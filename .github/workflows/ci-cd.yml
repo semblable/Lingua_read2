@@ -136,6 +136,22 @@ jobs:
             EOF
             chmod 600 .env
 
+            # Ensure TLS certs exist for the production Nginx config.
+            # If you haven't provisioned real certs yet, generate a temporary self-signed pair.
+            mkdir -p certs
+            if [ ! -s certs/fullchain.pem ] || [ ! -s certs/privkey.pem ]; then
+              echo "TLS certs missing at ./certs; generating self-signed certs (temporary)"
+              if ! command -v openssl >/dev/null 2>&1; then
+                sudo apt-get update
+                sudo apt-get install -y openssl
+              fi
+              openssl req -x509 -nodes -newkey rsa:2048 -days 365 \
+                -keyout certs/privkey.pem \
+                -out certs/fullchain.pem \
+                -subj "/CN=${HOSTNAME:-localhost}"
+              chmod 600 certs/privkey.pem certs/fullchain.pem
+            fi
+
             # Use sudo because many hosts restrict /var/run/docker.sock to root/docker group.
             echo "${{ secrets.GHCR_PAT }}" | sudo docker login ghcr.io -u "${{ secrets.GHCR_USERNAME }}" --password-stdin
 

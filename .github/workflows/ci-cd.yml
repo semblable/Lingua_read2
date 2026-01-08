@@ -136,12 +136,31 @@ jobs:
             EOF
             chmod 600 .env
 
-            echo "${{ secrets.GHCR_PAT }}" | docker login ghcr.io -u "${{ secrets.GHCR_USERNAME }}" --password-stdin
+            # Use sudo because many hosts restrict /var/run/docker.sock to root/docker group.
+            echo "${{ secrets.GHCR_PAT }}" | sudo docker login ghcr.io -u "${{ secrets.GHCR_USERNAME }}" --password-stdin
 
-            docker compose -f docker-compose.yml -f docker-compose.prod.yml pull
-            docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+            sudo docker compose -f docker-compose.yml -f docker-compose.prod.yml pull
+            sudo docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 
-            # Health check (inside the api container; Nginx is Basic-Auth protected)
-            docker compose exec -T api curl -fsS http://localhost:5000/api/Health >/dev/null
-            echo "Health check OK"
+            # Health check (inside the api container; Nginx is Basic-Auth protected).
+            # The API may take time to start (DB readiness + migrations). Retry and dump logs on failure.
+            ok=""
+            for i in $(seq 1 60); do
+              if sudo docker compose exec -T api curl -fsS http://localhost:5000/api/Health >/dev/null; then
+                ok="yes"
+                break
+              fi
+              echo "Waiting for API health... ($i/60)"
+              sleep 2
+            done
+
+            if [ "$ok" = "yes" ]; then
+              echo "Health check OK"
+              exit 0
+            fi
+
+            echo "Health check FAILED; dumping status/logs"
+            sudo docker compose ps
+            sudo docker compose logs --no-color --tail=200 api || true
+            exit 1
 

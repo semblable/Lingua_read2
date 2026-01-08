@@ -5,6 +5,7 @@ using System;
 // using System.ComponentModel.DataAnnotations; // No longer needed for models
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
+using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
 using LinguaReadApi.Data;
@@ -20,13 +21,19 @@ namespace LinguaReadApi.Controllers
         private readonly AppDbContext _context;
         private readonly IConfiguration _configuration;
         private readonly ILogger<AuthController> _logger; // Add logger
+        private readonly IWebHostEnvironment _env;
         private static readonly Guid DefaultUserId = new Guid("a1a1a1a1-b2b2-c3c3-d4d4-e5e5e5e5e5e5"); // Define default user ID
 
-        public AuthController(AppDbContext context, IConfiguration configuration, ILogger<AuthController> logger) // Inject logger
+        public AuthController(
+            AppDbContext context,
+            IConfiguration configuration,
+            ILogger<AuthController> logger,
+            IWebHostEnvironment env) // Inject environment
         {
             _context = context;
             _configuration = configuration;
             _logger = logger; // Assign logger
+            _env = env;
         }
 
         // REMOVED [HttpPost("register")] endpoint
@@ -35,6 +42,36 @@ namespace LinguaReadApi.Controllers
         // No [FromBody] needed as we don't expect a request body
         public async Task<IActionResult> Login()
         {
+            // Defense-in-depth: in production, do not mint JWTs for anonymous callers.
+            // Preferred: Require a shared secret (header: X-Login-Secret) to access auto-login.
+            // If no secret is configured, require that the request came through the reverse proxy
+            // (Nginx Basic Auth) by checking `X-Forwarded-User` (set from `$remote_user`).
+            if (!_env.IsDevelopment())
+            {
+                var configuredSecret =
+                    _configuration["Auth:LoginSecret"] ??
+                    Environment.GetEnvironmentVariable("LINGUAREAD_LOGIN_SECRET");
+
+                if (!string.IsNullOrWhiteSpace(configuredSecret))
+                {
+                    var providedSecret = Request.Headers["X-Login-Secret"].FirstOrDefault();
+                    if (!FixedTimeEquals(providedSecret, configuredSecret))
+                    {
+                        _logger.LogWarning("[AuthController] Login blocked: invalid or missing X-Login-Secret.");
+                        return Unauthorized(new { message = "Invalid login secret." });
+                    }
+                }
+                else
+                {
+                    var forwardedUser = Request.Headers["X-Forwarded-User"].FirstOrDefault();
+                    if (string.IsNullOrWhiteSpace(forwardedUser))
+                    {
+                        _logger.LogWarning("[AuthController] Login blocked: missing X-Forwarded-User (expected behind reverse proxy Basic Auth).");
+                        return Unauthorized(new { message = "Login is not available without proxy authentication." });
+                    }
+                }
+            }
+
             _logger.LogInformation("[AuthController] Attempting auto-login for default user ID: {UserId}", DefaultUserId);
 
             // Find the predefined default user by ID
@@ -60,6 +97,24 @@ namespace LinguaReadApi.Controllers
 
             // Return token
             return Ok(new { token });
+        }
+
+        private static bool FixedTimeEquals(string? provided, string expected)
+        {
+            if (string.IsNullOrEmpty(provided) || string.IsNullOrEmpty(expected))
+            {
+                return false;
+            }
+
+            var providedBytes = Encoding.UTF8.GetBytes(provided);
+            var expectedBytes = Encoding.UTF8.GetBytes(expected);
+
+            if (providedBytes.Length != expectedBytes.Length)
+            {
+                return false;
+            }
+
+            return CryptographicOperations.FixedTimeEquals(providedBytes, expectedBytes);
         }
 
         private string GenerateJwtToken(User user)

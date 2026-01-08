@@ -2,11 +2,18 @@
 import { Platform } from 'react-native';
 // import storage from './storage'; // Removed unused storage
 
-// Dynamically set API URL based on platform
-// For web development use localhost, for mobile use your computer's IP address
-export const API_URL = Platform.OS === 'web'
-  ? '/api'
-  : 'http://192.168.0.48:5000'; // Your Ethernet adapter IP address
+// Dynamically set API URL based on platform.
+//
+// - Web (behind Nginx): default to `/api`
+// - Native/mobile: set `REACT_APP_API_BASE_URL_MOBILE` (e.g. `http://<LAN-IP>:5000/api`)
+// - Optional override for web too: `REACT_APP_API_BASE_URL` (e.g. `https://yourdomain.com/api`)
+const WEB_API_BASE_URL = process.env.REACT_APP_API_BASE_URL || '/api';
+const MOBILE_API_BASE_URL =
+  process.env.REACT_APP_API_BASE_URL_MOBILE ||
+  process.env.REACT_APP_API_BASE_URL ||
+  'http://localhost:5000/api';
+
+export const API_URL = Platform.OS === 'web' ? WEB_API_BASE_URL : MOBILE_API_BASE_URL;
 
 // Helper function to get token from storage
 const getToken = () => {

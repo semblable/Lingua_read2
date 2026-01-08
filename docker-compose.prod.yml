@@ -1,0 +1,11 @@
+services:
+  nginx:
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      # SSL certificates (place `fullchain.pem` + `privkey.pem` here on the host)
+      - ./certs:/etc/nginx/certs:ro
+      # Use the SSL-enabled Nginx config for production
+      - ./client/lingua-read-client/nginx.ssl.conf:/etc/nginx/nginx.conf:ro
+

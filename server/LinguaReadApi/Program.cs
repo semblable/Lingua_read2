@@ -13,6 +13,7 @@ using Microsoft.AspNetCore.Http.Features; // Needed for FormOptions
 using Microsoft.AspNetCore.Server.Kestrel.Core; // Needed for KestrelServerOptions
 using DotNetEnv; // <-- Add this using directive
 using Microsoft.AspNetCore.Identity; // Keep one Identity using
+using Microsoft.AspNetCore.HttpOverrides;
 // using Microsoft.AspNetCore.Identity.EntityFrameworkCore; // This namespace is not needed directly here
 
 // --- Load .env file ---
@@ -44,8 +45,15 @@ builder.Services.Configure<FormOptions>(options =>
 builder.Services.AddControllers();
 // Configure DbContext with PostgreSQL
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection"))
-           .EnableSensitiveDataLogging()); // <-- Enable sensitive data logging
+{
+    options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection"));
+
+    // Sensitive EF Core logging should be Development-only.
+    if (builder.Environment.IsDevelopment())
+    {
+        options.EnableSensitiveDataLogging();
+    }
+});
 
 // --- Add ASP.NET Core Identity ---
 // Make sure LinguaReadApi.Models.User exists and is the correct user class
@@ -104,27 +112,6 @@ builder.Services.AddAuthentication(options =>
             Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"] ?? throw new InvalidOperationException("JWT Key is not configured"))
         )
     };
-
-    options.Events = new JwtBearerEvents
-    {
-        OnMessageReceived = context =>
-        {
-            var token = context.Request.Headers["Authorization"].FirstOrDefault()?.Split(" ").Last();
-            Console.WriteLine($"Raw Authorization header: {context.Request.Headers["Authorization"]}");
-            Console.WriteLine($"Extracted token: {token}");
-            return Task.CompletedTask;
-        },
-        OnAuthenticationFailed = context =>
-        {
-            Console.WriteLine($"Authentication failed: {context.Exception.GetType().Name} - {context.Exception.Message}");
-            return Task.CompletedTask;
-        },
-        OnTokenValidated = context =>
-        {
-            Console.WriteLine("Token validated successfully");
-            return Task.CompletedTask;
-        }
-    };
 });
 
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
@@ -136,16 +123,49 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowClientApp", policy =>
     {
-        // Restore specific CORS policy
-        policy.WithOrigins("http://localhost:3000", "http://localhost:19006", "http://localhost") // Allow specific frontend origins
-              .WithMethods("GET", "POST", "PUT", "DELETE", "OPTIONS") // Explicitly allow needed methods + OPTIONS for preflight
-              .WithHeaders("Content-Type", "Authorization", "Accept") // Explicitly allow common headers + Authorization
-              .AllowCredentials(); // Allow cookies/auth headers
-              //.SetIsOriginAllowed(origin => true); // Rely on WithOrigins explicitly
+        // In production the app should be served behind the same-origin Nginx reverse proxy.
+        // If you need cross-origin access (e.g., separate domain), set:
+        // - Cors:AllowedOrigins (appsettings / env) or
+        // - CORS_ALLOWED_ORIGINS (comma-separated)
+        var configuredOrigins =
+            builder.Configuration["Cors:AllowedOrigins"] ??
+            Environment.GetEnvironmentVariable("CORS_ALLOWED_ORIGINS") ??
+            string.Empty;
+
+        var origins = configuredOrigins
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        if (builder.Environment.IsDevelopment())
+        {
+            policy.WithOrigins("http://localhost:3000", "http://localhost:19006", "http://localhost");
+        }
+        else if (origins.Length > 0)
+        {
+            policy.WithOrigins(origins);
+        }
+        else
+        {
+            // Default production stance: no cross-origin calls allowed.
+            policy.SetIsOriginAllowed(_ => false);
+        }
+
+        policy.WithMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
+              .WithHeaders("Content-Type", "Authorization", "Accept")
+              .AllowCredentials();
     });
 });
 
 var app = builder.Build();
+
+// Trust reverse-proxy headers (Nginx) when deployed behind a proxy.
+// NOTE: We clear known networks/proxies so this works in containerized environments.
+var forwardedHeaderOptions = new ForwardedHeadersOptions
+{
+    ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
+};
+forwardedHeaderOptions.KnownNetworks.Clear();
+forwardedHeaderOptions.KnownProxies.Clear();
+app.UseForwardedHeaders(forwardedHeaderOptions);
 
 // --- Add early exception logging middleware ---
 app.Use(async (context, next) =>
@@ -257,12 +277,6 @@ app.UseStaticFiles(new StaticFileOptions
 
 app.UseAuthentication();
 app.UseAuthorization();
-
-// Only use HTTPS redirection in production
-if (!app.Environment.IsDevelopment())
-{
-    app.UseHttpsRedirection();
-}
 
 app.MapControllers();
 

@@ -23,9 +23,6 @@ COPY --from=build /app/build ./
 # Copy custom nginx configuration
 COPY nginx.conf /etc/nginx/nginx.conf
 
-# Copy htpasswd file for basic authentication
-COPY .htpasswd /etc/nginx/.htpasswd
-
 EXPOSE 80
 
 CMD ["nginx", "-g", "daemon off;"]

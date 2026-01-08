@@ -8,10 +8,9 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - db_data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
 
-  backend:
+  api:
+    image: ghcr.io/${GHCR_REPO:-local/lingua-read}-api:latest
     build: ./server/LinguaReadApi
     restart: unless-stopped
     depends_on:
@@ -27,23 +26,32 @@ services:
       PGPASSWORD: ${POSTGRES_PASSWORD}
       # Other variables
       Jwt__Key: ${JWT_KEY}
-      Jwt__Issuer: http://backend:5000
-      Jwt__Audience: http://localhost
+      Jwt__Issuer: ${JWT_ISSUER}
+      Jwt__Audience: ${JWT_AUDIENCE}
       DeepL__ApiKey: ${DEEPL_API_KEY}
       Gemini__ApiKey: ${GEMINI_API_KEY}
+      Auth__LoginSecret: ${LOGIN_SECRET}
+      Cors__AllowedOrigins: ${CORS_ALLOWED_ORIGINS}
     volumes:
-      - api_audio:/app/wwwroot
-    ports:
-      - "5000:5000" # Changed from expose to ports for potentially better connectivity/debugging
+      - api_audio_lessons:/app/wwwroot/audio_lessons
+      - api_audiobooks:/app/wwwroot/audiobooks
+    expose:
+      - "5000"
 
-  frontend:
+  nginx:
+    image: ghcr.io/${GHCR_REPO:-local/lingua-read}-nginx:latest
     build: ./client/lingua-read-client
     restart: unless-stopped
     depends_on:
-      - backend
+      - api
     ports:
       - "80:80"
+    volumes:
+      # Provide Basic Auth credentials at runtime (do not bake into image).
+      # Create this file on the host with: `htpasswd -c secrets/nginx.htpasswd <user>`
+      - ./secrets/nginx.htpasswd:/etc/nginx/.htpasswd:ro
 
 volumes:
   db_data:
-  api_audio:
+  api_audio_lessons:
+  api_audiobooks:

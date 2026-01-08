@@ -32,8 +32,9 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends postgresql-client-16 && \
     rm -rf /var/lib/apt/lists/* # Clean up
 
-# Create the directory the application needs at runtime and ensure correct ownership
-RUN mkdir -p /app/wwwroot/audio_lessons && chown -R app:app /app/wwwroot/audio_lessons
+# Create the directories the application needs at runtime and ensure correct ownership
+RUN mkdir -p /app/wwwroot/audio_lessons /app/wwwroot/audiobooks && \
+    chown -R app:app /app/wwwroot/audio_lessons /app/wwwroot/audiobooks
 
 # Change ownership of the rest of the app directory to the app user
 RUN chown -R app:app /app

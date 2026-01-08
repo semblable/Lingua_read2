@@ -3,6 +3,12 @@
 # ===================================================================
 # Ignore .env file at the root level. This is critical for sensitive keys.
 .env
+secrets/
+certs/
+.cursor/
+!secrets/.gitkeep
+!certs/.gitkeep
+backups/
 
 # ===================================================================
 # OS-specific

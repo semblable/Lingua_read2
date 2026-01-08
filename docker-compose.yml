@@ -10,7 +10,7 @@ services:
       - db_data:/var/lib/postgresql/data
 
   api:
-    image: ghcr.io/${GHCR_REPO:-local/lingua-read}-api:latest
+    image: ghcr.io/${GHCR_REPO:-semblable/lingua-read-api}:latest
     build: ./server/LinguaReadApi
     restart: unless-stopped
     depends_on:
@@ -39,7 +39,7 @@ services:
       - "5000"
 
   nginx:
-    image: ghcr.io/${GHCR_REPO:-local/lingua-read}-nginx:latest
+    image: ghcr.io/${GHCR_REPO:-semblable/lingua-read-nginx}:latest
     build: ./client/lingua-read-client
     restart: unless-stopped
     depends_on:

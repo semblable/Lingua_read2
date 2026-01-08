@@ -10,8 +10,8 @@ permissions:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_API: ${{ github.repository }}-api
-  IMAGE_NGINX: ${{ github.repository }}-nginx
+  IMAGE_API: ${{ github.repository_owner }}/lingua-read-api
+  IMAGE_NGINX: ${{ github.repository_owner }}/lingua-read-nginx
 
 jobs:
   ci:

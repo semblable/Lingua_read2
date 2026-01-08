@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo, useCallback } from 'react'; // Added useCallback
-import { Container, Row, Col, Card, Button, Spinner, Alert, Form, ButtonGroup, InputGroup, Badge } from 'react-bootstrap'; // Added Badge, InputGroup
+import { Container, Row, Col, Card, Button, Spinner, Alert, Form, ButtonGroup, Badge } from 'react-bootstrap'; // Added Badge
 import { Link } from 'react-router-dom';
 import { useTextsStore } from '../utils/store';
 import { getTexts, deleteText } from '../utils/api'; // Import deleteText

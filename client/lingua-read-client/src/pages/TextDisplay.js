@@ -523,7 +523,7 @@ const TextDisplay = () => {
     fontSize: `${globalSettings.textSize}px`,
     fontFamily: getFontFamilyForList(), // Assuming getFontFamilyForList is stable or memoized
     lineHeight: currentLineSpacing // Use the passed-in value directly
-  }), [globalSettings.textSize, globalSettings.textFont, getFontFamilyForList]); // Removed globalSettings.lineSpacing, kept getFontFamilyForList
+  }), [globalSettings.textSize, getFontFamilyForList]); // getFontFamilyForList already depends on textFont
 
   const handleLineClick = useCallback((startTime) => {
       console.log(`[handleLineClick] Attempting seek to: ${startTime} (Type: ${typeof startTime})`);
@@ -703,21 +703,14 @@ const TextDisplay = () => {
         if (isAudioLesson && text?.languageId) {
             console.log('[Audio Log - Unmount] Starting duration calculation...');
             console.log(`[Audio Log - Unmount] Accumulated duration (ms): ${accumulatedDurationRef.current}`);
-            let finalDurationMs = accumulatedDurationRef.current;
-            // If audio was playing when unmounted, add the last segment
-            if (startTimeRef.current) {
-                const lastSegmentMs = Date.now() - startTimeRef.current;
-                console.log(`[Audio Log - Unmount] Audio was playing. Adding last segment (ms): ${lastSegmentMs}`);
-                finalDurationMs += lastSegmentMs;
-            } else {
-                console.log('[Audio Log - Unmount] Audio was paused/ended.');
-            }
             // --- Calculate final elapsed time if audio was playing on unmount ---
             if (startTimeRef.current) {
                 const finalElapsed = Date.now() - startTimeRef.current;
                 accumulatedDurationRef.current += finalElapsed;
                 console.log(`[Audio Log - Unmount] Added final elapsed time: ${finalElapsed}ms. New Accumulated: ${accumulatedDurationRef.current}ms`);
                 startTimeRef.current = null; // Clear ref after calculation
+            } else {
+                console.log('[Audio Log - Unmount] Audio was paused/ended.');
             }
             // --- Use the final accumulated duration ---
             const finalAccumulatedMs = accumulatedDurationRef.current; // Use the potentially updated value
@@ -919,7 +912,7 @@ const TextDisplay = () => {
        setSaveSuccess(true); setTimeout(() => setSaveSuccess(false), 2000);
      } catch (error) { console.error('Error saving word:', error); alert(`Failed to save word: ${error.message}`); }
      finally { setProcessingWord(false); }
-   }, [selectedWord, displayedWord, processingWord, isTranslating, translation, text?.textId, words, getWordData, setWords, setDisplayedWord, setSaveSuccess, setProcessingWord, updateWord, createWord]); // Added dependencies for useCallback
+  }, [selectedWord, displayedWord, processingWord, isTranslating, translation, text?.textId, words, getWordData, setWords, setDisplayedWord, setSaveSuccess, setProcessingWord]); // createWord/updateWord are module imports (stable); omit to satisfy exhaustive-deps
 
   // Handler for saving translation via Enter key (Moved after handleSaveWord)
   const handleTranslationKeyDown = useCallback((event) => {

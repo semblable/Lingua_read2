@@ -22,7 +22,6 @@ const TermsPage = () => {
     const [importError, setImportError] = useState(null);
     const [importSuccess, setImportSuccess] = useState(null);
     const fileInputRef = useRef(null);
-    const searchTimeoutRef = useRef(null);
 
     // Fetch languages on component mount
     useEffect(() => {

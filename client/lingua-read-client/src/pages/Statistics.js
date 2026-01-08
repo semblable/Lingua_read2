@@ -5,8 +5,8 @@ import { Container, Row, Col, Card, Alert, Spinner, ProgressBar, Table, Form, Bu
 import { getUserStatistics, getReadingActivity, getListeningActivity } from '../utils/api';
 import { formatDate } from '../utils/helpers';
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
-  PieChart, Pie, Cell, LineChart, Line, ResponsiveContainer
+  XAxis, YAxis, CartesianGrid, Tooltip, Legend,
+  LineChart, Line, ResponsiveContainer
 } from 'recharts';
 import ManualEntryModal from '../components/ManualEntryModal'; // Import the modal component
 
@@ -345,18 +345,6 @@ const Statistics = () => {
       .sort((a, b) => new Date(a.date) - new Date(b.date)); // Sort by date ascending
   };
 
-  // Helper function to prepare activity by language data for charts
-  const prepareActivityByLanguageData = () => {
-    if (!readingActivity?.ActivityByLanguage) return [];
-
-    return Object.entries(readingActivity.ActivityByLanguage)
-      .map(([language, count]) => ({
-        language,
-        wordsRead: count
-      }))
-      .sort((a, b) => b.wordsRead - a.wordsRead); // Sort by count descending
-  };
-
   // Helper function to prepare language statistics data for charts
   // const prepareLanguageStatsData = () => { // Removed unused function
   //   if (!stats?.LanguageStatistics) return [];
@@ -551,10 +539,6 @@ uniqueLanguages[langId].totalSecondsListened = stat.TotalSecondsListened ?? stat
       }
   });
 
-  const readingActivityByLanguageArray = Array.isArray(readingActivity?.ActivityByLanguage)
-    ? readingActivity.ActivityByLanguage
-    : Object.values(readingActivity?.ActivityByLanguage || {});
-
   // Populate PERIOD stats from readingActivity
   if (activityPeriod !== 'all') {
     if (!loadingActivity) { // Only calculate if reading activity is not loading
@@ -595,31 +579,9 @@ uniqueLanguages[langId].totalSecondsListened = stat.TotalSecondsListened ?? stat
   // Filter language statistics if a specific language is selected
   console.log('languagesArray', languagesArray);
 
-  // Filter the aggregated languagesArray, not the raw allLanguageStats
-  const filteredLanguageStats = selectedLanguage === 'all'
-    ? languagesArray // Use the aggregated array
-    : languagesArray.filter(lang => {
-        const langId = lang.languageId; // languagesArray uses languageId
-        return langId && langId.toString() === selectedLanguage;
-      });
-
-  // Prepare data for vocabulary chart
-  const vocabularyData = [
-    { name: 'Known', value: stats.KnownWords },
-    { name: 'Learning', value: stats.LearningWords },
-  ];
-
-  // Prepare data for books chart
-  const booksData = [
-    { name: 'Finished', value: stats.FinishedBooks },
-    { name: 'In Progress', value: stats.TotalBooks - stats.FinishedBooks },
-  ];
-
   // Prepare data for activity charts
   const readingActivityByDate = prepareActivityByDateData();
-  const readingActivityByLanguage = prepareActivityByLanguageData();
   const listeningActivityByDate = prepareListeningActivityByDateData();
-  const listeningActivityByLanguage = prepareListeningActivityByLanguageData();
 
 
   return (

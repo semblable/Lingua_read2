@@ -106,6 +106,49 @@ const AudiobookPlayer = ({ book }) => {
       }
   }, []);
 
+  // --- Save Progress ---
+  const saveProgress = useCallback(async (isUnmounting = false, trackOverride = null, positionOverride = null) => {
+    // Use refs and state directly here
+    const audio = audioRef.current;
+    const track = trackOverride || currentTrack;
+    const position = positionOverride !== null ? positionOverride : (audio ? audio.currentTime : null);
+    const ready = audio ? audio.readyState : null;
+
+    if (!track || !audio || ready === 0) {
+      console.log("[AudioPlayer Save] Skipping save: No track, audio ref, or audio not ready.");
+      return;
+    }
+
+    // Avoid saving 0 position if track just started unless unmounting and duration exists
+    if (position === 0 && !isUnmounting && audio.duration > 0) {
+      console.log("[AudioPlayer Save] Skipping save: Position is 0 and not unmounting.");
+      return;
+    }
+
+    // Also skip saving if position is effectively the end of the track (within 0.5s) unless unmounting
+    if (!isUnmounting && audio.duration > 0 && audio.duration - position < 0.5) {
+      console.log("[AudioPlayer Save] Skipping save: Position is at the end of the track.");
+      return;
+    }
+
+    // *** DEBUG LOG: Check position just before API call in saveProgress ***
+    console.log(`[AudioPlayer Save DEBUG] About to call API. Track ID: ${track?.trackId}, Position: ${position}, isUnmounting: ${isUnmounting}`);
+    console.log(`[AudioPlayer Save] Attempting to save progress for Book ${bookId}: Track ID ${track.trackId}, Position ${position}, Unmounting: ${isUnmounting}`);
+    try {
+      await updateAudiobookProgress(bookId, {
+        currentAudiobookTrackId: track.trackId,
+        currentAudiobookPosition: position
+      });
+      console.log(`[AudioPlayer Save] Successfully saved progress for Book ${bookId}: Track ID ${track.trackId}, Position ${position}`);
+    } catch (err) {
+      console.error("[AudioPlayer Save] Failed to save audiobook progress:", err);
+      // Avoid setting error state if unmounting, as component is gone
+      if (!isUnmounting) {
+          setError("Failed to save progress.");
+      }
+    }
+  }, [bookId, currentTrack]); // Removed updateAudiobookProgress dependency
+
   // --- Audio Element Setup & Event Listeners ---
   useEffect(() => {
     const audio = audioRef.current;
@@ -297,7 +340,7 @@ const AudiobookPlayer = ({ book }) => {
       audio.removeEventListener('pause', handlePause);
       audio.removeEventListener('ended', handleEnded);
     };
-  }, [currentTrackIndex, playbackRate, audiobookTracks, isPlaying, playbackPositionLoaded, currentTrack]); // Added currentTrack dependency
+  }, [currentTrackIndex, playbackRate, audiobookTracks, isPlaying, playbackPositionLoaded, currentTrack, saveProgress]); // Added saveProgress dependency
 
   // --- Play/Pause Logic ---
   const togglePlayPause = useCallback(() => {
@@ -418,50 +461,6 @@ const AudiobookPlayer = ({ book }) => {
           console.log(`[AudioPlayer Seek] Seeked via progress bar to ${newTime}s (${(percentage * 100).toFixed(1)}%)`);
       }
   };
-
-
-  // --- Save Progress ---
-  const saveProgress = useCallback(async (isUnmounting = false, trackOverride = null, positionOverride = null) => {
-    // Use refs and state directly here
-    const audio = audioRef.current;
-    const track = trackOverride || currentTrack;
-    const position = positionOverride !== null ? positionOverride : (audio ? audio.currentTime : null);
-    const ready = audio ? audio.readyState : null;
-
-    if (!track || !audio || ready === 0) {
-      console.log("[AudioPlayer Save] Skipping save: No track, audio ref, or audio not ready.");
-      return;
-    }
-
-    // Avoid saving 0 position if track just started unless unmounting and duration exists
-    if (position === 0 && !isUnmounting && audio.duration > 0) {
-      console.log("[AudioPlayer Save] Skipping save: Position is 0 and not unmounting.");
-      return;
-    }
-
-    // Also skip saving if position is effectively the end of the track (within 0.5s) unless unmounting
-    if (!isUnmounting && audio.duration > 0 && audio.duration - position < 0.5) {
-      console.log("[AudioPlayer Save] Skipping save: Position is at the end of the track.");
-      return;
-    }
-
-    // *** DEBUG LOG: Check position just before API call in saveProgress ***
-    console.log(`[AudioPlayer Save DEBUG] About to call API. Track ID: ${track?.trackId}, Position: ${position}, isUnmounting: ${isUnmounting}`);
-    console.log(`[AudioPlayer Save] Attempting to save progress for Book ${bookId}: Track ID ${track.trackId}, Position ${position}, Unmounting: ${isUnmounting}`);
-    try {
-      await updateAudiobookProgress(bookId, {
-        currentAudiobookTrackId: track.trackId,
-        currentAudiobookPosition: position
-      });
-      console.log(`[AudioPlayer Save] Successfully saved progress for Book ${bookId}: Track ID ${track.trackId}, Position ${position}`);
-    } catch (err) {
-      console.error("[AudioPlayer Save] Failed to save audiobook progress:", err);
-      // Avoid setting error state if unmounting, as component is gone
-      if (!isUnmounting) {
-          setError("Failed to save progress.");
-      }
-    }
-  }, [bookId, currentTrack]); // Removed updateAudiobookProgress dependency
 
   // --- Log Listening Time ---
   const logListeningTime = useCallback(async (isUnmounting = false) => {

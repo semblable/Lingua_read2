@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 import { Container, Row, Col, Card, Alert, Spinner, ProgressBar, Table, Form, Button } from 'react-bootstrap';
 // import { useNavigate } from 'react-router-dom'; // Removed unused import
-import { getUserStatistics, getReadingActivity, getListeningActivity } from '../utils/api';
+import { API_URL, getUserStatistics, getReadingActivity, getListeningActivity, testApiConnection } from '../utils/api';
 import { formatDate } from '../utils/helpers';
 import {
   XAxis, YAxis, CartesianGrid, Tooltip, Legend,
@@ -34,13 +34,8 @@ const Statistics = () => {
   useEffect(() => {
     const checkConnectivity = async () => {
       try {
-        const healthUrl = new URL('/api/health', 'http://localhost:5000').toString();
-        const response = await fetch(healthUrl, {
-          mode: 'cors',
-          headers: { 'Accept': 'application/json' }
-        });
-
-        if (response.ok) {
+        const ok = await testApiConnection();
+        if (ok) {
           setNetworkStatus('connected');
           setUsingFallbackData(false);
         } else {
@@ -312,7 +307,7 @@ const Statistics = () => {
       setInitializingLanguages(true);
 
       // Call the admin endpoint to initialize languages
-      const response = await fetch('http://localhost:5000/api/admin/initialize-languages', {
+      const response = await fetch(`${API_URL}/admin/initialize-languages`, {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`,
           'Accept': 'application/json'

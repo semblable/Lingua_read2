@@ -39,23 +39,27 @@
 
 /* General Content Padding */
 .main-content-padding {
-  padding: var(--space-md) var(--space-lg); /* e.g., 16px 24px */
+  padding: var(--space-md) var(--content-gutter);
+  max-width: var(--content-max-width);
+  margin-left: auto;
+  margin-right: auto;
+  width: 100%;
 }
 
 /* Ensure full-width containers have internal padding for their content */
 /* This class can be added to the immediate child of a .container-fluid.p-0.m-0 */
 .content-in-fluid {
-  padding-left: var(--space-md); /* 16px */
-  padding-right: var(--space-md); /* 16px */
+  padding-left: var(--content-gutter);
+  padding-right: var(--content-gutter);
 }
 
 @media (min-width: 768px) { /* Larger padding for larger screens */
   .main-content-padding {
-    padding: var(--space-lg) var(--space-xl); /* e.g., 24px 32px */
+    padding: var(--space-lg) var(--content-gutter);
   }
   .content-in-fluid {
-    padding-left: var(--space-lg); /* 24px */
-    padding-right: var(--space-lg); /* 24px */
+    padding-left: var(--content-gutter);
+    padding-right: var(--content-gutter);
   }
 }
 

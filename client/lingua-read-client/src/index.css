@@ -100,6 +100,17 @@
   --line-height-base: 1.6;
   --reading-line-height: 1.5; /* Default reading line height */
 
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-base: 1rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.25rem;
+
   --h1-font-size: calc(var(--font-size-base) * 2.5);   /* 40px */
   --h2-font-size: calc(var(--font-size-base) * 2);     /* 32px */
   --h3-font-size: calc(var(--font-size-base) * 1.75);  /* 28px */
@@ -115,6 +126,30 @@
   --space-lg: calc(var(--space-unit) * 6);  /* 24px */
   --space-xl: calc(var(--space-unit) * 8);  /* 32px */
   --space-xxl: calc(var(--space-unit) * 12); /* 48px */
+  --space-3xl: calc(var(--space-unit) * 16); /* 64px */
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 18px;
+  --radius-full: 999px;
+
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.06);
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.08);
+  --shadow-md: 0 6px 18px rgba(0, 0, 0, 0.12);
+  --shadow-lg: 0 12px 28px rgba(0, 0, 0, 0.16);
+
+  --content-max-width: 1200px;
+  --content-gutter: var(--space-lg);
+
+  --color-success: #1f9d55;
+  --color-success-bg: rgba(31, 157, 85, 0.12);
+  --color-danger: #dc3545;
+  --color-danger-bg: rgba(220, 53, 69, 0.12);
+  --color-warning: #f59f00;
+  --color-warning-bg: rgba(245, 159, 0, 0.12);
+  --color-info: #2f80ed;
+  --color-info-bg: rgba(47, 128, 237, 0.12);
 
   /* Translation Popup Theme Variables - Light */
   --popup-original-panel-bg: var(--background-color-light);
@@ -327,6 +362,12 @@
     /* Consider a specific color or SVG for the close button if default is not visible */
 }
 
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
 body {
   margin: 0;
   font-family: var(--font-family-sans-serif);
@@ -350,7 +391,7 @@ h1, h2, h3, h4, h5, h6 {
   margin-top: 0;
   margin-bottom: 0.5rem;
   font-family: var(--font-family-sans-serif); /* Headings use Inter by default */
-  font-weight: 600; /* Bolder for headings */
+  font-weight: var(--font-weight-semibold); /* Bolder for headings */
   line-height: 1.2;
   color: var(--font-color); /* Inherit themed font color */
 }
@@ -381,9 +422,9 @@ a:hover, a:focus {
 
 /* Global Button Styles */
 .btn {
-  border-radius: var(--space-sm); /* 8px */
+  border-radius: var(--radius-md);
   padding: var(--space-sm) var(--space-md); /* 8px 16px */
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
   transition: background-color 0.2s ease-in-out, border-color 0.2s ease-in-out, color 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
   border-width: 1px;
   border-style: solid;
@@ -400,7 +441,7 @@ a:hover, a:focus {
   background-color: var(--accent-color-darker);
   border-color: var(--accent-color-darker);
   color: var(--font-color-on-accent);
-  box-shadow: 0 0 0 0.2rem rgba(var(--accent-color), 0.25);
+  box-shadow: var(--shadow-sm);
 }
 
 /* Secondary Button (example, adjust as needed) */
@@ -414,7 +455,7 @@ a:hover, a:focus {
   background-color: #d3d3d3; /* Slightly darker gray */
   border-color: #d3d3d3;
   color: var(--font-color-on-secondary);
-  box-shadow: 0 0 0 0.2rem rgba(var(--secondary-color), 0.25);
+  box-shadow: var(--shadow-xs);
 }
 
 /* Light/Outline Button for dark theme considerations */
@@ -442,7 +483,7 @@ a:hover, a:focus {
 /* Ensure Bootstrap's default button focus ring is themed */
 .btn:focus, .btn.focus {
   outline: 0;
-  box-shadow: 0 0 0 0.2rem rgba(var(--accent-color), 0.25); /* Default to accent, can be overridden by specific button types */
+  box-shadow: 0 0 0 0.2rem rgba(26, 188, 156, 0.25); /* Default to accent, can be overridden by specific button types */
 }
 
 /* Text display word styles */
@@ -508,8 +549,8 @@ a:hover, a:focus {
   margin: 2rem auto; /* Added top/bottom margin */
   padding: 20px;
   background-color: var(--ui-background); /* Use themed UI background */
-  border-radius: var(--space-sm); /* Slightly more rounded, using spacing var */
-  box-shadow: 0 var(--space-xs) var(--space-xl) rgba(0, 0, 0, 0.1); /* Using spacing vars */
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
   border: 1px solid var(--border-color);
   padding: var(--space-lg); /* Using spacing var */
 }
@@ -519,13 +560,23 @@ a:hover, a:focus {
   background-color: var(--ui-background); /* Use themed UI background */
   color: var(--font-color);
   border: 1px solid var(--border-color);
-  border-radius: var(--space-sm); /* Consistent rounding, using spacing var */
+  border-radius: var(--radius-lg);
   margin-bottom: var(--space-md); /* Add some bottom margin */
 }
 
 .text-card:hover {
-  transform: translateY(-5px);
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+/* Modern card and surface styling */
+.card,
+.modal-content,
+.list-group-item,
+.dropdown-menu {
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-xs);
+  border-color: var(--border-color);
 }
 
 /* Dark theme overrides for Bootstrap components & general elements */
@@ -678,7 +729,7 @@ body, html {
 
 /* Form Styling */
 .form-label {
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
   margin-bottom: var(--space-sm);
   color: var(--font-color);
 }
@@ -688,7 +739,7 @@ body, html {
   background-color: var(--background-color-light);
   color: var(--font-color-light);
   border: 1px solid var(--border-color-light);
-  border-radius: var(--space-xs); /* 4px */
+  border-radius: var(--radius-md);
   padding: var(--space-sm) var(--space-md); /* 8px 16px */
   transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
   line-height: var(--line-height-base);
@@ -698,7 +749,7 @@ body, html {
 .form-select:focus {
   border-color: var(--accent-color);
   outline: 0;
-  box-shadow: 0 0 0 0.2rem rgba(var(--accent-color), 0.25);
+  box-shadow: 0 0 0 0.2rem rgba(26, 188, 156, 0.25);
   background-color: var(--background-color-light); /* Ensure background doesn't change on focus for light theme */
   color: var(--font-color-light);
 }

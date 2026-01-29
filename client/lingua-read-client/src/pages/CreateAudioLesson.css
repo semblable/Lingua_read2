@@ -1,107 +1,111 @@
 .create-audio-lesson-container {
-    max-width: 600px;
-    margin: 2rem auto;
-    padding: 2rem;
-    border: 1px solid #e0e0e0; /* Lighter border */
-    border-radius: 8px;
-    background-color: #ffffff; /* White background */
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05); /* Subtle shadow */
+    max-width: 640px;
+    margin: var(--space-xxl) auto;
+    padding: var(--space-xl);
+    border: 1px solid var(--theme-border-color);
+    border-radius: var(--radius-lg);
+    background-color: var(--theme-surface-bg);
+    box-shadow: var(--shadow-sm);
 }
 
 .create-audio-lesson-container h2 {
     text-align: center;
-    margin-bottom: 1.5rem;
-    color: #333;
+    margin-bottom: var(--space-lg);
+    color: var(--font-color);
 }
 
 .form-group {
-    margin-bottom: 1.25rem; /* Slightly more spacing */
+    margin-bottom: var(--space-md);
 }
 
 .form-group label {
     display: block;
-    margin-bottom: 0.5rem;
-    font-weight: bold;
-    color: #555;
+    margin-bottom: var(--space-xs);
+    font-weight: var(--font-weight-medium);
+    color: var(--font-color);
 }
 
 .form-group input[type="text"],
 .form-group select,
 .form-group input[type="file"] {
     width: 100%;
-    padding: 0.75rem; /* More padding */
-    border: 1px solid #ccc;
-    border-radius: 4px;
+    padding: var(--space-sm);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
     box-sizing: border-box; /* Include padding and border in width */
-    margin-bottom: 0.5rem; /* Add space below input */
+    margin-bottom: var(--space-xs);
+    background-color: var(--background-color);
+    color: var(--font-color);
 }
 
 /* Style file input button */
 .form-group input[type="file"] {
-    padding: 0.3rem; /* Adjust padding for file input */
+    padding: var(--space-xs);
 }
 
 .form-group input[type="file"]::file-selector-button {
-    padding: 0.5rem 1rem;
-    border: 1px solid #ccc;
-    border-radius: 4px;
-    background-color: #f8f8f8;
+    padding: var(--space-xs) var(--space-md);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    background-color: var(--ui-background);
     cursor: pointer;
-    margin-right: 1rem;
-    transition: background-color 0.2s ease;
+    margin-right: var(--space-md);
+    transition: background-color 0.2s ease, border-color 0.2s ease;
 }
 
 .form-group input[type="file"]::file-selector-button:hover {
-    background-color: #eee;
+    background-color: var(--secondary-color);
 }
 
 
 .form-group span {
     display: block; /* Ensure span takes its own line */
-    font-size: 0.9em;
-    color: #555;
-    margin-top: 0.25rem; /* Add space above the span */
+    font-size: var(--text-sm);
+    color: var(--font-color);
+    margin-top: var(--space-xs);
 }
 
 .error-message {
-    color: #d9534f; /* Bootstrap danger color */
-    background-color: #f2dede;
-    border: 1px solid #ebccd1;
-    padding: 0.75rem;
-    border-radius: 4px;
-    margin-bottom: 1rem;
+    color: var(--color-danger);
+    background-color: var(--color-danger-bg);
+    border: 1px solid var(--color-danger);
+    padding: var(--space-sm);
+    border-radius: var(--radius-md);
+    margin-bottom: var(--space-md);
     text-align: center;
 }
 
 .success-message {
-    color: #5cb85c; /* Bootstrap success color */
-    background-color: #dff0d8;
-    border: 1px solid #d6e9c6;
-    padding: 0.75rem;
-    border-radius: 4px;
-    margin-bottom: 1rem;
+    color: var(--color-success);
+    background-color: var(--color-success-bg);
+    border: 1px solid var(--color-success);
+    padding: var(--space-sm);
+    border-radius: var(--radius-md);
+    margin-bottom: var(--space-md);
     text-align: center;
 }
 
 .create-audio-lesson-container button[type="submit"] {
     display: block; /* Make button block level */
     width: 100%; /* Full width */
-    padding: 0.75rem 1.5rem;
-    background-color: #007bff; /* Primary button color */
+    padding: var(--space-sm) var(--space-lg);
+    background-color: var(--accent-color);
     color: white;
     border: none;
-    border-radius: 4px;
+    border-radius: var(--radius-md);
     cursor: pointer;
-    font-size: 1rem;
-    transition: background-color 0.2s ease;
+    font-size: var(--text-base);
+    font-weight: var(--font-weight-medium);
+    transition: background-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .create-audio-lesson-container button[type="submit"]:hover {
-    background-color: #0056b3; /* Darker shade on hover */
+    background-color: var(--accent-color-darker);
+    box-shadow: var(--shadow-sm);
 }
 
 .create-audio-lesson-container button:disabled {
-    background-color: #6c757d; /* Disabled color */
+    background-color: var(--secondary-color);
     cursor: not-allowed;
     opacity: 0.65;
 }

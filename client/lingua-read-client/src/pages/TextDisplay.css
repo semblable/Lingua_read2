@@ -19,6 +19,9 @@
   top: 0;
   z-index: 1020;
   padding: var(--space-sm) var(--space-md);
+  background-color: var(--theme-surface-bg, #fff);
+  border-bottom: 1px solid var(--theme-border-color, #e9ecef);
+  box-shadow: var(--shadow-xs);
 }
 
 .lesson-topbar-closed {
@@ -40,8 +43,8 @@
 }
 
 .mobile-lesson-fab .btn {
-  border-radius: 999px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  border-radius: var(--radius-full);
+  box-shadow: var(--shadow-md);
 }
 
 .lesson-topbar-content {
@@ -52,8 +55,8 @@
 }
 
 .lesson-topbar-title {
-  font-weight: 600;
-  color: var(--font-color-dark);
+  font-weight: var(--font-weight-semibold);
+  color: var(--theme-text);
   font-size: 1rem;
   line-height: 1.2;
   overflow: hidden;
@@ -336,7 +339,7 @@
   cursor: default; /* Indicate it's not clickable itself */
   margin-right: 0.3em; /* Space between icon and text */
   font-size: 1em; /* Increase size */
-  color: #0d6efd; /* Use a noticeable blue color (Bootstrap primary) */
+  color: var(--accent-color);
   vertical-align: baseline; /* Align with text */
   user-select: none; /* Prevent selecting the icon */
   display: inline-block; /* Ensure margin/padding work */

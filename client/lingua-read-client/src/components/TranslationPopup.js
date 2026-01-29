@@ -40,9 +40,25 @@ const TranslationPopup = ({
   // Memoize sentence processing to avoid re-calculation on every render
   const sentencePairs = useMemo(() => {
     // Parse the combined tagged text directly
-    return parsePairedTranslation(translatedText);
+    const pairs = parsePairedTranslation(translatedText);
+    if (pairs.length > 0) {
+      return pairs;
+    }
+
+    // Fallback: show raw translation when tags are missing.
+    if (translatedText && translatedText.trim()) {
+      return [
+        {
+          number: 1,
+          original: originalText || '',
+          translated: translatedText
+        }
+      ];
+    }
+
+    return [];
     // No longer need originalText as a dependency here if it's embedded in translatedText
-  }, [translatedText]);
+  }, [translatedText, originalText]);
 
   // Scroll synchronization handler
   const handleScroll = useCallback((source) => {

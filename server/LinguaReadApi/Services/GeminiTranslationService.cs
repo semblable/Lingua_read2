@@ -70,7 +70,9 @@ namespace LinguaReadApi.Services
    - Immediately follow it with its translation wrapped EXACTLY like this: `<t s=""N"">Translated Sentence</t>`
    - Replace 'N' with the sentence number, starting from 1.
 2. Maintain ALL original formatting and punctuation within the sentences inside the tags.
-3. **CRITICAL:** Your response MUST contain ONLY the sequence of `<o s=""N"">...</o><t s=""N"">...</t>` pairs. Do NOT include ANY introductory text, concluding remarks, explanations, apologies, or any other text outside these specific tags.
+3. **CRITICAL:** Your response MUST contain ONLY the sequence of `<o s=""N"">...</o><t s=""N"">...</t>` pairs. Do NOT include ANY introductory text, concluding remarks, explanations, apologies, code fences, or markdown.
+4. Do NOT escape `<` or `>` and do NOT wrap output in any container tags.
+5. If the input has only one sentence, still output exactly one `<o>` + `<t>` pair.
 
 Example Input Text:
 Hello world. How are you?

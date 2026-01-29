@@ -443,6 +443,7 @@ namespace LinguaReadApi.Services
                 var safeMessage = string.IsNullOrWhiteSpace(message) ? "Attachment" : message;
                 var attachmentPayload = JsonSerializer.Serialize(new { content = safeMessage });
                 var multipartContent = new MultipartFormDataContent();
+                multipartContent.Add(new StringContent(safeMessage, Encoding.UTF8), "content");
                 multipartContent.Add(new StringContent(attachmentPayload, Encoding.UTF8, "application/json"), "payload_json");
 
                 var index = 0;
@@ -456,7 +457,8 @@ namespace LinguaReadApi.Services
                     var fileName = Path.GetFileName(attachmentPath);
                     var fileStream = File.OpenRead(attachmentPath);
                     var fileContent = new StreamContent(fileStream);
-                    fileContent.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
+                    var contentType = GetAttachmentContentType(attachmentPath);
+                    fileContent.Headers.ContentType = new MediaTypeHeaderValue(contentType);
                     multipartContent.Add(fileContent, $"files[{index}]", fileName);
                     index++;
                 }
@@ -780,6 +782,14 @@ namespace LinguaReadApi.Services
             }
 
             return $"{bytes / (1024d * 1024 * 1024):0.#} GB";
+        }
+
+        private static string GetAttachmentContentType(string attachmentPath)
+        {
+            var extension = Path.GetExtension(attachmentPath);
+            return extension.Equals(".html", StringComparison.OrdinalIgnoreCase)
+                ? "text/html"
+                : "application/octet-stream";
         }
 
         private static string BuildAttachmentStatusMessage(

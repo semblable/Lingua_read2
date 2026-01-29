@@ -76,34 +76,40 @@ const BatchAudioCreate = () => {
         const srtFiles = fileList.filter(f => f.name.toLowerCase().endsWith('.srt'));
         console.log(`[Debug Validation] Found ${mp3Files.length} MP3s and ${srtFiles.length} SRTs.`); // DEBUG LOG
 
-        // Function to normalize base names: trim trailing . or _, convert to lowercase
+        // Function to normalize base names: trim whitespace/punctuation, convert to lowercase
         const normalizeBaseName = (name) => {
             if (!name) return '';
-            // Remove .mp3 or .srt extension first if present (though usually called on base names)
-            let base = name.replace(/\.(mp3|srt)$/i, '');
-            // Trim trailing dots and underscores repeatedly
-            base = base.replace(/[._]+$/, '');
+            // Normalize unicode and strip extension if present
+            let base = name.normalize('NFKC').replace(/\.(mp3|srt)$/i, '');
+            // Trim whitespace and collapse repeated spaces
+            base = base.trim().replace(/\s+/g, ' ');
+            // Trim trailing dots/underscores/dashes repeatedly
+            base = base.replace(/[._-]+$/, '');
             return base.toLowerCase();
         };
 
-        // Function to extract base name and lang from SRT: expects 'base_xx.srt' or 'base__xx.srt'
+        // Function to extract base name and lang from SRT with flexible suffix patterns
         const extractSrtInfo = (srtFileName) => {
-             // Try matching double underscore first, then single
-             let match = srtFileName.match(/^(.*?)__([a-z]{2})\.srt$/i);
-             if (match) {
-                 // Matched double underscore pattern
-                 return { baseName: match[1], lang: match[2].toLowerCase(), originalFullName: srtFileName };
+             const patterns = [
+                 /^(.*?)__([a-z]{2,3})(?:[-_]?([a-z]{2}))?\.srt$/i, // base__fr or base__fr-CA
+                 /^(.*?)_([a-z]{2,3})(?:[-_]?([a-z]{2}))?\.srt$/i,  // base_fr or base_fr_CA
+                 /^(.*?)[ -]([a-z]{2,3})(?:[-_]?([a-z]{2}))?\.srt$/i, // base fr or base-fr
+                 /^(.*?)\.([a-z]{2,3})(?:[-_]?([a-z]{2}))?\.srt$/i  // base.fr or base.fr-CA
+             ];
+
+             for (const pattern of patterns) {
+                 const match = srtFileName.match(pattern);
+                 if (match) {
+                     return {
+                         baseName: match[1],
+                         lang: match[2].toLowerCase(),
+                         originalFullName: srtFileName
+                     };
+                 }
              }
 
-             // Try matching single underscore pattern
-             match = srtFileName.match(/^(.*?)_([a-z]{2})\.srt$/i);
-             if (match) {
-                 // Matched single underscore pattern
-                 return { baseName: match[1], lang: match[2].toLowerCase(), originalFullName: srtFileName };
-             }
-
-             // If neither pattern matched, it's an invalid format
-             return { error: 'Invalid Format (must end with _xx.srt or __xx.srt)', originalFullName: srtFileName };
+             // If none matched, it's an invalid format
+             return { error: 'Invalid Format (expected base + lang suffix like __fr, _fr, -fr, .fr)', originalFullName: srtFileName };
         };
 
         const mp3sByNormalizedBase = new Map();
@@ -118,7 +124,7 @@ const BatchAudioCreate = () => {
         // 1. Process and Normalize MP3s
         console.log("[Debug Validation] --- Processing MP3s ---"); // DEBUG LOG
         mp3Files.forEach(mp3File => {
-            const rawBaseName = mp3File.name.substring(0, mp3File.name.lastIndexOf('.mp3'));
+            const rawBaseName = mp3File.name.replace(/\.mp3$/i, '');
             const normalized = normalizeBaseName(rawBaseName);
             console.log(`[Debug MP3] File: ${mp3File.name}, Raw Base: "${rawBaseName}", Normalized: "${normalized}"`); // DEBUG LOG
             if (!mp3sByNormalizedBase.has(normalized)) mp3sByNormalizedBase.set(normalized, []);

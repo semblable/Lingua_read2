@@ -147,14 +147,18 @@
   border-left: 4px solid var(--active-srt-line-border, #fd7e14); /* Use a distinct left border (orange) */
   padding-left: calc(0.5rem - 4px); /* Adjust padding to account for border width */
   font-weight: 500; /* Slightly bolder */
+  box-shadow: 0 6px 12px rgba(0, 0, 0, 0.08);
+  transform: translateY(-1px);
 }
 
 .srt-line {
   margin-bottom: 0.75rem;
+  transition: background-color 0.25s ease, box-shadow 0.25s ease, transform 0.25s ease;
 }
 
 .audio-transcript-container {
   padding: var(--space-md) 0;
+  scroll-behavior: smooth;
 }
 
 .dark-theme .theme-aware-audio-player-container {

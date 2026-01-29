@@ -110,12 +110,7 @@ Example Output:
                         TopK = 32,
                         TopP = 1.0,
                         MaxOutputTokens = 65535,
-                        ResponseMimeType = "text/plain",
-                        // Add ThinkingConfig with budget set to 0
-                        ThinkingConfig = new ThinkingConfig
-                        {
-                            ThinkingBudget = 1024
-                        }
+                        ResponseMimeType = "text/plain"
                     }
                 };
 

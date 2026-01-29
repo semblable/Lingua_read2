@@ -78,12 +78,7 @@ namespace LinguaReadApi.Services
                         TopK = 40,
                         TopP = 0.95,
                         MaxOutputTokens = 20000, // Increased token limit
-                        ResponseMimeType = "text/plain",
-                        // Add ThinkingConfig with budget set to 0
-                        ThinkingConfig = new ThinkingConfig
-                        {
-                            ThinkingBudget = 0
-                        }
+                        ResponseMimeType = "text/plain"
                     }
                 };
 

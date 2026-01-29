@@ -26,13 +26,13 @@ jobs:
           dotnet-version: "8.0.x"
 
       - name: Restore
-        run: dotnet restore server/LinguaReadApi/LinguaReadApi.csproj
+        run: dotnet restore Lingua_Read.sln
 
       - name: Build
-        run: dotnet build server/LinguaReadApi/LinguaReadApi.csproj -c Release --no-restore
+        run: dotnet build Lingua_Read.sln -c Release --no-restore
 
       - name: Test
-        run: dotnet test -c Release --no-build
+        run: dotnet test Lingua_Read.sln -c Release --no-build
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -44,6 +44,12 @@ jobs:
       - name: Install client deps
         run: npm ci --legacy-peer-deps
         working-directory: client/lingua-read-client
+
+      - name: Test client
+        run: npm test -- --watchAll=false
+        working-directory: client/lingua-read-client
+        env:
+          CI: true
 
       - name: Build client
         run: npm run build

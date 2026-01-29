@@ -6,6 +6,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "server", "server", "{DAD03C
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LinguaReadApi", "server\LinguaReadApi\LinguaReadApi.csproj", "{A150600B-C70D-947A-EB41-4F566DD00A2B}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LinguaReadApi.Tests", "server\LinguaReadApi.Tests\LinguaReadApi.Tests.csproj", "{B17E2E6D-3A70-4A4D-8C4F-9B9BC7B5A4C6}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -16,12 +18,17 @@ Global
 		{A150600B-C70D-947A-EB41-4F566DD00A2B}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{A150600B-C70D-947A-EB41-4F566DD00A2B}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{A150600B-C70D-947A-EB41-4F566DD00A2B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B17E2E6D-3A70-4A4D-8C4F-9B9BC7B5A4C6}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B17E2E6D-3A70-4A4D-8C4F-9B9BC7B5A4C6}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B17E2E6D-3A70-4A4D-8C4F-9B9BC7B5A4C6}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B17E2E6D-3A70-4A4D-8C4F-9B9BC7B5A4C6}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{A150600B-C70D-947A-EB41-4F566DD00A2B} = {DAD03CFC-D5FA-AC94-41C7-9ABAB326F09E}
+		{B17E2E6D-3A70-4A4D-8C4F-9B9BC7B5A4C6} = {DAD03CFC-D5FA-AC94-41C7-9ABAB326F09E}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {B08F1104-C1BC-4C47-88CE-16583CCDB4BA}

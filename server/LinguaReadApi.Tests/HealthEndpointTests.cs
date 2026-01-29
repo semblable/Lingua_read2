@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using LinguaReadApi.Data;
+using Xunit;
 
 namespace LinguaReadApi.Tests;
 

@@ -1,6 +1,7 @@
 using LinguaReadApi.Controllers;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging.Abstractions;
+using Xunit;
 
 namespace LinguaReadApi.Tests;
 

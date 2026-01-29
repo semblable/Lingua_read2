@@ -1375,10 +1375,68 @@ const TextDisplay = () => {
     </>
   );
 
+  const renderPrimaryControls = () => (
+    <>
+      {isAudioLesson && (
+        <Button
+          variant="outline-info"
+          size="sm"
+          onClick={() => setDisplayMode(p => p === 'audio' ? 'text' : 'audio')}
+          title={displayMode === 'audio' ? 'Text View' : 'Audio View'}
+          className="me-1"
+        >
+          {displayMode === 'audio' ? 'Text' : 'Audio'} View
+        </Button>
+      )}
+      <Button
+        variant={isWordPanelOpen ? 'outline-secondary' : 'primary'}
+        size="sm"
+        onClick={() => setIsWordPanelOpen(prev => !prev)}
+        className="d-md-none"
+        title="Toggle word info panel"
+      >
+        Word Info
+      </Button>
+      {isAudioLesson && !text?.bookId && (
+        <Button variant="success" onClick={handleCompleteLesson} disabled={completing} size="sm" className="ms-1">
+          {completing ? <Spinner animation="border" size="sm" /> : (nextTextId === null ? 'Finish Book' : 'Complete Lesson')}
+        </Button>
+      )}
+      {text?.bookId && ( <Button variant="outline-primary" size="sm" onClick={() => navigate(`/books/${text.bookId}`)} className="ms-1">Back to Book</Button> )}
+      {!text?.bookId && ( <Button variant="outline-secondary" size="sm" onClick={() => navigate('/texts')} className="ms-1">Back to Texts</Button> )}
+      <Button
+        variant="outline-secondary"
+        size="sm"
+        className="ms-1 d-md-none"
+        onClick={() => setShowMoreControls(prev => !prev)}
+        aria-controls="lesson-more-controls"
+        aria-expanded={showMoreControls}
+      >
+        {showMoreControls ? 'Less' : 'More'}
+      </Button>
+    </>
+  );
+
   // --- Main Return JSX ---
   return (
     <div className="text-display-wrapper lesson-page px-0 mx-0 w-100">
+      {isMobile && (
+        <div className="lesson-topbar navbar-custom-bg">
+          <div className="lesson-topbar-content">
+            <div className="lesson-topbar-title">{text.title}</div>
+            <div className="lesson-topbar-actions">
+              {renderPrimaryControls()}
+            </div>
+          </div>
+          <Collapse in={showMoreControls}>
+            <div id="lesson-more-controls" className="lesson-controls-collapse">
+              {renderSecondaryControls()}
+            </div>
+          </Collapse>
+        </div>
+      )}
       {/* Header Card - Add Playback Speed Controls */}
+      {!isMobile && (
       <Card className="shadow-sm mb-3 border-0 rounded-0 lesson-header">
         <Card.Body className="p-2 lesson-header-body">
            <div className="lesson-header-top d-flex justify-content-between align-items-start flex-wrap">
@@ -1394,56 +1452,15 @@ const TextDisplay = () => {
              )}
            </div>
            <div className="lesson-header-actions d-flex gap-2 flex-wrap mt-2 align-items-center">
-             {isAudioLesson && (
-               <Button
-                 variant="outline-info"
-                 size="sm"
-                 onClick={() => setDisplayMode(p => p === 'audio' ? 'text' : 'audio')}
-                 title={displayMode === 'audio' ? 'Text View' : 'Audio View'}
-                 className="me-1"
-               >
-                 {displayMode === 'audio' ? 'Text' : 'Audio'} View
-               </Button>
-             )}
-             <Button
-               variant={isWordPanelOpen ? 'outline-secondary' : 'primary'}
-               size="sm"
-               onClick={() => setIsWordPanelOpen(prev => !prev)}
-               className="d-md-none"
-               title="Toggle word info panel"
-             >
-               Word Info
-             </Button>
-             {/* Show top button ONLY for standalone audio lessons */}
-             {isAudioLesson && !text?.bookId && (
-               <Button variant="success" onClick={handleCompleteLesson} disabled={completing} size="sm" className="ms-1">
-                 {completing ? <Spinner animation="border" size="sm" /> : (nextTextId === null ? 'Finish Book' : 'Complete Lesson')}
-               </Button>
-             )}
-             {text?.bookId && ( <Button variant="outline-primary" size="sm" onClick={() => navigate(`/books/${text.bookId}`)} className="ms-1">Back to Book</Button> )}
-             {!text?.bookId && ( <Button variant="outline-secondary" size="sm" onClick={() => navigate('/texts')} className="ms-1">Back to Texts</Button> )}
-             <Button
-               variant="outline-secondary"
-               size="sm"
-               className="ms-1 d-md-none"
-               onClick={() => setShowMoreControls(prev => !prev)}
-               aria-controls="lesson-more-controls"
-               aria-expanded={showMoreControls}
-             >
-               {showMoreControls ? 'Less' : 'More'}
-             </Button>
+             {renderPrimaryControls()}
              <div className="lesson-controls-desktop d-none d-md-flex gap-2 flex-wrap align-items-center">
                {renderSecondaryControls()}
              </div>
            </div>
-           <Collapse in={showMoreControls} className="d-md-none">
-             <div id="lesson-more-controls" className="lesson-controls-collapse mt-2">
-               {renderSecondaryControls()}
-             </div>
-           </Collapse>
            {translateUnknownError && <Alert variant="danger" className="mt-1 mb-0 p-1 small">{translateUnknownError}</Alert>}
         </Card.Body>
       </Card>
+      )}
 
       {/* Audiobook Player rendering removed from here to fix duplication */}
 
@@ -1520,6 +1537,22 @@ const TextDisplay = () => {
            </Card.Body></Card>
         </div>
       </div>
+
+      {isMobile && isWordPanelOpen && (
+        <div
+          className="word-info-sheet-backdrop"
+          onClick={() => setIsWordPanelOpen(false)}
+          role="presentation"
+        >
+          <div className="word-info-sheet" onClick={(event) => event.stopPropagation()} role="dialog" aria-label="Word information">
+            <div className="word-info-sheet-handle" />
+            <div className="word-info-sheet-content">
+              <h5 className="mb-2">Word Info</h5>
+              {renderSidePanel()}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modals */}
       <Modal show={showStatsModal} onHide={() => setShowStatsModal(false)} centered>

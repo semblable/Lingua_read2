@@ -14,6 +14,38 @@
   gap: var(--space-xs);
 }
 
+.lesson-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 1020;
+  padding: var(--space-sm) var(--space-md);
+}
+
+.lesson-topbar-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+}
+
+.lesson-topbar-title {
+  font-weight: 600;
+  color: var(--font-color-dark);
+  font-size: 1rem;
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 55%;
+}
+
+.lesson-topbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+  justify-content: flex-end;
+}
+
 .lesson-header-top {
   gap: var(--space-sm);
 }
@@ -104,6 +136,15 @@
 
 /* Media queries for responsive design */
 @media (max-width: 768px) {
+  .lesson-topbar {
+    padding: var(--space-sm);
+  }
+
+  .lesson-topbar-actions .btn {
+    padding: 0.35rem 0.6rem;
+    font-size: 0.85rem;
+  }
+
   .lesson-meta {
     display: none;
   }
@@ -174,6 +215,42 @@
     line-height: calc(var(--reading-line-height) + 0.2);
     text-indent: 0;
   }
+
+  .right-panel {
+    display: none;
+  }
+}
+
+.word-info-sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.2);
+  z-index: 1050;
+  display: flex;
+  align-items: flex-end;
+}
+
+.word-info-sheet {
+  width: 100%;
+  max-height: 60vh;
+  background: var(--theme-surface-bg, #fff);
+  border-top-left-radius: 18px;
+  border-top-right-radius: 18px;
+  box-shadow: 0 -6px 16px rgba(0, 0, 0, 0.12);
+  padding: var(--space-sm) var(--space-md) var(--space-lg);
+  overflow-y: auto;
+}
+
+.word-info-sheet-handle {
+  width: 42px;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.2);
+  margin: 0 auto var(--space-sm);
+}
+
+.word-info-sheet-content {
+  text-align: left;
 }
 /* --- Bookmark Styles --- */
 .sentence {

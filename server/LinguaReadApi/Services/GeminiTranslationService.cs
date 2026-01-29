@@ -1,7 +1,10 @@
 using System;
+using System.Collections.Generic;
 using System.Net.Http;
+using System.Net;
 using System.Text;
 using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
@@ -18,6 +21,8 @@ namespace LinguaReadApi.Services
         private readonly HttpClient _httpClient;
         private readonly string _apiKey;
         private readonly string _baseUrl;
+        private readonly string _primaryModel;
+        private readonly string _fallbackModel;
         private readonly ILogger<GeminiTranslationService> _logger;
         private readonly ILanguageService _languageService; // Added LanguageService dependency
 
@@ -26,6 +31,8 @@ namespace LinguaReadApi.Services
             _httpClient = new HttpClient();
             _apiKey = configuration["Gemini:ApiKey"] ?? throw new ArgumentNullException("Gemini:ApiKey is missing in configuration");
             _baseUrl = configuration["Gemini:BaseUrl"] ?? "https://generativelanguage.googleapis.com/v1beta";
+            _primaryModel = configuration["Gemini:Model"] ?? "gemini-3-flash-preview";
+            _fallbackModel = configuration["Gemini:FallbackModel"] ?? "gemini-2.5-flash";
             _logger = logger;
             _languageService = languageService; // Store injected service
             
@@ -122,38 +129,67 @@ Example Output:
                 string jsonPayload = JsonSerializer.Serialize(requestPayload, options);
                 _logger.LogDebug($"Request payload: {jsonPayload}");
 
-                // Create the request
-                var endpoint = $"{_baseUrl}/models/gemini-3-flash-preview:generateContent?key={_apiKey}";
-                var content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
-                
-                // Send the request
-                var response = await _httpClient.PostAsync(endpoint, content);
-                var responseContent = await response.Content.ReadAsStringAsync();
-                
-                // Check if the request was successful
-                if (!response.IsSuccessStatusCode)
+                var modelsToTry = new List<string> { _primaryModel };
+                if (!string.Equals(_fallbackModel, _primaryModel, StringComparison.OrdinalIgnoreCase))
                 {
-                    _logger.LogError($"Gemini API error: {response.StatusCode}, {responseContent}");
-                    return $"Translation error: {response.StatusCode}";
+                    modelsToTry.Add(_fallbackModel);
                 }
 
-                _logger.LogDebug($"Gemini API response: {responseContent}");
-                
-                // Parse using proper models
-                var geminiResponse = JsonSerializer.Deserialize<GeminiResponse>(responseContent, options);
-                
-                if (geminiResponse?.Candidates != null && 
-                    geminiResponse.Candidates.Length > 0 && 
-                    geminiResponse.Candidates[0].Content?.Parts != null &&
-                    geminiResponse.Candidates[0].Content.Parts.Length > 0)
+                HttpStatusCode? lastStatus = null;
+                foreach (var model in modelsToTry)
                 {
-                    var translatedText = geminiResponse.Candidates[0].Content.Parts[0].Text;
-                    _logger.LogInformation($"Translation successful, length: {translatedText?.Length ?? 0}");
-                    return translatedText ?? string.Empty;
+                    const int maxAttempts = 3;
+                    for (int attempt = 1; attempt <= maxAttempts; attempt++)
+                    {
+                        // Create the request
+                        var endpoint = $"{_baseUrl}/models/{model}:generateContent?key={_apiKey}";
+                        var content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
+
+                        // Send the request
+                        var response = await _httpClient.PostAsync(endpoint, content);
+                        var responseContent = await response.Content.ReadAsStringAsync();
+
+                        // Check if the request was successful
+                        if (!response.IsSuccessStatusCode)
+                        {
+                            lastStatus = response.StatusCode;
+                            var isRetryable = response.StatusCode == HttpStatusCode.ServiceUnavailable ||
+                                              response.StatusCode == HttpStatusCode.TooManyRequests;
+
+                            _logger.LogWarning("Gemini API error (model={Model}, attempt={Attempt}/{Max}): {StatusCode}. Retryable={Retryable}. Response={Response}",
+                                model, attempt, maxAttempts, response.StatusCode, isRetryable, responseContent);
+
+                            if (isRetryable && attempt < maxAttempts)
+                            {
+                                var delayMs = (int)Math.Pow(2, attempt - 1) * 1000;
+                                await Task.Delay(delayMs);
+                                continue;
+                            }
+
+                            break; // Try next model (if any)
+                        }
+
+                        _logger.LogDebug($"Gemini API response: {responseContent}");
+
+                        // Parse using proper models
+                        var geminiResponse = JsonSerializer.Deserialize<GeminiResponse>(responseContent, options);
+
+                        if (geminiResponse?.Candidates != null &&
+                            geminiResponse.Candidates.Length > 0 &&
+                            geminiResponse.Candidates[0].Content?.Parts != null &&
+                            geminiResponse.Candidates[0].Content.Parts.Length > 0)
+                        {
+                            var translatedText = geminiResponse.Candidates[0].Content.Parts[0].Text;
+                            _logger.LogInformation("Translation successful (model={Model}), length: {Length}", model, translatedText?.Length ?? 0);
+                            return translatedText ?? string.Empty;
+                        }
+
+                        _logger.LogWarning("Could not extract translation from response (model={Model}).", model);
+                        return "Translation failed: Could not extract result";
+                    }
                 }
-                
-                _logger.LogWarning("Could not extract translation from response");
-                return "Translation failed: Could not extract result";
+
+                return $"Translation error: {lastStatus}";
             }
             catch (Exception ex)
             {

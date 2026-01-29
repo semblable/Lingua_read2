@@ -222,7 +222,7 @@ namespace LinguaReadApi.Services
                 }
 
                 var attachmentFailures = new List<string>();
-                foreach (var attachmentPath in attachmentDecision.Attachments)
+                foreach (var attachmentPath in attachmentDecision.Sendable)
                 {
                     var attachmentMessage = $"Report attachment: {Path.GetFileName(attachmentPath)}";
                     var attachmentResult = await PostWebhookAsync(
@@ -238,18 +238,22 @@ namespace LinguaReadApi.Services
                     }
                 }
 
-                if (!string.IsNullOrWhiteSpace(attachmentDecision.Note))
+                var skipped = attachmentDecision.Skipped;
+                if (skipped.Count > 0 || attachmentFailures.Count > 0)
                 {
-                    var noteResult = await PostWebhookAsync(
+                    var statusMessage = BuildAttachmentStatusMessage(skipped, attachmentFailures);
+                    var statusResult = await PostWebhookAsync(
                         settings.DiscordWebhookUrl,
-                        attachmentDecision.Note,
+                        statusMessage,
                         Array.Empty<string>(),
                         cancellationToken);
 
-                    if (!noteResult.Success)
+                    if (!statusResult.Success)
                     {
-                        attachmentFailures.Add(
-                            $"note ({noteResult.ErrorMessage ?? "failed"})");
+                        _logger.LogWarning(
+                            "Failed to send Discord attachment status message for user {UserId}: {Error}",
+                            settings.UserId,
+                            statusResult.ErrorMessage ?? "unknown error");
                     }
                 }
 
@@ -745,11 +749,10 @@ namespace LinguaReadApi.Services
 
         private static AttachmentDecision FilterAttachmentsForDiscord(
             IReadOnlyList<string> attachmentPaths,
-            long maxTotalBytes)
+            long maxFileBytes)
         {
             var selected = new List<string>();
             var skipped = new List<string>();
-            long total = 0;
 
             foreach (var path in attachmentPaths)
             {
@@ -765,46 +768,16 @@ namespace LinguaReadApi.Services
                     continue;
                 }
 
-                if (size > maxTotalBytes)
-                {
-                    skipped.Add($"{Path.GetFileName(path)} ({FormatBytes(size)})");
-                    continue;
-                }
-
-                if (total + size > maxTotalBytes)
+                if (size > maxFileBytes)
                 {
                     skipped.Add($"{Path.GetFileName(path)} ({FormatBytes(size)})");
                     continue;
                 }
 
                 selected.Add(path);
-                total += size;
             }
 
-            string? note = null;
-            if (skipped.Count > 0)
-            {
-                note = $"Attachments skipped (size limit): {string.Join(", ", skipped)}";
-            }
-
-            return new AttachmentDecision(selected, note);
-        }
-
-        private static string AppendMessageNote(string message, string? note)
-        {
-            if (string.IsNullOrWhiteSpace(note))
-            {
-                return message;
-            }
-
-            var combined = $"{message}\n\n{note}";
-            if (combined.Length <= MaxDiscordMessageLength)
-            {
-                return combined;
-            }
-
-            var trimmed = combined[..(MaxDiscordMessageLength - 3)] + "...";
-            return trimmed;
+            return new AttachmentDecision(selected, skipped);
         }
 
         private static string FormatBytes(long bytes)
@@ -825,6 +798,38 @@ namespace LinguaReadApi.Services
             }
 
             return $"{bytes / (1024d * 1024 * 1024):0.#} GB";
+        }
+
+        private static string BuildAttachmentStatusMessage(
+            IReadOnlyList<string> skipped,
+            IReadOnlyList<string> failed)
+        {
+            var lines = new List<string> { "Attachment status:" };
+            if (skipped.Count > 0)
+            {
+                lines.Add($"- Skipped (size limit): {string.Join(", ", skipped)}");
+            }
+            else
+            {
+                lines.Add("- Skipped (size limit): none");
+            }
+
+            if (failed.Count > 0)
+            {
+                lines.Add($"- Failed uploads: {string.Join(", ", failed)}");
+            }
+            else
+            {
+                lines.Add("- Failed uploads: none");
+            }
+
+            var message = string.Join("\n", lines);
+            if (message.Length > MaxDiscordMessageLength)
+            {
+                message = message[..(MaxDiscordMessageLength - 3)] + "...";
+            }
+
+            return message;
         }
 
         private static bool TryNormalizeWebhookUrl(string url, out string normalizedUrl)
@@ -883,7 +888,9 @@ namespace LinguaReadApi.Services
             public int TotalSessions => ReadingSessions + ListeningSessions;
         }
 
-        private readonly record struct AttachmentDecision(IReadOnlyList<string> Attachments, string? Note);
+        private readonly record struct AttachmentDecision(
+            IReadOnlyList<string> Sendable,
+            IReadOnlyList<string> Skipped);
     }
 
     public class DiscordReportResult

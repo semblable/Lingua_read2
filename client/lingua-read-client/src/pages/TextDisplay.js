@@ -815,11 +815,18 @@ const TextDisplay = () => {
     const currentLine = currentLineIndex !== -1 ? srtLines[currentLineIndex] : null;
     if (currentLine && currentLine.id !== currentSrtLineId) {
       setCurrentSrtLineId(currentLine.id);
-      if (listRef.current && currentLineIndex !== -1) {
+      if (!isMobile && listRef.current && currentLineIndex !== -1) {
         setTimeout(() => { if (listRef.current) listRef.current.scrollToItem(currentLineIndex, 'center'); }, 50);
+      } else if (isMobile) {
+        requestAnimationFrame(() => {
+          const lineElement = document.getElementById(`srt-line-${currentLine.id}`);
+          if (lineElement) {
+            lineElement.scrollIntoView({ block: 'center', behavior: 'smooth' });
+          }
+        });
       }
     }
-  }, [audioCurrentTime, srtLines, isAudioLesson, currentSrtLineId, displayMode]);
+  }, [audioCurrentTime, srtLines, isAudioLesson, currentSrtLineId, displayMode, isMobile]);
 
   // Resizable Panel
   // Removed useEffect for drag-to-resize functionality

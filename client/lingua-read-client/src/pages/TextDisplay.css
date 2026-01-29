@@ -157,6 +157,16 @@
   padding: var(--space-md) 0;
 }
 
+.dark-theme .theme-aware-audio-player-container {
+  background-color: var(--ui-background-dark);
+}
+
+.dark-theme .theme-aware-audio-player-container audio {
+  background-color: var(--ui-background-dark);
+  border-radius: 10px;
+  color-scheme: dark;
+}
+
 /* Dark theme adjustments */
 
 /* Dark theme adjustments for active SRT line */
@@ -270,6 +280,7 @@
     border-radius: 10px;
     background: var(--theme-surface-bg, #fff);
     box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05);
+    scroll-margin-top: calc(var(--space-lg) + 3rem);
   }
 
   .srt-line.active-srt-line {

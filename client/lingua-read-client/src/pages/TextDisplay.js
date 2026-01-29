@@ -183,6 +183,7 @@ const TextDisplay = () => {
   const [bookmarkedIndices, setBookmarkedIndices] = useState([]); // State for bookmarked sentence indices
   const [showMoreControls, setShowMoreControls] = useState(false);
   const [isWordPanelOpen, setIsWordPanelOpen] = useState(true);
+  const [isMobile, setIsMobile] = useState(false);
   // --- End State Declarations ---
 
   // --- Effects ---
@@ -195,8 +196,10 @@ const TextDisplay = () => {
     const mediaQuery = window.matchMedia('(max-width: 768px)');
     const handleMediaChange = (event) => {
       setIsWordPanelOpen(!event.matches);
+      setIsMobile(event.matches);
     };
     setIsWordPanelOpen(!mediaQuery.matches);
+    setIsMobile(mediaQuery.matches);
     mediaQuery.addEventListener('change', handleMediaChange);
     return () => mediaQuery.removeEventListener('change', handleMediaChange);
   }, []);
@@ -274,6 +277,9 @@ const TextDisplay = () => {
     setSelectedWord(word);
     setProcessingWord(false);
     setWordTranslationError('');
+    if (isMobile) {
+      setIsWordPanelOpen(true);
+    }
     const existingWord = getWordData(word);
     if (existingWord) {
       setDisplayedWord(existingWord);
@@ -285,7 +291,7 @@ const TextDisplay = () => {
       setTranslation('');
       triggerAutoTranslation(word);
     }
-  }, [getWordData, triggerAutoTranslation, setSelectedWord, setTranslation, setWordTranslationError, setDisplayedWord]); // Dependencies using globalSettings don't need it listed if context handles updates
+  }, [getWordData, triggerAutoTranslation, setSelectedWord, setTranslation, setWordTranslationError, setDisplayedWord, isMobile]); // Dependencies using globalSettings don't need it listed if context handles updates
 
   // Removed handleTextSelection as selection is now handled by onMouseUp on the container
 
@@ -1166,6 +1172,23 @@ const TextDisplay = () => {
     if (!text?.content) return null;
     const paragraphs = text.content.split(/(\n\s*){2,}/g).filter(p => p?.trim().length > 0);
     let currentSentenceIndex = 0; // Track sentence index across paragraphs
+    const groupSentences = (sentenceElements, groupSize) => {
+      if (!Array.isArray(sentenceElements) || sentenceElements.length === 0) return [];
+      const groups = [];
+      let currentGroup = [];
+      let sentenceCount = 0;
+      sentenceElements.forEach((sentence) => {
+        currentGroup.push(sentence);
+        sentenceCount += 1;
+        if (sentenceCount >= groupSize) {
+          groups.push(currentGroup);
+          currentGroup = [];
+          sentenceCount = 0;
+        }
+      });
+      if (currentGroup.length) groups.push(currentGroup);
+      return groups;
+    };
 
     return (
        <div
@@ -1180,6 +1203,24 @@ const TextDisplay = () => {
           // Render elements as sentences, passing and updating the global sentence index
           const { sentenceElements, nextSentenceIndex } = renderProcessedContentAsSentences(processedParaElements, currentSentenceIndex);
           currentSentenceIndex = nextSentenceIndex; // Update index for the next paragraph
+
+          if (isMobile) {
+            const grouped = groupSentences(sentenceElements, 2);
+            return (
+              <div key={`para-${index}`} className="reading-block-group">
+                {grouped.map((group, groupIndex) => (
+                  <p key={`para-${index}-group-${groupIndex}`} className="reading-block">
+                    {group.map((sentence, sentenceIndex) => (
+                      <React.Fragment key={`para-${index}-group-${groupIndex}-sentence-${sentenceIndex}`}>
+                        {sentence}
+                        {sentenceIndex < group.length - 1 ? ' ' : null}
+                      </React.Fragment>
+                    ))}
+                  </p>
+                ))}
+              </div>
+            );
+          }
 
           return (
             <p key={`para-${index}`} className="mb-3" style={{ textIndent: '1.5em' }}>
@@ -1343,7 +1384,7 @@ const TextDisplay = () => {
            <div className="lesson-header-top d-flex justify-content-between align-items-start flex-wrap">
              <div className="lesson-title">
                <h2 className="mb-1">{text.title}</h2>
-               <p className="text-muted mb-0 small">Lang: {text.languageName || 'N/A'} | Words: {words.length}</p>
+               <p className="text-muted mb-0 small lesson-meta">Lang: {text.languageName || 'N/A'} | Words: {words.length}</p>
              </div>
              {/* Audiobook Player Integration - ONLY if NOT an audio lesson */}
              {!isAudioLesson && book && book.audiobookTracks && book.audiobookTracks.length > 0 && (

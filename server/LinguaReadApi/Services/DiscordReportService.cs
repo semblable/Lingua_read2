@@ -526,9 +526,9 @@ namespace LinguaReadApi.Services
 
             var endDisplay = endUtc.AddSeconds(-1);
             var title = $"LinguaRead weekly report ({startUtc:yyyy-MM-dd} to {endDisplay:yyyy-MM-dd} UTC)";
-            var maxDailyWords = Math.Max(1, dayTotals.Max(day => day.Words));
-            var maxDailySeconds = Math.Max(1, dayTotals.Max(day => day.Seconds));
-            var maxLanguageWords = Math.Max(1, orderedLanguages.Max(entry => entry.Value.Words));
+            var maxDailyWords = dayTotals.Count == 0 ? 1 : Math.Max(1, dayTotals.Max(day => day.Words));
+            var maxDailySeconds = dayTotals.Count == 0 ? 1 : Math.Max(1, dayTotals.Max(day => day.Seconds));
+            var maxLanguageWords = orderedLanguages.Count == 0 ? 1 : Math.Max(1, orderedLanguages.Max(entry => entry.Value.Words));
 
             var builder = new StringBuilder();
             builder.AppendLine("<!doctype html>");

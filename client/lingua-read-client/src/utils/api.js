@@ -935,6 +935,17 @@ export const updateUserSettings = async (settings) => {
   }
 };
 
+export const sendDiscordReport = async (period = 'week', days = null) => {
+  const params = new URLSearchParams({ period });
+  if (period === 'days' && days) {
+    params.append('days', days);
+  }
+
+  return fetchApi(`/usersettings/discord/report?${params.toString()}`, {
+    method: 'POST'
+  });
+};
+
 // Updated updateAudiobookProgress function (requires bookId)
 export const updateAudiobookProgress = async (bookId, progressData) => {
   // progressData should be { currentAudiobookTrackId: number | null, currentAudiobookPosition: number | null }

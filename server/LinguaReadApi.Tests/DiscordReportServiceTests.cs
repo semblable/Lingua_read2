@@ -142,6 +142,66 @@ public class DiscordReportServiceTests
         Assert.NotNull(handler.LastPayloadContent);
     }
 
+    [Fact]
+    public async Task SendReportForUserAsync_UsesCustomRange()
+    {
+        using var context = CreateDbContext();
+        var handler = new CapturingHttpMessageHandler();
+        var httpClientFactory = new StubHttpClientFactory(handler);
+        var service = new DiscordReportService(context, httpClientFactory, NullLogger<DiscordReportService>.Instance);
+
+        var userId = Guid.NewGuid();
+        var language = new Language { Name = "French", Code = "fr" };
+        var settings = new UserSettings
+        {
+            UserId = userId,
+            DiscordWeeklyReportEnabled = true,
+            DiscordWebhookUrl = "https://discord.com/api/webhooks/test/test",
+            DiscordWeeklyReportDayOfWeek = "Monday",
+            DiscordWeeklyReportHourLocal = 8,
+            DiscordTimezoneOffsetMinutes = 0
+        };
+
+        context.Users.Add(new User { Id = userId, Email = "user4@example.com", UserName = "user4@example.com" });
+        context.Languages.Add(language);
+        context.UserSettings.Add(settings);
+        context.UserActivities.Add(new UserActivity
+        {
+            UserId = userId,
+            Language = language,
+            LanguageId = language.LanguageId,
+            ActivityType = "Reading",
+            WordCount = 50,
+            ListeningDurationSeconds = 0,
+            Timestamp = new DateTime(2026, 1, 1, 10, 0, 0, DateTimeKind.Utc)
+        });
+        context.UserActivities.Add(new UserActivity
+        {
+            UserId = userId,
+            Language = language,
+            LanguageId = language.LanguageId,
+            ActivityType = "Reading",
+            WordCount = 200,
+            ListeningDurationSeconds = 0,
+            Timestamp = new DateTime(2026, 1, 20, 10, 0, 0, DateTimeKind.Utc)
+        });
+        await context.SaveChangesAsync();
+
+        var startUtc = new DateTime(2026, 1, 15, 0, 0, 0, DateTimeKind.Utc);
+        var endUtc = new DateTime(2026, 1, 22, 0, 0, 0, DateTimeKind.Utc);
+
+        var result = await service.SendReportForUserAsync(settings, startUtc, endUtc, false, CancellationToken.None);
+
+        Assert.True(result.Sent);
+        Assert.NotNull(handler.LastPayloadContent);
+
+        using var payloadDoc = JsonDocument.Parse(handler.LastPayloadContent!);
+        var content = payloadDoc.RootElement.GetProperty("content").GetString();
+        Assert.NotNull(content);
+        Assert.Contains("Total words read: 200", content);
+        Assert.DoesNotContain("Total words read: 50", content);
+    }
+
     private static AppDbContext CreateDbContext()
     {
         var options = new DbContextOptionsBuilder<AppDbContext>()

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useContext } from 'react'; // Added
 import { Container, Card, Form, Button, Alert, Spinner, Row, Col } from 'react-bootstrap';
 import {
     getUserSettings, updateUserSettings, getAllLanguages, // Changed getLanguages to getAllLanguages
-    backupDatabase, restoreDatabase, resetUserStatistics // Import new API functions
+    backupDatabase, restoreDatabase, resetUserStatistics, sendDiscordReport // Import new API functions
 } from '../utils/api';
 import { SettingsContext } from '../contexts/SettingsContext'; // Import SettingsContext
 const UserSettings = () => {
@@ -42,6 +42,13 @@ const UserSettings = () => {
   const [isResettingStats, setIsResettingStats] = useState(false);
   const [resetStatsMessage, setResetStatsMessage] = useState({ type: '', text: '' });
   // --- End Backup/Restore State ---
+
+  // --- Discord Report State ---
+  const [reportPeriod, setReportPeriod] = useState('week');
+  const [reportDays, setReportDays] = useState(30);
+  const [isSendingReport, setIsSendingReport] = useState(false);
+  const [reportMessage, setReportMessage] = useState({ type: '', text: '' });
+  // --- End Discord Report State ---
 
   // Removed unused isAdmin placeholder
 
@@ -199,6 +206,19 @@ const UserSettings = () => {
      } finally {
        setSaving(false);
      }
+  };
+
+  const handleSendReportNow = async () => {
+    setIsSendingReport(true);
+    setReportMessage({ type: '', text: '' });
+    try {
+      const result = await sendDiscordReport(reportPeriod, reportPeriod === 'days' ? reportDays : null);
+      setReportMessage({ type: 'success', text: result.message || 'Report sent.' });
+    } catch (err) {
+      setReportMessage({ type: 'danger', text: err.message || 'Failed to send report.' });
+    } finally {
+      setIsSendingReport(false);
+    }
   };
 
   const handleSetBrowserTimezone = () => {
@@ -554,6 +574,57 @@ const UserSettings = () => {
                 Example: UTC+2 is 120, UTC-5 is -300.
               </Form.Text>
             </Form.Group>
+
+            <Card className="mb-4">
+              <Card.Body>
+                <Card.Title>Send Report Now</Card.Title>
+                <Card.Text className="text-muted">
+                  Send an activity report immediately using your selected timeframe.
+                </Card.Text>
+                {reportMessage.text && (
+                  <Alert variant={reportMessage.type} className="mt-2">
+                    {reportMessage.text}
+                  </Alert>
+                )}
+                <Row className="mb-3">
+                  <Col md={6}>
+                    <Form.Group controlId="reportPeriod">
+                      <Form.Label>Report Period</Form.Label>
+                      <Form.Select
+                        value={reportPeriod}
+                        onChange={(e) => setReportPeriod(e.target.value)}
+                      >
+                        <option value="week">Last 7 days</option>
+                        <option value="month">Last 30 days</option>
+                        <option value="year">Last 365 days</option>
+                        <option value="all">All time</option>
+                        <option value="days">Custom days</option>
+                      </Form.Select>
+                    </Form.Group>
+                  </Col>
+                  <Col md={6}>
+                    <Form.Group controlId="reportDays">
+                      <Form.Label>Custom Days</Form.Label>
+                      <Form.Control
+                        type="number"
+                        min={1}
+                        max={3650}
+                        value={reportDays}
+                        disabled={reportPeriod !== 'days'}
+                        onChange={(e) => setReportDays(parseInt(e.target.value, 10) || 1)}
+                      />
+                    </Form.Group>
+                  </Col>
+                </Row>
+                <Button
+                  variant="primary"
+                  onClick={handleSendReportNow}
+                  disabled={isSendingReport || (reportPeriod === 'days' && (!reportDays || reportDays <= 0))}
+                >
+                  {isSendingReport ? 'Sending...' : 'Send Report Now'}
+                </Button>
+              </Card.Body>
+            </Card>
 
 
             <div className="d-grid gap-2 mb-4"> {/* Added mb-4 */}

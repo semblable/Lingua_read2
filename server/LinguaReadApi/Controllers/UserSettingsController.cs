@@ -16,10 +16,12 @@ namespace LinguaReadApi.Controllers
     public class UserSettingsController : ControllerBase
     {
         private readonly AppDbContext _context;
+        private readonly DiscordReportService _discordReportService;
 
-        public UserSettingsController(AppDbContext context)
+        public UserSettingsController(AppDbContext context, DiscordReportService discordReportService)
         {
             _context = context;
+            _discordReportService = discordReportService;
         }
 
         // GET: api/usersettings
@@ -208,6 +210,79 @@ namespace LinguaReadApi.Controllers
             await _context.SaveChangesAsync();
 
             return NoContent(); // Indicate success without returning data
+        }
+
+        // POST: api/usersettings/discord/report
+        [HttpPost("discord/report")]
+        public async Task<IActionResult> SendDiscordReport([FromQuery] string period = "week", [FromQuery] int? days = null)
+        {
+            var userId = GetUserId();
+            var settings = await _context.UserSettings.FirstOrDefaultAsync(s => s.UserId == userId);
+            if (settings == null)
+            {
+                settings = new UserSettings { UserId = userId, CreatedAt = DateTime.UtcNow };
+                _context.UserSettings.Add(settings);
+                await _context.SaveChangesAsync();
+            }
+
+            var nowUtc = DateTime.UtcNow;
+            var range = ResolveReportRange(nowUtc, period, days);
+            if (!range.IsValid)
+            {
+                return BadRequest(range.Error);
+            }
+
+            var sendResult = await _discordReportService.SendReportForUserAsync(
+                settings,
+                range.StartUtc,
+                range.EndUtc,
+                false,
+                HttpContext.RequestAborted);
+
+            if (sendResult.Sent)
+            {
+                return Ok(new { message = "Report sent successfully." });
+            }
+
+            if (sendResult.Skipped)
+            {
+                return Ok(new { message = sendResult.Reason ?? "Report skipped." });
+            }
+
+            return BadRequest(new { message = sendResult.Reason ?? "Unable to send report." });
+        }
+
+        private static ReportRange ResolveReportRange(DateTime nowUtc, string period, int? days)
+        {
+            var normalized = (period ?? string.Empty).Trim().ToLowerInvariant();
+            if (normalized == "days")
+            {
+                if (!days.HasValue || days.Value <= 0)
+                {
+                    return ReportRange.Invalid("Days must be a positive number when period=days.");
+                }
+
+                var cappedDays = Math.Min(days.Value, 3650);
+                return ReportRange.Valid(nowUtc.AddDays(-cappedDays), nowUtc);
+            }
+
+            return normalized switch
+            {
+                "week" => ReportRange.Valid(nowUtc.AddDays(-7), nowUtc),
+                "month" => ReportRange.Valid(nowUtc.AddDays(-30), nowUtc),
+                "year" => ReportRange.Valid(nowUtc.AddDays(-365), nowUtc),
+                "all" => ReportRange.Valid(DateTime.MinValue, nowUtc),
+                _ => ReportRange.Invalid("Unsupported period. Use week, month, year, all, or days.")
+            };
+        }
+
+        private readonly record struct ReportRange(DateTime StartUtc, DateTime EndUtc, bool IsValid, string? Error)
+        {
+            public static ReportRange Valid(DateTime startUtc, DateTime endUtc) =>
+                new(startUtc, endUtc, true, null);
+
+            public static ReportRange Invalid(string error) =>
+                new(DateTime.MinValue, DateTime.MinValue, false, error);
         }
 
         private Guid GetUserId()

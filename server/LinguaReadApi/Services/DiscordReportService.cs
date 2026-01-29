@@ -111,33 +111,22 @@ namespace LinguaReadApi.Services
                 var startUtc = scheduledUtc.AddDays(-7);
                 var endUtc = scheduledUtc;
 
-                var userActivities = await _context.UserActivities
-                    .AsNoTracking()
-                    .Where(ua =>
-                        ua.UserId == target.UserId &&
-                        ua.Timestamp >= startUtc &&
-                        ua.Timestamp < endUtc)
-                    .Include(ua => ua.Language)
-                    .ToListAsync(cancellationToken);
+                var sendResult = await SendReportForUserAsync(
+                    target,
+                    startUtc,
+                    endUtc,
+                    options.DryRun,
+                    cancellationToken);
 
-                var message = BuildWeeklyReportMessage(startUtc, endUtc, userActivities);
                 result.PreparedCount++;
-
-                if (options.DryRun)
-                {
-                    _logger.LogInformation(
-                        "Discord report dry run for user {UserId}: {MessagePreview}",
-                        target.UserId,
-                        message.Length > 200 ? message[..200] + "..." : message);
-                    result.SkippedCount++;
-                    continue;
-                }
-
-                var sent = await PostWebhookAsync(target.DiscordWebhookUrl!, message, cancellationToken);
-                if (sent)
+                if (sendResult.Sent)
                 {
                     target.DiscordWeeklyReportLastSentAt = scheduledUtc;
                     result.SentCount++;
+                }
+                else if (sendResult.Skipped)
+                {
+                    result.SkippedCount++;
                 }
                 else
                 {
@@ -149,7 +138,57 @@ namespace LinguaReadApi.Services
             return result;
         }
 
-        private string BuildWeeklyReportMessage(
+        public async Task<DiscordReportSendResult> SendReportForUserAsync(
+            Models.UserSettings settings,
+            DateTime startUtc,
+            DateTime endUtc,
+            bool dryRun,
+            CancellationToken cancellationToken)
+        {
+            if (endUtc <= startUtc)
+            {
+                return DiscordReportSendResult.Failed("Invalid date range.");
+            }
+
+            if (string.IsNullOrWhiteSpace(settings.DiscordWebhookUrl))
+            {
+                return DiscordReportSendResult.Failed("Discord webhook URL is missing.");
+            }
+
+            if (!TryNormalizeWebhookUrl(settings.DiscordWebhookUrl, out var normalizedUrl))
+            {
+                return DiscordReportSendResult.Failed("Discord webhook URL is invalid.");
+            }
+
+            settings.DiscordWebhookUrl = normalizedUrl;
+
+            var userActivities = await _context.UserActivities
+                .AsNoTracking()
+                .Where(ua =>
+                    ua.UserId == settings.UserId &&
+                    ua.Timestamp >= startUtc &&
+                    ua.Timestamp < endUtc)
+                .Include(ua => ua.Language)
+                .ToListAsync(cancellationToken);
+
+            var message = BuildReportMessage(startUtc, endUtc, userActivities);
+
+            if (dryRun)
+            {
+                _logger.LogInformation(
+                    "Discord report dry run for user {UserId}: {MessagePreview}",
+                    settings.UserId,
+                    message.Length > 200 ? message[..200] + "..." : message);
+                return DiscordReportSendResult.Skipped("Dry run enabled.");
+            }
+
+            var sent = await PostWebhookAsync(settings.DiscordWebhookUrl, message, cancellationToken);
+            return sent
+                ? DiscordReportSendResult.Success()
+                : DiscordReportSendResult.Failed("Failed to send webhook.");
+        }
+
+        private string BuildReportMessage(
             DateTime startUtc,
             DateTime endUtc,
             List<Models.UserActivity> activities)
@@ -186,7 +225,7 @@ namespace LinguaReadApi.Services
             var endDisplay = endUtc.AddSeconds(-1);
             var messageLines = new List<string>
             {
-                $"**Weekly activity report** ({startUtc:yyyy-MM-dd} to {endDisplay:yyyy-MM-dd} UTC)",
+                $"**Activity report** ({startUtc:yyyy-MM-dd} to {endDisplay:yyyy-MM-dd} UTC)",
                 $"Total words read: {totalWords}",
                 $"Total listening time: {FormatDuration(totalListeningSeconds)}"
             };
@@ -338,5 +377,23 @@ namespace LinguaReadApi.Services
         public int SentCount { get; set; }
         public int FailedCount { get; set; }
         public int SkippedCount { get; set; }
+    }
+
+    public class DiscordReportSendResult
+    {
+        private DiscordReportSendResult(bool sent, bool skipped, string? reason)
+        {
+            Sent = sent;
+            Skipped = skipped;
+            Reason = reason;
+        }
+
+        public bool Sent { get; }
+        public bool Skipped { get; }
+        public string? Reason { get; }
+
+        public static DiscordReportSendResult Success() => new(true, false, null);
+        public static DiscordReportSendResult Skipped(string reason) => new(false, true, reason);
+        public static DiscordReportSendResult Failed(string reason) => new(false, false, reason);
     }
 }

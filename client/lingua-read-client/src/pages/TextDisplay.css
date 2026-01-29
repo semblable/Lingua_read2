@@ -149,6 +149,14 @@
   font-weight: 500; /* Slightly bolder */
 }
 
+.srt-line {
+  margin-bottom: 0.75rem;
+}
+
+.audio-transcript-container {
+  padding: var(--space-md) 0;
+}
+
 /* Dark theme adjustments */
 
 /* Dark theme adjustments for active SRT line */
@@ -159,6 +167,10 @@
 
 /* Media queries for responsive design */
 @media (max-width: 768px) {
+  .lesson-page {
+    padding-bottom: calc(var(--space-lg) + 3.5rem);
+  }
+
   .lesson-topbar {
     padding: var(--space-sm);
   }
@@ -240,6 +252,7 @@
     top: 0;
     z-index: 1010;
     padding: var(--space-sm);
+    margin-bottom: var(--space-xs);
     border-bottom: 1px solid var(--theme-border-color, #e9ecef);
   }
 
@@ -248,7 +261,7 @@
   }
 
   .audio-transcript-container {
-    padding: var(--space-sm) 0;
+    padding: var(--space-sm) 0 var(--space-lg);
   }
 
   .srt-line {

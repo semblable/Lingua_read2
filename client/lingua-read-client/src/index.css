@@ -77,6 +77,13 @@
   --link-color: var(--link-color-light);
   --link-hover-color: var(--link-hover-color-light);
 
+  /* Theme surface helpers */
+  --light-surface-bg: var(--ui-background-light);
+  --light-border-color: var(--border-color-light);
+  --theme-surface-bg: var(--light-surface-bg);
+  --theme-border-color: var(--light-border-color);
+  --theme-text: var(--font-color-light);
+
   --status-0-color: var(--status-0-color-light);
   --status-1-color: var(--status-1-color-light);
   --status-2-color: var(--status-2-color-light);
@@ -131,6 +138,10 @@
   --link-color: var(--link-color-dark);
   --link-hover-color: var(--link-hover-color-dark);
 
+  --theme-surface-bg: var(--ui-background-dark);
+  --theme-border-color: var(--border-color-dark);
+  --theme-text: var(--font-color-dark);
+
   --status-0-color: var(--status-0-color-dark);
   --status-1-color: var(--status-1-color-dark);
   --status-2-color: var(--status-2-color-dark);
@@ -159,6 +170,10 @@
   --border-color: var(--classic-dark-border-color);
   --link-color: var(--classic-dark-link-color);
   --link-hover-color: var(--classic-dark-link-hover-color);
+
+  --theme-surface-bg: var(--classic-dark-surface-bg);
+  --theme-border-color: var(--classic-dark-surface-border-color);
+  --theme-text: var(--classic-dark-text);
 
   --status-0-color: var(--status-0-color-classic-dark);
   --status-1-color: var(--status-1-color-classic-dark);

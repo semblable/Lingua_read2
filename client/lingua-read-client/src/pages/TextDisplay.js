@@ -1178,7 +1178,7 @@ const TextDisplay = () => {
     if (!srtLines || srtLines.length === 0) return <p className="p-3">Loading transcript...</p>;
     // Calculate itemSize dynamically
     const effectiveLineSpacing = isMobile ? mobileReadingConfig.lineSpacing : globalSettings.lineSpacing;
-    const calculatedItemSize = (globalSettings.textSize * effectiveLineSpacing * 1.2) + 10;
+    const calculatedItemSize = (globalSettings.textSize * effectiveLineSpacing * 1.6) + 18;
     const LIST_HEIGHT = textContentRef.current ? textContentRef.current.clientHeight - 30 : 600;
     return (
       <div className="audio-transcript-container" style={{ height: '100%', overflow: 'hidden' }}>

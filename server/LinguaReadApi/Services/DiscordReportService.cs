@@ -18,6 +18,7 @@ namespace LinguaReadApi.Services
     {
         private const int MaxDiscordMessageLength = 1900;
         private const int MaxLanguagesPerUser = 8;
+        private const long MaxDiscordUploadBytes = 8L * 1024 * 1024;
 
         private static readonly HashSet<string> ReadingActivityTypes = new(StringComparer.OrdinalIgnoreCase)
         {
@@ -207,15 +208,51 @@ namespace LinguaReadApi.Services
                     attachments.Add(htmlReportPath);
                 }
 
-                var sendResult = await PostWebhookAsync(
+                var attachmentDecision = FilterAttachmentsForDiscord(attachments, MaxDiscordUploadBytes);
+
+                var messageResult = await PostWebhookAsync(
                     settings.DiscordWebhookUrl,
                     message,
-                    attachments,
+                    Array.Empty<string>(),
                     cancellationToken);
 
-                return sendResult.Success
-                    ? DiscordReportSendResult.Success()
-                    : DiscordReportSendResult.Failed(sendResult.ErrorMessage ?? "Failed to send webhook.");
+                if (!messageResult.Success)
+                {
+                    return DiscordReportSendResult.Failed(messageResult.ErrorMessage ?? "Failed to send webhook.");
+                }
+
+                foreach (var attachmentPath in attachmentDecision.Attachments)
+                {
+                    var attachmentMessage = $"Report attachment: {Path.GetFileName(attachmentPath)}";
+                    var attachmentResult = await PostWebhookAsync(
+                        settings.DiscordWebhookUrl,
+                        attachmentMessage,
+                        new[] { attachmentPath },
+                        cancellationToken);
+
+                    if (!attachmentResult.Success)
+                    {
+                        return DiscordReportSendResult.Failed(
+                            attachmentResult.ErrorMessage ?? "Failed to send webhook attachment.");
+                    }
+                }
+
+                if (!string.IsNullOrWhiteSpace(attachmentDecision.Note))
+                {
+                    var noteResult = await PostWebhookAsync(
+                        settings.DiscordWebhookUrl,
+                        attachmentDecision.Note,
+                        Array.Empty<string>(),
+                        cancellationToken);
+
+                    if (!noteResult.Success)
+                    {
+                        return DiscordReportSendResult.Failed(
+                            noteResult.ErrorMessage ?? "Failed to send webhook attachment note.");
+                    }
+                }
+
+                return DiscordReportSendResult.Success();
             }
             finally
             {
@@ -697,6 +734,90 @@ namespace LinguaReadApi.Services
             return FormatDuration(averageSeconds);
         }
 
+        private static AttachmentDecision FilterAttachmentsForDiscord(
+            IReadOnlyList<string> attachmentPaths,
+            long maxTotalBytes)
+        {
+            var selected = new List<string>();
+            var skipped = new List<string>();
+            long total = 0;
+
+            foreach (var path in attachmentPaths)
+            {
+                if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+                {
+                    continue;
+                }
+
+                var size = new FileInfo(path).Length;
+                if (size <= 0)
+                {
+                    skipped.Add($"{Path.GetFileName(path)} (empty)");
+                    continue;
+                }
+
+                if (size > maxTotalBytes)
+                {
+                    skipped.Add($"{Path.GetFileName(path)} ({FormatBytes(size)})");
+                    continue;
+                }
+
+                if (total + size > maxTotalBytes)
+                {
+                    skipped.Add($"{Path.GetFileName(path)} ({FormatBytes(size)})");
+                    continue;
+                }
+
+                selected.Add(path);
+                total += size;
+            }
+
+            string? note = null;
+            if (skipped.Count > 0)
+            {
+                note = $"Attachments skipped (size limit): {string.Join(", ", skipped)}";
+            }
+
+            return new AttachmentDecision(selected, note);
+        }
+
+        private static string AppendMessageNote(string message, string? note)
+        {
+            if (string.IsNullOrWhiteSpace(note))
+            {
+                return message;
+            }
+
+            var combined = $"{message}\n\n{note}";
+            if (combined.Length <= MaxDiscordMessageLength)
+            {
+                return combined;
+            }
+
+            var trimmed = combined[..(MaxDiscordMessageLength - 3)] + "...";
+            return trimmed;
+        }
+
+        private static string FormatBytes(long bytes)
+        {
+            if (bytes < 1024)
+            {
+                return $"{bytes} B";
+            }
+
+            if (bytes < 1024 * 1024)
+            {
+                return $"{bytes / 1024d:0.#} KB";
+            }
+
+            if (bytes < 1024L * 1024 * 1024)
+            {
+                return $"{bytes / (1024d * 1024):0.#} MB";
+            }
+
+            return $"{bytes / (1024d * 1024 * 1024):0.#} GB";
+        }
+
         private static bool TryNormalizeWebhookUrl(string url, out string normalizedUrl)
         {
             normalizedUrl = url.Trim();
@@ -752,6 +873,8 @@ namespace LinguaReadApi.Services
             public int ListeningSessions { get; set; }
             public int TotalSessions => ReadingSessions + ListeningSessions;
         }
+
+        private readonly record struct AttachmentDecision(IReadOnlyList<string> Attachments, string? Note);
     }
 
     public class DiscordReportResult

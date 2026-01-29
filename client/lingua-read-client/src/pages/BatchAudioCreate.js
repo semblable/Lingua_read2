@@ -153,8 +153,30 @@ const BatchAudioCreate = () => {
         const pairedSrts = new Set();
         const ambiguousMatches = new Set(); // Store normalized names with >1 MP3 or >1 SRT
 
+        // Helper function to find fuzzy matches for truncated filenames
+        const findFuzzyMatch = (targetNormalized, candidateMap) => {
+            // Try exact match first
+            if (candidateMap.has(targetNormalized)) {
+                return candidateMap.get(targetNormalized);
+            }
+            
+            // Try prefix matching for truncated names (min 10 chars to avoid false positives)
+            if (targetNormalized.length >= 10) {
+                for (const [candidateNormalized, candidateList] of candidateMap.entries()) {
+                    if (candidateNormalized.length >= 10) {
+                        // Check if one is a prefix of the other
+                        if (targetNormalized.startsWith(candidateNormalized) || 
+                            candidateNormalized.startsWith(targetNormalized)) {
+                            return candidateList;
+                        }
+                    }
+                }
+            }
+            return null;
+        };
+
         mp3sByNormalizedBase.forEach((mp3List, normalizedName) => {
-            const matchingSrtList = srtsByNormalizedBase.get(normalizedName);
+            const matchingSrtList = findFuzzyMatch(normalizedName, srtsByNormalizedBase);
             console.log(`[Debug Pair Check] Normalized Name: "${normalizedName}", MP3s: ${mp3List.length}, SRTs: ${matchingSrtList ? matchingSrtList.length : 0}`); // DEBUG LOG
 
             // Check for ambiguity first
@@ -195,9 +217,10 @@ const BatchAudioCreate = () => {
                  // Check if this SRT was successfully paired OR if it was already flagged (e.g., ambiguous, invalid format)
                  if (!pairedSrts.has(srtInfo.originalFullName) && !problematicFiles.has(srtInfo.originalFullName)) {
                       console.log(`[Debug Unpaired SRT Check] SRT: ${srtInfo.originalFullName} (Normalized: "${normalizedName}") was not paired and not previously flagged.`); // DEBUG LOG
-                      // Determine the reason it wasn't paired
-                      if (!mp3sByNormalizedBase.has(normalizedName)) {
-                           // No MP3 existed with the same normalized name
+                      // Try fuzzy matching before marking as missing
+                      const fuzzyMp3Match = findFuzzyMatch(normalizedName, mp3sByNormalizedBase);
+                      if (!fuzzyMp3Match) {
+                           // No MP3 existed with the same normalized name (even fuzzy)
                            console.log(`[Debug Unpaired SRT] Reason: No MP3 found with normalized name "${normalizedName}".`); // DEBUG LOG
                            addProblem(srtInfo.originalFullName, 'Missing Matching MP3');
                       } else if (ambiguousMatches.has(normalizedName)) {
@@ -206,7 +229,7 @@ const BatchAudioCreate = () => {
                            addProblem(srtInfo.originalFullName, 'Unpaired (Related MP3 was ambiguous)');
                       } else {
                            // Should not happen if logic is correct: MP3 exists, is unique, SRT exists, is unique, but not paired?
-                           console.warn(`[Debug Unpaired SRT] Unclear Reason: SRT ${srtInfo.originalFullName} not paired with MP3s for "${normalizedName}". MP3 list:`, mp3sByNormalizedBase.get(normalizedName)); // DEBUG LOG
+                           console.warn(`[Debug Unpaired SRT] Unclear Reason: SRT ${srtInfo.originalFullName} not paired with MP3s for "${normalizedName}". MP3 list:`, fuzzyMp3Match); // DEBUG LOG
                            addProblem(srtInfo.originalFullName, 'Unpaired (Reason unclear)');
                       }
                  }

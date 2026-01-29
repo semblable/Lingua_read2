@@ -54,6 +54,6 @@ public class HealthEndpointTests : IClassFixture<WebApplicationFactory<Program>>
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var content = await response.Content.ReadAsStringAsync();
-        Assert.Contains("\"Status\":\"healthy\"", content);
+        Assert.Contains("\"status\":\"healthy\"", content);
     }
 }

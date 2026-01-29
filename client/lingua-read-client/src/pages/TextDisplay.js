@@ -107,13 +107,11 @@ const TranscriptLine = React.memo(({ index, style, data }) => {
         className={`srt-line ${line.id === currentLineId ? 'active-srt-line' : ''}`}
         style={{
           ...getFontStyling(currentLineSpacing), // Call with currentLineSpacing
-          marginBottom: '0.8rem',
           padding: '0.3rem 0.5rem',
           borderRadius: '4px',
           transition: 'background-color 0.3s ease',
           /* backgroundColor removed to allow CSS file to control it */
-          cursor: 'pointer',
-          margin: 0
+          cursor: 'pointer'
         }}
         onClick={() => handleLineClick(line.startTime)}
       >
@@ -1183,7 +1181,7 @@ const TextDisplay = () => {
     const calculatedItemSize = (globalSettings.textSize * effectiveLineSpacing * 1.2) + 10;
     const LIST_HEIGHT = textContentRef.current ? textContentRef.current.clientHeight - 30 : 600;
     return (
-      <div className="audio-transcript-container" style={{ padding: '15px 0', height: '100%', overflow: 'hidden' }}>
+      <div className="audio-transcript-container" style={{ height: '100%', overflow: 'hidden' }}>
         <List height={LIST_HEIGHT} itemCount={srtLines.length} itemSize={calculatedItemSize} width="100%" itemData={itemData} overscanCount={5} ref={listRef} style={{ paddingRight: '15px', paddingLeft: '15px' }}>
             {TranscriptLine}
         </List>

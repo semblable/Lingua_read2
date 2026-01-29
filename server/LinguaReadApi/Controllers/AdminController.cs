@@ -3,10 +3,14 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
 using LinguaReadApi.Services; // Assuming your service is here
 using Microsoft.AspNetCore.Http; // Required for IFormFile
+using Microsoft.Extensions.Configuration;
+using System.Linq;
+using System.Security.Claims;
 
 namespace LinguaReadApi.Controllers
 {
@@ -19,17 +23,44 @@ namespace LinguaReadApi.Controllers
         private readonly DiscordReportService _discordReportService;
         private readonly IOptions<DiscordReportOptions> _discordReportOptions;
         private readonly ILogger<AdminController> _logger;
+        private readonly HashSet<string> _adminUserIds;
+        private const string AdminUserIdsConfigKey = "Admin:AllowedUserIds";
 
         public AdminController(
             IDatabaseAdminService dbAdminService,
             DiscordReportService discordReportService,
             IOptions<DiscordReportOptions> discordReportOptions,
+            IConfiguration configuration,
             ILogger<AdminController> logger)
         {
             _dbAdminService = dbAdminService;
             _discordReportService = discordReportService;
             _discordReportOptions = discordReportOptions;
             _logger = logger;
+            _adminUserIds = ParseAdminUserIds(configuration[AdminUserIdsConfigKey]);
+        }
+        
+        private static HashSet<string> ParseAdminUserIds(string? raw)
+        {
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            }
+            
+            return raw
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        }
+        
+        private bool IsAdminUser()
+        {
+            if (_adminUserIds.Count == 0)
+            {
+                return true; // No restriction configured
+            }
+            
+            var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            return userId != null && _adminUserIds.Contains(userId);
         }
 
         // GET: api/admin/backup
@@ -37,6 +68,11 @@ namespace LinguaReadApi.Controllers
         // [Authorize(Roles = "Admin")] // TODO: Add role-based authorization later
         public async Task<IActionResult> BackupDatabase()
         {
+            if (!IsAdminUser())
+            {
+                _logger.LogWarning("Database backup blocked for non-admin user {UserId}.", User.FindFirst(ClaimTypes.NameIdentifier)?.Value);
+                return Forbid();
+            }
             _logger.LogInformation("Database backup requested by user {UserId}", User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value);
 
             var backupFilePath = await _dbAdminService.BackupDatabaseAsync();
@@ -80,6 +116,11 @@ namespace LinguaReadApi.Controllers
         // [Authorize(Roles = "Admin")] // TODO: Add role-based authorization later
         public async Task<IActionResult> RestoreDatabase(IFormFile backupFile)
         {
+             if (!IsAdminUser())
+             {
+                 _logger.LogWarning("Database restore blocked for non-admin user {UserId}.", User.FindFirst(ClaimTypes.NameIdentifier)?.Value);
+                 return Forbid();
+             }
              _logger.LogWarning("Database restore requested by user {UserId}. THIS IS A DESTRUCTIVE OPERATION.", User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value);
 
             if (backupFile == null || backupFile.Length == 0)
@@ -123,6 +164,11 @@ namespace LinguaReadApi.Controllers
             [FromQuery] bool dryRun = false,
             [FromQuery] bool force = false)
         {
+            if (!IsAdminUser())
+            {
+                _logger.LogWarning("Weekly report trigger blocked for non-admin user {UserId}.", User.FindFirst(ClaimTypes.NameIdentifier)?.Value);
+                return Forbid();
+            }
             var baseOptions = _discordReportOptions.Value;
             var options = new DiscordReportOptions
             {

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Threading.Tasks;
@@ -54,7 +55,15 @@ namespace LinguaReadApi.Services
             var backupFileName = $"linguaread_backup_{timestamp}.backup";
             var backupFilePath = Path.Combine(_backupDirectory, backupFileName);
 
-            var arguments = $"-h {_pgHost} -p {_pgPort} -U {_pgUser} -d {_pgDatabase} -F c -f \"{backupFilePath}\""; // Custom format backup
+            var arguments = new List<string>
+            {
+                "-h", _pgHost,
+                "-p", _pgPort,
+                "-U", _pgUser,
+                "-d", _pgDatabase,
+                "-F", "c",
+                "-f", backupFilePath
+            }; // Custom format backup
 
             _logger.LogInformation("Starting database backup to {BackupFilePath}...", backupFilePath);
 
@@ -104,7 +113,19 @@ namespace LinguaReadApi.Services
                 // --no-owner: Don't try to set ownership (useful if restoring user is different)
                 // --no-privileges: Don't try to set privileges
                 // -1: Single transaction
-                var arguments = $"-h {_pgHost} -p {_pgPort} -U {_pgUser} -d {_pgDatabase} --clean --if-exists --no-owner --no-privileges -1 \"{tempBackupFilePath}\"";
+                var arguments = new List<string>
+                {
+                    "-h", _pgHost,
+                    "-p", _pgPort,
+                    "-U", _pgUser,
+                    "-d", _pgDatabase,
+                    "--clean",
+                    "--if-exists",
+                    "--no-owner",
+                    "--no-privileges",
+                    "-1",
+                    tempBackupFilePath
+                };
 
                 _logger.LogWarning("Starting database restore from {TempBackupFilePath}. THIS WILL OVERWRITE EXISTING DATA.", tempBackupFilePath);
 
@@ -136,19 +157,21 @@ namespace LinguaReadApi.Services
             }
         }
 
-        private async Task<int> ExecuteProcessAsync(string command, string arguments, string? password = null)
+        private async Task<int> ExecuteProcessAsync(string command, IEnumerable<string> arguments, string? password = null)
         {
             var processStartInfo = new ProcessStartInfo
             {
                 FileName = command,
-                Arguments = arguments,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false,
-                CreateNoWindow = true,
-                // Set environment variable for password
-                Environment = { ["PGPASSWORD"] = password ?? string.Empty }
+                CreateNoWindow = true
             };
+            processStartInfo.Environment["PGPASSWORD"] = password ?? string.Empty;
+            foreach (var argument in arguments)
+            {
+                processStartInfo.ArgumentList.Add(argument);
+            }
 
             using var process = new Process { StartInfo = processStartInfo };
 

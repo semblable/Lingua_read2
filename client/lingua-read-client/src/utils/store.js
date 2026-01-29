@@ -6,15 +6,21 @@ export const useAuthStore = create((set) => ({
   token: null,
   user: null,
   setToken: (token) => {
-    localStorage.setItem('token', token);
-    const decodedToken = jwtDecode(token);
-    set({ 
-      token, 
-      user: {
-        id: decodedToken.sub,
-        email: decodedToken.email
-      }
-    });
+    try {
+      localStorage.setItem('token', token);
+      const decodedToken = jwtDecode(token);
+      set({
+        token,
+        user: {
+          id: decodedToken.sub,
+          email: decodedToken.email
+        }
+      });
+    } catch (error) {
+      console.error('Failed to decode token, clearing auth state.', error);
+      localStorage.removeItem('token');
+      set({ token: null, user: null });
+    }
   },
   clearToken: () => {
     localStorage.removeItem('token');

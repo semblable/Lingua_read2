@@ -406,8 +406,10 @@ namespace LinguaReadApi.Controllers
                 }
                 // --- DEBUG LOGGING END ---
 
-                // Now attempt to create the dictionary (this might still throw, but we have logs)
-                var existingWords = wordsBeforeDict.ToDictionary(w => w.Term.ToLowerInvariant());
+                // Create dictionary safely even if duplicates exist (lowercased)
+                var existingWords = wordsBeforeDict
+                    .GroupBy(w => w.Term.ToLowerInvariant())
+                    .ToDictionary(g => g.Key, g => g.First());
 
                 var newWords = new List<Word>();
 

@@ -3,11 +3,14 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.Logging;
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
 using LinguaReadApi.Services;
 using Microsoft.AspNetCore.Http;
 using System.Security.Claims; // Added for User claims
+using Microsoft.Extensions.Configuration;
+using System.Linq;
 
 namespace LinguaReadApi.Controllers
 {
@@ -18,17 +21,51 @@ namespace LinguaReadApi.Controllers
     {
         private readonly IDatabaseAdminService _dbAdminService;
         private readonly ILogger<DataManagementController> _logger; // Updated logger type
+        private readonly HashSet<string> _adminUserIds;
+        private const string AdminUserIdsConfigKey = "Admin:AllowedUserIds";
 
-        public DataManagementController(IDatabaseAdminService dbAdminService, ILogger<DataManagementController> logger) // Updated constructor
+        public DataManagementController(
+            IDatabaseAdminService dbAdminService,
+            IConfiguration configuration,
+            ILogger<DataManagementController> logger) // Updated constructor
         {
             _dbAdminService = dbAdminService;
             _logger = logger;
+            _adminUserIds = ParseAdminUserIds(configuration[AdminUserIdsConfigKey]);
+        }
+        
+        private static HashSet<string> ParseAdminUserIds(string? raw)
+        {
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            }
+            
+            return raw
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        }
+        
+        private bool IsAdminUser()
+        {
+            if (_adminUserIds.Count == 0)
+            {
+                return true; // No restriction configured
+            }
+            
+            var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            return userId != null && _adminUserIds.Contains(userId);
         }
 
         // GET: api/datamanagement/backup
         [HttpGet("backup")]
         public async Task<IActionResult> BackupDatabase()
         {
+            if (!IsAdminUser())
+            {
+                _logger.LogWarning("Database backup blocked for non-admin user {UserId}.", User.FindFirst(ClaimTypes.NameIdentifier)?.Value);
+                return Forbid();
+            }
             _logger.LogInformation("Database backup requested by user {UserId}", User.FindFirst(ClaimTypes.NameIdentifier)?.Value);
 
             var backupFilePath = await _dbAdminService.BackupDatabaseAsync();
@@ -71,6 +108,11 @@ namespace LinguaReadApi.Controllers
         [RequestFormLimits(MultipartBodyLengthLimit = 200 * 1024 * 1024)]
         public async Task<IActionResult> RestoreDatabase(IFormFile backupFile)
         {
+             if (!IsAdminUser())
+             {
+                 _logger.LogWarning("Database restore blocked for non-admin user {UserId}.", User.FindFirst(ClaimTypes.NameIdentifier)?.Value);
+                 return Forbid();
+             }
              _logger.LogWarning("Database restore requested by user {UserId}. THIS IS A DESTRUCTIVE OPERATION.", User.FindFirst(ClaimTypes.NameIdentifier)?.Value);
 
             if (backupFile == null || backupFile.Length == 0)

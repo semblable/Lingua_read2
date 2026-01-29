@@ -59,7 +59,11 @@ namespace LinguaReadApi.Controllers
                 .ToDictionaryAsync(uls => uls.LanguageId); // Dictionary for easy lookup
 
             // Get language details for languages the user has stats for
-            var languages = userLangStats.Values.Select(uls => uls.Language).Distinct().ToList();
+            var languages = userLangStats.Values
+                .Select(uls => uls.Language)
+                .Where(language => language != null)
+                .Distinct()
+                .ToList();
                 
             // --- Create LanguageStatisticsDto using UserLanguageStatistics ---
             var languageStats = languages.Select(l =>

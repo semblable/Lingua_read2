@@ -38,8 +38,7 @@ const ProtectedRoute = ({ token, isLoading }) => {
   return token ? <Outlet /> : <Navigate to="/" />; // Redirect to home if not authenticated after check
 };
 
-
-function App() {
+const AppContent = () => {
   const { token, setToken, clearToken } = useAuthStore();
   const [isLoading, setIsLoading] = useState(true); // Add loading state
   const settingsContext = useContext(SettingsContext); // Access settings context
@@ -164,59 +163,65 @@ function App() {
 
 
   return (
-      <SettingsProvider>
-        <div className="App">
-          {/* Conditionally render Navigation only when not loading and potentially authenticated */}
-          {!isLoading && <Navigation />}
-          <div className="container-fluid p-0 m-0">
-            <Routes>
-              {/* Root route: Show loading or Home component */}
-              <Route
-                path="/"
-                element={
-                  isLoading ? (
-                    <Loading />
-                  ) : (
-                     // Always render Home component after loading,
-                     // as user will be auto-logged in.
-                     // ProtectedRoute handles guarding other routes.
-                    <Home />
-                  )
-                }
-              />
-              {/* Removed /login and /register routes */}
+    <div className="App">
+      {/* Conditionally render Navigation only when not loading and potentially authenticated */}
+      {!isLoading && <Navigation />}
+      <div className="container-fluid p-0 m-0">
+        <Routes>
+          {/* Root route: Show loading or Home component */}
+          <Route
+            path="/"
+            element={
+              isLoading ? (
+                <Loading />
+              ) : (
+                 // Always render Home component after loading,
+                 // as user will be auto-logged in.
+                 // ProtectedRoute handles guarding other routes.
+                <Home />
+              )
+            }
+          />
+          {/* Removed /login and /register routes */}
 
-              {/* Protected Routes */}
-              {/* Ensure ProtectedRoute still redirects to "/" if token is somehow missing after loading */}
-              <Route element={<ProtectedRoute token={token} isLoading={isLoading} />}>
-                {/* Book routes */}
-                <Route path="/books" element={<BookList />} />
-                <Route path="/books/create" element={<BookCreate />} />
-                <Route path="/books/:bookId" element={<BookDetail />} />
+          {/* Protected Routes */}
+          {/* Ensure ProtectedRoute still redirects to "/" if token is somehow missing after loading */}
+          <Route element={<ProtectedRoute token={token} isLoading={isLoading} />}>
+            {/* Book routes */}
+            <Route path="/books" element={<BookList />} />
+            <Route path="/books/create" element={<BookCreate />} />
+            <Route path="/books/:bookId" element={<BookDetail />} />
 
-                {/* Text routes */}
-                <Route path="/texts" element={<TextList />} />
-                <Route path="/texts/create" element={<TextCreate />} />
-                <Route path="/texts/:textId" element={<TextDisplay />} />
-                <Route path="/texts/create-audio" element={<CreateAudioLesson />} />
-                <Route path="/texts/create-batch-audio" element={<BatchAudioCreate />} />
+            {/* Text routes */}
+            <Route path="/texts" element={<TextList />} />
+            <Route path="/texts/create" element={<TextCreate />} />
+            <Route path="/texts/:textId" element={<TextDisplay />} />
+            <Route path="/texts/create-audio" element={<CreateAudioLesson />} />
+            <Route path="/texts/create-batch-audio" element={<BatchAudioCreate />} />
 
-                {/* Statistics route */}
-                <Route path="/statistics" element={<Statistics />} />
-                <Route path="/terms" element={<TermsPage />} />
+            {/* Statistics route */}
+            <Route path="/statistics" element={<Statistics />} />
+            <Route path="/terms" element={<TermsPage />} />
 
-                {/* Settings route */}
-                <Route path="/settings" element={<UserSettings />} />
-                <Route path="/settings/languages" element={<LanguagesPage />} />
-              </Route>
+            {/* Settings route */}
+            <Route path="/settings" element={<UserSettings />} />
+            <Route path="/settings/languages" element={<LanguagesPage />} />
+          </Route>
 
-              {/* Fallback for any other route - maybe redirect to home or show a 404 */}
-              <Route path="*" element={<Navigate to="/" />} />
+          {/* Fallback for any other route - maybe redirect to home or show a 404 */}
+          <Route path="*" element={<Navigate to="/" />} />
 
-            </Routes>
-          </div>
-        </div>
-      </SettingsProvider>
+        </Routes>
+      </div>
+    </div>
+  );
+};
+
+function App() {
+  return (
+    <SettingsProvider>
+      <AppContent />
+    </SettingsProvider>
   );
 }
 

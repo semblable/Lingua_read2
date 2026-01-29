@@ -686,9 +686,13 @@ namespace LinguaReadApi.Controllers
                         {
                             // Look for a space or punctuation within the last 20% of the segment
                             int searchStart = i + (int)(length * 0.8);
-                            int breakPoint = content.LastIndexOfAny(new[] { ' ', '.', '!', '?', '\n' }, i + length, length - searchStart + i);
-                            
-                            if (breakPoint > searchStart)
+                            int searchEnd = i + length - 1;
+                            int searchLength = searchEnd - searchStart + 1;
+                            int breakPoint = searchLength > 0
+                                ? content.LastIndexOfAny(new[] { ' ', '.', '!', '?', '\n' }, searchEnd, searchLength)
+                                : -1;
+
+                            if (breakPoint >= searchStart)
                             {
                                 length = breakPoint - i + 1;
                             }

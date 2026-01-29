@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Form, Button, Card, Row, Col } from 'react-bootstrap';
 import { useAuthStore } from '../utils/store';
-import api from '../services/api';
+import { getUserSettings, updateUserSettings } from '../utils/api';
 
 const UserSettings = () => {
   const { token } = useAuthStore();
@@ -22,13 +22,13 @@ const UserSettings = () => {
       
       try {
         setLoading(true);
-        const response = await api.get('/api/user/settings');
+        const response = await getUserSettings();
         
-        if (response.data) {
-          setSettings(response.data);
+        if (response) {
+          setSettings(response);
           
           // Apply theme from settings
-          if (response.data.theme === 'dark') {
+          if (response.theme === 'dark') {
             document.body.classList.add('dark-theme');
           } else {
             document.body.classList.remove('dark-theme');
@@ -74,7 +74,7 @@ const UserSettings = () => {
       setError('');
       setMessage('');
       
-      await api.post('/api/user/settings', settings);
+      await updateUserSettings(settings);
       setMessage('Settings saved successfully');
     } catch (err) {
       console.error('Error saving settings:', err);

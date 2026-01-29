@@ -1,5 +1,3 @@
-// Import Platform from react-native
-import { Platform } from 'react-native';
 // import storage from './storage'; // Removed unused storage
 
 // Dynamically set API URL based on platform.
@@ -13,7 +11,8 @@ const MOBILE_API_BASE_URL =
   process.env.REACT_APP_API_BASE_URL ||
   'http://localhost:5000/api';
 
-export const API_URL = Platform.OS === 'web' ? WEB_API_BASE_URL : MOBILE_API_BASE_URL;
+const isWeb = typeof window !== 'undefined' && typeof document !== 'undefined';
+export const API_URL = isWeb ? WEB_API_BASE_URL : MOBILE_API_BASE_URL;
 
 // Helper function to get token from storage
 const getToken = () => {

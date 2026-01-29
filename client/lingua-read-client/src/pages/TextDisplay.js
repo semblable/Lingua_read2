@@ -1512,7 +1512,7 @@ const TextDisplay = () => {
 
       {/* Audio Player */}
       {isAudioLesson && audioSrc && displayMode === 'audio' && (
-        <div className="audio-player-container p-2 border-bottom theme-aware-audio-player-container">
+        <div className={`audio-player-container p-2 border-bottom theme-aware-audio-player-container ${isMobile ? 'lesson-audio-bar' : ''}`}>
           <audio
             ref={audioRef}
             controls

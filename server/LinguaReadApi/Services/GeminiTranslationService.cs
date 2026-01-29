@@ -121,7 +121,7 @@ Example Output:
                 _logger.LogDebug($"Request payload: {jsonPayload}");
 
                 // Create the request
-                var endpoint = $"{_baseUrl}/models/gemini-2.5-flash-preview-04-17:generateContent?key={_apiKey}";
+                var endpoint = $"{_baseUrl}/models/gemini-3-flash-preview:generateContent?key={_apiKey}";
                 var content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
                 
                 // Send the request

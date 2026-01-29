@@ -179,7 +179,7 @@ namespace LinguaReadApi.Services
                     "Discord report dry run for user {UserId}: {MessagePreview}",
                     settings.UserId,
                     message.Length > 200 ? message[..200] + "..." : message);
-                return DiscordReportSendResult.Skipped("Dry run enabled.");
+                return DiscordReportSendResult.SkippedResult("Dry run enabled.");
             }
 
             var sent = await PostWebhookAsync(settings.DiscordWebhookUrl, message, cancellationToken);
@@ -393,7 +393,7 @@ namespace LinguaReadApi.Services
         public string? Reason { get; }
 
         public static DiscordReportSendResult Success() => new(true, false, null);
-        public static DiscordReportSendResult Skipped(string reason) => new(false, true, reason);
+        public static DiscordReportSendResult SkippedResult(string reason) => new(false, true, reason);
         public static DiscordReportSendResult Failed(string reason) => new(false, false, reason);
     }
 }

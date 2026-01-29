@@ -6,6 +6,7 @@ using System.Security.Claims;
 using System.Threading.Tasks;
 using LinguaReadApi.Data;
 using LinguaReadApi.Models;
+using LinguaReadApi.Services;
 using System.ComponentModel.DataAnnotations;
 
 namespace LinguaReadApi.Controllers

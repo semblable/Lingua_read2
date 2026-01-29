@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Net;
 using System.Net.Http;
 using System.Text;
@@ -22,7 +23,12 @@ public class DiscordReportServiceTests
         using var context = CreateDbContext();
         var handler = new CapturingHttpMessageHandler();
         var httpClientFactory = new StubHttpClientFactory(handler);
-        var service = new DiscordReportService(context, httpClientFactory, NullLogger<DiscordReportService>.Instance);
+        var databaseAdminService = new StubDatabaseAdminService();
+        var service = new DiscordReportService(
+            context,
+            httpClientFactory,
+            NullLogger<DiscordReportService>.Instance,
+            databaseAdminService);
 
         var userId = Guid.NewGuid();
         var language = new Language { Name = "Spanish", Code = "es" };
@@ -69,7 +75,8 @@ public class DiscordReportServiceTests
         Assert.Equal(1, result.SentCount);
         Assert.NotNull(handler.LastPayloadContent);
 
-        using var payloadDoc = JsonDocument.Parse(handler.LastPayloadContent!);
+        var payloadJson = ExtractPayloadJson(handler.LastPayloadContent);
+        using var payloadDoc = JsonDocument.Parse(payloadJson);
         var content = payloadDoc.RootElement.GetProperty("content").GetString();
         Assert.NotNull(content);
         Assert.Contains("Total words read: 120", content);
@@ -85,7 +92,12 @@ public class DiscordReportServiceTests
         using var context = CreateDbContext();
         var handler = new CapturingHttpMessageHandler();
         var httpClientFactory = new StubHttpClientFactory(handler);
-        var service = new DiscordReportService(context, httpClientFactory, NullLogger<DiscordReportService>.Instance);
+        var databaseAdminService = new StubDatabaseAdminService();
+        var service = new DiscordReportService(
+            context,
+            httpClientFactory,
+            NullLogger<DiscordReportService>.Instance,
+            databaseAdminService);
 
         var userId = Guid.NewGuid();
         context.Users.Add(new User { Id = userId, Email = "user2@example.com", UserName = "user2@example.com" });
@@ -117,7 +129,12 @@ public class DiscordReportServiceTests
         using var context = CreateDbContext();
         var handler = new CapturingHttpMessageHandler();
         var httpClientFactory = new StubHttpClientFactory(handler);
-        var service = new DiscordReportService(context, httpClientFactory, NullLogger<DiscordReportService>.Instance);
+        var databaseAdminService = new StubDatabaseAdminService();
+        var service = new DiscordReportService(
+            context,
+            httpClientFactory,
+            NullLogger<DiscordReportService>.Instance,
+            databaseAdminService);
 
         var userId = Guid.NewGuid();
         context.Users.Add(new User { Id = userId, Email = "user3@example.com", UserName = "user3@example.com" });
@@ -148,7 +165,12 @@ public class DiscordReportServiceTests
         using var context = CreateDbContext();
         var handler = new CapturingHttpMessageHandler();
         var httpClientFactory = new StubHttpClientFactory(handler);
-        var service = new DiscordReportService(context, httpClientFactory, NullLogger<DiscordReportService>.Instance);
+        var databaseAdminService = new StubDatabaseAdminService();
+        var service = new DiscordReportService(
+            context,
+            httpClientFactory,
+            NullLogger<DiscordReportService>.Instance,
+            databaseAdminService);
 
         var userId = Guid.NewGuid();
         var language = new Language { Name = "French", Code = "fr" };
@@ -195,7 +217,8 @@ public class DiscordReportServiceTests
         Assert.True(result.Sent);
         Assert.NotNull(handler.LastPayloadContent);
 
-        using var payloadDoc = JsonDocument.Parse(handler.LastPayloadContent!);
+        var payloadJson = ExtractPayloadJson(handler.LastPayloadContent);
+        using var payloadDoc = JsonDocument.Parse(payloadJson);
         var content = payloadDoc.RootElement.GetProperty("content").GetString();
         Assert.NotNull(content);
         Assert.Contains("Total words read: 200", content);
@@ -240,5 +263,48 @@ public class DiscordReportServiceTests
                 Content = new StringContent(string.Empty, Encoding.UTF8, "application/json")
             };
         }
+    }
+
+    private sealed class StubDatabaseAdminService : IDatabaseAdminService
+    {
+        public Task<string?> BackupDatabaseAsync()
+        {
+            var tempFile = Path.GetTempFileName();
+            File.WriteAllText(tempFile, "test-backup");
+            return Task.FromResult<string?>(tempFile);
+        }
+
+        public Task<bool> RestoreDatabaseAsync(Stream backupStream)
+        {
+            return Task.FromResult(true);
+        }
+    }
+
+    private static string ExtractPayloadJson(string? rawPayload)
+    {
+        if (string.IsNullOrWhiteSpace(rawPayload))
+        {
+            return "{}";
+        }
+
+        var payloadIndex = rawPayload.IndexOf("payload_json", StringComparison.Ordinal);
+        if (payloadIndex < 0)
+        {
+            return rawPayload;
+        }
+
+        var jsonStart = rawPayload.IndexOf("{\"content\"", payloadIndex, StringComparison.Ordinal);
+        if (jsonStart < 0)
+        {
+            return rawPayload;
+        }
+
+        var jsonEnd = rawPayload.IndexOf("}\r\n--", jsonStart, StringComparison.Ordinal);
+        if (jsonEnd < 0)
+        {
+            return rawPayload.Substring(jsonStart);
+        }
+
+        return rawPayload.Substring(jsonStart, jsonEnd - jsonStart + 1);
     }
 }

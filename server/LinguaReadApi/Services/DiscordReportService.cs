@@ -221,6 +221,7 @@ namespace LinguaReadApi.Services
                     return DiscordReportSendResult.Failed(messageResult.ErrorMessage ?? "Failed to send webhook.");
                 }
 
+                var attachmentFailures = new List<string>();
                 foreach (var attachmentPath in attachmentDecision.Attachments)
                 {
                     var attachmentMessage = $"Report attachment: {Path.GetFileName(attachmentPath)}";
@@ -232,8 +233,8 @@ namespace LinguaReadApi.Services
 
                     if (!attachmentResult.Success)
                     {
-                        return DiscordReportSendResult.Failed(
-                            attachmentResult.ErrorMessage ?? "Failed to send webhook attachment.");
+                        attachmentFailures.Add(
+                            $"{Path.GetFileName(attachmentPath)} ({attachmentResult.ErrorMessage ?? "failed"})");
                     }
                 }
 
@@ -247,9 +248,17 @@ namespace LinguaReadApi.Services
 
                     if (!noteResult.Success)
                     {
-                        return DiscordReportSendResult.Failed(
-                            noteResult.ErrorMessage ?? "Failed to send webhook attachment note.");
+                        attachmentFailures.Add(
+                            $"note ({noteResult.ErrorMessage ?? "failed"})");
                     }
+                }
+
+                if (attachmentFailures.Count > 0)
+                {
+                    _logger.LogWarning(
+                        "One or more Discord report attachments failed for user {UserId}: {Failures}",
+                        settings.UserId,
+                        string.Join(", ", attachmentFailures));
                 }
 
                 return DiscordReportSendResult.Success();

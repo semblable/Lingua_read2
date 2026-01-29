@@ -208,11 +208,11 @@
 
   .reading-block {
     margin: 0;
-    padding: 0.9rem 0.9rem;
+    padding: var(--mobile-reading-block-padding, 0.9rem 0.9rem);
     border-radius: 12px;
     background: var(--theme-surface-bg, #fff);
     box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
-    line-height: calc(var(--reading-line-height) + 0.2);
+    line-height: var(--mobile-reading-line-height, calc(var(--reading-line-height) + 0.2));
     text-indent: 0;
   }
 

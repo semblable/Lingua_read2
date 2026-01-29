@@ -184,6 +184,7 @@ const TextDisplay = () => {
   const [showMoreControls, setShowMoreControls] = useState(false);
   const [isWordPanelOpen, setIsWordPanelOpen] = useState(true);
   const [isMobile, setIsMobile] = useState(false);
+  const [readingStyle, setReadingStyle] = useState('balanced');
   // --- End State Declarations ---
 
   // --- Effects ---
@@ -556,20 +557,34 @@ const TextDisplay = () => {
       }
   }, []);
 
+  const mobileReadingConfig = useMemo(() => {
+    switch (readingStyle) {
+      case 'compact':
+        return { lineSpacing: 1.4, chunkSize: 3, blockPadding: '0.7rem 0.8rem' };
+      case 'spacious':
+        return { lineSpacing: 1.9, chunkSize: 1, blockPadding: '1.05rem 1rem' };
+      case 'balanced':
+      default:
+        return { lineSpacing: 1.65, chunkSize: 2, blockPadding: '0.9rem 0.9rem' };
+    }
+  }, [readingStyle]);
+
   const itemData = useMemo(() => ({
     lines: srtLines,
     currentLineId: currentSrtLineId,
     processLineContent: processTextContent,
     handleLineClick: handleLineClick,
     getFontStyling, // Pass the function as defined in step 1
-    currentLineSpacing: globalSettings.lineSpacing // Pass the current lineSpacing value
+    currentLineSpacing: isMobile ? mobileReadingConfig.lineSpacing : globalSettings.lineSpacing // Pass the current lineSpacing value
   }), [
     srtLines,
     currentSrtLineId,
     processTextContent,
     handleLineClick,
     getFontStyling,
-    globalSettings.lineSpacing // CRITICAL: itemData must update when lineSpacing changes
+    globalSettings.lineSpacing,
+    isMobile,
+    mobileReadingConfig.lineSpacing // CRITICAL: itemData must update when lineSpacing changes
   ]);
 
   // --- Bookmark Helper Functions ---
@@ -1157,7 +1172,8 @@ const TextDisplay = () => {
   const renderAudioTranscript = () => {
     if (!srtLines || srtLines.length === 0) return <p className="p-3">Loading transcript...</p>;
     // Calculate itemSize dynamically
-    const calculatedItemSize = (globalSettings.textSize * globalSettings.lineSpacing * 1.2) + 10;
+    const effectiveLineSpacing = isMobile ? mobileReadingConfig.lineSpacing : globalSettings.lineSpacing;
+    const calculatedItemSize = (globalSettings.textSize * effectiveLineSpacing * 1.2) + 10;
     const LIST_HEIGHT = textContentRef.current ? textContentRef.current.clientHeight - 30 : 600;
     return (
       <div className="audio-transcript-container" style={{ padding: '15px 0', height: '100%', overflow: 'hidden' }}>
@@ -1194,7 +1210,13 @@ const TextDisplay = () => {
        <div
          className="text-content"
          ref={textContentRef}
-         style={{ fontSize: `${globalSettings.textSize}px`, lineHeight: '1.6', fontFamily: getFontFamilyForList() }} // Use globalSettings, removed inline padding
+         style={{
+           fontSize: `${globalSettings.textSize}px`,
+           lineHeight: isMobile ? mobileReadingConfig.lineSpacing : '1.6',
+           fontFamily: getFontFamilyForList(),
+           '--mobile-reading-block-padding': mobileReadingConfig.blockPadding,
+           '--mobile-reading-line-height': mobileReadingConfig.lineSpacing
+         }} // Use globalSettings, removed inline padding
          onMouseUp={handleWordSelection} // Use the new word selection handler
         >
         {paragraphs.map((paragraph, index) => {
@@ -1205,7 +1227,7 @@ const TextDisplay = () => {
           currentSentenceIndex = nextSentenceIndex; // Update index for the next paragraph
 
           if (isMobile) {
-            const grouped = groupSentences(sentenceElements, 2);
+            const grouped = groupSentences(sentenceElements, mobileReadingConfig.chunkSize);
             return (
               <div key={`para-${index}`} className="reading-block-group">
                 {grouped.map((group, groupIndex) => (
@@ -1301,6 +1323,28 @@ const TextDisplay = () => {
 
   const renderSecondaryControls = () => (
     <>
+      {isMobile && (
+        <ButtonGroup size="sm" className="me-1" aria-label="Reading style">
+          <Button
+            variant={readingStyle === 'compact' ? 'primary' : 'outline-secondary'}
+            onClick={() => setReadingStyle('compact')}
+          >
+            Compact
+          </Button>
+          <Button
+            variant={readingStyle === 'balanced' ? 'primary' : 'outline-secondary'}
+            onClick={() => setReadingStyle('balanced')}
+          >
+            Balanced
+          </Button>
+          <Button
+            variant={readingStyle === 'spacious' ? 'primary' : 'outline-secondary'}
+            onClick={() => setReadingStyle('spacious')}
+          >
+            Spacious
+          </Button>
+        </ButtonGroup>
+      )}
       {isAudioLesson && displayMode === 'audio' && (
         <ButtonGroup size="sm" className="me-1" title={`Playback Speed: ${playbackRate.toFixed(2)}x`}>
           <Button variant="outline-secondary" onClick={() => changePlaybackRate(-0.05)} disabled={playbackRate <= 0.5}>-</Button>
@@ -1340,6 +1384,7 @@ const TextDisplay = () => {
                 .catch(err => console.error('[Save Settings] Failed to save panel width via API:', err));
         }} title="Decrease reading area (Narrower)">▶</Button>
       </ButtonGroup>
+      {!isMobile && (
       <ButtonGroup size="sm" className="me-1">
         <OverlayTrigger placement="top" overlay={<Tooltip>Line Spacing: Default (1.5)</Tooltip>}>
           <Button
@@ -1369,6 +1414,7 @@ const TextDisplay = () => {
           </Button>
         </OverlayTrigger>
       </ButtonGroup>
+      )}
       {text && !loading && ( <Button variant="info" size="sm" onClick={handleFullTextTranslation} className="me-1">Translate Text</Button> )}
       {text && !loading && ( <Button variant="secondary" size="sm" onClick={handleTranslateUnknownWords} disabled={translatingUnknown} className="ms-1" title="Translate unknown/learning words">{translatingUnknown ? <Spinner size="sm"/> : 'Translate ?'}</Button> )}
       {text && !loading && ( <Button variant="outline-success" size="sm" onClick={handleMarkAllUnknownAsKnown} disabled={isMarkingAll} className="ms-1" title="Mark all untracked words as Known">{isMarkingAll ? <Spinner size="sm"/> : 'Mark All Known'}</Button> )}

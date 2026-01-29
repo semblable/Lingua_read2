@@ -103,7 +103,7 @@ function App() {
 
   // Theme management useEffect (unchanged)
   useEffect(() => {
-    const savedTheme = localStorage.getItem('theme') || 'light';
+    const savedTheme = localStorage.getItem('theme') || 'dark';
 
     const applyTheme = (theme) => {
       document.body.classList.remove('light-theme', 'dark-theme', 'classic-dark-theme');

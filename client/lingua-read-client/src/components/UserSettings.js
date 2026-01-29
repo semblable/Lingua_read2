@@ -7,7 +7,7 @@ const UserSettings = () => {
   const { token } = useAuthStore();
   const [settings, setSettings] = useState({
     textSize: 'medium',
-    theme: 'light',
+    theme: 'dark',
     highlighting: 'on',
     highlightKnownWords: true
   });

@@ -7,7 +7,7 @@ import {
 import { SettingsContext } from '../contexts/SettingsContext'; // Import SettingsContext
 const UserSettings = () => {
   const [settings, setSettings] = useState({
-    theme: 'light',
+    theme: 'dark',
     textSize: 16,
     textFont: 'default',
     leftPanelWidth: 85, // Added initial state
@@ -47,7 +47,7 @@ const UserSettings = () => {
        try {
          const data = await getUserSettings();
          setSettings({
-           theme: data.theme || 'light',
+           theme: data.theme || 'dark',
            textSize: data.textSize || 16,
            textFont: data.textFont || 'default',
            leftPanelWidth: data.leftPanelWidth || 85, // Fetch panel width

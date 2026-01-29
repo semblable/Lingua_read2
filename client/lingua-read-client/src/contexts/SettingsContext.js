@@ -3,7 +3,7 @@ import { getUserSettings } from '../utils/api'; // Assuming getUserSettings is i
 
 // Default settings structure
 const defaultSettings = {
-  theme: 'light',
+  theme: 'dark',
   textSize: 16,
   textFont: 'default',
   leftPanelWidth: 85,

@@ -798,13 +798,13 @@ namespace LinguaReadApi.Controllers
             
             // Update UserLanguageStatistics for completed lesson
             var stats = await _context.UserLanguageStatistics
-                .FirstOrDefaultAsync(uls => uls.UserId == userId && uls.LanguageId == language.LanguageId);
+                .FirstOrDefaultAsync(uls => uls.UserId == userId && uls.LanguageId == book.LanguageId);
             if (stats == null)
             {
                 stats = new UserLanguageStatistics
                 {
                     UserId = userId,
-                    LanguageId = language.LanguageId,
+                    LanguageId = book.LanguageId,
                     TotalWordsRead = totalWordCount,
                     TotalTextsCompleted = 1,
                     LastUpdatedAt = DateTime.UtcNow

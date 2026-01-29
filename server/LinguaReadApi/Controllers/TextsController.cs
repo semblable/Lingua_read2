@@ -770,23 +770,27 @@ namespace LinguaReadApi.Controllers
             return result;
         }
 
-        // Normalizes the base name for better matching (lowercase, remove common separators/whitespace)
+        // Normalizes the base name for better matching (lowercase, remove language suffixes and trailing punctuation)
         private string NormalizeBaseName(string? name)
         {
             if (string.IsNullOrWhiteSpace(name)) return string.Empty;
 
-            // 1. Get filename without extension
+            // 1. Get filename without extension and normalize unicode
             string stem = Path.GetFileNameWithoutExtension(name);
             if (string.IsNullOrWhiteSpace(stem)) return string.Empty;
+            
+            stem = stem.Normalize(System.Text.NormalizationForm.FormKC);
 
-            // 2. Define known language/variant suffixes (longest first)
+            // 2. Define known language/variant suffixes with flexible separators (longest patterns first)
             var suffixes = new List<string> {
-                "_fr", "_en", "_es", "_de", "_it", "_pt", "_ru", // Add more as needed
-                "fr", "en", "es", "de", "it", "pt", "ru" // Variants without underscore
-                // Add other potential separators/codes if necessary
+                "__fr", "__en", "__es", "__de", "__it", "__pt", "__ru", "__zh", "__ja", "__ko", // Double underscore
+                "_fr", "_en", "_es", "_de", "_it", "_pt", "_ru", "_zh", "_ja", "_ko", // Single underscore
+                "-fr", "-en", "-es", "-de", "-it", "-pt", "-ru", "-zh", "-ja", "-ko", // Hyphen
+                ".fr", ".en", ".es", ".de", ".it", ".pt", ".ru", ".zh", ".ja", ".ko", // Dot
+                " fr", " en", " es", " de", " it", " pt", " ru", " zh", " ja", " ko" // Space
             };
 
-            // 3. Find and remove the longest matching suffix at the end
+            // 3. Find and remove the longest matching suffix at the end (case-insensitive)
             string? longestMatch = suffixes
                                     .Where(suffix => stem.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
                                     .OrderByDescending(suffix => suffix.Length)
@@ -797,9 +801,13 @@ namespace LinguaReadApi.Controllers
                 stem = stem.Substring(0, stem.Length - longestMatch.Length);
             }
 
-            // 4. Convert to lowercase (optional: remove extra spaces/hyphens if needed, but might be less robust)
-            // Keeping it simple for now to focus on pairing
-            return stem.ToLowerInvariant().Trim(); // Trim any potential leftover whitespace
+            // 4. Trim whitespace, collapse repeated spaces, and remove trailing punctuation
+            stem = stem.Trim();
+            stem = System.Text.RegularExpressions.Regex.Replace(stem, @"\s+", " "); // Collapse spaces
+            stem = System.Text.RegularExpressions.Regex.Replace(stem, @"[._-]+$", ""); // Remove trailing punctuation
+
+            // 5. Convert to lowercase
+            return stem.ToLowerInvariant();
         }
 
         // --- End: Fuzzy Parsing Helper ---

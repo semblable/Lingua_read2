@@ -91,17 +91,18 @@ const BatchAudioCreate = () => {
         // Function to extract base name and lang from SRT with flexible suffix patterns
         const extractSrtInfo = (srtFileName) => {
              const patterns = [
-                 /^(.*?)__([a-z]{2,3})(?:[-_]?([a-z]{2}))?\.srt$/i, // base__fr or base__fr-CA
-                 /^(.*?)_([a-z]{2,3})(?:[-_]?([a-z]{2}))?\.srt$/i,  // base_fr or base_fr_CA
-                 /^(.*?)[ -]([a-z]{2,3})(?:[-_]?([a-z]{2}))?\.srt$/i, // base fr or base-fr
-                 /^(.*?)\.([a-z]{2,3})(?:[-_]?([a-z]{2}))?\.srt$/i  // base.fr or base.fr-CA
+                 /^(.+?)__([a-z]{2,3})(?:[-_]?([a-z]{2}))?\.srt$/i, // base__fr or base__fr-CA
+                 /^(.+?)_([a-z]{2,3})(?:[-_]?([a-z]{2}))?\.srt$/i,  // base_fr or base_fr_CA
+                 /^(.+?)[ -]([a-z]{2,3})(?:[-_]?([a-z]{2}))?\.srt$/i, // base fr or base-fr
+                 /^(.+?)\.([a-z]{2,3})(?:[-_]?([a-z]{2}))?\.srt$/i  // base.fr or base.fr-CA
              ];
 
              for (const pattern of patterns) {
                  const match = srtFileName.match(pattern);
                  if (match) {
+                     console.log(`[Debug extractSrtInfo] File: ${srtFileName}, Matched pattern, Base: "${match[1]}", Lang: ${match[2]}`); // DEBUG
                      return {
-                         baseName: match[1],
+                         baseName: match[1].trim(), // Trim whitespace from base name
                          lang: match[2].toLowerCase(),
                          originalFullName: srtFileName
                      };
@@ -109,6 +110,7 @@ const BatchAudioCreate = () => {
              }
 
              // If none matched, it's an invalid format
+             console.log(`[Debug extractSrtInfo] File: ${srtFileName}, NO PATTERN MATCHED`); // DEBUG
              return { error: 'Invalid Format (expected base + lang suffix like __fr, _fr, -fr, .fr)', originalFullName: srtFileName };
         };
 
@@ -124,9 +126,9 @@ const BatchAudioCreate = () => {
         // 1. Process and Normalize MP3s
         console.log("[Debug Validation] --- Processing MP3s ---"); // DEBUG LOG
         mp3Files.forEach(mp3File => {
-            const rawBaseName = mp3File.name.replace(/\.mp3$/i, '');
+            const rawBaseName = mp3File.name.replace(/\.mp3$/i, '').trim(); // Trim whitespace
             const normalized = normalizeBaseName(rawBaseName);
-            console.log(`[Debug MP3] File: ${mp3File.name}, Raw Base: "${rawBaseName}", Normalized: "${normalized}"`); // DEBUG LOG
+            console.log(`[Debug MP3] File: "${mp3File.name}", Raw Base: "${rawBaseName}", Normalized: "${normalized}"`); // DEBUG LOG
             if (!mp3sByNormalizedBase.has(normalized)) mp3sByNormalizedBase.set(normalized, []);
             mp3sByNormalizedBase.get(normalized).push(mp3File);
         });

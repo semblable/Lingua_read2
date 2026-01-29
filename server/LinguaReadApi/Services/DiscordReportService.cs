@@ -182,10 +182,10 @@ namespace LinguaReadApi.Services
                 return DiscordReportSendResult.SkippedResult("Dry run enabled.");
             }
 
-            var sent = await PostWebhookAsync(settings.DiscordWebhookUrl, message, cancellationToken);
-            return sent
+            var sendResult = await PostWebhookAsync(settings.DiscordWebhookUrl, message, cancellationToken);
+            return sendResult.Success
                 ? DiscordReportSendResult.Success()
-                : DiscordReportSendResult.Failed("Failed to send webhook.");
+                : DiscordReportSendResult.Failed(sendResult.ErrorMessage ?? "Failed to send webhook.");
         }
 
         private string BuildReportMessage(
@@ -267,7 +267,7 @@ namespace LinguaReadApi.Services
             return message;
         }
 
-        private async Task<bool> PostWebhookAsync(
+        private async Task<DiscordWebhookPostResult> PostWebhookAsync(
             string webhookUrl,
             string message,
             CancellationToken cancellationToken)
@@ -281,7 +281,7 @@ namespace LinguaReadApi.Services
 
                 if (response.IsSuccessStatusCode)
                 {
-                    return true;
+                    return DiscordWebhookPostResult.SuccessResult();
                 }
 
                 var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
@@ -289,12 +289,16 @@ namespace LinguaReadApi.Services
                     "Discord webhook returned {StatusCode}: {ResponseBody}",
                     response.StatusCode,
                     responseBody);
-                return false;
+                var trimmedBody = responseBody?.Length > 200
+                    ? responseBody[..200] + "..."
+                    : responseBody;
+                return DiscordWebhookPostResult.Failed(
+                    $"Discord webhook returned {(int)response.StatusCode} {response.ReasonPhrase}. {trimmedBody}".Trim());
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to send Discord webhook message.");
-                return false;
+                return DiscordWebhookPostResult.Failed($"Failed to send Discord webhook: {ex.Message}");
             }
         }
 
@@ -395,5 +399,11 @@ namespace LinguaReadApi.Services
         public static DiscordReportSendResult Success() => new(true, false, null);
         public static DiscordReportSendResult SkippedResult(string reason) => new(false, true, reason);
         public static DiscordReportSendResult Failed(string reason) => new(false, false, reason);
+    }
+
+    internal readonly record struct DiscordWebhookPostResult(bool Success, string? ErrorMessage)
+    {
+        public static DiscordWebhookPostResult SuccessResult() => new(true, null);
+        public static DiscordWebhookPostResult Failed(string errorMessage) => new(false, errorMessage);
     }
 }

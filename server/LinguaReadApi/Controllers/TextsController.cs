@@ -801,10 +801,15 @@ namespace LinguaReadApi.Controllers
                 stem = stem.Substring(0, stem.Length - longestMatch.Length);
             }
 
-            // 4. Trim whitespace, collapse repeated spaces, and remove trailing punctuation
+            // 4. Trim whitespace, collapse repeated spaces, and remove trailing punctuation/whitespace
             stem = stem.Trim();
             stem = System.Text.RegularExpressions.Regex.Replace(stem, @"\s+", " "); // Collapse spaces
-            stem = System.Text.RegularExpressions.Regex.Replace(stem, @"[._-]+$", ""); // Remove trailing punctuation
+            
+            // Remove trailing punctuation and spaces iteratively (to handle mixed cases like "name_ ")
+            while (System.Text.RegularExpressions.Regex.IsMatch(stem, @"[._\-\s]+$"))
+            {
+                stem = System.Text.RegularExpressions.Regex.Replace(stem, @"[._\-\s]+$", "");
+            }
 
             // 5. Convert to lowercase
             return stem.ToLowerInvariant();

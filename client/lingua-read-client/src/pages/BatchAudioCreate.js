@@ -83,8 +83,10 @@ const BatchAudioCreate = () => {
             let base = name.normalize('NFKC').replace(/\.(mp3|srt)$/i, '');
             // Trim whitespace and collapse repeated spaces
             base = base.trim().replace(/\s+/g, ' ');
-            // Trim trailing dots/underscores/dashes repeatedly
-            base = base.replace(/[._-]+$/, '');
+            // Trim trailing dots/underscores/dashes/spaces repeatedly (iteratively to handle mixed cases)
+            while (/[._\-\s]+$/.test(base)) {
+                base = base.replace(/[._\-\s]+$/, '');
+            }
             return base.toLowerCase();
         };
 

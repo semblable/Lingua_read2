@@ -188,21 +188,13 @@ namespace LinguaReadApi.Services
                 return DiscordReportSendResult.SkippedResult("Dry run enabled.");
             }
 
-            string? backupFilePath = null;
             string? htmlReportPath = null;
             try
             {
                 var htmlReport = BuildReportHtml(startUtc, endUtc, userActivities);
                 htmlReportPath = SaveHtmlReport(htmlReport, settings.UserId, startUtc, endUtc);
 
-                backupFilePath = await _databaseAdminService.BackupDatabaseAsync();
-                if (string.IsNullOrWhiteSpace(backupFilePath) || !System.IO.File.Exists(backupFilePath))
-                {
-                    _logger.LogError("Database backup failed or missing for user {UserId}.", settings.UserId);
-                    return DiscordReportSendResult.Failed("Database backup failed.");
-                }
-
-                var attachments = new List<string> { backupFilePath };
+                var attachments = new List<string>();
                 if (!string.IsNullOrWhiteSpace(htmlReportPath) && System.IO.File.Exists(htmlReportPath))
                 {
                     attachments.Add(htmlReportPath);
@@ -269,18 +261,6 @@ namespace LinguaReadApi.Services
             }
             finally
             {
-                if (!string.IsNullOrWhiteSpace(backupFilePath) && System.IO.File.Exists(backupFilePath))
-                {
-                    try
-                    {
-                        System.IO.File.Delete(backupFilePath);
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogWarning(ex, "Failed to delete temporary backup file {BackupFilePath}.", backupFilePath);
-                    }
-                }
-
                 if (!string.IsNullOrWhiteSpace(htmlReportPath) && System.IO.File.Exists(htmlReportPath))
                 {
                     try

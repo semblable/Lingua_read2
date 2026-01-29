@@ -18,7 +18,7 @@ namespace LinguaReadApi.Services
     {
         private const int MaxDiscordMessageLength = 1900;
         private const int MaxLanguagesPerUser = 8;
-        private const long MaxDiscordUploadBytes = 8L * 1024 * 1024;
+        private const long MaxDiscordUploadBytes = 7L * 1024 * 1024;
 
         private static readonly HashSet<string> ReadingActivityTypes = new(StringComparer.OrdinalIgnoreCase)
         {
@@ -457,12 +457,11 @@ namespace LinguaReadApi.Services
 
         private static HttpContent CreateWebhookContent(string message, IReadOnlyList<string> attachmentPaths)
         {
-            var payload = JsonSerializer.Serialize(new { content = message });
             var hasAttachments = attachmentPaths.Any(path => !string.IsNullOrWhiteSpace(path) && File.Exists(path));
             if (hasAttachments)
             {
                 var multipartContent = new MultipartFormDataContent();
-                multipartContent.Add(new StringContent(payload, Encoding.UTF8, "application/json"), "payload_json");
+                multipartContent.Add(new StringContent(message ?? string.Empty, Encoding.UTF8), "content");
 
                 var index = 0;
                 foreach (var attachmentPath in attachmentPaths)
@@ -483,6 +482,7 @@ namespace LinguaReadApi.Services
                 return multipartContent;
             }
 
+            var payload = JsonSerializer.Serialize(new { content = message });
             return new StringContent(payload, Encoding.UTF8, "application/json");
         }
 

@@ -73,9 +73,9 @@ public class DiscordReportServiceTests
         var result = await service.SendDueWeeklyReportsAsync(options, nowUtc, false, CancellationToken.None);
 
         Assert.Equal(1, result.SentCount);
-        Assert.NotNull(handler.LastPayloadContent);
+        Assert.NotNull(handler.FirstPayloadContent);
 
-        var payloadJson = ExtractPayloadJson(handler.LastPayloadContent);
+        var payloadJson = ExtractPayloadJson(handler.FirstPayloadContent);
         using var payloadDoc = JsonDocument.Parse(payloadJson);
         var content = payloadDoc.RootElement.GetProperty("content").GetString();
         Assert.NotNull(content);
@@ -156,7 +156,7 @@ public class DiscordReportServiceTests
         var result = await service.SendDueWeeklyReportsAsync(options, nowUtc, true, CancellationToken.None);
 
         Assert.Equal(1, result.SentCount);
-        Assert.NotNull(handler.LastPayloadContent);
+        Assert.NotNull(handler.FirstPayloadContent);
     }
 
     [Fact]
@@ -215,9 +215,9 @@ public class DiscordReportServiceTests
         var result = await service.SendReportForUserAsync(settings, startUtc, endUtc, false, CancellationToken.None);
 
         Assert.True(result.Sent);
-        Assert.NotNull(handler.LastPayloadContent);
+        Assert.NotNull(handler.FirstPayloadContent);
 
-        var payloadJson = ExtractPayloadJson(handler.LastPayloadContent);
+        var payloadJson = ExtractPayloadJson(handler.FirstPayloadContent);
         using var payloadDoc = JsonDocument.Parse(payloadJson);
         var content = payloadDoc.RootElement.GetProperty("content").GetString();
         Assert.NotNull(content);
@@ -247,6 +247,7 @@ public class DiscordReportServiceTests
 
     private sealed class CapturingHttpMessageHandler : HttpMessageHandler
     {
+        public string? FirstPayloadContent { get; private set; }
         public string? LastPayloadContent { get; private set; }
 
         protected override async Task<HttpResponseMessage> SendAsync(
@@ -256,6 +257,7 @@ public class DiscordReportServiceTests
             if (request.Content != null)
             {
                 LastPayloadContent = await request.Content.ReadAsStringAsync(cancellationToken);
+                FirstPayloadContent ??= LastPayloadContent;
             }
 
             return new HttpResponseMessage(HttpStatusCode.NoContent)

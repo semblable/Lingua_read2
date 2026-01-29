@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Button, Spinner, Alert, ProgressBar, ButtonGroup, Form } from 'react-bootstrap';
 import { getAudiobookProgress, updateAudiobookProgress, logListeningActivity } from '../utils/api';
 import { formatTime } from '../utils/helpers';
+import './AudiobookPlayer.css';
 
 const AudiobookPlayer = ({ book }) => {
   const { audiobookTracks = [], bookId, languageId } = book || {};
@@ -567,7 +568,7 @@ const AudiobookPlayer = ({ book }) => {
       <audio ref={audioRef} style={{ display: 'none' }} />
 
       {/* Top Row: Track Info + Progress */}
-      <div className="d-flex align-items-center mb-0 gap-2"> {/* Reduced margin-bottom */}
+      <div className="audiobook-player__progress d-flex align-items-center mb-0 gap-2"> {/* Reduced margin-bottom */}
          <small className="text-muted text-nowrap">
              Trk {currentTrackIndex + 1}/{audiobookTracks.length}
          </small>
@@ -590,9 +591,9 @@ const AudiobookPlayer = ({ book }) => {
       </div>
 
       {/* Dense Controls */}
-      <div className="d-flex justify-content-between align-items-center gap-1">
+      <div className="audiobook-player__controls d-flex justify-content-between align-items-center gap-1">
         {/* Speed Controls */}
-        <ButtonGroup size="sm">
+        <ButtonGroup size="sm" className="audiobook-player__speed">
           <Button
             variant="outline-secondary"
             size="sm"
@@ -623,7 +624,7 @@ const AudiobookPlayer = ({ book }) => {
         </ButtonGroup>
 
         {/* Main Controls */}
-        <div className="d-flex align-items-center gap-1">
+        <div className="audiobook-player__transport d-flex align-items-center gap-1">
           <Button
             variant="outline-secondary"
             size="sm"
@@ -658,7 +659,7 @@ const AudiobookPlayer = ({ book }) => {
         </div>
 
         {/* Track Navigation */}
-        <ButtonGroup size="sm">
+        <ButtonGroup size="sm" className="audiobook-player__tracks">
           <Button
             variant="outline-secondary"
             size="sm"
@@ -689,7 +690,7 @@ const AudiobookPlayer = ({ book }) => {
           </Button>
         </ButtonGroup>
         {/* Volume Control */}
-        <div className="d-flex align-items-center gap-1 ms-2" style={{ minWidth: 120 }}>
+        <div className="audiobook-player__volume d-flex align-items-center gap-1 ms-2" style={{ minWidth: 120 }}>
           <i
             className={`bi ${isMuted || volume === 0 ? 'bi-volume-mute' : 'bi-volume-up'}`}
             style={{ fontSize: '1.1rem', color: 'var(--bs-body-color)', cursor: 'pointer' }}

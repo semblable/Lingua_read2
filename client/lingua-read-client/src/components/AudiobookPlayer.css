@@ -1,0 +1,30 @@
+.audiobook-player__controls {
+  flex-wrap: wrap;
+}
+
+.audiobook-player__progress {
+  min-width: 0;
+}
+
+@media (max-width: 768px) {
+  .audiobook-player__controls {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.5rem;
+  }
+
+  .audiobook-player__progress {
+    gap: 0.5rem;
+  }
+
+  .audiobook-player__speed,
+  .audiobook-player__tracks,
+  .audiobook-player__transport {
+    justify-content: center;
+    width: 100%;
+  }
+
+  .audiobook-player__volume {
+    display: none;
+  }
+}

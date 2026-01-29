@@ -8,6 +8,20 @@
   overflow-x: hidden;
 }
 
+.lesson-header .lesson-header-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.lesson-header-top {
+  gap: var(--space-sm);
+}
+
+.lesson-header-player {
+  min-width: 360px;
+}
+
 /* Resizable container layout */
 .resizable-container {
   display: flex;
@@ -86,6 +100,23 @@
 
 /* Media queries for responsive design */
 @media (max-width: 768px) {
+  .lesson-header-player {
+    min-width: 100%;
+    margin: 0;
+  }
+
+  .lesson-header-actions {
+    align-items: stretch;
+  }
+
+  .lesson-controls-collapse {
+    border-top: 1px solid var(--theme-border-color, #e9ecef);
+    padding-top: var(--space-xs);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
   .resizable-container {
     flex-direction: column;
   }
@@ -98,11 +129,21 @@
   }
 
   .left-panel {
-    height: 60vh !important;
+    height: 65vh !important;
   }
 
   .right-panel {
-    height: 40vh !important;
+    height: 35vh !important;
+  }
+
+  .right-panel.word-panel-closed {
+    display: none;
+  }
+
+  .text-content p {
+    text-indent: 1rem;
+    padding-left: 0;
+    padding-right: 0;
   }
 }
 /* --- Bookmark Styles --- */

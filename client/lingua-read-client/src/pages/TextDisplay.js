@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, useRef, useMemo, useContext } from 'react'; // Added useContext
-import { Container, Card, Spinner, Alert, Button, Modal, Form, Row, Col, Badge, ProgressBar, OverlayTrigger, Tooltip, ButtonGroup } from 'react-bootstrap';
+import { Container, Card, Spinner, Alert, Button, Modal, Form, Row, Col, Badge, ProgressBar, OverlayTrigger, Tooltip, ButtonGroup, Collapse } from 'react-bootstrap';
 import { useParams, useNavigate } from 'react-router-dom'; // Removed unused Link import
 import { FixedSizeList as List } from 'react-window';
 import {
@@ -181,6 +181,8 @@ const TextDisplay = () => {
   const [languageConfig, setLanguageConfig] = useState(null); // State for language settings (Phase 3)
   const [embeddedUrl, setEmbeddedUrl] = useState(null); // State for embedded dictionary iframe URL (Phase 3)
   const [bookmarkedIndices, setBookmarkedIndices] = useState([]); // State for bookmarked sentence indices
+  const [showMoreControls, setShowMoreControls] = useState(false);
+  const [isWordPanelOpen, setIsWordPanelOpen] = useState(true);
   // --- End State Declarations ---
 
   // --- Effects ---
@@ -188,6 +190,16 @@ const TextDisplay = () => {
     console.log('[TextDisplay] globalSettings.lineSpacing updated:', globalSettings.lineSpacing);
   }, [globalSettings.lineSpacing]);
   // --- End Effects ---
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const mediaQuery = window.matchMedia('(max-width: 768px)');
+    const handleMediaChange = (event) => {
+      setIsWordPanelOpen(!event.matches);
+    };
+    setIsWordPanelOpen(!mediaQuery.matches);
+    mediaQuery.addEventListener('change', handleMediaChange);
+    return () => mediaQuery.removeEventListener('change', handleMediaChange);
+  }, []);
 
   // --- Helper Functions & Memoized Values (Define BEFORE useEffects that use them) ---
 
@@ -1246,112 +1258,148 @@ const TextDisplay = () => {
       // DEBUG: Log isAudioLesson state before rendering
       console.log(`[Render Check] isAudioLesson state: ${isAudioLesson}`);
 
+  const renderSecondaryControls = () => (
+    <>
+      {isAudioLesson && displayMode === 'audio' && (
+        <ButtonGroup size="sm" className="me-1" title={`Playback Speed: ${playbackRate.toFixed(2)}x`}>
+          <Button variant="outline-secondary" onClick={() => changePlaybackRate(-0.05)} disabled={playbackRate <= 0.5}>-</Button>
+          <Button variant="outline-secondary" disabled style={{ minWidth: '45px', textAlign: 'center' }}>{playbackRate.toFixed(2)}x</Button>
+          <Button variant="outline-secondary" onClick={() => changePlaybackRate(0.05)} disabled={playbackRate >= 2.0}>+</Button>
+        </ButtonGroup>
+      )}
+      <ButtonGroup size="sm" className="me-1">
+        <Button variant="outline-secondary" onClick={() => {
+            const newSize = Math.max(12, globalSettings.textSize - 2);
+            console.log('[Save Settings] Saving Text Size via API:', newSize);
+            updateSetting('textSize', newSize);
+            updateUserSettings({ textSize: newSize })
+                .catch(err => console.error('[Save Settings] Failed to save text size via API:', err));
+        }} title="Decrease text size">A-</Button>
+        <Button variant="outline-secondary" onClick={() => {
+            const newSize = Math.min(32, globalSettings.textSize + 2);
+            console.log('[Save Settings] Saving Text Size via API:', newSize);
+            updateSetting('textSize', newSize);
+            updateUserSettings({ textSize: newSize })
+                .catch(err => console.error('[Save Settings] Failed to save text size via API:', err));
+        }} title="Increase text size">A+</Button>
+      </ButtonGroup>
+      <ButtonGroup size="sm" className="me-1">
+        <Button variant="outline-secondary" onClick={() => {
+            const newWidth = Math.min(leftPanelWidth + 5, 85);
+            setLeftPanelWidth(newWidth);
+            updateSetting('leftPanelWidth', newWidth);
+            updateUserSettings({ leftPanelWidth: newWidth })
+                .catch(err => console.error('[Save Settings] Failed to save panel width via API:', err));
+        }} title="Increase reading area (Wider)">◀</Button>
+        <Button variant="outline-secondary" onClick={() => {
+            const newWidth = Math.max(leftPanelWidth - 5, 20);
+            setLeftPanelWidth(newWidth);
+            updateSetting('leftPanelWidth', newWidth);
+            updateUserSettings({ leftPanelWidth: newWidth })
+                .catch(err => console.error('[Save Settings] Failed to save panel width via API:', err));
+        }} title="Decrease reading area (Narrower)">▶</Button>
+      </ButtonGroup>
+      <ButtonGroup size="sm" className="me-1">
+        <OverlayTrigger placement="top" overlay={<Tooltip>Line Spacing: Default (1.5)</Tooltip>}>
+          <Button
+            variant={parseFloat(globalSettings.lineSpacing) === 1.5 ? 'primary' : 'outline-secondary'}
+            onClick={() => handleLineSpacingChange(1.5)}
+            aria-label="Set line spacing to default"
+          >
+            1.5
+          </Button>
+        </OverlayTrigger>
+        <OverlayTrigger placement="top" overlay={<Tooltip>Line Spacing: Relaxed (1.75)</Tooltip>}>
+          <Button
+            variant={parseFloat(globalSettings.lineSpacing) === 1.75 ? 'primary' : 'outline-secondary'}
+            onClick={() => handleLineSpacingChange(1.75)}
+            aria-label="Set line spacing to relaxed"
+          >
+            1.75
+          </Button>
+        </OverlayTrigger>
+        <OverlayTrigger placement="top" overlay={<Tooltip>Line Spacing: Spacious (2.0)</Tooltip>}>
+          <Button
+            variant={parseFloat(globalSettings.lineSpacing) === 2.0 ? 'primary' : 'outline-secondary'}
+            onClick={() => handleLineSpacingChange(2.0)}
+            aria-label="Set line spacing to spacious"
+          >
+            2.0
+          </Button>
+        </OverlayTrigger>
+      </ButtonGroup>
+      {text && !loading && ( <Button variant="info" size="sm" onClick={handleFullTextTranslation} className="me-1">Translate Text</Button> )}
+      {text && !loading && ( <Button variant="secondary" size="sm" onClick={handleTranslateUnknownWords} disabled={translatingUnknown} className="ms-1" title="Translate unknown/learning words">{translatingUnknown ? <Spinner size="sm"/> : 'Translate ?'}</Button> )}
+      {text && !loading && ( <Button variant="outline-success" size="sm" onClick={handleMarkAllUnknownAsKnown} disabled={isMarkingAll} className="ms-1" title="Mark all untracked words as Known">{isMarkingAll ? <Spinner size="sm"/> : 'Mark All Known'}</Button> )}
+    </>
+  );
+
   // --- Main Return JSX ---
   return (
-    <div className="text-display-wrapper px-0 mx-0 w-100">
+    <div className="text-display-wrapper lesson-page px-0 mx-0 w-100">
       {/* Header Card - Add Playback Speed Controls */}
-      <Card className="shadow-sm mb-3 border-0 rounded-0">
-        <Card.Body className="p-2">
-           <div className="d-flex justify-content-between align-items-center flex-wrap">
-             <div>
+      <Card className="shadow-sm mb-3 border-0 rounded-0 lesson-header">
+        <Card.Body className="p-2 lesson-header-body">
+           <div className="lesson-header-top d-flex justify-content-between align-items-start flex-wrap">
+             <div className="lesson-title">
                <h2 className="mb-1">{text.title}</h2>
                <p className="text-muted mb-0 small">Lang: {text.languageName || 'N/A'} | Words: {words.length}</p>
              </div>
-             <div className="d-flex gap-2 flex-wrap mt-2 mt-md-0 align-items-center">
-               {/* Audiobook Player Integration - ONLY if NOT an audio lesson */}
-               {!isAudioLesson && book && book.audiobookTracks && book.audiobookTracks.length > 0 && (
-                 <div className="flex-grow-1 mx-2" style={{ minWidth: '450px' }}> {/* Increased minWidth significantly */}
-                    <AudiobookPlayer book={book} />
-                 </div>
-               )}
-               {/* Playback Speed Controls */}
-               {isAudioLesson && displayMode === 'audio' && (
-                 <ButtonGroup size="sm" className="me-1" title={`Playback Speed: ${playbackRate.toFixed(2)}x`}>
-                   <Button variant="outline-secondary" onClick={() => changePlaybackRate(-0.05)} disabled={playbackRate <= 0.5}>-</Button>
-                   <Button variant="outline-secondary" disabled style={{ minWidth: '45px', textAlign: 'center' }}>{playbackRate.toFixed(2)}x</Button>
-                   <Button variant="outline-secondary" onClick={() => changePlaybackRate(0.05)} disabled={playbackRate >= 2.0}>+</Button>
-                 </ButtonGroup>
-               )}
-               {/* Existing Controls */}
-               <ButtonGroup size="sm" className="me-1">
-                  {/* Update font size via API and context */}
-                  <Button variant="outline-secondary" onClick={() => {
-                      const newSize = Math.max(12, globalSettings.textSize - 2);
-                      console.log('[Save Settings] Saving Text Size via API:', newSize);
-                      updateSetting('textSize', newSize); // Update context immediately
-                      updateUserSettings({ textSize: newSize }) // Call API
-                          .catch(err => console.error('[Save Settings] Failed to save text size via API:', err));
-                  }} title="Decrease text size">A-</Button>
-                  <Button variant="outline-secondary" onClick={() => {
-                      const newSize = Math.min(32, globalSettings.textSize + 2);
-                      console.log('[Save Settings] Saving Text Size via API:', newSize);
-                      updateSetting('textSize', newSize); // Update context immediately
-                      updateUserSettings({ textSize: newSize }) // Call API
-                          .catch(err => console.error('[Save Settings] Failed to save text size via API:', err));
-                  }} title="Increase text size">A+</Button>
-               </ButtonGroup>
-               {/* Re-added Panel resize buttons */}
-               <ButtonGroup size="sm" className="me-1">
-                 <Button variant="outline-secondary" onClick={() => {
-                     const newWidth = Math.min(leftPanelWidth + 5, 85); // Increase width, max 85
-                     setLeftPanelWidth(newWidth);
-                     updateSetting('leftPanelWidth', newWidth); // Update context
-                     updateUserSettings({ leftPanelWidth: newWidth }) // Save via API
-                         .catch(err => console.error('[Save Settings] Failed to save panel width via API:', err));
-                 }} title="Increase reading area (Wider)">◀</Button>
-                 <Button variant="outline-secondary" onClick={() => {
-                     const newWidth = Math.max(leftPanelWidth - 5, 20); // Decrease width, min 20
-                     setLeftPanelWidth(newWidth);
-                     updateSetting('leftPanelWidth', newWidth); // Update context
-                     updateUserSettings({ leftPanelWidth: newWidth }) // Save via API
-                         .catch(err => console.error('[Save Settings] Failed to save panel width via API:', err));
-                 }} title="Decrease reading area (Narrower)">▶</Button>
-               </ButtonGroup>
-{/* Line Spacing Controls */}
-               <ButtonGroup size="sm" className="me-1">
-                 <OverlayTrigger placement="top" overlay={<Tooltip>Line Spacing: Default (1.5)</Tooltip>}>
-                   <Button
-                     variant={parseFloat(globalSettings.lineSpacing) === 1.5 ? 'primary' : 'outline-secondary'}
-                     onClick={() => handleLineSpacingChange(1.5)}
-                     aria-label="Set line spacing to default"
-                   >
-                     1.5
-                   </Button>
-                 </OverlayTrigger>
-                 <OverlayTrigger placement="top" overlay={<Tooltip>Line Spacing: Relaxed (1.75)</Tooltip>}>
-                   <Button
-                     variant={parseFloat(globalSettings.lineSpacing) === 1.75 ? 'primary' : 'outline-secondary'}
-                     onClick={() => handleLineSpacingChange(1.75)}
-                     aria-label="Set line spacing to relaxed"
-                   >
-                     1.75
-                   </Button>
-                 </OverlayTrigger>
-                 <OverlayTrigger placement="top" overlay={<Tooltip>Line Spacing: Spacious (2.0)</Tooltip>}>
-                   <Button
-                     variant={parseFloat(globalSettings.lineSpacing) === 2.0 ? 'primary' : 'outline-secondary'}
-                     onClick={() => handleLineSpacingChange(2.0)}
-                     aria-label="Set line spacing to spacious"
-                   >
-                     2.0
-                   </Button>
-                 </OverlayTrigger>
-               </ButtonGroup>
-               {isAudioLesson && ( <Button variant="outline-info" size="sm" onClick={() => setDisplayMode(p => p === 'audio' ? 'text' : 'audio')} title={displayMode === 'audio' ? 'Text View' : 'Audio View'} className="me-1">{displayMode === 'audio' ? 'Text' : 'Audio'} View</Button> )}
-               {text && !loading && ( <Button variant="info" size="sm" onClick={handleFullTextTranslation} className="me-1">Translate Text</Button> )}
-               {text && !loading && ( <Button variant="secondary" size="sm" onClick={handleTranslateUnknownWords} disabled={translatingUnknown} className="ms-1" title="Translate unknown/learning words">{translatingUnknown ? <Spinner size="sm"/> : 'Translate ?'}</Button> )}
-               {text && !loading && ( <Button variant="outline-success" size="sm" onClick={handleMarkAllUnknownAsKnown} disabled={isMarkingAll} className="ms-1" title="Mark all untracked words as Known">{isMarkingAll ? <Spinner size="sm"/> : 'Mark All Known'}</Button> )}
-               {/* Add Complete Lesson button here specifically for Audio Lessons */}
-               {/* Show top button ONLY for standalone audio lessons */}
-               {isAudioLesson && !text?.bookId && (
-                   <Button variant="success" onClick={handleCompleteLesson} disabled={completing} size="sm" className="ms-1">
-                       {completing ? <Spinner animation="border" size="sm" /> : (nextTextId === null ? 'Finish Book' : 'Complete Lesson')}
-                   </Button>
-               )}
-               {text?.bookId && ( <Button variant="outline-primary" size="sm" onClick={() => navigate(`/books/${text.bookId}`)} className="ms-1">Back to Book</Button> )}
-               {!text?.bookId && ( <Button variant="outline-secondary" size="sm" onClick={() => navigate('/texts')} className="ms-1">Back to Texts</Button> )}
+             {/* Audiobook Player Integration - ONLY if NOT an audio lesson */}
+             {!isAudioLesson && book && book.audiobookTracks && book.audiobookTracks.length > 0 && (
+               <div className="lesson-header-player flex-grow-1 mx-2">
+                  <AudiobookPlayer book={book} />
+               </div>
+             )}
+           </div>
+           <div className="lesson-header-actions d-flex gap-2 flex-wrap mt-2 align-items-center">
+             {isAudioLesson && (
+               <Button
+                 variant="outline-info"
+                 size="sm"
+                 onClick={() => setDisplayMode(p => p === 'audio' ? 'text' : 'audio')}
+                 title={displayMode === 'audio' ? 'Text View' : 'Audio View'}
+                 className="me-1"
+               >
+                 {displayMode === 'audio' ? 'Text' : 'Audio'} View
+               </Button>
+             )}
+             <Button
+               variant={isWordPanelOpen ? 'outline-secondary' : 'primary'}
+               size="sm"
+               onClick={() => setIsWordPanelOpen(prev => !prev)}
+               className="d-md-none"
+               title="Toggle word info panel"
+             >
+               Word Info
+             </Button>
+             {/* Show top button ONLY for standalone audio lessons */}
+             {isAudioLesson && !text?.bookId && (
+               <Button variant="success" onClick={handleCompleteLesson} disabled={completing} size="sm" className="ms-1">
+                 {completing ? <Spinner animation="border" size="sm" /> : (nextTextId === null ? 'Finish Book' : 'Complete Lesson')}
+               </Button>
+             )}
+             {text?.bookId && ( <Button variant="outline-primary" size="sm" onClick={() => navigate(`/books/${text.bookId}`)} className="ms-1">Back to Book</Button> )}
+             {!text?.bookId && ( <Button variant="outline-secondary" size="sm" onClick={() => navigate('/texts')} className="ms-1">Back to Texts</Button> )}
+             <Button
+               variant="outline-secondary"
+               size="sm"
+               className="ms-1 d-md-none"
+               onClick={() => setShowMoreControls(prev => !prev)}
+               aria-controls="lesson-more-controls"
+               aria-expanded={showMoreControls}
+             >
+               {showMoreControls ? 'Less' : 'More'}
+             </Button>
+             <div className="lesson-controls-desktop d-none d-md-flex gap-2 flex-wrap align-items-center">
+               {renderSecondaryControls()}
              </div>
            </div>
+           <Collapse in={showMoreControls} className="d-md-none">
+             <div id="lesson-more-controls" className="lesson-controls-collapse mt-2">
+               {renderSecondaryControls()}
+             </div>
+           </Collapse>
            {translateUnknownError && <Alert variant="danger" className="mt-1 mb-0 p-1 small">{translateUnknownError}</Alert>}
         </Card.Body>
       </Card>
@@ -1401,7 +1449,7 @@ const TextDisplay = () => {
         {/* Removed Resize Divider */}
 
         {/* Right Panel (Word Info) */}
-        <div className="right-panel" style={{ width: `${100 - leftPanelWidth}%`, height: 'calc(100vh - 130px)', overflowY: 'auto', padding: 'var(--space-sm)', position: 'relative' }}>
+        <div className={`right-panel ${isWordPanelOpen ? 'word-panel-open' : 'word-panel-closed'}`} style={{ width: `${100 - leftPanelWidth}%`, height: 'calc(100vh - 130px)', overflowY: 'auto', padding: 'var(--space-sm)', position: 'relative' }}>
            <Card className="border-0 h-100"><Card.Body className="p-2 d-flex flex-column">
              <h5 className="mb-2 flex-shrink-0">Word Info</h5>
              <div className="flex-grow-1" style={{ overflowY: 'auto', paddingBottom: 'var(--space-xs)' }}>{renderSidePanel()}</div>

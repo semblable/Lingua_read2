@@ -3,6 +3,7 @@ using System;
 using LinguaReadApi.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace LinguaReadApi.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260129163442_AddDiscordReportSettings")]
+    partial class AddDiscordReportSettings
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -566,26 +569,12 @@ namespace LinguaReadApi.Migrations
                     b.Property<int>("DefaultLanguageId")
                         .HasColumnType("integer");
 
-                    b.Property<int>("DiscordTimezoneOffsetMinutes")
-                        .HasColumnType("integer");
-
                     b.Property<string>("DiscordWebhookUrl")
                         .HasMaxLength(2048)
                         .HasColumnType("character varying(2048)");
 
-                    b.Property<string>("DiscordWeeklyReportDayOfWeek")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)");
-
                     b.Property<bool>("DiscordWeeklyReportEnabled")
                         .HasColumnType("boolean");
-
-                    b.Property<int>("DiscordWeeklyReportHourLocal")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime?>("DiscordWeeklyReportLastSentAt")
-                        .HasColumnType("timestamp with time zone");
 
                     b.Property<bool>("HighlightKnownWords")
                         .HasColumnType("boolean");

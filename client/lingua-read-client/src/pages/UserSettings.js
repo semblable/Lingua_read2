@@ -6,6 +6,7 @@ import {
 } from '../utils/api';
 import { SettingsContext } from '../contexts/SettingsContext'; // Import SettingsContext
 const UserSettings = () => {
+  const browserTimezoneOffsetMinutes = -new Date().getTimezoneOffset();
   const [settings, setSettings] = useState({
     theme: 'dark',
     textSize: 16,
@@ -16,7 +17,12 @@ const UserSettings = () => {
     defaultLanguageId: 0,
     autoAdvanceToNextLesson: false,
     showProgressStats: true,
-    lineSpacing: 1.5 // Added lineSpacing setting
+    lineSpacing: 1.5, // Added lineSpacing setting
+    discordWeeklyReportEnabled: false,
+    discordWebhookUrl: '',
+    discordWeeklyReportDayOfWeek: 'Monday',
+    discordWeeklyReportHourLocal: 8,
+    discordTimezoneOffsetMinutes: browserTimezoneOffsetMinutes
   });
 
   const [languages, setLanguages] = useState([]);
@@ -56,7 +62,12 @@ const UserSettings = () => {
            defaultLanguageId: data.defaultLanguageId || 0,
            autoAdvanceToNextLesson: data.autoAdvanceToNextLesson ?? false,
            showProgressStats: data.showProgressStats ?? true,
-           lineSpacing: data.lineSpacing || 1.5 // Fetch lineSpacing
+           lineSpacing: data.lineSpacing || 1.5, // Fetch lineSpacing
+           discordWeeklyReportEnabled: data.discordWeeklyReportEnabled ?? false,
+           discordWebhookUrl: data.discordWebhookUrl || '',
+           discordWeeklyReportDayOfWeek: data.discordWeeklyReportDayOfWeek || 'Monday',
+           discordWeeklyReportHourLocal: data.discordWeeklyReportHourLocal ?? 8,
+           discordTimezoneOffsetMinutes: data.discordTimezoneOffsetMinutes ?? browserTimezoneOffsetMinutes
          });
        } catch (err) {
          setError('Failed to load settings. Please try again later.');
@@ -86,7 +97,12 @@ const UserSettings = () => {
      let processedValue = value;
      if (type === 'checkbox') {
        processedValue = checked;
-     } else if (type === 'number' || name === 'defaultLanguageId') { // Treat defaultLanguageId as number
+     } else if (
+       type === 'number' ||
+       name === 'defaultLanguageId' ||
+       name === 'discordWeeklyReportHourLocal' ||
+       name === 'discordTimezoneOffsetMinutes'
+     ) { // Treat these fields as numbers
        processedValue = parseInt(value, 10);
        if (isNaN(processedValue)) { // Handle potential NaN if parsing fails (e.g., for "0")
           processedValue = 0; // Default to 0 if parsing fails or value is "0"
@@ -158,6 +174,21 @@ const UserSettings = () => {
        updateSetting('lineSpacing', settings.lineSpacing); // Update context for lineSpacing
        localStorage.setItem('lineSpacing', settings.lineSpacing.toString()); // Save lineSpacing to localStorage
 
+       updateSetting('discordWeeklyReportEnabled', settings.discordWeeklyReportEnabled);
+       localStorage.setItem('discordWeeklyReportEnabled', settings.discordWeeklyReportEnabled.toString());
+
+       updateSetting('discordWebhookUrl', settings.discordWebhookUrl);
+       localStorage.setItem('discordWebhookUrl', settings.discordWebhookUrl || '');
+
+      updateSetting('discordWeeklyReportDayOfWeek', settings.discordWeeklyReportDayOfWeek);
+      localStorage.setItem('discordWeeklyReportDayOfWeek', settings.discordWeeklyReportDayOfWeek);
+
+      updateSetting('discordWeeklyReportHourLocal', settings.discordWeeklyReportHourLocal);
+      localStorage.setItem('discordWeeklyReportHourLocal', settings.discordWeeklyReportHourLocal.toString());
+
+      updateSetting('discordTimezoneOffsetMinutes', settings.discordTimezoneOffsetMinutes);
+      localStorage.setItem('discordTimezoneOffsetMinutes', settings.discordTimezoneOffsetMinutes.toString());
+
        setSuccess(true);
        // Hide success message after 3 seconds
        setTimeout(() => {
@@ -168,6 +199,14 @@ const UserSettings = () => {
      } finally {
        setSaving(false);
      }
+  };
+
+  const handleSetBrowserTimezone = () => {
+    const offsetMinutes = -new Date().getTimezoneOffset();
+    setSettings(prevSettings => ({
+      ...prevSettings,
+      discordTimezoneOffsetMinutes: offsetMinutes
+    }));
   };
 
   // --- Backup/Restore Handlers ---
@@ -431,6 +470,90 @@ const UserSettings = () => {
                  onChange={handleChange}
                />
              </Form.Group>
+
+            {/* --- Discord Reports --- */}
+            <h4 className="mt-4 mb-3">Discord Reports</h4>
+            <Form.Group className="mb-3" controlId="discordWeeklyReportEnabled">
+              <Form.Check
+                type="checkbox"
+                name="discordWeeklyReportEnabled"
+                label="Send me a weekly activity report on Discord"
+                checked={settings.discordWeeklyReportEnabled}
+                onChange={handleChange}
+              />
+            </Form.Group>
+            <Form.Group className="mb-4" controlId="discordWebhookUrl">
+              <Form.Label>Discord Webhook URL</Form.Label>
+              <Form.Control
+                type="url"
+                name="discordWebhookUrl"
+                placeholder="https://discord.com/api/webhooks/..."
+                value={settings.discordWebhookUrl}
+                onChange={handleChange}
+              />
+              <Form.Text muted>
+                Create a webhook in your Discord channel settings and paste the URL here.
+              </Form.Text>
+            </Form.Group>
+            <Row className="mb-3">
+              <Col md={6}>
+                <Form.Group controlId="discordWeeklyReportDayOfWeek">
+                  <Form.Label>Report Day</Form.Label>
+                  <Form.Select
+                    name="discordWeeklyReportDayOfWeek"
+                    value={settings.discordWeeklyReportDayOfWeek}
+                    onChange={handleChange}
+                  >
+                    <option value="Monday">Monday</option>
+                    <option value="Tuesday">Tuesday</option>
+                    <option value="Wednesday">Wednesday</option>
+                    <option value="Thursday">Thursday</option>
+                    <option value="Friday">Friday</option>
+                    <option value="Saturday">Saturday</option>
+                    <option value="Sunday">Sunday</option>
+                  </Form.Select>
+                </Form.Group>
+              </Col>
+              <Col md={6}>
+                <Form.Group controlId="discordWeeklyReportHourLocal">
+                  <Form.Label>Report Hour (Local)</Form.Label>
+                  <Form.Select
+                    name="discordWeeklyReportHourLocal"
+                    value={settings.discordWeeklyReportHourLocal}
+                    onChange={handleChange}
+                  >
+                    {Array.from({ length: 24 }, (_, hour) => (
+                      <option key={hour} value={hour}>
+                        {hour.toString().padStart(2, '0')}:00
+                      </option>
+                    ))}
+                  </Form.Select>
+                </Form.Group>
+              </Col>
+            </Row>
+            <Form.Group className="mb-4" controlId="discordTimezoneOffsetMinutes">
+              <Form.Label>Timezone Offset (minutes from UTC)</Form.Label>
+              <Form.Control
+                type="number"
+                name="discordTimezoneOffsetMinutes"
+                value={settings.discordTimezoneOffsetMinutes}
+                onChange={handleChange}
+                min={-840}
+                max={840}
+              />
+              <div className="mt-2">
+                <Button
+                  variant="outline-secondary"
+                  size="sm"
+                  onClick={handleSetBrowserTimezone}
+                >
+                  Use browser timezone
+                </Button>
+              </div>
+              <Form.Text muted>
+                Example: UTC+2 is 120, UTC-5 is -300.
+              </Form.Text>
+            </Form.Group>
 
 
             <div className="d-grid gap-2 mb-4"> {/* Added mb-4 */}

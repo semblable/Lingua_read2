@@ -74,6 +74,11 @@ builder.Services.AddIdentity<LinguaReadApi.Models.User, IdentityRole<Guid>>(opti
 // Register HttpClient
 builder.Services.AddHttpClient();
 
+// Discord weekly report configuration and services
+builder.Services.Configure<DiscordReportOptions>(builder.Configuration.GetSection("Discord"));
+builder.Services.AddScoped<DiscordReportService>();
+builder.Services.AddHostedService<WeeklyDiscordReportHostedService>();
+
 // Register DeepL Translation Service
 builder.Services.AddScoped<ITranslationService, DeepLTranslationService>();
 

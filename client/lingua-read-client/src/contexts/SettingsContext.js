@@ -13,6 +13,11 @@ const defaultSettings = {
   autoAdvanceToNextLesson: false,
   showProgressStats: true,
   lineSpacing: 1.5, // Added lineSpacing
+  discordWeeklyReportEnabled: false,
+  discordWebhookUrl: '',
+  discordWeeklyReportDayOfWeek: 'Monday',
+  discordWeeklyReportHourLocal: 8,
+  discordTimezoneOffsetMinutes: 0,
   // Add other settings as needed
 };
 
@@ -49,6 +54,11 @@ export const SettingsProvider = ({ children }) => {
         autoAdvanceToNextLesson: data.autoAdvanceToNextLesson ?? defaultSettings.autoAdvanceToNextLesson,
         showProgressStats: data.showProgressStats ?? defaultSettings.showProgressStats,
         lineSpacing: data.lineSpacing || defaultSettings.lineSpacing, // Fetch lineSpacing
+        discordWeeklyReportEnabled: data.discordWeeklyReportEnabled ?? defaultSettings.discordWeeklyReportEnabled,
+        discordWebhookUrl: data.discordWebhookUrl || defaultSettings.discordWebhookUrl,
+        discordWeeklyReportDayOfWeek: data.discordWeeklyReportDayOfWeek || defaultSettings.discordWeeklyReportDayOfWeek,
+        discordWeeklyReportHourLocal: data.discordWeeklyReportHourLocal ?? defaultSettings.discordWeeklyReportHourLocal,
+        discordTimezoneOffsetMinutes: data.discordTimezoneOffsetMinutes ?? defaultSettings.discordTimezoneOffsetMinutes,
       });
     } catch (err) {
       console.error('[SettingsContext] Failed to load settings:', err);

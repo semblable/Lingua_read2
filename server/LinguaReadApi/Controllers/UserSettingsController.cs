@@ -46,7 +46,12 @@ namespace LinguaReadApi.Controllers
                     AutoAdvanceToNextLesson = false,
                     ShowProgressStats = true,
                     CreatedAt = DateTime.UtcNow,
-                    LeftPanelWidth = 85 // Set default panel width
+                    LeftPanelWidth = 85, // Set default panel width
+                    DiscordWeeklyReportEnabled = false,
+                    DiscordWebhookUrl = null,
+                    DiscordWeeklyReportDayOfWeek = "Monday",
+                    DiscordWeeklyReportHourLocal = 8,
+                    DiscordTimezoneOffsetMinutes = 0
                 };
                 
                 _context.UserSettings.Add(settings);
@@ -65,7 +70,12 @@ namespace LinguaReadApi.Controllers
                 ShowProgressStats = settings.ShowProgressStats,
                 CurrentAudiobookTrackId = settings.CurrentAudiobookTrackId, // Added
                 CurrentAudiobookPosition = settings.CurrentAudiobookPosition, // Added
-                LeftPanelWidth = settings.LeftPanelWidth // Map panel width to DTO
+                LeftPanelWidth = settings.LeftPanelWidth, // Map panel width to DTO
+                DiscordWeeklyReportEnabled = settings.DiscordWeeklyReportEnabled,
+                DiscordWebhookUrl = settings.DiscordWebhookUrl,
+                DiscordWeeklyReportDayOfWeek = settings.DiscordWeeklyReportDayOfWeek,
+                DiscordWeeklyReportHourLocal = settings.DiscordWeeklyReportHourLocal,
+                DiscordTimezoneOffsetMinutes = settings.DiscordTimezoneOffsetMinutes
             };
         }
 
@@ -104,6 +114,30 @@ namespace LinguaReadApi.Controllers
             settings.AutoAdvanceToNextLesson = updateDto.AutoAdvanceToNextLesson ?? settings.AutoAdvanceToNextLesson;
             settings.ShowProgressStats = updateDto.ShowProgressStats ?? settings.ShowProgressStats;
             settings.LeftPanelWidth = updateDto.LeftPanelWidth ?? settings.LeftPanelWidth; // Update panel width
+            settings.DiscordWeeklyReportEnabled = updateDto.DiscordWeeklyReportEnabled ?? settings.DiscordWeeklyReportEnabled;
+            if (updateDto.DiscordWebhookUrl != null)
+            {
+                settings.DiscordWebhookUrl = string.IsNullOrWhiteSpace(updateDto.DiscordWebhookUrl)
+                    ? null
+                    : updateDto.DiscordWebhookUrl.Trim();
+            }
+            if (!string.IsNullOrWhiteSpace(updateDto.DiscordWeeklyReportDayOfWeek) &&
+                Enum.TryParse(updateDto.DiscordWeeklyReportDayOfWeek, true, out DayOfWeek dayOfWeek))
+            {
+                settings.DiscordWeeklyReportDayOfWeek = dayOfWeek.ToString();
+            }
+            if (updateDto.DiscordWeeklyReportHourLocal.HasValue &&
+                updateDto.DiscordWeeklyReportHourLocal.Value >= 0 &&
+                updateDto.DiscordWeeklyReportHourLocal.Value <= 23)
+            {
+                settings.DiscordWeeklyReportHourLocal = updateDto.DiscordWeeklyReportHourLocal.Value;
+            }
+            if (updateDto.DiscordTimezoneOffsetMinutes.HasValue &&
+                updateDto.DiscordTimezoneOffsetMinutes.Value >= -840 &&
+                updateDto.DiscordTimezoneOffsetMinutes.Value <= 840)
+            {
+                settings.DiscordTimezoneOffsetMinutes = updateDto.DiscordTimezoneOffsetMinutes.Value;
+            }
             settings.UpdatedAt = DateTime.UtcNow;
             
             await _context.SaveChangesAsync();
@@ -118,7 +152,12 @@ namespace LinguaReadApi.Controllers
                 DefaultLanguageId = settings.DefaultLanguageId,
                 AutoAdvanceToNextLesson = settings.AutoAdvanceToNextLesson,
                 ShowProgressStats = settings.ShowProgressStats,
-                LeftPanelWidth = settings.LeftPanelWidth // Map panel width to DTO
+                LeftPanelWidth = settings.LeftPanelWidth, // Map panel width to DTO
+                DiscordWeeklyReportEnabled = settings.DiscordWeeklyReportEnabled,
+                DiscordWebhookUrl = settings.DiscordWebhookUrl,
+                DiscordWeeklyReportDayOfWeek = settings.DiscordWeeklyReportDayOfWeek,
+                DiscordWeeklyReportHourLocal = settings.DiscordWeeklyReportHourLocal,
+                DiscordTimezoneOffsetMinutes = settings.DiscordTimezoneOffsetMinutes
             };
         }
 
@@ -196,6 +235,11 @@ namespace LinguaReadApi.Controllers
         public bool ShowProgressStats { get; set; } = true;
         public int? CurrentAudiobookTrackId { get; set; } // Added
         public double? CurrentAudiobookPosition { get; set; } // Added
+        public bool DiscordWeeklyReportEnabled { get; set; } = false;
+        public string? DiscordWebhookUrl { get; set; }
+        public string DiscordWeeklyReportDayOfWeek { get; set; } = "Monday";
+        public int DiscordWeeklyReportHourLocal { get; set; } = 8;
+        public int DiscordTimezoneOffsetMinutes { get; set; } = 0;
     }
 
     public class UpdateUserSettingsDto
@@ -214,6 +258,20 @@ namespace LinguaReadApi.Controllers
         public int? DefaultLanguageId { get; set; }
         public bool? AutoAdvanceToNextLesson { get; set; }
         public bool? ShowProgressStats { get; set; }
+
+        public bool? DiscordWeeklyReportEnabled { get; set; }
+
+        [StringLength(2048)]
+        public string? DiscordWebhookUrl { get; set; }
+
+        [StringLength(20)]
+        public string? DiscordWeeklyReportDayOfWeek { get; set; }
+
+        [Range(0, 23)]
+        public int? DiscordWeeklyReportHourLocal { get; set; }
+
+        [Range(-840, 840)]
+        public int? DiscordTimezoneOffsetMinutes { get; set; }
     }
 
     public class UpdateAudiobookProgressDto

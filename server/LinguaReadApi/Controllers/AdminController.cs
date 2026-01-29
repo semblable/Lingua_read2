@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using System;
 using System.IO;
 using System.Threading.Tasks;
@@ -15,11 +16,19 @@ namespace LinguaReadApi.Controllers
     public class AdminController : ControllerBase
     {
         private readonly IDatabaseAdminService _dbAdminService;
+        private readonly DiscordReportService _discordReportService;
+        private readonly IOptions<DiscordReportOptions> _discordReportOptions;
         private readonly ILogger<AdminController> _logger;
 
-        public AdminController(IDatabaseAdminService dbAdminService, ILogger<AdminController> logger)
+        public AdminController(
+            IDatabaseAdminService dbAdminService,
+            DiscordReportService discordReportService,
+            IOptions<DiscordReportOptions> discordReportOptions,
+            ILogger<AdminController> logger)
         {
             _dbAdminService = dbAdminService;
+            _discordReportService = discordReportService;
+            _discordReportOptions = discordReportOptions;
             _logger = logger;
         }
 
@@ -106,6 +115,37 @@ namespace LinguaReadApi.Controllers
                 _logger.LogError(ex, "Exception occurred during database restore request processing.");
                 return StatusCode(500, $"Internal server error during restore: {ex.Message}");
             }
+        }
+
+        // POST: api/admin/discord/weekly-report
+        [HttpPost("discord/weekly-report")]
+        public async Task<IActionResult> SendWeeklyDiscordReport(
+            [FromQuery] bool dryRun = false,
+            [FromQuery] bool force = false)
+        {
+            var baseOptions = _discordReportOptions.Value;
+            var options = new DiscordReportOptions
+            {
+                WeeklyReportEnabled = baseOptions.WeeklyReportEnabled,
+                WeeklyReportDayOfWeek = baseOptions.WeeklyReportDayOfWeek,
+                WeeklyReportHourUtc = baseOptions.WeeklyReportHourUtc,
+                DryRun = dryRun || baseOptions.DryRun,
+                PollIntervalMinutes = baseOptions.PollIntervalMinutes
+            };
+
+            var result = await _discordReportService.SendDueWeeklyReportsAsync(
+                options,
+                DateTime.UtcNow,
+                force,
+                HttpContext.RequestAborted);
+            return Ok(new
+            {
+                result.TargetCount,
+                result.PreparedCount,
+                result.SentCount,
+                result.FailedCount,
+                result.SkippedCount
+            });
         }
     }
 }

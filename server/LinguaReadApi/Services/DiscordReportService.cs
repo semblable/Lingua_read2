@@ -4,6 +4,8 @@ using System.Linq;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
+using System.Net.Http.Headers;
+using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using LinguaReadApi.Data;
@@ -33,15 +35,18 @@ namespace LinguaReadApi.Services
         private readonly AppDbContext _context;
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly ILogger<DiscordReportService> _logger;
+        private readonly IDatabaseAdminService _databaseAdminService;
 
         public DiscordReportService(
             AppDbContext context,
             IHttpClientFactory httpClientFactory,
-            ILogger<DiscordReportService> logger)
+            ILogger<DiscordReportService> logger,
+            IDatabaseAdminService databaseAdminService)
         {
             _context = context;
             _httpClientFactory = httpClientFactory;
             _logger = logger;
+            _databaseAdminService = databaseAdminService;
         }
 
         public async Task<DiscordReportResult> SendDueWeeklyReportsAsync(
@@ -182,10 +187,62 @@ namespace LinguaReadApi.Services
                 return DiscordReportSendResult.SkippedResult("Dry run enabled.");
             }
 
-            var sendResult = await PostWebhookAsync(settings.DiscordWebhookUrl, message, cancellationToken);
-            return sendResult.Success
-                ? DiscordReportSendResult.Success()
-                : DiscordReportSendResult.Failed(sendResult.ErrorMessage ?? "Failed to send webhook.");
+            string? backupFilePath = null;
+            string? htmlReportPath = null;
+            try
+            {
+                var htmlReport = BuildReportHtml(startUtc, endUtc, userActivities);
+                htmlReportPath = SaveHtmlReport(htmlReport, settings.UserId, startUtc, endUtc);
+
+                backupFilePath = await _databaseAdminService.BackupDatabaseAsync();
+                if (string.IsNullOrWhiteSpace(backupFilePath) || !System.IO.File.Exists(backupFilePath))
+                {
+                    _logger.LogError("Database backup failed or missing for user {UserId}.", settings.UserId);
+                    return DiscordReportSendResult.Failed("Database backup failed.");
+                }
+
+                var attachments = new List<string> { backupFilePath };
+                if (!string.IsNullOrWhiteSpace(htmlReportPath) && System.IO.File.Exists(htmlReportPath))
+                {
+                    attachments.Add(htmlReportPath);
+                }
+
+                var sendResult = await PostWebhookAsync(
+                    settings.DiscordWebhookUrl,
+                    message,
+                    attachments,
+                    cancellationToken);
+
+                return sendResult.Success
+                    ? DiscordReportSendResult.Success()
+                    : DiscordReportSendResult.Failed(sendResult.ErrorMessage ?? "Failed to send webhook.");
+            }
+            finally
+            {
+                if (!string.IsNullOrWhiteSpace(backupFilePath) && System.IO.File.Exists(backupFilePath))
+                {
+                    try
+                    {
+                        System.IO.File.Delete(backupFilePath);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Failed to delete temporary backup file {BackupFilePath}.", backupFilePath);
+                    }
+                }
+
+                if (!string.IsNullOrWhiteSpace(htmlReportPath) && System.IO.File.Exists(htmlReportPath))
+                {
+                    try
+                    {
+                        System.IO.File.Delete(htmlReportPath);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Failed to delete temporary HTML report {ReportPath}.", htmlReportPath);
+                    }
+                }
+            }
         }
 
         private string BuildReportMessage(
@@ -201,6 +258,40 @@ namespace LinguaReadApi.Services
                 .Where(activity => ListeningActivityTypes.Contains(activity.ActivityType))
                 .Sum(activity => activity.ListeningDurationSeconds ?? 0);
 
+            var readingActivities = activities
+                .Where(activity => ReadingActivityTypes.Contains(activity.ActivityType))
+                .ToList();
+
+            var listeningActivities = activities
+                .Where(activity => ListeningActivityTypes.Contains(activity.ActivityType))
+                .ToList();
+
+            var dayTotals = activities
+                .GroupBy(activity => activity.Timestamp.Date)
+                .Select(group => new
+                {
+                    Date = group.Key,
+                    Words = group.Where(activity => ReadingActivityTypes.Contains(activity.ActivityType))
+                        .Sum(activity => activity.WordCount),
+                    Seconds = group.Where(activity => ListeningActivityTypes.Contains(activity.ActivityType))
+                        .Sum(activity => activity.ListeningDurationSeconds ?? 0),
+                    Activities = group.Count()
+                })
+                .ToList();
+
+            var activeDays = dayTotals.Count;
+            var totalDays = (int)Math.Ceiling((endUtc.Date - startUtc.Date).TotalDays);
+            if (totalDays <= 0)
+            {
+                totalDays = 1;
+            }
+
+            var topDay = dayTotals
+                .OrderByDescending(day => day.Words)
+                .ThenByDescending(day => day.Seconds)
+                .ThenByDescending(day => day.Activities)
+                .FirstOrDefault();
+
             var languageTotals = new Dictionary<string, LanguageTotals>(StringComparer.OrdinalIgnoreCase);
             foreach (var activity in activities)
             {
@@ -214,11 +305,13 @@ namespace LinguaReadApi.Services
                 if (ReadingActivityTypes.Contains(activity.ActivityType))
                 {
                     totals.Words += activity.WordCount;
+                    totals.ReadingSessions += 1;
                 }
 
                 if (ListeningActivityTypes.Contains(activity.ActivityType))
                 {
                     totals.Seconds += activity.ListeningDurationSeconds ?? 0;
+                    totals.ListeningSessions += 1;
                 }
             }
 
@@ -227,13 +320,23 @@ namespace LinguaReadApi.Services
             {
                 $"**Activity report** ({startUtc:yyyy-MM-dd} to {endDisplay:yyyy-MM-dd} UTC)",
                 $"Total words read: {totalWords}",
-                $"Total listening time: {FormatDuration(totalListeningSeconds)}"
+                $"Total listening time: {FormatDuration(totalListeningSeconds)}",
+                $"Total activities: {activities.Count} (reading {readingActivities.Count}, listening {listeningActivities.Count})",
+                $"Active days: {activeDays}/{totalDays}",
+                $"Avg words per active day: {FormatAverage(totalWords, activeDays)}",
+                $"Avg listening per active day: {FormatAverageDuration(totalListeningSeconds, activeDays)}",
+                $"Languages active: {languageTotals.Count}"
             };
 
             if (activities.Count == 0)
             {
                 messageLines.Add("No activity recorded this week.");
                 return string.Join("\n", messageLines);
+            }
+
+            if (topDay != null)
+            {
+                messageLines.Add($"Most active day: {topDay.Date:yyyy-MM-dd} ({topDay.Words} words, {FormatDuration(topDay.Seconds)})");
             }
 
             if (languageTotals.Count > 0)
@@ -249,7 +352,7 @@ namespace LinguaReadApi.Services
                 foreach (var entry in displayed)
                 {
                     messageLines.Add(
-                        $"- {entry.Key}: {entry.Value.Words} words, {FormatDuration(entry.Value.Seconds)}");
+                        $"- {entry.Key}: {entry.Value.Words} words, {FormatDuration(entry.Value.Seconds)}, {entry.Value.TotalSessions} sessions");
                 }
 
                 if (orderedLanguages.Count > MaxLanguagesPerUser)
@@ -270,13 +373,13 @@ namespace LinguaReadApi.Services
         private async Task<DiscordWebhookPostResult> PostWebhookAsync(
             string webhookUrl,
             string message,
+            IReadOnlyList<string> attachmentPaths,
             CancellationToken cancellationToken)
         {
             try
             {
                 using var client = _httpClientFactory.CreateClient();
-                var payload = JsonSerializer.Serialize(new { content = message });
-                using var content = new StringContent(payload, Encoding.UTF8, "application/json");
+                using var content = CreateWebhookContent(message, attachmentPaths);
                 using var response = await client.PostAsync(webhookUrl, content, cancellationToken);
 
                 if (response.IsSuccessStatusCode)
@@ -302,6 +405,258 @@ namespace LinguaReadApi.Services
             }
         }
 
+        private static HttpContent CreateWebhookContent(string message, IReadOnlyList<string> attachmentPaths)
+        {
+            var payload = JsonSerializer.Serialize(new { content = message });
+            var hasAttachments = attachmentPaths.Any(path => !string.IsNullOrWhiteSpace(path) && File.Exists(path));
+            if (hasAttachments)
+            {
+                var multipartContent = new MultipartFormDataContent();
+                multipartContent.Add(new StringContent(payload, Encoding.UTF8, "application/json"), "payload_json");
+
+                var index = 0;
+                foreach (var attachmentPath in attachmentPaths)
+                {
+                    if (string.IsNullOrWhiteSpace(attachmentPath) || !File.Exists(attachmentPath))
+                    {
+                        continue;
+                    }
+
+                    var fileName = Path.GetFileName(attachmentPath);
+                    var fileStream = File.OpenRead(attachmentPath);
+                    var fileContent = new StreamContent(fileStream);
+                    fileContent.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
+                    multipartContent.Add(fileContent, $"files[{index}]", fileName);
+                    index++;
+                }
+
+                return multipartContent;
+            }
+
+            return new StringContent(payload, Encoding.UTF8, "application/json");
+        }
+
+        private static string SaveHtmlReport(string htmlReport, Guid userId, DateTime startUtc, DateTime endUtc)
+        {
+            var safeStart = startUtc.ToString("yyyyMMdd");
+            var safeEnd = endUtc.AddSeconds(-1).ToString("yyyyMMdd");
+            var fileName = $"linguaread_report_{userId}_{safeStart}_{safeEnd}.html";
+            var directory = Path.Combine(Directory.GetCurrentDirectory(), "temp_reports");
+            Directory.CreateDirectory(directory);
+            var path = Path.Combine(directory, fileName);
+            File.WriteAllText(path, htmlReport, Encoding.UTF8);
+            return path;
+        }
+
+        private static string BuildReportHtml(
+            DateTime startUtc,
+            DateTime endUtc,
+            List<Models.UserActivity> activities)
+        {
+            var totalWords = activities
+                .Where(activity => ReadingActivityTypes.Contains(activity.ActivityType))
+                .Sum(activity => activity.WordCount);
+
+            var totalListeningSeconds = activities
+                .Where(activity => ListeningActivityTypes.Contains(activity.ActivityType))
+                .Sum(activity => activity.ListeningDurationSeconds ?? 0);
+
+            var readingActivities = activities
+                .Where(activity => ReadingActivityTypes.Contains(activity.ActivityType))
+                .ToList();
+
+            var listeningActivities = activities
+                .Where(activity => ListeningActivityTypes.Contains(activity.ActivityType))
+                .ToList();
+
+            var dayTotals = activities
+                .GroupBy(activity => activity.Timestamp.Date)
+                .Select(group => new
+                {
+                    Date = group.Key,
+                    Words = group.Where(activity => ReadingActivityTypes.Contains(activity.ActivityType))
+                        .Sum(activity => activity.WordCount),
+                    Seconds = group.Where(activity => ListeningActivityTypes.Contains(activity.ActivityType))
+                        .Sum(activity => activity.ListeningDurationSeconds ?? 0),
+                    Activities = group.Count()
+                })
+                .OrderBy(day => day.Date)
+                .ToList();
+
+            var activeDays = dayTotals.Count;
+            var totalDays = (int)Math.Ceiling((endUtc.Date - startUtc.Date).TotalDays);
+            if (totalDays <= 0)
+            {
+                totalDays = 1;
+            }
+
+            var topDay = dayTotals
+                .OrderByDescending(day => day.Words)
+                .ThenByDescending(day => day.Seconds)
+                .ThenByDescending(day => day.Activities)
+                .FirstOrDefault();
+
+            var languageTotals = new Dictionary<string, LanguageTotals>(StringComparer.OrdinalIgnoreCase);
+            foreach (var activity in activities)
+            {
+                var languageName = activity.Language?.Name ?? "Unknown";
+                if (!languageTotals.TryGetValue(languageName, out var totals))
+                {
+                    totals = new LanguageTotals();
+                    languageTotals[languageName] = totals;
+                }
+
+                if (ReadingActivityTypes.Contains(activity.ActivityType))
+                {
+                    totals.Words += activity.WordCount;
+                    totals.ReadingSessions += 1;
+                }
+
+                if (ListeningActivityTypes.Contains(activity.ActivityType))
+                {
+                    totals.Seconds += activity.ListeningDurationSeconds ?? 0;
+                    totals.ListeningSessions += 1;
+                }
+            }
+
+            var orderedLanguages = languageTotals
+                .OrderByDescending(entry => entry.Value.Words)
+                .ThenByDescending(entry => entry.Value.Seconds)
+                .ToList();
+
+            var endDisplay = endUtc.AddSeconds(-1);
+            var title = $"LinguaRead weekly report ({startUtc:yyyy-MM-dd} to {endDisplay:yyyy-MM-dd} UTC)";
+            var maxDailyWords = Math.Max(1, dayTotals.Max(day => day.Words));
+            var maxDailySeconds = Math.Max(1, dayTotals.Max(day => day.Seconds));
+            var maxLanguageWords = Math.Max(1, orderedLanguages.Max(entry => entry.Value.Words));
+
+            var builder = new StringBuilder();
+            builder.AppendLine("<!doctype html>");
+            builder.AppendLine("<html lang=\"en\">");
+            builder.AppendLine("<head>");
+            builder.AppendLine("  <meta charset=\"utf-8\" />");
+            builder.AppendLine($"  <title>{EscapeHtml(title)}</title>");
+            builder.AppendLine("  <style>");
+            builder.AppendLine("    body { font-family: Arial, sans-serif; margin: 24px; color: #111827; background: #f9fafb; }");
+            builder.AppendLine("    h1 { margin-bottom: 6px; }");
+            builder.AppendLine("    .subtitle { color: #6b7280; margin-bottom: 18px; }");
+            builder.AppendLine("    .card { background: #fff; border-radius: 12px; padding: 16px; margin-bottom: 16px; box-shadow: 0 1px 2px rgba(0,0,0,0.06); }");
+            builder.AppendLine("    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }");
+            builder.AppendLine("    .stat { font-size: 22px; font-weight: bold; }");
+            builder.AppendLine("    .label { font-size: 12px; color: #6b7280; text-transform: uppercase; letter-spacing: 0.04em; }");
+            builder.AppendLine("    table { width: 100%; border-collapse: collapse; }");
+            builder.AppendLine("    th, td { text-align: left; padding: 8px; border-bottom: 1px solid #e5e7eb; }");
+            builder.AppendLine("    th { font-size: 12px; text-transform: uppercase; color: #6b7280; letter-spacing: 0.04em; }");
+            builder.AppendLine("    .bar { height: 12px; border-radius: 999px; background: #e5e7eb; position: relative; overflow: hidden; }");
+            builder.AppendLine("    .bar > span { position: absolute; top: 0; left: 0; height: 100%; background: #6366f1; }");
+            builder.AppendLine("    .bar.secondary > span { background: #10b981; }");
+            builder.AppendLine("    .chart-title { font-weight: 600; margin-bottom: 8px; }");
+            builder.AppendLine("    .empty { color: #9ca3af; }");
+            builder.AppendLine("  </style>");
+            builder.AppendLine("</head>");
+            builder.AppendLine("<body>");
+            builder.AppendLine($"  <h1>{EscapeHtml(title)}</h1>");
+            builder.AppendLine($"  <div class=\"subtitle\">Generated {DateTime.UtcNow:yyyy-MM-dd HH:mm} UTC</div>");
+
+            builder.AppendLine("  <div class=\"card grid\">");
+            builder.AppendLine($"    <div><div class=\"label\">Total words read</div><div class=\"stat\">{totalWords}</div></div>");
+            builder.AppendLine($"    <div><div class=\"label\">Total listening time</div><div class=\"stat\">{FormatDuration(totalListeningSeconds)}</div></div>");
+            builder.AppendLine($"    <div><div class=\"label\">Total activities</div><div class=\"stat\">{activities.Count}</div></div>");
+            builder.AppendLine($"    <div><div class=\"label\">Active days</div><div class=\"stat\">{activeDays}/{totalDays}</div></div>");
+            builder.AppendLine($"    <div><div class=\"label\">Avg words / active day</div><div class=\"stat\">{FormatAverage(totalWords, activeDays)}</div></div>");
+            builder.AppendLine($"    <div><div class=\"label\">Avg listening / active day</div><div class=\"stat\">{FormatAverageDuration(totalListeningSeconds, activeDays)}</div></div>");
+            builder.AppendLine($"    <div><div class=\"label\">Languages active</div><div class=\"stat\">{languageTotals.Count}</div></div>");
+            if (topDay != null)
+            {
+                builder.AppendLine($"    <div><div class=\"label\">Most active day</div><div class=\"stat\">{topDay.Date:yyyy-MM-dd}</div></div>");
+            }
+            builder.AppendLine("  </div>");
+
+            builder.AppendLine("  <div class=\"card\">");
+            builder.AppendLine("    <div class=\"chart-title\">Daily activity</div>");
+            if (dayTotals.Count == 0)
+            {
+                builder.AppendLine("    <div class=\"empty\">No activity recorded for this period.</div>");
+            }
+            else
+            {
+                builder.AppendLine("    <table>");
+                builder.AppendLine("      <thead><tr><th>Date</th><th>Words</th><th>Listening</th><th>Sessions</th></tr></thead>");
+                builder.AppendLine("      <tbody>");
+                foreach (var day in dayTotals)
+                {
+                    var wordWidth = (int)Math.Round(day.Words / (double)maxDailyWords * 100);
+                    var secondsWidth = (int)Math.Round(day.Seconds / (double)maxDailySeconds * 100);
+                    builder.AppendLine("        <tr>");
+                    builder.AppendLine($"          <td>{day.Date:yyyy-MM-dd}</td>");
+                    builder.AppendLine($"          <td>{day.Words}<div class=\"bar\"><span style=\"width:{wordWidth}%\"></span></div></td>");
+                    builder.AppendLine($"          <td>{FormatDuration(day.Seconds)}<div class=\"bar secondary\"><span style=\"width:{secondsWidth}%\"></span></div></td>");
+                    builder.AppendLine($"          <td>{day.Activities}</td>");
+                    builder.AppendLine("        </tr>");
+                }
+                builder.AppendLine("      </tbody>");
+                builder.AppendLine("    </table>");
+            }
+            builder.AppendLine("  </div>");
+
+            builder.AppendLine("  <div class=\"card\">");
+            builder.AppendLine("    <div class=\"chart-title\">Language breakdown</div>");
+            if (orderedLanguages.Count == 0)
+            {
+                builder.AppendLine("    <div class=\"empty\">No language activity recorded.</div>");
+            }
+            else
+            {
+                builder.AppendLine("    <table>");
+                builder.AppendLine("      <thead><tr><th>Language</th><th>Words</th><th>Listening</th><th>Sessions</th></tr></thead>");
+                builder.AppendLine("      <tbody>");
+                foreach (var entry in orderedLanguages)
+                {
+                    var barWidth = (int)Math.Round(entry.Value.Words / (double)maxLanguageWords * 100);
+                    builder.AppendLine("        <tr>");
+                    builder.AppendLine($"          <td>{EscapeHtml(entry.Key)}</td>");
+                    builder.AppendLine($"          <td>{entry.Value.Words}<div class=\"bar\"><span style=\"width:{barWidth}%\"></span></div></td>");
+                    builder.AppendLine($"          <td>{FormatDuration(entry.Value.Seconds)}</td>");
+                    builder.AppendLine($"          <td>{entry.Value.TotalSessions}</td>");
+                    builder.AppendLine("        </tr>");
+                }
+                builder.AppendLine("      </tbody>");
+                builder.AppendLine("    </table>");
+            }
+            builder.AppendLine("  </div>");
+
+            builder.AppendLine("  <div class=\"card\">");
+            builder.AppendLine("    <div class=\"chart-title\">Activity split</div>");
+            builder.AppendLine("    <table>");
+            builder.AppendLine("      <thead><tr><th>Type</th><th>Count</th></tr></thead>");
+            builder.AppendLine("      <tbody>");
+            builder.AppendLine($"        <tr><td>Reading</td><td>{readingActivities.Count}</td></tr>");
+            builder.AppendLine($"        <tr><td>Listening</td><td>{listeningActivities.Count}</td></tr>");
+            builder.AppendLine("      </tbody>");
+            builder.AppendLine("    </table>");
+            builder.AppendLine("  </div>");
+
+            builder.AppendLine("</body>");
+            builder.AppendLine("</html>");
+
+            return builder.ToString();
+        }
+
+        private static string EscapeHtml(string? value)
+        {
+            if (string.IsNullOrEmpty(value))
+            {
+                return string.Empty;
+            }
+
+            return value
+                .Replace("&", "&amp;")
+                .Replace("<", "&lt;")
+                .Replace(">", "&gt;")
+                .Replace("\"", "&quot;")
+                .Replace("'", "&#39;");
+        }
+
         private static string FormatDuration(int totalSeconds)
         {
             if (totalSeconds <= 0)
@@ -318,6 +673,28 @@ namespace LinguaReadApi.Services
             }
 
             return $"{minutes}m";
+        }
+
+        private static string FormatAverage(int total, int divisor)
+        {
+            if (divisor <= 0)
+            {
+                return "0";
+            }
+
+            var average = (int)Math.Round(total / (double)divisor, MidpointRounding.AwayFromZero);
+            return average.ToString();
+        }
+
+        private static string FormatAverageDuration(int totalSeconds, int divisor)
+        {
+            if (divisor <= 0)
+            {
+                return "0m";
+            }
+
+            var averageSeconds = (int)Math.Round(totalSeconds / (double)divisor, MidpointRounding.AwayFromZero);
+            return FormatDuration(averageSeconds);
         }
 
         private static bool TryNormalizeWebhookUrl(string url, out string normalizedUrl)
@@ -371,6 +748,9 @@ namespace LinguaReadApi.Services
         {
             public int Words { get; set; }
             public int Seconds { get; set; }
+            public int ReadingSessions { get; set; }
+            public int ListeningSessions { get; set; }
+            public int TotalSessions => ReadingSessions + ListeningSessions;
         }
     }
 

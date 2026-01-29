@@ -441,9 +441,9 @@ namespace LinguaReadApi.Services
             if (hasAttachments)
             {
                 var safeMessage = string.IsNullOrWhiteSpace(message) ? "Attachment" : message;
-                var payload = JsonSerializer.Serialize(new { content = safeMessage });
+                var attachmentPayload = JsonSerializer.Serialize(new { content = safeMessage });
                 var multipartContent = new MultipartFormDataContent();
-                multipartContent.Add(new StringContent(payload, Encoding.UTF8, "application/json"), "payload_json");
+                multipartContent.Add(new StringContent(attachmentPayload, Encoding.UTF8, "application/json"), "payload_json");
 
                 var index = 0;
                 foreach (var attachmentPath in attachmentPaths)

@@ -21,6 +21,29 @@
   padding: var(--space-sm) var(--space-md);
 }
 
+.lesson-topbar-closed {
+  display: none;
+}
+
+.lesson-topbar-open {
+  display: block;
+}
+
+.mobile-lesson-fab {
+  position: fixed;
+  right: var(--space-md);
+  bottom: var(--space-lg);
+  z-index: 1030;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.mobile-lesson-fab .btn {
+  border-radius: 999px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+}
+
 .lesson-topbar-content {
   display: flex;
   align-items: center;
@@ -189,10 +212,6 @@
     height: 35vh !important;
   }
 
-  .right-panel.word-panel-closed {
-    display: none;
-  }
-
   .text-content p {
     text-indent: 1rem;
     padding-left: 0;
@@ -245,9 +264,6 @@
     border-left: 4px solid var(--active-srt-line-border, #fd7e14);
   }
 
-  .right-panel {
-    display: none;
-  }
 }
 
 .word-info-sheet-backdrop {

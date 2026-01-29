@@ -182,8 +182,9 @@ const TextDisplay = () => {
   const [embeddedUrl, setEmbeddedUrl] = useState(null); // State for embedded dictionary iframe URL (Phase 3)
   const [bookmarkedIndices, setBookmarkedIndices] = useState([]); // State for bookmarked sentence indices
   const [showMoreControls, setShowMoreControls] = useState(false);
-  const [isWordPanelOpen, setIsWordPanelOpen] = useState(true);
   const [isMobile, setIsMobile] = useState(false);
+  const [showMobileHeader, setShowMobileHeader] = useState(false);
+  const [isWordPanelOpen, setIsWordPanelOpen] = useState(false);
   const [readingStyle, setReadingStyle] = useState('balanced');
   // --- End State Declarations ---
 
@@ -196,11 +197,17 @@ const TextDisplay = () => {
     if (typeof window === 'undefined') return;
     const mediaQuery = window.matchMedia('(max-width: 768px)');
     const handleMediaChange = (event) => {
-      setIsWordPanelOpen(!event.matches);
       setIsMobile(event.matches);
+      if (!event.matches) {
+        setShowMobileHeader(false);
+        setIsWordPanelOpen(false);
+      }
     };
-    setIsWordPanelOpen(!mediaQuery.matches);
     setIsMobile(mediaQuery.matches);
+    if (!mediaQuery.matches) {
+      setShowMobileHeader(false);
+      setIsWordPanelOpen(false);
+    }
     mediaQuery.addEventListener('change', handleMediaChange);
     return () => mediaQuery.removeEventListener('change', handleMediaChange);
   }, []);
@@ -1434,15 +1441,6 @@ const TextDisplay = () => {
           {displayMode === 'audio' ? 'Text' : 'Audio'} View
         </Button>
       )}
-      <Button
-        variant={isWordPanelOpen ? 'outline-secondary' : 'primary'}
-        size="sm"
-        onClick={() => setIsWordPanelOpen(prev => !prev)}
-        className="d-md-none"
-        title="Toggle word info panel"
-      >
-        Word Info
-      </Button>
       {isAudioLesson && !text?.bookId && (
         <Button variant="success" onClick={handleCompleteLesson} disabled={completing} size="sm" className="ms-1">
           {completing ? <Spinner animation="border" size="sm" /> : (nextTextId === null ? 'Finish Book' : 'Complete Lesson')}
@@ -1467,11 +1465,38 @@ const TextDisplay = () => {
   return (
     <div className="text-display-wrapper lesson-page px-0 mx-0 w-100">
       {isMobile && (
-        <div className="lesson-topbar navbar-custom-bg">
+        <>
+        <div className="mobile-lesson-fab">
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={() => setShowMobileHeader(true)}
+            aria-label="Open lesson controls"
+          >
+            Lesson
+          </Button>
+          <Button
+            variant="outline-primary"
+            size="sm"
+            onClick={() => setIsWordPanelOpen(true)}
+            aria-label="Open word info"
+          >
+            Word
+          </Button>
+        </div>
+        <div className={`lesson-topbar navbar-custom-bg ${showMobileHeader ? 'lesson-topbar-open' : 'lesson-topbar-closed'}`}>
           <div className="lesson-topbar-content">
             <div className="lesson-topbar-title">{text.title}</div>
             <div className="lesson-topbar-actions">
               {renderPrimaryControls()}
+              <Button
+                variant="outline-light"
+                size="sm"
+                onClick={() => setShowMobileHeader(false)}
+                aria-label="Close lesson controls"
+              >
+                Close
+              </Button>
             </div>
           </div>
           <Collapse in={showMoreControls}>
@@ -1480,6 +1505,7 @@ const TextDisplay = () => {
             </div>
           </Collapse>
         </div>
+        </>
       )}
       {/* Header Card - Add Playback Speed Controls */}
       {!isMobile && (
@@ -1552,36 +1578,38 @@ const TextDisplay = () => {
 
         {/* Removed Resize Divider */}
 
-        {/* Right Panel (Word Info) */}
-        <div className={`right-panel ${isWordPanelOpen ? 'word-panel-open' : 'word-panel-closed'}`} style={{ width: `${100 - leftPanelWidth}%`, height: 'calc(100vh - 130px)', overflowY: 'auto', padding: 'var(--space-sm)', position: 'relative' }}>
-           <Card className="border-0 h-100"><Card.Body className="p-2 d-flex flex-column">
-             <h5 className="mb-2 flex-shrink-0">Word Info</h5>
-             <div className="flex-grow-1" style={{ overflowY: 'auto', paddingBottom: 'var(--space-xs)' }}>{renderSidePanel()}</div>
+        {/* Right Panel (Word Info) - desktop only */}
+        {!isMobile && (
+          <div className="right-panel" style={{ width: `${100 - leftPanelWidth}%`, height: 'calc(100vh - 130px)', overflowY: 'auto', padding: 'var(--space-sm)', position: 'relative' }}>
+            <Card className="border-0 h-100"><Card.Body className="p-2 d-flex flex-column">
+              <h5 className="mb-2 flex-shrink-0">Word Info</h5>
+              <div className="flex-grow-1" style={{ overflowY: 'auto', paddingBottom: 'var(--space-xs)' }}>{renderSidePanel()}</div>
 
-             {/* --- Phase 3: Embedded Dictionary Iframe --- */}
-             {embeddedUrl && (
+              {/* --- Phase 3: Embedded Dictionary Iframe --- */}
+              {embeddedUrl && (
                 <div className="mt-2 pt-2 border-top flex-shrink-0" style={{ position: 'relative', height: '40%', minHeight: '150px' }}>
-                   <Button
-                     variant="light"
-                     size="sm"
-                     onClick={() => setEmbeddedUrl(null)}
-                     style={{ position: 'absolute', top: '5px', right: '5px', zIndex: 10, padding: '0.1rem 0.3rem', lineHeight: 1 }}
-                     title="Close Dictionary View"
-                   >
-                     &times; {/* Close icon */}
-                   </Button>
-                   <iframe
-                     src={embeddedUrl}
-                     title="Embedded Dictionary"
-                     style={{ width: '100%', height: '100%', border: 'none' }}
-                     sandbox="allow-scripts allow-same-origin allow-popups allow-forms" // Security sandbox
-                     referrerPolicy="no-referrer" // Privacy
-                   ></iframe>
+                  <Button
+                    variant="light"
+                    size="sm"
+                    onClick={() => setEmbeddedUrl(null)}
+                    style={{ position: 'absolute', top: '5px', right: '5px', zIndex: 10, padding: '0.1rem 0.3rem', lineHeight: 1 }}
+                    title="Close Dictionary View"
+                  >
+                    &times; {/* Close icon */}
+                  </Button>
+                  <iframe
+                    src={embeddedUrl}
+                    title="Embedded Dictionary"
+                    style={{ width: '100%', height: '100%', border: 'none' }}
+                    sandbox="allow-scripts allow-same-origin allow-popups allow-forms" // Security sandbox
+                    referrerPolicy="no-referrer" // Privacy
+                  ></iframe>
                 </div>
-             )}
-             {/* --- End Phase 3 --- */}
-           </Card.Body></Card>
-        </div>
+              )}
+              {/* --- End Phase 3 --- */}
+            </Card.Body></Card>
+          </div>
+        )}
       </div>
 
       {isMobile && isWordPanelOpen && (

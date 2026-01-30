@@ -504,14 +504,15 @@ private DateTime CalculateStartDate(string period)
                 {
                     _logger.LogInformation("UserBookProgress record not found for UserId: {UserId}, BookId: {BookId}. Returning default progress.", userId, bookId);
                     // Return default/empty progress if no record found
-                    return Ok(new { currentAudiobookTrackId = (int?)null, currentAudiobookPosition = (double?)null });
+                    return Ok(new { currentAudiobookTrackId = (int?)null, currentAudiobookPosition = (double?)null, updatedAt = (DateTime?)null });
                 }
 
                 _logger.LogInformation("Successfully retrieved audiobook progress from UserBookProgress for UserId: {UserId}, BookId: {BookId}. TrackId: {TrackId}, Position: {Position}", userId, bookId, progressRecord.CurrentAudiobookTrackId, progressRecord.CurrentAudiobookPosition);
                 return Ok(new
                 {
                     currentAudiobookTrackId = progressRecord.CurrentAudiobookTrackId,
-                    currentAudiobookPosition = progressRecord.CurrentAudiobookPosition
+                    currentAudiobookPosition = progressRecord.CurrentAudiobookPosition,
+                    updatedAt = progressRecord.UpdatedAt
                 });
             }
             catch (Exception ex)
@@ -616,13 +617,14 @@ private DateTime CalculateStartDate(string period)
                 if (progressRecord == null)
                 {
                     _logger.LogInformation("UserAudioLessonProgress record not found for UserId: {UserId}, TextId: {TextId}. Returning default progress.", userId, textId);
-                    return Ok(new { currentPosition = (double?)null }); // Return null if no record found
+                    return Ok(new { currentPosition = (double?)null, updatedAt = (DateTime?)null }); // Return null if no record found
                 }
 
                 _logger.LogInformation("Successfully retrieved audio lesson progress from UserAudioLessonProgress for UserId: {UserId}, TextId: {TextId}. Position: {Position}", userId, textId, progressRecord.CurrentPosition);
                 return Ok(new
                 {
-                    currentPosition = progressRecord.CurrentPosition
+                    currentPosition = progressRecord.CurrentPosition,
+                    updatedAt = progressRecord.UpdatedAt
                 });
             }
             catch (Exception ex)

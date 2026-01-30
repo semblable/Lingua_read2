@@ -54,6 +54,9 @@ const AudiobookPlayer = ({
   const [isInitialized, setIsInitialized] = useState(false);
   const initialSeekRef = useRef(null); // Position to seek to once metadata loads
 
+  // Cross-device sync: track server update timestamp
+  const lastServerUpdateRef = useRef(null);
+
   // --- THREE: Data Derivation ---
 
   // Memoize the "source of truth" for tracks. 
@@ -116,11 +119,19 @@ const AudiobookPlayer = ({
               console.log(`[AudioPlayer] Restoring Book progress: Track ${idx}, Pos ${savedPosition}`);
             }
           }
+          // Store server update time for cross-device sync
+          if (progress?.updatedAt) {
+            lastServerUpdateRef.current = new Date(progress.updatedAt).getTime();
+          }
         } else if (!isBookMode && textId) {
           const progress = await getAudioLessonProgress(textId);
           if (progress?.currentPosition) {
             savedPosition = progress.currentPosition;
             console.log(`[AudioPlayer] Restoring Lesson progress: Pos ${savedPosition}`);
+          }
+          // Store server update time for cross-device sync
+          if (progress?.updatedAt) {
+            lastServerUpdateRef.current = new Date(progress.updatedAt).getTime();
           }
         }
 
@@ -368,6 +379,114 @@ const AudiobookPlayer = ({
       window.removeEventListener('beforeunload', handleUnload);
     }
   }, [saveProgress]);
+
+  // --- CROSS-DEVICE SYNC ---
+
+  // Track if we just transitioned to playing (to avoid re-saving on every render)
+  const justStartedPlayingRef = useRef(false);
+
+  // Save progress immediately when playback STARTS (transition from paused to playing)
+  useEffect(() => {
+    if (isPlaying && isInitialized && !justStartedPlayingRef.current) {
+      justStartedPlayingRef.current = true;
+      console.log('[AudioPlayer] Play started - saving position for cross-device sync');
+      saveProgress(true);
+      // Update our known server time to now
+      lastServerUpdateRef.current = Date.now();
+    } else if (!isPlaying) {
+      // Reset the flag when playback stops
+      justStartedPlayingRef.current = false;
+    }
+  }, [isPlaying, isInitialized, saveProgress]);
+
+  // Poll for remote updates when NOT playing (to sync from other devices)
+  useEffect(() => {
+    // Only poll when not playing and initialized
+    if (isPlaying || !isInitialized) return;
+
+    const checkRemoteProgress = async () => {
+      // Don't poll if page is hidden (browser tab not visible)
+      if (document.hidden) return;
+
+      try {
+        let remoteProgress = null;
+
+        if (isBookMode && book?.bookId) {
+          remoteProgress = await getAudiobookProgress(book.bookId);
+        } else if (!isBookMode && textId) {
+          remoteProgress = await getAudioLessonProgress(textId);
+        }
+
+        if (!remoteProgress?.updatedAt) return;
+
+        const remoteUpdateTime = new Date(remoteProgress.updatedAt).getTime();
+        const localUpdateTime = lastServerUpdateRef.current || 0;
+
+        // If remote update is newer than our last known update, sync to it
+        // Use 2 second buffer to account for potential clock drift
+        if (remoteUpdateTime > localUpdateTime + 2000) {
+          console.log('[AudioPlayer] Cross-device sync: detected newer remote position');
+
+          let newPosition = null;
+          let newTrackIndex = currentTrackIndex;
+
+          if (isBookMode) {
+            // Verify the remote track matches expected content
+            if (remoteProgress.currentAudiobookTrackId) {
+              const idx = sourceTracks.findIndex(t => t.trackId === remoteProgress.currentAudiobookTrackId);
+              if (idx !== -1) {
+                newTrackIndex = idx;
+                newPosition = remoteProgress.currentAudiobookPosition;
+              }
+              // If track not found, don't sync (might be different audiobook)
+            }
+          } else {
+            newPosition = remoteProgress.currentPosition;
+          }
+
+          // Only sync if we have a valid position (not null/undefined and > 0)
+          if (newPosition != null && newPosition > 0) {
+            // Update track index if changed
+            if (newTrackIndex !== currentTrackIndex) {
+              setCurrentTrackIndex(newTrackIndex);
+            }
+
+            // Seek to new position
+            const audio = audioRef.current;
+            if (audio && Math.abs(audio.currentTime - newPosition) > 2) { // Only sync if diff > 2 seconds
+              console.log(`[AudioPlayer] Cross-device sync: seeking to ${newPosition}s`);
+              audio.currentTime = newPosition;
+              setCurrentTime(newPosition);
+            }
+          }
+
+          // Update our known server time regardless (to avoid re-checking)
+          lastServerUpdateRef.current = remoteUpdateTime;
+        }
+      } catch (e) {
+        console.error('[AudioPlayer] Cross-device sync check failed:', e);
+      }
+    };
+
+    // Poll every 5 seconds when not playing
+    const pollInterval = setInterval(checkRemoteProgress, 5000);
+
+    // Also check immediately when we stop playing
+    checkRemoteProgress();
+
+    // Listen for visibility changes to poll when tab becomes visible again
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        checkRemoteProgress();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      clearInterval(pollInterval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [isPlaying, isInitialized, isBookMode, book?.bookId, textId, currentTrackIndex, sourceTracks, audioRef]);
 
 
   // --- EIGHT: Render Helpers ---

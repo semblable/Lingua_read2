@@ -441,24 +441,13 @@ namespace LinguaReadApi.Services
             if (hasAttachments)
             {
                 var safeMessage = string.IsNullOrWhiteSpace(message) ? "Attachment" : message;
-                var attachmentMetadata = new List<object>();
-                var attachmentIndex = 0;
-                foreach (var attachmentPath in attachmentPaths)
-                {
-                    if (string.IsNullOrWhiteSpace(attachmentPath) || !File.Exists(attachmentPath))
-                    {
-                        continue;
-                    }
 
-                    var fileName = Path.GetFileName(attachmentPath);
-                    attachmentMetadata.Add(new { id = attachmentIndex, filename = fileName });
-                    attachmentIndex++;
-                }
-
+                // Discord webhooks automatically attach files from files[n] parts.
+                // The attachments array in payload_json is only for modifying attachment
+                // properties (like alt text) and is not needed for simple file uploads.
                 var attachmentPayload = JsonSerializer.Serialize(new
                 {
-                    content = safeMessage,
-                    attachments = attachmentMetadata
+                    content = safeMessage
                 });
                 var multipartContent = new MultipartFormDataContent();
                 multipartContent.Add(new StringContent(attachmentPayload, Encoding.UTF8, "application/json"), "payload_json");

@@ -401,6 +401,20 @@ const AudiobookPlayer = ({
     setCurrentTime(newTime);
   }, [audioRef, duration]);
 
+  const goToNextTrack = useCallback(() => {
+    if (currentTrackIndex < playlist.length - 1) {
+      console.log("[AudioPlayer] Manually advancing to next track.");
+      setCurrentTrackIndex(prev => prev + 1);
+    }
+  }, [currentTrackIndex, playlist.length]);
+
+  const goToPrevTrack = useCallback(() => {
+    if (currentTrackIndex > 0) {
+      console.log("[AudioPlayer] Manually going to previous track.");
+      setCurrentTrackIndex(prev => prev - 1);
+    }
+  }, [currentTrackIndex]);
+
   const changeRate = (diff) => {
     setPlaybackRate(prev => {
       const newRate = parseFloat((prev + diff).toFixed(2));
@@ -417,12 +431,18 @@ const AudiobookPlayer = ({
       if (e.key === ' ' || e.key === '`') {
         e.preventDefault();
         togglePlayPause();
+      } else if (e.key === '[') {
+        e.preventDefault();
+        goToPrevTrack();
+      } else if (e.key === ']') {
+        e.preventDefault();
+        goToNextTrack();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-    // FIX: Added togglePlayPause dependency
-  }, [togglePlayPause]);
+    // FIX: Added dependencies
+  }, [togglePlayPause, goToNextTrack, goToPrevTrack]);
 
   return (
     <div className="audiobook-player p-1 rounded-2 w-100 audiobook-player-custom-bg">
@@ -479,6 +499,19 @@ const AudiobookPlayer = ({
             </ButtonGroup>
 
             <div className="d-flex gap-2">
+              {isBookMode && playlist.length > 1 && (
+                <Button
+                  variant="outline-secondary"
+                  size="sm"
+                  className="py-0 px-1 rounded-pill"
+                  onClick={goToPrevTrack}
+                  disabled={currentTrackIndex === 0}
+                  title="Previous Track ([)"
+                >
+                  <i className="bi bi-skip-start-fill"></i>
+                </Button>
+              )}
+
               <Button variant="outline-secondary" size="sm" className="py-0 px-2 rounded-pill" onClick={() => seek(currentTime - 10)}>
                 -10s
               </Button>
@@ -501,6 +534,19 @@ const AudiobookPlayer = ({
               <Button variant="outline-secondary" size="sm" className="py-0 px-2 rounded-pill" onClick={() => seek(currentTime + 10)}>
                 +10s
               </Button>
+
+              {isBookMode && playlist.length > 1 && (
+                <Button
+                  variant="outline-secondary"
+                  size="sm"
+                  className="py-0 px-1 rounded-pill"
+                  onClick={goToNextTrack}
+                  disabled={currentTrackIndex === playlist.length - 1}
+                  title="Next Track (])"
+                >
+                  <i className="bi bi-skip-end-fill"></i>
+                </Button>
+              )}
             </div>
 
             <div className="small text-muted text-truncate" style={{ maxWidth: '100px' }}>

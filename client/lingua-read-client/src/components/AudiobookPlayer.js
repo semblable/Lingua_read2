@@ -159,8 +159,8 @@ const AudiobookPlayer = ({
 
     const currentSrc = audio.src;
 
-    // FIX: Mixed operators
-    const isSameSrc = currentSrc.includes(src) || (src.includes(currentSrc) && currentSrc !== '');
+    // FIX: Optimized check for same source
+    const isSameSrc = currentSrc && (currentSrc.includes(src) || (src && src.includes(currentSrc)));
 
     if (isSameSrc) {
       return;
@@ -171,12 +171,13 @@ const AudiobookPlayer = ({
     audio.load();
     setIsBuffering(true);
 
-    if (!initialSeekRef.current && isPlaying) {
+    // If it was already playing, continue playing the new track
+    if (isPlaying) {
       audio.play().catch(e => console.warn("Auto-play on track change failed", e));
     }
 
-    // FIX: Added audioRef dependency
-  }, [currentTrack, isInitialized, isPlaying, audioRef]);
+    // FIX: Removed isPlaying from dependencies to prevent re-loading on play/pause
+  }, [currentTrack, isInitialized, audioRef]);
 
 
   // --- SIX: Event Listeners & Logic ---
@@ -231,6 +232,7 @@ const AudiobookPlayer = ({
     const onPlaying = () => setIsBuffering(false);
 
     audio.addEventListener('loadedmetadata', handleLoadedMetadata);
+    audio.addEventListener('durationchange', handleLoadedMetadata); // Also listen for durationchange
     audio.addEventListener('timeupdate', handleTimeUpdate);
     audio.addEventListener('ended', handleEnded);
     audio.addEventListener('error', handleError);
@@ -244,6 +246,7 @@ const AudiobookPlayer = ({
 
     return () => {
       audio.removeEventListener('loadedmetadata', handleLoadedMetadata);
+      audio.removeEventListener('durationchange', handleLoadedMetadata);
       audio.removeEventListener('timeupdate', handleTimeUpdate);
       audio.removeEventListener('ended', handleEnded);
       audio.removeEventListener('error', handleError);
@@ -371,7 +374,13 @@ const AudiobookPlayer = ({
   const seek = useCallback((time) => {
     const audio = audioRef.current;
     if (!audio) return;
-    const newTime = Math.max(0, Math.min(time, duration));
+
+    // Use audio.duration if available, fallback to state
+    const d = (audio.duration && !isNaN(audio.duration) && audio.duration !== Infinity) ? audio.duration : duration;
+    if (!d) return;
+
+    const newTime = Math.max(0, Math.min(time, d));
+    console.log(`[AudioPlayer] Seeking to ${newTime}s (Requested: ${time}s, Duration: ${d}s)`);
     audio.currentTime = newTime;
     setCurrentTime(newTime);
   }, [audioRef, duration]);
@@ -399,78 +408,93 @@ const AudiobookPlayer = ({
     // FIX: Added togglePlayPause dependency
   }, [togglePlayPause]);
 
-  if (isLoading) return <Spinner animation="border" size="sm" />;
-  if (playlist.length === 0) return <div className="text-muted small">No audio available</div>;
-
   return (
     <div className="audiobook-player p-1 rounded-2 w-100 audiobook-player-custom-bg">
+      {/* 
+        CRITICAL: Always render the audio element. 
+        If it's conditionally rendered (e.g. only after isLoading is false), 
+        the audioRef will be null when the event listener effect runs for the first time, 
+        causing seeking and time updates to stay broken until a prop changes.
+      */}
       <audio ref={audioRef} style={{ display: 'none' }} />
 
-      {error && <Alert variant="danger" size="sm" className="p-1 mb-1">{error}</Alert>}
-
-      <div className="audiobook-player__progress d-flex align-items-center mb-0 gap-2">
-        <small className="text-muted text-nowrap" style={{ minWidth: '40px' }}>
-          {formatTime(currentTime)}
-        </small>
-
-        <ProgressBar
-          ref={progressBarRef}
-          now={duration ? (currentTime / duration) * 100 : 0}
-          className="flex-grow-1"
-          style={{ height: '6px', cursor: 'pointer' }}
-          variant="info"
-          onClick={(e) => {
-            const rect = progressBarRef.current.getBoundingClientRect();
-            const pos = (e.clientX - rect.left) / rect.width;
-            seek(pos * duration);
-          }}
-        />
-
-        <small className="text-muted text-nowrap" style={{ minWidth: '40px', textAlign: 'right' }}>
-          {formatTime(duration)}
-        </small>
-      </div>
-
-      <div className="d-flex justify-content-between align-items-center mt-1">
-        <ButtonGroup size="sm">
-          <Button variant="link" size="sm" className="p-0 text-decoration-none text-secondary"
-            onClick={() => changeRate(-0.1)} disabled={playbackRate <= 0.5}>-</Button>
-          <span className="mx-2 small text-muted" style={{ minWidth: '30px', textAlign: 'center' }}>{playbackRate}x</span>
-          <Button variant="link" size="sm" className="p-0 text-decoration-none text-secondary"
-            onClick={() => changeRate(0.1)} disabled={playbackRate >= 2.0}>+</Button>
-        </ButtonGroup>
-
-        <div className="d-flex gap-2">
-          <Button variant="outline-secondary" size="sm" className="py-0 px-2 rounded-pill" onClick={() => seek(currentTime - 10)}>
-            -10s
-          </Button>
-
-          <Button
-            variant={isPlaying ? "outline-primary" : "primary"}
-            size="sm"
-            className="py-0 px-3 rounded-pill d-flex align-items-center justify-content-center"
-            style={{ width: '40px' }}
-            onClick={togglePlayPause}
-            title="Play (Space or `)"
-          >
-            {isBuffering ? (
-              <Spinner animation="grow" size="sm" role="status" aria-hidden="true" style={{ width: '0.6rem', height: '0.6rem' }} />
-            ) : (
-              <i className={`bi ${isPlaying ? 'bi-pause-fill' : 'bi-play-fill'}`} style={{ fontSize: '1.2em' }}></i>
-            )}
-          </Button>
-
-          <Button variant="outline-secondary" size="sm" className="py-0 px-2 rounded-pill" onClick={() => seek(currentTime + 10)}>
-            +10s
-          </Button>
+      {isLoading ? (
+        <div className="d-flex justify-content-center p-2">
+          <Spinner animation="border" size="sm" />
         </div>
+      ) : playlist.length === 0 ? (
+        <div className="text-muted small p-2">No audio available</div>
+      ) : (
+        <>
+          {error && <Alert variant="danger" size="sm" className="p-1 mb-1">{error}</Alert>}
 
-        <div className="small text-muted text-truncate" style={{ maxWidth: '100px' }}>
-          {isBookMode && playlist.length > 1 && (
-            <span>Track {currentTrackIndex + 1}/{playlist.length}</span>
-          )}
-        </div>
-      </div>
+          <div className="audiobook-player__progress d-flex align-items-center mb-0 gap-2">
+            <small className="text-muted text-nowrap" style={{ minWidth: '40px' }}>
+              {formatTime(currentTime)}
+            </small>
+
+            <ProgressBar
+              ref={progressBarRef}
+              now={duration ? (currentTime / duration) * 100 : 0}
+              className="flex-grow-1"
+              style={{ height: '6px', cursor: 'pointer' }}
+              variant="info"
+              onClick={(e) => {
+                if (!progressBarRef.current) return;
+                const rect = progressBarRef.current.getBoundingClientRect();
+                const pos = (e.clientX - rect.left) / rect.width;
+                const d = audioRef.current?.duration || duration;
+                if (d) seek(pos * d);
+              }}
+            />
+
+            <small className="text-muted text-nowrap" style={{ minWidth: '40px', textAlign: 'right' }}>
+              {formatTime(duration)}
+            </small>
+          </div>
+
+          <div className="d-flex justify-content-between align-items-center mt-1">
+            <ButtonGroup size="sm">
+              <Button variant="link" size="sm" className="p-0 text-decoration-none text-secondary"
+                onClick={() => changeRate(-0.1)} disabled={playbackRate <= 0.5}>-</Button>
+              <span className="mx-2 small text-muted" style={{ minWidth: '30px', textAlign: 'center' }}>{playbackRate}x</span>
+              <Button variant="link" size="sm" className="p-0 text-decoration-none text-secondary"
+                onClick={() => changeRate(0.1)} disabled={playbackRate >= 2.0}>+</Button>
+            </ButtonGroup>
+
+            <div className="d-flex gap-2">
+              <Button variant="outline-secondary" size="sm" className="py-0 px-2 rounded-pill" onClick={() => seek(currentTime - 10)}>
+                -10s
+              </Button>
+
+              <Button
+                variant={isPlaying ? "outline-primary" : "primary"}
+                size="sm"
+                className="py-0 px-3 rounded-pill d-flex align-items-center justify-content-center"
+                style={{ width: '40px' }}
+                onClick={togglePlayPause}
+                title="Play (Space or `)"
+              >
+                {isBuffering ? (
+                  <Spinner animation="grow" size="sm" role="status" aria-hidden="true" style={{ width: '0.6rem', height: '0.6rem' }} />
+                ) : (
+                  <i className={`bi ${isPlaying ? 'bi-pause-fill' : 'bi-play-fill'}`} style={{ fontSize: '1.2em' }}></i>
+                )}
+              </Button>
+
+              <Button variant="outline-secondary" size="sm" className="py-0 px-2 rounded-pill" onClick={() => seek(currentTime + 10)}>
+                +10s
+              </Button>
+            </div>
+
+            <div className="small text-muted text-truncate" style={{ maxWidth: '100px' }}>
+              {isBookMode && playlist.length > 1 && (
+                <span>Track {currentTrackIndex + 1}/{playlist.length}</span>
+              )}
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 };

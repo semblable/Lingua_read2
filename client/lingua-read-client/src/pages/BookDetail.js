@@ -30,17 +30,17 @@ const BookDetail = () => {
 
 
   const fetchBook = useCallback(async () => { // Wrap in useCallback
-      setLoading(true);
-      try {
-        const data = await getBook(bookId);
-        setBook(data);
-        setError('');
-      } catch (err) {
-        setError(err.message || 'Failed to load book details');
-      } finally {
-        setLoading(false);
-      }
-    }, [bookId]); // Add bookId as dependency
+    setLoading(true);
+    try {
+      const data = await getBook(bookId);
+      setBook(data);
+      setError('');
+    } catch (err) {
+      setError(err.message || 'Failed to load book details');
+    } finally {
+      setLoading(false);
+    }
+  }, [bookId]); // Add bookId as dependency
 
   useEffect(() => {
     fetchBook();
@@ -53,7 +53,7 @@ const BookDetail = () => {
         const updatedStats = await finishBook(bookId);
         setStats(updatedStats);
         setShowStatsModal(true);
-        
+
         // Update book with finished status
         setBook(prev => ({
           ...prev,
@@ -123,27 +123,27 @@ const BookDetail = () => {
   };
 
   const handleTextUpdate = async () => {
-     if (!editingText || !editingText.title || !editingText.content) {
-       setModalError('Text title and content cannot be empty.');
-       return;
-     }
-     setModalLoading(true);
-     setModalError('');
-     try {
-       await updateText(editingText.textId, {
-         title: editingText.title,
-         content: editingText.content,
-         tag: editingText.tag || null // Send null if tag is empty
-       });
-       // Refresh book data to show updated text title/info in the list
-       await fetchBook();
-       handleCloseModals();
-     } catch (err) {
-       setModalError(`Failed to update text: ${err.message}`);
-     } finally {
-       setModalLoading(false);
-     }
-   };
+    if (!editingText || !editingText.title || !editingText.content) {
+      setModalError('Text title and content cannot be empty.');
+      return;
+    }
+    setModalLoading(true);
+    setModalError('');
+    try {
+      await updateText(editingText.textId, {
+        title: editingText.title,
+        content: editingText.content,
+        tag: editingText.tag || null // Send null if tag is empty
+      });
+      // Refresh book data to show updated text title/info in the list
+      await fetchBook();
+      handleCloseModals();
+    } catch (err) {
+      setModalError(`Failed to update text: ${err.message}`);
+    } finally {
+      setModalLoading(false);
+    }
+  };
 
   const handleBookDelete = async () => {
     if (window.confirm(`Are you sure you want to delete the book "${book.title}"? This cannot be undone.`)) {
@@ -160,21 +160,21 @@ const BookDetail = () => {
     }
   };
 
-   const handleTextDelete = async (textId, textTitle) => {
-     if (window.confirm(`Are you sure you want to delete the text part "${textTitle}"? This cannot be undone.`)) {
-       setLoading(true); // Use main loading indicator for simplicity
-       setError('');
-       try {
-         await deleteText(textId);
-         // Refresh book data to remove the text from the list
-         await fetchBook();
-       } catch (err) {
-         setError(`Failed to delete text part: ${err.message}`);
-       } finally {
-         setLoading(false);
-       }
-     }
-   };
+  const handleTextDelete = async (textId, textTitle) => {
+    if (window.confirm(`Are you sure you want to delete the text part "${textTitle}"? This cannot be undone.`)) {
+      setLoading(true); // Use main loading indicator for simplicity
+      setError('');
+      try {
+        await deleteText(textId);
+        // Refresh book data to remove the text from the list
+        await fetchBook();
+      } catch (err) {
+        setError(`Failed to delete text part: ${err.message}`);
+      } finally {
+        setLoading(false);
+      }
+    }
+  };
 
   // --- End Edit/Delete Handlers ---
 
@@ -195,25 +195,46 @@ const BookDetail = () => {
     setUploadError('');
     setUploadSuccess('');
 
-    const formData = new FormData();
-    selectedFiles.forEach(file => {
-      formData.append('Files', file); // Match the backend DTO property name 'Files'
-    });
+    let successCount = 0;
+    let failCount = 0;
+    const totalFiles = selectedFiles.length;
 
     try {
-      await uploadAudiobookTracks(bookId, formData);
-      setUploadSuccess(`Successfully uploaded ${selectedFiles.length} audio track(s).`);
-      setSelectedFiles([]); // Clear selection after successful upload
+      for (let i = 0; i < totalFiles; i++) {
+        const file = selectedFiles[i];
+        // Update success message to show progress instead of success
+        setUploadSuccess(`Uploading file ${i + 1} of ${totalFiles}: ${file.name}...`);
+
+        const formData = new FormData();
+        formData.append('Files', file); // API expects 'Files' but we send one at a time which works as it appends
+
+        try {
+          await uploadAudiobookTracks(bookId, formData);
+          successCount++;
+        } catch (err) {
+          console.error(`Failed to upload ${file.name}:`, err);
+          failCount++;
+          // Optionally stop or continue. We'll continue to try others.
+          // Append error to a running log? For now just log to console.
+        }
+      }
+
+      setUploadSuccess(`Successfully uploaded ${successCount} audio track(s). ${failCount > 0 ? `${failCount} failed.` : ''}`);
+      if (failCount > 0) {
+        setUploadError(`Failed to upload ${failCount} files. Check console for details.`);
+      }
+
+      setSelectedFiles([]); // Clear selection after operations
       // Refresh book data to show the new tracks
-      await fetchBook(); // <-- Uncommented this line
+      await fetchBook();
     } catch (err) {
-      setUploadError(err.message || 'Failed to upload audiobook tracks.');
+      setUploadError(err.message || 'Failed to process audiobook upload.');
     } finally {
       setUploadingAudio(false);
       // Clear the file input visually (important for UX)
       const fileInput = document.getElementById('audiobook-upload-input');
       if (fileInput) {
-          fileInput.value = '';
+        fileInput.value = '';
       }
     }
   };
@@ -265,8 +286,8 @@ const BookDetail = () => {
         <div>
           <h1 className="mb-1">{book.title}</h1>
           <p className="text-muted mb-2">
-            Language: {book.languageName} | 
-            Parts: {book.parts.length} | 
+            Language: {book.languageName} |
+            Parts: {book.parts.length} |
             Added: {formatDate(book.createdAt)}
           </p>
           {book.description && (
@@ -277,16 +298,16 @@ const BookDetail = () => {
           {/* Add prominent reading button */}
           {book.parts.length > 0 && (
             book.lastReadTextId ? (
-              <Button 
-                variant="primary" 
+              <Button
+                variant="primary"
                 size="lg"
                 onClick={() => navigate(`/texts/${book.lastReadTextId}`)}
               >
                 Continue Reading
               </Button>
             ) : (
-              <Button 
-                variant="primary" 
+              <Button
+                variant="primary"
                 size="lg"
                 onClick={() => navigate(`/texts/${book.parts[0].textId}`)}
               >
@@ -294,15 +315,15 @@ const BookDetail = () => {
               </Button>
             )
           )}
-          <Button 
-            variant="outline-secondary" 
+          <Button
+            variant="outline-secondary"
             onClick={() => navigate('/books')}
           >
             Back to Books
           </Button>
-           {/* Add Edit/Delete Book Buttons */}
-           <Button variant="outline-warning" size="sm" onClick={handleOpenEditBookModal} className="ms-2">Edit Book</Button>
-           <Button variant="outline-danger" size="sm" onClick={handleBookDelete} className="ms-2">Delete Book</Button>
+          {/* Add Edit/Delete Book Buttons */}
+          <Button variant="outline-warning" size="sm" onClick={handleOpenEditBookModal} className="ms-2">Edit Book</Button>
+          <Button variant="outline-danger" size="sm" onClick={handleBookDelete} className="ms-2">Delete Book</Button>
         </div>
       </div>
 
@@ -310,7 +331,7 @@ const BookDetail = () => {
         <Card.Header as="h5">Book Sections</Card.Header>
         <ListGroup variant="flush">
           {book.parts.map((part, index) => (
-            <ListGroup.Item 
+            <ListGroup.Item
               key={part.textId}
               className="d-flex justify-content-between align-items-center"
               action
@@ -325,30 +346,30 @@ const BookDetail = () => {
                 <Badge bg="primary" pill className="me-2">
                   Part {part.partNumber}
                 </Badge>
-                 {/* Add Edit/Delete Text Buttons */}
-                 <Button
-                   variant="outline-secondary"
-                   size="sm"
-                   className="me-1"
-                   onClick={(e) => {
-                     e.preventDefault(); // Prevent navigation
-                     e.stopPropagation(); // Prevent ListGroup item click
-                     handleOpenEditTextModal(part.textId);
-                   }}
-                 >
-                   Edit
-                 </Button>
-                 <Button
-                   variant="outline-danger"
-                   size="sm"
-                   onClick={(e) => {
-                     e.preventDefault(); // Prevent navigation
-                     e.stopPropagation(); // Prevent ListGroup item click
-                     handleTextDelete(part.textId, part.title);
-                   }}
-                 >
-                   Delete
-                 </Button>
+                {/* Add Edit/Delete Text Buttons */}
+                <Button
+                  variant="outline-secondary"
+                  size="sm"
+                  className="me-1"
+                  onClick={(e) => {
+                    e.preventDefault(); // Prevent navigation
+                    e.stopPropagation(); // Prevent ListGroup item click
+                    handleOpenEditTextModal(part.textId);
+                  }}
+                >
+                  Edit
+                </Button>
+                <Button
+                  variant="outline-danger"
+                  size="sm"
+                  onClick={(e) => {
+                    e.preventDefault(); // Prevent navigation
+                    e.stopPropagation(); // Prevent ListGroup item click
+                    handleTextDelete(part.textId, part.title);
+                  }}
+                >
+                  Delete
+                </Button>
               </div>
             </ListGroup.Item>
           ))}
@@ -403,9 +424,9 @@ const BookDetail = () => {
 
       <div className="d-flex justify-content-between mb-4">
         {!book.isFinished && (
-          <Button 
-            variant="success" 
-            onClick={handleFinishBook} 
+          <Button
+            variant="success"
+            onClick={handleFinishBook}
             disabled={finishingBook}
           >
             {finishingBook ? <Spinner size="sm" animation="border" /> : null}
@@ -426,7 +447,7 @@ const BookDetail = () => {
               <p className="mb-3">You've completed the book "<strong>{book.title}</strong>"!</p>
               <p className="mb-2">Progress:</p>
               <ProgressBar now={100} label={`100%`} className="mb-3" />
-              
+
               <Row className="mb-3">
                 <Col xs={6}>
                   <div className="d-flex flex-column align-items-center p-2 border rounded">
@@ -441,7 +462,7 @@ const BookDetail = () => {
                   </div>
                 </Col>
               </Row>
-              
+
               <p>All words in this book have been marked as known. Great job!</p>
             </div>
           )}

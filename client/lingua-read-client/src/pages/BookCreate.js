@@ -22,6 +22,7 @@ const BookCreate = () => {
   const [audioUploadError, setAudioUploadError] = useState(''); // Separate error for audio upload
   const navigate = useNavigate();
   const { settings: userSettings } = useContext(SettingsContext); // Get settings from context
+  const [loadingText, setLoadingText] = useState(''); // New state for feedback
 
   useEffect(() => {
     const fetchLanguages = async () => {
@@ -54,30 +55,31 @@ const BookCreate = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
+
     if (!title.trim()) {
       setError('Please enter a title');
       return;
     }
-    
+
     // Content/File validation depends on the active tab
     if (activeTab === 'manual' && !content.trim()) {
       setError('Please enter book content');
       return;
     }
     if (activeTab === 'upload' && !file) {
-       setError('Please select a file to upload');
-       return;
+      setError('Please select a file to upload');
+      return;
     }
-    
+
     if (!languageId) {
       setError('Please select a language');
       return;
     }
-    
+
     setLoading(true);
+    setLoadingText(activeTab === 'manual' ? 'Creating book...' : 'Uploading book...');
     setError('');
-    
+
     // Prepare tags array
     const tagsArray = tags.split(',').map(tag => tag.trim()).filter(tag => tag);
 
@@ -111,21 +113,33 @@ const BookCreate = () => {
       if (audioFiles.length > 0 && newBook?.bookId) {
         console.log(`Book created/uploaded (ID: ${newBook.bookId}), now uploading audio tracks...`);
         setAudioUploadError(''); // Clear previous audio error
-        const audioFormData = new FormData();
-        audioFiles.forEach(file => {
-          audioFormData.append('Files', file);
-        });
 
-        try {
-          await uploadAudiobookTracks(newBook.bookId, audioFormData);
-          console.log(`Audio tracks uploaded successfully for book ${newBook.bookId}`);
-        } catch (audioErr) {
-          const audioErrorMsg = audioErr.message || 'Failed to upload audio tracks. Please add them later from the book detail page.';
-          console.error("Audio upload failed:", audioErrorMsg);
-          // Set a separate error state or append to the main error?
-          // For now, let's just log it and potentially show a non-blocking message later.
-          // We will still navigate to the book page.
-          setAudioUploadError(audioErrorMsg); // Use a separate state to avoid overwriting book creation errors
+        let successCount = 0;
+        let failCount = 0;
+        const totalFiles = audioFiles.length;
+
+        for (let i = 0; i < totalFiles; i++) {
+          setLoadingText(`Uploading audio track ${i + 1} of ${totalFiles}...`);
+
+          const audioFormData = new FormData();
+          audioFormData.append('Files', audioFiles[i]);
+
+          try {
+            // If we want to show progress, we need a way to render it.
+            // For now, just logging progress.
+            console.log(`Uploading audio file ${i + 1}/${totalFiles}: ${audioFiles[i].name}`);
+            await uploadAudiobookTracks(newBook.bookId, audioFormData);
+            successCount++;
+          } catch (audioErr) {
+            console.error(`Failed to upload ${audioFiles[i].name}:`, audioErr);
+            failCount++;
+          }
+        }
+
+        if (failCount > 0) {
+          setAudioUploadError(`Uploaded ${successCount} tracks, but failed ${failCount}. You can retry in the book details.`);
+        } else {
+          console.log(`All ${successCount} audio tracks uploaded successfully.`);
         }
       }
       // --- End: Audiobook Upload Logic ---
@@ -135,11 +149,12 @@ const BookCreate = () => {
       navigate(`/books/${newBook.bookId}`);
 
     } catch (err) {
-       const errorMsg = err.response?.data?.message || err.message || `Failed to ${activeTab === 'manual' ? 'create' : 'upload'} book. Please try again.`;
-       setError(errorMsg);
-       // Don't proceed to audio upload if book creation failed
+      const errorMsg = err.response?.data?.message || err.message || `Failed to ${activeTab === 'manual' ? 'create' : 'upload'} book. Please try again.`;
+      setError(errorMsg);
+      // Don't proceed to audio upload if book creation failed
     } finally {
-       setLoading(false);
+      setLoading(false);
+      setLoadingText('');
     }
   };
 
@@ -158,7 +173,7 @@ const BookCreate = () => {
       setFile(e.target.files[0]);
       // Optionally set title from filename if title is empty
       if (!title.trim()) {
-         setTitle(e.target.files[0].name.replace(/\.[^/.]+$/, "")); // Remove extension
+        setTitle(e.target.files[0].name.replace(/\.[^/.]+$/, "")); // Remove extension
       }
     } else {
       setFile(null);
@@ -197,7 +212,7 @@ const BookCreate = () => {
                   />
                 </Form.Group>
               </Col>
-              
+
               <Col md={6}>
                 <Form.Group className="mb-3" controlId="language">
                   <Form.Label>Language</Form.Label>
@@ -231,7 +246,7 @@ const BookCreate = () => {
               />
             </Form.Group>
 
-             {/* Tags Input */}
+            {/* Tags Input */}
             <Form.Group className="mb-3" controlId="tags">
               <Form.Label>Tags (Optional)</Form.Label>
               <Form.Control
@@ -306,18 +321,18 @@ const BookCreate = () => {
                 </Form.Group>
               </Tab>
               <Tab eventKey="upload" title="Upload File (.txt, .epub)">
-                 <Form.Group controlId="formFile" className="mb-3 mt-3">
-                    <Form.Label>Select Book File</Form.Label>
-                    <Form.Control
-                      type="file"
-                      accept=".txt,.epub"
-                      onChange={handleFileChange}
-                      required={activeTab === 'upload'} // Required only if this tab is active
-                    />
-                     <Form.Text className="text-muted">
-                        Upload a .txt or .epub file. Content will be extracted and split.
-                     </Form.Text>
-                  </Form.Group>
+                <Form.Group controlId="formFile" className="mb-3 mt-3">
+                  <Form.Label>Select Book File</Form.Label>
+                  <Form.Control
+                    type="file"
+                    accept=".txt,.epub"
+                    onChange={handleFileChange}
+                    required={activeTab === 'upload'} // Required only if this tab is active
+                  />
+                  <Form.Text className="text-muted">
+                    Upload a .txt or .epub file. Content will be extracted and split.
+                  </Form.Text>
+                </Form.Group>
               </Tab>
             </Tabs>
 
@@ -339,10 +354,15 @@ const BookCreate = () => {
             <div className="d-grid gap-2">
               {/* Submit button outside tabs */}
               <Button variant="primary" type="submit" disabled={loading || languages.length === 0 || (activeTab === 'upload' && !file)}>
-                {loading ? (activeTab === 'upload' ? 'Uploading...' : 'Creating...') : `Create Book ${activeTab === 'upload' ? 'from File' : 'from Text'}`}
+                {loading ? (
+                  <>
+                    <Spinner animation="border" size="sm" className="me-2" />
+                    {loadingText || (activeTab === 'upload' ? 'Uploading...' : 'Creating...')}
+                  </>
+                ) : `Create Book ${activeTab === 'upload' ? 'from File' : 'from Text'}`}
               </Button>
-              <Button 
-                variant="outline-secondary" 
+              <Button
+                variant="outline-secondary"
                 onClick={() => navigate('/books')}
                 disabled={loading}
               >

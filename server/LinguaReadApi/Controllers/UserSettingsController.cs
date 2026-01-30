@@ -303,7 +303,7 @@ namespace LinguaReadApi.Controllers
 
                     foreach (var audioPath in userTexts)
                     {
-                        var fullPath = Path.Combine(wwwrootPath, audioPath.TrimStart('/'));
+                        var fullPath = Path.Combine(wwwrootPath, audioPath!.TrimStart('/'));
                         if (System.IO.File.Exists(fullPath))
                         {
                             var fileInfo = new FileInfo(fullPath);

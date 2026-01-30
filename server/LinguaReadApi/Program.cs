@@ -26,14 +26,14 @@ builder.WebHost.ConfigureKestrel(serverOptions =>
 {
     // Set a higher limit for the request body size to support large audiobooks
     // Adjusted to 5 GB to allow uploading complete audiobooks
-    serverOptions.Limits.MaxRequestBodySize = 5120 * 1024 * 1024; // 5 GB (5120 MB)
+    serverOptions.Limits.MaxRequestBodySize = 5120L * 1024 * 1024; // 5 GB (5120 MB)
 });
 
 // --- Add Form Options Configuration ---
 builder.Services.Configure<FormOptions>(options =>
 {
     // Ensure this limit is also high enough for multipart requests (5 GB to match Kestrel)
-    options.MultipartBodyLengthLimit = 5120 * 1024 * 1024; // 5 GB (5120 MB)
+    options.MultipartBodyLengthLimit = 5120L * 1024 * 1024; // 5 GB (5120 MB)
     // You might need to adjust other limits depending on your form data
     options.ValueLengthLimit = int.MaxValue; // Or a specific large value
     options.KeyLengthLimit = int.MaxValue;   // Or a specific large value

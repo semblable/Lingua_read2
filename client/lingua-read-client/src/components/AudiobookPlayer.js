@@ -69,8 +69,14 @@ const AudiobookPlayer = ({
   useEffect(() => {
     const newTracks = sourceTracks;
     setPlaylist(prev => {
-      if (prev.length !== newTracks.length) return newTracks;
-      if (prev.length > 0 && prev[0].trackId !== newTracks[0]?.trackId) return newTracks;
+      if (prev.length !== newTracks.length) {
+        setIsInitialized(false); // Reset initialization on track change
+        return newTracks;
+      }
+      if (prev.length > 0 && prev[0].trackId !== newTracks[0]?.trackId) {
+        setIsInitialized(false);
+        return newTracks;
+      }
       return newTracks;
     });
   }, [sourceTracks]);
@@ -81,8 +87,9 @@ const AudiobookPlayer = ({
     let mounted = true;
     const loadProgress = async () => {
       // FIX: Added 'sourceTracks' dependency logic inside or check
+      // FIX: Added 'sourceTracks' dependency logic inside or check
       if (sourceTracks.length === 0) {
-        setIsInitialized(true);
+        // Don't set initialized to true if no tracks, wait for them.
         setIsLoading(false);
         return;
       }
@@ -128,10 +135,14 @@ const AudiobookPlayer = ({
 
     loadProgress();
 
-    return () => { mounted = false; };
+    return () => {
+      mounted = false;
+    };
     // FIX: Included sourceTracks to re-run if tracks change (although logic handles empty). 
     // Ideally we want this to run once per "content", but sourceTracks is the content def.
   }, [book?.bookId, textId, isBookMode, sourceTracks]);
+
+
 
 
   // --- FIVE: Active Track Management ---
@@ -226,6 +237,11 @@ const AudiobookPlayer = ({
     audio.addEventListener('waiting', onWaiting);
     audio.addEventListener('playing', onPlaying);
 
+    // Check if metadata is already loaded (race condition fix)
+    if (audio.readyState >= 1) {
+      handleLoadedMetadata();
+    }
+
     return () => {
       audio.removeEventListener('loadedmetadata', handleLoadedMetadata);
       audio.removeEventListener('timeupdate', handleTimeUpdate);
@@ -315,11 +331,23 @@ const AudiobookPlayer = ({
     }
   }, [isPlaying, saveProgress]);
 
-  // Page Exit Save
+  // Save on Unmount (React Lifecycle)
+  useEffect(() => {
+    return () => {
+      console.log("[AudioPlayer] Unmounting - Saving progress.");
+      saveProgress(true); // Force save
+    };
+  }, [saveProgress]);
+
+  // Page Exit Save (Browser Lifecycle)
   useEffect(() => {
     const handleUnload = () => saveProgress(true);
     window.addEventListener('pagehide', handleUnload);
-    return () => window.removeEventListener('pagehide', handleUnload);
+    window.addEventListener('beforeunload', handleUnload); // Also listen for beforeunload
+    return () => {
+      window.removeEventListener('pagehide', handleUnload);
+      window.removeEventListener('beforeunload', handleUnload);
+    }
   }, [saveProgress]);
 
 

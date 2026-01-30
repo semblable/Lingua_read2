@@ -171,7 +171,7 @@ namespace LinguaReadApi.Services
                         openRouterResponse.Choices.Length > 0 &&
                         openRouterResponse.Choices[0].Message?.Content != null)
                     {
-                        var generatedStory = openRouterResponse.Choices[0].Message.Content;
+                        var generatedStory = openRouterResponse.Choices[0].Message!.Content;
                         _logger.LogInformation("Story generation successful using OpenRouter, length: {Length}", generatedStory.Length);
                         return generatedStory;
                     }

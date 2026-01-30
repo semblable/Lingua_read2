@@ -333,7 +333,7 @@ Example Output:
                     openRouterResponse.Choices.Length > 0 &&
                     openRouterResponse.Choices[0].Message?.Content != null)
                 {
-                    var translatedText = openRouterResponse.Choices[0].Message.Content;
+                    var translatedText = openRouterResponse.Choices[0].Message!.Content;
                     _logger.LogInformation("Translation successful using OpenRouter, length: {Length}", translatedText.Length);
                     return translatedText;
                 }

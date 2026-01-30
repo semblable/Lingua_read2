@@ -163,11 +163,11 @@ Example Output:
 
                     if (openRouterResponse?.Choices != null &&
                         openRouterResponse.Choices.Length > 0 &&
-                        openRouterResponse.Choices[0].Message != null)
+                        openRouterResponse.Choices[0].Message?.Content != null)
                     {
                         var translatedText = openRouterResponse.Choices[0].Message.Content;
-                        _logger.LogInformation("Translation successful using OpenRouter, length: {Length}", translatedText?.Length ?? 0);
-                        return translatedText ?? string.Empty;
+                        _logger.LogInformation("Translation successful using OpenRouter, length: {Length}", translatedText.Length);
+                        return translatedText;
                     }
 
                     _logger.LogWarning("Could not extract translation from OpenRouter response");

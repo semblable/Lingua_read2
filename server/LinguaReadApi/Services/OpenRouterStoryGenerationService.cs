@@ -133,11 +133,11 @@ namespace LinguaReadApi.Services
 
                     if (openRouterResponse?.Choices != null &&
                         openRouterResponse.Choices.Length > 0 &&
-                        openRouterResponse.Choices[0].Message != null)
+                        openRouterResponse.Choices[0].Message?.Content != null)
                     {
                         var generatedStory = openRouterResponse.Choices[0].Message.Content;
-                        _logger.LogInformation("Story generation successful using OpenRouter, length: {Length}", generatedStory?.Length ?? 0);
-                        return generatedStory ?? string.Empty;
+                        _logger.LogInformation("Story generation successful using OpenRouter, length: {Length}", generatedStory.Length);
+                        return generatedStory;
                     }
 
                     _logger.LogWarning("Could not extract story from OpenRouter response");

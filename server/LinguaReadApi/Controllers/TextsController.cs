@@ -541,131 +541,97 @@ namespace LinguaReadApi.Controllers
 
             var mp3Infos = fileInfos.Where(fi => fi.Type == FileType.MP3 && !fi.HasError).ToList();
             var srtInfos = fileInfos.Where(fi => fi.Type == FileType.SRT && !fi.HasError).ToList();
-
-            var mp3sByNormalizedBase = mp3Infos.GroupBy(fi => fi.NormalizedBaseName).ToDictionary(g => g.Key, g => g.ToList());
-            var srtsByNormalizedBase = srtInfos.GroupBy(fi => fi.NormalizedBaseName).ToDictionary(g => g.Key, g => g.ToList());
+            var availableSrts = new List<FileInfoResult>(srtInfos); // Track unmatched SRTs
 
             var processedFiles = new HashSet<string>(); // Track original filenames that have been processed (paired or skipped)
 
             _logger.LogInformation("Attempting fuzzy pairing. MP3s found: {Mp3Count}, SRTs found: {SrtCount}", mp3Infos.Count, srtInfos.Count);
 
-            foreach (var kvp in mp3sByNormalizedBase)
+            // Process each MP3 individually and find the best matching SRT
+            foreach (var mp3Info in mp3Infos)
             {
-                var normalizedName = kvp.Key;
-                var currentMp3Infos = kvp.Value;
-                srtsByNormalizedBase.TryGetValue(normalizedName, out var currentSrtInfos);
+                if (processedFiles.Contains(mp3Info.OriginalName))
+                    continue;
 
-                _logger.LogDebug("Checking normalized name: '{NormalizedName}'. MP3s: {Mp3Count}, SRTs: {SrtCount}",
-                    normalizedName, currentMp3Infos.Count, currentSrtInfos?.Count ?? 0);
+                processedFiles.Add(mp3Info.OriginalName);
 
-                // Check for Ambiguity or Missing Pairs
-                bool isAmbiguous = false;
-                if (currentMp3Infos.Count > 1)
+                // Find best matching SRT using longest common prefix
+                var bestMatch = FindBestSrtMatch(mp3Info, availableSrts);
+
+                if (bestMatch != null)
                 {
-                    _logger.LogWarning("Ambiguous MP3 match for normalized name '{NormalizedName}'. Files: {FileNames}", normalizedName, string.Join(", ", currentMp3Infos.Select(fi => fi.OriginalName)));
-                    currentMp3Infos.ForEach(fi => {
-                        skippedFiles.Add($"{fi.OriginalName} (Ambiguous MP3 Match)");
-                        processedFiles.Add(fi.OriginalName);
-                    });
-                    isAmbiguous = true;
-                }
-                if (currentSrtInfos != null && currentSrtInfos.Count > 1)
-                {
-                     _logger.LogWarning("Ambiguous SRT match for normalized name '{NormalizedName}'. Files: {FileNames}", normalizedName, string.Join(", ", currentSrtInfos.Select(fi => fi.OriginalName)));
-                     currentSrtInfos.ForEach(fi => {
-                         skippedFiles.Add($"{fi.OriginalName} (Ambiguous SRT Match)");
-                         processedFiles.Add(fi.OriginalName);
-                     });
-                     isAmbiguous = true;
-                }
+                    var srtInfo = bestMatch;
+                    availableSrts.Remove(srtInfo); // Remove from available pool
+                    processedFiles.Add(srtInfo.OriginalName); // Mark SRT as processed
 
-                if (isAmbiguous)
-                {
-                    // If SRTs existed but were ambiguous, ensure they are marked as processed/skipped
-                    currentSrtInfos?.ForEach(fi => processedFiles.Add(fi.OriginalName));
-                    continue; // Move to the next normalized name
-                }
+                    _logger.LogInformation("Processing pair: MP3 '{Mp3Name}' matched with SRT '{SrtName}'",
+                        mp3Info.OriginalName, srtInfo.OriginalName);
 
-                // Process 1-to-1 Matches or Missing Pairs
-                if (currentMp3Infos.Count == 1)
-                {
-                    var mp3Info = currentMp3Infos[0];
-                    processedFiles.Add(mp3Info.OriginalName); // Mark MP3 as processed
-
-                    if (currentSrtInfos != null && currentSrtInfos.Count == 1)
+                    string? audioFilePath = null;
+                    try
                     {
-                        var srtInfo = currentSrtInfos[0];
-                        processedFiles.Add(srtInfo.OriginalName); // Mark SRT as processed
+                        // --- 1. Save Audio File ---
+                        var audioFileName = $"{Guid.NewGuid()}_{Path.GetFileName(mp3Info.File.FileName)}";
+                        var userAudioDir = Path.Combine("wwwroot", "audio_lessons", userId.ToString());
+                        Directory.CreateDirectory(userAudioDir);
+                        var fullAudioPath = Path.Combine(userAudioDir, audioFileName);
 
-                        _logger.LogInformation("Processing pair for normalized name: '{NormalizedName}'. MP3: {Mp3Name}, SRT: {SrtName}",
-                            normalizedName, mp3Info.OriginalName, srtInfo.OriginalName);
-
-                        string? audioFilePath = null;
-                        try
+                        using (var stream = new FileStream(fullAudioPath, FileMode.Create))
                         {
-                            // --- 1. Save Audio File ---
-                            var audioFileName = $"{Guid.NewGuid()}_{Path.GetFileName(mp3Info.File.FileName)}";
-                            var userAudioDir = Path.Combine("wwwroot", "audio_lessons", userId.ToString());
-                            Directory.CreateDirectory(userAudioDir);
-                            var fullAudioPath = Path.Combine(userAudioDir, audioFileName);
-
-                            using (var stream = new FileStream(fullAudioPath, FileMode.Create))
-                            {
-                                await mp3Info.File.CopyToAsync(stream);
-                            }
-                            audioFilePath = Path.Combine("audio_lessons", userId.ToString(), audioFileName).Replace("\\", "/");
-
-                            // --- 2. Read and Parse SRT File ---
-                            string srtContent;
-                            using (var reader = new StreamReader(srtInfo.File.OpenReadStream()))
-                            {
-                                srtContent = await reader.ReadToEndAsync();
-                            }
-                            string transcript = ParseSrt(srtContent);
-
-                            if (string.IsNullOrWhiteSpace(transcript))
-                            {
-                                _logger.LogWarning("Could not parse transcript from SRT file: {SrtFileName} for normalized name: {NormalizedName}. Skipping.", srtInfo.OriginalName, normalizedName);
-                                skippedFiles.Add($"{mp3Info.OriginalName} / {srtInfo.OriginalName} (Transcript parsing failed)");
-                                if (!string.IsNullOrEmpty(audioFilePath)) {
-                                     var fullPathToDelete = Path.Combine("wwwroot", audioFilePath.Replace("/", "\\"));
-                                     if(System.IO.File.Exists(fullPathToDelete)) try { System.IO.File.Delete(fullPathToDelete); } catch (IOException ioEx) { _logger.LogWarning(ioEx, "Failed to delete audio file during cleanup: {FilePath}", fullPathToDelete); }
-                                }
-                                continue;
-                            }
-
-                            // --- 3. Create Text Entity ---
-                            var text = new Text
-                            {
-                                Title = mp3Info.BaseName, // Use MP3's original base name for title
-                                Content = transcript,
-                                LanguageId = dto.LanguageId,
-                                UserId = userId,
-                                CreatedAt = DateTime.UtcNow,
-                                IsAudioLesson = true,
-                                AudioFilePath = audioFilePath,
-                                SrtContent = srtContent,
-                                Tag = dto.Tag,
-                                LastAccessedAt = null // Explicitly null on creation
-                            };
-                            _context.Texts.Add(text);
-                            createdCount++;
+                            await mp3Info.File.CopyToAsync(stream);
                         }
-                        catch (Exception ex)
+                        audioFilePath = Path.Combine("audio_lessons", userId.ToString(), audioFileName).Replace("\\", "/");
+
+                        // --- 2. Read and Parse SRT File ---
+                        string srtContent;
+                        using (var reader = new StreamReader(srtInfo.File.OpenReadStream()))
                         {
-                            _logger.LogError(ex, "Error processing pair for normalized name {NormalizedName}. MP3: {Mp3Name}, SRT: {SrtName}. Skipping.", normalizedName, mp3Info.OriginalName, srtInfo.OriginalName);
-                            skippedFiles.Add($"{mp3Info.OriginalName} / {srtInfo.OriginalName} (Error: {ex.Message})");
+                            srtContent = await reader.ReadToEndAsync();
+                        }
+                        string transcript = ParseSrt(srtContent);
+
+                        if (string.IsNullOrWhiteSpace(transcript))
+                        {
+                            _logger.LogWarning("Could not parse transcript from SRT file: {SrtFileName}. Skipping.", srtInfo.OriginalName);
+                            skippedFiles.Add($"{mp3Info.OriginalName} / {srtInfo.OriginalName} (Transcript parsing failed)");
                             if (!string.IsNullOrEmpty(audioFilePath)) {
-                                var fullPathToDelete = Path.Combine("wwwroot", audioFilePath.Replace("/", "\\"));
-                                if(System.IO.File.Exists(fullPathToDelete)) try { System.IO.File.Delete(fullPathToDelete); } catch (IOException ioEx) { _logger.LogWarning(ioEx, "Failed to delete audio file during cleanup: {FilePath}", fullPathToDelete); }
+                                 var fullPathToDelete = Path.Combine("wwwroot", audioFilePath.Replace("/", "\\"));
+                                 if(System.IO.File.Exists(fullPathToDelete)) try { System.IO.File.Delete(fullPathToDelete); } catch (IOException ioEx) { _logger.LogWarning(ioEx, "Failed to delete audio file during cleanup: {FilePath}", fullPathToDelete); }
                             }
+                            continue;
+                        }
+
+                        // --- 3. Create Text Entity ---
+                        var text = new Text
+                        {
+                            Title = mp3Info.BaseName, // Use MP3's original base name for title
+                            Content = transcript,
+                            LanguageId = dto.LanguageId,
+                            UserId = userId,
+                            CreatedAt = DateTime.UtcNow,
+                            IsAudioLesson = true,
+                            AudioFilePath = audioFilePath,
+                            SrtContent = srtContent,
+                            Tag = dto.Tag,
+                            LastAccessedAt = null // Explicitly null on creation
+                        };
+                        _context.Texts.Add(text);
+                        createdCount++;
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Error processing pair. MP3: {Mp3Name}, SRT: {SrtName}. Skipping.", mp3Info.OriginalName, srtInfo.OriginalName);
+                        skippedFiles.Add($"{mp3Info.OriginalName} / {srtInfo.OriginalName} (Error: {ex.Message})");
+                        if (!string.IsNullOrEmpty(audioFilePath)) {
+                            var fullPathToDelete = Path.Combine("wwwroot", audioFilePath.Replace("/", "\\"));
+                            if(System.IO.File.Exists(fullPathToDelete)) try { System.IO.File.Delete(fullPathToDelete); } catch (IOException ioEx) { _logger.LogWarning(ioEx, "Failed to delete audio file during cleanup: {FilePath}", fullPathToDelete); }
                         }
                     }
-                    else // MP3 exists (count=1), but no matching SRT (count=0)
-                    {
-                        _logger.LogWarning("Missing SRT pair for MP3: {Mp3Name} (Normalized: '{NormalizedName}')", mp3Info.OriginalName, normalizedName);
-                        skippedFiles.Add($"{mp3Info.OriginalName} (Missing SRT Pair)");
-                    }
+                }
+                else // No matching SRT found
+                {
+                    _logger.LogWarning("No SRT match found for MP3: {Mp3Name}", mp3Info.OriginalName);
+                    skippedFiles.Add($"{mp3Info.OriginalName} (Missing SRT Pair)");
                 }
             }
 
@@ -815,6 +781,75 @@ namespace LinguaReadApi.Controllers
 
             // 5. Convert to lowercase
             return stem.ToLowerInvariant();
+        }
+
+        // Finds the best matching SRT for an MP3 file using longest common prefix matching
+        private FileInfoResult? FindBestSrtMatch(FileInfoResult mp3Info, List<FileInfoResult> availableSrts)
+        {
+            if (availableSrts == null || availableSrts.Count == 0)
+                return null;
+
+            var mp3Normalized = mp3Info.NormalizedBaseName;
+            if (string.IsNullOrEmpty(mp3Normalized))
+                return null;
+
+            FileInfoResult? bestMatch = null;
+            int bestScore = 0;
+            
+            foreach (var srt in availableSrts)
+            {
+                var srtNormalized = srt.NormalizedBaseName;
+                if (string.IsNullOrEmpty(srtNormalized))
+                    continue;
+
+                // Calculate longest common prefix length
+                int commonPrefixLength = GetLongestCommonPrefixLength(mp3Normalized, srtNormalized);
+                
+                // Use score that considers both prefix match and overall similarity
+                // Prioritize exact matches or very close matches
+                int score = commonPrefixLength;
+                
+                // Bonus for exact normalized name match
+                if (mp3Normalized == srtNormalized)
+                {
+                    score += 1000;
+                }
+                
+                // Update best match if this is better
+                if (score > bestScore)
+                {
+                    bestScore = score;
+                    bestMatch = srt;
+                }
+            }
+
+            // Only return a match if we have a reasonable match (at least 5 characters or the mp3 name is shorter)
+            int minMatchThreshold = Math.Min(5, mp3Normalized.Length);
+            if (bestScore < minMatchThreshold)
+            {
+                _logger.LogDebug("No good SRT match found for MP3 '{Mp3Name}'. Best score was {BestScore}, threshold is {Threshold}",
+                    mp3Info.OriginalName, bestScore, minMatchThreshold);
+                return null;
+            }
+
+            return bestMatch;
+        }
+
+        // Helper method to calculate the longest common prefix length between two strings
+        private int GetLongestCommonPrefixLength(string a, string b)
+        {
+            int minLength = Math.Min(a.Length, b.Length);
+            int commonLength = 0;
+            
+            for (int i = 0; i < minLength; i++)
+            {
+                if (a[i] == b[i])
+                    commonLength++;
+                else
+                    break;
+            }
+            
+            return commonLength;
         }
 
         // --- End: Fuzzy Parsing Helper ---

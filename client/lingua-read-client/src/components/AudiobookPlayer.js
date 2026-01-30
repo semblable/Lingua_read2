@@ -1,13 +1,24 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Button, Spinner, Alert, ProgressBar, ButtonGroup, Form } from 'react-bootstrap';
-import { getAudiobookProgress, updateAudiobookProgress, logListeningActivity } from '../utils/api';
+import { getAudiobookProgress, updateAudiobookProgress, getAudioLessonProgress, updateAudioLessonProgress, logListeningActivity } from '../utils/api';
 import { formatTime } from '../utils/helpers';
 import './AudiobookPlayer.css';
 
-const AudiobookPlayer = ({ book }) => {
-  const { audiobookTracks = [], bookId, languageId } = book || {};
+const AudiobookPlayer = ({
+  type = 'book',
+  book,
+  audioSrc,
+  textId,
+  languageId,
+  audioRef: externalAudioRef,
+  onTimeUpdate
+}) => {
+  const isBookMode = type === 'book';
+  const { audiobookTracks = [], bookId, languageId: bookLanguageId } = book || {};
+  const effectiveLanguageId = languageId || bookLanguageId;
 
-  const audioRef = useRef(null);
+  const internalAudioRef = useRef(null);
+  const audioRef = externalAudioRef || internalAudioRef;
   const [currentTrackIndex, setCurrentTrackIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLoading, setIsLoading] = useState(true); // Loading initial state/progress
@@ -39,33 +50,34 @@ const AudiobookPlayer = ({ book }) => {
   const progressBarRef = useRef(null);
   const initialSeekPositionRef = useRef(null); // Ref to store position loaded from backend
 
-  const currentTrack = audiobookTracks.length > 0 ? audiobookTracks[currentTrackIndex] : null;
+  const currentTrack = isBookMode && audiobookTracks.length > 0 ? audiobookTracks[currentTrackIndex] : null;
 
   // --- Load Last Playback Position ---
   useEffect(() => {
     const loadLastPosition = async () => {
       setIsLoading(true);
       try {
-        const progress = await getAudiobookProgress(bookId); // Pass bookId
-        if (progress.currentAudiobookTrackId && progress.currentAudiobookPosition != null) {
-          const lastTrackIndex = audiobookTracks.findIndex(t => t.trackId === progress.currentAudiobookTrackId);
-          console.log(`[AudioPlayer Load] Received progress: Track ID ${progress.currentAudiobookTrackId}, Position ${progress.currentAudiobookPosition}. Current Book ID: ${bookId}`);
-          if (lastTrackIndex !== -1) {
-            setCurrentTrackIndex(lastTrackIndex);
-            lastKnownTrackIndexRef.current = lastTrackIndex; // Update cached track index when restoring saved progress
-            // Store the loaded position in the ref instead of setting state immediately
-            initialSeekPositionRef.current = progress.currentAudiobookPosition;
-            console.log(`[AudioPlayer Load] Will attempt to resume Book ${bookId} at Track Index ${lastTrackIndex} (ID: ${progress.currentAudiobookTrackId}), Position ${progress.currentAudiobookPosition}`);
+        if (isBookMode) {
+          const progress = await getAudiobookProgress(bookId); // Pass bookId
+          if (progress.currentAudiobookTrackId && progress.currentAudiobookPosition != null) {
+            const lastTrackIndex = audiobookTracks.findIndex(t => t.trackId === progress.currentAudiobookTrackId);
+            console.log(`[AudioPlayer Load] Received progress: Track ID ${progress.currentAudiobookTrackId}, Position ${progress.currentAudiobookPosition}. Current Book ID: ${bookId}`);
+            if (lastTrackIndex !== -1) {
+              setCurrentTrackIndex(lastTrackIndex);
+              lastKnownTrackIndexRef.current = lastTrackIndex; // Update cached track index when restoring saved progress
+              // Store the loaded position in the ref instead of setting state immediately
+              initialSeekPositionRef.current = progress.currentAudiobookPosition;
+              console.log(`[AudioPlayer Load] Will attempt to resume Book ${bookId} at Track Index ${lastTrackIndex} (ID: ${progress.currentAudiobookTrackId}), Position ${progress.currentAudiobookPosition}`);
+            } else {
+              console.warn(`[AudioPlayer Load] Last saved track ID ${progress.currentAudiobookTrackId} not found in tracks for current Book ID ${bookId}. Starting from beginning.`);
+              setCurrentTrackIndex(0);
+              lastKnownTrackIndexRef.current = 0; // Reset cached track index if no saved progress
+              // Ensure initial seek ref is cleared if starting from beginning
+              initialSeekPositionRef.current = null;
+              console.log(`[AudioPlayer Log] setCurrentTime(0) from loadLastPosition (track not found or no progress)`);
+              setCurrentTime(0); // Set time to 0 if starting fresh
+            }
           } else {
-             console.warn(`[AudioPlayer Load] Last saved track ID ${progress.currentAudiobookTrackId} not found in tracks for current Book ID ${bookId}. Starting from beginning.`);
-             setCurrentTrackIndex(0);
-             lastKnownTrackIndexRef.current = 0; // Reset cached track index if no saved progress
-             // Ensure initial seek ref is cleared if starting from beginning
-             initialSeekPositionRef.current = null;
-             console.log(`[AudioPlayer Log] setCurrentTime(0) from loadLastPosition (track not found or no progress)`);
-             setCurrentTime(0); // Set time to 0 if starting fresh
-          }
-        } else {
             // No progress saved for this book
             console.log(`[AudioPlayer Load] No progress found for Book ID ${bookId}. Restoring cached position if available.`);
             const cachedTrackIndex = lastKnownTrackIndexRef.current || 0;
@@ -74,6 +86,20 @@ const AudiobookPlayer = ({ book }) => {
             setCurrentTrackIndex(cachedTrackIndex);
             initialSeekPositionRef.current = null;
             setCurrentTime(cachedPosition);
+          }
+        } else {
+          const progress = await getAudioLessonProgress(textId);
+          if (progress && progress.currentPosition != null) {
+            console.log(`[AudioPlayer Load] Restored lesson position ${progress.currentPosition} for textId ${textId}`);
+            initialSeekPositionRef.current = progress.currentPosition;
+            setCurrentTime(progress.currentPosition);
+            if (onTimeUpdate) onTimeUpdate(progress.currentPosition);
+          } else {
+            console.log(`[AudioPlayer Load] No progress found for lesson textId ${textId}.`);
+            initialSeekPositionRef.current = 0;
+            setCurrentTime(0);
+            if (onTimeUpdate) onTimeUpdate(0);
+          }
         }
       } catch (err) {
         console.error("Failed to load playback position:", err);
@@ -82,20 +108,29 @@ const AudiobookPlayer = ({ book }) => {
         initialSeekPositionRef.current = null;
         console.log(`[AudioPlayer Log] setCurrentTime(0) from loadLastPosition (error case)`);
         setCurrentTime(0);
+        if (!isBookMode && onTimeUpdate) onTimeUpdate(0);
       } finally {
         setIsLoading(false);
         setPlaybackPositionLoaded(true);
       }
     };
 
-    if (bookId && audiobookTracks.length > 0) {
+    if (isBookMode) {
+      if (bookId && audiobookTracks.length > 0) {
         console.log("[AudioPlayer] Attempting to load last position.");
         loadLastPosition();
-    } else {
+      } else {
         setIsLoading(false);
         setPlaybackPositionLoaded(true);
+      }
+    } else if (textId && audioSrc) {
+      console.log("[AudioPlayer] Attempting to load last lesson position.");
+      loadLastPosition();
+    } else {
+      setIsLoading(false);
+      setPlaybackPositionLoaded(true);
     }
-  }, [bookId, audiobookTracks]); // Ensure bookId and tracks are stable before loading
+  }, [isBookMode, bookId, audiobookTracks, textId, audioSrc, onTimeUpdate]);
 
   // --- Restore Playback Rate ---
   useEffect(() => {
@@ -111,49 +146,64 @@ const AudiobookPlayer = ({ book }) => {
   const saveProgress = useCallback(async (isUnmounting = false, trackOverride = null, positionOverride = null) => {
     // Use refs and state directly here
     const audio = audioRef.current;
-    const track = trackOverride || currentTrack;
     const position = positionOverride !== null ? positionOverride : (audio ? audio.currentTime : null);
     const ready = audio ? audio.readyState : null;
+    const track = isBookMode ? (trackOverride || currentTrack) : null;
 
-    if (!track || !audio || ready === 0) {
-      console.log("[AudioPlayer Save] Skipping save: No track, audio ref, or audio not ready.");
+    if (!audio || ready === 0) {
+      console.log("[AudioPlayer Save] Skipping save: No audio ref or audio not ready.");
+      return;
+    }
+
+    if (isBookMode && !track) {
+      console.log("[AudioPlayer Save] Skipping save: No track for book mode.");
       return;
     }
 
     // Avoid saving 0 position if track just started unless unmounting and duration exists
-    if (position === 0 && !isUnmounting && audio.duration > 0) {
+    if ((position === 0 || position === null) && !isUnmounting && audio.duration > 0) {
       console.log("[AudioPlayer Save] Skipping save: Position is 0 and not unmounting.");
       return;
     }
 
     // Also skip saving if position is effectively the end of the track (within 0.5s) unless unmounting
-    if (!isUnmounting && audio.duration > 0 && audio.duration - position < 0.5) {
+    if (isBookMode && !isUnmounting && audio.duration > 0 && position != null && audio.duration - position < 0.5) {
       console.log("[AudioPlayer Save] Skipping save: Position is at the end of the track.");
       return;
     }
 
-    // *** DEBUG LOG: Check position just before API call in saveProgress ***
-    console.log(`[AudioPlayer Save DEBUG] About to call API. Track ID: ${track?.trackId}, Position: ${position}, isUnmounting: ${isUnmounting}`);
-    console.log(`[AudioPlayer Save] Attempting to save progress for Book ${bookId}: Track ID ${track.trackId}, Position ${position}, Unmounting: ${isUnmounting}`);
     try {
-      await updateAudiobookProgress(bookId, {
-        currentAudiobookTrackId: track.trackId,
-        currentAudiobookPosition: position
-      });
-      console.log(`[AudioPlayer Save] Successfully saved progress for Book ${bookId}: Track ID ${track.trackId}, Position ${position}`);
+      if (isBookMode) {
+        // *** DEBUG LOG: Check position just before API call in saveProgress ***
+        console.log(`[AudioPlayer Save DEBUG] About to call API. Track ID: ${track?.trackId}, Position: ${position}, isUnmounting: ${isUnmounting}`);
+        console.log(`[AudioPlayer Save] Attempting to save progress for Book ${bookId}: Track ID ${track.trackId}, Position ${position}, Unmounting: ${isUnmounting}`);
+        await updateAudiobookProgress(bookId, {
+          currentAudiobookTrackId: track.trackId,
+          currentAudiobookPosition: position
+        });
+        console.log(`[AudioPlayer Save] Successfully saved progress for Book ${bookId}: Track ID ${track.trackId}, Position ${position}`);
+      } else if (textId) {
+        console.log(`[AudioPlayer Save] Attempting to save progress for lesson ${textId}: Position ${position}, Unmounting: ${isUnmounting}`);
+        await updateAudioLessonProgress(textId, { currentPosition: position });
+        console.log(`[AudioPlayer Save] Successfully saved progress for lesson ${textId}: Position ${position}`);
+      }
     } catch (err) {
-      console.error("[AudioPlayer Save] Failed to save audiobook progress:", err);
+      console.error("[AudioPlayer Save] Failed to save progress:", err);
       // Avoid setting error state if unmounting, as component is gone
       if (!isUnmounting) {
-          setError("Failed to save progress.");
+        setError("Failed to save progress.");
       }
     }
-  }, [bookId, currentTrack]); // Removed updateAudiobookProgress dependency
+  }, [audioRef, bookId, currentTrack, isBookMode, textId]);
 
   // --- Audio Element Setup & Event Listeners ---
   useEffect(() => {
     const audio = audioRef.current;
-    if (!audio || !currentTrack) return;
+    if (!audio) return;
+
+    const backendBaseUrl = process.env.REACT_APP_API_URL || 'http://localhost:5000';
+    const newSrc = isBookMode ? (currentTrack ? `${backendBaseUrl}/${currentTrack.filePath}` : null) : audioSrc;
+    if (!newSrc) return;
 
     let isMounted = true;
 
@@ -170,6 +220,7 @@ const AudiobookPlayer = ({ book }) => {
         audio.currentTime = seekPos;
         console.log(`[AudioPlayer Log] setCurrentTime from handleLoadedMetadata (initial seek): ${seekPos}`);
         setCurrentTime(seekPos); // Update state now that seek is done
+        if (onTimeUpdate) onTimeUpdate(seekPos);
         initialSeekPositionRef.current = null; // Clear the ref after seeking
       }
       // Note: Removed the fallback seek based on currentTime state here,
@@ -198,10 +249,14 @@ const AudiobookPlayer = ({ book }) => {
 
     const handleTimeUpdate = () => {
       if (isMounted) {
-          // console.log(`[AudioPlayer Log] setCurrentTime from handleTimeUpdate: ${audio.currentTime}`); // Very noisy, disable normally
-          setCurrentTime(audio.currentTime);
-          lastKnownPositionRef.current = audio.currentTime; // Update cached position
+        const newTime = audio.currentTime;
+        // console.log(`[AudioPlayer Log] setCurrentTime from handleTimeUpdate: ${newTime}`); // Very noisy, disable normally
+        setCurrentTime(newTime);
+        if (onTimeUpdate) onTimeUpdate(newTime);
+        if (isBookMode) {
+          lastKnownPositionRef.current = newTime; // Update cached position
           lastKnownTrackIndexRef.current = currentTrackIndex; // Update cached track index
+        }
       }
     };
 
@@ -224,6 +279,11 @@ const AudiobookPlayer = ({ book }) => {
 
     const handleEnded = () => {
       if (!isMounted) return;
+      if (!isBookMode) {
+        console.log("[AudioPlayer] Lesson audio ended.");
+        setIsPlaying(false);
+        return;
+      }
       console.log(`[AudioPlayer] Track ${currentTrackIndex + 1} ended.`);
       if (currentTrackIndex < audiobookTracks.length - 1) {
         // Move to the next track
@@ -245,7 +305,7 @@ const AudiobookPlayer = ({ book }) => {
     };
 
     // --- Setup ---
-    console.log(`[AudioPlayer] Setup effect for Track ${currentTrackIndex + 1}`);
+    console.log(`[AudioPlayer] Setup effect for ${isBookMode ? `Track ${currentTrackIndex + 1}` : 'Lesson audio'}`);
     audio.addEventListener('loadedmetadata', handleLoadedMetadata);
     audio.addEventListener('timeupdate', handleTimeUpdate);
     audio.addEventListener('play', handlePlay);
@@ -253,10 +313,10 @@ const AudiobookPlayer = ({ book }) => {
     audio.addEventListener('ended', handleEnded);
 
     // Set source and rate
-    const backendBaseUrl = process.env.REACT_APP_API_URL || 'http://localhost:5000';
-    const newSrc = `${backendBaseUrl}/${currentTrack.filePath}`;
     let sourceChanged = false;
-    console.log("[AudioPlayer] Current Track Data:", currentTrack);
+    if (isBookMode) {
+      console.log("[AudioPlayer] Current Track Data:", currentTrack);
+    }
     console.log(`[AudioPlayer] Constructed Audio URL: ${newSrc}`);
 
     // Check if the source needs to be updated
@@ -274,11 +334,11 @@ const AudiobookPlayer = ({ book }) => {
       // If the old source was empty, it means this is the initial load for this component instance.
       // In this case, we *keep* the initialSeekPositionRef loaded from the backend.
       // If the old source was *not* empty, it means the track is actually changing, so reset to 0.
-      if (audio.src && audio.src !== newSrc) { // Check if old src existed and is different
-         console.log(`[AudioPlayer DEBUG] Actual track change detected. Resetting initialSeekPositionRef to 0.`);
-         initialSeekPositionRef.current = 0;
+      if (audio.src && audio.src !== newSrc && isBookMode) { // Check if old src existed and is different
+        console.log(`[AudioPlayer DEBUG] Actual track change detected. Resetting initialSeekPositionRef to 0.`);
+        initialSeekPositionRef.current = 0;
       } else {
-         console.log(`[AudioPlayer DEBUG] Initial source load. Preserving initialSeekPositionRef (${initialSeekPositionRef.current}).`);
+        console.log(`[AudioPlayer DEBUG] Initial source load. Preserving initialSeekPositionRef (${initialSeekPositionRef.current}).`);
       }
       // --- END FIX ---
 
@@ -324,6 +384,7 @@ const AudiobookPlayer = ({ book }) => {
                 audio.currentTime = seekPos;
                 console.log(`[AudioPlayer Log] setCurrentTime from useEffect (applying loaded pos): ${seekPos}`);
                 setCurrentTime(seekPos); // Update state
+                if (onTimeUpdate) onTimeUpdate(seekPos);
             }
             // Clear ref once checked/applied
             initialSeekPositionRef.current = null;
@@ -341,7 +402,7 @@ const AudiobookPlayer = ({ book }) => {
       audio.removeEventListener('pause', handlePause);
       audio.removeEventListener('ended', handleEnded);
     };
-  }, [currentTrackIndex, playbackRate, audiobookTracks, isPlaying, playbackPositionLoaded, currentTrack, saveProgress]); // Added saveProgress dependency
+  }, [currentTrackIndex, playbackRate, audiobookTracks, isPlaying, playbackPositionLoaded, currentTrack, saveProgress, isBookMode, audioSrc, onTimeUpdate]); // Added saveProgress dependency
 
   // --- Play/Pause Logic ---
   const togglePlayPause = useCallback(() => {
@@ -349,6 +410,13 @@ const AudiobookPlayer = ({ book }) => {
     if (!audio) {
         console.error("[AudioPlayer togglePlayPause] Audio ref is null!");
         setError("Audio element not available.");
+        return;
+    }
+    const backendBaseUrl = process.env.REACT_APP_API_URL || 'http://localhost:5000';
+    const desiredSrc = isBookMode ? (currentTrack ? `${backendBaseUrl}/${currentTrack.filePath}` : null) : audioSrc;
+    if (!desiredSrc) {
+        console.error("[AudioPlayer togglePlayPause] Audio source not available.");
+        setError("Audio source not available.");
         return;
     }
     console.log(`[AudioPlayer togglePlayPause] Called. Current isPlaying state: ${isPlaying}, audio.paused: ${audio.paused}`);
@@ -367,8 +435,8 @@ const AudiobookPlayer = ({ book }) => {
           setIsLoadingAudio(true); // Show loading indicator
           setIsPlaying(true); // Set intent to play, handleLoadedMetadata will trigger play later
           // Ensure load is triggered if needed (though useEffect should handle it)
-          if (!audio.src || audio.src !== `${process.env.REACT_APP_API_URL || 'http://localhost:5000'}/${currentTrack.filePath}`) {
-              audio.src = `${process.env.REACT_APP_API_URL || 'http://localhost:5000'}/${currentTrack.filePath}`;
+          if (!audio.src || audio.src !== desiredSrc) {
+              audio.src = desiredSrc;
               audio.load();
           } else if (audio.networkState === 3) { // NETWORK_NO_SOURCE
               audio.load();
@@ -396,12 +464,14 @@ const AudiobookPlayer = ({ book }) => {
           setIsPlaying(true); // Set intent to play
       }
     }
-  }, [isPlaying, currentTrack]); // Add currentTrack dependency
+  }, [isPlaying, currentTrack, isBookMode, audioSrc]); // Add currentTrack dependency
 
-  // --- Keyboard Shortcut (` key) ---
+  // --- Keyboard Shortcuts (Space + `) ---
   useEffect(() => {
     const handleKeyDown = (event) => {
-      if (event.key === '`') {
+      const tagName = event.target?.tagName;
+      if (tagName === 'INPUT' || tagName === 'TEXTAREA' || event.target?.isContentEditable) return;
+      if (event.key === '`' || event.code === 'Space') {
         event.preventDefault();
         togglePlayPause();
       }
@@ -440,6 +510,7 @@ const AudiobookPlayer = ({ book }) => {
       audio.currentTime = newTime;
       console.log(`[AudioPlayer Log] setCurrentTime from seek(): ${newTime}`);
       setCurrentTime(newTime); // Update state immediately for responsiveness
+      if (onTimeUpdate) onTimeUpdate(newTime);
       console.log(`[AudioPlayer Seek] Seeked by ${offsetSeconds}s to ${newTime}s`);
   };
 
@@ -459,6 +530,7 @@ const AudiobookPlayer = ({ book }) => {
           audio.currentTime = newTime;
           console.log(`[AudioPlayer Log] setCurrentTime from handleProgressClick(): ${newTime}`);
           setCurrentTime(newTime); // Update state immediately
+          if (onTimeUpdate) onTimeUpdate(newTime);
           console.log(`[AudioPlayer Seek] Seeked via progress bar to ${newTime}s (${(percentage * 100).toFixed(1)}%)`);
       }
   };
@@ -466,10 +538,10 @@ const AudiobookPlayer = ({ book }) => {
   // --- Log Listening Time ---
   const logListeningTime = useCallback(async (isUnmounting = false) => {
     const timeToLog = Math.floor(accumulatedListenTimeRef.current);
-    if (timeToLog > 0 && languageId) {
-      console.log(`[AudioPlayer Log] Attempting to log listening time: ${timeToLog}s for Lang ${languageId}, Unmounting: ${isUnmounting}`);
+    if (timeToLog > 0 && effectiveLanguageId) {
+      console.log(`[AudioPlayer Log] Attempting to log listening time: ${timeToLog}s for Lang ${effectiveLanguageId}, Unmounting: ${isUnmounting}`);
       try {
-        await logListeningActivity(languageId, timeToLog);
+        await logListeningActivity(effectiveLanguageId, timeToLog);
         console.log(`[AudioPlayer Log] Successfully logged ${timeToLog}s.`);
         accumulatedListenTimeRef.current = 0; // Reset only on success
       } catch (err) {
@@ -480,16 +552,17 @@ const AudiobookPlayer = ({ book }) => {
     } else if (isUnmounting) {
       console.log("[AudioPlayer Log] No accumulated time to log on unmount.");
     }
-  }, [languageId]); // Removed logListeningActivity dependency
+  }, [effectiveLanguageId]); // Removed logListeningActivity dependency
 
   // --- Effect for Timers and Cleanup ---
   useEffect(() => {
     const audioInstance = audioRef.current; // Capture ref value for cleanup
     let secondTimer = null;
 
+    const saveIntervalMs = isBookMode ? 15000 : 5000;
     if (isPlaying && !isLoadingAudio) {
       // Start timers
-      saveIntervalRef.current = setInterval(() => saveProgress(false), 15000);
+      saveIntervalRef.current = setInterval(() => saveProgress(false), saveIntervalMs);
       listeningLogIntervalRef.current = setInterval(() => logListeningTime(false), 60000);
       secondTimer = setInterval(() => {
         accumulatedListenTimeRef.current += 1;
@@ -530,21 +603,47 @@ const AudiobookPlayer = ({ book }) => {
       // Log unconditionally first
       console.log(`[AudioPlayer Cleanup] Final state check: isPlaying=${isPlaying}, isLoadingAudio=${isLoadingAudio}, bookId=${bookId}, trackId=${track?.trackId}, position=${position}, readyState=${ready}`);
 
-      if (audio && ready > 0 && track) { // Use captured ref value 'audio'
-          // *** DEBUG LOG: Check position just before saving in cleanup ***
+      const shouldSave = audio && ready > 0 && (isBookMode ? !!track : true);
+      if (shouldSave) { // Use captured ref value 'audio'
+        // *** DEBUG LOG: Check position just before saving in cleanup ***
+        if (isBookMode) {
           console.log(`[AudioPlayer Cleanup DEBUG] About to save final state. Track ID: ${track.trackId}, Position Read from audioRef.current: ${audio.currentTime}`);
           console.log(`[AudioPlayer Cleanup] Saving final state: Book ${bookId}, Track ${track.trackId}, Pos ${position}`); // Note: 'position' here uses the value read on line 486
-          // Call the useCallback versions directly
-          saveProgress(true);
-          logListeningTime(true);
+        } else {
+          console.log(`[AudioPlayer Cleanup] Saving final state for lesson. textId=${textId}, Pos ${position}`);
+        }
+        // Call the useCallback versions directly
+        saveProgress(true);
+        logListeningTime(true);
       } else {
-           console.log(`[AudioPlayer Cleanup] Skipping final save/log. Conditions not met: audio=${!!audio}, readyState=${ready}, track=${!!track}`); // Use captured ref value 'audio'
+        console.log(`[AudioPlayer Cleanup] Skipping final save/log. Conditions not met: audio=${!!audio}, readyState=${ready}, track=${!!track}`); // Use captured ref value 'audio'
       }
     };
     // Dependencies: Run effect when play state or loading state changes.
     // Also include saveProgress and logListeningTime if they were defined outside and wrapped in useCallback.
     // bookId, currentTrack are needed by the cleanup function's logic/logging.
-  }, [isPlaying, isLoadingAudio, saveProgress, logListeningTime, bookId, currentTrack]);
+  }, [isPlaying, isLoadingAudio, saveProgress, logListeningTime, bookId, currentTrack, isBookMode, textId]);
+
+  // --- Visibility/Unload Handling for Lessons ---
+  useEffect(() => {
+    if (isBookMode) return undefined;
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        saveProgress(false);
+        logListeningTime(false);
+      }
+    };
+    const handleBeforeUnload = () => {
+      saveProgress(true);
+      logListeningTime(true);
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [isBookMode, saveProgress, logListeningTime]);
 
 
   // --- Render Logic ---
@@ -552,12 +651,16 @@ const AudiobookPlayer = ({ book }) => {
     return <Spinner animation="border" size="sm" />;
   }
 
-  if (audiobookTracks.length === 0) {
+  if (isBookMode && audiobookTracks.length === 0) {
     return <p className="text-muted">No audiobook tracks available for this book.</p>;
   }
 
-  if (!currentTrack) {
+  if (isBookMode && !currentTrack) {
      return <Alert variant="warning">Could not load current track data.</Alert>;
+  }
+
+  if (!isBookMode && !audioSrc) {
+    return <p className="text-muted">No audio lesson available.</p>;
   }
 
 
@@ -570,7 +673,7 @@ const AudiobookPlayer = ({ book }) => {
       {/* Top Row: Track Info + Progress */}
       <div className="audiobook-player__progress d-flex align-items-center mb-0 gap-2"> {/* Reduced margin-bottom */}
          <small className="text-muted text-nowrap">
-             Trk {currentTrackIndex + 1}/{audiobookTracks.length}
+             {isBookMode ? `Trk ${currentTrackIndex + 1}/${audiobookTracks.length}` : 'Lesson'}
          </small>
         <ProgressBar
           ref={progressBarRef}
@@ -638,7 +741,7 @@ const AudiobookPlayer = ({ book }) => {
             size="sm"
             onClick={togglePlayPause}
             className="px-1 py-0" // Reduced padding
-            title={isPlaying ? 'Pause (` key)' : 'Play (` key)'}
+            title={isPlaying ? 'Pause (Space or `)' : 'Play (Space or `)'}
             style={{ minWidth: '40px' }} // Ensure it's slightly larger
             disabled={isLoadingAudio} // Disable button while loading audio
           >
@@ -659,36 +762,38 @@ const AudiobookPlayer = ({ book }) => {
         </div>
 
         {/* Track Navigation */}
-        <ButtonGroup size="sm" className="audiobook-player__tracks">
-          <Button
-            variant="outline-secondary"
-            size="sm"
-            onClick={() => {
-                // console.log(`[AudioPlayer Log] setCurrentTime(0) from prev track button`); // Removed - Let loadedmetadata handle initial time
-                // setCurrentTime(0); // Reset time state immediately - Let loadedmetadata handle initial time
-                initialSeekPositionRef.current = 0; // Ensure seek ref is 0
-                setCurrentTrackIndex(prev => Math.max(0, prev - 1));
-            }}
-            disabled={currentTrackIndex === 0}
-            className="px-1 py-0"
-            title="Previous Track">
-            <i className="bi bi-skip-start-fill" />
-          </Button>
-          <Button
-            variant="outline-secondary"
-            size="sm"
-            onClick={() => {
-                // console.log(`[AudioPlayer Log] setCurrentTime(0) from next track button`); // Removed - Let loadedmetadata handle initial time
-                // setCurrentTime(0); // Reset time state immediately - Let loadedmetadata handle initial time
-                initialSeekPositionRef.current = 0; // Ensure seek ref is 0
-                setCurrentTrackIndex(prev => Math.min(audiobookTracks.length - 1, prev + 1));
-            }}
-            disabled={currentTrackIndex === audiobookTracks.length - 1}
-            className="px-1 py-0"
-            title="Next Track">
-            <i className="bi bi-skip-end-fill" />
-          </Button>
-        </ButtonGroup>
+        {isBookMode && (
+          <ButtonGroup size="sm" className="audiobook-player__tracks">
+            <Button
+              variant="outline-secondary"
+              size="sm"
+              onClick={() => {
+                  // console.log(`[AudioPlayer Log] setCurrentTime(0) from prev track button`); // Removed - Let loadedmetadata handle initial time
+                  // setCurrentTime(0); // Reset time state immediately - Let loadedmetadata handle initial time
+                  initialSeekPositionRef.current = 0; // Ensure seek ref is 0
+                  setCurrentTrackIndex(prev => Math.max(0, prev - 1));
+              }}
+              disabled={currentTrackIndex === 0}
+              className="px-1 py-0"
+              title="Previous Track">
+              <i className="bi bi-skip-start-fill" />
+            </Button>
+            <Button
+              variant="outline-secondary"
+              size="sm"
+              onClick={() => {
+                  // console.log(`[AudioPlayer Log] setCurrentTime(0) from next track button`); // Removed - Let loadedmetadata handle initial time
+                  // setCurrentTime(0); // Reset time state immediately - Let loadedmetadata handle initial time
+                  initialSeekPositionRef.current = 0; // Ensure seek ref is 0
+                  setCurrentTrackIndex(prev => Math.min(audiobookTracks.length - 1, prev + 1));
+              }}
+              disabled={currentTrackIndex === audiobookTracks.length - 1}
+              className="px-1 py-0"
+              title="Next Track">
+              <i className="bi bi-skip-end-fill" />
+            </Button>
+          </ButtonGroup>
+        )}
         {/* Volume Control */}
         <div className="audiobook-player__volume d-flex align-items-center gap-1 ms-2" style={{ minWidth: 120 }}>
           <i

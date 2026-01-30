@@ -6,8 +6,7 @@ import {
   getText, createWord, updateWord, updateLastRead, completeLesson, getBook, // Use completeLesson instead of completeText
   translateText, /*translateSentence,*/ translateFullText, updateUserSettings, // Added updateUserSettings, removed unused getUserSettings
   batchTranslateWords, addTermsBatch, getLanguage, // Added getLanguage (Phase 3)
-  API_URL,
-  getAudioLessonProgress, updateAudioLessonProgress, logListeningActivity // Added audio lesson progress API functions
+  API_URL
 } from '../utils/api';
 import TranslationPopup from '../components/TranslationPopup';
 import AudiobookPlayer from '../components/AudiobookPlayer'; // Import AudiobookPlayer
@@ -131,11 +130,6 @@ const TextDisplay = () => {
   const listRef = useRef(null);
   const autoScrollRafRef = useRef(null);
   // Removed resizeDividerRef
-  const lastSaveTimeRef = useRef(Date.now()); // Ref for throttling position saves
-  const saveInterval = 5000; // Save position every 5 seconds
-  const startTimeRef = useRef(null); // Ref for tracking listening start time
-  const accumulatedDurationRef = useRef(0); // Ref for tracking total listening duration in ms for the session
-  const listeningLogIntervalRef = useRef(null); // Interval for periodic listening logs
 
   // --- State Declarations ---
   const [loading, setLoading] = useState(true);
@@ -176,8 +170,6 @@ const TextDisplay = () => {
   const [currentSrtLineId, setCurrentSrtLineId] = useState(null);
   const [audioCurrentTime, setAudioCurrentTime] = useState(0);
   const [displayMode, setDisplayMode] = useState('audio');
-  const [initialAudioTime, setInitialAudioTime] = useState(null); // State for restored time
-  const [playbackRate, setPlaybackRate] = useState(1.0); // State for playback speed
   const [languageConfig, setLanguageConfig] = useState(null); // State for language settings (Phase 3)
   const [embeddedUrl, setEmbeddedUrl] = useState(null); // State for embedded dictionary iframe URL (Phase 3)
   const [bookmarkedIndices, setBookmarkedIndices] = useState([]); // State for bookmarked sentence indices
@@ -186,7 +178,6 @@ const TextDisplay = () => {
   const [showMobileHeader, setShowMobileHeader] = useState(false);
   const [isWordPanelOpen, setIsWordPanelOpen] = useState(false);
   const [readingStyle, setReadingStyle] = useState('balanced');
-  const [isAudioPlaying, setIsAudioPlaying] = useState(false);
   // --- End State Declarations ---
 
   // --- Effects ---
@@ -238,49 +229,6 @@ const TextDisplay = () => {
       console.log(`[fetchAllLanguageWords] Replaced words state with ${allLanguageWords.length} words from backend.`);
     } catch (error) { console.error('Error fetching language words:', error); }
   }, [setWords]); // Dependency: setWords
-
-  const saveAudioLessonProgress = useCallback(async (positionOverride = null) => {
-    if (!isAudioLesson) return;
-    const position = positionOverride ?? audioRef.current?.currentTime;
-    if (!position || position <= 0) return;
-    try {
-      await updateAudioLessonProgress(textId, { currentPosition: position });
-      lastSaveTimeRef.current = Date.now();
-    } catch (err) {
-      console.error(`[Audio Save] Failed to save position for textId ${textId}:`, err);
-    }
-  }, [isAudioLesson, textId]);
-
-  const flushListeningDuration = useCallback(async (isFinal = false) => {
-    if (!text?.languageId) return;
-    const now = Date.now();
-    const isPlayingNow = !!startTimeRef.current;
-    let totalMs = accumulatedDurationRef.current;
-    if (isPlayingNow) {
-      totalMs += now - startTimeRef.current;
-    }
-    const secondsToLog = Math.floor(totalMs / 1000);
-    if (secondsToLog <= 0) {
-      if (isFinal) {
-        accumulatedDurationRef.current = 0;
-        startTimeRef.current = null;
-      }
-      return;
-    }
-
-    try {
-      await logListeningActivity(text.languageId, secondsToLog);
-      const remainingMs = totalMs - (secondsToLog * 1000);
-      accumulatedDurationRef.current = remainingMs;
-      startTimeRef.current = isPlayingNow ? now : null;
-    } catch (err) {
-      console.error('[Audio Log] Failed to log listening activity:', err);
-      if (isFinal) {
-        accumulatedDurationRef.current = 0;
-        startTimeRef.current = null;
-      }
-    }
-  }, [text?.languageId]);
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const getWordData = useCallback((word) => {
@@ -666,23 +614,13 @@ const TextDisplay = () => {
 
   // Fetch Text Data, Restore Audio Time & Playback Rate
   useEffect(() => {
-    // --- Restore Playback Rate ---
-    const savedRate = localStorage.getItem('audioPlaybackRate');
-    if (savedRate && !isNaN(parseFloat(savedRate))) {
-        const rate = parseFloat(savedRate);
-        // Clamp rate between 0.5 and 2.0 on load
-        setPlaybackRate(Math.max(0.5, Math.min(rate, 2.0)));
-        console.log(`[Playback Rate Restore] Restored rate: ${rate}`);
-    }
-    // --- End Restore Playback Rate ---
-
     // --- Set initial panel width from global settings ---
     // This ensures panel width resets if global settings change while component is mounted
     setLeftPanelWidth(globalSettings.leftPanelWidth || 85);
     // --- End Set initial panel width ---
 
     const fetchText = async () => {
-      setLoading(true); setError(''); setBook(null); setNextTextId(null); setInitialAudioTime(null); setBookmarkedIndices([]); // Reset bookmarks for new text
+      setLoading(true); setError(''); setBook(null); setNextTextId(null); setBookmarkedIndices([]); // Reset bookmarks for new text
       try {
         const data = await getText(textId);
         setText(data);
@@ -701,21 +639,6 @@ const TextDisplay = () => {
           // --- END DEBUG ---
           setSrtLines(parseSrtContent(data.srtContent));
           setDisplayMode('audio');
-
-          // --- Restore Audio Time from Backend ---
-          getAudioLessonProgress(textId).then(progress => {
-            if (progress && progress.currentPosition != null && progress.currentPosition > 0) {
-              console.log(`[Audio Restore - Backend] Restored time: ${progress.currentPosition} for textId: ${textId}`);
-              setInitialAudioTime(progress.currentPosition); // Set state to trigger seek on metadata load
-            } else {
-              console.log(`[Audio Restore - Backend] No progress found or position is 0 for textId: ${textId}.`);
-              setInitialAudioTime(0); // Ensure it starts at 0 if no progress
-            }
-          }).catch(err => {
-            console.error("[Audio Restore - Backend] Failed to get audio lesson progress:", err);
-            setInitialAudioTime(0); // Start at 0 on error
-          });
-          // --- End Restore Audio Time ---
 
         } else {
           setIsAudioLesson(false); setAudioSrc(null); setSrtLines([]); setDisplayMode('text');
@@ -761,47 +684,8 @@ const TextDisplay = () => {
     };
     fetchText();
 
-    // Store audioRef.current in a variable inside the effect scope
-    const currentAudioElement = audioRef.current;
-
-    // Cleanup function to save time and log duration on unmount
-    return () => {
-      console.log('[TextDisplay Cleanup] Running cleanup function...');
-      // Log critical state values *at the time of cleanup*
-      console.log(`[TextDisplay Cleanup] State at cleanup: isAudioLesson=${isAudioLesson}, text exists=${!!text}, languageId=${text?.languageId}`);
-      try {
-        // Save Current Playback Position using the variable captured in the effect scope
-        if (currentAudioElement && isAudioLesson) {
-          const currentTime = currentAudioElement.currentTime;
-          if (currentTime > 0) {
-            console.log(`[Audio Save - Unmount] Saving position via API: ${currentTime} for textId: ${textId}`);
-          saveAudioLessonProgress(currentTime);
-          }
-        }
-
-        // Log Listening Duration
-        if (isAudioLesson && text?.languageId) {
-          console.log('[Audio Log - Unmount] Flushing listening duration...');
-          flushListeningDuration(true);
-        } else {
-             console.log('[Audio Log - Unmount] Skipping duration log: Not an audio lesson or no languageId.');
-        }
-        // Reset refs for safety, although component is unmounting
-        accumulatedDurationRef.current = 0;
-        startTimeRef.current = null;
-        console.log('[TextDisplay Cleanup] Refs reset.');
-
-      } catch (cleanupError) { // Add catch block
-          console.error('[TextDisplay Cleanup] Error during cleanup:', cleanupError);
-      } finally { // Add finally block
-          // Move ref resetting inside finally
-          accumulatedDurationRef.current = 0;
-          startTimeRef.current = null;
-          console.log('[TextDisplay Cleanup] Finished cleanup function and reset refs.');
-      }
-    }; // End of return function
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [textId, fetchAllLanguageWords, isAudioLesson, saveAudioLessonProgress, flushListeningDuration]); // 'text' is intentionally omitted to prevent loops; cleanup captures correct 'text' via closure.
+  }, [textId, fetchAllLanguageWords, isAudioLesson]); // 'text' is intentionally omitted to prevent loops; cleanup captures correct 'text' via closure.
 
 
   // Audio Sync & Scroll
@@ -842,68 +726,7 @@ const TextDisplay = () => {
   // Resizable Panel
   // Removed useEffect for drag-to-resize functionality
 
-  // --- Apply Playback Rate ---
-  useEffect(() => {
-      if (audioRef.current) {
-          audioRef.current.playbackRate = playbackRate;
-          console.log(`[Playback Rate Apply] Set audio playbackRate to: ${playbackRate}`);
-      }
-  }, [playbackRate]); // Apply whenever playbackRate state changes
-  // --- End Apply Playback Rate ---
-
-  // --- Save Audio Time Periodically ---
-  useEffect(() => {
-      if (isAudioLesson && audioCurrentTime > 0) { // Only save if playing and valid time
-          const now = Date.now();
-          if (now - lastSaveTimeRef.current > saveInterval) {
-              console.log(`[Audio Save - Throttled API] Saving time: ${audioCurrentTime} for textId: ${textId}`);
-              // Use API instead of localStorage
-              updateAudioLessonProgress(textId, { currentPosition: audioCurrentTime })
-                .then(() => {
-                  console.log(`[Audio Save - Throttled API] Success for textId: ${textId}`);
-                  lastSaveTimeRef.current = Date.now(); // Update last save time only on success
-                })
-                .catch(err => console.error(`[Audio Save - Throttled API] Failed for textId: ${textId}:`, err));
-          }
-      }
-  }, [audioCurrentTime, isAudioLesson, textId]); // Depend on time, lesson status, and textId
-  // --- End Save Audio Time ---
-
-  // --- Effect to Load Audio Source ---
-  // Use useLayoutEffect to ensure ref is attached before running
-  React.useLayoutEffect(() => {
-    if (isAudioLesson && audioSrc && displayMode === 'audio' && audioRef.current) {
-      console.log(`[Audio Load LayoutEffect] Conditions met. audioSrc: ${audioSrc}. Calling load() on audioRef.`);
-      audioRef.current.load();
-    } else {
-      console.log(`[Audio Load LayoutEffect] Skipping load(). isAudioLesson=${isAudioLesson}, audioSrc=${audioSrc}, displayMode=${displayMode}, audioRef exists=${!!audioRef.current}`);
-    }
-  }, [audioSrc, isAudioLesson, displayMode]);
-  // --- End Effect to Load Audio Source ---
-
-
   // --- Keyboard Shortcuts ---
-  useEffect(() => { // Spacebar
-    const handleKeyDown = (event) => {
-        // Ignore if typing in an input or textarea
-        if (event.target.tagName === 'INPUT' || event.target.tagName === 'TEXTAREA') {
-            return;
-        }
-        // Toggle play/pause for audio lessons when space is pressed
-        if (isAudioLesson && displayMode === 'audio' && event.code === 'Space') {
-            event.preventDefault(); // Prevent default space behavior (like scrolling)
-            if (audioRef.current) {
-                if (audioRef.current.paused) {
-                    audioRef.current.play();
-                } else {
-                    audioRef.current.pause();
-                }
-            }
-        }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isAudioLesson, displayMode]); // Add dependencies
 
   useEffect(() => { // 1-5 keys
     const handleKeyDown = (event) => {
@@ -935,38 +758,6 @@ const TextDisplay = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [hoveredWordTerm, processingWord, isTranslating, getWordData, setWords, selectedWord, displayedWord, text?.textId, globalSettings.autoTranslateWords, triggerAutoTranslation]); // Use globalSettings
   // --- End Keyboard Shortcuts ---
-
-  useEffect(() => {
-    if (!isAudioLesson) return undefined;
-    if (isAudioPlaying) {
-      listeningLogIntervalRef.current = setInterval(() => {
-        flushListeningDuration(false);
-      }, 60000);
-    }
-    return () => {
-      clearInterval(listeningLogIntervalRef.current);
-    };
-  }, [isAudioLesson, isAudioPlaying, flushListeningDuration]);
-
-  useEffect(() => {
-    if (!isAudioLesson) return undefined;
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'hidden') {
-        saveAudioLessonProgress();
-        flushListeningDuration(false);
-      }
-    };
-    const handleBeforeUnload = () => {
-      saveAudioLessonProgress();
-      flushListeningDuration(true);
-    };
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    window.addEventListener('beforeunload', handleBeforeUnload);
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      window.removeEventListener('beforeunload', handleBeforeUnload);
-    };
-  }, [isAudioLesson, saveAudioLessonProgress, flushListeningDuration]);
 
   // Removed redundant text selection listener useEffect hook
   // Selection is now handled by onMouseUp on the text container div
@@ -1104,82 +895,6 @@ const TextDisplay = () => {
       } catch (error) { alert(`Failed to complete lesson: ${error.message}`); }
       finally { setCompleting(false); }
     };
-
-  // --- New Handler for Audio Metadata Load ---
-  const handleAudioMetadataLoaded = () => {
-      console.log(`[Audio Metadata] Loaded. Initial time from state: ${initialAudioTime}`);
-      // Apply initial playback rate when metadata loads
-      if (audioRef.current) {
-          audioRef.current.playbackRate = playbackRate;
-      }
-      // --- DEBUGGING: Log values before attempting seek ---
-      console.log(`[Audio Metadata DEBUG] Checking seek condition: audioRef.current exists=${!!audioRef.current}, initialAudioTime=${initialAudioTime}, initialAudioTime >= 0=${initialAudioTime >= 0}`);
-
-      if (audioRef.current && initialAudioTime !== null && initialAudioTime >= 0) {
-          // Pause before seeking to ensure correct position is set before play
-          audioRef.current.pause();
-          console.log(`[Audio Metadata] Paused audio. Current time BEFORE seek: ${audioRef.current.currentTime}`);
-          console.log(`[Audio Metadata] Attempting to set current time to: ${initialAudioTime}`);
-          audioRef.current.currentTime = initialAudioTime;
-          // --- DEBUGGING: Log time immediately after setting ---
-          console.log(`[Audio Metadata DEBUG] Current time AFTER seek attempt: ${audioRef.current?.currentTime}`);
-          // Optionally, resume playback if desired (uncomment next line if you want auto-play)
-          // audioRef.current.play();
-          // Reset initial time state after applying it once
-          setInitialAudioTime(null);
-      } else if (audioRef.current) {
-          console.log(`[Audio Metadata] Condition NOT MET for setting initial time. initialAudioTime=${initialAudioTime}. Current time: ${audioRef.current.currentTime}`);
-      } else {
-          console.log(`[Audio Metadata DEBUG] Condition NOT MET because audioRef.current is null.`);
-      }
-  };
-
-  useEffect(() => {
-    if (!isAudioLesson || initialAudioTime === null) return;
-    if (audioRef.current && audioRef.current.readyState >= 1) {
-      const seekTime = initialAudioTime >= 0 ? initialAudioTime : 0;
-      console.log(`[Audio Restore] Applying late-loaded position ${seekTime}`);
-      audioRef.current.currentTime = seekTime;
-      setAudioCurrentTime(seekTime);
-      setInitialAudioTime(null);
-    }
-  }, [initialAudioTime, isAudioLesson]);
-
-  // --- Handlers for Playback Speed ---
-  const changePlaybackRate = (delta) => {
-      setPlaybackRate(prevRate => {
-          const newRate = parseFloat((prevRate + delta).toFixed(2));
-          const clampedRate = Math.max(0.5, Math.min(newRate, 2.0)); // Clamp between 0.5x and 2.0x
-          localStorage.setItem('audioPlaybackRate', clampedRate.toString()); // Save preference
-          console.log(`[Playback Rate Change] New rate: ${clampedRate}`);
-          return clampedRate;
-      });
-  };
-  // --- End Event Handlers ---
-
-  // --- Audio Play/Pause/End Handlers for Duration Tracking ---
-  const handlePlay = () => {
-      if (!startTimeRef.current) { // Start timer only if not already started
-          startTimeRef.current = Date.now();
-          console.log('[Audio Tracking] Play started/resumed. Start time:', startTimeRef.current);
-      }
-      setIsAudioPlaying(true);
-  };
-
-  const handlePauseOrEnd = () => {
-      if (startTimeRef.current) {
-          const elapsed = Date.now() - startTimeRef.current;
-          accumulatedDurationRef.current += elapsed;
-          console.log(`[Audio Tracking] Paused/Ended. Elapsed: ${elapsed}ms. Accumulated: ${accumulatedDurationRef.current}ms`);
-          startTimeRef.current = null; // Reset start time
-
-          // Log and save on pause/end to avoid losing progress
-          flushListeningDuration(false);
-          saveAudioLessonProgress(audioRef.current?.currentTime);
-      }
-      setIsAudioPlaying(false);
-  };
-  // --- End Audio Tracking Handlers ---
 
   // --- New Sentence Rendering Logic ---
   // Takes processed elements for a block (e.g., paragraph) and a starting index,
@@ -1439,13 +1154,6 @@ const TextDisplay = () => {
           </Button>
         </ButtonGroup>
       )}
-      {isAudioLesson && displayMode === 'audio' && (
-        <ButtonGroup size="sm" className="me-1" title={`Playback Speed: ${playbackRate.toFixed(2)}x`}>
-          <Button variant="outline-secondary" onClick={() => changePlaybackRate(-0.05)} disabled={playbackRate <= 0.5}>-</Button>
-          <Button variant="outline-secondary" disabled style={{ minWidth: '45px', textAlign: 'center' }}>{playbackRate.toFixed(2)}x</Button>
-          <Button variant="outline-secondary" onClick={() => changePlaybackRate(0.05)} disabled={playbackRate >= 2.0}>+</Button>
-        </ButtonGroup>
-      )}
       <ButtonGroup size="sm" className="me-1">
         <Button variant="outline-secondary" onClick={() => {
             const newSize = Math.max(12, globalSettings.textSize - 2);
@@ -1606,7 +1314,7 @@ const TextDisplay = () => {
              {/* Audiobook Player Integration - ONLY if NOT an audio lesson */}
              {!isAudioLesson && book && book.audiobookTracks && book.audiobookTracks.length > 0 && (
                <div className="lesson-header-player flex-grow-1 mx-2">
-                  <AudiobookPlayer book={book} />
+                  <AudiobookPlayer type="book" book={book} />
                </div>
              )}
            </div>
@@ -1626,19 +1334,14 @@ const TextDisplay = () => {
       {/* Audio Player */}
       {isAudioLesson && audioSrc && displayMode === 'audio' && (
         <div className={`audio-player-container p-2 border-bottom theme-aware-audio-player-container ${isMobile ? 'lesson-audio-bar' : ''}`}>
-          <audio
-            ref={audioRef}
-            controls
-            src={audioSrc}
-            onTimeUpdate={(e) => setAudioCurrentTime(e.target.currentTime)}
-            onLoadedMetadata={handleAudioMetadataLoaded}
-            onPlay={handlePlay} // Track play start
-            onPause={handlePauseOrEnd} // Track pause
-            onEnded={handlePauseOrEnd} // Track end
-            style={{ width: '100%' }}
-          >
-            Your browser does not support the audio element.
-          </audio>
+          <AudiobookPlayer
+            type="lesson"
+            audioSrc={audioSrc}
+            textId={textId}
+            languageId={text?.languageId}
+            audioRef={audioRef}
+            onTimeUpdate={setAudioCurrentTime}
+          />
         </div>
       )}
 

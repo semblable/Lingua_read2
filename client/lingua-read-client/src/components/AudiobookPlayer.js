@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Button, Spinner, Alert, ProgressBar, ButtonGroup } from 'react-bootstrap';
+import { Button, Spinner, Alert, ProgressBar } from 'react-bootstrap';
 import { getAudiobookProgress, updateAudiobookProgress, getAudioLessonProgress, updateAudioLessonProgress, logListeningActivity } from '../utils/api';
 import { formatTime } from '../utils/helpers';
 import './AudiobookPlayer.css';

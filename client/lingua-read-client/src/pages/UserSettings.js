@@ -557,27 +557,17 @@ const UserSettings = () => {
                 </Form.Group>
 
                 <Form.Group className="mb-4" controlId="openRouterModel">
-                  <Form.Label>Model</Form.Label>
-                  <Form.Select
+                  <Form.Label>Model Name</Form.Label>
+                  <Form.Control
+                    type="text"
                     name="openRouterModel"
+                    placeholder="google/gemini-2.5-flash-preview-05-20:free"
                     value={settings.openRouterModel}
                     onChange={handleChange}
-                  >
-                    <optgroup label="Free Models">
-                      <option value="google/gemini-2.5-flash-preview-05-20:free">Google Gemini 2.5 Flash (Free)</option>
-                      <option value="meta-llama/llama-3.3-8b-instruct:free">Meta Llama 3.3 8B (Free)</option>
-                      <option value="qwen/qwen3-4b:free">Qwen 3 4B (Free)</option>
-                      <option value="mistralai/mistral-small-3.1-24b-instruct:free">Mistral Small 3.1 24B (Free)</option>
-                      <option value="deepseek/deepseek-r1:free">DeepSeek R1 (Free)</option>
-                    </optgroup>
-                    <optgroup label="Paid Models">
-                      <option value="anthropic/claude-3.5-sonnet">Claude 3.5 Sonnet</option>
-                      <option value="openai/gpt-4o">GPT-4o</option>
-                      <option value="google/gemini-pro-1.5">Gemini Pro 1.5</option>
-                    </optgroup>
-                  </Form.Select>
+                  />
                   <Form.Text muted>
-                    Free models have rate limits. Paid models require credits in your OpenRouter account.
+                    Paste any model name from <a href="https://openrouter.ai/models" target="_blank" rel="noopener noreferrer">openrouter.ai/models</a>.
+                    Free models end with ":free".
                   </Form.Text>
                 </Form.Group>
               </>

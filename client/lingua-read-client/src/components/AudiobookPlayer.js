@@ -659,12 +659,12 @@ const AudiobookPlayer = ({
   // --- Visibility/Unload Handling for Lessons ---
   useEffect(() => {
     if (isBookMode) return undefined;
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'hidden') {
-        saveProgress(false);
-        logListeningTime(false);
-      }
-    };
+    // const handleVisibilityChange = () => {  // Removed unused function
+    //   if (document.visibilityState === 'hidden') {
+    //     saveProgress(false);
+    //     logListeningTime(false);
+    //   }
+    // };
     const handleBeforeUnload = () => {
       // Use true for isUnmounting to force save even if position is 0
       saveProgress(true);

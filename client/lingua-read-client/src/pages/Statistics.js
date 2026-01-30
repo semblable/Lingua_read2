@@ -102,8 +102,8 @@ const Statistics = () => {
 
         // Check for both camelCase and PascalCase versions of the property
         const wordsRead = lang.TotalWordsRead ||
-                        lang.totalWordsRead ||
-                        0;
+          lang.totalWordsRead ||
+          0;
 
         console.log(`Language ${lang.LanguageName || lang.languageName || 'unknown'}: ${wordsRead} words read`);
         return total + wordsRead;
@@ -194,17 +194,15 @@ const Statistics = () => {
   }, [location.state]);
 
   // --- Refactored Data Fetching ---
-  const fetchReadingActivityData = async (period) => {
+  const fetchReadingActivityData = async (period, languageId = null) => {
     setLoadingActivity(true);
     try {
-      console.log(`Starting reading activity fetch for period: ${period}`);
-      let data;
-      if (period && period !== 'all') {
-        const timezoneOffsetMinutes = new Date().getTimezoneOffset();
-        data = await getReadingActivity(period, timezoneOffsetMinutes);
-      } else {
-        data = await getReadingActivity(period);
-      }
+      console.log(`Starting reading activity fetch for period: ${period}, languageId: ${languageId}`);
+      // Pass timezone offset for all periods except 'all'
+      const timezoneOffsetMinutes = period !== 'all' ? new Date().getTimezoneOffset() : null;
+      // Convert 'all' string to null for API
+      const langId = languageId === 'all' ? null : languageId;
+      const data = await getReadingActivity(period, timezoneOffsetMinutes, langId);
       console.log('Reading activity data received:', data);
 
       if (!data) {
@@ -227,13 +225,15 @@ const Statistics = () => {
     }
   };
 
-  const fetchListeningActivityData = async (period) => {
+  const fetchListeningActivityData = async (period, languageId = null) => {
     setLoadingListeningActivity(true);
     try {
-      console.log(`Starting listening activity fetch for period: ${period}`);
+      console.log(`Starting listening activity fetch for period: ${period}, languageId: ${languageId}`);
       // Pass timezone offset for all periods except 'all'
       const timezoneOffsetMinutes = period !== 'all' ? new Date().getTimezoneOffset() : null;
-      const data = await getListeningActivity(period, timezoneOffsetMinutes);
+      // Convert 'all' string to null for API
+      const langId = languageId === 'all' ? null : languageId;
+      const data = await getListeningActivity(period, timezoneOffsetMinutes, langId);
       console.log('Raw listening activity data received:', data);
 
       if (!data || data.error) {
@@ -261,11 +261,11 @@ const Statistics = () => {
     }
   };
 
-  // Fetch activity data on initial load and when period changes
+  // Fetch activity data on initial load and when period or language changes
   useEffect(() => {
-    fetchReadingActivityData(activityPeriod);
-    fetchListeningActivityData(activityPeriod);
-  }, [activityPeriod]);
+    fetchReadingActivityData(activityPeriod, selectedLanguage);
+    fetchListeningActivityData(activityPeriod, selectedLanguage);
+  }, [activityPeriod, selectedLanguage]);
 
   // --- End Refactored Data Fetching ---
 
@@ -276,9 +276,9 @@ const Statistics = () => {
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
         console.log('[Stats Visibility] Page became visible, triggering re-fetch...');
-        // Re-trigger the fetch functions using the current activityPeriod
-        fetchReadingActivityData(activityPeriod);
-        fetchListeningActivityData(activityPeriod);
+        // Re-trigger the fetch functions using the current activityPeriod and selectedLanguage
+        fetchReadingActivityData(activityPeriod, selectedLanguage);
+        fetchListeningActivityData(activityPeriod, selectedLanguage);
       }
     };
 
@@ -288,14 +288,14 @@ const Statistics = () => {
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [activityPeriod]); // Re-run if activityPeriod changes
+  }, [activityPeriod, selectedLanguage]); // Re-run if activityPeriod changes
 
   // Callback function for successful manual entry
   const handleManualSubmitSuccess = () => {
     console.log("Manual entry successful, refreshing activity data...");
-    // Re-fetch data for the current period
-    fetchReadingActivityData(activityPeriod);
-    fetchListeningActivityData(activityPeriod);
+    // Re-fetch data for the current period and language
+    fetchReadingActivityData(activityPeriod, selectedLanguage);
+    fetchListeningActivityData(activityPeriod, selectedLanguage);
     // Optionally, could also re-fetch general stats if manual entry affects them
     // fetchStats(); // Uncomment if needed
   };
@@ -357,43 +357,43 @@ const Statistics = () => {
   //   }).sort((a, b) => b.wordCount - a.wordCount); // Sort by word count descending
   // };
 
- // Helper function to format duration in seconds to HH:MM:SS or similar
- const formatDuration = (totalSeconds) => {
-   if (totalSeconds === 0) return '0m';
-   const hours = Math.floor(totalSeconds / 3600);
-   const minutes = Math.floor((totalSeconds % 3600) / 60);
-   const seconds = totalSeconds % 60;
+  // Helper function to format duration in seconds to HH:MM:SS or similar
+  const formatDuration = (totalSeconds) => {
+    if (totalSeconds === 0) return '0m';
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
 
-   let formatted = '';
-   if (hours > 0) formatted += `${hours}h `;
-   if (minutes > 0 || hours > 0) formatted += `${minutes}m `; // Show minutes if hours exist or minutes > 0
-   if (hours === 0 && minutes < 10) formatted += `${seconds}s`; // Only show seconds if duration is short
+    let formatted = '';
+    if (hours > 0) formatted += `${hours}h `;
+    if (minutes > 0 || hours > 0) formatted += `${minutes}m `; // Show minutes if hours exist or minutes > 0
+    if (hours === 0 && minutes < 10) formatted += `${seconds}s`; // Only show seconds if duration is short
 
-   return formatted.trim() || '0s'; // Handle case where duration is < 1s
- };
+    return formatted.trim() || '0s'; // Handle case where duration is < 1s
+  };
 
- // Helper function to prepare listening activity by date data for charts
- const prepareListeningActivityByDateData = () => {
-   if (!listeningActivity?.ListeningByDate) return [];
-   return Object.entries(listeningActivity.ListeningByDate)
-     .map(([date, seconds]) => ({
-       date,
-       minutesListened: Math.round(seconds / 60) // Convert seconds to minutes for chart readability
-     }))
-     .sort((a, b) => new Date(a.date) - new Date(b.date)); // Sort by date ascending
- };
+  // Helper function to prepare listening activity by date data for charts
+  const prepareListeningActivityByDateData = () => {
+    if (!listeningActivity?.ListeningByDate) return [];
+    return Object.entries(listeningActivity.ListeningByDate)
+      .map(([date, seconds]) => ({
+        date,
+        minutesListened: Math.round(seconds / 60) // Convert seconds to minutes for chart readability
+      }))
+      .sort((a, b) => new Date(a.date) - new Date(b.date)); // Sort by date ascending
+  };
 
- // Helper function to prepare listening activity by language data for charts
- const prepareListeningActivityByLanguageData = () => {
-   if (!listeningActivity?.ListeningByLanguage || !Array.isArray(listeningActivity.ListeningByLanguage)) return [];
-   return listeningActivity.ListeningByLanguage
-     .map(lang => ({
-       language: lang.languageName || 'Unknown',
-       minutesListened: Math.round(lang.totalSeconds / 60) // Convert seconds to minutes
-     }))
-     .filter(item => item.minutesListened > 0) // Only show languages with listening time
-     .sort((a, b) => b.minutesListened - a.minutesListened); // Sort by duration descending
- };
+  // Helper function to prepare listening activity by language data for charts
+  const prepareListeningActivityByLanguageData = () => {
+    if (!listeningActivity?.ListeningByLanguage || !Array.isArray(listeningActivity.ListeningByLanguage)) return [];
+    return listeningActivity.ListeningByLanguage
+      .map(lang => ({
+        language: lang.languageName || 'Unknown',
+        minutesListened: Math.round(lang.totalSeconds / 60) // Convert seconds to minutes
+      }))
+      .filter(item => item.minutesListened > 0) // Only show languages with listening time
+      .sort((a, b) => b.minutesListened - a.minutesListened); // Sort by duration descending
+  };
 
 
   // Network Status Banner
@@ -485,53 +485,53 @@ const Statistics = () => {
   // Get language statistics safely
   // Combine all language data sources to get a unique list of languages
   const allLanguageStats = [
-      ...(Array.isArray(stats?.LanguageStatistics) ? stats.LanguageStatistics : []),
-      ...(Array.isArray(stats?.languageStatistics) ? stats.languageStatistics : []),
-      ...(Array.isArray(readingActivity?.ActivityByLanguage) ? readingActivity.ActivityByLanguage : []),
-      ...(Array.isArray(listeningActivity?.ListeningByLanguage) ? listeningActivity.ListeningByLanguage : [])
+    ...(Array.isArray(stats?.LanguageStatistics) ? stats.LanguageStatistics : []),
+    ...(Array.isArray(stats?.languageStatistics) ? stats.languageStatistics : []),
+    ...(Array.isArray(readingActivity?.ActivityByLanguage) ? readingActivity.ActivityByLanguage : []),
+    ...(Array.isArray(listeningActivity?.ListeningByLanguage) ? listeningActivity.ListeningByLanguage : [])
   ];
 
   const uniqueLanguages = allLanguageStats.reduce((acc, langStat) => {
-      const langId = langStat.LanguageId || langStat.languageId;
-      if (langId && !acc[langId]) {
-          acc[langId] = {
-              languageId: langId,
-              languageName: langStat.LanguageName || langStat.languageName || 'Unknown',
-              // Initialize cumulative stats
-              knownWords: 0,
-              learningWords: 0,
-              totalWordsEncountered: 0,
-              totalWordsRead: 0,          // Cumulative from UserLanguageStatistics
-              totalSecondsListened: 0,    // Cumulative from UserLanguageStatistics
-              totalTextsCompleted: 0,     // Cumulative from UserLanguageStatistics
-              totalBooksCompleted: 0,     // Cumulative from UserLanguageStatistics
-              bookCount: 0,               // Maybe from general stats?
-              finishedBookCount: 0,       // Maybe from general stats?
-              // Initialize period-specific stats
-              periodWordsRead: 0,         // From readingActivity
-              periodSecondsListened: 0    // From listeningActivity
-          };
-      }
-      return acc;
+    const langId = langStat.LanguageId || langStat.languageId;
+    if (langId && !acc[langId]) {
+      acc[langId] = {
+        languageId: langId,
+        languageName: langStat.LanguageName || langStat.languageName || 'Unknown',
+        // Initialize cumulative stats
+        knownWords: 0,
+        learningWords: 0,
+        totalWordsEncountered: 0,
+        totalWordsRead: 0,          // Cumulative from UserLanguageStatistics
+        totalSecondsListened: 0,    // Cumulative from UserLanguageStatistics
+        totalTextsCompleted: 0,     // Cumulative from UserLanguageStatistics
+        totalBooksCompleted: 0,     // Cumulative from UserLanguageStatistics
+        bookCount: 0,               // Maybe from general stats?
+        finishedBookCount: 0,       // Maybe from general stats?
+        // Initialize period-specific stats
+        periodWordsRead: 0,         // From readingActivity
+        periodSecondsListened: 0    // From listeningActivity
+      };
+    }
+    return acc;
   }, {});
 
   // Populate CUMULATIVE stats from stats.LanguageStatistics (for fields NOT available in activity endpoints)
   (stats?.LanguageStatistics || []).forEach(stat => {
-      const langId = stat.LanguageId || stat.languageId;
-      if (uniqueLanguages[langId]) {
-          // Populate stats potentially ONLY available here (like word status counts, book counts)
-          uniqueLanguages[langId].knownWords = stat.KnownWords || stat.knownWords || 0;
-          uniqueLanguages[langId].learningWords = stat.LearningWords || stat.learningWords || 0;
-          uniqueLanguages[langId].totalTextsCompleted = stat.TotalTextsCompleted || stat.totalTextsCompleted || 0; // Keep this for now
-          uniqueLanguages[langId].totalBooksCompleted = stat.TotalBooksCompleted || stat.totalBooksCompleted || 0;
-          uniqueLanguages[langId].totalWordsEncountered = stat.WordCount || stat.wordCount || 0; // Needs clarification?
-          uniqueLanguages[langId].bookCount = stat.BookCount || stat.bookCount || 0; // Needs clarification?
-          uniqueLanguages[langId].finishedBookCount = stat.FinishedBookCount || stat.finishedBookCount || 0; // Needs clarification?
-// Robustly map both PascalCase and camelCase to camelCase for frontend
-uniqueLanguages[langId].totalWordsRead = stat.TotalWordsRead ?? stat.totalWordsRead ?? 0;
-uniqueLanguages[langId].totalSecondsListened = stat.TotalSecondsListened ?? stat.totalSecondsListened ?? 0;
-          // DO NOT populate totalWordsRead or totalSecondsListened here, use activity endpoints below
-      }
+    const langId = stat.LanguageId || stat.languageId;
+    if (uniqueLanguages[langId]) {
+      // Populate stats potentially ONLY available here (like word status counts, book counts)
+      uniqueLanguages[langId].knownWords = stat.KnownWords || stat.knownWords || 0;
+      uniqueLanguages[langId].learningWords = stat.LearningWords || stat.learningWords || 0;
+      uniqueLanguages[langId].totalTextsCompleted = stat.TotalTextsCompleted || stat.totalTextsCompleted || 0; // Keep this for now
+      uniqueLanguages[langId].totalBooksCompleted = stat.TotalBooksCompleted || stat.totalBooksCompleted || 0;
+      uniqueLanguages[langId].totalWordsEncountered = stat.WordCount || stat.wordCount || 0; // Needs clarification?
+      uniqueLanguages[langId].bookCount = stat.BookCount || stat.bookCount || 0; // Needs clarification?
+      uniqueLanguages[langId].finishedBookCount = stat.FinishedBookCount || stat.finishedBookCount || 0; // Needs clarification?
+      // Robustly map both PascalCase and camelCase to camelCase for frontend
+      uniqueLanguages[langId].totalWordsRead = stat.TotalWordsRead ?? stat.totalWordsRead ?? 0;
+      uniqueLanguages[langId].totalSecondsListened = stat.TotalSecondsListened ?? stat.totalSecondsListened ?? 0;
+      // DO NOT populate totalWordsRead or totalSecondsListened here, use activity endpoints below
+    }
   });
 
   // Populate PERIOD stats from readingActivity
@@ -554,12 +554,12 @@ uniqueLanguages[langId].totalSecondsListened = stat.TotalSecondsListened ?? stat
     // Populate PERIOD stats from listeningActivity
     if (!loadingListeningActivity) { // Only calculate if listening activity is not loading
       (listeningActivity?.ListeningByLanguage || []).forEach(stat => {
-          const langId = stat.LanguageId || stat.languageId;
-          if (uniqueLanguages[langId]) {
-              // Update the periodSecondsListened from the activity endpoint data
-              const activitySeconds = stat.TotalSeconds || stat.totalSeconds || 0;
-              uniqueLanguages[langId].periodSecondsListened = activitySeconds;
-          }
+        const langId = stat.LanguageId || stat.languageId;
+        if (uniqueLanguages[langId]) {
+          // Update the periodSecondsListened from the activity endpoint data
+          const activitySeconds = stat.TotalSeconds || stat.totalSeconds || 0;
+          uniqueLanguages[langId].periodSecondsListened = activitySeconds;
+        }
       });
     }
   }
@@ -579,6 +579,21 @@ uniqueLanguages[langId].totalSecondsListened = stat.TotalSecondsListened ?? stat
   const listeningActivityByDate = prepareListeningActivityByDateData();
 
 
+  // Determine displayed general stats based on language selection
+  const displayStats = selectedLanguage === 'all'
+    ? stats
+    : (uniqueLanguages[selectedLanguage] ? {
+      TotalWords: uniqueLanguages[selectedLanguage].totalWordsEncountered,
+      KnownWords: uniqueLanguages[selectedLanguage].knownWords,
+      LearningWords: uniqueLanguages[selectedLanguage].learningWords,
+      TotalBooks: uniqueLanguages[selectedLanguage].bookCount,
+      FinishedBooks: uniqueLanguages[selectedLanguage].finishedBookCount
+    } : stats);
+
+  const displayCompletionPercentage = displayStats.TotalWords > 0
+    ? Math.round((displayStats.KnownWords / displayStats.TotalWords) * 100)
+    : 0;
+
   return (
     <Container className="mt-4 pb-5"> {/* Added padding-bottom */}
       {renderNetworkBanner()}
@@ -586,7 +601,7 @@ uniqueLanguages[langId].totalSecondsListened = stat.TotalSecondsListened ?? stat
       {/* Header Row */}
       <Row className="mb-4 align-items-center justify-content-between">
         <Col md="auto">
-          <h2>Statistics</h2>
+          <h2>Statistics <small className="text-muted fs-6">{selectedLanguage !== 'all' ? `(${languagesArray.find(l => (l.LanguageId || l.languageId).toString() === selectedLanguage.toString())?.languageName || 'Selected Language'})` : '(All Languages)'}</small></h2>
         </Col>
         <Col md="auto">
           <div className="d-flex align-items-center"> {/* Flex container for period select and button */}
@@ -642,24 +657,26 @@ uniqueLanguages[langId].totalSecondsListened = stat.TotalSecondsListened ?? stat
       <Row className="mb-4">
         {/* Total Words Card */}
         <Col md={3}>
-          <Card className="text-center h-100">
+          <Card className="text-center h-100 shadow-sm border-0 bg-light">
             <Card.Body>
-              <Card.Title>Total Words Encountered</Card.Title>
-              <Card.Text className="fs-2">{stats.TotalWords}</Card.Text>
+              <Card.Title className="text-muted small text-uppercase">Total Encountered</Card.Title>
+              <Card.Text className="fs-2 fw-bold">{displayStats.TotalWords}</Card.Text>
             </Card.Body>
           </Card>
         </Col>
 
         {/* Known Words Card */}
         <Col md={3}>
-          <Card className="text-center h-100">
+          <Card className="text-center h-100 shadow-sm border-0 bg-light">
             <Card.Body>
-              <Card.Title>Known Words</Card.Title>
-              <Card.Text className="fs-2">{stats.KnownWords}</Card.Text>
+              <Card.Title className="text-muted small text-uppercase">Known Words</Card.Title>
+              <Card.Text className="fs-2 fw-bold text-success">{displayStats.KnownWords}</Card.Text>
               <ProgressBar
-                now={completionPercentage}
-                label={`${completionPercentage}%`}
+                now={displayCompletionPercentage}
+                label={`${displayCompletionPercentage}%`}
                 variant="success"
+                className="mt-2"
+                style={{ height: '10px' }}
               />
             </Card.Body>
           </Card>
@@ -667,21 +684,21 @@ uniqueLanguages[langId].totalSecondsListened = stat.TotalSecondsListened ?? stat
 
         {/* Books Card */}
         <Col md={3}>
-          <Card className="text-center h-100">
+          <Card className="text-center h-100 shadow-sm border-0 bg-light">
             <Card.Body>
-              <Card.Title>Books</Card.Title>
-              <Card.Text className="fs-2">{stats.TotalBooks}</Card.Text>
-              <p>{stats.FinishedBooks} Finished</p>
+              <Card.Title className="text-muted small text-uppercase">Books</Card.Title>
+              <Card.Text className="fs-2 fw-bold">{displayStats.TotalBooks}</Card.Text>
+              <p className="small text-muted mb-0">{displayStats.FinishedBooks} Finished</p>
             </Card.Body>
           </Card>
         </Col>
 
         {/* Languages Card */}
         <Col md={3}>
-          <Card className="text-center h-100">
+          <Card className="text-center h-100 shadow-sm border-0 bg-light">
             <Card.Body>
-              <Card.Title>Languages</Card.Title>
-              <Card.Text className="fs-2">{totalLanguages}</Card.Text>
+              <Card.Title className="text-muted small text-uppercase">Languages</Card.Title>
+              <Card.Text className="fs-2 fw-bold text-info">{totalLanguages}</Card.Text>
               {/* Add language initialization button if no languages */}
               {totalLanguages === 0 && (
                 <Button
@@ -700,24 +717,24 @@ uniqueLanguages[langId].totalSecondsListened = stat.TotalSecondsListened ?? stat
 
       {/* Activity Summary Cards */}
       <Row className="mb-4">
-         {/* Total Words Read Card */}
-         <Col md={6}>
-           <Card className="text-center h-100">
-             <Card.Body>
-               <Card.Title>Total Words Read ({activityPeriod === 'all' ? 'All Time' : `Last ${activityPeriod.split('_')[1]} Days`})</Card.Title>
-               {loadingActivity ? <Spinner animation="border" size="sm" /> : <Card.Text className="fs-2">{readingActivity?.TotalWordsRead ?? 0}</Card.Text>}
-             </Card.Body>
-           </Card>
-         </Col>
-         {/* Total Time Listened Card */}
-         <Col md={6}>
-           <Card className="text-center h-100">
-             <Card.Body>
-               <Card.Title>Total Time Listened ({activityPeriod === 'all' ? 'All Time' : `Last ${activityPeriod.split('_')[1]} Days`})</Card.Title>
-               {loadingListeningActivity ? <Spinner animation="border" size="sm" /> : <Card.Text className="fs-2">{formatDuration(listeningActivity?.TotalListeningSeconds ?? 0)}</Card.Text>}
-             </Card.Body>
-           </Card>
-         </Col>
+        {/* Total Words Read Card */}
+        <Col md={6}>
+          <Card className="text-center h-100">
+            <Card.Body>
+              <Card.Title>Total Words Read ({activityPeriod === 'all' ? 'All Time' : `Last ${activityPeriod.split('_')[1]} Days`})</Card.Title>
+              {loadingActivity ? <Spinner animation="border" size="sm" /> : <Card.Text className="fs-2">{readingActivity?.TotalWordsRead ?? 0}</Card.Text>}
+            </Card.Body>
+          </Card>
+        </Col>
+        {/* Total Time Listened Card */}
+        <Col md={6}>
+          <Card className="text-center h-100">
+            <Card.Body>
+              <Card.Title>Total Time Listened ({activityPeriod === 'all' ? 'All Time' : `Last ${activityPeriod.split('_')[1]} Days`})</Card.Title>
+              {loadingListeningActivity ? <Spinner animation="border" size="sm" /> : <Card.Text className="fs-2">{formatDuration(listeningActivity?.TotalListeningSeconds ?? 0)}</Card.Text>}
+            </Card.Body>
+          </Card>
+        </Col>
       </Row>
 
 
@@ -736,28 +753,28 @@ uniqueLanguages[langId].totalSecondsListened = stat.TotalSecondsListened ?? stat
                   <p className="mb-1">Learning Words: {lang.learningWords}</p>
                   <p className="mb-0">Total Encountered: {lang.totalWordsEncountered}</p>
                   {lang.totalWordsEncountered > 0 && (
-                     <ProgressBar className="mt-2">
-                        <ProgressBar variant="success" now={(lang.knownWords / lang.totalWordsEncountered) * 100} key={1} label={`Known (${((lang.knownWords / lang.totalWordsEncountered) * 100).toFixed(0)}%)`} />
-                        <ProgressBar variant="warning" now={(lang.learningWords / lang.totalWordsEncountered) * 100} key={2} label={`Learning (${((lang.learningWords / lang.totalWordsEncountered) * 100).toFixed(0)}%)`} />
-                     </ProgressBar>
+                    <ProgressBar className="mt-2">
+                      <ProgressBar variant="success" now={(lang.knownWords / lang.totalWordsEncountered) * 100} key={1} label={`Known (${((lang.knownWords / lang.totalWordsEncountered) * 100).toFixed(0)}%)`} />
+                      <ProgressBar variant="warning" now={(lang.learningWords / lang.totalWordsEncountered) * 100} key={2} label={`Learning (${((lang.learningWords / lang.totalWordsEncountered) * 100).toFixed(0)}%)`} />
+                    </ProgressBar>
                   )}
                 </Col>
 
                 {/* Reading Stats */}
                 <Col md={4} className="mb-3">
                   <h6>Reading ({activityPeriod === 'all' ? 'All Time' : `Selected Period`})</h6>
-                  {loadingActivity ? <Spinner size="sm"/> : <p className="mb-0">Words Read: {activityPeriod === 'all' ? lang.totalWordsRead : lang.periodWordsRead}</p>}
+                  {loadingActivity ? <Spinner size="sm" /> : <p className="mb-0">Words Read: {activityPeriod === 'all' ? lang.totalWordsRead : lang.periodWordsRead}</p>}
                   {/* Add more reading stats if available */}
                 </Col>
 
                 {/* Listening Stats */}
                 <Col md={4} className="mb-3">
                   <h6>Listening ({activityPeriod === 'all' ? 'All Time' : `Selected Period`})</h6>
-                   {loadingListeningActivity ? <Spinner size="sm"/> : <p className="mb-0">Time Listened: {formatDuration(activityPeriod === 'all' ? lang.totalSecondsListened : lang.periodSecondsListened)}</p>}
+                  {loadingListeningActivity ? <Spinner size="sm" /> : <p className="mb-0">Time Listened: {formatDuration(activityPeriod === 'all' ? lang.totalSecondsListened : lang.periodSecondsListened)}</p>}
                   {/* Add more listening stats if available */}
                 </Col>
               </Row>
-               {/* Optionally add per-language charts here later */}
+              {/* Optionally add per-language charts here later */}
             </Card.Body>
           </Card>
         ))
@@ -767,79 +784,79 @@ uniqueLanguages[langId].totalSecondsListened = stat.TotalSecondsListened ?? stat
 
       {/* Keep Activity Over Time Charts (Aggregated for now) */}
       <h3 className="mt-5 mb-3">Activity Over Time ({activityPeriod === 'all' ? 'All Time' : `Selected Period`})</h3>
-       {/* Reading Activity Over Time Chart */}
-       <Row className="mb-4">
-         <Col>
-           <Card>
-             <Card.Body>
-               <Card.Title>Words Read</Card.Title>
-               {loadingActivity ? <Spinner animation="border" size="sm" /> : readingActivityByDate.length > 0 ? (
-                 <ResponsiveContainer width="100%" height={300}>
-                   <LineChart data={readingActivityByDate}>
-                     <CartesianGrid strokeDasharray="3 3" />
-                     <XAxis dataKey="date" />
-                     <YAxis />
-                     <Tooltip />
-                     <Legend />
-                     <Line type="monotone" dataKey="wordsRead" name="Words Read" stroke={THEMED_CHART_COLORS[1]} activeDot={{ r: 8 }} />
-                   </LineChart>
-                 </ResponsiveContainer>
-               ) : (
-                 <p>No reading activity data for this period.</p>
-               )}
-             </Card.Body>
-           </Card>
-         </Col>
-       </Row>
+      {/* Reading Activity Over Time Chart */}
+      <Row className="mb-4">
+        <Col>
+          <Card>
+            <Card.Body>
+              <Card.Title>Words Read</Card.Title>
+              {loadingActivity ? <Spinner animation="border" size="sm" /> : readingActivityByDate.length > 0 ? (
+                <ResponsiveContainer width="100%" height={300}>
+                  <LineChart data={readingActivityByDate}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="date" />
+                    <YAxis />
+                    <Tooltip />
+                    <Legend />
+                    <Line type="monotone" dataKey="wordsRead" name="Words Read" stroke={THEMED_CHART_COLORS[1]} activeDot={{ r: 8 }} />
+                  </LineChart>
+                </ResponsiveContainer>
+              ) : (
+                <p>No reading activity data for this period.</p>
+              )}
+            </Card.Body>
+          </Card>
+        </Col>
+      </Row>
 
-       {/* Listening Activity Over Time Chart */}
-       <Row className="mb-4">
-         <Col>
-           <Card>
-             <Card.Body>
-               <Card.Title>Minutes Listened</Card.Title>
-               {loadingListeningActivity ? <Spinner animation="border" size="sm" /> : listeningActivityByDate.length > 0 ? (
-                 <ResponsiveContainer width="100%" height={300}>
-                   <LineChart data={listeningActivityByDate}>
-                     <CartesianGrid strokeDasharray="3 3" />
-                     <XAxis dataKey="date" />
-                     <YAxis />
-                     <Tooltip />
-                     <Legend />
-                     <Line type="monotone" dataKey="minutesListened" name="Minutes Listened" stroke={THEMED_CHART_COLORS[0]} activeDot={{ r: 8 }} />
-                   </LineChart>
-                 </ResponsiveContainer>
-               ) : (
-                 <p>No listening activity data for this period.</p>
-               )}
-             </Card.Body>
-           </Card>
-         </Col>
-       </Row>
+      {/* Listening Activity Over Time Chart */}
+      <Row className="mb-4">
+        <Col>
+          <Card>
+            <Card.Body>
+              <Card.Title>Minutes Listened</Card.Title>
+              {loadingListeningActivity ? <Spinner animation="border" size="sm" /> : listeningActivityByDate.length > 0 ? (
+                <ResponsiveContainer width="100%" height={300}>
+                  <LineChart data={listeningActivityByDate}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="date" />
+                    <YAxis />
+                    <Tooltip />
+                    <Legend />
+                    <Line type="monotone" dataKey="minutesListened" name="Minutes Listened" stroke={THEMED_CHART_COLORS[0]} activeDot={{ r: 8 }} />
+                  </LineChart>
+                </ResponsiveContainer>
+              ) : (
+                <p>No listening activity data for this period.</p>
+              )}
+            </Card.Body>
+          </Card>
+        </Col>
+      </Row>
 
       {/* Reading Activity Table */}
       {readingActivityByDate.length > 0 && (
-         <Row className="mt-4">
-           <Col>
-             <Card>
-               <Card.Body>
-                 <Card.Title>Reading Activity by Date ({activityPeriod === 'all' ? 'All Time' : `Last ${activityPeriod.split('_')[1]} Days`})</Card.Title>
-                 <Table striped bordered hover responsive size="sm">
-                   <thead>
-                     <tr>
-                       <th>Date</th>
-                       <th>Words Read</th>
-                     </tr>
-                   </thead>
-                   <tbody>{/* Ensure no whitespace */}
-                     {readingActivityByDate.map((item, index) => (<tr key={index}><td>{formatDate(item.date)}</td><td>{item.wordsRead}</td></tr>
-                     ))}
-                   </tbody>
-                 </Table>
-               </Card.Body>
-             </Card>
-           </Col>
-         </Row>
+        <Row className="mt-4">
+          <Col>
+            <Card>
+              <Card.Body>
+                <Card.Title>Reading Activity by Date ({activityPeriod === 'all' ? 'All Time' : `Last ${activityPeriod.split('_')[1]} Days`})</Card.Title>
+                <Table striped bordered hover responsive size="sm">
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Words Read</th>
+                    </tr>
+                  </thead>
+                  <tbody>{/* Ensure no whitespace */}
+                    {readingActivityByDate.map((item, index) => (<tr key={index}><td>{formatDate(item.date)}</td><td>{item.wordsRead}</td></tr>
+                    ))}
+                  </tbody>
+                </Table>
+              </Card.Body>
+            </Card>
+          </Col>
+        </Row>
       )}
 
       {/* Listening Activity Table */}
@@ -849,18 +866,18 @@ uniqueLanguages[langId].totalSecondsListened = stat.TotalSecondsListened ?? stat
             <Card>
               <Card.Body>
                 <Card.Title>Listening Time by Language ({activityPeriod === 'all' ? 'All Time' : `Last ${activityPeriod.split('_')[1]} Days`})</Card.Title>
-                 <Table striped bordered hover responsive size="sm">
-                   <thead>
-                     <tr>
-                       <th>Language</th>
-                       <th>Total Time Listened</th>
-                     </tr>
-                   </thead>
-                   <tbody>{/* Ensure no whitespace */}
-                     {prepareListeningActivityByLanguageData().map((item, index) => (<tr key={index}><td>{item.language}</td><td>{formatDuration(item.minutesListened * 60)}</td></tr>
-                     ))}
-                   </tbody>
-                 </Table>
+                <Table striped bordered hover responsive size="sm">
+                  <thead>
+                    <tr>
+                      <th>Language</th>
+                      <th>Total Time Listened</th>
+                    </tr>
+                  </thead>
+                  <tbody>{/* Ensure no whitespace */}
+                    {prepareListeningActivityByLanguageData().map((item, index) => (<tr key={index}><td>{item.language}</td><td>{formatDuration(item.minutesListened * 60)}</td></tr>
+                    ))}
+                  </tbody>
+                </Table>
               </Card.Body>
             </Card>
           </Col>

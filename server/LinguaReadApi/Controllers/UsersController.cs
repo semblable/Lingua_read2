@@ -121,9 +121,9 @@ namespace LinguaReadApi.Controllers
         }
 
         [HttpGet("reading-activity")] // Corrected route to match frontend api.js
-        public async Task<IActionResult> GetReadingActivity([FromQuery] string period = "all", [FromQuery] int? timezoneOffsetMinutes = null)
+        public async Task<IActionResult> GetReadingActivity([FromQuery] string period = "all", [FromQuery] int? timezoneOffsetMinutes = null, [FromQuery] int? languageId = null)
         {
-            _logger.LogInformation("Getting reading activity for period: {Period}, timezoneOffsetMinutes: {TimezoneOffset}", period, timezoneOffsetMinutes);
+            _logger.LogInformation("Getting reading activity for period: {Period}, timezoneOffsetMinutes: {TimezoneOffset}, languageId: {LanguageId}", period, timezoneOffsetMinutes, languageId);
             var userId = GetUserId();
 
             try
@@ -167,11 +167,18 @@ namespace LinguaReadApi.Controllers
                         break;
                 }
 
-                _logger.LogDebug("Fetching activities from {StartDate} for user {UserId} (timezoneOffsetMinutes: {TimezoneOffset})", startDate, userId, timezoneOffsetMinutes);
+                _logger.LogDebug("Fetching activities from {StartDate} for user {UserId} (timezoneOffsetMinutes: {TimezoneOffset}, languageId: {LanguageId})", startDate, userId, timezoneOffsetMinutes, languageId);
 
-                var activities = await _context.UserActivities
+                var query = _context.UserActivities
                     .Where(a => a.UserId == userId && a.Timestamp >= startDate &&
-                                (a.ActivityType == "LessonCompleted" || a.ActivityType == "BookFinished" || a.ActivityType == "ManualReading" || a.ActivityType == "TextCompleted")) // Added TextCompleted
+                                (a.ActivityType == "LessonCompleted" || a.ActivityType == "BookFinished" || a.ActivityType == "ManualReading" || a.ActivityType == "TextCompleted")); // Added TextCompleted
+
+                if (languageId.HasValue)
+                {
+                    query = query.Where(a => a.LanguageId == languageId.Value);
+                }
+
+                var activities = await query
                     .Include(a => a.Language) // Include Language for grouping
                     .OrderBy(a => a.Timestamp)
                     .ToListAsync();
@@ -219,9 +226,9 @@ namespace LinguaReadApi.Controllers
 
         // GET: api/users/listening-activity
         [HttpGet("listening-activity")]
-        public async Task<IActionResult> GetListeningActivity([FromQuery] string period = "all", [FromQuery] int? timezoneOffsetMinutes = null)
+        public async Task<IActionResult> GetListeningActivity([FromQuery] string period = "all", [FromQuery] int? timezoneOffsetMinutes = null, [FromQuery] int? languageId = null)
         {
-            _logger.LogInformation("Getting listening activity for period: {Period}, timezoneOffsetMinutes: {TimezoneOffset}", period, timezoneOffsetMinutes);
+            _logger.LogInformation("Getting listening activity for period: {Period}, timezoneOffsetMinutes: {TimezoneOffset}, languageId: {LanguageId}", period, timezoneOffsetMinutes, languageId);
             var userId = GetUserId();
 
             try
@@ -265,13 +272,20 @@ namespace LinguaReadApi.Controllers
                         break;
                 }
 
-                _logger.LogDebug("Fetching listening activities from {StartDate} for user {UserId}", startDate, userId);
+                _logger.LogDebug("Fetching listening activities from {StartDate} for user {UserId} (languageId: {LanguageId})", startDate, userId, languageId);
 
-                var activities = await _context.UserActivities
+                var query = _context.UserActivities
                     .Where(a => a.UserId == userId
                                 && (a.ActivityType == "Listening" || a.ActivityType == "ManualListening") // Include manual listening
                                 && a.ListeningDurationSeconds.HasValue && a.ListeningDurationSeconds > 0 // Ensure we only count activities with positive duration
-                                && a.Timestamp >= startDate)
+                                && a.Timestamp >= startDate);
+
+                if (languageId.HasValue)
+                {
+                    query = query.Where(a => a.LanguageId == languageId.Value);
+                }
+
+                var activities = await query
                     .Include(a => a.Language) // Include Language for grouping by name
                     .OrderBy(a => a.Timestamp)
                     .ToListAsync();

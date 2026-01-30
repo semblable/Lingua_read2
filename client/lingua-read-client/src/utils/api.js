@@ -550,11 +550,17 @@ export const getUserStatistics = () => {
   return fetchApi('/users/statistics');
 };
 
-export const getReadingActivity = async (period = 'all', timezoneOffsetMinutes = null) => {
+export const getReadingActivity = async (period = 'all', timezoneOffsetMinutes = null, languageId = null) => {
   try {
-    const tzParam = timezoneOffsetMinutes !== null ? `&timezoneOffsetMinutes=${timezoneOffsetMinutes}` : '';
-    console.log(`[API] Getting reading activity for period: ${period}, timezoneOffsetMinutes: ${timezoneOffsetMinutes}`);
-    const data = await fetchApi(`/users/reading-activity?period=${period}${tzParam}`);
+    const params = new URLSearchParams({ period });
+    if (timezoneOffsetMinutes !== null) {
+      params.append('timezoneOffsetMinutes', timezoneOffsetMinutes);
+    }
+    if (languageId !== null) {
+      params.append('languageId', languageId);
+    }
+    console.log(`[API] Getting reading activity with params: ${params.toString()}`);
+    const data = await fetchApi(`/users/reading-activity?${params.toString()}`);
     return data;
   } catch (error) {
     console.error('Error getting reading activity:', error);
@@ -563,14 +569,17 @@ export const getReadingActivity = async (period = 'all', timezoneOffsetMinutes =
 };
 
 // Fetch listening activity data
-export const getListeningActivity = async (period = 'all', timezoneOffsetMinutes = null) => {
+export const getListeningActivity = async (period = 'all', timezoneOffsetMinutes = null, languageId = null) => {
   try {
-    let tzParam = '';
+    const params = new URLSearchParams({ period });
     if (timezoneOffsetMinutes !== null && timezoneOffsetMinutes !== undefined) {
-      tzParam = `&timezoneOffsetMinutes=${timezoneOffsetMinutes}`;
+      params.append('timezoneOffsetMinutes', timezoneOffsetMinutes);
     }
-    console.log(`[API] Fetching listening activity for period: ${period}, timezoneOffsetMinutes: ${timezoneOffsetMinutes}`);
-    const data = await fetchApi(`/users/listening-activity?period=${period}${tzParam}`);
+    if (languageId !== null && languageId !== undefined) {
+      params.append('languageId', languageId);
+    }
+    console.log(`[API] Fetching listening activity with params: ${params.toString()}`);
+    const data = await fetchApi(`/users/listening-activity?${params.toString()}`);
     return data;
   } catch (error) {
     console.error('Error getting listening activity:', error);

@@ -117,6 +117,8 @@ client/lingua-read-client/.storybook/ # For Storybook
 # Binaries and build outputs
 server/LinguaReadApi/bin/
 server/LinguaReadApi/obj/
+server/LinguaReadApi.Tests/bin/
+server/LinguaReadApi.Tests/obj/
 
 # User-specific files (Visual Studio)
 server/LinguaReadApi/*.user

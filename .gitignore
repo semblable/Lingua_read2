@@ -39,6 +39,17 @@ Thumbs.db
 .eslintcache # ESLint cache
 *.tsbuildinfo # TypeScript build info
 
+# AI Assistant artifacts and planning files
+.gemini/ # Antigravity/Gemini AI assistant artifacts
+**/brain/ # AI planning documents
+**/implementation_plan.md # Auto-generated implementation plans
+**/walkthrough.md # Auto-generated walkthroughs
+**/task.md # Auto-generated task files
+
+# Test output files
+test-output*.txt
+**/test-output*.txt
+
 # ===================================================================
 # General Development / Logs
 # ===================================================================

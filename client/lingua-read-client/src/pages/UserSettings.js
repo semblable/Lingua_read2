@@ -2,8 +2,9 @@ import React, { useState, useEffect, useRef, useContext } from 'react'; // Added
 import { Container, Card, Form, Button, Alert, Spinner, Row, Col } from 'react-bootstrap';
 import {
   getUserSettings, updateUserSettings, getAllLanguages, // Changed getLanguages to getAllLanguages
-  backupDatabase, restoreDatabase, resetUserStatistics, sendDiscordReport, getAudioStorageSize // Import new API functions
+  backupDatabase, restoreDatabase, resetUserStatistics, sendDiscordReport, getAudioStorageSize, testOpenRouterConnection // Import new API functions
 } from '../utils/api';
+import * as api from '../utils/api'; // Import api object for test button
 import { SettingsContext } from '../contexts/SettingsContext'; // Import SettingsContext
 const UserSettings = () => {
   const browserTimezoneOffsetMinutes = -new Date().getTimezoneOffset();
@@ -52,6 +53,11 @@ const UserSettings = () => {
   const [isSendingReport, setIsSendingReport] = useState(false);
   const [reportMessage, setReportMessage] = useState({ type: '', text: '' });
   // --- End Discord Report State ---
+
+  // --- OpenRouter Test State ---
+  const [testingOpenRouter, setTestingOpenRouter] = useState(false);
+  const [openRouterTestResult, setOpenRouterTestResult] = useState(null);
+  // --- End OpenRouter Test State ---
 
   // --- Audio Storage State ---
   const [audioStorage, setAudioStorage] = useState(null);
@@ -556,7 +562,7 @@ const UserSettings = () => {
                   </Form.Text>
                 </Form.Group>
 
-                <Form.Group className="mb-4" controlId="openRouterModel">
+                <Form.Group className="mb-3" controlId="openRouterModel">
                   <Form.Label>Model Name</Form.Label>
                   <Form.Control
                     type="text"
@@ -570,6 +576,45 @@ const UserSettings = () => {
                     Free models end with ":free".
                   </Form.Text>
                 </Form.Group>
+
+                <div className="mb-4">
+                  <Button
+                    variant="outline-secondary"
+                    size="sm"
+                    onClick={async () => {
+                      setTestingOpenRouter(true);
+                      setOpenRouterTestResult(null);
+                      try {
+                        // First save current settings
+                        await api.updateUserSettings(settings);
+                        // Then test
+                        const result = await api.testOpenRouterConnection();
+                        setOpenRouterTestResult(result);
+                      } catch (err) {
+                        setOpenRouterTestResult({ success: false, message: err.message });
+                      } finally {
+                        setTestingOpenRouter(false);
+                      }
+                    }}
+                    disabled={testingOpenRouter || !settings.openRouterApiKey}
+                  >
+                    {testingOpenRouter ? 'Testing...' : 'Test Connection'}
+                  </Button>
+                  {openRouterTestResult && (
+                    <Alert
+                      variant={openRouterTestResult.success ? 'success' : 'danger'}
+                      className="mt-2 mb-0"
+                      style={{ fontSize: '0.9em' }}
+                    >
+                      <strong>{openRouterTestResult.success ? '✓' : '✗'}</strong> {openRouterTestResult.message}
+                      {openRouterTestResult.details && (
+                        <div className="mt-1" style={{ fontSize: '0.85em', opacity: 0.8 }}>
+                          {openRouterTestResult.details.substring(0, 200)}
+                        </div>
+                      )}
+                    </Alert>
+                  )}
+                </div>
               </>
             )}
 

@@ -2,12 +2,16 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using System;
+using System.Net.Http;
 using System.Security.Claims;
+using System.Text;
+using System.Text.Json;
 using System.Threading.Tasks;
 using LinguaReadApi.Data;
 using LinguaReadApi.Models;
 using LinguaReadApi.Services;
 using System.ComponentModel.DataAnnotations;
+using Microsoft.Extensions.Logging;
 
 namespace LinguaReadApi.Controllers
 {
@@ -18,11 +22,19 @@ namespace LinguaReadApi.Controllers
     {
         private readonly AppDbContext _context;
         private readonly DiscordReportService _discordReportService;
+        private readonly IHttpClientFactory _httpClientFactory;
+        private readonly ILogger<UserSettingsController> _logger;
 
-        public UserSettingsController(AppDbContext context, DiscordReportService discordReportService)
+        public UserSettingsController(
+            AppDbContext context, 
+            DiscordReportService discordReportService,
+            IHttpClientFactory httpClientFactory,
+            ILogger<UserSettingsController> logger)
         {
             _context = context;
             _discordReportService = discordReportService;
+            _httpClientFactory = httpClientFactory;
+            _logger = logger;
         }
 
         // GET: api/usersettings
@@ -390,6 +402,121 @@ namespace LinguaReadApi.Controllers
             
             return Guid.Parse(userIdClaim);
         }
+
+        // POST: api/usersettings/test-openrouter
+        [HttpPost("test-openrouter")]
+        public async Task<ActionResult<OpenRouterTestResultDto>> TestOpenRouterConnection()
+        {
+            var userId = GetUserId();
+            var settings = await _context.UserSettings.FirstOrDefaultAsync(s => s.UserId == userId);
+            
+            if (settings == null || string.IsNullOrWhiteSpace(settings.OpenRouterApiKey))
+            {
+                return BadRequest(new OpenRouterTestResultDto 
+                { 
+                    Success = false, 
+                    Message = "OpenRouter API key not configured" 
+                });
+            }
+
+            try
+            {
+                var httpClient = _httpClientFactory.CreateClient();
+                httpClient.Timeout = TimeSpan.FromSeconds(30);
+                
+                var request = new HttpRequestMessage(HttpMethod.Post, "https://openrouter.ai/api/v1/chat/completions");
+                request.Headers.Add("Authorization", $"Bearer {settings.OpenRouterApiKey}");
+                request.Headers.Add("HTTP-Referer", "https://lingua-read.app");
+                request.Headers.Add("X-Title", "Lingua-Read");
+                
+                var payload = new
+                {
+                    model = settings.OpenRouterModel,
+                    messages = new[]
+                    {
+                        new { role = "user", content = "Reply with only the word 'OK'" }
+                    },
+                    max_tokens = 10
+                };
+                
+                var jsonOptions = new JsonSerializerOptions 
+                { 
+                    PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower 
+                };
+                var json = JsonSerializer.Serialize(payload, jsonOptions);
+                request.Content = new StringContent(json, Encoding.UTF8, "application/json");
+                
+                _logger.LogInformation("Testing OpenRouter with model: {Model}", settings.OpenRouterModel);
+                
+                var response = await httpClient.SendAsync(request);
+                var responseContent = await response.Content.ReadAsStringAsync();
+                
+                _logger.LogInformation("OpenRouter test response: {StatusCode} - {Content}", 
+                    response.StatusCode, responseContent.Substring(0, Math.Min(500, responseContent.Length)));
+                
+                if (!response.IsSuccessStatusCode)
+                {
+                    return Ok(new OpenRouterTestResultDto
+                    {
+                        Success = false,
+                        Message = $"API Error: {response.StatusCode}",
+                        Details = responseContent
+                    });
+                }
+                
+                // Parse response to check for API-level errors
+                using var doc = JsonDocument.Parse(responseContent);
+                if (doc.RootElement.TryGetProperty("error", out var errorElement))
+                {
+                    var errorMessage = errorElement.TryGetProperty("message", out var msgProp) 
+                        ? msgProp.GetString() 
+                        : "Unknown error";
+                    return Ok(new OpenRouterTestResultDto
+                    {
+                        Success = false,
+                        Message = $"OpenRouter Error: {errorMessage}",
+                        Details = responseContent
+                    });
+                }
+                
+                // Success - extract the response
+                var reply = "";
+                if (doc.RootElement.TryGetProperty("choices", out var choices) && 
+                    choices.GetArrayLength() > 0)
+                {
+                    var firstChoice = choices[0];
+                    if (firstChoice.TryGetProperty("message", out var message) &&
+                        message.TryGetProperty("content", out var content))
+                    {
+                        reply = content.GetString() ?? "";
+                    }
+                }
+                
+                return Ok(new OpenRouterTestResultDto
+                {
+                    Success = true,
+                    Message = $"Connection successful! Model '{settings.OpenRouterModel}' responded.",
+                    Details = reply
+                });
+            }
+            catch (TaskCanceledException)
+            {
+                return Ok(new OpenRouterTestResultDto
+                {
+                    Success = false,
+                    Message = "Request timed out after 30 seconds"
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "OpenRouter test failed");
+                return Ok(new OpenRouterTestResultDto
+                {
+                    Success = false,
+                    Message = $"Error: {ex.Message}"
+                });
+            }
+        }
     }
 
     public class UserSettingsDto
@@ -472,5 +599,12 @@ namespace LinguaReadApi.Controllers
         public double TotalSizeMB { get; set; }
         public double TotalSizeGB { get; set; }
         public int TotalFiles { get; set; }
+    }
+
+    public class OpenRouterTestResultDto
+    {
+        public bool Success { get; set; }
+        public string Message { get; set; } = string.Empty;
+        public string? Details { get; set; }
     }
 } 

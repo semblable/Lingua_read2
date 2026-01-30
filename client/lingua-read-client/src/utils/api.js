@@ -814,6 +814,14 @@ export const sendDiscordReport = async (period = 'week', days = null) => {
   });
 };
 
+// Test OpenRouter connection
+export const testOpenRouterConnection = async () => {
+  console.log('[API] Testing OpenRouter connection');
+  return await fetchApi('/usersettings/test-openrouter', {
+    method: 'POST'
+  });
+};
+
 // Get total audio storage size
 export const getAudioStorageSize = async () => {
   try {

@@ -1,0 +1,465 @@
+﻿
+> lingua-read-client@0.1.0 test
+> react-scripts test AudiobookPlayer.test.js
+
+  console.error
+    Warning: `ReactDOMTestUtils.act` is deprecated in favor of `React.act`. Import `act` from `react` instead of `react-dom/test-utils`. See https://react.dev/warnings/react-dom-test-utils for more info.
+
+    [0m [90m 48 |[39m     }[33m;[39m
+     [90m 49 |[39m
+    [31m[1m>[22m[39m[90m 50 |[39m     render([33m<[39m[33mAudiobookPlayer[39m type[33m=[39m[32m"book"[39m book[33m=[39m{book} [33m/[39m[33m>[39m)[33m;[39m
+     [90m    |[39m           [31m[1m^[22m[39m
+     [90m 51 |[39m
+     [90m 52 |[39m     [90m// Wait for the component to load and call getAudiobookProgress[39m
+     [90m 53 |[39m     [36mawait[39m waitFor(() [33m=>[39m {[0m
+
+      at printWarning (node_modules/react-dom/cjs/react-dom-test-utils.development.js:71:30)
+      at error (node_modules/react-dom/cjs/react-dom-test-utils.development.js:45:7)
+      at actWithWarning (node_modules/react-dom/cjs/react-dom-test-utils.development.js:1736:7)
+      at node_modules/@testing-library/react/dist/act-compat.js:63:25
+      at renderRoot (node_modules/@testing-library/react/dist/pure.js:159:26)
+      at render (node_modules/@testing-library/react/dist/pure.js:246:10)
+      at Object.<anonymous> (src/__tests__/AudiobookPlayer.test.js:50:11)
+      at TestScheduler.scheduleTests (node_modules/@jest/core/build/TestScheduler.js:333:13)
+      at runJest (node_modules/@jest/core/build/runJest.js:404:19)
+      at _run10000 (node_modules/@jest/core/build/cli/index.js:320:7)
+      at runCLI (node_modules/@jest/core/build/cli/index.js:173:3)
+
+  console.log
+    [AudioPlayer] Unmounting - Saving progress.
+
+      at src/components/AudiobookPlayer.js:356:15
+
+  console.log
+    [AudioPlayer] Restoring Book progress: Track 1, Pos 12
+
+      at loadProgress (src/components/AudiobookPlayer.js:116:23)
+
+node.exe : (node:28424) 
+[DEP0040] 
+DeprecationWarning: The 
+`punycode` module is 
+deprecated. Please use a 
+userland alternative instead.
+At C:\Program 
+Files\nodejs\npm.ps1:29 
+char:3
++   & $NODE_EXE $NPM_CLI_JS 
+$args
++   
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo           
+   : NotSpecified: ((node:2  
+  8424) [D...native instea   
+ d.:String) [], RemoteExc    
+eption
+    + FullyQualifiedErrorId  
+   : NativeCommandError
+ 
+(Use `node 
+--trace-deprecation ...` to 
+show where the warning was 
+created)
+  console.log
+    [AudioPlayer] Unmounting - Saving progress.
+
+      at src/components/AudiobookPlayer.js:356:15
+
+  console.log
+    [AudioPlayer] Loading Track: /audio/track-2.mp3
+
+      at src/components/AudiobookPlayer.js:187:13
+
+  console.log
+    [AudioPlayer] Unmounting - Saving progress.
+
+      at src/components/AudiobookPlayer.js:356:15
+          at Array.forEach (<anonymous>)
+
+  console.log
+    [AudioPlayer] Unmounting - Saving progress.
+
+      at src/components/AudiobookPlayer.js:356:15
+
+  console.log
+    [AudioPlayer] Restoring Lesson progress: Pos 30
+
+      at loadProgress (src/components/AudiobookPlayer.js:123:21)
+
+  console.log
+    [AudioPlayer] Unmounting - Saving progress.
+
+      at src/components/AudiobookPlayer.js:356:15
+
+  console.log
+    [AudioPlayer] Loading Track: https://example.com/lesson.mp3
+
+      at src/components/AudiobookPlayer.js:187:13
+
+  console.log
+    [AudioPlayer] Unmounting - Saving progress.
+
+      at src/components/AudiobookPlayer.js:356:15
+          at Array.forEach (<anonymous>)
+
+FAIL src/__tests__/AudiobookP
+layer.test.js
+  AudiobookPlayer
+    ├ù book mode calls API 
+to restore progress (1089 ms)
+    ÔêÜ lesson mode calls 
+API to restore progress (24 
+ms)
+
+  ÔùÅ AudiobookPlayer ÔÇ║ 
+book mode calls API to 
+restore progress
+
+    expect(received).toBeInTh
+eDocument()
+
+    received value must be 
+an HTMLElement or an 
+SVGElement.
+    Received has value: null
+
+    Ignored nodes: comments, 
+script, style
+    [36m<html>[39m
+      [36m<head />[39m
+      [36m<body>[39m
+        [36m<div>[39m
+          [36m<div[39m
+            [33mclass[39m=
+[32m"audiobook-player p-1 
+rounded-2 audiobook-player-cu
+stom-bg"[39m
+            [33mstyle[39m=
+[32m"max-width: 550px; 
+width: 100%;"[39m
+          [36m>[39m
+            [36m<audio[39m
+              [33msrc[39m=
+[32m"/audio/track-2.mp3"[39m
+              [33mstyle[39m
+=[32m"display: none;"[39m
+            [36m/>[39m
+            [36m<div[39m
+              
+[33mclass[39m=[32m"d-flex 
+align-items-center 
+gap-3"[39m
+            [36m>[39m
+              [36m<div[39m
+                
+[33mclass[39m=[32m"d-flex 
+align-items-center 
+flex-grow-1 gap-2"[39m
+                [33mstyle[3
+9m=[32m"min-width: 
+150px;"[39m
+              [36m>[39m
+                
+[36m<small[39m
+                  [33mclass
+[39m=[32m"text-muted 
+text-nowrap small-xs"[39m
+                [36m>[39m
+                  
+[0m00:12[0m
+                
+[36m</small>[39m
+                
+[36m<div[39m
+                  [33mclass
+[39m=[32m"flex-grow-1 
+progress"[39m
+                  [33mstyle
+[39m=[32m"height: 4px; 
+cursor: pointer; min-width: 
+60px;"[39m
+                [36m>[39m
+                  
+[36m<div[39m
+                    [33maria
+-valuemax[39m=[32m"100"[39
+m
+                    [33maria
+-valuemin[39m=[32m"0"[39m
+                    [33maria
+-valuenow[39m=[32m"0"[39m
+                    [33mclas
+s[39m=[32m"progress-bar 
+bg-info"[39m
+                    [33mrole
+[39m=[32m"progressbar"[39m
+                    
+[33mstyle[39m=[32m"width: 
+0%;"[39m
+                  
+[36m/>[39m
+                
+[36m</div>[39m
+                
+[36m<small[39m
+                  [33mclass
+[39m=[32m"text-muted 
+text-nowrap small-xs"[39m
+                [36m>[39m
+                  
+[0m00:00[0m
+                
+[36m</small>[39m
+              
+[36m</div>[39m
+              [36m<div[39m
+                
+[33mclass[39m=[32m"d-flex 
+align-items-center 
+gap-2"[39m
+              [36m>[39m
+                
+[36m<div[39m
+                  
+[33mclass[39m=[32m"d-flex 
+gap-1"[39m
+                [36m>[39m
+                  
+[36m<button[39m
+                    
+[33mclass[39m=[32m"p-1 
+border-0 btn 
+btn-outline-secondary 
+btn-sm"[39m
+                    [33mtitl
+e[39m=[32m"Previous Track 
+([)"[39m
+                    [33mtype
+[39m=[32m"button"[39m
+                  [36m>[39m
+                    
+[36m<i[39m
+                      
+[33mclass[39m=[32m"bi 
+bi-skip-start-fill"[39m
+                    
+[36m/>[39m
+                  
+[36m</button>[39m
+                  
+[36m<button[39m
+                    
+[33mclass[39m=[32m"p-1 
+border-0 btn 
+btn-outline-secondary 
+btn-sm"[39m
+                    [33mtitl
+e[39m=[32m"-10s"[39m
+                    [33mtype
+[39m=[32m"button"[39m
+                  [36m>[39m
+                    
+[36m<i[39m
+                      
+[33mclass[39m=[32m"bi 
+bi-rewind-fill"[39m
+                    
+[36m/>[39m
+                  
+[36m</button>[39m
+                  
+[36m<button[39m
+                    
+[33mclass[39m=[32m"p-1 
+rounded-circle d-flex 
+align-items-center 
+justify-content-center btn 
+btn-primary btn-sm"[39m
+                    
+[33mstyle[39m=[32m"width: 
+30px; height: 30px;"[39m
+                    [33mtitl
+e[39m=[32m"Play/Pause 
+(Space)"[39m
+                    [33mtype
+[39m=[32m"button"[39m
+                  [36m>[39m
+                    
+[36m<div[39m
+                      [33mcl
+ass[39m=[32m"spinner-grow 
+spinner-grow-sm"[39m
+                      
+[33mstyle[39m=[32m"width: 
+0.6rem; height: 0.6rem;"[39m
+                    
+[36m/>[39m
+                  
+[36m</button>[39m
+                  
+[36m<button[39m
+                    
+[33mclass[39m=[32m"p-1 
+border-0 btn 
+btn-outline-secondary 
+btn-sm"[39m
+                    [33mtitl
+e[39m=[32m"+10s"[39m
+                    [33mtype
+[39m=[32m"button"[39m
+                  [36m>[39m
+                    
+[36m<i[39m
+                      
+[33mclass[39m=[32m"bi 
+bi-fast-forward-fill"[39m
+                    
+[36m/>[39m
+                  
+[36m</button>[39m
+                  
+[36m<button[39m
+                    
+[33mclass[39m=[32m"p-1 
+border-0 btn 
+btn-outline-secondary 
+btn-sm"[39m
+                    [33mdisa
+bled[39m=[32m""[39m
+                    
+[33mtitle[39m=[32m"Next 
+Track (])"[39m
+                    [33mtype
+[39m=[32m"button"[39m
+                  [36m>[39m
+                    
+[36m<i[39m
+                      
+[33mclass[39m=[32m"bi 
+bi-skip-end-fill"[39m
+                    
+[36m/>[39m
+                  
+[36m</button>[39m
+                
+[36m</div>[39m
+                
+[36m<div[39m
+                  
+[33mclass[39m=[32m"d-flex 
+align-items-center 
+border-start ps-2 gap-1"[39m
+                [36m>[39m
+                  
+[36m<button[39m
+                    
+[33mclass[39m=[32m"p-0 
+text-decoration-none 
+text-secondary btn btn-link 
+btn-sm"[39m
+                    [33mtitl
+e[39m=[32m"Slower"[39m
+                    [33mtype
+[39m=[32m"button"[39m
+                  [36m>[39m
+                    [0m-[0m
+                  
+[36m</button>[39m
+                  
+[36m<span[39m
+                    
+[33mclass[39m=[32m"small 
+text-muted"[39m
+                    [33mstyl
+e[39m=[32m"min-width: 
+25px; text-align: center; 
+font-size: 0.75rem;"[39m
+                  [36m>[39m
+                    [0m1[0m
+                    [0mx[0m
+                  
+[36m</span>[39m
+                  
+[36m<button[39m
+                    
+[33mclass[39m=[32m"p-0 
+text-decoration-none 
+text-secondary btn btn-link 
+btn-sm"[39m
+                    [33mtitl
+e[39m=[32m"Faster"[39m
+                    [33mtype
+[39m=[32m"button"[39m
+                  [36m>[39m
+                    [0m+[0m
+                  
+[36m</button>[39m
+                
+[36m</div>[39m
+              
+[36m</div>[39m
+            [36m</div>[39m
+          [36m</div>[39m
+        [36m</div>[39m
+      [36m</body>[39m
+    [36m</html>[39m
+
+    [0m [90m 57 |[39m     
+[90m// Verify the UI is 
+rendered[39m
+     [90m 58 |[39m     
+[36mawait[39m waitFor(() 
+[33m=>[39m {
+    
+[31m[1m>[22m[39m[90m 59 
+|[39m       expect(screen[3
+3m.[39mqueryByTitle([32m'Pl
+ay (Space or `)'[39m))[33m.
+[39mtoBeInTheDocument()[33m
+;[39m
+     [90m    |[39m         
+                             
+                  
+[31m[1m^[22m[39m
+     [90m 60 |[39m     
+})[33m;[39m
+     [90m 61 |[39m   
+})[33m;[39m
+     [90m 62 |[39m[0m
+
+      at 
+__EXTERNAL_MATCHER_TRAP__ (no
+de_modules/jest-circus/node_m
+odules/expect/build/index.js:
+386:30)
+      at src/__tests__/Audiob
+ookPlayer.test.js:59:56
+      at runWithExpensiveErro
+rDiagnosticsDisabled (node_mo
+dules/@testing-library/react/
+node_modules/@testing-library
+/dom/dist/config.js:47:12)
+      at checkCallback (node_
+modules/@testing-library/reac
+t/node_modules/@testing-libra
+ry/dom/dist/wait-for.js:127:7
+7)
+      at 
+checkRealTimersCallback (node
+_modules/@testing-library/rea
+ct/node_modules/@testing-libr
+ary/dom/dist/wait-for.js:121:
+16)
+      at Timeout.task [as 
+_onTimeout] (node_modules/jsd
+om/lib/jsdom/browser/Window.j
+s:516:19)
+
+Test Suites: 1 failed, 1 
+total
+Tests:       1 failed, 1 
+passed, 2 total
+Snapshots:   0 total
+Time:        3.046 s
+Ran all test suites matching 
+/AudiobookPlayer.test.js/i.

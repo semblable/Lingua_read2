@@ -20,6 +20,11 @@ jest.mock('../utils/api', () => ({
 
 describe('AudiobookPlayer', () => {
   beforeEach(() => {
+    // Mock HTMLMediaElement methods that JSDOM doesn't implement
+    window.HTMLMediaElement.prototype.play = jest.fn().mockResolvedValue();
+    window.HTMLMediaElement.prototype.pause = jest.fn();
+    window.HTMLMediaElement.prototype.load = jest.fn();
+
     getAudiobookProgress.mockReset();
     updateAudiobookProgress.mockReset();
     getAudioLessonProgress.mockReset();
@@ -51,7 +56,7 @@ describe('AudiobookPlayer', () => {
 
     // Verify the UI is rendered
     await waitFor(() => {
-      expect(screen.queryByTitle('Play (Space or `)')).toBeInTheDocument();
+      expect(screen.getByTitle(/Play/)).toBeInTheDocument();
     });
   });
 
@@ -77,7 +82,7 @@ describe('AudiobookPlayer', () => {
 
     // Verify the UI is rendered
     await waitFor(() => {
-      expect(screen.queryByTitle('Play (Space or `)')).toBeInTheDocument();
+      expect(screen.getByTitle(/Play/)).toBeInTheDocument();
     });
   });
 });

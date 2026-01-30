@@ -418,18 +418,18 @@ const LessonHeader = React.memo(({
   return (
     <Card className="shadow-sm mb-3 border-0 rounded-0 lesson-header">
       <Card.Body className="p-2 lesson-header-body">
-        <div className="lesson-header-top d-flex justify-content-between align-items-start flex-wrap">
+        <div className="lesson-header-top d-flex justify-content-between align-items-center flex-wrap">
           <div className="lesson-title">
-            <h2 className="mb-1">{text.title}</h2>
+            <h2 className="mb-0">{text.title}</h2>
             <p className="text-muted mb-0 small lesson-meta">Lang: {text.languageName || 'N/A'} | Words: {words.length}</p>
           </div>
+        </div>
+        <div className="lesson-header-actions d-flex gap-2 flex-wrap mt-2 align-items-center">
           {!isAudioLesson && book && book.audiobookTracks && book.audiobookTracks.length > 0 && (
-            <div className="lesson-header-player mx-2">
+            <div className="lesson-header-player">
               <AudiobookPlayer type="book" book={book} />
             </div>
           )}
-        </div>
-        <div className="lesson-header-actions d-flex gap-2 flex-wrap mt-2 align-items-center">
           {primaryControls}
           <div className="lesson-controls-desktop d-none d-md-flex gap-2 flex-wrap align-items-center">
             {secondaryControls}

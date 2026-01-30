@@ -445,7 +445,7 @@ const AudiobookPlayer = ({
   }, [togglePlayPause, goToNextTrack, goToPrevTrack]);
 
   return (
-    <div className="audiobook-player p-1 rounded-2 audiobook-player-custom-bg" style={{ maxWidth: '400px', width: '100%' }}>
+    <div className="audiobook-player p-1 rounded-2 audiobook-player-custom-bg" style={{ maxWidth: '550px', width: '100%' }}>
       {/* 
         CRITICAL: Always render the audio element. 
         If it's conditionally rendered (e.g. only after isLoading is false), 
@@ -464,95 +464,92 @@ const AudiobookPlayer = ({
         <>
           {error && <Alert variant="danger" size="sm" className="p-1 mb-1">{error}</Alert>}
 
-          <div className="audiobook-player__progress d-flex align-items-center mb-0 gap-2">
-            <small className="text-muted text-nowrap" style={{ minWidth: '40px' }}>
-              {formatTime(currentTime)}
-            </small>
-
-            <ProgressBar
-              ref={progressBarRef}
-              now={duration ? (currentTime / duration) * 100 : 0}
-              className="flex-grow-1"
-              style={{ height: '6px', cursor: 'pointer' }}
-              variant="info"
-              onClick={(e) => {
-                if (!progressBarRef.current) return;
-                const rect = progressBarRef.current.getBoundingClientRect();
-                const pos = (e.clientX - rect.left) / rect.width;
-                const d = audioRef.current?.duration || duration;
-                if (d) seek(pos * d);
-              }}
-            />
-
-            <small className="text-muted text-nowrap" style={{ minWidth: '40px', textAlign: 'right' }}>
-              {formatTime(duration)}
-            </small>
-          </div>
-
-          <div className="d-flex justify-content-between align-items-center mt-1">
-            <ButtonGroup size="sm">
-              <Button variant="link" size="sm" className="p-0 text-decoration-none text-secondary"
-                onClick={() => changeRate(-0.1)} disabled={playbackRate <= 0.5}>-</Button>
-              <span className="mx-2 small text-muted" style={{ minWidth: '30px', textAlign: 'center' }}>{playbackRate}x</span>
-              <Button variant="link" size="sm" className="p-0 text-decoration-none text-secondary"
-                onClick={() => changeRate(0.1)} disabled={playbackRate >= 2.0}>+</Button>
-            </ButtonGroup>
-
-            <div className="d-flex gap-2">
-              {isBookMode && playlist.length > 1 && (
-                <Button
-                  variant="outline-secondary"
-                  size="sm"
-                  className="py-0 px-1 rounded-pill"
-                  onClick={goToPrevTrack}
-                  disabled={currentTrackIndex === 0}
-                  title="Previous Track ([)"
-                >
-                  <i className="bi bi-skip-start-fill"></i>
-                </Button>
-              )}
-
-              <Button variant="outline-secondary" size="sm" className="py-0 px-2 rounded-pill" onClick={() => seek(currentTime - 10)}>
-                -10s
-              </Button>
-
-              <Button
-                variant={isPlaying ? "outline-primary" : "primary"}
-                size="sm"
-                className="py-0 px-3 rounded-pill d-flex align-items-center justify-content-center"
-                style={{ width: '40px' }}
-                onClick={togglePlayPause}
-                title="Play (Space or `)"
-              >
-                {isBuffering ? (
-                  <Spinner animation="grow" size="sm" role="status" aria-hidden="true" style={{ width: '0.6rem', height: '0.6rem' }} />
-                ) : (
-                  <i className={`bi ${isPlaying ? 'bi-pause-fill' : 'bi-play-fill'}`} style={{ fontSize: '1.2em' }}></i>
-                )}
-              </Button>
-
-              <Button variant="outline-secondary" size="sm" className="py-0 px-2 rounded-pill" onClick={() => seek(currentTime + 10)}>
-                +10s
-              </Button>
-
-              {isBookMode && playlist.length > 1 && (
-                <Button
-                  variant="outline-secondary"
-                  size="sm"
-                  className="py-0 px-1 rounded-pill"
-                  onClick={goToNextTrack}
-                  disabled={currentTrackIndex === playlist.length - 1}
-                  title="Next Track (])"
-                >
-                  <i className="bi bi-skip-end-fill"></i>
-                </Button>
-              )}
+          <div className="d-flex align-items-center gap-3">
+            {/* Progress Section */}
+            <div className="d-flex align-items-center flex-grow-1 gap-2" style={{ minWidth: '150px' }}>
+              <small className="text-muted text-nowrap small-xs">
+                {formatTime(currentTime)}
+              </small>
+              <ProgressBar
+                ref={progressBarRef}
+                now={duration ? (currentTime / duration) * 100 : 0}
+                className="flex-grow-1"
+                style={{ height: '4px', cursor: 'pointer', minWidth: '60px' }}
+                variant="info"
+                onClick={(e) => {
+                  if (!progressBarRef.current) return;
+                  const rect = progressBarRef.current.getBoundingClientRect();
+                  const pos = (e.clientX - rect.left) / rect.width;
+                  const d = audioRef.current?.duration || duration;
+                  if (d) seek(pos * d);
+                }}
+              />
+              <small className="text-muted text-nowrap small-xs">
+                {formatTime(duration)}
+              </small>
             </div>
 
-            <div className="small text-muted text-truncate" style={{ maxWidth: '100px' }}>
-              {isBookMode && playlist.length > 1 && (
-                <span>Track {currentTrackIndex + 1}/{playlist.length}</span>
-              )}
+            {/* Controls Section */}
+            <div className="d-flex align-items-center gap-2">
+              <div className="d-flex gap-1">
+                {isBookMode && playlist.length > 1 && (
+                  <Button
+                    variant="outline-secondary"
+                    size="sm"
+                    className="p-1 border-0"
+                    onClick={goToPrevTrack}
+                    disabled={currentTrackIndex === 0}
+                    title="Previous Track ([)"
+                  >
+                    <i className="bi bi-skip-start-fill"></i>
+                  </Button>
+                )}
+
+                <Button variant="outline-secondary" size="sm" className="p-1 border-0" onClick={() => seek(currentTime - 10)} title="-10s">
+                  <i className="bi bi-rewind-fill"></i>
+                </Button>
+
+                <Button
+                  variant={isPlaying ? "outline-primary" : "primary"}
+                  size="sm"
+                  className="p-1 rounded-circle d-flex align-items-center justify-content-center"
+                  style={{ width: '30px', height: '30px' }}
+                  onClick={togglePlayPause}
+                  title="Play/Pause (Space)"
+                >
+                  {isBuffering ? (
+                    <Spinner animation="grow" size="sm" style={{ width: '0.6rem', height: '0.6rem' }} />
+                  ) : (
+                    <i className={`bi ${isPlaying ? 'bi-pause-fill' : 'bi-play-fill'}`}></i>
+                  )}
+                </Button>
+
+                <Button variant="outline-secondary" size="sm" className="p-1 border-0" onClick={() => seek(currentTime + 10)} title="+10s">
+                  <i className="bi bi-fast-forward-fill"></i>
+                </Button>
+
+                {isBookMode && playlist.length > 1 && (
+                  <Button
+                    variant="outline-secondary"
+                    size="sm"
+                    className="p-1 border-0"
+                    onClick={goToNextTrack}
+                    disabled={currentTrackIndex === playlist.length - 1}
+                    title="Next Track (])"
+                  >
+                    <i className="bi bi-skip-end-fill"></i>
+                  </Button>
+                )}
+              </div>
+
+              {/* Rate Controls */}
+              <div className="d-flex align-items-center border-start ps-2 gap-1">
+                <Button variant="link" size="sm" className="p-0 text-decoration-none text-secondary"
+                  onClick={() => changeRate(-0.1)} disabled={playbackRate <= 0.5} title="Slower">-</Button>
+                <span className="small text-muted" style={{ minWidth: '25px', textAlign: 'center', fontSize: '0.75rem' }}>{playbackRate}x</span>
+                <Button variant="link" size="sm" className="p-0 text-decoration-none text-secondary"
+                  onClick={() => changeRate(0.1)} disabled={playbackRate >= 2.0} title="Faster">+</Button>
+              </div>
             </div>
           </div>
         </>

@@ -26,6 +26,11 @@ const AudiobookPlayer = ({
     onTimeUpdateRef.current = onTimeUpdate;
   }, [onTimeUpdate]);
 
+  const isPlayingRef = useRef(isPlaying);
+  useEffect(() => {
+    isPlayingRef.current = isPlaying;
+  }, [isPlaying]);
+
   // --- TWO: State Management ---
   const isBookMode = type === 'book';
   const effectiveLanguageId = languageId || (book?.languageId);
@@ -172,11 +177,9 @@ const AudiobookPlayer = ({
     setIsBuffering(true);
 
     // If it was already playing, continue playing the new track
-    if (isPlaying) {
+    if (isPlayingRef.current) {
       audio.play().catch(e => console.warn("Auto-play on track change failed", e));
     }
-
-    // FIX: Removed isPlaying from dependencies to prevent re-loading on play/pause
   }, [currentTrack, isInitialized, audioRef]);
 
 

@@ -121,6 +121,553 @@ const TranscriptLine = React.memo(({ index, style, data }) => {
 });
 // --- End Transcript Line Component ---
 
+const SecondaryControls = React.memo(({
+  isMobile,
+  readingStyle,
+  setReadingStyle,
+  globalSettings,
+  updateSetting,
+  updateUserSettings,
+  leftPanelWidth,
+  setLeftPanelWidth,
+  handleLineSpacingChange,
+  text,
+  loading,
+  handleFullTextTranslation,
+  handleTranslateUnknownWords,
+  translatingUnknown,
+  handleMarkAllUnknownAsKnown,
+  isMarkingAll
+}) => (
+  <>
+    {isMobile && (
+      <ButtonGroup size="sm" className="me-1" aria-label="Reading style">
+        <Button
+          variant={readingStyle === 'compact' ? 'primary' : 'outline-secondary'}
+          onClick={() => setReadingStyle('compact')}
+        >
+          Compact
+        </Button>
+        <Button
+          variant={readingStyle === 'balanced' ? 'primary' : 'outline-secondary'}
+          onClick={() => setReadingStyle('balanced')}
+        >
+          Balanced
+        </Button>
+        <Button
+          variant={readingStyle === 'spacious' ? 'primary' : 'outline-secondary'}
+          onClick={() => setReadingStyle('spacious')}
+        >
+          Spacious
+        </Button>
+      </ButtonGroup>
+    )}
+    <ButtonGroup size="sm" className="me-1">
+      <Button
+        variant="outline-secondary"
+        onClick={() => {
+          const newSize = Math.max(12, globalSettings.textSize - 2);
+          console.log('[Save Settings] Saving Text Size via API:', newSize);
+          updateSetting('textSize', newSize);
+          updateUserSettings({ textSize: newSize })
+            .catch(err => console.error('[Save Settings] Failed to save text size via API:', err));
+        }}
+        title="Decrease text size"
+      >
+        A-
+      </Button>
+      <Button
+        variant="outline-secondary"
+        onClick={() => {
+          const newSize = Math.min(32, globalSettings.textSize + 2);
+          console.log('[Save Settings] Saving Text Size via API:', newSize);
+          updateSetting('textSize', newSize);
+          updateUserSettings({ textSize: newSize })
+            .catch(err => console.error('[Save Settings] Failed to save text size via API:', err));
+        }}
+        title="Increase text size"
+      >
+        A+
+      </Button>
+    </ButtonGroup>
+    <ButtonGroup size="sm" className="me-1">
+      <Button
+        variant="outline-secondary"
+        onClick={() => {
+          const newWidth = Math.min(leftPanelWidth + 5, 85);
+          setLeftPanelWidth(newWidth);
+          updateSetting('leftPanelWidth', newWidth);
+          updateUserSettings({ leftPanelWidth: newWidth })
+            .catch(err => console.error('[Save Settings] Failed to save panel width via API:', err));
+        }}
+        title="Increase reading area (Wider)"
+      >
+        ◀
+      </Button>
+      <Button
+        variant="outline-secondary"
+        onClick={() => {
+          const newWidth = Math.max(leftPanelWidth - 5, 20);
+          setLeftPanelWidth(newWidth);
+          updateSetting('leftPanelWidth', newWidth);
+          updateUserSettings({ leftPanelWidth: newWidth })
+            .catch(err => console.error('[Save Settings] Failed to save panel width via API:', err));
+        }}
+        title="Decrease reading area (Narrower)"
+      >
+        ▶
+      </Button>
+    </ButtonGroup>
+    {!isMobile && (
+      <ButtonGroup size="sm" className="me-1">
+        <OverlayTrigger placement="top" overlay={<Tooltip>Line Spacing: Default (1.5)</Tooltip>}>
+          <Button
+            variant={parseFloat(globalSettings.lineSpacing) === 1.5 ? 'primary' : 'outline-secondary'}
+            onClick={() => handleLineSpacingChange(1.5)}
+            aria-label="Set line spacing to default"
+          >
+            1.5
+          </Button>
+        </OverlayTrigger>
+        <OverlayTrigger placement="top" overlay={<Tooltip>Line Spacing: Relaxed (1.75)</Tooltip>}>
+          <Button
+            variant={parseFloat(globalSettings.lineSpacing) === 1.75 ? 'primary' : 'outline-secondary'}
+            onClick={() => handleLineSpacingChange(1.75)}
+            aria-label="Set line spacing to relaxed"
+          >
+            1.75
+          </Button>
+        </OverlayTrigger>
+        <OverlayTrigger placement="top" overlay={<Tooltip>Line Spacing: Spacious (2.0)</Tooltip>}>
+          <Button
+            variant={parseFloat(globalSettings.lineSpacing) === 2.0 ? 'primary' : 'outline-secondary'}
+            onClick={() => handleLineSpacingChange(2.0)}
+            aria-label="Set line spacing to spacious"
+          >
+            2.0
+          </Button>
+        </OverlayTrigger>
+      </ButtonGroup>
+    )}
+    {text && !loading && (
+      <Button
+        variant="info"
+        size="sm"
+        onClick={handleFullTextTranslation}
+        className="me-1"
+      >
+        Translate Text
+      </Button>
+    )}
+    {text && !loading && (
+      <Button
+        variant="secondary"
+        size="sm"
+        onClick={handleTranslateUnknownWords}
+        disabled={translatingUnknown}
+        className="ms-1"
+        title="Translate unknown/learning words"
+      >
+        {translatingUnknown ? <Spinner size="sm" /> : 'Translate ?'}
+      </Button>
+    )}
+    {text && !loading && (
+      <Button
+        variant="outline-success"
+        size="sm"
+        onClick={handleMarkAllUnknownAsKnown}
+        disabled={isMarkingAll}
+        className="ms-1"
+        title="Mark all untracked words as Known"
+      >
+        {isMarkingAll ? <Spinner size="sm" /> : 'Mark All Known'}
+      </Button>
+    )}
+  </>
+));
+
+const PrimaryControls = React.memo(({
+  isAudioLesson,
+  displayMode,
+  setDisplayMode,
+  text,
+  handleCompleteLesson,
+  completing,
+  nextTextId,
+  navigate,
+  showMoreControls,
+  setShowMoreControls
+}) => (
+  <>
+    {isAudioLesson && (
+      <Button
+        variant="outline-info"
+        size="sm"
+        onClick={() => setDisplayMode(p => p === 'audio' ? 'text' : 'audio')}
+        title={displayMode === 'audio' ? 'Text View' : 'Audio View'}
+        className="me-1"
+      >
+        {displayMode === 'audio' ? 'Text' : 'Audio'} View
+      </Button>
+    )}
+    {isAudioLesson && !text?.bookId && (
+      <Button variant="success" onClick={handleCompleteLesson} disabled={completing} size="sm" className="ms-1">
+        {completing ? <Spinner animation="border" size="sm" /> : (nextTextId === null ? 'Finish Book' : 'Complete Lesson')}
+      </Button>
+    )}
+    {text?.bookId && (
+      <Button
+        variant="outline-primary"
+        size="sm"
+        onClick={() => navigate(`/books/${text.bookId}`)}
+        className="ms-1"
+      >
+        Back to Book
+      </Button>
+    )}
+    {!text?.bookId && (
+      <Button
+        variant="outline-secondary"
+        size="sm"
+        onClick={() => navigate('/texts')}
+        className="ms-1"
+      >
+        Back to Texts
+      </Button>
+    )}
+    <Button
+      variant="outline-secondary"
+      size="sm"
+      className="ms-1 d-md-none"
+      onClick={() => setShowMoreControls(prev => !prev)}
+      aria-controls="lesson-more-controls"
+      aria-expanded={showMoreControls}
+    >
+      {showMoreControls ? 'Less' : 'More'}
+    </Button>
+  </>
+));
+
+const MobileLessonHeader = React.memo(({
+  isMobile,
+  showMobileHeader,
+  setShowMobileHeader,
+  showMoreControls,
+  text,
+  primaryControls,
+  secondaryControls,
+  setIsWordPanelOpen
+}) => {
+  if (!isMobile) return null;
+  return (
+    <>
+      <div className="mobile-lesson-fab">
+        <Button
+          variant="primary"
+          size="sm"
+          onClick={() => setShowMobileHeader(true)}
+          aria-label="Open lesson controls"
+        >
+          Lesson
+        </Button>
+        <Button
+          variant="outline-primary"
+          size="sm"
+          onClick={() => setIsWordPanelOpen(true)}
+          aria-label="Open word info"
+        >
+          Word
+        </Button>
+      </div>
+      <div className={`lesson-topbar navbar-custom-bg ${showMobileHeader ? 'lesson-topbar-open' : 'lesson-topbar-closed'}`}>
+        <div className="lesson-topbar-content">
+          <div className="lesson-topbar-title">{text.title}</div>
+          <div className="lesson-topbar-actions">
+            {primaryControls}
+            <Button
+              variant="outline-light"
+              size="sm"
+              onClick={() => setShowMobileHeader(false)}
+              aria-label="Close lesson controls"
+            >
+              Close
+            </Button>
+          </div>
+        </div>
+        <Collapse in={showMoreControls}>
+          <div id="lesson-more-controls" className="lesson-controls-collapse">
+            {secondaryControls}
+          </div>
+        </Collapse>
+      </div>
+    </>
+  );
+});
+
+const LessonHeader = React.memo(({
+  isMobile,
+  text,
+  words,
+  isAudioLesson,
+  book,
+  primaryControls,
+  secondaryControls,
+  translateUnknownError
+}) => {
+  if (isMobile) return null;
+  return (
+    <Card className="shadow-sm mb-3 border-0 rounded-0 lesson-header">
+      <Card.Body className="p-2 lesson-header-body">
+        <div className="lesson-header-top d-flex justify-content-between align-items-start flex-wrap">
+          <div className="lesson-title">
+            <h2 className="mb-1">{text.title}</h2>
+            <p className="text-muted mb-0 small lesson-meta">Lang: {text.languageName || 'N/A'} | Words: {words.length}</p>
+          </div>
+          {!isAudioLesson && book && book.audiobookTracks && book.audiobookTracks.length > 0 && (
+            <div className="lesson-header-player flex-grow-1 mx-2">
+              <AudiobookPlayer type="book" book={book} />
+            </div>
+          )}
+        </div>
+        <div className="lesson-header-actions d-flex gap-2 flex-wrap mt-2 align-items-center">
+          {primaryControls}
+          <div className="lesson-controls-desktop d-none d-md-flex gap-2 flex-wrap align-items-center">
+            {secondaryControls}
+          </div>
+        </div>
+        {translateUnknownError && <Alert variant="danger" className="mt-1 mb-0 p-1 small">{translateUnknownError}</Alert>}
+      </Card.Body>
+    </Card>
+  );
+});
+
+const WordInfoPanel = React.memo(({
+  displayedWord,
+  saveSuccess,
+  translation,
+  setTranslation,
+  handleTranslationKeyDown,
+  isTranslating,
+  wordTranslationError,
+  handleSaveWord,
+  processingWord,
+  selectedWord,
+  languageConfig,
+  setEmbeddedUrl
+}) => {
+  if (!displayedWord) return <p>Click/hover on a word.</p>;
+  return (
+    <div>
+      <h5 className="fw-bold mb-2">{displayedWord.term}</h5>
+      {saveSuccess && <Alert variant="success" size="sm">Saved!</Alert>}
+      <p className="mb-1 small">Status: {displayedWord.status > 0 ? ['New','Learning','Familiar','Advanced','Known'][displayedWord.status-1] : 'Untracked'}</p>
+      <Form.Control
+        as="textarea"
+        rows={2}
+        value={translation}
+        onChange={(e) => setTranslation(e.target.value)}
+        onKeyDown={handleTranslationKeyDown}
+        placeholder="Translation/Notes (Enter to save)"
+        disabled={isTranslating}
+        size="sm"
+      />
+      {isTranslating && <Spinner size="sm" />}
+      {wordTranslationError && <Alert variant="danger" size="sm">{wordTranslationError}</Alert>}
+      <div className="d-flex flex-wrap gap-1 mt-2">
+        {[1, 2, 3, 4, 5].map(s => (
+          <Button
+            key={s}
+            variant="outline-secondary"
+            size="sm"
+            className="py-0 px-2"
+            onClick={() => handleSaveWord(s)}
+            disabled={processingWord || isTranslating || !selectedWord}
+          >
+            {s}
+          </Button>
+        ))}
+      </div>
+
+      {languageConfig?.dictionaries && selectedWord && (
+        <div className="mt-3 pt-2 border-top">
+          <h6 className="mb-2 small text-muted">Dictionaries</h6>
+          <div className="d-flex flex-wrap gap-1">
+            {languageConfig.dictionaries
+              .filter(dict => dict.isActive && dict.purpose === 'terms')
+              .sort((a, b) => a.sortOrder - b.sortOrder)
+              .map(dict => {
+                const handleDictClick = () => {
+                  if (!selectedWord) return;
+                  const term = encodeURIComponent(selectedWord);
+                  const url = dict.urlTemplate.replace('###', term);
+                  console.log(`[Dictionary] Clicked: ${dict.dictionaryId}, Type: ${dict.displayType}, URL: ${url}`);
+                  if (dict.displayType === 'popup') {
+                    window.open(url, '_blank', 'noopener,noreferrer');
+                    setEmbeddedUrl(null);
+                  } else if (dict.displayType === 'embedded') {
+                    setEmbeddedUrl(url);
+                  }
+                };
+                let buttonText = `Dict ${dict.sortOrder}`;
+                try {
+                  const urlObj = new URL(dict.urlTemplate);
+                  buttonText = urlObj.hostname.replace(/^www\./, '').split('.')[0];
+                  buttonText = buttonText.charAt(0).toUpperCase() + buttonText.slice(1);
+                } catch (e) {
+                  // Ignore invalid URL for naming
+                }
+
+                return (
+                  <Button key={dict.dictionaryId} variant="outline-info" size="sm" onClick={handleDictClick} title={dict.urlTemplate}>
+                    {buttonText}
+                  </Button>
+                );
+              })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+});
+
+const AudioTranscriptView = React.memo(({
+  isMobile,
+  srtLines,
+  currentSrtLineId,
+  getFontStyling,
+  handleLineClick,
+  processTextContent,
+  globalSettings,
+  mobileReadingConfig,
+  textContentRef,
+  itemData,
+  listRef
+}) => {
+  if (!srtLines || srtLines.length === 0) return <p className="p-3">Loading transcript...</p>;
+  const effectiveLineSpacing = isMobile ? mobileReadingConfig.lineSpacing : globalSettings.lineSpacing;
+  const listHeight = textContentRef.current ? textContentRef.current.clientHeight - 30 : 600;
+
+  if (isMobile) {
+    return (
+      <div className="audio-transcript-container">
+        {srtLines.map((line) => (
+          <p
+            key={line.id}
+            id={`srt-line-${line.id}`}
+            className={`srt-line ${line.id === currentSrtLineId ? 'active-srt-line' : ''}`}
+            style={{
+              ...getFontStyling(effectiveLineSpacing),
+              padding: '0.4rem 0.6rem',
+              borderRadius: '6px',
+              transition: 'background-color 0.3s ease',
+              cursor: 'pointer'
+            }}
+            onClick={() => handleLineClick(line.startTime)}
+          >
+            {processTextContent(line.text)}
+          </p>
+        ))}
+      </div>
+    );
+  }
+
+  const calculatedItemSize = (globalSettings.textSize * effectiveLineSpacing * 1.6) + 18;
+  return (
+    <div className="audio-transcript-container" style={{ height: '100%', overflow: 'hidden' }}>
+      <List
+        height={listHeight}
+        itemCount={srtLines.length}
+        itemSize={calculatedItemSize}
+        width="100%"
+        itemData={itemData}
+        overscanCount={5}
+        ref={listRef}
+        style={{ paddingRight: '15px', paddingLeft: '15px' }}
+      >
+        {TranscriptLine}
+      </List>
+    </div>
+  );
+});
+
+const StandardTextView = React.memo(({
+  text,
+  globalSettings,
+  mobileReadingConfig,
+  getFontFamilyForList,
+  handleWordSelection,
+  processTextContent,
+  renderProcessedContentAsSentences,
+  isMobile,
+  textContentRef
+}) => {
+  if (!text?.content) return null;
+  const paragraphs = text.content.split(/(\n\s*){2,}/g).filter(p => p?.trim().length > 0);
+  let currentSentenceIndex = 0;
+  const groupSentences = (sentenceElements, groupSize) => {
+    if (!Array.isArray(sentenceElements) || sentenceElements.length === 0) return [];
+    const groups = [];
+    let currentGroup = [];
+    let sentenceCount = 0;
+    sentenceElements.forEach((sentence) => {
+      currentGroup.push(sentence);
+      sentenceCount += 1;
+      if (sentenceCount >= groupSize) {
+        groups.push(currentGroup);
+        currentGroup = [];
+        sentenceCount = 0;
+      }
+    });
+    if (currentGroup.length) groups.push(currentGroup);
+    return groups;
+  };
+
+  return (
+    <div
+      className="text-content"
+      ref={textContentRef}
+      style={{
+        fontSize: `${globalSettings.textSize}px`,
+        lineHeight: isMobile ? mobileReadingConfig.lineSpacing : 'var(--reading-line-height)',
+        fontFamily: getFontFamilyForList(),
+        '--mobile-reading-block-padding': mobileReadingConfig.blockPadding,
+        '--mobile-reading-line-height': mobileReadingConfig.lineSpacing
+      }}
+      onMouseUp={handleWordSelection}
+    >
+      {paragraphs.map((paragraph, index) => {
+        const processedParaElements = processTextContent(paragraph);
+        const { sentenceElements, nextSentenceIndex } = renderProcessedContentAsSentences(processedParaElements, currentSentenceIndex);
+        currentSentenceIndex = nextSentenceIndex;
+
+        if (isMobile) {
+          const grouped = groupSentences(sentenceElements, mobileReadingConfig.chunkSize);
+          return (
+            <div key={`para-${index}`} className="reading-block-group">
+              {grouped.map((group, groupIndex) => (
+                <p key={`para-${index}-group-${groupIndex}`} className="reading-block">
+                  {group.map((sentence, sentenceIndex) => (
+                    <React.Fragment key={`para-${index}-group-${groupIndex}-sentence-${sentenceIndex}`}>
+                      {sentence}
+                      {sentenceIndex < group.length - 1 ? ' ' : null}
+                    </React.Fragment>
+                  ))}
+                </p>
+              ))}
+            </div>
+          );
+        }
+
+        return (
+          <p key={`para-${index}`} className="mb-3" style={{ textIndent: '1.5em' }}>
+            {sentenceElements}
+          </p>
+        );
+      })}
+    </div>
+  );
+});
+
 
 const TextDisplay = () => {
   const { textId } = useParams();
@@ -953,174 +1500,6 @@ const TextDisplay = () => {
 
 
   // --- Rendering Logic ---
-  const renderAudioTranscript = () => {
-    if (!srtLines || srtLines.length === 0) return <p className="p-3">Loading transcript...</p>;
-    // Calculate itemSize dynamically
-    const effectiveLineSpacing = isMobile ? mobileReadingConfig.lineSpacing : globalSettings.lineSpacing;
-    const LIST_HEIGHT = textContentRef.current ? textContentRef.current.clientHeight - 30 : 600;
-
-    if (isMobile) {
-      return (
-        <div className="audio-transcript-container">
-          {srtLines.map((line) => (
-            <p
-              key={line.id}
-              id={`srt-line-${line.id}`}
-              className={`srt-line ${line.id === currentSrtLineId ? 'active-srt-line' : ''}`}
-              style={{
-                ...getFontStyling(effectiveLineSpacing),
-                padding: '0.4rem 0.6rem',
-                borderRadius: '6px',
-                transition: 'background-color 0.3s ease',
-                cursor: 'pointer'
-              }}
-              onClick={() => handleLineClick(line.startTime)}
-            >
-              {processTextContent(line.text)}
-            </p>
-          ))}
-        </div>
-      );
-    }
-
-    const calculatedItemSize = (globalSettings.textSize * effectiveLineSpacing * 1.6) + 18;
-    return (
-      <div className="audio-transcript-container" style={{ height: '100%', overflow: 'hidden' }}>
-        <List height={LIST_HEIGHT} itemCount={srtLines.length} itemSize={calculatedItemSize} width="100%" itemData={itemData} overscanCount={5} ref={listRef} style={{ paddingRight: '15px', paddingLeft: '15px' }}>
-            {TranscriptLine}
-        </List>
-      </div>
-    );
-  };
-
-  const renderStandardText = () => {
-    if (!text?.content) return null;
-    const paragraphs = text.content.split(/(\n\s*){2,}/g).filter(p => p?.trim().length > 0);
-    let currentSentenceIndex = 0; // Track sentence index across paragraphs
-    const groupSentences = (sentenceElements, groupSize) => {
-      if (!Array.isArray(sentenceElements) || sentenceElements.length === 0) return [];
-      const groups = [];
-      let currentGroup = [];
-      let sentenceCount = 0;
-      sentenceElements.forEach((sentence) => {
-        currentGroup.push(sentence);
-        sentenceCount += 1;
-        if (sentenceCount >= groupSize) {
-          groups.push(currentGroup);
-          currentGroup = [];
-          sentenceCount = 0;
-        }
-      });
-      if (currentGroup.length) groups.push(currentGroup);
-      return groups;
-    };
-
-    return (
-       <div
-         className="text-content"
-         ref={textContentRef}
-         style={{
-           fontSize: `${globalSettings.textSize}px`,
-           lineHeight: isMobile ? mobileReadingConfig.lineSpacing : 'var(--reading-line-height)',
-           fontFamily: getFontFamilyForList(),
-           '--mobile-reading-block-padding': mobileReadingConfig.blockPadding,
-           '--mobile-reading-line-height': mobileReadingConfig.lineSpacing
-         }} // Use globalSettings, removed inline padding
-         onMouseUp={handleWordSelection} // Use the new word selection handler
-        >
-        {paragraphs.map((paragraph, index) => {
-          // Process paragraph into elements
-          const processedParaElements = processTextContent(paragraph);
-          // Render elements as sentences, passing and updating the global sentence index
-          const { sentenceElements, nextSentenceIndex } = renderProcessedContentAsSentences(processedParaElements, currentSentenceIndex);
-          currentSentenceIndex = nextSentenceIndex; // Update index for the next paragraph
-
-          if (isMobile) {
-            const grouped = groupSentences(sentenceElements, mobileReadingConfig.chunkSize);
-            return (
-              <div key={`para-${index}`} className="reading-block-group">
-                {grouped.map((group, groupIndex) => (
-                  <p key={`para-${index}-group-${groupIndex}`} className="reading-block">
-                    {group.map((sentence, sentenceIndex) => (
-                      <React.Fragment key={`para-${index}-group-${groupIndex}-sentence-${sentenceIndex}`}>
-                        {sentence}
-                        {sentenceIndex < group.length - 1 ? ' ' : null}
-                      </React.Fragment>
-                    ))}
-                  </p>
-                ))}
-              </div>
-            );
-          }
-
-          return (
-            <p key={`para-${index}`} className="mb-3" style={{ textIndent: '1.5em' }}>
-              {sentenceElements}
-            </p>
-          );
-        })}
-      </div>
-    );
-  };
-
-  const renderSidePanel = () => {
-     if (!displayedWord) return <p>Click/hover on a word.</p>;
-     return (
-        <div>
-          <h5 className="fw-bold mb-2">{displayedWord.term}</h5>
-          {saveSuccess && <Alert variant="success" size="sm">Saved!</Alert>}
-          <p className="mb-1 small">Status: {displayedWord.status > 0 ? ['New','Learning','Familiar','Advanced','Known'][displayedWord.status-1] : 'Untracked'}</p>
-          <Form.Control as="textarea" rows={2} value={translation} onChange={(e) => setTranslation(e.target.value)} onKeyDown={handleTranslationKeyDown} placeholder="Translation/Notes (Enter to save)" disabled={isTranslating} size="sm"/>
-          {isTranslating && <Spinner size="sm"/>}
-          {wordTranslationError && <Alert variant="danger" size="sm">{wordTranslationError}</Alert>}
-          <div className="d-flex flex-wrap gap-1 mt-2">
-             {[1, 2, 3, 4, 5].map(s => <Button key={s} variant="outline-secondary" size="sm" className="py-0 px-2" onClick={() => handleSaveWord(s)} disabled={processingWord || isTranslating || !selectedWord}>{s}</Button>)}
-          </div>
-
-          {/* --- Phase 3: Dictionary Buttons --- */}
-          {languageConfig?.dictionaries && selectedWord && (
-            <div className="mt-3 pt-2 border-top">
-              <h6 className="mb-2 small text-muted">Dictionaries</h6>
-              <div className="d-flex flex-wrap gap-1">
-                {languageConfig.dictionaries
-                  .filter(dict => dict.isActive && dict.purpose === 'terms')
-                  .sort((a, b) => a.sortOrder - b.sortOrder)
-                  .map(dict => {
-                    const handleDictClick = () => {
-                      if (!selectedWord) return;
-                      const term = encodeURIComponent(selectedWord); // Ensure encoding
-                      const url = dict.urlTemplate.replace('###', term);
-                      console.log(`[Dictionary] Clicked: ${dict.dictionaryId}, Type: ${dict.displayType}, URL: ${url}`);
-                      if (dict.displayType === 'popup') {
-                        window.open(url, '_blank', 'noopener,noreferrer');
-                        setEmbeddedUrl(null); // Clear any existing embedded view
-                      } else if (dict.displayType === 'embedded') {
-                        setEmbeddedUrl(url);
-                      }
-                    };
-                    // Attempt to get a simple name from the URL
-                    let buttonText = `Dict ${dict.sortOrder}`;
-                    try {
-                        const urlObj = new URL(dict.urlTemplate);
-                        buttonText = urlObj.hostname.replace(/^www\./, '').split('.')[0];
-                        buttonText = buttonText.charAt(0).toUpperCase() + buttonText.slice(1);
-                    } catch (e) { /* Ignore invalid URL for naming */ }
-
-                    return (
-                      <Button key={dict.dictionaryId} variant="outline-info" size="sm" onClick={handleDictClick} title={dict.urlTemplate}>
-                        {buttonText}
-                      </Button>
-                    );
-                  })}
-              </div>
-            </div>
-          )}
-          {/* --- End Phase 3 --- */}
-
-        </div>
-     );
-  };
-  // --- End Rendering Logic ---
   // --- Loading/Error/NotFound States ---
   if (loading) { return <Container className="py-5 text-center"><Spinner animation="border" /></Container>; }
   if (error) { return <Container className="py-5"><Alert variant="danger">{error}<Button onClick={() => navigate(-1)}>Back</Button></Alert></Container>; }
@@ -1130,204 +1509,65 @@ const TextDisplay = () => {
       // DEBUG: Log isAudioLesson state before rendering
       console.log(`[Render Check] isAudioLesson state: ${isAudioLesson}`);
 
-  const renderSecondaryControls = () => (
-    <>
-      {isMobile && (
-        <ButtonGroup size="sm" className="me-1" aria-label="Reading style">
-          <Button
-            variant={readingStyle === 'compact' ? 'primary' : 'outline-secondary'}
-            onClick={() => setReadingStyle('compact')}
-          >
-            Compact
-          </Button>
-          <Button
-            variant={readingStyle === 'balanced' ? 'primary' : 'outline-secondary'}
-            onClick={() => setReadingStyle('balanced')}
-          >
-            Balanced
-          </Button>
-          <Button
-            variant={readingStyle === 'spacious' ? 'primary' : 'outline-secondary'}
-            onClick={() => setReadingStyle('spacious')}
-          >
-            Spacious
-          </Button>
-        </ButtonGroup>
-      )}
-      <ButtonGroup size="sm" className="me-1">
-        <Button variant="outline-secondary" onClick={() => {
-            const newSize = Math.max(12, globalSettings.textSize - 2);
-            console.log('[Save Settings] Saving Text Size via API:', newSize);
-            updateSetting('textSize', newSize);
-            updateUserSettings({ textSize: newSize })
-                .catch(err => console.error('[Save Settings] Failed to save text size via API:', err));
-        }} title="Decrease text size">A-</Button>
-        <Button variant="outline-secondary" onClick={() => {
-            const newSize = Math.min(32, globalSettings.textSize + 2);
-            console.log('[Save Settings] Saving Text Size via API:', newSize);
-            updateSetting('textSize', newSize);
-            updateUserSettings({ textSize: newSize })
-                .catch(err => console.error('[Save Settings] Failed to save text size via API:', err));
-        }} title="Increase text size">A+</Button>
-      </ButtonGroup>
-      <ButtonGroup size="sm" className="me-1">
-        <Button variant="outline-secondary" onClick={() => {
-            const newWidth = Math.min(leftPanelWidth + 5, 85);
-            setLeftPanelWidth(newWidth);
-            updateSetting('leftPanelWidth', newWidth);
-            updateUserSettings({ leftPanelWidth: newWidth })
-                .catch(err => console.error('[Save Settings] Failed to save panel width via API:', err));
-        }} title="Increase reading area (Wider)">◀</Button>
-        <Button variant="outline-secondary" onClick={() => {
-            const newWidth = Math.max(leftPanelWidth - 5, 20);
-            setLeftPanelWidth(newWidth);
-            updateSetting('leftPanelWidth', newWidth);
-            updateUserSettings({ leftPanelWidth: newWidth })
-                .catch(err => console.error('[Save Settings] Failed to save panel width via API:', err));
-        }} title="Decrease reading area (Narrower)">▶</Button>
-      </ButtonGroup>
-      {!isMobile && (
-      <ButtonGroup size="sm" className="me-1">
-        <OverlayTrigger placement="top" overlay={<Tooltip>Line Spacing: Default (1.5)</Tooltip>}>
-          <Button
-            variant={parseFloat(globalSettings.lineSpacing) === 1.5 ? 'primary' : 'outline-secondary'}
-            onClick={() => handleLineSpacingChange(1.5)}
-            aria-label="Set line spacing to default"
-          >
-            1.5
-          </Button>
-        </OverlayTrigger>
-        <OverlayTrigger placement="top" overlay={<Tooltip>Line Spacing: Relaxed (1.75)</Tooltip>}>
-          <Button
-            variant={parseFloat(globalSettings.lineSpacing) === 1.75 ? 'primary' : 'outline-secondary'}
-            onClick={() => handleLineSpacingChange(1.75)}
-            aria-label="Set line spacing to relaxed"
-          >
-            1.75
-          </Button>
-        </OverlayTrigger>
-        <OverlayTrigger placement="top" overlay={<Tooltip>Line Spacing: Spacious (2.0)</Tooltip>}>
-          <Button
-            variant={parseFloat(globalSettings.lineSpacing) === 2.0 ? 'primary' : 'outline-secondary'}
-            onClick={() => handleLineSpacingChange(2.0)}
-            aria-label="Set line spacing to spacious"
-          >
-            2.0
-          </Button>
-        </OverlayTrigger>
-      </ButtonGroup>
-      )}
-      {text && !loading && ( <Button variant="info" size="sm" onClick={handleFullTextTranslation} className="me-1">Translate Text</Button> )}
-      {text && !loading && ( <Button variant="secondary" size="sm" onClick={handleTranslateUnknownWords} disabled={translatingUnknown} className="ms-1" title="Translate unknown/learning words">{translatingUnknown ? <Spinner size="sm"/> : 'Translate ?'}</Button> )}
-      {text && !loading && ( <Button variant="outline-success" size="sm" onClick={handleMarkAllUnknownAsKnown} disabled={isMarkingAll} className="ms-1" title="Mark all untracked words as Known">{isMarkingAll ? <Spinner size="sm"/> : 'Mark All Known'}</Button> )}
-    </>
+  const primaryControls = (
+    <PrimaryControls
+      isAudioLesson={isAudioLesson}
+      displayMode={displayMode}
+      setDisplayMode={setDisplayMode}
+      text={text}
+      handleCompleteLesson={handleCompleteLesson}
+      completing={completing}
+      nextTextId={nextTextId}
+      navigate={navigate}
+      showMoreControls={showMoreControls}
+      setShowMoreControls={setShowMoreControls}
+    />
   );
 
-  const renderPrimaryControls = () => (
-    <>
-      {isAudioLesson && (
-        <Button
-          variant="outline-info"
-          size="sm"
-          onClick={() => setDisplayMode(p => p === 'audio' ? 'text' : 'audio')}
-          title={displayMode === 'audio' ? 'Text View' : 'Audio View'}
-          className="me-1"
-        >
-          {displayMode === 'audio' ? 'Text' : 'Audio'} View
-        </Button>
-      )}
-      {isAudioLesson && !text?.bookId && (
-        <Button variant="success" onClick={handleCompleteLesson} disabled={completing} size="sm" className="ms-1">
-          {completing ? <Spinner animation="border" size="sm" /> : (nextTextId === null ? 'Finish Book' : 'Complete Lesson')}
-        </Button>
-      )}
-      {text?.bookId && ( <Button variant="outline-primary" size="sm" onClick={() => navigate(`/books/${text.bookId}`)} className="ms-1">Back to Book</Button> )}
-      {!text?.bookId && ( <Button variant="outline-secondary" size="sm" onClick={() => navigate('/texts')} className="ms-1">Back to Texts</Button> )}
-      <Button
-        variant="outline-secondary"
-        size="sm"
-        className="ms-1 d-md-none"
-        onClick={() => setShowMoreControls(prev => !prev)}
-        aria-controls="lesson-more-controls"
-        aria-expanded={showMoreControls}
-      >
-        {showMoreControls ? 'Less' : 'More'}
-      </Button>
-    </>
+  const secondaryControls = (
+    <SecondaryControls
+      isMobile={isMobile}
+      readingStyle={readingStyle}
+      setReadingStyle={setReadingStyle}
+      globalSettings={globalSettings}
+      updateSetting={updateSetting}
+      updateUserSettings={updateUserSettings}
+      leftPanelWidth={leftPanelWidth}
+      setLeftPanelWidth={setLeftPanelWidth}
+      handleLineSpacingChange={handleLineSpacingChange}
+      text={text}
+      loading={loading}
+      handleFullTextTranslation={handleFullTextTranslation}
+      handleTranslateUnknownWords={handleTranslateUnknownWords}
+      translatingUnknown={translatingUnknown}
+      handleMarkAllUnknownAsKnown={handleMarkAllUnknownAsKnown}
+      isMarkingAll={isMarkingAll}
+    />
   );
 
   // --- Main Return JSX ---
   return (
     <div className="text-display-wrapper lesson-page px-0 mx-0 w-100">
-      {isMobile && (
-        <>
-        <div className="mobile-lesson-fab">
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={() => setShowMobileHeader(true)}
-            aria-label="Open lesson controls"
-          >
-            Lesson
-          </Button>
-          <Button
-            variant="outline-primary"
-            size="sm"
-            onClick={() => setIsWordPanelOpen(true)}
-            aria-label="Open word info"
-          >
-            Word
-          </Button>
-        </div>
-        <div className={`lesson-topbar navbar-custom-bg ${showMobileHeader ? 'lesson-topbar-open' : 'lesson-topbar-closed'}`}>
-          <div className="lesson-topbar-content">
-            <div className="lesson-topbar-title">{text.title}</div>
-            <div className="lesson-topbar-actions">
-              {renderPrimaryControls()}
-              <Button
-                variant="outline-light"
-                size="sm"
-                onClick={() => setShowMobileHeader(false)}
-                aria-label="Close lesson controls"
-              >
-                Close
-              </Button>
-            </div>
-          </div>
-          <Collapse in={showMoreControls}>
-            <div id="lesson-more-controls" className="lesson-controls-collapse">
-              {renderSecondaryControls()}
-            </div>
-          </Collapse>
-        </div>
-        </>
-      )}
-      {/* Header Card - Add Playback Speed Controls */}
-      {!isMobile && (
-      <Card className="shadow-sm mb-3 border-0 rounded-0 lesson-header">
-        <Card.Body className="p-2 lesson-header-body">
-           <div className="lesson-header-top d-flex justify-content-between align-items-start flex-wrap">
-             <div className="lesson-title">
-               <h2 className="mb-1">{text.title}</h2>
-               <p className="text-muted mb-0 small lesson-meta">Lang: {text.languageName || 'N/A'} | Words: {words.length}</p>
-             </div>
-             {/* Audiobook Player Integration - ONLY if NOT an audio lesson */}
-             {!isAudioLesson && book && book.audiobookTracks && book.audiobookTracks.length > 0 && (
-               <div className="lesson-header-player flex-grow-1 mx-2">
-                  <AudiobookPlayer type="book" book={book} />
-               </div>
-             )}
-           </div>
-           <div className="lesson-header-actions d-flex gap-2 flex-wrap mt-2 align-items-center">
-             {renderPrimaryControls()}
-             <div className="lesson-controls-desktop d-none d-md-flex gap-2 flex-wrap align-items-center">
-               {renderSecondaryControls()}
-             </div>
-           </div>
-           {translateUnknownError && <Alert variant="danger" className="mt-1 mb-0 p-1 small">{translateUnknownError}</Alert>}
-        </Card.Body>
-      </Card>
-      )}
+      <MobileLessonHeader
+        isMobile={isMobile}
+        showMobileHeader={showMobileHeader}
+        setShowMobileHeader={setShowMobileHeader}
+        showMoreControls={showMoreControls}
+        text={text}
+        primaryControls={primaryControls}
+        secondaryControls={secondaryControls}
+        setIsWordPanelOpen={setIsWordPanelOpen}
+      />
+      <LessonHeader
+        isMobile={isMobile}
+        text={text}
+        words={words}
+        isAudioLesson={isAudioLesson}
+        book={book}
+        primaryControls={primaryControls}
+        secondaryControls={secondaryControls}
+        translateUnknownError={translateUnknownError}
+      />
 
       {/* Audiobook Player rendering removed from here to fix duplication */}
 
@@ -1353,7 +1593,33 @@ const TextDisplay = () => {
         <div className="left-panel" style={{ width: `${leftPanelWidth}%`, height: 'calc(100vh - 130px)', overflowY: 'auto', padding: '0', position: 'relative' }}>
            <div className="d-flex flex-column" style={{ minHeight: '100%' }}>
              <div className="flex-grow-1" ref={textContentRef}>
-               {isAudioLesson && displayMode === 'audio' ? renderAudioTranscript() : renderStandardText()}
+               {isAudioLesson && displayMode === 'audio' ? (
+                 <AudioTranscriptView
+                   isMobile={isMobile}
+                   srtLines={srtLines}
+                   currentSrtLineId={currentSrtLineId}
+                   getFontStyling={getFontStyling}
+                   handleLineClick={handleLineClick}
+                   processTextContent={processTextContent}
+                   globalSettings={globalSettings}
+                   mobileReadingConfig={mobileReadingConfig}
+                   textContentRef={textContentRef}
+                   itemData={itemData}
+                   listRef={listRef}
+                 />
+               ) : (
+                 <StandardTextView
+                   text={text}
+                   globalSettings={globalSettings}
+                   mobileReadingConfig={mobileReadingConfig}
+                   getFontFamilyForList={getFontFamilyForList}
+                   handleWordSelection={handleWordSelection}
+                   processTextContent={processTextContent}
+                   renderProcessedContentAsSentences={renderProcessedContentAsSentences}
+                   isMobile={isMobile}
+                   textContentRef={textContentRef}
+                 />
+               )}
              </div>
              {/* Show bottom button for regular texts OR any text within a book */}
              {(!isAudioLesson || text?.bookId) && (
@@ -1373,7 +1639,22 @@ const TextDisplay = () => {
           <div className="right-panel" style={{ width: `${100 - leftPanelWidth}%`, height: 'calc(100vh - 130px)', overflowY: 'auto', padding: 'var(--space-sm)', position: 'relative' }}>
             <Card className="border-0 h-100"><Card.Body className="p-2 d-flex flex-column">
               <h5 className="mb-2 flex-shrink-0">Word Info</h5>
-              <div className="flex-grow-1" style={{ overflowY: 'auto', paddingBottom: 'var(--space-xs)' }}>{renderSidePanel()}</div>
+              <div className="flex-grow-1" style={{ overflowY: 'auto', paddingBottom: 'var(--space-xs)' }}>
+                <WordInfoPanel
+                  displayedWord={displayedWord}
+                  saveSuccess={saveSuccess}
+                  translation={translation}
+                  setTranslation={setTranslation}
+                  handleTranslationKeyDown={handleTranslationKeyDown}
+                  isTranslating={isTranslating}
+                  wordTranslationError={wordTranslationError}
+                  handleSaveWord={handleSaveWord}
+                  processingWord={processingWord}
+                  selectedWord={selectedWord}
+                  languageConfig={languageConfig}
+                  setEmbeddedUrl={setEmbeddedUrl}
+                />
+              </div>
 
               {/* --- Phase 3: Embedded Dictionary Iframe --- */}
               {embeddedUrl && (
@@ -1412,7 +1693,20 @@ const TextDisplay = () => {
             <div className="word-info-sheet-handle" />
             <div className="word-info-sheet-content">
               <h5 className="mb-2">Word Info</h5>
-              {renderSidePanel()}
+              <WordInfoPanel
+                displayedWord={displayedWord}
+                saveSuccess={saveSuccess}
+                translation={translation}
+                setTranslation={setTranslation}
+                handleTranslationKeyDown={handleTranslationKeyDown}
+                isTranslating={isTranslating}
+                wordTranslationError={wordTranslationError}
+                handleSaveWord={handleSaveWord}
+                processingWord={processingWord}
+                selectedWord={selectedWord}
+                languageConfig={languageConfig}
+                setEmbeddedUrl={setEmbeddedUrl}
+              />
             </div>
           </div>
         </div>

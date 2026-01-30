@@ -46,5 +46,7 @@ describe('App', () => {
     expect(screen.getByText(/loading/i)).toBeInTheDocument();
 
     await waitFor(() => expect(screen.getByText(/LinguaRead/i)).toBeInTheDocument());
+    await waitFor(() => expect(getRecentTexts).toHaveBeenCalled());
+    await screen.findByText(/No recently read texts found/i);
   });
 });

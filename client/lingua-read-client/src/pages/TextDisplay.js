@@ -751,6 +751,11 @@ const TextDisplay = () => {
 
   // --- Effects ---
   useEffect(() => {
+    console.log('[TextDisplay] Mounted');
+    return () => console.log('[TextDisplay] Unmounted');
+  }, []);
+
+  useEffect(() => {
     console.log('[TextDisplay] globalSettings.lineSpacing updated:', globalSettings.lineSpacing);
   }, [globalSettings.lineSpacing]);
   // --- End Effects ---
@@ -798,6 +803,8 @@ const TextDisplay = () => {
       console.log(`[fetchAllLanguageWords] Replaced words state with ${allLanguageWords.length} words from backend.`);
     } catch (error) { console.error('Error fetching language words:', error); }
   }, [setWords]); // Dependency: setWords
+
+  const prevFetchAllLanguageWordsRef = useRef(fetchAllLanguageWords);
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const getWordData = useCallback((word) => {
@@ -1183,13 +1190,33 @@ const TextDisplay = () => {
 
   // Fetch Text Data, Restore Audio Time & Playback Rate
   useEffect(() => {
+    // --- Debug: Check what triggered this effect ---
+    if (prevFetchAllLanguageWordsRef.current !== fetchAllLanguageWords) {
+      console.log('[TextDisplay] fetchText Effect triggered by: fetchAllLanguageWords change');
+      prevFetchAllLanguageWordsRef.current = fetchAllLanguageWords;
+    } else {
+      console.log(`[TextDisplay] fetchText Effect triggered by: textId change (${textId}) or mount`);
+    }
+
     // --- Set initial panel width from global settings ---
     // This ensures panel width resets if global settings change while component is mounted
     setLeftPanelWidth(globalSettings.leftPanelWidth || 85);
     // --- End Set initial panel width ---
 
     const fetchText = async () => {
-      setLoading(true); setError(''); setBook(null); setNextTextId(null); setBookmarkedIndices([]); // Reset bookmarks for new text
+      // Check if we are checking the same text to avoid full re-mount of children (AudiobookPlayer)
+      const isSameText = text && String(text.textId) === String(textId);
+
+      if (!isSameText) {
+        setLoading(true);
+        setError('');
+        setBook(null);
+        setNextTextId(null);
+        setBookmarkedIndices([]); // Reset bookmarks for new text
+      } else {
+        console.log(`[TextDisplay] Refreshing data for same text ${textId} (skipping loading state)`);
+      }
+
       try {
         const data = await getText(textId);
         setText(data);

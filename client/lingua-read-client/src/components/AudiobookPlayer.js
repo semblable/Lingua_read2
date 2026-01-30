@@ -59,8 +59,32 @@ const AudiobookPlayer = ({
 
   const currentTrack = isBookMode && audiobookTracks.length > 0 ? audiobookTracks[currentTrackIndex] : null;
 
+  // --- Debug Refs for Effect Triggers ---
+  const prevLoadDepsRef = useRef({ isBookMode, bookId, audiobookTracks, textId, audioSrc });
+
+  // --- Mount/Unmount Log ---
+  useEffect(() => {
+    console.log('[AudiobookPlayer] Mounted');
+    return () => console.log('[AudiobookPlayer] Unmounted');
+  }, []);
+
   // --- Load Last Playback Position ---
   useEffect(() => {
+    const prev = prevLoadDepsRef.current;
+    const changes = [];
+    if (prev.isBookMode !== isBookMode) changes.push(`isBookMode: ${prev.isBookMode}->${isBookMode}`);
+    if (prev.bookId !== bookId) changes.push(`bookId: ${prev.bookId}->${bookId}`);
+    if (prev.audiobookTracks !== audiobookTracks) changes.push(`audiobookTracks changed (len: ${audiobookTracks?.length})`);
+    if (prev.textId !== textId) changes.push(`textId: ${prev.textId}->${textId}`);
+    if (prev.audioSrc !== audioSrc) changes.push(`audioSrc: ${prev.audioSrc}->${audioSrc}`);
+
+    if (changes.length > 0) {
+      console.log('[AudiobookPlayer] loadLastPosition effect triggered by:', changes.join(', '));
+      prevLoadDepsRef.current = { isBookMode, bookId, audiobookTracks, textId, audioSrc };
+    } else {
+      console.log('[AudiobookPlayer] loadLastPosition effect triggered (likely mount)');
+    }
+
     let isMounted = true; // Track if component is still mounted
 
     const loadLastPosition = async () => {

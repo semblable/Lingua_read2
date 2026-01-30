@@ -4,12 +4,13 @@ import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import App from '../App';
 import { useAuthStore } from '../utils/store';
-import { login, getUserSettings } from '../utils/api';
+import { login, getUserSettings, getRecentTexts } from '../utils/api';
 import { jwtDecode } from 'jwt-decode';
 
 jest.mock('../utils/api', () => ({
   login: jest.fn(),
-  getUserSettings: jest.fn()
+  getUserSettings: jest.fn(),
+  getRecentTexts: jest.fn()
 }));
 
 jest.mock('jwt-decode', () => ({
@@ -22,6 +23,7 @@ describe('App', () => {
     useAuthStore.setState({ token: null, user: null });
     login.mockReset();
     getUserSettings.mockReset();
+    getRecentTexts.mockReset();
     jwtDecode.mockReset();
   });
 
@@ -33,6 +35,7 @@ describe('App', () => {
       email: 'user@example.com'
     });
     getUserSettings.mockResolvedValue({});
+    getRecentTexts.mockResolvedValue([]);
 
     render(
       <MemoryRouter>

@@ -11,7 +11,23 @@
 .lesson-header .lesson-header-body {
   display: flex;
   flex-direction: column;
-  gap: var(--space-xs);
+  gap: 0;
+}
+
+/* Compact title for inline header */
+.lesson-title-compact {
+  flex-shrink: 0;
+  line-height: 1.2;
+}
+
+.lesson-title-compact h5 {
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.lesson-title-compact small {
+  font-size: 0.7rem;
+  display: block;
 }
 
 .lesson-topbar {

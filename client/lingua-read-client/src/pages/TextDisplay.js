@@ -419,39 +419,38 @@ const LessonHeader = React.memo(({
   onTimeUpdate
 }) => {
   if (isMobile) return null;
+
+  const hasAudioPlayer = (isAudioLesson && audioSrc) || (!isAudioLesson && book?.audiobookTracks?.length > 0);
+
   return (
-    <Card className="shadow-sm mb-3 border-0 rounded-0 lesson-header">
-      <Card.Body className="p-2 lesson-header-body">
-        <div className="lesson-header-top d-flex justify-content-between align-items-center flex-wrap">
-          <div className="lesson-title">
-            <h2 className="mb-0">{text.title}</h2>
-            <p className="text-muted mb-0 small lesson-meta">Lang: {text.languageName || 'N/A'} | Words: {words.length}</p>
+    <Card className="shadow-sm mb-2 border-0 rounded-0 lesson-header">
+      <Card.Body className="py-1 px-2 lesson-header-body">
+        <div className="d-flex align-items-center gap-2 flex-wrap">
+          {/* Title - compact */}
+          <div className="lesson-title-compact me-2">
+            <h5 className="mb-0 text-truncate" style={{ maxWidth: '250px' }} title={text.title}>{text.title}</h5>
+            <small className="text-muted lesson-meta">Lang: {text.languageName || 'N/A'} | {words.length} words</small>
           </div>
-        </div>
-        <div className="lesson-header-actions d-flex gap-2 flex-wrap mt-2 align-items-center">
-          {/* Audio Player for Audio Lessons - Prioritized in header if it exists */}
+
+          {/* Audio Player - inline */}
           {isAudioLesson && audioSrc && (
-            <div className="lesson-header-player">
-              <AudiobookPlayer
-                key="lesson-audio-player"
-                type="lesson"
-                audioSrc={audioSrc}
-                textId={textId}
-                languageId={text?.languageId}
-                audioRef={audioRef}
-                onTimeUpdate={onTimeUpdate}
-              />
-            </div>
+            <AudiobookPlayer
+              key="lesson-audio-player"
+              type="lesson"
+              audioSrc={audioSrc}
+              textId={textId}
+              languageId={text?.languageId}
+              audioRef={audioRef}
+              onTimeUpdate={onTimeUpdate}
+            />
+          )}
+          {!isAudioLesson && book?.audiobookTracks?.length > 0 && (
+            <AudiobookPlayer type="book" book={book} />
           )}
 
-          {/* Book Player - shown if NOT an audio lesson but part of an audiobook */}
-          {!isAudioLesson && book && book.audiobookTracks && book.audiobookTracks.length > 0 && (
-            <div className="lesson-header-player">
-              <AudiobookPlayer type="book" book={book} />
-            </div>
-          )}
-          {primaryControls}
-          <div className="lesson-controls-desktop d-none d-md-flex gap-2 flex-wrap align-items-center">
+          {/* Controls - inline */}
+          <div className="d-flex align-items-center gap-1 ms-auto flex-wrap">
+            {primaryControls}
             {secondaryControls}
           </div>
         </div>

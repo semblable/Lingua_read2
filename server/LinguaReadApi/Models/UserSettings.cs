@@ -45,6 +45,15 @@ namespace LinguaReadApi.Models
         public int DiscordTimezoneOffsetMinutes { get; set; } = 0;
 
         public DateTime? DiscordWeeklyReportLastSentAt { get; set; }
+
+        // AI Provider Settings (OpenRouter)
+        public bool UseOpenRouter { get; set; } = false; // Toggle between Gemini/OpenRouter
+        
+        [StringLength(256)]
+        public string? OpenRouterApiKey { get; set; }
+        
+        [StringLength(100)]
+        public string OpenRouterModel { get; set; } = "google/gemini-2.5-flash-preview-05-20:free";
         
         // Creation timestamps
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;

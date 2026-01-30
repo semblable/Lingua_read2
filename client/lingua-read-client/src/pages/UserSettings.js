@@ -22,7 +22,10 @@ const UserSettings = () => {
     discordWebhookUrl: '',
     discordWeeklyReportDayOfWeek: 'Monday',
     discordWeeklyReportHourLocal: 8,
-    discordTimezoneOffsetMinutes: browserTimezoneOffsetMinutes
+    discordTimezoneOffsetMinutes: browserTimezoneOffsetMinutes,
+    useOpenRouter: false,
+    openRouterApiKey: '',
+    openRouterModel: 'google/gemini-2.5-flash-preview-05-20:free'
   });
 
   const [languages, setLanguages] = useState([]);
@@ -80,7 +83,10 @@ const UserSettings = () => {
           discordWebhookUrl: data.discordWebhookUrl || '',
           discordWeeklyReportDayOfWeek: data.discordWeeklyReportDayOfWeek || 'Monday',
           discordWeeklyReportHourLocal: data.discordWeeklyReportHourLocal ?? 8,
-          discordTimezoneOffsetMinutes: data.discordTimezoneOffsetMinutes ?? browserTimezoneOffsetMinutes
+          discordTimezoneOffsetMinutes: data.discordTimezoneOffsetMinutes ?? browserTimezoneOffsetMinutes,
+          useOpenRouter: data.useOpenRouter ?? false,
+          openRouterApiKey: data.openRouterApiKey || '',
+          openRouterModel: data.openRouterModel || 'google/gemini-2.5-flash-preview-05-20:free'
         });
       } catch (err) {
         setError('Failed to load settings. Please try again later.');
@@ -518,6 +524,64 @@ const UserSettings = () => {
                 onChange={handleChange}
               />
             </Form.Group>
+
+            {/* --- AI Provider Settings --- */}
+            <h4 className="mt-4 mb-3">AI Provider</h4>
+            <Form.Group className="mb-3" controlId="useOpenRouter">
+              <Form.Check
+                type="checkbox"
+                name="useOpenRouter"
+                label="Use OpenRouter instead of Gemini for translation and story generation"
+                checked={settings.useOpenRouter}
+                onChange={handleChange}
+              />
+              <Form.Text muted>
+                OpenRouter provides access to multiple AI models. You'll need an API key from openrouter.ai.
+              </Form.Text>
+            </Form.Group>
+
+            {settings.useOpenRouter && (
+              <>
+                <Form.Group className="mb-3" controlId="openRouterApiKey">
+                  <Form.Label>OpenRouter API Key</Form.Label>
+                  <Form.Control
+                    type="password"
+                    name="openRouterApiKey"
+                    placeholder="sk-or-..."
+                    value={settings.openRouterApiKey}
+                    onChange={handleChange}
+                  />
+                  <Form.Text muted>
+                    Get your API key from <a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer">openrouter.ai/keys</a>
+                  </Form.Text>
+                </Form.Group>
+
+                <Form.Group className="mb-4" controlId="openRouterModel">
+                  <Form.Label>Model</Form.Label>
+                  <Form.Select
+                    name="openRouterModel"
+                    value={settings.openRouterModel}
+                    onChange={handleChange}
+                  >
+                    <optgroup label="Free Models">
+                      <option value="google/gemini-2.5-flash-preview-05-20:free">Google Gemini 2.5 Flash (Free)</option>
+                      <option value="meta-llama/llama-3.3-8b-instruct:free">Meta Llama 3.3 8B (Free)</option>
+                      <option value="qwen/qwen3-4b:free">Qwen 3 4B (Free)</option>
+                      <option value="mistralai/mistral-small-3.1-24b-instruct:free">Mistral Small 3.1 24B (Free)</option>
+                      <option value="deepseek/deepseek-r1:free">DeepSeek R1 (Free)</option>
+                    </optgroup>
+                    <optgroup label="Paid Models">
+                      <option value="anthropic/claude-3.5-sonnet">Claude 3.5 Sonnet</option>
+                      <option value="openai/gpt-4o">GPT-4o</option>
+                      <option value="google/gemini-pro-1.5">Gemini Pro 1.5</option>
+                    </optgroup>
+                  </Form.Select>
+                  <Form.Text muted>
+                    Free models have rate limits. Paid models require credits in your OpenRouter account.
+                  </Form.Text>
+                </Form.Group>
+              </>
+            )}
 
             {/* --- Discord Reports --- */}
             <h4 className="mt-4 mb-3">Discord Reports</h4>

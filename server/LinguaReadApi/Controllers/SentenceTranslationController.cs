@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using System.Text.Json.Serialization;
 using System.Threading.Tasks;
 using System;
+using System.Security.Claims;
 using Microsoft.Extensions.Logging;
 using LinguaReadApi.Services;
 
@@ -13,19 +14,19 @@ namespace LinguaReadApi.Controllers
     [Authorize]
     public class SentenceTranslationController : ControllerBase
     {
-        private readonly ISentenceTranslationService _translationService;
+        private readonly ITranslationServiceFactory _translationServiceFactory;
         private readonly ILogger<SentenceTranslationController> _logger;
 
         public SentenceTranslationController(
-            ISentenceTranslationService translationService,
+            ITranslationServiceFactory translationServiceFactory,
             ILogger<SentenceTranslationController> logger)
         {
-            _translationService = translationService;
+            _translationServiceFactory = translationServiceFactory;
             _logger = logger;
         }
 
         /// <summary>
-        /// Translates a sentence or paragraph from one language to another using Gemini API
+        /// Translates a sentence or paragraph from one language to another using user's configured AI provider
         /// </summary>
         /// <param name="request">The translation request containing text and language codes</param>
         /// <returns>The translated text</returns>
@@ -42,9 +43,12 @@ namespace LinguaReadApi.Controllers
                     return BadRequest(new { message = "Text to translate cannot be empty" });
                 }
 
+                var userId = GetUserId();
+                var translationService = await _translationServiceFactory.GetServiceForUserAsync(userId);
+
                 _logger.LogInformation($"Translating from {request.SourceLanguageCode} to {request.TargetLanguageCode}");
                 
-                var translatedText = await _translationService.TranslateSentenceAsync(
+                var translatedText = await translationService.TranslateSentenceAsync(
                     request.Text,
                     request.SourceLanguageCode,
                     request.TargetLanguageCode);
@@ -88,9 +92,12 @@ namespace LinguaReadApi.Controllers
                     return BadRequest(new { message = "Text to translate cannot be empty" });
                 }
 
+                var userId = GetUserId();
+                var translationService = await _translationServiceFactory.GetServiceForUserAsync(userId);
+
                 _logger.LogInformation($"Translating full text from {request.SourceLanguageCode} to {request.TargetLanguageCode}");
                 
-                var translatedText = await _translationService.TranslateSentenceAsync(
+                var translatedText = await translationService.TranslateSentenceAsync(
                     request.Text,
                     request.SourceLanguageCode,
                     request.TargetLanguageCode);
@@ -116,6 +123,16 @@ namespace LinguaReadApi.Controllers
                 _logger.LogError(ex, "Error during full text translation");
                 return StatusCode(500, new { message = $"Translation failed: {ex.Message}" });
             }
+        }
+
+        private Guid GetUserId()
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (string.IsNullOrEmpty(userIdClaim))
+            {
+                throw new UnauthorizedAccessException("User ID not found in token");
+            }
+            return Guid.Parse(userIdClaim);
         }
     }
 

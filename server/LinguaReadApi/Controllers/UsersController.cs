@@ -36,9 +36,9 @@ namespace LinguaReadApi.Controllers
             var totalWords = await _context.Words
                 .CountAsync(w => w.UserId == userId);
                 
-            // Get known word count (status 5)
-            var knownWords = await _context.Words
-                .CountAsync(w => w.UserId == userId && w.Status == 5);
+            // Get known word count (status 4 or 5)
+    var knownWords = await _context.Words
+        .CountAsync(w => w.UserId == userId && w.Status >= 4);
 
             // Get user's books
             var books = await _context.Books

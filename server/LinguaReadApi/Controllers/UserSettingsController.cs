@@ -54,7 +54,10 @@ namespace LinguaReadApi.Controllers
                     DiscordWebhookUrl = null,
                     DiscordWeeklyReportDayOfWeek = "Monday",
                     DiscordWeeklyReportHourLocal = 8,
-                    DiscordTimezoneOffsetMinutes = 0
+                    DiscordTimezoneOffsetMinutes = 0,
+                    UseOpenRouter = false,
+                    OpenRouterApiKey = null,
+                    OpenRouterModel = "google/gemini-2.5-flash-preview-05-20:free"
                 };
                 
                 _context.UserSettings.Add(settings);
@@ -78,7 +81,10 @@ namespace LinguaReadApi.Controllers
                 DiscordWebhookUrl = settings.DiscordWebhookUrl,
                 DiscordWeeklyReportDayOfWeek = settings.DiscordWeeklyReportDayOfWeek,
                 DiscordWeeklyReportHourLocal = settings.DiscordWeeklyReportHourLocal,
-                DiscordTimezoneOffsetMinutes = settings.DiscordTimezoneOffsetMinutes
+                DiscordTimezoneOffsetMinutes = settings.DiscordTimezoneOffsetMinutes,
+                UseOpenRouter = settings.UseOpenRouter,
+                OpenRouterApiKey = settings.OpenRouterApiKey,
+                OpenRouterModel = settings.OpenRouterModel
             };
         }
 
@@ -141,6 +147,17 @@ namespace LinguaReadApi.Controllers
             {
                 settings.DiscordTimezoneOffsetMinutes = updateDto.DiscordTimezoneOffsetMinutes.Value;
             }
+            settings.UseOpenRouter = updateDto.UseOpenRouter ?? settings.UseOpenRouter;
+            if (updateDto.OpenRouterApiKey != null)
+            {
+                settings.OpenRouterApiKey = string.IsNullOrWhiteSpace(updateDto.OpenRouterApiKey)
+                    ? null
+                    : updateDto.OpenRouterApiKey.Trim();
+            }
+            if (!string.IsNullOrWhiteSpace(updateDto.OpenRouterModel))
+            {
+                settings.OpenRouterModel = updateDto.OpenRouterModel.Trim();
+            }
             settings.UpdatedAt = DateTime.UtcNow;
             
             await _context.SaveChangesAsync();
@@ -160,7 +177,10 @@ namespace LinguaReadApi.Controllers
                 DiscordWebhookUrl = settings.DiscordWebhookUrl,
                 DiscordWeeklyReportDayOfWeek = settings.DiscordWeeklyReportDayOfWeek,
                 DiscordWeeklyReportHourLocal = settings.DiscordWeeklyReportHourLocal,
-                DiscordTimezoneOffsetMinutes = settings.DiscordTimezoneOffsetMinutes
+                DiscordTimezoneOffsetMinutes = settings.DiscordTimezoneOffsetMinutes,
+                UseOpenRouter = settings.UseOpenRouter,
+                OpenRouterApiKey = settings.OpenRouterApiKey,
+                OpenRouterModel = settings.OpenRouterModel
             };
         }
 
@@ -390,6 +410,9 @@ namespace LinguaReadApi.Controllers
         public string DiscordWeeklyReportDayOfWeek { get; set; } = "Monday";
         public int DiscordWeeklyReportHourLocal { get; set; } = 8;
         public int DiscordTimezoneOffsetMinutes { get; set; } = 0;
+        public bool UseOpenRouter { get; set; } = false;
+        public string? OpenRouterApiKey { get; set; }
+        public string OpenRouterModel { get; set; } = "google/gemini-2.5-flash-preview-05-20:free";
     }
 
     public class UpdateUserSettingsDto
@@ -422,6 +445,15 @@ namespace LinguaReadApi.Controllers
 
         [Range(-840, 840)]
         public int? DiscordTimezoneOffsetMinutes { get; set; }
+
+        // OpenRouter Settings
+        public bool? UseOpenRouter { get; set; }
+
+        [StringLength(256)]
+        public string? OpenRouterApiKey { get; set; }
+
+        [StringLength(100)]
+        public string? OpenRouterModel { get; set; }
     }
 
     public class UpdateAudiobookProgressDto

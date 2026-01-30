@@ -82,11 +82,21 @@ builder.Services.AddHostedService<WeeklyDiscordReportHostedService>();
 // Register DeepL Translation Service
 builder.Services.AddScoped<ITranslationService, DeepLTranslationService>();
 
-// Register Gemini Translation Service for sentences
+// Register Gemini Translation Service for sentences (concrete type for factory)
+builder.Services.AddScoped<GeminiTranslationService>();
 builder.Services.AddScoped<ISentenceTranslationService, GeminiTranslationService>();
 
-// Register Gemini Story Generation Service
+// Register Gemini Story Generation Service (concrete type for factory)
+builder.Services.AddScoped<GeminiStoryGenerationService>();
 builder.Services.AddScoped<IStoryGenerationService, GeminiStoryGenerationService>();
+
+// Register OpenRouter Services
+builder.Services.AddScoped<OpenRouterTranslationService>();
+builder.Services.AddScoped<OpenRouterStoryGenerationService>();
+
+// Register Service Factories (select between Gemini/OpenRouter per-user)
+builder.Services.AddScoped<ITranslationServiceFactory, TranslationServiceFactory>();
+builder.Services.AddScoped<IStoryGenerationServiceFactory, StoryGenerationServiceFactory>();
 
 // Register Database Admin Service
 builder.Services.AddScoped<IDatabaseAdminService, DatabaseAdminService>(); // <-- Add this line

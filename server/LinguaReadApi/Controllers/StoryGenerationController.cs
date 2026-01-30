@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using System;
+using System.Security.Claims;
 using System.Threading.Tasks;
 using System.ComponentModel.DataAnnotations;
 using Microsoft.Extensions.Logging;
@@ -12,19 +14,19 @@ namespace LinguaReadApi.Controllers
     [Authorize]
     public class StoryGenerationController : ControllerBase
     {
-        private readonly IStoryGenerationService _storyGenerationService;
+        private readonly IStoryGenerationServiceFactory _storyGenerationServiceFactory;
         private readonly ILogger<StoryGenerationController> _logger;
 
         public StoryGenerationController(
-            IStoryGenerationService storyGenerationService,
+            IStoryGenerationServiceFactory storyGenerationServiceFactory,
             ILogger<StoryGenerationController> logger)
         {
-            _storyGenerationService = storyGenerationService;
+            _storyGenerationServiceFactory = storyGenerationServiceFactory;
             _logger = logger;
         }
 
         /// <summary>
-        /// Generates a story based on provided parameters using Gemini API
+        /// Generates a story based on provided parameters using user's configured AI provider
         /// </summary>
         /// <param name="request">The story generation request containing prompt, language, and other parameters</param>
         /// <returns>The generated story</returns>
@@ -38,7 +40,10 @@ namespace LinguaReadApi.Controllers
 
             _logger.LogInformation($"Story generation request received: {request.Prompt}, Language: {request.Language}");
 
-            var generatedStory = await _storyGenerationService.GenerateStoryAsync(
+            var userId = GetUserId();
+            var storyGenerationService = await _storyGenerationServiceFactory.GetServiceForUserAsync(userId);
+
+            var generatedStory = await storyGenerationService.GenerateStoryAsync(
                 request.Prompt,
                 request.Language,
                 request.Level,
@@ -46,6 +51,16 @@ namespace LinguaReadApi.Controllers
             );
 
             return Ok(new StoryGenerationResponse { GeneratedStory = generatedStory });
+        }
+
+        private Guid GetUserId()
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (string.IsNullOrEmpty(userIdClaim))
+            {
+                throw new UnauthorizedAccessException("User ID not found in token");
+            }
+            return Guid.Parse(userIdClaim);
         }
     }
 

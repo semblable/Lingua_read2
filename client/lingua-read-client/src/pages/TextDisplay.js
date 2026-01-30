@@ -48,17 +48,17 @@ const parseSrtContent = (srtContent) => {
         currentEntry.endTime = parseSrtTime(timeParts[1]);
       }
     } else if (trimmedLine === '') {
-       if (currentEntry && currentEntry.startTime >= 0 && textBuffer.length > 0) { // Allow 0 start time
-           currentEntry.text = textBuffer.join(' ').trim();
-           entries.push(currentEntry);
-           currentEntry = null;
-           textBuffer = [];
-       } else if (currentEntry && currentEntry.startTime >= 0) {
-           currentEntry.text = '';
-           entries.push(currentEntry);
-           currentEntry = null;
-           textBuffer = [];
-       }
+      if (currentEntry && currentEntry.startTime >= 0 && textBuffer.length > 0) { // Allow 0 start time
+        currentEntry.text = textBuffer.join(' ').trim();
+        entries.push(currentEntry);
+        currentEntry = null;
+        textBuffer = [];
+      } else if (currentEntry && currentEntry.startTime >= 0) {
+        currentEntry.text = '';
+        entries.push(currentEntry);
+        currentEntry = null;
+        textBuffer = [];
+      }
     } else if (currentEntry) {
       textBuffer.push(trimmedLine);
     }
@@ -460,7 +460,7 @@ const WordInfoPanel = React.memo(({
     <div>
       <h5 className="fw-bold mb-2">{displayedWord.term}</h5>
       {saveSuccess && <Alert variant="success" size="sm">Saved!</Alert>}
-      <p className="mb-1 small">Status: {displayedWord.status > 0 ? ['New','Learning','Familiar','Advanced','Known'][displayedWord.status-1] : 'Untracked'}</p>
+      <p className="mb-1 small">Status: {displayedWord.status > 0 ? ['New', 'Learning', 'Familiar', 'Advanced', 'Known'][displayedWord.status - 1] : 'Untracked'}</p>
       <Form.Control
         as="textarea"
         rows={2}
@@ -715,7 +715,7 @@ const TextDisplay = () => {
   const [audioSrc, setAudioSrc] = useState(null);
   const [srtLines, setSrtLines] = useState([]);
   const [currentSrtLineId, setCurrentSrtLineId] = useState(null);
-  const [audioCurrentTime, setAudioCurrentTime] = useState(0);
+  const audioCurrentTimeRef = useRef(0); // Use ref instead of state to prevent re-renders
   const [displayMode, setDisplayMode] = useState('audio');
   const [languageConfig, setLanguageConfig] = useState(null); // State for language settings (Phase 3)
   const [embeddedUrl, setEmbeddedUrl] = useState(null); // State for embedded dictionary iframe URL (Phase 3)
@@ -852,9 +852,9 @@ const TextDisplay = () => {
 
     // Ensure the selection is within the text container
     if (!container.contains(range.commonAncestorContainer)) {
-        // Optionally clear selection if it's outside? Or just ignore.
-        // selection.removeAllRanges();
-        return;
+      // Optionally clear selection if it's outside? Or just ignore.
+      // selection.removeAllRanges();
+      return;
     }
 
     let startNode = range.startContainer;
@@ -864,53 +864,53 @@ const TextDisplay = () => {
 
     // Helper function to find the nearest ancestor word span
     const findWordSpan = (node) => {
-        while (node && node !== container) {
-            if (node.nodeType === Node.ELEMENT_NODE && node.classList.contains('clickable-word')) {
-                return node;
-            }
-            node = node.parentNode;
+      while (node && node !== container) {
+        if (node.nodeType === Node.ELEMENT_NODE && node.classList.contains('clickable-word')) {
+          return node;
         }
-        return null;
+        node = node.parentNode;
+      }
+      return null;
     };
 
     // Helper function to find the word span containing or immediately preceding/following a text node offset
-     const findWordSpanNearText = (node, offset, lookForward) => {
-        if (node.nodeType === Node.ELEMENT_NODE) {
-             // If the node itself is a word span
-             if (node.classList.contains('clickable-word')) return node;
-             // If offset points to a child node, check that child
-             const childNode = node.childNodes[offset];
-             if (childNode) return findWordSpan(childNode);
-        }
+    const findWordSpanNearText = (node, offset, lookForward) => {
+      if (node.nodeType === Node.ELEMENT_NODE) {
+        // If the node itself is a word span
+        if (node.classList.contains('clickable-word')) return node;
+        // If offset points to a child node, check that child
+        const childNode = node.childNodes[offset];
+        if (childNode) return findWordSpan(childNode);
+      }
 
-        // If it's a text node or offset is within a text node
-        let current = node;
-        while (current && current !== container) {
-            if (current.nodeType === Node.ELEMENT_NODE && current.classList.contains('clickable-word')) {
-                return current; // Found ancestor word span
-            }
-            // Move to sibling or parent
-            const sibling = lookForward ? current.nextSibling : current.previousSibling;
-            if (sibling) {
-                current = sibling;
-                // If moving to a sibling element, check its children (especially if looking backward)
-                 if (current.nodeType === Node.ELEMENT_NODE) {
-                    let innerNode = lookForward ? current.firstChild : current.lastChild;
-                    while(innerNode) {
-                         const word = findWordSpan(innerNode);
-                         if(word) return word;
-                         innerNode = lookForward ? innerNode.nextSibling : innerNode.previousSibling;
-                    }
-                 } else { // Text node sibling
-                     const word = findWordSpan(current);
-                     if(word) return word;
-                 }
-
-            } else {
-                current = current.parentNode; // Move up if no more siblings
-            }
+      // If it's a text node or offset is within a text node
+      let current = node;
+      while (current && current !== container) {
+        if (current.nodeType === Node.ELEMENT_NODE && current.classList.contains('clickable-word')) {
+          return current; // Found ancestor word span
         }
-        return null; // No word span found in traversal
+        // Move to sibling or parent
+        const sibling = lookForward ? current.nextSibling : current.previousSibling;
+        if (sibling) {
+          current = sibling;
+          // If moving to a sibling element, check its children (especially if looking backward)
+          if (current.nodeType === Node.ELEMENT_NODE) {
+            let innerNode = lookForward ? current.firstChild : current.lastChild;
+            while (innerNode) {
+              const word = findWordSpan(innerNode);
+              if (word) return word;
+              innerNode = lookForward ? innerNode.nextSibling : innerNode.previousSibling;
+            }
+          } else { // Text node sibling
+            const word = findWordSpan(current);
+            if (word) return word;
+          }
+
+        } else {
+          current = current.parentNode; // Move up if no more siblings
+        }
+      }
+      return null; // No word span found in traversal
     };
 
 
@@ -919,45 +919,45 @@ const TextDisplay = () => {
 
     // If selection starts/ends outside any word span, maybe abort
     if (!startWordSpan || !endWordSpan) {
-         console.warn("Selection boundary outside clickable words.");
-         // Optionally clear selection or do nothing
-         // selection.removeAllRanges();
-         return;
+      console.warn("Selection boundary outside clickable words.");
+      // Optionally clear selection or do nothing
+      // selection.removeAllRanges();
+      return;
     }
 
     // Ensure startWordSpan actually comes before endWordSpan in the DOM
     if (startWordSpan.compareDocumentPosition(endWordSpan) & Node.DOCUMENT_POSITION_FOLLOWING) {
-        // Correct order
+      // Correct order
     } else if (endWordSpan.compareDocumentPosition(startWordSpan) & Node.DOCUMENT_POSITION_FOLLOWING) {
-        // Swapped order, fix it
-        [startWordSpan, endWordSpan] = [endWordSpan, startWordSpan];
+      // Swapped order, fix it
+      [startWordSpan, endWordSpan] = [endWordSpan, startWordSpan];
     } else {
-        // Same node, which is fine
+      // Same node, which is fine
     }
 
 
     // Create a new range encompassing the start and end word spans
     const newRange = document.createRange();
     try {
-        newRange.setStartBefore(startWordSpan);
-        newRange.setEndAfter(endWordSpan);
+      newRange.setStartBefore(startWordSpan);
+      newRange.setEndAfter(endWordSpan);
 
-        // Update the selection visually
-        selection.removeAllRanges();
-        selection.addRange(newRange);
+      // Update the selection visually
+      selection.removeAllRanges();
+      selection.addRange(newRange);
 
-        // Get the text and trigger lookup (allow a tick for selection update)
-        const selectedText = newRange.toString().trim();
-        if (selectedText) {
-             // Use a slight delay to let the selection update render
-             setTimeout(() => {
-                handleWordClick(selectedText);
-             }, 0);
-        }
+      // Get the text and trigger lookup (allow a tick for selection update)
+      const selectedText = newRange.toString().trim();
+      if (selectedText) {
+        // Use a slight delay to let the selection update render
+        setTimeout(() => {
+          handleWordClick(selectedText);
+        }, 0);
+      }
     } catch (e) {
-        console.error("Error adjusting selection range:", e);
-        // Fallback or cleanup if range setting fails
-        selection.removeAllRanges();
+      console.error("Error adjusting selection range:", e);
+      // Fallback or cleanup if range setting fails
+      selection.removeAllRanges();
     }
 
   }, [handleWordClick, textContentRef]); // Added textContentRef dependency
@@ -1091,16 +1091,16 @@ const TextDisplay = () => {
   }), [globalSettings.textSize, getFontFamilyForList]); // getFontFamilyForList already depends on textFont
 
   const handleLineClick = useCallback((startTime) => {
-      console.log(`[handleLineClick] Attempting seek to: ${startTime} (Type: ${typeof startTime})`);
-      if (audioRef.current) {
-          console.log(`[handleLineClick] audioRef found. Current time before seek: ${audioRef.current.currentTime}`);
-          audioRef.current.currentTime = startTime;
-          setTimeout(() => {
-             if(audioRef.current) { console.log(`[handleLineClick] audioRef current time after seek attempt: ${audioRef.current.currentTime}`); }
-          }, 0);
-      } else {
-          console.log('[handleLineClick] audioRef.current is null!');
-      }
+    console.log(`[handleLineClick] Attempting seek to: ${startTime} (Type: ${typeof startTime})`);
+    if (audioRef.current) {
+      console.log(`[handleLineClick] audioRef found. Current time before seek: ${audioRef.current.currentTime}`);
+      audioRef.current.currentTime = startTime;
+      setTimeout(() => {
+        if (audioRef.current) { console.log(`[handleLineClick] audioRef current time after seek attempt: ${audioRef.current.currentTime}`); }
+      }, 0);
+    } else {
+      console.log('[handleLineClick] audioRef.current is null!');
+    }
   }, []);
 
   const mobileReadingConfig = useMemo(() => {
@@ -1192,32 +1192,32 @@ const TextDisplay = () => {
         }
         // Fetch all words for the language AND the language configuration itself (Phase 3)
         if (data.languageId) {
-           await fetchAllLanguageWords(data.languageId);
-           try {
-               // Assuming getLanguage exists in api.js from Phase 1/2
-               const langConfigData = await getLanguage(data.languageId); // Make sure getLanguage is imported
-               setLanguageConfig(langConfigData);
-               console.log('[Language Config] Fetched:', langConfigData);
-           } catch (langErr) {
-               console.error('Failed to fetch language configuration:', langErr);
-               setError(prev => `${prev} (Warning: Failed to load language config)`);
-               setLanguageConfig(null); // Ensure it's null on error
-           }
+          await fetchAllLanguageWords(data.languageId);
+          try {
+            // Assuming getLanguage exists in api.js from Phase 1/2
+            const langConfigData = await getLanguage(data.languageId); // Make sure getLanguage is imported
+            setLanguageConfig(langConfigData);
+            console.log('[Language Config] Fetched:', langConfigData);
+          } catch (langErr) {
+            console.error('Failed to fetch language configuration:', langErr);
+            setError(prev => `${prev} (Warning: Failed to load language config)`);
+            setLanguageConfig(null); // Ensure it's null on error
+          }
         } else {
-            setLanguageConfig(null); // Reset if no languageId
+          setLanguageConfig(null); // Reset if no languageId
         }
         if (data.bookId) {
           try {
             await updateLastRead(data.bookId, data.textId);
             const bookData = await getBook(data.bookId);
-             setBook(bookData);
+            setBook(bookData);
             if (bookData?.parts) {
               const currentPartIndex = bookData.parts.findIndex(part => part.textId === parseInt(textId));
               setNextTextId(currentPartIndex >= 0 && currentPartIndex < bookData.parts.length - 1 ? bookData.parts[currentPartIndex + 1].textId : null);
             }
           } catch (bookErr) {
-               console.error('Failed to get book data:', bookErr);
-               // Don't block text display if book fetch fails, but player won't show
+            console.error('Failed to get book data:', bookErr);
+            // Don't block text display if book fetch fails, but player won't show
           }
         }
         // Load bookmarks after text is set
@@ -1235,13 +1235,24 @@ const TextDisplay = () => {
   }, [textId, fetchAllLanguageWords, isAudioLesson]); // 'text' is intentionally omitted to prevent loops; cleanup captures correct 'text' via closure.
 
 
-  // Audio Sync & Scroll
-  useEffect(() => {
-    if (!isAudioLesson || srtLines.length === 0 || displayMode !== 'audio') { setCurrentSrtLineId(null); return; }
-    const currentLineIndex = srtLines.findIndex(line => audioCurrentTime >= line.startTime && audioCurrentTime < line.endTime);
+  // Audio Time Update Handler - updates ref and checks for line changes
+  const handleAudioTimeUpdate = useCallback((newTime) => {
+    audioCurrentTimeRef.current = newTime;
+
+    // Only check for line changes if we're in audio mode with SRT lines
+    if (!isAudioLesson || srtLines.length === 0 || displayMode !== 'audio') {
+      if (currentSrtLineId !== null) setCurrentSrtLineId(null);
+      return;
+    }
+
+    const currentLineIndex = srtLines.findIndex(line => newTime >= line.startTime && newTime < line.endTime);
     const currentLine = currentLineIndex !== -1 ? srtLines[currentLineIndex] : null;
+
+    // Only trigger re-render if the line ID actually changed
     if (currentLine && currentLine.id !== currentSrtLineId) {
       setCurrentSrtLineId(currentLine.id);
+
+      // Handle scrolling
       if (autoScrollRafRef.current) {
         cancelAnimationFrame(autoScrollRafRef.current);
       }
@@ -1262,13 +1273,19 @@ const TextDisplay = () => {
           }
         }
       });
+    } else if (!currentLine && currentSrtLineId !== null) {
+      setCurrentSrtLineId(null);
     }
+  }, [isAudioLesson, srtLines, displayMode, currentSrtLineId, isMobile]);
+
+  // Cleanup for auto-scroll animation frame
+  useEffect(() => {
     return () => {
       if (autoScrollRafRef.current) {
         cancelAnimationFrame(autoScrollRafRef.current);
       }
     };
-  }, [audioCurrentTime, srtLines, isAudioLesson, currentSrtLineId, displayMode, isMobile]);
+  }, []);
 
   // Resizable Panel
   // Removed useEffect for drag-to-resize functionality
@@ -1287,16 +1304,16 @@ const TextDisplay = () => {
             updateWord(wordData.wordId, key, wordData.translation || '')
               .then(() => {
                 setWords(prevWords => prevWords.map(w => w.wordId === wordData.wordId ? { ...w, status: key } : w));
-                if (selectedWord === hoveredWordTerm && displayedWord?.term === hoveredWordTerm) setDisplayedWord(prev => ({...prev, status: key }));
+                if (selectedWord === hoveredWordTerm && displayedWord?.term === hoveredWordTerm) setDisplayedWord(prev => ({ ...prev, status: key }));
               })
               .catch(err => console.error(`[Keyboard Shortcut] Failed update for ${hoveredWordTerm}:`, err));
           } else {
-             createWord(text.textId, hoveredWordTerm, key, '')
-                .then(newWordData => {
-                    setWords(prevWords => [...prevWords, newWordData]);
-                    if(globalSettings.autoTranslateWords) triggerAutoTranslation(hoveredWordTerm); // Use globalSettings
-                })
-                .catch(err => console.error(`[Keyboard Shortcut] Failed to create word ${hoveredWordTerm}:`, err));
+            createWord(text.textId, hoveredWordTerm, key, '')
+              .then(newWordData => {
+                setWords(prevWords => [...prevWords, newWordData]);
+                if (globalSettings.autoTranslateWords) triggerAutoTranslation(hoveredWordTerm); // Use globalSettings
+              })
+              .catch(err => console.error(`[Keyboard Shortcut] Failed to create word ${hoveredWordTerm}:`, err));
           }
         }
       }
@@ -1313,31 +1330,31 @@ const TextDisplay = () => {
 
   // --- Event Handlers ---
 
-   const handleSaveWord = useCallback(async (status) => {
-     // Ensure selectedWord is used here, as displayedWord might be slightly different if selection changed rapidly
-     const termToSave = selectedWord || displayedWord?.term;
-     if (!termToSave || processingWord || isTranslating) {
-        console.log(`[handleSaveWord] Aborted: termToSave=${termToSave}, processingWord=${processingWord}, isTranslating=${isTranslating}`); // Added logging
-        return;
-     }
-     setSaveSuccess(false); setProcessingWord(true);
-     try {
-       const numericStatus = parseInt(status, 10);
-       if (isNaN(numericStatus) || numericStatus < 1 || numericStatus > 5) throw new Error(`Invalid status: ${status}.`);
-       const existingWord = getWordData(selectedWord);
-       if (existingWord) {
-         await updateWord(existingWord.wordId, numericStatus, translation);
-         const updatedWords = words.map(w => w.wordId === existingWord.wordId ? { ...w, status: numericStatus, translation } : w);
-         setWords(updatedWords);
-         setDisplayedWord(prev => (prev?.term === selectedWord ? { ...prev, status: numericStatus, translation } : prev));
-       } else {
-         const newWordData = await createWord(text.textId, selectedWord, numericStatus, translation);
-         setWords(prevWords => [...prevWords, newWordData]);
-         setDisplayedWord({ ...newWordData, isNew: false });
-       }
-       setSaveSuccess(true); setTimeout(() => setSaveSuccess(false), 2000);
-     } catch (error) { console.error('Error saving word:', error); alert(`Failed to save word: ${error.message}`); }
-     finally { setProcessingWord(false); }
+  const handleSaveWord = useCallback(async (status) => {
+    // Ensure selectedWord is used here, as displayedWord might be slightly different if selection changed rapidly
+    const termToSave = selectedWord || displayedWord?.term;
+    if (!termToSave || processingWord || isTranslating) {
+      console.log(`[handleSaveWord] Aborted: termToSave=${termToSave}, processingWord=${processingWord}, isTranslating=${isTranslating}`); // Added logging
+      return;
+    }
+    setSaveSuccess(false); setProcessingWord(true);
+    try {
+      const numericStatus = parseInt(status, 10);
+      if (isNaN(numericStatus) || numericStatus < 1 || numericStatus > 5) throw new Error(`Invalid status: ${status}.`);
+      const existingWord = getWordData(selectedWord);
+      if (existingWord) {
+        await updateWord(existingWord.wordId, numericStatus, translation);
+        const updatedWords = words.map(w => w.wordId === existingWord.wordId ? { ...w, status: numericStatus, translation } : w);
+        setWords(updatedWords);
+        setDisplayedWord(prev => (prev?.term === selectedWord ? { ...prev, status: numericStatus, translation } : prev));
+      } else {
+        const newWordData = await createWord(text.textId, selectedWord, numericStatus, translation);
+        setWords(prevWords => [...prevWords, newWordData]);
+        setDisplayedWord({ ...newWordData, isNew: false });
+      }
+      setSaveSuccess(true); setTimeout(() => setSaveSuccess(false), 2000);
+    } catch (error) { console.error('Error saving word:', error); alert(`Failed to save word: ${error.message}`); }
+    finally { setProcessingWord(false); }
   }, [selectedWord, displayedWord, processingWord, isTranslating, translation, text?.textId, words, getWordData, setWords, setDisplayedWord, setSaveSuccess, setProcessingWord]); // createWord/updateWord are module imports (stable); omit to satisfy exhaustive-deps
 
   // Handler for saving translation via Enter key (Moved after handleSaveWord)
@@ -1350,98 +1367,98 @@ const TextDisplay = () => {
         console.log(`[Enter Save] Saving word: "${displayedWord.term}", Status: ${statusToSave}, Translation: "${translation}"`); // Added logging
         handleSaveWord(statusToSave); // handleSaveWord is now defined before this
       } else {
-         console.log('[Enter Save] No displayedWord, cannot save.'); // Added logging
+        console.log('[Enter Save] No displayedWord, cannot save.'); // Added logging
       }
     }
   }, [displayedWord, handleSaveWord, translation]); // handleSaveWord dependency is now safe
 
-   const handleFullTextTranslation = async () => {
-      if (!text || !text.content) return;
-      setShowTranslationPopup(true); setIsFullTextTranslating(true); setFullTextTranslation('');
+  const handleFullTextTranslation = async () => {
+    if (!text || !text.content) return;
+    setShowTranslationPopup(true); setIsFullTextTranslating(true); setFullTextTranslation('');
+    try {
+      const response = await translateFullText(text.content, text.languageCode || 'auto', 'en');
+      setFullTextTranslation(response?.translatedText || 'Translation failed.');
+    } catch (error) { setFullTextTranslation(`Translation failed: ${error.message}`); }
+    finally { setIsFullTextTranslating(false); }
+  };
+
+  const handleTranslateUnknownWords = async () => {
+    if (!text || !text.content || !text.languageId) return;
+    setTranslatingUnknown(true); setTranslateUnknownError('');
+    try {
+      const wordsRegex = /\p{L}+(['-]\p{L}+)*/gu;
+      const textWords = text.content.match(wordsRegex) || [];
+      const uniqueWordsInText = [...new Set(textWords.map(w => w.toLowerCase()))];
+      const wordsMap = new Map(words.map(w => [w.term.toLowerCase(), w]));
+      const unknownWords = uniqueWordsInText.filter(word => !wordsMap.has(word) || (wordsMap.get(word)?.status <= 2 && !wordsMap.get(word)?.translation));
+      if (unknownWords.length === 0) { alert("No words found needing translation."); setTranslatingUnknown(false); return; } // Exit early
+      const translations = await batchTranslateWords(unknownWords, 'EN', text.languageCode);
+      const originalCaseMap = new Map();
+      textWords.forEach(w => { const lower = w.toLowerCase(); if (!originalCaseMap.has(lower)) { originalCaseMap.set(lower, w); } });
+      const termsToAdd = unknownWords.map(word => ({
+        term: originalCaseMap.get(word) || word,
+        translation: translations[word.toLowerCase()] || ''
+      })).filter(t => t.translation);
+
+      if (termsToAdd.length === 0) { alert("No translations received."); setTranslatingUnknown(false); return; } // Exit early
+
+      // Two-step workflow: first fetch translations, then save terms+translations
       try {
-        const response = await translateFullText(text.content, text.languageCode || 'auto', 'en');
-        setFullTextTranslation(response?.translatedText || 'Translation failed.');
-      } catch (error) { setFullTextTranslation(`Translation failed: ${error.message}`); }
-      finally { setIsFullTextTranslating(false); }
-    };
+        await addTermsBatch(text.languageId, termsToAdd);
+      } catch (saveError) {
+        console.error("Error saving translated terms:", saveError);
+        setTranslateUnknownError(`Failed to save terms: ${saveError.message}`);
+        alert(`Error saving terms: ${saveError.message}`);
+        setTranslatingUnknown(false);
+        return;
+      }
+      await fetchAllLanguageWords(text.languageId);
+      alert(`Successfully translated and updated ${termsToAdd.length} words.`);
+    } catch (err) { console.error("Error translating unknown words:", err); setTranslateUnknownError(`Failed: ${err.message}`); alert(`Error: ${err.message}`); }
+    finally { setTranslatingUnknown(false); }
+  };
 
-   const handleTranslateUnknownWords = async () => {
-      if (!text || !text.content || !text.languageId) return;
-      setTranslatingUnknown(true); setTranslateUnknownError('');
-      try {
-        const wordsRegex = /\p{L}+(['-]\p{L}+)*/gu;
-        const textWords = text.content.match(wordsRegex) || [];
-        const uniqueWordsInText = [...new Set(textWords.map(w => w.toLowerCase()))];
-        const wordsMap = new Map(words.map(w => [w.term.toLowerCase(), w]));
-        const unknownWords = uniqueWordsInText.filter(word => !wordsMap.has(word) || (wordsMap.get(word)?.status <= 2 && !wordsMap.get(word)?.translation));
-        if (unknownWords.length === 0) { alert("No words found needing translation."); setTranslatingUnknown(false); return; } // Exit early
-        const translations = await batchTranslateWords(unknownWords, 'EN', text.languageCode);
-        const originalCaseMap = new Map();
-        textWords.forEach(w => { const lower = w.toLowerCase(); if (!originalCaseMap.has(lower)) { originalCaseMap.set(lower, w); } });
-        const termsToAdd = unknownWords.map(word => ({
-          term: originalCaseMap.get(word) || word,
-          translation: translations[word.toLowerCase()] || ''
-        })).filter(t => t.translation);
+  const handleMarkAllUnknownAsKnown = async () => {
+    if (!text || !text.content || !text.languageId || !text.textId) return;
+    setIsMarkingAll(true); setError('');
+    try {
+      const wordsRegex = /\p{L}+(['-]\p{L}+)*/gu;
+      const textWords = text.content.match(wordsRegex) || [];
+      const uniqueWordsInText = [...new Set(textWords.map(w => w.toLowerCase()))];
+      const wordsMap = new Map(words.map(w => [w.term.toLowerCase(), w]));
+      const unknownWords = uniqueWordsInText.filter(word => !wordsMap.has(word));
+      if (unknownWords.length === 0) { alert("No untracked words found."); setIsMarkingAll(false); return; } // Exit early
+      const originalCaseMap = new Map();
+      textWords.forEach(w => { const lower = w.toLowerCase(); if (!originalCaseMap.has(lower)) { originalCaseMap.set(lower, w); } });
+      const termsToMark = unknownWords.map(word => ({ term: originalCaseMap.get(word) || word, translation: null }));
+      await addTermsBatch(text.languageId, termsToMark);
+      await fetchAllLanguageWords(text.languageId);
+      alert(`Attempted to mark ${unknownWords.length} words as Known.`);
+    } catch (err) { console.error("Error marking all unknown as known:", err); setError(`Failed: ${err.message}`); alert(`Error: ${err.message}`); }
+    finally { setIsMarkingAll(false); }
+  };
 
-        if (termsToAdd.length === 0) { alert("No translations received."); setTranslatingUnknown(false); return; } // Exit early
-
-        // Two-step workflow: first fetch translations, then save terms+translations
-        try {
-          await addTermsBatch(text.languageId, termsToAdd);
-        } catch (saveError) {
-          console.error("Error saving translated terms:", saveError);
-          setTranslateUnknownError(`Failed to save terms: ${saveError.message}`);
-          alert(`Error saving terms: ${saveError.message}`);
-          setTranslatingUnknown(false);
-          return;
-        }
-        await fetchAllLanguageWords(text.languageId);
-        alert(`Successfully translated and updated ${termsToAdd.length} words.`);
-      } catch (err) { console.error("Error translating unknown words:", err); setTranslateUnknownError(`Failed: ${err.message}`); alert(`Error: ${err.message}`); }
-      finally { setTranslatingUnknown(false); }
-    };
-
-   const handleMarkAllUnknownAsKnown = async () => {
-      if (!text || !text.content || !text.languageId || !text.textId) return;
-      setIsMarkingAll(true); setError('');
-      try {
-        const wordsRegex = /\p{L}+(['-]\p{L}+)*/gu;
-        const textWords = text.content.match(wordsRegex) || [];
-        const uniqueWordsInText = [...new Set(textWords.map(w => w.toLowerCase()))];
-        const wordsMap = new Map(words.map(w => [w.term.toLowerCase(), w]));
-        const unknownWords = uniqueWordsInText.filter(word => !wordsMap.has(word));
-        if (unknownWords.length === 0) { alert("No untracked words found."); setIsMarkingAll(false); return; } // Exit early
-        const originalCaseMap = new Map();
-        textWords.forEach(w => { const lower = w.toLowerCase(); if (!originalCaseMap.has(lower)) { originalCaseMap.set(lower, w); } });
-        const termsToMark = unknownWords.map(word => ({ term: originalCaseMap.get(word) || word, translation: null }));
-        await addTermsBatch(text.languageId, termsToMark);
-        await fetchAllLanguageWords(text.languageId);
-        alert(`Attempted to mark ${unknownWords.length} words as Known.`);
-      } catch (err) { console.error("Error marking all unknown as known:", err); setError(`Failed: ${err.message}`); alert(`Error: ${err.message}`); }
-      finally { setIsMarkingAll(false); }
-    };
-
-   const handleCompleteLesson = async () => {
-      if (!text?.textId) return; // Require at least textId
-      setCompleting(true);
-      try {
-        // Call the correct API endpoint using the imported completeLesson function
-        // Pass bookId if available, otherwise null/undefined (handled by completeLesson in api.js)
-        const textStats = await completeLesson(text?.bookId, text.textId);
-        // If standalone text, always go back to texts page after completion
-        if (!text?.bookId) {
-            navigate('/texts');
-        } else if (globalSettings.autoAdvanceToNextLesson && nextTextId) {
-            navigate(`/texts/${nextTextId}`);
-        } else if (globalSettings.showProgressStats) {
-            setStats(textStats); // Use the stats returned from completeText
-            setShowStatsModal(true);
-        } else {
-            navigate(`/books/${text.bookId}`);
-        }
-      } catch (error) { alert(`Failed to complete lesson: ${error.message}`); }
-      finally { setCompleting(false); }
-    };
+  const handleCompleteLesson = async () => {
+    if (!text?.textId) return; // Require at least textId
+    setCompleting(true);
+    try {
+      // Call the correct API endpoint using the imported completeLesson function
+      // Pass bookId if available, otherwise null/undefined (handled by completeLesson in api.js)
+      const textStats = await completeLesson(text?.bookId, text.textId);
+      // If standalone text, always go back to texts page after completion
+      if (!text?.bookId) {
+        navigate('/texts');
+      } else if (globalSettings.autoAdvanceToNextLesson && nextTextId) {
+        navigate(`/texts/${nextTextId}`);
+      } else if (globalSettings.showProgressStats) {
+        setStats(textStats); // Use the stats returned from completeText
+        setShowStatsModal(true);
+      } else {
+        navigate(`/books/${text.bookId}`);
+      }
+    } catch (error) { alert(`Failed to complete lesson: ${error.message}`); }
+    finally { setCompleting(false); }
+  };
 
   // --- New Sentence Rendering Logic ---
   // Takes processed elements for a block (e.g., paragraph) and a starting index,
@@ -1506,8 +1523,8 @@ const TextDisplay = () => {
   if (!text) { return <Container className="py-5"><Alert variant="warning">Text not found<Button onClick={() => navigate('/texts')}>Back</Button></Alert></Container>; }
   // --- End Loading/Error States ---
 
-      // DEBUG: Log isAudioLesson state before rendering
-      console.log(`[Render Check] isAudioLesson state: ${isAudioLesson}`);
+  // DEBUG: Log isAudioLesson state before rendering
+  console.log(`[Render Check] isAudioLesson state: ${isAudioLesson}`);
 
   const primaryControls = (
     <PrimaryControls
@@ -1571,8 +1588,8 @@ const TextDisplay = () => {
 
       {/* Audiobook Player rendering removed from here to fix duplication */}
 
-      {/* Audio Player */}
-      {isAudioLesson && audioSrc && displayMode === 'audio' && (
+      {/* Audio Player - Show for audio lessons regardless of display mode */}
+      {isAudioLesson && audioSrc && (
         <div className={`audio-player-container p-2 border-bottom theme-aware-audio-player-container ${isMobile ? 'lesson-audio-bar' : ''}`}>
           <AudiobookPlayer
             type="lesson"
@@ -1580,7 +1597,7 @@ const TextDisplay = () => {
             textId={textId}
             languageId={text?.languageId}
             audioRef={audioRef}
-            onTimeUpdate={setAudioCurrentTime}
+            onTimeUpdate={handleAudioTimeUpdate}
           />
         </div>
       )}
@@ -1591,45 +1608,45 @@ const TextDisplay = () => {
       <div className="resizable-container">
         {/* Left Panel (Reading Area) */}
         <div className="left-panel" style={{ width: `${leftPanelWidth}%`, height: 'calc(100vh - 130px)', overflowY: 'auto', padding: '0', position: 'relative' }}>
-           <div className="d-flex flex-column" style={{ minHeight: '100%' }}>
-             <div className="flex-grow-1" ref={textContentRef}>
-               {isAudioLesson && displayMode === 'audio' ? (
-                 <AudioTranscriptView
-                   isMobile={isMobile}
-                   srtLines={srtLines}
-                   currentSrtLineId={currentSrtLineId}
-                   getFontStyling={getFontStyling}
-                   handleLineClick={handleLineClick}
-                   processTextContent={processTextContent}
-                   globalSettings={globalSettings}
-                   mobileReadingConfig={mobileReadingConfig}
-                   textContentRef={textContentRef}
-                   itemData={itemData}
-                   listRef={listRef}
-                 />
-               ) : (
-                 <StandardTextView
-                   text={text}
-                   globalSettings={globalSettings}
-                   mobileReadingConfig={mobileReadingConfig}
-                   getFontFamilyForList={getFontFamilyForList}
-                   handleWordSelection={handleWordSelection}
-                   processTextContent={processTextContent}
-                   renderProcessedContentAsSentences={renderProcessedContentAsSentences}
-                   isMobile={isMobile}
-                   textContentRef={textContentRef}
-                 />
-               )}
-             </div>
-             {/* Show bottom button for regular texts OR any text within a book */}
-             {(!isAudioLesson || text?.bookId) && (
-                <div className="mt-auto pt-2 text-end px-2 pb-2">
-                    <Button variant="success" onClick={handleCompleteLesson} disabled={completing} size="sm">
-                        {completing ? <Spinner animation="border" size="sm" /> : (nextTextId === null ? 'Finish Book' : 'Complete Lesson')}
-                    </Button>
-                </div>
-             )}
-           </div>
+          <div className="d-flex flex-column" style={{ minHeight: '100%' }}>
+            <div className="flex-grow-1" ref={textContentRef}>
+              {isAudioLesson && displayMode === 'audio' ? (
+                <AudioTranscriptView
+                  isMobile={isMobile}
+                  srtLines={srtLines}
+                  currentSrtLineId={currentSrtLineId}
+                  getFontStyling={getFontStyling}
+                  handleLineClick={handleLineClick}
+                  processTextContent={processTextContent}
+                  globalSettings={globalSettings}
+                  mobileReadingConfig={mobileReadingConfig}
+                  textContentRef={textContentRef}
+                  itemData={itemData}
+                  listRef={listRef}
+                />
+              ) : (
+                <StandardTextView
+                  text={text}
+                  globalSettings={globalSettings}
+                  mobileReadingConfig={mobileReadingConfig}
+                  getFontFamilyForList={getFontFamilyForList}
+                  handleWordSelection={handleWordSelection}
+                  processTextContent={processTextContent}
+                  renderProcessedContentAsSentences={renderProcessedContentAsSentences}
+                  isMobile={isMobile}
+                  textContentRef={textContentRef}
+                />
+              )}
+            </div>
+            {/* Show bottom button for regular texts OR any text within a book */}
+            {(!isAudioLesson || text?.bookId) && (
+              <div className="mt-auto pt-2 text-end px-2 pb-2">
+                <Button variant="success" onClick={handleCompleteLesson} disabled={completing} size="sm">
+                  {completing ? <Spinner animation="border" size="sm" /> : (nextTextId === null ? 'Finish Book' : 'Complete Lesson')}
+                </Button>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Removed Resize Divider */}
@@ -1714,25 +1731,25 @@ const TextDisplay = () => {
 
       {/* Modals */}
       <Modal show={showStatsModal} onHide={() => setShowStatsModal(false)} centered>
-         <Modal.Header closeButton><Modal.Title>Lesson Completed!</Modal.Title></Modal.Header>
-         <Modal.Body>
-              {stats && (
-                <div className="text-center">
-                  <h5>Book Progress</h5>
-                  <ProgressBar now={stats.completionPercentage || 0} label={`${(stats.completionPercentage || 0).toFixed(1)}%`} className="mb-3" />
-                  <Row>
-                    <Col>Known: <Badge bg="success">{stats.knownWords}</Badge></Col>
-                    <Col>Learning: <Badge bg="warning">{stats.learningWords}</Badge></Col>
-                    <Col>Total: <Badge bg="info">{stats.totalWords}</Badge></Col>
-                  </Row>
-                </div>
-              )}
-         </Modal.Body>
-         <Modal.Footer>
-             <Button variant="secondary" onClick={() => setShowStatsModal(false)}>Close</Button>
-             {nextTextId && <Button variant="success" onClick={() => { setShowStatsModal(false); navigate(`/texts/${nextTextId}`); }}>Next Lesson</Button>}
-             {text?.bookId && <Button variant="primary" onClick={() => navigate(`/books/${text.bookId}`)}>Back to Book</Button>}
-         </Modal.Footer>
+        <Modal.Header closeButton><Modal.Title>Lesson Completed!</Modal.Title></Modal.Header>
+        <Modal.Body>
+          {stats && (
+            <div className="text-center">
+              <h5>Book Progress</h5>
+              <ProgressBar now={stats.completionPercentage || 0} label={`${(stats.completionPercentage || 0).toFixed(1)}%`} className="mb-3" />
+              <Row>
+                <Col>Known: <Badge bg="success">{stats.knownWords}</Badge></Col>
+                <Col>Learning: <Badge bg="warning">{stats.learningWords}</Badge></Col>
+                <Col>Total: <Badge bg="info">{stats.totalWords}</Badge></Col>
+              </Row>
+            </div>
+          )}
+        </Modal.Body>
+        <Modal.Footer>
+          <Button variant="secondary" onClick={() => setShowStatsModal(false)}>Close</Button>
+          {nextTextId && <Button variant="success" onClick={() => { setShowStatsModal(false); navigate(`/texts/${nextTextId}`); }}>Next Lesson</Button>}
+          {text?.bookId && <Button variant="primary" onClick={() => navigate(`/books/${text.bookId}`)}>Back to Book</Button>}
+        </Modal.Footer>
       </Modal>
       <TranslationPopup show={showTranslationPopup} handleClose={() => setShowTranslationPopup(false)} originalText={text?.content || ''} translatedText={fullTextTranslation} isTranslating={isFullTextTranslating} />
 

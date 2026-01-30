@@ -54,11 +54,15 @@ const AudiobookPlayer = ({
 
   // --- Load Last Playback Position ---
   useEffect(() => {
+    let isMounted = true; // Track if component is still mounted
+
     const loadLastPosition = async () => {
       setIsLoading(true);
       try {
         if (isBookMode) {
           const progress = await getAudiobookProgress(bookId); // Pass bookId
+          if (!isMounted) return; // Exit if unmounted
+
           if (progress.currentAudiobookTrackId && progress.currentAudiobookPosition != null) {
             const lastTrackIndex = audiobookTracks.findIndex(t => t.trackId === progress.currentAudiobookTrackId);
             console.log(`[AudioPlayer Load] Received progress: Track ID ${progress.currentAudiobookTrackId}, Position ${progress.currentAudiobookPosition}. Current Book ID: ${bookId}`);
@@ -89,6 +93,8 @@ const AudiobookPlayer = ({
           }
         } else {
           const progress = await getAudioLessonProgress(textId);
+          if (!isMounted) return; // Exit if unmounted
+
           if (progress && progress.currentPosition != null) {
             console.log(`[AudioPlayer Load] Restored lesson position ${progress.currentPosition} for textId ${textId}`);
             initialSeekPositionRef.current = progress.currentPosition;
@@ -102,6 +108,7 @@ const AudiobookPlayer = ({
           }
         }
       } catch (err) {
+        if (!isMounted) return; // Exit if unmounted
         console.error("Failed to load playback position:", err);
         // Fallback to start from beginning on error
         setCurrentTrackIndex(0);
@@ -110,8 +117,10 @@ const AudiobookPlayer = ({
         setCurrentTime(0);
         if (!isBookMode && onTimeUpdate) onTimeUpdate(0);
       } finally {
-        setIsLoading(false);
-        setPlaybackPositionLoaded(true);
+        if (isMounted) {
+          setIsLoading(false);
+          setPlaybackPositionLoaded(true);
+        }
       }
     };
 
@@ -130,16 +139,21 @@ const AudiobookPlayer = ({
       setIsLoading(false);
       setPlaybackPositionLoaded(true);
     }
+
+    // Cleanup function
+    return () => {
+      isMounted = false;
+    };
   }, [isBookMode, bookId, audiobookTracks, textId, audioSrc, onTimeUpdate]);
 
   // --- Restore Playback Rate ---
   useEffect(() => {
-      const savedRate = localStorage.getItem('audioPlaybackRate');
-      if (savedRate && !isNaN(parseFloat(savedRate))) {
-          const rate = parseFloat(savedRate);
-          setPlaybackRate(Math.max(0.5, Math.min(rate, 2.0)));
-          console.log(`[AudioPlayer Rate Restore] Restored rate: ${rate}`);
-      }
+    const savedRate = localStorage.getItem('audioPlaybackRate');
+    if (savedRate && !isNaN(parseFloat(savedRate))) {
+      const rate = parseFloat(savedRate);
+      setPlaybackRate(Math.max(0.5, Math.min(rate, 2.0)));
+      console.log(`[AudioPlayer Rate Restore] Restored rate: ${rate}`);
+    }
   }, []);
 
   // --- Save Progress ---
@@ -160,9 +174,11 @@ const AudiobookPlayer = ({
       return;
     }
 
-    // Avoid saving 0 position if track just started unless unmounting and duration exists
-    if ((position === 0 || position === null) && !isUnmounting && audio.duration > 0) {
-      console.log("[AudioPlayer Save] Skipping save: Position is 0 and not unmounting.");
+    // Avoid saving 0 position if track just started unless:
+    // 1. We're unmounting (final save), OR
+    // 2. An explicit positionOverride was provided (e.g., track advance to position 0)
+    if ((position === 0 || position === null) && !isUnmounting && positionOverride === null && audio.duration > 0) {
+      console.log("[AudioPlayer Save] Skipping save: Position is 0, not unmounting, and no explicit override.");
       return;
     }
 
@@ -241,9 +257,9 @@ const AudiobookPlayer = ({
           });
         }
       } else if (isPlaying) {
-         // If isPlaying is true but audio isn't paused, it might already be playing
-         // or about to fire the 'play' event. Ensure loading state is false.
-         setIsLoadingAudio(false);
+        // If isPlaying is true but audio isn't paused, it might already be playing
+        // or about to fire the 'play' event. Ensure loading state is false.
+        setIsLoadingAudio(false);
       }
     };
 
@@ -346,49 +362,49 @@ const AudiobookPlayer = ({
     }
 
     if (audio.playbackRate !== playbackRate) {
-        console.log(`[AudioPlayer] Applying playback rate: ${playbackRate}`);
-        audio.playbackRate = playbackRate;
+      console.log(`[AudioPlayer] Applying playback rate: ${playbackRate}`);
+      audio.playbackRate = playbackRate;
     }
 
     if (sourceChanged) {
-        console.log("[AudioPlayer] Calling load() due to src change.");
-        audio.load();
+      console.log("[AudioPlayer] Calling load() due to src change.");
+      audio.load();
     } else {
-       // Source did not change
-       // If intent is to play and it's paused, try playing (handles rate changes etc.)
-       if (isPlaying && audio.paused && audio.readyState >= 2) {
-            console.log("[AudioPlayer] Attempting play (src unchanged, isPlaying=true, audio paused, readyState>=2).");
-            const playPromise = audio.play();
-            if (playPromise !== undefined) {
-                playPromise.catch(e => {
-                    if (isMounted) {
-                        console.error("Error playing (src unchanged):", e);
-                        setError(`Playback failed: ${e.message}.`);
-                        setIsPlaying(false);
-                        setIsLoadingAudio(false);
-                    }
-                });
+      // Source did not change
+      // If intent is to play and it's paused, try playing (handles rate changes etc.)
+      if (isPlaying && audio.paused && audio.readyState >= 2) {
+        console.log("[AudioPlayer] Attempting play (src unchanged, isPlaying=true, audio paused, readyState>=2).");
+        const playPromise = audio.play();
+        if (playPromise !== undefined) {
+          playPromise.catch(e => {
+            if (isMounted) {
+              console.error("Error playing (src unchanged):", e);
+              setError(`Playback failed: ${e.message}.`);
+              setIsPlaying(false);
+              setIsLoadingAudio(false);
             }
-       } else if (isPlaying && audio.paused && audio.readyState < 2) {
-           // If intent is to play, but audio not ready yet, ensure loading indicator is shown
-           setIsLoadingAudio(true);
-       }
-       // If source didn't change and we are NOT trying to play,
-       // ensure any previously loaded seek position is applied if metadata just loaded.
-       // This handles resuming playback without auto-play.
-       else if (!isPlaying && playbackPositionLoaded && initialSeekPositionRef.current != null && audio.readyState >= 1 /*HAVE_METADATA*/) {
-            const seekPos = initialSeekPositionRef.current;
-            // Check if audio.currentTime needs updating
-            if (audio.currentTime !== seekPos && seekPos < audio.duration) {
-                console.log(`[AudioPlayer] Applying loaded position ${seekPos} after metadata (not auto-playing).`);
-                audio.currentTime = seekPos;
-                console.log(`[AudioPlayer Log] setCurrentTime from useEffect (applying loaded pos): ${seekPos}`);
-                setCurrentTime(seekPos); // Update state
-                if (onTimeUpdate) onTimeUpdate(seekPos);
-            }
-            // Clear ref once checked/applied
-            initialSeekPositionRef.current = null;
-       }
+          });
+        }
+      } else if (isPlaying && audio.paused && audio.readyState < 2) {
+        // If intent is to play, but audio not ready yet, ensure loading indicator is shown
+        setIsLoadingAudio(true);
+      }
+      // If source didn't change and we are NOT trying to play,
+      // ensure any previously loaded seek position is applied if metadata just loaded.
+      // This handles resuming playback without auto-play.
+      else if (!isPlaying && playbackPositionLoaded && initialSeekPositionRef.current != null && audio.readyState >= 1 /*HAVE_METADATA*/) {
+        const seekPos = initialSeekPositionRef.current;
+        // Check if audio.currentTime needs updating
+        if (audio.currentTime !== seekPos && seekPos < audio.duration) {
+          console.log(`[AudioPlayer] Applying loaded position ${seekPos} after metadata (not auto-playing).`);
+          audio.currentTime = seekPos;
+          console.log(`[AudioPlayer Log] setCurrentTime from useEffect (applying loaded pos): ${seekPos}`);
+          setCurrentTime(seekPos); // Update state
+          if (onTimeUpdate) onTimeUpdate(seekPos);
+        }
+        // Clear ref once checked/applied
+        initialSeekPositionRef.current = null;
+      }
     }
 
 
@@ -408,16 +424,16 @@ const AudiobookPlayer = ({
   const togglePlayPause = useCallback(() => {
     const audio = audioRef.current;
     if (!audio) {
-        console.error("[AudioPlayer togglePlayPause] Audio ref is null!");
-        setError("Audio element not available.");
-        return;
+      console.error("[AudioPlayer togglePlayPause] Audio ref is null!");
+      setError("Audio element not available.");
+      return;
     }
     const backendBaseUrl = process.env.REACT_APP_API_URL || 'http://localhost:5000';
     const desiredSrc = isBookMode ? (currentTrack ? `${backendBaseUrl}/${currentTrack.filePath}` : null) : audioSrc;
     if (!desiredSrc) {
-        console.error("[AudioPlayer togglePlayPause] Audio source not available.");
-        setError("Audio source not available.");
-        return;
+      console.error("[AudioPlayer togglePlayPause] Audio source not available.");
+      setError("Audio source not available.");
+      return;
     }
     console.log(`[AudioPlayer togglePlayPause] Called. Current isPlaying state: ${isPlaying}, audio.paused: ${audio.paused}`);
 
@@ -431,37 +447,37 @@ const AudiobookPlayer = ({
       setIsLoadingAudio(false); // Reset loading state
 
       if (audio.readyState === 0) {
-          console.warn(`[AudioPlayer togglePlayPause] Play attempt when readyState is 0. Setting loading state.`);
-          setIsLoadingAudio(true); // Show loading indicator
-          setIsPlaying(true); // Set intent to play, handleLoadedMetadata will trigger play later
-          // Ensure load is triggered if needed (though useEffect should handle it)
-          if (!audio.src || audio.src !== desiredSrc) {
-              audio.src = desiredSrc;
-              audio.load();
-          } else if (audio.networkState === 3) { // NETWORK_NO_SOURCE
-              audio.load();
-          }
+        console.warn(`[AudioPlayer togglePlayPause] Play attempt when readyState is 0. Setting loading state.`);
+        setIsLoadingAudio(true); // Show loading indicator
+        setIsPlaying(true); // Set intent to play, handleLoadedMetadata will trigger play later
+        // Ensure load is triggered if needed (though useEffect should handle it)
+        if (!audio.src || audio.src !== desiredSrc) {
+          audio.src = desiredSrc;
+          audio.load();
+        } else if (audio.networkState === 3) { // NETWORK_NO_SOURCE
+          audio.load();
+        }
       } else if (audio.readyState >= 2) { // HAVE_CURRENT_DATA or more
-          console.log(`[AudioPlayer togglePlayPause] readyState is ${audio.readyState}. Calling audio.play().`);
-          const playPromise = audio.play();
-          if (playPromise !== undefined) {
-              playPromise.then(_ => {
-                  console.log("[AudioPlayer togglePlayPause] audio.play() promise resolved.");
-                  // 'play' event listener sets states
-              }).catch(e => {
-                  console.error("[AudioPlayer togglePlayPause] audio.play() promise rejected:", e);
-                  setError(`Playback failed: ${e.message}.`);
-                  setIsPlaying(false);
-                  setIsLoadingAudio(false);
-              });
-          } else {
-              console.warn("[AudioPlayer togglePlayPause] audio.play() did not return a promise.");
-              setIsPlaying(true); // Manually set state as fallback
-          }
+        console.log(`[AudioPlayer togglePlayPause] readyState is ${audio.readyState}. Calling audio.play().`);
+        const playPromise = audio.play();
+        if (playPromise !== undefined) {
+          playPromise.then(_ => {
+            console.log("[AudioPlayer togglePlayPause] audio.play() promise resolved.");
+            // 'play' event listener sets states
+          }).catch(e => {
+            console.error("[AudioPlayer togglePlayPause] audio.play() promise rejected:", e);
+            setError(`Playback failed: ${e.message}.`);
+            setIsPlaying(false);
+            setIsLoadingAudio(false);
+          });
+        } else {
+          console.warn("[AudioPlayer togglePlayPause] audio.play() did not return a promise.");
+          setIsPlaying(true); // Manually set state as fallback
+        }
       } else { // readyState is 1 (HAVE_METADATA)
-          console.warn(`[AudioPlayer togglePlayPause] Play attempt when readyState is ${audio.readyState}. Setting loading state.`);
-          setIsLoadingAudio(true); // Show loading indicator while data buffers
-          setIsPlaying(true); // Set intent to play
+        console.warn(`[AudioPlayer togglePlayPause] Play attempt when readyState is ${audio.readyState}. Setting loading state.`);
+        setIsLoadingAudio(true); // Show loading indicator while data buffers
+        setIsPlaying(true); // Set intent to play
       }
     }
   }, [audioRef, isPlaying, currentTrack, isBookMode, audioSrc]); // Add currentTrack dependency
@@ -484,55 +500,55 @@ const AudiobookPlayer = ({
   }, [togglePlayPause]);
 
   // --- Apply Playback Rate ---
-   useEffect(() => {
-       if (audioRef.current) {
-           audioRef.current.playbackRate = playbackRate;
-           console.log(`[AudioPlayer Rate Apply] Set audio playbackRate to: ${playbackRate}`);
-       }
-   }, [audioRef, playbackRate]);
+  useEffect(() => {
+    if (audioRef.current) {
+      audioRef.current.playbackRate = playbackRate;
+      console.log(`[AudioPlayer Rate Apply] Set audio playbackRate to: ${playbackRate}`);
+    }
+  }, [audioRef, playbackRate]);
 
   // --- Handlers for Playback Speed ---
   const changePlaybackRate = (delta) => {
-      setPlaybackRate(prevRate => {
-          const newRate = parseFloat((prevRate + delta).toFixed(2));
-          const clampedRate = Math.max(0.5, Math.min(newRate, 2.0));
-          localStorage.setItem('audioPlaybackRate', clampedRate.toString());
-          console.log(`[AudioPlayer Rate Change] New rate: ${clampedRate}`);
-          return clampedRate;
-      });
+    setPlaybackRate(prevRate => {
+      const newRate = parseFloat((prevRate + delta).toFixed(2));
+      const clampedRate = Math.max(0.5, Math.min(newRate, 2.0));
+      localStorage.setItem('audioPlaybackRate', clampedRate.toString());
+      console.log(`[AudioPlayer Rate Change] New rate: ${clampedRate}`);
+      return clampedRate;
+    });
   };
 
   // --- Seek Function ---
   const seek = (offsetSeconds) => {
-      const audio = audioRef.current;
-      if (!audio || isNaN(audio.duration)) return;
-      const newTime = Math.max(0, Math.min(audio.currentTime + offsetSeconds, audio.duration));
-      audio.currentTime = newTime;
-      console.log(`[AudioPlayer Log] setCurrentTime from seek(): ${newTime}`);
-      setCurrentTime(newTime); // Update state immediately for responsiveness
-      if (onTimeUpdate) onTimeUpdate(newTime);
-      console.log(`[AudioPlayer Seek] Seeked by ${offsetSeconds}s to ${newTime}s`);
+    const audio = audioRef.current;
+    if (!audio || isNaN(audio.duration)) return;
+    const newTime = Math.max(0, Math.min(audio.currentTime + offsetSeconds, audio.duration));
+    audio.currentTime = newTime;
+    console.log(`[AudioPlayer Log] setCurrentTime from seek(): ${newTime}`);
+    setCurrentTime(newTime); // Update state immediately for responsiveness
+    if (onTimeUpdate) onTimeUpdate(newTime);
+    console.log(`[AudioPlayer Seek] Seeked by ${offsetSeconds}s to ${newTime}s`);
   };
 
   // --- Progress Bar Click Handler ---
   const handleProgressClick = (event) => {
-      const audio = audioRef.current;
-      const progressBar = progressBarRef.current;
-      if (!audio || !progressBar || isNaN(audio.duration) || audio.duration === 0) return;
+    const audio = audioRef.current;
+    const progressBar = progressBarRef.current;
+    if (!audio || !progressBar || isNaN(audio.duration) || audio.duration === 0) return;
 
-      const rect = progressBar.getBoundingClientRect();
-      const clickX = event.clientX - rect.left;
-      const width = progressBar.offsetWidth;
-      const percentage = clickX / width;
-      const newTime = audio.duration * percentage;
+    const rect = progressBar.getBoundingClientRect();
+    const clickX = event.clientX - rect.left;
+    const width = progressBar.offsetWidth;
+    const percentage = clickX / width;
+    const newTime = audio.duration * percentage;
 
-      if (!isNaN(newTime)) {
-          audio.currentTime = newTime;
-          console.log(`[AudioPlayer Log] setCurrentTime from handleProgressClick(): ${newTime}`);
-          setCurrentTime(newTime); // Update state immediately
-          if (onTimeUpdate) onTimeUpdate(newTime);
-          console.log(`[AudioPlayer Seek] Seeked via progress bar to ${newTime}s (${(percentage * 100).toFixed(1)}%)`);
-      }
+    if (!isNaN(newTime)) {
+      audio.currentTime = newTime;
+      console.log(`[AudioPlayer Log] setCurrentTime from handleProgressClick(): ${newTime}`);
+      setCurrentTime(newTime); // Update state immediately
+      if (onTimeUpdate) onTimeUpdate(newTime);
+      console.log(`[AudioPlayer Seek] Seeked via progress bar to ${newTime}s (${(percentage * 100).toFixed(1)}%)`);
+    }
   };
 
   // --- Log Listening Time ---
@@ -576,9 +592,9 @@ const AudiobookPlayer = ({
       console.log("[AudioPlayer Timers] Cleared save/log timers.");
       // Save progress immediately when paused (if audio is ready and wasn't loading)
       if (!isPlaying && !isLoadingAudio && audioInstance && audioInstance.readyState > 0) {
-          console.log("[AudioPlayer Timers] Saving/logging immediately on pause.");
-          saveProgress(false);
-          logListeningTime(false);
+        console.log("[AudioPlayer Timers] Saving/logging immediately on pause.");
+        saveProgress(false);
+        logListeningTime(false);
       }
     }
 
@@ -656,7 +672,7 @@ const AudiobookPlayer = ({
   }
 
   if (isBookMode && !currentTrack) {
-     return <Alert variant="warning">Could not load current track data.</Alert>;
+    return <Alert variant="warning">Could not load current track data.</Alert>;
   }
 
   if (!isBookMode && !audioSrc) {
@@ -672,9 +688,9 @@ const AudiobookPlayer = ({
 
       {/* Top Row: Track Info + Progress */}
       <div className="audiobook-player__progress d-flex align-items-center mb-0 gap-2"> {/* Reduced margin-bottom */}
-         <small className="text-muted text-nowrap">
-             {isBookMode ? `Trk ${currentTrackIndex + 1}/${audiobookTracks.length}` : 'Lesson'}
-         </small>
+        <small className="text-muted text-nowrap">
+          {isBookMode ? `Trk ${currentTrackIndex + 1}/${audiobookTracks.length}` : 'Lesson'}
+        </small>
         <ProgressBar
           ref={progressBarRef}
           now={duration ? (currentTime / duration) * 100 : 0}
@@ -688,9 +704,9 @@ const AudiobookPlayer = ({
           onClick={handleProgressClick}
           title={`${formatTime(currentTime)} / ${formatTime(duration)} - Click to seek`}
         />
-         <small className="text-muted text-nowrap">
-             {formatTime(currentTime)}/{formatTime(duration)}
-         </small>
+        <small className="text-muted text-nowrap">
+          {formatTime(currentTime)}/{formatTime(duration)}
+        </small>
       </div>
 
       {/* Dense Controls */}
@@ -768,10 +784,10 @@ const AudiobookPlayer = ({
               variant="outline-secondary"
               size="sm"
               onClick={() => {
-                  // console.log(`[AudioPlayer Log] setCurrentTime(0) from prev track button`); // Removed - Let loadedmetadata handle initial time
-                  // setCurrentTime(0); // Reset time state immediately - Let loadedmetadata handle initial time
-                  initialSeekPositionRef.current = 0; // Ensure seek ref is 0
-                  setCurrentTrackIndex(prev => Math.max(0, prev - 1));
+                // console.log(`[AudioPlayer Log] setCurrentTime(0) from prev track button`); // Removed - Let loadedmetadata handle initial time
+                // setCurrentTime(0); // Reset time state immediately - Let loadedmetadata handle initial time
+                initialSeekPositionRef.current = 0; // Ensure seek ref is 0
+                setCurrentTrackIndex(prev => Math.max(0, prev - 1));
               }}
               disabled={currentTrackIndex === 0}
               className="px-1 py-0"
@@ -782,10 +798,10 @@ const AudiobookPlayer = ({
               variant="outline-secondary"
               size="sm"
               onClick={() => {
-                  // console.log(`[AudioPlayer Log] setCurrentTime(0) from next track button`); // Removed - Let loadedmetadata handle initial time
-                  // setCurrentTime(0); // Reset time state immediately - Let loadedmetadata handle initial time
-                  initialSeekPositionRef.current = 0; // Ensure seek ref is 0
-                  setCurrentTrackIndex(prev => Math.min(audiobookTracks.length - 1, prev + 1));
+                // console.log(`[AudioPlayer Log] setCurrentTime(0) from next track button`); // Removed - Let loadedmetadata handle initial time
+                // setCurrentTime(0); // Reset time state immediately - Let loadedmetadata handle initial time
+                initialSeekPositionRef.current = 0; // Ensure seek ref is 0
+                setCurrentTrackIndex(prev => Math.min(audiobookTracks.length - 1, prev + 1));
               }}
               disabled={currentTrackIndex === audiobookTracks.length - 1}
               className="px-1 py-0"

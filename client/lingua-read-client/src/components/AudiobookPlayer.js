@@ -295,15 +295,8 @@ const AudiobookPlayer = ({
       }
     }, 10000);
 
-    const logInterval = setInterval(() => {
-      if (isPlaying && effectiveLanguageId) {
-        logListeningActivity(effectiveLanguageId, 60);
-      }
-    }, 60000);
-
     return () => {
       clearInterval(interval);
-      clearInterval(logInterval);
     };
   }, [isPlaying, saveProgress, effectiveLanguageId]);
 

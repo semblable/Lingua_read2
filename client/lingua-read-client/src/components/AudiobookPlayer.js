@@ -13,6 +13,13 @@ const AudiobookPlayer = ({
   audioRef: externalAudioRef,
   onTimeUpdate
 }) => {
+  // Use a ref for onTimeUpdate to avoid re-triggering effects when the callback identity changes
+  const onTimeUpdateRef = useRef(onTimeUpdate);
+
+  useEffect(() => {
+    onTimeUpdateRef.current = onTimeUpdate;
+  }, [onTimeUpdate]);
+
   const isBookMode = type === 'book';
   const { audiobookTracks = [], bookId, languageId: bookLanguageId } = book || {};
   const effectiveLanguageId = languageId || bookLanguageId;
@@ -99,12 +106,14 @@ const AudiobookPlayer = ({
             console.log(`[AudioPlayer Load] Restored lesson position ${progress.currentPosition} for textId ${textId}`);
             initialSeekPositionRef.current = progress.currentPosition;
             setCurrentTime(progress.currentPosition);
-            if (onTimeUpdate) onTimeUpdate(progress.currentPosition);
+            if (onTimeUpdateRef.current) onTimeUpdateRef.current(progress.currentPosition);
           } else {
             console.log(`[AudioPlayer Load] No progress found for lesson textId ${textId}.`);
             initialSeekPositionRef.current = 0;
             setCurrentTime(0);
-            if (onTimeUpdate) onTimeUpdate(0);
+            initialSeekPositionRef.current = 0;
+            setCurrentTime(0);
+            if (onTimeUpdateRef.current) onTimeUpdateRef.current(0);
           }
         }
       } catch (err) {
@@ -115,7 +124,9 @@ const AudiobookPlayer = ({
         initialSeekPositionRef.current = null;
         console.log(`[AudioPlayer Log] setCurrentTime(0) from loadLastPosition (error case)`);
         setCurrentTime(0);
-        if (!isBookMode && onTimeUpdate) onTimeUpdate(0);
+        console.log(`[AudioPlayer Log] setCurrentTime(0) from loadLastPosition (error case)`);
+        setCurrentTime(0);
+        if (!isBookMode && onTimeUpdateRef.current) onTimeUpdateRef.current(0);
       } finally {
         if (isMounted) {
           setIsLoading(false);
@@ -144,7 +155,7 @@ const AudiobookPlayer = ({
     return () => {
       isMounted = false;
     };
-  }, [isBookMode, bookId, audiobookTracks, textId, audioSrc, onTimeUpdate]);
+  }, [isBookMode, bookId, audiobookTracks, textId, audioSrc]); // Removed onTimeUpdate dependency
 
   // --- Restore Playback Rate ---
   useEffect(() => {
@@ -236,7 +247,7 @@ const AudiobookPlayer = ({
         audio.currentTime = seekPos;
         console.log(`[AudioPlayer Log] setCurrentTime from handleLoadedMetadata (initial seek): ${seekPos}`);
         setCurrentTime(seekPos); // Update state now that seek is done
-        if (onTimeUpdate) onTimeUpdate(seekPos);
+        if (onTimeUpdateRef.current) onTimeUpdateRef.current(seekPos);
         initialSeekPositionRef.current = null; // Clear the ref after seeking
       }
       // Note: Removed the fallback seek based on currentTime state here,
@@ -268,7 +279,7 @@ const AudiobookPlayer = ({
         const newTime = audio.currentTime;
         // console.log(`[AudioPlayer Log] setCurrentTime from handleTimeUpdate: ${newTime}`); // Very noisy, disable normally
         setCurrentTime(newTime);
-        if (onTimeUpdate) onTimeUpdate(newTime);
+        if (onTimeUpdateRef.current) onTimeUpdateRef.current(newTime);
         if (isBookMode) {
           lastKnownPositionRef.current = newTime; // Update cached position
           lastKnownTrackIndexRef.current = currentTrackIndex; // Update cached track index
@@ -400,7 +411,7 @@ const AudiobookPlayer = ({
           audio.currentTime = seekPos;
           console.log(`[AudioPlayer Log] setCurrentTime from useEffect (applying loaded pos): ${seekPos}`);
           setCurrentTime(seekPos); // Update state
-          if (onTimeUpdate) onTimeUpdate(seekPos);
+          if (onTimeUpdateRef.current) onTimeUpdateRef.current(seekPos);
         }
         // Clear ref once checked/applied
         initialSeekPositionRef.current = null;
@@ -413,12 +424,9 @@ const AudiobookPlayer = ({
       console.log(`[AudioPlayer] Cleanup effect for Track ${currentTrackIndex + 1}`);
       isMounted = false;
       audio.removeEventListener('loadedmetadata', handleLoadedMetadata);
-      audio.removeEventListener('timeupdate', handleTimeUpdate);
-      audio.removeEventListener('play', handlePlay);
-      audio.removeEventListener('pause', handlePause);
       audio.removeEventListener('ended', handleEnded);
     };
-  }, [audioRef, currentTrackIndex, playbackRate, audiobookTracks, isPlaying, playbackPositionLoaded, currentTrack, saveProgress, isBookMode, audioSrc, onTimeUpdate]); // Added saveProgress dependency
+  }, [audioRef, currentTrackIndex, playbackRate, audiobookTracks, isPlaying, playbackPositionLoaded, currentTrack, saveProgress, isBookMode, audioSrc]); // Added saveProgress dependency, removed onTimeUpdate
 
   // --- Play/Pause Logic ---
   const togglePlayPause = useCallback(() => {
@@ -526,7 +534,7 @@ const AudiobookPlayer = ({
     audio.currentTime = newTime;
     console.log(`[AudioPlayer Log] setCurrentTime from seek(): ${newTime}`);
     setCurrentTime(newTime); // Update state immediately for responsiveness
-    if (onTimeUpdate) onTimeUpdate(newTime);
+    if (onTimeUpdateRef.current) onTimeUpdateRef.current(newTime);
     console.log(`[AudioPlayer Seek] Seeked by ${offsetSeconds}s to ${newTime}s`);
   };
 
@@ -546,7 +554,7 @@ const AudiobookPlayer = ({
       audio.currentTime = newTime;
       console.log(`[AudioPlayer Log] setCurrentTime from handleProgressClick(): ${newTime}`);
       setCurrentTime(newTime); // Update state immediately
-      if (onTimeUpdate) onTimeUpdate(newTime);
+      if (onTimeUpdateRef.current) onTimeUpdateRef.current(newTime);
       console.log(`[AudioPlayer Seek] Seeked via progress bar to ${newTime}s (${(percentage * 100).toFixed(1)}%)`);
     }
   };

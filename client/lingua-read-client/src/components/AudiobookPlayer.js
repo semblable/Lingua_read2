@@ -308,11 +308,19 @@ const AudiobookPlayer = ({
   }, [isPlaying, saveProgress, effectiveLanguageId]);
 
   // Save on Unmount / Pause
+  // Ref to track previous playing state to valid "Pause" event
+  const wasPlayingRef = useRef(false);
+
   useEffect(() => {
-    if (!isPlaying && isInitialized) {
-      saveProgress(true);
+    if (isPlaying) {
+      wasPlayingRef.current = true;
+    } else if (wasPlayingRef.current) {
+      // Transitioned from True -> False
+      console.log("[AudioPlayer] Paused - Saving progress.");
+      saveProgress(true); // Force save on pause
+      wasPlayingRef.current = false;
     }
-  }, [isPlaying, isInitialized, saveProgress]);
+  }, [isPlaying, saveProgress]);
 
   // Page Exit Save
   useEffect(() => {

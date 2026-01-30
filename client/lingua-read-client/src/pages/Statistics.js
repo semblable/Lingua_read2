@@ -5,8 +5,8 @@ import { Container, Row, Col, Card, Alert, Spinner, ProgressBar, Table, Form, Bu
 import { API_URL, getUserStatistics, getReadingActivity, getListeningActivity, testApiConnection } from '../utils/api';
 import { formatDate } from '../utils/helpers';
 import {
-  XAxis, YAxis, CartesianGrid, Tooltip, Legend,
-  LineChart, Line, ResponsiveContainer
+  XAxis, YAxis, CartesianGrid, Tooltip,
+  ResponsiveContainer, Cell, PieChart, Pie, AreaChart, Area, BarChart, Bar
 } from 'recharts';
 import ManualEntryModal from '../components/ManualEntryModal'; // Import the modal component
 
@@ -596,14 +596,19 @@ const Statistics = () => {
       {/* Header Row */}
       <Row className="mb-4 align-items-center justify-content-between">
         <Col md="auto">
-          <h2>Statistics <small className="text-muted fs-6">{selectedLanguage !== 'all' ? `(${languagesArray.find(l => (l.LanguageId || l.languageId).toString() === selectedLanguage.toString())?.languageName || 'Selected Language'})` : '(All Languages)'}</small></h2>
+          <h2 className="fw-bold mb-0" style={{ color: 'var(--primary-color)' }}>
+            Statistics
+            <small className="ms-2 text-muted fs-6 fw-normal">
+              {selectedLanguage !== 'all' ? `(${languagesArray.find(l => (l.LanguageId || l.languageId).toString() === selectedLanguage.toString())?.languageName || 'Selected Language'})` : '(All Languages)'}
+            </small>
+          </h2>
         </Col>
         <Col md="auto">
-          <div className="d-flex align-items-center"> {/* Flex container for period select and button */}
-            <Form.Group controlId="activityPeriodSelect" className="me-3"> {/* Add margin */}
-              <Form.Label className="me-2 visually-hidden">Activity Period:</Form.Label> {/* Hide label visually */}
+          <div className="d-flex align-items-center bg-white p-2 rounded-pill shadow-sm border">
+            <Form.Group controlId="activityPeriodSelect" className="me-2 mb-0">
               <Form.Select
-                style={{ width: 'auto' }}
+                className="border-0 bg-transparent fw-medium"
+                style={{ width: 'auto', outline: 'none', boxShadow: 'none' }}
                 value={activityPeriod}
                 onChange={(e) => setActivityPeriod(e.target.value)}
                 aria-label="Select activity period"
@@ -611,23 +616,24 @@ const Statistics = () => {
                 <option value="last_day">Today</option>
                 <option value="last_week">Last 7 Days</option>
                 <option value="last_month">Last 30 Days</option>
-                <option value="last_90">Last 90 Days</option>
-                <option value="last_180">Last 180 Days</option>
+                <option value="last_90">90 Days</option>
+                <option value="last_180">180 Days</option>
                 <option value="all">All Time</option>
               </Form.Select>
             </Form.Group>
 
-            {/* Language Filter */}
-            <Form.Group controlId="languageSelect" className="me-3">
-              <Form.Label className="me-2 visually-hidden">Language:</Form.Label>
+            <div className="vr me-2" style={{ height: '20px', alignSelf: 'center' }}></div>
+
+            <Form.Group controlId="languageSelect" className="me-2 mb-0">
               <Form.Select
-                style={{ width: 'auto' }}
+                className="border-0 bg-transparent fw-medium"
+                style={{ width: 'auto', outline: 'none', boxShadow: 'none' }}
                 value={selectedLanguage}
                 onChange={(e) => setSelectedLanguage(e.target.value)}
-                disabled={languagesArray.length === 0} // Disable if no languages
+                disabled={languagesArray.length === 0}
                 aria-label="Select language"
               >
-                <option value="all">All Languages</option>
+                <option value="all">Languages</option>
                 {languagesArray.map(lang => {
                   const langId = lang.LanguageId || lang.languageId;
                   const langName = lang.LanguageName || lang.languageName;
@@ -640,9 +646,13 @@ const Statistics = () => {
               </Form.Select>
             </Form.Group>
 
-            {/* Add Manual Entry Button */}
-            <Button variant="outline-primary" onClick={() => setShowManualEntryModal(true)}>
-              Log Manual Activity
+            <Button
+              variant="primary"
+              className="rounded-pill px-4 shadow-sm"
+              style={{ backgroundColor: 'var(--accent-color)', borderColor: 'var(--accent-color)' }}
+              onClick={() => setShowManualEntryModal(true)}
+            >
+              Log Activity
             </Button>
           </div>
         </Col>
@@ -652,57 +662,59 @@ const Statistics = () => {
       <Row className="mb-4">
         {/* Total Words Card */}
         <Col md={3}>
-          <Card className="text-center h-100 shadow-sm border-0 bg-light">
-            <Card.Body>
-              <Card.Title className="text-muted small text-uppercase">Total Encountered</Card.Title>
-              <Card.Text className="fs-2 fw-bold">{displayStats.TotalWords}</Card.Text>
+          <Card className="text-center h-100 border-0 shadow-sm hover-elevate transition-all" style={{ borderRadius: 'var(--radius-lg)', background: 'rgba(255, 255, 255, 0.7)', backdropFilter: 'blur(10px)' }}>
+            <Card.Body className="d-flex flex-column justify-content-center">
+              <Card.Title className="text-muted small text-uppercase fw-bold mb-3 ls-wide">Encountered</Card.Title>
+              <Card.Text className="fs-1 fw-bold mb-0" style={{ color: 'var(--primary-color)' }}>{displayStats.TotalWords.toLocaleString()}</Card.Text>
             </Card.Body>
           </Card>
         </Col>
 
         {/* Known Words Card */}
         <Col md={3}>
-          <Card className="text-center h-100 shadow-sm border-0 bg-light">
-            <Card.Body>
-              <Card.Title className="text-muted small text-uppercase">Known Words</Card.Title>
-              <Card.Text className="fs-2 fw-bold text-success">{displayStats.KnownWords}</Card.Text>
+          <Card className="text-center h-100 border-0 shadow-sm hover-elevate transition-all" style={{ borderRadius: 'var(--radius-lg)', background: 'rgba(255, 255, 255, 0.7)', backdropFilter: 'blur(10px)' }}>
+            <Card.Body className="d-flex flex-column justify-content-center">
+              <Card.Title className="text-muted small text-uppercase fw-bold mb-3 ls-wide">Known Words</Card.Title>
+              <Card.Text className="fs-1 fw-bold text-success mb-2">{displayStats.KnownWords.toLocaleString()}</Card.Text>
               <ProgressBar
                 now={displayCompletionPercentage}
-                label={`${displayCompletionPercentage}%`}
                 variant="success"
-                className="mt-2"
-                style={{ height: '10px' }}
+                className="mt-1"
+                style={{ height: '6px', borderRadius: '3px' }}
               />
+              <div className="small text-muted mt-1 fw-medium">{displayCompletionPercentage}% of total</div>
             </Card.Body>
           </Card>
         </Col>
 
         {/* Books Card */}
         <Col md={3}>
-          <Card className="text-center h-100 shadow-sm border-0 bg-light">
-            <Card.Body>
-              <Card.Title className="text-muted small text-uppercase">Books</Card.Title>
-              <Card.Text className="fs-2 fw-bold">{displayStats.TotalBooks}</Card.Text>
-              <p className="small text-muted mb-0">{displayStats.FinishedBooks} Finished</p>
+          <Card className="text-center h-100 border-0 shadow-sm hover-elevate transition-all" style={{ borderRadius: 'var(--radius-lg)', background: 'rgba(255, 255, 255, 0.7)', backdropFilter: 'blur(10px)' }}>
+            <Card.Body className="d-flex flex-column justify-content-center">
+              <Card.Title className="text-muted small text-uppercase fw-bold mb-3 ls-wide">Books</Card.Title>
+              <Card.Text className="fs-1 fw-bold mb-0" style={{ color: 'var(--primary-color)' }}>{displayStats.TotalBooks}</Card.Text>
+              <div className="badge bg-success-subtle text-success rounded-pill align-self-center mt-2 px-3 py-2 fw-semibold">
+                {displayStats.FinishedBooks} Finished
+              </div>
             </Card.Body>
           </Card>
         </Col>
 
         {/* Languages Card */}
         <Col md={3}>
-          <Card className="text-center h-100 shadow-sm border-0 bg-light">
-            <Card.Body>
-              <Card.Title className="text-muted small text-uppercase">Languages</Card.Title>
-              <Card.Text className="fs-2 fw-bold text-info">{totalLanguages}</Card.Text>
-              {/* Add language initialization button if no languages */}
+          <Card className="text-center h-100 border-0 shadow-sm hover-elevate transition-all" style={{ borderRadius: 'var(--radius-lg)', background: 'rgba(255, 255, 255, 0.7)', backdropFilter: 'blur(10px)' }}>
+            <Card.Body className="d-flex flex-column justify-content-center">
+              <Card.Title className="text-muted small text-uppercase fw-bold mb-3 ls-wide">Languages</Card.Title>
+              <Card.Text className="fs-1 fw-bold text-info mb-0">{totalLanguages}</Card.Text>
               {totalLanguages === 0 && (
                 <Button
                   variant="outline-secondary"
                   size="sm"
+                  className="mt-2 rounded-pill"
                   onClick={handleInitializeLanguages}
                   disabled={initializingLanguages}
                 >
-                  {initializingLanguages ? <Spinner size="sm" /> : 'Initialize Languages'}
+                  {initializingLanguages ? <Spinner size="sm" /> : 'Initialize'}
                 </Button>
               )}
             </Card.Body>
@@ -710,23 +722,63 @@ const Statistics = () => {
         </Col>
       </Row>
 
+      {/* Styles for glassmorphism and animations */}
+      <style>{`
+        .ls-wide { letter-spacing: 0.05em; }
+        .hover-elevate { transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+        .hover-elevate:hover { transform: translateY(-5px); box-shadow: var(--shadow-md) !important; }
+        .bg-success-subtle { background-color: rgba(46, 204, 113, 0.15); }
+        .bg-primary-subtle { background-color: rgba(52, 152, 219, 0.15); }
+        .transition-all { transition: all 0.3s ease; }
+      `}</style>
+
       {/* Activity Summary Cards */}
       <Row className="mb-4">
         {/* Total Words Read Card */}
-        <Col md={6}>
-          <Card className="text-center h-100">
-            <Card.Body>
-              <Card.Title>Total Words Read ({activityPeriod === 'all' ? 'All Time' : `Last ${activityPeriod.split('_')[1]} Days`})</Card.Title>
-              {loadingActivity ? <Spinner animation="border" size="sm" /> : <Card.Text className="fs-2">{readingActivity?.TotalWordsRead ?? 0}</Card.Text>}
+        <Col md={3}>
+          <Card className="text-center h-100 border-0 shadow-sm hover-elevate transition-all" style={{ borderRadius: 'var(--radius-lg)', background: 'rgba(255, 255, 255, 0.7)', backdropFilter: 'blur(10px)' }}>
+            <Card.Body className="d-flex flex-column justify-content-center">
+              <Card.Title className="text-muted small text-uppercase fw-bold mb-3 ls-wide">Words Read</Card.Title>
+              <Card.Text className="fs-1 fw-bold mb-0" style={{ color: 'var(--primary-color)' }}>{readingActivity?.TotalWordsRead?.toLocaleString() || 0}</Card.Text>
+              <div className="small text-muted mt-1 fw-medium">in selected period</div>
             </Card.Body>
           </Card>
         </Col>
+
         {/* Total Time Listened Card */}
-        <Col md={6}>
-          <Card className="text-center h-100">
-            <Card.Body>
-              <Card.Title>Total Time Listened ({activityPeriod === 'all' ? 'All Time' : `Last ${activityPeriod.split('_')[1]} Days`})</Card.Title>
-              {loadingListeningActivity ? <Spinner animation="border" size="sm" /> : <Card.Text className="fs-2">{formatDuration(listeningActivity?.TotalListeningSeconds ?? 0)}</Card.Text>}
+        <Col md={3}>
+          <Card className="text-center h-100 border-0 shadow-sm hover-elevate transition-all" style={{ borderRadius: 'var(--radius-lg)', background: 'rgba(255, 255, 255, 0.7)', backdropFilter: 'blur(10px)' }}>
+            <Card.Body className="d-flex flex-column justify-content-center">
+              <Card.Title className="text-muted small text-uppercase fw-bold mb-3 ls-wide">Time Listened</Card.Title>
+              <Card.Text className="fs-1 fw-bold text-primary mb-0">{Math.round((listeningActivity?.TotalSecondsListened || 0) / 60)}m</Card.Text>
+              <div className="small text-muted mt-1 fw-medium">in selected period</div>
+            </Card.Body>
+          </Card>
+        </Col>
+
+        {/* Total Lessons Card */}
+        <Col md={3}>
+          <Card className="text-center h-100 border-0 shadow-sm hover-elevate transition-all" style={{ borderRadius: 'var(--radius-lg)', background: 'rgba(255, 255, 255, 0.7)', backdropFilter: 'blur(10px)' }}>
+            <Card.Body className="d-flex flex-column justify-content-center">
+              <Card.Title className="text-muted small text-uppercase fw-bold mb-3 ls-wide">Activities</Card.Title>
+              <Card.Text className="fs-1 fw-bold mb-0" style={{ color: 'var(--primary-color)' }}>{readingActivity?.ActivityLogs?.length || 0}</Card.Text>
+              <div className="small text-muted mt-1 fw-medium">entries recorded</div>
+            </Card.Body>
+          </Card>
+        </Col>
+
+        {/* Daily Average Card */}
+        <Col md={3}>
+          <Card className="text-center h-100 border-0 shadow-sm hover-elevate transition-all" style={{ borderRadius: 'var(--radius-lg)', background: 'rgba(255, 255, 255, 0.7)', backdropFilter: 'blur(10px)' }}>
+            <Card.Body className="d-flex flex-column justify-content-center">
+              <Card.Title className="text-muted small text-uppercase fw-bold mb-3 ls-wide">Daily Avg</Card.Title>
+              <Card.Text className="fs-1 fw-bold text-accent mb-0" style={{ color: 'var(--accent-color)' }}>
+                {activityPeriod === 'all'
+                  ? '-'
+                  : (readingActivity?.TotalWordsRead / (activityPeriod === 'last_day' ? 1 : activityPeriod === 'last_week' ? 7 : activityPeriod === 'last_month' ? 30 : activityPeriod === 'last_90' ? 90 : 180)).toFixed(0)
+                }
+              </Card.Text>
+              <div className="small text-muted mt-1 fw-medium">words / day</div>
             </Card.Body>
           </Card>
         </Col>
@@ -777,107 +829,186 @@ const Statistics = () => {
         <Alert variant="info">No language-specific data available yet.</Alert>
       )}
 
-      {/* Keep Activity Over Time Charts (Aggregated for now) */}
-      <h3 className="mt-5 mb-3">Activity Over Time ({activityPeriod === 'all' ? 'All Time' : `Selected Period`})</h3>
-      {/* Reading Activity Over Time Chart */}
+      {/* Charts Section */}
       <Row className="mb-4">
-        <Col>
-          <Card>
+        <Col md={6}>
+          <Card className="border-0 shadow-sm h-100" style={{ borderRadius: 'var(--radius-lg)', background: 'rgba(255, 255, 255, 0.7)', backdropFilter: 'blur(10px)' }}>
             <Card.Body>
-              <Card.Title>Words Read</Card.Title>
-              {loadingActivity ? <Spinner animation="border" size="sm" /> : readingActivityByDate.length > 0 ? (
-                <ResponsiveContainer width="100%" height={300}>
-                  <LineChart data={readingActivityByDate}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="date" />
-                    <YAxis />
-                    <Tooltip />
-                    <Legend />
-                    <Line type="monotone" dataKey="wordsRead" name="Words Read" stroke={THEMED_CHART_COLORS[1]} activeDot={{ r: 8 }} />
-                  </LineChart>
-                </ResponsiveContainer>
+              <Card.Title className="text-muted small text-uppercase fw-bold mb-4 ls-wide">Words Read Over Time</Card.Title>
+              {loadingActivity ? (
+                <div className="d-flex justify-content-center align-items-center" style={{ height: '300px' }}>
+                  <Spinner animation="border" variant="primary" />
+                </div>
               ) : (
-                <p>No reading activity data for this period.</p>
+                <div style={{ width: '100%', height: 300 }}>
+                  <ResponsiveContainer>
+                    <AreaChart data={readingActivityByDate}>
+                      <defs>
+                        <linearGradient id="colorRead" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="var(--accent-color)" stopOpacity={0.3} />
+                          <stop offset="95%" stopColor="var(--accent-color)" stopOpacity={0} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(0,0,0,0.05)" />
+                      <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#888' }} />
+                      <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#888' }} />
+                      <Tooltip
+                        contentStyle={{ borderRadius: 'var(--radius-md)', border: 'none', boxShadow: 'var(--shadow-md)' }}
+                      />
+                      <Area type="monotone" dataKey="words" stroke="var(--accent-color)" strokeWidth={3} fillOpacity={1} fill="url(#colorRead)" />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+            </Card.Body>
+          </Card>
+        </Col>
+
+        <Col md={6}>
+          <Card className="border-0 shadow-sm h-100" style={{ borderRadius: 'var(--radius-lg)', background: 'rgba(255, 255, 255, 0.7)', backdropFilter: 'blur(10px)' }}>
+            <Card.Body>
+              <Card.Title className="text-muted small text-uppercase fw-bold mb-4 ls-wide">Listening Over Time (Minutes)</Card.Title>
+              {loadingListeningActivity ? (
+                <div className="d-flex justify-content-center align-items-center" style={{ height: '300px' }}>
+                  <Spinner animation="border" variant="info" />
+                </div>
+              ) : (
+                <div style={{ width: '100%', height: 300 }}>
+                  <ResponsiveContainer>
+                    <BarChart data={listeningActivityByDate}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(0,0,0,0.05)" />
+                      <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#888' }} />
+                      <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#888' }} />
+                      <Tooltip
+                        contentStyle={{ borderRadius: 'var(--radius-md)', border: 'none', boxShadow: 'var(--shadow-md)' }}
+                        cursor={{ fill: 'rgba(0,0,0,0.02)' }}
+                      />
+                      <Bar dataKey="minutes" fill="var(--link-color)" radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
               )}
             </Card.Body>
           </Card>
         </Col>
       </Row>
 
-      {/* Listening Activity Over Time Chart */}
-      <Row className="mb-4">
-        <Col>
-          <Card>
-            <Card.Body>
-              <Card.Title>Minutes Listened</Card.Title>
-              {loadingListeningActivity ? <Spinner animation="border" size="sm" /> : listeningActivityByDate.length > 0 ? (
-                <ResponsiveContainer width="100%" height={300}>
-                  <LineChart data={listeningActivityByDate}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="date" />
-                    <YAxis />
-                    <Tooltip />
-                    <Legend />
-                    <Line type="monotone" dataKey="minutesListened" name="Minutes Listened" stroke={THEMED_CHART_COLORS[0]} activeDot={{ r: 8 }} />
-                  </LineChart>
-                </ResponsiveContainer>
-              ) : (
-                <p>No listening activity data for this period.</p>
-              )}
-            </Card.Body>
-          </Card>
-        </Col>
+      {/* Per-Language Statistics Section */}
+      <h3 className="fw-bold mb-4 mt-5" style={{ color: 'var(--primary-color)' }}>Per-Language Activity</h3>
+      <Row>
+        {Object.values(uniqueLanguages).map(lang => (
+          <Col md={4} key={lang.languageId} className="mb-4">
+            <Card className="border-0 shadow-sm h-100 transition-all hover-elevate" style={{ borderRadius: 'var(--radius-lg)', background: 'rgba(255, 255, 255, 0.7)', backdropFilter: 'blur(10px)' }}>
+              <Card.Header className="bg-transparent border-0 pt-4 pb-0">
+                <h5 className="fw-bold mb-0">{lang.languageName}</h5>
+              </Card.Header>
+              <Card.Body>
+                <div className="d-flex justify-content-between mb-2">
+                  <span className="text-muted small">Words Known</span>
+                  <span className="fw-bold text-success">{lang.knownWords.toLocaleString()}</span>
+                </div>
+                <div className="d-flex justify-content-between mb-2">
+                  <span className="text-muted small">Words Reading</span>
+                  <span className="fw-bold text-warning">{lang.learningWords.toLocaleString()}</span>
+                </div>
+                <div className="d-flex justify-content-between mb-3">
+                  <span className="text-muted small">Listening Time</span>
+                  <span className="fw-bold text-primary">{Math.round(lang.totalSecondsListened / 60)}m</span>
+                </div>
+
+                <hr className="opacity-10" />
+
+                <div className="d-flex justify-content-between align-items-center mt-3">
+                  <div>
+                    <div className="small text-muted mb-1">Books Completed</div>
+                    <div className="fw-bold" style={{ color: 'var(--primary-color)' }}>{lang.finishedBookCount} / {lang.bookCount}</div>
+                  </div>
+                  <div style={{ width: '60px', height: '60px' }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={[
+                            { name: 'Known', value: lang.knownWords },
+                            { name: 'Learning', value: lang.learningWords }
+                          ]}
+                          innerRadius={18}
+                          outerRadius={25}
+                          paddingAngle={5}
+                          dataKey="value"
+                        >
+                          <Cell fill="var(--accent-color)" />
+                          <Cell fill="var(--color-warning)" />
+                        </Pie>
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              </Card.Body>
+            </Card>
+          </Col>
+        ))}
       </Row>
 
-      {/* Reading Activity Table */}
-      {readingActivityByDate.length > 0 && (
-        <Row className="mt-4">
-          <Col>
-            <Card>
+      {/* Activity Tables Section */}
+      <Row className="mt-5 g-4">
+        {/* Reading Activity Table */}
+        {readingActivityByDate.length > 0 && (
+          <Col md={6}>
+            <Card className="border-0 shadow-sm h-100" style={{ borderRadius: 'var(--radius-lg)', background: 'rgba(255, 255, 255, 0.7)', backdropFilter: 'blur(10px)' }}>
               <Card.Body>
-                <Card.Title>Reading Activity by Date ({activityPeriod === 'all' ? 'All Time' : `Last ${activityPeriod.split('_')[1]} Days`})</Card.Title>
-                <Table striped bordered hover responsive size="sm">
-                  <thead>
-                    <tr>
-                      <th>Date</th>
-                      <th>Words Read</th>
-                    </tr>
-                  </thead>
-                  <tbody>{/* Ensure no whitespace */}
-                    {readingActivityByDate.map((item, index) => (<tr key={index}><td>{formatDate(item.date)}</td><td>{item.wordsRead}</td></tr>
-                    ))}
-                  </tbody>
-                </Table>
+                <Card.Title className="text-muted small text-uppercase fw-bold mb-4 ls-wide">Reading History</Card.Title>
+                <div className="table-responsive">
+                  <Table borderless hover size="sm" className="mb-0">
+                    <thead className="text-muted small text-uppercase">
+                      <tr>
+                        <th className="border-bottom-0 pb-3">Date</th>
+                        <th className="border-bottom-0 pb-3 text-end">Words Read</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {readingActivityByDate.slice(-10).reverse().map((item, index) => (
+                        <tr key={index} className="align-middle">
+                          <td className="py-2 text-muted">{formatDate(item.date)}</td>
+                          <td className="py-2 text-end fw-bold">{item.wordsRead.toLocaleString()}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </Table>
+                </div>
               </Card.Body>
             </Card>
           </Col>
-        </Row>
-      )}
+        )}
 
-      {/* Listening Activity Table */}
-      {prepareListeningActivityByLanguageData().length > 0 && (
-        <Row className="mt-4">
-          <Col>
-            <Card>
+        {/* Listening Activity Table */}
+        {prepareListeningActivityByLanguageData().length > 0 && (
+          <Col md={6}>
+            <Card className="border-0 shadow-sm h-100" style={{ borderRadius: 'var(--radius-lg)', background: 'rgba(255, 255, 255, 0.7)', backdropFilter: 'blur(10px)' }}>
               <Card.Body>
-                <Card.Title>Listening Time by Language ({activityPeriod === 'all' ? 'All Time' : `Last ${activityPeriod.split('_')[1]} Days`})</Card.Title>
-                <Table striped bordered hover responsive size="sm">
-                  <thead>
-                    <tr>
-                      <th>Language</th>
-                      <th>Total Time Listened</th>
-                    </tr>
-                  </thead>
-                  <tbody>{/* Ensure no whitespace */}
-                    {prepareListeningActivityByLanguageData().map((item, index) => (<tr key={index}><td>{item.language}</td><td>{formatDuration(item.minutesListened * 60)}</td></tr>
-                    ))}
-                  </tbody>
-                </Table>
+                <Card.Title className="text-muted small text-uppercase fw-bold mb-4 ls-wide">Listening by Language</Card.Title>
+                <div className="table-responsive">
+                  <Table borderless hover size="sm" className="mb-0">
+                    <thead className="text-muted small text-uppercase">
+                      <tr>
+                        <th className="border-bottom-0 pb-3">Language</th>
+                        <th className="border-bottom-0 pb-3 text-end">Total Time</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {prepareListeningActivityByLanguageData().map((item, index) => (
+                        <tr key={index} className="align-middle">
+                          <td className="py-2 text-muted">{item.language}</td>
+                          <td className="py-2 text-end fw-bold">{formatDuration(item.minutesListened * 60)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </Table>
+                </div>
               </Card.Body>
             </Card>
           </Col>
-        </Row>
-      )}
+        )}
+      </Row>
 
       {/* Render the Manual Entry Modal */}
       <ManualEntryModal

@@ -32,73 +32,67 @@ namespace LinguaReadApi.Controllers
         {
             var userId = GetUserId();
             
-            // Get all user's words
-            var words = await _context.Words
-                .Where(w => w.UserId == userId)
-                .ToListAsync();
+            // Get total word count for user across all languages
+            var totalWords = await _context.Words
+                .CountAsync(w => w.UserId == userId);
                 
+            // Get known word count (status 5)
+            var knownWords = await _context.Words
+                .CountAsync(w => w.UserId == userId && w.Status == 5);
+
             // Get user's books
             var books = await _context.Books
                 .Where(b => b.UserId == userId)
                 .Include(b => b.Language)
                 .ToListAsync();
                 
-            // Get word counts by status and language
-            var wordsByStatus = words
-                .GroupBy(w => w.Status)
-                .ToDictionary(g => g.Key, g => g.Count());
-                
-            var wordsByLanguage = words
+            // Get word counts by language from database
+            var wordsByLanguage = await _context.Words
+                .Where(w => w.UserId == userId)
                 .GroupBy(w => w.LanguageId)
-                .ToDictionary(g => g.Key, g => g.Count());
+                .Select(g => new { LanguageId = g.Key, Count = g.Count() })
+                .ToDictionaryAsync(g => g.LanguageId, g => g.Count);
 
-            // --- Fetch Aggregated User Language Statistics ---
+            // Fetch Aggregated User Language Statistics
             var userLangStats = await _context.UserLanguageStatistics
                 .Where(uls => uls.UserId == userId)
-                .Include(uls => uls.Language) // Include Language for name
-                .ToDictionaryAsync(uls => uls.LanguageId); // Dictionary for easy lookup
+                .Include(uls => uls.Language) 
+                .ToDictionaryAsync(uls => uls.LanguageId); 
 
-            // Get language details for languages the user has stats for
+            // Get language details
             var languages = userLangStats.Values
                 .Select(uls => uls.Language)
                 .Where(language => language != null)
                 .Distinct()
                 .ToList();
                 
-            // --- Create LanguageStatisticsDto using UserLanguageStatistics ---
             var languageStats = languages.Select(l =>
             {
-                // Get stats from the fetched dictionary, or default if none exist yet
                 var stats = userLangStats.TryGetValue(l.LanguageId, out var uls)
                     ? uls
-                    : new UserLanguageStatistics { LanguageId = l.LanguageId }; // Default empty stats
+                    : new UserLanguageStatistics { LanguageId = l.LanguageId }; 
 
                 return new LanguageStatisticsDto
                 {
                     LanguageId = l.LanguageId,
                     LanguageName = l.Name,
-                    // WordCount (total unique terms known/learning) might still come from 'words' collection
-                    WordCount = wordsByLanguage.ContainsKey(l.LanguageId) ? wordsByLanguage[l.LanguageId] : 0,
-                    // Use cumulative stats from UserLanguageStatistics
-                    TotalWordsRead = (int)stats.TotalWordsRead, // Cast long to int for DTO
+                    WordCount = wordsByLanguage.TryGetValue(l.LanguageId, out var count) ? count : 0,
+                    TotalWordsRead = (int)stats.TotalWordsRead, 
                     TotalTextsCompleted = stats.TotalTextsCompleted,
-                    TotalSecondsListened = (int)stats.TotalSecondsListened, // Cast long to int for DTO
-                    // Book counts can still be calculated from the 'books' collection
+                    TotalSecondsListened = (int)stats.TotalSecondsListened, 
                     BookCount = books.Count(b => b.LanguageId == l.LanguageId),
-                    FinishedBookCount = books.Count(b => b.LanguageId == l.LanguageId && b.IsFinished) // Assuming IsFinished exists on Book model
-                    // Note: UserLanguageStatistics also has TotalBooksCompleted, could use that instead if Book model doesn't have IsFinished
+                    FinishedBookCount = books.Count(b => b.LanguageId == l.LanguageId && b.IsFinished) 
                 };
             }).ToList();
                 
-            // Calculate total statistics
             var statistics = new UserStatisticsDto
             {
-                TotalWords = words.Count,
-                KnownWords = wordsByStatus.ContainsKey(5) ? wordsByStatus[5] : 0,
-                LearningWords = words.Count - (wordsByStatus.ContainsKey(5) ? wordsByStatus[5] : 0),
+                TotalWords = totalWords,
+                KnownWords = knownWords,
+                LearningWords = totalWords - knownWords,
                 TotalBooks = books.Count,
                 FinishedBooks = books.Count(b => b.IsFinished),
-                LastActivity = DateTime.UtcNow, // Default to current time to avoid Invalid Date
+                LastActivity = DateTime.UtcNow,
                 TotalLanguages = languageStats.Count,
                 LanguageStatistics = languageStats
             };

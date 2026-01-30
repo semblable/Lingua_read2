@@ -253,7 +253,7 @@ const AudiobookPlayer = ({
       // Note: Removed the fallback seek based on currentTime state here,
       // as initial seek should handle resuming/starting.
 
-      // Auto-play if isPlaying was true (intent set by togglePlayPause) and audio is currently paused
+      // Auto-play if isPlaying was true and audio is paused
       if (isPlaying && audio.paused) {
         console.log("[AudioPlayer] Attempting play post-metadata (intent was set).");
         const playPromise = audio.play();
@@ -263,15 +263,21 @@ const AudiobookPlayer = ({
               console.error("Error auto-playing post-metadata:", e);
               setError(`Playback failed: ${e.message}. Try clicking play.`);
               setIsPlaying(false);
-              setIsLoadingAudio(false); // Ensure loading state is cleared on error
+              setIsLoadingAudio(false);
             }
           });
         }
       } else if (isPlaying) {
-        // If isPlaying is true but audio isn't paused, it might already be playing
-        // or about to fire the 'play' event. Ensure loading state is false.
         setIsLoadingAudio(false);
       }
+    };
+
+    const handleError = (e) => {
+      if (!isMounted) return;
+      console.error("Audio element error:", e);
+      setError("Failed to load audio source.");
+      setIsLoadingAudio(false);
+      setIsPlaying(false);
     };
 
     const handleTimeUpdate = () => {
@@ -338,6 +344,8 @@ const AudiobookPlayer = ({
     audio.addEventListener('play', handlePlay);
     audio.addEventListener('pause', handlePause);
     audio.addEventListener('ended', handleEnded);
+
+    audio.addEventListener('error', handleError);
 
     // Set source and rate
     let sourceChanged = false;
@@ -424,6 +432,7 @@ const AudiobookPlayer = ({
       console.log(`[AudioPlayer] Cleanup effect for Track ${currentTrackIndex + 1}`);
       isMounted = false;
       audio.removeEventListener('loadedmetadata', handleLoadedMetadata);
+      audio.removeEventListener('error', handleError);
       audio.removeEventListener('ended', handleEnded);
     };
   }, [audioRef, currentTrackIndex, playbackRate, audiobookTracks, isPlaying, playbackPositionLoaded, currentTrack, saveProgress, isBookMode, audioSrc]); // Added saveProgress dependency, removed onTimeUpdate
@@ -599,11 +608,9 @@ const AudiobookPlayer = ({
       clearInterval(secondTimer);
       console.log("[AudioPlayer Timers] Cleared save/log timers.");
       // Save progress immediately when paused (if audio is ready and wasn't loading)
-      if (!isPlaying && !isLoadingAudio && audioInstance && audioInstance.readyState > 0) {
-        console.log("[AudioPlayer Timers] Saving/logging immediately on pause.");
-        saveProgress(false);
-        logListeningTime(false);
-      }
+      // Note: The cleanup function of this effect will run when isPlaying changes to false.
+      // We rely on the cleanup function to handle the "save on pause" logic to avoid double-saving.
+      // However, we still need to clear intervals here.
     }
 
     // Cleanup function for this effect
@@ -614,8 +621,9 @@ const AudiobookPlayer = ({
       clearInterval(listeningLogIntervalRef.current);
       clearInterval(secondTimer);
 
-      // --- Save final state on unmount ---
-      // This cleanup runs when dependencies change OR component unmounts.
+      // --- Save final state on unmount or pause ---
+      // This cleanup runs when dependencies change (like isPlaying becoming false) OR component unmounts.
+
       // We capture the state *at the time of cleanup setup*.
       // Use refs directly for potentially more up-to-date values if needed,
       // but state values from the closure should be sufficient if deps are correct.
@@ -658,14 +666,17 @@ const AudiobookPlayer = ({
       }
     };
     const handleBeforeUnload = () => {
+      // Use true for isUnmounting to force save even if position is 0
       saveProgress(true);
       logListeningTime(true);
     };
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    window.addEventListener('beforeunload', handleBeforeUnload);
+    // Use 'pagehide' instead of 'beforeunload' for likely better reliability on mobile/modern browsers
+    window.addEventListener('pagehide', handleBeforeUnload);
+    // document.addEventListener('visibilitychange', handleVisibilityChange); // Visibility change logic is better handled by effect cleanup if component unmounts or parent handles visibility.
+    // If we want to save on tab switch, we can keep visibilitychange, but pagehide is key for close/nav.
+
     return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      window.removeEventListener('beforeunload', handleBeforeUnload);
+      window.removeEventListener('pagehide', handleBeforeUnload);
     };
   }, [isBookMode, saveProgress, logListeningTime]);
 

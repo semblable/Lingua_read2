@@ -102,19 +102,27 @@ const UserSettings = () => {
      const { name, value, type, checked } = e.target;
 
      let processedValue = value;
-     if (type === 'checkbox') {
+    if (type === 'checkbox') {
        processedValue = checked;
-     } else if (
-       type === 'number' ||
-       name === 'defaultLanguageId' ||
-       name === 'discordWeeklyReportHourLocal' ||
-       name === 'discordTimezoneOffsetMinutes'
-     ) { // Treat these fields as numbers
-       processedValue = parseInt(value, 10);
-       if (isNaN(processedValue)) { // Handle potential NaN if parsing fails (e.g., for "0")
-          processedValue = 0; // Default to 0 if parsing fails or value is "0"
-       }
-     }
+    } else if (
+      type === 'number' ||
+      type === 'range' ||
+      name === 'textSize' ||
+      name === 'leftPanelWidth' ||
+      name === 'lineSpacing' ||
+      name === 'defaultLanguageId' ||
+      name === 'discordWeeklyReportHourLocal' ||
+      name === 'discordTimezoneOffsetMinutes'
+    ) { // Treat these fields as numbers
+      if (name === 'lineSpacing') {
+        processedValue = parseFloat(value);
+      } else {
+        processedValue = parseInt(value, 10);
+      }
+      if (isNaN(processedValue)) { // Handle potential NaN if parsing fails (e.g., for "0")
+         processedValue = 0; // Default to 0 if parsing fails or value is "0"
+      }
+    }
 
      setSettings(prevSettings => ({
        ...prevSettings,

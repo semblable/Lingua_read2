@@ -129,6 +129,7 @@ const TextDisplay = () => {
   const textContentRef = useRef(null);
   const audioRef = useRef(null);
   const listRef = useRef(null);
+  const autoScrollRafRef = useRef(null);
   // Removed resizeDividerRef
   const lastSaveTimeRef = useRef(Date.now()); // Ref for throttling position saves
   const saveInterval = 5000; // Save position every 5 seconds
@@ -815,17 +816,32 @@ const TextDisplay = () => {
     const currentLine = currentLineIndex !== -1 ? srtLines[currentLineIndex] : null;
     if (currentLine && currentLine.id !== currentSrtLineId) {
       setCurrentSrtLineId(currentLine.id);
-      if (!isMobile && listRef.current && currentLineIndex !== -1) {
-        setTimeout(() => { if (listRef.current) listRef.current.scrollToItem(currentLineIndex, 'center'); }, 50);
-      } else if (isMobile) {
-        requestAnimationFrame(() => {
+      if (autoScrollRafRef.current) {
+        cancelAnimationFrame(autoScrollRafRef.current);
+      }
+      autoScrollRafRef.current = requestAnimationFrame(() => {
+        if (!isMobile && listRef.current && currentLineIndex !== -1) {
+          listRef.current.scrollToItem(currentLineIndex, 'smart');
+          return;
+        }
+        if (isMobile) {
           const lineElement = document.getElementById(`srt-line-${currentLine.id}`);
-          if (lineElement) {
+          if (!lineElement) return;
+          const rect = lineElement.getBoundingClientRect();
+          const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
+          const upperBound = viewportHeight * 0.25;
+          const lowerBound = viewportHeight * 0.75;
+          if (rect.top < upperBound || rect.bottom > lowerBound) {
             lineElement.scrollIntoView({ block: 'center', behavior: 'smooth' });
           }
-        });
-      }
+        }
+      });
     }
+    return () => {
+      if (autoScrollRafRef.current) {
+        cancelAnimationFrame(autoScrollRafRef.current);
+      }
+    };
   }, [audioCurrentTime, srtLines, isAudioLesson, currentSrtLineId, displayMode, isMobile]);
 
   // Resizable Panel
@@ -1249,7 +1265,7 @@ const TextDisplay = () => {
          ref={textContentRef}
          style={{
            fontSize: `${globalSettings.textSize}px`,
-           lineHeight: isMobile ? mobileReadingConfig.lineSpacing : '1.6',
+           lineHeight: isMobile ? mobileReadingConfig.lineSpacing : 'var(--reading-line-height)',
            fontFamily: getFontFamilyForList(),
            '--mobile-reading-block-padding': mobileReadingConfig.blockPadding,
            '--mobile-reading-line-height': mobileReadingConfig.lineSpacing

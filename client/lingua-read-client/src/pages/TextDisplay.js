@@ -7,7 +7,7 @@ import {
   translateText, /*translateSentence,*/ translateFullText, updateUserSettings, // Added updateUserSettings, removed unused getUserSettings
   batchTranslateWords, addTermsBatch, getLanguage, // Added getLanguage (Phase 3)
   API_URL,
-  getAudioLessonProgress, updateAudioLessonProgress // Added audio lesson progress API functions
+  getAudioLessonProgress, updateAudioLessonProgress, logListeningActivity // Added audio lesson progress API functions
 } from '../utils/api';
 import TranslationPopup from '../components/TranslationPopup';
 import AudiobookPlayer from '../components/AudiobookPlayer'; // Import AudiobookPlayer
@@ -135,6 +135,7 @@ const TextDisplay = () => {
   const saveInterval = 5000; // Save position every 5 seconds
   const startTimeRef = useRef(null); // Ref for tracking listening start time
   const accumulatedDurationRef = useRef(0); // Ref for tracking total listening duration in ms for the session
+  const listeningLogIntervalRef = useRef(null); // Interval for periodic listening logs
 
   // --- State Declarations ---
   const [loading, setLoading] = useState(true);
@@ -185,6 +186,7 @@ const TextDisplay = () => {
   const [showMobileHeader, setShowMobileHeader] = useState(false);
   const [isWordPanelOpen, setIsWordPanelOpen] = useState(false);
   const [readingStyle, setReadingStyle] = useState('balanced');
+  const [isAudioPlaying, setIsAudioPlaying] = useState(false);
   // --- End State Declarations ---
 
   // --- Effects ---
@@ -236,6 +238,49 @@ const TextDisplay = () => {
       console.log(`[fetchAllLanguageWords] Replaced words state with ${allLanguageWords.length} words from backend.`);
     } catch (error) { console.error('Error fetching language words:', error); }
   }, [setWords]); // Dependency: setWords
+
+  const saveAudioLessonProgress = useCallback(async (positionOverride = null) => {
+    if (!isAudioLesson) return;
+    const position = positionOverride ?? audioRef.current?.currentTime;
+    if (!position || position <= 0) return;
+    try {
+      await updateAudioLessonProgress(textId, { currentPosition: position });
+      lastSaveTimeRef.current = Date.now();
+    } catch (err) {
+      console.error(`[Audio Save] Failed to save position for textId ${textId}:`, err);
+    }
+  }, [isAudioLesson, textId]);
+
+  const flushListeningDuration = useCallback(async (isFinal = false) => {
+    if (!text?.languageId) return;
+    const now = Date.now();
+    const isPlayingNow = !!startTimeRef.current;
+    let totalMs = accumulatedDurationRef.current;
+    if (isPlayingNow) {
+      totalMs += now - startTimeRef.current;
+    }
+    const secondsToLog = Math.floor(totalMs / 1000);
+    if (secondsToLog <= 0) {
+      if (isFinal) {
+        accumulatedDurationRef.current = 0;
+        startTimeRef.current = null;
+      }
+      return;
+    }
+
+    try {
+      await logListeningActivity(text.languageId, secondsToLog);
+      const remainingMs = totalMs - (secondsToLog * 1000);
+      accumulatedDurationRef.current = remainingMs;
+      startTimeRef.current = isPlayingNow ? now : null;
+    } catch (err) {
+      console.error('[Audio Log] Failed to log listening activity:', err);
+      if (isFinal) {
+        accumulatedDurationRef.current = 0;
+        startTimeRef.current = null;
+      }
+    }
+  }, [text?.languageId]);
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const getWordData = useCallback((word) => {
@@ -726,68 +771,18 @@ const TextDisplay = () => {
       console.log(`[TextDisplay Cleanup] State at cleanup: isAudioLesson=${isAudioLesson}, text exists=${!!text}, languageId=${text?.languageId}`);
       try {
         // Save Current Playback Position using the variable captured in the effect scope
-        // Save Current Playback Position using the variable captured in the effect scope
         if (currentAudioElement && isAudioLesson) {
           const currentTime = currentAudioElement.currentTime;
           if (currentTime > 0) {
             console.log(`[Audio Save - Unmount] Saving position via API: ${currentTime} for textId: ${textId}`);
-            // Use API instead of localStorage
-            updateAudioLessonProgress(textId, { currentPosition: currentTime })
-              .then(() => console.log(`[Audio Save - Unmount API] Success for textId: ${textId}`))
-              .catch(err => console.error(`[Audio Save - Unmount API] Failed for textId: ${textId}:`, err));
+          saveAudioLessonProgress(currentTime);
           }
         }
 
         // Log Listening Duration
         if (isAudioLesson && text?.languageId) {
-            console.log('[Audio Log - Unmount] Starting duration calculation...');
-            console.log(`[Audio Log - Unmount] Accumulated duration (ms): ${accumulatedDurationRef.current}`);
-            // --- Calculate final elapsed time if audio was playing on unmount ---
-            if (startTimeRef.current) {
-                const finalElapsed = Date.now() - startTimeRef.current;
-                accumulatedDurationRef.current += finalElapsed;
-                console.log(`[Audio Log - Unmount] Added final elapsed time: ${finalElapsed}ms. New Accumulated: ${accumulatedDurationRef.current}ms`);
-                startTimeRef.current = null; // Clear ref after calculation
-            } else {
-                console.log('[Audio Log - Unmount] Audio was paused/ended.');
-            }
-            // --- Use the final accumulated duration ---
-            const finalAccumulatedMs = accumulatedDurationRef.current; // Use the potentially updated value
-            const durationInSeconds = Math.round(finalAccumulatedMs / 1000);
-            console.log(`[Audio Log - Unmount] Calculated final total duration (s): ${durationInSeconds} for languageId: ${text.languageId}`);
-
-            console.log(`[Audio Log - Unmount] Checking duration threshold (> 5s)... Duration is ${durationInSeconds}s.`);
-
-            if (durationInSeconds > 5) { // Only log if listened for more than 5 seconds
-                console.log('[Audio Log - Unmount] Duration > 5s. Preparing API call...');
-                const token = localStorage.getItem('token');
-                const payload = {
-                  languageId: text.languageId,
-                  durationSeconds: durationInSeconds
-                };
-                console.log('[Audio Log - Unmount] API Payload:', payload);
-                console.log('[Audio Log - Unmount] Making fetch call to logListening...');
-                fetch(`${API_URL}/activity/logListening`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${token}`
-                    },
-                    body: JSON.stringify(payload)
-                })
-                .then(response => {
-                    if (!response.ok) {
-                        console.error('[Audio Log - Unmount] API call failed:', response.statusText);
-                    } else {
-                        console.log('[Audio Log - Unmount] API call successful.');
-                    }
-                })
-                .catch(error => {
-                    console.error('[Audio Log - Unmount] API call error:', error);
-                });
-            } else {
-                console.log('[Audio Log - Unmount] Duration <= 5s. Skipping API call.');
-            }
+          console.log('[Audio Log - Unmount] Flushing listening duration...');
+          flushListeningDuration(true);
         } else {
              console.log('[Audio Log - Unmount] Skipping duration log: Not an audio lesson or no languageId.');
         }
@@ -806,7 +801,7 @@ const TextDisplay = () => {
       }
     }; // End of return function
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [textId, fetchAllLanguageWords, isAudioLesson]); // 'text' is intentionally omitted to prevent loops; cleanup captures correct 'text' via closure.
+  }, [textId, fetchAllLanguageWords, isAudioLesson, saveAudioLessonProgress, flushListeningDuration]); // 'text' is intentionally omitted to prevent loops; cleanup captures correct 'text' via closure.
 
 
   // Audio Sync & Scroll
@@ -940,6 +935,38 @@ const TextDisplay = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [hoveredWordTerm, processingWord, isTranslating, getWordData, setWords, selectedWord, displayedWord, text?.textId, globalSettings.autoTranslateWords, triggerAutoTranslation]); // Use globalSettings
   // --- End Keyboard Shortcuts ---
+
+  useEffect(() => {
+    if (!isAudioLesson) return undefined;
+    if (isAudioPlaying) {
+      listeningLogIntervalRef.current = setInterval(() => {
+        flushListeningDuration(false);
+      }, 60000);
+    }
+    return () => {
+      clearInterval(listeningLogIntervalRef.current);
+    };
+  }, [isAudioLesson, isAudioPlaying, flushListeningDuration]);
+
+  useEffect(() => {
+    if (!isAudioLesson) return undefined;
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        saveAudioLessonProgress();
+        flushListeningDuration(false);
+      }
+    };
+    const handleBeforeUnload = () => {
+      saveAudioLessonProgress();
+      flushListeningDuration(true);
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [isAudioLesson, saveAudioLessonProgress, flushListeningDuration]);
 
   // Removed redundant text selection listener useEffect hook
   // Selection is now handled by onMouseUp on the text container div
@@ -1086,9 +1113,9 @@ const TextDisplay = () => {
           audioRef.current.playbackRate = playbackRate;
       }
       // --- DEBUGGING: Log values before attempting seek ---
-      console.log(`[Audio Metadata DEBUG] Checking seek condition: audioRef.current exists=${!!audioRef.current}, initialAudioTime=${initialAudioTime}, initialAudioTime > 0=${initialAudioTime > 0}`);
+      console.log(`[Audio Metadata DEBUG] Checking seek condition: audioRef.current exists=${!!audioRef.current}, initialAudioTime=${initialAudioTime}, initialAudioTime >= 0=${initialAudioTime >= 0}`);
 
-      if (audioRef.current && initialAudioTime !== null && initialAudioTime > 0) {
+      if (audioRef.current && initialAudioTime !== null && initialAudioTime >= 0) {
           // Pause before seeking to ensure correct position is set before play
           audioRef.current.pause();
           console.log(`[Audio Metadata] Paused audio. Current time BEFORE seek: ${audioRef.current.currentTime}`);
@@ -1106,6 +1133,17 @@ const TextDisplay = () => {
           console.log(`[Audio Metadata DEBUG] Condition NOT MET because audioRef.current is null.`);
       }
   };
+
+  useEffect(() => {
+    if (!isAudioLesson || initialAudioTime === null) return;
+    if (audioRef.current && audioRef.current.readyState >= 1) {
+      const seekTime = initialAudioTime >= 0 ? initialAudioTime : 0;
+      console.log(`[Audio Restore] Applying late-loaded position ${seekTime}`);
+      audioRef.current.currentTime = seekTime;
+      setAudioCurrentTime(seekTime);
+      setInitialAudioTime(null);
+    }
+  }, [initialAudioTime, isAudioLesson]);
 
   // --- Handlers for Playback Speed ---
   const changePlaybackRate = (delta) => {
@@ -1125,6 +1163,7 @@ const TextDisplay = () => {
           startTimeRef.current = Date.now();
           console.log('[Audio Tracking] Play started/resumed. Start time:', startTimeRef.current);
       }
+      setIsAudioPlaying(true);
   };
 
   const handlePauseOrEnd = () => {
@@ -1134,9 +1173,11 @@ const TextDisplay = () => {
           console.log(`[Audio Tracking] Paused/Ended. Elapsed: ${elapsed}ms. Accumulated: ${accumulatedDurationRef.current}ms`);
           startTimeRef.current = null; // Reset start time
 
-          // --- Removed API logging from handlePauseOrEnd ---
-          // Logging is now handled only in the main useEffect cleanup function
+          // Log and save on pause/end to avoid losing progress
+          flushListeningDuration(false);
+          saveAudioLessonProgress(audioRef.current?.currentTime);
       }
+      setIsAudioPlaying(false);
   };
   // --- End Audio Tracking Handlers ---
 

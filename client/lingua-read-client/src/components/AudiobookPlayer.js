@@ -159,10 +159,21 @@ const AudiobookPlayer = ({
     const audio = audioRef.current;
     if (!audio || !isInitialized || !currentTrack) return;
 
-    const backendBaseUrl = process.env.REACT_APP_API_URL || 'http://localhost:5000';
-    const src = currentTrack.isLesson
-      ? currentTrack.url
-      : `${backendBaseUrl}/${currentTrack.filePath}`;
+    // FIX: More robust URL construction. 
+    // If it's a full URL, use it. Otherwise, ensure it starts with / for relative path.
+    let src = currentTrack.isLesson ? currentTrack.url : currentTrack.filePath;
+
+    if (src && !src.startsWith('http') && !src.startsWith('blob:')) {
+      // Prepend leading slash if missing
+      src = src.startsWith('/') ? src : `/${src}`;
+
+      // If we have an environment variable for the base URL, use it (optional prefix)
+      // But only if it's a full URL (origin). If it's just something like "/api", we don't want it for static files.
+      const envBaseUrl = process.env.REACT_APP_API_URL;
+      if (envBaseUrl && envBaseUrl.startsWith('http')) {
+        src = `${envBaseUrl}${src}`;
+      }
+    }
 
     const currentSrc = audio.src;
 

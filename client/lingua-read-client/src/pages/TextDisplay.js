@@ -49,7 +49,7 @@ const parseSrtContent = (srtContent) => {
       }
     } else if (trimmedLine === '') {
       if (currentEntry && currentEntry.startTime >= 0 && textBuffer.length > 0) { // Allow 0 start time
-        currentEntry.text = textBuffer.join(' ').trim();
+        currentEntry.text = textBuffer.join('\n').trim();
         entries.push(currentEntry);
         currentEntry = null;
         textBuffer = [];
@@ -64,7 +64,7 @@ const parseSrtContent = (srtContent) => {
     }
   }
   if (currentEntry && currentEntry.startTime >= 0 && textBuffer.length > 0) {
-    currentEntry.text = textBuffer.join(' ').trim();
+    currentEntry.text = textBuffer.join('\n').trim();
     entries.push(currentEntry);
   }
   console.log(`[SRT Parser] Parsed ${entries.length} entries.`);

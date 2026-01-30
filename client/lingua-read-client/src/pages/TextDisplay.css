@@ -186,6 +186,8 @@
 .srt-line {
   margin-bottom: 0.75rem;
   transition: background-color 0.25s ease, box-shadow 0.25s ease, transform 0.25s ease;
+  white-space: pre-wrap;
+  /* Preserve newlines from SRT */
 }
 
 .audio-transcript-container {

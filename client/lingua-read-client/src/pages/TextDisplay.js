@@ -1404,12 +1404,31 @@ const TextDisplay = () => {
               })
               .catch(err => console.error(`[Keyboard Shortcut] Failed update for ${hoveredWordTerm}:`, err));
           } else {
-            createWord(text.textId, hoveredWordTerm, key, '')
-              .then(newWordData => {
-                setWords(prevWords => [...prevWords, newWordData]);
-                if (globalSettings.autoTranslateWords) triggerAutoTranslation(hoveredWordTerm); // Use globalSettings
-              })
-              .catch(err => console.error(`[Keyboard Shortcut] Failed to create word ${hoveredWordTerm}:`, err));
+            // Unknown word - fetch translation first, then create
+            (async () => {
+              let translationToUse = '';
+              if (text?.languageCode) {
+                try {
+                  console.log(`[Keyboard Shortcut] Fetching translation for new word "${hoveredWordTerm}"...`);
+                  const result = await translateText(hoveredWordTerm, text.languageCode, 'EN');
+                  translationToUse = result?.translatedText || '';
+                  console.log(`[Keyboard Shortcut] Got translation for new word: "${translationToUse}"`);
+                } catch (err) {
+                  console.error(`[Keyboard Shortcut] Failed to fetch translation for ${hoveredWordTerm}:`, err);
+                  // Continue with empty translation rather than failing
+                }
+              }
+
+              createWord(text.textId, hoveredWordTerm, key, translationToUse)
+                .then(newWordData => {
+                  // Update newWordData with the translation we fetched (if backend didn't return it)
+                  const wordWithTranslation = { ...newWordData, translation: translationToUse || newWordData.translation };
+                  setWords(prevWords => [...prevWords, wordWithTranslation]);
+                  // Still trigger auto-translate if enabled and we didn't get a translation
+                  if (globalSettings.autoTranslateWords && !translationToUse) triggerAutoTranslation(hoveredWordTerm);
+                })
+                .catch(err => console.error(`[Keyboard Shortcut] Failed to create word ${hoveredWordTerm}:`, err));
+            })();
           }
         }
       }

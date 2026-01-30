@@ -603,7 +603,7 @@ export const createWord = async (textId, term, status, translation) => {
       textId,
       term: term.trim(),
       status,
-      translation: translation || null
+      translation: translation || ''
     };
 
     const response = await fetchApi('/words', {
@@ -629,7 +629,7 @@ export const updateWord = async (wordId, status, translation) => {
 
     const payload = {
       status,
-      translation: translation || null
+      translation: translation ?? ''
     };
 
     const response = await fetchApi(`/words/${wordId}`, {

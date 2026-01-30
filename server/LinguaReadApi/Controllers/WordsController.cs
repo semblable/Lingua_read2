@@ -577,8 +577,8 @@ namespace LinguaReadApi.Controllers
         [Range(1, 5)]
         public int Status { get; set; }
 
-        // Translation can be empty
-        public string Translation { get; set; } = string.Empty;
+        // Translation is optional (can be empty or null)
+        public string? Translation { get; set; }
     }
 
     public class UpdateWordDto
@@ -587,8 +587,8 @@ namespace LinguaReadApi.Controllers
         [Range(1, 5)]
         public int Status { get; set; }
 
-        // Translation can be empty
-        public string Translation { get; set; } = string.Empty;
+        // Translation is optional (can be empty or null)
+        public string? Translation { get; set; }
     }
 
     public class WordResponseDto

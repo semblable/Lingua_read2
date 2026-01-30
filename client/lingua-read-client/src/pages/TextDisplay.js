@@ -1293,7 +1293,7 @@ const TextDisplay = () => {
   // --- Keyboard Shortcuts ---
 
   useEffect(() => { // 1-5 keys
-    const handleKeyDown = (event) => {
+    const handleKeyDown = async (event) => {
       if (event.target.tagName === 'INPUT' || event.target.tagName === 'TEXTAREA' || event.ctrlKey || event.altKey || event.metaKey) return;
       if (hoveredWordTerm && !processingWord && !isTranslating) {
         const key = parseInt(event.key, 10);
@@ -1301,10 +1301,26 @@ const TextDisplay = () => {
           event.preventDefault();
           const wordData = getWordData(hoveredWordTerm);
           if (wordData) {
-            updateWord(wordData.wordId, key, wordData.translation || '')
+            // If translation is missing, fetch it first
+            let translationToUse = wordData.translation || '';
+            if (!translationToUse && text?.languageCode) {
+              try {
+                console.log(`[Keyboard Shortcut] Fetching translation for "${hoveredWordTerm}"...`);
+                const result = await translateText(hoveredWordTerm, text.languageCode, 'EN');
+                translationToUse = result?.translatedText || '';
+                console.log(`[Keyboard Shortcut] Got translation: "${translationToUse}"`);
+              } catch (err) {
+                console.error(`[Keyboard Shortcut] Failed to fetch translation for ${hoveredWordTerm}:`, err);
+                // Continue with empty translation rather than failing
+              }
+            }
+
+            updateWord(wordData.wordId, key, translationToUse)
               .then(() => {
-                setWords(prevWords => prevWords.map(w => w.wordId === wordData.wordId ? { ...w, status: key } : w));
-                if (selectedWord === hoveredWordTerm && displayedWord?.term === hoveredWordTerm) setDisplayedWord(prev => ({ ...prev, status: key }));
+                setWords(prevWords => prevWords.map(w => w.wordId === wordData.wordId ? { ...w, status: key, translation: translationToUse } : w));
+                if (selectedWord === hoveredWordTerm && displayedWord?.term === hoveredWordTerm) {
+                  setDisplayedWord(prev => ({ ...prev, status: key, translation: translationToUse }));
+                }
               })
               .catch(err => console.error(`[Keyboard Shortcut] Failed update for ${hoveredWordTerm}:`, err));
           } else {
@@ -1320,7 +1336,7 @@ const TextDisplay = () => {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [hoveredWordTerm, processingWord, isTranslating, getWordData, setWords, selectedWord, displayedWord, text?.textId, globalSettings.autoTranslateWords, triggerAutoTranslation]); // Use globalSettings
+  }, [hoveredWordTerm, processingWord, isTranslating, getWordData, setWords, selectedWord, displayedWord, text?.textId, text?.languageCode, globalSettings.autoTranslateWords, triggerAutoTranslation]); // Use globalSettings
   // --- End Keyboard Shortcuts ---
 
   // Removed redundant text selection listener useEffect hook

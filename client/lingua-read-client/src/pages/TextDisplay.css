@@ -76,9 +76,7 @@
   gap: var(--space-sm);
 }
 
-.lesson-header-player {
-  min-width: 360px;
-}
+
 
 .lesson-meta {
   white-space: nowrap;
@@ -98,12 +96,14 @@
 /* Removed styles for .resize-divider as it's no longer used */
 
 /* Panel styling */
-.left-panel, .right-panel {
+.left-panel,
+.right-panel {
   transition: width 0.05s ease-out;
 }
 
 /* Make the scroll behavior smoother */
-.left-panel, .right-panel {
+.left-panel,
+.right-panel {
   scrollbar-width: thin;
   scrollbar-color: #adb5bd #f8f9fa;
 }
@@ -112,27 +112,36 @@
 .text-content-wrapper {
   width: 100%;
   max-width: 100%;
-  padding: var(--space-md) var(--space-lg); /* Added padding using spacing variables */
+  padding: var(--space-md) var(--space-lg);
+  /* Added padding using spacing variables */
   margin: 0;
   position: relative;
-  background-color: var(--background-color); /* Ensure it has a background */
+  background-color: var(--background-color);
+  /* Ensure it has a background */
 }
 
 /* Text content styling */
 .text-content {
-  margin: 0; /* Keep margin 0 as padding is on wrapper */
+  margin: 0;
+  /* Keep margin 0 as padding is on wrapper */
   max-width: 100%;
-  padding: 0; /* Keep padding 0 as padding is on wrapper */
+  padding: 0;
+  /* Keep padding 0 as padding is on wrapper */
   width: 100%;
 }
 
 /* Paragraph styling */
 .text-content p {
-  margin-bottom: var(--space-md); /* Use spacing variable */
-  text-indent: var(--space-lg); /* Use spacing variable */
-  line-height: var(--reading-line-height); /* Use CSS custom property */
-  padding-left: var(--space-sm); /* Use spacing variable */
-  padding-right: var(--space-sm); /* Use spacing variable */
+  margin-bottom: var(--space-md);
+  /* Use spacing variable */
+  text-indent: var(--space-lg);
+  /* Use spacing variable */
+  line-height: var(--reading-line-height);
+  /* Use CSS custom property */
+  padding-left: var(--space-sm);
+  /* Use spacing variable */
+  padding-right: var(--space-sm);
+  /* Use spacing variable */
   text-align: left;
   width: 100%;
   max-width: 100%;
@@ -146,10 +155,14 @@
 
 /* Style for the currently active SRT line */
 .srt-line.active-srt-line {
-  background-color: var(--active-srt-line-bg, rgba(255, 223, 186, 0.7)); /* Added background for light mode */
-  border-left: 4px solid var(--active-srt-line-border, #fd7e14); /* Use a distinct left border (orange) */
-  padding-left: calc(0.5rem - 4px); /* Adjust padding to account for border width */
-  font-weight: 500; /* Slightly bolder */
+  background-color: var(--active-srt-line-bg, rgba(255, 223, 186, 0.7));
+  /* Added background for light mode */
+  border-left: 4px solid var(--active-srt-line-border, #fd7e14);
+  /* Use a distinct left border (orange) */
+  padding-left: calc(0.5rem - 4px);
+  /* Adjust padding to account for border width */
+  font-weight: 500;
+  /* Slightly bolder */
   box-shadow: 0 6px 12px rgba(0, 0, 0, 0.08);
   transform: translateY(-1px);
 }
@@ -178,8 +191,10 @@
 
 /* Dark theme adjustments for active SRT line */
 .dark-theme .srt-line.active-srt-line {
-  border-left-color: #61dafb; /* Brighter blue border */
-  background-color: rgba(80, 80, 80, 0.4); /* Darker grey background for better contrast */
+  border-left-color: #61dafb;
+  /* Brighter blue border */
+  background-color: rgba(80, 80, 80, 0.4);
+  /* Darker grey background for better contrast */
 }
 
 /* Media queries for responsive design */
@@ -228,7 +243,8 @@
 
   /* Removed media query styles for .resize-divider */
 
-  .left-panel, .right-panel {
+  .left-panel,
+  .right-panel {
     width: 100% !important;
     height: auto !important;
   }
@@ -328,28 +344,41 @@
 .word-info-sheet-content {
   text-align: left;
 }
+
 /* --- Bookmark Styles --- */
 .sentence {
   /* Base style for sentences if needed, e.g., for positioning context */
-  position: relative; /* Useful if absolutely positioning the icon */
-  display: inline; /* Keep sentences flowing naturally */
+  position: relative;
+  /* Useful if absolutely positioning the icon */
+  display: inline;
+  /* Keep sentences flowing naturally */
 }
 
 .bookmark-icon {
-  cursor: default; /* Indicate it's not clickable itself */
-  margin-right: 0.3em; /* Space between icon and text */
-  font-size: 1em; /* Increase size */
+  cursor: default;
+  /* Indicate it's not clickable itself */
+  margin-right: 0.3em;
+  /* Space between icon and text */
+  font-size: 1em;
+  /* Increase size */
   color: var(--accent-color);
-  vertical-align: baseline; /* Align with text */
-  user-select: none; /* Prevent selecting the icon */
-  display: inline-block; /* Ensure margin/padding work */
-  font-weight: bold; /* Make it bolder */
+  vertical-align: baseline;
+  /* Align with text */
+  user-select: none;
+  /* Prevent selecting the icon */
+  display: inline-block;
+  /* Ensure margin/padding work */
+  font-weight: bold;
+  /* Make it bolder */
 }
+
 /* --- End Bookmark Styles --- */
 /* Theme-aware styles for the audio player container */
 .theme-aware-audio-player-container {
-  background-color: var(--theme-surface-bg, var(--light-surface-bg)); /* Fallback for safety */
-  border-bottom: 1px solid var(--theme-border-color, var(--light-border-color)); /* Fallback for safety */
+  background-color: var(--theme-surface-bg, var(--light-surface-bg));
+  /* Fallback for safety */
+  border-bottom: 1px solid var(--theme-border-color, var(--light-border-color));
+  /* Fallback for safety */
   /* Padding is handled by existing p-2 class, but can be adjusted here if needed */
 }
 
@@ -360,7 +389,8 @@ body.classic-dark-theme .theme-aware-audio-player-container audio::-webkit-media
   filter: invert(1) hue-rotate(180deg);
 }
 
-body.dark-theme .theme-aware-audio-player-container audio::-moz-media-controls-panel, /* Firefox specific if needed */
+body.dark-theme .theme-aware-audio-player-container audio::-moz-media-controls-panel,
+/* Firefox specific if needed */
 body.classic-dark-theme .theme-aware-audio-player-container audio::-moz-media-controls-panel {
   filter: invert(1) hue-rotate(180deg);
 }

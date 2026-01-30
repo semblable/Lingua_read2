@@ -424,7 +424,7 @@ const LessonHeader = React.memo(({
             <p className="text-muted mb-0 small lesson-meta">Lang: {text.languageName || 'N/A'} | Words: {words.length}</p>
           </div>
           {!isAudioLesson && book && book.audiobookTracks && book.audiobookTracks.length > 0 && (
-            <div className="lesson-header-player flex-grow-1 mx-2">
+            <div className="lesson-header-player mx-2">
               <AudiobookPlayer type="book" book={book} />
             </div>
           )}

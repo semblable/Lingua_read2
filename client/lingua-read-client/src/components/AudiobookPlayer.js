@@ -445,7 +445,7 @@ const AudiobookPlayer = ({
   }, [togglePlayPause, goToNextTrack, goToPrevTrack]);
 
   return (
-    <div className="audiobook-player p-1 rounded-2 w-100 audiobook-player-custom-bg">
+    <div className="audiobook-player p-1 rounded-2 audiobook-player-custom-bg" style={{ maxWidth: '400px', width: '100%' }}>
       {/* 
         CRITICAL: Always render the audio element. 
         If it's conditionally rendered (e.g. only after isLoading is false), 

@@ -882,4 +882,4 @@ const AudiobookPlayer = ({
   );
 };
 
-export default AudiobookPlayer;
+export default React.memo(AudiobookPlayer);

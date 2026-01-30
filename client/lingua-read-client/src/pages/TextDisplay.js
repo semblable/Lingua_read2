@@ -727,6 +727,28 @@ const TextDisplay = () => {
   const [readingStyle, setReadingStyle] = useState('balanced');
   // --- End State Declarations ---
 
+  // Create refs for values used in handleAudioTimeUpdate to keep the callback stable
+  const handleAudioTimeUpdateStateRef = useRef({
+    isAudioLesson: false,
+    srtLines: [],
+    displayMode: 'audio',
+    currentSrtLineId: null,
+    isMobile: false,
+    listRef: listRef // Reference the listRef from scope
+  });
+
+  // Sync refs with state
+  useEffect(() => {
+    handleAudioTimeUpdateStateRef.current = {
+      isAudioLesson,
+      srtLines,
+      displayMode,
+      currentSrtLineId,
+      isMobile,
+      listRef: listRef.current
+    };
+  }, [isAudioLesson, srtLines, displayMode, currentSrtLineId, isMobile]);
+
   // --- Effects ---
   useEffect(() => {
     console.log('[TextDisplay] globalSettings.lineSpacing updated:', globalSettings.lineSpacing);
@@ -1236,7 +1258,11 @@ const TextDisplay = () => {
 
 
   // Audio Time Update Handler - updates ref and checks for line changes
+  // Audio Time Update Handler - NOW STABLE (using refs)
   const handleAudioTimeUpdate = useCallback((newTime) => {
+    // Read latest state from ref
+    const { isAudioLesson, srtLines, displayMode, currentSrtLineId, isMobile, listRef: currentListRef } = handleAudioTimeUpdateStateRef.current;
+
     audioCurrentTimeRef.current = newTime;
 
     // Only check for line changes if we're in audio mode with SRT lines
@@ -1257,8 +1283,8 @@ const TextDisplay = () => {
         cancelAnimationFrame(autoScrollRafRef.current);
       }
       autoScrollRafRef.current = requestAnimationFrame(() => {
-        if (!isMobile && listRef.current && currentLineIndex !== -1) {
-          listRef.current.scrollToItem(currentLineIndex, 'smart');
+        if (!isMobile && currentListRef && currentLineIndex !== -1) {
+          currentListRef.scrollToItem(currentLineIndex, 'smart');
           return;
         }
         if (isMobile) {
@@ -1276,7 +1302,7 @@ const TextDisplay = () => {
     } else if (!currentLine && currentSrtLineId !== null) {
       setCurrentSrtLineId(null);
     }
-  }, [isAudioLesson, srtLines, displayMode, currentSrtLineId, isMobile]);
+  }, []); // Empty dependency array = STABLE CALLBACK IDENTITY
 
   // Cleanup for auto-scroll animation frame
   useEffect(() => {
@@ -1608,6 +1634,7 @@ const TextDisplay = () => {
       {isAudioLesson && audioSrc && (
         <div className={`audio-player-container p-2 border-bottom theme-aware-audio-player-container ${isMobile ? 'lesson-audio-bar' : ''}`}>
           <AudiobookPlayer
+            key="lesson-audio-player"
             type="lesson"
             audioSrc={audioSrc}
             textId={textId}

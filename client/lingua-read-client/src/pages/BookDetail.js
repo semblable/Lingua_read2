@@ -27,6 +27,7 @@ const BookDetail = () => {
   const [uploadingAudio, setUploadingAudio] = useState(false);
   const [uploadError, setUploadError] = useState('');
   const [uploadSuccess, setUploadSuccess] = useState('');
+  const [uploadProgress, setUploadProgress] = useState(0); // Progress state
 
 
   const fetchBook = useCallback(async () => { // Wrap in useCallback
@@ -204,12 +205,15 @@ const BookDetail = () => {
         const file = selectedFiles[i];
         // Update success message to show progress instead of success
         setUploadSuccess(`Uploading file ${i + 1} of ${totalFiles}: ${file.name}...`);
+        setUploadProgress(0);
 
         const formData = new FormData();
         formData.append('Files', file); // API expects 'Files' but we send one at a time which works as it appends
 
         try {
-          await uploadAudiobookTracks(bookId, formData);
+          await uploadAudiobookTracks(bookId, formData, (progress) => {
+            setUploadProgress(progress);
+          });
           successCount++;
         } catch (err) {
           console.error(`Failed to upload ${file.name}:`, err);
@@ -220,6 +224,7 @@ const BookDetail = () => {
       }
 
       setUploadSuccess(`Successfully uploaded ${successCount} audio track(s). ${failCount > 0 ? `${failCount} failed.` : ''}`);
+      setUploadProgress(0); // Reset after done
       if (failCount > 0) {
         setUploadError(`Failed to upload ${failCount} files. Check console for details.`);
       }
@@ -410,6 +415,11 @@ const BookDetail = () => {
                 'Upload Selected Tracks'
               )}
             </Button>
+            {uploadingAudio && (
+              <div className="mt-3">
+                <ProgressBar now={uploadProgress} label={`${uploadProgress}%`} animated variant="info" />
+              </div>
+            )}
           </Form>
         </Card.Body>
       </Card>

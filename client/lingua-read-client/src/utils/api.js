@@ -11,6 +11,7 @@ const MOBILE_API_BASE_URL =
   process.env.REACT_APP_API_BASE_URL ||
   'http://localhost:5000/api';
 
+
 const isWeb = typeof window !== 'undefined' && typeof document !== 'undefined';
 export const API_URL = isWeb ? WEB_API_BASE_URL : MOBILE_API_BASE_URL;
 
@@ -27,6 +28,76 @@ const getToken = () => {
     return null;
   }
 };
+
+// --- NEW HELPER: Upload with Progress (XHR) ---
+const uploadWithProgress = (endpoint, formData, onProgress) => {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    const fullUrl = API_URL + (endpoint.startsWith('/') ? endpoint : '/' + endpoint);
+
+    // Upload progress event
+    if (onProgress) {
+      xhr.upload.addEventListener('progress', (event) => {
+        if (event.lengthComputable) {
+          const percentComplete = Math.round((event.loaded / event.total) * 100);
+          onProgress(percentComplete);
+        }
+      });
+    }
+
+    xhr.open('POST', fullUrl);
+    xhr.withCredentials = true; // IMPORTANT: For cookies if needed, or consistent with fetch credentials: 'include'
+
+    // Set Auth Header
+    const token = getToken();
+    if (token && typeof token === 'string' && token.trim() !== '') {
+      xhr.setRequestHeader('Authorization', `Bearer ${token.trim()}`);
+    } else {
+      reject(new Error('Authentication required for upload.'));
+      return;
+    }
+
+    // Response handler
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        // Success
+        try {
+          // Check if response has content
+          if (xhr.status === 204 || xhr.getResponseHeader('Content-Length') === '0') {
+            resolve({ message: 'Success' });
+            return;
+          }
+          const contentType = xhr.getResponseHeader('Content-Type');
+          if (contentType && contentType.includes('application/json')) {
+            const json = JSON.parse(xhr.responseText);
+            resolve(json);
+          } else {
+            resolve({ message: xhr.responseText || xhr.statusText });
+          }
+        } catch (e) {
+          console.error('JSON Parse Error:', e);
+          resolve({ message: xhr.statusText }); // Fallback
+        }
+      } else {
+        // Error
+        try {
+          const json = JSON.parse(xhr.responseText);
+          const message = json.message || json.title || `Upload failed: ${xhr.status} ${xhr.statusText}`;
+          reject(new Error(message));
+        } catch (e) {
+          reject(new Error(xhr.responseText || `Upload failed: ${xhr.status} ${xhr.statusText}`));
+        }
+      }
+    };
+
+    xhr.onerror = () => {
+      reject(new Error('Network error occurred during upload.'));
+    };
+
+    xhr.send(formData);
+  });
+};
+
 
 // Helper function for making API requests
 const fetchApi = async (endpoint, options = {}) => {
@@ -301,26 +372,12 @@ export const createText = (title, content, languageId, tag = null) => {
 };
 
 // Modified to include optional tag
-export const createAudioLesson = async (title, languageId, audioFile, srtFile, tag = null) => {
+// Modified to use XHR for progress
+export const createAudioLesson = async (title, languageId, audioFile, srtFile, tag = null, onProgress = null) => {
   const endpoint = '/texts/audio';
   console.log(`[API] Creating audio lesson: "${title}" with tag: ${tag || 'none'}`);
 
   try {
-    const token = getToken();
-    const headers = {
-      'Accept': 'application/json',
-      // DO NOT set Content-Type for FormData, browser does it with boundary
-    };
-
-    if (token && typeof token === 'string' && token.trim() !== '') {
-      headers.Authorization = `Bearer ${token.trim()}`;
-      console.log('[API Debug] Authorization header added for audio lesson upload');
-    } else {
-      console.log('[API Debug] No token available for audio lesson upload');
-      // Decide if auth is strictly required for this endpoint based on backend
-      throw new Error('Authentication required to create audio lesson');
-    }
-
     const formData = new FormData();
     formData.append('title', title);
     formData.append('languageId', languageId);
@@ -330,54 +387,7 @@ export const createAudioLesson = async (title, languageId, audioFile, srtFile, t
       formData.append('tag', tag); // Add tag if provided
     }
 
-    const requestConfig = {
-      method: 'POST',
-      headers,
-      body: formData,
-      credentials: 'include', // Keep consistent with fetchApi
-      mode: 'cors'           // Keep consistent with fetchApi
-    };
-
-    const fullUrl = API_URL + endpoint; // Directly concatenate the relative path
-    console.log('[API Debug] Full URL for audio lesson:', fullUrl.toString());
-    console.log('[API Debug] Request config for audio lesson:', {
-      method: requestConfig.method,
-      headers: requestConfig.headers, // Log headers (excluding Content-Type)
-      credentials: requestConfig.credentials,
-      mode: requestConfig.mode
-    });
-
-    const response = await fetch(fullUrl.toString(), requestConfig);
-    console.log('[API Debug] Audio lesson creation response status:', response.status);
-
-    if (!response.ok) {
-      let errorMessage = `HTTP error! Status: ${response.status}`;
-      try {
-        const errorData = await response.json();
-        errorMessage = errorData.message || errorMessage;
-      } catch (e) {
-        // If response is not JSON, try to get text
-        try {
-          const text = await response.text();
-          errorMessage = text || errorMessage;
-        } catch (textError) {
-          // Keep the original status code error
-        }
-      }
-      console.error('[API Error] Audio lesson creation failed:', errorMessage);
-      throw new Error(errorMessage);
-    }
-
-    // Parse successful response (assuming backend returns JSON like other create endpoints)
-    const contentType = response.headers.get('content-type');
-    if (contentType && contentType.includes('application/json')) {
-      const data = await response.json();
-      console.log('[API Debug] Audio lesson creation response data:', data);
-      return data;
-    } else {
-      console.log('[API Debug] Non-JSON response for audio lesson creation.');
-      return { message: response.statusText }; // Or handle as appropriate
-    }
+    return await uploadWithProgress(endpoint, formData, onProgress);
 
   } catch (error) {
     console.error('[API Error] Failed to create audio lesson:', error);
@@ -438,59 +448,13 @@ export const createBook = (title, description, languageId, content, splitMethod 
 };
 
 // Added uploadBook function for file uploads
-export const uploadBook = async (formData) => {
+// Added uploadBook function for file uploads with progress support
+export const uploadBook = async (formData, onProgress = null) => {
   const endpoint = '/books/upload';
   console.log(`[API] Uploading book file...`);
 
   try {
-    const token = getToken();
-    const headers = {
-      'Accept': 'application/json',
-      // Content-Type is NOT set for FormData, browser handles it
-    };
-
-    if (token && typeof token === 'string' && token.trim() !== '') {
-      headers.Authorization = `Bearer ${token.trim()}`;
-    } else {
-      throw new Error('Authentication required for book upload');
-    }
-
-    const requestConfig = {
-      method: 'POST',
-      headers,
-      body: formData, // FormData object
-      credentials: 'include',
-      mode: 'cors'
-    };
-
-    const fullUrl = API_URL + endpoint; // Directly concatenate the relative path
-    console.log('[API Debug] Full URL for book upload:', fullUrl.toString());
-
-    const response = await fetch(fullUrl.toString(), requestConfig);
-    console.log('[API Debug] Book upload response status:', response.status);
-
-    if (!response.ok) {
-      let errorMessage = `HTTP error! Status: ${response.status}`;
-      try {
-        const errorData = await response.json();
-        errorMessage = errorData.message || errorData.title || errorMessage;
-      } catch (e) {
-        try { const text = await response.text(); errorMessage = text || errorMessage; } catch (textError) { }
-      }
-      console.error('[API Error] Book upload failed:', errorMessage);
-      throw new Error(errorMessage);
-    }
-
-    const contentType = response.headers.get('content-type');
-    if (contentType && contentType.includes('application/json')) {
-      const data = await response.json();
-      console.log('[API Debug] Book upload response data:', data);
-      return data; // Should be the created BookDto
-    } else {
-      console.log('[API Debug] Non-JSON response for book upload.');
-      return { message: response.statusText };
-    }
-
+    return await uploadWithProgress(endpoint, formData, onProgress);
   } catch (error) {
     console.error('[API Error] Failed to upload book:', error);
     throw error;
@@ -507,64 +471,13 @@ export const updateBook = (bookId, { title, description, tags }) => {
 };
 
 // Added uploadAudiobookTracks function for MP3 uploads
-export const uploadAudiobookTracks = async (bookId, formData) => {
+// Added uploadAudiobookTracks function for MP3 uploads with progress
+export const uploadAudiobookTracks = async (bookId, formData, onProgress = null) => {
   const endpoint = `/books/${bookId}/audiobook`;
   console.log(`[API] Uploading audiobook tracks for book ${bookId}...`);
 
   try {
-    const token = getToken();
-    const headers = {
-      'Accept': 'application/json',
-      // Content-Type is NOT set for FormData, browser handles it
-    };
-
-    if (token && typeof token === 'string' && token.trim() !== '') {
-      headers.Authorization = `Bearer ${token.trim()}`;
-    } else {
-      throw new Error('Authentication required for audiobook upload');
-    }
-
-    const requestConfig = {
-      method: 'POST',
-      headers,
-      body: formData, // FormData object
-      credentials: 'include',
-      mode: 'cors'
-    };
-
-    const fullUrl = API_URL + endpoint; // Directly concatenate the relative path
-    console.log('[API Debug] Full URL for audiobook upload:', fullUrl.toString());
-
-    const response = await fetch(fullUrl.toString(), requestConfig);
-    console.log('[API Debug] Audiobook upload response status:', response.status);
-
-    if (!response.ok) {
-      let errorMessage = `HTTP error! Status: ${response.status}`;
-      try {
-        const errorData = await response.json();
-        errorMessage = errorData.message || errorData.title || errorMessage;
-      } catch (e) {
-        try { const text = await response.text(); errorMessage = text || errorMessage; } catch (textError) { }
-      }
-      console.error('[API Error] Audiobook upload failed:', errorMessage);
-      throw new Error(errorMessage);
-    }
-
-    // Check if response has content before trying to parse JSON
-    const contentType = response.headers.get('content-type');
-    if (response.status === 204 || !contentType) { // 204 No Content
-      console.log('[API Debug] Audiobook upload successful (No Content).');
-      return { message: 'Upload successful' }; // Or return null/undefined
-    } else if (contentType && contentType.includes('application/json')) {
-      const data = await response.json();
-      console.log('[API Debug] Audiobook upload response data:', data);
-      return data;
-    } else {
-      const text = await response.text();
-      console.log('[API Debug] Non-JSON response for audiobook upload:', text);
-      return { message: text || response.statusText };
-    }
-
+    return await uploadWithProgress(endpoint, formData, onProgress);
   } catch (error) {
     console.error('[API Error] Failed to upload audiobook tracks:', error);
     throw error;
@@ -572,75 +485,22 @@ export const uploadAudiobookTracks = async (bookId, formData) => {
 };
 
 // Add createAudioLessonsBatch function
-export const createAudioLessonsBatch = async (languageId, tag, files) => {
+// Add createAudioLessonsBatch function
+export const createAudioLessonsBatch = async (languageId, tag, files, onProgress = null) => {
   const endpoint = '/texts/audio/batch';
   console.log(`[API] Creating batch audio lessons for language ${languageId} with tag: ${tag || 'none'}`);
 
   try {
-    const token = getToken();
-    const headers = {
-      'Accept': 'application/json',
-      // Content-Type is set automatically by browser for FormData
-    };
-
-    if (token && typeof token === 'string' && token.trim() !== '') {
-      headers.Authorization = `Bearer ${token.trim()}`;
-    } else {
-      throw new Error('Authentication required for batch upload');
-    }
-
     const formData = new FormData();
     formData.append('languageId', languageId);
     if (tag) {
       formData.append('tag', tag);
     }
-    // Append all files under the same key 'files'
-    // Note: The backend expects List<IFormFile> files, so the key should match the parameter name.
     for (let i = 0; i < files.length; i++) {
       formData.append('files', files[i]);
     }
 
-
-    const requestConfig = {
-      method: 'POST',
-      headers,
-      body: formData,
-      credentials: 'include',
-      mode: 'cors'
-    };
-
-    const fullUrl = API_URL + endpoint; // Directly concatenate the relative path
-    console.log('[API Debug] Full URL for batch audio lesson:', fullUrl.toString());
-
-    const response = await fetch(fullUrl.toString(), requestConfig);
-    console.log('[API Debug] Batch audio lesson creation response status:', response.status);
-
-    // Handle response (similar to single audio lesson upload)
-    if (!response.ok) {
-      let errorMessage = `HTTP error! Status: ${response.status}`;
-      try {
-        const errorData = await response.json();
-        // Include skipped files info if available in error response
-        errorMessage = errorData.message || errorData.title || errorMessage;
-        if (errorData.skippedFiles) {
-          errorMessage += ` Skipped: ${errorData.skippedFiles.join(', ')}`;
-        }
-      } catch (e) {
-        try { const text = await response.text(); errorMessage = text || errorMessage; } catch (textError) { }
-      }
-      console.error('[API Error] Batch audio lesson creation failed:', errorMessage);
-      throw new Error(errorMessage);
-    }
-
-    const contentType = response.headers.get('content-type');
-    if (contentType && contentType.includes('application/json')) {
-      const data = await response.json();
-      console.log('[API Debug] Batch audio lesson creation response data:', data);
-      return data; // Should contain { createdCount, skippedFiles }
-    } else {
-      console.log('[API Debug] Non-JSON response for batch audio lesson creation.');
-      return { message: response.statusText };
-    }
+    return await uploadWithProgress(endpoint, formData, onProgress);
 
   } catch (error) {
     console.error('[API Error] Failed to create batch audio lessons:', error);

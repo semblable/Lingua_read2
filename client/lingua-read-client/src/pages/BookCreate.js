@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useContext } from 'react'; // Added useContext
-import { Container, Form, Button, Card, Alert, Spinner, Row, Col, Tabs, Tab } from 'react-bootstrap';
+import { Container, Form, Button, Card, Alert, Spinner, Row, Col, Tabs, Tab, ProgressBar } from 'react-bootstrap';
 import { useNavigate } from 'react-router-dom';
 import { createBook, uploadBook, getAllLanguages, uploadAudiobookTracks } from '../utils/api';
 import { SettingsContext } from '../contexts/SettingsContext'; // Import SettingsContext
@@ -23,6 +23,7 @@ const BookCreate = () => {
   const navigate = useNavigate();
   const { settings: userSettings } = useContext(SettingsContext); // Get settings from context
   const [loadingText, setLoadingText] = useState(''); // New state for feedback
+  const [uploadProgress, setUploadProgress] = useState(0); // Progress state 0-100
 
   useEffect(() => {
     const fetchLanguages = async () => {
@@ -106,7 +107,9 @@ const BookCreate = () => {
         // Optional: Add TitleOverride if needed, otherwise backend uses filename
         // formData.append('TitleOverride', title);
 
-        newBook = await uploadBook(formData);
+        newBook = await uploadBook(formData, (progress) => {
+          setUploadProgress(progress);
+        });
       }
 
       // --- Start: Audiobook Upload Logic ---
@@ -120,15 +123,16 @@ const BookCreate = () => {
 
         for (let i = 0; i < totalFiles; i++) {
           setLoadingText(`Uploading audio track ${i + 1} of ${totalFiles}...`);
+          setUploadProgress(0); // Reset progress for each file
 
           const audioFormData = new FormData();
           audioFormData.append('Files', audioFiles[i]);
 
           try {
-            // If we want to show progress, we need a way to render it.
-            // For now, just logging progress.
             console.log(`Uploading audio file ${i + 1}/${totalFiles}: ${audioFiles[i].name}`);
-            await uploadAudiobookTracks(newBook.bookId, audioFormData);
+            await uploadAudiobookTracks(newBook.bookId, audioFormData, (progress) => {
+              setUploadProgress(progress);
+            });
             successCount++;
           } catch (audioErr) {
             console.error(`Failed to upload ${audioFiles[i].name}:`, audioErr);
@@ -361,6 +365,18 @@ const BookCreate = () => {
                   </>
                 ) : `Create Book ${activeTab === 'upload' ? 'from File' : 'from Text'}`}
               </Button>
+              {/* Progress Bar for Uploads */}
+              {loading && activeTab === 'upload' && (
+                <div className="mt-2">
+                  <ProgressBar now={uploadProgress} label={`${uploadProgress}%`} animated />
+                </div>
+              )}
+              {/* Progress Bar for Audio Uploads (Manual Tab too if audio selected) */}
+              {loading && audioFiles.length > 0 && uploadProgress > 0 && (
+                <div className="mt-2">
+                  <ProgressBar now={uploadProgress} label={`${uploadProgress}%`} variant="info" animated />
+                </div>
+              )}
               <Button
                 variant="outline-secondary"
                 onClick={() => navigate('/books')}

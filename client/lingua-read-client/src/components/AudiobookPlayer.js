@@ -40,7 +40,7 @@ const AudiobookPlayer = ({
     if (audioRef.current) {
       audioRef.current.volume = isMuted ? 0 : volume;
     }
-  }, [volume, isMuted]);
+  }, [audioRef, volume, isMuted]);
   const lastKnownTrackIndexRef = useRef(0); // Cache last known track index across lessons
 
   // Refs
@@ -402,7 +402,7 @@ const AudiobookPlayer = ({
       audio.removeEventListener('pause', handlePause);
       audio.removeEventListener('ended', handleEnded);
     };
-  }, [currentTrackIndex, playbackRate, audiobookTracks, isPlaying, playbackPositionLoaded, currentTrack, saveProgress, isBookMode, audioSrc, onTimeUpdate]); // Added saveProgress dependency
+  }, [audioRef, currentTrackIndex, playbackRate, audiobookTracks, isPlaying, playbackPositionLoaded, currentTrack, saveProgress, isBookMode, audioSrc, onTimeUpdate]); // Added saveProgress dependency
 
   // --- Play/Pause Logic ---
   const togglePlayPause = useCallback(() => {
@@ -464,7 +464,7 @@ const AudiobookPlayer = ({
           setIsPlaying(true); // Set intent to play
       }
     }
-  }, [isPlaying, currentTrack, isBookMode, audioSrc]); // Add currentTrack dependency
+  }, [audioRef, isPlaying, currentTrack, isBookMode, audioSrc]); // Add currentTrack dependency
 
   // --- Keyboard Shortcuts (Space + `) ---
   useEffect(() => {
@@ -489,7 +489,7 @@ const AudiobookPlayer = ({
            audioRef.current.playbackRate = playbackRate;
            console.log(`[AudioPlayer Rate Apply] Set audio playbackRate to: ${playbackRate}`);
        }
-   }, [playbackRate]);
+   }, [audioRef, playbackRate]);
 
   // --- Handlers for Playback Speed ---
   const changePlaybackRate = (delta) => {
@@ -622,7 +622,7 @@ const AudiobookPlayer = ({
     // Dependencies: Run effect when play state or loading state changes.
     // Also include saveProgress and logListeningTime if they were defined outside and wrapped in useCallback.
     // bookId, currentTrack are needed by the cleanup function's logic/logging.
-  }, [isPlaying, isLoadingAudio, saveProgress, logListeningTime, bookId, currentTrack, isBookMode, textId]);
+  }, [audioRef, isPlaying, isLoadingAudio, saveProgress, logListeningTime, bookId, currentTrack, isBookMode, textId]);
 
   // --- Visibility/Unload Handling for Lessons ---
   useEffect(() => {

@@ -26,10 +26,7 @@ const AudiobookPlayer = ({
     onTimeUpdateRef.current = onTimeUpdate;
   }, [onTimeUpdate]);
 
-  const isPlayingRef = useRef(isPlaying);
-  useEffect(() => {
-    isPlayingRef.current = isPlaying;
-  }, [isPlaying]);
+
 
   // --- TWO: State Management ---
   const isBookMode = type === 'book';
@@ -43,6 +40,11 @@ const AudiobookPlayer = ({
   const [isLoading, setIsLoading] = useState(true); // Initial load (seeking/fetching progress)
   const [isBuffering, setIsBuffering] = useState(false); // Network buffering
   const [playbackRate, setPlaybackRate] = useState(1.0);
+
+  const isPlayingRef = useRef(isPlaying);
+  useEffect(() => {
+    isPlayingRef.current = isPlaying;
+  }, [isPlaying]);
 
   // Track State
   const [playlist, setPlaylist] = useState([]);

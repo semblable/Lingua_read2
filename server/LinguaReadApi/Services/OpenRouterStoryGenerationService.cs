@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Net;
 using System.Net.Http;
 using System.Text;
@@ -16,16 +17,40 @@ namespace LinguaReadApi.Services
         private readonly ILogger<OpenRouterStoryGenerationService> _logger;
         private readonly AppDbContext _context;
         private const string BaseUrl = "https://openrouter.ai/api/v1/chat/completions";
+        
+        // Timeout configuration - 5 minutes for story generation
+        private static readonly TimeSpan RequestTimeout = TimeSpan.FromMinutes(5);
+        
+        // Approximate tokens per character (conservative estimate)
+        private const double TokensPerChar = 0.4;
+        
+        // Model context limits (output tokens, conservative for story generation)
+        private static readonly Dictionary<string, int> ModelOutputLimits = new()
+        {
+            // Free models - output limits
+            { "google/gemini-2.5-flash-preview-05-20:free", 65535 },
+            { "meta-llama/llama-3.3-8b-instruct:free", 8192 },
+            { "qwen/qwen3-4b:free", 4096 },
+            { "mistralai/mistral-small-3.1-24b-instruct:free", 8192 },
+            { "deepseek/deepseek-r1:free", 8192 },
+            // Paid models
+            { "anthropic/claude-3.5-sonnet", 8192 },
+            { "openai/gpt-4o", 16384 },
+            { "google/gemini-pro-1.5", 65535 },
+        };
+        
+        // Default output limit for unknown models
+        private const int DefaultOutputLimit = 4096;
 
         public OpenRouterStoryGenerationService(
             ILogger<OpenRouterStoryGenerationService> logger,
             AppDbContext context)
         {
-            _httpClient = new HttpClient();
+            _httpClient = new HttpClient { Timeout = RequestTimeout };
             _logger = logger;
             _context = context;
 
-            _logger.LogInformation("OpenRouterStoryGenerationService initialized");
+            _logger.LogInformation("OpenRouterStoryGenerationService initialized with {Timeout}s timeout", RequestTimeout.TotalSeconds);
         }
 
         public async Task<string> GenerateStoryAsync(string prompt, string language, string level, int maxLength, Guid userId)
@@ -48,9 +73,20 @@ namespace LinguaReadApi.Services
 
                 var apiKey = userSettings.OpenRouterApiKey;
                 var model = userSettings.OpenRouterModel;
+                
+                // Validate requested length against model output limit
+                var outputLimit = GetModelOutputLimit(model);
+                var estimatedOutputTokens = (int)(maxLength * 1.5); // Words to tokens
+                
+                if (estimatedOutputTokens > outputLimit)
+                {
+                    _logger.LogWarning("Requested story length ({Words} words ≈ {Tokens} tokens) exceeds model limit ({Limit}). Capping.",
+                        maxLength, estimatedOutputTokens, outputLimit);
+                    maxLength = (int)(outputLimit / 1.5);
+                }
 
-                _logger.LogInformation("Generating story with OpenRouter model {Model}: '{Prompt}', language: {Language}, level: {Level}",
-                    model, prompt, language, level);
+                _logger.LogInformation("Generating story with OpenRouter model {Model}: '{Prompt}', language: {Language}, level: {Level}, maxLength: {MaxLength}",
+                    model, prompt, language, level, maxLength);
 
                 // Create story generation prompt (same as Gemini prompt)
                 string fullPrompt = $"Write a {level} level story in {language} about: {prompt}\n\n" +
@@ -74,7 +110,7 @@ namespace LinguaReadApi.Services
                         }
                     },
                     Temperature = 0.7,
-                    MaxTokens = 20000,
+                    MaxTokens = Math.Min(20000, outputLimit),
                     TopP = 0.95
                 };
 
@@ -146,11 +182,26 @@ namespace LinguaReadApi.Services
 
                 return $"Story generation error: {lastStatus}";
             }
+            catch (TaskCanceledException ex) when (ex.InnerException is TimeoutException || ex.CancellationToken.IsCancellationRequested)
+            {
+                _logger.LogError(ex, "OpenRouter request timed out after {Timeout}s", RequestTimeout.TotalSeconds);
+                return $"Story generation error: Request timed out.";
+            }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error during OpenRouter story generation");
                 return $"Story generation error: {ex.Message}";
             }
+        }
+        
+        private int GetModelOutputLimit(string model)
+        {
+            if (ModelOutputLimits.TryGetValue(model, out var limit))
+            {
+                return limit;
+            }
+            _logger.LogDebug("Unknown model '{Model}', using default output limit", model);
+            return DefaultOutputLimit;
         }
     }
 }

@@ -1,8 +1,10 @@
 using System;
+using System.Collections.Generic;
 using System.Net;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
@@ -18,18 +20,45 @@ namespace LinguaReadApi.Services
         private readonly ILanguageService _languageService;
         private readonly AppDbContext _context;
         private const string BaseUrl = "https://openrouter.ai/api/v1/chat/completions";
+        
+        // Timeout configuration - 5 minutes for long texts
+        private static readonly TimeSpan RequestTimeout = TimeSpan.FromMinutes(5);
+        
+        // Approximate tokens per character (conservative estimate)
+        private const double TokensPerChar = 0.4;
+        
+        // Model context limits (input tokens, leave room for output)
+        private static readonly Dictionary<string, int> ModelContextLimits = new()
+        {
+            // Free models
+            { "google/gemini-2.5-flash-preview-05-20:free", 500000 }, // 1M context, use 500k for input
+            { "meta-llama/llama-3.3-8b-instruct:free", 60000 },       // 128k context
+            { "qwen/qwen3-4b:free", 30000 },                           // 64k context  
+            { "mistralai/mistral-small-3.1-24b-instruct:free", 60000 },
+            { "deepseek/deepseek-r1:free", 30000 },                    // 64k context
+            // Paid models
+            { "anthropic/claude-3.5-sonnet", 100000 },                 // 200k context
+            { "openai/gpt-4o", 60000 },                                // 128k context
+            { "google/gemini-pro-1.5", 500000 },                       // 1M context
+        };
+        
+        // Default limit for unknown models
+        private const int DefaultContextLimit = 30000;
+        
+        // Max characters per chunk (leaves room for prompt overhead)
+        private const int MaxCharsPerChunk = 15000;
 
         public OpenRouterTranslationService(
             ILogger<OpenRouterTranslationService> logger,
             ILanguageService languageService,
             AppDbContext context)
         {
-            _httpClient = new HttpClient();
+            _httpClient = new HttpClient { Timeout = RequestTimeout };
             _logger = logger;
             _languageService = languageService;
             _context = context;
 
-            _logger.LogInformation("OpenRouterTranslationService initialized");
+            _logger.LogInformation("OpenRouterTranslationService initialized with {Timeout}s timeout", RequestTimeout.TotalSeconds);
         }
 
         public async Task<string> TranslateSentenceAsync(string text, string sourceLanguage, string targetLanguage, Guid userId)
@@ -67,11 +96,150 @@ namespace LinguaReadApi.Services
                     }
                 }
 
-                _logger.LogInformation("Translating text ({Length} chars) from {Source} to {Target} using OpenRouter model {Model}",
-                    text.Length, sourceLanguage, finalTargetCode, model);
+                // Validate text length against model context
+                var contextLimit = GetModelContextLimit(model);
+                var estimatedTokens = (int)(text.Length * TokensPerChar);
+                
+                _logger.LogInformation("Translating text ({Length} chars, ~{Tokens} tokens) from {Source} to {Target} using OpenRouter model {Model} (limit: {Limit})",
+                    text.Length, estimatedTokens, sourceLanguage, finalTargetCode, model, contextLimit);
 
-                // Create the translation prompt (same as Gemini prompt)
-                string prompt = $@"Translate the following text from {sourceLanguage} to {finalTargetCode}, sentence by sentence.
+                // Check if we need chunking
+                if (text.Length > MaxCharsPerChunk)
+                {
+                    _logger.LogInformation("Text exceeds chunk limit ({Length} > {Limit}), splitting into chunks", text.Length, MaxCharsPerChunk);
+                    return await TranslateInChunksAsync(text, sourceLanguage, finalTargetCode, apiKey, model);
+                }
+
+                // Validate against context limit
+                if (estimatedTokens > contextLimit)
+                {
+                    _logger.LogWarning("Text ({Tokens} tokens) exceeds model context limit ({Limit}). Consider using a larger model.", estimatedTokens, contextLimit);
+                    return $"Translation error: Text too long for selected model ({estimatedTokens} tokens > {contextLimit} limit). Try a model with larger context.";
+                }
+
+                return await TranslateSingleChunkAsync(text, sourceLanguage, finalTargetCode, apiKey, model);
+            }
+            catch (TaskCanceledException ex) when (ex.InnerException is TimeoutException || ex.CancellationToken.IsCancellationRequested)
+            {
+                _logger.LogError(ex, "OpenRouter request timed out after {Timeout}s", RequestTimeout.TotalSeconds);
+                return $"Translation error: Request timed out. Text may be too long.";
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error during OpenRouter translation");
+                return $"Translation error: {ex.Message}";
+            }
+        }
+
+        private int GetModelContextLimit(string model)
+        {
+            if (ModelContextLimits.TryGetValue(model, out var limit))
+            {
+                return limit;
+            }
+            _logger.LogDebug("Unknown model '{Model}', using default context limit", model);
+            return DefaultContextLimit;
+        }
+
+        private async Task<string> TranslateInChunksAsync(string text, string sourceLanguage, string targetLanguage, string apiKey, string model)
+        {
+            // Split text into sentences to maintain meaning
+            var chunks = SplitTextIntoChunks(text, MaxCharsPerChunk);
+            _logger.LogInformation("Split text into {Count} chunks", chunks.Count);
+
+            var results = new List<string>();
+            int chunkIndex = 0;
+
+            foreach (var chunk in chunks)
+            {
+                chunkIndex++;
+                _logger.LogInformation("Translating chunk {Index}/{Total} ({Length} chars)", chunkIndex, chunks.Count, chunk.Length);
+                
+                var result = await TranslateSingleChunkAsync(chunk, sourceLanguage, targetLanguage, apiKey, model);
+                
+                // Check for errors
+                if (result.StartsWith("Translation error:"))
+                {
+                    _logger.LogWarning("Chunk {Index} failed: {Error}", chunkIndex, result);
+                    return result; // Return error and stop
+                }
+                
+                results.Add(result);
+                
+                // Small delay between chunks to avoid rate limiting
+                if (chunkIndex < chunks.Count)
+                {
+                    await Task.Delay(500);
+                }
+            }
+
+            return string.Join("", results);
+        }
+
+        private List<string> SplitTextIntoChunks(string text, int maxChars)
+        {
+            var chunks = new List<string>();
+            
+            // Split by sentences (periods, question marks, exclamation marks followed by space or newline)
+            var sentences = Regex.Split(text, @"(?<=[.!?])\s+");
+            
+            var currentChunk = new StringBuilder();
+            
+            foreach (var sentence in sentences)
+            {
+                // If adding this sentence would exceed limit, save current chunk
+                if (currentChunk.Length + sentence.Length > maxChars && currentChunk.Length > 0)
+                {
+                    chunks.Add(currentChunk.ToString());
+                    currentChunk.Clear();
+                }
+                
+                // If single sentence is too long, split it further by newlines or force-split
+                if (sentence.Length > maxChars)
+                {
+                    if (currentChunk.Length > 0)
+                    {
+                        chunks.Add(currentChunk.ToString());
+                        currentChunk.Clear();
+                    }
+                    
+                    // Split long sentence by paragraphs/newlines
+                    var parts = sentence.Split(new[] { "\n\n", "\n" }, StringSplitOptions.RemoveEmptyEntries);
+                    foreach (var part in parts)
+                    {
+                        if (part.Length > maxChars)
+                        {
+                            // Force split at max chars
+                            for (int i = 0; i < part.Length; i += maxChars)
+                            {
+                                chunks.Add(part.Substring(i, Math.Min(maxChars, part.Length - i)));
+                            }
+                        }
+                        else
+                        {
+                            chunks.Add(part);
+                        }
+                    }
+                }
+                else
+                {
+                    if (currentChunk.Length > 0) currentChunk.Append(" ");
+                    currentChunk.Append(sentence);
+                }
+            }
+            
+            if (currentChunk.Length > 0)
+            {
+                chunks.Add(currentChunk.ToString());
+            }
+            
+            return chunks;
+        }
+
+        private async Task<string> TranslateSingleChunkAsync(string text, string sourceLanguage, string targetLanguage, string apiKey, string model)
+        {
+            // Create the translation prompt (same as Gemini prompt)
+            string prompt = $@"Translate the following text from {sourceLanguage} to {targetLanguage}, sentence by sentence.
 **Strict Instructions:**
 1. For EACH sentence in the original text:
    - Output the original sentence wrapped EXACTLY like this: `<o s=""N"">Original Sentence</o>`
@@ -91,96 +259,90 @@ Example Output:
 **Text to translate:**
 {text}";
 
-                // Create OpenRouter request
-                var requestPayload = new OpenRouterRequest
+            // Create OpenRouter request
+            var requestPayload = new OpenRouterRequest
+            {
+                Model = model,
+                Messages = new[]
                 {
-                    Model = model,
-                    Messages = new[]
+                    new OpenRouterMessage
                     {
-                        new OpenRouterMessage
-                        {
-                            Role = "user",
-                            Content = prompt
-                        }
-                    },
-                    Temperature = 0.3,
-                    MaxTokens = 65535,
-                    TopP = 1.0
-                };
+                        Role = "user",
+                        Content = prompt
+                    }
+                },
+                Temperature = 0.3,
+                MaxTokens = 65535,
+                TopP = 1.0
+            };
 
-                var options = new JsonSerializerOptions
+            var options = new JsonSerializerOptions
+            {
+                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                WriteIndented = false
+            };
+
+            string jsonPayload = JsonSerializer.Serialize(requestPayload, options);
+            _logger.LogDebug("OpenRouter request payload: {Payload}", jsonPayload.Substring(0, Math.Min(500, jsonPayload.Length)));
+
+            // Send request with retries
+            const int maxAttempts = 3;
+            HttpStatusCode? lastStatus = null;
+
+            for (int attempt = 1; attempt <= maxAttempts; attempt++)
+            {
+                var request = new HttpRequestMessage(HttpMethod.Post, BaseUrl);
+                request.Headers.Add("Authorization", $"Bearer {apiKey}");
+                request.Headers.Add("HTTP-Referer", "https://lingua-read.app");
+                request.Headers.Add("X-Title", "Lingua-Read");
+                request.Content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
+
+                var response = await _httpClient.SendAsync(request);
+                var responseContent = await response.Content.ReadAsStringAsync();
+
+                if (!response.IsSuccessStatusCode)
                 {
-                    PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-                    WriteIndented = false
-                };
+                    lastStatus = response.StatusCode;
+                    var isRetryable = response.StatusCode == HttpStatusCode.ServiceUnavailable ||
+                                      response.StatusCode == HttpStatusCode.TooManyRequests;
 
-                string jsonPayload = JsonSerializer.Serialize(requestPayload, options);
-                _logger.LogDebug("OpenRouter request payload: {Payload}", jsonPayload.Substring(0, Math.Min(500, jsonPayload.Length)));
+                    _logger.LogWarning("OpenRouter API error (attempt={Attempt}/{Max}): {StatusCode}. Retryable={Retryable}. Response={Response}",
+                        attempt, maxAttempts, response.StatusCode, isRetryable, responseContent);
 
-                // Send request with retries
-                const int maxAttempts = 3;
-                HttpStatusCode? lastStatus = null;
-
-                for (int attempt = 1; attempt <= maxAttempts; attempt++)
-                {
-                    var request = new HttpRequestMessage(HttpMethod.Post, BaseUrl);
-                    request.Headers.Add("Authorization", $"Bearer {apiKey}");
-                    request.Headers.Add("HTTP-Referer", "https://lingua-read.app");
-                    request.Headers.Add("X-Title", "Lingua-Read");
-                    request.Content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
-
-                    var response = await _httpClient.SendAsync(request);
-                    var responseContent = await response.Content.ReadAsStringAsync();
-
-                    if (!response.IsSuccessStatusCode)
+                    if (isRetryable && attempt < maxAttempts)
                     {
-                        lastStatus = response.StatusCode;
-                        var isRetryable = response.StatusCode == HttpStatusCode.ServiceUnavailable ||
-                                          response.StatusCode == HttpStatusCode.TooManyRequests;
-
-                        _logger.LogWarning("OpenRouter API error (attempt={Attempt}/{Max}): {StatusCode}. Retryable={Retryable}. Response={Response}",
-                            attempt, maxAttempts, response.StatusCode, isRetryable, responseContent);
-
-                        if (isRetryable && attempt < maxAttempts)
-                        {
-                            var delayMs = (int)Math.Pow(2, attempt - 1) * 1000;
-                            await Task.Delay(delayMs);
-                            continue;
-                        }
-
-                        return $"Translation error: {response.StatusCode}";
+                        var delayMs = (int)Math.Pow(2, attempt - 1) * 1000;
+                        await Task.Delay(delayMs);
+                        continue;
                     }
 
-                    _logger.LogDebug("OpenRouter API response: {Response}", responseContent.Substring(0, Math.Min(500, responseContent.Length)));
-
-                    var openRouterResponse = JsonSerializer.Deserialize<OpenRouterResponse>(responseContent, options);
-
-                    if (openRouterResponse?.Error != null)
-                    {
-                        _logger.LogWarning("OpenRouter API returned error: {Error}", openRouterResponse.Error.Message);
-                        return $"Translation error: {openRouterResponse.Error.Message}";
-                    }
-
-                    if (openRouterResponse?.Choices != null &&
-                        openRouterResponse.Choices.Length > 0 &&
-                        openRouterResponse.Choices[0].Message?.Content != null)
-                    {
-                        var translatedText = openRouterResponse.Choices[0].Message.Content;
-                        _logger.LogInformation("Translation successful using OpenRouter, length: {Length}", translatedText.Length);
-                        return translatedText;
-                    }
-
-                    _logger.LogWarning("Could not extract translation from OpenRouter response");
-                    return "Translation failed: Could not extract result";
+                    return $"Translation error: {response.StatusCode}";
                 }
 
-                return $"Translation error: {lastStatus}";
+                _logger.LogDebug("OpenRouter API response: {Response}", responseContent.Substring(0, Math.Min(500, responseContent.Length)));
+
+                var openRouterResponse = JsonSerializer.Deserialize<OpenRouterResponse>(responseContent, options);
+
+                if (openRouterResponse?.Error != null)
+                {
+                    _logger.LogWarning("OpenRouter API returned error: {Error}", openRouterResponse.Error.Message);
+                    return $"Translation error: {openRouterResponse.Error.Message}";
+                }
+
+                if (openRouterResponse?.Choices != null &&
+                    openRouterResponse.Choices.Length > 0 &&
+                    openRouterResponse.Choices[0].Message?.Content != null)
+                {
+                    var translatedText = openRouterResponse.Choices[0].Message.Content;
+                    _logger.LogInformation("Translation successful using OpenRouter, length: {Length}", translatedText.Length);
+                    return translatedText;
+                }
+
+                _logger.LogWarning("Could not extract translation from OpenRouter response");
+                return "Translation failed: Could not extract result";
             }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error during OpenRouter translation");
-                return $"Translation error: {ex.Message}";
-            }
+
+            return $"Translation error: {lastStatus}";
         }
     }
 }

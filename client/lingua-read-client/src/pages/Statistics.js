@@ -594,7 +594,7 @@ const Statistics = () => {
       {/* Header Row */}
       <Row className="mb-4 align-items-center justify-content-between">
         <Col md="auto">
-          <h2 className="fw-bold mb-0" style={{ color: 'var(--primary-color)' }}>
+          <h2 className="fw-bold mb-0" style={{ color: 'var(--font-color)' }}>
             Statistics
             <small className="ms-2 text-muted fs-6 fw-normal">
               {selectedLanguage !== 'all' ? `(${languagesArray.find(l => (l.LanguageId || l.languageId).toString() === selectedLanguage.toString())?.languageName || 'Selected Language'})` : '(All Languages)'}
@@ -602,51 +602,57 @@ const Statistics = () => {
           </h2>
         </Col>
         <Col md="auto">
-          <div className="d-flex align-items-center bg-white p-2 rounded-pill shadow-sm border">
-            <Form.Group controlId="activityPeriodSelect" className="me-2 mb-0">
-              <Form.Select
-                className="border-0 bg-transparent fw-medium"
-                style={{ width: 'auto', outline: 'none', boxShadow: 'none' }}
-                value={activityPeriod}
-                onChange={(e) => setActivityPeriod(e.target.value)}
-                aria-label="Select activity period"
-              >
-                <option value="last_day">Today</option>
-                <option value="last_week">Last 7 Days</option>
-                <option value="last_month">Last 30 Days</option>
-                <option value="last_90">90 Days</option>
-                <option value="last_180">180 Days</option>
-                <option value="all">All Time</option>
-              </Form.Select>
-            </Form.Group>
+          <div className="d-flex align-items-center gap-2 p-2 rounded-3" style={{ backgroundColor: 'var(--theme-surface-bg)', border: '1px solid var(--theme-border-color)' }}>
+            <Form.Select
+              className="fw-medium"
+              style={{
+                width: 'auto',
+                backgroundColor: 'var(--theme-surface-bg)',
+                color: 'var(--theme-text)',
+                borderColor: 'var(--theme-border-color)',
+                borderRadius: 'var(--radius-md)'
+              }}
+              value={activityPeriod}
+              onChange={(e) => setActivityPeriod(e.target.value)}
+              aria-label="Select activity period"
+            >
+              <option value="last_day">Today</option>
+              <option value="last_week">Last 7 Days</option>
+              <option value="last_month">Last 30 Days</option>
+              <option value="last_90">90 Days</option>
+              <option value="last_180">180 Days</option>
+              <option value="all">All Time</option>
+            </Form.Select>
 
-            <div className="vr me-2" style={{ height: '20px', alignSelf: 'center' }}></div>
-
-            <Form.Group controlId="languageSelect" className="me-2 mb-0">
-              <Form.Select
-                className="border-0 bg-transparent fw-medium"
-                style={{ width: 'auto', outline: 'none', boxShadow: 'none' }}
-                value={selectedLanguage}
-                onChange={(e) => setSelectedLanguage(e.target.value)}
-                disabled={languagesArray.length === 0}
-                aria-label="Select language"
-              >
-                <option value="all">Languages</option>
-                {languagesArray.map(lang => {
-                  const langId = lang.LanguageId || lang.languageId;
-                  const langName = lang.LanguageName || lang.languageName;
-                  return (
-                    <option key={langId} value={langId}>
-                      {langName}
-                    </option>
-                  );
-                })}
-              </Form.Select>
-            </Form.Group>
+            <Form.Select
+              className="fw-medium"
+              style={{
+                width: 'auto',
+                backgroundColor: 'var(--theme-surface-bg)',
+                color: 'var(--theme-text)',
+                borderColor: 'var(--theme-border-color)',
+                borderRadius: 'var(--radius-md)'
+              }}
+              value={selectedLanguage}
+              onChange={(e) => setSelectedLanguage(e.target.value)}
+              disabled={languagesArray.length === 0}
+              aria-label="Select language"
+            >
+              <option value="all">All Languages</option>
+              {languagesArray.map(lang => {
+                const langId = lang.LanguageId || lang.languageId;
+                const langName = lang.LanguageName || lang.languageName;
+                return (
+                  <option key={langId} value={langId}>
+                    {langName}
+                  </option>
+                );
+              })}
+            </Form.Select>
 
             <Button
               variant="primary"
-              className="rounded-pill px-4 shadow-sm"
+              className="rounded-pill px-4"
               style={{ backgroundColor: 'var(--accent-color)', borderColor: 'var(--accent-color)' }}
               onClick={() => setShowManualEntryModal(true)}
             >
@@ -828,32 +834,66 @@ const Statistics = () => {
       )}
 
       {/* Charts Section */}
-      <Row className="mb-4">
-        <Col md={6}>
-          <Card className="border-0 shadow-sm h-100" style={{ borderRadius: 'var(--radius-lg)', background: 'rgba(255, 255, 255, 0.7)', backdropFilter: 'blur(10px)' }}>
+      <Row className="mb-4 g-4">
+        {/* Word Breakdown Donut Chart */}
+        <Col md={4}>
+          <Card className="border-0 shadow-sm h-100" style={{ borderRadius: 'var(--radius-lg)', background: 'var(--theme-surface-bg)' }}>
+            <Card.Body className="d-flex flex-column">
+              <Card.Title className="text-muted small text-uppercase fw-bold mb-4 ls-wide">Word Breakdown</Card.Title>
+              <div style={{ flexGrow: 1, minHeight: 250 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={[
+                        { name: 'Known', value: displayStats.KnownWords, fill: '#2ECC71' },
+                        { name: 'Learning', value: displayStats.LearningWords, fill: '#F1C40F' }
+                      ]}
+                      innerRadius={60}
+                      outerRadius={90}
+                      paddingAngle={5}
+                      dataKey="value"
+                      label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                      labelLine={false}
+                    >
+                      <Cell fill="#2ECC71" />
+                      <Cell fill="#F1C40F" />
+                    </Pie>
+                    <Tooltip />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="text-center mt-3">
+                <span className="badge rounded-pill me-2 px-3 py-2" style={{ backgroundColor: '#2ECC71', color: '#fff' }}>Known: {displayStats.KnownWords.toLocaleString()}</span>
+                <span className="badge rounded-pill px-3 py-2" style={{ backgroundColor: '#F1C40F', color: '#333' }}>Learning: {displayStats.LearningWords.toLocaleString()}</span>
+              </div>
+            </Card.Body>
+          </Card>
+        </Col>
+
+        {/* Words Read Over Time Chart */}
+        <Col md={4}>
+          <Card className="border-0 shadow-sm h-100" style={{ borderRadius: 'var(--radius-lg)', background: 'var(--theme-surface-bg)' }}>
             <Card.Body>
               <Card.Title className="text-muted small text-uppercase fw-bold mb-4 ls-wide">Words Read Over Time</Card.Title>
               {loadingActivity ? (
-                <div className="d-flex justify-content-center align-items-center" style={{ height: '300px' }}>
+                <div className="d-flex justify-content-center align-items-center" style={{ height: '250px' }}>
                   <Spinner animation="border" variant="primary" />
                 </div>
               ) : (
-                <div style={{ width: '100%', height: 300 }}>
+                <div style={{ width: '100%', height: 250 }}>
                   <ResponsiveContainer>
                     <AreaChart data={readingActivityByDate}>
                       <defs>
                         <linearGradient id="colorRead" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="var(--accent-color)" stopOpacity={0.3} />
-                          <stop offset="95%" stopColor="var(--accent-color)" stopOpacity={0} />
+                          <stop offset="5%" stopColor="#3498DB" stopOpacity={0.3} />
+                          <stop offset="95%" stopColor="#3498DB" stopOpacity={0} />
                         </linearGradient>
                       </defs>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(0,0,0,0.05)" />
-                      <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#888' }} />
-                      <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#888' }} />
-                      <Tooltip
-                        contentStyle={{ borderRadius: 'var(--radius-md)', border: 'none', boxShadow: 'var(--shadow-md)' }}
-                      />
-                      <Area type="monotone" dataKey="words" stroke="var(--accent-color)" strokeWidth={3} fillOpacity={1} fill="url(#colorRead)" />
+                      <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#888' }} />
+                      <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#888' }} />
+                      <Tooltip contentStyle={{ borderRadius: 'var(--radius-md)', border: 'none', boxShadow: 'var(--shadow-md)' }} />
+                      <Area type="monotone" dataKey="wordsRead" stroke="#3498DB" strokeWidth={2} fillOpacity={1} fill="url(#colorRead)" />
                     </AreaChart>
                   </ResponsiveContainer>
                 </div>
@@ -862,26 +902,24 @@ const Statistics = () => {
           </Card>
         </Col>
 
-        <Col md={6}>
-          <Card className="border-0 shadow-sm h-100" style={{ borderRadius: 'var(--radius-lg)', background: 'rgba(255, 255, 255, 0.7)', backdropFilter: 'blur(10px)' }}>
+        {/* Listening Over Time Chart */}
+        <Col md={4}>
+          <Card className="border-0 shadow-sm h-100" style={{ borderRadius: 'var(--radius-lg)', background: 'var(--theme-surface-bg)' }}>
             <Card.Body>
-              <Card.Title className="text-muted small text-uppercase fw-bold mb-4 ls-wide">Listening Over Time (Minutes)</Card.Title>
+              <Card.Title className="text-muted small text-uppercase fw-bold mb-4 ls-wide">Listening Over Time</Card.Title>
               {loadingListeningActivity ? (
-                <div className="d-flex justify-content-center align-items-center" style={{ height: '300px' }}>
+                <div className="d-flex justify-content-center align-items-center" style={{ height: '250px' }}>
                   <Spinner animation="border" variant="info" />
                 </div>
               ) : (
-                <div style={{ width: '100%', height: 300 }}>
+                <div style={{ width: '100%', height: 250 }}>
                   <ResponsiveContainer>
                     <BarChart data={listeningActivityByDate}>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(0,0,0,0.05)" />
-                      <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#888' }} />
-                      <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#888' }} />
-                      <Tooltip
-                        contentStyle={{ borderRadius: 'var(--radius-md)', border: 'none', boxShadow: 'var(--shadow-md)' }}
-                        cursor={{ fill: 'rgba(0,0,0,0.02)' }}
-                      />
-                      <Bar dataKey="minutes" fill="var(--link-color)" radius={[4, 4, 0, 0]} />
+                      <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#888' }} />
+                      <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#888' }} />
+                      <Tooltip contentStyle={{ borderRadius: 'var(--radius-md)', border: 'none', boxShadow: 'var(--shadow-md)' }} cursor={{ fill: 'rgba(0,0,0,0.02)' }} />
+                      <Bar dataKey="minutesListened" fill="#1ABC9C" radius={[4, 4, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
@@ -890,6 +928,31 @@ const Statistics = () => {
           </Card>
         </Col>
       </Row>
+
+      {/* Language Comparison Chart */}
+      {Object.keys(uniqueLanguages).length > 1 && (
+        <Row className="mb-4">
+          <Col>
+            <Card className="border-0 shadow-sm" style={{ borderRadius: 'var(--radius-lg)', background: 'var(--theme-surface-bg)' }}>
+              <Card.Body>
+                <Card.Title className="text-muted small text-uppercase fw-bold mb-4 ls-wide">Vocabulary by Language</Card.Title>
+                <div style={{ width: '100%', height: 300 }}>
+                  <ResponsiveContainer>
+                    <BarChart data={Object.values(uniqueLanguages).map(l => ({ name: l.languageName, known: l.knownWords, learning: l.learningWords }))} layout="vertical">
+                      <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="rgba(0,0,0,0.05)" />
+                      <XAxis type="number" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#888' }} />
+                      <YAxis type="category" dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#888' }} width={100} />
+                      <Tooltip contentStyle={{ borderRadius: 'var(--radius-md)', border: 'none', boxShadow: 'var(--shadow-md)' }} />
+                      <Bar dataKey="known" stackId="a" fill="#2ECC71" name="Known" radius={[0, 4, 4, 0]} />
+                      <Bar dataKey="learning" stackId="a" fill="#F1C40F" name="Learning" radius={[0, 4, 4, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </Card.Body>
+            </Card>
+          </Col>
+        </Row>
+      )}
 
       {/* Per-Language Statistics Section */}
       <h3 className="fw-bold mb-4 mt-5" style={{ color: 'var(--primary-color)' }}>Per-Language Activity</h3>

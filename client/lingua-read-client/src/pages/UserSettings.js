@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useContext } from 'react'; // Added
 import { Container, Card, Form, Button, Alert, Spinner, Row, Col } from 'react-bootstrap';
 import {
   getUserSettings, updateUserSettings, getAllLanguages, // Changed getLanguages to getAllLanguages
-  backupDatabase, restoreDatabase, resetUserStatistics, sendDiscordReport, getAudioStorageSize, testOpenRouterConnection // Import new API functions
+  backupDatabase, restoreDatabase, resetUserStatistics, sendDiscordReport, getAudioStorageSize // Import new API functions
 } from '../utils/api';
 import * as api from '../utils/api'; // Import api object for test button
 import { SettingsContext } from '../contexts/SettingsContext'; // Import SettingsContext

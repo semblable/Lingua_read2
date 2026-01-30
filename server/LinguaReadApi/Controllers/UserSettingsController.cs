@@ -253,6 +253,80 @@ namespace LinguaReadApi.Controllers
             return BadRequest(new { message = sendResult.Reason ?? "Unable to send report." });
         }
 
+        // GET: api/usersettings/audio-storage-size
+        [HttpGet("audio-storage-size")]
+        public async Task<ActionResult<AudioStorageSizeDto>> GetAudioStorageSize()
+        {
+            var userId = GetUserId();
+            
+            long totalSize = 0;
+            int totalFiles = 0;
+
+            try
+            {
+                // Get the wwwroot path
+                var wwwrootPath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot");
+                
+                // Calculate audiobooks size
+                var audiobooksPath = Path.Combine(wwwrootPath, "audiobooks");
+                if (Directory.Exists(audiobooksPath))
+                {
+                    var userBooks = await _context.Books
+                        .Where(b => b.UserId == userId)
+                        .Select(b => b.BookId)
+                        .ToListAsync();
+
+                    foreach (var bookId in userBooks)
+                    {
+                        var bookPath = Path.Combine(audiobooksPath, bookId.ToString());
+                        if (Directory.Exists(bookPath))
+                        {
+                            var files = Directory.GetFiles(bookPath, "*", SearchOption.AllDirectories);
+                            foreach (var file in files)
+                            {
+                                var fileInfo = new FileInfo(file);
+                                totalSize += fileInfo.Length;
+                                totalFiles++;
+                            }
+                        }
+                    }
+                }
+
+                // Calculate audio lessons size
+                var audioLessonsPath = Path.Combine(wwwrootPath, "audio_lessons");
+                if (Directory.Exists(audioLessonsPath))
+                {
+                    var userTexts = await _context.Texts
+                        .Where(t => t.UserId == userId && t.IsAudioLesson && !string.IsNullOrEmpty(t.AudioFilePath))
+                        .Select(t => t.AudioFilePath)
+                        .ToListAsync();
+
+                    foreach (var audioPath in userTexts)
+                    {
+                        var fullPath = Path.Combine(wwwrootPath, audioPath.TrimStart('/'));
+                        if (System.IO.File.Exists(fullPath))
+                        {
+                            var fileInfo = new FileInfo(fullPath);
+                            totalSize += fileInfo.Length;
+                            totalFiles++;
+                        }
+                    }
+                }
+
+                return new AudioStorageSizeDto
+                {
+                    TotalSizeBytes = totalSize,
+                    TotalSizeMB = Math.Round(totalSize / (1024.0 * 1024.0), 2),
+                    TotalSizeGB = Math.Round(totalSize / (1024.0 * 1024.0 * 1024.0), 2),
+                    TotalFiles = totalFiles
+                };
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = $"Failed to calculate storage size: {ex.Message}" });
+            }
+        }
+
         private static ReportRange ResolveReportRange(DateTime nowUtc, string period, int? days)
         {
             var normalized = (period ?? string.Empty).Trim().ToLowerInvariant();
@@ -358,5 +432,13 @@ namespace LinguaReadApi.Controllers
         // Nullable, should only be non-null if TrackId is non-null
         [Range(0, double.MaxValue)]
         public double? CurrentAudiobookPosition { get; set; } // Position in seconds
+    }
+
+    public class AudioStorageSizeDto
+    {
+        public long TotalSizeBytes { get; set; }
+        public double TotalSizeMB { get; set; }
+        public double TotalSizeGB { get; set; }
+        public int TotalFiles { get; set; }
     }
 } 

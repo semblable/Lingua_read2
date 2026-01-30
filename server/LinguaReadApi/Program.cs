@@ -24,16 +24,16 @@ var builder = WebApplication.CreateBuilder(args);
 // --- Add Kestrel Configuration ---
 builder.WebHost.ConfigureKestrel(serverOptions =>
 {
-    // Set a higher limit for the request body size (e.g., 100 MB)
-    // Adjust this value based on expected maximum file sizes
-    serverOptions.Limits.MaxRequestBodySize = 600 * 1024 * 1024; // 600 MB (Increased significantly)
+    // Set a higher limit for the request body size to support large audiobooks
+    // Adjusted to 5 GB to allow uploading complete audiobooks
+    serverOptions.Limits.MaxRequestBodySize = 5120 * 1024 * 1024; // 5 GB (5120 MB)
 });
 
 // --- Add Form Options Configuration ---
 builder.Services.Configure<FormOptions>(options =>
 {
-    // Ensure this limit is also high enough for multipart requests
-    options.MultipartBodyLengthLimit = 600 * 1024 * 1024; // 600 MB (Increased significantly)
+    // Ensure this limit is also high enough for multipart requests (5 GB to match Kestrel)
+    options.MultipartBodyLengthLimit = 5120 * 1024 * 1024; // 5 GB (5120 MB)
     // You might need to adjust other limits depending on your form data
     options.ValueLengthLimit = int.MaxValue; // Or a specific large value
     options.KeyLengthLimit = int.MaxValue;   // Or a specific large value

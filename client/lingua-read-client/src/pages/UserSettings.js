@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef, useContext } from 'react'; // Added useRef, useContext
 import { Container, Card, Form, Button, Alert, Spinner, Row, Col } from 'react-bootstrap';
 import {
-    getUserSettings, updateUserSettings, getAllLanguages, // Changed getLanguages to getAllLanguages
-    backupDatabase, restoreDatabase, resetUserStatistics, sendDiscordReport // Import new API functions
+  getUserSettings, updateUserSettings, getAllLanguages, // Changed getLanguages to getAllLanguages
+  backupDatabase, restoreDatabase, resetUserStatistics, sendDiscordReport, getAudioStorageSize // Import new API functions
 } from '../utils/api';
 import { SettingsContext } from '../contexts/SettingsContext'; // Import SettingsContext
 const UserSettings = () => {
@@ -50,6 +50,12 @@ const UserSettings = () => {
   const [reportMessage, setReportMessage] = useState({ type: '', text: '' });
   // --- End Discord Report State ---
 
+  // --- Audio Storage State ---
+  const [audioStorage, setAudioStorage] = useState(null);
+  const [loadingStorage, setLoadingStorage] = useState(false);
+  const [storageError, setStorageError] = useState('');
+  // --- End Audio Storage State ---
+
   // Removed unused isAdmin placeholder
 
   // Get updateSetting function from context
@@ -57,53 +63,67 @@ const UserSettings = () => {
 
   useEffect(() => {
     const fetchSettings = async () => {
-       try {
-         const data = await getUserSettings();
-         setSettings({
-           theme: data.theme || 'dark',
-           textSize: data.textSize || 16,
-           textFont: data.textFont || 'default',
-           leftPanelWidth: data.leftPanelWidth || 85, // Fetch panel width
-           autoTranslateWords: data.autoTranslateWords ?? true,
-           highlightKnownWords: data.highlightKnownWords ?? true,
-           defaultLanguageId: data.defaultLanguageId || 0,
-           autoAdvanceToNextLesson: data.autoAdvanceToNextLesson ?? false,
-           showProgressStats: data.showProgressStats ?? true,
-           lineSpacing: data.lineSpacing || 1.5, // Fetch lineSpacing
-           discordWeeklyReportEnabled: data.discordWeeklyReportEnabled ?? false,
-           discordWebhookUrl: data.discordWebhookUrl || '',
-           discordWeeklyReportDayOfWeek: data.discordWeeklyReportDayOfWeek || 'Monday',
-           discordWeeklyReportHourLocal: data.discordWeeklyReportHourLocal ?? 8,
-           discordTimezoneOffsetMinutes: data.discordTimezoneOffsetMinutes ?? browserTimezoneOffsetMinutes
-         });
-       } catch (err) {
-         setError('Failed to load settings. Please try again later.');
-       } finally {
-         setLoading(false);
-       }
+      try {
+        const data = await getUserSettings();
+        setSettings({
+          theme: data.theme || 'dark',
+          textSize: data.textSize || 16,
+          textFont: data.textFont || 'default',
+          leftPanelWidth: data.leftPanelWidth || 85, // Fetch panel width
+          autoTranslateWords: data.autoTranslateWords ?? true,
+          highlightKnownWords: data.highlightKnownWords ?? true,
+          defaultLanguageId: data.defaultLanguageId || 0,
+          autoAdvanceToNextLesson: data.autoAdvanceToNextLesson ?? false,
+          showProgressStats: data.showProgressStats ?? true,
+          lineSpacing: data.lineSpacing || 1.5, // Fetch lineSpacing
+          discordWeeklyReportEnabled: data.discordWeeklyReportEnabled ?? false,
+          discordWebhookUrl: data.discordWebhookUrl || '',
+          discordWeeklyReportDayOfWeek: data.discordWeeklyReportDayOfWeek || 'Monday',
+          discordWeeklyReportHourLocal: data.discordWeeklyReportHourLocal ?? 8,
+          discordTimezoneOffsetMinutes: data.discordTimezoneOffsetMinutes ?? browserTimezoneOffsetMinutes
+        });
+      } catch (err) {
+        setError('Failed to load settings. Please try again later.');
+      } finally {
+        setLoading(false);
+      }
     };
 
     const fetchLanguages = async () => {
-       try {
-         const data = await getAllLanguages(); // Use getAllLanguages
-         setLanguages(data || []); // Ensure it's an array
-       } catch (err) {
-         console.error('Failed to load languages:', err);
-       } finally {
-         setLoadingLanguages(false);
-       }
+      try {
+        const data = await getAllLanguages(); // Use getAllLanguages
+        setLanguages(data || []); // Ensure it's an array
+      } catch (err) {
+        console.error('Failed to load languages:', err);
+      } finally {
+        setLoadingLanguages(false);
+      }
+    };
+
+    const fetchStorageSize = async () => {
+      setLoadingStorage(true);
+      try {
+        const data = await getAudioStorageSize();
+        setAudioStorage(data);
+      } catch (err) {
+        console.error('Failed to load audio storage size:', err);
+        setStorageError('Failed to load storage information');
+      } finally {
+        setLoadingStorage(false);
+      }
     };
 
     fetchSettings();
     fetchLanguages();
+    fetchStorageSize();
   }, [browserTimezoneOffsetMinutes]);
 
   const handleChange = (e) => {
-     const { name, value, type, checked } = e.target;
+    const { name, value, type, checked } = e.target;
 
-     let processedValue = value;
+    let processedValue = value;
     if (type === 'checkbox') {
-       processedValue = checked;
+      processedValue = checked;
     } else if (
       type === 'number' ||
       type === 'range' ||
@@ -120,80 +140,80 @@ const UserSettings = () => {
         processedValue = parseInt(value, 10);
       }
       if (isNaN(processedValue)) { // Handle potential NaN if parsing fails (e.g., for "0")
-         processedValue = 0; // Default to 0 if parsing fails or value is "0"
+        processedValue = 0; // Default to 0 if parsing fails or value is "0"
       }
     }
 
-     setSettings(prevSettings => ({
-       ...prevSettings,
-       [name]: processedValue
-     }));
+    setSettings(prevSettings => ({
+      ...prevSettings,
+      [name]: processedValue
+    }));
   };
 
   const handleSubmit = async (e) => {
-     e.preventDefault();
-     setSaving(true);
-     setError('');
-     setSuccess(false);
+    e.preventDefault();
+    setSaving(true);
+    setError('');
+    setSuccess(false);
 
-     try {
-       await updateUserSettings(settings);
+    try {
+      await updateUserSettings(settings);
 
-       // Apply theme change immediately and save to localStorage
-       localStorage.setItem('theme', settings.theme);
-       document.body.classList.remove('light-theme', 'dark-theme', 'classic-dark-theme'); // Clear existing theme classes
+      // Apply theme change immediately and save to localStorage
+      localStorage.setItem('theme', settings.theme);
+      document.body.classList.remove('light-theme', 'dark-theme', 'classic-dark-theme'); // Clear existing theme classes
 
-       if (settings.theme === 'dark') {
-         document.body.classList.add('dark-theme');
-       } else if (settings.theme === 'light') {
-         document.body.classList.add('light-theme');
-       } else if (settings.theme === 'classic-dark') {
-         document.body.classList.add('classic-dark-theme');
-       } else { // System theme (defaults to light/dark based on system)
-         const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-         if (prefersDark) {
-           document.body.classList.add('dark-theme'); // Or classic-dark-theme if preferred for system dark
-         } else {
-           document.body.classList.add('light-theme');
-         }
-       }
-       
-       // Update global context after successful API save
-       updateSetting('theme', settings.theme);
-       localStorage.setItem('theme', settings.theme); // Ensure theme is saved here too
+      if (settings.theme === 'dark') {
+        document.body.classList.add('dark-theme');
+      } else if (settings.theme === 'light') {
+        document.body.classList.add('light-theme');
+      } else if (settings.theme === 'classic-dark') {
+        document.body.classList.add('classic-dark-theme');
+      } else { // System theme (defaults to light/dark based on system)
+        const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+        if (prefersDark) {
+          document.body.classList.add('dark-theme'); // Or classic-dark-theme if preferred for system dark
+        } else {
+          document.body.classList.add('light-theme');
+        }
+      }
 
-       updateSetting('textSize', settings.textSize);
-       localStorage.setItem('textSize', settings.textSize.toString());
+      // Update global context after successful API save
+      updateSetting('theme', settings.theme);
+      localStorage.setItem('theme', settings.theme); // Ensure theme is saved here too
 
-       updateSetting('textFont', settings.textFont);
-       localStorage.setItem('textFont', settings.textFont);
+      updateSetting('textSize', settings.textSize);
+      localStorage.setItem('textSize', settings.textSize.toString());
 
-       updateSetting('leftPanelWidth', settings.leftPanelWidth);
-       localStorage.setItem('leftPanelWidth', settings.leftPanelWidth.toString());
+      updateSetting('textFont', settings.textFont);
+      localStorage.setItem('textFont', settings.textFont);
 
-       updateSetting('autoTranslateWords', settings.autoTranslateWords);
-       localStorage.setItem('autoTranslateWords', settings.autoTranslateWords.toString());
+      updateSetting('leftPanelWidth', settings.leftPanelWidth);
+      localStorage.setItem('leftPanelWidth', settings.leftPanelWidth.toString());
 
-       updateSetting('highlightKnownWords', settings.highlightKnownWords);
-       localStorage.setItem('highlightKnownWords', settings.highlightKnownWords.toString());
+      updateSetting('autoTranslateWords', settings.autoTranslateWords);
+      localStorage.setItem('autoTranslateWords', settings.autoTranslateWords.toString());
 
-       updateSetting('defaultLanguageId', settings.defaultLanguageId);
-       localStorage.setItem('defaultLanguageId', settings.defaultLanguageId.toString());
+      updateSetting('highlightKnownWords', settings.highlightKnownWords);
+      localStorage.setItem('highlightKnownWords', settings.highlightKnownWords.toString());
 
-       updateSetting('autoAdvanceToNextLesson', settings.autoAdvanceToNextLesson);
-       localStorage.setItem('autoAdvanceToNextLesson', settings.autoAdvanceToNextLesson.toString());
+      updateSetting('defaultLanguageId', settings.defaultLanguageId);
+      localStorage.setItem('defaultLanguageId', settings.defaultLanguageId.toString());
 
-       updateSetting('showProgressStats', settings.showProgressStats);
-       localStorage.setItem('showProgressStats', settings.showProgressStats.toString());
-       
-       updateSetting('lineSpacing', settings.lineSpacing); // Update context for lineSpacing
-       localStorage.setItem('lineSpacing', settings.lineSpacing.toString()); // Save lineSpacing to localStorage
+      updateSetting('autoAdvanceToNextLesson', settings.autoAdvanceToNextLesson);
+      localStorage.setItem('autoAdvanceToNextLesson', settings.autoAdvanceToNextLesson.toString());
 
-       updateSetting('discordWeeklyReportEnabled', settings.discordWeeklyReportEnabled);
-       localStorage.setItem('discordWeeklyReportEnabled', settings.discordWeeklyReportEnabled.toString());
+      updateSetting('showProgressStats', settings.showProgressStats);
+      localStorage.setItem('showProgressStats', settings.showProgressStats.toString());
 
-       updateSetting('discordWebhookUrl', settings.discordWebhookUrl);
-       localStorage.setItem('discordWebhookUrl', settings.discordWebhookUrl || '');
+      updateSetting('lineSpacing', settings.lineSpacing); // Update context for lineSpacing
+      localStorage.setItem('lineSpacing', settings.lineSpacing.toString()); // Save lineSpacing to localStorage
+
+      updateSetting('discordWeeklyReportEnabled', settings.discordWeeklyReportEnabled);
+      localStorage.setItem('discordWeeklyReportEnabled', settings.discordWeeklyReportEnabled.toString());
+
+      updateSetting('discordWebhookUrl', settings.discordWebhookUrl);
+      localStorage.setItem('discordWebhookUrl', settings.discordWebhookUrl || '');
 
       updateSetting('discordWeeklyReportDayOfWeek', settings.discordWeeklyReportDayOfWeek);
       localStorage.setItem('discordWeeklyReportDayOfWeek', settings.discordWeeklyReportDayOfWeek);
@@ -204,16 +224,16 @@ const UserSettings = () => {
       updateSetting('discordTimezoneOffsetMinutes', settings.discordTimezoneOffsetMinutes);
       localStorage.setItem('discordTimezoneOffsetMinutes', settings.discordTimezoneOffsetMinutes.toString());
 
-       setSuccess(true);
-       // Hide success message after 3 seconds
-       setTimeout(() => {
-         setSuccess(false);
-       }, 3000);
-     } catch (err) {
-       setError(err.message || 'Failed to update settings. Please try again.');
-     } finally {
-       setSaving(false);
-     }
+      setSuccess(true);
+      // Hide success message after 3 seconds
+      setTimeout(() => {
+        setSuccess(false);
+      }, 3000);
+    } catch (err) {
+      setError(err.message || 'Failed to update settings. Please try again.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleSendReportNow = async () => {
@@ -333,13 +353,13 @@ const UserSettings = () => {
 
 
   if (loading) {
-     return (
-       <Container className="py-5 text-center">
-         <Spinner animation="border" role="status">
-           <span className="visually-hidden">Loading settings...</span>
-         </Spinner>
-       </Container>
-     );
+    return (
+      <Container className="py-5 text-center">
+        <Spinner animation="border" role="status">
+          <span className="visually-hidden">Loading settings...</span>
+        </Spinner>
+      </Container>
+    );
   }
 
   return (
@@ -355,149 +375,149 @@ const UserSettings = () => {
             {/* --- Existing UI Preferences --- */}
             <h4 className="mt-4 mb-3">UI Preferences</h4>
             {/* ... (theme, text size, font) ... */}
-             <Row className="mb-3">
-               <Col md={6}>
-                 <Form.Group controlId="theme">
-                   <Form.Label>Theme</Form.Label>
-                   <Form.Select
-                     name="theme"
-                     value={settings.theme}
-                     onChange={handleChange}
-                   >
-                     <option value="light">Light</option>
-                     <option value="dark">Dark</option>
-                     <option value="classic-dark">Classic Dark</option>
-                     <option value="system">System Default</option>
-                   </Form.Select>
-                 </Form.Group>
-               </Col>
+            <Row className="mb-3">
+              <Col md={6}>
+                <Form.Group controlId="theme">
+                  <Form.Label>Theme</Form.Label>
+                  <Form.Select
+                    name="theme"
+                    value={settings.theme}
+                    onChange={handleChange}
+                  >
+                    <option value="light">Light</option>
+                    <option value="dark">Dark</option>
+                    <option value="classic-dark">Classic Dark</option>
+                    <option value="system">System Default</option>
+                  </Form.Select>
+                </Form.Group>
+              </Col>
 
-               <Col md={6}>
-                 <Form.Group controlId="textSize">
-                   <Form.Label>Text Size ({settings.textSize}px)</Form.Label>
-                   <Form.Range
-                     name="textSize"
-                     min={10}
-                     max={36}
-                     value={settings.textSize}
-                     onChange={handleChange}
-                   />
-                   <div className="d-flex justify-content-between">
-                     <small>Small</small>
-                     <small>Large</small>
-                   </div>
-                 </Form.Group>
-               </Col>
-             </Row>
+              <Col md={6}>
+                <Form.Group controlId="textSize">
+                  <Form.Label>Text Size ({settings.textSize}px)</Form.Label>
+                  <Form.Range
+                    name="textSize"
+                    min={10}
+                    max={36}
+                    value={settings.textSize}
+                    onChange={handleChange}
+                  />
+                  <div className="d-flex justify-content-between">
+                    <small>Small</small>
+                    <small>Large</small>
+                  </div>
+                </Form.Group>
+              </Col>
+            </Row>
 
-             <Form.Group className="mb-4" controlId="textFont">
-               <Form.Label>Font Family</Form.Label>
-               <Form.Select
-                 name="textFont"
-                 value={settings.textFont}
-                 onChange={handleChange}
-               >
-                 <option value="default">Default</option>
-                 <option value="serif">Serif</option>
-                 <option value="sans-serif">Sans Serif</option>
-                 <option value="monospace">Monospace</option>
-                 <option value="dyslexic">OpenDyslexic</option>
-               </Form.Select>
-             </Form.Group>
+            <Form.Group className="mb-4" controlId="textFont">
+              <Form.Label>Font Family</Form.Label>
+              <Form.Select
+                name="textFont"
+                value={settings.textFont}
+                onChange={handleChange}
+              >
+                <option value="default">Default</option>
+                <option value="serif">Serif</option>
+                <option value="sans-serif">Sans Serif</option>
+                <option value="monospace">Monospace</option>
+                <option value="dyslexic">OpenDyslexic</option>
+              </Form.Select>
+            </Form.Group>
 
-             {/* Added Left Panel Width Slider */}
-             <Form.Group className="mb-4" controlId="leftPanelWidth">
-               <Form.Label>Reading Panel Width ({settings.leftPanelWidth}%)</Form.Label>
-               <Form.Range
-                 name="leftPanelWidth"
-                 min={20}
-                 max={85} // Increased max width to 85%
-                 value={settings.leftPanelWidth}
-                 onChange={handleChange}
-               />
-               <div className="d-flex justify-content-between">
-                 <small>Narrow</small>
-                 <small>Wide</small>
-               </div>
-             </Form.Group>
+            {/* Added Left Panel Width Slider */}
+            <Form.Group className="mb-4" controlId="leftPanelWidth">
+              <Form.Label>Reading Panel Width ({settings.leftPanelWidth}%)</Form.Label>
+              <Form.Range
+                name="leftPanelWidth"
+                min={20}
+                max={85} // Increased max width to 85%
+                value={settings.leftPanelWidth}
+                onChange={handleChange}
+              />
+              <div className="d-flex justify-content-between">
+                <small>Narrow</small>
+                <small>Wide</small>
+              </div>
+            </Form.Group>
 
-             <Form.Group className="mb-4" controlId="lineSpacing">
-               <Form.Label>Line Spacing</Form.Label>
-               <Form.Select
-                 name="lineSpacing"
-                 value={settings.lineSpacing}
-                 onChange={handleChange}
-               >
-                 <option value={1.5}>Default</option>
-                 <option value={1.75}>Relaxed</option>
-                 <option value={2.0}>Spacious</option>
-               </Form.Select>
-             </Form.Group>
+            <Form.Group className="mb-4" controlId="lineSpacing">
+              <Form.Label>Line Spacing</Form.Label>
+              <Form.Select
+                name="lineSpacing"
+                value={settings.lineSpacing}
+                onChange={handleChange}
+              >
+                <option value={1.5}>Default</option>
+                <option value={1.75}>Relaxed</option>
+                <option value={2.0}>Spacious</option>
+              </Form.Select>
+            </Form.Group>
 
 
-           {/* --- Existing Reading Preferences --- */}
-           <h4 className="mt-4 mb-3">Reading Preferences</h4>
+            {/* --- Existing Reading Preferences --- */}
+            <h4 className="mt-4 mb-3">Reading Preferences</h4>
             {/* ... (auto translate, highlight, default language) ... */}
-             <Form.Group className="mb-3" controlId="autoTranslateWords">
-               <Form.Check
-                 type="checkbox"
-                 name="autoTranslateWords"
-                 label="Automatically translate words when clicked"
-                 checked={settings.autoTranslateWords}
-                 onChange={handleChange}
-               />
-             </Form.Group>
+            <Form.Group className="mb-3" controlId="autoTranslateWords">
+              <Form.Check
+                type="checkbox"
+                name="autoTranslateWords"
+                label="Automatically translate words when clicked"
+                checked={settings.autoTranslateWords}
+                onChange={handleChange}
+              />
+            </Form.Group>
 
-             <Form.Group className="mb-3" controlId="highlightKnownWords">
-               <Form.Check
-                 type="checkbox"
-                 name="highlightKnownWords"
-                 label="Highlight words based on knowledge level"
-                 checked={settings.highlightKnownWords}
-                 onChange={handleChange}
-               />
-             </Form.Group>
+            <Form.Group className="mb-3" controlId="highlightKnownWords">
+              <Form.Check
+                type="checkbox"
+                name="highlightKnownWords"
+                label="Highlight words based on knowledge level"
+                checked={settings.highlightKnownWords}
+                onChange={handleChange}
+              />
+            </Form.Group>
 
-             <Form.Group className="mb-4" controlId="defaultLanguageId">
-               <Form.Label>Default Language for New Texts</Form.Label>
-               <Form.Select
-                 name="defaultLanguageId"
-                 value={settings.defaultLanguageId}
-                 onChange={handleChange}
-                 disabled={loadingLanguages}
-               >
-                 <option value={0}>No default (ask each time)</option>
-                 {languages.map(language => (
-                   <option key={language.languageId} value={language.languageId}>
-                     {language.name}
-                   </option>
-                 ))}
-               </Form.Select>
-             </Form.Group>
+            <Form.Group className="mb-4" controlId="defaultLanguageId">
+              <Form.Label>Default Language for New Texts</Form.Label>
+              <Form.Select
+                name="defaultLanguageId"
+                value={settings.defaultLanguageId}
+                onChange={handleChange}
+                disabled={loadingLanguages}
+              >
+                <option value={0}>No default (ask each time)</option>
+                {languages.map(language => (
+                  <option key={language.languageId} value={language.languageId}>
+                    {language.name}
+                  </option>
+                ))}
+              </Form.Select>
+            </Form.Group>
 
 
             {/* --- Existing Navigation Preferences --- */}
             <h4 className="mt-4 mb-3">Navigation Preferences</h4>
             {/* ... (auto advance, show stats) ... */}
-             <Form.Group className="mb-3" controlId="autoAdvanceToNextLesson">
-               <Form.Check
-                 type="checkbox"
-                 name="autoAdvanceToNextLesson"
-                 label="Automatically advance to next lesson after completion"
-                 checked={settings.autoAdvanceToNextLesson}
-                 onChange={handleChange}
-               />
-             </Form.Group>
+            <Form.Group className="mb-3" controlId="autoAdvanceToNextLesson">
+              <Form.Check
+                type="checkbox"
+                name="autoAdvanceToNextLesson"
+                label="Automatically advance to next lesson after completion"
+                checked={settings.autoAdvanceToNextLesson}
+                onChange={handleChange}
+              />
+            </Form.Group>
 
-             <Form.Group className="mb-4" controlId="showProgressStats">
-               <Form.Check
-                 type="checkbox"
-                 name="showProgressStats"
-                 label="Show progress statistics after completing a lesson"
-                 checked={settings.showProgressStats}
-                 onChange={handleChange}
-               />
-             </Form.Group>
+            <Form.Group className="mb-4" controlId="showProgressStats">
+              <Form.Check
+                type="checkbox"
+                name="showProgressStats"
+                label="Show progress statistics after completing a lesson"
+                checked={settings.showProgressStats}
+                onChange={handleChange}
+              />
+            </Form.Group>
 
             {/* --- Discord Reports --- */}
             <h4 className="mt-4 mb-3">Discord Reports</h4>
@@ -653,88 +673,117 @@ const UserSettings = () => {
 
           {/* --- Data Management Section --- */}
           {/* Removed isAdmin check to make available to all users */}
-            <>
-              <hr />
-              <h4 className="mt-4 mb-3">Data Management</h4> {/* Renamed Header */}
-              <p className="text-muted small">Use these options with caution.</p>
+          <>
+            <hr />
+            <h4 className="mt-4 mb-3">Data Management</h4> {/* Renamed Header */}
+            <p className="text-muted small">Use these options with caution.</p>
 
-              {/* Backup Section */}
-              <Card className="mb-3">
-                <Card.Body>
-                  <Card.Title>Backup</Card.Title>
-                  <Card.Text>Download a full backup of the application database.</Card.Text>
-                  {backupMessage.text && <Alert variant={backupMessage.type} className="mt-2">{backupMessage.text}</Alert>}
-                  <Button
-                    variant="secondary"
-                    onClick={handleBackupClick}
-                    disabled={isBackingUp}
-                  >
-                    {isBackingUp ? (
-                      <>
-                        <Spinner animation="border" size="sm" className="me-2" />
-                        Backing up...
-                      </>
-                    ) : 'Download Backup'}
-                  </Button>
-                </Card.Body>
-              </Card>
+            {/* Audio Storage Section */}
+            <Card className="mb-3">
+              <Card.Body>
+                <Card.Title>Audio Storage</Card.Title>
+                <Card.Text>Total size of your audiobooks and audio lessons.</Card.Text>
+                {loadingStorage && <Spinner animation="border" size="sm" />}
+                {storageError && <Alert variant="danger" className="mt-2">{storageError}</Alert>}
+                {audioStorage && !loadingStorage && (
+                  <div className="mt-2">
+                    <Row>
+                      <Col md={6}>
+                        <strong>Total Size:</strong> {audioStorage.totalSizeGB > 0.1
+                          ? `${audioStorage.totalSizeGB} GB`
+                          : `${audioStorage.totalSizeMB} MB`}
+                      </Col>
+                      <Col md={6}>
+                        <strong>Total Files:</strong> {audioStorage.totalFiles}
+                      </Col>
+                    </Row>
+                    <div className="mt-2">
+                      <small className="text-muted">
+                        Maximum upload size per book: 5 GB
+                      </small>
+                    </div>
+                  </div>
+                )}
+              </Card.Body>
+            </Card>
 
-              {/* Restore Section */}
-              <Card>
-                <Card.Body>
-                  <Card.Title>Restore</Card.Title>
-                  <Card.Text className="text-danger fw-bold">
-                    WARNING: Restoring from a backup will overwrite ALL current data. This action is irreversible.
-                  </Card.Text>
-                  <Form.Group controlId="restoreFile" className="mb-3">
-                    <Form.Label>Select Backup File (.backup)</Form.Label>
-                    <Form.Control
-                      type="file"
-                      accept=".backup" // Suggest correct file type
-                      onChange={handleRestoreFileChange}
-                      ref={fileInputRef} // Assign ref
-                      disabled={isRestoring}
-                    />
-                  </Form.Group>
-                  {restoreMessage.text && <Alert variant={restoreMessage.type} className="mt-2">{restoreMessage.text}</Alert>}
-                  <Button
-                    variant="danger"
-                    onClick={handleRestoreClick}
-                    disabled={isRestoring || !restoreFile}
-                  >
-                    {isRestoring ? (
-                      <>
-                        <Spinner animation="border" size="sm" className="me-2" />
-                        Restoring...
-                      </>
-                    ) : 'Restore from Backup'}
-                  </Button>
-                </Card.Body>
-              </Card>
+            {/* Backup Section */}
+            <Card className="mb-3">
+              <Card.Body>
+                <Card.Title>Backup</Card.Title>
+                <Card.Text>Download a full backup of the application database.</Card.Text>
+                {backupMessage.text && <Alert variant={backupMessage.type} className="mt-2">{backupMessage.text}</Alert>}
+                <Button
+                  variant="secondary"
+                  onClick={handleBackupClick}
+                  disabled={isBackingUp}
+                >
+                  {isBackingUp ? (
+                    <>
+                      <Spinner animation="border" size="sm" className="me-2" />
+                      Backing up...
+                    </>
+                  ) : 'Download Backup'}
+                </Button>
+              </Card.Body>
+            </Card>
 
-              {/* Reset Statistics Section */}
-              <Card className="mt-3">
-                <Card.Body>
-                  <Card.Title>Reset Statistics</Card.Title>
-                  <Card.Text className="text-warning fw-bold">
-                    Reset all reading/listening history and aggregate counts (words read, time listened, texts/books completed). Your learned words status, books, and texts themselves will remain. This action is irreversible.
-                  </Card.Text>
-                  {resetStatsMessage.text && <Alert variant={resetStatsMessage.type} className="mt-2">{resetStatsMessage.text}</Alert>}
-                  <Button
-                    variant="warning" // Use warning color for caution
-                    onClick={handleResetStatistics}
-                    disabled={isResettingStats}
-                  >
-                    {isResettingStats ? (
-                      <>
-                        <Spinner animation="border" size="sm" className="me-2" />
-                        Resetting...
-                      </>
-                    ) : 'Reset All Statistics'}
-                  </Button>
-                </Card.Body>
-              </Card>
-            </>
+            {/* Restore Section */}
+            <Card>
+              <Card.Body>
+                <Card.Title>Restore</Card.Title>
+                <Card.Text className="text-danger fw-bold">
+                  WARNING: Restoring from a backup will overwrite ALL current data. This action is irreversible.
+                </Card.Text>
+                <Form.Group controlId="restoreFile" className="mb-3">
+                  <Form.Label>Select Backup File (.backup)</Form.Label>
+                  <Form.Control
+                    type="file"
+                    accept=".backup" // Suggest correct file type
+                    onChange={handleRestoreFileChange}
+                    ref={fileInputRef} // Assign ref
+                    disabled={isRestoring}
+                  />
+                </Form.Group>
+                {restoreMessage.text && <Alert variant={restoreMessage.type} className="mt-2">{restoreMessage.text}</Alert>}
+                <Button
+                  variant="danger"
+                  onClick={handleRestoreClick}
+                  disabled={isRestoring || !restoreFile}
+                >
+                  {isRestoring ? (
+                    <>
+                      <Spinner animation="border" size="sm" className="me-2" />
+                      Restoring...
+                    </>
+                  ) : 'Restore from Backup'}
+                </Button>
+              </Card.Body>
+            </Card>
+
+            {/* Reset Statistics Section */}
+            <Card className="mt-3">
+              <Card.Body>
+                <Card.Title>Reset Statistics</Card.Title>
+                <Card.Text className="text-warning fw-bold">
+                  Reset all reading/listening history and aggregate counts (words read, time listened, texts/books completed). Your learned words status, books, and texts themselves will remain. This action is irreversible.
+                </Card.Text>
+                {resetStatsMessage.text && <Alert variant={resetStatsMessage.type} className="mt-2">{resetStatsMessage.text}</Alert>}
+                <Button
+                  variant="warning" // Use warning color for caution
+                  onClick={handleResetStatistics}
+                  disabled={isResettingStats}
+                >
+                  {isResettingStats ? (
+                    <>
+                      <Spinner animation="border" size="sm" className="me-2" />
+                      Resetting...
+                    </>
+                  ) : 'Reset All Statistics'}
+                </Button>
+              </Card.Body>
+            </Card>
+          </>
           {/* --- End Data Management Section --- */} {/* Updated comment */}
 
         </Card.Body>

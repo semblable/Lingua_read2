@@ -55,12 +55,12 @@ const fetchApi = async (endpoint, options = {}) => {
       headers.Authorization = `Bearer ${cleanToken}`;
       // Authorization header added
     } else {
-       // Allow /usersettings even without token initially? Or rely on context to call only when logged in?
-       // For now, let's assume /usersettings REQUIRES auth like others, except login/register.
+      // Allow /usersettings even without token initially? Or rely on context to call only when logged in?
+      // For now, let's assume /usersettings REQUIRES auth like others, except login/register.
       if (endpoint !== '/auth/login' && endpoint !== '/auth/register') {
         // --- DEBUG: Log auth error trigger ---
         if (endpoint === '/usersettings') {
-           console.log(`[fetchApi DEBUG /usersettings] Throwing 'Authentication required' because token check failed.`);
+          console.log(`[fetchApi DEBUG /usersettings] Throwing 'Authentication required' because token check failed.`);
         }
         // --- END DEBUG ---
         throw new Error('Authentication required');
@@ -182,11 +182,11 @@ const fetchApiDownload = async (endpoint, options = {}) => {
     const disposition = response.headers.get('content-disposition');
     let filename = 'linguaread_backup.backup'; // Default filename
     if (disposition && disposition.indexOf('attachment') !== -1) {
-        const filenameRegex = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/;
-        const matches = filenameRegex.exec(disposition);
-        if (matches != null && matches[1]) {
-          filename = matches[1].replace(/['"]/g, '');
-        }
+      const filenameRegex = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/;
+      const matches = filenameRegex.exec(disposition);
+      if (matches != null && matches[1]) {
+        filename = matches[1].replace(/['"]/g, '');
+      }
     }
 
     // Get the blob data
@@ -316,9 +316,9 @@ export const createAudioLesson = async (title, languageId, audioFile, srtFile, t
       headers.Authorization = `Bearer ${token.trim()}`;
       console.log('[API Debug] Authorization header added for audio lesson upload');
     } else {
-       console.log('[API Debug] No token available for audio lesson upload');
-       // Decide if auth is strictly required for this endpoint based on backend
-       throw new Error('Authentication required to create audio lesson');
+      console.log('[API Debug] No token available for audio lesson upload');
+      // Decide if auth is strictly required for this endpoint based on backend
+      throw new Error('Authentication required to create audio lesson');
     }
 
     const formData = new FormData();
@@ -341,10 +341,10 @@ export const createAudioLesson = async (title, languageId, audioFile, srtFile, t
     const fullUrl = API_URL + endpoint; // Directly concatenate the relative path
     console.log('[API Debug] Full URL for audio lesson:', fullUrl.toString());
     console.log('[API Debug] Request config for audio lesson:', {
-        method: requestConfig.method,
-        headers: requestConfig.headers, // Log headers (excluding Content-Type)
-        credentials: requestConfig.credentials,
-        mode: requestConfig.mode
+      method: requestConfig.method,
+      headers: requestConfig.headers, // Log headers (excluding Content-Type)
+      credentials: requestConfig.credentials,
+      mode: requestConfig.mode
     });
 
     const response = await fetch(fullUrl.toString(), requestConfig);
@@ -356,13 +356,13 @@ export const createAudioLesson = async (title, languageId, audioFile, srtFile, t
         const errorData = await response.json();
         errorMessage = errorData.message || errorMessage;
       } catch (e) {
-         // If response is not JSON, try to get text
-         try {
-            const text = await response.text();
-            errorMessage = text || errorMessage;
-         } catch (textError) {
-            // Keep the original status code error
-         }
+        // If response is not JSON, try to get text
+        try {
+          const text = await response.text();
+          errorMessage = text || errorMessage;
+        } catch (textError) {
+          // Keep the original status code error
+        }
       }
       console.error('[API Error] Audio lesson creation failed:', errorMessage);
       throw new Error(errorMessage);
@@ -452,7 +452,7 @@ export const uploadBook = async (formData) => {
     if (token && typeof token === 'string' && token.trim() !== '') {
       headers.Authorization = `Bearer ${token.trim()}`;
     } else {
-       throw new Error('Authentication required for book upload');
+      throw new Error('Authentication required for book upload');
     }
 
     const requestConfig = {
@@ -475,7 +475,7 @@ export const uploadBook = async (formData) => {
         const errorData = await response.json();
         errorMessage = errorData.message || errorData.title || errorMessage;
       } catch (e) {
-         try { const text = await response.text(); errorMessage = text || errorMessage; } catch (textError) {}
+        try { const text = await response.text(); errorMessage = text || errorMessage; } catch (textError) { }
       }
       console.error('[API Error] Book upload failed:', errorMessage);
       throw new Error(errorMessage);
@@ -521,7 +521,7 @@ export const uploadAudiobookTracks = async (bookId, formData) => {
     if (token && typeof token === 'string' && token.trim() !== '') {
       headers.Authorization = `Bearer ${token.trim()}`;
     } else {
-       throw new Error('Authentication required for audiobook upload');
+      throw new Error('Authentication required for audiobook upload');
     }
 
     const requestConfig = {
@@ -544,7 +544,7 @@ export const uploadAudiobookTracks = async (bookId, formData) => {
         const errorData = await response.json();
         errorMessage = errorData.message || errorData.title || errorMessage;
       } catch (e) {
-         try { const text = await response.text(); errorMessage = text || errorMessage; } catch (textError) {}
+        try { const text = await response.text(); errorMessage = text || errorMessage; } catch (textError) { }
       }
       console.error('[API Error] Audiobook upload failed:', errorMessage);
       throw new Error(errorMessage);
@@ -553,8 +553,8 @@ export const uploadAudiobookTracks = async (bookId, formData) => {
     // Check if response has content before trying to parse JSON
     const contentType = response.headers.get('content-type');
     if (response.status === 204 || !contentType) { // 204 No Content
-        console.log('[API Debug] Audiobook upload successful (No Content).');
-        return { message: 'Upload successful' }; // Or return null/undefined
+      console.log('[API Debug] Audiobook upload successful (No Content).');
+      return { message: 'Upload successful' }; // Or return null/undefined
     } else if (contentType && contentType.includes('application/json')) {
       const data = await response.json();
       console.log('[API Debug] Audiobook upload response data:', data);
@@ -586,7 +586,7 @@ export const createAudioLessonsBatch = async (languageId, tag, files) => {
     if (token && typeof token === 'string' && token.trim() !== '') {
       headers.Authorization = `Bearer ${token.trim()}`;
     } else {
-       throw new Error('Authentication required for batch upload');
+      throw new Error('Authentication required for batch upload');
     }
 
     const formData = new FormData();
@@ -597,7 +597,7 @@ export const createAudioLessonsBatch = async (languageId, tag, files) => {
     // Append all files under the same key 'files'
     // Note: The backend expects List<IFormFile> files, so the key should match the parameter name.
     for (let i = 0; i < files.length; i++) {
-        formData.append('files', files[i]);
+      formData.append('files', files[i]);
     }
 
 
@@ -623,10 +623,10 @@ export const createAudioLessonsBatch = async (languageId, tag, files) => {
         // Include skipped files info if available in error response
         errorMessage = errorData.message || errorData.title || errorMessage;
         if (errorData.skippedFiles) {
-            errorMessage += ` Skipped: ${errorData.skippedFiles.join(', ')}`;
+          errorMessage += ` Skipped: ${errorData.skippedFiles.join(', ')}`;
         }
       } catch (e) {
-         try { const text = await response.text(); errorMessage = text || errorMessage; } catch (textError) {}
+        try { const text = await response.text(); errorMessage = text || errorMessage; } catch (textError) { }
       }
       console.error('[API Error] Batch audio lesson creation failed:', errorMessage);
       throw new Error(errorMessage);
@@ -945,6 +945,17 @@ export const sendDiscordReport = async (period = 'week', days = null) => {
   });
 };
 
+// Get total audio storage size
+export const getAudioStorageSize = async () => {
+  try {
+    console.log('[API] Getting audio storage size');
+    return await fetchApi('/usersettings/audio-storage-size');
+  } catch (error) {
+    console.error('Failed to get audio storage size:', error);
+    throw error;
+  }
+};
+
 // Updated updateAudiobookProgress function (requires bookId)
 export const updateAudiobookProgress = async (bookId, progressData) => {
   // progressData should be { currentAudiobookTrackId: number | null, currentAudiobookPosition: number | null }
@@ -962,9 +973,9 @@ export const updateAudiobookProgress = async (bookId, progressData) => {
 
 // Updated function to get audiobook progress specifically (requires bookId)
 export const getAudiobookProgress = async (bookId) => {
-    console.log(`[API] Getting audiobook progress for book ${bookId} via UserActivityController`);
-    // Point to the new endpoint in UserActivityController, appending bookId
-    return await fetchApi(`/activity/audiobookprogress/${bookId}`); // GET request by default
+  console.log(`[API] Getting audiobook progress for book ${bookId} via UserActivityController`);
+  // Point to the new endpoint in UserActivityController, appending bookId
+  return await fetchApi(`/activity/audiobookprogress/${bookId}`); // GET request by default
 };
 
 // --- Audio Lesson Progress ---
@@ -985,9 +996,9 @@ export const updateAudioLessonProgress = async (textId, progressData) => {
 
 // Get audio lesson progress (requires textId)
 export const getAudioLessonProgress = async (textId) => {
-    console.log(`[API] Getting audio lesson progress for text ${textId} via UserActivityController`);
-    // Point to the new endpoint in UserActivityController, appending textId
-    return await fetchApi(`/activity/audiolessonprogress/${textId}`); // GET request by default
+  console.log(`[API] Getting audio lesson progress for text ${textId} via UserActivityController`);
+  // Point to the new endpoint in UserActivityController, appending textId
+  return await fetchApi(`/activity/audiolessonprogress/${textId}`); // GET request by default
 };
 
 // Added logListeningActivity function
@@ -1098,7 +1109,7 @@ export const restoreDatabase = async (backupFile) => {
     if (token && typeof token === 'string' && token.trim() !== '') {
       headers.Authorization = `Bearer ${token.trim()}`;
     } else {
-       throw new Error('Authentication required for database restore');
+      throw new Error('Authentication required for database restore');
     }
 
     const formData = new FormData();

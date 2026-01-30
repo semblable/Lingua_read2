@@ -10,8 +10,6 @@ import {
 } from 'recharts';
 import ManualEntryModal from '../components/ManualEntryModal'; // Import the modal component
 
-// Custom colors for charts
-const THEMED_CHART_COLORS = ['#1ABC9C', '#3498DB', '#F1C40F', '#E74C3C', '#9B59B6', '#2ECC71'];
 const Statistics = () => {
   const location = useLocation();
   // If navigated with state { refreshStats: true }, force a stats refresh

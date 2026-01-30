@@ -745,7 +745,7 @@ const TextDisplay = () => {
       displayMode,
       currentSrtLineId,
       isMobile,
-      listRef: listRef.current
+      listRef: listRef // Store the ref object
     };
   }, [isAudioLesson, srtLines, displayMode, currentSrtLineId, isMobile]);
 
@@ -1316,8 +1316,8 @@ const TextDisplay = () => {
         cancelAnimationFrame(autoScrollRafRef.current);
       }
       autoScrollRafRef.current = requestAnimationFrame(() => {
-        if (!isMobile && currentListRef && currentLineIndex !== -1) {
-          currentListRef.scrollToItem(currentLineIndex, 'smart');
+        if (!isMobile && currentListRef?.current && currentLineIndex !== -1) {
+          currentListRef.current.scrollToItem(currentLineIndex, 'center');
           return;
         }
         if (isMobile) {
@@ -1325,8 +1325,12 @@ const TextDisplay = () => {
           if (!lineElement) return;
           const rect = lineElement.getBoundingClientRect();
           const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
-          const upperBound = viewportHeight * 0.25;
-          const lowerBound = viewportHeight * 0.75;
+
+          // Tighten bounds to keep line in the upper-middle of the screen
+          // Good reading position is usually around 30-40% from top
+          const upperBound = viewportHeight * 0.3;
+          const lowerBound = viewportHeight * 0.6;
+
           if (rect.top < upperBound || rect.bottom > lowerBound) {
             lineElement.scrollIntoView({ block: 'center', behavior: 'smooth' });
           }

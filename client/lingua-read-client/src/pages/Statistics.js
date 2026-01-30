@@ -477,11 +477,6 @@ const Statistics = () => {
     );
   }
 
-  // Safely calculate percentages
-  const completionPercentage = stats.TotalWords > 0
-    ? Math.round((stats.KnownWords / stats.TotalWords) * 100)
-    : 0;
-
   // Get language statistics safely
   // Combine all language data sources to get a unique list of languages
   const allLanguageStats = [

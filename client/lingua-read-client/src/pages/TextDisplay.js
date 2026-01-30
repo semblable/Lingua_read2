@@ -420,8 +420,6 @@ const LessonHeader = React.memo(({
 }) => {
   if (isMobile) return null;
 
-  const hasAudioPlayer = (isAudioLesson && audioSrc) || (!isAudioLesson && book?.audiobookTracks?.length > 0);
-
   return (
     <Card className="shadow-sm mb-2 border-0 rounded-0 lesson-header">
       <Card.Body className="py-1 px-2 lesson-header-body">

@@ -1222,22 +1222,28 @@ const TextDisplay = () => {
         setText(data);
         setWords(data.words || []);
         if (data.isAudioLesson && data.audioFilePath && data.srtContent) {
-          setIsAudioLesson(true);
+          if (!isAudioLesson) setIsAudioLesson(true);
+
           // --- DEBUG: Log the path being used ---
           console.log(`[Audio Lesson DEBUG] Setting audio source. data.audioFilePath = "${data.audioFilePath}"`);
           // Correctly set audio source - remove API_URL prefix as it's a direct file path
           const newAudioSrc = `/${data.audioFilePath}`;
-          setAudioSrc(newAudioSrc);
+          if (audioSrc !== newAudioSrc) {
+            setAudioSrc(newAudioSrc);
+          }
           // --- DEBUG: Log after setting src and check if load() needs to be called ---
           console.log(`[Audio Lesson DEBUG] Set audioSrc to: ${newAudioSrc}. Checking audioRef...`);
           // Load call moved to a separate useEffect hook dependent on audioSrc
           // --- END DEBUG ---
           // --- END DEBUG ---
           setSrtLines(parseSrtContent(data.srtContent));
-          setDisplayMode('audio');
+          if (displayMode !== 'audio') setDisplayMode('audio');
 
         } else {
-          setIsAudioLesson(false); setAudioSrc(null); setSrtLines([]); setDisplayMode('text');
+          if (isAudioLesson) setIsAudioLesson(false);
+          if (audioSrc !== null) setAudioSrc(null);
+          setSrtLines([]);
+          if (displayMode !== 'text') setDisplayMode('text');
         }
         // Fetch all words for the language AND the language configuration itself (Phase 3)
         if (data.languageId) {

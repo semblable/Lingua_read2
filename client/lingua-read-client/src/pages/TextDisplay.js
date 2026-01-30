@@ -1232,7 +1232,7 @@ const TextDisplay = () => {
     fetchText();
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [textId, fetchAllLanguageWords, isAudioLesson]); // 'text' is intentionally omitted to prevent loops; cleanup captures correct 'text' via closure.
+  }, [textId, fetchAllLanguageWords]); // 'text' and 'isAudioLesson' are intentionally omitted to prevent loops; cleanup captures correct 'text' via closure.
 
 
   // Audio Time Update Handler - updates ref and checks for line changes

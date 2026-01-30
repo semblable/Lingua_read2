@@ -593,6 +593,15 @@ namespace LinguaReadApi.Migrations
                     b.Property<int>("LeftPanelWidth")
                         .HasColumnType("integer");
 
+                    b.Property<string>("OpenRouterApiKey")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<string>("OpenRouterModel")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
                     b.Property<bool>("ShowProgressStats")
                         .HasColumnType("boolean");
 
@@ -609,6 +618,9 @@ namespace LinguaReadApi.Migrations
 
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("UseOpenRouter")
+                        .HasColumnType("boolean");
 
                     b.HasKey("UserId");
 

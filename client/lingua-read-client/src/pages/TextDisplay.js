@@ -412,7 +412,11 @@ const LessonHeader = React.memo(({
   book,
   primaryControls,
   secondaryControls,
-  translateUnknownError
+  translateUnknownError,
+  audioSrc,
+  textId,
+  audioRef,
+  onTimeUpdate
 }) => {
   if (isMobile) return null;
   return (
@@ -425,6 +429,22 @@ const LessonHeader = React.memo(({
           </div>
         </div>
         <div className="lesson-header-actions d-flex gap-2 flex-wrap mt-2 align-items-center">
+          {/* Audio Player for Audio Lessons - Prioritized in header if it exists */}
+          {isAudioLesson && audioSrc && (
+            <div className="lesson-header-player">
+              <AudiobookPlayer
+                key="lesson-audio-player"
+                type="lesson"
+                audioSrc={audioSrc}
+                textId={textId}
+                languageId={text?.languageId}
+                audioRef={audioRef}
+                onTimeUpdate={onTimeUpdate}
+              />
+            </div>
+          )}
+
+          {/* Book Player - shown if NOT an audio lesson but part of an audiobook */}
           {!isAudioLesson && book && book.audiobookTracks && book.audiobookTracks.length > 0 && (
             <div className="lesson-header-player">
               <AudiobookPlayer type="book" book={book} />
@@ -1663,15 +1683,17 @@ const TextDisplay = () => {
         primaryControls={primaryControls}
         secondaryControls={secondaryControls}
         translateUnknownError={translateUnknownError}
+        audioSrc={audioSrc}
+        textId={textId}
+        audioRef={audioRef}
+        onTimeUpdate={handleAudioTimeUpdate}
       />
 
-      {/* Audiobook Player rendering removed from here to fix duplication */}
-
-      {/* Audio Player - Show for audio lessons regardless of display mode */}
-      {isAudioLesson && audioSrc && (
-        <div className={`audio-player-container p-2 border-bottom theme-aware-audio-player-container ${isMobile ? 'lesson-audio-bar' : ''}`}>
+      {/* Mobile Audio Player - Show for audio lessons on mobile only */}
+      {isMobile && isAudioLesson && audioSrc && (
+        <div className="audio-player-container p-2 border-bottom theme-aware-audio-player-container lesson-audio-bar">
           <AudiobookPlayer
-            key="lesson-audio-player"
+            key="lesson-audio-player-mobile"
             type="lesson"
             audioSrc={audioSrc}
             textId={textId}
@@ -1681,8 +1703,6 @@ const TextDisplay = () => {
           />
         </div>
       )}
-
-      {/* Audiobook Player rendering removed from here to fix duplication */}
 
       {/* Main Content Area */}
       <div className="resizable-container">

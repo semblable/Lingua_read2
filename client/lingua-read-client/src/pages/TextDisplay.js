@@ -1129,7 +1129,7 @@ const TextDisplay = () => {
     return elements;
     // --- End Phase 2 Logic ---
 
-  }, [words, knownPhrases, getWordData, getWordStyle, handleWordClick, setHoveredWordTerm]); // Added knownPhrases dependency
+  }, [knownPhrases, getWordData, getWordStyle, handleWordClick, setHoveredWordTerm]); // Removed unnecessary 'words' dependency
 
 
   const getFontFamilyForList = useCallback(() => {

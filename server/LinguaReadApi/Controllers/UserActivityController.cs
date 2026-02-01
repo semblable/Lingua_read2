@@ -468,6 +468,47 @@ private DateTime CalculateStartDate(string period)
             }
             catch (DbUpdateException dbEx) // Catch specific DB exceptions
             {
+                // Check for Postgres Unique Constraint Violation (Code 23505)
+                if (dbEx.InnerException != null && dbEx.InnerException.Message.Contains("23505"))
+                {
+                    _logger.LogWarning("Duplicate key error (race condition) detected for UserId: {UserId}, BookId: {BookId}. Retrying as UPDATE.", userId, request.BookId);
+                    
+                    try
+                    {
+                        // 1. Detach the failed entity
+                        var entry = _context.ChangeTracker.Entries<UserBookProgress>()
+                            .FirstOrDefault(e => e.Entity.UserId == userId && e.Entity.BookId == request.BookId);
+                        
+                        if (entry != null)
+                        {
+                            entry.State = EntityState.Detached;
+                        }
+
+                        // 2. Fetch the existing record
+                        var existingRecord = await _context.UserBookProgresses.FindAsync(userId, request.BookId);
+                        
+                        if (existingRecord != null)
+                        {
+                            // 3. Update it
+                            existingRecord.CurrentAudiobookTrackId = request.CurrentAudiobookTrackId;
+                            if (request.CurrentAudiobookPosition.HasValue)
+                            {
+                                existingRecord.CurrentAudiobookPosition = request.CurrentAudiobookPosition;
+                            }
+                            existingRecord.UpdatedAt = DateTime.UtcNow;
+                            
+                            // 4. Save again
+                            await _context.SaveChangesAsync();
+                            _logger.LogInformation("Race condition resolved for audiobook progress: Successfully updated existing record.");
+                            return Ok(new { message = "Audiobook progress updated successfully (recovered from race condition)." });
+                        }
+                    }
+                    catch (Exception retryEx)
+                    {
+                        _logger.LogError(retryEx, "Failed to recover from race condition for UserId: {UserId}, BookId: {BookId}", userId, request.BookId);
+                    }
+                }
+
                  _logger.LogError(dbEx, "Database error updating audiobook progress for UserId: {UserId}, BookId: {BookId}. InnerException: {InnerMessage}", userId, request.BookId, dbEx.InnerException?.Message);
                  _logger.LogInformation("---- END UpdateAudiobookProgress (DB Error) ----");
                  return StatusCode(500, $"A database error occurred while updating progress: {dbEx.Message}");

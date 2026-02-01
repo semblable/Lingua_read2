@@ -823,12 +823,28 @@ const TextDisplay = () => {
 
   const prevFetchAllLanguageWordsRef = useRef(fetchAllLanguageWords);
 
+  // --- Optimized Data Structures ---
+  // 1. Create a Map for O(1) word lookups
+  const wordMap = useMemo(() => {
+    const map = new Map();
+    words.forEach(w => {
+      if (w.term) map.set(w.term.toLowerCase(), w);
+    });
+    return map;
+  }, [words]);
+
+  // 2. Pre-calculate and sort phrases once
+  const knownPhrases = useMemo(() => {
+    return words
+      .filter(w => w.term && w.term.includes(' '))
+      .sort((a, b) => b.term.length - a.term.length);
+  }, [words]);
+
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const getWordData = useCallback((word) => {
     if (!word) return null;
-    const wordLower = word.toLowerCase();
-    return words.find(w => w.term && w.term.toLowerCase() === wordLower) || null;
-  }, [words]);
+    return wordMap.get(word.toLowerCase()) || null;
+  }, [wordMap]);
 
   const getWordStyle = useCallback((wordStatus) => {
     const baseStyle = { cursor: 'pointer', padding: '2px 0', margin: '0 2px', borderRadius: '3px', transition: 'all 0.2s' };
@@ -1013,11 +1029,8 @@ const TextDisplay = () => {
   const processTextContent = useCallback((content) => {
     if (!content) return [];
 
-    // --- Phase 2: Phrase Recognition Logic ---
-    // 1. Get known phrases (terms with spaces) and sort longest first
-    const knownPhrases = words
-      .filter(w => w.term && w.term.includes(' '))
-      .sort((a, b) => b.term.length - a.term.length);
+    // Use memoized knownPhrases directly
+    // const knownPhrases = ... (Removed redundant calculation)
 
     const elements = [];
     let currentIndex = 0;
@@ -1116,7 +1129,7 @@ const TextDisplay = () => {
     return elements;
     // --- End Phase 2 Logic ---
 
-  }, [words, getWordData, getWordStyle, handleWordClick, setHoveredWordTerm]); // Added 'words' dependency
+  }, [words, knownPhrases, getWordData, getWordStyle, handleWordClick, setHoveredWordTerm]); // Added knownPhrases dependency
 
 
   const getFontFamilyForList = useCallback(() => {

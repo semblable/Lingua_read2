@@ -685,20 +685,6 @@ private DateTime CalculateStartDate(string period)
             }
         }
 
-        [HttpGet("debug-table")]
-        public async Task<IActionResult> DebugTable()
-        {
-            try
-            {
-                // Try raw SQL to check if table exists
-                await _context.Database.ExecuteSqlRawAsync("SELECT 1 FROM \"UserAudioLessonProgresses\" LIMIT 1");
-                return Ok("Table 'UserAudioLessonProgresses' exists and is accessible.");
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, $"Table check failed: {ex.Message} | Inner: {ex.InnerException?.Message}");
-            }
-        }
 
         [HttpGet("audiolessonprogress/{textId}")]
         public async Task<IActionResult> GetAudioLessonProgress(int textId)

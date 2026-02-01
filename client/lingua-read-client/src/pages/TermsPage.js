@@ -322,7 +322,7 @@ const TermsPage = () => {
                         <Form.Select
                             value={selectedLanguage}
                             onChange={handleLanguageChange}
-                            disabled={loading && terms.length === 0 || languages.length === 0}
+                            disabled={(loading && terms.length === 0) || languages.length === 0}
                         >
                             <option value="">-- Select Language --</option>
                             {languages.map(lang => (
@@ -361,7 +361,7 @@ const TermsPage = () => {
                             placeholder="Term or Translation..."
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
-                            disabled={loading && terms.length === 0 || !selectedLanguage || importLoading}
+                            disabled={(loading && terms.length === 0) || !selectedLanguage || importLoading}
                         />
                     </Form.Group>
                 </Col>

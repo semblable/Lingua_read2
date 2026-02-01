@@ -195,6 +195,7 @@ namespace LinguaReadApi.Controllers
             var userId = GetUserId();
 
             var query = _context.Words
+                .AsNoTracking() // Performance improvement for read-only query
                 .Where(w => w.LanguageId == languageId && w.UserId == userId)
                 .Include(w => w.Translation)
                 .AsQueryable(); // Use AsQueryable for building the query
@@ -272,7 +273,12 @@ namespace LinguaReadApi.Controllers
         {
             var userId = GetUserId();
 
+            // Clamp pagination parameters
+            page = Math.Max(1, page);
+            pageSize = Math.Clamp(pageSize, 1, 100);
+
             var query = _context.Words
+                .AsNoTracking() // Performance improvement for read-only query
                 .Where(w => w.LanguageId == languageId && w.UserId == userId)
                 .Include(w => w.Translation)
                 .AsQueryable();

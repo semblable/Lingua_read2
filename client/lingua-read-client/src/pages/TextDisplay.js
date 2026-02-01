@@ -909,7 +909,14 @@ const TextDisplay = () => {
     const selection = window.getSelection();
     if (!selection || selection.isCollapsed || !textContentRef.current || selection.rangeCount === 0) return;
 
-    const range = selection.getRangeAt(0);
+    let range;
+    try {
+      range = selection.getRangeAt(0);
+    } catch (e) {
+      console.warn("Could not get selection range", e);
+      return;
+    }
+
     const container = textContentRef.current;
 
     // Ensure the selection is within the text container
@@ -1008,7 +1015,6 @@ const TextDisplay = () => {
       selection.removeAllRanges();
       selection.addRange(newRange);
 
-      // Get the text and trigger lookup (allow a tick for selection update)
       const selectedText = newRange.toString().trim();
       if (selectedText) {
         // Use a slight delay to let the selection update render
@@ -1017,9 +1023,12 @@ const TextDisplay = () => {
         }, 0);
       }
     } catch (e) {
-      console.error("Error adjusting selection range:", e);
-      // Fallback or cleanup if range setting fails
-      selection.removeAllRanges();
+      console.warn("Error adjusting selection range:", e);
+      // Fallback: use original selection text if possible
+      const originalText = selection.toString().trim();
+      if (originalText) {
+        handleWordClick(originalText);
+      }
     }
 
   }, [handleWordClick, textContentRef]); // Added textContentRef dependency

@@ -550,6 +550,15 @@ private DateTime CalculateStartDate(string period)
                 _logger.LogWarning("Failed to get UserId from token claim for UpdateAudioLessonProgress.");
                 return Unauthorized("User ID not found or invalid in token.");
             }
+
+            // --- Validate that the Text exists and belongs to the user ---
+            var textExists = await _context.Texts.AnyAsync(t => t.TextId == request.TextId && t.UserId == userId);
+            if (!textExists)
+            {
+                _logger.LogWarning("TextId {TextId} not found or doesn't belong to UserId {UserId} for UpdateAudioLessonProgress.", request.TextId, userId);
+                return NotFound($"Text with ID {request.TextId} not found for this user.");
+            }
+
             _logger.LogInformation("Attempting to find/update UserAudioLessonProgress for UserId: {UserId}, TextId: {TextId}", userId, request.TextId);
 
             try

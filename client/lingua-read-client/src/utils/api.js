@@ -873,7 +873,7 @@ export const getAudiobookProgress = async (bookId) => {
 export const updateAudioLessonProgress = async (textId, progressData) => {
   // progressData should be { currentPosition: number | null }
   const payload = {
-    textId: textId,
+    textId: parseInt(textId, 10),
     currentPosition: progressData.currentPosition
   };
   console.log('[API] Updating audio lesson progress via UserActivityController:', payload);

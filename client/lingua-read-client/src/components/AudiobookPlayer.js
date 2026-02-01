@@ -629,8 +629,8 @@ const AudiobookPlayer = ({
             </div>
 
             {/* Controls Section */}
-            <div className="d-flex align-items-center gap-2">
-              <div className="d-flex gap-1">
+            <div className="d-flex align-items-center gap-2 flex-wrap audiobook-player__controls">
+              <div className="d-flex gap-1 audiobook-player__transport">
                 {isBookMode && playlist.length > 1 && (
                   <Button
                     variant="outline-secondary"
@@ -682,7 +682,7 @@ const AudiobookPlayer = ({
               </div>
 
               {/* Rate Controls */}
-              <div className="d-flex align-items-center border-start ps-2 gap-1">
+              <div className="d-flex align-items-center border-start ps-2 gap-1 audiobook-player__rate-group">
                 <Button variant="link" size="sm" className="p-0 text-decoration-none text-secondary"
                   onClick={() => changeRate(-0.05)} disabled={playbackRate <= 0.5} title="Slower">-</Button>
                 <span className="small text-muted" style={{ minWidth: '35px', textAlign: 'center', fontSize: '0.75rem' }}>{playbackRate.toFixed(2)}x</span>
@@ -691,7 +691,7 @@ const AudiobookPlayer = ({
               </div>
 
               {/* Volume Control */}
-              <div className="d-flex align-items-center gap-1 ms-2 ps-2 border-start" style={{ width: '80px' }}>
+              <div className="d-flex align-items-center gap-1 ms-2 ps-2 border-start audiobook-player__volume-group" style={{ width: '80px' }}>
                 <i className={`bi ${volume === 0 ? 'bi-volume-mute-fill' : volume < 0.5 ? 'bi-volume-down-fill' : 'bi-volume-up-fill'} text-muted small`}></i>
                 <input
                   type="range"

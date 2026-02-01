@@ -6,6 +6,17 @@
   min-width: 0;
 }
 
+/* Ensure controls are visible and properly laid out */
+.audiobook-player__rate-group,
+.audiobook-player__volume-group {
+  display: flex !important;
+}
+
+/* Styles for the volume slider to ensure it takes space */
+.audiobook-player__volume-group input[type=range] {
+  min-width: 50px;
+}
+
 @media (max-width: 768px) {
   .audiobook-player__controls {
     flex-direction: column;
@@ -19,12 +30,22 @@
 
   .audiobook-player__speed,
   .audiobook-player__tracks,
-  .audiobook-player__transport {
+  .audiobook-player__transport,
+  .audiobook-player__rate-group {
     justify-content: center;
     width: 100%;
   }
 
-  .audiobook-player__volume {
-    display: none;
+  /* Specific rule to SHOW volume on mobile, overriding any previous display:none */
+  .audiobook-player__volume,
+  .audiobook-player__volume-group {
+    display: flex !important;
+    justify-content: center;
+    width: 100%;
+    border-left: none !important;
+    /* Remove border in vertical layout */
+    margin-left: 0 !important;
+    padding-left: 0 !important;
+    margin-top: 0.5rem;
   }
 }

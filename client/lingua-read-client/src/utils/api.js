@@ -682,6 +682,26 @@ export const getWordsByLanguage = (languageId, statusFilter = [], sortBy = 'term
   return fetchApi(endpoint);
 };
 
+// Fetches paginated words for a specific language
+export const getPaginatedWordsByLanguage = (languageId, page = 1, pageSize = 20, statusFilter = [], sortBy = 'term_asc', searchTerm = '') => {
+  const params = new URLSearchParams();
+  params.append('page', page);
+  params.append('pageSize', pageSize);
+
+  if (statusFilter && statusFilter.length > 0) {
+    params.append('status', statusFilter.join(','));
+  }
+  if (sortBy) {
+    params.append('sortBy', sortBy);
+  }
+  if (searchTerm && searchTerm.trim() !== '') {
+    params.append('searchTerm', searchTerm.trim());
+  }
+  const queryString = params.toString();
+  const endpoint = `/words/language/${languageId}/paginated${queryString ? `?${queryString}` : ''}`;
+  return fetchApi(endpoint);
+};
+
 // Triggers CSV export for words, with optional filtering
 export const exportWordsCsv = (languageId = null, statusFilter = []) => {
   const params = new URLSearchParams();

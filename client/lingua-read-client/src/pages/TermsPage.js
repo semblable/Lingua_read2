@@ -1,23 +1,28 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Container, Row, Col, Table, Form, Button, Spinner, Alert, DropdownButton, Dropdown } from 'react-bootstrap'; // Added DropdownButton, Dropdown
-import { getAllLanguages, getWordsByLanguage, exportWordsCsv, addTermsBatch } from '../utils/api'; // Import API functions, added addTermsBatch
-import { saveAs } from 'file-saver'; // For triggering file download
-import Papa from 'papaparse'; // For CSV parsing
-// Removed duplicate useRef import
+import { Container, Row, Col, Table, Form, Button, Spinner, Alert, DropdownButton, Dropdown, Pagination, Badge } from 'react-bootstrap'; // Added Pagination, Badge
+import { getAllLanguages, getPaginatedWordsByLanguage, exportWordsCsv, addTermsBatch } from '../utils/api'; // Changed to use paginated API
+import { saveAs } from 'file-saver';
+import Papa from 'papaparse';
 
 const TermsPage = () => {
     const [languages, setLanguages] = useState([]);
     const [selectedLanguage, setSelectedLanguage] = useState(() => {
-        // Initialize from localStorage if available
         return localStorage.getItem('lastSelectedLanguage') || '';
     });
     const [terms, setTerms] = useState([]);
-    const [statusFilter, setStatusFilter] = useState([]); // Array of selected statuses (e.g., [1, 5])
-    const [sortBy, setSortBy] = useState('created_desc'); // Default sort: newest first
+    const [statusFilter, setStatusFilter] = useState([]);
+    const [sortBy, setSortBy] = useState('created_desc');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
     const [searchTerm, setSearchTerm] = useState('');
     const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
+
+    // Pagination State
+    const [currentPage, setCurrentPage] = useState(1);
+    const [totalPages, setTotalPages] = useState(0);
+    const [totalItems, setTotalItems] = useState(0);
+    const pageSize = 20; // Fixed page size for now
+
     const [importLoading, setImportLoading] = useState(false);
     const [importError, setImportError] = useState(null);
     const [importSuccess, setImportSuccess] = useState(null);
@@ -38,38 +43,56 @@ const TermsPage = () => {
         fetchLanguages();
     }, []);
 
-    // Fetch terms when selectedLanguage, statusFilter, or sortBy changes
-
     // Debounce search term
     useEffect(() => {
         const handler = setTimeout(() => {
-            setDebouncedSearchTerm(searchTerm);
-        }, 500); // 500ms delay
+            if (searchTerm !== debouncedSearchTerm) {
+                setDebouncedSearchTerm(searchTerm);
+                setCurrentPage(1); // Reset to page 1 on search change
+            }
+        }, 500);
 
         return () => {
             clearTimeout(handler);
         };
-    }, [searchTerm]);
+    }, [searchTerm, debouncedSearchTerm]);
 
     // Fetch terms useCallback
     const fetchTerms = useCallback(async () => {
         if (!selectedLanguage) {
             setTerms([]);
+            setTotalItems(0);
+            setTotalPages(0);
             return;
         }
         setLoading(true);
         setError(null);
         try {
-            const data = await getWordsByLanguage(selectedLanguage, statusFilter, sortBy, debouncedSearchTerm);
-            setTerms(data || []);
+            // Call the new paginated endpoint
+            const data = await getPaginatedWordsByLanguage(
+                selectedLanguage,
+                currentPage,
+                pageSize,
+                statusFilter,
+                sortBy,
+                debouncedSearchTerm
+            );
+
+            // Access properties from PagedResult
+            setTerms(data.items || []);
+            setTotalItems(data.totalCount || 0);
+            setTotalPages(data.totalPages || 0);
+
         } catch (err) {
             setError(`Failed to fetch terms: ${err.message}`);
             console.error(err);
             setTerms([]);
+            setTotalItems(0);
+            setTotalPages(0);
         } finally {
             setLoading(false);
         }
-    }, [selectedLanguage, statusFilter, sortBy, debouncedSearchTerm]); // Include debouncedSearchTerm
+    }, [selectedLanguage, currentPage, pageSize, statusFilter, sortBy, debouncedSearchTerm]);
 
     // useEffect to trigger fetchTerms
     useEffect(() => {
@@ -80,36 +103,36 @@ const TermsPage = () => {
     const handleLanguageChange = (e) => {
         const langId = e.target.value;
         setSelectedLanguage(langId);
+        setCurrentPage(1); // Reset to page 1
         localStorage.setItem('lastSelectedLanguage', langId);
-        // Reset filters/sort when language changes? Optional, but can be good UX.
-        // setStatusFilter([]);
-        // setSortBy('term_asc');
     };
 
-    // Handle status filter change (from checkboxes)
+    // Handle status filter change
     const handleStatusFilterChange = (e) => {
         const { value, checked } = e.target;
         const statusValue = parseInt(value, 10);
-        setStatusFilter(prev =>
-            checked
-                ? [...prev, statusValue] // Add status to filter
-                : prev.filter(s => s !== statusValue) // Remove status from filter
-        );
+        setStatusFilter(prev => {
+            const newFilter = checked
+                ? [...prev, statusValue]
+                : prev.filter(s => s !== statusValue);
+            return newFilter;
+        });
+        setCurrentPage(1); // Reset to page 1
     };
 
-    // Handle sorting change (e.g., clicking table headers)
+    // Handle sorting change
     const handleSort = (column) => {
         const isAsc = sortBy === `${column}_asc`;
         setSortBy(isAsc ? `${column}_desc` : `${column}_asc`);
+        setCurrentPage(1); // Reset to page 1 optional, but usually good practice on sort change
     };
 
-    // Handle CSV export (takes a boolean to determine if filters should be applied)
+    // Handle CSV export
     const handleExportCsv = async (applyFilters = false) => {
         if (!selectedLanguage) return;
         setLoading(true);
         setError(null);
         try {
-            // Pass language and optionally status filters
             const filtersToApply = applyFilters ? statusFilter : [];
             const { blob, filename } = await exportWordsCsv(selectedLanguage, filtersToApply);
             saveAs(blob, filename);
@@ -123,7 +146,6 @@ const TermsPage = () => {
 
     // Handle CSV Import
     const handleImportClick = () => {
-        // Reset messages and trigger file input
         setImportError(null);
         setImportSuccess(null);
         fileInputRef.current?.click();
@@ -131,9 +153,7 @@ const TermsPage = () => {
 
     const handleFileChange = (event) => {
         const file = event.target.files[0];
-        if (!file || !selectedLanguage) {
-            return;
-        }
+        if (!file || !selectedLanguage) return;
 
         setImportLoading(true);
         setImportError(null);
@@ -145,18 +165,15 @@ const TermsPage = () => {
             complete: async (results) => {
                 const termsToImport = [];
                 let parseError = null;
-
-                // Check for required columns (case-insensitive) and optional status
                 const headers = results.meta.fields.map(h => h.toLowerCase());
                 const hasTerm = headers.includes('term');
                 const hasTranslation = headers.includes('translation');
                 const hasStatus = headers.includes('status');
 
-                if (!hasTerm) { // Term is mandatory
+                if (!hasTerm) {
                     parseError = "CSV must contain a 'Term' column.";
                 } else {
                     results.data.forEach((row, index) => {
-                        // Find keys case-insensitively
                         const termKey = Object.keys(row).find(k => k.toLowerCase() === 'term');
                         const translationKey = hasTranslation ? Object.keys(row).find(k => k.toLowerCase() === 'translation') : null;
                         const statusKey = hasStatus ? Object.keys(row).find(k => k.toLowerCase() === 'status') : null;
@@ -170,18 +187,16 @@ const TermsPage = () => {
                             const parsedStatus = parseInt(statusStr, 10);
                             if (!isNaN(parsedStatus) && parsedStatus >= 1 && parsedStatus <= 5) {
                                 status = parsedStatus;
-                            } else if (!parseError) { // Report first status error only
+                            } else if (!parseError) {
                                 parseError = `Row ${index + 2}: Invalid 'Status' value "${statusStr}". Must be a number between 1 and 5.`;
                             }
                         }
 
-                        if (term) { // Term is required
+                        if (term) {
                             const termData = { term, translation: translation || '' };
-                            if (status !== null) {
-                                termData.status = status; // Add status only if valid and provided
-                            }
+                            if (status !== null) termData.status = status;
                             termsToImport.push(termData);
-                        } else if (!parseError) { // Report first term error only
+                        } else if (!parseError) {
                             parseError = `Row ${index + 2}: 'Term' column is missing or empty.`;
                         }
                     });
@@ -202,7 +217,7 @@ const TermsPage = () => {
                 try {
                     const response = await addTermsBatch(selectedLanguage, termsToImport);
                     setImportSuccess(response.message || `${termsToImport.length} terms processed successfully.`);
-                    fetchTerms(); // Refresh the list after import
+                    fetchTerms(); // Refresh the list - will fetch page 1 automatically if we wanted, or stay on current page
                 } catch (err) {
                     setImportError(`Failed to import terms: ${err.message}`);
                     console.error(err);
@@ -215,12 +230,9 @@ const TermsPage = () => {
                 setImportLoading(false);
             }
         });
-
-        // Reset file input value to allow re-uploading the same file
         event.target.value = null;
     };
 
-    // Helper to render sort indicators
     const renderSortIndicator = (column) => {
         if (sortBy.startsWith(column)) {
             return sortBy.endsWith('_asc') ? ' ▲' : ' ▼';
@@ -228,20 +240,89 @@ const TermsPage = () => {
         return '';
     };
 
+    // Helper for status badge
+    const getStatusBadge = (status) => {
+        const variants = {
+            1: 'danger',   // New (Red)
+            2: 'warning',  // Learning (Orange-ish)
+            3: 'info',     // Familiar (Blue)
+            4: 'primary',  // Advanced (Blue/Green)
+            5: 'success'   // Known (Green)
+        };
+        const labels = {
+            1: 'New', 2: 'Learning', 3: 'Familiar', 4: 'Advanced', 5: 'Known'
+        };
+        return <Badge bg={variants[status] || 'secondary'}>{labels[status] || status}</Badge>;
+    };
+
+    // Pagination Component
+    const renderPagination = () => {
+        if (totalPages <= 1) return null;
+
+        let items = [];
+        const maxPagesToShow = 5;
+        let startPage = Math.max(1, currentPage - Math.floor(maxPagesToShow / 2));
+        let endPage = Math.min(totalPages, startPage + maxPagesToShow - 1);
+
+        if (endPage - startPage + 1 < maxPagesToShow) {
+            startPage = Math.max(1, endPage - maxPagesToShow + 1);
+        }
+
+        // First Page
+        if (startPage > 1) {
+            items.push(<Pagination.First key="first" onClick={() => setCurrentPage(1)} />);
+            items.push(<Pagination.Prev key="prev" onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))} />);
+        }
+
+        // Ellipsis start
+        if (startPage > 1) {
+            items.push(<Pagination.Ellipsis key="ellipsis-start" disabled />);
+        }
+
+        // Page Numbers
+        for (let number = startPage; number <= endPage; number++) {
+            items.push(
+                <Pagination.Item key={number} active={number === currentPage} onClick={() => setCurrentPage(number)}>
+                    {number}
+                </Pagination.Item>,
+            );
+        }
+
+        // Ellipsis end
+        if (endPage < totalPages) {
+            items.push(<Pagination.Ellipsis key="ellipsis-end" disabled />);
+        }
+
+        // Last Page
+        if (endPage < totalPages) {
+            items.push(<Pagination.Next key="next" onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))} />);
+            items.push(<Pagination.Last key="last" onClick={() => setCurrentPage(totalPages)} />);
+        }
+
+        return (
+            <div className="d-flex justify-content-between align-items-center mt-3">
+                <div>
+                    Showing {Math.min((currentPage - 1) * pageSize + 1, totalItems)} to {Math.min(currentPage * pageSize, totalItems)} of {totalItems} terms
+                </div>
+                <Pagination size="sm" className="mb-0">{items}</Pagination>
+            </div>
+        );
+    };
+
+
     return (
         <Container fluid className="mt-4">
             <h2>My Terms</h2>
             <hr />
 
-
-            <Row className="mb-3 align-items-end g-2"> {/* Use g-2 for gutters */}
-                <Col md={3} xs={12} sm={6}> {/* Language Select */}
+            <Row className="mb-3 align-items-end g-2">
+                <Col md={3} xs={12} sm={6}>
                     <Form.Group controlId="languageSelect">
                         <Form.Label>Language</Form.Label>
                         <Form.Select
                             value={selectedLanguage}
                             onChange={handleLanguageChange}
-                            disabled={loading || languages.length === 0}
+                            disabled={loading && terms.length === 0 || languages.length === 0}
                         >
                             <option value="">-- Select Language --</option>
                             {languages.map(lang => (
@@ -252,7 +333,7 @@ const TermsPage = () => {
                         </Form.Select>
                     </Form.Group>
                 </Col>
-                <Col md={3} xs={12} sm={6}> {/* Status Filter */}
+                <Col md={3} xs={12} sm={6}>
                     <Form.Group>
                         <Form.Label>Status Filter</Form.Label>
                         <div>
@@ -262,7 +343,7 @@ const TermsPage = () => {
                                     inline
                                     type="checkbox"
                                     id={`status-${status}`}
-                                    label={`${status}`} // Shorten label
+                                    label={`${status}`}
                                     value={status}
                                     checked={statusFilter.includes(status)}
                                     onChange={handleStatusFilterChange}
@@ -272,7 +353,7 @@ const TermsPage = () => {
                         </div>
                     </Form.Group>
                 </Col>
-                <Col md={2} xs={12} sm={6}> {/* Search Input */}
+                <Col md={2} xs={12} sm={6}>
                     <Form.Group controlId="searchTerm">
                         <Form.Label>Search</Form.Label>
                         <Form.Control
@@ -280,12 +361,11 @@ const TermsPage = () => {
                             placeholder="Term or Translation..."
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
-                            disabled={loading || !selectedLanguage || importLoading}
+                            disabled={loading && terms.length === 0 || !selectedLanguage || importLoading}
                         />
                     </Form.Group>
                 </Col>
-                <Col md={4} xs={12} sm={6} className="text-sm-end mt-2 mt-sm-0 d-flex justify-content-start justify-content-sm-end align-items-end gap-2"> {/* Actions */}
-                    {/* Hidden File Input */}
+                <Col md={4} xs={12} sm={6} className="text-sm-end mt-2 mt-sm-0 d-flex justify-content-start justify-content-sm-end align-items-end gap-2">
                     <input
                         type="file"
                         ref={fileInputRef}
@@ -293,7 +373,6 @@ const TermsPage = () => {
                         style={{ display: 'none' }}
                         accept=".csv"
                     />
-                    {/* Import Button */}
                     <Button
                         variant="success"
                         onClick={handleImportClick}
@@ -302,15 +381,14 @@ const TermsPage = () => {
                     >
                         {importLoading ? <Spinner as="span" animation="border" size="sm" role="status" aria-hidden="true" /> : 'Import CSV'}
                     </Button>
-                    {/* Export Dropdown */}
                     <DropdownButton
                         id="export-dropdown"
                         title="Export CSV"
                         variant="secondary"
                         disabled={loading || !selectedLanguage || terms.length === 0 || importLoading}
-                        >
+                    >
                         <Dropdown.Item onClick={() => handleExportCsv(true)} disabled={statusFilter.length === 0}>
-                            Export Filtered ({statusFilter.length > 0 ? terms.length : '0'})
+                            Export Filtered
                         </Dropdown.Item>
                         <Dropdown.Item onClick={() => handleExportCsv(false)}>
                             Export All for Language
@@ -319,59 +397,68 @@ const TermsPage = () => {
                 </Col>
             </Row>
 
-            {/* Loading and Error Display */}
-            {loading && (
+            {loading && terms.length === 0 && ( /* Only show full spinner if no data yet or language switching */
                 <div className="text-center my-4">
                     <Spinner animation="border" role="status">
                         <span className="visually-hidden">Loading...</span>
                     </Spinner>
                 </div>
             )}
+
             {error && <Alert variant="danger" className="my-2">{error}</Alert>}
             {importError && <Alert variant="danger" className="my-2">Import Error: {importError}</Alert>}
             {importSuccess && <Alert variant="success" className="my-2">{importSuccess}</Alert>}
 
-            {/* Terms Table */}
             {!loading && !error && selectedLanguage && (
-                 <Table striped bordered hover responsive size="sm">
-                    <thead>
-                        <tr>
-                            <th onClick={() => handleSort('term')} style={{ cursor: 'pointer' }}>
-                                Term{renderSortIndicator('term')}
-                            </th>
-                            <th>Translation</th>
-                            <th onClick={() => handleSort('status')} style={{ cursor: 'pointer' }}>
-                                Status{renderSortIndicator('status')}
-                            </th>
-                            <th onClick={() => handleSort('created')} style={{ cursor: 'pointer' }}>
-                                Date Added{renderSortIndicator('created')}
-                            </th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {terms.length > 0 ? (
-                            terms.map(term => (
-                                <tr key={term.wordId}>
-                                    <td>{term.term}</td>
-                                    <td>{term.translation}</td>
-                                    <td>{term.status}</td>
-                                    <td>{new Date(term.createdAt).toLocaleString()}</td>
-                                </tr>
-                            ))
-                        ) : (
-                            <tr>
-                                <td colSpan="3" className="text-center">No terms found for the selected criteria.</td>
-                            </tr>
+                <>
+                    <div style={{ minHeight: '400px', position: 'relative' }}>
+                        {loading && ( /* Overlay spinner for updates */
+                            <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(255,255,255,0.6)', zIndex: 10, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+                                <Spinner animation="border" size="sm" />
+                            </div>
                         )}
-                    </tbody>
-                </Table>
+                        <Table striped bordered hover responsive size="sm">
+                            <thead>
+                                <tr>
+                                    <th onClick={() => handleSort('term')} style={{ cursor: 'pointer' }}>
+                                        Term{renderSortIndicator('term')}
+                                    </th>
+                                    <th>Translation</th>
+                                    <th onClick={() => handleSort('status')} style={{ cursor: 'pointer', width: '120px' }}>
+                                        Status{renderSortIndicator('status')}
+                                    </th>
+                                    <th onClick={() => handleSort('created')} style={{ cursor: 'pointer', width: '180px' }}>
+                                        Date Added{renderSortIndicator('created')}
+                                    </th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {terms.length > 0 ? (
+                                    terms.map(term => (
+                                        <tr key={term.wordId}>
+                                            <td>{term.term}</td>
+                                            <td>{term.translation}</td>
+                                            <td className="text-center">{getStatusBadge(term.status)}</td>
+                                            <td>{new Date(term.createdAt).toLocaleString()}</td>
+                                        </tr>
+                                    ))
+                                ) : (
+                                    <tr>
+                                        <td colSpan="4" className="text-center">No terms found for the selected criteria.</td>
+                                    </tr>
+                                )}
+                            </tbody>
+                        </Table>
+                    </div>
+                    {renderPagination()}
+                </>
             )}
-             {!loading && !error && !selectedLanguage && languages.length > 0 && !importLoading && (
-                 <Alert variant="info">Please select a language to view terms.</Alert>
-             )}
-             {!loading && !error && languages.length === 0 && !error && !importLoading && ( // Show if languages finished loading but none exist
-                 <Alert variant="warning">No languages found. Please add languages in settings.</Alert>
-             )}
+            {!loading && !error && !selectedLanguage && languages.length > 0 && !importLoading && (
+                <Alert variant="info">Please select a language to view terms.</Alert>
+            )}
+            {!loading && !error && languages.length === 0 && !error && !importLoading && (
+                <Alert variant="warning">No languages found. Please add languages in settings.</Alert>
+            )}
 
         </Container>
     );

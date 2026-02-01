@@ -260,6 +260,98 @@ namespace LinguaReadApi.Controllers
             return words;
         }
 
+        // GET: api/words/language/5/paginated?page=1&pageSize=20&status=1,2,3&sortBy=term_asc
+        [HttpGet("language/{languageId}/paginated")]
+        public async Task<ActionResult<PagedResult<WordResponseDto>>> GetPaginatedWordsByLanguage(
+            int languageId,
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 20,
+            [FromQuery] string? status = null, // Comma-separated list of statuses (e.g., "1,2,5")
+            [FromQuery] string? sortBy = null, // Sort criteria (e.g., "term_asc", "status_desc")
+            [FromQuery] string? searchTerm = null) // Search term
+        {
+            var userId = GetUserId();
+
+            var query = _context.Words
+                .Where(w => w.LanguageId == languageId && w.UserId == userId)
+                .Include(w => w.Translation)
+                .AsQueryable();
+
+            // Apply filters (same logic as non-paginated)
+            if (!string.IsNullOrEmpty(status))
+            {
+                var statusList = status.Split(',')
+                                       .Select(s => s.Trim())
+                                       .Where(s => int.TryParse(s, out _))
+                                       .Select(int.Parse)
+                                       .ToList();
+                if (statusList.Any())
+                {
+                    query = query.Where(w => statusList.Contains(w.Status));
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(searchTerm))
+            {
+                var termLower = searchTerm.ToLower();
+                query = query.Where(w => w.Term.ToLower().Contains(termLower) ||
+                                       (w.Translation != null && w.Translation.Translation.ToLower().Contains(termLower)));
+            }
+
+            // Apply sorting
+            switch (sortBy?.ToLowerInvariant())
+            {
+                case "term_desc":
+                    query = query.OrderByDescending(w => w.Term);
+                    break;
+                case "status_asc":
+                    query = query.OrderBy(w => w.Status).ThenBy(w => w.Term);
+                    break;
+                case "status_desc":
+                    query = query.OrderByDescending(w => w.Status).ThenBy(w => w.Term);
+                    break;
+                case "created_asc":
+                    query = query.OrderBy(w => w.CreatedAt);
+                    break;
+                case "created_desc":
+                    query = query.OrderByDescending(w => w.CreatedAt);
+                    break;
+                case "term_asc":
+                default:
+                    query = query.OrderBy(w => w.Term);
+                    break;
+            }
+
+            // Get total count BEFORE paging
+            var totalCount = await query.CountAsync();
+
+            // Apply paging
+            var items = await query
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .Select(w => new WordResponseDto
+                {
+                    WordId = w.WordId,
+                    Term = w.Term,
+                    Status = w.Status,
+                    Translation = w.Translation != null ? w.Translation.Translation : "",
+                    IsNew = w.Status == 1,
+                    CreatedAt = w.CreatedAt
+                })
+                .ToListAsync();
+
+            var totalPages = (int)Math.Ceiling(totalCount / (double)pageSize);
+
+            return new PagedResult<WordResponseDto>
+            {
+                Items = items,
+                TotalCount = totalCount,
+                PageNumber = page,
+                PageSize = pageSize,
+                TotalPages = totalPages
+            };
+        }
+
         // PUT: api/words/5
         [HttpPut("{id}")]
         public async Task<IActionResult> UpdateWord(int id, [FromBody] UpdateWordDto updateWordDto)

@@ -38,10 +38,15 @@ const uploadWithProgress = (endpoint, formData, onProgress) => {
 
     // Upload progress event
     if (onProgress) {
+      let lastPercent = 0;
       xhr.upload.addEventListener('progress', (event) => {
         if (event.lengthComputable) {
           const percentComplete = Math.round((event.loaded / event.total) * 100);
-          onProgress(percentComplete);
+          // Ensure monotonic progress to prevent jitter or resets during the same request
+          if (percentComplete > lastPercent) {
+            lastPercent = percentComplete;
+            onProgress(percentComplete);
+          }
         }
       });
     }

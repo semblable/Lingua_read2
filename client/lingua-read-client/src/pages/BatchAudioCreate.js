@@ -282,7 +282,8 @@ const BatchAudioCreate = () => {
         } catch (err) {
             setError(`Batch upload failed: ${err.message}`);
             console.error(err);
-            setUploadProgress(0); // Reset progress on error
+            // Do not reset progress on error, so user sees where it failed
+            // setUploadProgress(0);
         } finally {
             setIsLoading(false);
         }
@@ -293,7 +294,7 @@ const BatchAudioCreate = () => {
             <Card className="shadow-sm">
                 <Card.Body className="p-4">
                     <h2 className="mb-4">Batch Create Audio Lessons</h2>
-                    <p>Upload paired audio (.mp3) and subtitle (.srt) files. Files must follow the naming convention:</p>
+                    <p className="mb-4">Upload paired audio (.mp3) and subtitle (.srt) files. Files must follow the naming convention:</p>
                     <ul>
                         <li>Audio: <code>Lesson Name_.mp3</code></li>
                         <li>Subtitle: <code>Lesson Name__fr.srt</code> (or other language code)</li>
@@ -346,20 +347,22 @@ const BatchAudioCreate = () => {
                             {files && <div className="mt-2 text-muted">{files.length} file(s) selected</div>}
                         </Form.Group>
 
-                        {isLoading && (
+                        {(isLoading || uploadProgress > 0) && (
                             <div className="mb-3">
                                 <ProgressBar
-                                    animated
+                                    animated={isLoading}
                                     now={uploadProgress}
                                     label={`${uploadProgress}%`}
-                                    variant={uploadProgress === 100 ? "success" : "primary"}
-                                    striped={uploadProgress < 100}
+                                    variant={error ? "danger" : (uploadProgress === 100 ? "success" : "primary")}
+                                    striped={!error && uploadProgress < 100}
                                 />
                                 <div className="text-center mt-2">
-                                    <small className={uploadProgress === 100 ? "text-success fw-bold" : "text-muted"}>
-                                        {uploadProgress < 100
-                                            ? "Uploading files..."
-                                            : "Upload complete. Processing files on server (this may take a moment)..."}
+                                    <small className={error ? "text-danger fw-bold" : (uploadProgress === 100 ? "text-success fw-bold" : "text-muted")}>
+                                        {error ? "Upload failed" : (
+                                            uploadProgress < 100
+                                                ? "Uploading files..."
+                                                : "Upload complete. Processing files on server (this may take a moment)..."
+                                        )}
                                     </small>
                                 </div>
                             </div>

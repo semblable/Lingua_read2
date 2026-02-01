@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react'; // Add useCallback
+import React, { useState, useEffect, useCallback, useMemo } from 'react'; // Add useCallback, useMemo
 import { Container, Row, Col, Card, Button, Alert, Spinner, ListGroup, Badge, ProgressBar, Modal, Form } from 'react-bootstrap'; // Add Form
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { getBook, finishBook, updateBook, deleteBook, getText, updateText, deleteText, uploadAudiobookTracks } from '../utils/api'; // Import new API functions + uploadAudiobookTracks
@@ -46,6 +46,14 @@ const BookDetail = () => {
   useEffect(() => {
     fetchBook();
   }, [fetchBook]); // Use fetchBook as dependency
+
+  // Sort parts naturally (e.g. Part 1, Part 2, ... Part 10)
+  const sortedParts = useMemo(() => {
+    if (!book || !book.parts) return [];
+    return [...book.parts].sort((a, b) =>
+      (a.title || '').localeCompare(b.title || '', undefined, { numeric: true, sensitivity: 'base' })
+    );
+  }, [book]);
 
   const handleFinishBook = async () => {
     if (window.confirm('Are you sure you want to mark this book as finished? This will mark all words in the book as known.')) {
@@ -198,11 +206,15 @@ const BookDetail = () => {
 
     let successCount = 0;
     let failCount = 0;
-    const totalFiles = selectedFiles.length;
+    // Sort files naturally by name to ensure 1.mp3 comes before 10.mp3 if 2.mp3 exists, etc.
+    const sortedFiles = [...selectedFiles].sort((a, b) =>
+      a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })
+    );
+    const totalFiles = sortedFiles.length;
 
     try {
       for (let i = 0; i < totalFiles; i++) {
-        const file = selectedFiles[i];
+        const file = sortedFiles[i];
         // Update success message to show progress instead of success
         setUploadSuccess(`Uploading file ${i + 1} of ${totalFiles}: ${file.name}...`);
         setUploadProgress(0);
@@ -301,7 +313,7 @@ const BookDetail = () => {
         </div>
         <div className="d-flex flex-column gap-2">
           {/* Add prominent reading button */}
-          {book.parts.length > 0 && (
+          {sortedParts.length > 0 && (
             book.lastReadTextId ? (
               <Button
                 variant="primary"
@@ -314,7 +326,7 @@ const BookDetail = () => {
               <Button
                 variant="primary"
                 size="lg"
-                onClick={() => navigate(`/texts/${book.parts[0].textId}`)}
+                onClick={() => navigate(`/texts/${sortedParts[0].textId}`)}
               >
                 Start Reading
               </Button>
@@ -335,7 +347,7 @@ const BookDetail = () => {
       <Card className="shadow-sm mb-4">
         <Card.Header as="h5">Book Sections</Card.Header>
         <ListGroup variant="flush">
-          {book.parts.map((part, index) => (
+          {sortedParts.map((part, index) => (
             <ListGroup.Item
               key={part.textId}
               className="d-flex justify-content-between align-items-center"

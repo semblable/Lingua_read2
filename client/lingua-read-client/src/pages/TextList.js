@@ -70,11 +70,13 @@ const TextList = () => {
         valB = valB ? new Date(valB) : new Date(0);
       }
 
-      // Handle string sorting (case-insensitive)
-      if (typeof valA === 'string') valA = valA.toLowerCase();
-      if (typeof valB === 'string') valB = valB.toLowerCase();
+      // Handle string sorting with natural sort order
+      if (typeof valA === 'string' && typeof valB === 'string') {
+        const comparison = valA.localeCompare(valB, undefined, { numeric: true, sensitivity: 'base' });
+        return sortOrder === 'asc' ? comparison : -comparison;
+      }
 
-      // Comparison logic
+      // Default comparison for non-strings (e.g. dates)
       if (valA < valB) return sortOrder === 'asc' ? -1 : 1;
       if (valA > valB) return sortOrder === 'asc' ? 1 : -1;
       return 0;

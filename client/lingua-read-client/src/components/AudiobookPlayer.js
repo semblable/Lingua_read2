@@ -63,7 +63,11 @@ const AudiobookPlayer = ({
   // FIX: Removed unnecessary `book.id` dependency (used book.bookId)
   const sourceTracks = useMemo(() => {
     if (isBookMode && book?.audiobookTracks) {
-      return book.audiobookTracks;
+      return [...book.audiobookTracks].sort((a, b) => {
+        const nameA = a.title || a.filePath || '';
+        const nameB = b.title || b.filePath || '';
+        return nameA.localeCompare(nameB, undefined, { numeric: true, sensitivity: 'base' });
+      });
     }
     if (!isBookMode && audioSrc) {
       return [{

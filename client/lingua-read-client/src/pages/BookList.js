@@ -47,6 +47,11 @@ const BookList = () => {
     // Filtered books
     const filtered = books.filter(book => {
       return !languageFilter || book.languageName === languageFilter;
+    }).sort((a, b) => {
+      // Natural sort by title
+      const titleA = a.title || '';
+      const titleB = b.title || '';
+      return titleA.localeCompare(titleB, undefined, { numeric: true, sensitivity: 'base' });
     });
 
     return { filteredBooks: filtered, uniqueLanguages: languages };

@@ -71,7 +71,9 @@ const BatchAudioCreate = () => {
 
         // --- Start: Fuzzy Pairing Validation using Normalization (with Debugging) ---
         console.log("[Debug Validation] Starting fuzzy pairing validation..."); // DEBUG LOG
-        const fileList = Array.from(files);
+        const fileList = Array.from(files).sort((a, b) =>
+            a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })
+        );
         const mp3Files = fileList.filter(f => f.name.toLowerCase().endsWith('.mp3'));
         const srtFiles = fileList.filter(f => f.name.toLowerCase().endsWith('.srt'));
         console.log(`[Debug Validation] Found ${mp3Files.length} MP3s and ${srtFiles.length} SRTs.`); // DEBUG LOG
@@ -267,7 +269,7 @@ const BatchAudioCreate = () => {
         setIsLoading(true);
 
         try {
-            const resultData = await createAudioLessonsBatch(languageId, tag || null, files, (percent) => {
+            const resultData = await createAudioLessonsBatch(languageId, tag || null, fileList, (percent) => {
                 setUploadProgress(percent);
             });
 
@@ -384,7 +386,7 @@ const BatchAudioCreate = () => {
                                     <hr />
                                     <p className="mb-1"><strong>Skipped Files ({results.skippedFiles.length}):</strong></p>
                                     <ListGroup variant="flush">
-                                        {results.skippedFiles.map((skipped, index) => (
+                                        {[...results.skippedFiles].sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' })).map((skipped, index) => (
                                             <ListGroup.Item key={index} className="py-1 px-0 border-0">
                                                 <small>{skipped}</small>
                                             </ListGroup.Item>

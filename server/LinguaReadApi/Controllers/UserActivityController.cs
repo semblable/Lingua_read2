@@ -594,9 +594,46 @@ private DateTime CalculateStartDate(string period)
             }
             catch (DbUpdateException dbEx)
             {
+                // Check for Postgres Unique Constraint Violation (Code 23505)
+                if (dbEx.InnerException != null && dbEx.InnerException.Message.Contains("23505"))
+                {
+                    _logger.LogWarning("Duplicate key error (race condition) detected for UserId: {UserId}, TextId: {TextId}. Retrying as UPDATE.", userId, request.TextId);
+                    
+                    try
+                    {
+                        // 1. Detach the failed entity so EF Core doesn't try to insert it again
+                        var entry = _context.ChangeTracker.Entries<UserAudioLessonProgress>()
+                            .FirstOrDefault(e => e.Entity.UserId == userId && e.Entity.TextId == request.TextId);
+                        
+                        if (entry != null)
+                        {
+                            entry.State = EntityState.Detached;
+                        }
+
+                        // 2. Fetch the record that was committed by the other request
+                        var existingRecord = await _context.UserAudioLessonProgresses.FindAsync(userId, request.TextId);
+                        
+                        if (existingRecord != null)
+                        {
+                            // 3. Update it with the current request's data
+                            existingRecord.CurrentPosition = request.CurrentPosition;
+                            existingRecord.UpdatedAt = DateTime.UtcNow;
+                            
+                            // 4. Save again
+                            await _context.SaveChangesAsync();
+                            _logger.LogInformation("Race condition resolved: Successfully updated existing record.");
+                            return Ok(new { message = "Audio lesson progress updated successfully (recovered from race condition)." });
+                        }
+                    }
+                    catch (Exception retryEx)
+                    {
+                        _logger.LogError(retryEx, "Failed to recover from race condition for UserId: {UserId}, TextId: {TextId}", userId, request.TextId);
+                        // Fall through to generic 500 if retry fails
+                    }
+                }
+
                 _logger.LogError(dbEx, "Database error updating audio lesson progress for UserId: {UserId}, TextId: {TextId}. InnerException: {InnerMessage}", userId, request.TextId, dbEx.InnerException?.Message);
                 _logger.LogInformation("---- END UpdateAudioLessonProgress (DB Error) ----");
-                // RETURN INNER EXCEPTION FOR DEBUGGING
                 return StatusCode(500, $"DB Error: {dbEx.Message} | Inner: {dbEx.InnerException?.Message}");
             }
             catch (Exception ex)

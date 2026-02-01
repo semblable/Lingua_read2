@@ -596,13 +596,29 @@ private DateTime CalculateStartDate(string period)
             {
                 _logger.LogError(dbEx, "Database error updating audio lesson progress for UserId: {UserId}, TextId: {TextId}. InnerException: {InnerMessage}", userId, request.TextId, dbEx.InnerException?.Message);
                 _logger.LogInformation("---- END UpdateAudioLessonProgress (DB Error) ----");
-                return StatusCode(500, $"A database error occurred while updating progress: {dbEx.Message}");
+                // RETURN INNER EXCEPTION FOR DEBUGGING
+                return StatusCode(500, $"DB Error: {dbEx.Message} | Inner: {dbEx.InnerException?.Message}");
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Unexpected error updating audio lesson progress for UserId: {UserId}, TextId: {TextId}", userId, request.TextId);
                 _logger.LogInformation("---- END UpdateAudioLessonProgress (Error) ----");
-                return StatusCode(500, $"An unexpected error occurred while updating progress: {ex.Message}");
+                return StatusCode(500, $"Error: {ex.Message}");
+            }
+        }
+
+        [HttpGet("debug-table")]
+        public async Task<IActionResult> DebugTable()
+        {
+            try
+            {
+                // Try raw SQL to check if table exists
+                await _context.Database.ExecuteSqlRawAsync("SELECT 1 FROM \"UserAudioLessonProgresses\" LIMIT 1");
+                return Ok("Table 'UserAudioLessonProgresses' exists and is accessible.");
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Table check failed: {ex.Message} | Inner: {ex.InnerException?.Message}");
             }
         }
 

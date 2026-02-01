@@ -34,6 +34,7 @@ const uploadWithProgress = (endpoint, formData, onProgress) => {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     const fullUrl = API_URL + (endpoint.startsWith('/') ? endpoint : '/' + endpoint);
+    console.log(`[API Upload] Starting upload to ${fullUrl}`);
 
     // Upload progress event
     if (onProgress) {
@@ -91,7 +92,13 @@ const uploadWithProgress = (endpoint, formData, onProgress) => {
     };
 
     xhr.onerror = () => {
-      reject(new Error('Network error occurred during upload.'));
+      console.error('[API Error] XHR Network Error:', {
+        status: xhr.status,
+        statusText: xhr.statusText,
+        readyState: xhr.readyState,
+        responseURL: xhr.responseURL
+      });
+      reject(new Error(`Network error occurred during upload. Status: ${xhr.status}`));
     };
 
     xhr.send(formData);

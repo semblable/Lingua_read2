@@ -260,8 +260,8 @@ namespace LinguaReadApi.Controllers
 
         // POST: api/books/upload
         [HttpPost("upload")]
-        [RequestSizeLimit(100_000_000)] // Limit upload size (e.g., 100MB) - Adjust as needed
-        [RequestFormLimits(MultipartBodyLengthLimit = 100_000_000)]
+        [RequestSizeLimit(500L * 1024 * 1024)] // Increased to 500MB
+        [RequestFormLimits(MultipartBodyLengthLimit = 500L * 1024 * 1024)]
         public async Task<ActionResult<BookDto>> UploadBook([FromForm] UploadBookDto uploadDto)
         {
             if (uploadDto.File == null || uploadDto.File.Length == 0)
@@ -512,8 +512,8 @@ namespace LinguaReadApi.Controllers
 
         // POST: api/books/{bookId}/audiobook
         [HttpPost("{bookId}/audiobook")]
-        [RequestSizeLimit(600 * 1024 * 1024)] // 600 MB Limit
-        [RequestFormLimits(MultipartBodyLengthLimit = 600 * 1024 * 1024)] // 600 MB Limit
+        [RequestSizeLimit(5120L * 1024 * 1024)] // Increased to 5GB
+        [RequestFormLimits(MultipartBodyLengthLimit = 5120L * 1024 * 1024)] // Increased to 5GB
         public async Task<IActionResult> UploadAudiobook(int bookId, [FromForm] UploadAudiobookDto uploadDto)
         {
             if (uploadDto.Files == null || !uploadDto.Files.Any())

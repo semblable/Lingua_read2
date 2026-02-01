@@ -277,8 +277,8 @@ namespace LinguaReadApi.Controllers
         // POST: api/texts/audio
         [HttpPost("audio")]
         [Consumes("multipart/form-data")] // Specify content type
-        [RequestSizeLimit(100 * 1024 * 1024)] // 100 MB limit, match Program.cs
-        [RequestFormLimits(MultipartBodyLengthLimit = 100 * 1024 * 1024, ValueLengthLimit = int.MaxValue)] // Match Program.cs
+        [RequestSizeLimit(5120L * 1024 * 1024)] // 5 GB limit
+        [RequestFormLimits(MultipartBodyLengthLimit = 5120L * 1024 * 1024, ValueLengthLimit = int.MaxValue)] // 5 GB limit
         public async Task<ActionResult<TextDto>> CreateAudioLesson([FromForm] CreateAudioLessonDto createAudioLessonDto)
         {
             if (!ModelState.IsValid)
@@ -509,8 +509,8 @@ namespace LinguaReadApi.Controllers
         // POST: api/texts/audio/batch
         [HttpPost("audio/batch")]
         [Consumes("multipart/form-data")]
-        [RequestSizeLimit(500 * 1024 * 1024)] // Increase limit for batch uploads (e.g., 500MB) - Adjust as needed
-        [RequestFormLimits(MultipartBodyLengthLimit = 500 * 1024 * 1024, ValueLengthLimit = int.MaxValue)]
+        [RequestSizeLimit(5120L * 1024 * 1024)] // Increase limit for batch uploads to 5GB
+        [RequestFormLimits(MultipartBodyLengthLimit = 5120L * 1024 * 1024, ValueLengthLimit = int.MaxValue)]
         public async Task<ActionResult> CreateAudioLessonsBatch([FromForm] CreateAudioLessonsBatchDto dto, List<IFormFile> files)
         {
             if (files == null || files.Count == 0)

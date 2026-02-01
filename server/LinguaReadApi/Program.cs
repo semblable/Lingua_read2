@@ -152,7 +152,7 @@ builder.Services.AddCors(options =>
 
         if (builder.Environment.IsDevelopment())
         {
-            policy.WithOrigins("http://localhost:3000", "http://localhost:19006", "http://localhost");
+            policy.WithOrigins("http://localhost:3000", "http://localhost:19006", "http://localhost", "http://127.0.0.1:3000");
         }
         else if (origins.Length > 0)
         {

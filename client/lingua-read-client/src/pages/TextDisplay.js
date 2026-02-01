@@ -1517,7 +1517,7 @@ const TextDisplay = () => {
       const wordsRegex = /\p{L}+(['-]\p{L}+)*/gu;
       const textWords = text.content.match(wordsRegex) || [];
       const uniqueWordsInText = [...new Set(textWords.map(w => w.toLowerCase()))];
-      const wordsMap = new Map(words.map(w => [w.term.toLowerCase(), w]));
+      const wordsMap = wordMap; // Reuse the memoized map
       const unknownWords = uniqueWordsInText.filter(word => !wordsMap.has(word) || (wordsMap.get(word)?.status <= 2 && !wordsMap.get(word)?.translation));
       if (unknownWords.length === 0) { alert("No words found needing translation."); setTranslatingUnknown(false); return; } // Exit early
       const translations = await batchTranslateWords(unknownWords, 'EN', text.languageCode);

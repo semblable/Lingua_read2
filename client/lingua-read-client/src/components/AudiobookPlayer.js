@@ -40,6 +40,10 @@ const AudiobookPlayer = ({
   const [isLoading, setIsLoading] = useState(true); // Initial load (seeking/fetching progress)
   const [isBuffering, setIsBuffering] = useState(false); // Network buffering
   const [playbackRate, setPlaybackRate] = useState(1.0);
+  const [volume, setVolume] = useState(() => {
+    const saved = localStorage.getItem('audioVolume');
+    return saved ? parseFloat(saved) : 1.0;
+  });
 
   const isPlayingRef = useRef(isPlaying);
   useEffect(() => {
@@ -292,8 +296,14 @@ const AudiobookPlayer = ({
     if (audioRef.current) {
       audioRef.current.playbackRate = playbackRate;
     }
-    // FIX: Added audioRef
   }, [playbackRate, audioRef]);
+
+  // Sync Volume
+  useEffect(() => {
+    if (audioRef.current) {
+      audioRef.current.volume = volume;
+    }
+  }, [volume, audioRef]);
 
   // Restore Rate
   useEffect(() => {
@@ -547,6 +557,12 @@ const AudiobookPlayer = ({
     });
   };
 
+  const handleVolumeChange = (e) => {
+    const newVolume = parseFloat(e.target.value);
+    setVolume(newVolume);
+    localStorage.setItem('audioVolume', newVolume);
+  };
+
   // Keyboard Shortcuts
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -668,10 +684,26 @@ const AudiobookPlayer = ({
               {/* Rate Controls */}
               <div className="d-flex align-items-center border-start ps-2 gap-1">
                 <Button variant="link" size="sm" className="p-0 text-decoration-none text-secondary"
-                  onClick={() => changeRate(-0.1)} disabled={playbackRate <= 0.5} title="Slower">-</Button>
-                <span className="small text-muted" style={{ minWidth: '25px', textAlign: 'center', fontSize: '0.75rem' }}>{playbackRate}x</span>
+                  onClick={() => changeRate(-0.05)} disabled={playbackRate <= 0.5} title="Slower">-</Button>
+                <span className="small text-muted" style={{ minWidth: '35px', textAlign: 'center', fontSize: '0.75rem' }}>{playbackRate.toFixed(2)}x</span>
                 <Button variant="link" size="sm" className="p-0 text-decoration-none text-secondary"
-                  onClick={() => changeRate(0.1)} disabled={playbackRate >= 2.0} title="Faster">+</Button>
+                  onClick={() => changeRate(0.05)} disabled={playbackRate >= 2.0} title="Faster">+</Button>
+              </div>
+
+              {/* Volume Control */}
+              <div className="d-flex align-items-center gap-1 ms-2 ps-2 border-start" style={{ width: '80px' }}>
+                <i className={`bi ${volume === 0 ? 'bi-volume-mute-fill' : volume < 0.5 ? 'bi-volume-down-fill' : 'bi-volume-up-fill'} text-muted small`}></i>
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.05"
+                  value={volume}
+                  onChange={handleVolumeChange}
+                  className="form-range"
+                  style={{ height: '4px', width: '50px' }}
+                  title={`Volume: ${Math.round(volume * 100)}%`}
+                />
               </div>
             </div>
           </div>

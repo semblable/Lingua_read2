@@ -1,0 +1,44 @@
+﻿Using project 'C:\Users\kamil\Lingua-Read\server\LinguaReadApi\LinguaReadApi.csproj'.
+Using startup project 'C:\Users\kamil\Lingua-Read\server\LinguaReadApi\LinguaReadApi.csproj'.
+dotnet msbuild /target:GetEFProjectMetadata /property:EFProjectMetadataFile=C:\Users\kamil\AppData\Local\Temp\tmpa1nvsb.tmp /verbosity:quiet /nologo C:\Users\kamil\Lingua-Read\server\LinguaReadApi\LinguaReadApi.csproj
+dotnet msbuild /target:GetEFProjectMetadata /property:EFProjectMetadataFile=C:\Users\kamil\AppData\Local\Temp\tmphh21cg.tmp /verbosity:quiet /nologo C:\Users\kamil\Lingua-Read\server\LinguaReadApi\LinguaReadApi.csproj
+Build started...
+dotnet build C:\Users\kamil\Lingua-Read\server\LinguaReadApi\LinguaReadApi.csproj /verbosity:quiet /nologo /p:PublishAot=false
+
+Build succeeded.
+    0 Warning(s)
+    0 Error(s)
+
+Time Elapsed 00:00:00.99
+
+Build succeeded.
+dotnet exec --depsfile C:\Users\kamil\Lingua-Read\server\LinguaReadApi\bin\Debug\net8.0\LinguaReadApi.deps.json --additionalprobingpath C:\Users\kamil\.nuget\packages --additionalprobingpath "C:\Program Files (x86)\Microsoft Visual Studio\Shared\NuGetPackages" --runtimeconfig C:\Users\kamil\Lingua-Read\server\LinguaReadApi\bin\Debug\net8.0\LinguaReadApi.runtimeconfig.json C:\Users\kamil\.dotnet\tools\.store\dotnet-ef\9.0.2\dotnet-ef\9.0.2\tools\net8.0\any\tools\netcoreapp2.0\any\ef.dll migrations add FixUserAudioLessonProgressTable --assembly C:\Users\kamil\Lingua-Read\server\LinguaReadApi\bin\Debug\net8.0\LinguaReadApi.dll --project C:\Users\kamil\Lingua-Read\server\LinguaReadApi\LinguaReadApi.csproj --startup-assembly C:\Users\kamil\Lingua-Read\server\LinguaReadApi\bin\Debug\net8.0\LinguaReadApi.dll --startup-project C:\Users\kamil\Lingua-Read\server\LinguaReadApi\LinguaReadApi.csproj --project-dir C:\Users\kamil\Lingua-Read\server\LinguaReadApi\ --root-namespace LinguaReadApi --language C# --framework net8.0 --nullable --working-dir C:\Users\kamil\Lingua-Read\server\LinguaReadApi --verbose
+Using assembly 'LinguaReadApi'.
+Using startup assembly 'LinguaReadApi'.
+Using application base 'C:\Users\kamil\Lingua-Read\server\LinguaReadApi\bin\Debug\net8.0'.
+Using working directory 'C:\Users\kamil\Lingua-Read\server\LinguaReadApi'.
+Using root namespace 'LinguaReadApi'.
+Using project directory 'C:\Users\kamil\Lingua-Read\server\LinguaReadApi\'.
+Remaining arguments: .
+Finding DbContext classes...
+Using environment 'Development'.
+Finding IDesignTimeDbContextFactory implementations...
+Found IDesignTimeDbContextFactory implementation 'AppDbContextFactory'.
+Found DbContext 'AppDbContext'.
+Found IDesignTimeDbContextFactory implementation 'DesignTimeDbContextFactory'.
+Found DbContext 'AppDbContext'.
+Microsoft.EntityFrameworkCore.Design.OperationException: The exception 'An item with the same key has already been added. Key: LinguaReadApi.Data.AppDbContext' was thrown while attempting to find 'DbContext' types. For the different patterns supported at design time, see https://go.microsoft.com/fwlink/?linkid=851728
+ ---> System.ArgumentException: An item with the same key has already been added. Key: LinguaReadApi.Data.AppDbContext
+   at System.Collections.Generic.Dictionary`2.TryInsert(TKey key, TValue value, InsertionBehavior behavior)
+   at System.Collections.Generic.Dictionary`2.Add(TKey key, TValue value)
+   at Microsoft.EntityFrameworkCore.Design.Internal.DbContextOperations.FindContextTypes(String name, Boolean useServiceProvider)
+   --- End of inner exception stack trace ---
+   at Microsoft.EntityFrameworkCore.Design.Internal.DbContextOperations.FindContextTypes(String name, Boolean useServiceProvider)
+   at Microsoft.EntityFrameworkCore.Design.Internal.DbContextOperations.FindContextType(String name)
+   at Microsoft.EntityFrameworkCore.Design.Internal.DbContextOperations.CreateContext(String contextType)
+   at Microsoft.EntityFrameworkCore.Design.Internal.MigrationsOperations.AddMigration(String name, String outputDir, String contextType, String namespace, Boolean dryRun)
+   at Microsoft.EntityFrameworkCore.Design.OperationExecutor.AddMigrationImpl(String name, String outputDir, String contextType, String namespace, Boolean dryRun)
+   at Microsoft.EntityFrameworkCore.Design.OperationExecutor.AddMigration.<>c__DisplayClass0_0.<.ctor>b__0()
+   at Microsoft.EntityFrameworkCore.Design.OperationExecutor.OperationBase.<>c__DisplayClass3_0`1.<Execute>b__0()
+   at Microsoft.EntityFrameworkCore.Design.OperationExecutor.OperationBase.Execute(Action action)
+The exception 'An item with the same key has already been added. Key: LinguaReadApi.Data.AppDbContext' was thrown while attempting to find 'DbContext' types. For the different patterns supported at design time, see https://go.microsoft.com/fwlink/?linkid=851728

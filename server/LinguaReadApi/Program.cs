@@ -223,11 +223,35 @@ if (!app.Environment.IsEnvironment("Testing"))
             var dbContext = services.GetRequiredService<AppDbContext>();
             dbContext.Database.Migrate();
             logger.LogInformation("Database migrations applied successfully (or were already up-to-date).");
+
+            // --- Ensure UserAudioLessonProgresses table exists (Recovery for cloud environments) ---
+            try
+            {
+                logger.LogInformation("Ensuring UserAudioLessonProgresses table exists...");
+                const string createTableSql = @"
+                    CREATE TABLE IF NOT EXISTS ""UserAudioLessonProgresses"" (
+                        ""UserId"" uuid NOT NULL,
+                        ""TextId"" integer NOT NULL,
+                        ""CurrentPosition"" double precision NULL,
+                        ""UpdatedAt"" timestamp with time zone NOT NULL,
+                        CONSTRAINT ""PK_UserAudioLessonProgresses"" PRIMARY KEY (""UserId"", ""TextId""),
+                        CONSTRAINT ""FK_UserAudioLessonProgresses_Texts_TextId"" FOREIGN KEY (""TextId"") REFERENCES ""Texts"" (""TextId"") ON DELETE CASCADE,
+                        CONSTRAINT ""FK_UserAudioLessonProgresses_Users_UserId"" FOREIGN KEY (""UserId"") REFERENCES ""Users"" (""Id"") ON DELETE CASCADE
+                    );
+                    CREATE INDEX IF NOT EXISTS ""IX_UserAudioLessonProgresses_TextId"" ON ""UserAudioLessonProgresses"" (""TextId"");
+                ";
+                dbContext.Database.ExecuteSqlRaw(createTableSql);
+                logger.LogInformation("UserAudioLessonProgresses table check/creation completed.");
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Failed to ensure UserAudioLessonProgresses table exists via raw SQL. This may be expected if the table already exists but schema check failed.");
+            }
         }
         catch (Exception ex)
         {
             // Log the migration error AND stop the application if it fails.
-            logger.LogError(ex, "An error occurred during database migration. Halting application startup.");
+            logger.LogError(ex, "An error occurred during database migration or table recovery. Halting application startup.");
             throw; // Re-throw the exception to stop the application
         }
 

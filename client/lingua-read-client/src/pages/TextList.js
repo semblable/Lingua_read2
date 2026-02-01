@@ -10,8 +10,19 @@ const TextList = () => {
   const { texts, loading, error, setTexts, setLoading, setError } = useTextsStore();
   const [sortKey, setSortKey] = useState('createdAt'); // Default sort by creation date
   const [sortOrder, setSortOrder] = useState('desc'); // Default descending (newest first)
+
+  // Persistent language filter
+  const [languageFilter, setLanguageFilter] = useState(() => {
+    return localStorage.getItem('textListLanguageFilter') || '';
+  });
+
   const [tagFilter, setTagFilter] = useState(''); // State for tag filter
   const [typeFilter, setTypeFilter] = useState('all'); // State for type filter ('all', 'audio', 'normal')
+
+  // Update localStorage when filter changes
+  useEffect(() => {
+    localStorage.setItem('textListLanguageFilter', languageFilter);
+  }, [languageFilter]);
 
   const fetchTexts = useCallback(async () => { // Wrap fetch logic in useCallback
     setLoading(true);
@@ -30,45 +41,47 @@ const TextList = () => {
     fetchTexts();
   }, [fetchTexts]); // Use fetchTexts as dependency
 
-  // Filter, Sort texts and get unique tags
-  const { filteredAndSortedTexts, uniqueTags } = useMemo(() => {
-    if (!texts || texts.length === 0) return { filteredAndSortedTexts: [], uniqueTags: [] };
+  // Filter, Sort texts and get unique attributes
+  const { filteredAndSortedTexts, uniqueTags, uniqueLanguages } = useMemo(() => {
+    if (!texts || texts.length === 0) return { filteredAndSortedTexts: [], uniqueTags: [], uniqueLanguages: [] };
 
-    // Get unique tags
+    // Get unique tags and languages
     const tags = [...new Set(texts.map(text => text.tag).filter(tag => tag))]; // Filter out null/empty tags
+    const languages = [...new Set(texts.map(text => text.languageName).filter(lang => lang))];
 
     // Filter texts
     const filtered = texts.filter(text => {
       const tagMatch = !tagFilter || text.tag === tagFilter;
       const typeMatch = typeFilter === 'all' ||
-                        (typeFilter === 'audio' && text.isAudioLesson) ||
-                        (typeFilter === 'normal' && !text.isAudioLesson);
-      return tagMatch && typeMatch;
+        (typeFilter === 'audio' && text.isAudioLesson) ||
+        (typeFilter === 'normal' && !text.isAudioLesson);
+      const languageMatch = !languageFilter || text.languageName === languageFilter;
+      return tagMatch && typeMatch && languageMatch;
     });
 
     // Sort filtered texts
     const sorted = [...filtered].sort((a, b) => {
-       let valA = a[sortKey];
-       let valB = b[sortKey];
+      let valA = a[sortKey];
+      let valB = b[sortKey];
 
-       // Handle date sorting
-       if (sortKey === 'createdAt') {
-         valA = valA ? new Date(valA) : new Date(0);
-         valB = valB ? new Date(valB) : new Date(0);
-       }
+      // Handle date sorting
+      if (sortKey === 'createdAt') {
+        valA = valA ? new Date(valA) : new Date(0);
+        valB = valB ? new Date(valB) : new Date(0);
+      }
 
-       // Handle string sorting (case-insensitive)
-       if (typeof valA === 'string') valA = valA.toLowerCase();
-       if (typeof valB === 'string') valB = valB.toLowerCase();
+      // Handle string sorting (case-insensitive)
+      if (typeof valA === 'string') valA = valA.toLowerCase();
+      if (typeof valB === 'string') valB = valB.toLowerCase();
 
-       // Comparison logic
-       if (valA < valB) return sortOrder === 'asc' ? -1 : 1;
-       if (valA > valB) return sortOrder === 'asc' ? 1 : -1;
-       return 0;
+      // Comparison logic
+      if (valA < valB) return sortOrder === 'asc' ? -1 : 1;
+      if (valA > valB) return sortOrder === 'asc' ? 1 : -1;
+      return 0;
     });
 
-    return { filteredAndSortedTexts: sorted, uniqueTags: tags };
-  }, [texts, sortKey, sortOrder, tagFilter, typeFilter]); // Add filters to dependencies
+    return { filteredAndSortedTexts: sorted, uniqueTags: tags, uniqueLanguages: languages };
+  }, [texts, sortKey, sortOrder, tagFilter, typeFilter, languageFilter]); // Add filters to dependencies
 
   const handleSort = (key) => {
     if (key === sortKey) {
@@ -114,43 +127,56 @@ const TextList = () => {
         <h1>My Texts</h1>
         {/* Sorting Controls */}
         <div className="d-flex align-items-center gap-2">
-           <span className="text-muted me-2">Sort by:</span>
-           <ButtonGroup size="sm">
-             <Button
-               variant={sortKey === 'title' ? 'primary' : 'outline-secondary'}
-               onClick={() => handleSort('title')}
-             >
-               Title {sortKey === 'title' ? (sortOrder === 'asc' ? '▲' : '▼') : ''}
-             </Button>
-             <Button
-               variant={sortKey === 'createdAt' ? 'primary' : 'outline-secondary'}
-               onClick={() => handleSort('createdAt')}
-             >
-               Date {sortKey === 'createdAt' ? (sortOrder === 'asc' ? '▲' : '▼') : ''}
-             </Button>
-           </ButtonGroup>
+          <span className="text-muted me-2">Sort by:</span>
+          <ButtonGroup size="sm">
+            <Button
+              variant={sortKey === 'title' ? 'primary' : 'outline-secondary'}
+              onClick={() => handleSort('title')}
+            >
+              Title {sortKey === 'title' ? (sortOrder === 'asc' ? '▲' : '▼') : ''}
+            </Button>
+            <Button
+              variant={sortKey === 'createdAt' ? 'primary' : 'outline-secondary'}
+              onClick={() => handleSort('createdAt')}
+            >
+              Date {sortKey === 'createdAt' ? (sortOrder === 'asc' ? '▲' : '▼') : ''}
+            </Button>
+          </ButtonGroup>
         </div>
         {/* Filter Controls */}
         <div className="d-flex align-items-center gap-2 mt-2 mt-md-0">
-           <Form.Select size="sm" value={tagFilter} onChange={(e) => setTagFilter(e.target.value)} style={{ width: '150px' }}>
-             <option value="">All Tags</option>
-             {uniqueTags.map(tag => (
-               <option key={tag} value={tag}>{tag}</option>
-             ))}
-           </Form.Select>
-           <Form.Select size="sm" value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} style={{ width: '150px' }}>
-             <option value="all">All Types</option>
-             <option value="normal">Normal Texts</option>
-             <option value="audio">Audio Lessons</option>
-           </Form.Select>
+          {/* Language Filter */}
+          <Form.Select
+            size="sm"
+            value={languageFilter}
+            onChange={(e) => setLanguageFilter(e.target.value)}
+            style={{ width: '150px' }}
+          >
+            <option value="">All Languages</option>
+            {uniqueLanguages.map(lang => (
+              <option key={lang} value={lang}>{lang}</option>
+            ))}
+          </Form.Select>
+
+          <Form.Select size="sm" value={tagFilter} onChange={(e) => setTagFilter(e.target.value)} style={{ width: '150px' }}>
+            <option value="">All Tags</option>
+            {uniqueTags.map(tag => (
+              <option key={tag} value={tag}>{tag}</option>
+            ))}
+          </Form.Select>
+          <Form.Select size="sm" value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} style={{ width: '150px' }}>
+            <option value="all">All Types</option>
+            <option value="normal">Normal Texts</option>
+            <option value="audio">Audio Lessons</option>
+          </Form.Select>
         </div>
         <div className="d-flex gap-2 mt-2 mt-md-0"> {/* Wrap buttons in a div for grouping */}
-           <Button as={Link} to="/texts/create-batch-audio" variant="info">
-               Batch Add Audio
-           </Button>
-           <Button as={Link} to="/texts/create" variant="success">
-               Add New Text
-           </Button>
+          <Button as={Link} to="/texts/create-batch-audio" variant="info">
+            Batch Add Audio
+          </Button>
+          <Button as={Link} to="/texts/create" variant="success">
+            Add New Text
+          </Button>
         </div>
       </div>
 
@@ -164,6 +190,19 @@ const TextList = () => {
             <Button as={Link} to="/texts/create" variant="primary">
               Add Your First Text
             </Button>
+            {(languageFilter || tagFilter || typeFilter !== 'all') && (
+              <Button
+                variant="outline-secondary"
+                className="ms-2"
+                onClick={() => {
+                  setLanguageFilter('');
+                  setTagFilter('');
+                  setTypeFilter('all');
+                }}
+              >
+                Clear Filters
+              </Button>
+            )}
           </Card.Body>
         </Card>
       ) : (

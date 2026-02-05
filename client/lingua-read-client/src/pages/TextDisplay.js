@@ -1145,6 +1145,12 @@ const TextDisplay = () => {
     switch (globalSettings.textFont) { // Use globalSettings from context
       case 'serif': return "var(--font-family-serif)"; // Use Lora via CSS variable
       case 'sans-serif': return "var(--font-family-sans-serif)"; // Use Inter via CSS variable
+      case 'lato': return "'Lato', sans-serif";
+      case 'open-sans': return "'Open Sans', sans-serif";
+      case 'atkinson': return "'Atkinson Hyperlegible', sans-serif";
+      case 'merriweather': return "'Merriweather', serif";
+      case 'roboto-slab': return "'Roboto Slab', serif";
+      case 'comic-sans': return "'Comic Sans MS', 'Comic Sans', cursive";
       case 'monospace': return "'Courier New', monospace"; // Keep monospace as is
       case 'dyslexic': return "'OpenDyslexic', sans-serif"; // Keep dyslexic font as is
       default: return "var(--font-family-sans-serif)"; // Default to Inter

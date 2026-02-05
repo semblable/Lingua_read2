@@ -8,6 +8,7 @@ const UserSettings = () => {
   const [settings, setSettings] = useState({
     textSize: 'medium',
     theme: 'dark',
+    textFont: 'default', // Added textFont default
     highlighting: 'on',
     highlightKnownWords: true
   });
@@ -19,14 +20,14 @@ const UserSettings = () => {
     // Fetch user settings
     const fetchSettings = async () => {
       if (!token) return;
-      
+
       try {
         setLoading(true);
         const response = await getUserSettings();
-        
+
         if (response) {
           setSettings(response);
-          
+
           // Apply theme from settings
           if (response.theme === 'dark') {
             document.body.classList.add('dark-theme');
@@ -48,12 +49,12 @@ const UserSettings = () => {
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
     const newValue = type === 'checkbox' ? checked : value;
-    
+
     setSettings(prev => ({
       ...prev,
       [name]: newValue
     }));
-    
+
     // Apply theme change immediately
     if (name === 'theme') {
       if (value === 'dark') {
@@ -68,12 +69,12 @@ const UserSettings = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
+
     try {
       setLoading(true);
       setError('');
       setMessage('');
-      
+
       await updateUserSettings(settings);
       setMessage('Settings saved successfully');
     } catch (err) {
@@ -90,14 +91,14 @@ const UserSettings = () => {
       <Card.Body>
         {error && <div className="alert alert-danger">{error}</div>}
         {message && <div className="alert alert-success">{message}</div>}
-        
+
         <Form onSubmit={handleSubmit}>
           <Row>
             <Col md={6}>
               <Form.Group className="mb-3">
                 <Form.Label>Theme</Form.Label>
-                <Form.Select 
-                  name="theme" 
+                <Form.Select
+                  name="theme"
                   value={settings.theme}
                   onChange={handleChange}
                 >
@@ -106,12 +107,12 @@ const UserSettings = () => {
                 </Form.Select>
               </Form.Group>
             </Col>
-            
+
             <Col md={6}>
               <Form.Group className="mb-3">
                 <Form.Label>Text Size</Form.Label>
-                <Form.Select 
-                  name="textSize" 
+                <Form.Select
+                  name="textSize"
                   value={settings.textSize}
                   onChange={handleChange}
                 >
@@ -122,13 +123,37 @@ const UserSettings = () => {
               </Form.Group>
             </Col>
           </Row>
-          
+
+          <Row>
+            <Col md={6}>
+              <Form.Group className="mb-3">
+                <Form.Label>Text Font</Form.Label>
+                <Form.Select
+                  name="textFont"
+                  value={settings.textFont}
+                  onChange={handleChange}
+                >
+                  <option value="default">Inter (Default)</option>
+                  <option value="serif">Lora (Serif)</option>
+                  <option value="open-sans">Open Sans</option>
+                  <option value="lato">Lato</option>
+                  <option value="atkinson">Atkinson Hyperlegible</option>
+                  <option value="merriweather">Merriweather</option>
+                  <option value="roboto-slab">Roboto Slab</option>
+                  <option value="monospace">Monospace</option>
+                  <option value="comic-sans">Comic Sans</option>
+                  <option value="dyslexic">OpenDyslexic</option>
+                </Form.Select>
+              </Form.Group>
+            </Col>
+          </Row>
+
           <Row>
             <Col md={6}>
               <Form.Group className="mb-3">
                 <Form.Label>Highlighting</Form.Label>
-                <Form.Select 
-                  name="highlighting" 
+                <Form.Select
+                  name="highlighting"
                   value={settings.highlighting}
                   onChange={handleChange}
                 >
@@ -137,10 +162,10 @@ const UserSettings = () => {
                 </Form.Select>
               </Form.Group>
             </Col>
-            
+
             <Col md={6}>
               <Form.Group className="mb-3" controlId="highlightKnownWords">
-                <Form.Check 
+                <Form.Check
                   type="checkbox"
                   label="Highlight known words"
                   name="highlightKnownWords"
@@ -150,10 +175,10 @@ const UserSettings = () => {
               </Form.Group>
             </Col>
           </Row>
-          
-          <Button 
-            variant="primary" 
-            type="submit" 
+
+          <Button
+            variant="primary"
+            type="submit"
             disabled={loading}
           >
             {loading ? 'Saving...' : 'Save Settings'}

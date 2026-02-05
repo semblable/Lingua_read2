@@ -37,8 +37,8 @@ namespace LinguaReadApi.Controllers
                 .CountAsync(w => w.UserId == userId);
                 
             // Get known word count (status 4 or 5)
-    var knownWords = await _context.Words
-        .CountAsync(w => w.UserId == userId && w.Status >= 4);
+            var knownWords = await _context.Words
+                .CountAsync(w => w.UserId == userId && w.Status >= 4);
 
             // Get user's books
             var books = await _context.Books
@@ -47,11 +47,16 @@ namespace LinguaReadApi.Controllers
                 .ToListAsync();
                 
             // Get word counts by language from database
-            var wordsByLanguage = await _context.Words
+            // Modified to get both total count and known count
+            var wordStatsByLanguage = await _context.Words
                 .Where(w => w.UserId == userId)
                 .GroupBy(w => w.LanguageId)
-                .Select(g => new { LanguageId = g.Key, Count = g.Count() })
-                .ToDictionaryAsync(g => g.LanguageId, g => g.Count);
+                .Select(g => new { 
+                    LanguageId = g.Key, 
+                    TotalCount = g.Count(),
+                    KnownCount = g.Count(w => w.Status >= 4)
+                })
+                .ToDictionaryAsync(g => g.LanguageId, g => g);
 
             // Fetch Aggregated User Language Statistics
             var userLangStats = await _context.UserLanguageStatistics
@@ -60,30 +65,70 @@ namespace LinguaReadApi.Controllers
                 .ToDictionaryAsync(uls => uls.LanguageId); 
 
             // Get language details
-            var languages = userLangStats.Values
-                .Select(uls => uls.Language)
-                .Where(language => language != null)
+            // Merge keys from all sources to ensure we catch all languages
+            var allLanguageIds = userLangStats.Keys
+                .Union(wordStatsByLanguage.Keys)
+                .Union(books.Select(b => b.LanguageId))
                 .Distinct()
                 .ToList();
                 
-            var languageStats = languages.Select(l =>
+            // We need to fetch language names for IDs that might not be in userLangStats (which included Language)
+            // Ideally we'd have a separate dictionary of LanguageId -> LanguageName, but let's try to get it from available sources
+            // or fetch missing ones. For now, rely on what we have or "Unknown" if missing (should be rare/impossible if FKs exist)
+            
+            // To be safe, let's just fetch all languages for the IDs we have if we think we might miss some names
+            // But userLangStats.Include(l => l.Language) covers most.
+            // If a user has words but no language stats entry (rare?), we might miss the name.
+            // Let's grab names from books or handle gracefully on frontend or just do a quick lookup if needed.
+            // For simplicity, let's use the sources we have.
+            
+            var languageStats = new List<LanguageStatisticsDto>();
+            
+            foreach(var langId in allLanguageIds)
             {
-                var stats = userLangStats.TryGetValue(l.LanguageId, out var uls)
-                    ? uls
-                    : new UserLanguageStatistics { LanguageId = l.LanguageId }; 
-
-                return new LanguageStatisticsDto
+                // Try to find name in userLangStats first
+                string langName = "Unknown";
+                if (userLangStats.TryGetValue(langId, out var uls) && uls.Language != null)
                 {
-                    LanguageId = l.LanguageId,
-                    LanguageName = l.Name,
-                    WordCount = wordsByLanguage.TryGetValue(l.LanguageId, out var count) ? count : 0,
+                    langName = uls.Language.Name;
+                }
+                else
+                {
+                    // Try to find in books
+                    var book = books.FirstOrDefault(b => b.LanguageId == langId);
+                    if (book != null && book.Language != null)
+                    {
+                        langName = book.Language.Name;
+                    }
+                    // Could also fetch from DB if really needed, but let's assume one of these covers it or "Unknown" is acceptable fallback
+                }
+
+                // Get word stats
+                int count = 0;
+                int known = 0;
+                if (wordStatsByLanguage.TryGetValue(langId, out var ws))
+                {
+                    count = ws.TotalCount;
+                    known = ws.KnownCount;
+                }
+                
+                // Get general stats (or default)
+                var stats = uls ?? new UserLanguageStatistics { LanguageId = langId };
+
+                languageStats.Add(new LanguageStatisticsDto
+                {
+                    LanguageId = langId,
+                    LanguageName = langName,
+                    WordCount = count, // Total Encountered
+                    KnownWords = known,
+                    LearningWords = count - known,
                     TotalWordsRead = (int)stats.TotalWordsRead, 
                     TotalTextsCompleted = stats.TotalTextsCompleted,
                     TotalSecondsListened = (int)stats.TotalSecondsListened, 
-                    BookCount = books.Count(b => b.LanguageId == l.LanguageId),
-                    FinishedBookCount = books.Count(b => b.LanguageId == l.LanguageId && b.IsFinished) 
-                };
-            }).ToList();
+                    BookCount = books.Count(b => b.LanguageId == langId),
+                    FinishedBookCount = books.Count(b => b.LanguageId == langId && b.IsFinished) 
+                });
+            }
                 
             var statistics = new UserStatisticsDto
             {
@@ -100,11 +145,8 @@ namespace LinguaReadApi.Controllers
             // Set LastActivity safely
             if (books.Any(b => b.LastReadAt.HasValue))
             {
-                // Provide a default value for Max in case the filtered list is empty (though Any check prevents this)
-                // or to satisfy the compiler about nullability.
                 var maxDate = books.Where(b => b.LastReadAt.HasValue)
                                   .Max(b => b.LastReadAt ?? DateTime.MinValue);
-                // Ensure we don't assign MinValue if no valid dates were found
                 if (maxDate != DateTime.MinValue)
                 {
                     statistics.LastActivity = maxDate;
@@ -419,6 +461,8 @@ namespace LinguaReadApi.Controllers
         public int LanguageId { get; set; }
         public string LanguageName { get; set; } = string.Empty;
         public int WordCount { get; set; } // Total unique words encountered for this language
+        public int KnownWords { get; set; } // Added: Words with status >= 4
+        public int LearningWords { get; set; } // Added: Words with status < 4
         public int TotalWordsRead { get; set; } // Cumulative words read
         public int TotalTextsCompleted { get; set; } // Cumulative texts completed
         public int TotalSecondsListened { get; set; } // Cumulative listening time

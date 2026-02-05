@@ -221,6 +221,10 @@ if (!app.Environment.IsEnvironment("Testing"))
         {
             logger.LogInformation("Attempting to apply database migrations...");
             var dbContext = services.GetRequiredService<AppDbContext>();
+            
+            // Increase timeout for migrations - merging large word sets can take several minutes
+            dbContext.Database.SetCommandTimeout(TimeSpan.FromMinutes(10));
+            
             dbContext.Database.Migrate();
             logger.LogInformation("Database migrations applied successfully (or were already up-to-date).");
         }

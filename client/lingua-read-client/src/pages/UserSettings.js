@@ -434,10 +434,15 @@ const UserSettings = () => {
                 value={settings.textFont}
                 onChange={handleChange}
               >
-                <option value="default">Default</option>
-                <option value="serif">Serif</option>
-                <option value="sans-serif">Sans Serif</option>
+                <option value="default">Default (Inter)</option>
+                <option value="serif">Serif (Lora)</option>
+                <option value="open-sans">Open Sans</option>
+                <option value="lato">Lato</option>
+                <option value="atkinson">Atkinson Hyperlegible</option>
+                <option value="merriweather">Merriweather</option>
+                <option value="roboto-slab">Roboto Slab</option>
                 <option value="monospace">Monospace</option>
+                <option value="comic-sans">Comic Sans</option>
                 <option value="dyslexic">OpenDyslexic</option>
               </Form.Select>
             </Form.Group>

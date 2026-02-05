@@ -11,15 +11,23 @@ namespace LinguaReadApi.Migrations
         protected override void Up(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.Sql(@"
-                -- 1. Preparation: Remove any current TextWords duplicates if they somehow exist
+                -- Disable timeouts for this transaction - merging 100k+ words can take minutes
+                SET statement_timeout = 0;
+
+                -- 1. Initial Cleanup: Remove direct duplicates
                 DELETE FROM ""TextWords"" a
                 USING ""TextWords"" b
                 WHERE a.""TextWordId"" > b.""TextWordId""
                 AND a.""TextId"" = b.""TextId""
                 AND a.""WordId"" = b.""WordId"";
 
-                -- 2. Word & Translation Merge Map
-                -- We identify 'winners' and 'losers' for each logical word group
+                DELETE FROM ""UserLanguageStatistics"" a
+                USING ""UserLanguageStatistics"" b
+                WHERE a.""UserLanguageStatisticsId"" > b.""UserLanguageStatisticsId""
+                AND a.""UserId"" = b.""UserId""
+                AND a.""LanguageId"" = b.""LanguageId"";
+
+                -- 2. Master Word Merge Map (Canonical ID identification)
                 DROP TABLE IF EXISTS word_merge_map;
                 CREATE TEMP TABLE word_merge_map AS
                 SELECT w.""WordId"" as old_id, m.min_id as new_id
@@ -34,22 +42,18 @@ namespace LinguaReadApi.Migrations
                    AND TRIM(LOWER(w.""Term"")) = m.norm_term
                 WHERE w.""WordId"" <> m.min_id;
 
-                -- 3. Resolve WordTranslations collisions
-                -- If both 'old' and 'new' words have translations, we must keep only the best one
+                -- 3. Resolve conflicts in WordTranslations (Keep only one per logical word)
                 DELETE FROM ""WordTranslations"" wt
                 USING word_merge_map wm
                 WHERE wt.""WordId"" = wm.old_id
                 AND EXISTS (SELECT 1 FROM ""WordTranslations"" wt2 WHERE wt2.""WordId"" = wm.new_id);
 
-                -- Re-link remaining translations to the winner WordId
                 UPDATE ""WordTranslations"" wt
                 SET ""WordId"" = wm.new_id
                 FROM word_merge_map wm
                 WHERE wt.""WordId"" = wm.old_id;
 
-                -- 4. CRITICAL: Resolve TextWords conflicts
-                -- Before we update TextWords, we must delete entries where a link already exists for the 'new' word
-                -- To prevent Unique Constraint Violation on (TextId, WordId)
+                -- 4. Resolve conflicts in TextWords (Prevent duplicate TextId+WordId pairs)
                 DELETE FROM ""TextWords"" tw
                 USING word_merge_map wm
                 WHERE tw.""WordId"" = wm.old_id
@@ -60,30 +64,31 @@ namespace LinguaReadApi.Migrations
                     AND tw2.""WordId"" = wm.new_id
                 );
 
-                -- Now safe to re-link all remaining TextWords
                 UPDATE ""TextWords"" tw
                 SET ""WordId"" = wm.new_id
                 FROM word_merge_map wm
                 WHERE tw.""WordId"" = wm.old_id;
 
-                -- 5. Final Cleanup
-                -- Delete duplicate Words
+                -- 5. Delete now-redundant duplicate words
                 DELETE FROM ""Words"" w
                 USING word_merge_map wm
                 WHERE w.""WordId"" = wm.old_id;
 
                 DROP TABLE IF EXISTS word_merge_map;
 
-                -- 6. Schema Upgrades (Idempotent)
+                -- 6. Schema Finalization
                 ALTER TABLE ""Texts"" ADD COLUMN IF NOT EXISTS ""IsFinished"" boolean NOT NULL DEFAULT FALSE;
 
                 DROP INDEX IF EXISTS ""IX_Words_UserId"";
                 DROP INDEX IF EXISTS ""IX_Words_UserId_LanguageId_Term"";
-                CREATE UNIQUE INDEX IF NOT EXISTS ""IX_Words_UserId_LanguageId_Term"" ON ""Words"" (""UserId"", ""LanguageId"", ""Term"");
+                CREATE UNIQUE INDEX ""IX_Words_UserId_LanguageId_Term"" ON ""Words"" (""UserId"", ""LanguageId"", ""Term"");
 
                 DROP INDEX IF EXISTS ""IX_TextWords_TextId"";
                 DROP INDEX IF EXISTS ""IX_TextWords_TextId_WordId"";
-                CREATE UNIQUE INDEX IF NOT EXISTS ""IX_TextWords_TextId_WordId"" ON ""TextWords"" (""TextId"", ""WordId"");
+                CREATE UNIQUE INDEX ""IX_TextWords_TextId_WordId"" ON ""TextWords"" (""TextId"", ""WordId"");
+
+                DROP INDEX IF EXISTS ""IX_UserLanguageStatistics_UserId_LanguageId"";
+                CREATE UNIQUE INDEX ""IX_UserLanguageStatistics_UserId_LanguageId"" ON ""UserLanguageStatistics"" (""UserId"", ""LanguageId"");
             ");
         }
 
@@ -97,6 +102,10 @@ namespace LinguaReadApi.Migrations
             migrationBuilder.DropIndex(
                 name: "IX_TextWords_TextId_WordId",
                 table: "TextWords");
+            
+            migrationBuilder.DropIndex(
+                name: "IX_UserLanguageStatistics_UserId_LanguageId",
+                table: "UserLanguageStatistics");
 
             migrationBuilder.DropColumn(
                 name: "IsFinished",

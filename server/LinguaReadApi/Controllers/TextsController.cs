@@ -51,9 +51,23 @@ namespace LinguaReadApi.Controllers
                     Tag = t.Tag,
                     IsAudioLesson = t.IsAudioLesson,
                     BookId = t.BookId,
-                    BookTitle = t.Book != null ? t.Book.Title : null // Include BookTitle
+                    BookTitle = t.Book != null ? t.Book.Title : null, // Include BookTitle
+                    IsFinished = t.IsFinished
                 })
                 .ToListAsync();
+
+            // Fetch audio progress
+            var progressDict = await _context.UserAudioLessonProgresses
+                .Where(p => p.UserId == userId)
+                .ToDictionaryAsync(p => p.TextId, p => p.CurrentPosition);
+
+            foreach (var text in texts)
+            {
+                if (text.IsAudioLesson && progressDict.TryGetValue(text.TextId, out var progress))
+                {
+                    text.AudioProgress = progress;
+                }
+            }
 
             return texts;
         }
@@ -70,32 +84,28 @@ namespace LinguaReadApi.Controllers
                 .Where(t => t.TextId == id && t.UserId == userId)
                 .Include(t => t.Language)
                 .Include(t => t.Book)
-                .Include(t => t.TextWords)
-                    .ThenInclude(tw => tw.Word)
-                        .ThenInclude(w => w.Translation)
                 .Select(text => new TextDetailDto // Project directly to DTO
                 {
                      TextId = text.TextId,
                      Title = text.Title,
                      Content = text.Content,
                      LanguageId = text.LanguageId,
-                     LanguageCode = text.Language.Code, // Assuming Language is always loaded
+                     LanguageCode = text.Language.Code,
                      LanguageName = text.Language.Name,
                      BookId = text.BookId,
                      BookTitle = text.Book != null ? text.Book.Title : null,
-                     IsAudioLesson = text.IsAudioLesson, // Include audio lesson fields
+                     IsAudioLesson = text.IsAudioLesson,
                      AudioFilePath = text.AudioFilePath,
                      SrtContent = text.SrtContent,
                      CreatedAt = text.CreatedAt,
+                     // Optimized: TextWords now contains unique links, so we can project directly
                      Words = text.TextWords
-                         .Select(tw => tw.Word)
-                         .Distinct() // Optimization: Return unique words only to reduce payload size
-                         .Select(w => new WordDto
+                         .Select(tw => new WordDto
                          {
-                             WordId = w.WordId,
-                             Term = w.Term,
-                             Status = w.Status,
-                             Translation = w.Translation != null ? w.Translation.Translation : null
+                             WordId = tw.Word.WordId,
+                             Term = tw.Word.Term,
+                             Status = tw.Word.Status,
+                             Translation = tw.Word.Translation != null ? tw.Word.Translation.Translation : null
                          }).ToList()
                 })
                 .FirstOrDefaultAsync();
@@ -457,9 +467,9 @@ namespace LinguaReadApi.Controllers
                 await _context.SaveChangesAsync(); // Save new words to get their IDs
             }
 
-            // 4. Link all word occurrences via TextWord bulk insert
+            // 4. Link only UNIQUE word occurrences via TextWord bulk insert
             var textWordsToAdd = new List<TextWord>();
-            foreach (var wordTerm in wordsInText) // Link EVERY occurrence
+            foreach (var wordTerm in uniqueWords) // Changed to uniqueWords: Link each word only once per text
             {
                 if (existingWords.TryGetValue(wordTerm, out var word))
                 {
@@ -959,28 +969,20 @@ namespace LinguaReadApi.Controllers
                 return NotFound("Text not found.");
             }
 
-            // --- 1. Calculate Stats from existing links ---
-            // Ensure TextWords and Words were loaded in the initial query (Lines 888-891)
-            if (text.TextWords == null)
-            {
-                 // This shouldn't happen if the Include was correct, but handle defensively
-                 await _context.Entry(text).Collection(t => t.TextWords).Query().Include(tw => tw.Word).LoadAsync();
-                 if (text.TextWords == null)
-                 {
-                      _logger.LogError("Failed to load TextWords for TextId {TextId} during completion.", textId);
-                      return StatusCode(500, "Failed to load word data for statistics.");
-                 }
-            }
+            // --- 1. Calculate Stats ---
+            // 'totalWordsUnique' is used for the popup percentage
+            var totalWordsUnique = text.TextWords.Count; 
+            var knownWordsUnique = text.TextWords.Count(tw => tw.Word.Status == 5); 
+            var learningWordsUnique = text.TextWords.Count(tw => tw.Word.Status > 0 && tw.Word.Status < 5); 
 
-            var totalWords = text.TextWords.Count; // Calculate stats from already loaded data
-            var knownWords = text.TextWords.Count(tw => tw.Word.Status == 5); // Status 5 = Known
-            var learningWords = text.TextWords.Count(tw => tw.Word.Status > 0 && tw.Word.Status < 5); // Status 1-4 = Learning
+            // 'totalActualWordCount' is used for daily activity tracking (total tokens read)
+            var totalActualWordCount = LinguaReadApi.Utilities.WordCountUtility.CountTotalWords(text.Content);
 
             // --- 2. Log Activity ---
             try
             {
-                // Log completion activity (TODO: Implement the service method fully)
-                await _userActivityService.LogTextCompletedActivity(userId, text.LanguageId, textId, totalWords, text.IsAudioLesson);
+                // Log completion activity with the full token count for accurate progress tracking
+                await _userActivityService.LogTextCompletedActivity(userId, text.LanguageId, textId, totalActualWordCount, text.IsAudioLesson);
                 // TODO: Optionally call UpdateUserLanguageStats here or within LogTextCompletedActivity
                 // await _userActivityService.UpdateUserLanguageStats(userId, text.LanguageId);
             }
@@ -991,17 +993,20 @@ namespace LinguaReadApi.Controllers
             }
 
             // --- 3. Update Text Status (If applicable) ---
-            // If a 'IsCompleted' or similar status exists on the Text model, update it here.
-            // text.IsCompleted = true;
-            // await _context.SaveChangesAsync(); // Save if status updated
+            // Update IsFinished status
+            if (!text.IsFinished)
+            {
+                text.IsFinished = true;
+                await _context.SaveChangesAsync(); 
+            }
 
             // --- 4. Return Stats ---
             var stats = new TextStatsDto
             {
-                TotalWords = totalWords,
-                KnownWords = knownWords,
-                LearningWords = learningWords,
-                CompletionPercentage = totalWords > 0 ? (double)knownWords / totalWords * 100 : 0
+                TotalWords = totalWordsUnique,
+                KnownWords = knownWordsUnique,
+                LearningWords = learningWordsUnique,
+                CompletionPercentage = totalWordsUnique > 0 ? (double)knownWordsUnique / totalWordsUnique * 100 : 0
             };
 
             // Use Ok() as we are returning stats. Use NoContent() if not returning anything.
@@ -1032,6 +1037,8 @@ namespace LinguaReadApi.Controllers
         public bool IsAudioLesson { get; set; }
         public int? BookId { get; set; } // Include BookId
         public string? BookTitle { get; set; } // Include BookTitle
+        public bool IsFinished { get; set; }
+        public double? AudioProgress { get; set; }
     }
 
     public class TextDetailDto

@@ -50,5 +50,8 @@ namespace LinguaReadApi.Models
         public bool IsAudioLesson { get; set; } = false;
         public string? AudioFilePath { get; set; } // Path to the associated audio file
         public string? SrtContent { get; set; } // Raw content of the SRT file
+
+        // New field to track completion status
+        public bool IsFinished { get; set; } = false;
     }
 }

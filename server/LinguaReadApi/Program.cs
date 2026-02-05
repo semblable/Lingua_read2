@@ -247,6 +247,22 @@ if (!app.Environment.IsEnvironment("Testing"))
             {
                 logger.LogWarning(ex, "Failed to ensure UserAudioLessonProgresses table exists via raw SQL. This may be expected if the table already exists but schema check failed.");
             }
+
+            // --- Ensure IsFinished column exists in Texts table (Migration workaround) ---
+            try
+            {
+                logger.LogInformation("Ensuring IsFinished column exists in Texts table...");
+                // Add column if not exists - PostgreSQL specific syntax
+                const string addColumnSql = @"
+                    ALTER TABLE ""Texts"" ADD COLUMN IF NOT EXISTS ""IsFinished"" boolean NOT NULL DEFAULT FALSE;
+                ";
+                dbContext.Database.ExecuteSqlRaw(addColumnSql);
+                logger.LogInformation("Texts table schema check/update completed.");
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Failed to ensure IsFinished column exists in Texts table via raw SQL.");
+            }
         }
         catch (Exception ex)
         {

@@ -93,6 +93,10 @@ namespace LinguaReadApi.Data
             // Text - Word: Many-to-Many through TextWord
             modelBuilder.Entity<TextWord>()
                 .HasKey(tw => tw.TextWordId);
+
+            modelBuilder.Entity<TextWord>()
+                .HasIndex(tw => new { tw.TextId, tw.WordId })
+                .IsUnique();
                 
             modelBuilder.Entity<TextWord>()
                 .HasOne(tw => tw.Text)
@@ -144,6 +148,11 @@ namespace LinguaReadApi.Data
             // Configure Tag entity
             modelBuilder.Entity<Tag>()
                 .HasIndex(t => t.Name)
+                .IsUnique();
+
+            // Configure unique index for Words to speed up lookups and prevent duplicates
+            modelBuilder.Entity<Word>()
+                .HasIndex(w => new { w.UserId, w.LanguageId, w.Term })
                 .IsUnique();
 
             // Configure BookTag join entity (Many-to-Many: Book <-> Tag)

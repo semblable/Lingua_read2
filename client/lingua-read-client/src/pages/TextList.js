@@ -215,6 +215,7 @@ const TextList = () => {
                 <Card.Body>
                   <Card.Title>
                     {text.isAudioLesson && <i className="bi bi-headphones me-2" title="Audio Lesson"></i>}
+                    {text.isFinished && <i className="bi bi-check-circle-fill text-success me-2" title="Completed"></i>}
                     {text.title}
                   </Card.Title>
                   <Card.Subtitle className="mb-2 text-muted">

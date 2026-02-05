@@ -994,17 +994,24 @@ namespace LinguaReadApi.Controllers
 
             // --- 3. Update Text Status (If applicable) ---
             // Update IsFinished status
-            if (!text.IsFinished)
+                if (!text.IsFinished)
             {
-                // Because we used AsNoTracking above, we must attach the entity or a stub to update it
-                var textToUpdate = new Text { TextId = textId, UserId = userId, IsFinished = true };
+                var textToUpdate = new Text { TextId = textId, UserId = userId };
                 _context.Texts.Attach(textToUpdate);
+
+                // Update IsFinished status
+                textToUpdate.IsFinished = true;
                 _context.Entry(textToUpdate).Property(t => t.IsFinished).IsModified = true;
-                
-                // Update local object property as well for consistency if reused (though we just return stats)
-                text.IsFinished = true;
-                
-                await _context.SaveChangesAsync(); 
+
+                // Check for AutoMoveFinishedLessons setting
+                var userSettings = await _context.UserSettings.FindAsync(userId);
+                if (userSettings != null && userSettings.AutoMoveFinishedLessons)
+                {
+                    textToUpdate.Tag = "Finished";
+                    _context.Entry(textToUpdate).Property(t => t.Tag).IsModified = true;
+                }
+
+                await _context.SaveChangesAsync();
             }
 
             // --- 4. Return Stats ---

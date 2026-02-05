@@ -17,6 +17,7 @@ const UserSettings = () => {
     highlightKnownWords: true,
     defaultLanguageId: 0,
     autoAdvanceToNextLesson: false,
+    autoMoveFinishedLessons: false, // Added property
     showProgressStats: true,
     lineSpacing: 1.5, // Added lineSpacing setting
     discordWeeklyReportEnabled: false,
@@ -83,6 +84,7 @@ const UserSettings = () => {
           highlightKnownWords: data.highlightKnownWords ?? true,
           defaultLanguageId: data.defaultLanguageId || 0,
           autoAdvanceToNextLesson: data.autoAdvanceToNextLesson ?? false,
+          autoMoveFinishedLessons: data.autoMoveFinishedLessons ?? false, // Map response
           showProgressStats: data.showProgressStats ?? true,
           lineSpacing: data.lineSpacing || 1.5, // Fetch lineSpacing
           discordWeeklyReportEnabled: data.discordWeeklyReportEnabled ?? false,
@@ -214,6 +216,9 @@ const UserSettings = () => {
 
       updateSetting('autoAdvanceToNextLesson', settings.autoAdvanceToNextLesson);
       localStorage.setItem('autoAdvanceToNextLesson', settings.autoAdvanceToNextLesson.toString());
+
+      updateSetting('autoMoveFinishedLessons', settings.autoMoveFinishedLessons);
+      localStorage.setItem('autoMoveFinishedLessons', settings.autoMoveFinishedLessons.toString());
 
       updateSetting('showProgressStats', settings.showProgressStats);
       localStorage.setItem('showProgressStats', settings.showProgressStats.toString());
@@ -517,6 +522,16 @@ const UserSettings = () => {
                 name="autoAdvanceToNextLesson"
                 label="Automatically advance to next lesson after completion"
                 checked={settings.autoAdvanceToNextLesson}
+                onChange={handleChange}
+              />
+            </Form.Group>
+
+            <Form.Group className="mb-3" controlId="autoMoveFinishedLessons">
+              <Form.Check
+                type="checkbox"
+                name="autoMoveFinishedLessons"
+                label="Automatically move finished lessons to 'Finished' folder"
+                checked={settings.autoMoveFinishedLessons || false}
                 onChange={handleChange}
               />
             </Form.Group>

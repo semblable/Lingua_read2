@@ -59,6 +59,7 @@ namespace LinguaReadApi.Controllers
                     HighlightKnownWords = true,
                     DefaultLanguageId = 0,
                     AutoAdvanceToNextLesson = false,
+                    AutoMoveFinishedLessons = false, // Added property
                     ShowProgressStats = true,
                     CreatedAt = DateTime.UtcNow,
                     LeftPanelWidth = 85, // Set default panel width
@@ -85,6 +86,7 @@ namespace LinguaReadApi.Controllers
                 HighlightKnownWords = settings.HighlightKnownWords,
                 DefaultLanguageId = settings.DefaultLanguageId,
                 AutoAdvanceToNextLesson = settings.AutoAdvanceToNextLesson,
+                AutoMoveFinishedLessons = settings.AutoMoveFinishedLessons, // Added
                 ShowProgressStats = settings.ShowProgressStats,
                 CurrentAudiobookTrackId = settings.CurrentAudiobookTrackId, // Added
                 CurrentAudiobookPosition = settings.CurrentAudiobookPosition, // Added
@@ -133,6 +135,7 @@ namespace LinguaReadApi.Controllers
             settings.HighlightKnownWords = updateDto.HighlightKnownWords ?? settings.HighlightKnownWords;
             settings.DefaultLanguageId = updateDto.DefaultLanguageId ?? settings.DefaultLanguageId;
             settings.AutoAdvanceToNextLesson = updateDto.AutoAdvanceToNextLesson ?? settings.AutoAdvanceToNextLesson;
+            settings.AutoMoveFinishedLessons = updateDto.AutoMoveFinishedLessons ?? settings.AutoMoveFinishedLessons; // Update property
             settings.ShowProgressStats = updateDto.ShowProgressStats ?? settings.ShowProgressStats;
             settings.LeftPanelWidth = updateDto.LeftPanelWidth ?? settings.LeftPanelWidth; // Update panel width
             settings.DiscordWeeklyReportEnabled = updateDto.DiscordWeeklyReportEnabled ?? settings.DiscordWeeklyReportEnabled;
@@ -183,6 +186,7 @@ namespace LinguaReadApi.Controllers
                 HighlightKnownWords = settings.HighlightKnownWords,
                 DefaultLanguageId = settings.DefaultLanguageId,
                 AutoAdvanceToNextLesson = settings.AutoAdvanceToNextLesson,
+                AutoMoveFinishedLessons = settings.AutoMoveFinishedLessons, // Update property
                 ShowProgressStats = settings.ShowProgressStats,
                 LeftPanelWidth = settings.LeftPanelWidth, // Map panel width to DTO
                 DiscordWeeklyReportEnabled = settings.DiscordWeeklyReportEnabled,
@@ -529,6 +533,7 @@ namespace LinguaReadApi.Controllers
         public bool HighlightKnownWords { get; set; } = true;
         public int DefaultLanguageId { get; set; } = 0;
         public bool AutoAdvanceToNextLesson { get; set; } = false;
+        public bool AutoMoveFinishedLessons { get; set; } = false; // Added property
         public bool ShowProgressStats { get; set; } = true;
         public int? CurrentAudiobookTrackId { get; set; } // Added
         public double? CurrentAudiobookPosition { get; set; } // Added
@@ -557,6 +562,7 @@ namespace LinguaReadApi.Controllers
         public bool? HighlightKnownWords { get; set; }
         public int? DefaultLanguageId { get; set; }
         public bool? AutoAdvanceToNextLesson { get; set; }
+        public bool? AutoMoveFinishedLessons { get; set; } // Added property
         public bool? ShowProgressStats { get; set; }
 
         public bool? DiscordWeeklyReportEnabled { get; set; }

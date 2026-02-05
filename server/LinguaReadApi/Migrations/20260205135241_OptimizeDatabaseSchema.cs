@@ -10,11 +10,7 @@ namespace LinguaReadApi.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            // --- 0. Safe Drops ---
-            migrationBuilder.Sql("DROP INDEX IF EXISTS \"IX_Words_UserId\";");
-            migrationBuilder.Sql("DROP INDEX IF EXISTS \"IX_TextWords_TextId\";");
-
-            // --- 1. Clean up duplicate TextWords ---
+            // --- 1. Clean up duplicate TextWords (While indexes still exist for performance) ---
             migrationBuilder.Sql(@"
                 DELETE FROM ""TextWords"" a
                 USING ""TextWords"" b
@@ -89,7 +85,10 @@ namespace LinguaReadApi.Migrations
                 $$;
             ");
 
-            // --- 4. Create Unique Indexes ---
+            // --- 4. Create Unique Indexes (Safe Drops first) ---
+            migrationBuilder.Sql("DROP INDEX IF EXISTS \"IX_Words_UserId\";");
+            migrationBuilder.Sql("DROP INDEX IF EXISTS \"IX_TextWords_TextId\";");
+
             migrationBuilder.Sql(@"
                 DO $$
                 BEGIN

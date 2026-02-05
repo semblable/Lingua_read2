@@ -10,105 +10,80 @@ namespace LinguaReadApi.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            // --- 1. Clean up duplicate TextWords (While indexes still exist for performance) ---
             migrationBuilder.Sql(@"
+                -- 1. Preparation: Remove any current TextWords duplicates if they somehow exist
                 DELETE FROM ""TextWords"" a
                 USING ""TextWords"" b
                 WHERE a.""TextWordId"" > b.""TextWordId""
                 AND a.""TextId"" = b.""TextId""
                 AND a.""WordId"" = b.""WordId"";
-            ");
 
-            // --- 2. Clean up duplicate Words and handle related tables ---
-            migrationBuilder.Sql(@"
-                DO $$
-                BEGIN
-                    -- Create temporary mapping
-                    IF NOT (SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'wordmappings_temp')) THEN
-                        CREATE TEMP TABLE wordmappings_temp AS
-                        SELECT w.""WordId"" as OldId, m.MinId as NewId
-                        FROM ""Words"" w
-                        JOIN (
-                            SELECT ""UserId"", ""LanguageId"", LOWER(""Term"") as NormTerm, MIN(""WordId"") as MinId
-                            FROM ""Words""
-                            GROUP BY ""UserId"", ""LanguageId"", LOWER(""Term"")
-                            HAVING COUNT(*) > 1
-                        ) m ON w.""UserId"" = m.""UserId"" 
-                           AND w.""LanguageId"" = m.""LanguageId"" 
-                           AND LOWER(w.""Term"") = m.NormTerm
-                        WHERE w.""WordId"" <> m.MinId;
+                -- 2. Word & Translation Merge Map
+                -- We identify 'winners' and 'losers' for each logical word group
+                DROP TABLE IF EXISTS word_merge_map;
+                CREATE TEMP TABLE word_merge_map AS
+                SELECT w.""WordId"" as old_id, m.min_id as new_id
+                FROM ""Words"" w
+                JOIN (
+                    SELECT ""UserId"", ""LanguageId"", TRIM(LOWER(""Term"")) as norm_term, MIN(""WordId"") as min_id
+                    FROM ""Words""
+                    GROUP BY ""UserId"", ""LanguageId"", TRIM(LOWER(""Term""))
+                    HAVING COUNT(*) > 1
+                ) m ON w.""UserId"" = m.""UserId"" 
+                   AND w.""LanguageId"" = m.""LanguageId"" 
+                   AND TRIM(LOWER(w.""Term"")) = m.norm_term
+                WHERE w.""WordId"" <> m.min_id;
 
-                        -- Handle WordTranslations: Delete translations for 'OldId' if 'NewId' already has one
-                        DELETE FROM ""WordTranslations"" wt
-                        USING wordmappings_temp wm
-                        WHERE wt.""WordId"" = wm.OldId
-                        AND EXISTS (SELECT 1 FROM ""WordTranslations"" wt2 WHERE wt2.""WordId"" = wm.NewId);
+                -- 3. Resolve WordTranslations collisions
+                -- If both 'old' and 'new' words have translations, we must keep only the best one
+                DELETE FROM ""WordTranslations"" wt
+                USING word_merge_map wm
+                WHERE wt.""WordId"" = wm.old_id
+                AND EXISTS (SELECT 1 FROM ""WordTranslations"" wt2 WHERE wt2.""WordId"" = wm.new_id);
 
-                        -- Now update remaining WordTranslations to point to the canonical WordId
-                        UPDATE ""WordTranslations"" wt
-                        SET ""WordId"" = wm.NewId
-                        FROM wordmappings_temp wm
-                        WHERE wt.""WordId"" = wm.OldId;
+                -- Re-link remaining translations to the winner WordId
+                UPDATE ""WordTranslations"" wt
+                SET ""WordId"" = wm.new_id
+                FROM word_merge_map wm
+                WHERE wt.""WordId"" = wm.old_id;
 
-                        -- Update TextWords to point to the canonical WordId
-                        UPDATE ""TextWords"" tw
-                        SET ""WordId"" = wm.NewId
-                        FROM wordmappings_temp wm
-                        WHERE tw.""WordId"" = wm.OldId;
+                -- 4. CRITICAL: Resolve TextWords conflicts
+                -- Before we update TextWords, we must delete entries where a link already exists for the 'new' word
+                -- To prevent Unique Constraint Violation on (TextId, WordId)
+                DELETE FROM ""TextWords"" tw
+                USING word_merge_map wm
+                WHERE tw.""WordId"" = wm.old_id
+                AND EXISTS (
+                    SELECT 1 
+                    FROM ""TextWords"" tw2 
+                    WHERE tw2.""TextId"" = tw.""TextId"" 
+                    AND tw2.""WordId"" = wm.new_id
+                );
 
-                        -- Delete the duplicate words
-                        DELETE FROM ""Words"" w
-                        USING wordmappings_temp wm
-                        WHERE w.""WordId"" = wm.OldId;
+                -- Now safe to re-link all remaining TextWords
+                UPDATE ""TextWords"" tw
+                SET ""WordId"" = wm.new_id
+                FROM word_merge_map wm
+                WHERE tw.""WordId"" = wm.old_id;
 
-                        -- Final pass for TextWords duplicates (created by the WordId merge)
-                        DELETE FROM ""TextWords"" a
-                        USING ""TextWords"" b
-                        WHERE a.""TextWordId"" > b.""TextWordId""
-                        AND a.""TextId"" = b.""TextId""
-                        AND a.""WordId"" = b.""WordId"";
+                -- 5. Final Cleanup
+                -- Delete duplicate Words
+                DELETE FROM ""Words"" w
+                USING word_merge_map wm
+                WHERE w.""WordId"" = wm.old_id;
 
-                        DROP TABLE wordmappings_temp;
-                    END IF;
-                END
-                $$;
-            ");
+                DROP TABLE IF EXISTS word_merge_map;
 
-            // --- 3. Optional: Ensure IsFinished column exists ---
-            migrationBuilder.Sql(@"
-                DO $$
-                BEGIN
-                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='Texts' AND column_name='IsFinished') THEN
-                        ALTER TABLE ""Texts"" ADD COLUMN ""IsFinished"" boolean NOT NULL DEFAULT FALSE;
-                    END IF;
-                END
-                $$;
-            ");
+                -- 6. Schema Upgrades (Idempotent)
+                ALTER TABLE ""Texts"" ADD COLUMN IF NOT EXISTS ""IsFinished"" boolean NOT NULL DEFAULT FALSE;
 
-            // --- 4. Create Unique Indexes (Safe Drops first) ---
-            migrationBuilder.Sql("DROP INDEX IF EXISTS \"IX_Words_UserId\";");
-            migrationBuilder.Sql("DROP INDEX IF EXISTS \"IX_TextWords_TextId\";");
+                DROP INDEX IF EXISTS ""IX_Words_UserId"";
+                DROP INDEX IF EXISTS ""IX_Words_UserId_LanguageId_Term"";
+                CREATE UNIQUE INDEX IF NOT EXISTS ""IX_Words_UserId_LanguageId_Term"" ON ""Words"" (""UserId"", ""LanguageId"", ""Term"");
 
-            migrationBuilder.Sql(@"
-                DO $$
-                BEGIN
-                    IF NOT EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE c.relname = 'IX_Words_UserId_LanguageId_Term' AND n.nspname = 'public') THEN
-                         DROP INDEX IF EXISTS ""IX_Words_UserId_LanguageId_Term"";
-                         CREATE UNIQUE INDEX ""IX_Words_UserId_LanguageId_Term"" ON ""Words"" (""UserId"", ""LanguageId"", ""Term"");
-                    END IF;
-                END
-                $$;
-            ");
-
-            migrationBuilder.Sql(@"
-                DO $$
-                BEGIN
-                    IF NOT EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE c.relname = 'IX_TextWords_TextId_WordId' AND n.nspname = 'public') THEN
-                         DROP INDEX IF EXISTS ""IX_TextWords_TextId_WordId"";
-                         CREATE UNIQUE INDEX ""IX_TextWords_TextId_WordId"" ON ""TextWords"" (""TextId"", ""WordId"");
-                    END IF;
-                END
-                $$;
+                DROP INDEX IF EXISTS ""IX_TextWords_TextId"";
+                DROP INDEX IF EXISTS ""IX_TextWords_TextId_WordId"";
+                CREATE UNIQUE INDEX IF NOT EXISTS ""IX_TextWords_TextId_WordId"" ON ""TextWords"" (""TextId"", ""WordId"");
             ");
         }
 

@@ -87,13 +87,16 @@ namespace LinguaReadApi.Controllers
                      AudioFilePath = text.AudioFilePath,
                      SrtContent = text.SrtContent,
                      CreatedAt = text.CreatedAt,
-                     Words = text.TextWords.Select(tw => new WordDto
-                     {
-                         WordId = tw.Word.WordId,
-                         Term = tw.Word.Term,
-                         Status = tw.Word.Status,
-                         Translation = tw.Word.Translation != null ? tw.Word.Translation.Translation : null
-                     }).ToList()
+                     Words = text.TextWords
+                         .Select(tw => tw.Word)
+                         .Distinct() // Optimization: Return unique words only to reduce payload size
+                         .Select(w => new WordDto
+                         {
+                             WordId = w.WordId,
+                             Term = w.Term,
+                             Status = w.Status,
+                             Translation = w.Translation != null ? w.Translation.Translation : null
+                         }).ToList()
                 })
                 .FirstOrDefaultAsync();
 

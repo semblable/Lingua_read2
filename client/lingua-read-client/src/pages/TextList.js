@@ -18,6 +18,7 @@ const TextList = () => {
 
   const [tagFilter, setTagFilter] = useState(''); // State for tag filter
   const [typeFilter, setTypeFilter] = useState('all'); // State for type filter ('all', 'audio', 'normal')
+  const [statusFilter, setStatusFilter] = useState('all'); // State for status filter ('all', 'finished', 'inprogress')
 
   // Update localStorage when filter changes
   useEffect(() => {
@@ -56,7 +57,10 @@ const TextList = () => {
         (typeFilter === 'audio' && text.isAudioLesson) ||
         (typeFilter === 'normal' && !text.isAudioLesson);
       const languageMatch = !languageFilter || text.languageName === languageFilter;
-      return tagMatch && typeMatch && languageMatch;
+      const statusMatch = statusFilter === 'all' ||
+        (statusFilter === 'finished' && text.isFinished) ||
+        (statusFilter === 'inprogress' && !text.isFinished);
+      return tagMatch && typeMatch && languageMatch && statusMatch;
     });
 
     // Sort filtered texts
@@ -83,7 +87,7 @@ const TextList = () => {
     });
 
     return { filteredAndSortedTexts: sorted, uniqueTags: tags, uniqueLanguages: languages };
-  }, [texts, sortKey, sortOrder, tagFilter, typeFilter, languageFilter]); // Add filters to dependencies
+  }, [texts, sortKey, sortOrder, tagFilter, typeFilter, languageFilter, statusFilter]); // Add filters to dependencies
 
   const handleSort = (key) => {
     if (key === sortKey) {
@@ -166,6 +170,11 @@ const TextList = () => {
               <option key={tag} value={tag}>{tag}</option>
             ))}
           </Form.Select>
+          <Form.Select size="sm" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={{ width: '150px' }}>
+            <option value="all">All Status</option>
+            <option value="finished">Finished</option>
+            <option value="inprogress">In Progress</option>
+          </Form.Select>
           <Form.Select size="sm" value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} style={{ width: '150px' }}>
             <option value="all">All Types</option>
             <option value="normal">Normal Texts</option>
@@ -192,7 +201,7 @@ const TextList = () => {
             <Button as={Link} to="/texts/create" variant="primary">
               Add Your First Text
             </Button>
-            {(languageFilter || tagFilter || typeFilter !== 'all') && (
+            {(languageFilter || tagFilter || typeFilter !== 'all' || statusFilter !== 'all') && ( // Update condition
               <Button
                 variant="outline-secondary"
                 className="ms-2"
@@ -200,6 +209,7 @@ const TextList = () => {
                   setLanguageFilter('');
                   setTagFilter('');
                   setTypeFilter('all');
+                  setStatusFilter('all'); // Clear status filter
                 }}
               >
                 Clear Filters

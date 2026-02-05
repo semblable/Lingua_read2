@@ -556,7 +556,7 @@ namespace LinguaReadApi.Controllers
         
         public string? TextFont { get; set; }
 
-        [Range(20, 85)] // Increased max width to 85%
+        [Range(10, 100)] // Widen range to accept broader values
         public int? LeftPanelWidth { get; set; } // Already added in previous step, ensure it's correct
         public bool? AutoTranslateWords { get; set; }
         public bool? HighlightKnownWords { get; set; }

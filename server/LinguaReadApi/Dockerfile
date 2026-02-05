@@ -16,14 +16,10 @@ RUN dotnet publish LinguaReadApi.csproj -c Release -o /app/publish
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS final
 WORKDIR /app
 
-# Copy published output from build stage
-COPY --from=build /app/publish ./
-
 # Install PostgreSQL client for pg_dump and pg_restore
 USER root
 RUN apt-get update && \
     # Add PostgreSQL repo setup for version 16 client tools
-    # Install lsb-release first to get codename - No longer needed, hardcoding bookworm
     apt-get install -y --no-install-recommends curl ca-certificates gnupg lsb-release && \
     curl https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor -o /usr/share/keyrings/postgresql-archive-keyring.gpg && \
     echo "deb [signed-by=/usr/share/keyrings/postgresql-archive-keyring.gpg] http://apt.postgresql.org/pub/repos/apt bookworm-pgdg main" > /etc/apt/sources.list.d/pgdg.list && \
@@ -35,6 +31,9 @@ RUN apt-get update && \
 # Create the directories the application needs at runtime and ensure correct ownership
 RUN mkdir -p /app/wwwroot/audio_lessons /app/wwwroot/audiobooks && \
     chown -R app:app /app/wwwroot/audio_lessons /app/wwwroot/audiobooks
+
+# Copy published output from build stage
+COPY --from=build /app/publish ./
 
 # Change ownership of the rest of the app directory to the app user
 RUN chown -R app:app /app

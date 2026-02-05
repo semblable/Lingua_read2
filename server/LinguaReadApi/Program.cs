@@ -223,46 +223,6 @@ if (!app.Environment.IsEnvironment("Testing"))
             var dbContext = services.GetRequiredService<AppDbContext>();
             dbContext.Database.Migrate();
             logger.LogInformation("Database migrations applied successfully (or were already up-to-date).");
-
-            // --- Ensure UserAudioLessonProgresses table exists (Recovery for cloud environments) ---
-            try
-            {
-                logger.LogInformation("Ensuring UserAudioLessonProgresses table exists...");
-                const string createTableSql = @"
-                    CREATE TABLE IF NOT EXISTS ""UserAudioLessonProgresses"" (
-                        ""UserId"" uuid NOT NULL,
-                        ""TextId"" integer NOT NULL,
-                        ""CurrentPosition"" double precision NULL,
-                        ""UpdatedAt"" timestamp with time zone NOT NULL,
-                        CONSTRAINT ""PK_UserAudioLessonProgresses"" PRIMARY KEY (""UserId"", ""TextId""),
-                        CONSTRAINT ""FK_UserAudioLessonProgresses_Texts_TextId"" FOREIGN KEY (""TextId"") REFERENCES ""Texts"" (""TextId"") ON DELETE CASCADE,
-                        CONSTRAINT ""FK_UserAudioLessonProgresses_Users_UserId"" FOREIGN KEY (""UserId"") REFERENCES ""Users"" (""Id"") ON DELETE CASCADE
-                    );
-                    CREATE INDEX IF NOT EXISTS ""IX_UserAudioLessonProgresses_TextId"" ON ""UserAudioLessonProgresses"" (""TextId"");
-                ";
-                dbContext.Database.ExecuteSqlRaw(createTableSql);
-                logger.LogInformation("UserAudioLessonProgresses table check/creation completed.");
-            }
-            catch (Exception ex)
-            {
-                logger.LogWarning(ex, "Failed to ensure UserAudioLessonProgresses table exists via raw SQL. This may be expected if the table already exists but schema check failed.");
-            }
-
-            // --- Ensure IsFinished column exists in Texts table (Migration workaround) ---
-            try
-            {
-                logger.LogInformation("Ensuring IsFinished column exists in Texts table...");
-                // Add column if not exists - PostgreSQL specific syntax
-                const string addColumnSql = @"
-                    ALTER TABLE ""Texts"" ADD COLUMN IF NOT EXISTS ""IsFinished"" boolean NOT NULL DEFAULT FALSE;
-                ";
-                dbContext.Database.ExecuteSqlRaw(addColumnSql);
-                logger.LogInformation("Texts table schema check/update completed.");
-            }
-            catch (Exception ex)
-            {
-                logger.LogWarning(ex, "Failed to ensure IsFinished column exists in Texts table via raw SQL.");
-            }
         }
         catch (Exception ex)
         {

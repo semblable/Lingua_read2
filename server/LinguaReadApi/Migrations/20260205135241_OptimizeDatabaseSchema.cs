@@ -74,24 +74,40 @@ namespace LinguaReadApi.Migrations
                 DROP TABLE WordMappings;
             ");
 
-            migrationBuilder.AddColumn<bool>(
-                name: "IsFinished",
-                table: "Texts",
-                type: "boolean",
-                nullable: false,
-                defaultValue: false);
+            // 3. Add IsFinished column safely if it doesn't exist
+            migrationBuilder.Sql(@"
+                DO $$
+                BEGIN
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='Texts' AND column_name='IsFinished') THEN
+                        ALTER TABLE ""Texts"" ADD COLUMN ""IsFinished"" boolean NOT NULL DEFAULT FALSE;
+                    END IF;
+                END
+                $$;
+            ");
 
-            migrationBuilder.CreateIndex(
-                name: "IX_Words_UserId_LanguageId_Term",
-                table: "Words",
-                columns: new[] { "UserId", "LanguageId", "Term" },
-                unique: true);
+            // 4. Create unique indexes safely if they don't exist
+            migrationBuilder.Sql(@"
+                DO $$
+                BEGIN
+                    IF NOT EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE c.relname = 'IX_Words_UserId_Language_Term_Unique' AND n.nspname = 'public') THEN
+                        -- Use a slightly different name if needed to avoid conflict with EF's default names if they exist but aren't unique
+                         DROP INDEX IF EXISTS ""IX_Words_UserId_LanguageId_Term"";
+                         CREATE UNIQUE INDEX ""IX_Words_UserId_LanguageId_Term"" ON ""Words"" (""UserId"", ""LanguageId"", ""Term"");
+                    END IF;
+                END
+                $$;
+            ");
 
-            migrationBuilder.CreateIndex(
-                name: "IX_TextWords_TextId_WordId",
-                table: "TextWords",
-                columns: new[] { "TextId", "WordId" },
-                unique: true);
+            migrationBuilder.Sql(@"
+                DO $$
+                BEGIN
+                    IF NOT EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE c.relname = 'IX_TextWords_TextId_WordId' AND n.nspname = 'public') THEN
+                         DROP INDEX IF EXISTS ""IX_TextWords_TextId_WordId"";
+                         CREATE UNIQUE INDEX ""IX_TextWords_TextId_WordId"" ON ""TextWords"" (""TextId"", ""WordId"");
+                    END IF;
+                END
+                $$;
+            ");
         }
 
         /// <inheritdoc />

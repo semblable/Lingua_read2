@@ -1745,7 +1745,7 @@ const TextDisplay = () => {
       {/* Main Content Area */}
       <div className="resizable-container">
         {/* Left Panel (Reading Area) */}
-        <div className="left-panel" style={{ width: `${leftPanelWidth}%`, height: 'calc(100vh - 130px)', overflowY: 'auto', padding: '0', position: 'relative' }}>
+        <div className="left-panel" style={{ width: `${leftPanelWidth}%`, minHeight: 'calc(100vh - 130px)', padding: '0', position: 'relative' }}>
           <div className="d-flex flex-column" style={{ minHeight: '100%' }}>
             <div className="flex-grow-1" ref={textContentRef}>
               {isAudioLesson && displayMode === 'audio' ? (

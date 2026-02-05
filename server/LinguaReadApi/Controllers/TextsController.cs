@@ -161,6 +161,51 @@ namespace LinguaReadApi.Controllers
             return recentTexts;
         }
 
+        // POST: api/texts/admin/relink-all
+        // This utility endpoint fixes existing texts that were created without proper word linking
+        [HttpPost("admin/relink-all")]
+        public async Task<IActionResult> RelinkAllTextWords()
+        {
+            var userId = GetUserId();
+            _logger.LogInformation("Starting retroactive word linking for user {UserId}", userId);
+
+            var texts = await _context.Texts
+                .Where(t => t.UserId == userId)
+                .ToListAsync();
+
+            int processedCount = 0;
+            int errorCount = 0;
+
+            foreach (var text in texts)
+            {
+                try
+                {
+                    // 1. Remove existing links
+                    var existingLinks = await _context.TextWords.Where(tw => tw.TextId == text.TextId).ToListAsync();
+                    if (existingLinks.Any())
+                    {
+                        _context.TextWords.RemoveRange(existingLinks);
+                        await _context.SaveChangesAsync();
+                    }
+
+                    // 2. Repopulate links using new logic
+                    await LinkWordsToTextInternal(text.TextId, text.Content, text.LanguageId, userId);
+                    processedCount++;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to relink words for text {TextId}", text.TextId);
+                    errorCount++;
+                }
+            }
+
+            return Ok(new { 
+                message = "Retroactive word linking complete", 
+                processedCount, 
+                errorCount 
+            });
+        }
+
 
         // POST: api/texts
         [HttpPost]
@@ -195,67 +240,7 @@ namespace LinguaReadApi.Controllers
             await _context.SaveChangesAsync();
 
             // --- Parse and link words ---
-            var content = text.Content;
-            var languageId = text.LanguageId;
-
-            // Basic word parsing: split on whitespace and punctuation
-            var separators = new char[] { ' ', '\t', '\r', '\n', '.', ',', ';', ':', '!', '?', '\"', '\'', '(', ')', '[', ']', '{', '}', '-', '_', '/', '\\', '|', '@', '#', '$', '%', '^', '&', '*', '+', '=', '<', '>', '`', '~' };
-            var wordsInText = content.Split(separators, StringSplitOptions.RemoveEmptyEntries)
-                                     .Select(w => w.Trim().ToLowerInvariant())
-                                     .Where(w => !string.IsNullOrWhiteSpace(w))
-                                     .ToList();
-
-            var uniqueWords = wordsInText.Distinct().ToList();
-
-            // Fetch existing words for this user and language without tracking to improve performance
-            var existingWords = await _context.Words
-                .AsNoTracking() // Prevent tracking related entities like Language
-                .Where(w => w.UserId == userId && w.LanguageId == languageId && uniqueWords.Contains(w.Term.ToLower()))
-                .ToDictionaryAsync(w => w.Term.ToLower());
-
-            var newWords = new List<Word>();
-
-            foreach (var wordTerm in uniqueWords)
-            {
-                if (!existingWords.ContainsKey(wordTerm))
-                {
-                    var newWord = new Word
-                    {
-                        UserId = userId,
-                        LanguageId = languageId,
-                        Term = wordTerm,
-                        Status = 0, // Default status (unknown/learning)
-                        CreatedAt = DateTime.UtcNow
-                    };
-                    _context.Words.Add(newWord);
-                    newWords.Add(newWord);
-                    existingWords[wordTerm] = newWord; // Add to dictionary for linking
-                }
-            }
-
-            await _context.SaveChangesAsync(); // Save new words to get their IDs
-
-            // Link all word occurrences in the text using bulk insert
-            var textWordsToAdd = new List<TextWord>();
-            foreach (var wordTerm in wordsInText)
-            {
-                if (existingWords.TryGetValue(wordTerm, out var word))
-                {
-                    var textWord = new TextWord
-                    {
-                        TextId = text.TextId,
-                        WordId = word.WordId,
-                        CreatedAt = DateTime.UtcNow
-                    };
-                    textWordsToAdd.Add(textWord); // Add to list instead of context directly
-                }
-            }
-
-            if (textWordsToAdd.Any())
-            {
-                await _context.TextWords.AddRangeAsync(textWordsToAdd); // Add the whole batch
-                await _context.SaveChangesAsync(); // Save all TextWord links in one go
-            }
+            await LinkWordsToTextInternal(text.TextId, text.Content, text.LanguageId, userId);
 
             var language = await _context.Languages.FindAsync(text.LanguageId);
 
@@ -368,94 +353,7 @@ namespace LinguaReadApi.Controllers
                 await _context.SaveChangesAsync();
 
                 // --- Parse and link words from transcript ---
-                var content = transcript;
-                var languageId = text.LanguageId;
-
-                // Basic word parsing: split on whitespace and punctuation
-                var separators = new char[] { ' ', '\t', '\r', '\n', '.', ',', ';', ':', '!', '?', '\"', '\'', '(', ')', '[', ']', '{', '}', '-', '_', '/', '\\', '|', '@', '#', '$', '%', '^', '&', '*', '+', '=', '<', '>', '`', '~' };
-                var wordsInText = content.Split(separators, StringSplitOptions.RemoveEmptyEntries)
-                                         .Select(w => w.Trim().ToLowerInvariant())
-                                         .Where(w => !string.IsNullOrWhiteSpace(w))
-                                         .ToList();
-
-                var uniqueWords = wordsInText.Distinct().ToList();
-
-                // Fetch existing words for this user and language without tracking
-                var existingWordsQuery = _context.Words
-                    .AsNoTracking() // Prevent tracking related entities like Language
-                    .Where(w => w.UserId == userId && w.LanguageId == languageId && uniqueWords.Contains(w.Term.ToLower()));
-
-                // --- DEBUG LOGGING START ---
-                var wordsBeforeDict = await existingWordsQuery.ToListAsync(); // Fetch results first
-                _logger.LogInformation("User {UserId}, Language {LanguageId}: Found {Count} existing words matching terms from the text.", userId, languageId, wordsBeforeDict.Count);
-
-                var wordsGroupedByLowerTerm = wordsBeforeDict
-                    .GroupBy(w => w.Term.ToLowerInvariant())
-                    .Where(g => g.Count() > 1) // Find terms that appear more than once after lowercasing
-                    .ToList();
-
-                if (wordsGroupedByLowerTerm.Any())
-                {
-                    foreach (var group in wordsGroupedByLowerTerm)
-                    {
-                        _logger.LogWarning("User {UserId}, Language {LanguageId}: Duplicate key potential for term '{Term}'. Found {Count} entries: {WordIds}",
-                            userId, languageId, group.Key, group.Count(), string.Join(", ", group.Select(w => w.Term)));
-                    }
-                    // Log all fetched terms for broader context if duplicates found
-                     _logger.LogInformation("User {UserId}, Language {LanguageId}: All fetched terms before dictionary creation: {Terms}", userId, languageId, string.Join(", ", wordsBeforeDict.Select(w => $"'{w.Term}'")));
-                }
-                // --- DEBUG LOGGING END ---
-
-                // Create dictionary safely even if duplicates exist (lowercased)
-                var existingWords = wordsBeforeDict
-                    .GroupBy(w => w.Term.ToLowerInvariant())
-                    .ToDictionary(g => g.Key, g => g.First());
-
-                var newWords = new List<Word>();
-
-                foreach (var wordTerm in uniqueWords)
-                {
-                    if (!existingWords.ContainsKey(wordTerm))
-                    {
-                        var newWord = new Word
-                        {
-                            UserId = userId,
-                            LanguageId = languageId,
-                            Term = wordTerm,
-                            Status = 0, // Default status (unknown/learning)
-                            CreatedAt = DateTime.UtcNow
-                        };
-                        _context.Words.Add(newWord);
-                        newWords.Add(newWord);
-                        existingWords[wordTerm] = newWord; // Add to dictionary for linking
-                    }
-                }
-
-                await _context.SaveChangesAsync(); // Save new words to get their IDs
-
-                // Link all word occurrences in the transcript using bulk insert
-                // Note: This currently links only *unique* words. If you need to link every occurrence,
-                // the loop should iterate over 'wordsInText' instead of 'uniqueWords'.
-                var textWordsToAdd = new List<TextWord>();
-                foreach (var wordTerm in uniqueWords) // Iterating unique words as per original logic
-                {
-                    if (existingWords.TryGetValue(wordTerm, out var word))
-                    {
-                        var textWord = new TextWord
-                        {
-                            TextId = text.TextId,
-                            WordId = word.WordId,
-                            CreatedAt = DateTime.UtcNow
-                        };
-                        textWordsToAdd.Add(textWord); // Add to list instead of context directly
-                    }
-                }
-    
-                 if (textWordsToAdd.Any())
-                {
-                    await _context.TextWords.AddRangeAsync(textWordsToAdd); // Add the whole batch
-                    await _context.SaveChangesAsync(); // Save all TextWord links in one go
-                }
+                await LinkWordsToTextInternal(text.TextId, transcript, text.LanguageId, userId);
 
                 // --- 4. Return Response ---
                 var language = await _context.Languages.FindAsync(text.LanguageId);
@@ -505,6 +403,79 @@ namespace LinguaReadApi.Controllers
             return string.Join(" ", transcriptLines); // Join lines into a single transcript string
         }
 
+        private async Task LinkWordsToTextInternal(int textId, string content, int languageId, Guid userId)
+        {
+            if (string.IsNullOrWhiteSpace(content)) return;
+
+            // 1. Basic word parsing: split on whitespace and punctuation
+            var separators = new char[] { ' ', '\t', '\r', '\n', '.', ',', ';', ':', '!', '?', '\"', '\'', '(', ')', '[', ']', '{', '}', '-', '_', '/', '\\', '|', '@', '#', '$', '%', '^', '&', '*', '+', '=', '<', '>', '`', '~' };
+            var wordsInText = content.Split(separators, StringSplitOptions.RemoveEmptyEntries)
+                                     .Select(w => w.Trim().ToLowerInvariant())
+                                     .Where(w => !string.IsNullOrWhiteSpace(w))
+                                     .ToList();
+
+            if (!wordsInText.Any()) return;
+
+            var uniqueWords = wordsInText.Distinct().ToList();
+
+            // 2. Fetch existing words for this user and language
+            var existingWordsList = await _context.Words
+                .AsNoTracking()
+                .Where(w => w.UserId == userId && w.LanguageId == languageId && uniqueWords.Contains(w.Term.ToLower()))
+                .ToListAsync();
+
+            // Handle potential duplicates in DB safely
+            var existingWords = existingWordsList
+                .GroupBy(w => w.Term.ToLowerInvariant())
+                .ToDictionary(g => g.Key, g => g.First());
+
+            // 3. Create missing words
+            var newWords = new List<Word>();
+            foreach (var wordTerm in uniqueWords)
+            {
+                if (!existingWords.ContainsKey(wordTerm))
+                {
+                    var newWord = new Word
+                    {
+                        UserId = userId,
+                        LanguageId = languageId,
+                        Term = wordTerm,
+                        Status = 0, // Default status
+                        CreatedAt = DateTime.UtcNow
+                    };
+                    _context.Words.Add(newWord);
+                    newWords.Add(newWord);
+                    existingWords[wordTerm] = newWord;
+                }
+            }
+
+            if (newWords.Any())
+            {
+                await _context.SaveChangesAsync(); // Save new words to get their IDs
+            }
+
+            // 4. Link all word occurrences via TextWord bulk insert
+            var textWordsToAdd = new List<TextWord>();
+            foreach (var wordTerm in wordsInText) // Link EVERY occurrence
+            {
+                if (existingWords.TryGetValue(wordTerm, out var word))
+                {
+                    textWordsToAdd.Add(new TextWord
+                    {
+                        TextId = textId,
+                        WordId = word.WordId,
+                        CreatedAt = DateTime.UtcNow
+                    });
+                }
+            }
+
+            if (textWordsToAdd.Any())
+            {
+                await _context.TextWords.AddRangeAsync(textWordsToAdd);
+                await _context.SaveChangesAsync();
+            }
+        }
+
 
         // POST: api/texts/audio/batch
         [HttpPost("audio/batch")]
@@ -534,7 +505,7 @@ namespace LinguaReadApi.Controllers
 
             var createdCount = 0;
             var skippedFiles = new List<string>();
-            var processedBaseNames = new HashSet<string>(); // To track processed pairs
+            var createdLessons = new List<(Text text, string transcript)>();
 
             // --- Start: Fuzzy Pairing Logic ---
             var fileInfos = files.Select(f => ParseFileInfo(f)).ToList();
@@ -616,6 +587,7 @@ namespace LinguaReadApi.Controllers
                             LastAccessedAt = null // Explicitly null on creation
                         };
                         _context.Texts.Add(text);
+                        createdLessons.Add((text, transcript));
                         createdCount++;
                     }
                     catch (Exception ex)
@@ -667,6 +639,20 @@ namespace LinguaReadApi.Controllers
             {
                  await _context.SaveChangesAsync();
                  _logger.LogInformation("Attempted to save {CreatedCount} new audio lessons for user {UserId}.", createdCount, userId);
+
+                 // --- Parse and link words for each successfully created lesson ---
+                 foreach (var (t, transcript) in createdLessons)
+                 {
+                     try
+                     {
+                         await LinkWordsToTextInternal(t.TextId, transcript, t.LanguageId, userId);
+                     }
+                     catch (Exception wordLinkEx)
+                     {
+                         _logger.LogError(wordLinkEx, "Failed to link words for lesson {TextId} in batch upload.", t.TextId);
+                         // Don't fail the whole batch if word linking fails for one lesson, but log it
+                     }
+                 }
             }
             catch (Exception ex)
             {

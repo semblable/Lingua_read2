@@ -83,9 +83,10 @@
 
 .lesson-topbar-actions {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: var(--space-xs);
   justify-content: flex-end;
+  flex-shrink: 0;
 }
 
 .lesson-header-top {
@@ -251,8 +252,19 @@
     border-top: 1px solid var(--theme-border-color, #e9ecef);
     padding-top: var(--space-xs);
     display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .lesson-controls-menu {
+    padding-bottom: var(--space-xs);
+  }
+
+  .lesson-controls-section {
+    display: flex;
     flex-wrap: wrap;
     gap: 0.5rem;
+    align-items: center;
   }
 
   .resizable-container {

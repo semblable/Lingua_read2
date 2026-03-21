@@ -294,9 +294,7 @@ const PrimaryControls = React.memo(({
   handleCompleteLesson,
   completing,
   nextTextId,
-  navigate,
-  showMoreControls,
-  setShowMoreControls
+  navigate
 }) => (
   <>
     {isAudioLesson && (
@@ -335,16 +333,6 @@ const PrimaryControls = React.memo(({
         Back to Texts
       </Button>
     )}
-    <Button
-      variant="outline-secondary"
-      size="sm"
-      className="ms-1 d-md-none"
-      onClick={() => setShowMoreControls(prev => !prev)}
-      aria-controls="lesson-more-controls"
-      aria-expanded={showMoreControls}
-    >
-      {showMoreControls ? 'Less' : 'More'}
-    </Button>
   </>
 ));
 
@@ -353,41 +341,67 @@ const MobileLessonHeader = React.memo(({
   showMobileHeader,
   setShowMobileHeader,
   showMoreControls,
+  setShowMoreControls,
   text,
   primaryControls,
   secondaryControls,
-  setIsWordPanelOpen
+  isAudioLesson,
+  isAudioPlaying,
+  toggleAudioPlayback
 }) => {
   if (!isMobile) return null;
+
+  const handleToggleHeader = () => {
+    if (showMobileHeader) {
+      setShowMoreControls(false);
+    }
+    setShowMobileHeader(prev => !prev);
+  };
+
+  const handleCloseHeader = () => {
+    setShowMobileHeader(false);
+    setShowMoreControls(false);
+  };
+
   return (
     <>
       <div className="mobile-lesson-fab">
         <Button
           variant="primary"
           size="sm"
-          onClick={() => setShowMobileHeader(true)}
-          aria-label="Open lesson controls"
+          onClick={handleToggleHeader}
+          aria-label={showMobileHeader ? 'Close lesson controls' : 'Open lesson controls'}
         >
-          Lesson
+          {showMobileHeader ? 'Hide' : 'Lesson'}
         </Button>
-        <Button
-          variant="outline-primary"
-          size="sm"
-          onClick={() => setIsWordPanelOpen(true)}
-          aria-label="Open word info"
-        >
-          Word
-        </Button>
+        {isAudioLesson && (
+          <Button
+            variant={isAudioPlaying ? 'warning' : 'outline-primary'}
+            size="sm"
+            onClick={toggleAudioPlayback}
+            aria-label={isAudioPlaying ? 'Pause audio' : 'Play audio'}
+          >
+            {isAudioPlaying ? 'Pause' : 'Play'}
+          </Button>
+        )}
       </div>
       <div className={`lesson-topbar navbar-custom-bg ${showMobileHeader ? 'lesson-topbar-open' : 'lesson-topbar-closed'}`}>
         <div className="lesson-topbar-content">
           <div className="lesson-topbar-title">{text.title}</div>
           <div className="lesson-topbar-actions">
-            {primaryControls}
+            <Button
+              variant={showMoreControls ? 'light' : 'outline-light'}
+              size="sm"
+              onClick={() => setShowMoreControls(prev => !prev)}
+              aria-controls="lesson-more-controls"
+              aria-expanded={showMoreControls}
+            >
+              Menu
+            </Button>
             <Button
               variant="outline-light"
               size="sm"
-              onClick={() => setShowMobileHeader(false)}
+              onClick={handleCloseHeader}
               aria-label="Close lesson controls"
             >
               Close
@@ -395,8 +409,13 @@ const MobileLessonHeader = React.memo(({
           </div>
         </div>
         <Collapse in={showMoreControls}>
-          <div id="lesson-more-controls" className="lesson-controls-collapse">
-            {secondaryControls}
+          <div id="lesson-more-controls" className="lesson-controls-collapse lesson-controls-menu">
+            <div className="lesson-controls-section">
+              {primaryControls}
+            </div>
+            <div className="lesson-controls-section">
+              {secondaryControls}
+            </div>
           </div>
         </Collapse>
       </div>
@@ -553,6 +572,7 @@ const AudioTranscriptView = React.memo(({
   currentSrtLineId,
   getFontStyling,
   handleLineClick,
+  handleWordSelection,
   processTextContent,
   globalSettings,
   mobileReadingConfig,
@@ -565,8 +585,18 @@ const AudioTranscriptView = React.memo(({
   const listHeight = textContentRef.current ? textContentRef.current.clientHeight - 30 : 600;
 
   if (isMobile) {
+    const hasSelection = () => {
+      const selection = window.getSelection();
+      return Boolean(selection && !selection.isCollapsed && selection.toString().trim());
+    };
+
     return (
-      <div className="audio-transcript-container">
+      <div
+        className="audio-transcript-container"
+        ref={textContentRef}
+        onMouseUp={handleWordSelection}
+        onTouchEnd={handleWordSelection}
+      >
         {srtLines.map((line) => (
           <p
             key={line.id}
@@ -579,7 +609,10 @@ const AudioTranscriptView = React.memo(({
               transition: 'background-color 0.3s ease',
               cursor: 'pointer'
             }}
-            onClick={() => handleLineClick(line.startTime)}
+            onClick={() => {
+              if (hasSelection()) return;
+              handleLineClick(line.startTime);
+            }}
           >
             {processTextContent(line.text)}
           </p>
@@ -651,6 +684,7 @@ const StandardTextView = React.memo(({
         '--mobile-reading-line-height': mobileReadingConfig.lineSpacing
       }}
       onMouseUp={handleWordSelection}
+      onTouchEnd={handleWordSelection}
     >
       {paragraphs.map((paragraph, index) => {
         const processedParaElements = processTextContent(paragraph);
@@ -742,6 +776,9 @@ const TextDisplay = () => {
   const [showMobileHeader, setShowMobileHeader] = useState(false);
   const [isWordPanelOpen, setIsWordPanelOpen] = useState(false);
   const [readingStyle, setReadingStyle] = useState('balanced');
+  const [isAudioPlaying, setIsAudioPlaying] = useState(false);
+  const selectionDebounceRef = useRef(null);
+  const lastHandledSelectionRef = useRef('');
   // --- End State Declarations ---
 
   // Create refs for values used in handleAudioTimeUpdate to keep the callback stable
@@ -783,17 +820,47 @@ const TextDisplay = () => {
       setIsMobile(event.matches);
       if (!event.matches) {
         setShowMobileHeader(false);
+        setShowMoreControls(false);
         setIsWordPanelOpen(false);
       }
     };
     setIsMobile(mediaQuery.matches);
     if (!mediaQuery.matches) {
       setShowMobileHeader(false);
+      setShowMoreControls(false);
       setIsWordPanelOpen(false);
     }
     mediaQuery.addEventListener('change', handleMediaChange);
     return () => mediaQuery.removeEventListener('change', handleMediaChange);
   }, []);
+  const clearPendingSelection = useCallback(() => {
+    if (selectionDebounceRef.current) {
+      clearTimeout(selectionDebounceRef.current);
+      selectionDebounceRef.current = null;
+    }
+  }, []);
+
+  const toggleAudioPlayback = useCallback(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    if (audio.paused) {
+      audio.play().catch(err => console.error('Mobile audio toggle failed to play:', err));
+    } else {
+      audio.pause();
+    }
+  }, []);
+
+  const pauseAudioPlayback = useCallback(() => {
+    const audio = audioRef.current;
+    if (!audio || audio.paused) return;
+    audio.pause();
+  }, []);
+
+  const handleAudioPlaybackStateChange = useCallback((nextIsPlaying) => {
+    setIsAudioPlaying(nextIsPlaying);
+  }, []);
+
 
   // --- Helper Functions & Memoized Values (Define BEFORE useEffects that use them) ---
 
@@ -883,6 +950,11 @@ const TextDisplay = () => {
   }, [globalSettings.autoTranslateWords, text?.languageCode, setTranslation, setDisplayedWord, setIsTranslating, setWordTranslationError]); // Use globalSettings from context
 
   const handleWordClick = useCallback((word) => {
+    clearPendingSelection();
+    lastHandledSelectionRef.current = '';
+    if (isAudioLesson && globalSettings.pauseOnWordClick) {
+      pauseAudioPlayback();
+    }
     setSelectedWord(word);
     setProcessingWord(false);
     setWordTranslationError('');
@@ -900,14 +972,17 @@ const TextDisplay = () => {
       setTranslation('');
       triggerAutoTranslation(word);
     }
-  }, [getWordData, triggerAutoTranslation, setSelectedWord, setTranslation, setWordTranslationError, setDisplayedWord, isMobile]); // Dependencies using globalSettings don't need it listed if context handles updates
+  }, [clearPendingSelection, getWordData, globalSettings.pauseOnWordClick, isAudioLesson, triggerAutoTranslation, setSelectedWord, setTranslation, setWordTranslationError, setDisplayedWord, isMobile, pauseAudioPlayback]); // Dependencies using globalSettings don't need it listed if context handles updates
 
   // Removed handleTextSelection as selection is now handled by onMouseUp on the container
 
   // --- New Word-Granularity Selection Logic ---
-  const handleWordSelection = useCallback(() => {
+  const processWordSelection = useCallback(() => {
     const selection = window.getSelection();
-    if (!selection || selection.isCollapsed || !textContentRef.current || selection.rangeCount === 0) return;
+    if (!selection || selection.isCollapsed || !textContentRef.current || selection.rangeCount === 0) {
+      lastHandledSelectionRef.current = '';
+      return;
+    }
 
     let range;
     try {
@@ -1017,6 +1092,10 @@ const TextDisplay = () => {
 
       const selectedText = newRange.toString().trim();
       if (selectedText) {
+        if (selectedText === lastHandledSelectionRef.current) {
+          return;
+        }
+        lastHandledSelectionRef.current = selectedText;
         // Use a slight delay to let the selection update render
         setTimeout(() => {
           handleWordClick(selectedText);
@@ -1027,11 +1106,52 @@ const TextDisplay = () => {
       // Fallback: use original selection text if possible
       const originalText = selection.toString().trim();
       if (originalText) {
+        if (originalText === lastHandledSelectionRef.current) {
+          return;
+        }
+        lastHandledSelectionRef.current = originalText;
         handleWordClick(originalText);
       }
     }
 
   }, [handleWordClick, textContentRef]); // Added textContentRef dependency
+
+  const handleWordSelection = useCallback(() => {
+    clearPendingSelection();
+    selectionDebounceRef.current = setTimeout(() => {
+      selectionDebounceRef.current = null;
+      processWordSelection();
+    }, 120);
+  }, [clearPendingSelection, processWordSelection]);
+
+  useEffect(() => {
+    return () => clearPendingSelection();
+  }, [clearPendingSelection]);
+
+  useEffect(() => {
+    if (!isMobile) return undefined;
+
+    const handleSelectionChange = () => {
+      const selection = window.getSelection();
+      if (!selection || selection.isCollapsed) {
+        lastHandledSelectionRef.current = '';
+        return;
+      }
+
+      const container = textContentRef.current;
+      const anchorNode = selection.anchorNode;
+      const focusNode = selection.focusNode;
+      if (!container || !anchorNode || !focusNode) return;
+      if (!container.contains(anchorNode) || !container.contains(focusNode)) return;
+
+      handleWordSelection();
+    };
+
+    document.addEventListener('selectionchange', handleSelectionChange);
+    return () => {
+      document.removeEventListener('selectionchange', handleSelectionChange);
+    };
+  }, [isMobile, handleWordSelection]);
   // --- End New Word-Granularity Selection Logic ---
 
 
@@ -1679,8 +1799,6 @@ const TextDisplay = () => {
       completing={completing}
       nextTextId={nextTextId}
       navigate={navigate}
-      showMoreControls={showMoreControls}
-      setShowMoreControls={setShowMoreControls}
     />
   );
 
@@ -1713,10 +1831,13 @@ const TextDisplay = () => {
         showMobileHeader={showMobileHeader}
         setShowMobileHeader={setShowMobileHeader}
         showMoreControls={showMoreControls}
+        setShowMoreControls={setShowMoreControls}
         text={text}
         primaryControls={primaryControls}
         secondaryControls={secondaryControls}
-        setIsWordPanelOpen={setIsWordPanelOpen}
+        isAudioLesson={isAudioLesson}
+        isAudioPlaying={isAudioPlaying}
+        toggleAudioPlayback={toggleAudioPlayback}
       />
       <LessonHeader
         isMobile={isMobile}
@@ -1731,6 +1852,7 @@ const TextDisplay = () => {
         textId={textId}
         audioRef={audioRef}
         onTimeUpdate={handleAudioTimeUpdate}
+        onPlaybackStateChange={handleAudioPlaybackStateChange}
       />
 
       {/* Mobile Audio Player - Show for audio lessons on mobile only */}
@@ -1744,6 +1866,7 @@ const TextDisplay = () => {
             languageId={text?.languageId}
             audioRef={audioRef}
             onTimeUpdate={handleAudioTimeUpdate}
+            onPlaybackStateChange={handleAudioPlaybackStateChange}
           />
         </div>
       )}
@@ -1761,6 +1884,7 @@ const TextDisplay = () => {
                   currentSrtLineId={currentSrtLineId}
                   getFontStyling={getFontStyling}
                   handleLineClick={handleLineClick}
+                  handleWordSelection={handleWordSelection}
                   processTextContent={processTextContent}
                   globalSettings={globalSettings}
                   mobileReadingConfig={mobileReadingConfig}

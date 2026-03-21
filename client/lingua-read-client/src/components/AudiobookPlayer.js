@@ -11,12 +11,14 @@ const AudiobookPlayer = ({
   textId,
   languageId,
   audioRef: externalAudioRef,
-  onTimeUpdate
+  onTimeUpdate,
+  onPlaybackStateChange
 }) => {
   // --- ONE: Refs and Stable Callbacks ---
   const internalAudioRef = useRef(null);
   const audioRef = externalAudioRef || internalAudioRef;
   const onTimeUpdateRef = useRef(onTimeUpdate);
+  const onPlaybackStateChangeRef = useRef(onPlaybackStateChange);
   const progressBarRef = useRef(null);
 
   // NOTE: Removed unused progressSaveRef
@@ -25,6 +27,10 @@ const AudiobookPlayer = ({
   useEffect(() => {
     onTimeUpdateRef.current = onTimeUpdate;
   }, [onTimeUpdate]);
+
+  useEffect(() => {
+    onPlaybackStateChangeRef.current = onPlaybackStateChange;
+  }, [onPlaybackStateChange]);
 
 
 
@@ -243,15 +249,22 @@ const AudiobookPlayer = ({
     }
   }, [audioRef]);
 
+  const syncPlaybackState = useCallback((nextIsPlaying) => {
+    setIsPlaying(nextIsPlaying);
+    if (onPlaybackStateChangeRef.current) {
+      onPlaybackStateChangeRef.current(nextIsPlaying);
+    }
+  }, []);
+
   const handleEnded = useCallback(() => {
     if (isBookMode && currentTrackIndex < playlist.length - 1) {
       console.log("[AudioPlayer] Track ended, advancing...");
       setCurrentTrackIndex(prev => prev + 1);
     } else {
       console.log("[AudioPlayer] Finished.");
-      setIsPlaying(false);
+      syncPlaybackState(false);
     }
-  }, [isBookMode, currentTrackIndex, playlist.length]);
+  }, [isBookMode, currentTrackIndex, playlist.length, syncPlaybackState]);
 
   const handleError = useCallback((e) => {
     console.error("Audio Error:", e);
@@ -264,7 +277,12 @@ const AudiobookPlayer = ({
     if (!audio) return;
 
     const onWaiting = () => setIsBuffering(true);
-    const onPlaying = () => setIsBuffering(false);
+    const onPlaying = () => {
+      setIsBuffering(false);
+      syncPlaybackState(true);
+    };
+    const onPlay = () => syncPlaybackState(true);
+    const onPause = () => syncPlaybackState(false);
 
     audio.addEventListener('loadedmetadata', handleLoadedMetadata);
     audio.addEventListener('durationchange', handleLoadedMetadata); // Also listen for durationchange
@@ -272,6 +290,8 @@ const AudiobookPlayer = ({
     audio.addEventListener('ended', handleEnded);
     audio.addEventListener('error', handleError);
     audio.addEventListener('waiting', onWaiting);
+    audio.addEventListener('play', onPlay);
+    audio.addEventListener('pause', onPause);
     audio.addEventListener('playing', onPlaying);
 
     // Check if metadata is already loaded (race condition fix)
@@ -286,10 +306,12 @@ const AudiobookPlayer = ({
       audio.removeEventListener('ended', handleEnded);
       audio.removeEventListener('error', handleError);
       audio.removeEventListener('waiting', onWaiting);
+      audio.removeEventListener('play', onPlay);
+      audio.removeEventListener('pause', onPause);
       audio.removeEventListener('playing', onPlaying);
     };
     // FIX: Added all handler dependencies
-  }, [audioRef, handleLoadedMetadata, handleTimeUpdate, handleEnded, handleError]);
+  }, [audioRef, handleLoadedMetadata, handleTimeUpdate, handleEnded, handleError, syncPlaybackState]);
 
   // Sync Playback Rate
   useEffect(() => {
@@ -512,13 +534,13 @@ const AudiobookPlayer = ({
     if (!audio) return;
     if (audio.paused) {
       audio.play()
-        .then(() => setIsPlaying(true))
+        .then(() => syncPlaybackState(true))
         .catch(e => console.error("Play failed", e));
     } else {
       audio.pause();
-      setIsPlaying(false);
+      syncPlaybackState(false);
     }
-  }, [audioRef]); // Safe dependency
+  }, [audioRef, syncPlaybackState]); // Safe dependency
 
   const seek = useCallback((time) => {
     const audio = audioRef.current;

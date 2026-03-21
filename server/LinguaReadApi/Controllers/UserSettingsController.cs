@@ -83,6 +83,7 @@ namespace LinguaReadApi.Controllers
                 TextSize = settings.TextSize,
                 TextFont = settings.TextFont,
                 AutoTranslateWords = settings.AutoTranslateWords,
+                PauseOnWordClick = settings.PauseOnWordClick,
                 HighlightKnownWords = settings.HighlightKnownWords,
                 DefaultLanguageId = settings.DefaultLanguageId,
                 AutoAdvanceToNextLesson = settings.AutoAdvanceToNextLesson,
@@ -132,6 +133,7 @@ namespace LinguaReadApi.Controllers
             settings.TextSize = updateDto.TextSize ?? settings.TextSize;
             settings.TextFont = updateDto.TextFont ?? settings.TextFont;
             settings.AutoTranslateWords = updateDto.AutoTranslateWords ?? settings.AutoTranslateWords;
+            settings.PauseOnWordClick = updateDto.PauseOnWordClick ?? settings.PauseOnWordClick;
             settings.HighlightKnownWords = updateDto.HighlightKnownWords ?? settings.HighlightKnownWords;
             settings.DefaultLanguageId = updateDto.DefaultLanguageId ?? settings.DefaultLanguageId;
             settings.AutoAdvanceToNextLesson = updateDto.AutoAdvanceToNextLesson ?? settings.AutoAdvanceToNextLesson;
@@ -183,6 +185,7 @@ namespace LinguaReadApi.Controllers
                 TextSize = settings.TextSize,
                 TextFont = settings.TextFont,
                 AutoTranslateWords = settings.AutoTranslateWords,
+                PauseOnWordClick = settings.PauseOnWordClick,
                 HighlightKnownWords = settings.HighlightKnownWords,
                 DefaultLanguageId = settings.DefaultLanguageId,
                 AutoAdvanceToNextLesson = settings.AutoAdvanceToNextLesson,
@@ -530,6 +533,7 @@ namespace LinguaReadApi.Controllers
         public string TextFont { get; set; } = "default";
         public int LeftPanelWidth { get; set; } // Already added in previous step, ensure it's correct
         public bool AutoTranslateWords { get; set; } = true;
+        public bool PauseOnWordClick { get; set; } = false;
         public bool HighlightKnownWords { get; set; } = true;
         public int DefaultLanguageId { get; set; } = 0;
         public bool AutoAdvanceToNextLesson { get; set; } = false;
@@ -559,6 +563,7 @@ namespace LinguaReadApi.Controllers
         [Range(10, 100)] // Widen range to accept broader values
         public int? LeftPanelWidth { get; set; } // Already added in previous step, ensure it's correct
         public bool? AutoTranslateWords { get; set; }
+        public bool? PauseOnWordClick { get; set; }
         public bool? HighlightKnownWords { get; set; }
         public int? DefaultLanguageId { get; set; }
         public bool? AutoAdvanceToNextLesson { get; set; }

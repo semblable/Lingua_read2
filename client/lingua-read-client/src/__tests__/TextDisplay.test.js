@@ -52,6 +52,7 @@ const settingsValue = {
     textFont: 'sans-serif',
     leftPanelWidth: 85,
     autoTranslateWords: false,
+    pauseOnWordClick: false,
     highlightKnownWords: true,
     defaultLanguageId: 0,
     autoAdvanceToNextLesson: false,

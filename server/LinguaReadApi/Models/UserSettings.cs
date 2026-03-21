@@ -18,6 +18,7 @@ namespace LinguaReadApi.Models
 
         // Reading Preferences
         public bool AutoTranslateWords { get; set; } = true; // automatically translate words on click
+        public bool PauseOnWordClick { get; set; } = false; // pause lesson audio before opening word details
         public bool HighlightKnownWords { get; set; } = true; // highlight words based on knowledge level
         public int DefaultLanguageId { get; set; } = 0; // default language for new texts
         

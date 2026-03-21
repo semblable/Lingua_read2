@@ -14,6 +14,7 @@ const UserSettings = () => {
     textFont: 'default',
     leftPanelWidth: 85, // Added initial state
     autoTranslateWords: true,
+    pauseOnWordClick: false,
     highlightKnownWords: true,
     defaultLanguageId: 0,
     autoAdvanceToNextLesson: false,
@@ -81,6 +82,7 @@ const UserSettings = () => {
           textFont: data.textFont || 'default',
           leftPanelWidth: data.leftPanelWidth || 85, // Fetch panel width
           autoTranslateWords: data.autoTranslateWords ?? true,
+          pauseOnWordClick: data.pauseOnWordClick ?? false,
           highlightKnownWords: data.highlightKnownWords ?? true,
           defaultLanguageId: data.defaultLanguageId || 0,
           autoAdvanceToNextLesson: data.autoAdvanceToNextLesson ?? false,
@@ -207,6 +209,9 @@ const UserSettings = () => {
 
       updateSetting('autoTranslateWords', settings.autoTranslateWords);
       localStorage.setItem('autoTranslateWords', settings.autoTranslateWords.toString());
+
+      updateSetting('pauseOnWordClick', settings.pauseOnWordClick);
+      localStorage.setItem('pauseOnWordClick', settings.pauseOnWordClick.toString());
 
       updateSetting('highlightKnownWords', settings.highlightKnownWords);
       localStorage.setItem('highlightKnownWords', settings.highlightKnownWords.toString());
@@ -486,6 +491,16 @@ const UserSettings = () => {
                 name="autoTranslateWords"
                 label="Automatically translate words when clicked"
                 checked={settings.autoTranslateWords}
+                onChange={handleChange}
+              />
+            </Form.Group>
+
+            <Form.Group className="mb-3" controlId="pauseOnWordClick">
+              <Form.Check
+                type="checkbox"
+                name="pauseOnWordClick"
+                label="Pause audio when a word or phrase is opened"
+                checked={settings.pauseOnWordClick}
                 onChange={handleChange}
               />
             </Form.Group>

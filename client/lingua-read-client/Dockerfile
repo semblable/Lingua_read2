@@ -1,10 +1,11 @@
+# syntax=docker/dockerfile:1.7
 # -------- Build Stage --------
 FROM node:20 AS build
 WORKDIR /app
 
 # Install dependencies
 COPY package.json package-lock.json ./
-RUN npm ci --legacy-peer-deps
+RUN --mount=type=cache,target=/root/.npm npm ci --legacy-peer-deps
 
 # Copy source code and build
 COPY . ./

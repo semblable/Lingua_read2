@@ -1,0 +1,9 @@
+.git
+.github
+.cursor
+node_modules
+build
+coverage
+npm-debug.log
+.DS_Store
+Thumbs.db

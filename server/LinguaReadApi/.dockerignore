@@ -1,0 +1,9 @@
+.git
+.github
+.cursor
+bin
+obj
+.vs
+TestResults
+.DS_Store
+Thumbs.db

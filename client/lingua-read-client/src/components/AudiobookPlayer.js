@@ -279,7 +279,6 @@ const AudiobookPlayer = ({
     const onWaiting = () => setIsBuffering(true);
     const onPlaying = () => {
       setIsBuffering(false);
-      syncPlaybackState(true);
     };
     const onPlay = () => syncPlaybackState(true);
     const onPause = () => syncPlaybackState(false);
@@ -534,13 +533,11 @@ const AudiobookPlayer = ({
     if (!audio) return;
     if (audio.paused) {
       audio.play()
-        .then(() => syncPlaybackState(true))
         .catch(e => console.error("Play failed", e));
     } else {
       audio.pause();
-      syncPlaybackState(false);
     }
-  }, [audioRef, syncPlaybackState]); // Safe dependency
+  }, [audioRef]); // Safe dependency
 
   const seek = useCallback((time) => {
     const audio = audioRef.current;

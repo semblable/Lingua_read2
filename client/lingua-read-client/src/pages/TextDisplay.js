@@ -577,12 +577,15 @@ const AudioTranscriptView = React.memo(({
   globalSettings,
   mobileReadingConfig,
   textContentRef,
+  readingContainerRef,
   itemData,
   listRef
 }) => {
+  const suppressLineClickUntilRef = useRef(0);
+  const touchMovedRef = useRef(false);
   if (!srtLines || srtLines.length === 0) return <p className="p-3">Loading transcript...</p>;
   const effectiveLineSpacing = isMobile ? mobileReadingConfig.lineSpacing : globalSettings.lineSpacing;
-  const listHeight = textContentRef.current ? textContentRef.current.clientHeight - 30 : 600;
+  const listHeight = readingContainerRef.current ? readingContainerRef.current.clientHeight - 30 : 600;
 
   if (isMobile) {
     const hasSelection = () => {
@@ -590,12 +593,31 @@ const AudioTranscriptView = React.memo(({
       return Boolean(selection && !selection.isCollapsed && selection.toString().trim());
     };
 
+    const handleTouchStart = () => {
+      touchMovedRef.current = false;
+    };
+
+    const handleTouchMove = () => {
+      touchMovedRef.current = true;
+    };
+
+    const handleTouchEnd = () => {
+      const shouldSuppressClick = touchMovedRef.current || hasSelection();
+      if (shouldSuppressClick) {
+        suppressLineClickUntilRef.current = Date.now() + 400;
+      }
+      handleWordSelection();
+      touchMovedRef.current = false;
+    };
+
     return (
       <div
         className="audio-transcript-container"
         ref={textContentRef}
         onMouseUp={handleWordSelection}
-        onTouchEnd={handleWordSelection}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
       >
         {srtLines.map((line) => (
           <p
@@ -610,7 +632,7 @@ const AudioTranscriptView = React.memo(({
               cursor: 'pointer'
             }}
             onClick={() => {
-              if (hasSelection()) return;
+              if (Date.now() < suppressLineClickUntilRef.current || hasSelection()) return;
               handleLineClick(line.startTime);
             }}
           >
@@ -724,6 +746,7 @@ const TextDisplay = () => {
   const { textId } = useParams();
   const navigate = useNavigate();
   const textContentRef = useRef(null);
+  const readingContainerRef = useRef(null);
   const audioRef = useRef(null);
   const listRef = useRef(null);
   const autoScrollRafRef = useRef(null);
@@ -1114,7 +1137,7 @@ const TextDisplay = () => {
       }
     }
 
-  }, [handleWordClick, textContentRef]); // Added textContentRef dependency
+  }, [handleWordClick]); // textContentRef is a stable ref
 
   const handleWordSelection = useCallback(() => {
     clearPendingSelection();
@@ -1876,7 +1899,7 @@ const TextDisplay = () => {
         {/* Left Panel (Reading Area) */}
         <div className="left-panel" style={{ width: `${leftPanelWidth}%`, minHeight: 'calc(100vh - 130px)', padding: '0', position: 'relative' }}>
           <div className="d-flex flex-column" style={{ minHeight: '100%' }}>
-            <div className="flex-grow-1" ref={textContentRef}>
+            <div className="flex-grow-1" ref={readingContainerRef}>
               {isAudioLesson && displayMode === 'audio' ? (
                 <AudioTranscriptView
                   isMobile={isMobile}
@@ -1889,6 +1912,7 @@ const TextDisplay = () => {
                   globalSettings={globalSettings}
                   mobileReadingConfig={mobileReadingConfig}
                   textContentRef={textContentRef}
+                  readingContainerRef={readingContainerRef}
                   itemData={itemData}
                   listRef={listRef}
                 />

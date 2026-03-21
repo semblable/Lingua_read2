@@ -19,6 +19,7 @@ namespace LinguaReadApi.Services
         private const int MaxDiscordMessageLength = 1900;
         private const int MaxLanguagesPerUser = 8;
         private const long MaxDiscordUploadBytes = 7L * 1024 * 1024;
+        private static readonly TimeSpan ListeningSessionGraceGap = TimeSpan.FromMinutes(5);
 
         private static readonly HashSet<string> ReadingActivityTypes = new(StringComparer.OrdinalIgnoreCase)
         {
@@ -75,7 +76,7 @@ namespace LinguaReadApi.Services
             var validTargets = new List<Models.UserSettings>();
             foreach (var target in targets)
             {
-                if (TryNormalizeWebhookUrl(target.DiscordWebhookUrl!, out var normalizedUrl))
+                if (TryNormalizeWebhookUrl(target.DiscordWebhookUrl!, out var normalizedUrl, out _))
                 {
                     target.DiscordWebhookUrl = normalizedUrl;
                     validTargets.Add(target);
@@ -161,7 +162,7 @@ namespace LinguaReadApi.Services
                 return DiscordReportSendResult.Failed("Discord webhook URL is missing.");
             }
 
-            if (!TryNormalizeWebhookUrl(settings.DiscordWebhookUrl, out var normalizedUrl))
+            if (!TryNormalizeWebhookUrl(settings.DiscordWebhookUrl, out var normalizedUrl, out var endpointKind))
             {
                 return DiscordReportSendResult.Failed("Discord webhook URL is invalid.");
             }
@@ -206,6 +207,7 @@ namespace LinguaReadApi.Services
                     settings.DiscordWebhookUrl,
                     message,
                     Array.Empty<string>(),
+                    endpointKind,
                     cancellationToken);
 
                 if (!messageResult.Success)
@@ -221,6 +223,7 @@ namespace LinguaReadApi.Services
                         settings.DiscordWebhookUrl,
                         attachmentMessage,
                         new[] { attachmentPath },
+                        endpointKind,
                         cancellationToken);
 
                     if (!attachmentResult.Success)
@@ -238,6 +241,7 @@ namespace LinguaReadApi.Services
                         settings.DiscordWebhookUrl,
                         statusMessage,
                         Array.Empty<string>(),
+                        endpointKind,
                         cancellationToken);
 
                     if (!statusResult.Success)
@@ -296,18 +300,7 @@ namespace LinguaReadApi.Services
                 .Where(activity => ListeningActivityTypes.Contains(activity.ActivityType))
                 .ToList();
 
-            var dayTotals = activities
-                .GroupBy(activity => activity.Timestamp.Date)
-                .Select(group => new
-                {
-                    Date = group.Key,
-                    Words = group.Where(activity => ReadingActivityTypes.Contains(activity.ActivityType))
-                        .Sum(activity => activity.WordCount),
-                    Seconds = group.Where(activity => ListeningActivityTypes.Contains(activity.ActivityType))
-                        .Sum(activity => activity.ListeningDurationSeconds ?? 0),
-                    Activities = group.Count()
-                })
-                .ToList();
+            var dayTotals = BuildDayTotals(activities);
 
             var activeDays = dayTotals.Count;
             var totalDays = (int)Math.Ceiling((endUtc.Date - startUtc.Date).TotalDays);
@@ -322,28 +315,7 @@ namespace LinguaReadApi.Services
                 .ThenByDescending(day => day.Activities)
                 .FirstOrDefault();
 
-            var languageTotals = new Dictionary<string, LanguageTotals>(StringComparer.OrdinalIgnoreCase);
-            foreach (var activity in activities)
-            {
-                var languageName = activity.Language?.Name ?? "Unknown";
-                if (!languageTotals.TryGetValue(languageName, out var totals))
-                {
-                    totals = new LanguageTotals();
-                    languageTotals[languageName] = totals;
-                }
-
-                if (ReadingActivityTypes.Contains(activity.ActivityType))
-                {
-                    totals.Words += activity.WordCount;
-                    totals.ReadingSessions += 1;
-                }
-
-                if (ListeningActivityTypes.Contains(activity.ActivityType))
-                {
-                    totals.Seconds += activity.ListeningDurationSeconds ?? 0;
-                    totals.ListeningSessions += 1;
-                }
-            }
+            var languageTotals = BuildLanguageTotals(activities);
 
             var endDisplay = endUtc.AddSeconds(-1);
             var messageLines = new List<string>
@@ -404,12 +376,13 @@ namespace LinguaReadApi.Services
             string webhookUrl,
             string message,
             IReadOnlyList<string> attachmentPaths,
+            WebhookEndpointKind endpointKind,
             CancellationToken cancellationToken)
         {
             try
             {
                 using var client = _httpClientFactory.CreateClient();
-                using var content = CreateWebhookContent(message, attachmentPaths);
+                using var content = CreateWebhookContent(message, attachmentPaths, endpointKind);
                 using var response = await client.PostAsync(webhookUrl, content, cancellationToken);
 
                 if (response.IsSuccessStatusCode)
@@ -435,7 +408,10 @@ namespace LinguaReadApi.Services
             }
         }
 
-        private static HttpContent CreateWebhookContent(string message, IReadOnlyList<string> attachmentPaths)
+        private static HttpContent CreateWebhookContent(
+            string message,
+            IReadOnlyList<string> attachmentPaths,
+            WebhookEndpointKind endpointKind)
         {
             var hasAttachments = attachmentPaths.Any(path => !string.IsNullOrWhiteSpace(path) && File.Exists(path));
             if (hasAttachments)
@@ -451,6 +427,10 @@ namespace LinguaReadApi.Services
                 });
                 var multipartContent = new MultipartFormDataContent();
                 multipartContent.Add(new StringContent(attachmentPayload, Encoding.UTF8, "application/json"), "payload_json");
+                if (endpointKind == WebhookEndpointKind.ReportRelay)
+                {
+                    multipartContent.Add(new StringContent(safeMessage, Encoding.UTF8), "content");
+                }
 
                 var index = 0;
                 foreach (var attachmentPath in attachmentPaths)
@@ -509,19 +489,7 @@ namespace LinguaReadApi.Services
                 .Where(activity => ListeningActivityTypes.Contains(activity.ActivityType))
                 .ToList();
 
-            var dayTotals = activities
-                .GroupBy(activity => activity.Timestamp.Date)
-                .Select(group => new
-                {
-                    Date = group.Key,
-                    Words = group.Where(activity => ReadingActivityTypes.Contains(activity.ActivityType))
-                        .Sum(activity => activity.WordCount),
-                    Seconds = group.Where(activity => ListeningActivityTypes.Contains(activity.ActivityType))
-                        .Sum(activity => activity.ListeningDurationSeconds ?? 0),
-                    Activities = group.Count()
-                })
-                .OrderBy(day => day.Date)
-                .ToList();
+            var dayTotals = BuildDayTotals(activities);
 
             var activeDays = dayTotals.Count;
             var totalDays = (int)Math.Ceiling((endUtc.Date - startUtc.Date).TotalDays);
@@ -536,28 +504,7 @@ namespace LinguaReadApi.Services
                 .ThenByDescending(day => day.Activities)
                 .FirstOrDefault();
 
-            var languageTotals = new Dictionary<string, LanguageTotals>(StringComparer.OrdinalIgnoreCase);
-            foreach (var activity in activities)
-            {
-                var languageName = activity.Language?.Name ?? "Unknown";
-                if (!languageTotals.TryGetValue(languageName, out var totals))
-                {
-                    totals = new LanguageTotals();
-                    languageTotals[languageName] = totals;
-                }
-
-                if (ReadingActivityTypes.Contains(activity.ActivityType))
-                {
-                    totals.Words += activity.WordCount;
-                    totals.ReadingSessions += 1;
-                }
-
-                if (ListeningActivityTypes.Contains(activity.ActivityType))
-                {
-                    totals.Seconds += activity.ListeningDurationSeconds ?? 0;
-                    totals.ListeningSessions += 1;
-                }
-            }
+            var languageTotals = BuildLanguageTotals(activities);
 
             var orderedLanguages = languageTotals
                 .OrderByDescending(entry => entry.Value.Words)
@@ -631,7 +578,7 @@ namespace LinguaReadApi.Services
                     builder.AppendLine($"          <td>{day.Date:yyyy-MM-dd}</td>");
                     builder.AppendLine($"          <td>{day.Words}<div class=\"bar\"><span style=\"width:{wordWidth}%\"></span></div></td>");
                     builder.AppendLine($"          <td>{FormatDuration(day.Seconds)}<div class=\"bar secondary\"><span style=\"width:{secondsWidth}%\"></span></div></td>");
-                    builder.AppendLine($"          <td>{day.Activities}</td>");
+                    builder.AppendLine($"          <td>{day.Sessions}</td>");
                     builder.AppendLine("        </tr>");
                 }
                 builder.AppendLine("      </tbody>");
@@ -830,9 +777,13 @@ namespace LinguaReadApi.Services
             return message;
         }
 
-        private static bool TryNormalizeWebhookUrl(string url, out string normalizedUrl)
+        private static bool TryNormalizeWebhookUrl(
+            string url,
+            out string normalizedUrl,
+            out WebhookEndpointKind endpointKind)
         {
             normalizedUrl = url.Trim();
+            endpointKind = WebhookEndpointKind.Unknown;
             if (!Uri.TryCreate(normalizedUrl, UriKind.Absolute, out var uri))
             {
                 return false;
@@ -843,7 +794,156 @@ namespace LinguaReadApi.Services
                 return false;
             }
 
-            return true;
+            if (IsDiscordWebhookUri(uri))
+            {
+                endpointKind = WebhookEndpointKind.Discord;
+                normalizedUrl = uri.ToString();
+                return true;
+            }
+
+            if (IsReportRelayWebhookUri(uri))
+            {
+                endpointKind = WebhookEndpointKind.ReportRelay;
+                normalizedUrl = uri.ToString();
+                return true;
+            }
+
+            return false;
+        }
+
+        private static bool IsDiscordWebhookUri(Uri uri)
+        {
+            var host = uri.Host.ToLowerInvariant();
+            if (host is not ("discord.com" or "www.discord.com" or "discordapp.com" or "www.discordapp.com"))
+            {
+                return false;
+            }
+
+            var segments = uri.AbsolutePath.Trim('/').Split('/', StringSplitOptions.RemoveEmptyEntries);
+            if (segments.Length < 4)
+            {
+                return false;
+            }
+
+            if (!segments[0].Equals("api", StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            var webhookIndex = Array.FindIndex(
+                segments,
+                segment => segment.Equals("webhooks", StringComparison.OrdinalIgnoreCase));
+            if (webhookIndex < 1 || webhookIndex + 2 >= segments.Length)
+            {
+                return false;
+            }
+
+            return webhookIndex == 1 ||
+                (webhookIndex == 2 && segments[1].StartsWith("v", StringComparison.OrdinalIgnoreCase));
+        }
+
+        private static bool IsReportRelayWebhookUri(Uri uri)
+        {
+            var segments = uri.AbsolutePath.Trim('/').Split('/', StringSplitOptions.RemoveEmptyEntries);
+            return segments.Length >= 3 &&
+                segments[0].Equals("webhook", StringComparison.OrdinalIgnoreCase) &&
+                segments[1].Equals("report", StringComparison.OrdinalIgnoreCase) &&
+                !string.IsNullOrWhiteSpace(segments[2]);
+        }
+
+        private static List<DayTotals> BuildDayTotals(List<Models.UserActivity> activities)
+        {
+            return activities
+                .GroupBy(activity => activity.Timestamp.Date)
+                .Select(group =>
+                {
+                    var groupActivities = group.ToList();
+                    var groupListeningActivities = groupActivities
+                        .Where(activity => ListeningActivityTypes.Contains(activity.ActivityType))
+                        .ToList();
+
+                    return new DayTotals
+                    {
+                        Date = group.Key,
+                        Words = groupActivities
+                            .Where(activity => ReadingActivityTypes.Contains(activity.ActivityType))
+                            .Sum(activity => activity.WordCount),
+                        Seconds = groupListeningActivities
+                            .Sum(activity => activity.ListeningDurationSeconds ?? 0),
+                        Activities = groupActivities.Count,
+                        Sessions = groupActivities.Count(activity => ReadingActivityTypes.Contains(activity.ActivityType)) +
+                            CountListeningSessions(groupListeningActivities)
+                    };
+                })
+                .OrderBy(day => day.Date)
+                .ToList();
+        }
+
+        private static Dictionary<string, LanguageTotals> BuildLanguageTotals(List<Models.UserActivity> activities)
+        {
+            var languageTotals = new Dictionary<string, LanguageTotals>(StringComparer.OrdinalIgnoreCase);
+            foreach (var activity in activities)
+            {
+                var languageName = activity.Language?.Name ?? "Unknown";
+                if (!languageTotals.TryGetValue(languageName, out var totals))
+                {
+                    totals = new LanguageTotals();
+                    languageTotals[languageName] = totals;
+                }
+
+                if (ReadingActivityTypes.Contains(activity.ActivityType))
+                {
+                    totals.Words += activity.WordCount;
+                    totals.ReadingSessions += 1;
+                }
+
+                if (ListeningActivityTypes.Contains(activity.ActivityType))
+                {
+                    totals.Seconds += activity.ListeningDurationSeconds ?? 0;
+                }
+            }
+
+            foreach (var languageGroup in activities
+                .Where(activity => ListeningActivityTypes.Contains(activity.ActivityType))
+                .GroupBy(activity => activity.Language?.Name ?? "Unknown", StringComparer.OrdinalIgnoreCase))
+            {
+                languageTotals[languageGroup.Key].ListeningSessions = CountListeningSessions(languageGroup);
+            }
+
+            return languageTotals;
+        }
+
+        private static int CountListeningSessions(IEnumerable<Models.UserActivity> listeningActivities)
+        {
+            var orderedActivities = listeningActivities
+                .OrderBy(activity => activity.Timestamp)
+                .ToList();
+            if (orderedActivities.Count == 0)
+            {
+                return 0;
+            }
+
+            var sessions = 0;
+            DateTime? currentSessionEnd = null;
+            foreach (var activity in orderedActivities)
+            {
+                var durationSeconds = Math.Max(activity.ListeningDurationSeconds ?? 0, 0);
+                var activityEnd = activity.Timestamp.AddSeconds(durationSeconds);
+
+                if (!currentSessionEnd.HasValue || activity.Timestamp > currentSessionEnd.Value.Add(ListeningSessionGraceGap))
+                {
+                    sessions++;
+                    currentSessionEnd = activityEnd;
+                    continue;
+                }
+
+                if (activityEnd > currentSessionEnd.Value)
+                {
+                    currentSessionEnd = activityEnd;
+                }
+            }
+
+            return sessions;
         }
 
         private static DateTime GetScheduledUtcForWeek(DateTime nowUtc, Models.UserSettings settings)
@@ -886,6 +986,15 @@ namespace LinguaReadApi.Services
             public int TotalSessions => ReadingSessions + ListeningSessions;
         }
 
+        private class DayTotals
+        {
+            public DateTime Date { get; set; }
+            public int Words { get; set; }
+            public int Seconds { get; set; }
+            public int Activities { get; set; }
+            public int Sessions { get; set; }
+        }
+
         private readonly record struct AttachmentDecision(
             IReadOnlyList<string> Sendable,
             IReadOnlyList<string> Skipped);
@@ -922,5 +1031,12 @@ namespace LinguaReadApi.Services
     {
         public static DiscordWebhookPostResult SuccessResult() => new(true, null);
         public static DiscordWebhookPostResult Failed(string errorMessage) => new(false, errorMessage);
+    }
+
+    internal enum WebhookEndpointKind
+    {
+        Unknown = 0,
+        Discord = 1,
+        ReportRelay = 2
     }
 }

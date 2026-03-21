@@ -2,10 +2,12 @@ using System;
 using System.IO;
 using System.Net;
 using System.Net.Http;
+using System.Reflection;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Collections.Generic;
 using LinguaReadApi.Data;
 using LinguaReadApi.Models;
 using LinguaReadApi.Services;
@@ -225,6 +227,213 @@ public class DiscordReportServiceTests
         Assert.DoesNotContain("Total words read: 50", content);
     }
 
+    [Fact]
+    public async Task SendReportForUserAsync_GroupsListeningAcrossShortBreaks()
+    {
+        using var context = CreateDbContext();
+        var handler = new CapturingHttpMessageHandler();
+        var httpClientFactory = new StubHttpClientFactory(handler);
+        var service = new DiscordReportService(
+            context,
+            httpClientFactory,
+            NullLogger<DiscordReportService>.Instance,
+            new StubDatabaseAdminService());
+
+        var userId = Guid.NewGuid();
+        var language = new Language { Name = "Portuguese", Code = "pt" };
+        var settings = new UserSettings
+        {
+            UserId = userId,
+            DiscordWeeklyReportEnabled = true,
+            DiscordWebhookUrl = "https://discord.com/api/webhooks/test/test",
+            DiscordWeeklyReportDayOfWeek = "Monday",
+            DiscordWeeklyReportHourLocal = 8,
+            DiscordTimezoneOffsetMinutes = 0
+        };
+
+        context.Users.Add(new User { Id = userId, Email = "grouped@example.com", UserName = "grouped@example.com" });
+        context.Languages.Add(language);
+        context.UserSettings.Add(settings);
+        context.UserActivities.AddRange(
+            new UserActivity
+            {
+                UserId = userId,
+                Language = language,
+                LanguageId = language.LanguageId,
+                ActivityType = "Listening",
+                WordCount = 0,
+                ListeningDurationSeconds = 600,
+                Timestamp = new DateTime(2026, 3, 20, 10, 0, 0, DateTimeKind.Utc)
+            },
+            new UserActivity
+            {
+                UserId = userId,
+                Language = language,
+                LanguageId = language.LanguageId,
+                ActivityType = "Listening",
+                WordCount = 0,
+                ListeningDurationSeconds = 600,
+                Timestamp = new DateTime(2026, 3, 20, 10, 12, 0, 0, DateTimeKind.Utc)
+            },
+            new UserActivity
+            {
+                UserId = userId,
+                Language = language,
+                LanguageId = language.LanguageId,
+                ActivityType = "Listening",
+                WordCount = 0,
+                ListeningDurationSeconds = 600,
+                Timestamp = new DateTime(2026, 3, 20, 10, 24, 0, 0, DateTimeKind.Utc)
+            });
+        await context.SaveChangesAsync();
+
+        var startUtc = new DateTime(2026, 3, 14, 0, 0, 0, DateTimeKind.Utc);
+        var endUtc = new DateTime(2026, 3, 21, 0, 0, 0, DateTimeKind.Utc);
+
+        var result = await service.SendReportForUserAsync(settings, startUtc, endUtc, false, CancellationToken.None);
+
+        Assert.True(result.Sent);
+        Assert.NotNull(handler.FirstPayloadContent);
+
+        var payloadJson = ExtractPayloadJson(handler.FirstPayloadContent);
+        using var payloadDoc = JsonDocument.Parse(payloadJson);
+        var content = payloadDoc.RootElement.GetProperty("content").GetString();
+        Assert.NotNull(content);
+        Assert.Contains("Portuguese: 0 words, 30m, 1 sessions", content);
+    }
+
+    [Fact]
+    public async Task SendReportForUserAsync_StartsNewListeningSessionAfterLongGap()
+    {
+        using var context = CreateDbContext();
+        var handler = new CapturingHttpMessageHandler();
+        var httpClientFactory = new StubHttpClientFactory(handler);
+        var service = new DiscordReportService(
+            context,
+            httpClientFactory,
+            NullLogger<DiscordReportService>.Instance,
+            new StubDatabaseAdminService());
+
+        var userId = Guid.NewGuid();
+        var language = new Language { Name = "Portuguese", Code = "pt" };
+        var settings = new UserSettings
+        {
+            UserId = userId,
+            DiscordWeeklyReportEnabled = true,
+            DiscordWebhookUrl = "https://discord.com/api/webhooks/test/test",
+            DiscordWeeklyReportDayOfWeek = "Monday",
+            DiscordWeeklyReportHourLocal = 8,
+            DiscordTimezoneOffsetMinutes = 0
+        };
+
+        context.Users.Add(new User { Id = userId, Email = "split@example.com", UserName = "split@example.com" });
+        context.Languages.Add(language);
+        context.UserSettings.Add(settings);
+        context.UserActivities.AddRange(
+            new UserActivity
+            {
+                UserId = userId,
+                Language = language,
+                LanguageId = language.LanguageId,
+                ActivityType = "Listening",
+                WordCount = 0,
+                ListeningDurationSeconds = 600,
+                Timestamp = new DateTime(2026, 3, 20, 10, 0, 0, DateTimeKind.Utc)
+            },
+            new UserActivity
+            {
+                UserId = userId,
+                Language = language,
+                LanguageId = language.LanguageId,
+                ActivityType = "Listening",
+                WordCount = 0,
+                ListeningDurationSeconds = 600,
+                Timestamp = new DateTime(2026, 3, 20, 11, 0, 0, DateTimeKind.Utc)
+            });
+        await context.SaveChangesAsync();
+
+        var startUtc = new DateTime(2026, 3, 14, 0, 0, 0, DateTimeKind.Utc);
+        var endUtc = new DateTime(2026, 3, 21, 0, 0, 0, DateTimeKind.Utc);
+
+        var result = await service.SendReportForUserAsync(settings, startUtc, endUtc, false, CancellationToken.None);
+
+        Assert.True(result.Sent);
+        Assert.NotNull(handler.FirstPayloadContent);
+
+        var payloadJson = ExtractPayloadJson(handler.FirstPayloadContent);
+        using var payloadDoc = JsonDocument.Parse(payloadJson);
+        var content = payloadDoc.RootElement.GetProperty("content").GetString();
+        Assert.NotNull(content);
+        Assert.Contains("Portuguese: 0 words, 20m, 2 sessions", content);
+    }
+
+    [Fact]
+    public async Task SendReportForUserAsync_UsesRelayCompatibleMultipartForAttachments()
+    {
+        var tempFile = Path.GetTempFileName();
+        await File.WriteAllTextAsync(tempFile, "<html><body>report</body></html>");
+
+        try
+        {
+            var endpointKindType = typeof(DiscordReportService).Assembly.GetType("LinguaReadApi.Services.WebhookEndpointKind");
+            Assert.NotNull(endpointKindType);
+
+            var relayKind = Enum.Parse(endpointKindType!, "ReportRelay");
+            var createWebhookContentMethod = typeof(DiscordReportService).GetMethod(
+                "CreateWebhookContent",
+                BindingFlags.NonPublic | BindingFlags.Static);
+
+            Assert.NotNull(createWebhookContentMethod);
+
+            using var content = (HttpContent?)createWebhookContentMethod!.Invoke(
+                null,
+                new object[] { "Report attachment: report.html", new[] { tempFile }, relayKind });
+
+            Assert.NotNull(content);
+            Assert.NotNull(content!.Headers.ContentType);
+            Assert.Contains("multipart/form-data", content.Headers.ContentType!.ToString());
+
+            var rawBody = await content.ReadAsStringAsync();
+            Assert.Contains("name=content", rawBody);
+            Assert.Contains("payload_json", rawBody);
+            Assert.Contains("files[0]", rawBody);
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+    }
+
+    [Fact]
+    public async Task SendReportForUserAsync_RejectsUnsupportedWebhookUrls()
+    {
+        using var context = CreateDbContext();
+        var service = new DiscordReportService(
+            context,
+            new StubHttpClientFactory(new CapturingHttpMessageHandler()),
+            NullLogger<DiscordReportService>.Instance,
+            new StubDatabaseAdminService());
+
+        var settings = new UserSettings
+        {
+            UserId = Guid.NewGuid(),
+            DiscordWeeklyReportEnabled = true,
+            DiscordWebhookUrl = "https://example.com/not-a-webhook",
+            DiscordWeeklyReportDayOfWeek = "Monday",
+            DiscordWeeklyReportHourLocal = 8,
+            DiscordTimezoneOffsetMinutes = 0
+        };
+
+        var startUtc = new DateTime(2026, 3, 14, 0, 0, 0, DateTimeKind.Utc);
+        var endUtc = new DateTime(2026, 3, 21, 0, 0, 0, DateTimeKind.Utc);
+
+        var result = await service.SendReportForUserAsync(settings, startUtc, endUtc, false, CancellationToken.None);
+
+        Assert.False(result.Sent);
+        Assert.False(result.Skipped);
+        Assert.Equal("Discord webhook URL is invalid.", result.Reason);
+    }
+
     private static AppDbContext CreateDbContext()
     {
         var options = new DbContextOptionsBuilder<AppDbContext>()
@@ -249,6 +458,7 @@ public class DiscordReportServiceTests
     {
         public string? FirstPayloadContent { get; private set; }
         public string? LastPayloadContent { get; private set; }
+        public List<CapturedRequest> Requests { get; } = new();
 
         protected override async Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
@@ -258,6 +468,17 @@ public class DiscordReportServiceTests
             {
                 LastPayloadContent = await request.Content.ReadAsStringAsync(cancellationToken);
                 FirstPayloadContent ??= LastPayloadContent;
+                Requests.Add(new CapturedRequest(
+                    request.RequestUri?.ToString(),
+                    request.Content.Headers.ContentType?.ToString(),
+                    LastPayloadContent));
+            }
+            else
+            {
+                Requests.Add(new CapturedRequest(
+                    request.RequestUri?.ToString(),
+                    null,
+                    null));
             }
 
             return new HttpResponseMessage(HttpStatusCode.NoContent)
@@ -309,4 +530,6 @@ public class DiscordReportServiceTests
 
         return rawPayload.Substring(jsonStart, jsonEnd - jsonStart + 1);
     }
+
+    private sealed record CapturedRequest(string? RequestUri, string? ContentType, string? Body);
 }

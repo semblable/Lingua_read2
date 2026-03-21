@@ -35,6 +35,7 @@ services:
       Jwt__Key: ${JWT_KEY}
       Jwt__Issuer: ${JWT_ISSUER}
       Jwt__Audience: ${JWT_AUDIENCE}
+      Jwt__ExpiryInHours: ${JWT_EXPIRY_HOURS:-2160}
       DeepL__ApiKey: ${DEEPL_API_KEY}
       Gemini__ApiKey: ${GEMINI_API_KEY}
       Auth__LoginSecret: ${LOGIN_SECRET}

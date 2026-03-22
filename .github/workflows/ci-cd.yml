@@ -246,31 +246,30 @@ jobs:
             fi
 
             echo "Running authenticated smoke test against /api/usersettings"
+            login_output_file=$(mktemp)
             if [ -n "${LOGIN_SECRET}" ]; then
               set +e
-              login_result=$(
-                sudo docker compose exec -T -e LOGIN_SECRET="$LOGIN_SECRET" api sh -lc '
-                  curl -sS -X POST http://localhost:5000/api/auth/login \
-                    -H "Accept: application/json" \
-                    -H "X-Login-Secret: $LOGIN_SECRET" \
-                    -w "\n%{http_code}"
-                '
-              )
+              sudo docker compose exec -T -e LOGIN_SECRET="$LOGIN_SECRET" api sh -lc '
+                curl -sS -X POST http://localhost:5000/api/auth/login \
+                  -H "Accept: application/json" \
+                  -H "X-Login-Secret: $LOGIN_SECRET" \
+                  -w "\n%{http_code}"
+              ' >"$login_output_file" 2>&1
               login_exec_status=$?
               set -e
             else
               set +e
-              login_result=$(
-                sudo docker compose exec -T api sh -lc '
-                  curl -sS -X POST http://localhost:5000/api/auth/login \
-                    -H "Accept: application/json" \
-                    -H "X-Forwarded-User: deploy-smoke-test" \
-                    -w "\n%{http_code}"
-                '
-              )
+              sudo docker compose exec -T api sh -lc '
+                curl -sS -X POST http://localhost:5000/api/auth/login \
+                  -H "Accept: application/json" \
+                  -H "X-Forwarded-User: deploy-smoke-test" \
+                  -w "\n%{http_code}"
+              ' >"$login_output_file" 2>&1
               login_exec_status=$?
               set -e
             fi
+            login_result=$(cat "$login_output_file")
+            rm -f "$login_output_file"
 
             if [ "$login_exec_status" -ne 0 ]; then
               echo "Smoke-test login command failed with exit code $login_exec_status"
@@ -296,17 +295,18 @@ jobs:
               exit 1
             fi
 
+            usersettings_output_file=$(mktemp)
             set +e
-            usersettings_result=$(
-              sudo docker compose exec -T -e AUTH_TOKEN="$token" api sh -lc '
-                curl -sS http://localhost:5000/api/usersettings \
-                  -H "Accept: application/json" \
-                  -H "Authorization: Bearer $AUTH_TOKEN" \
-                  -w "\n%{http_code}"
-              '
-            )
+            sudo docker compose exec -T -e AUTH_TOKEN="$token" api sh -lc '
+              curl -sS http://localhost:5000/api/usersettings \
+                -H "Accept: application/json" \
+                -H "Authorization: Bearer $AUTH_TOKEN" \
+                -w "\n%{http_code}"
+            ' >"$usersettings_output_file" 2>&1
             usersettings_exec_status=$?
             set -e
+            usersettings_result=$(cat "$usersettings_output_file")
+            rm -f "$usersettings_output_file"
             if [ "$usersettings_exec_status" -ne 0 ]; then
               echo "Usersettings smoke-test command failed with exit code $usersettings_exec_status"
               printf '%s\n' "$usersettings_result"

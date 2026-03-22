@@ -1301,6 +1301,12 @@ const TextDisplay = () => {
   const canUseSentenceTts = isSpeechSynthesisSupported();
   const readingUiMode = globalSettings.readingUiMode === 'modern' ? 'modern' : 'classic';
 
+  const setAudioPlaybackIntent = useCallback((shouldPlay) => {
+    if (audioRef.current) {
+      audioRef.current.__lrAllowPlayback = shouldPlay;
+    }
+  }, []);
+
   const hasActiveTextSelection = useCallback(() => {
     const selection = window.getSelection();
     return Boolean(selection && !selection.isCollapsed && selection.toString().trim());
@@ -1311,17 +1317,20 @@ const TextDisplay = () => {
     if (!audio) return;
 
     if (audio.paused) {
+      setAudioPlaybackIntent(true);
       audio.play().catch(err => console.error('Mobile audio toggle failed to play:', err));
     } else {
+      setAudioPlaybackIntent(false);
       audio.pause();
     }
-  }, []);
+  }, [setAudioPlaybackIntent]);
 
   const pauseAudioPlayback = useCallback(() => {
     const audio = audioRef.current;
     if (!audio || audio.paused) return;
+    setAudioPlaybackIntent(false);
     audio.pause();
-  }, []);
+  }, [setAudioPlaybackIntent]);
 
   const focusSentenceIndexFromNode = useCallback((node) => {
     const container = textContentRef.current;
@@ -1975,7 +1984,8 @@ const TextDisplay = () => {
       requestId: `replay-${currentSentenceSegment.index}-${Date.now()}`,
       startTime: currentSentenceSegment.startTime,
       endTime: currentSentenceSegment.endTime,
-      repeatCount: sentenceAudioRepeats
+      repeatCount: sentenceAudioRepeats,
+      forcePlay: true
     });
   }, [currentSentenceSegment, sentenceAudioRepeats, speakCurrentSentence]);
 
@@ -2140,7 +2150,8 @@ const TextDisplay = () => {
             requestId: `${currentSentenceSegment.index}-${Date.now()}`,
             startTime: currentSentenceSegment.startTime,
             endTime: currentSentenceSegment.endTime,
-            repeatCount: sentenceAudioRepeats
+            repeatCount: sentenceAudioRepeats,
+            forcePlay: isAudioPlaying
           });
         }
       }
@@ -2152,6 +2163,7 @@ const TextDisplay = () => {
   }, [
     currentSentenceSegment,
     isAudioLesson,
+    isAudioPlaying,
     isSentenceMode,
     sentenceAudioRepeats,
     sentenceProgressLoaded,

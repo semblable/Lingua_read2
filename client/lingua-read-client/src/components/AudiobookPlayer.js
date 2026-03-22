@@ -38,6 +38,13 @@ const isLifecycleNetworkError = (errorLike) => {
   return name === 'TypeError' && /networkerror|failed to fetch/i.test(message);
 };
 
+const setAudioPlaybackIntent = (audio, shouldPlay) => {
+  if (!audio) return;
+  audio.__lrAllowPlayback = shouldPlay;
+};
+
+const getAudioPlaybackIntent = (audio) => Boolean(audio?.__lrAllowPlayback);
+
 const AudiobookPlayer = ({
   type = 'book',
   book,
@@ -246,6 +253,22 @@ const AudiobookPlayer = ({
     console.warn(context, errorLike);
   }, []);
 
+  const requestAudioPlay = useCallback((context, options = {}) => {
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    if (options.forceIntent) {
+      setAudioPlaybackIntent(audio, true);
+    }
+
+    if (!getAudioPlaybackIntent(audio)) {
+      console.debug(`[AudioPlayer] Skipping play for ${context} because playback is paused by intent.`);
+      return;
+    }
+
+    audio.play().catch(e => logPlaybackInterruption(context, e));
+  }, [audioRef, logPlaybackInterruption]);
+
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio || !isInitialized || !currentTrack) return;
@@ -274,9 +297,9 @@ const AudiobookPlayer = ({
 
     // If it was already playing, continue playing the new track
     if (isPlayingRef.current) {
-      audio.play().catch(e => logPlaybackInterruption('Auto-play on track change failed', e));
+      requestAudioPlay('Auto-play on track change failed');
     }
-  }, [currentTrack, isInitialized, audioRef, buildTrackSrc, logPlaybackInterruption, resetSegmentPlayback]);
+  }, [currentTrack, isInitialized, audioRef, buildTrackSrc, requestAudioPlay, resetSegmentPlayback]);
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -306,8 +329,8 @@ const AudiobookPlayer = ({
 
     audio.currentTime = startTime;
     setCurrentTime(startTime);
-    audio.play().catch(e => logPlaybackInterruption('Segment playback failed', e));
-  }, [audioRef, logPlaybackInterruption, resetSegmentPlayback, segmentPlaybackRequest]);
+    requestAudioPlay('Segment playback failed', { forceIntent: Boolean(segmentPlaybackRequest.forcePlay) });
+  }, [audioRef, requestAudioPlay, resetSegmentPlayback, segmentPlaybackRequest]);
 
 
   // --- SIX: Event Listeners & Logic ---
@@ -340,7 +363,7 @@ const AudiobookPlayer = ({
         segmentPlayback.remainingRepeats -= 1;
         audio.currentTime = segmentPlayback.startTime;
         setCurrentTime(segmentPlayback.startTime);
-        audio.play().catch(e => logPlaybackInterruption('Segment replay failed', e));
+        requestAudioPlay('Segment replay failed');
         return;
       }
 
@@ -358,7 +381,7 @@ const AudiobookPlayer = ({
     if (onTimeUpdateRef.current) {
       onTimeUpdateRef.current(time);
     }
-  }, [audioRef, logPlaybackInterruption, resetSegmentPlayback]);
+  }, [audioRef, requestAudioPlay, resetSegmentPlayback]);
 
   const syncPlaybackState = useCallback((nextIsPlaying) => {
     setIsPlaying(nextIsPlaying);
@@ -414,7 +437,14 @@ const AudiobookPlayer = ({
       sourceSwapRef.current = { previousSrc: '', nextSrc: '' };
       setIsBuffering(false);
     };
-    const onPlay = () => syncPlaybackState(true);
+    const onPlay = () => {
+      if (!getAudioPlaybackIntent(audio)) {
+        console.debug('[AudioPlayer] Blocking unintended resume after pause.');
+        audio.pause();
+        return;
+      }
+      syncPlaybackState(true);
+    };
     const onPause = () => {
       // Manual pauses should cancel bounded segment playback so resume/play
       // does not remain tied to an old sentence boundary.
@@ -684,12 +714,13 @@ const AudiobookPlayer = ({
     const audio = audioRef.current;
     if (!audio) return;
     if (audio.paused) {
-      audio.play()
-        .catch(e => logPlaybackInterruption('Play failed', e));
+      setAudioPlaybackIntent(audio, true);
+      requestAudioPlay('Play failed');
     } else {
+      setAudioPlaybackIntent(audio, false);
       audio.pause();
     }
-  }, [audioRef, logPlaybackInterruption]); // Safe dependency
+  }, [audioRef, requestAudioPlay]); // Safe dependency
 
   const seek = useCallback((time) => {
     const audio = audioRef.current;

@@ -125,6 +125,38 @@ const isShortHeadingLine = (line) => {
   return wordCount > 0 && wordCount <= 4 && !titleLineEndsLikeSentence(line);
 };
 
+const isChapterMarkerLine = (line) => /^(part|chapter|book|section|prologue|epilogue|cap[ií]tulo|parte|livro)\b/i.test(line.trim());
+
+const isChapterMetaLine = (line) => {
+  const trimmed = line.trim();
+  return /^\d{1,4}$/.test(trimmed) || /^[IVXLCDM]+$/i.test(trimmed);
+};
+
+const isQuotedEpigraphLine = (line) => /^[\"'“”‘’«»]/.test(line.trim()) || /[\"'“”‘’«»]$/.test(line.trim());
+
+const getTitleLineVariant = (line, lineIndex, lines) => {
+  const trimmed = line.trim();
+  if (!trimmed) return 'spacer';
+  if (isChapterMarkerLine(trimmed)) return 'chapter-marker';
+  if (isChapterMetaLine(trimmed)) return 'chapter-meta';
+  if (isQuotedEpigraphLine(trimmed)) return 'epigraph';
+
+  const previousNonEmpty = [...lines]
+    .slice(0, lineIndex)
+    .reverse()
+    .find(candidate => candidate.trim());
+
+  if (previousNonEmpty && isQuotedEpigraphLine(previousNonEmpty) && countWordsInText(trimmed) <= 5) {
+    return 'epigraph-attribution';
+  }
+
+  if (countWordsInText(trimmed) >= 8 && lineIndex > 0) {
+    return 'epigraph';
+  }
+
+  return 'default';
+};
+
 const buildDisplayBlocks = (content) => {
   if (!content) return [];
 
@@ -858,15 +890,17 @@ const StandardTextView = React.memo(({
     currentSentenceIndex = nextSentenceIndex;
     return sentenceElements;
   };
-  const renderTitleLine = (line, lineIndex, blockKey) => {
+  const renderTitleLine = (line, lineIndex, blockKey, lines) => {
     if (!line) {
       return <div key={`${blockKey}-spacer-${lineIndex}`} className="reader-title-line-spacer" aria-hidden="true" />;
     }
 
+    const titleLineVariant = getTitleLineVariant(line, lineIndex, lines);
+
     return (
       <div
         key={`${blockKey}-line-${lineIndex}`}
-        className={`reader-title-line reader-title-line-${modeClass}`}
+        className={`reader-title-line reader-title-line-${modeClass} reader-title-line-${titleLineVariant}`}
       >
         {renderLineAsSentences(line)}
       </div>
@@ -933,7 +967,7 @@ const StandardTextView = React.memo(({
                 key={`${block.key}-title`}
                 className={`reader-title-block reader-title-block-${modeClass}`}
               >
-                {block.lines.map((line, lineIndex) => renderTitleLine(line, lineIndex, block.key))}
+                {block.lines.map((line, lineIndex) => renderTitleLine(line, lineIndex, block.key, block.lines))}
               </div>
             );
           }
@@ -1007,17 +1041,26 @@ const SentenceModeView = React.memo(({
     () => parseSentenceExplanation(currentSegmentExplanation), [currentSegmentExplanation]
   );
   const isTitleSegment = currentSegment.type === 'title';
-  const renderSentenceModeTitle = () => currentSegment.text.split('\n').map((line, lineIndex) => {
+  const renderSentenceModeTitle = () => {
+    const titleLines = currentSegment.text.split('\n');
+
+    return titleLines.map((line, lineIndex) => {
     if (!line.trim()) {
       return <div key={`title-segment-spacer-${lineIndex}`} className="reader-title-line-spacer" aria-hidden="true" />;
     }
 
+    const titleLineVariant = getTitleLineVariant(line, lineIndex, titleLines);
+
     return (
-      <div key={`title-segment-line-${lineIndex}`} className="reader-title-line sentence-mode-title-line">
+      <div
+        key={`title-segment-line-${lineIndex}`}
+        className={`reader-title-line sentence-mode-title-line reader-title-line-${titleLineVariant}`}
+      >
         {processTextContent(line)}
       </div>
     );
-  });
+    });
+  };
 
   if (!currentSegment) {
     return <p className="p-3">No sentence available.</p>;

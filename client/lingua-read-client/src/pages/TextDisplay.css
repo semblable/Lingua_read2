@@ -275,6 +275,36 @@
   line-height: 1.95;
 }
 
+.reader-title-line-chapter-marker {
+  font-size: 1.1em;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.reader-title-line-chapter-meta {
+  font-size: 1.55em;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+
+.reader-title-line-epigraph {
+  max-width: 28rem;
+  margin-left: auto;
+  margin-right: auto;
+  font-style: italic;
+  font-size: 1.18em;
+  line-height: 1.95;
+}
+
+.reader-title-line-epigraph-attribution {
+  margin-top: 1.1rem;
+  font-size: 0.98em;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  opacity: 0.86;
+}
+
 .reader-title-line:first-child {
   font-size: 1.4em;
 }

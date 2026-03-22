@@ -546,12 +546,26 @@ const WordInfoPanel = React.memo(({
   processingWord,
   selectedWord,
   languageConfig,
-  setEmbeddedUrl
+  setEmbeddedUrl,
+  canUseSentenceTts,
+  isSpeakingWord,
+  onSpeakWord
 }) => {
   if (!displayedWord) return <p>Click/hover on a word.</p>;
   return (
     <div>
-      <h5 className="fw-bold mb-2">{displayedWord.term}</h5>
+      <div className="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
+        <h5 className="fw-bold mb-0">{displayedWord.term}</h5>
+        <Button
+          variant="outline-primary"
+          size="sm"
+          onClick={onSpeakWord}
+          disabled={!canUseSentenceTts || !displayedWord?.term}
+          title={canUseSentenceTts ? 'Read this word aloud' : 'Speech synthesis is not supported in this browser'}
+        >
+          {isSpeakingWord ? 'Speaking...' : 'Speak Word'}
+        </Button>
+      </div>
       {saveSuccess && <Alert variant="success" size="sm">Saved!</Alert>}
       <p className="mb-1 small">Status: {displayedWord.status > 0 ? ['New', 'Learning', 'Familiar', 'Advanced', 'Known'][displayedWord.status - 1] : 'Untracked'}</p>
       <Form.Control
@@ -728,7 +742,14 @@ const StandardTextView = React.memo(({
   processTextContent,
   renderProcessedContentAsSentences,
   isMobile,
-  textContentRef
+  textContentRef,
+  canUseSentenceTts,
+  isSpeakingSentence,
+  sentenceTtsEnabled,
+  setSentenceTtsEnabled,
+  sentenceTtsRate,
+  setSentenceTtsRate,
+  onSpeakSentence
 }) => {
   if (!text?.content) return null;
   const paragraphs = text.content.split(/(\n\s*){2,}/g).filter(p => p?.trim().length > 0);
@@ -752,48 +773,88 @@ const StandardTextView = React.memo(({
   };
 
   return (
-    <div
-      className="text-content"
-      ref={textContentRef}
-      style={{
-        fontSize: `${globalSettings.textSize}px`,
-        lineHeight: isMobile ? mobileReadingConfig.lineSpacing : 'var(--reading-line-height)',
-        fontFamily: getFontFamilyForList(),
-        '--mobile-reading-block-padding': mobileReadingConfig.blockPadding,
-        '--mobile-reading-line-height': mobileReadingConfig.lineSpacing
-      }}
-      onMouseUp={handleWordSelection}
-      onTouchEnd={handleWordSelection}
-    >
-      {paragraphs.map((paragraph, index) => {
-        const processedParaElements = processTextContent(paragraph);
-        const { sentenceElements, nextSentenceIndex } = renderProcessedContentAsSentences(processedParaElements, currentSentenceIndex);
-        currentSentenceIndex = nextSentenceIndex;
+    <div className="d-flex flex-column gap-2 h-100">
+      <div className="d-flex flex-wrap align-items-center gap-1 px-2 pt-2">
+        <Button
+          variant="outline-primary"
+          size="sm"
+          onClick={onSpeakSentence}
+          disabled={!canUseSentenceTts || !sentenceTtsEnabled}
+          title={canUseSentenceTts ? 'Read the current sentence aloud' : 'Speech synthesis is not supported in this browser'}
+        >
+          {isSpeakingSentence ? 'Speaking...' : 'Speak Sentence'}
+        </Button>
+        <Button
+          variant={sentenceTtsEnabled ? 'outline-success' : 'outline-secondary'}
+          size="sm"
+          onClick={() => setSentenceTtsEnabled(!sentenceTtsEnabled)}
+          disabled={!canUseSentenceTts}
+        >
+          {sentenceTtsEnabled ? 'TTS On' : 'TTS Off'}
+        </Button>
+        <Button
+          variant="outline-secondary"
+          size="sm"
+          onClick={() => setSentenceTtsRate((prev) => prev - 0.1)}
+          disabled={!canUseSentenceTts || !sentenceTtsEnabled || sentenceTtsRate <= 0.5}
+          aria-label="Decrease sentence speech rate"
+        >
+          -
+        </Button>
+        <Badge bg="info">Rate: {sentenceTtsRate.toFixed(1)}x</Badge>
+        <Button
+          variant="outline-secondary"
+          size="sm"
+          onClick={() => setSentenceTtsRate((prev) => prev + 0.1)}
+          disabled={!canUseSentenceTts || !sentenceTtsEnabled || sentenceTtsRate >= 1.5}
+          aria-label="Increase sentence speech rate"
+        >
+          +
+        </Button>
+      </div>
+      <div
+        className="text-content"
+        ref={textContentRef}
+        style={{
+          fontSize: `${globalSettings.textSize}px`,
+          lineHeight: isMobile ? mobileReadingConfig.lineSpacing : 'var(--reading-line-height)',
+          fontFamily: getFontFamilyForList(),
+          '--mobile-reading-block-padding': mobileReadingConfig.blockPadding,
+          '--mobile-reading-line-height': mobileReadingConfig.lineSpacing
+        }}
+        onMouseUp={handleWordSelection}
+        onTouchEnd={handleWordSelection}
+      >
+        {paragraphs.map((paragraph, index) => {
+          const processedParaElements = processTextContent(paragraph);
+          const { sentenceElements, nextSentenceIndex } = renderProcessedContentAsSentences(processedParaElements, currentSentenceIndex);
+          currentSentenceIndex = nextSentenceIndex;
 
-        if (isMobile) {
-          const grouped = groupSentences(sentenceElements, mobileReadingConfig.chunkSize);
+          if (isMobile) {
+            const grouped = groupSentences(sentenceElements, mobileReadingConfig.chunkSize);
+            return (
+              <div key={`para-${index}`} className="reading-block-group">
+                {grouped.map((group, groupIndex) => (
+                  <p key={`para-${index}-group-${groupIndex}`} className="reading-block">
+                    {group.map((sentence, sentenceIndex) => (
+                      <React.Fragment key={`para-${index}-group-${groupIndex}-sentence-${sentenceIndex}`}>
+                        {sentence}
+                        {sentenceIndex < group.length - 1 ? ' ' : null}
+                      </React.Fragment>
+                    ))}
+                  </p>
+                ))}
+              </div>
+            );
+          }
+
           return (
-            <div key={`para-${index}`} className="reading-block-group">
-              {grouped.map((group, groupIndex) => (
-                <p key={`para-${index}-group-${groupIndex}`} className="reading-block">
-                  {group.map((sentence, sentenceIndex) => (
-                    <React.Fragment key={`para-${index}-group-${groupIndex}-sentence-${sentenceIndex}`}>
-                      {sentence}
-                      {sentenceIndex < group.length - 1 ? ' ' : null}
-                    </React.Fragment>
-                  ))}
-                </p>
-              ))}
-            </div>
+            <p key={`para-${index}`} className="mb-3" style={{ textIndent: '1.5em' }}>
+              {sentenceElements}
+            </p>
           );
-        }
-
-        return (
-          <p key={`para-${index}`} className="mb-3" style={{ textIndent: '1.5em' }}>
-            {sentenceElements}
-          </p>
-        );
-      })}
+        })}
+      </div>
     </div>
   );
 });
@@ -1035,6 +1096,7 @@ const TextDisplay = () => {
   const [sentenceProgressLoaded, setSentenceProgressLoaded] = useState(false);
   const [segmentPlaybackRequest, setSegmentPlaybackRequest] = useState(null);
   const [isSpeakingSentence, setIsSpeakingSentence] = useState(false);
+  const [isSpeakingWord, setIsSpeakingWord] = useState(false);
   const selectionDebounceRef = useRef(null);
   const lastHandledSelectionRef = useRef('');
   const suppressWordClickUntilRef = useRef(0);
@@ -1141,10 +1203,29 @@ const TextDisplay = () => {
     audio.pause();
   }, []);
 
+  const focusSentenceIndexFromNode = useCallback((node) => {
+    const container = textContentRef.current;
+    let currentNode = node;
+    while (currentNode && currentNode !== container) {
+      if (
+        currentNode.nodeType === Node.ELEMENT_NODE &&
+        currentNode.classList?.contains('sentence')
+      ) {
+        const sentenceIndex = Number(currentNode.getAttribute('data-sentence-index'));
+        if (Number.isInteger(sentenceIndex) && sentenceIndex >= 0) {
+          setCurrentSegmentIndex(sentenceIndex);
+        }
+        return;
+      }
+      currentNode = currentNode.parentNode;
+    }
+  }, []);
+
   const handleAudioPlaybackStateChange = useCallback((nextIsPlaying) => {
     if (nextIsPlaying) {
       cancelSpeech();
       setIsSpeakingSentence(false);
+      setIsSpeakingWord(false);
     }
     setIsAudioPlaying(nextIsPlaying);
   }, []);
@@ -1184,6 +1265,7 @@ const TextDisplay = () => {
     if (!nextValue) {
       cancelSpeech();
       setIsSpeakingSentence(false);
+      setIsSpeakingWord(false);
     }
   }, [updateSetting]);
 
@@ -1356,8 +1438,9 @@ const TextDisplay = () => {
     if (Date.now() < suppressWordClickUntilRef.current || hasActiveTextSelection()) {
       return;
     }
+    focusSentenceIndexFromNode(event.target);
     handleWordClick(word);
-  }, [handleWordClick, hasActiveTextSelection]);
+  }, [focusSentenceIndexFromNode, handleWordClick, hasActiveTextSelection]);
 
   const handleSelectableWordTouchStart = useCallback(() => {
     selectableWordTouchStartRef.current = Date.now();
@@ -1378,6 +1461,7 @@ const TextDisplay = () => {
     }
 
     const { selection, range, container, selectedText } = selectionDetails;
+    focusSentenceIndexFromNode(range.commonAncestorContainer);
     if (isMobile) {
       handleSelectedText(selectedText);
       return;
@@ -1479,7 +1563,7 @@ const TextDisplay = () => {
       handleSelectedText(selection.toString().trim());
     }
 
-  }, [getSelectionDetails, handleSelectedText, isMobile]); // textContentRef is a stable ref
+  }, [focusSentenceIndexFromNode, getSelectionDetails, handleSelectedText, isMobile]); // textContentRef is a stable ref
 
   const scheduleWordSelection = useCallback((delayMs) => {
     clearPendingSelection();
@@ -1705,6 +1789,9 @@ const TextDisplay = () => {
       return;
     }
 
+    cancelSpeech();
+    setIsSpeakingSentence(false);
+    setIsSpeakingWord(false);
     pauseAudioPlayback();
     setSegmentPlaybackRequest(null);
 
@@ -1722,6 +1809,33 @@ const TextDisplay = () => {
       setIsSpeakingSentence(false);
     }
   }, [canUseSentenceTts, currentSentenceSegment, pauseAudioPlayback, sentenceTtsEnabled, sentenceTtsRate, text?.languageCode]);
+
+  const speakDisplayedWord = useCallback(async () => {
+    const wordToSpeak = selectedWord || displayedWord?.term;
+    if (!wordToSpeak || !sentenceTtsEnabled || !canUseSentenceTts) {
+      return;
+    }
+
+    cancelSpeech();
+    setIsSpeakingSentence(false);
+    setIsSpeakingWord(false);
+    pauseAudioPlayback();
+    setSegmentPlaybackRequest(null);
+
+    try {
+      await speakText({
+        text: wordToSpeak,
+        languageCode: text?.languageCode,
+        rate: sentenceTtsRate,
+        onStart: () => setIsSpeakingWord(true),
+        onEnd: () => setIsSpeakingWord(false),
+        onError: () => setIsSpeakingWord(false)
+      });
+    } catch (speechErr) {
+      console.error('Word TTS failed:', speechErr);
+      setIsSpeakingWord(false);
+    }
+  }, [canUseSentenceTts, displayedWord?.term, pauseAudioPlayback, selectedWord, sentenceTtsEnabled, sentenceTtsRate, text?.languageCode]);
 
   const replayCurrentSegmentAudio = useCallback(() => {
     if (!currentSentenceSegment) {
@@ -1831,6 +1945,7 @@ const TextDisplay = () => {
     if (!isSentenceMode) {
       cancelSpeech();
       setIsSpeakingSentence(false);
+      setIsSpeakingWord(false);
       setSegmentPlaybackRequest(null);
     }
   }, [isSentenceMode]);
@@ -1842,6 +1957,7 @@ const TextDisplay = () => {
   useEffect(() => {
     cancelSpeech();
     setIsSpeakingSentence(false);
+    setIsSpeakingWord(false);
   }, [currentSegmentIndex]);
 
   useEffect(() => {
@@ -2385,6 +2501,8 @@ const TextDisplay = () => {
               className="sentence"
               data-sentence-index={currentSentenceIndex}
               onContextMenu={(e) => handleSentenceContextMenu(e, currentSentenceIndex)}
+              onClickCapture={(e) => focusSentenceIndexFromNode(e.target)}
+              onTouchEndCapture={(e) => focusSentenceIndexFromNode(e.target)}
               style={{ display: 'inline' }} // Keep inline display
             >
               {isBookmarked(currentSentenceIndex) && (
@@ -2399,7 +2517,7 @@ const TextDisplay = () => {
     });
 
     return { sentenceElements, nextSentenceIndex: sentenceIndex };
-  }, [handleSentenceContextMenu, isBookmarked]); // Dependencies
+  }, [focusSentenceIndexFromNode, handleSentenceContextMenu, isBookmarked]); // Dependencies
 
   // --- End New Sentence Rendering Logic ---
 
@@ -2566,6 +2684,13 @@ const TextDisplay = () => {
                   renderProcessedContentAsSentences={renderProcessedContentAsSentences}
                   isMobile={isMobile}
                   textContentRef={textContentRef}
+                  canUseSentenceTts={canUseSentenceTts}
+                  isSpeakingSentence={isSpeakingSentence}
+                  sentenceTtsEnabled={sentenceTtsEnabled}
+                  setSentenceTtsEnabled={setSentenceTtsEnabled}
+                  sentenceTtsRate={sentenceTtsRate}
+                  setSentenceTtsRate={setSentenceTtsRate}
+                  onSpeakSentence={speakCurrentSentence}
                 />
               )}
             </div>
@@ -2601,6 +2726,9 @@ const TextDisplay = () => {
                   selectedWord={selectedWord}
                   languageConfig={languageConfig}
                   setEmbeddedUrl={setEmbeddedUrl}
+                  canUseSentenceTts={canUseSentenceTts}
+                  isSpeakingWord={isSpeakingWord}
+                  onSpeakWord={speakDisplayedWord}
                 />
               </div>
 
@@ -2654,6 +2782,9 @@ const TextDisplay = () => {
                 selectedWord={selectedWord}
                 languageConfig={languageConfig}
                 setEmbeddedUrl={setEmbeddedUrl}
+                canUseSentenceTts={canUseSentenceTts}
+                isSpeakingWord={isSpeakingWord}
+                onSpeakWord={speakDisplayedWord}
               />
             </div>
           </div>

@@ -5,6 +5,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import TextDisplay from '../pages/TextDisplay';
 import { SettingsContext } from '../contexts/SettingsContext';
 import { getBookmarkedSentences, toggleBookmark } from '../utils/bookmarks';
+import { speakText, cancelSpeech, isSpeechSynthesisSupported } from '../utils/browserTts';
 import {
   getText,
   createWord,
@@ -52,6 +53,12 @@ jest.mock('../utils/bookmarks', () => ({
 jest.mock('../components/AudiobookPlayer', () => () => <div>Audio Player</div>);
 
 jest.mock('../components/TranslationPopup', () => () => null);
+
+jest.mock('../utils/browserTts', () => ({
+  speakText: jest.fn(() => Promise.resolve()),
+  cancelSpeech: jest.fn(),
+  isSpeechSynthesisSupported: jest.fn(() => true)
+}));
 
 const createSettingsValue = (settingOverrides = {}) => ({
   settings: {
@@ -132,6 +139,9 @@ describe('TextDisplay', () => {
     getSentenceProgress.mockReset();
     logSentenceReadActivity.mockReset();
     toggleBookmark.mockReset();
+    speakText.mockClear();
+    cancelSpeech.mockClear();
+    isSpeechSynthesisSupported.mockReturnValue(true);
     translateText.mockResolvedValue({ translatedText: 'Translated selection' });
     translateSentence.mockResolvedValue({ translatedText: 'Sentence translation' });
     explainSentence.mockResolvedValue({ explanationText: 'Grammar: Greeting.\nNuance: Friendly.\nCulture/Context: None.\nNatural phrasing: Common opener.' });
@@ -309,5 +319,36 @@ describe('TextDisplay', () => {
     expect(await screen.findByText('Grammar')).toBeInTheDocument();
     expect(await screen.findByText('Greeting.')).toBeInTheDocument();
     expect(await screen.findByText('Natural phrasing')).toBeInTheDocument();
+  });
+
+  test('normal reading view can speak the current sentence', async () => {
+    renderTextDisplay();
+
+    await waitFor(() => expect(getText).toHaveBeenCalled());
+    fireEvent.click(await screen.findByRole('button', { name: /Speak Sentence/i }));
+
+    await waitFor(() => {
+      expect(speakText).toHaveBeenCalledWith(expect.objectContaining({
+        text: 'Hello world.',
+        languageCode: 'ES',
+        rate: 1
+      }));
+    });
+  });
+
+  test('word info panel can speak the selected word', async () => {
+    renderTextDisplay();
+
+    await waitFor(() => expect(getText).toHaveBeenCalled());
+    fireEvent.click(await screen.findByText('Hello'));
+    fireEvent.click(await screen.findByRole('button', { name: /Speak Word/i }));
+
+    await waitFor(() => {
+      expect(speakText).toHaveBeenCalledWith(expect.objectContaining({
+        text: 'Hello',
+        languageCode: 'ES',
+        rate: 1
+      }));
+    });
   });
 });

@@ -911,7 +911,7 @@ export const getAudiobookProgress = async (bookId) => {
 // --- Audio Lesson Progress ---
 
 // Update audio lesson progress (requires textId)
-export const updateAudioLessonProgress = async (textId, progressData) => {
+export const updateAudioLessonProgress = async (textId, progressData, options = {}) => {
   // progressData should be { currentPosition: number | null }
   const payload = {
     textId: parseInt(textId, 10),
@@ -919,6 +919,7 @@ export const updateAudioLessonProgress = async (textId, progressData) => {
   };
   console.log('[API] Updating audio lesson progress via UserActivityController:', payload);
   return await fetchApi('/activity/audiolessonprogress', {
+    ...options,
     method: 'PUT',
     body: JSON.stringify(payload)
   });

@@ -31,6 +31,13 @@ const isAbortLikeError = (errorLike) => {
   return name === 'AbortError' || code === 1 || /abort(ed)?/i.test(message);
 };
 
+const isLifecycleNetworkError = (errorLike) => {
+  const name = errorLike?.name || '';
+  const message = errorLike?.message || '';
+
+  return name === 'TypeError' && /networkerror|failed to fetch/i.test(message);
+};
+
 const AudiobookPlayer = ({
   type = 'book',
   book,
@@ -50,6 +57,7 @@ const AudiobookPlayer = ({
   const progressBarRef = useRef(null);
   const segmentPlaybackRef = useRef(createSegmentPlaybackState());
   const sourceSwapRef = useRef({ previousSrc: '', nextSrc: '' });
+  const lifecycleSaveRef = useRef(false);
 
   // NOTE: Removed unused progressSaveRef
 
@@ -488,11 +496,18 @@ const AudiobookPlayer = ({
           currentAudiobookPosition: currentPos
         });
       } else if (textId) {
+        const isPageLifecycleSave = lifecycleSaveRef.current || document.hidden;
         await updateAudioLessonProgress(textId, {
           currentPosition: currentPos
+        }, {
+          keepalive: isPageLifecycleSave
         });
       }
     } catch (e) {
+      if ((lifecycleSaveRef.current || document.hidden) && isLifecycleNetworkError(e)) {
+        console.debug('[AudioPlayer] Ignoring page-lifecycle progress save interruption.', e);
+        return;
+      }
       console.error("Save progress failed", e);
     }
     // FIX: Added audioRef dependency
@@ -539,10 +554,14 @@ const AudiobookPlayer = ({
 
   // Page Exit Save (Browser Lifecycle)
   useEffect(() => {
-    const handleUnload = () => saveProgress(true);
+    const handleUnload = () => {
+      lifecycleSaveRef.current = true;
+      saveProgress(true);
+    };
     window.addEventListener('pagehide', handleUnload);
     window.addEventListener('beforeunload', handleUnload); // Also listen for beforeunload
     return () => {
+      lifecycleSaveRef.current = false;
       window.removeEventListener('pagehide', handleUnload);
       window.removeEventListener('beforeunload', handleUnload);
     }

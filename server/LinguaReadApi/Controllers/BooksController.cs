@@ -311,9 +311,10 @@ namespace LinguaReadApi.Controllers
                 {
                     epubBook = await VersOne.Epub.EpubReader.ReadBookAsync(stream);
                     bookTitle = uploadDto.TitleOverride ?? epubBook.Title ?? sourceFileStem;
-                    bookDescription = string.IsNullOrWhiteSpace(epubBook.Description)
+                    var normalizedDescription = NormalizeEpubHtmlToText(epubBook.Description ?? string.Empty);
+                    bookDescription = string.IsNullOrWhiteSpace(normalizedDescription)
                         ? $"Uploaded from {uploadDto.File.FileName}"
-                        : epubBook.Description;
+                        : normalizedDescription;
                 }
                 else
                 {
@@ -929,26 +930,15 @@ namespace LinguaReadApi.Controllers
                 return null;
             }
 
-            normalizedSource = normalizedSource.Split('#')[0].Split('?')[0];
-            var resolvedPath = ResolveEpubArchivePath(textFile.FilePath, normalizedSource);
-            if (extractionContext.SavedImages.TryGetValue(resolvedPath, out var existingPath))
+            normalizedSource = WebUtility.HtmlDecode(normalizedSource.Split('#')[0].Split('?')[0]);
+            var candidatePaths = BuildEpubImageLookupCandidates(textFile.FilePath, normalizedSource);
+            var cacheKey = candidatePaths.First();
+            if (extractionContext.SavedImages.TryGetValue(cacheKey, out var existingPath))
             {
                 return existingPath;
             }
 
-            EpubLocalByteContentFile? imageFile = null;
-            if (extractionContext.Book.Content.Images.TryGetLocalFileByFilePath(resolvedPath, out var fileByPath))
-            {
-                imageFile = fileByPath;
-            }
-            else if (extractionContext.Book.Content.Images.TryGetLocalFileByKey(normalizedSource, out var fileByKey))
-            {
-                imageFile = fileByKey;
-            }
-            else if (extractionContext.Book.Content.AllFiles.TryGetLocalFileByFilePath(resolvedPath, out var generalFile) && generalFile is EpubLocalByteContentFile byteFile)
-            {
-                imageFile = byteFile;
-            }
+            var imageFile = FindReferencedEpubImage(candidatePaths, extractionContext);
 
             if (imageFile == null || imageFile.Content.Length == 0)
             {
@@ -963,8 +953,76 @@ namespace LinguaReadApi.Controllers
             System.IO.File.WriteAllBytes(absolutePath, imageFile.Content);
 
             var relativePath = $"{extractionContext.RelativeAssetRoot}/{fileName}";
-            extractionContext.SavedImages[resolvedPath] = relativePath;
+            extractionContext.SavedImages[cacheKey] = relativePath;
             return relativePath;
+        }
+
+        private static EpubLocalByteContentFile? FindReferencedEpubImage(IEnumerable<string> candidatePaths, EpubExtractionContext extractionContext)
+        {
+            foreach (var candidatePath in candidatePaths)
+            {
+                if (extractionContext.Book.Content.Images.TryGetLocalFileByFilePath(candidatePath, out var fileByPath))
+                {
+                    return fileByPath;
+                }
+
+                if (extractionContext.Book.Content.Images.TryGetLocalFileByKey(candidatePath, out var fileByKey))
+                {
+                    return fileByKey;
+                }
+
+                if (extractionContext.Book.Content.AllFiles.TryGetLocalFileByFilePath(candidatePath, out var generalFile) && generalFile is EpubLocalByteContentFile byteFile)
+                {
+                    return byteFile;
+                }
+
+                var normalizedCandidate = NormalizeArchiveLookupValue(candidatePath);
+                var imageMatch = extractionContext.Book.Content.Images.Local.FirstOrDefault(image =>
+                    NormalizeArchiveLookupValue(image.FilePath) == normalizedCandidate ||
+                    NormalizeArchiveLookupValue(image.Key) == normalizedCandidate);
+                if (imageMatch != null)
+                {
+                    return imageMatch;
+                }
+
+                var allFilesMatch = extractionContext.Book.Content.AllFiles.Local
+                    .OfType<EpubLocalByteContentFile>()
+                    .FirstOrDefault(file =>
+                        NormalizeArchiveLookupValue(file.FilePath) == normalizedCandidate ||
+                        NormalizeArchiveLookupValue(file.Key) == normalizedCandidate);
+                if (allFilesMatch != null)
+                {
+                    return allFilesMatch;
+                }
+            }
+
+            return null;
+        }
+
+        private static List<string> BuildEpubImageLookupCandidates(string baseFilePath, string sourcePath)
+        {
+            var candidates = new List<string>();
+            void AddCandidate(string value)
+            {
+                if (string.IsNullOrWhiteSpace(value))
+                {
+                    return;
+                }
+
+                var normalizedValue = value.Replace('\\', '/');
+                if (!candidates.Contains(normalizedValue, StringComparer.OrdinalIgnoreCase))
+                {
+                    candidates.Add(normalizedValue);
+                }
+            }
+
+            var resolvedPath = ResolveEpubArchivePath(baseFilePath, sourcePath);
+            AddCandidate(resolvedPath);
+            AddCandidate(resolvedPath.TrimStart('/'));
+            AddCandidate(sourcePath.Trim());
+            AddCandidate(sourcePath.Trim().TrimStart('/'));
+
+            return candidates;
         }
 
         private static string? SaveEpubCoverImage(EpubExtractionContext extractionContext)
@@ -1225,6 +1283,16 @@ namespace LinguaReadApi.Controllers
             }
 
             return "/" + string.Join("/", segments);
+        }
+
+        private static string NormalizeArchiveLookupValue(string? path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return string.Empty;
+            }
+
+            return NormalizeArchivePath(WebUtility.UrlDecode(path) ?? path).TrimStart('/');
         }
 
         private static string GetImageExtension(string? mimeType, string? filePath)

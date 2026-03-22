@@ -661,7 +661,9 @@ const LessonHeader = React.memo(({
   audioRef,
   onTimeUpdate,
   onPlaybackStateChange,
-  segmentPlaybackRequest
+  segmentPlaybackRequest,
+  showDesktopLessonControls,
+  setShowDesktopLessonControls
 }) => {
   if (isMobile) return null;
 
@@ -694,9 +696,23 @@ const LessonHeader = React.memo(({
           )}
 
           {/* Controls - inline */}
-          <div className="d-flex align-items-center gap-1 ms-auto flex-wrap">
-            {primaryControls}
-            {secondaryControls}
+          <div className="d-flex align-items-center gap-1 ms-auto flex-wrap lesson-header-actions">
+            <Button
+              variant={showDesktopLessonControls ? 'outline-secondary' : 'primary'}
+              size="sm"
+              onClick={() => setShowDesktopLessonControls(prev => !prev)}
+              className="lesson-header-controls-toggle"
+              aria-expanded={showDesktopLessonControls}
+              aria-label={showDesktopLessonControls ? 'Hide lesson controls panel' : 'Show lesson controls panel'}
+            >
+              {showDesktopLessonControls ? 'Hide Panel' : 'Show Panel'}
+            </Button>
+            {showDesktopLessonControls && (
+              <>
+                {primaryControls}
+                {secondaryControls}
+              </>
+            )}
           </div>
         </div>
         {translateUnknownError && <Alert variant="danger" className="mt-1 mb-0 p-1 small">{translateUnknownError}</Alert>}
@@ -1316,6 +1332,7 @@ const TextDisplay = () => {
   const [showMoreControls, setShowMoreControls] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [showMobileHeader, setShowMobileHeader] = useState(false);
+  const [showDesktopLessonControls, setShowDesktopLessonControls] = useState(true);
   const [isWordPanelOpen, setIsWordPanelOpen] = useState(false);
   const [isAudioPlaying, setIsAudioPlaying] = useState(false);
   const [currentSegmentIndex, setCurrentSegmentIndex] = useState(0);
@@ -2925,6 +2942,8 @@ const TextDisplay = () => {
         onTimeUpdate={handleAudioTimeUpdate}
         onPlaybackStateChange={handleAudioPlaybackStateChange}
         segmentPlaybackRequest={segmentPlaybackRequest}
+        showDesktopLessonControls={showDesktopLessonControls}
+        setShowDesktopLessonControls={setShowDesktopLessonControls}
       />
 
       {/* Mobile Audio Player - Show for audio lessons on mobile only */}

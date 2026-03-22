@@ -14,6 +14,7 @@ namespace LinguaReadApi.Services
     public interface ISentenceTranslationService
     {
         Task<string> TranslateSentenceAsync(string text, string sourceLanguage, string targetLanguage);
+    Task<string> TranslateFullTextAsync(string text, string sourceLanguage, string targetLanguage);
     }
 
     public class GeminiTranslationService : ISentenceTranslationService
@@ -40,7 +41,17 @@ namespace LinguaReadApi.Services
             _logger.LogDebug($"Using base URL: {_baseUrl}");
         }
 
-        public async Task<string> TranslateSentenceAsync(string text, string sourceLanguage, string targetLanguage)
+        public Task<string> TranslateSentenceAsync(string text, string sourceLanguage, string targetLanguage)
+        {
+            return TranslateAsync(text, sourceLanguage, targetLanguage, includeSentenceTags: false);
+        }
+
+        public Task<string> TranslateFullTextAsync(string text, string sourceLanguage, string targetLanguage)
+        {
+            return TranslateAsync(text, sourceLanguage, targetLanguage, includeSentenceTags: true);
+        }
+
+        private async Task<string> TranslateAsync(string text, string sourceLanguage, string targetLanguage, bool includeSentenceTags)
         {
             if (string.IsNullOrWhiteSpace(text))
             {
@@ -67,10 +78,11 @@ namespace LinguaReadApi.Services
                 }
                 // --- End determining target code ---
 
-                _logger.LogInformation($"Translating text ({text.Length} chars) from {sourceLanguage} to {finalGeminiTargetCode}");
+                _logger.LogInformation("Translating text ({Length} chars) from {SourceLanguage} to {TargetLanguage}. TaggedOutput={TaggedOutput}",
+                    text.Length, sourceLanguage, finalGeminiTargetCode, includeSentenceTags);
 
-                // Prepare a prompt asking for paired, numbered original and translated sentences
-                string prompt = $@"Translate the following text from {sourceLanguage} to {finalGeminiTargetCode}, sentence by sentence.
+                string prompt = includeSentenceTags
+                    ? $@"Translate the following text from {sourceLanguage} to {finalGeminiTargetCode}, sentence by sentence.
 **Strict Instructions:**
 1. For EACH sentence in the original text:
    - Output the original sentence wrapped EXACTLY like this: `<o s=""N"">Original Sentence</o>`
@@ -89,8 +101,19 @@ Example Output:
 <o s=""1"">Hello world.</o><t s=""1"">Bonjour le monde.</t><o s=""2"">How are you?</o><t s=""2"">Comment allez-vous?</t>
 
 **Text to translate:**
+{text}"
+                    : $@"Translate the following sentence or short passage from {sourceLanguage} to {finalGeminiTargetCode}.
+**Strict Instructions:**
+1. Return ONLY the translated text in {finalGeminiTargetCode}.
+2. Do NOT include the original text.
+3. Do NOT use XML/HTML tags such as `<o>` or `<t>`.
+4. Do NOT add explanations, notes, quotes, code fences, or markdown.
+5. Preserve meaning, tone, and punctuation naturally in the target language.
+6. Translate idiomatically, not word-for-word. Avoid literal calques that sound unnatural or shift meaning.
+
+Text:
 {text}";
-                _logger.LogDebug("Using paired sentence tag translation prompt."); // Log new prompt type
+                _logger.LogDebug("Using {PromptType} translation prompt.", includeSentenceTags ? "paired-tag" : "plain-sentence");
 
                 // Create request payload according to Gemini API specs
                 var requestPayload = new GeminiRequest

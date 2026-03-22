@@ -60,7 +60,7 @@ namespace LinguaReadApi.Controllers
                     return StatusCode(500, new { message = "Translation service returned empty result" });
                 }
 
-                // Strip LLM paired-tag format so clients (e.g. sentence mode) show plain translation only.
+                // Keep a defensive fallback in case a provider still returns paired tags.
                 translatedText = PairedTranslationTagExtractor.ExtractTranslatedTextOnly(translatedText);
 
                 _logger.LogInformation($"Translation successful, result length: {translatedText.Length}");
@@ -101,7 +101,7 @@ namespace LinguaReadApi.Controllers
 
                 _logger.LogInformation($"Translating full text from {request.SourceLanguageCode} to {request.TargetLanguageCode}");
                 
-                var translatedText = await translationService.TranslateSentenceAsync(
+                var translatedText = await translationService.TranslateFullTextAsync(
                     request.Text,
                     request.SourceLanguageCode,
                     request.TargetLanguageCode);

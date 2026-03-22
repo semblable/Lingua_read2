@@ -61,7 +61,17 @@ namespace LinguaReadApi.Services
             _logger.LogInformation("OpenRouterTranslationService initialized with {Timeout}s timeout", RequestTimeout.TotalSeconds);
         }
 
-        public async Task<string> TranslateSentenceAsync(string text, string sourceLanguage, string targetLanguage, Guid userId)
+        public Task<string> TranslateSentenceAsync(string text, string sourceLanguage, string targetLanguage, Guid userId)
+        {
+            return TranslateAsync(text, sourceLanguage, targetLanguage, userId, includeSentenceTags: false);
+        }
+
+        public Task<string> TranslateFullTextAsync(string text, string sourceLanguage, string targetLanguage, Guid userId)
+        {
+            return TranslateAsync(text, sourceLanguage, targetLanguage, userId, includeSentenceTags: true);
+        }
+
+        private async Task<string> TranslateAsync(string text, string sourceLanguage, string targetLanguage, Guid userId, bool includeSentenceTags)
         {
             if (string.IsNullOrWhiteSpace(text))
             {
@@ -100,11 +110,11 @@ namespace LinguaReadApi.Services
                 var contextLimit = GetModelContextLimit(model);
                 var estimatedTokens = (int)(text.Length * TokensPerChar);
                 
-                _logger.LogInformation("Translating text ({Length} chars, ~{Tokens} tokens) from {Source} to {Target} using OpenRouter model {Model} (limit: {Limit})",
-                    text.Length, estimatedTokens, sourceLanguage, finalTargetCode, model, contextLimit);
+                _logger.LogInformation("Translating text ({Length} chars, ~{Tokens} tokens) from {Source} to {Target} using OpenRouter model {Model} (limit: {Limit}). TaggedOutput={TaggedOutput}",
+                    text.Length, estimatedTokens, sourceLanguage, finalTargetCode, model, contextLimit, includeSentenceTags);
 
                 // Check if we need chunking
-                if (text.Length > MaxCharsPerChunk)
+                if (includeSentenceTags && text.Length > MaxCharsPerChunk)
                 {
                     _logger.LogInformation("Text exceeds chunk limit ({Length} > {Limit}), splitting into chunks", text.Length, MaxCharsPerChunk);
                     return await TranslateInChunksAsync(text, sourceLanguage, finalTargetCode, apiKey, model);
@@ -117,7 +127,7 @@ namespace LinguaReadApi.Services
                     return $"Translation error: Text too long for selected model ({estimatedTokens} tokens > {contextLimit} limit). Try a model with larger context.";
                 }
 
-                return await TranslateSingleChunkAsync(text, sourceLanguage, finalTargetCode, apiKey, model);
+                return await TranslateSingleChunkAsync(text, sourceLanguage, finalTargetCode, apiKey, model, includeSentenceTags);
             }
             catch (TaskCanceledException ex) when (ex.InnerException is TimeoutException || ex.CancellationToken.IsCancellationRequested)
             {
@@ -155,7 +165,7 @@ namespace LinguaReadApi.Services
                 chunkIndex++;
                 _logger.LogInformation("Translating chunk {Index}/{Total} ({Length} chars)", chunkIndex, chunks.Count, chunk.Length);
                 
-                var result = await TranslateSingleChunkAsync(chunk, sourceLanguage, targetLanguage, apiKey, model);
+                var result = await TranslateSingleChunkAsync(chunk, sourceLanguage, targetLanguage, apiKey, model, includeSentenceTags: true);
                 
                 // Check for errors
                 if (result.StartsWith("Translation error:"))
@@ -236,10 +246,10 @@ namespace LinguaReadApi.Services
             return chunks;
         }
 
-        private async Task<string> TranslateSingleChunkAsync(string text, string sourceLanguage, string targetLanguage, string apiKey, string model)
+        private async Task<string> TranslateSingleChunkAsync(string text, string sourceLanguage, string targetLanguage, string apiKey, string model, bool includeSentenceTags)
         {
-            // Create the translation prompt (same as Gemini prompt)
-            string prompt = $@"Translate the following text from {sourceLanguage} to {targetLanguage}, sentence by sentence.
+            string prompt = includeSentenceTags
+                ? $@"Translate the following text from {sourceLanguage} to {targetLanguage}, sentence by sentence.
 **Strict Instructions:**
 1. For EACH sentence in the original text:
    - Output the original sentence wrapped EXACTLY like this: `<o s=""N"">Original Sentence</o>`
@@ -258,6 +268,17 @@ Example Output:
 <o s=""1"">Hello world.</o><t s=""1"">Bonjour le monde.</t><o s=""2"">How are you?</o><t s=""2"">Comment allez-vous?</t>
 
 **Text to translate:**
+{text}"
+                : $@"Translate the following sentence or short passage from {sourceLanguage} to {targetLanguage}.
+**Strict Instructions:**
+1. Return ONLY the translated text in {targetLanguage}.
+2. Do NOT include the original text.
+3. Do NOT use XML/HTML tags such as `<o>` or `<t>`.
+4. Do NOT add explanations, notes, quotes, code fences, or markdown.
+5. Preserve meaning, tone, and punctuation naturally in the target language.
+6. Translate idiomatically, not word-for-word. Avoid literal calques that sound unnatural or shift meaning.
+
+Text:
 {text}";
 
             // Create OpenRouter request

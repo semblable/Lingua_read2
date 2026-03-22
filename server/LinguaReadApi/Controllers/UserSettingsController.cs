@@ -56,7 +56,10 @@ namespace LinguaReadApi.Controllers
                     TextSize = 16,
                     TextFont = "default",
                     AutoTranslateWords = true,
+                    PauseOnWordClick = false,
                     HighlightKnownWords = true,
+                    SentenceMode = false,
+                    SentenceAudioRepeats = 1,
                     DefaultLanguageId = 0,
                     AutoAdvanceToNextLesson = false,
                     AutoMoveFinishedLessons = false, // Added property
@@ -85,6 +88,8 @@ namespace LinguaReadApi.Controllers
                 AutoTranslateWords = settings.AutoTranslateWords,
                 PauseOnWordClick = settings.PauseOnWordClick,
                 HighlightKnownWords = settings.HighlightKnownWords,
+                SentenceMode = settings.SentenceMode,
+                SentenceAudioRepeats = settings.SentenceAudioRepeats,
                 DefaultLanguageId = settings.DefaultLanguageId,
                 AutoAdvanceToNextLesson = settings.AutoAdvanceToNextLesson,
                 AutoMoveFinishedLessons = settings.AutoMoveFinishedLessons, // Added
@@ -135,6 +140,8 @@ namespace LinguaReadApi.Controllers
             settings.AutoTranslateWords = updateDto.AutoTranslateWords ?? settings.AutoTranslateWords;
             settings.PauseOnWordClick = updateDto.PauseOnWordClick ?? settings.PauseOnWordClick;
             settings.HighlightKnownWords = updateDto.HighlightKnownWords ?? settings.HighlightKnownWords;
+            settings.SentenceMode = updateDto.SentenceMode ?? settings.SentenceMode;
+            settings.SentenceAudioRepeats = updateDto.SentenceAudioRepeats ?? settings.SentenceAudioRepeats;
             settings.DefaultLanguageId = updateDto.DefaultLanguageId ?? settings.DefaultLanguageId;
             settings.AutoAdvanceToNextLesson = updateDto.AutoAdvanceToNextLesson ?? settings.AutoAdvanceToNextLesson;
             settings.AutoMoveFinishedLessons = updateDto.AutoMoveFinishedLessons ?? settings.AutoMoveFinishedLessons; // Update property
@@ -187,6 +194,8 @@ namespace LinguaReadApi.Controllers
                 AutoTranslateWords = settings.AutoTranslateWords,
                 PauseOnWordClick = settings.PauseOnWordClick,
                 HighlightKnownWords = settings.HighlightKnownWords,
+                SentenceMode = settings.SentenceMode,
+                SentenceAudioRepeats = settings.SentenceAudioRepeats,
                 DefaultLanguageId = settings.DefaultLanguageId,
                 AutoAdvanceToNextLesson = settings.AutoAdvanceToNextLesson,
                 AutoMoveFinishedLessons = settings.AutoMoveFinishedLessons, // Update property
@@ -535,6 +544,8 @@ namespace LinguaReadApi.Controllers
         public bool AutoTranslateWords { get; set; } = true;
         public bool PauseOnWordClick { get; set; } = false;
         public bool HighlightKnownWords { get; set; } = true;
+        public bool SentenceMode { get; set; } = false;
+        public int SentenceAudioRepeats { get; set; } = 1;
         public int DefaultLanguageId { get; set; } = 0;
         public bool AutoAdvanceToNextLesson { get; set; } = false;
         public bool AutoMoveFinishedLessons { get; set; } = false; // Added property
@@ -565,6 +576,9 @@ namespace LinguaReadApi.Controllers
         public bool? AutoTranslateWords { get; set; }
         public bool? PauseOnWordClick { get; set; }
         public bool? HighlightKnownWords { get; set; }
+        public bool? SentenceMode { get; set; }
+        [Range(1, 10)]
+        public int? SentenceAudioRepeats { get; set; }
         public int? DefaultLanguageId { get; set; }
         public bool? AutoAdvanceToNextLesson { get; set; }
         public bool? AutoMoveFinishedLessons { get; set; } // Added property

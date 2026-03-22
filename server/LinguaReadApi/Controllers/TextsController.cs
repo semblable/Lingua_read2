@@ -977,12 +977,15 @@ namespace LinguaReadApi.Controllers
 
             // 'totalActualWordCount' is used for daily activity tracking (total tokens read)
             var totalActualWordCount = LinguaReadApi.Utilities.WordCountUtility.CountTotalWords(text.Content);
+            var sentenceProgress = await _context.UserSentenceProgresses.FindAsync(userId, textId);
+            var alreadyCreditedWordCount = sentenceProgress?.CreditedWordCount ?? 0;
+            var completionWordCredit = Math.Max(totalActualWordCount - alreadyCreditedWordCount, 0);
 
             // --- 2. Log Activity ---
             try
             {
-                // Log completion activity with the full token count for accurate progress tracking
-                await _userActivityService.LogTextCompletedActivity(userId, text.LanguageId, textId, totalActualWordCount, text.IsAudioLesson);
+                // Only credit the remaining unread words so sentence-mode progress does not double count.
+                await _userActivityService.LogTextCompletedActivity(userId, text.LanguageId, textId, completionWordCredit, text.IsAudioLesson);
                 // TODO: Optionally call UpdateUserLanguageStats here or within LogTextCompletedActivity
                 // await _userActivityService.UpdateUserLanguageStats(userId, text.LanguageId);
             }

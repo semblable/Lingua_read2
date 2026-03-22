@@ -4,8 +4,9 @@ import { useParams, useNavigate } from 'react-router-dom'; // Removed unused Lin
 import { FixedSizeList as List } from 'react-window';
 import {
   getText, createWord, updateWord, updateLastRead, completeLesson, getBook, // Use completeLesson instead of completeText
-  translateText, /*translateSentence,*/ translateFullText, updateUserSettings, // Added updateUserSettings, removed unused getUserSettings
+  translateText, translateSentence, translateFullText, updateUserSettings, // Added updateUserSettings, removed unused getUserSettings
   batchTranslateWords, addTermsBatch, getLanguage, // Added getLanguage (Phase 3)
+  getSentenceProgress, logSentenceReadActivity,
   API_URL
 } from '../utils/api';
 import TranslationPopup from '../components/TranslationPopup';
@@ -69,6 +70,35 @@ const parseSrtContent = (srtContent) => {
   }
   console.log(`[SRT Parser] Parsed ${entries.length} entries.`);
   return entries;
+};
+
+const splitTextIntoSentenceSegments = (content) => {
+  if (!content) return [];
+
+  const normalizedContent = content.replace(/\r\n/g, '\n');
+  const segments = [];
+  const paragraphs = normalizedContent
+    .split(/\n\s*\n+/)
+    .map(paragraph => paragraph.trim())
+    .filter(Boolean);
+
+  const sentenceRegex = /[^.!?…]+(?:[.!?…]+(?:"|”|'|’)?|$)/g;
+
+  paragraphs.forEach((paragraph) => {
+    const matches = paragraph.match(sentenceRegex) || [paragraph];
+    matches
+      .map(sentence => sentence.replace(/\s+/g, ' ').trim())
+      .filter(Boolean)
+      .forEach((sentence) => {
+        segments.push({
+          index: segments.length,
+          text: sentence,
+          type: 'sentence'
+        });
+      });
+  });
+
+  return segments;
 };
 // --- End SRT Parsing Utilities ---
 
@@ -299,6 +329,8 @@ const PrimaryControls = React.memo(({
   isAudioLesson,
   displayMode,
   setDisplayMode,
+  isSentenceMode,
+  setSentenceModeEnabled,
   text,
   handleCompleteLesson,
   completing,
@@ -317,6 +349,14 @@ const PrimaryControls = React.memo(({
         {displayMode === 'audio' ? 'Text' : 'Audio'} View
       </Button>
     )}
+    <Button
+      variant={isSentenceMode ? 'primary' : 'outline-primary'}
+      size="sm"
+      onClick={() => setSentenceModeEnabled(!isSentenceMode)}
+      className="me-1"
+    >
+      Sentence Mode
+    </Button>
     {isAudioLesson && !text?.bookId && (
       <Button variant="success" onClick={handleCompleteLesson} disabled={completing} size="sm" className="ms-1">
         {completing ? <Spinner animation="border" size="sm" /> : (nextTextId === null ? 'Finish Book' : 'Complete Lesson')}
@@ -444,7 +484,9 @@ const LessonHeader = React.memo(({
   audioSrc,
   textId,
   audioRef,
-  onTimeUpdate
+  onTimeUpdate,
+  onPlaybackStateChange,
+  segmentPlaybackRequest
 }) => {
   if (isMobile) return null;
 
@@ -468,6 +510,8 @@ const LessonHeader = React.memo(({
               languageId={text?.languageId}
               audioRef={audioRef}
               onTimeUpdate={onTimeUpdate}
+              onPlaybackStateChange={onPlaybackStateChange}
+              segmentPlaybackRequest={segmentPlaybackRequest}
             />
           )}
           {!isAudioLesson && book?.audiobookTracks?.length > 0 && (
@@ -750,6 +794,101 @@ const StandardTextView = React.memo(({
   );
 });
 
+const SentenceModeView = React.memo(({
+  currentSegment,
+  segmentCount,
+  currentSegmentIndex,
+  creditedSegmentCount,
+  fontStyle,
+  processTextContent,
+  handleWordSelection,
+  textContentRef,
+  canGoPrev,
+  canGoNext,
+  onPrev,
+  onNext,
+  onReplayAudio,
+  isAudioLesson,
+  sentenceAudioRepeats,
+  setSentenceAudioRepeats,
+  onShowTranslation,
+  isTranslatingSegment,
+  isTranslationVisible,
+  currentSegmentTranslation
+}) => {
+  if (!currentSegment) {
+    return <p className="p-3">No sentence available.</p>;
+  }
+
+  return (
+    <div className="sentence-mode-view">
+      <div className="sentence-mode-toolbar">
+        <div className="sentence-mode-toolbar-group">
+          <Button variant="outline-secondary" size="sm" onClick={onPrev} disabled={!canGoPrev}>
+            Previous
+          </Button>
+          <Badge bg="secondary">
+            {segmentCount === 0 ? 0 : currentSegmentIndex + 1} / {segmentCount}
+          </Badge>
+          <Badge bg="light" text="dark">
+            Read: {creditedSegmentCount}
+          </Badge>
+          <Button variant="outline-secondary" size="sm" onClick={onNext} disabled={!canGoNext}>
+            Next
+          </Button>
+        </div>
+        <div className="sentence-mode-toolbar-group">
+          {isAudioLesson && (
+            <>
+              <Button variant="outline-primary" size="sm" onClick={onReplayAudio}>
+                Replay Audio
+              </Button>
+              <Button
+                variant="outline-secondary"
+                size="sm"
+                onClick={() => setSentenceAudioRepeats(prev => Math.max(1, prev - 1))}
+                disabled={sentenceAudioRepeats <= 1}
+              >
+                -
+              </Button>
+              <Badge bg="info">Repeats: {sentenceAudioRepeats}</Badge>
+              <Button
+                variant="outline-secondary"
+                size="sm"
+                onClick={() => setSentenceAudioRepeats(prev => Math.min(10, prev + 1))}
+                disabled={sentenceAudioRepeats >= 10}
+              >
+                +
+              </Button>
+            </>
+          )}
+          <Button variant="outline-info" size="sm" onClick={onShowTranslation} disabled={isTranslatingSegment}>
+            {isTranslatingSegment ? 'Translating...' : (isTranslationVisible ? 'Hide Translation' : 'Show Translation')}
+          </Button>
+        </div>
+      </div>
+      <Card className="sentence-mode-card shadow-sm border-0">
+        <Card.Body>
+          <div
+            className="sentence-mode-text"
+            ref={textContentRef}
+            style={fontStyle}
+            onMouseUp={handleWordSelection}
+            onTouchEnd={handleWordSelection}
+          >
+            {processTextContent(currentSegment.text)}
+          </div>
+          {isTranslationVisible && (
+            <div className="sentence-mode-translation">
+              {currentSegmentTranslation || 'No translation available.'}
+            </div>
+          )}
+        </Card.Body>
+      </Card>
+    </div>
+  );
+});
+
 
 const TextDisplay = () => {
   const { textId } = useParams();
@@ -809,10 +948,19 @@ const TextDisplay = () => {
   const [isWordPanelOpen, setIsWordPanelOpen] = useState(false);
   const [readingStyle, setReadingStyle] = useState('balanced');
   const [isAudioPlaying, setIsAudioPlaying] = useState(false);
+  const [currentSegmentIndex, setCurrentSegmentIndex] = useState(0);
+  const [segmentTranslations, setSegmentTranslations] = useState({});
+  const [isTranslatingSegment, setIsTranslatingSegment] = useState(false);
+  const [visibleTranslationIndex, setVisibleTranslationIndex] = useState(null);
+  const [creditedSegmentIndices, setCreditedSegmentIndices] = useState([]);
+  const [sentenceProgressLoaded, setSentenceProgressLoaded] = useState(false);
+  const [segmentPlaybackRequest, setSegmentPlaybackRequest] = useState(null);
   const selectionDebounceRef = useRef(null);
   const lastHandledSelectionRef = useRef('');
   const suppressWordClickUntilRef = useRef(0);
   const selectableWordTouchStartRef = useRef(0);
+  const pendingSentenceCreditRef = useRef(new Set());
+  const sentenceAudioRepeatsRef = useRef(sentenceAudioRepeats);
   // --- End State Declarations ---
 
   // Create refs for values used in handleAudioTimeUpdate to keep the callback stable
@@ -846,6 +994,10 @@ const TextDisplay = () => {
   useEffect(() => {
     console.log('[TextDisplay] globalSettings.lineSpacing updated:', globalSettings.lineSpacing);
   }, [globalSettings.lineSpacing]);
+
+  useEffect(() => {
+    sentenceAudioRepeatsRef.current = sentenceAudioRepeats;
+  }, [sentenceAudioRepeats]);
   // --- End Effects ---
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -873,6 +1025,9 @@ const TextDisplay = () => {
       selectionDebounceRef.current = null;
     }
   }, []);
+
+  const isSentenceMode = globalSettings.sentenceMode;
+  const sentenceAudioRepeats = globalSettings.sentenceAudioRepeats || 1;
 
   const hasActiveTextSelection = useCallback(() => {
     const selection = window.getSelection();
@@ -911,6 +1066,22 @@ const TextDisplay = () => {
       document.body.style.setProperty('--reading-line-height', numericSpacing.toString()); // Apply immediately
     }
   };
+
+  const setSentenceModeEnabled = useCallback((nextValue) => {
+    updateSetting('sentenceMode', nextValue);
+    updateUserSettings({ sentenceMode: nextValue })
+      .catch(err => console.error('[Save Settings] Failed to save sentence mode via API:', err));
+  }, [updateSetting]);
+
+  const setSentenceAudioRepeats = useCallback((updater) => {
+    const nextValue = typeof updater === 'function'
+      ? updater(sentenceAudioRepeats)
+      : updater;
+    const clamped = Math.max(1, Math.min(10, nextValue));
+    updateSetting('sentenceAudioRepeats', clamped);
+    updateUserSettings({ sentenceAudioRepeats: clamped })
+      .catch(err => console.error('[Save Settings] Failed to save sentence audio repeats via API:', err));
+  }, [sentenceAudioRepeats, updateSetting]);
 
   const fetchAllLanguageWords = useCallback(async (languageId) => {
     if (!languageId) return; // Guard against missing languageId
@@ -1398,6 +1569,147 @@ const TextDisplay = () => {
     }
   }, [readingStyle]);
 
+  const sentenceSegments = useMemo(() => {
+    if (isAudioLesson && srtLines.length > 0) {
+      return srtLines.map((line, index) => ({
+        index,
+        text: line.text,
+        startTime: line.startTime,
+        endTime: line.endTime,
+        srtLineId: line.id,
+        type: 'audio'
+      }));
+    }
+
+    return splitTextIntoSentenceSegments(text?.content || '');
+  }, [isAudioLesson, srtLines, text?.content]);
+
+  const currentSentenceSegment = sentenceSegments[currentSegmentIndex] || null;
+
+  const replayCurrentSegmentAudio = useCallback(() => {
+    if (!currentSentenceSegment || currentSentenceSegment.startTime == null || currentSentenceSegment.endTime == null) {
+      return;
+    }
+
+    setSegmentPlaybackRequest({
+      requestId: `replay-${currentSentenceSegment.index}-${Date.now()}`,
+      startTime: currentSentenceSegment.startTime,
+      endTime: currentSentenceSegment.endTime,
+      repeatCount: sentenceAudioRepeats
+    });
+  }, [currentSentenceSegment, sentenceAudioRepeats]);
+
+  const handleSegmentTranslationToggle = useCallback(async () => {
+    if (!currentSentenceSegment || !text?.languageCode) return;
+
+    if (visibleTranslationIndex === currentSentenceSegment.index) {
+      setVisibleTranslationIndex(null);
+      return;
+    }
+
+    if (segmentTranslations[currentSentenceSegment.index]) {
+      setVisibleTranslationIndex(currentSentenceSegment.index);
+      return;
+    }
+
+    setIsTranslatingSegment(true);
+    try {
+      const result = await translateSentence(currentSentenceSegment.text, text.languageCode, 'EN');
+      const translatedText = result?.translatedText || 'Translation failed.';
+      setSegmentTranslations(prev => ({
+        ...prev,
+        [currentSentenceSegment.index]: translatedText
+      }));
+      setVisibleTranslationIndex(currentSentenceSegment.index);
+    } catch (translationErr) {
+      console.error('Sentence translation failed:', translationErr);
+      setSegmentTranslations(prev => ({
+        ...prev,
+        [currentSentenceSegment.index]: `Translation failed: ${translationErr.message}`
+      }));
+      setVisibleTranslationIndex(currentSentenceSegment.index);
+    } finally {
+      setIsTranslatingSegment(false);
+    }
+  }, [currentSentenceSegment, segmentTranslations, text?.languageCode, visibleTranslationIndex]);
+
+  useEffect(() => {
+    if (sentenceSegments.length === 0) {
+      if (currentSegmentIndex !== 0) {
+        setCurrentSegmentIndex(0);
+      }
+      return;
+    }
+
+    if (currentSegmentIndex >= sentenceSegments.length) {
+      setCurrentSegmentIndex(sentenceSegments.length - 1);
+    }
+  }, [currentSegmentIndex, sentenceSegments]);
+
+  useEffect(() => {
+    if (!isSentenceMode) {
+      setSegmentPlaybackRequest(null);
+    }
+  }, [isSentenceMode]);
+
+  useEffect(() => {
+    if (!isSentenceMode || !sentenceProgressLoaded || !text?.textId || !currentSentenceSegment) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const syncSentenceProgress = async () => {
+      const segmentIndex = currentSentenceSegment.index;
+      if (pendingSentenceCreditRef.current.has(segmentIndex)) {
+        return;
+      }
+
+      pendingSentenceCreditRef.current.add(segmentIndex);
+      try {
+        const response = await logSentenceReadActivity({
+          textId: text.textId,
+          currentSegmentIndex: segmentIndex,
+          segments: [{
+            segmentIndex,
+            segmentText: currentSentenceSegment.text
+          }]
+        });
+
+        if (!cancelled) {
+          setCreditedSegmentIndices(response?.creditedSegmentIndices || []);
+        }
+      } catch (sentenceReadErr) {
+        console.error('Failed to log sentence progress:', sentenceReadErr);
+      } finally {
+        pendingSentenceCreditRef.current.delete(segmentIndex);
+      }
+    };
+
+    syncSentenceProgress();
+    setVisibleTranslationIndex(null);
+
+    if (isAudioLesson && currentSentenceSegment.startTime != null && currentSentenceSegment.endTime != null) {
+      setCurrentSrtLineId(currentSentenceSegment.srtLineId || null);
+      setSegmentPlaybackRequest({
+        requestId: `${currentSentenceSegment.index}-${Date.now()}`,
+        startTime: currentSentenceSegment.startTime,
+        endTime: currentSentenceSegment.endTime,
+        repeatCount: sentenceAudioRepeatsRef.current
+      });
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    currentSentenceSegment,
+    isAudioLesson,
+    isSentenceMode,
+    sentenceProgressLoaded,
+    text?.textId
+  ]);
+
   const itemData = useMemo(() => ({
     lines: srtLines,
     currentLineId: currentSrtLineId,
@@ -1468,6 +1780,12 @@ const TextDisplay = () => {
         setBook(null);
         setNextTextId(null);
         setBookmarkedIndices([]); // Reset bookmarks for new text
+        setCurrentSegmentIndex(0);
+        setSegmentTranslations({});
+        setVisibleTranslationIndex(null);
+        setCreditedSegmentIndices([]);
+        setSentenceProgressLoaded(false);
+        pendingSentenceCreditRef.current = new Set();
       } else {
         console.log(`[TextDisplay] Refreshing data for same text ${textId} (skipping loading state)`);
       }
@@ -1535,6 +1853,18 @@ const TextDisplay = () => {
           const loadedBookmarks = getBookmarkedSentences(data.textId);
           setBookmarkedIndices(loadedBookmarks);
           console.log(`[Bookmarks] Loaded ${loadedBookmarks.length} bookmarks for text ${data.textId}`);
+          try {
+            const sentenceProgress = await getSentenceProgress(data.textId);
+            const initialIndex = Math.max(0, sentenceProgress?.lastSegmentIndex || 0);
+            setCurrentSegmentIndex(initialIndex);
+            setCreditedSegmentIndices(sentenceProgress?.creditedSegmentIndices || []);
+          } catch (sentenceProgressErr) {
+            console.error('Failed to fetch sentence progress:', sentenceProgressErr);
+            setCreditedSegmentIndices([]);
+            setCurrentSegmentIndex(0);
+          } finally {
+            setSentenceProgressLoaded(true);
+          }
         }
       } catch (err) { setError(err.message || 'Failed to load text'); }
       finally { setLoading(false); }
@@ -1884,6 +2214,8 @@ const TextDisplay = () => {
       isAudioLesson={isAudioLesson}
       displayMode={displayMode}
       setDisplayMode={setDisplayMode}
+      isSentenceMode={isSentenceMode}
+      setSentenceModeEnabled={setSentenceModeEnabled}
       text={text}
       handleCompleteLesson={handleCompleteLesson}
       completing={completing}
@@ -1943,6 +2275,7 @@ const TextDisplay = () => {
         audioRef={audioRef}
         onTimeUpdate={handleAudioTimeUpdate}
         onPlaybackStateChange={handleAudioPlaybackStateChange}
+        segmentPlaybackRequest={segmentPlaybackRequest}
       />
 
       {/* Mobile Audio Player - Show for audio lessons on mobile only */}
@@ -1957,6 +2290,7 @@ const TextDisplay = () => {
             audioRef={audioRef}
             onTimeUpdate={handleAudioTimeUpdate}
             onPlaybackStateChange={handleAudioPlaybackStateChange}
+            segmentPlaybackRequest={segmentPlaybackRequest}
           />
         </div>
       )}
@@ -1967,7 +2301,30 @@ const TextDisplay = () => {
         <div className="left-panel" style={{ width: `${leftPanelWidth}%`, minHeight: 'calc(100vh - 130px)', padding: '0', position: 'relative' }}>
           <div className="d-flex flex-column" style={{ minHeight: '100%' }}>
             <div className="flex-grow-1" ref={readingContainerRef}>
-              {isAudioLesson && displayMode === 'audio' ? (
+              {isSentenceMode ? (
+                <SentenceModeView
+                  currentSegment={currentSentenceSegment}
+                  segmentCount={sentenceSegments.length}
+                  currentSegmentIndex={currentSegmentIndex}
+                  creditedSegmentCount={creditedSegmentIndices.length}
+                  fontStyle={getFontStyling(isMobile ? mobileReadingConfig.lineSpacing : globalSettings.lineSpacing)}
+                  processTextContent={processTextContent}
+                  handleWordSelection={handleWordSelection}
+                  textContentRef={textContentRef}
+                  canGoPrev={currentSegmentIndex > 0}
+                  canGoNext={currentSegmentIndex < sentenceSegments.length - 1}
+                  onPrev={() => setCurrentSegmentIndex(prev => Math.max(0, prev - 1))}
+                  onNext={() => setCurrentSegmentIndex(prev => Math.min(sentenceSegments.length - 1, prev + 1))}
+                  onReplayAudio={replayCurrentSegmentAudio}
+                  isAudioLesson={isAudioLesson}
+                  sentenceAudioRepeats={sentenceAudioRepeats}
+                  setSentenceAudioRepeats={setSentenceAudioRepeats}
+                  onShowTranslation={handleSegmentTranslationToggle}
+                  isTranslatingSegment={isTranslatingSegment}
+                  isTranslationVisible={visibleTranslationIndex === currentSentenceSegment?.index}
+                  currentSegmentTranslation={currentSentenceSegment ? segmentTranslations[currentSentenceSegment.index] : ''}
+                />
+              ) : isAudioLesson && displayMode === 'audio' ? (
                 <AudioTranscriptView
                   isMobile={isMobile}
                   srtLines={srtLines}

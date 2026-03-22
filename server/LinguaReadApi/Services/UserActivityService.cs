@@ -22,6 +22,8 @@ namespace LinguaReadApi.Services
         {
             try
             {
+                wordCount = Math.Max(wordCount, 0);
+
                 var stats = await _context.UserLanguageStatistics
                     .FirstOrDefaultAsync(uls => uls.UserId == userId && uls.LanguageId == languageId);
 

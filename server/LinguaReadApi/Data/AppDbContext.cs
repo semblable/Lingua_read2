@@ -26,6 +26,7 @@ namespace LinguaReadApi.Data
         public DbSet<LanguageSentenceSplitException> LanguageSentenceSplitExceptions { get; set; } // Added for Language Config feature
         public DbSet<UserLanguageStatistics> UserLanguageStatistics { get; set; } // Added for aggregated stats
         public DbSet<UserAudioLessonProgress> UserAudioLessonProgresses { get; set; } // Added for audio lesson progress
+        public DbSet<UserSentenceProgress> UserSentenceProgresses { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -243,6 +244,22 @@ namespace LinguaReadApi.Data
                 .WithMany() // No collection navigation property in Text for this
                 .HasForeignKey(ualp => ualp.TextId)
                 .OnDelete(DeleteBehavior.Cascade); // If text (lesson) is deleted, delete its progress records
+
+            // Configure UserSentenceProgress entity
+            modelBuilder.Entity<UserSentenceProgress>()
+                .HasKey(usp => new { usp.UserId, usp.TextId });
+
+            modelBuilder.Entity<UserSentenceProgress>()
+                .HasOne(usp => usp.User)
+                .WithMany()
+                .HasForeignKey(usp => usp.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<UserSentenceProgress>()
+                .HasOne(usp => usp.Text)
+                .WithMany()
+                .HasForeignKey(usp => usp.TextId)
+                .OnDelete(DeleteBehavior.Cascade);
         }
     }
 }

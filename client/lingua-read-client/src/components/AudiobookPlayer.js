@@ -12,7 +12,8 @@ const AudiobookPlayer = ({
   languageId,
   audioRef: externalAudioRef,
   onTimeUpdate,
-  onPlaybackStateChange
+  onPlaybackStateChange,
+  segmentPlaybackRequest
 }) => {
   // --- ONE: Refs and Stable Callbacks ---
   const internalAudioRef = useRef(null);
@@ -20,6 +21,13 @@ const AudiobookPlayer = ({
   const onTimeUpdateRef = useRef(onTimeUpdate);
   const onPlaybackStateChangeRef = useRef(onPlaybackStateChange);
   const progressBarRef = useRef(null);
+  const segmentPlaybackRef = useRef({
+    active: false,
+    requestId: null,
+    startTime: 0,
+    endTime: 0,
+    remainingRepeats: 0
+  });
 
   // NOTE: Removed unused progressSaveRef
 
@@ -209,6 +217,14 @@ const AudiobookPlayer = ({
       return;
     }
 
+    segmentPlaybackRef.current = {
+      active: false,
+      requestId: null,
+      startTime: 0,
+      endTime: 0,
+      remainingRepeats: 0
+    };
+
     console.log(`[AudioPlayer] Loading Track: ${src}`);
     audio.src = src;
     audio.load();
@@ -219,6 +235,37 @@ const AudiobookPlayer = ({
       audio.play().catch(e => console.warn("Auto-play on track change failed", e));
     }
   }, [currentTrack, isInitialized, audioRef]);
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    if (!segmentPlaybackRequest?.requestId) {
+      if (segmentPlaybackRef.current.active) {
+        segmentPlaybackRef.current = { active: false, requestId: null, startTime: 0, endTime: 0, remainingRepeats: 0 };
+        audio.pause();
+      }
+      return;
+    }
+
+    if (segmentPlaybackRef.current.requestId === segmentPlaybackRequest.requestId) return;
+
+    const startTime = Math.max(0, segmentPlaybackRequest.startTime || 0);
+    const endTime = Math.max(startTime, segmentPlaybackRequest.endTime || startTime);
+    const repeatCount = Math.max(1, segmentPlaybackRequest.repeatCount || 1);
+
+    segmentPlaybackRef.current = {
+      active: true,
+      requestId: segmentPlaybackRequest.requestId,
+      startTime,
+      endTime,
+      remainingRepeats: repeatCount
+    };
+
+    audio.currentTime = startTime;
+    setCurrentTime(startTime);
+    audio.play().catch(e => console.warn("Segment playback failed", e));
+  }, [audioRef, segmentPlaybackRequest]);
 
 
   // --- SIX: Event Listeners & Logic ---
@@ -243,6 +290,33 @@ const AudiobookPlayer = ({
     if (!audio) return;
     const time = audio.currentTime;
     setCurrentTime(time);
+
+    const segmentPlayback = segmentPlaybackRef.current;
+    if (segmentPlayback.active && time >= Math.max(segmentPlayback.endTime - 0.05, segmentPlayback.startTime)) {
+      if (segmentPlayback.remainingRepeats > 1) {
+        segmentPlayback.remainingRepeats -= 1;
+        audio.currentTime = segmentPlayback.startTime;
+        setCurrentTime(segmentPlayback.startTime);
+        audio.play().catch(e => console.warn("Segment replay failed", e));
+        return;
+      }
+
+      const endTime = segmentPlayback.endTime;
+      segmentPlaybackRef.current = {
+        active: false,
+        requestId: null,
+        startTime: 0,
+        endTime: 0,
+        remainingRepeats: 0
+      };
+      audio.pause();
+      audio.currentTime = endTime;
+      setCurrentTime(endTime);
+      if (onTimeUpdateRef.current) {
+        onTimeUpdateRef.current(endTime);
+      }
+      return;
+    }
 
     if (onTimeUpdateRef.current) {
       onTimeUpdateRef.current(time);

@@ -13,11 +13,14 @@ import {
   completeLesson,
   getBook,
   translateText,
+  translateSentence,
   translateFullText,
   updateUserSettings,
   batchTranslateWords,
   addTermsBatch,
-  getLanguage
+  getLanguage,
+  getSentenceProgress,
+  logSentenceReadActivity
 } from '../utils/api';
 
 jest.mock('../utils/api', () => ({
@@ -28,11 +31,14 @@ jest.mock('../utils/api', () => ({
   completeLesson: jest.fn(),
   getBook: jest.fn(),
   translateText: jest.fn(),
+  translateSentence: jest.fn(),
   translateFullText: jest.fn(),
   updateUserSettings: jest.fn(),
   batchTranslateWords: jest.fn(),
   addTermsBatch: jest.fn(),
   getLanguage: jest.fn(),
+  getSentenceProgress: jest.fn(),
+  logSentenceReadActivity: jest.fn(),
   API_URL: 'http://test.local'
 }));
 
@@ -54,6 +60,8 @@ const createSettingsValue = (settingOverrides = {}) => ({
     autoTranslateWords: false,
     pauseOnWordClick: false,
     highlightKnownWords: true,
+    sentenceMode: false,
+    sentenceAudioRepeats: 1,
     defaultLanguageId: 0,
     autoAdvanceToNextLesson: false,
     showProgressStats: true,
@@ -110,13 +118,29 @@ describe('TextDisplay', () => {
     completeLesson.mockReset();
     getBook.mockReset();
     translateText.mockReset();
+    translateSentence.mockReset();
     translateFullText.mockReset();
     updateUserSettings.mockReset();
     batchTranslateWords.mockReset();
     addTermsBatch.mockReset();
     getLanguage.mockReset();
+    getSentenceProgress.mockReset();
+    logSentenceReadActivity.mockReset();
     toggleBookmark.mockReset();
     translateText.mockResolvedValue({ translatedText: 'Translated selection' });
+    translateSentence.mockResolvedValue({ translatedText: 'Sentence translation' });
+    getSentenceProgress.mockResolvedValue({
+      textId: 1,
+      creditedSegmentIndices: [],
+      creditedWordCount: 0,
+      lastSegmentIndex: 0
+    });
+    logSentenceReadActivity.mockResolvedValue({
+      textId: 1,
+      creditedSegmentIndices: [0],
+      creditedWordCount: 2,
+      lastSegmentIndex: 0
+    });
   });
 
   afterEach(() => {
@@ -204,5 +228,54 @@ describe('TextDisplay', () => {
     fireEvent.contextMenu(sentence);
 
     expect(toggleBookmark).not.toHaveBeenCalled();
+  });
+
+  test('sentence mode navigates sentence by sentence', async () => {
+    getText.mockResolvedValueOnce({
+      textId: 1,
+      title: 'Sample Text',
+      content: 'Hello world. Another sentence!',
+      languageId: null,
+      languageCode: 'ES',
+      languageName: 'Spanish',
+      isAudioLesson: false,
+      words: [],
+      bookId: null
+    });
+
+    renderTextDisplay({ sentenceMode: true });
+
+    await waitFor(() => expect(getText).toHaveBeenCalled());
+    expect(await screen.findByText('Hello')).toBeInTheDocument();
+    expect(screen.queryByText('Another')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Next/i }));
+
+    expect(await screen.findByText('Another')).toBeInTheDocument();
+    expect(logSentenceReadActivity).toHaveBeenCalled();
+  });
+
+  test('sentence mode shows translation for current sentence', async () => {
+    getText.mockResolvedValueOnce({
+      textId: 1,
+      title: 'Sample Text',
+      content: 'Hello world.',
+      languageId: null,
+      languageCode: 'ES',
+      languageName: 'Spanish',
+      isAudioLesson: false,
+      words: [],
+      bookId: null
+    });
+
+    renderTextDisplay({ sentenceMode: true });
+
+    await waitFor(() => expect(getText).toHaveBeenCalled());
+    fireEvent.click(await screen.findByRole('button', { name: /Show Translation/i }));
+
+    await waitFor(() => {
+      expect(translateSentence).toHaveBeenCalledWith('Hello world.', 'ES', 'EN');
+    });
+    expect(await screen.findByText('Sentence translation')).toBeInTheDocument();
   });
 });

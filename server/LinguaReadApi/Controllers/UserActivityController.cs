@@ -11,6 +11,8 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using System.Collections.Generic; // For Dictionary, List
 using System.Linq; // For LINQ methods like GroupBy, Sum
+using System.Text.Json;
+using LinguaReadApi.Utilities;
 
 namespace LinguaReadApi.Controllers
 {
@@ -255,6 +257,164 @@ public async Task<IActionResult> LogManualActivity([FromBody] LogManualActivityR
         _logger.LogError(ex, "Unexpected error saving manual activity for UserId: {UserId}", userId);
         return StatusCode(500, $"An unexpected error occurred while saving the manual activity: {ex.Message}");
     }
+}
+
+public class SentenceSegmentDto
+{
+    [Required]
+    public int SegmentIndex { get; set; }
+
+    [Required]
+    public string SegmentText { get; set; } = string.Empty;
+}
+
+public class LogSentenceReadRequest
+{
+    [Required]
+    public int TextId { get; set; }
+
+    public List<SentenceSegmentDto> Segments { get; set; } = new();
+
+    public int? CurrentSegmentIndex { get; set; }
+}
+
+public class SentenceProgressDto
+{
+    public int TextId { get; set; }
+    public List<int> CreditedSegmentIndices { get; set; } = new();
+    public int CreditedWordCount { get; set; }
+    public int? LastSegmentIndex { get; set; }
+}
+
+[HttpGet("sentenceprogress/{textId}")]
+public async Task<ActionResult<SentenceProgressDto>> GetSentenceProgress(int textId)
+{
+    var userId = GetUserId();
+    if (userId == Guid.Empty)
+    {
+        return Unauthorized("User ID not found in token.");
+    }
+
+    var text = await _context.Texts
+        .AsNoTracking()
+        .FirstOrDefaultAsync(t => t.TextId == textId && t.UserId == userId);
+
+    if (text == null)
+    {
+        return NotFound("Text not found.");
+    }
+
+    var progress = await _context.UserSentenceProgresses.FindAsync(userId, textId);
+    if (progress == null)
+    {
+        return Ok(new SentenceProgressDto
+        {
+            TextId = textId
+        });
+    }
+
+    return Ok(ToSentenceProgressDto(progress));
+}
+
+[HttpPost("logSentenceRead")]
+public async Task<ActionResult<SentenceProgressDto>> LogSentenceRead([FromBody] LogSentenceReadRequest request)
+{
+    if (!ModelState.IsValid)
+    {
+        return BadRequest(ModelState);
+    }
+
+    var userId = GetUserId();
+    if (userId == Guid.Empty)
+    {
+        return Unauthorized("User ID not found in token.");
+    }
+
+    var text = await _context.Texts
+        .AsNoTracking()
+        .FirstOrDefaultAsync(t => t.TextId == request.TextId && t.UserId == userId);
+
+    if (text == null)
+    {
+        return NotFound("Text not found.");
+    }
+
+    var progress = await _context.UserSentenceProgresses.FindAsync(userId, request.TextId);
+    if (progress == null)
+    {
+        progress = new UserSentenceProgress
+        {
+            UserId = userId,
+            TextId = request.TextId,
+            UpdatedAt = DateTime.UtcNow
+        };
+        _context.UserSentenceProgresses.Add(progress);
+    }
+
+    var creditedIndices = ParseCreditedIndices(progress.CreditedSegmentIndicesJson);
+    var distinctSegments = request.Segments
+        .Where(segment => segment != null && !string.IsNullOrWhiteSpace(segment.SegmentText))
+        .GroupBy(segment => segment.SegmentIndex)
+        .Select(group => group.First())
+        .ToList();
+
+    var newlyCreditedWords = 0;
+
+    foreach (var segment in distinctSegments)
+    {
+        if (segment.SegmentIndex < 0 || creditedIndices.Contains(segment.SegmentIndex))
+        {
+            continue;
+        }
+
+        creditedIndices.Add(segment.SegmentIndex);
+        newlyCreditedWords += WordCountUtility.CountTotalWords(segment.SegmentText);
+    }
+
+    if (request.CurrentSegmentIndex.HasValue && request.CurrentSegmentIndex.Value >= 0)
+    {
+        progress.LastSegmentIndex = request.CurrentSegmentIndex.Value;
+    }
+
+    progress.CreditedSegmentIndicesJson = SerializeCreditedIndices(creditedIndices);
+    progress.CreditedWordCount += newlyCreditedWords;
+    progress.UpdatedAt = DateTime.UtcNow;
+
+    if (newlyCreditedWords > 0)
+    {
+        _context.UserActivities.Add(new UserActivity
+        {
+            UserId = userId,
+            LanguageId = text.LanguageId,
+            ActivityType = "Reading",
+            WordCount = newlyCreditedWords,
+            Timestamp = DateTime.UtcNow
+        });
+
+        var stats = await _context.UserLanguageStatistics
+            .FirstOrDefaultAsync(uls => uls.UserId == userId && uls.LanguageId == text.LanguageId);
+
+        if (stats == null)
+        {
+            stats = new UserLanguageStatistics
+            {
+                UserId = userId,
+                LanguageId = text.LanguageId,
+                TotalWordsRead = newlyCreditedWords,
+                LastUpdatedAt = DateTime.UtcNow
+            };
+            _context.UserLanguageStatistics.Add(stats);
+        }
+        else
+        {
+            stats.TotalWordsRead += newlyCreditedWords;
+            stats.LastUpdatedAt = DateTime.UtcNow;
+        }
+    }
+
+    await _context.SaveChangesAsync();
+
+    return Ok(ToSentenceProgressDto(progress));
 }
 
 // --- DTOs for Statistics Endpoints ---
@@ -724,6 +884,41 @@ private DateTime CalculateStartDate(string period)
         }
 
         // --- Helper Methods ---
+
+        private static HashSet<int> ParseCreditedIndices(string? json)
+        {
+            if (string.IsNullOrWhiteSpace(json))
+            {
+                return new HashSet<int>();
+            }
+
+            try
+            {
+                return JsonSerializer.Deserialize<HashSet<int>>(json) ?? new HashSet<int>();
+            }
+            catch
+            {
+                return new HashSet<int>();
+            }
+        }
+
+        private static string SerializeCreditedIndices(HashSet<int> creditedIndices)
+        {
+            return JsonSerializer.Serialize(creditedIndices.OrderBy(index => index));
+        }
+
+        private static SentenceProgressDto ToSentenceProgressDto(UserSentenceProgress progress)
+        {
+            return new SentenceProgressDto
+            {
+                TextId = progress.TextId,
+                CreditedSegmentIndices = ParseCreditedIndices(progress.CreditedSegmentIndicesJson)
+                    .OrderBy(index => index)
+                    .ToList(),
+                CreditedWordCount = progress.CreditedWordCount,
+                LastSegmentIndex = progress.LastSegmentIndex
+            };
+        }
 
         private Guid GetUserId()
         {

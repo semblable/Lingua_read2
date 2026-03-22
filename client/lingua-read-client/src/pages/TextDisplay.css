@@ -229,6 +229,46 @@
   /* Darker grey background for better contrast */
 }
 
+.sentence-mode-view {
+  padding: var(--space-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.sentence-mode-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+  align-items: center;
+  justify-content: space-between;
+}
+
+.sentence-mode-toolbar-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.sentence-mode-card {
+  background: var(--theme-surface-bg, #fff);
+}
+
+.sentence-mode-text {
+  font-size: 1.35rem;
+  line-height: 1.8;
+  min-height: 10rem;
+}
+
+.sentence-mode-translation {
+  margin-top: var(--space-md);
+  padding-top: var(--space-sm);
+  border-top: 1px solid var(--theme-border-color, #e9ecef);
+  color: var(--theme-text-muted, #6c757d);
+  white-space: pre-wrap;
+}
+
 /* Media queries for responsive design */
 @media (max-width: 768px) {
   .lesson-page {
@@ -338,6 +378,14 @@
 
   .audio-transcript-container {
     padding: var(--space-sm) 0 var(--space-lg);
+  }
+
+  .sentence-mode-view {
+    padding: var(--space-sm);
+  }
+
+  .sentence-mode-text {
+    min-height: 7rem;
   }
 
   .srt-line {

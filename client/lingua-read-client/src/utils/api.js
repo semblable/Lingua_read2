@@ -928,6 +928,17 @@ export const logManualActivity = async (payload) => {
     body: JSON.stringify(payload)
   });
 };
+
+export const getSentenceProgress = async (textId) => {
+  return await fetchApi(`/activity/sentenceprogress/${textId}`);
+};
+
+export const logSentenceReadActivity = async (payload) => {
+  return await fetchApi('/activity/logSentenceRead', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+};
 // Add near other translation functions
 
 export const batchTranslateWords = async (words, targetLanguageCode, sourceLanguageCode = null) => {

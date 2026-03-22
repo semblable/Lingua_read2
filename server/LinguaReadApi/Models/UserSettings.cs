@@ -16,6 +16,9 @@ namespace LinguaReadApi.Models
         public string TextFont { get; set; } = "default"; // font family for reading
         [StringLength(20)]
         public string ReadingUiMode { get; set; } = "classic"; // classic, modern
+        public int ReaderContentWidth { get; set; } = 740; // max readable text column width in px
+        [StringLength(20)]
+        public string ReadingDensity { get; set; } = "balanced"; // compact, balanced, spacious
         public int LeftPanelWidth { get; set; } = 85; // Reading panel width percentage (default 85%)
 
         // Reading Preferences

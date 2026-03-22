@@ -277,9 +277,9 @@ const TranscriptLine = React.memo(({ index, style, data }) => {
 
 const SecondaryControls = React.memo(({
   isMobile,
-  readingStyle,
-  setReadingStyle,
   globalSettings,
+  setReadingDensity,
+  setReaderContentWidth,
   updateSetting,
   updateUserSettings,
   leftPanelWidth,
@@ -294,28 +294,26 @@ const SecondaryControls = React.memo(({
   isMarkingAll
 }) => (
   <>
-    {isMobile && (
-      <ButtonGroup size="sm" className="me-1" aria-label="Reading style">
+    <ButtonGroup size="sm" className="me-1" aria-label="Reading density">
         <Button
-          variant={readingStyle === 'compact' ? 'primary' : 'outline-secondary'}
-          onClick={() => setReadingStyle('compact')}
+          variant={globalSettings.readingDensity === 'compact' ? 'primary' : 'outline-secondary'}
+          onClick={() => setReadingDensity('compact')}
         >
           Compact
         </Button>
         <Button
-          variant={readingStyle === 'balanced' ? 'primary' : 'outline-secondary'}
-          onClick={() => setReadingStyle('balanced')}
+          variant={globalSettings.readingDensity === 'balanced' ? 'primary' : 'outline-secondary'}
+          onClick={() => setReadingDensity('balanced')}
         >
           Balanced
         </Button>
         <Button
-          variant={readingStyle === 'spacious' ? 'primary' : 'outline-secondary'}
-          onClick={() => setReadingStyle('spacious')}
+          variant={globalSettings.readingDensity === 'spacious' ? 'primary' : 'outline-secondary'}
+          onClick={() => setReadingDensity('spacious')}
         >
           Spacious
         </Button>
       </ButtonGroup>
-    )}
     <ButtonGroup size="sm" className="me-1">
       <Button
         variant="outline-secondary"
@@ -370,6 +368,29 @@ const SecondaryControls = React.memo(({
         title="Decrease reading area (Narrower)"
       >
         ▶
+      </Button>
+    </ButtonGroup>
+    <ButtonGroup size="sm" className="me-1" aria-label="Reader text width">
+      <Button
+        variant={globalSettings.readerContentWidth <= 660 ? 'primary' : 'outline-secondary'}
+        onClick={() => setReaderContentWidth(620)}
+        title="Narrow text column"
+      >
+        Narrow
+      </Button>
+      <Button
+        variant={globalSettings.readerContentWidth > 660 && globalSettings.readerContentWidth < 820 ? 'primary' : 'outline-secondary'}
+        onClick={() => setReaderContentWidth(740)}
+        title="Balanced text column"
+      >
+        Medium
+      </Button>
+      <Button
+        variant={globalSettings.readerContentWidth >= 820 ? 'primary' : 'outline-secondary'}
+        onClick={() => setReaderContentWidth(900)}
+        title="Wide text column"
+      >
+        Wide
       </Button>
     </ButtonGroup>
     {!isMobile && (
@@ -1250,7 +1271,6 @@ const TextDisplay = () => {
   const [isMobile, setIsMobile] = useState(false);
   const [showMobileHeader, setShowMobileHeader] = useState(false);
   const [isWordPanelOpen, setIsWordPanelOpen] = useState(false);
-  const [readingStyle, setReadingStyle] = useState('balanced');
   const [isAudioPlaying, setIsAudioPlaying] = useState(false);
   const [currentSegmentIndex, setCurrentSegmentIndex] = useState(0);
   const [segmentTranslations, setSegmentTranslations] = useState({});
@@ -1343,6 +1363,7 @@ const TextDisplay = () => {
   const sentenceTtsRate = globalSettings.sentenceTtsRate ?? 1;
   const canUseSentenceTts = isSpeechSynthesisSupported();
   const readingUiMode = globalSettings.readingUiMode === 'modern' ? 'modern' : 'classic';
+  const readingDensity = globalSettings.readingDensity || 'balanced';
 
   const setAudioPlaybackIntent = useCallback((shouldPlay) => {
     if (audioRef.current) {
@@ -1411,8 +1432,25 @@ const TextDisplay = () => {
       updateSetting('lineSpacing', numericSpacing); // Update context
       localStorage.setItem('lineSpacing', numericSpacing.toString()); // Persist to localStorage
       document.body.style.setProperty('--reading-line-height', numericSpacing.toString()); // Apply immediately
+      updateUserSettings({ lineSpacing: numericSpacing })
+        .catch(err => console.error('[Save Settings] Failed to save line spacing via API:', err));
     }
   };
+
+  const setReadingDensity = useCallback((nextValue) => {
+    updateSetting('readingDensity', nextValue);
+    localStorage.setItem('readingDensity', nextValue);
+    updateUserSettings({ readingDensity: nextValue })
+      .catch(err => console.error('[Save Settings] Failed to save reading density via API:', err));
+  }, [updateSetting]);
+
+  const setReaderContentWidth = useCallback((nextValue) => {
+    const clamped = Math.max(520, Math.min(980, nextValue));
+    updateSetting('readerContentWidth', clamped);
+    localStorage.setItem('readerContentWidth', clamped.toString());
+    updateUserSettings({ readerContentWidth: clamped })
+      .catch(err => console.error('[Save Settings] Failed to save reader content width via API:', err));
+  }, [updateSetting]);
 
   const setSentenceModeEnabled = useCallback((nextValue) => {
     updateSetting('sentenceMode', nextValue);
@@ -1928,7 +1966,7 @@ const TextDisplay = () => {
   }, []);
 
   const mobileReadingConfig = useMemo(() => {
-    switch (readingStyle) {
+    switch (readingDensity) {
       case 'compact':
         return { lineSpacing: 1.4, chunkSize: 3, blockPadding: '0.7rem 0.8rem' };
       case 'spacious':
@@ -1937,7 +1975,7 @@ const TextDisplay = () => {
       default:
         return { lineSpacing: 1.65, chunkSize: 2, blockPadding: '0.9rem 0.9rem' };
     }
-  }, [readingStyle]);
+  }, [readingDensity]);
 
   const sentenceSegments = useMemo(() => {
     if (isAudioLesson && srtLines.length > 0) {
@@ -2741,9 +2779,9 @@ const TextDisplay = () => {
   const secondaryControls = (
     <SecondaryControls
       isMobile={isMobile}
-      readingStyle={readingStyle}
-      setReadingStyle={setReadingStyle}
       globalSettings={globalSettings}
+      setReadingDensity={setReadingDensity}
+      setReaderContentWidth={setReaderContentWidth}
       updateSetting={updateSetting}
       updateUserSettings={updateUserSettings}
       leftPanelWidth={leftPanelWidth}
@@ -2815,7 +2853,10 @@ const TextDisplay = () => {
         <div className={`left-panel left-panel-${readingUiMode}`} style={{ width: `${leftPanelWidth}%`, minHeight: 'calc(100vh - 130px)', padding: '0', position: 'relative' }}>
           <div className="d-flex flex-column" style={{ minHeight: '100%' }}>
             <div className={`flex-grow-1 reader-main-surface reader-main-surface-${readingUiMode}`} ref={readingContainerRef}>
-              <div className={`reader-main-surface-inner reader-main-surface-inner-${readingUiMode}`}>
+              <div
+                className={`reader-main-surface-inner reader-main-surface-inner-${readingUiMode}`}
+                style={{ '--reader-content-max-width': `${globalSettings.readerContentWidth || 740}px` }}
+              >
                 {isSentenceMode ? (
                   <SentenceModeView
                     currentSegment={currentSentenceSegment}

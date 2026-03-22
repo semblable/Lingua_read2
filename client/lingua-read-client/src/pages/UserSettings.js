@@ -13,6 +13,8 @@ const UserSettings = () => {
     textSize: 16,
     textFont: 'default',
     readingUiMode: 'classic',
+    readerContentWidth: 740,
+    readingDensity: 'balanced',
     leftPanelWidth: 85, // Added initial state
     autoTranslateWords: true,
     pauseOnWordClick: false,
@@ -83,6 +85,8 @@ const UserSettings = () => {
           textSize: data.textSize || 16,
           textFont: data.textFont || 'default',
           readingUiMode: data.readingUiMode || 'classic',
+          readerContentWidth: data.readerContentWidth || 740,
+          readingDensity: data.readingDensity || 'balanced',
           leftPanelWidth: data.leftPanelWidth || 85, // Fetch panel width
           autoTranslateWords: data.autoTranslateWords ?? true,
           pauseOnWordClick: data.pauseOnWordClick ?? false,
@@ -148,6 +152,7 @@ const UserSettings = () => {
       type === 'number' ||
       type === 'range' ||
       name === 'textSize' ||
+      name === 'readerContentWidth' ||
       name === 'leftPanelWidth' ||
       name === 'lineSpacing' ||
       name === 'defaultLanguageId' ||
@@ -210,6 +215,12 @@ const UserSettings = () => {
 
       updateSetting('readingUiMode', settings.readingUiMode);
       localStorage.setItem('readingUiMode', settings.readingUiMode);
+
+      updateSetting('readerContentWidth', settings.readerContentWidth);
+      localStorage.setItem('readerContentWidth', settings.readerContentWidth.toString());
+
+      updateSetting('readingDensity', settings.readingDensity);
+      localStorage.setItem('readingDensity', settings.readingDensity);
 
       updateSetting('leftPanelWidth', settings.leftPanelWidth);
       localStorage.setItem('leftPanelWidth', settings.leftPanelWidth.toString());
@@ -500,6 +511,35 @@ const UserSettings = () => {
               >
                 <option value="classic">Classic</option>
                 <option value="modern">Modern</option>
+              </Form.Select>
+            </Form.Group>
+
+            <Form.Group className="mb-4" controlId="readerContentWidth">
+              <Form.Label>Reader Text Width ({settings.readerContentWidth}px)</Form.Label>
+              <Form.Range
+                name="readerContentWidth"
+                min={520}
+                max={980}
+                step={20}
+                value={settings.readerContentWidth}
+                onChange={handleChange}
+              />
+              <div className="d-flex justify-content-between">
+                <small>Narrow</small>
+                <small>Wide</small>
+              </div>
+            </Form.Group>
+
+            <Form.Group className="mb-4" controlId="readingDensity">
+              <Form.Label>Reading Density</Form.Label>
+              <Form.Select
+                name="readingDensity"
+                value={settings.readingDensity}
+                onChange={handleChange}
+              >
+                <option value="compact">Compact</option>
+                <option value="balanced">Balanced</option>
+                <option value="spacious">Spacious</option>
               </Form.Select>
             </Form.Group>
 

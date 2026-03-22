@@ -207,7 +207,9 @@
   padding-right: var(--space-sm);
   text-align: left;
   width: 100%;
-  max-width: 100%;
+  max-width: var(--reader-content-max-width, 740px);
+  margin-left: auto;
+  margin-right: auto;
   overflow-wrap: break-word;
   word-wrap: break-word;
 }
@@ -217,9 +219,6 @@
 }
 
 .reader-paragraph-modern {
-  max-width: 46rem;
-  margin-left: auto;
-  margin-right: auto;
   margin-bottom: 1.35rem;
   padding-left: 0;
   padding-right: 0;
@@ -240,11 +239,11 @@
 }
 
 .reader-title-block-classic {
-  max-width: 38rem;
+  max-width: calc(var(--reader-content-max-width, 740px) * 0.82);
 }
 
 .reader-title-block-modern {
-  max-width: 42rem;
+  max-width: calc(var(--reader-content-max-width, 740px) * 0.88);
   margin-bottom: 3rem;
   padding: 1.25rem 1.25rem 1.75rem;
 }
@@ -402,7 +401,7 @@
 
 .sentence-mode-title-text {
   text-align: center;
-  max-width: 34rem;
+  max-width: calc(var(--reader-content-max-width, 740px) * 0.78);
   margin: 0 auto;
   font-family: var(--font-family-serif);
   padding-bottom: 0.5rem;

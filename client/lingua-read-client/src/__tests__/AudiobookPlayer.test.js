@@ -164,6 +164,10 @@ describe('AudiobookPlayer', () => {
       value: 100
     });
 
+    await waitFor(() => {
+      expect(screen.getByTitle('+10s')).toBeInTheDocument();
+    });
+
     fireEvent.click(screen.getByTitle('+10s'));
 
     expect(onTimeUpdate).toHaveBeenCalledWith(10);

@@ -92,7 +92,10 @@ const createSettingsValue = (settingOverrides = {}) => ({
 
 const renderTextDisplay = (settingOverrides = {}) => render(
   <SettingsContext.Provider value={createSettingsValue(settingOverrides)}>
-    <MemoryRouter initialEntries={['/texts/1']}>
+    <MemoryRouter
+      initialEntries={['/texts/1']}
+      future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
+    >
       <Routes>
         <Route path="/texts/:textId" element={<TextDisplay />} />
       </Routes>
@@ -411,7 +414,7 @@ describe('TextDisplay', () => {
     expect(wrapper).not.toHaveClass('reader-ui-modern');
   });
 
-  test('switching audio lessons emits a fresh segment playback request', async () => {
+  test('switching audio lessons does not auto-play a segment during initial restore', async () => {
     let now = 1000;
     jest.spyOn(Date, 'now').mockImplementation(() => {
       now += 1000;
@@ -464,7 +467,10 @@ describe('TextDisplay', () => {
       [
         { path: '/texts/:textId', element: <TextDisplay /> }
       ],
-      { initialEntries: ['/texts/1'] }
+      {
+        initialEntries: ['/texts/1'],
+        future: { v7_startTransition: true, v7_relativeSplatPath: true }
+      }
     );
 
     renderTextDisplayWithRouter(router, { sentenceMode: true });
@@ -472,27 +478,25 @@ describe('TextDisplay', () => {
     const getLatestAudioProps = (textId) => (
       mockAudiobookPlayer.mock.calls
         .map(([props]) => props)
-        .filter((props) => String(props.textId) === String(textId) && props.segmentPlaybackRequest)
+        .filter((props) => String(props.textId) === String(textId))
         .at(-1)
     );
 
     await waitFor(() => {
-      expect(getLatestAudioProps(1)?.segmentPlaybackRequest?.requestId).toBeTruthy();
+      expect(getLatestAudioProps(1)).toBeTruthy();
     });
 
-    const firstRequestId = getLatestAudioProps(1).segmentPlaybackRequest.requestId;
+    expect(getLatestAudioProps(1).segmentPlaybackRequest).toBeNull();
 
     await act(async () => {
       await router.navigate('/texts/2');
     });
 
     await waitFor(() => {
-      expect(getLatestAudioProps(2)?.segmentPlaybackRequest?.requestId).toBeTruthy();
+      expect(getLatestAudioProps(2)).toBeTruthy();
     });
 
     const secondProps = getLatestAudioProps(2);
-    expect(secondProps.segmentPlaybackRequest.requestId).not.toBe(firstRequestId);
-    expect(secondProps.segmentPlaybackRequest.startTime).toBe(0);
-    expect(secondProps.segmentPlaybackRequest.endTime).toBe(2);
+    expect(secondProps.segmentPlaybackRequest).toBeNull();
   });
 });

@@ -132,7 +132,7 @@ const isChapterMetaLine = (line) => {
   return /^\d{1,4}$/.test(trimmed) || /^[IVXLCDM]+$/i.test(trimmed);
 };
 
-const isQuotedEpigraphLine = (line) => /^[\"'“”‘’«»]/.test(line.trim()) || /[\"'“”‘’«»]$/.test(line.trim());
+const isQuotedEpigraphLine = (line) => /^["'“”‘’«»]/.test(line.trim()) || /["'“”‘’«»]$/.test(line.trim());
 
 const getTitleLineVariant = (line, lineIndex, lines) => {
   const trimmed = line.trim();

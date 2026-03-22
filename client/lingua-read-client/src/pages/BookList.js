@@ -4,6 +4,15 @@ import { Link, useNavigate } from 'react-router-dom';
 import { getBooks } from '../utils/api';
 import { formatDate } from '../utils/helpers';
 
+const normalizeCoverUrl = (value) => {
+  if (!value) return null;
+  if (/^(https?:)?\/\//i.test(value) || value.startsWith('/')) {
+    return value;
+  }
+
+  return `/${value.replace(/^\/+/, '')}`;
+};
+
 const BookList = () => {
   const [books, setBooks] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -117,6 +126,14 @@ const BookList = () => {
         {filteredBooks.map((book) => ( // Use filteredBooks
           <Col key={book.bookId}>
             <Card className="h-100 d-flex flex-column book-card">
+              {book.coverImagePath && (
+                <Card.Img
+                  variant="top"
+                  src={normalizeCoverUrl(book.coverImagePath)}
+                  alt={`${book.title} cover`}
+                  style={{ objectFit: 'cover', maxHeight: '280px' }}
+                />
+              )}
               <Card.Body className="d-flex flex-column flex-grow-1">
                 <Card.Title as="h5" className="text-truncate mb-1">{book.title}</Card.Title>
                 <Card.Subtitle className="mb-3 text-muted">

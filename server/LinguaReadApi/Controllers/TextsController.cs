@@ -11,6 +11,8 @@ using LinguaReadApi.Models;
 using System.ComponentModel.DataAnnotations;
 using Microsoft.Extensions.Logging;
 using System.IO;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using LinguaReadApi.Services;
 namespace LinguaReadApi.Controllers
 {
@@ -23,6 +25,10 @@ namespace LinguaReadApi.Controllers
         private readonly ILogger<TextsController> _logger;
         private readonly IUserActivityService _userActivityService; // Inject activity service
         private const int MaxRecentTexts = 5;
+        private static readonly JsonSerializerOptions StructuredContentJsonOptions = new(JsonSerializerDefaults.Web)
+        {
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+        };
 
         public TextsController(AppDbContext context, ILogger<TextsController> logger, IUserActivityService userActivityService) // Inject services
         {
@@ -97,6 +103,7 @@ namespace LinguaReadApi.Controllers
                      IsAudioLesson = text.IsAudioLesson,
                      AudioFilePath = text.AudioFilePath,
                      SrtContent = text.SrtContent,
+                     StructuredContentRaw = text.StructuredContent,
                      CreatedAt = text.CreatedAt,
                      // Optimized: TextWords now contains unique links, so we can project directly
                      Words = text.TextWords
@@ -113,6 +120,19 @@ namespace LinguaReadApi.Controllers
             if (textDto == null)
             {
                 return NotFound();
+            }
+
+            if (!string.IsNullOrWhiteSpace(textDto.StructuredContentRaw))
+            {
+                try
+                {
+                    textDto.StructuredContent = JsonSerializer.Deserialize<List<ReaderContentBlock>>(textDto.StructuredContentRaw, StructuredContentJsonOptions) ?? new List<ReaderContentBlock>();
+                }
+                catch (JsonException ex)
+                {
+                    _logger.LogWarning(ex, "Failed to deserialize structured content for TextId {TextId}", id);
+                    textDto.StructuredContent = new List<ReaderContentBlock>();
+                }
             }
 
             // --- Step 2: Perform separate update for LastAccessedAt ---
@@ -874,6 +894,7 @@ namespace LinguaReadApi.Controllers
             // Update only allowed fields
             text.Title = updateTextDto.Title;
             text.Content = updateTextDto.Content;
+            text.StructuredContent = null;
             text.Tag = updateTextDto.Tag; // Update tag
 
             // If LanguageId is provided and different, update it
@@ -1072,7 +1093,10 @@ namespace LinguaReadApi.Controllers
         public bool IsAudioLesson { get; set; }
         public string? AudioFilePath { get; set; }
         public string? SrtContent { get; set; }
+        public List<ReaderContentBlock> StructuredContent { get; set; } = new List<ReaderContentBlock>();
         public List<WordDto> Words { get; set; } = new List<WordDto>();
+        [JsonIgnore]
+        public string? StructuredContentRaw { get; set; }
     }
 
     public class WordDto

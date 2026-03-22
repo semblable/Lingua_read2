@@ -76,21 +76,38 @@ const parseSrtContent = (srtContent) => {
   return entries;
 };
 
-const splitTextIntoSentenceSegments = (content) => {
-  if (!content) return [];
+const normalizeAssetUrl = (value) => {
+  if (!value) return null;
+  if (/^(https?:)?\/\//i.test(value) || value.startsWith('/')) {
+    return value;
+  }
+
+  return `/${value.replace(/^\/+/, '')}`;
+};
+
+const splitTextIntoSentenceSegments = (content, structuredContent = []) => {
+  if (!content && (!Array.isArray(structuredContent) || structuredContent.length === 0)) return [];
 
   const segments = [];
   const sentenceRegex = /[^.!?…]+(?:[.!?…]+(?:"|”|'|’)?|$)/g;
+  let pendingMediaBlocks = [];
 
-  buildDisplayBlocks(content).forEach((block) => {
+  buildDisplayBlocks(content, structuredContent).forEach((block) => {
+    if (block.type === 'image') {
+      pendingMediaBlocks.push(block);
+      return;
+    }
+
     if (block.isTitleBlock) {
       const titleSegmentText = block.lines.join('\n').trim();
       if (titleSegmentText) {
         segments.push({
           index: segments.length,
           text: titleSegmentText,
-          type: 'title'
+          type: 'title',
+          mediaBlocks: pendingMediaBlocks
         });
+        pendingMediaBlocks = [];
       }
       return;
     }
@@ -99,14 +116,22 @@ const splitTextIntoSentenceSegments = (content) => {
     matches
       .map(sentence => sentence.replace(/\s+/g, ' ').trim())
       .filter(Boolean)
-      .forEach((sentence) => {
+      .forEach((sentence, sentenceIndex) => {
         segments.push({
           index: segments.length,
           text: sentence,
-          type: 'sentence'
+          type: 'sentence',
+          mediaBlocks: sentenceIndex === 0 ? pendingMediaBlocks : []
         });
       });
+
+    pendingMediaBlocks = [];
   });
+
+  if (pendingMediaBlocks.length > 0 && segments.length > 0) {
+    const lastSegment = segments[segments.length - 1];
+    lastSegment.mediaBlocks = [...(lastSegment.mediaBlocks || []), ...pendingMediaBlocks];
+  }
 
   return segments;
 };
@@ -157,7 +182,43 @@ const getTitleLineVariant = (line, lineIndex, lines) => {
   return 'default';
 };
 
-const buildDisplayBlocks = (content) => {
+const buildDisplayBlocks = (content, structuredContent = []) => {
+  if (Array.isArray(structuredContent) && structuredContent.length > 0) {
+    return structuredContent
+      .map((block, blockIndex) => {
+        if (block?.type === 'image' && block?.imageUrl) {
+          return {
+            key: `block-${blockIndex}`,
+            type: 'image',
+            imageUrl: normalizeAssetUrl(block.imageUrl),
+            altText: block.altText || '',
+            caption: block.caption || '',
+            meta: block.meta || {},
+            isTitleBlock: false,
+            text: '',
+            lines: []
+          };
+        }
+
+        const normalizedText = (block?.text || '').replace(/\r\n/g, '\n').trim();
+        if (!normalizedText) {
+          return null;
+        }
+
+        const lines = normalizedText.split('\n').map(line => line.trim());
+        return {
+          key: `block-${blockIndex}`,
+          type: block?.type === 'title' ? 'title' : 'paragraph',
+          text: normalizedText,
+          lines,
+          caption: block?.caption || '',
+          meta: block?.meta || {},
+          isTitleBlock: block?.type === 'title'
+        };
+      })
+      .filter(Boolean);
+  }
+
   if (!content) return [];
 
   const normalizedBlocks = content
@@ -943,7 +1004,7 @@ const StandardTextView = React.memo(({
   onSpeakSentence
 }) => {
   if (!text?.content) return null;
-  const displayBlocks = buildDisplayBlocks(text.content);
+  const displayBlocks = buildDisplayBlocks(text.content, text.structuredContent);
   let currentSentenceIndex = 0;
   const groupSentences = (sentenceElements, groupSize) => {
     if (!Array.isArray(sentenceElements) || sentenceElements.length === 0) return [];
@@ -1042,6 +1103,21 @@ const StandardTextView = React.memo(({
         onTouchEnd={handleWordSelection}
       >
         {displayBlocks.map((block) => {
+          if (block.type === 'image') {
+            return (
+              <figure key={block.key} className={`reader-image-block reader-image-block-${modeClass}`}>
+                <img
+                  src={block.imageUrl}
+                  alt={block.altText || block.caption || 'Illustration'}
+                  className="reader-inline-image"
+                />
+                {block.caption && (
+                  <figcaption className="reader-image-caption">{block.caption}</figcaption>
+                )}
+              </figure>
+            );
+          }
+
           if (block.isTitleBlock) {
             return (
               <div
@@ -1247,6 +1323,22 @@ const SentenceModeView = React.memo(({
             onMouseUp={handleWordSelection}
             onTouchEnd={handleWordSelection}
           >
+            {Array.isArray(currentSegment.mediaBlocks) && currentSegment.mediaBlocks.length > 0 && (
+              <div className="sentence-mode-media-stack">
+                {currentSegment.mediaBlocks.map((mediaBlock, mediaIndex) => (
+                  <figure key={`sentence-media-${currentSegment.index}-${mediaIndex}`} className="reader-image-block sentence-mode-image-block">
+                    <img
+                      src={mediaBlock.imageUrl}
+                      alt={mediaBlock.altText || mediaBlock.caption || 'Illustration'}
+                      className="reader-inline-image"
+                    />
+                    {mediaBlock.caption && (
+                      <figcaption className="reader-image-caption">{mediaBlock.caption}</figcaption>
+                    )}
+                  </figure>
+                ))}
+              </div>
+            )}
             {isTitleSegment ? renderSentenceModeTitle() : processTextContent(currentSegment.text)}
           </div>
           {isTranslationVisible && (
@@ -2090,8 +2182,8 @@ const TextDisplay = () => {
       }));
     }
 
-    return splitTextIntoSentenceSegments(text?.content || '');
-  }, [isAudioLesson, srtLines, text?.content]);
+    return splitTextIntoSentenceSegments(text?.content || '', text?.structuredContent || []);
+  }, [isAudioLesson, srtLines, text?.content, text?.structuredContent]);
 
   const currentSentenceSegment = sentenceSegments[currentSegmentIndex] || null;
 

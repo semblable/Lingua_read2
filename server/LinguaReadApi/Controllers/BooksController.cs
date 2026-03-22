@@ -11,6 +11,7 @@ using System.IO; // Added for file streams
 using System.Globalization;
 using System.Net;
 using System.Text; // Added for StreamReader encoding
+using System.Text.Json;
 using System.Text.RegularExpressions; // Added for Regex HTML stripping
 using VersOne.Epub; // Added for EPUB parsing
 using LinguaReadApi.Data;
@@ -25,6 +26,10 @@ namespace LinguaReadApi.Controllers
     public class BooksController : ControllerBase
     {
         private readonly AppDbContext _context;
+        private static readonly JsonSerializerOptions StructuredContentJsonOptions = new(JsonSerializerDefaults.Web)
+        {
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+        };
 
         public BooksController(AppDbContext context)
         {
@@ -56,6 +61,7 @@ namespace LinguaReadApi.Controllers
                     KnownWords = b.KnownWords,
                     LearningWords = b.LearningWords,
                     IsFinished = b.IsFinished,
+                    CoverImagePath = b.CoverImagePath,
                     Tags = b.BookTags.Select(bt => bt.Tag.Name).ToList() // Map Tag names
                 })
                 .ToListAsync();
@@ -91,6 +97,8 @@ namespace LinguaReadApi.Controllers
                 LanguageName = book.Language.Name,
                 LanguageId = book.LanguageId,
                 CreatedAt = book.CreatedAt,
+                LastReadTextId = book.LastReadTextId,
+                CoverImagePath = book.CoverImagePath,
                 Parts = book.Texts.OrderBy(t => t.PartNumber).Select(t => new TextPartDto
                 {
                     TextId = t.TextId,
@@ -288,8 +296,11 @@ namespace LinguaReadApi.Controllers
                 return BadRequest("Invalid language ID.");
             }
 
-            string bookTitle = uploadDto.TitleOverride ?? "Untitled Upload"; // Default title
+            string bookTitle = uploadDto.TitleOverride ?? "Untitled Upload";
             string bookContent = string.Empty;
+            string? bookDescription = null;
+            EpubBook? epubBook = null;
+            string sourceFileStem = Path.GetFileNameWithoutExtension(uploadDto.File.FileName);
 
             // --- File Processing ---
             try
@@ -298,23 +309,19 @@ namespace LinguaReadApi.Controllers
 
                 if (fileExtension == ".epub")
                 {
-                    // Use VersOne.Epub library
-                    var epubBook = await VersOne.Epub.EpubReader.ReadBookAsync(stream);
-                    bookTitle = uploadDto.TitleOverride ?? epubBook.Title ?? Path.GetFileNameWithoutExtension(uploadDto.File.FileName); // Use EPUB title or filename if override not provided
-
-                    bookContent = ExtractPlainTextFromEpub(
-                        epubBook,
-                        bookTitle,
-                        Path.GetFileNameWithoutExtension(uploadDto.File.FileName));
+                    epubBook = await VersOne.Epub.EpubReader.ReadBookAsync(stream);
+                    bookTitle = uploadDto.TitleOverride ?? epubBook.Title ?? sourceFileStem;
+                    bookDescription = string.IsNullOrWhiteSpace(epubBook.Description)
+                        ? $"Uploaded from {uploadDto.File.FileName}"
+                        : epubBook.Description;
                 }
-                else // Must be .txt based on earlier check
+                else
                 {
-                     bookTitle = uploadDto.TitleOverride ?? Path.GetFileNameWithoutExtension(uploadDto.File.FileName);
-                     // Use StreamReader with encoding detection
-                     using (var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true))
-                     {
-                         bookContent = await reader.ReadToEndAsync();
-                     }
+                    bookTitle = uploadDto.TitleOverride ?? sourceFileStem;
+                    using (var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true))
+                    {
+                        bookContent = await reader.ReadToEndAsync();
+                    }
                 }
             }
             catch (Exception ex)
@@ -324,7 +331,7 @@ namespace LinguaReadApi.Controllers
                 return StatusCode(StatusCodes.Status500InternalServerError, $"Error processing uploaded file: {ex.Message}");
             }
 
-            if (string.IsNullOrWhiteSpace(bookContent))
+            if (fileExtension != ".epub" && string.IsNullOrWhiteSpace(bookContent))
             {
                  return BadRequest("Could not extract readable content from the uploaded file.");
             }
@@ -335,7 +342,9 @@ namespace LinguaReadApi.Controllers
             var book = new Book
             {
                 Title = bookTitle.Length > 200 ? bookTitle.Substring(0, 200) : bookTitle, // Ensure title fits DB constraint
-                Description = $"Uploaded from {uploadDto.File.FileName}", // Simple description
+                Description = (bookDescription ?? $"Uploaded from {uploadDto.File.FileName}").Length > 1000
+                    ? (bookDescription ?? $"Uploaded from {uploadDto.File.FileName}").Substring(0, 1000)
+                    : (bookDescription ?? $"Uploaded from {uploadDto.File.FileName}"),
                 LanguageId = uploadDto.LanguageId,
                 UserId = userId,
                 CreatedAt = DateTime.UtcNow
@@ -390,6 +399,7 @@ namespace LinguaReadApi.Controllers
             try
             {
                 await _context.SaveChangesAsync();
+                CleanupBookAssets(userId, book.BookId);
             }
             catch (DbUpdateException ex)
             {
@@ -427,29 +437,71 @@ namespace LinguaReadApi.Controllers
             int partCount = 0;
             try
             {
-                var textParts = SplitContent(bookContent, uploadDto.SplitMethod, uploadDto.MaxSegmentSize);
-                partCount = textParts.Count;
-                for (int i = 0; i < textParts.Count; i++)
+                if (epubBook != null)
                 {
-                    var text = new Text
+                    var importResult = BuildStructuredEpubImport(
+                        epubBook,
+                        book.Title,
+                        sourceFileStem,
+                        userId,
+                        book.BookId,
+                        uploadDto.SplitMethod,
+                        uploadDto.MaxSegmentSize);
+
+                    if (string.IsNullOrWhiteSpace(importResult.PlainText))
                     {
-                        Title = $"{book.Title} - Part {i + 1}",
-                        Content = textParts[i],
-                        LanguageId = book.LanguageId,
-                        UserId = userId,
-                        BookId = book.BookId,
-                        PartNumber = i + 1,
-                        CreatedAt = DateTime.UtcNow
-                    };
-                    _context.Texts.Add(text);
+                        CleanupBookAssets(userId, book.BookId);
+                        _context.Books.Remove(book);
+                        await _context.SaveChangesAsync();
+                        return BadRequest("Could not extract readable content from the uploaded EPUB.");
+                    }
+
+                    book.CoverImagePath = importResult.CoverImagePath;
+                    partCount = importResult.Parts.Count;
+
+                    for (int i = 0; i < importResult.Parts.Count; i++)
+                    {
+                        var part = importResult.Parts[i];
+                        var text = new Text
+                        {
+                            Title = $"{book.Title} - Part {i + 1}",
+                            Content = part.PlainText,
+                            StructuredContent = JsonSerializer.Serialize(part.Blocks, StructuredContentJsonOptions),
+                            LanguageId = book.LanguageId,
+                            UserId = userId,
+                            BookId = book.BookId,
+                            PartNumber = i + 1,
+                            CreatedAt = DateTime.UtcNow
+                        };
+                        _context.Texts.Add(text);
+                    }
+                }
+                else
+                {
+                    var textParts = SplitContent(bookContent, uploadDto.SplitMethod, uploadDto.MaxSegmentSize);
+                    partCount = textParts.Count;
+                    for (int i = 0; i < textParts.Count; i++)
+                    {
+                        var text = new Text
+                        {
+                            Title = $"{book.Title} - Part {i + 1}",
+                            Content = textParts[i],
+                            StructuredContent = null,
+                            LanguageId = book.LanguageId,
+                            UserId = userId,
+                            BookId = book.BookId,
+                            PartNumber = i + 1,
+                            CreatedAt = DateTime.UtcNow
+                        };
+                        _context.Texts.Add(text);
+                    }
                 }
                 await _context.SaveChangesAsync(); // Save Texts
             }
             catch (Exception ex)
             {
                  Console.WriteLine($"Error splitting or saving text parts during upload: {ex.ToString()}");
-                 // Decide how to handle: Maybe delete the book created earlier? Or return error?
-                 // For now, return an error indicating partial success/failure.
+                 CleanupBookAssets(userId, book.BookId);
                  _context.Books.Remove(book); // Attempt to clean up book if text splitting fails
                  await _context.SaveChangesAsync();
                  return StatusCode(StatusCodes.Status500InternalServerError, "Book metadata created, but failed to process and save text content.");
@@ -471,6 +523,7 @@ namespace LinguaReadApi.Controllers
                 TotalWords = 0, // Stats calculated later
                 KnownWords = 0,
                 LearningWords = 0,
+                CoverImagePath = book.CoverImagePath,
                 Tags = tagsToAssociate.Select(t => t.Name).ToList() // Use names from processed tags
             };
 
@@ -585,7 +638,7 @@ namespace LinguaReadApi.Controllers
         }
 
         // Helper method to split content into parts
-        private List<string> SplitContent(string content, string splitMethod, int maxSegmentSize)
+        private static List<string> SplitContent(string content, string splitMethod, int maxSegmentSize)
         {
             var result = new List<string>();
             
@@ -685,31 +738,520 @@ namespace LinguaReadApi.Controllers
             return result;
         }
 
-        private static string ExtractPlainTextFromEpub(EpubBook epubBook, string? bookTitle, string? sourceFileStem)
+        private static StructuredEpubImportResult BuildStructuredEpubImport(
+            EpubBook epubBook,
+            string? bookTitle,
+            string? sourceFileStem,
+            Guid userId,
+            int bookId,
+            string splitMethod,
+            int maxSegmentSize)
         {
-            var contentBlocks = new List<string>();
             var artifactKeys = BuildEpubArtifactKeys(bookTitle, sourceFileStem);
+            var relativeAssetRoot = Path.Combine("epub_assets", userId.ToString(), bookId.ToString()).Replace('\\', '/');
+            var absoluteAssetRoot = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "epub_assets", userId.ToString(), bookId.ToString());
+            Directory.CreateDirectory(absoluteAssetRoot);
+
+            var extractionContext = new EpubExtractionContext(epubBook, absoluteAssetRoot, relativeAssetRoot);
+            var extractedBlocks = new List<ReaderContentBlock>();
+            string? coverImagePath = SaveEpubCoverImage(extractionContext);
 
             foreach (EpubLocalTextContentFile textFile in epubBook.ReadingOrder)
             {
-                var normalizedText = NormalizeEpubHtmlToText(textFile.Content ?? string.Empty);
-                if (string.IsNullOrWhiteSpace(normalizedText))
+                extractedBlocks.AddRange(ExtractStructuredBlocksFromHtml(textFile, artifactKeys, extractionContext));
+            }
+
+            var filteredBlocks = FilterIgnorableArtifactBlocks(extractedBlocks, artifactKeys);
+            if (string.IsNullOrWhiteSpace(coverImagePath))
+            {
+                coverImagePath = filteredBlocks
+                    .FirstOrDefault(block => string.Equals(block.Type, ReaderContentBlockTypes.Image, StringComparison.OrdinalIgnoreCase))
+                    ?.ImageUrl;
+            }
+
+            var parts = SplitStructuredContent(filteredBlocks, splitMethod, maxSegmentSize);
+            var plainText = string.Join("\n\n", parts.Select(part => part.PlainText).Where(part => !string.IsNullOrWhiteSpace(part)));
+            return new StructuredEpubImportResult(parts, plainText, coverImagePath);
+        }
+
+        private static IEnumerable<ReaderContentBlock> ExtractStructuredBlocksFromHtml(
+            EpubLocalTextContentFile textFile,
+            HashSet<string> artifactKeys,
+            EpubExtractionContext extractionContext)
+        {
+            if (string.IsNullOrWhiteSpace(textFile.Content))
+            {
+                return Enumerable.Empty<ReaderContentBlock>();
+            }
+
+            var normalizedHtml = textFile.Content;
+            normalizedHtml = Regex.Replace(normalizedHtml, @"<!--.*?-->", string.Empty, RegexOptions.Singleline);
+            normalizedHtml = Regex.Replace(normalizedHtml, @"<(script|style)\b[^>]*>.*?</\1>", string.Empty, RegexOptions.Singleline | RegexOptions.IgnoreCase);
+
+            var blocks = new List<ReaderContentBlock>();
+            var textBuffer = new StringBuilder();
+            var tokenMatches = Regex.Matches(normalizedHtml, @"<img\b[^>]*>|</?[^>]+>|[^<]+", RegexOptions.IgnoreCase);
+            bool inHeading = false;
+            bool inCaption = false;
+
+            foreach (Match match in tokenMatches)
+            {
+                var token = match.Value;
+                if (string.IsNullOrEmpty(token))
                 {
                     continue;
                 }
 
-                foreach (var block in Regex.Split(normalizedText, @"\n{2,}")
-                    .Select(part => part.Trim())
-                    .Where(part => !string.IsNullOrWhiteSpace(part)))
+                if (token[0] != '<')
                 {
-                    if (!IsIgnorableEpubArtifactBlock(block, artifactKeys, contentBlocks.Count))
+                    textBuffer.Append(WebUtility.HtmlDecode(token));
+                    continue;
+                }
+
+                if (Regex.IsMatch(token, @"^<br\s*/?>$", RegexOptions.IgnoreCase))
+                {
+                    textBuffer.Append('\n');
+                    continue;
+                }
+
+                if (Regex.IsMatch(token, @"^<img\b", RegexOptions.IgnoreCase))
+                {
+                    FlushBufferedText(blocks, textBuffer, inHeading ? ReaderContentBlockTypes.Title : ReaderContentBlockTypes.Paragraph);
+                    var imageBlock = TryCreateImageBlock(token, textFile, extractionContext);
+                    if (imageBlock != null)
                     {
-                        contentBlocks.Add(block);
+                        blocks.Add(imageBlock);
                     }
+                    continue;
+                }
+
+                if (Regex.IsMatch(token, @"^<h[1-6]\b", RegexOptions.IgnoreCase))
+                {
+                    FlushBufferedText(blocks, textBuffer, ReaderContentBlockTypes.Paragraph);
+                    inHeading = true;
+                    continue;
+                }
+
+                if (Regex.IsMatch(token, @"^</h[1-6]\s*>$", RegexOptions.IgnoreCase))
+                {
+                    FlushBufferedText(blocks, textBuffer, ReaderContentBlockTypes.Title);
+                    inHeading = false;
+                    continue;
+                }
+
+                if (Regex.IsMatch(token, @"^<figcaption\b", RegexOptions.IgnoreCase))
+                {
+                    FlushBufferedText(blocks, textBuffer, inHeading ? ReaderContentBlockTypes.Title : ReaderContentBlockTypes.Paragraph);
+                    inCaption = true;
+                    continue;
+                }
+
+                if (Regex.IsMatch(token, @"^</figcaption\s*>$", RegexOptions.IgnoreCase))
+                {
+                    var caption = NormalizeTextFragment(textBuffer.ToString());
+                    textBuffer.Clear();
+                    if (!string.IsNullOrWhiteSpace(caption))
+                    {
+                        var lastImageBlock = blocks.LastOrDefault(block => string.Equals(block.Type, ReaderContentBlockTypes.Image, StringComparison.OrdinalIgnoreCase));
+                        if (lastImageBlock != null && string.IsNullOrWhiteSpace(lastImageBlock.Caption))
+                        {
+                            lastImageBlock.Caption = caption;
+                        }
+                        else
+                        {
+                            blocks.Add(new ReaderContentBlock
+                            {
+                                Type = ReaderContentBlockTypes.Paragraph,
+                                Text = caption,
+                                Meta = new Dictionary<string, string> { ["variant"] = "caption" }
+                            });
+                        }
+                    }
+                    inCaption = false;
+                    continue;
+                }
+
+                if (Regex.IsMatch(token, @"^<(p|div|section|article|aside|header|footer|nav|figure|blockquote|pre|li|tr)\b", RegexOptions.IgnoreCase) ||
+                    Regex.IsMatch(token, @"^</(p|div|section|article|aside|header|footer|nav|figure|blockquote|pre|li|tr)\s*>$", RegexOptions.IgnoreCase) ||
+                    Regex.IsMatch(token, @"^<hr\b", RegexOptions.IgnoreCase))
+                {
+                    FlushBufferedText(blocks, textBuffer, inHeading ? ReaderContentBlockTypes.Title : ReaderContentBlockTypes.Paragraph);
+                    continue;
+                }
+
+                if (Regex.IsMatch(token, @"^<(td|th)\b", RegexOptions.IgnoreCase) ||
+                    Regex.IsMatch(token, @"^</(td|th)\s*>$", RegexOptions.IgnoreCase))
+                {
+                    textBuffer.Append(' ');
+                    continue;
+                }
+
+                if (inCaption && Regex.IsMatch(token, @"^</?(span|em|strong|b|i|small|a)\b", RegexOptions.IgnoreCase))
+                {
+                    continue;
                 }
             }
 
-            return string.Join("\n\n", contentBlocks);
+            FlushBufferedText(blocks, textBuffer, inHeading ? ReaderContentBlockTypes.Title : ReaderContentBlockTypes.Paragraph);
+            return blocks;
+        }
+
+        private static ReaderContentBlock? TryCreateImageBlock(string imageTag, EpubLocalTextContentFile textFile, EpubExtractionContext extractionContext)
+        {
+            var source = ExtractHtmlAttribute(imageTag, "src");
+            if (string.IsNullOrWhiteSpace(source))
+            {
+                return null;
+            }
+
+            var imageUrl = PersistReferencedEpubImage(source, textFile, extractionContext);
+            if (string.IsNullOrWhiteSpace(imageUrl))
+            {
+                return null;
+            }
+
+            var altText = ExtractHtmlAttribute(imageTag, "alt");
+            return new ReaderContentBlock
+            {
+                Type = ReaderContentBlockTypes.Image,
+                ImageUrl = imageUrl,
+                AltText = string.IsNullOrWhiteSpace(altText) ? null : WebUtility.HtmlDecode(altText).Trim()
+            };
+        }
+
+        private static string? PersistReferencedEpubImage(string source, EpubLocalTextContentFile textFile, EpubExtractionContext extractionContext)
+        {
+            var normalizedSource = source.Trim();
+            if (normalizedSource.StartsWith("data:", StringComparison.OrdinalIgnoreCase) ||
+                normalizedSource.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+                normalizedSource.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+            {
+                return null;
+            }
+
+            normalizedSource = normalizedSource.Split('#')[0].Split('?')[0];
+            var resolvedPath = ResolveEpubArchivePath(textFile.FilePath, normalizedSource);
+            if (extractionContext.SavedImages.TryGetValue(resolvedPath, out var existingPath))
+            {
+                return existingPath;
+            }
+
+            EpubLocalByteContentFile? imageFile = null;
+            if (extractionContext.Book.Content.Images.TryGetLocalFileByFilePath(resolvedPath, out var fileByPath))
+            {
+                imageFile = fileByPath;
+            }
+            else if (extractionContext.Book.Content.Images.TryGetLocalFileByKey(normalizedSource, out var fileByKey))
+            {
+                imageFile = fileByKey;
+            }
+            else if (extractionContext.Book.Content.AllFiles.TryGetLocalFileByFilePath(resolvedPath, out var generalFile) && generalFile is EpubLocalByteContentFile byteFile)
+            {
+                imageFile = byteFile;
+            }
+
+            if (imageFile == null || imageFile.Content.Length == 0)
+            {
+                return null;
+            }
+
+            var extension = GetImageExtension(imageFile.ContentMimeType, imageFile.FilePath);
+            var fileName = $"img_{extractionContext.NextImageIndex:D4}{extension}";
+            extractionContext.NextImageIndex++;
+
+            var absolutePath = Path.Combine(extractionContext.AbsoluteAssetRoot, fileName);
+            System.IO.File.WriteAllBytes(absolutePath, imageFile.Content);
+
+            var relativePath = $"{extractionContext.RelativeAssetRoot}/{fileName}";
+            extractionContext.SavedImages[resolvedPath] = relativePath;
+            return relativePath;
+        }
+
+        private static string? SaveEpubCoverImage(EpubExtractionContext extractionContext)
+        {
+            if (extractionContext.Book.Content.Cover != null && extractionContext.Book.Content.Cover.Content.Length > 0)
+            {
+                var extension = GetImageExtension(extractionContext.Book.Content.Cover.ContentMimeType, extractionContext.Book.Content.Cover.FilePath);
+                var relativePath = $"{extractionContext.RelativeAssetRoot}/cover{extension}";
+                var absolutePath = Path.Combine(extractionContext.AbsoluteAssetRoot, $"cover{extension}");
+                System.IO.File.WriteAllBytes(absolutePath, extractionContext.Book.Content.Cover.Content);
+                return relativePath;
+            }
+
+            if (extractionContext.Book.CoverImage != null && extractionContext.Book.CoverImage.Length > 0)
+            {
+                var extension = GetImageExtension(null, "cover");
+                var relativePath = $"{extractionContext.RelativeAssetRoot}/cover{extension}";
+                var absolutePath = Path.Combine(extractionContext.AbsoluteAssetRoot, $"cover{extension}");
+                System.IO.File.WriteAllBytes(absolutePath, extractionContext.Book.CoverImage);
+                return relativePath;
+            }
+
+            return null;
+        }
+
+        private static List<ReaderContentBlock> FilterIgnorableArtifactBlocks(IEnumerable<ReaderContentBlock> blocks, HashSet<string> artifactKeys)
+        {
+            var filteredBlocks = new List<ReaderContentBlock>();
+            var textBlockIndex = 0;
+
+            foreach (var block in blocks)
+            {
+                if (string.Equals(block.Type, ReaderContentBlockTypes.Image, StringComparison.OrdinalIgnoreCase))
+                {
+                    filteredBlocks.Add(block);
+                    continue;
+                }
+
+                var candidateText = GetBlockPlainText(block);
+                if (IsIgnorableEpubArtifactBlock(candidateText, artifactKeys, textBlockIndex))
+                {
+                    textBlockIndex++;
+                    continue;
+                }
+
+                if (!string.IsNullOrWhiteSpace(candidateText) || !string.IsNullOrWhiteSpace(block.ImageUrl))
+                {
+                    filteredBlocks.Add(block);
+                }
+                textBlockIndex++;
+            }
+
+            return filteredBlocks;
+        }
+
+        private static List<StructuredTextPart> SplitStructuredContent(IEnumerable<ReaderContentBlock> blocks, string splitMethod, int maxSegmentSize)
+        {
+            var expandedBlocks = ExpandStructuredBlocksForSplit(blocks, splitMethod, maxSegmentSize);
+            var parts = new List<StructuredTextPart>();
+            var currentBlocks = new List<ReaderContentBlock>();
+            var currentCharCount = 0;
+
+            foreach (var block in expandedBlocks)
+            {
+                var blockText = GetBlockPlainText(block);
+                var blockLength = blockText.Length;
+
+                if (blockLength > 0 && currentCharCount > 0 && currentCharCount + blockLength > maxSegmentSize)
+                {
+                    parts.Add(new StructuredTextPart(CloneBlocks(currentBlocks), BuildPlainTextFromBlocks(currentBlocks)));
+                    currentBlocks.Clear();
+                    currentCharCount = 0;
+                }
+
+                currentBlocks.Add(CloneBlock(block));
+                currentCharCount += Math.Max(0, blockLength) + 2;
+            }
+
+            if (currentBlocks.Count > 0)
+            {
+                parts.Add(new StructuredTextPart(CloneBlocks(currentBlocks), BuildPlainTextFromBlocks(currentBlocks)));
+            }
+
+            if (parts.Count == 0)
+            {
+                parts.Add(new StructuredTextPart(new List<ReaderContentBlock>(), string.Empty));
+            }
+
+            return parts;
+        }
+
+        private static List<ReaderContentBlock> ExpandStructuredBlocksForSplit(IEnumerable<ReaderContentBlock> blocks, string splitMethod, int maxSegmentSize)
+        {
+            var expandedBlocks = new List<ReaderContentBlock>();
+            foreach (var block in blocks)
+            {
+                if (string.Equals(block.Type, ReaderContentBlockTypes.Image, StringComparison.OrdinalIgnoreCase))
+                {
+                    expandedBlocks.Add(CloneBlock(block));
+                    continue;
+                }
+
+                var blockText = block.Text?.Trim();
+                if (string.IsNullOrWhiteSpace(blockText))
+                {
+                    continue;
+                }
+
+                if (string.Equals(block.Type, ReaderContentBlockTypes.Title, StringComparison.OrdinalIgnoreCase))
+                {
+                    expandedBlocks.Add(CloneBlock(block));
+                    continue;
+                }
+
+                IEnumerable<string> chunks = splitMethod.ToLowerInvariant() switch
+                {
+                    "sentence" => Regex.Matches(blockText, @"[^.!?…]+(?:[.!?…]+(?:""|”|'|’)?|$)")
+                        .Select(match => match.Value.Trim())
+                        .Where(chunk => !string.IsNullOrWhiteSpace(chunk))
+                        .DefaultIfEmpty(blockText),
+                    "length" => SplitContent(blockText, "length", maxSegmentSize)
+                        .Select(chunk => chunk.Trim())
+                        .Where(chunk => !string.IsNullOrWhiteSpace(chunk))
+                        .DefaultIfEmpty(blockText),
+                    _ => new[] { blockText }
+                };
+
+                foreach (var chunk in chunks)
+                {
+                    expandedBlocks.Add(new ReaderContentBlock
+                    {
+                        Type = block.Type,
+                        Text = chunk,
+                        Caption = block.Caption,
+                        AltText = block.AltText,
+                        ImageUrl = block.ImageUrl,
+                        Meta = block.Meta != null ? new Dictionary<string, string>(block.Meta) : null
+                    });
+                }
+            }
+
+            return expandedBlocks;
+        }
+
+        private static string BuildPlainTextFromBlocks(IEnumerable<ReaderContentBlock> blocks)
+        {
+            return string.Join(
+                "\n\n",
+                blocks
+                    .Select(GetBlockPlainText)
+                    .Where(text => !string.IsNullOrWhiteSpace(text))
+                    .Select(text => text.Trim()));
+        }
+
+        private static string GetBlockPlainText(ReaderContentBlock block)
+        {
+            if (string.Equals(block.Type, ReaderContentBlockTypes.Image, StringComparison.OrdinalIgnoreCase))
+            {
+                return NormalizeTextFragment(block.Caption);
+            }
+
+            return NormalizeTextFragment(block.Text);
+        }
+
+        private static ReaderContentBlock CloneBlock(ReaderContentBlock block)
+        {
+            return new ReaderContentBlock
+            {
+                Type = block.Type,
+                Text = block.Text,
+                ImageUrl = block.ImageUrl,
+                AltText = block.AltText,
+                Caption = block.Caption,
+                Meta = block.Meta != null ? new Dictionary<string, string>(block.Meta) : null
+            };
+        }
+
+        private static List<ReaderContentBlock> CloneBlocks(IEnumerable<ReaderContentBlock> blocks)
+        {
+            return blocks.Select(CloneBlock).ToList();
+        }
+
+        private static void FlushBufferedText(List<ReaderContentBlock> blocks, StringBuilder textBuffer, string blockType)
+        {
+            var normalizedText = NormalizeTextFragment(textBuffer.ToString());
+            textBuffer.Clear();
+
+            if (string.IsNullOrWhiteSpace(normalizedText))
+            {
+                return;
+            }
+
+            blocks.Add(new ReaderContentBlock
+            {
+                Type = blockType,
+                Text = normalizedText
+            });
+        }
+
+        private static string NormalizeTextFragment(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return string.Empty;
+            }
+
+            var text = WebUtility.HtmlDecode(value)
+                .Replace("\r\n", "\n")
+                .Replace('\r', '\n')
+                .Replace('\u00A0', ' ');
+
+            text = Regex.Replace(text, @"[ \t\f\v]+", " ");
+            text = Regex.Replace(text, @" *\n *", "\n");
+            text = Regex.Replace(text, @"\n{3,}", "\n\n");
+            return text.Trim();
+        }
+
+        private static string ExtractHtmlAttribute(string tag, string attributeName)
+        {
+            var match = Regex.Match(tag, $@"\b{attributeName}\s*=\s*(?:""(?<value>[^""]*)""|'(?<value>[^']*)'|(?<value>[^\s>]+))", RegexOptions.IgnoreCase);
+            return match.Success ? match.Groups["value"].Value : string.Empty;
+        }
+
+        private static string ResolveEpubArchivePath(string baseFilePath, string relativePath)
+        {
+            var sanitizedRelativePath = relativePath.Replace('\\', '/');
+            if (sanitizedRelativePath.StartsWith("/"))
+            {
+                return NormalizeArchivePath(sanitizedRelativePath);
+            }
+
+            var baseDirectory = NormalizeArchivePath(Path.GetDirectoryName(baseFilePath)?.Replace('\\', '/') ?? string.Empty);
+            var combinedPath = $"{baseDirectory}/{sanitizedRelativePath}";
+            return NormalizeArchivePath(combinedPath);
+        }
+
+        private static string NormalizeArchivePath(string path)
+        {
+            var sanitized = path.Replace('\\', '/');
+            var segments = new List<string>();
+            foreach (var segment in sanitized.Split('/', StringSplitOptions.RemoveEmptyEntries))
+            {
+                if (segment == ".")
+                {
+                    continue;
+                }
+
+                if (segment == "..")
+                {
+                    if (segments.Count > 0)
+                    {
+                        segments.RemoveAt(segments.Count - 1);
+                    }
+                    continue;
+                }
+
+                segments.Add(segment);
+            }
+
+            return "/" + string.Join("/", segments);
+        }
+
+        private static string GetImageExtension(string? mimeType, string? filePath)
+        {
+            var extension = Path.GetExtension(filePath ?? string.Empty);
+            if (!string.IsNullOrWhiteSpace(extension))
+            {
+                return extension.StartsWith('.') ? extension.ToLowerInvariant() : "." + extension.ToLowerInvariant();
+            }
+
+            return mimeType?.ToLowerInvariant() switch
+            {
+                "image/png" => ".png",
+                "image/gif" => ".gif",
+                "image/webp" => ".webp",
+                "image/svg+xml" => ".svg",
+                _ => ".jpg"
+            };
+        }
+
+        private static void CleanupBookAssets(Guid userId, int bookId)
+        {
+            var assetDirectory = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "epub_assets", userId.ToString(), bookId.ToString());
+            if (Directory.Exists(assetDirectory))
+            {
+                Directory.Delete(assetDirectory, recursive: true);
+            }
         }
 
         private static string NormalizeEpubHtmlToText(string htmlContent)
@@ -1441,6 +1983,48 @@ namespace LinguaReadApi.Controllers
         {
             return await _context.Books.AnyAsync(e => e.BookId == id && e.UserId == userId);
         }
+
+        private sealed class StructuredEpubImportResult
+        {
+            public StructuredEpubImportResult(List<StructuredTextPart> parts, string plainText, string? coverImagePath)
+            {
+                Parts = parts;
+                PlainText = plainText;
+                CoverImagePath = coverImagePath;
+            }
+
+            public List<StructuredTextPart> Parts { get; }
+            public string PlainText { get; }
+            public string? CoverImagePath { get; }
+        }
+
+        private sealed class StructuredTextPart
+        {
+            public StructuredTextPart(List<ReaderContentBlock> blocks, string plainText)
+            {
+                Blocks = blocks;
+                PlainText = plainText;
+            }
+
+            public List<ReaderContentBlock> Blocks { get; }
+            public string PlainText { get; }
+        }
+
+        private sealed class EpubExtractionContext
+        {
+            public EpubExtractionContext(EpubBook book, string absoluteAssetRoot, string relativeAssetRoot)
+            {
+                Book = book;
+                AbsoluteAssetRoot = absoluteAssetRoot;
+                RelativeAssetRoot = relativeAssetRoot;
+            }
+
+            public EpubBook Book { get; }
+            public string AbsoluteAssetRoot { get; }
+            public string RelativeAssetRoot { get; }
+            public int NextImageIndex { get; set; } = 1;
+            public Dictionary<string, string> SavedImages { get; } = new(StringComparer.OrdinalIgnoreCase);
+        }
     }
 
     // DTO for Tag information
@@ -1455,6 +2039,7 @@ namespace LinguaReadApi.Controllers
         public int BookId { get; set; }
         public string Title { get; set; } = string.Empty;
         public string Description { get; set; } = string.Empty;
+        public string? CoverImagePath { get; set; }
         public string LanguageName { get; set; } = string.Empty;
         public DateTime CreatedAt { get; set; }
         public int PartCount { get; set; }
@@ -1474,9 +2059,11 @@ namespace LinguaReadApi.Controllers
         public int BookId { get; set; }
         public string Title { get; set; } = string.Empty;
         public string Description { get; set; } = string.Empty;
+        public string? CoverImagePath { get; set; }
         public string LanguageName { get; set; } = string.Empty;
         public int LanguageId { get; set; }
         public DateTime CreatedAt { get; set; }
+        public int? LastReadTextId { get; set; }
         public List<TextPartDto> Parts { get; set; } = new List<TextPartDto>();
         public List<TagDto> Tags { get; set; } = new List<TagDto>();
         public List<AudiobookTrackDto> AudiobookTracks { get; set; } = new List<AudiobookTrackDto>(); // Added for Audiobook feature

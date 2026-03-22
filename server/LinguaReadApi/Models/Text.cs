@@ -17,6 +17,8 @@ namespace LinguaReadApi.Models
         [Required]
         public string Content { get; set; } = string.Empty;
 
+        public string? StructuredContent { get; set; }
+
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
         // New field to track last access time

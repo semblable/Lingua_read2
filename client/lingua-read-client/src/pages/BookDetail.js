@@ -4,6 +4,16 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { getBook, finishBook, updateBook, deleteBook, getText, updateText, deleteText, uploadAudiobookTracks } from '../utils/api'; // Import new API functions + uploadAudiobookTracks
 import { formatDate, /*calculateReadingTime*/ } from '../utils/helpers'; // Removed unused calculateReadingTime
 // Removed AudiobookPlayer import
+
+const normalizeCoverUrl = (value) => {
+  if (!value) return null;
+  if (/^(https?:)?\/\//i.test(value) || value.startsWith('/')) {
+    return value;
+  }
+
+  return `/${value.replace(/^\/+/, '')}`;
+};
+
 const BookDetail = () => {
   const { bookId } = useParams();
   const [book, setBook] = useState(null);
@@ -299,8 +309,14 @@ const BookDetail = () => {
 
   return (
     <Container className="py-5">
-      <div className="d-flex justify-content-between align-items-center mb-4">
-        <div>
+      <div className="d-flex justify-content-between align-items-start mb-4 gap-4 flex-wrap">
+        <div className="d-flex gap-4 flex-wrap align-items-start">
+          {book.coverImagePath && (
+            <Card className="shadow-sm" style={{ width: 'min(220px, 100%)', flexShrink: 0 }}>
+              <Card.Img src={normalizeCoverUrl(book.coverImagePath)} alt={`${book.title} cover`} />
+            </Card>
+          )}
+          <div>
           <h1 className="mb-1">{book.title}</h1>
           <p className="text-muted mb-2">
             Language: {book.languageName} |
@@ -310,6 +326,7 @@ const BookDetail = () => {
           {book.description && (
             <p className="lead">{book.description}</p>
           )}
+        </div>
         </div>
         <div className="d-flex flex-column gap-2">
           {/* Add prominent reading button */}

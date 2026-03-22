@@ -16,6 +16,9 @@ namespace LinguaReadApi.Models
         
         [StringLength(1000)]
         public string Description { get; set; } = string.Empty;
+
+        [StringLength(500)]
+        public string? CoverImagePath { get; set; }
         
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
         

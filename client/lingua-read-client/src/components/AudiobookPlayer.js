@@ -65,6 +65,20 @@ const AudiobookPlayer = ({
   const segmentPlaybackRef = useRef(createSegmentPlaybackState());
   const sourceSwapRef = useRef({ previousSrc: '', nextSrc: '' });
   const lifecycleSaveRef = useRef(false);
+  const latestAudioElementRef = useRef(null);
+  const latestPlaybackStateRef = useRef({
+    isBookMode: type === 'book',
+    bookId: book?.bookId ?? null,
+    textId: textId ?? null,
+    currentTrackIndex: 0,
+    playlist: [],
+    isInitialized: false,
+    isPlaying: false
+  });
+  const saveProgressRef = useRef(null);
+  const restoredContentKeyRef = useRef('');
+  const playbackStartedContentKeyRef = useRef('');
+  const userPositionIntentContentKeyRef = useRef('');
 
   // NOTE: Removed unused progressSaveRef
 
@@ -77,11 +91,24 @@ const AudiobookPlayer = ({
     onPlaybackStateChangeRef.current = onPlaybackStateChange;
   }, [onPlaybackStateChange]);
 
+  useEffect(() => {
+    if (audioRef.current) {
+      latestAudioElementRef.current = audioRef.current;
+    }
+  });
+
 
 
   // --- TWO: State Management ---
   const isBookMode = type === 'book';
   const effectiveLanguageId = languageId || (book?.languageId);
+  const contentKey = useMemo(() => {
+    if (isBookMode) {
+      return `book:${book?.bookId || 'none'}`;
+    }
+
+    return `lesson:${textId || 'none'}:${audioSrc || 'none'}`;
+  }, [audioSrc, book?.bookId, isBookMode, textId]);
 
   // Core Playback State
   const [isPlaying, setIsPlaying] = useState(false);
@@ -112,6 +139,18 @@ const AudiobookPlayer = ({
   // Cross-device sync: track server update timestamp
   const lastServerUpdateRef = useRef(null);
 
+  useEffect(() => {
+    latestPlaybackStateRef.current = {
+      isBookMode,
+      bookId: book?.bookId ?? null,
+      textId: textId ?? null,
+      currentTrackIndex,
+      playlist,
+      isInitialized,
+      isPlaying
+    };
+  }, [book?.bookId, currentTrackIndex, isBookMode, isInitialized, isPlaying, playlist, textId]);
+
   // --- THREE: Data Derivation ---
 
   // Memoize the "source of truth" for tracks. 
@@ -138,37 +177,83 @@ const AudiobookPlayer = ({
   useEffect(() => {
     const newTracks = sourceTracks;
     setPlaylist(prev => {
-      if (prev.length !== newTracks.length) {
-        setIsInitialized(false); // Reset initialization on track change
-        return newTracks;
+      const tracksChanged =
+        prev.length !== newTracks.length ||
+        prev.some((track, index) => (
+          track.trackId !== newTracks[index]?.trackId ||
+          track.url !== newTracks[index]?.url ||
+          track.filePath !== newTracks[index]?.filePath
+        ));
+
+      if (!tracksChanged) {
+        return prev;
       }
-      if (prev.length > 0 && prev[0].trackId !== newTracks[0]?.trackId) {
+
+      if (isBookMode) {
         setIsInitialized(false);
-        return newTracks;
       }
+
       return newTracks;
     });
-  }, [sourceTracks]);
-
+  }, [isBookMode, sourceTracks]);
 
   // --- FOUR: Initial Progress Loading ---
+  const applyInitialSeekIfReady = useCallback((audio) => {
+    if (!audio || initialSeekRef.current == null) return false;
+
+    if (
+      restoredContentKeyRef.current === contentKey ||
+      userPositionIntentContentKeyRef.current === contentKey ||
+      playbackStartedContentKeyRef.current === contentKey
+    ) {
+      initialSeekRef.current = null;
+      return false;
+    }
+
+    console.log(`[AudioPlayer] Seeking to ${initialSeekRef.current}`);
+    audio.currentTime = initialSeekRef.current;
+    setCurrentTime(initialSeekRef.current);
+    restoredContentKeyRef.current = contentKey;
+    initialSeekRef.current = null;
+    return true;
+  }, [contentKey]);
+
+  const queueInitialSeek = useCallback((position) => {
+    if (!Number.isFinite(position) || position <= 0) return false;
+
+    if (
+      restoredContentKeyRef.current === contentKey ||
+      userPositionIntentContentKeyRef.current === contentKey ||
+      playbackStartedContentKeyRef.current === contentKey
+    ) {
+      return false;
+    }
+
+    initialSeekRef.current = position;
+    setCurrentTime(position);
+
+    const audio = audioRef.current;
+    if (audio?.readyState >= 1) {
+      return applyInitialSeekIfReady(audio);
+    }
+
+    return true;
+  }, [applyInitialSeekIfReady, audioRef, contentKey]);
+
   useEffect(() => {
     let mounted = true;
     const loadProgress = async () => {
-      // FIX: Added 'sourceTracks' dependency logic inside or check
-      // FIX: Added 'sourceTracks' dependency logic inside or check
       if (sourceTracks.length === 0) {
-        // Don't set initialized to true if no tracks, wait for them.
         setIsLoading(false);
         return;
       }
 
-      setIsLoading(true);
       try {
         let savedTrackIndex = 0;
         let savedPosition = 0;
 
         if (isBookMode && book?.bookId) {
+          setIsLoading(true);
           const progress = await getAudiobookProgress(book.bookId);
           if (progress?.currentAudiobookTrackId) {
             const idx = sourceTracks.findIndex(t => t.trackId === progress.currentAudiobookTrackId);
@@ -184,11 +269,10 @@ const AudiobookPlayer = ({
           }
         } else if (!isBookMode && textId) {
           const progress = await getAudioLessonProgress(textId);
-          if (progress?.currentPosition) {
+          if (progress?.currentPosition > 0) {
             savedPosition = progress.currentPosition;
             console.log(`[AudioPlayer] Restoring Lesson progress: Pos ${savedPosition}`);
           }
-          // Store server update time for cross-device sync
           if (progress?.updatedAt) {
             lastServerUpdateRef.current = new Date(progress.updatedAt).getTime();
           }
@@ -196,17 +280,20 @@ const AudiobookPlayer = ({
 
         if (mounted) {
           setCurrentTrackIndex(savedTrackIndex);
+
           if (savedPosition > 0) {
-            initialSeekRef.current = savedPosition;
-            setCurrentTime(savedPosition);
+            queueInitialSeek(savedPosition);
           }
-          setIsInitialized(true);
+
+          if (isBookMode) {
+            setIsInitialized(true);
+          }
         }
       } catch (e) {
         console.error("Failed to load progress:", e);
-        if (mounted) setIsInitialized(true);
+        if (mounted && isBookMode) setIsInitialized(true);
       } finally {
-        if (mounted) setIsLoading(false);
+        if (mounted && isBookMode) setIsLoading(false);
       }
     };
 
@@ -215,9 +302,7 @@ const AudiobookPlayer = ({
     return () => {
       mounted = false;
     };
-    // FIX: Included sourceTracks to re-run if tracks change (although logic handles empty). 
-    // Ideally we want this to run once per "content", but sourceTracks is the content def.
-  }, [book?.bookId, textId, isBookMode, sourceTracks]);
+  }, [book?.bookId, isBookMode, queueInitialSeek, sourceTracks, textId]);
 
 
 
@@ -228,6 +313,36 @@ const AudiobookPlayer = ({
   const resetSegmentPlayback = useCallback(() => {
     segmentPlaybackRef.current = createSegmentPlaybackState();
   }, []);
+
+  useEffect(() => {
+    initialSeekRef.current = null;
+    restoredContentKeyRef.current = '';
+    playbackStartedContentKeyRef.current = '';
+    userPositionIntentContentKeyRef.current = '';
+    lastServerUpdateRef.current = null;
+    justStartedPlayingRef.current = false;
+    wasPlayingRef.current = false;
+    resetSegmentPlayback();
+    setCurrentTrackIndex(0);
+    setCurrentTime(0);
+    setDuration(0);
+    setError('');
+
+    if (sourceTracks.length === 0) {
+      setIsInitialized(false);
+      setIsLoading(false);
+      return;
+    }
+
+    if (isBookMode) {
+      setIsInitialized(false);
+      setIsLoading(true);
+      return;
+    }
+
+    setIsInitialized(true);
+    setIsLoading(false);
+  }, [contentKey, isBookMode, resetSegmentPlayback, sourceTracks.length]);
 
   const buildTrackSrc = useCallback((track) => {
     let src = track?.isLesson ? track.url : track?.filePath;
@@ -327,10 +442,11 @@ const AudiobookPlayer = ({
       remainingRepeats: repeatCount
     };
 
+    userPositionIntentContentKeyRef.current = contentKey;
     audio.currentTime = startTime;
     setCurrentTime(startTime);
     requestAudioPlay('Segment playback failed', { forceIntent: Boolean(segmentPlaybackRequest.forcePlay) });
-  }, [audioRef, requestAudioPlay, resetSegmentPlayback, segmentPlaybackRequest]);
+  }, [audioRef, contentKey, requestAudioPlay, resetSegmentPlayback, segmentPlaybackRequest]);
 
 
   // --- SIX: Event Listeners & Logic ---
@@ -342,14 +458,8 @@ const AudiobookPlayer = ({
     sourceSwapRef.current = { previousSrc: '', nextSrc: '' };
     setDuration(audio.duration);
     setIsBuffering(false);
-
-    if (initialSeekRef.current !== null) {
-      console.log(`[AudioPlayer] Seeking to ${initialSeekRef.current}`);
-      audio.currentTime = initialSeekRef.current;
-      setCurrentTime(initialSeekRef.current);
-      initialSeekRef.current = null;
-    }
-  }, [audioRef]);
+    applyInitialSeekIfReady(audio);
+  }, [applyInitialSeekIfReady, audioRef]);
 
   const handleTimeUpdate = useCallback(() => {
     const audio = audioRef.current;
@@ -443,6 +553,7 @@ const AudiobookPlayer = ({
         audio.pause();
         return;
       }
+      playbackStartedContentKeyRef.current = contentKey;
       syncPlaybackState(true);
     };
     const onPause = () => {
@@ -481,7 +592,7 @@ const AudiobookPlayer = ({
       audio.removeEventListener('playing', onPlaying);
     };
     // FIX: Added all handler dependencies
-  }, [audioRef, handleLoadedMetadata, handleTimeUpdate, handleEnded, handleError, resetSegmentPlayback, syncPlaybackState]);
+  }, [audioRef, contentKey, handleLoadedMetadata, handleTimeUpdate, handleEnded, handleError, resetSegmentPlayback, syncPlaybackState]);
 
   // Sync Playback Rate
   useEffect(() => {
@@ -509,25 +620,34 @@ const AudiobookPlayer = ({
 
   // --- SEVEN: Progress Saving ---
   const saveProgress = useCallback(async (force = false) => {
-    const audio = audioRef.current;
-    if (!audio || !isInitialized) return;
+    const audio = audioRef.current || latestAudioElementRef.current;
+    const {
+      isBookMode: isBookModeSnapshot,
+      bookId,
+      textId: textIdSnapshot,
+      currentTrackIndex: currentTrackIndexSnapshot,
+      playlist: playlistSnapshot,
+      isInitialized: isInitializedSnapshot,
+      isPlaying: isPlayingSnapshot
+    } = latestPlaybackStateRef.current;
 
-    if (!force && audio.paused && !isPlaying) return;
+    if (!audio || !isInitializedSnapshot) return;
 
-    // FIX: Removed unused 'nav'
+    if (!force && audio.paused && !isPlayingSnapshot) return;
+
     const currentPos = audio.currentTime;
-    const track = playlist[currentTrackIndex];
+    const track = playlistSnapshot[currentTrackIndexSnapshot];
     if (!track) return;
 
     try {
-      if (isBookMode && book?.bookId) {
-        await updateAudiobookProgress(book.bookId, {
+      if (isBookModeSnapshot && bookId) {
+        await updateAudiobookProgress(bookId, {
           currentAudiobookTrackId: track.trackId,
           currentAudiobookPosition: currentPos
         });
-      } else if (textId) {
+      } else if (textIdSnapshot) {
         const isPageLifecycleSave = lifecycleSaveRef.current || document.hidden;
-        await updateAudioLessonProgress(textId, {
+        await updateAudioLessonProgress(textIdSnapshot, {
           currentPosition: currentPos
         }, {
           keepalive: isPageLifecycleSave
@@ -540,8 +660,11 @@ const AudiobookPlayer = ({
       }
       console.error("Save progress failed", e);
     }
-    // FIX: Added audioRef dependency
-  }, [isBookMode, book?.bookId, textId, currentTrackIndex, playlist, isInitialized, isPlaying, audioRef]);
+  }, [audioRef]);
+
+  useEffect(() => {
+    saveProgressRef.current = saveProgress;
+  }, [saveProgress]);
 
   // Periodic Save
   useEffect(() => {
@@ -578,15 +701,15 @@ const AudiobookPlayer = ({
   useEffect(() => {
     return () => {
       console.log("[AudioPlayer] Unmounting - Saving progress.");
-      saveProgress(true); // Force save
+      saveProgressRef.current?.(true);
     };
-  }, [saveProgress]);
+  }, []);
 
   // Page Exit Save (Browser Lifecycle)
   useEffect(() => {
     const handleUnload = () => {
       lifecycleSaveRef.current = true;
-      saveProgress(true);
+      saveProgressRef.current?.(true);
     };
     window.addEventListener('pagehide', handleUnload);
     window.addEventListener('beforeunload', handleUnload); // Also listen for beforeunload
@@ -595,7 +718,7 @@ const AudiobookPlayer = ({
       window.removeEventListener('pagehide', handleUnload);
       window.removeEventListener('beforeunload', handleUnload);
     }
-  }, [saveProgress]);
+  }, []);
 
   // --- CROSS-DEVICE SYNC ---
 
@@ -607,6 +730,7 @@ const AudiobookPlayer = ({
     if (isPlaying && isInitialized && !justStartedPlayingRef.current) {
       justStartedPlayingRef.current = true;
       console.log('[AudioPlayer] Play started - saving position for cross-device sync');
+      playbackStartedContentKeyRef.current = contentKey;
       saveProgress(true);
       // Update our known server time to now
       lastServerUpdateRef.current = Date.now();
@@ -614,7 +738,7 @@ const AudiobookPlayer = ({
       // Reset the flag when playback stops
       justStartedPlayingRef.current = false;
     }
-  }, [isPlaying, isInitialized, saveProgress]);
+  }, [contentKey, isPlaying, isInitialized, saveProgress]);
 
   // Poll for remote updates when NOT playing (to sync from other devices)
   useEffect(() => {
@@ -642,6 +766,11 @@ const AudiobookPlayer = ({
         // If remote update is newer than our last known update, sync to it
         // Use 2 second buffer to account for potential clock drift
         if (remoteUpdateTime > localUpdateTime + 2000) {
+          if (!isBookMode && playbackStartedContentKeyRef.current === contentKey) {
+            lastServerUpdateRef.current = remoteUpdateTime;
+            return;
+          }
+
           console.log('[AudioPlayer] Cross-device sync: detected newer remote position');
 
           let newPosition = null;
@@ -703,7 +832,7 @@ const AudiobookPlayer = ({
       clearInterval(pollInterval);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [isPlaying, isInitialized, isBookMode, book?.bookId, textId, currentTrackIndex, sourceTracks, audioRef]);
+  }, [audioRef, book?.bookId, contentKey, currentTrackIndex, isBookMode, isInitialized, isPlaying, sourceTracks, textId]);
 
 
   // --- EIGHT: Render Helpers ---
@@ -714,13 +843,15 @@ const AudiobookPlayer = ({
     const audio = audioRef.current;
     if (!audio) return;
     if (audio.paused) {
+      userPositionIntentContentKeyRef.current = contentKey;
+      playbackStartedContentKeyRef.current = contentKey;
       setAudioPlaybackIntent(audio, true);
       requestAudioPlay('Play failed');
     } else {
       setAudioPlaybackIntent(audio, false);
       audio.pause();
     }
-  }, [audioRef, requestAudioPlay]); // Safe dependency
+  }, [audioRef, contentKey, requestAudioPlay]); // Safe dependency
 
   const seek = useCallback((time) => {
     const audio = audioRef.current;
@@ -735,12 +866,13 @@ const AudiobookPlayer = ({
     if (segmentPlaybackRef.current.active) {
       resetSegmentPlayback();
     }
+    userPositionIntentContentKeyRef.current = contentKey;
     audio.currentTime = newTime;
     setCurrentTime(newTime);
     if (onTimeUpdateRef.current) {
       onTimeUpdateRef.current(newTime);
     }
-  }, [audioRef, duration, resetSegmentPlayback]);
+  }, [audioRef, contentKey, duration, resetSegmentPlayback]);
 
   const goToNextTrack = useCallback(() => {
     if (currentTrackIndex < playlist.length - 1) {

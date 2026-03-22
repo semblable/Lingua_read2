@@ -1337,6 +1337,7 @@ const TextDisplay = () => {
   const pendingSentenceCreditRef = useRef(new Set());
   const audioDrivenSentenceSyncRef = useRef(false);
   const lastAutoSegmentPlaybackKeyRef = useRef('');
+  const skipInitialAudioLessonSegmentPlaybackRef = useRef(true);
   // --- End State Declarations ---
 
   // Create refs for values used in handleAudioTimeUpdate to keep the callback stable
@@ -2027,13 +2028,26 @@ const TextDisplay = () => {
     if (audioRef.current) {
       console.log(`[handleLineClick] audioRef found. Current time before seek: ${audioRef.current.currentTime}`);
       audioRef.current.currentTime = startTime;
+      audioCurrentTimeRef.current = startTime;
+
+      if (isAudioLesson && displayMode === 'audio' && srtLines.length > 0) {
+        const currentLineIndex = srtLines.findIndex(line => startTime >= line.startTime && startTime < line.endTime);
+        const currentLine = currentLineIndex !== -1 ? srtLines[currentLineIndex] : null;
+        setCurrentSrtLineId(currentLine?.id ?? null);
+
+        if (isSentenceMode && currentLineIndex !== -1 && currentLineIndex !== currentSegmentIndex) {
+          audioDrivenSentenceSyncRef.current = true;
+          setCurrentSegmentIndex(currentLineIndex);
+        }
+      }
+
       setTimeout(() => {
         if (audioRef.current) { console.log(`[handleLineClick] audioRef current time after seek attempt: ${audioRef.current.currentTime}`); }
       }, 0);
     } else {
       console.log('[handleLineClick] audioRef.current is null!');
     }
-  }, []);
+  }, [currentSegmentIndex, displayMode, isAudioLesson, isSentenceMode, srtLines]);
 
   const mobileReadingConfig = useMemo(() => {
     switch (readingDensity) {
@@ -2286,6 +2300,12 @@ const TextDisplay = () => {
 
     if (isAudioLesson && currentSentenceSegment.startTime != null && currentSentenceSegment.endTime != null) {
       setCurrentSrtLineId(currentSentenceSegment.srtLineId || null);
+      if (!isAudioDrivenSync && skipInitialAudioLessonSegmentPlaybackRef.current) {
+        skipInitialAudioLessonSegmentPlaybackRef.current = false;
+        return () => {
+          cancelled = true;
+        };
+      }
       if (!isAudioDrivenSync) {
         const playbackKey = [
           text.textId,
@@ -2307,6 +2327,8 @@ const TextDisplay = () => {
         }
       }
     }
+
+    skipInitialAudioLessonSegmentPlaybackRef.current = false;
 
     return () => {
       cancelled = true;
@@ -2400,6 +2422,7 @@ const TextDisplay = () => {
         setSentenceProgressLoaded(false);
       setSegmentPlaybackRequest(null);
       lastAutoSegmentPlaybackKeyRef.current = '';
+        skipInitialAudioLessonSegmentPlaybackRef.current = true;
         pendingSentenceCreditRef.current = new Set();
       } else {
         console.log(`[TextDisplay] Refreshing data for same text ${textId} (skipping loading state)`);

@@ -18,6 +18,17 @@ jest.mock('../utils/api', () => ({
   logListeningActivity: jest.fn()
 }));
 
+const createDeferred = () => {
+  let resolve;
+  let reject;
+  const promise = new Promise((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+
+  return { promise, resolve, reject };
+};
+
 describe('AudiobookPlayer', () => {
   beforeEach(() => {
     // Mock HTMLMediaElement methods that JSDOM doesn't implement
@@ -85,6 +96,31 @@ describe('AudiobookPlayer', () => {
     });
 
     // Verify the UI is rendered
+    await waitFor(() => {
+      expect(screen.getByTitle(/Play/)).toBeInTheDocument();
+    });
+  });
+
+  test('lesson mode starts loading audio before progress restore resolves', async () => {
+    const deferredProgress = createDeferred();
+    getAudioLessonProgress.mockReturnValue(deferredProgress.promise);
+
+    render(
+      <AudiobookPlayer
+        type="lesson"
+        audioSrc="https://example.com/lesson.mp3"
+        textId={42}
+        languageId={5}
+      />
+    );
+
+    await waitFor(() => {
+      expect(getAudioLessonProgress).toHaveBeenCalledWith(42);
+      expect(window.HTMLMediaElement.prototype.load).toHaveBeenCalledTimes(1);
+    });
+
+    deferredProgress.resolve({ currentPosition: 30 });
+
     await waitFor(() => {
       expect(screen.getByTitle(/Play/)).toBeInTheDocument();
     });
@@ -186,6 +222,88 @@ describe('AudiobookPlayer', () => {
     });
 
     expect(window.HTMLMediaElement.prototype.pause).not.toHaveBeenCalled();
+  });
+
+  test('does not force-save progress on routine rerenders', async () => {
+    getAudioLessonProgress.mockResolvedValue({ currentPosition: 0 });
+
+    const { container, rerender, unmount } = render(
+      <AudiobookPlayer
+        type="lesson"
+        audioSrc="https://example.com/lesson.mp3"
+        textId={42}
+        languageId={5}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTitle(/Play/)).toBeInTheDocument();
+    });
+
+    const audio = container.querySelector('audio');
+    expect(audio).not.toBeNull();
+    Object.defineProperty(audio, 'currentTime', {
+      configurable: true,
+      writable: true,
+      value: 12
+    });
+
+    rerender(
+      <AudiobookPlayer
+        type="lesson"
+        audioSrc="https://example.com/lesson.mp3"
+        textId={42}
+        languageId={6}
+      />
+    );
+
+    expect(updateAudioLessonProgress).not.toHaveBeenCalled();
+
+    unmount();
+
+    await waitFor(() => {
+      expect(updateAudioLessonProgress).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  test('does not apply delayed restore after playback intent has started', async () => {
+    const deferredProgress = createDeferred();
+    getAudioLessonProgress.mockReturnValue(deferredProgress.promise);
+
+    const { container } = render(
+      <AudiobookPlayer
+        type="lesson"
+        audioSrc="https://example.com/lesson.mp3"
+        textId={42}
+        languageId={5}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTitle(/Play/)).toBeInTheDocument();
+    });
+
+    const audio = container.querySelector('audio');
+    expect(audio).not.toBeNull();
+    Object.defineProperty(audio, 'currentTime', {
+      configurable: true,
+      writable: true,
+      value: 0
+    });
+
+    fireEvent.click(screen.getByTitle(/Play/));
+
+    await act(async () => {
+      deferredProgress.resolve({
+        currentPosition: 45,
+        updatedAt: new Date().toISOString()
+      });
+      await deferredProgress.promise;
+    });
+
+    await waitFor(() => {
+      expect(audio.currentTime).toBe(0);
+    });
   });
 
   test('does not reload when the same lesson source resolves to the same URL', async () => {

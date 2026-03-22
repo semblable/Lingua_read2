@@ -135,9 +135,10 @@ namespace LinguaReadApi.Data
                     }
                     catch (Exception ex)
                     {
-                         // Consider injecting ILogger here instead of Console.WriteLine
                          Console.WriteLine($"[DbInitializer] Error saving seeding changes: {ex.Message}");
-                         // Handle or rethrow if necessary
+                         throw new InvalidOperationException(
+                             "Database seeding failed (languages and/or default user). The API cannot start without a consistent seed.",
+                             ex);
                     }
                 } else {
                      Console.WriteLine("[DbInitializer] No seeding changes detected (Languages or User). Skipping SaveChanges.");

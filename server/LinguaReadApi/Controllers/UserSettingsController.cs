@@ -41,7 +41,8 @@ namespace LinguaReadApi.Controllers
         [HttpGet]
         public async Task<ActionResult<UserSettingsDto>> GetUserSettings()
         {
-            var userId = GetUserId();
+            if (!TryGetUserIdFromClaims(out var userId, out var unauthorizedBody))
+                return Unauthorized(unauthorizedBody);
             
             var settings = await _context.UserSettings
                 .FirstOrDefaultAsync(s => s.UserId == userId);
@@ -121,7 +122,8 @@ namespace LinguaReadApi.Controllers
                 return BadRequest(ModelState);
             }
             
-            var userId = GetUserId();
+            if (!TryGetUserIdFromClaims(out var userId, out var unauthorizedBody))
+                return Unauthorized(unauthorizedBody);
             
             var settings = await _context.UserSettings
                 .FirstOrDefaultAsync(s => s.UserId == userId);
@@ -229,7 +231,8 @@ namespace LinguaReadApi.Controllers
                 return BadRequest(ModelState);
             }
 
-            var userId = GetUserId();
+            if (!TryGetUserIdFromClaims(out var userId, out var unauthorizedBody))
+                return Unauthorized(unauthorizedBody);
             var settings = await _context.UserSettings.FirstOrDefaultAsync(s => s.UserId == userId);
 
             if (settings == null)
@@ -273,7 +276,8 @@ namespace LinguaReadApi.Controllers
         [HttpPost("discord/report")]
         public async Task<IActionResult> SendDiscordReport([FromQuery] string period = "week", [FromQuery] int? days = null)
         {
-            var userId = GetUserId();
+            if (!TryGetUserIdFromClaims(out var userId, out var unauthorizedBody))
+                return Unauthorized(unauthorizedBody);
             var settings = await _context.UserSettings.FirstOrDefaultAsync(s => s.UserId == userId);
             if (settings == null)
             {
@@ -313,7 +317,8 @@ namespace LinguaReadApi.Controllers
         [HttpGet("audio-storage-size")]
         public async Task<ActionResult<AudioStorageSizeDto>> GetAudioStorageSize()
         {
-            var userId = GetUserId();
+            if (!TryGetUserIdFromClaims(out var userId, out var unauthorizedBody))
+                return Unauthorized(unauthorizedBody);
             
             long totalSize = 0;
             int totalFiles = 0;
@@ -416,22 +421,29 @@ namespace LinguaReadApi.Controllers
                 new(DateTime.MinValue, DateTime.MinValue, false, error);
         }
 
-        private Guid GetUserId()
+        /// <summary>Returns false if NameIdentifier is missing or not a valid GUID.</summary>
+        private bool TryGetUserIdFromClaims(out Guid userId, out object unauthorizedBody)
         {
+            userId = default;
+            unauthorizedBody = new { message = "User ID not found in token" };
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
             if (string.IsNullOrEmpty(userIdClaim))
+                return false;
+            if (!Guid.TryParse(userIdClaim, out userId))
             {
-                throw new UnauthorizedAccessException("User ID not found in token");
+                unauthorizedBody = new { message = "Invalid user identifier in token" };
+                return false;
             }
-            
-            return Guid.Parse(userIdClaim);
+
+            return true;
         }
 
         // POST: api/usersettings/test-openrouter
         [HttpPost("test-openrouter")]
         public async Task<ActionResult<OpenRouterTestResultDto>> TestOpenRouterConnection()
         {
-            var userId = GetUserId();
+            if (!TryGetUserIdFromClaims(out var userId, out var unauthorizedBody))
+                return Unauthorized(unauthorizedBody);
             var settings = await _context.UserSettings.FirstOrDefaultAsync(s => s.UserId == userId);
             
             if (settings == null || string.IsNullOrWhiteSpace(settings.OpenRouterApiKey))

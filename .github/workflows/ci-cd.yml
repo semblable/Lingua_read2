@@ -190,6 +190,11 @@ jobs:
             set -euo pipefail
             cd "${{ secrets.DEPLOY_PATH }}"
 
+            # Always use the same compose files (matches pull/up) for ps/logs during failures.
+            dc() {
+              sudo docker compose -f docker-compose.yml -f docker-compose.prod.yml "$@"
+            }
+
             # Write production environment to .env (kept in GitHub Secrets as multiline text).
             # Create a secret named PRODUCTION_ENV containing the full .env contents.
             cat > .env <<'EOF'
@@ -221,38 +226,43 @@ jobs:
             # Use sudo because many hosts restrict /var/run/docker.sock to root/docker group.
             echo "${{ secrets.GHCR_PAT }}" | sudo docker login ghcr.io -u "${{ secrets.GHCR_USERNAME }}" --password-stdin
 
-            sudo docker compose -f docker-compose.yml -f docker-compose.prod.yml pull api nginx
-            sudo docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --force-recreate api
-            api_container_id=$(sudo docker compose -f docker-compose.yml -f docker-compose.prod.yml ps -q api)
+            dc pull api nginx
+            dc up -d --force-recreate api
+            api_container_id=$(dc ps -q api)
             if [ -z "$api_container_id" ]; then
               echo "Could not resolve api container id after recreate"
-              sudo docker compose ps
-              sudo docker compose logs --no-color --tail=200 api || true
+              dc ps
+              dc logs --no-color --tail=200 api || true
               exit 1
             fi
 
-            # Health check (inside the api container; Nginx is Basic-Auth protected).
-            # The API may take time to start (DB readiness + migrations). Retry and dump logs on failure.
+            # Readiness: DB connectivity + seeded default user (see GET /api/Health/ready).
+            # Nginx is Basic-Auth protected; smoke tests call Kestrel inside the api container.
             ok=""
             for i in $(seq 1 60); do
-              if sudo docker exec "$api_container_id" curl -fsS http://localhost:5000/api/Health >/dev/null; then
+              if sudo docker exec "$api_container_id" curl -fsS http://localhost:5000/api/Health/ready >/dev/null; then
                 ok="yes"
                 break
               fi
-              echo "Waiting for API health... ($i/60)"
+              echo "Waiting for API readiness (GET /api/Health/ready)... ($i/60)"
               sleep 2
             done
 
             if [ "$ok" = "yes" ]; then
-              echo "Health check OK"
+              echo "Readiness check OK (database + default user)"
             else
-              echo "Health check FAILED; dumping status/logs"
-              sudo docker compose ps
-              sudo docker compose logs --no-color --tail=200 api || true
+              echo "Readiness check FAILED (expected HTTP 200 from /api/Health/ready); dumping status/logs"
+              dc ps
+              dc logs --no-color --tail=200 api || true
               exit 1
             fi
 
-            echo "Running authenticated smoke test against /api/usersettings"
+            if [ -n "${LOGIN_SECRET}" ]; then
+              echo "Smoke test login mode: X-Login-Secret (LOGIN_SECRET is set in .env)"
+            else
+              echo "Smoke test login mode: X-Forwarded-User (LOGIN_SECRET empty or not in .env)"
+            fi
+            echo "Running authenticated smoke test: POST /api/auth/login then GET /api/usersettings"
             login_output_file=$(mktemp)
             if [ -n "${LOGIN_SECRET}" ]; then
               set +e
@@ -279,26 +289,26 @@ jobs:
             rm -f "$login_output_file"
 
             if [ "$login_exec_status" -ne 0 ]; then
-              echo "Smoke-test login command failed with exit code $login_exec_status"
+              echo "Smoke-test login: curl transport error (exit $login_exec_status). Body/stderr:"
               printf '%s\n' "$login_result"
-              sudo docker compose logs --no-color --tail=200 api || true
+              dc logs --no-color --tail=200 api || true
               exit 1
             fi
 
             login_http_code=$(printf '%s\n' "$login_result" | tail -n1)
             login_response=$(printf '%s\n' "$login_result" | sed '$d')
             if [ "$login_http_code" != "200" ]; then
-              echo "Smoke-test login failed with HTTP $login_http_code"
+              echo "Smoke-test login failed with HTTP $login_http_code (expected 200). Response body:"
               printf '%s\n' "$login_response"
-              sudo docker compose logs --no-color --tail=200 api || true
+              dc logs --no-color --tail=200 api || true
               exit 1
             fi
 
             token=$(printf '%s' "$login_response" | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')
             if [ -z "$token" ]; then
-              echo "Failed to obtain auth token during smoke test"
+              echo "Failed to parse JWT from login response (expected JSON with token field)"
               printf '%s\n' "$login_response"
-              sudo docker compose logs --no-color --tail=200 api || true
+              dc logs --no-color --tail=200 api || true
               exit 1
             fi
 
@@ -315,20 +325,20 @@ jobs:
             usersettings_result=$(cat "$usersettings_output_file")
             rm -f "$usersettings_output_file"
             if [ "$usersettings_exec_status" -ne 0 ]; then
-              echo "Usersettings smoke-test command failed with exit code $usersettings_exec_status"
+              echo "GET /api/usersettings: curl transport error (exit $usersettings_exec_status). Body/stderr:"
               printf '%s\n' "$usersettings_result"
-              sudo docker compose logs --no-color --tail=200 api || true
+              dc logs --no-color --tail=200 api || true
               exit 1
             fi
             usersettings_http_code=$(printf '%s\n' "$usersettings_result" | tail -n1)
             usersettings_response=$(printf '%s\n' "$usersettings_result" | sed '$d')
             if [ "$usersettings_http_code" != "200" ]; then
-              echo "Usersettings smoke test failed with HTTP $usersettings_http_code"
+              echo "GET /api/usersettings failed with HTTP $usersettings_http_code (expected 200). Response body:"
               printf '%s\n' "$usersettings_response"
-              sudo docker compose logs --no-color --tail=200 api || true
+              dc logs --no-color --tail=200 api || true
               exit 1
             fi
             echo "Usersettings smoke test OK"
 
-            sudo docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --force-recreate nginx
+            dc up -d --force-recreate nginx
 

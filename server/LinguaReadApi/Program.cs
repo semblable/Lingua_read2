@@ -244,10 +244,8 @@ if (!app.Environment.IsEnvironment("Testing"))
         }
         catch (Exception ex)
         {
-            // Log seeding errors separately
-            logger.LogError(ex, "An error occurred while running DbInitializer.");
-            // Depending on the severity, you might want to stop the application here
-            // throw;
+            logger.LogError(ex, "An error occurred while running DbInitializer. Halting application startup.");
+            throw;
         }
     }
 }

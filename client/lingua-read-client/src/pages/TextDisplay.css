@@ -234,8 +234,8 @@
 .reader-title-block {
   width: 100%;
   max-width: 100%;
-  margin: 0 auto 1.75rem;
-  padding: 0.25rem 0.75rem;
+  margin: 0 auto 2.75rem;
+  padding: 0.75rem 0.75rem 1.25rem;
   text-align: center;
 }
 
@@ -245,31 +245,43 @@
 
 .reader-title-block-modern {
   max-width: 42rem;
-  margin-bottom: 2rem;
-  padding: 1rem 1.25rem;
+  margin-bottom: 3rem;
+  padding: 1.25rem 1.25rem 1.75rem;
 }
 
 .reader-title-line {
   white-space: pre-wrap;
   overflow-wrap: break-word;
+  font-size: 1.18em;
+  line-height: 1.8;
 }
 
 .reader-title-line-spacer {
-  height: 1rem;
+  height: 1.6rem;
 }
 
 .reader-title-line + .reader-title-line {
-  margin-top: 0.5rem;
+  margin-top: 0.8rem;
 }
 
 .reader-title-line-classic {
   font-family: var(--font-family-serif);
+  font-size: 1.22em;
 }
 
 .reader-title-line-modern {
   font-family: var(--font-family-serif);
-  font-size: 1.08em;
-  line-height: 1.85;
+  font-size: 1.32em;
+  line-height: 1.95;
+}
+
+.reader-title-line:first-child {
+  font-size: 1.4em;
+}
+
+.reader-title-block + .reader-paragraph,
+.reader-title-block + .reading-block-group {
+  margin-top: 0.9rem;
 }
 
 .text-content-modern {
@@ -363,10 +375,16 @@
   max-width: 34rem;
   margin: 0 auto;
   font-family: var(--font-family-serif);
+  padding-bottom: 0.5rem;
 }
 
 .sentence-mode-title-line {
   white-space: pre-wrap;
+  font-size: 1.22em;
+}
+
+.sentence-mode-title-line:first-child {
+  font-size: 1.45em;
 }
 
 .sentence-mode-translation {
@@ -519,7 +537,7 @@
   }
 
   .reader-title-line + .reader-title-line {
-    margin-top: 0.35rem;
+    margin-top: 0.55rem;
   }
 
   .lesson-audio-bar {

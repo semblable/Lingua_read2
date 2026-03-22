@@ -8,6 +8,7 @@ using System.Security.Claims;
 using System.Threading.Tasks;
 using System.ComponentModel.DataAnnotations;
 using System.IO; // Added for file streams
+using System.Globalization;
 using System.Net;
 using System.Text; // Added for StreamReader encoding
 using System.Text.RegularExpressions; // Added for Regex HTML stripping
@@ -301,7 +302,10 @@ namespace LinguaReadApi.Controllers
                     var epubBook = await VersOne.Epub.EpubReader.ReadBookAsync(stream);
                     bookTitle = uploadDto.TitleOverride ?? epubBook.Title ?? Path.GetFileNameWithoutExtension(uploadDto.File.FileName); // Use EPUB title or filename if override not provided
 
-                    bookContent = ExtractPlainTextFromEpub(epubBook);
+                    bookContent = ExtractPlainTextFromEpub(
+                        epubBook,
+                        bookTitle,
+                        Path.GetFileNameWithoutExtension(uploadDto.File.FileName));
                 }
                 else // Must be .txt based on earlier check
                 {
@@ -681,20 +685,31 @@ namespace LinguaReadApi.Controllers
             return result;
         }
 
-        private static string ExtractPlainTextFromEpub(EpubBook epubBook)
+        private static string ExtractPlainTextFromEpub(EpubBook epubBook, string? bookTitle, string? sourceFileStem)
         {
-            var contentParts = new List<string>();
+            var contentBlocks = new List<string>();
+            var artifactKeys = BuildEpubArtifactKeys(bookTitle, sourceFileStem);
 
             foreach (EpubLocalTextContentFile textFile in epubBook.ReadingOrder)
             {
                 var normalizedText = NormalizeEpubHtmlToText(textFile.Content ?? string.Empty);
-                if (!string.IsNullOrWhiteSpace(normalizedText))
+                if (string.IsNullOrWhiteSpace(normalizedText))
                 {
-                    contentParts.Add(normalizedText);
+                    continue;
+                }
+
+                foreach (var block in Regex.Split(normalizedText, @"\n{2,}")
+                    .Select(part => part.Trim())
+                    .Where(part => !string.IsNullOrWhiteSpace(part)))
+                {
+                    if (!IsIgnorableEpubArtifactBlock(block, artifactKeys, contentBlocks.Count))
+                    {
+                        contentBlocks.Add(block);
+                    }
                 }
             }
 
-            return string.Join("\n\n", contentParts);
+            return string.Join("\n\n", contentBlocks);
         }
 
         private static string NormalizeEpubHtmlToText(string htmlContent)
@@ -729,6 +744,113 @@ namespace LinguaReadApi.Controllers
             plainText = Regex.Replace(plainText, @"\n{3,}", "\n\n");
 
             return plainText.Trim();
+        }
+
+        private static HashSet<string> BuildEpubArtifactKeys(string? bookTitle, string? sourceFileStem)
+        {
+            var keys = new HashSet<string>(StringComparer.Ordinal);
+            AddArtifactKeyVariants(keys, bookTitle);
+            AddArtifactKeyVariants(keys, sourceFileStem);
+            return keys;
+        }
+
+        private static void AddArtifactKeyVariants(HashSet<string> keys, string? value)
+        {
+            var normalized = NormalizeArtifactKey(value);
+            if (string.IsNullOrWhiteSpace(normalized))
+            {
+                return;
+            }
+
+            keys.Add(normalized);
+
+            var withoutCommonSuffix = Regex.Replace(normalized, @"(?:_|-)?(?:epub|book|novel)$", string.Empty).Trim('_', '-');
+            if (!string.IsNullOrWhiteSpace(withoutCommonSuffix))
+            {
+                keys.Add(withoutCommonSuffix);
+            }
+        }
+
+        private static bool IsIgnorableEpubArtifactBlock(string block, HashSet<string> artifactKeys, int blockIndex)
+        {
+            if (blockIndex > 12 || string.IsNullOrWhiteSpace(block))
+            {
+                return false;
+            }
+
+            var lines = block
+                .Split('\n')
+                .Select(line => line.Trim())
+                .Where(line => !string.IsNullOrWhiteSpace(line))
+                .ToList();
+
+            if (lines.Count == 0 || lines.Count > 2)
+            {
+                return false;
+            }
+
+            return lines.All(line => IsIgnorableEpubArtifactLine(line, artifactKeys));
+        }
+
+        private static bool IsIgnorableEpubArtifactLine(string line, HashSet<string> artifactKeys)
+        {
+            var normalizedLine = NormalizeArtifactKey(line);
+            if (string.IsNullOrWhiteSpace(normalizedLine) || normalizedLine.Length > 80)
+            {
+                return false;
+            }
+
+            var genericArtifacts = new HashSet<string>(StringComparer.Ordinal)
+            {
+                "cover",
+                "titlepage",
+                "title_page",
+                "half_title",
+                "halftitle",
+                "copyright",
+                "toc",
+                "table_of_contents",
+                "contents"
+            };
+
+            if (genericArtifacts.Contains(normalizedLine))
+            {
+                return true;
+            }
+
+            return artifactKeys.Any(key =>
+                normalizedLine == key ||
+                Regex.IsMatch(normalizedLine, $"^{Regex.Escape(key)}(?:[_-]?\\d+)?$"));
+        }
+
+        private static string NormalizeArtifactKey(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return string.Empty;
+            }
+
+            var normalized = value.Normalize(NormalizationForm.FormD);
+            var builder = new StringBuilder();
+
+            foreach (var character in normalized)
+            {
+                if (CharUnicodeInfo.GetUnicodeCategory(character) == UnicodeCategory.NonSpacingMark)
+                {
+                    continue;
+                }
+
+                if (char.IsLetterOrDigit(character))
+                {
+                    builder.Append(char.ToLowerInvariant(character));
+                }
+                else if (character == '_' || character == '-' || char.IsWhiteSpace(character))
+                {
+                    builder.Append('_');
+                }
+            }
+
+            return Regex.Replace(builder.ToString(), @"_+", "_").Trim('_');
         }
 
         // PUT: api/books/5/lastread

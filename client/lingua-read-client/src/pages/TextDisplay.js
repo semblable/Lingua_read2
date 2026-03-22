@@ -74,7 +74,16 @@ const parseSrtContent = (srtContent) => {
 
 // --- Styles ---
 const styles = {
-  highlightedWord: { cursor: 'pointer', padding: '0 2px', margin: '0 1px', borderRadius: '3px', transition: 'all 0.2s ease' },
+  highlightedWord: {
+    cursor: 'pointer',
+    padding: '0 2px',
+    margin: '0 1px',
+    borderRadius: '3px',
+    transition: 'all 0.2s ease',
+    userSelect: 'text',
+    WebkitUserSelect: 'text',
+    WebkitTouchCallout: 'default'
+  },
   wordStatus1: { color: '#000', backgroundColor: '#ff6666' }, // New (red)
   wordStatus2: { color: '#000', backgroundColor: '#ff9933' }, // Learning (orange)
   wordStatus3: { color: '#000', backgroundColor: '#ffdd66' }, // Familiar (yellow)

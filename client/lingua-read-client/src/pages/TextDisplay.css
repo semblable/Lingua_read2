@@ -145,6 +145,19 @@
   padding: 0;
   /* Keep padding 0 as padding is on wrapper */
   width: 100%;
+  user-select: text;
+  -webkit-user-select: text;
+  -webkit-touch-callout: default;
+}
+
+.text-content p,
+.reading-block,
+.audio-transcript-container,
+.srt-line,
+.clickable-word {
+  user-select: text;
+  -webkit-user-select: text;
+  -webkit-touch-callout: default;
 }
 
 /* Paragraph styling */

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { act } from 'react';
 import '@testing-library/jest-dom';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
@@ -45,7 +45,7 @@ jest.mock('../components/AudiobookPlayer', () => () => <div>Audio Player</div>);
 
 jest.mock('../components/TranslationPopup', () => () => null);
 
-const settingsValue = {
+const createSettingsValue = (settingOverrides = {}) => ({
   settings: {
     theme: 'dark',
     textSize: 16,
@@ -57,16 +57,17 @@ const settingsValue = {
     defaultLanguageId: 0,
     autoAdvanceToNextLesson: false,
     showProgressStats: true,
-    lineSpacing: 1.5
+    lineSpacing: 1.5,
+    ...settingOverrides
   },
   loadingSettings: false,
   errorSettings: null,
   updateSetting: jest.fn(),
   refetchSettings: jest.fn()
-};
+});
 
-const renderTextDisplay = () => render(
-  <SettingsContext.Provider value={settingsValue}>
+const renderTextDisplay = (settingOverrides = {}) => render(
+  <SettingsContext.Provider value={createSettingsValue(settingOverrides)}>
     <MemoryRouter initialEntries={['/texts/1']}>
       <Routes>
         <Route path="/texts/:textId" element={<TextDisplay />} />
@@ -76,6 +77,9 @@ const renderTextDisplay = () => render(
 );
 
 describe('TextDisplay', () => {
+  const originalMatchMedia = window.matchMedia;
+  const originalGetSelection = window.getSelection;
+
   beforeAll(() => {
     window.matchMedia = window.matchMedia || function matchMedia() {
       return {
@@ -87,6 +91,7 @@ describe('TextDisplay', () => {
   });
 
   beforeEach(() => {
+    jest.useFakeTimers();
     getText.mockResolvedValue({
       textId: 1,
       title: 'Sample Text',
@@ -110,6 +115,14 @@ describe('TextDisplay', () => {
     batchTranslateWords.mockReset();
     addTermsBatch.mockReset();
     getLanguage.mockReset();
+    translateText.mockResolvedValue({ translatedText: 'Translated selection' });
+  });
+
+  afterEach(() => {
+    jest.runOnlyPendingTimers();
+    jest.useRealTimers();
+    window.matchMedia = originalMatchMedia;
+    window.getSelection = originalGetSelection;
   });
 
   test('renders text content after load', async () => {
@@ -130,5 +143,41 @@ describe('TextDisplay', () => {
     expect(screen.getByText('Word Info')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Hello' })).toBeInTheDocument();
     expect(screen.getByText(/Untracked/i)).toBeInTheDocument();
+  });
+
+  test('mobile selectionchange translates the full selected text', async () => {
+    window.matchMedia = jest.fn().mockImplementation(() => ({
+      matches: true,
+      addEventListener: jest.fn(),
+      removeEventListener: jest.fn()
+    }));
+
+    renderTextDisplay({ autoTranslateWords: true });
+
+    await waitFor(() => expect(getText).toHaveBeenCalled());
+    const word = await screen.findByText('Hello');
+    const textContent = word.closest('.text-content');
+    expect(textContent).not.toBeNull();
+
+    const mockSelection = {
+      isCollapsed: false,
+      rangeCount: 1,
+      anchorNode: textContent,
+      focusNode: textContent,
+      toString: () => 'Hello world',
+      getRangeAt: () => ({
+        commonAncestorContainer: textContent
+      })
+    };
+    window.getSelection = jest.fn(() => mockSelection);
+
+    act(() => {
+      document.dispatchEvent(new Event('selectionchange'));
+      jest.advanceTimersByTime(200);
+    });
+
+    await waitFor(() => {
+      expect(translateText).toHaveBeenCalledWith('Hello world', 'ES', 'EN');
+    });
   });
 });

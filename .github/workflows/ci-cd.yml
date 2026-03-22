@@ -247,6 +247,7 @@ jobs:
 
             echo "Running authenticated smoke test against /api/usersettings"
             if [ -n "${LOGIN_SECRET}" ]; then
+              set +e
               login_result=$(
                 sudo docker compose exec -T -e LOGIN_SECRET="$LOGIN_SECRET" api sh -lc '
                   curl -sS -X POST http://localhost:5000/api/auth/login \
@@ -255,7 +256,10 @@ jobs:
                     -w "\n%{http_code}"
                 '
               )
+              login_exec_status=$?
+              set -e
             else
+              set +e
               login_result=$(
                 sudo docker compose exec -T api sh -lc '
                   curl -sS -X POST http://localhost:5000/api/auth/login \
@@ -264,6 +268,15 @@ jobs:
                     -w "\n%{http_code}"
                 '
               )
+              login_exec_status=$?
+              set -e
+            fi
+
+            if [ "$login_exec_status" -ne 0 ]; then
+              echo "Smoke-test login command failed with exit code $login_exec_status"
+              printf '%s\n' "$login_result"
+              sudo docker compose logs --no-color --tail=200 api || true
+              exit 1
             fi
 
             login_http_code=$(printf '%s\n' "$login_result" | tail -n1)
@@ -283,6 +296,7 @@ jobs:
               exit 1
             fi
 
+            set +e
             usersettings_result=$(
               sudo docker compose exec -T -e AUTH_TOKEN="$token" api sh -lc '
                 curl -sS http://localhost:5000/api/usersettings \
@@ -291,6 +305,14 @@ jobs:
                   -w "\n%{http_code}"
               '
             )
+            usersettings_exec_status=$?
+            set -e
+            if [ "$usersettings_exec_status" -ne 0 ]; then
+              echo "Usersettings smoke-test command failed with exit code $usersettings_exec_status"
+              printf '%s\n' "$usersettings_result"
+              sudo docker compose logs --no-color --tail=200 api || true
+              exit 1
+            fi
             usersettings_http_code=$(printf '%s\n' "$usersettings_result" | tail -n1)
             usersettings_response=$(printf '%s\n' "$usersettings_result" | sed '$d')
             if [ "$usersettings_http_code" != "200" ]; then

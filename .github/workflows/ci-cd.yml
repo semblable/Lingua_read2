@@ -205,8 +205,6 @@ jobs:
             NGINX_IMAGE_TAG=${{ needs.build_nginx.outputs.image_tag }}
             EOF
             chmod 600 .env
-            # Strip CR so Windows-style .env lines do not break X-Login-Secret comparison in the API.
-            LOGIN_SECRET=$(grep '^LOGIN_SECRET=' .env | head -n1 | cut -d= -f2- | tr -d '\r' || true)
 
             # Ensure TLS certs exist for the production Nginx config.
             # If you haven't provisioned real certs yet, generate a temporary self-signed pair.
@@ -258,19 +256,31 @@ jobs:
               exit 1
             fi
 
+            # Read the login secret from the running container so the smoke test uses
+            # the exact value the API is validating, regardless of .env quoting rules.
+            set +e
+            CONTAINER_LOGIN_SECRET=$(sudo docker exec "$api_container_id" sh -lc 'printf "%s" "${Auth__LoginSecret:-}"' | tr -d '\r')
+            container_login_secret_status=$?
+            set -e
+            if [ "$container_login_secret_status" -ne 0 ]; then
+              echo "Failed to read Auth__LoginSecret from the running api container"
+              dc logs --no-color --tail=200 api || true
+              exit 1
+            fi
+
             echo ">>> Smoke test: begin (stdout+stderr)" >&2
             echo ">>> Smoke test: begin"
 
-            if [ -n "${LOGIN_SECRET}" ]; then
-              echo "Smoke test login mode: X-Login-Secret (LOGIN_SECRET is set in .env)"
+            if [ -n "${CONTAINER_LOGIN_SECRET}" ]; then
+              echo "Smoke test login mode: X-Login-Secret (Auth__LoginSecret is set in the container)"
             else
-              echo "Smoke test login mode: X-Forwarded-User (LOGIN_SECRET empty or not in .env)"
+              echo "Smoke test login mode: X-Forwarded-User (Auth__LoginSecret empty in the container)"
             fi
             echo "Running authenticated smoke test: POST /api/auth/login then GET /api/usersettings"
             login_output_file=$(mktemp)
-            if [ -n "${LOGIN_SECRET}" ]; then
+            if [ -n "${CONTAINER_LOGIN_SECRET}" ]; then
               set +e
-              sudo docker exec -e LOGIN_SECRET="$LOGIN_SECRET" "$api_container_id" sh -lc '
+              sudo docker exec -e LOGIN_SECRET="$CONTAINER_LOGIN_SECRET" "$api_container_id" sh -lc '
                 curl -sS -X POST http://localhost:5000/api/auth/login \
                   -H "Accept: application/json" \
                   -H "X-Login-Secret: $LOGIN_SECRET" \

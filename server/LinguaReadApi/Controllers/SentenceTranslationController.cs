@@ -129,6 +129,48 @@ namespace LinguaReadApi.Controllers
             }
         }
 
+        [HttpPost("explain")]
+        public async Task<ActionResult<SentenceExplanationResponse>> ExplainSentence([FromBody] SentenceTranslationRequest request)
+        {
+            try
+            {
+                _logger.LogInformation($"Received sentence explanation request: {request.Text?.Substring(0, Math.Min(50, request.Text?.Length ?? 0))}...");
+
+                if (string.IsNullOrWhiteSpace(request.Text))
+                {
+                    _logger.LogWarning("Empty text provided for sentence explanation");
+                    return BadRequest(new { message = "Text to explain cannot be empty" });
+                }
+
+                var userId = GetUserId();
+                var translationService = await _translationServiceFactory.GetServiceForUserAsync(userId);
+
+                var explanationText = await translationService.ExplainSentenceAsync(
+                    request.Text,
+                    request.SourceLanguageCode,
+                    request.TargetLanguageCode);
+
+                if (string.IsNullOrEmpty(explanationText))
+                {
+                    _logger.LogWarning("Explanation service returned empty result");
+                    return StatusCode(500, new { message = "Explanation service returned empty result" });
+                }
+
+                return Ok(new SentenceExplanationResponse
+                {
+                    OriginalText = request.Text,
+                    ExplanationText = explanationText,
+                    SourceLanguageCode = request.SourceLanguageCode,
+                    TargetLanguageCode = request.TargetLanguageCode
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error during sentence explanation");
+                return StatusCode(500, new { message = $"Sentence explanation failed: {ex.Message}" });
+            }
+        }
+
         private Guid GetUserId()
         {
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
@@ -165,5 +207,20 @@ namespace LinguaReadApi.Controllers
 
         [JsonPropertyName("targetLanguageCode")]
         public string TargetLanguageCode { get; set; } = string.Empty; // Initialize
+    }
+
+    public class SentenceExplanationResponse
+    {
+        [JsonPropertyName("originalText")]
+        public string OriginalText { get; set; } = string.Empty;
+
+        [JsonPropertyName("explanationText")]
+        public string ExplanationText { get; set; } = string.Empty;
+
+        [JsonPropertyName("sourceLanguageCode")]
+        public string SourceLanguageCode { get; set; } = string.Empty;
+
+        [JsonPropertyName("targetLanguageCode")]
+        public string TargetLanguageCode { get; set; } = string.Empty;
     }
 } 

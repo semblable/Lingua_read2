@@ -5,6 +5,7 @@ import { FixedSizeList as List } from 'react-window';
 import {
   getText, createWord, updateWord, updateLastRead, completeLesson, getBook, // Use completeLesson instead of completeText
   translateText, translateSentence, translateFullText, updateUserSettings, // Added updateUserSettings, removed unused getUserSettings
+  explainSentence,
   batchTranslateWords, addTermsBatch, getLanguage, // Added getLanguage (Phase 3)
   getSentenceProgress, logSentenceReadActivity,
   API_URL
@@ -813,9 +814,13 @@ const SentenceModeView = React.memo(({
   sentenceAudioRepeats,
   setSentenceAudioRepeats,
   onShowTranslation,
+  onShowExplanation,
   isTranslatingSegment,
+  isExplainingSegment,
   isTranslationVisible,
-  currentSegmentTranslation
+  isExplanationVisible,
+  currentSegmentTranslation,
+  currentSegmentExplanation
 }) => {
   if (!currentSegment) {
     return <p className="p-3">No sentence available.</p>;
@@ -866,6 +871,9 @@ const SentenceModeView = React.memo(({
           <Button variant="outline-info" size="sm" onClick={onShowTranslation} disabled={isTranslatingSegment}>
             {isTranslatingSegment ? 'Translating...' : (isTranslationVisible ? 'Hide Translation' : 'Show Translation')}
           </Button>
+          <Button variant="outline-secondary" size="sm" onClick={onShowExplanation} disabled={isExplainingSegment}>
+            {isExplainingSegment ? 'Explaining...' : (isExplanationVisible ? 'Hide Explanation' : 'Explain Sentence')}
+          </Button>
         </div>
       </div>
       <Card className="sentence-mode-card shadow-sm border-0">
@@ -882,6 +890,11 @@ const SentenceModeView = React.memo(({
           {isTranslationVisible && (
             <div className="sentence-mode-translation">
               {currentSegmentTranslation || 'No translation available.'}
+            </div>
+          )}
+          {isExplanationVisible && (
+            <div className="sentence-mode-explanation">
+              {currentSegmentExplanation || 'No explanation available.'}
             </div>
           )}
         </Card.Body>
@@ -951,8 +964,11 @@ const TextDisplay = () => {
   const [isAudioPlaying, setIsAudioPlaying] = useState(false);
   const [currentSegmentIndex, setCurrentSegmentIndex] = useState(0);
   const [segmentTranslations, setSegmentTranslations] = useState({});
+  const [segmentExplanations, setSegmentExplanations] = useState({});
   const [isTranslatingSegment, setIsTranslatingSegment] = useState(false);
+  const [isExplainingSegment, setIsExplainingSegment] = useState(false);
   const [visibleTranslationIndex, setVisibleTranslationIndex] = useState(null);
+  const [visibleExplanationIndex, setVisibleExplanationIndex] = useState(null);
   const [creditedSegmentIndices, setCreditedSegmentIndices] = useState([]);
   const [sentenceProgressLoaded, setSentenceProgressLoaded] = useState(false);
   const [segmentPlaybackRequest, setSegmentPlaybackRequest] = useState(null);
@@ -1638,6 +1654,40 @@ const TextDisplay = () => {
     }
   }, [currentSentenceSegment, segmentTranslations, text?.languageCode, visibleTranslationIndex]);
 
+  const handleSegmentExplanationToggle = useCallback(async () => {
+    if (!currentSentenceSegment || !text?.languageCode) return;
+
+    if (visibleExplanationIndex === currentSentenceSegment.index) {
+      setVisibleExplanationIndex(null);
+      return;
+    }
+
+    if (segmentExplanations[currentSentenceSegment.index]) {
+      setVisibleExplanationIndex(currentSentenceSegment.index);
+      return;
+    }
+
+    setIsExplainingSegment(true);
+    try {
+      const result = await explainSentence(currentSentenceSegment.text, text.languageCode, 'EN');
+      const explanationText = result?.explanationText || 'Explanation failed.';
+      setSegmentExplanations(prev => ({
+        ...prev,
+        [currentSentenceSegment.index]: explanationText
+      }));
+      setVisibleExplanationIndex(currentSentenceSegment.index);
+    } catch (explanationErr) {
+      console.error('Sentence explanation failed:', explanationErr);
+      setSegmentExplanations(prev => ({
+        ...prev,
+        [currentSentenceSegment.index]: `Explanation failed: ${explanationErr.message}`
+      }));
+      setVisibleExplanationIndex(currentSentenceSegment.index);
+    } finally {
+      setIsExplainingSegment(false);
+    }
+  }, [currentSentenceSegment, segmentExplanations, text?.languageCode, visibleExplanationIndex]);
+
   useEffect(() => {
     if (sentenceSegments.length === 0) {
       if (currentSegmentIndex !== 0) {
@@ -1693,6 +1743,7 @@ const TextDisplay = () => {
 
     syncSentenceProgress();
     setVisibleTranslationIndex(null);
+    setVisibleExplanationIndex(null);
 
     if (isAudioLesson && currentSentenceSegment.startTime != null && currentSentenceSegment.endTime != null) {
       setCurrentSrtLineId(currentSentenceSegment.srtLineId || null);
@@ -1787,7 +1838,9 @@ const TextDisplay = () => {
         setBookmarkedIndices([]); // Reset bookmarks for new text
         setCurrentSegmentIndex(0);
         setSegmentTranslations({});
+        setSegmentExplanations({});
         setVisibleTranslationIndex(null);
+        setVisibleExplanationIndex(null);
         setCreditedSegmentIndices([]);
         setSentenceProgressLoaded(false);
         pendingSentenceCreditRef.current = new Set();
@@ -2325,9 +2378,13 @@ const TextDisplay = () => {
                   sentenceAudioRepeats={sentenceAudioRepeats}
                   setSentenceAudioRepeats={setSentenceAudioRepeats}
                   onShowTranslation={handleSegmentTranslationToggle}
+                  onShowExplanation={handleSegmentExplanationToggle}
                   isTranslatingSegment={isTranslatingSegment}
+                  isExplainingSegment={isExplainingSegment}
                   isTranslationVisible={visibleTranslationIndex === currentSentenceSegment?.index}
+                  isExplanationVisible={visibleExplanationIndex === currentSentenceSegment?.index}
                   currentSegmentTranslation={currentSentenceSegment ? segmentTranslations[currentSentenceSegment.index] : ''}
+                  currentSegmentExplanation={currentSentenceSegment ? segmentExplanations[currentSentenceSegment.index] : ''}
                 />
               ) : isAudioLesson && displayMode === 'audio' ? (
                 <AudioTranscriptView

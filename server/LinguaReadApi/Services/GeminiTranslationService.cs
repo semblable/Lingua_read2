@@ -15,6 +15,7 @@ namespace LinguaReadApi.Services
     {
         Task<string> TranslateSentenceAsync(string text, string sourceLanguage, string targetLanguage);
     Task<string> TranslateFullTextAsync(string text, string sourceLanguage, string targetLanguage);
+    Task<string> ExplainSentenceAsync(string text, string sourceLanguage, string targetLanguage);
     }
 
     public class GeminiTranslationService : ISentenceTranslationService
@@ -49,6 +50,11 @@ namespace LinguaReadApi.Services
         public Task<string> TranslateFullTextAsync(string text, string sourceLanguage, string targetLanguage)
         {
             return TranslateAsync(text, sourceLanguage, targetLanguage, includeSentenceTags: true);
+        }
+
+        public Task<string> ExplainSentenceAsync(string text, string sourceLanguage, string targetLanguage)
+        {
+            return ExplainAsync(text, sourceLanguage, targetLanguage);
         }
 
         private async Task<string> TranslateAsync(string text, string sourceLanguage, string targetLanguage, bool includeSentenceTags)
@@ -214,6 +220,136 @@ Text:
             {
                 _logger.LogError(ex, "Error during translation");
                 return $"Translation error: {ex.Message}";
+            }
+        }
+
+        private async Task<string> ExplainAsync(string text, string sourceLanguage, string targetLanguage)
+        {
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                _logger.LogWarning("Empty text provided for sentence explanation");
+                return string.Empty;
+            }
+
+            try
+            {
+                string explanationLanguage = targetLanguage;
+
+                if (!string.IsNullOrEmpty(sourceLanguage))
+                {
+                    var allLanguages = await _languageService.GetAllLanguagesAsync();
+                    var sourceLanguageConfig = allLanguages.FirstOrDefault(l => l.Code.Equals(sourceLanguage, StringComparison.OrdinalIgnoreCase));
+
+                    if (sourceLanguageConfig != null && !string.IsNullOrEmpty(sourceLanguageConfig.GeminiTargetCode))
+                    {
+                        explanationLanguage = sourceLanguageConfig.GeminiTargetCode;
+                    }
+                }
+
+                string prompt = $@"Explain the following sentence for a language learner.
+
+Sentence:
+{text}
+
+Source language: {sourceLanguage}
+Explanation language: {explanationLanguage}
+
+Strict instructions:
+1. Return ONLY plain text in {explanationLanguage}.
+2. Be concise and useful for a learner.
+3. Use exactly these short sections:
+Grammar:
+Nuance:
+Culture/Context:
+Natural phrasing:
+4. If there is no meaningful cultural context, say ""None"".
+5. Keep the whole answer brief, practical, and easy to scan.
+6. Do not use XML/HTML tags, markdown fences, or extra preamble.";
+
+                var requestPayload = new GeminiRequest
+                {
+                    Contents = new[]
+                    {
+                        new Content
+                        {
+                            Parts = new[]
+                            {
+                                new Part { Text = prompt }
+                            }
+                        }
+                    },
+                    GenerationConfig = new GenerationConfig
+                    {
+                        Temperature = 0.3,
+                        TopK = 32,
+                        TopP = 1.0,
+                        MaxOutputTokens = 65535,
+                        ResponseMimeType = "text/plain"
+                    }
+                };
+
+                var options = new JsonSerializerOptions
+                {
+                    PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                    WriteIndented = false
+                };
+
+                string jsonPayload = JsonSerializer.Serialize(requestPayload, options);
+                var modelsToTry = new List<string> { _primaryModel };
+                if (!string.Equals(_fallbackModel, _primaryModel, StringComparison.OrdinalIgnoreCase))
+                {
+                    modelsToTry.Add(_fallbackModel);
+                }
+
+                HttpStatusCode? lastStatus = null;
+                foreach (var model in modelsToTry)
+                {
+                    const int maxAttempts = 3;
+                    for (int attempt = 1; attempt <= maxAttempts; attempt++)
+                    {
+                        var endpoint = $"{_baseUrl}/models/{model}:generateContent?key={_apiKey}";
+                        var content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
+                        var response = await _httpClient.PostAsync(endpoint, content);
+                        var responseContent = await response.Content.ReadAsStringAsync();
+
+                        if (!response.IsSuccessStatusCode)
+                        {
+                            lastStatus = response.StatusCode;
+                            var isRetryable = response.StatusCode == HttpStatusCode.ServiceUnavailable ||
+                                              response.StatusCode == HttpStatusCode.TooManyRequests;
+
+                            _logger.LogWarning("Gemini explanation API error (model={Model}, attempt={Attempt}/{Max}): {StatusCode}. Retryable={Retryable}. Response={Response}",
+                                model, attempt, maxAttempts, response.StatusCode, isRetryable, responseContent);
+
+                            if (isRetryable && attempt < maxAttempts)
+                            {
+                                var delayMs = (int)Math.Pow(2, attempt - 1) * 1000;
+                                await Task.Delay(delayMs);
+                                continue;
+                            }
+
+                            break;
+                        }
+
+                        var geminiResponse = JsonSerializer.Deserialize<GeminiResponse>(responseContent, options);
+                        if (geminiResponse?.Candidates != null &&
+                            geminiResponse.Candidates.Length > 0 &&
+                            geminiResponse.Candidates[0].Content?.Parts != null &&
+                            geminiResponse.Candidates[0].Content.Parts.Length > 0)
+                        {
+                            return geminiResponse.Candidates[0].Content.Parts[0].Text ?? string.Empty;
+                        }
+
+                        return "Explanation failed: Could not extract result";
+                    }
+                }
+
+                return $"Explanation error: {lastStatus}";
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error during sentence explanation");
+                return $"Explanation error: {ex.Message}";
             }
         }
     }

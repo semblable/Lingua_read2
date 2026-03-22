@@ -71,6 +71,11 @@ namespace LinguaReadApi.Services
             return TranslateAsync(text, sourceLanguage, targetLanguage, userId, includeSentenceTags: true);
         }
 
+        public Task<string> ExplainSentenceAsync(string text, string sourceLanguage, string targetLanguage, Guid userId)
+        {
+            return ExplainAsync(text, sourceLanguage, targetLanguage, userId);
+        }
+
         private async Task<string> TranslateAsync(string text, string sourceLanguage, string targetLanguage, Guid userId, bool includeSentenceTags)
         {
             if (string.IsNullOrWhiteSpace(text))
@@ -138,6 +143,140 @@ namespace LinguaReadApi.Services
             {
                 _logger.LogError(ex, "Error during OpenRouter translation");
                 return $"Translation error: {ex.Message}";
+            }
+        }
+
+        private async Task<string> ExplainAsync(string text, string sourceLanguage, string targetLanguage, Guid userId)
+        {
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                _logger.LogWarning("Empty text provided for sentence explanation");
+                return string.Empty;
+            }
+
+            try
+            {
+                var userSettings = await _context.UserSettings.FirstOrDefaultAsync(s => s.UserId == userId);
+                if (userSettings == null || string.IsNullOrWhiteSpace(userSettings.OpenRouterApiKey))
+                {
+                    _logger.LogWarning("OpenRouter API key not configured for user {UserId}", userId);
+                    return "Explanation error: OpenRouter API key not configured";
+                }
+
+                var apiKey = userSettings.OpenRouterApiKey;
+                var model = userSettings.OpenRouterModel;
+                string explanationLanguage = targetLanguage;
+
+                if (!string.IsNullOrEmpty(sourceLanguage))
+                {
+                    var allLanguages = await _languageService.GetAllLanguagesAsync();
+                    var sourceLanguageConfig = allLanguages.FirstOrDefault(l => l.Code.Equals(sourceLanguage, StringComparison.OrdinalIgnoreCase));
+                    if (sourceLanguageConfig != null && !string.IsNullOrEmpty(sourceLanguageConfig.GeminiTargetCode))
+                    {
+                        explanationLanguage = sourceLanguageConfig.GeminiTargetCode;
+                    }
+                }
+
+                string prompt = $@"Explain the following sentence for a language learner.
+
+Sentence:
+{text}
+
+Source language: {sourceLanguage}
+Explanation language: {explanationLanguage}
+
+Strict instructions:
+1. Return ONLY plain text in {explanationLanguage}.
+2. Be concise and useful for a learner.
+3. Use exactly these short sections:
+Grammar:
+Nuance:
+Culture/Context:
+Natural phrasing:
+4. If there is no meaningful cultural context, say ""None"".
+5. Keep the whole answer brief, practical, and easy to scan.
+6. Do not use XML/HTML tags, markdown fences, or extra preamble.";
+
+                var requestPayload = new OpenRouterRequest
+                {
+                    Model = model,
+                    Messages = new[]
+                    {
+                        new OpenRouterMessage
+                        {
+                            Role = "user",
+                            Content = prompt
+                        }
+                    },
+                    Temperature = 0.3,
+                    MaxTokens = 65535,
+                    TopP = 1.0
+                };
+
+                var options = new JsonSerializerOptions
+                {
+                    PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                    WriteIndented = false
+                };
+
+                string jsonPayload = JsonSerializer.Serialize(requestPayload, options);
+                const int maxAttempts = 3;
+                HttpStatusCode? lastStatus = null;
+
+                for (int attempt = 1; attempt <= maxAttempts; attempt++)
+                {
+                    var request = new HttpRequestMessage(HttpMethod.Post, BaseUrl);
+                    request.Headers.Add("Authorization", $"Bearer {apiKey}");
+                    request.Headers.Add("HTTP-Referer", "https://lingua-read.app");
+                    request.Headers.Add("X-Title", "Lingua-Read");
+                    request.Content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
+
+                    var response = await _httpClient.SendAsync(request);
+                    var responseContent = await response.Content.ReadAsStringAsync();
+
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        lastStatus = response.StatusCode;
+                        var isRetryable = response.StatusCode == HttpStatusCode.ServiceUnavailable ||
+                                          response.StatusCode == HttpStatusCode.TooManyRequests;
+
+                        if (isRetryable && attempt < maxAttempts)
+                        {
+                            var delayMs = (int)Math.Pow(2, attempt - 1) * 1000;
+                            await Task.Delay(delayMs);
+                            continue;
+                        }
+
+                        return $"Explanation error: {response.StatusCode}";
+                    }
+
+                    var openRouterResponse = JsonSerializer.Deserialize<OpenRouterResponse>(responseContent, options);
+                    if (openRouterResponse?.Error != null)
+                    {
+                        return $"Explanation error: {openRouterResponse.Error.Message}";
+                    }
+
+                    if (openRouterResponse?.Choices != null &&
+                        openRouterResponse.Choices.Length > 0 &&
+                        openRouterResponse.Choices[0].Message?.Content != null)
+                    {
+                        return openRouterResponse.Choices[0].Message!.Content;
+                    }
+
+                    return "Explanation failed: Could not extract result";
+                }
+
+                return $"Explanation error: {lastStatus}";
+            }
+            catch (TaskCanceledException ex) when (ex.InnerException is TimeoutException || ex.CancellationToken.IsCancellationRequested)
+            {
+                _logger.LogError(ex, "OpenRouter sentence explanation timed out after {Timeout}s", RequestTimeout.TotalSeconds);
+                return "Explanation error: Request timed out.";
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error during OpenRouter sentence explanation");
+                return $"Explanation error: {ex.Message}";
             }
         }
 

@@ -779,6 +779,27 @@ export const translateSentence = async (text, sourceLanguageCode, targetLanguage
   }
 };
 
+export const explainSentence = async (text, sourceLanguageCode, targetLanguageCode) => {
+  try {
+    const payload = {
+      text,
+      sourceLanguageCode,
+      targetLanguageCode
+    };
+
+    return await fetchApi('/sentencetranslation/explain', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json; charset=utf-8'
+      },
+      body: JSON.stringify(payload)
+    });
+  } catch (error) {
+    console.error('Sentence explanation failed:', error);
+    throw error;
+  }
+};
+
 export const translateFullText = async (text, sourceLanguageCode, targetLanguageCode) => {
   try {
     console.log('Initiating full text translation request');

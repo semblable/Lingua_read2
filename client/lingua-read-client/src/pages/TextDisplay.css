@@ -269,6 +269,15 @@
   white-space: pre-wrap;
 }
 
+.sentence-mode-explanation {
+  margin-top: var(--space-md);
+  padding-top: var(--space-sm);
+  border-top: 1px solid var(--theme-border-color, #e9ecef);
+  color: var(--theme-text-color, inherit);
+  white-space: pre-wrap;
+  line-height: 1.65;
+}
+
 /* Media queries for responsive design */
 @media (max-width: 768px) {
   .lesson-page {

@@ -14,6 +14,7 @@ import {
   getBook,
   translateText,
   translateSentence,
+  explainSentence,
   translateFullText,
   updateUserSettings,
   batchTranslateWords,
@@ -32,6 +33,7 @@ jest.mock('../utils/api', () => ({
   getBook: jest.fn(),
   translateText: jest.fn(),
   translateSentence: jest.fn(),
+  explainSentence: jest.fn(),
   translateFullText: jest.fn(),
   updateUserSettings: jest.fn(),
   batchTranslateWords: jest.fn(),
@@ -119,6 +121,7 @@ describe('TextDisplay', () => {
     getBook.mockReset();
     translateText.mockReset();
     translateSentence.mockReset();
+    explainSentence.mockReset();
     translateFullText.mockReset();
     updateUserSettings.mockReset();
     batchTranslateWords.mockReset();
@@ -129,6 +132,7 @@ describe('TextDisplay', () => {
     toggleBookmark.mockReset();
     translateText.mockResolvedValue({ translatedText: 'Translated selection' });
     translateSentence.mockResolvedValue({ translatedText: 'Sentence translation' });
+    explainSentence.mockResolvedValue({ explanationText: 'Grammar: Greeting.\nNuance: Friendly.\nCulture/Context: None.\nNatural phrasing: Common opener.' });
     getSentenceProgress.mockResolvedValue({
       textId: 1,
       creditedSegmentIndices: [],
@@ -277,5 +281,29 @@ describe('TextDisplay', () => {
       expect(translateSentence).toHaveBeenCalledWith('Hello world.', 'ES', 'EN');
     });
     expect(await screen.findByText('Sentence translation')).toBeInTheDocument();
+  });
+
+  test('sentence mode shows explanation for current sentence', async () => {
+    getText.mockResolvedValueOnce({
+      textId: 1,
+      title: 'Sample Text',
+      content: 'Hello world.',
+      languageId: null,
+      languageCode: 'ES',
+      languageName: 'Spanish',
+      isAudioLesson: false,
+      words: [],
+      bookId: null
+    });
+
+    renderTextDisplay({ sentenceMode: true });
+
+    await waitFor(() => expect(getText).toHaveBeenCalled());
+    fireEvent.click(await screen.findByRole('button', { name: /Explain Sentence/i }));
+
+    await waitFor(() => {
+      expect(explainSentence).toHaveBeenCalledWith('Hello world.', 'ES', 'EN');
+    });
+    expect(await screen.findByText(/Grammar: Greeting\./i)).toBeInTheDocument();
   });
 });

@@ -6,6 +6,7 @@ using System;
 using System.Security.Claims;
 using Microsoft.Extensions.Logging;
 using LinguaReadApi.Services;
+using LinguaReadApi.Utilities;
 
 namespace LinguaReadApi.Controllers
 {
@@ -58,6 +59,9 @@ namespace LinguaReadApi.Controllers
                     _logger.LogWarning("Translation service returned empty result");
                     return StatusCode(500, new { message = "Translation service returned empty result" });
                 }
+
+                // Strip LLM paired-tag format so clients (e.g. sentence mode) show plain translation only.
+                translatedText = PairedTranslationTagExtractor.ExtractTranslatedTextOnly(translatedText);
 
                 _logger.LogInformation($"Translation successful, result length: {translatedText.Length}");
                 

@@ -14,6 +14,7 @@ import AudiobookPlayer from '../components/AudiobookPlayer'; // Import Audiobook
 import './TextDisplay.css';
 import { SettingsContext } from '../contexts/SettingsContext'; // Import SettingsContext
 import { getBookmarkedSentences, toggleBookmark } from '../utils/bookmarks'; // Import bookmark utils
+import { extractTranslatedTextFromPairedTags } from '../utils/translationTags';
 
 // --- SRT Parsing Utilities ---
 const parseSrtTime = (timeString) => {
@@ -1617,7 +1618,9 @@ const TextDisplay = () => {
     setIsTranslatingSegment(true);
     try {
       const result = await translateSentence(currentSentenceSegment.text, text.languageCode, 'EN');
-      const translatedText = result?.translatedText || 'Translation failed.';
+      const translatedText = extractTranslatedTextFromPairedTags(
+        result?.translatedText || 'Translation failed.'
+      );
       setSegmentTranslations(prev => ({
         ...prev,
         [currentSentenceSegment.index]: translatedText

@@ -249,6 +249,7 @@ namespace LinguaReadApi.Services
 3. **CRITICAL:** Your response MUST contain ONLY the sequence of `<o s=""N"">...</o><t s=""N"">...</t>` pairs. Do NOT include ANY introductory text, concluding remarks, explanations, apologies, code fences, or markdown.
 4. Do NOT escape `<` or `>` and do NOT wrap output in any container tags.
 5. If the input has only one sentence, still output exactly one `<o>` + `<t>` pair.
+6. **Natural, idiomatic translation:** Convey meaning and tone in {targetLanguage}, not word-for-word glosses. For idioms, metaphors, and fixed expressions, use the natural equivalent in the target language. Avoid literal calques that sound wrong or shift meaning (e.g. Portuguese ""ganhar o mundo"" in culture/media contexts suggests global breakthrough or worldwide impact—prefer natural English such as ""take the world by storm"", ""make waves internationally"", or ""break through globally""; do not use ""conquer the world"" unless the source clearly implies conquest).
 
 Example Input Text:
 Hello world. How are you?

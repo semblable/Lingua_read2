@@ -48,6 +48,7 @@ services:
     volumes:
       - api_audio_lessons:/app/wwwroot/audio_lessons
       - api_audiobooks:/app/wwwroot/audiobooks
+      - api_epub_assets:/app/wwwroot/epub_assets
     expose:
       - "5000"
     healthcheck:
@@ -75,3 +76,4 @@ volumes:
   db_data:
   api_audio_lessons:
   api_audiobooks:
+  api_epub_assets:

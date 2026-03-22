@@ -33,7 +33,7 @@ namespace LinguaReadApi.Services
                 var options = _optionsMonitor.CurrentValue;
                 if (!options.WeeklyReportEnabled)
                 {
-                    _logger.LogDebug("Discord weekly reporting is disabled.");
+                    _logger.LogDebug("Discord weekly reporting is disabled (Discord:WeeklyReportEnabled=false).");
                     await Task.Delay(DisabledPollInterval, stoppingToken);
                     continue;
                 }

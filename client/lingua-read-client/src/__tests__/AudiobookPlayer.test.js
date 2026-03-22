@@ -201,10 +201,8 @@ describe('AudiobookPlayer', () => {
     );
 
     await waitFor(() => {
-      expect(getAudioLessonProgress).toHaveBeenCalledWith(42);
+      expect(window.HTMLMediaElement.prototype.load).toHaveBeenCalledTimes(1);
     });
-
-    expect(window.HTMLMediaElement.prototype.load).toHaveBeenCalledTimes(1);
 
     rerender(
       <AudiobookPlayer

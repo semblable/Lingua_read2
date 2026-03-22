@@ -72,9 +72,15 @@ jobs:
   build_api:
     runs-on: ubuntu-latest
     needs: [ ci_dotnet ]
+    outputs:
+      image_tag: ${{ steps.image_tag.outputs.value }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Compute API image tag
+        id: image_tag
+        run: echo "value=sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -101,7 +107,9 @@ jobs:
           context: ./server/LinguaReadApi
           file: ./server/LinguaReadApi/Dockerfile
           push: true
-          tags: ${{ steps.meta_api.outputs.tags }}
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_API }}:${{ steps.image_tag.outputs.value }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_API }}:latest
           labels: ${{ steps.meta_api.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -109,9 +117,15 @@ jobs:
   build_nginx:
     runs-on: ubuntu-latest
     needs: [ ci_client ]
+    outputs:
+      image_tag: ${{ steps.image_tag.outputs.value }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Compute Nginx image tag
+        id: image_tag
+        run: echo "value=sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -138,7 +152,9 @@ jobs:
           context: ./client/lingua-read-client
           file: ./client/lingua-read-client/Dockerfile
           push: true
-          tags: ${{ steps.meta_nginx.outputs.tags }}
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NGINX }}:${{ steps.image_tag.outputs.value }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NGINX }}:latest
           labels: ${{ steps.meta_nginx.outputs.labels }}
           cache-from: |
             type=gha
@@ -179,7 +195,12 @@ jobs:
             cat > .env <<'EOF'
             ${{ secrets.PRODUCTION_ENV }}
             EOF
+            cat >> .env <<'EOF'
+            API_IMAGE_TAG=${{ needs.build_api.outputs.image_tag }}
+            NGINX_IMAGE_TAG=${{ needs.build_nginx.outputs.image_tag }}
+            EOF
             chmod 600 .env
+            LOGIN_SECRET=$(grep '^LOGIN_SECRET=' .env | head -n1 | cut -d= -f2- || true)
 
             # Ensure TLS certs exist for the production Nginx config.
             # If you haven't provisioned real certs yet, generate a temporary self-signed pair.
@@ -200,8 +221,8 @@ jobs:
             # Use sudo because many hosts restrict /var/run/docker.sock to root/docker group.
             echo "${{ secrets.GHCR_PAT }}" | sudo docker login ghcr.io -u "${{ secrets.GHCR_USERNAME }}" --password-stdin
 
-            sudo docker compose -f docker-compose.yml -f docker-compose.prod.yml pull
-            sudo docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+            sudo docker compose -f docker-compose.yml -f docker-compose.prod.yml pull api nginx
+            sudo docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --force-recreate api
 
             # Health check (inside the api container; Nginx is Basic-Auth protected).
             # The API may take time to start (DB readiness + migrations). Retry and dump logs on failure.
@@ -217,11 +238,29 @@ jobs:
 
             if [ "$ok" = "yes" ]; then
               echo "Health check OK"
-              exit 0
+            else
+              echo "Health check FAILED; dumping status/logs"
+              sudo docker compose ps
+              sudo docker compose logs --no-color --tail=200 api || true
+              exit 1
             fi
 
-            echo "Health check FAILED; dumping status/logs"
-            sudo docker compose ps
-            sudo docker compose logs --no-color --tail=200 api || true
-            exit 1
+            echo "Running authenticated smoke test against /api/usersettings"
+            if [ -n "${LOGIN_SECRET}" ]; then
+              login_response=$(sudo docker compose exec -T api sh -lc "curl -fsS -X POST http://localhost:5000/api/auth/login -H 'Accept: application/json' -H 'X-Login-Secret: ${LOGIN_SECRET}'")
+            else
+              login_response=$(sudo docker compose exec -T api sh -lc "curl -fsS -X POST http://localhost:5000/api/auth/login -H 'Accept: application/json' -H 'X-Forwarded-User: deploy-smoke-test'")
+            fi
+            token=$(printf '%s' "$login_response" | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')
+            if [ -z "$token" ]; then
+              echo "Failed to obtain auth token during smoke test"
+              printf '%s\n' "$login_response"
+              sudo docker compose logs --no-color --tail=200 api || true
+              exit 1
+            fi
+
+            sudo docker compose exec -T api sh -lc "curl -fsS http://localhost:5000/api/usersettings -H 'Accept: application/json' -H 'Authorization: Bearer ${token}' >/dev/null"
+            echo "Usersettings smoke test OK"
+
+            sudo docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --force-recreate nginx
 

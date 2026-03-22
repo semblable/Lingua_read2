@@ -762,12 +762,49 @@ namespace LinguaReadApi.Controllers
                 return;
             }
 
-            keys.Add(normalized);
-
-            var withoutCommonSuffix = Regex.Replace(normalized, @"(?:_|-)?(?:epub|book|novel)$", string.Empty).Trim('_', '-');
-            if (!string.IsNullOrWhiteSpace(withoutCommonSuffix))
+            foreach (var variant in GetArtifactKeyVariants(normalized))
             {
-                keys.Add(withoutCommonSuffix);
+                keys.Add(variant);
+            }
+        }
+
+        private static IEnumerable<string> GetArtifactKeyVariants(string normalized)
+        {
+            var pending = new Queue<string>();
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+
+            pending.Enqueue(normalized);
+
+            while (pending.Count > 0)
+            {
+                var current = pending.Dequeue().Trim('_', '-');
+                if (string.IsNullOrWhiteSpace(current) || !seen.Add(current))
+                {
+                    continue;
+                }
+
+                yield return current;
+
+                var withoutTrailingSuffix = Regex.Replace(current, @"(?:_|-)(?:\d+|[a-f0-9]{6,}|part\d+|page\d+|copy)$", string.Empty).Trim('_', '-');
+                if (!string.IsNullOrWhiteSpace(withoutTrailingSuffix) && !string.Equals(withoutTrailingSuffix, current, StringComparison.Ordinal))
+                {
+                    pending.Enqueue(withoutTrailingSuffix);
+                }
+
+                var truncatedAfterFormatToken = Regex.Replace(
+                    current,
+                    @"^(.+?_(?:epub|pdf|mobi|azw3))(?:_.+)$",
+                    "$1");
+                if (!string.IsNullOrWhiteSpace(truncatedAfterFormatToken) && !string.Equals(truncatedAfterFormatToken, current, StringComparison.Ordinal))
+                {
+                    pending.Enqueue(truncatedAfterFormatToken);
+                }
+
+                var withoutCommonSuffix = Regex.Replace(current, @"(?:_|-)?(?:epub|pdf|mobi|azw3|book|novel)$", string.Empty).Trim('_', '-');
+                if (!string.IsNullOrWhiteSpace(withoutCommonSuffix) && !string.Equals(withoutCommonSuffix, current, StringComparison.Ordinal))
+                {
+                    pending.Enqueue(withoutCommonSuffix);
+                }
             }
         }
 
@@ -818,9 +855,45 @@ namespace LinguaReadApi.Controllers
                 return true;
             }
 
+            if (LooksLikeFilenameArtifact(normalizedLine))
+            {
+                return true;
+            }
+
             return artifactKeys.Any(key =>
                 normalizedLine == key ||
                 Regex.IsMatch(normalizedLine, $"^{Regex.Escape(key)}(?:[_-]?\\d+)?$"));
+        }
+
+        private static bool LooksLikeFilenameArtifact(string normalizedLine)
+        {
+            if (!normalizedLine.Contains('_'))
+            {
+                return false;
+            }
+
+            var parts = normalizedLine
+                .Split('_', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+            if (parts.Length < 3)
+            {
+                return false;
+            }
+
+            var hasFormatMarker = parts.Any(part =>
+                part == "epub" ||
+                part == "pdf" ||
+                part == "mobi" ||
+                part == "azw3");
+
+            if (!hasFormatMarker)
+            {
+                return false;
+            }
+
+            return parts.All(part =>
+                part.All(char.IsLetterOrDigit) &&
+                part.Length <= 24);
         }
 
         private static string NormalizeArtifactKey(string? value)

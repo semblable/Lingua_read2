@@ -147,7 +147,8 @@
 }
 
 .reader-main-surface-inner-modern {
-  max-width: 980px;
+  width: 100%;
+  max-width: calc(var(--reader-content-max-width, 740px) + 3rem);
   margin: 0 auto;
   min-height: 100%;
   padding: 1.25rem 1.5rem 2rem;
@@ -406,6 +407,9 @@
 
 .sentence-mode-card {
   background: var(--theme-surface-bg, #fff);
+  width: 100%;
+  max-width: calc(var(--reader-content-max-width, 740px) + 2rem);
+  margin: 0 auto;
 }
 
 .sentence-mode-text {

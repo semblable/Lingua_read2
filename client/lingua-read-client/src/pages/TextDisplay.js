@@ -960,7 +960,8 @@ const TextDisplay = () => {
   const suppressWordClickUntilRef = useRef(0);
   const selectableWordTouchStartRef = useRef(0);
   const pendingSentenceCreditRef = useRef(new Set());
-  const sentenceAudioRepeatsRef = useRef(sentenceAudioRepeats);
+  // Initialize from globalSettings (sentenceAudioRepeats const is declared later — avoid TDZ)
+  const sentenceAudioRepeatsRef = useRef(globalSettings.sentenceAudioRepeats || 1);
   // --- End State Declarations ---
 
   // Create refs for values used in handleAudioTimeUpdate to keep the callback stable
@@ -995,9 +996,6 @@ const TextDisplay = () => {
     console.log('[TextDisplay] globalSettings.lineSpacing updated:', globalSettings.lineSpacing);
   }, [globalSettings.lineSpacing]);
 
-  useEffect(() => {
-    sentenceAudioRepeatsRef.current = sentenceAudioRepeats;
-  }, [sentenceAudioRepeats]);
   // --- End Effects ---
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -1028,6 +1026,10 @@ const TextDisplay = () => {
 
   const isSentenceMode = globalSettings.sentenceMode;
   const sentenceAudioRepeats = globalSettings.sentenceAudioRepeats || 1;
+
+  useEffect(() => {
+    sentenceAudioRepeatsRef.current = sentenceAudioRepeats;
+  }, [sentenceAudioRepeats]);
 
   const hasActiveTextSelection = useCallback(() => {
     const selection = window.getSelection();

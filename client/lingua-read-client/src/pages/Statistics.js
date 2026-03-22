@@ -477,12 +477,18 @@ const Statistics = () => {
 
   // Get language statistics safely
   // Combine all language data sources to get a unique list of languages
-  const allLanguageStats = [
+  const rawLanguageStats = [
     ...(Array.isArray(stats?.LanguageStatistics) ? stats.LanguageStatistics : []),
     ...(Array.isArray(stats?.languageStatistics) ? stats.languageStatistics : []),
     ...(Array.isArray(readingActivity?.ActivityByLanguage) ? readingActivity.ActivityByLanguage : []),
     ...(Array.isArray(listeningActivity?.ListeningByLanguage) ? listeningActivity.ListeningByLanguage : [])
   ];
+
+  // Drop invalid/orphan activity buckets (LanguageId 0); server also filters these
+  const allLanguageStats = rawLanguageStats.filter((langStat) => {
+    const id = langStat.LanguageId ?? langStat.languageId;
+    return id !== 0 && id !== '0';
+  });
 
   const uniqueLanguages = allLanguageStats.reduce((acc, langStat) => {
     const langId = langStat.LanguageId || langStat.languageId;

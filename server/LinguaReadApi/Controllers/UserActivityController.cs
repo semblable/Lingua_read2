@@ -459,7 +459,6 @@ public async Task<ActionResult<ReadingStatsDto>> GetReadingStats([FromQuery] str
         .Where(ua => ua.UserId == userId &&
                      ua.Timestamp >= startDate &&
                      (ua.ActivityType == "Reading" || ua.ActivityType == "ManualReading" || ua.ActivityType == "TextCompleted")) // Include relevant types
-        .Include(ua => ua.Language) // Include Language for name
         .ToListAsync();
 
     var stats = new ReadingStatsDto();
@@ -469,14 +468,22 @@ public async Task<ActionResult<ReadingStatsDto>> GetReadingStats([FromQuery] str
         .GroupBy(ua => ua.Timestamp.Date)
         .ToDictionary(g => g.Key.ToString("yyyy-MM-dd"), g => g.Sum(ua => ua.WordCount));
 
+    var readingLangIds = readingActivities.Select(ua => ua.LanguageId).Distinct().ToList();
+    var readingLanguageNamesById = readingLangIds.Count == 0
+        ? new Dictionary<int, string>()
+        : await _context.Languages.AsNoTracking()
+            .Where(l => readingLangIds.Contains(l.LanguageId))
+            .ToDictionaryAsync(l => l.LanguageId, l => l.Name);
+
     stats.ActivityByLanguage = readingActivities
-        .GroupBy(ua => ua.Language) // Group by Language entity
+        .GroupBy(ua => ua.LanguageId)
         .Select(g => new LanguageReadingStat
         {
-            LanguageId = g.Key?.LanguageId ?? 0,
-            LanguageName = g.Key?.Name ?? "Unknown",
+            LanguageId = g.Key,
+            LanguageName = readingLanguageNamesById.TryGetValue(g.Key, out var n) ? n : "Unknown",
             TotalWords = g.Sum(ua => ua.WordCount)
         })
+        .Where(ls => ls.LanguageId != 0)
         .OrderBy(ls => ls.LanguageName)
         .ToList();
 
@@ -493,7 +500,6 @@ public async Task<ActionResult<ListeningStatsDto>> GetListeningStats([FromQuery]
         .Where(ua => ua.UserId == userId &&
                      ua.Timestamp >= startDate &&
                      (ua.ActivityType == "Listening" || ua.ActivityType == "ManualListening")) // Include relevant types
-        .Include(ua => ua.Language) // Include Language for name
         .ToListAsync();
 
     var stats = new ListeningStatsDto();
@@ -505,15 +511,22 @@ public async Task<ActionResult<ListeningStatsDto>> GetListeningStats([FromQuery]
         // Fix: Handle potential null values in Sum
         .ToDictionary(g => g.Key.ToString("yyyy-MM-dd"), g => g.Sum(ua => ua.ListeningDurationSeconds ?? 0));
 
+    var listeningLangIds = listeningActivities.Select(ua => ua.LanguageId).Distinct().ToList();
+    var listeningLanguageNamesById = listeningLangIds.Count == 0
+        ? new Dictionary<int, string>()
+        : await _context.Languages.AsNoTracking()
+            .Where(l => listeningLangIds.Contains(l.LanguageId))
+            .ToDictionaryAsync(l => l.LanguageId, l => l.Name);
+
     stats.ListeningByLanguage = listeningActivities
-        .GroupBy(ua => ua.Language) // Group by Language entity
+        .GroupBy(ua => ua.LanguageId)
         .Select(g => new LanguageListeningStat
         {
-            LanguageId = g.Key?.LanguageId ?? 0,
-            LanguageName = g.Key?.Name ?? "Unknown",
-            // Fix: Handle potential null values in Sum
+            LanguageId = g.Key,
+            LanguageName = listeningLanguageNamesById.TryGetValue(g.Key, out var n) ? n : "Unknown",
             TotalSeconds = g.Sum(ua => ua.ListeningDurationSeconds ?? 0)
         })
+        .Where(ls => ls.LanguageId != 0)
         .OrderBy(ls => ls.LanguageName)
         .ToList();
 

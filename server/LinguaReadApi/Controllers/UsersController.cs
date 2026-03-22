@@ -71,17 +71,13 @@ namespace LinguaReadApi.Controllers
                 .Union(books.Select(b => b.LanguageId))
                 .Distinct()
                 .ToList();
-                
-            // We need to fetch language names for IDs that might not be in userLangStats (which included Language)
-            // Ideally we'd have a separate dictionary of LanguageId -> LanguageName, but let's try to get it from available sources
-            // or fetch missing ones. For now, rely on what we have or "Unknown" if missing (should be rare/impossible if FKs exist)
-            
-            // To be safe, let's just fetch all languages for the IDs we have if we think we might miss some names
-            // But userLangStats.Include(l => l.Language) covers most.
-            // If a user has words but no language stats entry (rare?), we might miss the name.
-            // Let's grab names from books or handle gracefully on frontend or just do a quick lookup if needed.
-            // For simplicity, let's use the sources we have.
-            
+
+            // Resolve names for any language id (e.g. words exist but no ULS row and no books yet)
+            var languageNamesById = await _context.Languages
+                .AsNoTracking()
+                .Where(l => allLanguageIds.Contains(l.LanguageId))
+                .ToDictionaryAsync(l => l.LanguageId, l => l.Name);
+
             var languageStats = new List<LanguageStatisticsDto>();
             
             foreach(var langId in allLanguageIds)
@@ -100,7 +96,11 @@ namespace LinguaReadApi.Controllers
                     {
                         langName = book.Language.Name;
                     }
-                    // Could also fetch from DB if really needed, but let's assume one of these covers it or "Unknown" is acceptable fallback
+                }
+
+                if (langName == "Unknown" && languageNamesById.TryGetValue(langId, out var nameFromDb))
+                {
+                    langName = nameFromDb;
                 }
 
                 // Get word stats

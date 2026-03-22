@@ -38,7 +38,7 @@ services:
       Jwt__ExpiryInHours: ${JWT_EXPIRY_HOURS:-2160}
       DeepL__ApiKey: ${DEEPL_API_KEY}
       Gemini__ApiKey: ${GEMINI_API_KEY}
-      Auth__LoginSecret: ${LOGIN_SECRET}
+      Auth__LoginSecret: ${LOGIN_SECRET:-}
       Cors__AllowedOrigins: ${CORS_ALLOWED_ORIGINS}
       Discord__WeeklyReportEnabled: ${DISCORD_WEEKLY_REPORT_ENABLED:-false}
       Discord__WeeklyReportDayOfWeek: ${DISCORD_WEEKLY_REPORT_DAY:-Monday}

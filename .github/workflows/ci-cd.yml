@@ -251,7 +251,7 @@ jobs:
                 sudo docker compose exec -T -e LOGIN_SECRET="$LOGIN_SECRET" api sh -lc '
                   curl -sS -X POST http://localhost:5000/api/auth/login \
                     -H "Accept: application/json" \
-                    -H "X-Login-Secret: $${LOGIN_SECRET}" \
+                    -H "X-Login-Secret: $LOGIN_SECRET" \
                     -w "\n%{http_code}"
                 '
               )
@@ -287,7 +287,7 @@ jobs:
               sudo docker compose exec -T -e AUTH_TOKEN="$token" api sh -lc '
                 curl -sS http://localhost:5000/api/usersettings \
                   -H "Accept: application/json" \
-                  -H "Authorization: Bearer $${AUTH_TOKEN}" \
+                  -H "Authorization: Bearer $AUTH_TOKEN" \
                   -w "\n%{http_code}"
               '
             )

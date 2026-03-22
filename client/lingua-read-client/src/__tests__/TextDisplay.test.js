@@ -364,6 +364,52 @@ describe('TextDisplay', () => {
     });
   });
 
+  test('normal reading view hides TTS controls when disabled', async () => {
+    renderTextDisplay({ sentenceTtsEnabled: false });
+
+    await waitFor(() => expect(getText).toHaveBeenCalled());
+    fireEvent.click(await screen.findByText('Hello'));
+
+    expect(screen.queryByRole('button', { name: /Speak Sentence/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Speak Word/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(/TTS On/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/TTS Off/i)).not.toBeInTheDocument();
+  });
+
+  test('sentence mode hides TTS controls when disabled', async () => {
+    renderTextDisplay({ sentenceMode: true, sentenceTtsEnabled: false });
+
+    await waitFor(() => expect(getText).toHaveBeenCalled());
+
+    expect(screen.queryByRole('button', { name: /Listen/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(/TTS On/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/TTS Off/i)).not.toBeInTheDocument();
+  });
+
+  test('audio lessons force classic UI even when modern mode is enabled', async () => {
+    getText.mockResolvedValueOnce({
+      textId: 1,
+      title: 'Audio Lesson',
+      content: 'Hola mundo.',
+      languageId: null,
+      languageCode: 'ES',
+      languageName: 'Spanish',
+      isAudioLesson: true,
+      audioFilePath: 'audio_lessons/1.mp3',
+      srtContent: '1\n00:00:00,000 --> 00:00:02,000\nHola mundo.\n',
+      words: [],
+      bookId: null
+    });
+
+    renderTextDisplay({ readingUiMode: 'modern' });
+
+    await waitFor(() => expect(getText).toHaveBeenCalled());
+
+    const wrapper = document.querySelector('.text-display-wrapper');
+    expect(wrapper).toHaveClass('reader-ui-classic');
+    expect(wrapper).not.toHaveClass('reader-ui-modern');
+  });
+
   test('switching audio lessons emits a fresh segment playback request', async () => {
     let now = 1000;
     jest.spyOn(Date, 'now').mockImplementation(() => {

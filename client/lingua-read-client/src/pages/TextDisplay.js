@@ -718,6 +718,7 @@ const WordInfoPanel = React.memo(({
   selectedWord,
   languageConfig,
   setEmbeddedUrl,
+  sentenceTtsEnabled,
   canUseSentenceTts,
   isSpeakingWord,
   onSpeakWord
@@ -727,15 +728,17 @@ const WordInfoPanel = React.memo(({
     <div>
       <div className="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
         <h5 className="fw-bold mb-0">{displayedWord.term}</h5>
-        <Button
-          variant="outline-primary"
-          size="sm"
-          onClick={onSpeakWord}
-          disabled={!canUseSentenceTts || !displayedWord?.term}
-          title={canUseSentenceTts ? 'Read this word aloud' : 'Speech synthesis is not supported in this browser'}
-        >
-          {isSpeakingWord ? 'Speaking...' : 'Speak Word'}
-        </Button>
+        {sentenceTtsEnabled && (
+          <Button
+            variant="outline-primary"
+            size="sm"
+            onClick={onSpeakWord}
+            disabled={!canUseSentenceTts || !displayedWord?.term}
+            title={canUseSentenceTts ? 'Read this word aloud' : 'Speech synthesis is not supported in this browser'}
+          >
+            {isSpeakingWord ? 'Speaking...' : 'Speak Word'}
+          </Button>
+        )}
       </div>
       {saveSuccess && <Alert variant="success" size="sm">Saved!</Alert>}
       <p className="mb-1 small">Status: {displayedWord.status > 0 ? ['New', 'Learning', 'Familiar', 'Advanced', 'Known'][displayedWord.status - 1] : 'Untracked'}</p>
@@ -969,44 +972,46 @@ const StandardTextView = React.memo(({
 
   return (
     <div className="d-flex flex-column gap-2 h-100">
-      <div className="d-flex flex-wrap align-items-center gap-1 px-2 pt-2">
-        <Button
-          variant="outline-primary"
-          size="sm"
-          onClick={onSpeakSentence}
-          disabled={!canUseSentenceTts || !sentenceTtsEnabled}
-          title={canUseSentenceTts ? 'Read the current sentence aloud' : 'Speech synthesis is not supported in this browser'}
-        >
-          {isSpeakingSentence ? 'Speaking...' : 'Speak Sentence'}
-        </Button>
-        <Button
-          variant={sentenceTtsEnabled ? 'outline-success' : 'outline-secondary'}
-          size="sm"
-          onClick={() => setSentenceTtsEnabled(!sentenceTtsEnabled)}
-          disabled={!canUseSentenceTts}
-        >
-          {sentenceTtsEnabled ? 'TTS On' : 'TTS Off'}
-        </Button>
-        <Button
-          variant="outline-secondary"
-          size="sm"
-          onClick={() => setSentenceTtsRate((prev) => prev - 0.1)}
-          disabled={!canUseSentenceTts || !sentenceTtsEnabled || sentenceTtsRate <= 0.5}
-          aria-label="Decrease sentence speech rate"
-        >
-          -
-        </Button>
-        <Badge bg="info">Rate: {sentenceTtsRate.toFixed(1)}x</Badge>
-        <Button
-          variant="outline-secondary"
-          size="sm"
-          onClick={() => setSentenceTtsRate((prev) => prev + 0.1)}
-          disabled={!canUseSentenceTts || !sentenceTtsEnabled || sentenceTtsRate >= 1.5}
-          aria-label="Increase sentence speech rate"
-        >
-          +
-        </Button>
-      </div>
+      {sentenceTtsEnabled && (
+        <div className="d-flex flex-wrap align-items-center gap-1 px-2 pt-2">
+          <Button
+            variant="outline-primary"
+            size="sm"
+            onClick={onSpeakSentence}
+            disabled={!canUseSentenceTts || !sentenceTtsEnabled}
+            title={canUseSentenceTts ? 'Read the current sentence aloud' : 'Speech synthesis is not supported in this browser'}
+          >
+            {isSpeakingSentence ? 'Speaking...' : 'Speak Sentence'}
+          </Button>
+          <Button
+            variant={sentenceTtsEnabled ? 'outline-success' : 'outline-secondary'}
+            size="sm"
+            onClick={() => setSentenceTtsEnabled(!sentenceTtsEnabled)}
+            disabled={!canUseSentenceTts}
+          >
+            {sentenceTtsEnabled ? 'TTS On' : 'TTS Off'}
+          </Button>
+          <Button
+            variant="outline-secondary"
+            size="sm"
+            onClick={() => setSentenceTtsRate((prev) => prev - 0.1)}
+            disabled={!canUseSentenceTts || !sentenceTtsEnabled || sentenceTtsRate <= 0.5}
+            aria-label="Decrease sentence speech rate"
+          >
+            -
+          </Button>
+          <Badge bg="info">Rate: {sentenceTtsRate.toFixed(1)}x</Badge>
+          <Button
+            variant="outline-secondary"
+            size="sm"
+            onClick={() => setSentenceTtsRate((prev) => prev + 0.1)}
+            disabled={!canUseSentenceTts || !sentenceTtsEnabled || sentenceTtsRate >= 1.5}
+            aria-label="Increase sentence speech rate"
+          >
+            +
+          </Button>
+        </div>
+      )}
       <div
         className={`text-content text-content-${modeClass} reader-align-${globalSettings.readerTextAlignment || 'left'} ${globalSettings.readerParagraphIndent ? 'reader-indent-on' : 'reader-indent-off'}`}
         ref={textContentRef}
@@ -1168,44 +1173,46 @@ const SentenceModeView = React.memo(({
               </Button>
             </>
           ) : (
-            <>
-              <Button
-                variant="outline-primary"
-                size="sm"
-                onClick={onReplayAudio}
-                disabled={!canUseSentenceTts || !sentenceTtsEnabled}
-                title={canUseSentenceTts ? 'Read the current sentence aloud' : 'Speech synthesis is not supported in this browser'}
-              >
-                {isSpeakingSentence ? 'Speaking...' : 'Listen'}
-              </Button>
-              <Button
-                variant={sentenceTtsEnabled ? 'outline-success' : 'outline-secondary'}
-                size="sm"
-                onClick={() => setSentenceTtsEnabled(!sentenceTtsEnabled)}
-                disabled={!canUseSentenceTts}
-              >
-                {sentenceTtsEnabled ? 'TTS On' : 'TTS Off'}
-              </Button>
-              <Button
-                variant="outline-secondary"
-                size="sm"
-                onClick={() => setSentenceTtsRate((prev) => prev - 0.1)}
-                disabled={!canUseSentenceTts || !sentenceTtsEnabled || sentenceTtsRate <= 0.5}
-                aria-label="Decrease speech rate"
-              >
-                -
-              </Button>
-              <Badge bg="info">Rate: {sentenceTtsRate.toFixed(1)}x</Badge>
-              <Button
-                variant="outline-secondary"
-                size="sm"
-                onClick={() => setSentenceTtsRate((prev) => prev + 0.1)}
-                disabled={!canUseSentenceTts || !sentenceTtsEnabled || sentenceTtsRate >= 1.5}
-                aria-label="Increase speech rate"
-              >
-                +
-              </Button>
-            </>
+            sentenceTtsEnabled && (
+              <>
+                <Button
+                  variant="outline-primary"
+                  size="sm"
+                  onClick={onReplayAudio}
+                  disabled={!canUseSentenceTts || !sentenceTtsEnabled}
+                  title={canUseSentenceTts ? 'Read the current sentence aloud' : 'Speech synthesis is not supported in this browser'}
+                >
+                  {isSpeakingSentence ? 'Speaking...' : 'Listen'}
+                </Button>
+                <Button
+                  variant={sentenceTtsEnabled ? 'outline-success' : 'outline-secondary'}
+                  size="sm"
+                  onClick={() => setSentenceTtsEnabled(!sentenceTtsEnabled)}
+                  disabled={!canUseSentenceTts}
+                >
+                  {sentenceTtsEnabled ? 'TTS On' : 'TTS Off'}
+                </Button>
+                <Button
+                  variant="outline-secondary"
+                  size="sm"
+                  onClick={() => setSentenceTtsRate((prev) => prev - 0.1)}
+                  disabled={!canUseSentenceTts || !sentenceTtsEnabled || sentenceTtsRate <= 0.5}
+                  aria-label="Decrease speech rate"
+                >
+                  -
+                </Button>
+                <Badge bg="info">Rate: {sentenceTtsRate.toFixed(1)}x</Badge>
+                <Button
+                  variant="outline-secondary"
+                  size="sm"
+                  onClick={() => setSentenceTtsRate((prev) => prev + 0.1)}
+                  disabled={!canUseSentenceTts || !sentenceTtsEnabled || sentenceTtsRate >= 1.5}
+                  aria-label="Increase speech rate"
+                >
+                  +
+                </Button>
+              </>
+            )
           )}
           <Button variant="outline-info" size="sm" onClick={onShowTranslation} disabled={isTranslatingSegment}>
             {isTranslatingSegment ? 'Translating...' : (isTranslationVisible ? 'Hide Translation' : 'Show Translation')}
@@ -1401,7 +1408,9 @@ const TextDisplay = () => {
   const sentenceTtsEnabled = globalSettings.sentenceTtsEnabled ?? false;
   const sentenceTtsRate = globalSettings.sentenceTtsRate ?? 1;
   const canUseSentenceTts = isSpeechSynthesisSupported();
-  const readingUiMode = globalSettings.readingUiMode === 'modern' ? 'modern' : 'classic';
+  const readingUiMode = isAudioLesson
+    ? 'classic'
+    : (globalSettings.readingUiMode === 'modern' ? 'modern' : 'classic');
   const readingDensity = globalSettings.readingDensity || 'balanced';
   const showWordInfoPanel = globalSettings.showWordInfoPanel ?? true;
 
@@ -3026,6 +3035,7 @@ const TextDisplay = () => {
                   selectedWord={selectedWord}
                   languageConfig={languageConfig}
                   setEmbeddedUrl={setEmbeddedUrl}
+                  sentenceTtsEnabled={sentenceTtsEnabled}
                   canUseSentenceTts={canUseSentenceTts}
                   isSpeakingWord={isSpeakingWord}
                   onSpeakWord={speakDisplayedWord}
@@ -3082,6 +3092,7 @@ const TextDisplay = () => {
                 selectedWord={selectedWord}
                 languageConfig={languageConfig}
                 setEmbeddedUrl={setEmbeddedUrl}
+                sentenceTtsEnabled={sentenceTtsEnabled}
                 canUseSentenceTts={canUseSentenceTts}
                 isSpeakingWord={isSpeakingWord}
                 onSpeakWord={speakDisplayedWord}

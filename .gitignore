@@ -42,6 +42,7 @@ Thumbs.db
 # AI Assistant artifacts and planning files
 .gemini/ # Antigravity/Gemini AI assistant artifacts
 **/brain/ # AI planning documents
+**/*.plan.md # Generated Cursor plan files
 **/implementation_plan.md # Auto-generated implementation plans
 **/walkthrough.md # Auto-generated walkthroughs
 **/task.md # Auto-generated task files

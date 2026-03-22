@@ -931,7 +931,7 @@ const AudiobookPlayer = ({
         the audioRef will be null when the event listener effect runs for the first time, 
         causing seeking and time updates to stay broken until a prop changes.
       */}
-      <audio ref={audioRef} style={{ display: 'none' }} />
+      <audio ref={audioRef} preload="auto" style={{ display: 'none' }} />
 
       {isLoading ? (
         <div className="d-flex justify-content-center p-2">

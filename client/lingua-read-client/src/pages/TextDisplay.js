@@ -802,6 +802,7 @@ const TextDisplay = () => {
   const [isAudioPlaying, setIsAudioPlaying] = useState(false);
   const selectionDebounceRef = useRef(null);
   const lastHandledSelectionRef = useRef('');
+  const suppressWordClickUntilRef = useRef(0);
   // --- End State Declarations ---
 
   // Create refs for values used in handleAudioTimeUpdate to keep the callback stable
@@ -1000,27 +1001,74 @@ const TextDisplay = () => {
   // Removed handleTextSelection as selection is now handled by onMouseUp on the container
 
   // --- New Word-Granularity Selection Logic ---
-  const processWordSelection = useCallback(() => {
+  const getSelectionDetails = useCallback(() => {
     const selection = window.getSelection();
     if (!selection || selection.isCollapsed || !textContentRef.current || selection.rangeCount === 0) {
-      lastHandledSelectionRef.current = '';
-      return;
+      return null;
     }
 
     let range;
     try {
       range = selection.getRangeAt(0);
     } catch (e) {
-      console.warn("Could not get selection range", e);
-      return;
+      console.warn('Could not get selection range', e);
+      return null;
     }
 
     const container = textContentRef.current;
+    const anchorNode = selection.anchorNode;
+    const focusNode = selection.focusNode;
+    if (!anchorNode || !focusNode) {
+      return null;
+    }
 
-    // Ensure the selection is within the text container
-    if (!container.contains(range.commonAncestorContainer)) {
-      // Optionally clear selection if it's outside? Or just ignore.
-      // selection.removeAllRanges();
+    if (!container.contains(range.commonAncestorContainer) || !container.contains(anchorNode) || !container.contains(focusNode)) {
+      return null;
+    }
+
+    const selectedText = selection.toString().trim();
+    if (!selectedText) {
+      return null;
+    }
+
+    return { selection, range, container, selectedText };
+  }, []);
+
+  const handleSelectedText = useCallback((selectedText) => {
+    if (!selectedText) {
+      lastHandledSelectionRef.current = '';
+      return;
+    }
+
+    if (selectedText === lastHandledSelectionRef.current) {
+      return;
+    }
+
+    lastHandledSelectionRef.current = selectedText;
+    suppressWordClickUntilRef.current = Date.now() + 400;
+    setTimeout(() => {
+      handleWordClick(selectedText);
+    }, 0);
+  }, [handleWordClick]);
+
+  const handleSelectableWordClick = useCallback((event, word) => {
+    event.stopPropagation();
+    if (Date.now() < suppressWordClickUntilRef.current) {
+      return;
+    }
+    handleWordClick(word);
+  }, [handleWordClick]);
+
+  const processWordSelection = useCallback(() => {
+    const selectionDetails = getSelectionDetails();
+    if (!selectionDetails) {
+      lastHandledSelectionRef.current = '';
+      return;
+    }
+
+    const { selection, range, container, selectedText } = selectionDetails;
+    if (isMobile) {
+      handleSelectedText(selectedText);
       return;
     }
 
@@ -1113,31 +1161,14 @@ const TextDisplay = () => {
       selection.removeAllRanges();
       selection.addRange(newRange);
 
-      const selectedText = newRange.toString().trim();
-      if (selectedText) {
-        if (selectedText === lastHandledSelectionRef.current) {
-          return;
-        }
-        lastHandledSelectionRef.current = selectedText;
-        // Use a slight delay to let the selection update render
-        setTimeout(() => {
-          handleWordClick(selectedText);
-        }, 0);
-      }
+      handleSelectedText(newRange.toString().trim());
     } catch (e) {
       console.warn("Error adjusting selection range:", e);
       // Fallback: use original selection text if possible
-      const originalText = selection.toString().trim();
-      if (originalText) {
-        if (originalText === lastHandledSelectionRef.current) {
-          return;
-        }
-        lastHandledSelectionRef.current = originalText;
-        handleWordClick(originalText);
-      }
+      handleSelectedText(selection.toString().trim());
     }
 
-  }, [handleWordClick]); // textContentRef is a stable ref
+  }, [getSelectionDetails, handleSelectedText, isMobile]); // textContentRef is a stable ref
 
   const handleWordSelection = useCallback(() => {
     clearPendingSelection();
@@ -1205,7 +1236,7 @@ const TextDisplay = () => {
               key={`phrase-${currentKeyIndex++}-${phraseTerm.replace(/\s+/g, '-')}`}
               style={{ ...styles.highlightedWord, ...getWordStyle(phraseStatus) }}
               className={`clickable-word word-status-${phraseStatus}`} // Treat phrase like a word visually/interactively
-              onClick={(e) => { e.stopPropagation(); handleWordClick(phraseTerm); }}
+              onClick={(e) => handleSelectableWordClick(e, phraseTerm)}
               onMouseEnter={() => setHoveredWordTerm(phraseTerm)}
               onMouseLeave={() => setHoveredWordTerm(null)}
             >
@@ -1254,7 +1285,7 @@ const TextDisplay = () => {
             key={`word-${currentKeyIndex++}-${currentWord}`}
             style={{ ...styles.highlightedWord, ...getWordStyle(wordStatus) }}
             className={`clickable-word word-status-${wordStatus}`}
-            onClick={(e) => { e.stopPropagation(); handleWordClick(currentWord); }}
+            onClick={(e) => handleSelectableWordClick(e, currentWord)}
             onMouseEnter={() => setHoveredWordTerm(currentWord)}
             onMouseLeave={() => setHoveredWordTerm(null)}
           >
@@ -1281,7 +1312,7 @@ const TextDisplay = () => {
     return elements;
     // --- End Phase 2 Logic ---
 
-  }, [knownPhrases, getWordData, getWordStyle, handleWordClick, setHoveredWordTerm]); // Removed unnecessary 'words' dependency
+  }, [knownPhrases, getWordData, getWordStyle, handleSelectableWordClick, setHoveredWordTerm]); // Removed unnecessary 'words' dependency
 
 
   const getFontFamilyForList = useCallback(() => {

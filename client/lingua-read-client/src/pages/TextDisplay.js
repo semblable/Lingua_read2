@@ -16,6 +16,8 @@ import './TextDisplay.css';
 import { SettingsContext } from '../contexts/SettingsContext'; // Import SettingsContext
 import { getBookmarkedSentences, toggleBookmark } from '../utils/bookmarks'; // Import bookmark utils
 import { extractTranslatedTextFromPairedTags } from '../utils/translationTags';
+import { parseSentenceExplanation } from '../utils/parseSentenceExplanation';
+import { cancelSpeech, isSpeechSynthesisSupported, speakText } from '../utils/browserTts';
 
 // --- SRT Parsing Utilities ---
 const parseSrtTime = (timeString) => {
@@ -810,6 +812,12 @@ const SentenceModeView = React.memo(({
   onPrev,
   onNext,
   onReplayAudio,
+  canUseSentenceTts,
+  isSpeakingSentence,
+  sentenceTtsEnabled,
+  setSentenceTtsEnabled,
+  sentenceTtsRate,
+  setSentenceTtsRate,
   isAudioLesson,
   sentenceAudioRepeats,
   setSentenceAudioRepeats,
@@ -822,6 +830,10 @@ const SentenceModeView = React.memo(({
   currentSegmentTranslation,
   currentSegmentExplanation
 }) => {
+  const explanationParsed = useMemo(
+    () => parseSentenceExplanation(currentSegmentExplanation), [currentSegmentExplanation]
+  );
+
   if (!currentSegment) {
     return <p className="p-3">No sentence available.</p>;
   }
@@ -844,7 +856,7 @@ const SentenceModeView = React.memo(({
           </Button>
         </div>
         <div className="sentence-mode-toolbar-group">
-          {isAudioLesson && (
+          {isAudioLesson ? (
             <>
               <Button variant="outline-primary" size="sm" onClick={onReplayAudio}>
                 Replay Audio
@@ -863,6 +875,45 @@ const SentenceModeView = React.memo(({
                 size="sm"
                 onClick={() => setSentenceAudioRepeats(prev => Math.min(10, prev + 1))}
                 disabled={sentenceAudioRepeats >= 10}
+              >
+                +
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button
+                variant="outline-primary"
+                size="sm"
+                onClick={onReplayAudio}
+                disabled={!canUseSentenceTts || !sentenceTtsEnabled}
+                title={canUseSentenceTts ? 'Read the current sentence aloud' : 'Speech synthesis is not supported in this browser'}
+              >
+                {isSpeakingSentence ? 'Speaking...' : 'Listen'}
+              </Button>
+              <Button
+                variant={sentenceTtsEnabled ? 'outline-success' : 'outline-secondary'}
+                size="sm"
+                onClick={() => setSentenceTtsEnabled(!sentenceTtsEnabled)}
+                disabled={!canUseSentenceTts}
+              >
+                {sentenceTtsEnabled ? 'TTS On' : 'TTS Off'}
+              </Button>
+              <Button
+                variant="outline-secondary"
+                size="sm"
+                onClick={() => setSentenceTtsRate((prev) => prev - 0.1)}
+                disabled={!canUseSentenceTts || !sentenceTtsEnabled || sentenceTtsRate <= 0.5}
+                aria-label="Decrease speech rate"
+              >
+                -
+              </Button>
+              <Badge bg="info">Rate: {sentenceTtsRate.toFixed(1)}x</Badge>
+              <Button
+                variant="outline-secondary"
+                size="sm"
+                onClick={() => setSentenceTtsRate((prev) => prev + 0.1)}
+                disabled={!canUseSentenceTts || !sentenceTtsEnabled || sentenceTtsRate >= 1.5}
+                aria-label="Increase speech rate"
               >
                 +
               </Button>
@@ -894,7 +945,18 @@ const SentenceModeView = React.memo(({
           )}
           {isExplanationVisible && (
             <div className="sentence-mode-explanation">
-              {currentSegmentExplanation || 'No explanation available.'}
+              {explanationParsed.fallback != null ? (
+                <div className="sentence-mode-explanation-fallback">{explanationParsed.fallback || 'No explanation available.'}</div>
+              ) : (
+                <div className="sentence-mode-explanation-sections">
+                  {explanationParsed.sections.map((sec) => (
+                    <section key={sec.id} className="sentence-mode-explanation-section">
+                      <h6 className="sentence-mode-explanation-heading">{sec.label}</h6>
+                      <div className="sentence-mode-explanation-body">{sec.body}</div>
+                    </section>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </Card.Body>
@@ -972,6 +1034,7 @@ const TextDisplay = () => {
   const [creditedSegmentIndices, setCreditedSegmentIndices] = useState([]);
   const [sentenceProgressLoaded, setSentenceProgressLoaded] = useState(false);
   const [segmentPlaybackRequest, setSegmentPlaybackRequest] = useState(null);
+  const [isSpeakingSentence, setIsSpeakingSentence] = useState(false);
   const selectionDebounceRef = useRef(null);
   const lastHandledSelectionRef = useRef('');
   const suppressWordClickUntilRef = useRef(0);
@@ -1048,6 +1111,9 @@ const TextDisplay = () => {
 
   const isSentenceMode = globalSettings.sentenceMode;
   const sentenceAudioRepeats = globalSettings.sentenceAudioRepeats || 1;
+  const sentenceTtsEnabled = globalSettings.sentenceTtsEnabled ?? true;
+  const sentenceTtsRate = globalSettings.sentenceTtsRate ?? 1;
+  const canUseSentenceTts = isSpeechSynthesisSupported();
 
   useEffect(() => {
     sentenceAudioRepeatsRef.current = sentenceAudioRepeats;
@@ -1076,6 +1142,10 @@ const TextDisplay = () => {
   }, []);
 
   const handleAudioPlaybackStateChange = useCallback((nextIsPlaying) => {
+    if (nextIsPlaying) {
+      cancelSpeech();
+      setIsSpeakingSentence(false);
+    }
     setIsAudioPlaying(nextIsPlaying);
   }, []);
 
@@ -1106,6 +1176,26 @@ const TextDisplay = () => {
     updateUserSettings({ sentenceAudioRepeats: clamped })
       .catch(err => console.error('[Save Settings] Failed to save sentence audio repeats via API:', err));
   }, [sentenceAudioRepeats, updateSetting]);
+
+  const setSentenceTtsEnabled = useCallback((nextValue) => {
+    updateSetting('sentenceTtsEnabled', nextValue);
+    updateUserSettings({ sentenceTtsEnabled: nextValue })
+      .catch(err => console.error('[Save Settings] Failed to save sentence TTS enabled via API:', err));
+    if (!nextValue) {
+      cancelSpeech();
+      setIsSpeakingSentence(false);
+    }
+  }, [updateSetting]);
+
+  const setSentenceTtsRate = useCallback((updater) => {
+    const nextValue = typeof updater === 'function'
+      ? updater(sentenceTtsRate)
+      : updater;
+    const clamped = Math.max(0.5, Math.min(1.5, Number(nextValue.toFixed(1))));
+    updateSetting('sentenceTtsRate', clamped);
+    updateUserSettings({ sentenceTtsRate: clamped })
+      .catch(err => console.error('[Save Settings] Failed to save sentence TTS rate via API:', err));
+  }, [sentenceTtsRate, updateSetting]);
 
   const fetchAllLanguageWords = useCallback(async (languageId) => {
     if (!languageId) return; // Guard against missing languageId
@@ -1610,10 +1700,41 @@ const TextDisplay = () => {
 
   const currentSentenceSegment = sentenceSegments[currentSegmentIndex] || null;
 
-  const replayCurrentSegmentAudio = useCallback(() => {
-    if (!currentSentenceSegment || currentSentenceSegment.startTime == null || currentSentenceSegment.endTime == null) {
+  const speakCurrentSentence = useCallback(async () => {
+    if (!currentSentenceSegment || !sentenceTtsEnabled || !canUseSentenceTts) {
       return;
     }
+
+    pauseAudioPlayback();
+    setSegmentPlaybackRequest(null);
+
+    try {
+      await speakText({
+        text: currentSentenceSegment.text,
+        languageCode: text?.languageCode,
+        rate: sentenceTtsRate,
+        onStart: () => setIsSpeakingSentence(true),
+        onEnd: () => setIsSpeakingSentence(false),
+        onError: () => setIsSpeakingSentence(false)
+      });
+    } catch (speechErr) {
+      console.error('Sentence TTS failed:', speechErr);
+      setIsSpeakingSentence(false);
+    }
+  }, [canUseSentenceTts, currentSentenceSegment, pauseAudioPlayback, sentenceTtsEnabled, sentenceTtsRate, text?.languageCode]);
+
+  const replayCurrentSegmentAudio = useCallback(() => {
+    if (!currentSentenceSegment) {
+      return;
+    }
+
+    if (currentSentenceSegment.startTime == null || currentSentenceSegment.endTime == null) {
+      speakCurrentSentence();
+      return;
+    }
+
+    cancelSpeech();
+    setIsSpeakingSentence(false);
 
     setSegmentPlaybackRequest({
       requestId: `replay-${currentSentenceSegment.index}-${Date.now()}`,
@@ -1621,7 +1742,7 @@ const TextDisplay = () => {
       endTime: currentSentenceSegment.endTime,
       repeatCount: sentenceAudioRepeats
     });
-  }, [currentSentenceSegment, sentenceAudioRepeats]);
+  }, [currentSentenceSegment, sentenceAudioRepeats, speakCurrentSentence]);
 
   const handleSegmentTranslationToggle = useCallback(async () => {
     if (!currentSentenceSegment || !text?.languageCode) return;
@@ -1708,9 +1829,20 @@ const TextDisplay = () => {
 
   useEffect(() => {
     if (!isSentenceMode) {
+      cancelSpeech();
+      setIsSpeakingSentence(false);
       setSegmentPlaybackRequest(null);
     }
   }, [isSentenceMode]);
+
+  useEffect(() => () => {
+    cancelSpeech();
+  }, []);
+
+  useEffect(() => {
+    cancelSpeech();
+    setIsSpeakingSentence(false);
+  }, [currentSegmentIndex]);
 
   useEffect(() => {
     if (!isSentenceMode || !sentenceProgressLoaded || !text?.textId || !currentSentenceSegment) {
@@ -2389,6 +2521,12 @@ const TextDisplay = () => {
                   onPrev={() => setCurrentSegmentIndex(prev => Math.max(0, prev - 1))}
                   onNext={() => setCurrentSegmentIndex(prev => Math.min(sentenceSegments.length - 1, prev + 1))}
                   onReplayAudio={replayCurrentSegmentAudio}
+                  canUseSentenceTts={canUseSentenceTts}
+                  isSpeakingSentence={isSpeakingSentence}
+                  sentenceTtsEnabled={sentenceTtsEnabled}
+                  setSentenceTtsEnabled={setSentenceTtsEnabled}
+                  sentenceTtsRate={sentenceTtsRate}
+                  setSentenceTtsRate={setSentenceTtsRate}
                   isAudioLesson={isAudioLesson}
                   sentenceAudioRepeats={sentenceAudioRepeats}
                   setSentenceAudioRepeats={setSentenceAudioRepeats}

@@ -22,6 +22,8 @@ namespace LinguaReadApi.Models
         public bool HighlightKnownWords { get; set; } = true; // highlight words based on knowledge level
         public bool SentenceMode { get; set; } = false; // default reader mode
         public int SentenceAudioRepeats { get; set; } = 1; // play each audio segment N times in sentence mode
+        public bool SentenceTtsEnabled { get; set; } = true; // enable browser TTS controls in sentence mode
+        public double SentenceTtsRate { get; set; } = 1.0; // browser TTS playback speed
         public int DefaultLanguageId { get; set; } = 0; // default language for new texts
         
         // Navigation Preferences

@@ -64,6 +64,8 @@ const createSettingsValue = (settingOverrides = {}) => ({
     highlightKnownWords: true,
     sentenceMode: false,
     sentenceAudioRepeats: 1,
+    sentenceTtsEnabled: true,
+    sentenceTtsRate: 1,
     defaultLanguageId: 0,
     autoAdvanceToNextLesson: false,
     showProgressStats: true,
@@ -304,6 +306,8 @@ describe('TextDisplay', () => {
     await waitFor(() => {
       expect(explainSentence).toHaveBeenCalledWith('Hello world.', 'ES', 'EN');
     });
-    expect(await screen.findByText(/Grammar: Greeting\./i)).toBeInTheDocument();
+    expect(await screen.findByText('Grammar')).toBeInTheDocument();
+    expect(await screen.findByText('Greeting.')).toBeInTheDocument();
+    expect(await screen.findByText('Natural phrasing')).toBeInTheDocument();
   });
 });

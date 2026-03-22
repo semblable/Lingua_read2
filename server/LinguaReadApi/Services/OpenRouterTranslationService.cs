@@ -177,25 +177,7 @@ namespace LinguaReadApi.Services
                     }
                 }
 
-                string prompt = $@"Explain the following sentence for a language learner.
-
-Sentence:
-{text}
-
-Source language: {sourceLanguage}
-Explanation language: {explanationLanguage}
-
-Strict instructions:
-1. Return ONLY plain text in {explanationLanguage}.
-2. Be concise and useful for a learner.
-3. Use exactly these short sections:
-Grammar:
-Nuance:
-Culture/Context:
-Natural phrasing:
-4. If there is no meaningful cultural context, say ""None"".
-5. Keep the whole answer brief, practical, and easy to scan.
-6. Do not use XML/HTML tags, markdown fences, or extra preamble.";
+                string prompt = SentenceExplanationPrompt.Build(text, sourceLanguage, explanationLanguage);
 
                 var requestPayload = new OpenRouterRequest
                 {

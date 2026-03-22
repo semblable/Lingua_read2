@@ -278,6 +278,31 @@
   line-height: 1.65;
 }
 
+.sentence-mode-explanation-sections {
+  display: grid;
+  gap: var(--space-sm);
+}
+
+.sentence-mode-explanation-section {
+  padding: 0.75rem 0.9rem;
+  border-radius: 0.75rem;
+  background: color-mix(in srgb, var(--theme-surface-bg, #fff) 80%, var(--theme-border-color, #e9ecef) 20%);
+}
+
+.sentence-mode-explanation-heading {
+  margin: 0 0 0.35rem;
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--theme-text-muted, #6c757d);
+}
+
+.sentence-mode-explanation-body,
+.sentence-mode-explanation-fallback {
+  white-space: pre-wrap;
+}
+
 /* Media queries for responsive design */
 @media (max-width: 768px) {
   .lesson-page {

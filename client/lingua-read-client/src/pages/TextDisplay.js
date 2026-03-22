@@ -1001,12 +1001,12 @@ const TextDisplay = () => {
       srtLines,
       displayMode,
       currentSrtLineId,
-      isSentenceMode,
+      isSentenceMode: globalSettings.sentenceMode,
       currentSegmentIndex,
       isMobile,
       listRef: listRef // Store the ref object
     };
-  }, [isAudioLesson, srtLines, displayMode, currentSrtLineId, isSentenceMode, currentSegmentIndex, isMobile]);
+  }, [isAudioLesson, srtLines, displayMode, currentSrtLineId, globalSettings.sentenceMode, currentSegmentIndex, isMobile]);
 
   // --- Effects ---
   useEffect(() => {

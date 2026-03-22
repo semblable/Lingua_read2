@@ -85,4 +85,47 @@ describe('AudiobookPlayer', () => {
       expect(screen.getByTitle(/Play/)).toBeInTheDocument();
     });
   });
+
+  test('manual pause cancels active segment playback boundary', async () => {
+    getAudioLessonProgress.mockResolvedValue({ currentPosition: 0 });
+
+    const { container } = render(
+      <AudiobookPlayer
+        type="lesson"
+        audioSrc="https://example.com/lesson.mp3"
+        textId={42}
+        languageId={5}
+        segmentPlaybackRequest={{
+          requestId: 'segment-1',
+          startTime: 5,
+          endTime: 10,
+          repeatCount: 2
+        }}
+      />
+    );
+
+    await waitFor(() => {
+      expect(getAudioLessonProgress).toHaveBeenCalledWith(42);
+    });
+
+    const audio = container.querySelector('audio');
+    expect(audio).not.toBeNull();
+
+    act(() => {
+      fireEvent.pause(audio);
+    });
+
+    expect(window.HTMLMediaElement.prototype.pause).not.toHaveBeenCalled();
+
+    act(() => {
+      Object.defineProperty(audio, 'currentTime', {
+        configurable: true,
+        writable: true,
+        value: 10
+      });
+      fireEvent.timeUpdate(audio);
+    });
+
+    expect(window.HTMLMediaElement.prototype.pause).not.toHaveBeenCalled();
+  });
 });

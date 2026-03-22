@@ -355,7 +355,20 @@ const AudiobookPlayer = ({
       setIsBuffering(false);
     };
     const onPlay = () => syncPlaybackState(true);
-    const onPause = () => syncPlaybackState(false);
+    const onPause = () => {
+      // Manual pauses should cancel bounded segment playback so resume/play
+      // does not remain tied to an old sentence boundary.
+      if (segmentPlaybackRef.current.active) {
+        segmentPlaybackRef.current = {
+          active: false,
+          requestId: null,
+          startTime: 0,
+          endTime: 0,
+          remainingRepeats: 0
+        };
+      }
+      syncPlaybackState(false);
+    };
 
     audio.addEventListener('loadedmetadata', handleLoadedMetadata);
     audio.addEventListener('durationchange', handleLoadedMetadata); // Also listen for durationchange

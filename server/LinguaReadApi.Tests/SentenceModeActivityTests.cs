@@ -127,6 +127,120 @@ public class SentenceModeActivityTests
         Assert.Equal(2, completionActivity.WordCount);
     }
 
+    [Fact]
+    public async Task CompleteText_CreditsZeroWords_WhenSentenceProgressAlreadyCoversFullText()
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        var textId = 30;
+        const int languageId = 1;
+
+        SeedUserLanguageAndText(context, userId, textId, "one two three four");
+
+        var words = new[]
+        {
+            new Word { WordId = 110, UserId = userId, LanguageId = languageId, Term = "one", Status = 5 },
+            new Word { WordId = 111, UserId = userId, LanguageId = languageId, Term = "two", Status = 4 },
+            new Word { WordId = 112, UserId = userId, LanguageId = languageId, Term = "three", Status = 3 },
+            new Word { WordId = 113, UserId = userId, LanguageId = languageId, Term = "four", Status = 2 }
+        };
+        await context.Words.AddRangeAsync(words);
+        await context.TextWords.AddRangeAsync(words.Select((word, index) => new TextWord
+        {
+            TextWordId = 210 + index,
+            TextId = textId,
+            WordId = word.WordId,
+            CreatedAt = DateTime.UtcNow
+        }));
+        await context.UserSentenceProgresses.AddAsync(new UserSentenceProgress
+        {
+            UserId = userId,
+            TextId = textId,
+            CreditedSegmentIndicesJson = "[0,1]",
+            CreditedWordCount = 4,
+            LastSegmentIndex = 1,
+            UpdatedAt = DateTime.UtcNow
+        });
+        await context.UserLanguageStatistics.AddAsync(new UserLanguageStatistics
+        {
+            UserId = userId,
+            LanguageId = languageId,
+            TotalWordsRead = 4,
+            LastUpdatedAt = DateTime.UtcNow
+        });
+        await context.SaveChangesAsync();
+        context.ChangeTracker.Clear();
+
+        var service = new UserActivityService(context, NullLogger<UserActivityService>.Instance);
+        var controller = new TextsController(context, NullLogger<TextsController>.Instance, service)
+        {
+            ControllerContext = BuildControllerContext(userId)
+        };
+
+        var result = await controller.CompleteText(textId);
+
+        Assert.IsType<OkObjectResult>(result.Result);
+
+        var stats = await context.UserLanguageStatistics.SingleAsync();
+        Assert.Equal(4, stats.TotalWordsRead);
+        Assert.Equal(1, stats.TotalTextsCompleted);
+
+        var completionActivity = await context.UserActivities.SingleAsync(a => a.ActivityType == "TextCompleted");
+        Assert.Equal(0, completionActivity.WordCount);
+    }
+
+    [Fact]
+    public async Task CompleteText_SetsTagToFinished_WhenAutoMoveFinishedLessonsEnabled()
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        var textId = 40;
+        const int languageId = 1;
+
+        SeedUserLanguageAndText(context, userId, textId, "hello");
+        await context.UserSettings.AddAsync(new UserSettings
+        {
+            UserId = userId,
+            AutoMoveFinishedLessons = true,
+            CreatedAt = DateTime.UtcNow
+        });
+
+        var word = new Word { WordId = 120, UserId = userId, LanguageId = languageId, Term = "hello", Status = 5 };
+        await context.Words.AddAsync(word);
+        await context.TextWords.AddAsync(new TextWord
+        {
+            TextWordId = 220,
+            TextId = textId,
+            WordId = word.WordId,
+            CreatedAt = DateTime.UtcNow
+        });
+        await context.UserSentenceProgresses.AddAsync(new UserSentenceProgress
+        {
+            UserId = userId,
+            TextId = textId,
+            CreditedSegmentIndicesJson = "[0]",
+            CreditedWordCount = 1,
+            LastSegmentIndex = 0,
+            UpdatedAt = DateTime.UtcNow
+        });
+        await context.SaveChangesAsync();
+        context.ChangeTracker.Clear();
+
+        var service = new UserActivityService(context, NullLogger<UserActivityService>.Instance);
+        var controller = new TextsController(context, NullLogger<TextsController>.Instance, service)
+        {
+            ControllerContext = BuildControllerContext(userId)
+        };
+
+        var result = await controller.CompleteText(textId);
+
+        Assert.IsType<OkObjectResult>(result.Result);
+
+        var textAfter = await context.Texts.AsNoTracking().SingleAsync(t => t.TextId == textId);
+        Assert.True(textAfter.IsFinished);
+        Assert.Equal("Finished", textAfter.Tag);
+    }
+
     private static UserActivityController CreateUserActivityController(AppDbContext context, Guid userId)
     {
         return new UserActivityController(context, null!, NullLogger<UserActivityController>.Instance)

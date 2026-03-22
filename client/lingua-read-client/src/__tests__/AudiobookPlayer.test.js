@@ -261,7 +261,7 @@ describe('AudiobookPlayer', () => {
     const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
     const debugSpy = jest.spyOn(console, 'debug').mockImplementation(() => {});
 
-    const { container } = render(
+    const { container, rerender } = render(
       <AudiobookPlayer
         type="lesson"
         audioSrc="https://example.com/lesson.mp3"
@@ -276,6 +276,24 @@ describe('AudiobookPlayer', () => {
 
     const audio = container.querySelector('audio');
     expect(audio).not.toBeNull();
+
+    rerender(
+      <AudiobookPlayer
+        type="lesson"
+        audioSrc="https://example.com/lesson-2.mp3"
+        textId={42}
+        languageId={5}
+      />
+    );
+
+    await waitFor(() => {
+      expect(audio.getAttribute('src')).toBe('https://example.com/lesson-2.mp3');
+    });
+
+    Object.defineProperty(audio, 'currentSrc', {
+      configurable: true,
+      value: 'https://example.com/lesson-2.mp3'
+    });
 
     Object.defineProperty(audio, 'error', {
       configurable: true,
@@ -295,5 +313,44 @@ describe('AudiobookPlayer', () => {
       })
     );
     expect(screen.queryByText('Error loading audio.')).not.toBeInTheDocument();
+  });
+
+  test('surfaces non-abort media errors', async () => {
+    getAudioLessonProgress.mockResolvedValue({ currentPosition: 0 });
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    const { container } = render(
+      <AudiobookPlayer
+        type="lesson"
+        audioSrc="https://example.com/lesson.mp3"
+        textId={42}
+        languageId={5}
+      />
+    );
+
+    await waitFor(() => {
+      expect(getAudioLessonProgress).toHaveBeenCalledWith(42);
+    });
+
+    const audio = container.querySelector('audio');
+    expect(audio).not.toBeNull();
+
+    Object.defineProperty(audio, 'error', {
+      configurable: true,
+      value: {
+        code: 4,
+        message: 'The media resource could not be loaded.'
+      }
+    });
+
+    fireEvent.error(audio);
+
+    expect(errorSpy).toHaveBeenCalledWith(
+      'Audio Error:',
+      expect.objectContaining({
+        mediaErrorCode: 4
+      })
+    );
+    expect(await screen.findByText('Error loading audio.')).toBeInTheDocument();
   });
 });

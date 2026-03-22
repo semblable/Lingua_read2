@@ -248,6 +248,7 @@ const AudiobookPlayer = ({
     const isSameSrc = currentSrc && currentSrc === nextSrc;
 
     if (isSameSrc) {
+      setIsBuffering(false);
       return;
     }
 
@@ -375,7 +376,7 @@ const AudiobookPlayer = ({
     const expectedNextSrc = sourceSwapRef.current.nextSrc;
     const isSourceSwapAbort = expectedNextSrc && currentSrc === expectedNextSrc && isAbortLikeError(mediaErr);
 
-    if (isSourceSwapAbort || isAbortLikeError(mediaErr)) {
+    if (isSourceSwapAbort) {
       console.debug('[AudioPlayer] Ignoring media abort during source transition.', {
         src: audio?.currentSrc ?? audio?.src,
         mediaErrorCode: mediaErr?.code,

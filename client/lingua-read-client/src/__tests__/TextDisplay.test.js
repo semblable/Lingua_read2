@@ -1,7 +1,7 @@
 import React, { act } from 'react';
 import '@testing-library/jest-dom';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, createMemoryRouter, RouterProvider } from 'react-router-dom';
 import TextDisplay from '../pages/TextDisplay';
 import { SettingsContext } from '../contexts/SettingsContext';
 import { getBookmarkedSentences, toggleBookmark } from '../utils/bookmarks';
@@ -50,7 +50,12 @@ jest.mock('../utils/bookmarks', () => ({
   toggleBookmark: jest.fn()
 }));
 
-jest.mock('../components/AudiobookPlayer', () => () => <div>Audio Player</div>);
+const mockAudiobookPlayer = jest.fn();
+
+jest.mock('../components/AudiobookPlayer', () => (props) => {
+  mockAudiobookPlayer(props);
+  return <div>Audio Player</div>;
+});
 
 jest.mock('../components/TranslationPopup', () => () => null);
 
@@ -95,6 +100,12 @@ const renderTextDisplay = (settingOverrides = {}) => render(
   </SettingsContext.Provider>
 );
 
+const renderTextDisplayWithRouter = (router, settingOverrides = {}) => render(
+  <SettingsContext.Provider value={createSettingsValue(settingOverrides)}>
+    <RouterProvider router={router} />
+  </SettingsContext.Provider>
+);
+
 describe('TextDisplay', () => {
   const originalMatchMedia = window.matchMedia;
   const originalGetSelection = window.getSelection;
@@ -111,6 +122,7 @@ describe('TextDisplay', () => {
 
   beforeEach(() => {
     jest.useFakeTimers();
+    mockAudiobookPlayer.mockClear();
     getText.mockResolvedValue({
       textId: 1,
       title: 'Sample Text',
@@ -350,5 +362,90 @@ describe('TextDisplay', () => {
         rate: 1
       }));
     });
+  });
+
+  test('switching audio lessons emits a fresh segment playback request', async () => {
+    let now = 1000;
+    jest.spyOn(Date, 'now').mockImplementation(() => {
+      now += 1000;
+      return now;
+    });
+
+    getText
+      .mockResolvedValueOnce({
+        textId: 1,
+        title: 'Lesson One',
+        content: 'Hola mundo.',
+        languageId: null,
+        languageCode: 'ES',
+        languageName: 'Spanish',
+        isAudioLesson: true,
+        audioFilePath: 'audio_lessons/1.mp3',
+        srtContent: '1\n00:00:00,000 --> 00:00:02,000\nHola mundo.\n',
+        words: [],
+        bookId: null
+      })
+      .mockResolvedValueOnce({
+        textId: 2,
+        title: 'Lesson Two',
+        content: 'Buenos dias.',
+        languageId: null,
+        languageCode: 'ES',
+        languageName: 'Spanish',
+        isAudioLesson: true,
+        audioFilePath: 'audio_lessons/2.mp3',
+        srtContent: '1\n00:00:00,000 --> 00:00:02,000\nBuenos dias.\n',
+        words: [],
+        bookId: null
+      });
+
+    getSentenceProgress
+      .mockResolvedValueOnce({
+        textId: 1,
+        creditedSegmentIndices: [],
+        creditedWordCount: 0,
+        lastSegmentIndex: 0
+      })
+      .mockResolvedValueOnce({
+        textId: 2,
+        creditedSegmentIndices: [],
+        creditedWordCount: 0,
+        lastSegmentIndex: 0
+      });
+
+    const router = createMemoryRouter(
+      [
+        { path: '/texts/:textId', element: <TextDisplay /> }
+      ],
+      { initialEntries: ['/texts/1'] }
+    );
+
+    renderTextDisplayWithRouter(router, { sentenceMode: true });
+
+    const getLatestAudioProps = (textId) => (
+      mockAudiobookPlayer.mock.calls
+        .map(([props]) => props)
+        .filter((props) => String(props.textId) === String(textId) && props.segmentPlaybackRequest)
+        .at(-1)
+    );
+
+    await waitFor(() => {
+      expect(getLatestAudioProps(1)?.segmentPlaybackRequest?.requestId).toBeTruthy();
+    });
+
+    const firstRequestId = getLatestAudioProps(1).segmentPlaybackRequest.requestId;
+
+    await act(async () => {
+      await router.navigate('/texts/2');
+    });
+
+    await waitFor(() => {
+      expect(getLatestAudioProps(2)?.segmentPlaybackRequest?.requestId).toBeTruthy();
+    });
+
+    const secondProps = getLatestAudioProps(2);
+    expect(secondProps.segmentPlaybackRequest.requestId).not.toBe(firstRequestId);
+    expect(secondProps.segmentPlaybackRequest.startTime).toBe(0);
+    expect(secondProps.segmentPlaybackRequest.endTime).toBe(2);
   });
 });

@@ -1102,8 +1102,6 @@ const TextDisplay = () => {
   const suppressWordClickUntilRef = useRef(0);
   const selectableWordTouchStartRef = useRef(0);
   const pendingSentenceCreditRef = useRef(new Set());
-  // Initialize from globalSettings (sentenceAudioRepeats const is declared later — avoid TDZ)
-  const sentenceAudioRepeatsRef = useRef(globalSettings.sentenceAudioRepeats || 1);
   const audioDrivenSentenceSyncRef = useRef(false);
   const lastAutoSegmentPlaybackKeyRef = useRef('');
   // --- End State Declarations ---
@@ -1177,10 +1175,6 @@ const TextDisplay = () => {
   const sentenceTtsEnabled = globalSettings.sentenceTtsEnabled ?? true;
   const sentenceTtsRate = globalSettings.sentenceTtsRate ?? 1;
   const canUseSentenceTts = isSpeechSynthesisSupported();
-
-  useEffect(() => {
-    sentenceAudioRepeatsRef.current = sentenceAudioRepeats;
-  }, [sentenceAudioRepeats]);
 
   const hasActiveTextSelection = useCallback(() => {
     const selection = window.getSelection();
@@ -2008,10 +2002,11 @@ const TextDisplay = () => {
       setCurrentSrtLineId(currentSentenceSegment.srtLineId || null);
       if (!isAudioDrivenSync) {
         const playbackKey = [
+          text.textId,
           currentSentenceSegment.index,
           currentSentenceSegment.startTime,
           currentSentenceSegment.endTime,
-          sentenceAudioRepeatsRef.current
+          sentenceAudioRepeats
         ].join(':');
 
         if (lastAutoSegmentPlaybackKeyRef.current !== playbackKey) {
@@ -2020,7 +2015,7 @@ const TextDisplay = () => {
             requestId: `${currentSentenceSegment.index}-${Date.now()}`,
             startTime: currentSentenceSegment.startTime,
             endTime: currentSentenceSegment.endTime,
-            repeatCount: sentenceAudioRepeatsRef.current
+            repeatCount: sentenceAudioRepeats
           });
         }
       }
@@ -2033,6 +2028,7 @@ const TextDisplay = () => {
     currentSentenceSegment,
     isAudioLesson,
     isSentenceMode,
+    sentenceAudioRepeats,
     sentenceProgressLoaded,
     text?.textId
   ]);
@@ -2114,6 +2110,8 @@ const TextDisplay = () => {
         setVisibleExplanationIndex(null);
         setCreditedSegmentIndices([]);
         setSentenceProgressLoaded(false);
+      setSegmentPlaybackRequest(null);
+      lastAutoSegmentPlaybackKeyRef.current = '';
         pendingSentenceCreditRef.current = new Set();
       } else {
         console.log(`[TextDisplay] Refreshing data for same text ${textId} (skipping loading state)`);

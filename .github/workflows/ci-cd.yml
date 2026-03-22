@@ -223,12 +223,19 @@ jobs:
 
             sudo docker compose -f docker-compose.yml -f docker-compose.prod.yml pull api nginx
             sudo docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --force-recreate api
+            api_container_id=$(sudo docker compose -f docker-compose.yml -f docker-compose.prod.yml ps -q api)
+            if [ -z "$api_container_id" ]; then
+              echo "Could not resolve api container id after recreate"
+              sudo docker compose ps
+              sudo docker compose logs --no-color --tail=200 api || true
+              exit 1
+            fi
 
             # Health check (inside the api container; Nginx is Basic-Auth protected).
             # The API may take time to start (DB readiness + migrations). Retry and dump logs on failure.
             ok=""
             for i in $(seq 1 60); do
-              if sudo docker compose exec -T api curl -fsS http://localhost:5000/api/Health >/dev/null; then
+              if sudo docker exec "$api_container_id" curl -fsS http://localhost:5000/api/Health >/dev/null; then
                 ok="yes"
                 break
               fi
@@ -249,7 +256,7 @@ jobs:
             login_output_file=$(mktemp)
             if [ -n "${LOGIN_SECRET}" ]; then
               set +e
-              sudo docker compose exec -T -e LOGIN_SECRET="$LOGIN_SECRET" api sh -lc '
+              sudo docker exec -e LOGIN_SECRET="$LOGIN_SECRET" "$api_container_id" sh -lc '
                 curl -sS -X POST http://localhost:5000/api/auth/login \
                   -H "Accept: application/json" \
                   -H "X-Login-Secret: $LOGIN_SECRET" \
@@ -259,7 +266,7 @@ jobs:
               set -e
             else
               set +e
-              sudo docker compose exec -T api sh -lc '
+              sudo docker exec "$api_container_id" sh -lc '
                 curl -sS -X POST http://localhost:5000/api/auth/login \
                   -H "Accept: application/json" \
                   -H "X-Forwarded-User: deploy-smoke-test" \
@@ -297,7 +304,7 @@ jobs:
 
             usersettings_output_file=$(mktemp)
             set +e
-            sudo docker compose exec -T -e AUTH_TOKEN="$token" api sh -lc '
+            sudo docker exec -e AUTH_TOKEN="$token" "$api_container_id" sh -lc '
               curl -sS http://localhost:5000/api/usersettings \
                 -H "Accept: application/json" \
                 -H "Authorization: Bearer $AUTH_TOKEN" \

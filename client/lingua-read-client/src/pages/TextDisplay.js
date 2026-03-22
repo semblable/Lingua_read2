@@ -979,6 +979,7 @@ const TextDisplay = () => {
   const pendingSentenceCreditRef = useRef(new Set());
   // Initialize from globalSettings (sentenceAudioRepeats const is declared later — avoid TDZ)
   const sentenceAudioRepeatsRef = useRef(globalSettings.sentenceAudioRepeats || 1);
+  const audioDrivenSentenceSyncRef = useRef(false);
   // --- End State Declarations ---
 
   // Create refs for values used in handleAudioTimeUpdate to keep the callback stable
@@ -987,6 +988,8 @@ const TextDisplay = () => {
     srtLines: [],
     displayMode: 'audio',
     currentSrtLineId: null,
+    isSentenceMode: false,
+    currentSegmentIndex: 0,
     isMobile: false,
     listRef: listRef // Reference the listRef from scope
   });
@@ -998,10 +1001,12 @@ const TextDisplay = () => {
       srtLines,
       displayMode,
       currentSrtLineId,
+      isSentenceMode,
+      currentSegmentIndex,
       isMobile,
       listRef: listRef // Store the ref object
     };
-  }, [isAudioLesson, srtLines, displayMode, currentSrtLineId, isMobile]);
+  }, [isAudioLesson, srtLines, displayMode, currentSrtLineId, isSentenceMode, currentSegmentIndex, isMobile]);
 
   // --- Effects ---
   useEffect(() => {
@@ -1712,6 +1717,9 @@ const TextDisplay = () => {
       return;
     }
 
+    const isAudioDrivenSync = audioDrivenSentenceSyncRef.current;
+    audioDrivenSentenceSyncRef.current = false;
+
     let cancelled = false;
 
     const syncSentenceProgress = async () => {
@@ -1747,12 +1755,14 @@ const TextDisplay = () => {
 
     if (isAudioLesson && currentSentenceSegment.startTime != null && currentSentenceSegment.endTime != null) {
       setCurrentSrtLineId(currentSentenceSegment.srtLineId || null);
-      setSegmentPlaybackRequest({
-        requestId: `${currentSentenceSegment.index}-${Date.now()}`,
-        startTime: currentSentenceSegment.startTime,
-        endTime: currentSentenceSegment.endTime,
-        repeatCount: sentenceAudioRepeatsRef.current
-      });
+      if (!isAudioDrivenSync) {
+        setSegmentPlaybackRequest({
+          requestId: `${currentSentenceSegment.index}-${Date.now()}`,
+          startTime: currentSentenceSegment.startTime,
+          endTime: currentSentenceSegment.endTime,
+          repeatCount: sentenceAudioRepeatsRef.current
+        });
+      }
     }
 
     return () => {
@@ -1937,7 +1947,7 @@ const TextDisplay = () => {
   // Audio Time Update Handler - NOW STABLE (using refs)
   const handleAudioTimeUpdate = useCallback((newTime) => {
     // Read latest state from ref
-    const { isAudioLesson, srtLines, displayMode, currentSrtLineId, isMobile, listRef: currentListRef } = handleAudioTimeUpdateStateRef.current;
+    const { isAudioLesson, srtLines, displayMode, currentSrtLineId, isSentenceMode, currentSegmentIndex, isMobile, listRef: currentListRef } = handleAudioTimeUpdateStateRef.current;
 
     audioCurrentTimeRef.current = newTime;
 
@@ -1949,6 +1959,11 @@ const TextDisplay = () => {
 
     const currentLineIndex = srtLines.findIndex(line => newTime >= line.startTime && newTime < line.endTime);
     const currentLine = currentLineIndex !== -1 ? srtLines[currentLineIndex] : null;
+
+    if (isSentenceMode && currentLineIndex !== -1 && currentLineIndex !== currentSegmentIndex) {
+      audioDrivenSentenceSyncRef.current = true;
+      setCurrentSegmentIndex(currentLineIndex);
+    }
 
     // Only trigger re-render if the line ID actually changed
     if (currentLine && currentLine.id !== currentSrtLineId) {

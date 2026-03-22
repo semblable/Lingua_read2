@@ -636,8 +636,20 @@ const AudiobookPlayer = ({
 
     const newTime = Math.max(0, Math.min(time, d));
     console.log(`[AudioPlayer] Seeking to ${newTime}s (Requested: ${time}s, Duration: ${d}s)`);
+    if (segmentPlaybackRef.current.active) {
+      segmentPlaybackRef.current = {
+        active: false,
+        requestId: null,
+        startTime: 0,
+        endTime: 0,
+        remainingRepeats: 0
+      };
+    }
     audio.currentTime = newTime;
     setCurrentTime(newTime);
+    if (onTimeUpdateRef.current) {
+      onTimeUpdateRef.current(newTime);
+    }
   }, [audioRef, duration]);
 
   const goToNextTrack = useCallback(() => {

@@ -128,4 +128,52 @@ describe('AudiobookPlayer', () => {
 
     expect(window.HTMLMediaElement.prototype.pause).not.toHaveBeenCalled();
   });
+
+  test('manual seek cancels active segment playback and reports new time', async () => {
+    getAudioLessonProgress.mockResolvedValue({ currentPosition: 0 });
+    const onTimeUpdate = jest.fn();
+
+    const { container } = render(
+      <AudiobookPlayer
+        type="lesson"
+        audioSrc="https://example.com/lesson.mp3"
+        textId={42}
+        languageId={5}
+        onTimeUpdate={onTimeUpdate}
+        segmentPlaybackRequest={{
+          requestId: 'segment-2',
+          startTime: 0,
+          endTime: 5,
+          repeatCount: 1
+        }}
+      />
+    );
+
+    await waitFor(() => {
+      expect(getAudioLessonProgress).toHaveBeenCalledWith(42);
+    });
+
+    const audio = container.querySelector('audio');
+    expect(audio).not.toBeNull();
+    Object.defineProperty(audio, 'duration', {
+      configurable: true,
+      writable: true,
+      value: 100
+    });
+
+    fireEvent.click(screen.getByTitle('+10s'));
+
+    expect(onTimeUpdate).toHaveBeenCalledWith(10);
+
+    act(() => {
+      Object.defineProperty(audio, 'currentTime', {
+        configurable: true,
+        writable: true,
+        value: 10
+      });
+      fireEvent.timeUpdate(audio);
+    });
+
+    expect(window.HTMLMediaElement.prototype.pause).not.toHaveBeenCalled();
+  });
 });

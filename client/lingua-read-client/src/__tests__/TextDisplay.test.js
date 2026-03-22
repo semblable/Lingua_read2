@@ -404,6 +404,7 @@ describe('TextDisplay', () => {
     renderTextDisplay({ readingUiMode: 'modern' });
 
     await waitFor(() => expect(getText).toHaveBeenCalled());
+    await screen.findByText('Audio Lesson');
 
     const wrapper = document.querySelector('.text-display-wrapper');
     expect(wrapper).toHaveClass('reader-ui-classic');

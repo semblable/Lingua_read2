@@ -174,7 +174,7 @@ describe('TextDisplay', () => {
 
     act(() => {
       document.dispatchEvent(new Event('selectionchange'));
-      jest.advanceTimersByTime(500);
+      jest.advanceTimersByTime(1000);
     });
 
     await waitFor(() => {

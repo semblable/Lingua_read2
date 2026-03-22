@@ -1196,13 +1196,17 @@ const TextDisplay = () => {
 
   }, [getSelectionDetails, handleSelectedText, isMobile]); // textContentRef is a stable ref
 
-  const handleWordSelection = useCallback(() => {
+  const scheduleWordSelection = useCallback((delayMs) => {
     clearPendingSelection();
     selectionDebounceRef.current = setTimeout(() => {
       selectionDebounceRef.current = null;
       processWordSelection();
-    }, isMobile ? 400 : 120);
-  }, [clearPendingSelection, isMobile, processWordSelection]);
+    }, delayMs);
+  }, [clearPendingSelection, processWordSelection]);
+
+  const handleWordSelection = useCallback(() => {
+    scheduleWordSelection(isMobile ? 650 : 120);
+  }, [isMobile, scheduleWordSelection]);
 
   useEffect(() => {
     return () => clearPendingSelection();
@@ -1225,14 +1229,14 @@ const TextDisplay = () => {
       if (!container.contains(anchorNode) || !container.contains(focusNode)) return;
 
       setIsWordPanelOpen(false);
-      handleWordSelection();
+      scheduleWordSelection(900);
     };
 
     document.addEventListener('selectionchange', handleSelectionChange);
     return () => {
       document.removeEventListener('selectionchange', handleSelectionChange);
     };
-  }, [isMobile, handleWordSelection]);
+  }, [isMobile, scheduleWordSelection]);
   // --- End New Word-Granularity Selection Logic ---
 
 

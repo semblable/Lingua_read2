@@ -56,12 +56,13 @@ namespace LinguaReadApi.Controllers
                     Theme = "light",
                     TextSize = 16,
                     TextFont = "default",
+                    ReadingUiMode = "classic",
                     AutoTranslateWords = true,
                     PauseOnWordClick = false,
                     HighlightKnownWords = true,
                     SentenceMode = false,
                     SentenceAudioRepeats = 1,
-                    SentenceTtsEnabled = true,
+                    SentenceTtsEnabled = false,
                     SentenceTtsRate = 1.0,
                     DefaultLanguageId = 0,
                     AutoAdvanceToNextLesson = false,
@@ -88,6 +89,7 @@ namespace LinguaReadApi.Controllers
                 Theme = settings.Theme,
                 TextSize = settings.TextSize,
                 TextFont = settings.TextFont,
+                ReadingUiMode = settings.ReadingUiMode,
                 AutoTranslateWords = settings.AutoTranslateWords,
                 PauseOnWordClick = settings.PauseOnWordClick,
                 HighlightKnownWords = settings.HighlightKnownWords,
@@ -143,6 +145,14 @@ namespace LinguaReadApi.Controllers
             settings.Theme = updateDto.Theme ?? settings.Theme;
             settings.TextSize = updateDto.TextSize ?? settings.TextSize;
             settings.TextFont = updateDto.TextFont ?? settings.TextFont;
+            if (!string.IsNullOrWhiteSpace(updateDto.ReadingUiMode))
+            {
+                var normalizedReadingUiMode = updateDto.ReadingUiMode.Trim().ToLowerInvariant();
+                if (normalizedReadingUiMode == "classic" || normalizedReadingUiMode == "modern")
+                {
+                    settings.ReadingUiMode = normalizedReadingUiMode;
+                }
+            }
             settings.AutoTranslateWords = updateDto.AutoTranslateWords ?? settings.AutoTranslateWords;
             settings.PauseOnWordClick = updateDto.PauseOnWordClick ?? settings.PauseOnWordClick;
             settings.HighlightKnownWords = updateDto.HighlightKnownWords ?? settings.HighlightKnownWords;
@@ -199,6 +209,7 @@ namespace LinguaReadApi.Controllers
                 Theme = settings.Theme,
                 TextSize = settings.TextSize,
                 TextFont = settings.TextFont,
+                ReadingUiMode = settings.ReadingUiMode,
                 AutoTranslateWords = settings.AutoTranslateWords,
                 PauseOnWordClick = settings.PauseOnWordClick,
                 HighlightKnownWords = settings.HighlightKnownWords,
@@ -560,13 +571,14 @@ namespace LinguaReadApi.Controllers
         public string Theme { get; set; } = "light";
         public int TextSize { get; set; } = 16;
         public string TextFont { get; set; } = "default";
+        public string ReadingUiMode { get; set; } = "classic";
         public int LeftPanelWidth { get; set; } // Already added in previous step, ensure it's correct
         public bool AutoTranslateWords { get; set; } = true;
         public bool PauseOnWordClick { get; set; } = false;
         public bool HighlightKnownWords { get; set; } = true;
         public bool SentenceMode { get; set; } = false;
         public int SentenceAudioRepeats { get; set; } = 1;
-        public bool SentenceTtsEnabled { get; set; } = true;
+        public bool SentenceTtsEnabled { get; set; } = false;
         public double SentenceTtsRate { get; set; } = 1.0;
         public int DefaultLanguageId { get; set; } = 0;
         public bool AutoAdvanceToNextLesson { get; set; } = false;
@@ -592,6 +604,8 @@ namespace LinguaReadApi.Controllers
         public int? TextSize { get; set; }
         
         public string? TextFont { get; set; }
+        [StringLength(20)]
+        public string? ReadingUiMode { get; set; }
 
         [Range(10, 100)] // Widen range to accept broader values
         public int? LeftPanelWidth { get; set; } // Already added in previous step, ensure it's correct

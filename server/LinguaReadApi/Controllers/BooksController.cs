@@ -8,6 +8,7 @@ using System.Security.Claims;
 using System.Threading.Tasks;
 using System.ComponentModel.DataAnnotations;
 using System.IO; // Added for file streams
+using System.Net;
 using System.Text; // Added for StreamReader encoding
 using System.Text.RegularExpressions; // Added for Regex HTML stripping
 using VersOne.Epub; // Added for EPUB parsing
@@ -300,35 +301,7 @@ namespace LinguaReadApi.Controllers
                     var epubBook = await VersOne.Epub.EpubReader.ReadBookAsync(stream);
                     bookTitle = uploadDto.TitleOverride ?? epubBook.Title ?? Path.GetFileNameWithoutExtension(uploadDto.File.FileName); // Use EPUB title or filename if override not provided
 
-                    // Concatenate content from reading order, attempting to get text
-                    var contentParts = new List<string>();
-                    var contentBuilder = new StringBuilder();
-                    // Iterate directly through the HTML content files
-                    // Iterate through the reading order (EpubNavigationItem) to maintain sequence
-                    // Iterate through the reading order, which contains EpubLocalTextContentFile objects
-                    foreach (EpubLocalTextContentFile textFile in epubBook.ReadingOrder)
-                    {
-                        // Access the raw HTML content directly from the Content property
-                        string htmlContent = textFile.Content ?? string.Empty;
-
-                        // 1. Replace paragraph endings with double newlines
-                        htmlContent = Regex.Replace(htmlContent, @"</p>", "\n\n", RegexOptions.IgnoreCase);
-                        // 2. Replace <br> tags with single newlines
-                        htmlContent = Regex.Replace(htmlContent, @"<br\s*/?>", "\n", RegexOptions.IgnoreCase);
-                        // 3. Strip remaining HTML tags
-                        string plainText = Regex.Replace(htmlContent, "<[^>]*>", string.Empty);
-                        // 4. Decode HTML entities
-                        plainText = System.Net.WebUtility.HtmlDecode(plainText);
-
-                        // 5. Trim and add to list if not empty
-                        string trimmedText = plainText.Trim();
-                        if (!string.IsNullOrWhiteSpace(trimmedText))
-                        {
-                            contentParts.Add(trimmedText); // Add processed part to the list
-                        }
-                    }
-                     // 6. Join the processed parts with double newlines
-                    bookContent = string.Join("\n\n", contentParts);
+                    bookContent = ExtractPlainTextFromEpub(epubBook);
                 }
                 else // Must be .txt based on earlier check
                 {
@@ -616,7 +589,9 @@ namespace LinguaReadApi.Controllers
             {
                 case "paragraph":
                     // Split by paragraphs
-                    var paragraphs = content.Split(new[] { "\r\n\r\n", "\n\n" }, StringSplitOptions.RemoveEmptyEntries);
+                    var paragraphs = Regex.Split(content, @"\r?\n\s*\r?\n+")
+                        .Where(p => !string.IsNullOrWhiteSpace(p))
+                        .ToArray();
                     
                     // Group paragraphs to respect max size
                     var currentPart = new List<string>();
@@ -704,6 +679,56 @@ namespace LinguaReadApi.Controllers
             }
             
             return result;
+        }
+
+        private static string ExtractPlainTextFromEpub(EpubBook epubBook)
+        {
+            var contentParts = new List<string>();
+
+            foreach (EpubLocalTextContentFile textFile in epubBook.ReadingOrder)
+            {
+                var normalizedText = NormalizeEpubHtmlToText(textFile.Content ?? string.Empty);
+                if (!string.IsNullOrWhiteSpace(normalizedText))
+                {
+                    contentParts.Add(normalizedText);
+                }
+            }
+
+            return string.Join("\n\n", contentParts);
+        }
+
+        private static string NormalizeEpubHtmlToText(string htmlContent)
+        {
+            if (string.IsNullOrWhiteSpace(htmlContent))
+            {
+                return string.Empty;
+            }
+
+            var normalizedHtml = htmlContent;
+
+            normalizedHtml = Regex.Replace(normalizedHtml, @"<!--.*?-->", string.Empty, RegexOptions.Singleline);
+            normalizedHtml = Regex.Replace(normalizedHtml, @"<(script|style)\b[^>]*>.*?</\1>", string.Empty, RegexOptions.Singleline | RegexOptions.IgnoreCase);
+            normalizedHtml = Regex.Replace(normalizedHtml, @"<br\s*/?>", "\n", RegexOptions.IgnoreCase);
+            normalizedHtml = Regex.Replace(
+                normalizedHtml,
+                @"</(p|div|section|article|aside|header|footer|nav|figure|figcaption|blockquote|pre|li|h[1-6])\s*>",
+                "\n\n",
+                RegexOptions.IgnoreCase);
+            normalizedHtml = Regex.Replace(normalizedHtml, @"</(tr)\s*>", "\n", RegexOptions.IgnoreCase);
+            normalizedHtml = Regex.Replace(normalizedHtml, @"<(hr)\b[^>]*>", "\n\n", RegexOptions.IgnoreCase);
+            normalizedHtml = Regex.Replace(normalizedHtml, @"<(td|th)\b[^>]*>", " ", RegexOptions.IgnoreCase);
+            normalizedHtml = Regex.Replace(normalizedHtml, @"</(td|th)\s*>", " ", RegexOptions.IgnoreCase);
+            normalizedHtml = Regex.Replace(normalizedHtml, @"<[^>]*>", string.Empty);
+
+            var plainText = WebUtility.HtmlDecode(normalizedHtml)
+                .Replace("\r\n", "\n")
+                .Replace('\r', '\n');
+
+            plainText = Regex.Replace(plainText, @"[ \t\f\v]+", " ");
+            plainText = Regex.Replace(plainText, @" *\n *", "\n");
+            plainText = Regex.Replace(plainText, @"\n{3,}", "\n\n");
+
+            return plainText.Trim();
         }
 
         // PUT: api/books/5/lastread

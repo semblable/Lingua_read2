@@ -14,6 +14,8 @@ namespace LinguaReadApi.Models
         public string Theme { get; set; } = "light"; // light, dark, system
         public int TextSize { get; set; } = 16; // font size for reading
         public string TextFont { get; set; } = "default"; // font family for reading
+        [StringLength(20)]
+        public string ReadingUiMode { get; set; } = "classic"; // classic, modern
         public int LeftPanelWidth { get; set; } = 85; // Reading panel width percentage (default 85%)
 
         // Reading Preferences
@@ -22,7 +24,7 @@ namespace LinguaReadApi.Models
         public bool HighlightKnownWords { get; set; } = true; // highlight words based on knowledge level
         public bool SentenceMode { get; set; } = false; // default reader mode
         public int SentenceAudioRepeats { get; set; } = 1; // play each audio segment N times in sentence mode
-        public bool SentenceTtsEnabled { get; set; } = true; // enable browser TTS controls in sentence mode
+        public bool SentenceTtsEnabled { get; set; } = false; // enable browser TTS controls in sentence mode
         public double SentenceTtsRate { get; set; } = 1.0; // browser TTS playback speed
         public int DefaultLanguageId { get; set; } = 0; // default language for new texts
         

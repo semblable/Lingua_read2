@@ -12,10 +12,12 @@ const UserSettings = () => {
     theme: 'dark',
     textSize: 16,
     textFont: 'default',
+    readingUiMode: 'classic',
     leftPanelWidth: 85, // Added initial state
     autoTranslateWords: true,
     pauseOnWordClick: false,
     highlightKnownWords: true,
+    sentenceTtsEnabled: false,
     defaultLanguageId: 0,
     autoAdvanceToNextLesson: false,
     autoMoveFinishedLessons: false, // Added property
@@ -80,10 +82,12 @@ const UserSettings = () => {
           theme: data.theme || 'dark',
           textSize: data.textSize || 16,
           textFont: data.textFont || 'default',
+          readingUiMode: data.readingUiMode || 'classic',
           leftPanelWidth: data.leftPanelWidth || 85, // Fetch panel width
           autoTranslateWords: data.autoTranslateWords ?? true,
           pauseOnWordClick: data.pauseOnWordClick ?? false,
           highlightKnownWords: data.highlightKnownWords ?? true,
+          sentenceTtsEnabled: data.sentenceTtsEnabled ?? false,
           defaultLanguageId: data.defaultLanguageId || 0,
           autoAdvanceToNextLesson: data.autoAdvanceToNextLesson ?? false,
           autoMoveFinishedLessons: data.autoMoveFinishedLessons ?? false, // Map response
@@ -204,6 +208,9 @@ const UserSettings = () => {
       updateSetting('textFont', settings.textFont);
       localStorage.setItem('textFont', settings.textFont);
 
+      updateSetting('readingUiMode', settings.readingUiMode);
+      localStorage.setItem('readingUiMode', settings.readingUiMode);
+
       updateSetting('leftPanelWidth', settings.leftPanelWidth);
       localStorage.setItem('leftPanelWidth', settings.leftPanelWidth.toString());
 
@@ -215,6 +222,9 @@ const UserSettings = () => {
 
       updateSetting('highlightKnownWords', settings.highlightKnownWords);
       localStorage.setItem('highlightKnownWords', settings.highlightKnownWords.toString());
+
+      updateSetting('sentenceTtsEnabled', settings.sentenceTtsEnabled);
+      localStorage.setItem('sentenceTtsEnabled', settings.sentenceTtsEnabled.toString());
 
       updateSetting('defaultLanguageId', settings.defaultLanguageId);
       localStorage.setItem('defaultLanguageId', settings.defaultLanguageId.toString());
@@ -481,6 +491,18 @@ const UserSettings = () => {
               </Form.Select>
             </Form.Group>
 
+            <Form.Group className="mb-4" controlId="readingUiMode">
+              <Form.Label>Reader Display Mode</Form.Label>
+              <Form.Select
+                name="readingUiMode"
+                value={settings.readingUiMode}
+                onChange={handleChange}
+              >
+                <option value="classic">Classic</option>
+                <option value="modern">Modern</option>
+              </Form.Select>
+            </Form.Group>
+
 
             {/* --- Existing Reading Preferences --- */}
             <h4 className="mt-4 mb-3">Reading Preferences</h4>
@@ -511,6 +533,16 @@ const UserSettings = () => {
                 name="highlightKnownWords"
                 label="Highlight words based on knowledge level"
                 checked={settings.highlightKnownWords}
+                onChange={handleChange}
+              />
+            </Form.Group>
+
+            <Form.Group className="mb-3" controlId="sentenceTtsEnabled">
+              <Form.Check
+                type="checkbox"
+                name="sentenceTtsEnabled"
+                label="Enable browser text-to-speech controls in the reader"
+                checked={settings.sentenceTtsEnabled}
                 onChange={handleChange}
               />
             </Form.Group>

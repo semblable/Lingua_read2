@@ -125,6 +125,44 @@
   scrollbar-color: #adb5bd #f8f9fa;
 }
 
+.reader-main-surface {
+  height: 100%;
+}
+
+.reader-main-surface-inner {
+  min-height: 100%;
+}
+
+.reader-ui-modern .lesson-header,
+.reader-ui-modern .lesson-topbar,
+.reader-ui-modern .lesson-audio-bar {
+  background: color-mix(in srgb, var(--theme-surface-bg, #fff) 92%, var(--theme-border-color, #e9ecef) 8%);
+}
+
+.reader-main-surface-modern {
+  padding: 1.25rem;
+  background:
+    radial-gradient(circle at top, color-mix(in srgb, var(--theme-surface-bg, #fff) 88%, transparent) 0%, transparent 58%),
+    color-mix(in srgb, var(--theme-surface-bg, #fff) 94%, var(--theme-border-color, #e9ecef) 6%);
+}
+
+.reader-main-surface-inner-modern {
+  max-width: 980px;
+  margin: 0 auto;
+  min-height: 100%;
+  padding: 1.25rem 1.5rem 2rem;
+  border: 1px solid color-mix(in srgb, var(--theme-border-color, #e9ecef) 80%, transparent);
+  border-radius: 24px;
+  background: color-mix(in srgb, var(--theme-surface-bg, #fff) 96%, transparent);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.08);
+}
+
+.reader-ui-modern .right-panel-modern > .card,
+.reader-ui-modern .sentence-mode-card {
+  border-radius: 20px;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.08);
+}
+
 /* Text content wrapper */
 .text-content-wrapper {
   width: 100%;
@@ -161,17 +199,12 @@
 }
 
 /* Paragraph styling */
-.text-content p {
+.reader-paragraph {
   margin-bottom: var(--space-md);
-  /* Use spacing variable */
   text-indent: var(--space-lg);
-  /* Use spacing variable */
   line-height: var(--reading-line-height);
-  /* Use CSS custom property */
   padding-left: var(--space-sm);
-  /* Use spacing variable */
   padding-right: var(--space-sm);
-  /* Use spacing variable */
   text-align: left;
   width: 100%;
   max-width: 100%;
@@ -179,8 +212,72 @@
   word-wrap: break-word;
 }
 
-.text-content p:last-child {
+.reader-paragraph:last-child {
   margin-bottom: 2em;
+}
+
+.reader-paragraph-modern {
+  max-width: 46rem;
+  margin-left: auto;
+  margin-right: auto;
+  margin-bottom: 1.35rem;
+  padding-left: 0;
+  padding-right: 0;
+  text-indent: 0;
+  font-size: 1.03em;
+}
+
+.reader-paragraph-classic {
+  text-indent: 1.5em;
+}
+
+.reader-title-block {
+  width: 100%;
+  max-width: 100%;
+  margin: 0 auto 1.75rem;
+  padding: 0.25rem 0.75rem;
+  text-align: center;
+}
+
+.reader-title-block-classic {
+  max-width: 38rem;
+}
+
+.reader-title-block-modern {
+  max-width: 42rem;
+  margin-bottom: 2rem;
+  padding: 1rem 1.25rem;
+}
+
+.reader-title-line {
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+
+.reader-title-line-spacer {
+  height: 1rem;
+}
+
+.reader-title-line + .reader-title-line {
+  margin-top: 0.5rem;
+}
+
+.reader-title-line-classic {
+  font-family: var(--font-family-serif);
+}
+
+.reader-title-line-modern {
+  font-family: var(--font-family-serif);
+  font-size: 1.08em;
+  line-height: 1.85;
+}
+
+.text-content-modern {
+  padding-bottom: 1rem;
+}
+
+.text-content-modern .sentence {
+  letter-spacing: 0.01em;
 }
 
 /* Style for the currently active SRT line */
@@ -259,6 +356,17 @@
   font-size: 1.35rem;
   line-height: 1.8;
   min-height: 10rem;
+}
+
+.sentence-mode-title-text {
+  text-align: center;
+  max-width: 34rem;
+  margin: 0 auto;
+  font-family: var(--font-family-serif);
+}
+
+.sentence-mode-title-line {
+  white-space: pre-wrap;
 }
 
 .sentence-mode-translation {
@@ -374,7 +482,7 @@
     height: 35vh !important;
   }
 
-  .text-content p {
+  .reader-paragraph {
     text-indent: 1rem;
     padding-left: 0;
     padding-right: 0;
@@ -395,6 +503,23 @@
     box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
     line-height: var(--mobile-reading-line-height, calc(var(--reading-line-height) + 0.2));
     text-indent: 0;
+  }
+
+  .reading-block-modern,
+  .reader-ui-modern .srt-line,
+  .reader-ui-modern .sentence-mode-card,
+  .reader-ui-modern .right-panel-modern > .card {
+    border-radius: 18px;
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.08);
+  }
+
+  .reader-title-block {
+    padding-left: 0.25rem;
+    padding-right: 0.25rem;
+  }
+
+  .reader-title-line + .reader-title-line {
+    margin-top: 0.35rem;
   }
 
   .lesson-audio-bar {

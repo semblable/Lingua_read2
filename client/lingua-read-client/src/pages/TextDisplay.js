@@ -79,17 +79,23 @@ const parseSrtContent = (srtContent) => {
 const splitTextIntoSentenceSegments = (content) => {
   if (!content) return [];
 
-  const normalizedContent = content.replace(/\r\n/g, '\n');
   const segments = [];
-  const paragraphs = normalizedContent
-    .split(/\n\s*\n+/)
-    .map(paragraph => paragraph.trim())
-    .filter(Boolean);
-
   const sentenceRegex = /[^.!?…]+(?:[.!?…]+(?:"|”|'|’)?|$)/g;
 
-  paragraphs.forEach((paragraph) => {
-    const matches = paragraph.match(sentenceRegex) || [paragraph];
+  buildDisplayBlocks(content).forEach((block) => {
+    if (block.isTitleBlock) {
+      const titleSegmentText = block.lines.join('\n').trim();
+      if (titleSegmentText) {
+        segments.push({
+          index: segments.length,
+          text: titleSegmentText,
+          type: 'title'
+        });
+      }
+      return;
+    }
+
+    const matches = block.text.match(sentenceRegex) || [block.text];
     matches
       .map(sentence => sentence.replace(/\s+/g, ' ').trim())
       .filter(Boolean)
@@ -103,6 +109,79 @@ const splitTextIntoSentenceSegments = (content) => {
   });
 
   return segments;
+};
+
+const countWordsInText = (content) => {
+  if (!content) return 0;
+  return (content.match(/[\p{L}\p{N}'’-]+/gu) || []).length;
+};
+
+const titleLineEndsLikeSentence = (line) => /[.!?…]["'”’)]?$/.test(line.trim());
+
+const isRomanOrNumericLine = (line) => /^\d{1,4}$/.test(line) || /^[IVXLCDM]+$/i.test(line);
+
+const isShortHeadingLine = (line) => {
+  const wordCount = countWordsInText(line);
+  return wordCount > 0 && wordCount <= 4 && !titleLineEndsLikeSentence(line);
+};
+
+const buildDisplayBlocks = (content) => {
+  if (!content) return [];
+
+  const normalizedBlocks = content
+    .replace(/\r\n/g, '\n')
+    .split(/\n\s*\n+/)
+    .map(block => block.trim())
+    .filter(Boolean)
+    .map((block, blockIndex) => {
+      const rawLines = block
+        .split('\n')
+        .map(line => line.trimEnd());
+      const displayLines = rawLines.map(line => line.trim());
+      const nonEmptyLines = displayLines.filter(Boolean);
+      const joinedText = nonEmptyLines.join(' ').trim();
+      const totalWordCount = countWordsInText(joinedText);
+      const allCapsLineCount = nonEmptyLines.filter(line => /[A-Za-zÀ-ÿ]/.test(line) && line === line.toLocaleUpperCase()).length;
+      const romanOrNumericLineCount = nonEmptyLines.filter(isRomanOrNumericLine).length;
+      const shortHeadingLineCount = nonEmptyLines.filter(isShortHeadingLine).length;
+      const proseLineCount = nonEmptyLines.filter(titleLineEndsLikeSentence).length;
+      const hasBlankLine = rawLines.some(line => line.trim() === '');
+      const strongTitleSignal = blockIndex <= 3 && (
+        romanOrNumericLineCount > 0 ||
+        allCapsLineCount > 0 ||
+        (nonEmptyLines.length === 1 && shortHeadingLineCount === 1)
+      );
+
+      return {
+        key: `block-${blockIndex}`,
+        text: block,
+        lines: displayLines,
+        nonEmptyLines,
+        totalWordCount,
+        proseLineCount,
+        hasBlankLine,
+        strongTitleSignal
+      };
+    });
+
+  return normalizedBlocks.map((block, blockIndex, blocks) => {
+    const prevStrongTitleSignal = blocks[blockIndex - 1]?.strongTitleSignal ?? false;
+    const nextStrongTitleSignal = blocks[blockIndex + 1]?.strongTitleSignal ?? false;
+    const contextualTitleSignal = (
+      blockIndex <= 3 &&
+      block.totalWordCount <= 28 &&
+      block.nonEmptyLines.length >= 2 &&
+      (block.hasBlankLine || prevStrongTitleSignal || nextStrongTitleSignal) &&
+      (prevStrongTitleSignal || nextStrongTitleSignal || block.proseLineCount === 0)
+    );
+
+    return {
+      key: block.key,
+      text: block.text,
+      lines: block.lines,
+      isTitleBlock: block.strongTitleSignal || contextualTitleSignal
+    };
+  });
 };
 // --- End SRT Parsing Utilities ---
 
@@ -736,6 +815,7 @@ const AudioTranscriptView = React.memo(({
 const StandardTextView = React.memo(({
   text,
   globalSettings,
+  readingUiMode,
   mobileReadingConfig,
   getFontFamilyForList,
   handleWordSelection,
@@ -752,7 +832,7 @@ const StandardTextView = React.memo(({
   onSpeakSentence
 }) => {
   if (!text?.content) return null;
-  const paragraphs = text.content.split(/(\n\s*){2,}/g).filter(p => p?.trim().length > 0);
+  const displayBlocks = buildDisplayBlocks(text.content);
   let currentSentenceIndex = 0;
   const groupSentences = (sentenceElements, groupSize) => {
     if (!Array.isArray(sentenceElements) || sentenceElements.length === 0) return [];
@@ -770,6 +850,27 @@ const StandardTextView = React.memo(({
     });
     if (currentGroup.length) groups.push(currentGroup);
     return groups;
+  };
+  const modeClass = readingUiMode === 'modern' ? 'modern' : 'classic';
+  const renderLineAsSentences = (lineText) => {
+    const processedLineElements = processTextContent(lineText);
+    const { sentenceElements, nextSentenceIndex } = renderProcessedContentAsSentences(processedLineElements, currentSentenceIndex);
+    currentSentenceIndex = nextSentenceIndex;
+    return sentenceElements;
+  };
+  const renderTitleLine = (line, lineIndex, blockKey) => {
+    if (!line) {
+      return <div key={`${blockKey}-spacer-${lineIndex}`} className="reader-title-line-spacer" aria-hidden="true" />;
+    }
+
+    return (
+      <div
+        key={`${blockKey}-line-${lineIndex}`}
+        className={`reader-title-line reader-title-line-${modeClass}`}
+      >
+        {renderLineAsSentences(line)}
+      </div>
+    );
   };
 
   return (
@@ -813,7 +914,7 @@ const StandardTextView = React.memo(({
         </Button>
       </div>
       <div
-        className="text-content"
+        className={`text-content text-content-${modeClass}`}
         ref={textContentRef}
         style={{
           fontSize: `${globalSettings.textSize}px`,
@@ -825,19 +926,30 @@ const StandardTextView = React.memo(({
         onMouseUp={handleWordSelection}
         onTouchEnd={handleWordSelection}
       >
-        {paragraphs.map((paragraph, index) => {
-          const processedParaElements = processTextContent(paragraph);
+        {displayBlocks.map((block) => {
+          if (block.isTitleBlock) {
+            return (
+              <div
+                key={`${block.key}-title`}
+                className={`reader-title-block reader-title-block-${modeClass}`}
+              >
+                {block.lines.map((line, lineIndex) => renderTitleLine(line, lineIndex, block.key))}
+              </div>
+            );
+          }
+
+          const processedParaElements = processTextContent(block.text);
           const { sentenceElements, nextSentenceIndex } = renderProcessedContentAsSentences(processedParaElements, currentSentenceIndex);
           currentSentenceIndex = nextSentenceIndex;
 
           if (isMobile) {
-            const grouped = groupSentences(sentenceElements, mobileReadingConfig.chunkSize);
+            const grouped = groupSentences(sentenceElements || [], mobileReadingConfig.chunkSize);
             return (
-              <div key={`para-${index}`} className="reading-block-group">
+              <div key={block.key} className={`reading-block-group reading-block-group-${modeClass}`}>
                 {grouped.map((group, groupIndex) => (
-                  <p key={`para-${index}-group-${groupIndex}`} className="reading-block">
+                  <p key={`${block.key}-group-${groupIndex}`} className={`reading-block reading-block-${modeClass}`}>
                     {group.map((sentence, sentenceIndex) => (
-                      <React.Fragment key={`para-${index}-group-${groupIndex}-sentence-${sentenceIndex}`}>
+                      <React.Fragment key={`${block.key}-group-${groupIndex}-sentence-${sentenceIndex}`}>
                         {sentence}
                         {sentenceIndex < group.length - 1 ? ' ' : null}
                       </React.Fragment>
@@ -849,7 +961,7 @@ const StandardTextView = React.memo(({
           }
 
           return (
-            <p key={`para-${index}`} className="mb-3" style={{ textIndent: '1.5em' }}>
+            <p key={block.key} className={`reader-paragraph reader-paragraph-${modeClass}`}>
               {sentenceElements}
             </p>
           );
@@ -894,6 +1006,18 @@ const SentenceModeView = React.memo(({
   const explanationParsed = useMemo(
     () => parseSentenceExplanation(currentSegmentExplanation), [currentSegmentExplanation]
   );
+  const isTitleSegment = currentSegment.type === 'title';
+  const renderSentenceModeTitle = () => currentSegment.text.split('\n').map((line, lineIndex) => {
+    if (!line.trim()) {
+      return <div key={`title-segment-spacer-${lineIndex}`} className="reader-title-line-spacer" aria-hidden="true" />;
+    }
+
+    return (
+      <div key={`title-segment-line-${lineIndex}`} className="reader-title-line sentence-mode-title-line">
+        {processTextContent(line)}
+      </div>
+    );
+  });
 
   if (!currentSegment) {
     return <p className="p-3">No sentence available.</p>;
@@ -991,13 +1115,13 @@ const SentenceModeView = React.memo(({
       <Card className="sentence-mode-card shadow-sm border-0">
         <Card.Body>
           <div
-            className="sentence-mode-text"
+            className={`sentence-mode-text${isTitleSegment ? ' sentence-mode-title-text' : ''}`}
             ref={textContentRef}
             style={fontStyle}
             onMouseUp={handleWordSelection}
             onTouchEnd={handleWordSelection}
           >
-            {processTextContent(currentSegment.text)}
+            {isTitleSegment ? renderSentenceModeTitle() : processTextContent(currentSegment.text)}
           </div>
           {isTranslationVisible && (
             <div className="sentence-mode-translation">
@@ -1172,9 +1296,10 @@ const TextDisplay = () => {
 
   const isSentenceMode = globalSettings.sentenceMode;
   const sentenceAudioRepeats = globalSettings.sentenceAudioRepeats || 1;
-  const sentenceTtsEnabled = globalSettings.sentenceTtsEnabled ?? true;
+  const sentenceTtsEnabled = globalSettings.sentenceTtsEnabled ?? false;
   const sentenceTtsRate = globalSettings.sentenceTtsRate ?? 1;
   const canUseSentenceTts = isSpeechSynthesisSupported();
+  const readingUiMode = globalSettings.readingUiMode === 'modern' ? 'modern' : 'classic';
 
   const hasActiveTextSelection = useCallback(() => {
     const selection = window.getSelection();
@@ -2581,7 +2706,7 @@ const TextDisplay = () => {
 
   // --- Main Return JSX ---
   return (
-    <div className="text-display-wrapper lesson-page px-0 mx-0 w-100">
+    <div className={`text-display-wrapper lesson-page px-0 mx-0 w-100 reader-ui-${readingUiMode}`}>
       <MobileLessonHeader
         isMobile={isMobile}
         showMobileHeader={showMobileHeader}
@@ -2630,80 +2755,83 @@ const TextDisplay = () => {
       )}
 
       {/* Main Content Area */}
-      <div className="resizable-container">
+      <div className={`resizable-container resizable-container-${readingUiMode}`}>
         {/* Left Panel (Reading Area) */}
-        <div className="left-panel" style={{ width: `${leftPanelWidth}%`, minHeight: 'calc(100vh - 130px)', padding: '0', position: 'relative' }}>
+        <div className={`left-panel left-panel-${readingUiMode}`} style={{ width: `${leftPanelWidth}%`, minHeight: 'calc(100vh - 130px)', padding: '0', position: 'relative' }}>
           <div className="d-flex flex-column" style={{ minHeight: '100%' }}>
-            <div className="flex-grow-1" ref={readingContainerRef}>
-              {isSentenceMode ? (
-                <SentenceModeView
-                  currentSegment={currentSentenceSegment}
-                  segmentCount={sentenceSegments.length}
-                  currentSegmentIndex={currentSegmentIndex}
-                  creditedSegmentCount={creditedSegmentIndices.length}
-                  fontStyle={getFontStyling(isMobile ? mobileReadingConfig.lineSpacing : globalSettings.lineSpacing)}
-                  processTextContent={processTextContent}
-                  handleWordSelection={handleWordSelection}
-                  textContentRef={textContentRef}
-                  canGoPrev={currentSegmentIndex > 0}
-                  canGoNext={currentSegmentIndex < sentenceSegments.length - 1}
-                  onPrev={() => setCurrentSegmentIndex(prev => Math.max(0, prev - 1))}
-                  onNext={() => setCurrentSegmentIndex(prev => Math.min(sentenceSegments.length - 1, prev + 1))}
-                  onReplayAudio={replayCurrentSegmentAudio}
-                  canUseSentenceTts={canUseSentenceTts}
-                  isSpeakingSentence={isSpeakingSentence}
-                  sentenceTtsEnabled={sentenceTtsEnabled}
-                  setSentenceTtsEnabled={setSentenceTtsEnabled}
-                  sentenceTtsRate={sentenceTtsRate}
-                  setSentenceTtsRate={setSentenceTtsRate}
-                  isAudioLesson={isAudioLesson}
-                  sentenceAudioRepeats={sentenceAudioRepeats}
-                  setSentenceAudioRepeats={setSentenceAudioRepeats}
-                  onShowTranslation={handleSegmentTranslationToggle}
-                  onShowExplanation={handleSegmentExplanationToggle}
-                  isTranslatingSegment={isTranslatingSegment}
-                  isExplainingSegment={isExplainingSegment}
-                  isTranslationVisible={visibleTranslationIndex === currentSentenceSegment?.index}
-                  isExplanationVisible={visibleExplanationIndex === currentSentenceSegment?.index}
-                  currentSegmentTranslation={currentSentenceSegment ? segmentTranslations[currentSentenceSegment.index] : ''}
-                  currentSegmentExplanation={currentSentenceSegment ? segmentExplanations[currentSentenceSegment.index] : ''}
-                />
-              ) : isAudioLesson && displayMode === 'audio' ? (
-                <AudioTranscriptView
-                  isMobile={isMobile}
-                  srtLines={srtLines}
-                  currentSrtLineId={currentSrtLineId}
-                  getFontStyling={getFontStyling}
-                  handleLineClick={handleLineClick}
-                  handleWordSelection={handleWordSelection}
-                  processTextContent={processTextContent}
-                  globalSettings={globalSettings}
-                  mobileReadingConfig={mobileReadingConfig}
-                  textContentRef={textContentRef}
-                  readingContainerRef={readingContainerRef}
-                  itemData={itemData}
-                  listRef={listRef}
-                />
-              ) : (
-                <StandardTextView
-                  text={text}
-                  globalSettings={globalSettings}
-                  mobileReadingConfig={mobileReadingConfig}
-                  getFontFamilyForList={getFontFamilyForList}
-                  handleWordSelection={handleWordSelection}
-                  processTextContent={processTextContent}
-                  renderProcessedContentAsSentences={renderProcessedContentAsSentences}
-                  isMobile={isMobile}
-                  textContentRef={textContentRef}
-                  canUseSentenceTts={canUseSentenceTts}
-                  isSpeakingSentence={isSpeakingSentence}
-                  sentenceTtsEnabled={sentenceTtsEnabled}
-                  setSentenceTtsEnabled={setSentenceTtsEnabled}
-                  sentenceTtsRate={sentenceTtsRate}
-                  setSentenceTtsRate={setSentenceTtsRate}
-                  onSpeakSentence={speakCurrentSentence}
-                />
-              )}
+            <div className={`flex-grow-1 reader-main-surface reader-main-surface-${readingUiMode}`} ref={readingContainerRef}>
+              <div className={`reader-main-surface-inner reader-main-surface-inner-${readingUiMode}`}>
+                {isSentenceMode ? (
+                  <SentenceModeView
+                    currentSegment={currentSentenceSegment}
+                    segmentCount={sentenceSegments.length}
+                    currentSegmentIndex={currentSegmentIndex}
+                    creditedSegmentCount={creditedSegmentIndices.length}
+                    fontStyle={getFontStyling(isMobile ? mobileReadingConfig.lineSpacing : globalSettings.lineSpacing)}
+                    processTextContent={processTextContent}
+                    handleWordSelection={handleWordSelection}
+                    textContentRef={textContentRef}
+                    canGoPrev={currentSegmentIndex > 0}
+                    canGoNext={currentSegmentIndex < sentenceSegments.length - 1}
+                    onPrev={() => setCurrentSegmentIndex(prev => Math.max(0, prev - 1))}
+                    onNext={() => setCurrentSegmentIndex(prev => Math.min(sentenceSegments.length - 1, prev + 1))}
+                    onReplayAudio={replayCurrentSegmentAudio}
+                    canUseSentenceTts={canUseSentenceTts}
+                    isSpeakingSentence={isSpeakingSentence}
+                    sentenceTtsEnabled={sentenceTtsEnabled}
+                    setSentenceTtsEnabled={setSentenceTtsEnabled}
+                    sentenceTtsRate={sentenceTtsRate}
+                    setSentenceTtsRate={setSentenceTtsRate}
+                    isAudioLesson={isAudioLesson}
+                    sentenceAudioRepeats={sentenceAudioRepeats}
+                    setSentenceAudioRepeats={setSentenceAudioRepeats}
+                    onShowTranslation={handleSegmentTranslationToggle}
+                    onShowExplanation={handleSegmentExplanationToggle}
+                    isTranslatingSegment={isTranslatingSegment}
+                    isExplainingSegment={isExplainingSegment}
+                    isTranslationVisible={visibleTranslationIndex === currentSentenceSegment?.index}
+                    isExplanationVisible={visibleExplanationIndex === currentSentenceSegment?.index}
+                    currentSegmentTranslation={currentSentenceSegment ? segmentTranslations[currentSentenceSegment.index] : ''}
+                    currentSegmentExplanation={currentSentenceSegment ? segmentExplanations[currentSentenceSegment.index] : ''}
+                  />
+                ) : isAudioLesson && displayMode === 'audio' ? (
+                  <AudioTranscriptView
+                    isMobile={isMobile}
+                    srtLines={srtLines}
+                    currentSrtLineId={currentSrtLineId}
+                    getFontStyling={getFontStyling}
+                    handleLineClick={handleLineClick}
+                    handleWordSelection={handleWordSelection}
+                    processTextContent={processTextContent}
+                    globalSettings={globalSettings}
+                    mobileReadingConfig={mobileReadingConfig}
+                    textContentRef={textContentRef}
+                    readingContainerRef={readingContainerRef}
+                    itemData={itemData}
+                    listRef={listRef}
+                  />
+                ) : (
+                  <StandardTextView
+                    text={text}
+                    globalSettings={globalSettings}
+                    readingUiMode={readingUiMode}
+                    mobileReadingConfig={mobileReadingConfig}
+                    getFontFamilyForList={getFontFamilyForList}
+                    handleWordSelection={handleWordSelection}
+                    processTextContent={processTextContent}
+                    renderProcessedContentAsSentences={renderProcessedContentAsSentences}
+                    isMobile={isMobile}
+                    textContentRef={textContentRef}
+                    canUseSentenceTts={canUseSentenceTts}
+                    isSpeakingSentence={isSpeakingSentence}
+                    sentenceTtsEnabled={sentenceTtsEnabled}
+                    setSentenceTtsEnabled={setSentenceTtsEnabled}
+                    sentenceTtsRate={sentenceTtsRate}
+                    setSentenceTtsRate={setSentenceTtsRate}
+                    onSpeakSentence={speakCurrentSentence}
+                  />
+                )}
+              </div>
             </div>
             {/* Show bottom button for regular texts OR any text within a book */}
             {(!isAudioLesson || text?.bookId) && (
@@ -2720,7 +2848,7 @@ const TextDisplay = () => {
 
         {/* Right Panel (Word Info) - desktop only */}
         {!isMobile && (
-          <div className="right-panel" style={{ width: `${100 - leftPanelWidth}%`, height: 'calc(100vh - 130px)', overflowY: 'auto', padding: 'var(--space-sm)', position: 'relative' }}>
+          <div className={`right-panel right-panel-${readingUiMode}`} style={{ width: `${100 - leftPanelWidth}%`, height: 'calc(100vh - 130px)', overflowY: 'auto', padding: 'var(--space-sm)', position: 'relative' }}>
             <Card className="border-0 h-100"><Card.Body className="p-2 d-flex flex-column">
               <h5 className="mb-2 flex-shrink-0">Word Info</h5>
               <div className="flex-grow-1" style={{ overflowY: 'auto', paddingBottom: 'var(--space-xs)' }}>

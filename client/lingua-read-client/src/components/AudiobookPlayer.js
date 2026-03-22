@@ -341,7 +341,16 @@ const AudiobookPlayer = ({
   }, [isBookMode, currentTrackIndex, playlist.length, syncPlaybackState]);
 
   const handleError = useCallback((e) => {
-    console.error("Audio Error:", e);
+    const audio = e?.target;
+    const mediaErr = audio?.error;
+    console.error("Audio Error:", {
+      event: e,
+      src: audio?.currentSrc ?? audio?.src,
+      networkState: audio?.networkState,
+      readyState: audio?.readyState,
+      mediaErrorCode: mediaErr?.code,
+      mediaErrorMessage: mediaErr?.message,
+    });
     setError("Error loading audio.");
     setIsBuffering(false);
   }, []);

@@ -247,10 +247,34 @@ jobs:
 
             echo "Running authenticated smoke test against /api/usersettings"
             if [ -n "${LOGIN_SECRET}" ]; then
-              login_response=$(sudo docker compose exec -T api sh -lc "curl -fsS -X POST http://localhost:5000/api/auth/login -H 'Accept: application/json' -H 'X-Login-Secret: ${LOGIN_SECRET}'")
+              login_result=$(
+                sudo docker compose exec -T -e LOGIN_SECRET="$LOGIN_SECRET" api sh -lc '
+                  curl -sS -X POST http://localhost:5000/api/auth/login \
+                    -H "Accept: application/json" \
+                    -H "X-Login-Secret: $${LOGIN_SECRET}" \
+                    -w "\n%{http_code}"
+                '
+              )
             else
-              login_response=$(sudo docker compose exec -T api sh -lc "curl -fsS -X POST http://localhost:5000/api/auth/login -H 'Accept: application/json' -H 'X-Forwarded-User: deploy-smoke-test'")
+              login_result=$(
+                sudo docker compose exec -T api sh -lc '
+                  curl -sS -X POST http://localhost:5000/api/auth/login \
+                    -H "Accept: application/json" \
+                    -H "X-Forwarded-User: deploy-smoke-test" \
+                    -w "\n%{http_code}"
+                '
+              )
             fi
+
+            login_http_code=$(printf '%s\n' "$login_result" | tail -n1)
+            login_response=$(printf '%s\n' "$login_result" | sed '$d')
+            if [ "$login_http_code" != "200" ]; then
+              echo "Smoke-test login failed with HTTP $login_http_code"
+              printf '%s\n' "$login_response"
+              sudo docker compose logs --no-color --tail=200 api || true
+              exit 1
+            fi
+
             token=$(printf '%s' "$login_response" | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')
             if [ -z "$token" ]; then
               echo "Failed to obtain auth token during smoke test"
@@ -259,7 +283,22 @@ jobs:
               exit 1
             fi
 
-            sudo docker compose exec -T api sh -lc "curl -fsS http://localhost:5000/api/usersettings -H 'Accept: application/json' -H 'Authorization: Bearer ${token}' >/dev/null"
+            usersettings_result=$(
+              sudo docker compose exec -T -e AUTH_TOKEN="$token" api sh -lc '
+                curl -sS http://localhost:5000/api/usersettings \
+                  -H "Accept: application/json" \
+                  -H "Authorization: Bearer $${AUTH_TOKEN}" \
+                  -w "\n%{http_code}"
+              '
+            )
+            usersettings_http_code=$(printf '%s\n' "$usersettings_result" | tail -n1)
+            usersettings_response=$(printf '%s\n' "$usersettings_result" | sed '$d')
+            if [ "$usersettings_http_code" != "200" ]; then
+              echo "Usersettings smoke test failed with HTTP $usersettings_http_code"
+              printf '%s\n' "$usersettings_response"
+              sudo docker compose logs --no-color --tail=200 api || true
+              exit 1
+            fi
             echo "Usersettings smoke test OK"
 
             sudo docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --force-recreate nginx

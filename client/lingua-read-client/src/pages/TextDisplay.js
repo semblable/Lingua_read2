@@ -812,6 +812,7 @@ const TextDisplay = () => {
   const selectionDebounceRef = useRef(null);
   const lastHandledSelectionRef = useRef('');
   const suppressWordClickUntilRef = useRef(0);
+  const selectableWordTouchStartRef = useRef(0);
   // --- End State Declarations ---
 
   // Create refs for values used in handleAudioTimeUpdate to keep the callback stable
@@ -871,6 +872,11 @@ const TextDisplay = () => {
       clearTimeout(selectionDebounceRef.current);
       selectionDebounceRef.current = null;
     }
+  }, []);
+
+  const hasActiveTextSelection = useCallback(() => {
+    const selection = window.getSelection();
+    return Boolean(selection && !selection.isCollapsed && selection.toString().trim());
   }, []);
 
   const toggleAudioPlayback = useCallback(() => {
@@ -1062,11 +1068,22 @@ const TextDisplay = () => {
 
   const handleSelectableWordClick = useCallback((event, word) => {
     event.stopPropagation();
-    if (Date.now() < suppressWordClickUntilRef.current) {
+    if (Date.now() < suppressWordClickUntilRef.current || hasActiveTextSelection()) {
       return;
     }
     handleWordClick(word);
-  }, [handleWordClick]);
+  }, [handleWordClick, hasActiveTextSelection]);
+
+  const handleSelectableWordTouchStart = useCallback(() => {
+    selectableWordTouchStartRef.current = Date.now();
+  }, []);
+
+  const handleSelectableWordTouchEnd = useCallback(() => {
+    const touchDuration = Date.now() - selectableWordTouchStartRef.current;
+    if (touchDuration >= 250 || hasActiveTextSelection()) {
+      suppressWordClickUntilRef.current = Date.now() + 600;
+    }
+  }, [hasActiveTextSelection]);
 
   const processWordSelection = useCallback(() => {
     const selectionDetails = getSelectionDetails();
@@ -1184,8 +1201,8 @@ const TextDisplay = () => {
     selectionDebounceRef.current = setTimeout(() => {
       selectionDebounceRef.current = null;
       processWordSelection();
-    }, 120);
-  }, [clearPendingSelection, processWordSelection]);
+    }, isMobile ? 400 : 120);
+  }, [clearPendingSelection, isMobile, processWordSelection]);
 
   useEffect(() => {
     return () => clearPendingSelection();
@@ -1207,6 +1224,7 @@ const TextDisplay = () => {
       if (!container || !anchorNode || !focusNode) return;
       if (!container.contains(anchorNode) || !container.contains(focusNode)) return;
 
+      setIsWordPanelOpen(false);
       handleWordSelection();
     };
 
@@ -1245,6 +1263,8 @@ const TextDisplay = () => {
               key={`phrase-${currentKeyIndex++}-${phraseTerm.replace(/\s+/g, '-')}`}
               style={{ ...styles.highlightedWord, ...getWordStyle(phraseStatus) }}
               className={`clickable-word word-status-${phraseStatus}`} // Treat phrase like a word visually/interactively
+              onTouchStart={handleSelectableWordTouchStart}
+              onTouchEnd={handleSelectableWordTouchEnd}
               onClick={(e) => handleSelectableWordClick(e, phraseTerm)}
               onMouseEnter={() => setHoveredWordTerm(phraseTerm)}
               onMouseLeave={() => setHoveredWordTerm(null)}
@@ -1294,6 +1314,8 @@ const TextDisplay = () => {
             key={`word-${currentKeyIndex++}-${currentWord}`}
             style={{ ...styles.highlightedWord, ...getWordStyle(wordStatus) }}
             className={`clickable-word word-status-${wordStatus}`}
+            onTouchStart={handleSelectableWordTouchStart}
+            onTouchEnd={handleSelectableWordTouchEnd}
             onClick={(e) => handleSelectableWordClick(e, currentWord)}
             onMouseEnter={() => setHoveredWordTerm(currentWord)}
             onMouseLeave={() => setHoveredWordTerm(null)}
@@ -1321,7 +1343,7 @@ const TextDisplay = () => {
     return elements;
     // --- End Phase 2 Logic ---
 
-  }, [knownPhrases, getWordData, getWordStyle, handleSelectableWordClick, setHoveredWordTerm]); // Removed unnecessary 'words' dependency
+  }, [knownPhrases, getWordData, getWordStyle, handleSelectableWordClick, handleSelectableWordTouchEnd, handleSelectableWordTouchStart, setHoveredWordTerm]); // Removed unnecessary 'words' dependency
 
 
   const getFontFamilyForList = useCallback(() => {
@@ -1397,6 +1419,7 @@ const TextDisplay = () => {
 
   const handleSentenceContextMenu = useCallback((event, sentenceIndex) => {
     event.preventDefault(); // Prevent default browser menu
+    if (isMobile || hasActiveTextSelection()) return;
     if (!text?.textId || typeof sentenceIndex !== 'number') return;
 
     console.log(`[Bookmark] Toggling bookmark for text ${text.textId}, sentence ${sentenceIndex}`);
@@ -1405,7 +1428,7 @@ const TextDisplay = () => {
     // Re-fetch bookmarks from storage and update state to trigger UI refresh
     const updatedBookmarks = getBookmarkedSentences(text.textId);
     setBookmarkedIndices(updatedBookmarks);
-  }, [text?.textId, setBookmarkedIndices]); // Dependencies: textId and the state setter
+  }, [hasActiveTextSelection, isMobile, text?.textId, setBookmarkedIndices]); // Dependencies: textId and the state setter
 
   // --- End Bookmark Helper Functions ---
 

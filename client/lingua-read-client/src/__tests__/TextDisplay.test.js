@@ -4,7 +4,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import TextDisplay from '../pages/TextDisplay';
 import { SettingsContext } from '../contexts/SettingsContext';
-import { getBookmarkedSentences } from '../utils/bookmarks';
+import { getBookmarkedSentences, toggleBookmark } from '../utils/bookmarks';
 import {
   getText,
   createWord,
@@ -115,6 +115,7 @@ describe('TextDisplay', () => {
     batchTranslateWords.mockReset();
     addTermsBatch.mockReset();
     getLanguage.mockReset();
+    toggleBookmark.mockReset();
     translateText.mockResolvedValue({ translatedText: 'Translated selection' });
   });
 
@@ -173,11 +174,35 @@ describe('TextDisplay', () => {
 
     act(() => {
       document.dispatchEvent(new Event('selectionchange'));
-      jest.advanceTimersByTime(200);
+      jest.advanceTimersByTime(500);
     });
 
     await waitFor(() => {
       expect(translateText).toHaveBeenCalledWith('Hello world', 'ES', 'EN');
     });
+  });
+
+  test('mobile context menu does not toggle bookmarks while selecting', async () => {
+    window.matchMedia = jest.fn().mockImplementation(() => ({
+      matches: true,
+      addEventListener: jest.fn(),
+      removeEventListener: jest.fn()
+    }));
+
+    renderTextDisplay();
+
+    await waitFor(() => expect(getText).toHaveBeenCalled());
+    const word = await screen.findByText('Hello');
+    const sentence = word.closest('.sentence');
+    expect(sentence).not.toBeNull();
+
+    window.getSelection = jest.fn(() => ({
+      isCollapsed: false,
+      toString: () => 'Hello'
+    }));
+
+    fireEvent.contextMenu(sentence);
+
+    expect(toggleBookmark).not.toHaveBeenCalled();
   });
 });

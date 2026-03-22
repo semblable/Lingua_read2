@@ -32,6 +32,10 @@ describe('AudiobookPlayer', () => {
     logListeningActivity.mockReset();
   });
 
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
   test('book mode calls API to restore progress', async () => {
     getAudiobookProgress.mockResolvedValue({
       currentAudiobookTrackId: 'track-2',
@@ -182,5 +186,116 @@ describe('AudiobookPlayer', () => {
     });
 
     expect(window.HTMLMediaElement.prototype.pause).not.toHaveBeenCalled();
+  });
+
+  test('does not reload when the same lesson source resolves to the same URL', async () => {
+    getAudioLessonProgress.mockResolvedValue({ currentPosition: 0 });
+
+    const { rerender } = render(
+      <AudiobookPlayer
+        type="lesson"
+        audioSrc="/lesson.mp3"
+        textId={42}
+        languageId={5}
+      />
+    );
+
+    await waitFor(() => {
+      expect(getAudioLessonProgress).toHaveBeenCalledWith(42);
+    });
+
+    expect(window.HTMLMediaElement.prototype.load).toHaveBeenCalledTimes(1);
+
+    rerender(
+      <AudiobookPlayer
+        type="lesson"
+        audioSrc={`${window.location.origin}/lesson.mp3`}
+        textId={42}
+        languageId={5}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTitle(/Play/)).toBeInTheDocument();
+    });
+
+    expect(window.HTMLMediaElement.prototype.load).toHaveBeenCalledTimes(1);
+  });
+
+  test('ignores abort-like segment playback failures', async () => {
+    getAudioLessonProgress.mockResolvedValue({ currentPosition: 0 });
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const debugSpy = jest.spyOn(console, 'debug').mockImplementation(() => {});
+    const abortError = Object.assign(new Error('The fetching process for the media resource was aborted.'), {
+      name: 'AbortError'
+    });
+    window.HTMLMediaElement.prototype.play = jest.fn().mockRejectedValue(abortError);
+
+    render(
+      <AudiobookPlayer
+        type="lesson"
+        audioSrc="https://example.com/lesson.mp3"
+        textId={42}
+        languageId={5}
+        segmentPlaybackRequest={{
+          requestId: 'segment-abort',
+          startTime: 5,
+          endTime: 10,
+          repeatCount: 1
+        }}
+      />
+    );
+
+    await waitFor(() => {
+      expect(getAudioLessonProgress).toHaveBeenCalledWith(42);
+    });
+
+    await waitFor(() => {
+      expect(debugSpy).toHaveBeenCalled();
+    });
+
+    expect(warnSpy).not.toHaveBeenCalledWith('Segment playback failed', abortError);
+    expect(screen.queryByText('Error loading audio.')).not.toBeInTheDocument();
+  });
+
+  test('ignores aborted media error events during source replacement', async () => {
+    getAudioLessonProgress.mockResolvedValue({ currentPosition: 0 });
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const debugSpy = jest.spyOn(console, 'debug').mockImplementation(() => {});
+
+    const { container } = render(
+      <AudiobookPlayer
+        type="lesson"
+        audioSrc="https://example.com/lesson.mp3"
+        textId={42}
+        languageId={5}
+      />
+    );
+
+    await waitFor(() => {
+      expect(getAudioLessonProgress).toHaveBeenCalledWith(42);
+    });
+
+    const audio = container.querySelector('audio');
+    expect(audio).not.toBeNull();
+
+    Object.defineProperty(audio, 'error', {
+      configurable: true,
+      value: {
+        code: 1,
+        message: 'The fetching process for the media resource was aborted by the user agent at the user\'s request.'
+      }
+    });
+
+    fireEvent.error(audio);
+
+    expect(debugSpy).toHaveBeenCalled();
+    expect(errorSpy).not.toHaveBeenCalledWith(
+      'Audio Error:',
+      expect.objectContaining({
+        mediaErrorCode: 1
+      })
+    );
+    expect(screen.queryByText('Error loading audio.')).not.toBeInTheDocument();
   });
 });

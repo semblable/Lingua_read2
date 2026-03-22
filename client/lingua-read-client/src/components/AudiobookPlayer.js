@@ -4,6 +4,33 @@ import { getAudiobookProgress, updateAudiobookProgress, getAudioLessonProgress, 
 import { formatTime } from '../utils/helpers';
 import './AudiobookPlayer.css';
 
+const createSegmentPlaybackState = () => ({
+  active: false,
+  requestId: null,
+  startTime: 0,
+  endTime: 0,
+  remainingRepeats: 0
+});
+
+const normalizeMediaSrc = (src) => {
+  if (!src) return '';
+  if (src.startsWith('blob:')) return src;
+
+  try {
+    return new URL(src, window.location.href).href;
+  } catch {
+    return src;
+  }
+};
+
+const isAbortLikeError = (errorLike) => {
+  const name = errorLike?.name || '';
+  const message = errorLike?.message || '';
+  const code = errorLike?.code;
+
+  return name === 'AbortError' || code === 1 || /abort(ed)?/i.test(message);
+};
+
 const AudiobookPlayer = ({
   type = 'book',
   book,
@@ -21,13 +48,8 @@ const AudiobookPlayer = ({
   const onTimeUpdateRef = useRef(onTimeUpdate);
   const onPlaybackStateChangeRef = useRef(onPlaybackStateChange);
   const progressBarRef = useRef(null);
-  const segmentPlaybackRef = useRef({
-    active: false,
-    requestId: null,
-    startTime: 0,
-    endTime: 0,
-    remainingRepeats: 0
-  });
+  const segmentPlaybackRef = useRef(createSegmentPlaybackState());
+  const sourceSwapRef = useRef({ previousSrc: '', nextSrc: '' });
 
   // NOTE: Removed unused progressSaveRef
 
@@ -188,53 +210,64 @@ const AudiobookPlayer = ({
   // --- FIVE: Active Track Management ---
   const currentTrack = playlist[currentTrackIndex];
 
-  useEffect(() => {
-    const audio = audioRef.current;
-    if (!audio || !isInitialized || !currentTrack) return;
+  const resetSegmentPlayback = useCallback(() => {
+    segmentPlaybackRef.current = createSegmentPlaybackState();
+  }, []);
 
-    // FIX: More robust URL construction. 
-    // If it's a full URL, use it. Otherwise, ensure it starts with / for relative path.
-    let src = currentTrack.isLesson ? currentTrack.url : currentTrack.filePath;
+  const buildTrackSrc = useCallback((track) => {
+    let src = track?.isLesson ? track.url : track?.filePath;
 
     if (src && !src.startsWith('http') && !src.startsWith('blob:')) {
-      // Prepend leading slash if missing
       src = src.startsWith('/') ? src : `/${src}`;
 
-      // If we have an environment variable for the base URL, use it (optional prefix)
-      // But only if it's a full URL (origin). If it's just something like "/api", we don't want it for static files.
       const envBaseUrl = process.env.REACT_APP_API_URL;
       if (envBaseUrl && envBaseUrl.startsWith('http')) {
         src = `${envBaseUrl}${src}`;
       }
     }
 
-    const currentSrc = audio.src;
+    return src || '';
+  }, []);
 
-    // FIX: Optimized check for same source
-    const isSameSrc = currentSrc && (currentSrc.includes(src) || (src && src.includes(currentSrc)));
+  const logPlaybackInterruption = useCallback((context, errorLike) => {
+    if (isAbortLikeError(errorLike)) {
+      console.debug(`[AudioPlayer] Ignoring interrupted playback during ${context}.`, errorLike);
+      return;
+    }
+
+    console.warn(context, errorLike);
+  }, []);
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio || !isInitialized || !currentTrack) return;
+
+    const src = buildTrackSrc(currentTrack);
+    const currentSrc = normalizeMediaSrc(audio.currentSrc || audio.src);
+    const nextSrc = normalizeMediaSrc(src);
+    const isSameSrc = currentSrc && currentSrc === nextSrc;
 
     if (isSameSrc) {
       return;
     }
 
-    segmentPlaybackRef.current = {
-      active: false,
-      requestId: null,
-      startTime: 0,
-      endTime: 0,
-      remainingRepeats: 0
+    resetSegmentPlayback();
+    sourceSwapRef.current = {
+      previousSrc: currentSrc,
+      nextSrc
     };
 
     console.log(`[AudioPlayer] Loading Track: ${src}`);
+    setError('');
     audio.src = src;
     audio.load();
     setIsBuffering(true);
 
     // If it was already playing, continue playing the new track
     if (isPlayingRef.current) {
-      audio.play().catch(e => console.warn("Auto-play on track change failed", e));
+      audio.play().catch(e => logPlaybackInterruption('Auto-play on track change failed', e));
     }
-  }, [currentTrack, isInitialized, audioRef]);
+  }, [currentTrack, isInitialized, audioRef, buildTrackSrc, logPlaybackInterruption, resetSegmentPlayback]);
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -242,7 +275,7 @@ const AudiobookPlayer = ({
 
     if (!segmentPlaybackRequest?.requestId) {
       if (segmentPlaybackRef.current.active) {
-        segmentPlaybackRef.current = { active: false, requestId: null, startTime: 0, endTime: 0, remainingRepeats: 0 };
+        resetSegmentPlayback();
         audio.pause();
       }
       return;
@@ -264,8 +297,8 @@ const AudiobookPlayer = ({
 
     audio.currentTime = startTime;
     setCurrentTime(startTime);
-    audio.play().catch(e => console.warn("Segment playback failed", e));
-  }, [audioRef, segmentPlaybackRequest]);
+    audio.play().catch(e => logPlaybackInterruption('Segment playback failed', e));
+  }, [audioRef, logPlaybackInterruption, resetSegmentPlayback, segmentPlaybackRequest]);
 
 
   // --- SIX: Event Listeners & Logic ---
@@ -274,6 +307,7 @@ const AudiobookPlayer = ({
   const handleLoadedMetadata = useCallback(() => {
     const audio = audioRef.current;
     if (!audio) return;
+    sourceSwapRef.current = { previousSrc: '', nextSrc: '' };
     setDuration(audio.duration);
     setIsBuffering(false);
 
@@ -297,18 +331,12 @@ const AudiobookPlayer = ({
         segmentPlayback.remainingRepeats -= 1;
         audio.currentTime = segmentPlayback.startTime;
         setCurrentTime(segmentPlayback.startTime);
-        audio.play().catch(e => console.warn("Segment replay failed", e));
+        audio.play().catch(e => logPlaybackInterruption('Segment replay failed', e));
         return;
       }
 
       const endTime = segmentPlayback.endTime;
-      segmentPlaybackRef.current = {
-        active: false,
-        requestId: null,
-        startTime: 0,
-        endTime: 0,
-        remainingRepeats: 0
-      };
+      resetSegmentPlayback();
       audio.pause();
       audio.currentTime = endTime;
       setCurrentTime(endTime);
@@ -321,7 +349,7 @@ const AudiobookPlayer = ({
     if (onTimeUpdateRef.current) {
       onTimeUpdateRef.current(time);
     }
-  }, [audioRef]);
+  }, [audioRef, logPlaybackInterruption, resetSegmentPlayback]);
 
   const syncPlaybackState = useCallback((nextIsPlaying) => {
     setIsPlaying(nextIsPlaying);
@@ -343,6 +371,19 @@ const AudiobookPlayer = ({
   const handleError = useCallback((e) => {
     const audio = e?.target;
     const mediaErr = audio?.error;
+    const currentSrc = normalizeMediaSrc(audio?.currentSrc ?? audio?.src);
+    const expectedNextSrc = sourceSwapRef.current.nextSrc;
+    const isSourceSwapAbort = expectedNextSrc && currentSrc === expectedNextSrc && isAbortLikeError(mediaErr);
+
+    if (isSourceSwapAbort || isAbortLikeError(mediaErr)) {
+      console.debug('[AudioPlayer] Ignoring media abort during source transition.', {
+        src: audio?.currentSrc ?? audio?.src,
+        mediaErrorCode: mediaErr?.code,
+        mediaErrorMessage: mediaErr?.message
+      });
+      return;
+    }
+
     console.error("Audio Error:", {
       event: e,
       src: audio?.currentSrc ?? audio?.src,
@@ -361,6 +402,7 @@ const AudiobookPlayer = ({
 
     const onWaiting = () => setIsBuffering(true);
     const onPlaying = () => {
+      sourceSwapRef.current = { previousSrc: '', nextSrc: '' };
       setIsBuffering(false);
     };
     const onPlay = () => syncPlaybackState(true);
@@ -368,13 +410,7 @@ const AudiobookPlayer = ({
       // Manual pauses should cancel bounded segment playback so resume/play
       // does not remain tied to an old sentence boundary.
       if (segmentPlaybackRef.current.active) {
-        segmentPlaybackRef.current = {
-          active: false,
-          requestId: null,
-          startTime: 0,
-          endTime: 0,
-          remainingRepeats: 0
-        };
+        resetSegmentPlayback();
       }
       syncPlaybackState(false);
     };
@@ -406,7 +442,7 @@ const AudiobookPlayer = ({
       audio.removeEventListener('playing', onPlaying);
     };
     // FIX: Added all handler dependencies
-  }, [audioRef, handleLoadedMetadata, handleTimeUpdate, handleEnded, handleError, syncPlaybackState]);
+  }, [audioRef, handleLoadedMetadata, handleTimeUpdate, handleEnded, handleError, resetSegmentPlayback, syncPlaybackState]);
 
   // Sync Playback Rate
   useEffect(() => {
@@ -629,11 +665,11 @@ const AudiobookPlayer = ({
     if (!audio) return;
     if (audio.paused) {
       audio.play()
-        .catch(e => console.error("Play failed", e));
+        .catch(e => logPlaybackInterruption('Play failed', e));
     } else {
       audio.pause();
     }
-  }, [audioRef]); // Safe dependency
+  }, [audioRef, logPlaybackInterruption]); // Safe dependency
 
   const seek = useCallback((time) => {
     const audio = audioRef.current;
@@ -646,20 +682,14 @@ const AudiobookPlayer = ({
     const newTime = Math.max(0, Math.min(time, d));
     console.log(`[AudioPlayer] Seeking to ${newTime}s (Requested: ${time}s, Duration: ${d}s)`);
     if (segmentPlaybackRef.current.active) {
-      segmentPlaybackRef.current = {
-        active: false,
-        requestId: null,
-        startTime: 0,
-        endTime: 0,
-        remainingRepeats: 0
-      };
+      resetSegmentPlayback();
     }
     audio.currentTime = newTime;
     setCurrentTime(newTime);
     if (onTimeUpdateRef.current) {
       onTimeUpdateRef.current(newTime);
     }
-  }, [audioRef, duration]);
+  }, [audioRef, duration, resetSegmentPlayback]);
 
   const goToNextTrack = useCallback(() => {
     if (currentTrackIndex < playlist.length - 1) {

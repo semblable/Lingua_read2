@@ -1105,6 +1105,7 @@ const TextDisplay = () => {
   // Initialize from globalSettings (sentenceAudioRepeats const is declared later — avoid TDZ)
   const sentenceAudioRepeatsRef = useRef(globalSettings.sentenceAudioRepeats || 1);
   const audioDrivenSentenceSyncRef = useRef(false);
+  const lastAutoSegmentPlaybackKeyRef = useRef('');
   // --- End State Declarations ---
 
   // Create refs for values used in handleAudioTimeUpdate to keep the callback stable
@@ -1849,6 +1850,7 @@ const TextDisplay = () => {
 
     cancelSpeech();
     setIsSpeakingSentence(false);
+    lastAutoSegmentPlaybackKeyRef.current = '';
 
     setSegmentPlaybackRequest({
       requestId: `replay-${currentSentenceSegment.index}-${Date.now()}`,
@@ -1946,6 +1948,7 @@ const TextDisplay = () => {
       cancelSpeech();
       setIsSpeakingSentence(false);
       setIsSpeakingWord(false);
+      lastAutoSegmentPlaybackKeyRef.current = '';
       setSegmentPlaybackRequest(null);
     }
   }, [isSentenceMode]);
@@ -2004,12 +2007,22 @@ const TextDisplay = () => {
     if (isAudioLesson && currentSentenceSegment.startTime != null && currentSentenceSegment.endTime != null) {
       setCurrentSrtLineId(currentSentenceSegment.srtLineId || null);
       if (!isAudioDrivenSync) {
-        setSegmentPlaybackRequest({
-          requestId: `${currentSentenceSegment.index}-${Date.now()}`,
-          startTime: currentSentenceSegment.startTime,
-          endTime: currentSentenceSegment.endTime,
-          repeatCount: sentenceAudioRepeatsRef.current
-        });
+        const playbackKey = [
+          currentSentenceSegment.index,
+          currentSentenceSegment.startTime,
+          currentSentenceSegment.endTime,
+          sentenceAudioRepeatsRef.current
+        ].join(':');
+
+        if (lastAutoSegmentPlaybackKeyRef.current !== playbackKey) {
+          lastAutoSegmentPlaybackKeyRef.current = playbackKey;
+          setSegmentPlaybackRequest({
+            requestId: `${currentSentenceSegment.index}-${Date.now()}`,
+            startTime: currentSentenceSegment.startTime,
+            endTime: currentSentenceSegment.endTime,
+            repeatCount: sentenceAudioRepeatsRef.current
+          });
+        }
       }
     }
 

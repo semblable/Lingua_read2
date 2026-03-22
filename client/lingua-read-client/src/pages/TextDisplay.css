@@ -214,6 +214,15 @@
   word-wrap: break-word;
 }
 
+.reader-align-justify .reader-paragraph {
+  text-align: justify;
+  text-justify: inter-word;
+}
+
+.reader-align-left .reader-paragraph {
+  text-align: left;
+}
+
 .reader-paragraph:last-child {
   margin-bottom: 2em;
 }
@@ -228,6 +237,12 @@
 
 .reader-paragraph-classic {
   text-indent: 1.5em;
+}
+
+.reader-indent-off .reader-paragraph,
+.reader-indent-off .reader-paragraph.reader-paragraph-classic,
+.reader-indent-off .reader-paragraph.reader-paragraph-modern {
+  text-indent: 0;
 }
 
 .reader-title-block {

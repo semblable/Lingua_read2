@@ -59,6 +59,9 @@ namespace LinguaReadApi.Controllers
                     ReadingUiMode = "classic",
                     ReaderContentWidth = 740,
                     ReadingDensity = "balanced",
+                    ShowWordInfoPanel = true,
+                    ReaderParagraphIndent = true,
+                    ReaderTextAlignment = "left",
                     AutoTranslateWords = true,
                     PauseOnWordClick = false,
                     HighlightKnownWords = true,
@@ -94,6 +97,9 @@ namespace LinguaReadApi.Controllers
                 ReadingUiMode = settings.ReadingUiMode,
                 ReaderContentWidth = settings.ReaderContentWidth,
                 ReadingDensity = settings.ReadingDensity,
+                ShowWordInfoPanel = settings.ShowWordInfoPanel,
+                ReaderParagraphIndent = settings.ReaderParagraphIndent,
+                ReaderTextAlignment = settings.ReaderTextAlignment,
                 AutoTranslateWords = settings.AutoTranslateWords,
                 PauseOnWordClick = settings.PauseOnWordClick,
                 HighlightKnownWords = settings.HighlightKnownWords,
@@ -171,6 +177,16 @@ namespace LinguaReadApi.Controllers
                     settings.ReadingDensity = normalizedReadingDensity;
                 }
             }
+            settings.ShowWordInfoPanel = updateDto.ShowWordInfoPanel ?? settings.ShowWordInfoPanel;
+            settings.ReaderParagraphIndent = updateDto.ReaderParagraphIndent ?? settings.ReaderParagraphIndent;
+            if (!string.IsNullOrWhiteSpace(updateDto.ReaderTextAlignment))
+            {
+                var normalizedReaderTextAlignment = updateDto.ReaderTextAlignment.Trim().ToLowerInvariant();
+                if (normalizedReaderTextAlignment == "left" || normalizedReaderTextAlignment == "justify")
+                {
+                    settings.ReaderTextAlignment = normalizedReaderTextAlignment;
+                }
+            }
             settings.AutoTranslateWords = updateDto.AutoTranslateWords ?? settings.AutoTranslateWords;
             settings.PauseOnWordClick = updateDto.PauseOnWordClick ?? settings.PauseOnWordClick;
             settings.HighlightKnownWords = updateDto.HighlightKnownWords ?? settings.HighlightKnownWords;
@@ -230,6 +246,9 @@ namespace LinguaReadApi.Controllers
                 ReadingUiMode = settings.ReadingUiMode,
                 ReaderContentWidth = settings.ReaderContentWidth,
                 ReadingDensity = settings.ReadingDensity,
+                ShowWordInfoPanel = settings.ShowWordInfoPanel,
+                ReaderParagraphIndent = settings.ReaderParagraphIndent,
+                ReaderTextAlignment = settings.ReaderTextAlignment,
                 AutoTranslateWords = settings.AutoTranslateWords,
                 PauseOnWordClick = settings.PauseOnWordClick,
                 HighlightKnownWords = settings.HighlightKnownWords,
@@ -594,6 +613,9 @@ namespace LinguaReadApi.Controllers
         public string ReadingUiMode { get; set; } = "classic";
         public int ReaderContentWidth { get; set; } = 740;
         public string ReadingDensity { get; set; } = "balanced";
+        public bool ShowWordInfoPanel { get; set; } = true;
+        public bool ReaderParagraphIndent { get; set; } = true;
+        public string ReaderTextAlignment { get; set; } = "left";
         public int LeftPanelWidth { get; set; } // Already added in previous step, ensure it's correct
         public bool AutoTranslateWords { get; set; } = true;
         public bool PauseOnWordClick { get; set; } = false;
@@ -632,6 +654,10 @@ namespace LinguaReadApi.Controllers
         public int? ReaderContentWidth { get; set; }
         [StringLength(20)]
         public string? ReadingDensity { get; set; }
+        public bool? ShowWordInfoPanel { get; set; }
+        public bool? ReaderParagraphIndent { get; set; }
+        [StringLength(20)]
+        public string? ReaderTextAlignment { get; set; }
 
         [Range(10, 100)] // Widen range to accept broader values
         public int? LeftPanelWidth { get; set; } // Already added in previous step, ensure it's correct

@@ -280,6 +280,9 @@ const SecondaryControls = React.memo(({
   globalSettings,
   setReadingDensity,
   setReaderContentWidth,
+  setShowWordInfoPanel,
+  setReaderParagraphIndent,
+  setReaderTextAlignment,
   updateSetting,
   updateUserSettings,
   leftPanelWidth,
@@ -391,6 +394,42 @@ const SecondaryControls = React.memo(({
         title="Wide text column"
       >
         Wide
+      </Button>
+    </ButtonGroup>
+    {!isMobile && (
+      <ButtonGroup size="sm" className="me-1" aria-label="Reader panel visibility">
+        <Button
+          variant={globalSettings.showWordInfoPanel ? 'primary' : 'outline-secondary'}
+          onClick={() => setShowWordInfoPanel(!globalSettings.showWordInfoPanel)}
+          title="Toggle word info panel"
+        >
+          Panel
+        </Button>
+      </ButtonGroup>
+    )}
+    <ButtonGroup size="sm" className="me-1" aria-label="Paragraph indent">
+      <Button
+        variant={globalSettings.readerParagraphIndent ? 'primary' : 'outline-secondary'}
+        onClick={() => setReaderParagraphIndent(!globalSettings.readerParagraphIndent)}
+        title="Toggle paragraph indent"
+      >
+        Indent
+      </Button>
+    </ButtonGroup>
+    <ButtonGroup size="sm" className="me-1" aria-label="Text alignment">
+      <Button
+        variant={globalSettings.readerTextAlignment !== 'justify' ? 'primary' : 'outline-secondary'}
+        onClick={() => setReaderTextAlignment('left')}
+        title="Ragged-right text"
+      >
+        Left
+      </Button>
+      <Button
+        variant={globalSettings.readerTextAlignment === 'justify' ? 'primary' : 'outline-secondary'}
+        onClick={() => setReaderTextAlignment('justify')}
+        title="Justified text"
+      >
+        Justify
       </Button>
     </ButtonGroup>
     {!isMobile && (
@@ -969,7 +1008,7 @@ const StandardTextView = React.memo(({
         </Button>
       </div>
       <div
-        className={`text-content text-content-${modeClass}`}
+        className={`text-content text-content-${modeClass} reader-align-${globalSettings.readerTextAlignment || 'left'} ${globalSettings.readerParagraphIndent ? 'reader-indent-on' : 'reader-indent-off'}`}
         ref={textContentRef}
         style={{
           fontSize: `${globalSettings.textSize}px`,
@@ -1364,6 +1403,7 @@ const TextDisplay = () => {
   const canUseSentenceTts = isSpeechSynthesisSupported();
   const readingUiMode = globalSettings.readingUiMode === 'modern' ? 'modern' : 'classic';
   const readingDensity = globalSettings.readingDensity || 'balanced';
+  const showWordInfoPanel = globalSettings.showWordInfoPanel ?? true;
 
   const setAudioPlaybackIntent = useCallback((shouldPlay) => {
     if (audioRef.current) {
@@ -1450,6 +1490,27 @@ const TextDisplay = () => {
     localStorage.setItem('readerContentWidth', clamped.toString());
     updateUserSettings({ readerContentWidth: clamped })
       .catch(err => console.error('[Save Settings] Failed to save reader content width via API:', err));
+  }, [updateSetting]);
+
+  const setShowWordInfoPanel = useCallback((nextValue) => {
+    updateSetting('showWordInfoPanel', nextValue);
+    localStorage.setItem('showWordInfoPanel', nextValue.toString());
+    updateUserSettings({ showWordInfoPanel: nextValue })
+      .catch(err => console.error('[Save Settings] Failed to save word info panel visibility via API:', err));
+  }, [updateSetting]);
+
+  const setReaderParagraphIndent = useCallback((nextValue) => {
+    updateSetting('readerParagraphIndent', nextValue);
+    localStorage.setItem('readerParagraphIndent', nextValue.toString());
+    updateUserSettings({ readerParagraphIndent: nextValue })
+      .catch(err => console.error('[Save Settings] Failed to save paragraph indent via API:', err));
+  }, [updateSetting]);
+
+  const setReaderTextAlignment = useCallback((nextValue) => {
+    updateSetting('readerTextAlignment', nextValue);
+    localStorage.setItem('readerTextAlignment', nextValue);
+    updateUserSettings({ readerTextAlignment: nextValue })
+      .catch(err => console.error('[Save Settings] Failed to save text alignment via API:', err));
   }, [updateSetting]);
 
   const setSentenceModeEnabled = useCallback((nextValue) => {
@@ -2782,6 +2843,9 @@ const TextDisplay = () => {
       globalSettings={globalSettings}
       setReadingDensity={setReadingDensity}
       setReaderContentWidth={setReaderContentWidth}
+      setShowWordInfoPanel={setShowWordInfoPanel}
+      setReaderParagraphIndent={setReaderParagraphIndent}
+      setReaderTextAlignment={setReaderTextAlignment}
       updateSetting={updateSetting}
       updateUserSettings={updateUserSettings}
       leftPanelWidth={leftPanelWidth}
@@ -2798,6 +2862,7 @@ const TextDisplay = () => {
   );
 
   // --- Main Return JSX ---
+  const effectiveLeftPanelWidth = !isMobile && showWordInfoPanel ? leftPanelWidth : 100;
   return (
     <div className={`text-display-wrapper lesson-page px-0 mx-0 w-100 reader-ui-${readingUiMode}`}>
       <MobileLessonHeader
@@ -2850,7 +2915,7 @@ const TextDisplay = () => {
       {/* Main Content Area */}
       <div className={`resizable-container resizable-container-${readingUiMode}`}>
         {/* Left Panel (Reading Area) */}
-        <div className={`left-panel left-panel-${readingUiMode}`} style={{ width: `${leftPanelWidth}%`, minHeight: 'calc(100vh - 130px)', padding: '0', position: 'relative' }}>
+        <div className={`left-panel left-panel-${readingUiMode}`} style={{ width: `${effectiveLeftPanelWidth}%`, minHeight: 'calc(100vh - 130px)', padding: '0', position: 'relative' }}>
           <div className="d-flex flex-column" style={{ minHeight: '100%' }}>
             <div className={`flex-grow-1 reader-main-surface reader-main-surface-${readingUiMode}`} ref={readingContainerRef}>
               <div
@@ -2943,8 +3008,8 @@ const TextDisplay = () => {
         {/* Removed Resize Divider */}
 
         {/* Right Panel (Word Info) - desktop only */}
-        {!isMobile && (
-          <div className={`right-panel right-panel-${readingUiMode}`} style={{ width: `${100 - leftPanelWidth}%`, height: 'calc(100vh - 130px)', overflowY: 'auto', padding: 'var(--space-sm)', position: 'relative' }}>
+        {!isMobile && showWordInfoPanel && (
+          <div className={`right-panel right-panel-${readingUiMode}`} style={{ width: `${100 - effectiveLeftPanelWidth}%`, height: 'calc(100vh - 130px)', overflowY: 'auto', padding: 'var(--space-sm)', position: 'relative' }}>
             <Card className="border-0 h-100"><Card.Body className="p-2 d-flex flex-column">
               <h5 className="mb-2 flex-shrink-0">Word Info</h5>
               <div className="flex-grow-1" style={{ overflowY: 'auto', paddingBottom: 'var(--space-xs)' }}>

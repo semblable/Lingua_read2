@@ -15,6 +15,9 @@ const UserSettings = () => {
     readingUiMode: 'classic',
     readerContentWidth: 740,
     readingDensity: 'balanced',
+    showWordInfoPanel: true,
+    readerParagraphIndent: true,
+    readerTextAlignment: 'left',
     leftPanelWidth: 85, // Added initial state
     autoTranslateWords: true,
     pauseOnWordClick: false,
@@ -87,6 +90,9 @@ const UserSettings = () => {
           readingUiMode: data.readingUiMode || 'classic',
           readerContentWidth: data.readerContentWidth || 740,
           readingDensity: data.readingDensity || 'balanced',
+          showWordInfoPanel: data.showWordInfoPanel ?? true,
+          readerParagraphIndent: data.readerParagraphIndent ?? true,
+          readerTextAlignment: data.readerTextAlignment || 'left',
           leftPanelWidth: data.leftPanelWidth || 85, // Fetch panel width
           autoTranslateWords: data.autoTranslateWords ?? true,
           pauseOnWordClick: data.pauseOnWordClick ?? false,
@@ -221,6 +227,15 @@ const UserSettings = () => {
 
       updateSetting('readingDensity', settings.readingDensity);
       localStorage.setItem('readingDensity', settings.readingDensity);
+
+      updateSetting('showWordInfoPanel', settings.showWordInfoPanel);
+      localStorage.setItem('showWordInfoPanel', settings.showWordInfoPanel.toString());
+
+      updateSetting('readerParagraphIndent', settings.readerParagraphIndent);
+      localStorage.setItem('readerParagraphIndent', settings.readerParagraphIndent.toString());
+
+      updateSetting('readerTextAlignment', settings.readerTextAlignment);
+      localStorage.setItem('readerTextAlignment', settings.readerTextAlignment);
 
       updateSetting('leftPanelWidth', settings.leftPanelWidth);
       localStorage.setItem('leftPanelWidth', settings.leftPanelWidth.toString());
@@ -540,6 +555,38 @@ const UserSettings = () => {
                 <option value="compact">Compact</option>
                 <option value="balanced">Balanced</option>
                 <option value="spacious">Spacious</option>
+              </Form.Select>
+            </Form.Group>
+
+            <Form.Group className="mb-3" controlId="showWordInfoPanel">
+              <Form.Check
+                type="checkbox"
+                name="showWordInfoPanel"
+                label="Show word info side panel by default on desktop"
+                checked={settings.showWordInfoPanel}
+                onChange={handleChange}
+              />
+            </Form.Group>
+
+            <Form.Group className="mb-3" controlId="readerParagraphIndent">
+              <Form.Check
+                type="checkbox"
+                name="readerParagraphIndent"
+                label="Indent body paragraphs"
+                checked={settings.readerParagraphIndent}
+                onChange={handleChange}
+              />
+            </Form.Group>
+
+            <Form.Group className="mb-4" controlId="readerTextAlignment">
+              <Form.Label>Body Text Alignment</Form.Label>
+              <Form.Select
+                name="readerTextAlignment"
+                value={settings.readerTextAlignment}
+                onChange={handleChange}
+              >
+                <option value="left">Ragged Right</option>
+                <option value="justify">Justified</option>
               </Form.Select>
             </Form.Group>
 

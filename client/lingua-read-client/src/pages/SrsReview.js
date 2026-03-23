@@ -25,6 +25,19 @@ const SrsReview = () => {
   const [statusFilter, setStatusFilter] = useState([1, 2, 3, 4]);
   const [onlyOneTarget, setOnlyOneTarget] = useState(false);
 
+  // Load languages
+  useEffect(() => {
+    const fetchLanguages = async () => {
+      try {
+        const data = await getAllLanguages();
+        setLanguages(data);
+      } catch (err) {
+        console.error('Failed to load languages:', err);
+      }
+    };
+    fetchLanguages();
+  }, []);
+
   // Settings
   const { settings, updateSetting } = React.useContext(SettingsContext);
   const [showSettingsModal, setShowSettingsModal] = useState(false);

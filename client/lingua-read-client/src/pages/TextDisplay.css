@@ -248,10 +248,10 @@
 
 .reader-inline-image {
   display: block;
-  width: 100%;
+  width: auto;
+  height: auto;
   max-width: 100%;
   max-height: min(70vh, 900px);
-  object-fit: contain;
   border-radius: 16px;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.12);
   background: color-mix(in srgb, var(--theme-surface-bg, #fff) 92%, var(--theme-border-color, #e9ecef) 8%);

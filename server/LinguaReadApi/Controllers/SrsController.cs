@@ -50,10 +50,8 @@ namespace LinguaReadApi.Controllers
             int remainingNew = Math.Max(0, maxNew - studiedNew);
             int remainingReviews = Math.Max(0, maxReviews - studiedReviews);
 
-            if (remainingNew == 0 && remainingReviews == 0)
-            {
-                return new List<SrsDueCardDto>(); // Limits reached for today
-            }
+            // Do not short-circuit when both daily quotas are exhausted: learning-phase
+            // cards still apply (see validLearningCards below, which ignores these limits).
 
             // 2. Base query for due cards
             var query = _context.SrsCardReviews
@@ -92,7 +90,7 @@ namespace LinguaReadApi.Controllers
             {
                 var newCardsQuery = query
                     .Where(scr => !scr.IsLearning && scr.Repetitions == 0 && scr.LastReviewedAt == null)
-                    .OrderByDescending(scr => scr.Word.TextWords.Count) // Prioritize highest frequency words
+                    .OrderByDescending(scr => _context.TextWords.Count(tw => tw.WordId == scr.WordId)) // Safe EF Core explicit subquery
                     .ThenBy(scr => scr.CreatedAt);
                 newCardsPool = await newCardsQuery.Take(Math.Max(limit * 2, remainingNew * 2)).ToListAsync();
             }
@@ -511,7 +509,9 @@ namespace LinguaReadApi.Controllers
 
             var cardQuery = _context.SrsCardReviews
                 .AsNoTracking()
-                .Where(scr => scr.UserId == userId);
+                .Where(scr => scr.UserId == userId)
+                .Where(scr => !scr.IsSuspended)
+                .Where(scr => scr.BuriedUntil == null || scr.BuriedUntil <= now);
 
             if (languageId.HasValue)
             {

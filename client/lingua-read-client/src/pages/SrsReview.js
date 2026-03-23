@@ -22,7 +22,8 @@ const SrsReview = () => {
   const [selectedLanguage, setSelectedLanguage] = useState(() =>
     localStorage.getItem('srsSelectedLanguage') || ''
   );
-  const [statusFilter, setStatusFilter] = useState([1, 2, 3, 4]);
+  // Include Known (5): stats count all due SRS cards; excluding 5 hid due "Known" words from sessions.
+  const [statusFilter, setStatusFilter] = useState([1, 2, 3, 4, 5]);
   const [onlyOneTarget, setOnlyOneTarget] = useState(false);
 
   // Load languages
@@ -523,7 +524,7 @@ const SrsReview = () => {
             <Form.Group className="mb-3">
               <Form.Label>Word Status Filter</Form.Label>
               <div>
-                {[1, 2, 3, 4].map(s => (
+                {[1, 2, 3, 4, 5].map(s => (
                   <Form.Check
                     key={s}
                     inline

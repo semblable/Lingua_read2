@@ -5,7 +5,7 @@ import { FixedSizeList as List } from 'react-window';
 import {
   getText, createWord, updateWord, updateLastRead, completeLesson, getBook, // Use completeLesson instead of completeText
   translateText, translateSentence, translateFullText, updateUserSettings, // Added updateUserSettings, removed unused getUserSettings
-  explainSentence,
+  explainSentence, mineSentence,
   batchTranslateWords, addTermsBatch, getLanguage, // Added getLanguage (Phase 3)
   getSentenceProgress, logSentenceReadActivity,
   API_URL
@@ -798,7 +798,8 @@ const WordInfoPanel = React.memo(({
   sentenceTtsEnabled,
   canUseSentenceTts,
   isSpeakingWord,
-  onSpeakWord
+  onSpeakWord,
+  handleMineSentence
 }) => {
   if (!displayedWord) return <p>Click/hover on a word.</p>;
   return (
@@ -816,6 +817,15 @@ const WordInfoPanel = React.memo(({
             {isSpeakingWord ? 'Speaking...' : 'Speak Word'}
           </Button>
         )}
+        <Button
+          variant="outline-success"
+          size="sm"
+          onClick={handleMineSentence}
+          disabled={!displayedWord?.wordId || displayedWord?.isNew}
+          title="Mine the current sentence for SRS review"
+        >
+          Mine Sentence
+        </Button>
       </div>
       {saveSuccess && <Alert variant="success" size="sm">Saved!</Alert>}
       <p className="mb-1 small">Status: {displayedWord.status > 0 ? ['New', 'Learning', 'Familiar', 'Advanced', 'Known'][displayedWord.status - 1] : 'Untracked'}</p>
@@ -2738,8 +2748,8 @@ const TextDisplay = () => {
                   // Continue with empty translation rather than failing
                 }
               }
-
-              createWord(text.textId, hoveredWordTerm, key, translationToUse)
+              const sentenceToMine = currentSentenceSegment?.text;
+              createWord(text.textId, hoveredWordTerm, key, translationToUse, sentenceToMine)
                 .then(newWordData => {
                   // Update newWordData with the translation we fetched (if backend didn't return it)
                   const wordWithTranslation = { ...newWordData, translation: translationToUse || newWordData.translation };
@@ -2783,7 +2793,7 @@ const TextDisplay = () => {
         setWords(updatedWords);
         setDisplayedWord(prev => (prev?.term === selectedWord ? { ...prev, status: numericStatus, translation } : prev));
       } else {
-        const newWordData = await createWord(text.textId, selectedWord, numericStatus, translation);
+        const newWordData = await createWord(text.textId, selectedWord, numericStatus, translation, currentSentenceSegment?.text);
         setWords(prevWords => [...prevWords, newWordData]);
         setDisplayedWord({ ...newWordData, isNew: false });
       }
@@ -2816,6 +2826,25 @@ const TextDisplay = () => {
     } catch (error) { setFullTextTranslation(`Translation failed: ${error.message}`); }
     finally { setIsFullTextTranslating(false); }
   };
+
+  const handleMineSentence = useCallback(async () => {
+    const sentenceToMine = currentSentenceSegment?.text;
+    const wordId = displayedWord?.wordId;
+    
+    if (!wordId || !sentenceToMine) {
+      alert("Please select an existing tracked word and ensure a sentence is focused.");
+      return;
+    }
+
+    try {
+      // Create a temporary state indicator if you want, or just wait.
+      await mineSentence(wordId, sentenceToMine, text.textId, text.title);
+      alert("Sentence added to flashcards successfully!");
+    } catch (err) {
+      console.error("Failed to mine sentence:", err);
+      alert(`Failed to mine sentence: ${err.message}`);
+    }
+  }, [displayedWord, currentSentenceSegment, text, mineSentence]);
 
   const handleTranslateUnknownWords = async () => {
     if (!text || !text.content || !text.languageId) return;
@@ -3173,6 +3202,7 @@ const TextDisplay = () => {
                   canUseSentenceTts={canUseSentenceTts}
                   isSpeakingWord={isSpeakingWord}
                   onSpeakWord={speakDisplayedWord}
+                  handleMineSentence={handleMineSentence}
                 />
               </div>
 
@@ -3230,6 +3260,7 @@ const TextDisplay = () => {
                 canUseSentenceTts={canUseSentenceTts}
                 isSpeakingWord={isSpeakingWord}
                 onSpeakWord={speakDisplayedWord}
+                handleMineSentence={handleMineSentence}
               />
             </div>
           </div>

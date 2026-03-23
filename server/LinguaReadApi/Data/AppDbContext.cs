@@ -27,6 +27,8 @@ namespace LinguaReadApi.Data
         public DbSet<UserLanguageStatistics> UserLanguageStatistics { get; set; } // Added for aggregated stats
         public DbSet<UserAudioLessonProgress> UserAudioLessonProgresses { get; set; } // Added for audio lesson progress
         public DbSet<UserSentenceProgress> UserSentenceProgresses { get; set; }
+        public DbSet<SrsCardReview> SrsCardReviews { get; set; }
+        public DbSet<SrsPhrase> SrsPhrases { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -260,6 +262,43 @@ namespace LinguaReadApi.Data
                 .WithMany()
                 .HasForeignKey(usp => usp.TextId)
                 .OnDelete(DeleteBehavior.Cascade);
+
+            // Configure SrsCardReview entity
+            modelBuilder.Entity<SrsCardReview>()
+                .HasIndex(scr => new { scr.UserId, scr.WordId })
+                .IsUnique();
+
+            modelBuilder.Entity<SrsCardReview>()
+                .HasOne(scr => scr.User)
+                .WithMany()
+                .HasForeignKey(scr => scr.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<SrsCardReview>()
+                .HasOne(scr => scr.Word)
+                .WithMany()
+                .HasForeignKey(scr => scr.WordId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // Configure SrsPhrase entity
+            modelBuilder.Entity<SrsPhrase>()
+                .HasOne(sp => sp.User)
+                .WithMany()
+                .HasForeignKey(sp => sp.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<SrsPhrase>()
+                .HasOne(sp => sp.Word)
+                .WithMany()
+                .HasForeignKey(sp => sp.WordId)
+                .OnDelete(DeleteBehavior.Restrict); // Don't cascade from Word to avoid multiple paths
+
+            modelBuilder.Entity<SrsPhrase>()
+                .HasOne(sp => sp.Text)
+                .WithMany()
+                .HasForeignKey(sp => sp.TextId)
+                .IsRequired(false)
+                .OnDelete(DeleteBehavior.SetNull); // If text deleted, keep phrase but null out TextId
         }
     }
 }

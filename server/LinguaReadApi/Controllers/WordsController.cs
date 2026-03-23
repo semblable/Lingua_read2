@@ -98,6 +98,34 @@ namespace LinguaReadApi.Controllers
                     }
                 }
 
+                // Auto-mine sentence if provided
+                if (!string.IsNullOrEmpty(createWordDto.Sentence))
+                {
+                    var existingPhrase = await _context.SrsPhrases
+                        .FirstOrDefaultAsync(p => p.WordId == existingWord.WordId && p.Sentence == createWordDto.Sentence);
+                    if (existingPhrase == null)
+                    {
+                        _context.SrsPhrases.Add(new SrsPhrase
+                        {
+                            WordId = existingWord.WordId,
+                            UserId = userId,
+                            Sentence = createWordDto.Sentence,
+                            TextId = text.TextId,
+                            TextTitle = text.Title,
+                            CreatedAt = DateTime.UtcNow
+                        });
+                    }
+                    if (createWordDto.Status < 5)
+                    {
+                        var existingCard = await _context.SrsCardReviews
+                            .FirstOrDefaultAsync(scr => scr.WordId == existingWord.WordId && scr.UserId == userId);
+                        if (existingCard == null)
+                        {
+                            _context.SrsCardReviews.Add(new SrsCardReview { WordId = existingWord.WordId, UserId = userId });
+                        }
+                    }
+                }
+
                 await _context.SaveChangesAsync();
 
                 return Ok(new WordResponseDto
@@ -146,7 +174,26 @@ namespace LinguaReadApi.Controllers
                 _context.WordTranslations.Add(wordTranslation);
             }
 
-            // Save relationships and potentially translation
+            // Auto-mine sentence if provided
+            if (!string.IsNullOrEmpty(createWordDto.Sentence))
+            {
+                _context.SrsPhrases.Add(new SrsPhrase
+                {
+                    WordId = word.WordId,
+                    UserId = userId,
+                    Sentence = createWordDto.Sentence,
+                    TextId = text.TextId,
+                    TextTitle = text.Title,
+                    CreatedAt = DateTime.UtcNow
+                });
+
+                if (createWordDto.Status < 5)
+                {
+                    _context.SrsCardReviews.Add(new SrsCardReview { WordId = word.WordId, UserId = userId });
+                }
+            }
+
+            // Save relationships and potentially translation and SRS data
             await _context.SaveChangesAsync();
 
             return CreatedAtAction(nameof(GetWord), new { id = word.WordId }, new WordResponseDto
@@ -677,6 +724,8 @@ namespace LinguaReadApi.Controllers
 
         // Translation is optional (can be empty or null)
         public string? Translation { get; set; }
+
+        public string? Sentence { get; set; }
     }
 
     public class UpdateWordDto

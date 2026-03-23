@@ -611,20 +611,16 @@ export const resetUserStatistics = () => {
 
 
 // Words API
-export const createWord = async (textId, term, status, translation) => {
+export const createWord = async (textId, term, status, translation, sentence = null) => {
   try {
-    // Validate inputs
-    if (!textId) throw new Error('Text ID is required');
-    if (!term || term.trim() === '') throw new Error('Word term is required');
-    if (!status) throw new Error('Word status is required');
-
-    console.log(`[API] Creating word: "${term}" with status: ${status}`);
+    console.log(`[API] Creating word: "${term}" with status: ${status}, sentence: "${sentence || 'N/A'}"`);
 
     const payload = {
-      textId,
+      textId: parseInt(textId, 10),
       term: term.trim(),
-      status,
-      translation: translation || ''
+      status: parseInt(status, 10),
+      translation: translation || '',
+      sentence: sentence // Include sentence for auto-mining
     };
 
     const response = await fetchApi('/words', {
@@ -1088,4 +1084,46 @@ export const restoreDatabase = async (backupFile) => {
     console.error('[API Error] Failed to restore database:', error);
     throw error; // Re-throw to be caught by calling component
   }
+};
+// --- SRS (Spaced Repetition System) API ---
+
+export const getSrsDueCards = async (languageId = null, { status, onlyOneTarget = false, limit = 50 } = {}) => {
+  const params = new URLSearchParams();
+  if (languageId) params.append('languageId', languageId);
+  if (status && status.length > 0) params.append('status', status.join(','));
+  if (onlyOneTarget) params.append('onlyOneTarget', 'true');
+  params.append('limit', limit);
+  const queryString = params.toString();
+  return await fetchApi(`/srs/due${queryString ? `?${queryString}` : ''}`);
+};
+
+export const submitSrsReview = async (srsCardReviewId, grade) => {
+  return await fetchApi('/srs/review', {
+    method: 'POST',
+    body: JSON.stringify({ srsCardReviewId, grade })
+  });
+};
+
+export const mineSentence = async (wordId, sentence, textId = null, textTitle = null) => {
+  return await fetchApi('/srs/mine', {
+    method: 'POST',
+    body: JSON.stringify({ wordId, sentence, textId, textTitle })
+  });
+};
+
+export const getSrsPhrases = async (wordId) => {
+  return await fetchApi(`/srs/phrases/${wordId}`);
+};
+
+export const deleteSrsPhrase = async (phraseId) => {
+  return await fetchApi(`/srs/phrases/${phraseId}`, {
+    method: 'DELETE'
+  });
+};
+
+export const getSrsStats = async (languageId = null) => {
+  const params = new URLSearchParams();
+  if (languageId) params.append('languageId', languageId);
+  const queryString = params.toString();
+  return await fetchApi(`/srs/stats${queryString ? `?${queryString}` : ''}`);
 };

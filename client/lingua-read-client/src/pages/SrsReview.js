@@ -160,6 +160,22 @@ const SrsReview = () => {
     return null;
   }, [cards, currentIndex]);
 
+  const primaryPhrase = useMemo(() => {
+    if (!currentCard?.phrases?.length || !currentCard?.term) return null;
+    const lowerTerm = currentCard.term.toLowerCase();
+    return currentCard.phrases.find(
+      (phrase) => typeof phrase?.sentence === 'string' && phrase.sentence.toLowerCase().includes(lowerTerm)
+    ) || null;
+  }, [currentCard]);
+
+  const otherPhrases = useMemo(() => {
+    if (!currentCard?.phrases?.length) return [];
+    if (!primaryPhrase) return currentCard.phrases.slice(0, 2);
+    return currentCard.phrases
+      .filter((phrase) => phrase.srsPhraseId !== primaryPhrase.srsPhraseId)
+      .slice(0, 2);
+  }, [currentCard, primaryPhrase]);
+
   // Handle grading
   const handleGrade = useCallback(async (grade) => {
     if (!currentCard || submitting) return;
@@ -269,7 +285,7 @@ const SrsReview = () => {
     const regex = new RegExp(`(${term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
     const parts = sentence.split(regex);
     return parts.map((part, i) =>
-      regex.test(part)
+      i % 2 === 1
         ? <span key={i} style={{
             backgroundColor: '#ffdd66',
             color: '#000',
@@ -751,16 +767,11 @@ const SrsReview = () => {
               style={{ cursor: !isFlipped ? 'pointer' : 'default', minHeight: '200px' }}
               onClick={() => !isFlipped && setIsFlipped(true)}
             >
-              {currentCard.phrases && currentCard.phrases.length > 0 ? (
+              {primaryPhrase ? (
                 <div>
                   <p className="lead mb-2" style={{ fontSize: '1.3rem', lineHeight: '1.8' }}>
-                    {renderSentenceWithHighlight(currentCard.phrases[0].sentence, currentCard.term)}
+                    {renderSentenceWithHighlight(primaryPhrase.sentence, currentCard.term)}
                   </p>
-                  {currentCard.phrases[0].textTitle && (
-                    <small className="text-muted d-block">
-                      From: <em>{currentCard.phrases[0].textTitle}</em>
-                    </small>
-                  )}
                 </div>
               ) : (
                 <p className="lead mb-2" style={{ fontSize: '1.5rem' }}>
@@ -793,13 +804,12 @@ const SrsReview = () => {
                   </p>
 
                   {/* Additional phrases */}
-                  {currentCard.phrases && currentCard.phrases.length > 1 && (
+                  {otherPhrases.length > 0 && (
                     <div className="mt-2 text-start">
                       <small className="text-muted d-block mb-1">Other mined sentences:</small>
-                      {currentCard.phrases.slice(1, 3).map((phrase, i) => (
+                      {otherPhrases.map((phrase) => (
                         <small key={phrase.srsPhraseId} className="d-block text-muted mb-1" style={{ fontStyle: 'italic' }}>
                           "{phrase.sentence}"
-                          {phrase.textTitle && <> — {phrase.textTitle}</>}
                         </small>
                       ))}
                     </div>

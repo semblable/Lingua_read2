@@ -154,7 +154,9 @@ namespace LinguaReadApi.Controllers
                     IsSuspended = card.IsSuspended,
                     Flag = card.Flag,
                     Tags = card.Tags,
-                    Phrases = cardPhrases.Select(p => new SrsPhraseDto
+                    Phrases = cardPhrases
+                    .OrderByDescending(p => p.CreatedAt)
+                    .Select(p => new SrsPhraseDto
                     {
                         SrsPhraseId = p.SrsPhraseId,
                         Sentence = p.Sentence,

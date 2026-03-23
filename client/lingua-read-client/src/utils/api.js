@@ -990,7 +990,7 @@ export const batchTranslateWords = async (words, targetLanguageCode, sourceLangu
       targetLanguageCode,
       sourceLanguageCode // Optional
     };
-    console.log(`[API] Sending batch translation request for ${words.length} words to ${targetLanguageCode}`);
+    console.log(`[API] Sending batch translation request for ${words.length} words from ${sourceLanguageCode || 'auto'} to ${targetLanguageCode}`);
     // Assuming the endpoint is /api/translation/batch based on backend changes
     return await fetchApi('/translation/batch', {
       method: 'POST',

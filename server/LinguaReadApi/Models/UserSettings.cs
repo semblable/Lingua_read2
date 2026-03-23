@@ -34,6 +34,8 @@ namespace LinguaReadApi.Models
         public bool SentenceTtsEnabled { get; set; } = false; // enable browser TTS controls in sentence mode
         public double SentenceTtsRate { get; set; } = 1.0; // browser TTS playback speed
         public int DefaultLanguageId { get; set; } = 0; // default language for new texts
+        [StringLength(20)]
+        public string TranslationTargetLanguageCode { get; set; } = "EN"; // target language for glossary translations
         
         // Navigation Preferences
         public bool AutoAdvanceToNextLesson { get; set; } = false; // automatically go to next lesson after completion

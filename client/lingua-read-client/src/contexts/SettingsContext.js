@@ -21,6 +21,7 @@ const defaultSettings = {
   sentenceTtsEnabled: false,
   sentenceTtsRate: 1,
   defaultLanguageId: 0,
+  translationTargetLanguageCode: 'EN',
   autoAdvanceToNextLesson: false,
   showProgressStats: true,
   lineSpacing: 1.5, // Added lineSpacing
@@ -76,6 +77,7 @@ export const SettingsProvider = ({ children }) => {
         sentenceTtsEnabled: data.sentenceTtsEnabled ?? defaultSettings.sentenceTtsEnabled,
         sentenceTtsRate: data.sentenceTtsRate ?? defaultSettings.sentenceTtsRate,
         defaultLanguageId: data.defaultLanguageId || defaultSettings.defaultLanguageId,
+        translationTargetLanguageCode: data.translationTargetLanguageCode || defaultSettings.translationTargetLanguageCode,
         autoAdvanceToNextLesson: data.autoAdvanceToNextLesson ?? defaultSettings.autoAdvanceToNextLesson,
         showProgressStats: data.showProgressStats ?? defaultSettings.showProgressStats,
         lineSpacing: data.lineSpacing || defaultSettings.lineSpacing, // Fetch lineSpacing

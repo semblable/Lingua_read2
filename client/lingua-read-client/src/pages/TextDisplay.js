@@ -1426,6 +1426,7 @@ const TextDisplay = () => {
   const [isFullTextTranslating, setIsFullTextTranslating] = useState(false);
   // Use SettingsContext instead of local state for settings that are now global
   const { settings: globalSettings, updateSetting } = useContext(SettingsContext);
+  const translationTargetLanguageCode = (globalSettings.translationTargetLanguageCode || 'EN').toUpperCase();
   // Local state only for panel width, as it's specific to this component's layout control
   const [leftPanelWidth, setLeftPanelWidth] = useState(globalSettings.leftPanelWidth || 85);
   // Local state for userSettings specific to TextDisplay (like textSize) if needed, or use globalSettings directly
@@ -1817,8 +1818,8 @@ const TextDisplay = () => {
     setWordTranslationError('');
     try {
       const result = sentenceContext
-        ? await translateSelectionWithContext(termToTranslate, sentenceContext, text.languageCode, 'EN')
-        : await translateText(termToTranslate, text.languageCode, 'EN');
+        ? await translateSelectionWithContext(termToTranslate, sentenceContext, text.languageCode, translationTargetLanguageCode)
+        : await translateText(termToTranslate, text.languageCode, translationTargetLanguageCode);
       if (result?.translatedText) {
         setTranslation(result.translatedText);
         setDisplayedWord(prev => (prev && prev.term === termToTranslate ? { ...prev, translation: result.translatedText } : prev));
@@ -1831,7 +1832,7 @@ const TextDisplay = () => {
     } finally {
       setIsTranslating(false);
     }
-  }, [globalSettings.autoTranslateWords, text?.languageCode, setTranslation, setDisplayedWord, setIsTranslating, setWordTranslationError]); // Use globalSettings from context
+  }, [globalSettings.autoTranslateWords, text?.languageCode, translationTargetLanguageCode, setTranslation, setDisplayedWord, setIsTranslating, setWordTranslationError]); // Use globalSettings from context
 
   const handleWordClick = useCallback((word, options = {}) => {
     const { skipAutoTranslate = false } = options;
@@ -2370,7 +2371,7 @@ const TextDisplay = () => {
 
     setIsTranslatingSegment(true);
     try {
-      const result = await translateSentence(currentSentenceSegment.text, text.languageCode, 'EN');
+      const result = await translateSentence(currentSentenceSegment.text, text.languageCode, translationTargetLanguageCode);
       const translatedText = extractTranslatedTextFromPairedTags(
         result?.translatedText || 'Translation failed.'
       );
@@ -2389,7 +2390,7 @@ const TextDisplay = () => {
     } finally {
       setIsTranslatingSegment(false);
     }
-  }, [currentSentenceSegment, segmentTranslations, text?.languageCode, visibleTranslationIndex]);
+  }, [currentSentenceSegment, segmentTranslations, text?.languageCode, translationTargetLanguageCode, visibleTranslationIndex]);
 
   const handleSegmentExplanationToggle = useCallback(async () => {
     if (!currentSentenceSegment || !text?.languageCode) return;
@@ -2406,7 +2407,7 @@ const TextDisplay = () => {
 
     setIsExplainingSegment(true);
     try {
-      const result = await explainSentence(currentSentenceSegment.text, text.languageCode, 'EN');
+      const result = await explainSentence(currentSentenceSegment.text, text.languageCode, translationTargetLanguageCode);
       const explanationText = result?.explanationText || 'Explanation failed.';
       setSegmentExplanations(prev => ({
         ...prev,
@@ -2423,7 +2424,7 @@ const TextDisplay = () => {
     } finally {
       setIsExplainingSegment(false);
     }
-  }, [currentSentenceSegment, segmentExplanations, text?.languageCode, visibleExplanationIndex]);
+  }, [currentSentenceSegment, segmentExplanations, text?.languageCode, translationTargetLanguageCode, visibleExplanationIndex]);
 
   useEffect(() => {
     if (sentenceSegments.length === 0) {
@@ -2798,7 +2799,7 @@ const TextDisplay = () => {
             if (!translationToUse && text?.languageCode) {
               try {
                 console.log(`[Keyboard Shortcut] Fetching translation for "${hoveredWordTerm}"...`);
-                const result = await translateText(hoveredWordTerm, text.languageCode, 'EN');
+                const result = await translateText(hoveredWordTerm, text.languageCode, translationTargetLanguageCode);
                 translationToUse = result?.translatedText || '';
                 console.log(`[Keyboard Shortcut] Got translation: "${translationToUse}"`);
               } catch (err) {
@@ -2822,7 +2823,7 @@ const TextDisplay = () => {
               if (text?.languageCode) {
                 try {
                   console.log(`[Keyboard Shortcut] Fetching translation for new word "${hoveredWordTerm}"...`);
-                  const result = await translateText(hoveredWordTerm, text.languageCode, 'EN');
+                  const result = await translateText(hoveredWordTerm, text.languageCode, translationTargetLanguageCode);
                   translationToUse = result?.translatedText || '';
                   console.log(`[Keyboard Shortcut] Got translation for new word: "${translationToUse}"`);
                 } catch (err) {
@@ -2847,7 +2848,7 @@ const TextDisplay = () => {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [hoveredWordTerm, processingWord, isTranslating, getWordData, setWords, selectedWord, displayedWord, text?.textId, text?.languageCode, currentSentenceSegment?.text, globalSettings.autoTranslateWords, triggerAutoTranslation]); // Use globalSettings
+  }, [hoveredWordTerm, processingWord, isTranslating, getWordData, setWords, selectedWord, displayedWord, text?.textId, text?.languageCode, currentSentenceSegment?.text, globalSettings.autoTranslateWords, triggerAutoTranslation, translationTargetLanguageCode]); // Use globalSettings
   // --- End Keyboard Shortcuts ---
 
   // Removed redundant text selection listener useEffect hook
@@ -2903,7 +2904,7 @@ const TextDisplay = () => {
     if (!text || !text.content) return;
     setShowTranslationPopup(true); setIsFullTextTranslating(true); setFullTextTranslation('');
     try {
-      const response = await translateFullText(text.content, text.languageCode || 'auto', 'en');
+      const response = await translateFullText(text.content, text.languageCode || 'auto', translationTargetLanguageCode);
       setFullTextTranslation(response?.translatedText || 'Translation failed.');
     } catch (error) { setFullTextTranslation(`Translation failed: ${error.message}`); }
     finally { setIsFullTextTranslating(false); }
@@ -2938,7 +2939,7 @@ const TextDisplay = () => {
       const wordsMap = wordMap; // Reuse the memoized map
       const unknownWords = uniqueWordsInText.filter(word => !wordsMap.has(word) || (wordsMap.get(word)?.status <= 2 && !wordsMap.get(word)?.translation));
       if (unknownWords.length === 0) { alert("No words found needing translation."); setTranslatingUnknown(false); return; } // Exit early
-      const translations = await batchTranslateWords(unknownWords, 'EN', text.languageCode);
+      const translations = await batchTranslateWords(unknownWords, translationTargetLanguageCode, text.languageCode);
       const originalCaseMap = new Map();
       textWords.forEach(w => { const lower = w.toLowerCase(); if (!originalCaseMap.has(lower)) { originalCaseMap.set(lower, w); } });
       const termsToAdd = unknownWords.map(word => ({

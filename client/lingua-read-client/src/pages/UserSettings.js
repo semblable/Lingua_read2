@@ -24,6 +24,7 @@ const UserSettings = () => {
     highlightKnownWords: true,
     sentenceTtsEnabled: false,
     defaultLanguageId: 0,
+    translationTargetLanguageCode: 'EN',
     autoAdvanceToNextLesson: false,
     autoMoveFinishedLessons: false, // Added property
     showProgressStats: true,
@@ -101,6 +102,7 @@ const UserSettings = () => {
           highlightKnownWords: data.highlightKnownWords ?? true,
           sentenceTtsEnabled: data.sentenceTtsEnabled ?? false,
           defaultLanguageId: data.defaultLanguageId || 0,
+          translationTargetLanguageCode: data.translationTargetLanguageCode || 'EN',
           autoAdvanceToNextLesson: data.autoAdvanceToNextLesson ?? false,
           autoMoveFinishedLessons: data.autoMoveFinishedLessons ?? false, // Map response
           showProgressStats: data.showProgressStats ?? true,
@@ -258,6 +260,9 @@ const UserSettings = () => {
 
       updateSetting('defaultLanguageId', settings.defaultLanguageId);
       localStorage.setItem('defaultLanguageId', settings.defaultLanguageId.toString());
+
+      updateSetting('translationTargetLanguageCode', settings.translationTargetLanguageCode);
+      localStorage.setItem('translationTargetLanguageCode', settings.translationTargetLanguageCode);
 
       updateSetting('autoAdvanceToNextLesson', settings.autoAdvanceToNextLesson);
       localStorage.setItem('autoAdvanceToNextLesson', settings.autoAdvanceToNextLesson.toString());
@@ -653,6 +658,28 @@ const UserSettings = () => {
                   </option>
                 ))}
               </Form.Select>
+            </Form.Group>
+
+            <Form.Group className="mb-4" controlId="translationTargetLanguageCode">
+              <Form.Label>Translation Target Language</Form.Label>
+              <Form.Select
+                name="translationTargetLanguageCode"
+                value={settings.translationTargetLanguageCode}
+                onChange={handleChange}
+                disabled={loadingLanguages}
+              >
+                <option value="EN">English</option>
+                {languages
+                  .filter(language => language.code && language.code.toLowerCase() !== 'en')
+                  .map(language => (
+                    <option key={`target-${language.languageId}`} value={language.code.toUpperCase()}>
+                      {language.name}
+                    </option>
+                  ))}
+              </Form.Select>
+              <Form.Text className="text-muted">
+                Used for word and sentence translation results in the reader.
+              </Form.Text>
             </Form.Group>
 
 

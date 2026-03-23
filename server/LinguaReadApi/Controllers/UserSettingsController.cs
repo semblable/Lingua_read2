@@ -70,6 +70,7 @@ namespace LinguaReadApi.Controllers
                     SentenceTtsEnabled = false,
                     SentenceTtsRate = 1.0,
                     DefaultLanguageId = 0,
+                    TranslationTargetLanguageCode = "EN",
                     AutoAdvanceToNextLesson = false,
                     AutoMoveFinishedLessons = false, // Added property
                     ShowProgressStats = true,
@@ -110,6 +111,7 @@ namespace LinguaReadApi.Controllers
                 SentenceTtsEnabled = settings.SentenceTtsEnabled,
                 SentenceTtsRate = settings.SentenceTtsRate,
                 DefaultLanguageId = settings.DefaultLanguageId,
+                TranslationTargetLanguageCode = settings.TranslationTargetLanguageCode,
                 AutoAdvanceToNextLesson = settings.AutoAdvanceToNextLesson,
                 AutoMoveFinishedLessons = settings.AutoMoveFinishedLessons, // Added
                 ShowProgressStats = settings.ShowProgressStats,
@@ -199,6 +201,10 @@ namespace LinguaReadApi.Controllers
             settings.SentenceTtsEnabled = updateDto.SentenceTtsEnabled ?? settings.SentenceTtsEnabled;
             settings.SentenceTtsRate = updateDto.SentenceTtsRate ?? settings.SentenceTtsRate;
             settings.DefaultLanguageId = updateDto.DefaultLanguageId ?? settings.DefaultLanguageId;
+            if (!string.IsNullOrWhiteSpace(updateDto.TranslationTargetLanguageCode))
+            {
+                settings.TranslationTargetLanguageCode = updateDto.TranslationTargetLanguageCode.Trim().ToUpperInvariant();
+            }
             settings.AutoAdvanceToNextLesson = updateDto.AutoAdvanceToNextLesson ?? settings.AutoAdvanceToNextLesson;
             settings.AutoMoveFinishedLessons = updateDto.AutoMoveFinishedLessons ?? settings.AutoMoveFinishedLessons; // Update property
             settings.ShowProgressStats = updateDto.ShowProgressStats ?? settings.ShowProgressStats;
@@ -270,6 +276,7 @@ namespace LinguaReadApi.Controllers
                 SentenceTtsEnabled = settings.SentenceTtsEnabled,
                 SentenceTtsRate = settings.SentenceTtsRate,
                 DefaultLanguageId = settings.DefaultLanguageId,
+                TranslationTargetLanguageCode = settings.TranslationTargetLanguageCode,
                 AutoAdvanceToNextLesson = settings.AutoAdvanceToNextLesson,
                 AutoMoveFinishedLessons = settings.AutoMoveFinishedLessons, // Update property
                 ShowProgressStats = settings.ShowProgressStats,
@@ -640,6 +647,7 @@ namespace LinguaReadApi.Controllers
         public bool SentenceTtsEnabled { get; set; } = false;
         public double SentenceTtsRate { get; set; } = 1.0;
         public int DefaultLanguageId { get; set; } = 0;
+        public string TranslationTargetLanguageCode { get; set; } = "EN";
         public bool AutoAdvanceToNextLesson { get; set; } = false;
         public bool AutoMoveFinishedLessons { get; set; } = false; // Added property
         public bool ShowProgressStats { get; set; } = true;
@@ -688,6 +696,8 @@ namespace LinguaReadApi.Controllers
         [Range(0.5, 1.5)]
         public double? SentenceTtsRate { get; set; }
         public int? DefaultLanguageId { get; set; }
+        [StringLength(20)]
+        public string? TranslationTargetLanguageCode { get; set; }
         public bool? AutoAdvanceToNextLesson { get; set; }
         public bool? AutoMoveFinishedLessons { get; set; } // Added property
         public bool? ShowProgressStats { get; set; }

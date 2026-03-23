@@ -1,0 +1,188 @@
+/* SRS Review Page Styles */
+
+/* Setup screen stats card */
+.srs-stats-card {
+  border: none;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.srs-stats-card .card-body {
+  background: var(--theme-surface-bg, #fff);
+}
+
+.srs-streak-badge {
+  font-size: 1rem;
+  padding: 0.5rem 1rem;
+  border-radius: 20px;
+  letter-spacing: 0.02em;
+}
+
+.srs-stat-value {
+  font-size: 1.25rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.srs-stat-label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--bs-secondary-color, #6c757d);
+}
+
+/* Forecast bar chart */
+.srs-forecast-bar {
+  transition: height 0.3s ease;
+  border-radius: 3px 3px 0 0;
+}
+
+/* Heatmap */
+.srs-heatmap-cell {
+  border-radius: 2px;
+  transition: opacity 0.15s ease;
+}
+
+.srs-heatmap-cell:hover {
+  opacity: 0.8;
+  outline: 1px solid var(--bs-secondary-color, #6c757d);
+}
+
+/* Review Card */
+.srs-review-card {
+  border: none;
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+}
+
+.srs-review-card .card-body {
+  padding: 1.5rem;
+}
+
+/* Card front: sentence display */
+.srs-sentence {
+  font-size: 1.25rem;
+  line-height: 2;
+  letter-spacing: 0.01em;
+}
+
+.srs-term-highlight {
+  background: linear-gradient(135deg, #ffe066 0%, #ffd633 100%);
+  color: #1a1a1a;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-weight: 700;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.srs-reveal-hint {
+  opacity: 0.5;
+  font-size: 0.85rem;
+}
+
+/* Card back: answer area */
+.srs-answer-area {
+  animation: srs-fade-in 0.2s ease-out;
+}
+
+@keyframes srs-fade-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.srs-translation {
+  font-size: 1.2rem;
+  color: var(--theme-text, #333);
+}
+
+.srs-other-phrases {
+  font-size: 0.85rem;
+  opacity: 0.7;
+  font-style: italic;
+}
+
+/* Grade buttons */
+.srs-grade-buttons {
+  gap: 8px;
+  display: flex;
+}
+
+.srs-grade-btn {
+  flex: 1;
+  border-radius: 12px !important;
+  padding: 0.6rem 0.25rem !important;
+  font-size: 0.9rem;
+  transition: transform 0.1s ease, box-shadow 0.1s ease;
+  border: none !important;
+}
+
+.srs-grade-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.srs-grade-btn:active {
+  transform: translateY(0);
+}
+
+.srs-grade-btn .interval-label {
+  font-size: 0.7rem;
+  opacity: 0.85;
+}
+
+.srs-grade-btn kbd {
+  font-size: 0.65rem;
+  opacity: 0.6;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 3px;
+  padding: 1px 5px;
+}
+
+/* Progress bar */
+.srs-progress-bar {
+  height: 6px;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+/* Session complete screen */
+.srs-complete-card {
+  border: none;
+  border-radius: 16px;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+}
+
+.srs-complete-emoji {
+  font-size: 3rem;
+  line-height: 1;
+  margin-bottom: 0.75rem;
+}
+
+/* Card action buttons (suspend/bury/flag) */
+.srs-card-actions .btn {
+  border-radius: 8px;
+  font-size: 0.8rem;
+}
+
+/* Setup form card */
+.srs-setup-card {
+  border: none;
+  border-radius: 12px;
+}
+
+/* Mobile: make grade buttons taller for touch targets */
+@media (max-width: 576px) {
+  .srs-grade-btn {
+    padding: 0.75rem 0.25rem !important;
+    font-size: 0.85rem;
+  }
+
+  .srs-sentence {
+    font-size: 1.1rem;
+  }
+
+  .srs-review-card .card-body {
+    padding: 1rem;
+  }
+}

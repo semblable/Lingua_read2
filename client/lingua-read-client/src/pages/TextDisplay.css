@@ -38,6 +38,14 @@
   flex-shrink: 0;
 }
 
+.lesson-controls-expanded-panel {
+  border-color: var(--theme-border-color, #e9ecef) !important;
+}
+
+.lesson-controls-section-reader-actions:empty {
+  display: none;
+}
+
 .lesson-topbar {
   position: sticky;
   top: 0;

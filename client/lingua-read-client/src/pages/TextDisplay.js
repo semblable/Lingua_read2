@@ -570,7 +570,6 @@ const PrimaryControls = React.memo(({
   text,
   handleCompleteLesson,
   completing,
-  previousTextId,
   nextTextId,
   navigate
 }) => (
@@ -601,28 +600,6 @@ const PrimaryControls = React.memo(({
     )}
     {text?.bookId && (
       <Button
-        variant="outline-secondary"
-        size="sm"
-        onClick={() => navigate(`/texts/${previousTextId}`)}
-        disabled={!previousTextId}
-        className="ms-1"
-      >
-        Previous Text
-      </Button>
-    )}
-    {text?.bookId && (
-      <Button
-        variant="outline-secondary"
-        size="sm"
-        onClick={() => navigate(`/texts/${nextTextId}`)}
-        disabled={!nextTextId}
-        className="ms-1"
-      >
-        Next Text
-      </Button>
-    )}
-    {text?.bookId && (
-      <Button
         variant="outline-primary"
         size="sm"
         onClick={() => navigate(`/books/${text.bookId}`)}
@@ -644,6 +621,58 @@ const PrimaryControls = React.memo(({
   </>
 ));
 
+/** Book part navigation + complete lesson — shown inside the collapsible lesson panel only. */
+const ReaderLessonActions = React.memo(({
+  text,
+  isAudioLesson,
+  previousTextId,
+  nextTextId,
+  completing,
+  navigate,
+  handleCompleteLesson
+}) => {
+  if (!text) return null;
+  const showComplete = !isAudioLesson || text.bookId;
+  const showBookNav = !!text.bookId;
+  if (!showBookNav && !showComplete) return null;
+
+  return (
+    <div className="d-flex flex-wrap align-items-center gap-1 reader-lesson-actions">
+      {showBookNav && (
+        <>
+          <Button
+            variant="outline-secondary"
+            size="sm"
+            onClick={() => navigate(`/texts/${previousTextId}`)}
+            disabled={!previousTextId}
+          >
+            Previous Text
+          </Button>
+          <Button
+            variant="outline-secondary"
+            size="sm"
+            onClick={() => navigate(`/texts/${nextTextId}`)}
+            disabled={!nextTextId}
+          >
+            Next Text
+          </Button>
+        </>
+      )}
+      {showComplete && (
+        <Button
+          variant="success"
+          onClick={handleCompleteLesson}
+          disabled={completing}
+          size="sm"
+          className={showBookNav ? 'ms-1' : ''}
+        >
+          {completing ? <Spinner animation="border" size="sm" /> : (nextTextId === null ? 'Finish Book' : 'Complete Lesson')}
+        </Button>
+      )}
+    </div>
+  );
+});
+
 const MobileLessonHeader = React.memo(({
   isMobile,
   showMobileHeader,
@@ -653,6 +682,7 @@ const MobileLessonHeader = React.memo(({
   text,
   primaryControls,
   secondaryControls,
+  readerLessonActions,
   isAudioLesson,
   isAudioPlaying,
   toggleAudioPlayback
@@ -724,6 +754,9 @@ const MobileLessonHeader = React.memo(({
             <div className="lesson-controls-section">
               {secondaryControls}
             </div>
+            <div className="lesson-controls-section lesson-controls-section-reader-actions">
+              {readerLessonActions}
+            </div>
           </div>
         </Collapse>
       </div>
@@ -739,6 +772,7 @@ const LessonHeader = React.memo(({
   book,
   primaryControls,
   secondaryControls,
+  readerLessonActions,
   translateUnknownError,
   audioSrc,
   textId,
@@ -779,8 +813,7 @@ const LessonHeader = React.memo(({
             <AudiobookPlayer type="book" book={book} />
           )}
 
-          {/* Controls - inline */}
-          <div className="d-flex align-items-center gap-1 ms-auto flex-wrap lesson-header-actions">
+          <div className="d-flex align-items-center gap-1 ms-auto flex-shrink-0 lesson-header-actions">
             <Button
               variant={showDesktopLessonControls ? 'outline-secondary' : 'primary'}
               size="sm"
@@ -791,14 +824,19 @@ const LessonHeader = React.memo(({
             >
               {showDesktopLessonControls ? 'Hide Panel' : 'Show Panel'}
             </Button>
-            {showDesktopLessonControls && (
-              <>
-                {primaryControls}
-                {secondaryControls}
-              </>
-            )}
           </div>
         </div>
+        {showDesktopLessonControls && (
+          <div className="lesson-controls-expanded-panel d-flex flex-wrap align-items-center gap-2 pt-2 mt-2 border-top">
+            <div className="d-flex flex-wrap align-items-center gap-1">
+              {primaryControls}
+            </div>
+            <div className="d-flex flex-wrap align-items-center gap-1">
+              {secondaryControls}
+            </div>
+            {readerLessonActions}
+          </div>
+        )}
         {translateUnknownError && <Alert variant="danger" className="mt-1 mb-0 p-1 small">{translateUnknownError}</Alert>}
       </Card.Body>
     </Card>
@@ -3114,7 +3152,6 @@ const TextDisplay = () => {
       text={text}
       handleCompleteLesson={handleCompleteLesson}
       completing={completing}
-      previousTextId={previousTextId}
       nextTextId={nextTextId}
       navigate={navigate}
     />
@@ -3144,6 +3181,18 @@ const TextDisplay = () => {
     />
   );
 
+  const readerLessonActions = (
+    <ReaderLessonActions
+      text={text}
+      isAudioLesson={isAudioLesson}
+      previousTextId={previousTextId}
+      nextTextId={nextTextId}
+      completing={completing}
+      navigate={navigate}
+      handleCompleteLesson={handleCompleteLesson}
+    />
+  );
+
   // --- Main Return JSX ---
   const effectiveLeftPanelWidth = !isMobile && showWordInfoPanel ? leftPanelWidth : 100;
   return (
@@ -3157,6 +3206,7 @@ const TextDisplay = () => {
         text={text}
         primaryControls={primaryControls}
         secondaryControls={secondaryControls}
+        readerLessonActions={readerLessonActions}
         isAudioLesson={isAudioLesson}
         isAudioPlaying={isAudioPlaying}
         toggleAudioPlayback={toggleAudioPlayback}
@@ -3169,6 +3219,7 @@ const TextDisplay = () => {
         book={book}
         primaryControls={primaryControls}
         secondaryControls={secondaryControls}
+        readerLessonActions={readerLessonActions}
         translateUnknownError={translateUnknownError}
         audioSrc={audioSrc}
         textId={textId}
@@ -3211,35 +3262,6 @@ const TextDisplay = () => {
           }}
         >
           <div className="d-flex flex-column" style={{ minHeight: '100%', height: '100%' }}>
-            {/* Lesson / book actions at top of reader column */}
-            {(!isAudioLesson || text?.bookId) && (
-              <div className="flex-shrink-0 pt-2 pb-2 px-2 text-end border-bottom reader-actions-bar">
-                {text?.bookId && (
-                  <>
-                    <Button
-                      variant="outline-secondary"
-                      onClick={() => navigate(`/texts/${previousTextId}`)}
-                      disabled={!previousTextId}
-                      size="sm"
-                    >
-                      Previous Text
-                    </Button>
-                    <Button
-                      variant="outline-secondary"
-                      onClick={() => navigate(`/texts/${nextTextId}`)}
-                      disabled={!nextTextId}
-                      size="sm"
-                      className="ms-1"
-                    >
-                      Next Text
-                    </Button>
-                  </>
-                )}
-                <Button variant="success" onClick={handleCompleteLesson} disabled={completing} size="sm" className={text?.bookId ? 'ms-1' : ''}>
-                  {completing ? <Spinner animation="border" size="sm" /> : (nextTextId === null ? 'Finish Book' : 'Complete Lesson')}
-                </Button>
-              </div>
-            )}
             <div className={`flex-grow-1 reader-main-surface reader-main-surface-${readingUiMode}`} ref={readingContainerRef}>
               <div
                 className={`reader-main-surface-inner reader-main-surface-inner-${readingUiMode}`}

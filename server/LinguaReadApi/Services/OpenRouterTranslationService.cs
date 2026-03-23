@@ -44,6 +44,10 @@ namespace LinguaReadApi.Services
         
         // Default limit for unknown models
         private const int DefaultContextLimit = 30000;
+        private static readonly HashSet<string> SupportedReasoningEfforts = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "xhigh", "high", "medium", "low", "minimal", "none"
+        };
         
         // Max characters per chunk (leaves room for prompt overhead)
         private const int MaxCharsPerChunk = 15000;
@@ -101,6 +105,7 @@ namespace LinguaReadApi.Services
 
                 var apiKey = userSettings.OpenRouterApiKey;
                 var model = userSettings.OpenRouterModel;
+                var reasoningOptions = BuildReasoningOptions(userSettings);
 
                 // --- Determine the final target language code ---
                 string finalTargetCode = targetLanguage;
@@ -127,7 +132,7 @@ namespace LinguaReadApi.Services
                 if (includeSentenceTags && text.Length > MaxCharsPerChunk)
                 {
                     _logger.LogInformation("Text exceeds chunk limit ({Length} > {Limit}), splitting into chunks", text.Length, MaxCharsPerChunk);
-                    return await TranslateInChunksAsync(text, sourceLanguage, finalTargetCode, apiKey, model);
+                    return await TranslateInChunksAsync(text, sourceLanguage, finalTargetCode, apiKey, model, reasoningOptions);
                 }
 
                 // Validate against context limit
@@ -137,7 +142,7 @@ namespace LinguaReadApi.Services
                     return $"Translation error: Text too long for selected model ({estimatedTokens} tokens > {contextLimit} limit). Try a model with larger context.";
                 }
 
-                return await TranslateSingleChunkAsync(text, sourceLanguage, finalTargetCode, apiKey, model, includeSentenceTags);
+                return await TranslateSingleChunkAsync(text, sourceLanguage, finalTargetCode, apiKey, model, includeSentenceTags, reasoningOptions);
             }
             catch (TaskCanceledException ex) when (ex.InnerException is TimeoutException || ex.CancellationToken.IsCancellationRequested)
             {
@@ -170,6 +175,7 @@ namespace LinguaReadApi.Services
 
                 var apiKey = userSettings.OpenRouterApiKey;
                 var model = userSettings.OpenRouterModel;
+                var reasoningOptions = BuildReasoningOptions(userSettings);
                 string explanationLanguage = targetLanguage;
 
                 if (!string.IsNullOrEmpty(sourceLanguage))
@@ -197,7 +203,8 @@ namespace LinguaReadApi.Services
                     },
                     Temperature = 0.3,
                     MaxTokens = 65535,
-                    TopP = 1.0
+                    TopP = 1.0,
+                    Reasoning = reasoningOptions
                 };
 
                 var options = new JsonSerializerOptions
@@ -277,7 +284,7 @@ namespace LinguaReadApi.Services
             return DefaultContextLimit;
         }
 
-        private async Task<string> TranslateInChunksAsync(string text, string sourceLanguage, string targetLanguage, string apiKey, string model)
+        private async Task<string> TranslateInChunksAsync(string text, string sourceLanguage, string targetLanguage, string apiKey, string model, OpenRouterReasoningOptions? reasoningOptions)
         {
             // Split text into sentences to maintain meaning
             var chunks = SplitTextIntoChunks(text, MaxCharsPerChunk);
@@ -291,7 +298,7 @@ namespace LinguaReadApi.Services
                 chunkIndex++;
                 _logger.LogInformation("Translating chunk {Index}/{Total} ({Length} chars)", chunkIndex, chunks.Count, chunk.Length);
                 
-                var result = await TranslateSingleChunkAsync(chunk, sourceLanguage, targetLanguage, apiKey, model, includeSentenceTags: true);
+                var result = await TranslateSingleChunkAsync(chunk, sourceLanguage, targetLanguage, apiKey, model, includeSentenceTags: true, reasoningOptions);
                 
                 // Check for errors
                 if (result.StartsWith("Translation error:"))
@@ -372,7 +379,7 @@ namespace LinguaReadApi.Services
             return chunks;
         }
 
-        private async Task<string> TranslateSingleChunkAsync(string text, string sourceLanguage, string targetLanguage, string apiKey, string model, bool includeSentenceTags)
+        private async Task<string> TranslateSingleChunkAsync(string text, string sourceLanguage, string targetLanguage, string apiKey, string model, bool includeSentenceTags, OpenRouterReasoningOptions? reasoningOptions)
         {
             string prompt = includeSentenceTags
                 ? $@"Translate the following text from {sourceLanguage} to {targetLanguage}, sentence by sentence.
@@ -421,7 +428,8 @@ Text:
                 },
                 Temperature = 0.3,
                 MaxTokens = 65535,
-                TopP = 1.0
+                TopP = 1.0,
+                Reasoning = reasoningOptions
             };
 
             var options = new JsonSerializerOptions
@@ -512,6 +520,7 @@ Text:
 
                 var apiKey = userSettings.OpenRouterApiKey;
                 var model = userSettings.OpenRouterModel;
+                var reasoningOptions = BuildReasoningOptions(userSettings);
                 string finalTargetCode = targetLanguage;
 
                 if (!string.IsNullOrEmpty(sourceLanguage))
@@ -552,7 +561,8 @@ Strict instructions:
                     },
                     Temperature = 0.2,
                     MaxTokens = 1024,
-                    TopP = 1.0
+                    TopP = 1.0,
+                    Reasoning = reasoningOptions
                 };
 
                 var options = new JsonSerializerOptions
@@ -619,6 +629,26 @@ Strict instructions:
                 _logger.LogError(ex, "Error during OpenRouter selection translation");
                 return $"Translation error: {ex.Message}";
             }
+        }
+
+        private static OpenRouterReasoningOptions? BuildReasoningOptions(Models.UserSettings userSettings)
+        {
+            if (!userSettings.OpenRouterReasoningEnabled)
+            {
+                return null;
+            }
+
+            var effort = (userSettings.OpenRouterReasoningEffort ?? string.Empty).Trim().ToLowerInvariant();
+            if (!SupportedReasoningEfforts.Contains(effort))
+            {
+                effort = "medium";
+            }
+
+            return new OpenRouterReasoningOptions
+            {
+                Enabled = true,
+                Effort = effort
+            };
         }
     }
 }

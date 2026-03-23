@@ -41,6 +41,10 @@ namespace LinguaReadApi.Services
         
         // Default output limit for unknown models
         private const int DefaultOutputLimit = 4096;
+        private static readonly HashSet<string> SupportedReasoningEfforts = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "xhigh", "high", "medium", "low", "minimal", "none"
+        };
 
         public OpenRouterStoryGenerationService(
             ILogger<OpenRouterStoryGenerationService> logger,
@@ -73,6 +77,7 @@ namespace LinguaReadApi.Services
 
                 var apiKey = userSettings.OpenRouterApiKey;
                 var model = userSettings.OpenRouterModel;
+                var reasoningOptions = BuildReasoningOptions(userSettings);
                 
                 // Validate requested length against model output limit
                 var outputLimit = GetModelOutputLimit(model);
@@ -111,7 +116,8 @@ namespace LinguaReadApi.Services
                     },
                     Temperature = 0.7,
                     MaxTokens = Math.Min(20000, outputLimit),
-                    TopP = 0.95
+                    TopP = 0.95,
+                    Reasoning = reasoningOptions
                 };
 
                 var options = new JsonSerializerOptions
@@ -202,6 +208,26 @@ namespace LinguaReadApi.Services
             }
             _logger.LogDebug("Unknown model '{Model}', using default output limit", model);
             return DefaultOutputLimit;
+        }
+
+        private static OpenRouterReasoningOptions? BuildReasoningOptions(Models.UserSettings userSettings)
+        {
+            if (!userSettings.OpenRouterReasoningEnabled)
+            {
+                return null;
+            }
+
+            var effort = (userSettings.OpenRouterReasoningEffort ?? string.Empty).Trim().ToLowerInvariant();
+            if (!SupportedReasoningEfforts.Contains(effort))
+            {
+                effort = "medium";
+            }
+
+            return new OpenRouterReasoningOptions
+            {
+                Enabled = true,
+                Effort = effort
+            };
         }
     }
 }

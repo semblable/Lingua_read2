@@ -35,7 +35,9 @@ const UserSettings = () => {
     discordTimezoneOffsetMinutes: browserTimezoneOffsetMinutes,
     useOpenRouter: false,
     openRouterApiKey: '',
-    openRouterModel: 'google/gemini-2.5-flash-preview-05-20:free'
+    openRouterModel: 'google/gemini-2.5-flash-preview-05-20:free',
+    openRouterReasoningEnabled: false,
+    openRouterReasoningEffort: 'medium'
   });
 
   const [languages, setLanguages] = useState([]);
@@ -110,7 +112,9 @@ const UserSettings = () => {
           discordTimezoneOffsetMinutes: data.discordTimezoneOffsetMinutes ?? browserTimezoneOffsetMinutes,
           useOpenRouter: data.useOpenRouter ?? false,
           openRouterApiKey: data.openRouterApiKey || '',
-          openRouterModel: data.openRouterModel || 'google/gemini-2.5-flash-preview-05-20:free'
+          openRouterModel: data.openRouterModel || 'google/gemini-2.5-flash-preview-05-20:free',
+          openRouterReasoningEnabled: data.openRouterReasoningEnabled ?? false,
+          openRouterReasoningEffort: data.openRouterReasoningEffort || 'medium'
         });
       } catch (err) {
         setError('Failed to load settings. Please try again later.');
@@ -728,6 +732,36 @@ const UserSettings = () => {
                   <Form.Text muted>
                     Paste any model name from <a href="https://openrouter.ai/models" target="_blank" rel="noopener noreferrer">openrouter.ai/models</a>.
                     Free models end with ":free".
+                  </Form.Text>
+                </Form.Group>
+
+                <Form.Group className="mb-3" controlId="openRouterReasoningEnabled">
+                  <Form.Check
+                    type="checkbox"
+                    name="openRouterReasoningEnabled"
+                    label="Enable reasoning tokens for OpenRouter requests"
+                    checked={settings.openRouterReasoningEnabled}
+                    onChange={handleChange}
+                  />
+                </Form.Group>
+
+                <Form.Group className="mb-3" controlId="openRouterReasoningEffort">
+                  <Form.Label>Reasoning Effort</Form.Label>
+                  <Form.Select
+                    name="openRouterReasoningEffort"
+                    value={settings.openRouterReasoningEffort}
+                    onChange={handleChange}
+                    disabled={!settings.openRouterReasoningEnabled}
+                  >
+                    <option value="xhigh">xhigh</option>
+                    <option value="high">high</option>
+                    <option value="medium">medium</option>
+                    <option value="low">low</option>
+                    <option value="minimal">minimal</option>
+                    <option value="none">none</option>
+                  </Form.Select>
+                  <Form.Text muted>
+                    Sent as `reasoning.effort` to OpenRouter when enabled.
                   </Form.Text>
                 </Form.Group>
 

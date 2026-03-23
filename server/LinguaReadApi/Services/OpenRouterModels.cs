@@ -23,6 +23,21 @@ namespace LinguaReadApi.Services
         [JsonPropertyName("top_p")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public double? TopP { get; set; }
+
+        [JsonPropertyName("reasoning")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public OpenRouterReasoningOptions? Reasoning { get; set; }
+    }
+
+    public class OpenRouterReasoningOptions
+    {
+        [JsonPropertyName("enabled")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public bool? Enabled { get; set; }
+
+        [JsonPropertyName("effort")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? Effort { get; set; }
     }
 
     public class OpenRouterMessage

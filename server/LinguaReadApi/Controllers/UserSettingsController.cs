@@ -82,7 +82,9 @@ namespace LinguaReadApi.Controllers
                     DiscordTimezoneOffsetMinutes = 0,
                     UseOpenRouter = false,
                     OpenRouterApiKey = null,
-                    OpenRouterModel = "google/gemini-2.5-flash-preview-05-20:free"
+                    OpenRouterModel = "google/gemini-2.5-flash-preview-05-20:free",
+                    OpenRouterReasoningEnabled = false,
+                    OpenRouterReasoningEffort = "medium"
                 };
                 
                 _context.UserSettings.Add(settings);
@@ -121,7 +123,9 @@ namespace LinguaReadApi.Controllers
                 DiscordTimezoneOffsetMinutes = settings.DiscordTimezoneOffsetMinutes,
                 UseOpenRouter = settings.UseOpenRouter,
                 OpenRouterApiKey = settings.OpenRouterApiKey,
-                OpenRouterModel = settings.OpenRouterModel
+                OpenRouterModel = settings.OpenRouterModel,
+                OpenRouterReasoningEnabled = settings.OpenRouterReasoningEnabled,
+                OpenRouterReasoningEffort = settings.OpenRouterReasoningEffort
             };
         }
 
@@ -234,6 +238,15 @@ namespace LinguaReadApi.Controllers
             {
                 settings.OpenRouterModel = updateDto.OpenRouterModel.Trim();
             }
+            settings.OpenRouterReasoningEnabled = updateDto.OpenRouterReasoningEnabled ?? settings.OpenRouterReasoningEnabled;
+            if (!string.IsNullOrWhiteSpace(updateDto.OpenRouterReasoningEffort))
+            {
+                var normalizedEffort = updateDto.OpenRouterReasoningEffort.Trim().ToLowerInvariant();
+                if (normalizedEffort is "xhigh" or "high" or "medium" or "low" or "minimal" or "none")
+                {
+                    settings.OpenRouterReasoningEffort = normalizedEffort;
+                }
+            }
             settings.UpdatedAt = DateTime.UtcNow;
             
             await _context.SaveChangesAsync();
@@ -268,7 +281,9 @@ namespace LinguaReadApi.Controllers
                 DiscordTimezoneOffsetMinutes = settings.DiscordTimezoneOffsetMinutes,
                 UseOpenRouter = settings.UseOpenRouter,
                 OpenRouterApiKey = settings.OpenRouterApiKey,
-                OpenRouterModel = settings.OpenRouterModel
+                OpenRouterModel = settings.OpenRouterModel,
+                OpenRouterReasoningEnabled = settings.OpenRouterReasoningEnabled,
+                OpenRouterReasoningEffort = settings.OpenRouterReasoningEffort
             };
         }
 
@@ -638,6 +653,8 @@ namespace LinguaReadApi.Controllers
         public bool UseOpenRouter { get; set; } = false;
         public string? OpenRouterApiKey { get; set; }
         public string OpenRouterModel { get; set; } = "google/gemini-2.5-flash-preview-05-20:free";
+        public bool OpenRouterReasoningEnabled { get; set; } = false;
+        public string OpenRouterReasoningEffort { get; set; } = "medium";
     }
 
     public class UpdateUserSettingsDto
@@ -697,6 +714,11 @@ namespace LinguaReadApi.Controllers
 
         [StringLength(100)]
         public string? OpenRouterModel { get; set; }
+
+        public bool? OpenRouterReasoningEnabled { get; set; }
+
+        [StringLength(20)]
+        public string? OpenRouterReasoningEffort { get; set; }
     }
 
     public class UpdateAudiobookProgressDto

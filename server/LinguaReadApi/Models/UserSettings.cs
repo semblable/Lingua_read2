@@ -69,6 +69,11 @@ namespace LinguaReadApi.Models
         
         [StringLength(100)]
         public string OpenRouterModel { get; set; } = "google/gemini-2.5-flash-preview-05-20:free";
+
+        public bool OpenRouterReasoningEnabled { get; set; } = false;
+
+        [StringLength(20)]
+        public string OpenRouterReasoningEffort { get; set; } = "medium";
         
         // SRS Limits & Preferences
         public int SrsMaxNewCards { get; set; } = 20;

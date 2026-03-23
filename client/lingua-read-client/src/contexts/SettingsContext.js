@@ -29,6 +29,9 @@ const defaultSettings = {
   discordWeeklyReportDayOfWeek: 'Monday',
   discordWeeklyReportHourLocal: 8,
   discordTimezoneOffsetMinutes: 0,
+  srsMaxNewCards: 20,
+  srsMaxReviews: 100,
+  srsReviewOrder: 'mix',
   // Add other settings as needed
 };
 
@@ -81,6 +84,9 @@ export const SettingsProvider = ({ children }) => {
         discordWeeklyReportDayOfWeek: data.discordWeeklyReportDayOfWeek || defaultSettings.discordWeeklyReportDayOfWeek,
         discordWeeklyReportHourLocal: data.discordWeeklyReportHourLocal ?? defaultSettings.discordWeeklyReportHourLocal,
         discordTimezoneOffsetMinutes: data.discordTimezoneOffsetMinutes ?? defaultSettings.discordTimezoneOffsetMinutes,
+        srsMaxNewCards: data.srsMaxNewCards ?? defaultSettings.srsMaxNewCards,
+        srsMaxReviews: data.srsMaxReviews ?? defaultSettings.srsMaxReviews,
+        srsReviewOrder: data.srsReviewOrder || defaultSettings.srsReviewOrder,
       });
     } catch (err) {
       console.error('[SettingsContext] Failed to load settings:', err);

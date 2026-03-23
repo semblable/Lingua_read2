@@ -70,6 +70,16 @@ namespace LinguaReadApi.Models
         [StringLength(100)]
         public string OpenRouterModel { get; set; } = "google/gemini-2.5-flash-preview-05-20:free";
         
+        // SRS Limits & Preferences
+        public int SrsMaxNewCards { get; set; } = 20;
+        public int SrsMaxReviews { get; set; } = 100;
+        public string SrsReviewOrder { get; set; } = "mix"; // "mix", "new_first", "reviews_first"
+
+        // SRS Daily Tracking
+        public DateTime? SrsDailyStudyDate { get; set; }
+        public int SrsDailyNewCardsStudied { get; set; } = 0;
+        public int SrsDailyReviewsStudied { get; set; } = 0;
+        
         // Creation timestamps
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
         public DateTime? UpdatedAt { get; set; }

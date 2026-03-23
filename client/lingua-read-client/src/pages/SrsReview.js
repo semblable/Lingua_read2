@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Container, Card, Button, Spinner, Alert, Form, Row, Col, Badge, ProgressBar, ButtonGroup } from 'react-bootstrap';
-import { getAllLanguages, getSrsDueCards, submitSrsReview, getSrsStats } from '../utils/api';
+import { Container, Card, Button, Spinner, Alert, Form, Row, Col, Badge, ProgressBar, ButtonGroup, Modal } from 'react-bootstrap';
+import { SettingsContext } from '../contexts/SettingsContext';
+import { getAllLanguages, getSrsDueCards, submitSrsReview, getSrsStats, updateUserSettings } from '../utils/api';
 
 const GRADE_LABELS = [
   { grade: 0, label: 'Again', variant: 'danger', key: '1' },
@@ -20,6 +21,40 @@ const SrsReview = () => {
   );
   const [statusFilter, setStatusFilter] = useState([1, 2, 3, 4]);
   const [onlyOneTarget, setOnlyOneTarget] = useState(false);
+
+  // Settings
+  const { settings, updateSetting } = React.useContext(SettingsContext);
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [localSettings, setLocalSettings] = useState({
+    srsMaxNewCards: 20,
+    srsMaxReviews: 100,
+    srsReviewOrder: 'mix'
+  });
+
+  useEffect(() => {
+    setLocalSettings({
+      srsMaxNewCards: settings?.srsMaxNewCards ?? 20,
+      srsMaxReviews: settings?.srsMaxReviews ?? 100,
+      srsReviewOrder: settings?.srsReviewOrder ?? 'mix'
+    });
+  }, [settings]);
+
+  const handleSaveSettings = async () => {
+    try {
+      await updateUserSettings({
+        srsMaxNewCards: parseInt(localSettings.srsMaxNewCards, 10),
+        srsMaxReviews: parseInt(localSettings.srsMaxReviews, 10),
+        srsReviewOrder: localSettings.srsReviewOrder
+      });
+      updateSetting('srsMaxNewCards', parseInt(localSettings.srsMaxNewCards, 10));
+      updateSetting('srsMaxReviews', parseInt(localSettings.srsMaxReviews, 10));
+      updateSetting('srsReviewOrder', localSettings.srsReviewOrder);
+      setShowSettingsModal(false);
+      loadStats(); // refresh visual stats
+    } catch (err) {
+      setError(`Failed to save settings: ${err.message}`);
+    }
+  };
 
   // Session state
   const [cards, setCards] = useState([]);
@@ -231,7 +266,22 @@ const SrsReview = () => {
                 <Col><div className="fw-bold text-info">{stats.newCards}</div><small className="text-muted">New</small></Col>
                 <Col><div className="fw-bold text-warning">{stats.learningCards}</div><small className="text-muted">Learning</small></Col>
                 <Col><div className="fw-bold text-success">{stats.matureCards}</div><small className="text-muted">Mature</small></Col>
-                <Col><div className="fw-bold">{stats.reviewedToday}</div><small className="text-muted">Today</small></Col>
+                <Col><div className="fw-bold">{stats.reviewedToday}</div><small className="text-muted">Total Today</small></Col>
+              </Row>
+              <hr className="my-2" />
+              <Row className="text-center">
+                <Col>
+                  <div className="fw-bold text-info">
+                    {stats.studiedNewCardsToday} <span className="text-muted fw-normal">/ {stats.maxNewCards}</span>
+                  </div>
+                  <small className="text-muted">New Today</small>
+                </Col>
+                <Col>
+                  <div className="fw-bold text-primary">
+                    {stats.studiedReviewsToday} <span className="text-muted fw-normal">/ {stats.maxReviews}</span>
+                  </div>
+                  <small className="text-muted">Reviews Today</small>
+                </Col>
               </Row>
             </Card.Body>
           </Card>
@@ -278,18 +328,70 @@ const SrsReview = () => {
               />
             </Form.Group>
 
-            <Button
-              variant="primary"
-              size="lg"
-              className="w-100"
-              onClick={startSession}
-              disabled={!selectedLanguage || loading}
-            >
-              {loading ? <><Spinner size="sm" className="me-2" />Loading...</> : 'Start Review'}
-            </Button>
+            <div className="d-flex gap-2 mt-3">
+              <Button
+                variant="primary"
+                size="lg"
+                className="flex-grow-1"
+                onClick={startSession}
+                disabled={!selectedLanguage || loading}
+              >
+                {loading ? <><Spinner size="sm" className="me-2" />Loading...</> : 'Start Review'}
+              </Button>
+              <Button
+                variant="outline-secondary"
+                size="lg"
+                onClick={() => setShowSettingsModal(true)}
+                title="Deck Options"
+              >
+                ⚙️ Options
+              </Button>
+            </div>
           </Card.Body>
         </Card>
         {error && <Alert variant="danger" className="mt-3">{error}</Alert>}
+
+        {/* Settings Modal */}
+        <Modal show={showSettingsModal} onHide={() => setShowSettingsModal(false)} centered>
+          <Modal.Header closeButton>
+            <Modal.Title>SRS Options</Modal.Title>
+          </Modal.Header>
+          <Modal.Body>
+            <Form.Group className="mb-3">
+              <Form.Label>Maximum New Cards / Day</Form.Label>
+              <Form.Control
+                type="number"
+                min="0"
+                value={localSettings.srsMaxNewCards}
+                onChange={e => setLocalSettings(p => ({ ...p, srsMaxNewCards: e.target.value }))}
+              />
+            </Form.Group>
+            <Form.Group className="mb-3">
+              <Form.Label>Maximum Reviews / Day</Form.Label>
+              <Form.Control
+                type="number"
+                min="0"
+                value={localSettings.srsMaxReviews}
+                onChange={e => setLocalSettings(p => ({ ...p, srsMaxReviews: e.target.value }))}
+              />
+            </Form.Group>
+            <Form.Group className="mb-3">
+              <Form.Label>Review Order</Form.Label>
+              <Form.Select
+                value={localSettings.srsReviewOrder}
+                onChange={e => setLocalSettings(p => ({ ...p, srsReviewOrder: e.target.value }))}
+              >
+                <option value="mix">Mix new cards and reviews</option>
+                <option value="new_first">Show new cards before reviews</option>
+                <option value="reviews_first">Show reviews before new cards</option>
+              </Form.Select>
+            </Form.Group>
+          </Modal.Body>
+          <Modal.Footer>
+            <Button variant="secondary" onClick={() => setShowSettingsModal(false)}>Cancel</Button>
+            <Button variant="primary" onClick={handleSaveSettings}>Save Changes</Button>
+          </Modal.Footer>
+        </Modal>
       </Container>
     );
   }

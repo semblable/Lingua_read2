@@ -34,7 +34,26 @@ namespace LinguaReadApi.Controllers
         {
             var userId = GetUserId();
             var now = DateTime.UtcNow;
+            var today = now.Date;
 
+            // 1. Get User Limits
+            var settings = await _context.UserSettings.FirstOrDefaultAsync(u => u.UserId == userId);
+            int maxNew = settings?.SrsMaxNewCards ?? 20;
+            int maxReviews = settings?.SrsMaxReviews ?? 100;
+            string reviewOrder = settings?.SrsReviewOrder ?? "mix";
+
+            int studiedNew = (settings?.SrsDailyStudyDate?.Date == today) ? settings.SrsDailyNewCardsStudied : 0;
+            int studiedReviews = (settings?.SrsDailyStudyDate?.Date == today) ? settings.SrsDailyReviewsStudied : 0;
+            
+            int remainingNew = Math.Max(0, maxNew - studiedNew);
+            int remainingReviews = Math.Max(0, maxReviews - studiedReviews);
+
+            if (remainingNew == 0 && remainingReviews == 0)
+            {
+                return new List<SrsDueCardDto>(); // Limits reached for today
+            }
+
+            // 2. Base query for due cards
             var query = _context.SrsCardReviews
                 .AsNoTracking()
                 .Where(scr => scr.UserId == userId && scr.NextReviewAt <= now)
@@ -42,68 +61,56 @@ namespace LinguaReadApi.Controllers
                     .ThenInclude(w => w.Translation)
                 .AsQueryable();
 
-            // Filter by language
             if (languageId.HasValue)
-            {
                 query = query.Where(scr => scr.Word.LanguageId == languageId.Value);
-            }
 
-            // Filter by word status
             if (!string.IsNullOrEmpty(status))
             {
-                var statusList = status.Split(',')
-                    .Select(s => s.Trim())
-                    .Where(s => int.TryParse(s, out _))
-                    .Select(int.Parse)
-                    .ToList();
-                if (statusList.Any())
-                {
-                    query = query.Where(scr => statusList.Contains(scr.Word.Status));
-                }
+                var statusList = status.Split(',').Select(s => s.Trim()).Where(s => int.TryParse(s, out _)).Select(int.Parse).ToList();
+                if (statusList.Any()) query = query.Where(scr => statusList.Contains(scr.Word.Status));
             }
 
-            // Order by most overdue first
-            query = query.OrderBy(scr => scr.NextReviewAt);
+            // 3. Separate Queries & Over-fetch
+            var newCardsQuery = query.Where(scr => scr.Repetitions == 0).OrderBy(scr => scr.NextReviewAt);
+            var reviewCardsQuery = query.Where(scr => scr.Repetitions > 0).OrderBy(scr => scr.NextReviewAt);
 
-            var cards = await query.Take(limit * 2).ToListAsync(); // Fetch extra for 1T filtering
+            var newCardsPool = await newCardsQuery.Take(Math.Max(limit * 2, remainingNew * 2)).ToListAsync();
+            var reviewCardsPool = await reviewCardsQuery.Take(Math.Max(limit * 2, remainingReviews * 2)).ToListAsync();
 
-            // Get all phrases for these cards
-            var cardWordIds = cards.Select(c => c.WordId).Distinct().ToList();
+            var allFetchedCards = newCardsPool.Concat(reviewCardsPool).ToList();
+            if (!allFetchedCards.Any()) return new List<SrsDueCardDto>();
+
+            // 4. Fetch Phrases for 1T validation
+            var cardWordIds = allFetchedCards.Select(c => c.WordId).Distinct().ToList();
             var phrases = await _context.SrsPhrases
                 .AsNoTracking()
                 .Where(sp => sp.UserId == userId && cardWordIds.Contains(sp.WordId))
                 .ToListAsync();
-            var phrasesByWordId = phrases.GroupBy(p => p.WordId)
-                .ToDictionary(g => g.Key, g => g.ToList());
+            var phrasesByWordId = phrases.GroupBy(p => p.WordId).ToDictionary(g => g.Key, g => g.ToList());
 
-            var result = new List<SrsDueCardDto>();
+            // 5. Apply 1T filter to build lists
+            var validNewCards = new List<SrsDueCardDto>();
+            var validReviewCards = new List<SrsDueCardDto>();
 
-            foreach (var card in cards)
+            foreach (var card in allFetchedCards)
             {
-                if (result.Count >= limit) break;
-
                 var cardPhrases = phrasesByWordId.GetValueOrDefault(card.WordId, new List<SrsPhrase>());
-
                 int unknownWordsInBestPhrase = 0;
 
-                // For 1T filtering: check how many unknown words in the best phrase
                 if (cardPhrases.Any())
                 {
                     var bestPhrase = cardPhrases.OrderByDescending(p => p.CreatedAt).First();
                     unknownWordsInBestPhrase = await CountUnknownWordsInSentence(
                         bestPhrase.Sentence, userId, card.Word.LanguageId, card.WordId);
 
-                    if (onlyOneTarget && unknownWordsInBestPhrase != 1)
-                    {
-                        continue; // Skip non-1T cards
-                    }
+                    if (onlyOneTarget && unknownWordsInBestPhrase != 1) continue; // Skip non-1T
                 }
                 else if (onlyOneTarget)
                 {
-                    continue; // No phrases, can't determine 1T
+                    continue; // No phrases for 1T
                 }
 
-                result.Add(new SrsDueCardDto
+                var dto = new SrsDueCardDto
                 {
                     SrsCardReviewId = card.SrsCardReviewId,
                     WordId = card.WordId,
@@ -121,10 +128,39 @@ namespace LinguaReadApi.Controllers
                         CreatedAt = p.CreatedAt
                     }).ToList(),
                     UnknownWordsInPhrase = unknownWordsInBestPhrase
-                });
+                };
+
+                if (card.Repetitions == 0) validNewCards.Add(dto);
+                else validReviewCards.Add(dto);
             }
 
-            return result;
+            // 6. Enforce remaining limits
+            validNewCards = validNewCards.Take(remainingNew).ToList();
+            validReviewCards = validReviewCards.Take(remainingReviews).ToList();
+
+            // 7. Apply Order
+            var rawResult = new List<SrsDueCardDto>();
+            if (reviewOrder == "new_first")
+            {
+                rawResult.AddRange(validNewCards);
+                rawResult.AddRange(validReviewCards);
+            }
+            else if (reviewOrder == "reviews_first")
+            {
+                rawResult.AddRange(validReviewCards);
+                rawResult.AddRange(validNewCards);
+            }
+            else // "mix"
+            {
+                int mixMax = Math.Max(validNewCards.Count, validReviewCards.Count);
+                for (int i = 0; i < mixMax; i++)
+                {
+                    if (i < validNewCards.Count) rawResult.Add(validNewCards[i]);
+                    if (i < validReviewCards.Count) rawResult.Add(validReviewCards[i]);
+                }
+            }
+
+            return rawResult.Take(limit).ToList();
         }
 
         // POST: api/srs/review
@@ -141,6 +177,22 @@ namespace LinguaReadApi.Controllers
 
             if (card == null)
                 return NotFound("Card not found.");
+
+            // Update daily limit tracking before SM2 alters repetitions
+            var settings = await _context.UserSettings.FirstOrDefaultAsync(u => u.UserId == userId);
+            var today = DateTime.UtcNow.Date;
+            if (settings != null)
+            {
+                if (settings.SrsDailyStudyDate?.Date != today)
+                {
+                    settings.SrsDailyStudyDate = today;
+                    settings.SrsDailyNewCardsStudied = 0;
+                    settings.SrsDailyReviewsStudied = 0;
+                }
+                
+                if (card.Repetitions == 0) settings.SrsDailyNewCardsStudied++;
+                else settings.SrsDailyReviewsStudied++;
+            }
 
             // Apply SM-2 algorithm
             ApplySm2(card, dto.Grade);
@@ -280,6 +332,12 @@ namespace LinguaReadApi.Controllers
                 c.LastReviewedAt.HasValue &&
                 c.LastReviewedAt.Value.Date == now.Date);
 
+            // Fetch settings for limit info
+            var settings = await _context.UserSettings.AsNoTracking().FirstOrDefaultAsync(u => u.UserId == userId);
+            
+            int studiedNew = (settings?.SrsDailyStudyDate?.Date == now.Date) ? settings.SrsDailyNewCardsStudied : 0;
+            int studiedReviews = (settings?.SrsDailyStudyDate?.Date == now.Date) ? settings.SrsDailyReviewsStudied : 0;
+
             return new SrsStatsDto
             {
                 DueCount = dueCount,
@@ -288,7 +346,11 @@ namespace LinguaReadApi.Controllers
                 LearningCards = learningCards,
                 MatureCards = matureCards,
                 TotalPhrases = totalPhrases,
-                ReviewedToday = reviewedToday
+                ReviewedToday = reviewedToday,
+                MaxNewCards = settings?.SrsMaxNewCards ?? 20,
+                MaxReviews = settings?.SrsMaxReviews ?? 100,
+                StudiedNewCardsToday = studiedNew,
+                StudiedReviewsToday = studiedReviews
             };
         }
 
@@ -456,5 +518,10 @@ namespace LinguaReadApi.Controllers
         public int MatureCards { get; set; }
         public int TotalPhrases { get; set; }
         public int ReviewedToday { get; set; }
+        
+        public int MaxNewCards { get; set; }
+        public int MaxReviews { get; set; }
+        public int StudiedNewCardsToday { get; set; }
+        public int StudiedReviewsToday { get; set; }
     }
 }

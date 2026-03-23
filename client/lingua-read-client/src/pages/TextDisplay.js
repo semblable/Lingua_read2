@@ -570,6 +570,7 @@ const PrimaryControls = React.memo(({
   text,
   handleCompleteLesson,
   completing,
+  previousTextId,
   nextTextId,
   navigate
 }) => (
@@ -596,6 +597,28 @@ const PrimaryControls = React.memo(({
     {isAudioLesson && !text?.bookId && (
       <Button variant="success" onClick={handleCompleteLesson} disabled={completing} size="sm" className="ms-1">
         {completing ? <Spinner animation="border" size="sm" /> : (nextTextId === null ? 'Finish Book' : 'Complete Lesson')}
+      </Button>
+    )}
+    {text?.bookId && (
+      <Button
+        variant="outline-secondary"
+        size="sm"
+        onClick={() => navigate(`/texts/${previousTextId}`)}
+        disabled={!previousTextId}
+        className="ms-1"
+      >
+        Previous Text
+      </Button>
+    )}
+    {text?.bookId && (
+      <Button
+        variant="outline-secondary"
+        size="sm"
+        onClick={() => navigate(`/texts/${nextTextId}`)}
+        disabled={!nextTextId}
+        className="ms-1"
+      >
+        Next Text
       </Button>
     )}
     {text?.bookId && (
@@ -1420,6 +1443,7 @@ const TextDisplay = () => {
   const [completing, setCompleting] = useState(false);
   const [stats, setStats] = useState(null);
   const [showStatsModal, setShowStatsModal] = useState(false);
+  const [previousTextId, setPreviousTextId] = useState(null);
   const [nextTextId, setNextTextId] = useState(null);
   const [showTranslationPopup, setShowTranslationPopup] = useState(false);
   const [fullTextTranslation, setFullTextTranslation] = useState('');
@@ -2613,6 +2637,7 @@ const TextDisplay = () => {
         setLoading(true);
         setError('');
         setBook(null);
+        setPreviousTextId(null);
         setNextTextId(null);
         setBookmarkedIndices([]); // Reset bookmarks for new text
         setCurrentSegmentIndex(0);
@@ -2681,12 +2706,16 @@ const TextDisplay = () => {
             setBook(bookData);
             if (bookData?.parts) {
               const currentPartIndex = bookData.parts.findIndex(part => part.textId === parseInt(textId));
+              setPreviousTextId(currentPartIndex > 0 ? bookData.parts[currentPartIndex - 1].textId : null);
               setNextTextId(currentPartIndex >= 0 && currentPartIndex < bookData.parts.length - 1 ? bookData.parts[currentPartIndex + 1].textId : null);
             }
           } catch (bookErr) {
             console.error('Failed to get book data:', bookErr);
             // Don't block text display if book fetch fails, but player won't show
           }
+        } else {
+          setPreviousTextId(null);
+          setNextTextId(null);
         }
         // Load bookmarks after text is set
         if (data?.textId) {
@@ -3085,6 +3114,7 @@ const TextDisplay = () => {
       text={text}
       handleCompleteLesson={handleCompleteLesson}
       completing={completing}
+      previousTextId={previousTextId}
       nextTextId={nextTextId}
       navigate={navigate}
     />
@@ -3252,7 +3282,28 @@ const TextDisplay = () => {
             {/* Show bottom button for regular texts OR any text within a book */}
             {(!isAudioLesson || text?.bookId) && (
               <div className="mt-auto pt-2 text-end px-2 pb-2">
-                <Button variant="success" onClick={handleCompleteLesson} disabled={completing} size="sm">
+                {text?.bookId && (
+                  <>
+                    <Button
+                      variant="outline-secondary"
+                      onClick={() => navigate(`/texts/${previousTextId}`)}
+                      disabled={!previousTextId}
+                      size="sm"
+                    >
+                      Previous Text
+                    </Button>
+                    <Button
+                      variant="outline-secondary"
+                      onClick={() => navigate(`/texts/${nextTextId}`)}
+                      disabled={!nextTextId}
+                      size="sm"
+                      className="ms-1"
+                    >
+                      Next Text
+                    </Button>
+                  </>
+                )}
+                <Button variant="success" onClick={handleCompleteLesson} disabled={completing} size="sm" className={text?.bookId ? 'ms-1' : ''}>
                   {completing ? <Spinner animation="border" size="sm" /> : (nextTextId === null ? 'Finish Book' : 'Complete Lesson')}
                 </Button>
               </div>

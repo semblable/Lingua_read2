@@ -80,6 +80,9 @@ namespace LinguaReadApi.Models
         public int SrsDailyNewCardsStudied { get; set; } = 0;
         public int SrsDailyReviewsStudied { get; set; } = 0;
 
+        // SRS Learning Steps
+        public string SrsLearningStepMinutes { get; set; } = "1,10"; // comma-separated step intervals in minutes
+
         // SRS Streak Tracking
         public int SrsCurrentStreak { get; set; } = 0;
         public int SrsLongestStreak { get; set; } = 0;

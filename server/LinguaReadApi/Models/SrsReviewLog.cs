@@ -26,6 +26,8 @@ namespace LinguaReadApi.Models
         public double OldEaseFactor { get; set; }
         public int OldRepetitions { get; set; }
         public DateTime OldNextReviewAt { get; set; }
+        public bool OldIsLearning { get; set; } = false;
+        public int OldCurrentLearningStepIndex { get; set; } = 0;
 
         // Navigation properties
         public virtual User User { get; set; } = null!;

@@ -8,7 +8,7 @@ import {
   explainSentence, mineSentence,
   batchTranslateWords, addTermsBatch, getLanguage, // Added getLanguage (Phase 3)
   getSentenceProgress, logSentenceReadActivity,
-  API_URL
+  API_URL, applySrsReadingCredit
 } from '../utils/api';
 import TranslationPopup from '../components/TranslationPopup';
 import AudiobookPlayer from '../components/AudiobookPlayer'; // Import AudiobookPlayer
@@ -799,7 +799,8 @@ const WordInfoPanel = React.memo(({
   canUseSentenceTts,
   isSpeakingWord,
   onSpeakWord,
-  handleMineSentence
+  handleMineSentence,
+  onReadingCredit
 }) => {
   if (!displayedWord) return <p>Click/hover on a word.</p>;
   return (
@@ -826,6 +827,16 @@ const WordInfoPanel = React.memo(({
         >
           Mine Sentence
         </Button>
+        {displayedWord?.wordId && !displayedWord?.isNew && displayedWord?.status >= 3 && displayedWord?.status <= 4 && (
+          <Button
+            variant="outline-info"
+            size="sm"
+            onClick={() => onReadingCredit(displayedWord.wordId)}
+            title="Boost SRS interval (reading credit)"
+          >
+            SRS ✓
+          </Button>
+        )}
       </div>
       {saveSuccess && <Alert variant="success" size="sm">Saved!</Alert>}
       <p className="mb-1 small">Status: {displayedWord.status > 0 ? ['New', 'Learning', 'Familiar', 'Advanced', 'Known'][displayedWord.status - 1] : 'Untracked'}</p>
@@ -3203,6 +3214,15 @@ const TextDisplay = () => {
                   isSpeakingWord={isSpeakingWord}
                   onSpeakWord={speakDisplayedWord}
                   handleMineSentence={handleMineSentence}
+                  onReadingCredit={async (wordId) => {
+                    try {
+                      const res = await applySrsReadingCredit(wordId);
+                      if (res.applied) alert('SRS reading credit applied!');
+                      else alert(res.message || 'Credit not applied.');
+                    } catch (err) {
+                      console.error('Reading credit failed:', err);
+                    }
+                  }}
                 />
               </div>
 
@@ -3261,6 +3281,15 @@ const TextDisplay = () => {
                 isSpeakingWord={isSpeakingWord}
                 onSpeakWord={speakDisplayedWord}
                 handleMineSentence={handleMineSentence}
+                onReadingCredit={async (wordId) => {
+                  try {
+                    const res = await applySrsReadingCredit(wordId);
+                    if (res.applied) alert('SRS reading credit applied!');
+                    else alert(res.message || 'Credit not applied.');
+                  } catch (err) {
+                    console.error('Reading credit failed:', err);
+                  }
+                }}
               />
             </div>
           </div>

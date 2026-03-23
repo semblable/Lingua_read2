@@ -1,7 +1,10 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Container, Card, Button, Spinner, Alert, Form, Row, Col, Badge, ProgressBar, ButtonGroup, Modal } from 'react-bootstrap';
 import { SettingsContext } from '../contexts/SettingsContext';
-import { getAllLanguages, getSrsDueCards, submitSrsReview, getSrsStats, updateUserSettings, undoSrsReview, getSrsForecast } from '../utils/api';
+import { getAllLanguages, getSrsDueCards, submitSrsReview, getSrsStats, updateUserSettings, undoSrsReview, getSrsForecast, suspendSrsCard, burySrsCard, updateSrsCard, getSrsHeatmap } from '../utils/api';
+
+const FLAG_COLORS = ['', '🟥', '🟧', '🟨', '🟩'];
+const FLAG_LABELS = ['None', 'Red', 'Orange', 'Yellow', 'Green'];
 
 const GRADE_LABELS = [
   { grade: 0, label: 'Again', variant: 'danger', key: '1' },
@@ -28,14 +31,16 @@ const SrsReview = () => {
   const [localSettings, setLocalSettings] = useState({
     srsMaxNewCards: 20,
     srsMaxReviews: 100,
-    srsReviewOrder: 'mix'
+    srsReviewOrder: 'mix',
+    srsLearningStepMinutes: '1,10'
   });
 
   useEffect(() => {
     setLocalSettings({
       srsMaxNewCards: settings?.srsMaxNewCards ?? 20,
       srsMaxReviews: settings?.srsMaxReviews ?? 100,
-      srsReviewOrder: settings?.srsReviewOrder ?? 'mix'
+      srsReviewOrder: settings?.srsReviewOrder ?? 'mix',
+      srsLearningStepMinutes: settings?.srsLearningStepMinutes ?? '1,10'
     });
   }, [settings]);
 
@@ -44,11 +49,13 @@ const SrsReview = () => {
       await updateUserSettings({
         srsMaxNewCards: parseInt(localSettings.srsMaxNewCards, 10),
         srsMaxReviews: parseInt(localSettings.srsMaxReviews, 10),
-        srsReviewOrder: localSettings.srsReviewOrder
+        srsReviewOrder: localSettings.srsReviewOrder,
+        srsLearningStepMinutes: localSettings.srsLearningStepMinutes
       });
       updateSetting('srsMaxNewCards', parseInt(localSettings.srsMaxNewCards, 10));
       updateSetting('srsMaxReviews', parseInt(localSettings.srsMaxReviews, 10));
       updateSetting('srsReviewOrder', localSettings.srsReviewOrder);
+      updateSetting('srsLearningStepMinutes', localSettings.srsLearningStepMinutes);
       setShowSettingsModal(false);
       loadStats(); // refresh visual stats
     } catch (err) {
@@ -73,6 +80,7 @@ const SrsReview = () => {
   const [stats, setStats] = useState(null);
   const [statsLoading, setStatsLoading] = useState(false);
   const [forecast, setForecast] = useState([]);
+  const [heatmap, setHeatmap] = useState([]);
 
   // Undo state
   const [undoVisible, setUndoVisible] = useState(false);
@@ -87,8 +95,10 @@ const SrsReview = () => {
       setStats(data);
       const forecastData = await getSrsForecast(selectedLanguage, 14);
       setForecast(forecastData);
+      const heatmapData = await getSrsHeatmap(365);
+      setHeatmap(heatmapData);
     } catch (err) {
-      console.error('Failed to load stats or forecast:', err);
+      console.error('Failed to load stats, forecast, or heatmap:', err);
     } finally {
       setStatsLoading(false);
     }
@@ -256,13 +266,43 @@ const SrsReview = () => {
     );
   };
 
+  // Parse learning steps from settings
+  const learningSteps = useMemo(() => {
+    const raw = localSettings.srsLearningStepMinutes || '1,10';
+    return raw.split(',').map(s => parseInt(s.trim(), 10)).filter(n => n > 0);
+  }, [localSettings.srsLearningStepMinutes]);
+
   const getIntervalLabel = (grade, card) => {
     if (!card) return '';
-    let interval;
     const ef = card.easeFactor;
+
+    // If card is currently in learning phase
+    if (card.isLearning) {
+      const stepIdx = card.currentLearningStepIndex || 0;
+      switch (grade) {
+        case 0: // Again: reset to step 0
+          return learningSteps.length > 0 ? `${learningSteps[0]}m` : '1m';
+        case 1: // Hard: also reset to step 0
+          return learningSteps.length > 0 ? `${learningSteps[0]}m` : '1m';
+        case 2: { // Good: next step or graduate
+          const nextStep = stepIdx + 1;
+          if (nextStep >= learningSteps.length) return '1d'; // graduate
+          return `${learningSteps[nextStep]}m`;
+        }
+        case 3: { // Easy: graduate immediately
+          return '1d';
+        }
+        default: return '';
+      }
+    }
+
+    // Not in learning phase (normal SM-2 preview)
+    let interval;
     switch (grade) {
-      case 0: return '10m';
-      case 1: return '1d';
+      case 0: // Lapse: enter learning (first step)
+        return learningSteps.length > 0 ? `${learningSteps[0]}m` : '1m';
+      case 1: // Hard lapse
+        return learningSteps.length > 0 ? `${learningSteps[0]}m` : '1m';
       case 2:
         if (card.repetitions === 0) interval = 1;
         else if (card.repetitions === 1) interval = 6;
@@ -276,6 +316,106 @@ const SrsReview = () => {
         return `${interval}d`;
       default: return '';
     }
+  };
+
+  // Suspend card handler
+  const handleSuspend = async (cardId) => {
+    try {
+      await suspendSrsCard(cardId);
+      // Remove card from session
+      setCards(prev => prev.filter(c => c.srsCardReviewId !== cardId));
+      if (currentIndex >= cards.length - 1) {
+        setSessionComplete(true);
+        loadStats();
+      }
+    } catch (err) {
+      setError(`Failed to suspend: ${err.message}`);
+    }
+  };
+
+  // Bury card handler
+  const handleBury = async (cardId) => {
+    try {
+      await burySrsCard(cardId);
+      // Remove card from session
+      setCards(prev => prev.filter(c => c.srsCardReviewId !== cardId));
+      if (currentIndex >= cards.length - 1) {
+        setSessionComplete(true);
+        loadStats();
+      }
+    } catch (err) {
+      setError(`Failed to bury: ${err.message}`);
+    }
+  };
+
+  // Flag card handler
+  const handleFlag = async (cardId, flagValue) => {
+    try {
+      await updateSrsCard(cardId, { flag: flagValue });
+      setCards(prev => prev.map(c => c.srsCardReviewId === cardId ? { ...c, flag: flagValue } : c));
+    } catch (err) {
+      setError(`Failed to flag: ${err.message}`);
+    }
+  };
+
+  // Build heatmap grid helper
+  const renderHeatmap = () => {
+    if (!heatmap || heatmap.length === 0) return null;
+    const heatmapMap = {};
+    heatmap.forEach(h => { heatmapMap[h.date] = h.reviewCount; });
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const maxCount = Math.max(...heatmap.map(h => h.reviewCount), 1);
+
+    // Build 365 days of data ending today
+    const days = [];
+    for (let i = 364; i >= 0; i--) {
+      const d = new Date(today);
+      d.setDate(d.getDate() - i);
+      const dateStr = d.toISOString().slice(0, 10);
+      days.push({ date: dateStr, count: heatmapMap[dateStr] || 0, dayOfWeek: d.getDay() });
+    }
+
+    // Group into weeks (columns)
+    const weeks = [];
+    let currentWeek = new Array(7).fill(null);
+    days.forEach((day, idx) => {
+      currentWeek[day.dayOfWeek] = day;
+      if (day.dayOfWeek === 6 || idx === days.length - 1) {
+        weeks.push(currentWeek);
+        currentWeek = new Array(7).fill(null);
+      }
+    });
+
+    const getColor = (count) => {
+      if (count === 0) return '#ebedf0';
+      const intensity = Math.min(count / maxCount, 1);
+      if (intensity < 0.25) return '#9be9a8';
+      if (intensity < 0.5) return '#40c463';
+      if (intensity < 0.75) return '#30a14e';
+      return '#216e39';
+    };
+
+    return (
+      <div style={{ display: 'flex', gap: '2px', overflowX: 'auto' }}>
+        {weeks.map((week, wi) => (
+          <div key={wi} style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+            {week.map((day, di) => (
+              <div
+                key={di}
+                title={day ? `${day.date}: ${day.count} reviews` : ''}
+                style={{
+                  width: '10px',
+                  height: '10px',
+                  borderRadius: '2px',
+                  backgroundColor: day ? getColor(day.count) : 'transparent',
+                }}
+              />
+            ))}
+          </div>
+        ))}
+      </div>
+    );
   };
 
   // --- Render ---
@@ -338,6 +478,16 @@ const SrsReview = () => {
                   );
                 })}
               </div>
+            </Card.Body>
+          </Card>
+        )}
+
+        {/* Heatmap Calendar */}
+        {heatmap && heatmap.length > 0 && !statsLoading && (
+          <Card className="mb-3 shadow-sm">
+            <Card.Body className="py-2">
+              <small className="text-muted fw-bold mb-2 d-block text-center">Review Activity (Past Year)</small>
+              {renderHeatmap()}
             </Card.Body>
           </Card>
         )}
@@ -442,6 +592,16 @@ const SrsReview = () => {
                 <option value="reviews_first">Show reviews before new cards</option>
               </Form.Select>
             </Form.Group>
+            <Form.Group className="mb-3">
+              <Form.Label>Learning Steps (minutes, comma-separated)</Form.Label>
+              <Form.Control
+                type="text"
+                placeholder="1, 10"
+                value={localSettings.srsLearningStepMinutes}
+                onChange={e => setLocalSettings(p => ({ ...p, srsLearningStepMinutes: e.target.value }))}
+              />
+              <Form.Text className="text-muted">E.g. "1, 10" means 1 minute then 10 minute step before graduating.</Form.Text>
+            </Form.Group>
           </Modal.Body>
           <Modal.Footer>
             <Button variant="secondary" onClick={() => setShowSettingsModal(false)}>Cancel</Button>
@@ -526,17 +686,48 @@ const SrsReview = () => {
           <Card.Body className="d-flex flex-column">
             {/* Card Header */}
             <div className="d-flex justify-content-between align-items-center mb-2">
-              <Badge bg={STATUS_VARIANTS[currentCard.wordStatus]}>
-                {STATUS_LABELS[currentCard.wordStatus]}
-              </Badge>
-              <small className="text-muted">
-                {currentCard.unknownWordsInPhrase > 0 &&
-                  <Badge bg={currentCard.unknownWordsInPhrase === 1 ? 'success' : 'warning'} className="me-1">
-                    {currentCard.unknownWordsInPhrase === 1 ? '1T' : `${currentCard.unknownWordsInPhrase}T`}
-                  </Badge>
-                }
-                Rep: {currentCard.repetitions} | Int: {currentCard.interval}d
-              </small>
+              <div className="d-flex align-items-center gap-1">
+                <Badge bg={STATUS_VARIANTS[currentCard.wordStatus]}>
+                  {STATUS_LABELS[currentCard.wordStatus]}
+                </Badge>
+                {currentCard.isLearning && (
+                  <Badge bg="warning" text="dark">📖 Learning</Badge>
+                )}
+                {currentCard.flag > 0 && (
+                  <span title={`Flag: ${FLAG_LABELS[currentCard.flag]}`}>{FLAG_COLORS[currentCard.flag]}</span>
+                )}
+              </div>
+              <div className="d-flex align-items-center gap-1">
+                {/* Flag dropdown */}
+                <div className="dropdown d-inline-block">
+                  <Button variant="outline-secondary" size="sm" className="py-0 px-1" data-bs-toggle="dropdown" title="Set flag">
+                    🏳️
+                  </Button>
+                  <ul className="dropdown-menu dropdown-menu-end">
+                    {FLAG_LABELS.map((label, idx) => (
+                      <li key={idx}>
+                        <button className="dropdown-item" onClick={() => handleFlag(currentCard.srsCardReviewId, idx)}>
+                          {idx === 0 ? '🏳️' : FLAG_COLORS[idx]} {label}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+                <Button variant="outline-secondary" size="sm" className="py-0 px-1" onClick={() => handleSuspend(currentCard.srsCardReviewId)} title="Suspend card">
+                  ⏸
+                </Button>
+                <Button variant="outline-secondary" size="sm" className="py-0 px-1" onClick={() => handleBury(currentCard.srsCardReviewId)} title="Bury until tomorrow">
+                  ⬇
+                </Button>
+                <small className="text-muted ms-1">
+                  {currentCard.unknownWordsInPhrase > 0 &&
+                    <Badge bg={currentCard.unknownWordsInPhrase === 1 ? 'success' : 'warning'} className="me-1">
+                      {currentCard.unknownWordsInPhrase === 1 ? '1T' : `${currentCard.unknownWordsInPhrase}T`}
+                    </Badge>
+                  }
+                  Rep: {currentCard.repetitions} | Int: {currentCard.interval}d
+                </small>
+              </div>
             </div>
 
             {/* Front: Sentence */}

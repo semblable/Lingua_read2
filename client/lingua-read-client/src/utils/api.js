@@ -1141,3 +1141,36 @@ export const getSrsForecast = async (languageId = null, days = 14) => {
   const queryString = params.toString();
   return await fetchApi(`/srs/forecast${queryString ? `?${queryString}` : ''}`);
 };
+
+export const suspendSrsCard = async (cardId) => {
+  return await fetchApi(`/srs/suspend/${cardId}`, { method: 'POST' });
+};
+
+export const unsuspendSrsCard = async (cardId) => {
+  return await fetchApi(`/srs/unsuspend/${cardId}`, { method: 'POST' });
+};
+
+export const burySrsCard = async (cardId) => {
+  return await fetchApi(`/srs/bury/${cardId}`, { method: 'POST' });
+};
+
+export const updateSrsCard = async (cardId, { flag, tags } = {}) => {
+  const body = {};
+  if (flag !== undefined) body.flag = flag;
+  if (tags !== undefined) body.tags = tags;
+  return await fetchApi(`/srs/cards/${cardId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(body)
+  });
+};
+
+export const getSrsHeatmap = async (days = 365) => {
+  const params = new URLSearchParams();
+  params.append('days', days);
+  const queryString = params.toString();
+  return await fetchApi(`/srs/heatmap${queryString ? `?${queryString}` : ''}`);
+};
+
+export const applySrsReadingCredit = async (wordId) => {
+  return await fetchApi(`/srs/reading-credit/${wordId}`, { method: 'POST' });
+};

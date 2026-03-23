@@ -30,6 +30,8 @@ namespace LinguaReadApi.Controllers
             [FromQuery] int? languageId = null,
             [FromQuery] string? status = null,
             [FromQuery] bool onlyOneTarget = false,
+            [FromQuery] int? flag = null,
+            [FromQuery] string? tags = null,
             [FromQuery] int limit = 50)
         {
             var userId = GetUserId();
@@ -57,6 +59,8 @@ namespace LinguaReadApi.Controllers
             var query = _context.SrsCardReviews
                 .AsNoTracking()
                 .Where(scr => scr.UserId == userId && scr.NextReviewAt <= now)
+                .Where(scr => !scr.IsSuspended)
+                .Where(scr => scr.BuriedUntil == null || scr.BuriedUntil <= now)
                 .Include(scr => scr.Word)
                     .ThenInclude(w => w.Translation)
                 .AsQueryable();
@@ -68,6 +72,16 @@ namespace LinguaReadApi.Controllers
             {
                 var statusList = status.Split(',').Select(s => s.Trim()).Where(s => int.TryParse(s, out _)).Select(int.Parse).ToList();
                 if (statusList.Any()) query = query.Where(scr => statusList.Contains(scr.Word.Status));
+            }
+
+            if (flag.HasValue && flag.Value > 0)
+                query = query.Where(scr => scr.Flag == flag.Value);
+
+            if (!string.IsNullOrEmpty(tags))
+            {
+                var tagList = tags.Split(',').Select(t => t.Trim().ToLowerInvariant()).Where(t => t.Length > 0).ToList();
+                if (tagList.Any())
+                    query = query.Where(scr => scr.Tags != null && tagList.Any(t => scr.Tags.ToLower().Contains(t)));
             }
 
             // 3. Separate Queries & Over-fetch
@@ -120,6 +134,11 @@ namespace LinguaReadApi.Controllers
                     EaseFactor = card.EaseFactor,
                     Interval = card.Interval,
                     Repetitions = card.Repetitions,
+                    IsLearning = card.IsLearning,
+                    CurrentLearningStepIndex = card.CurrentLearningStepIndex,
+                    IsSuspended = card.IsSuspended,
+                    Flag = card.Flag,
+                    Tags = card.Tags,
                     Phrases = cardPhrases.Select(p => new SrsPhraseDto
                     {
                         SrsPhraseId = p.SrsPhraseId,
@@ -224,12 +243,17 @@ namespace LinguaReadApi.Controllers
                 OldEaseFactor = card.EaseFactor,
                 OldRepetitions = card.Repetitions,
                 OldNextReviewAt = card.NextReviewAt,
+                OldIsLearning = card.IsLearning,
+                OldCurrentLearningStepIndex = card.CurrentLearningStepIndex,
                 ReviewedAt = DateTime.UtcNow
             };
             _context.SrsReviewLogs.Add(reviewLog);
 
-            // Apply SM-2 algorithm
-            ApplySm2(card, dto.Grade);
+            // Parse learning steps from user settings
+            var learningSteps = ParseLearningSteps(settings?.SrsLearningStepMinutes);
+
+            // Apply SM-2 algorithm with learning steps
+            ApplySm2(card, dto.Grade, learningSteps);
 
             await _context.SaveChangesAsync();
 
@@ -344,6 +368,8 @@ namespace LinguaReadApi.Controllers
             card.EaseFactor = lastLog.OldEaseFactor;
             card.Repetitions = lastLog.OldRepetitions;
             card.NextReviewAt = lastLog.OldNextReviewAt;
+            card.IsLearning = lastLog.OldIsLearning;
+            card.CurrentLearningStepIndex = lastLog.OldCurrentLearningStepIndex;
             card.LastReviewedAt = null; // Slightly inaccurate but serves the purpose to unmark "ReviewedToday"
 
             // Revert daily limits
@@ -525,20 +551,176 @@ namespace LinguaReadApi.Controllers
             };
         }
 
-        // --- SM-2 Algorithm ---
-        private void ApplySm2(SrsCardReview card, int grade)
+        // POST: api/srs/suspend/{cardId}
+        [HttpPost("suspend/{cardId}")]
+        public async Task<IActionResult> SuspendCard(int cardId)
+        {
+            var userId = GetUserId();
+            var card = await _context.SrsCardReviews
+                .FirstOrDefaultAsync(scr => scr.SrsCardReviewId == cardId && scr.UserId == userId);
+            if (card == null) return NotFound();
+            card.IsSuspended = true;
+            await _context.SaveChangesAsync();
+            return Ok(new { Message = "Card suspended." });
+        }
+
+        // POST: api/srs/unsuspend/{cardId}
+        [HttpPost("unsuspend/{cardId}")]
+        public async Task<IActionResult> UnsuspendCard(int cardId)
+        {
+            var userId = GetUserId();
+            var card = await _context.SrsCardReviews
+                .FirstOrDefaultAsync(scr => scr.SrsCardReviewId == cardId && scr.UserId == userId);
+            if (card == null) return NotFound();
+            card.IsSuspended = false;
+            await _context.SaveChangesAsync();
+            return Ok(new { Message = "Card unsuspended." });
+        }
+
+        // POST: api/srs/bury/{cardId}
+        [HttpPost("bury/{cardId}")]
+        public async Task<IActionResult> BuryCard(int cardId)
+        {
+            var userId = GetUserId();
+            var card = await _context.SrsCardReviews
+                .FirstOrDefaultAsync(scr => scr.SrsCardReviewId == cardId && scr.UserId == userId);
+            if (card == null) return NotFound();
+            card.BuriedUntil = DateTime.UtcNow.Date.AddDays(1);
+            await _context.SaveChangesAsync();
+            return Ok(new { Message = "Card buried until tomorrow." });
+        }
+
+        // PATCH: api/srs/cards/{cardId}
+        [HttpPatch("cards/{cardId}")]
+        public async Task<IActionResult> UpdateCard(int cardId, [FromBody] SrsCardPatchDto dto)
+        {
+            var userId = GetUserId();
+            var card = await _context.SrsCardReviews
+                .FirstOrDefaultAsync(scr => scr.SrsCardReviewId == cardId && scr.UserId == userId);
+            if (card == null) return NotFound();
+
+            if (dto.Flag.HasValue)
+                card.Flag = Math.Clamp(dto.Flag.Value, 0, 4);
+            if (dto.Tags != null)
+                card.Tags = dto.Tags;
+
+            await _context.SaveChangesAsync();
+            return Ok(new { card.Flag, card.Tags });
+        }
+
+        // GET: api/srs/heatmap?days=365
+        [HttpGet("heatmap")]
+        public async Task<ActionResult<List<SrsHeatmapDto>>> GetHeatmap([FromQuery] int days = 365)
+        {
+            var userId = GetUserId();
+            var startDate = DateTime.UtcNow.Date.AddDays(-days);
+
+            var logs = await _context.SrsReviewLogs
+                .AsNoTracking()
+                .Where(log => log.UserId == userId && log.ReviewedAt >= startDate)
+                .Select(log => new { log.ReviewedAt })
+                .ToListAsync();
+
+            var grouped = logs
+                .GroupBy(l => l.ReviewedAt.Date)
+                .Select(g => new SrsHeatmapDto
+                {
+                    Date = g.Key.ToString("yyyy-MM-dd"),
+                    ReviewCount = g.Count()
+                })
+                .OrderBy(h => h.Date)
+                .ToList();
+
+            return grouped;
+        }
+
+        // POST: api/srs/reading-credit/{wordId}
+        [HttpPost("reading-credit/{wordId}")]
+        public async Task<IActionResult> ApplyReadingCredit(int wordId)
+        {
+            var userId = GetUserId();
+            var card = await _context.SrsCardReviews
+                .FirstOrDefaultAsync(scr => scr.WordId == wordId && scr.UserId == userId);
+
+            if (card == null) return NotFound(new { Message = "No SRS card found for this word." });
+
+            // Only apply if card has some history (repetitions > 2)
+            if (card.Repetitions <= 2)
+                return Ok(new { Message = "Card too new for reading credit.", Applied = false });
+
+            // Boost: multiply interval by 1.1, cap at current next review + 2 days
+            var boostedInterval = (int)Math.Round(card.Interval * 1.1);
+            var maxInterval = card.Interval + 2;
+            card.Interval = Math.Min(boostedInterval, maxInterval);
+            card.NextReviewAt = DateTime.UtcNow.AddDays(card.Interval);
+
+            await _context.SaveChangesAsync();
+            return Ok(new { Message = "Reading credit applied.", Applied = true, card.Interval, card.NextReviewAt });
+        }
+
+        // --- SM-2 Algorithm with Learning Steps ---
+        private void ApplySm2(SrsCardReview card, int grade, List<int> learningSteps)
         {
             // grade: 0=Again, 1=Hard, 2=Good, 3=Easy
 
+            if (card.IsLearning)
+            {
+                // Card is in learning phase
+                if (grade < 2)
+                {
+                    // Again/Hard: reset to first learning step
+                    card.CurrentLearningStepIndex = 0;
+                    int stepMinutes = learningSteps.Count > 0 ? learningSteps[0] : 1;
+                    card.Interval = 0;
+                    card.NextReviewAt = DateTime.UtcNow.AddMinutes(stepMinutes);
+                    card.LastReviewedAt = DateTime.UtcNow;
+                    // Update ease factor for lapse
+                    card.EaseFactor = Math.Max(1.3,
+                        card.EaseFactor + 0.1 - (3 - grade) * (0.08 + (3 - grade) * 0.02));
+                    return;
+                }
+                else
+                {
+                    // Good/Easy: advance to next step
+                    card.CurrentLearningStepIndex++;
+                    if (card.CurrentLearningStepIndex >= learningSteps.Count)
+                    {
+                        // Graduate: exit learning phase
+                        card.IsLearning = false;
+                        card.CurrentLearningStepIndex = 0;
+                        card.Interval = 1;
+                        card.Repetitions = 1;
+                        if (grade == 3) card.Interval = (int)Math.Round(card.Interval * 1.3);
+                        card.NextReviewAt = DateTime.UtcNow.AddDays(card.Interval);
+                    }
+                    else
+                    {
+                        // Next learning step
+                        int stepMinutes = learningSteps[card.CurrentLearningStepIndex];
+                        card.Interval = 0;
+                        card.NextReviewAt = DateTime.UtcNow.AddMinutes(stepMinutes);
+                    }
+                    card.LastReviewedAt = DateTime.UtcNow;
+                    card.EaseFactor = Math.Max(1.3,
+                        card.EaseFactor + 0.1 - (3 - grade) * (0.08 + (3 - grade) * 0.02));
+                    return;
+                }
+            }
+
+            // Card is NOT in learning phase
             if (grade < 2)
             {
-                // Failed: reset repetitions, review again soon
+                // Lapse: enter learning phase
+                card.IsLearning = true;
+                card.CurrentLearningStepIndex = 0;
                 card.Repetitions = 0;
-                card.Interval = grade == 0 ? 0 : 1; // Again = today, Hard = tomorrow
+                int stepMinutes = learningSteps.Count > 0 ? learningSteps[0] : 1;
+                card.Interval = 0;
+                card.NextReviewAt = DateTime.UtcNow.AddMinutes(stepMinutes);
             }
             else
             {
-                // Passed
+                // Passed (normal SM-2 flow)
                 if (card.Repetitions == 0)
                     card.Interval = 1;
                 else if (card.Repetitions == 1)
@@ -551,6 +733,8 @@ namespace LinguaReadApi.Controllers
                 // Easy bonus
                 if (grade == 3)
                     card.Interval = (int)Math.Round(card.Interval * 1.3);
+
+                card.NextReviewAt = DateTime.UtcNow.AddDays(Math.Max(card.Interval, 0));
             }
 
             // Update ease factor
@@ -558,13 +742,22 @@ namespace LinguaReadApi.Controllers
                 card.EaseFactor + 0.1 - (3 - grade) * (0.08 + (3 - grade) * 0.02));
 
             card.LastReviewedAt = DateTime.UtcNow;
-            card.NextReviewAt = DateTime.UtcNow.AddDays(Math.Max(card.Interval, 0));
+        }
 
-            // If interval is 0 (Again), schedule for 10 minutes from now instead of right now
-            if (card.Interval == 0)
-            {
-                card.NextReviewAt = DateTime.UtcNow.AddMinutes(10);
-            }
+        // Parse learning step minutes from comma-separated string
+        private List<int> ParseLearningSteps(string? stepsString)
+        {
+            if (string.IsNullOrWhiteSpace(stepsString))
+                return new List<int> { 1, 10 }; // default
+
+            var steps = stepsString.Split(',')
+                .Select(s => s.Trim())
+                .Where(s => int.TryParse(s, out _))
+                .Select(int.Parse)
+                .Where(s => s > 0)
+                .ToList();
+
+            return steps.Count > 0 ? steps : new List<int> { 1, 10 };
         }
 
         // --- Helper: Count unknown words in a sentence ---
@@ -646,6 +839,11 @@ namespace LinguaReadApi.Controllers
         public double EaseFactor { get; set; }
         public int Interval { get; set; }
         public int Repetitions { get; set; }
+        public bool IsLearning { get; set; }
+        public int CurrentLearningStepIndex { get; set; }
+        public bool IsSuspended { get; set; }
+        public int Flag { get; set; }
+        public string? Tags { get; set; }
         public List<SrsPhraseDto> Phrases { get; set; } = new();
         public int UnknownWordsInPhrase { get; set; }
     }
@@ -712,5 +910,17 @@ namespace LinguaReadApi.Controllers
     {
         public string Date { get; set; } = string.Empty;
         public int Count { get; set; }
+    }
+
+    public class SrsCardPatchDto
+    {
+        public int? Flag { get; set; }
+        public string? Tags { get; set; }
+    }
+
+    public class SrsHeatmapDto
+    {
+        public string Date { get; set; } = string.Empty;
+        public int ReviewCount { get; set; }
     }
 }

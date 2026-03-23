@@ -3200,8 +3200,17 @@ const TextDisplay = () => {
       {/* Main Content Area */}
       <div className={`resizable-container resizable-container-${readingUiMode}`}>
         {/* Left Panel (Reading Area) */}
-        <div className={`left-panel left-panel-${readingUiMode}`} style={{ width: `${effectiveLeftPanelWidth}%`, minHeight: 'calc(100vh - 130px)', padding: '0', position: 'relative' }}>
-          <div className="d-flex flex-column" style={{ minHeight: '100%' }}>
+        <div
+          className={`left-panel left-panel-${readingUiMode}`}
+          style={{
+            width: `${effectiveLeftPanelWidth}%`,
+            minHeight: readingUiMode === 'modern' ? 0 : 'calc(100vh - 130px)',
+            height: readingUiMode === 'modern' ? 'calc(100vh - 130px)' : 'auto',
+            padding: '0',
+            position: 'relative'
+          }}
+        >
+          <div className="d-flex flex-column" style={{ minHeight: '100%', height: '100%' }}>
             <div className={`flex-grow-1 reader-main-surface reader-main-surface-${readingUiMode}`} ref={readingContainerRef}>
               <div
                 className={`reader-main-surface-inner reader-main-surface-inner-${readingUiMode}`}

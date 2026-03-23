@@ -154,6 +154,23 @@
     color-mix(in srgb, var(--theme-surface-bg, #fff) 94%, var(--theme-border-color, #e9ecef) 6%);
 }
 
+/* Keep modern desktop reading scroll inside the reader pane. */
+@media (min-width: 769px) {
+  .reader-ui-modern .resizable-container-modern {
+    height: calc(100vh - 130px);
+    overflow: hidden;
+  }
+
+  .reader-ui-modern .left-panel-modern {
+    min-height: 0;
+  }
+
+  .reader-ui-modern .reader-main-surface-modern {
+    min-height: 0;
+    overflow-y: auto;
+  }
+}
+
 .reader-main-surface-inner-modern {
   width: 100%;
   max-width: calc(var(--reader-content-max-width, 740px) + 3rem);

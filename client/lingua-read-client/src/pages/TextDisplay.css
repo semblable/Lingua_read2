@@ -524,6 +524,14 @@
   white-space: pre-wrap;
 }
 
+@media (min-width: 769px) {
+  .right-panel {
+    position: sticky;
+    top: 0;
+    align-self: flex-start;
+  }
+}
+
 /* Media queries for responsive design */
 @media (max-width: 768px) {
   .lesson-page {

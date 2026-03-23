@@ -128,6 +128,7 @@ describe('TextDisplay', () => {
   beforeEach(() => {
     jest.useFakeTimers();
     mockAudiobookPlayer.mockClear();
+    getText.mockReset();
     getText.mockResolvedValue({
       textId: 1,
       title: 'Sample Text',
@@ -578,7 +579,7 @@ describe('TextDisplay', () => {
 
     // Flush all pending async state updates from the translate callback
     await act(async () => {
-      await new Promise(r => setTimeout(r, 0));
+      await Promise.resolve();
     });
   });
 

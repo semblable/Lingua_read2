@@ -3211,6 +3211,35 @@ const TextDisplay = () => {
           }}
         >
           <div className="d-flex flex-column" style={{ minHeight: '100%', height: '100%' }}>
+            {/* Lesson / book actions at top of reader column */}
+            {(!isAudioLesson || text?.bookId) && (
+              <div className="flex-shrink-0 pt-2 pb-2 px-2 text-end border-bottom reader-actions-bar">
+                {text?.bookId && (
+                  <>
+                    <Button
+                      variant="outline-secondary"
+                      onClick={() => navigate(`/texts/${previousTextId}`)}
+                      disabled={!previousTextId}
+                      size="sm"
+                    >
+                      Previous Text
+                    </Button>
+                    <Button
+                      variant="outline-secondary"
+                      onClick={() => navigate(`/texts/${nextTextId}`)}
+                      disabled={!nextTextId}
+                      size="sm"
+                      className="ms-1"
+                    >
+                      Next Text
+                    </Button>
+                  </>
+                )}
+                <Button variant="success" onClick={handleCompleteLesson} disabled={completing} size="sm" className={text?.bookId ? 'ms-1' : ''}>
+                  {completing ? <Spinner animation="border" size="sm" /> : (nextTextId === null ? 'Finish Book' : 'Complete Lesson')}
+                </Button>
+              </div>
+            )}
             <div className={`flex-grow-1 reader-main-surface reader-main-surface-${readingUiMode}`} ref={readingContainerRef}>
               <div
                 className={`reader-main-surface-inner reader-main-surface-inner-${readingUiMode}`}
@@ -3288,35 +3317,6 @@ const TextDisplay = () => {
                 )}
               </div>
             </div>
-            {/* Show bottom button for regular texts OR any text within a book */}
-            {(!isAudioLesson || text?.bookId) && (
-              <div className="mt-auto pt-2 text-end px-2 pb-2">
-                {text?.bookId && (
-                  <>
-                    <Button
-                      variant="outline-secondary"
-                      onClick={() => navigate(`/texts/${previousTextId}`)}
-                      disabled={!previousTextId}
-                      size="sm"
-                    >
-                      Previous Text
-                    </Button>
-                    <Button
-                      variant="outline-secondary"
-                      onClick={() => navigate(`/texts/${nextTextId}`)}
-                      disabled={!nextTextId}
-                      size="sm"
-                      className="ms-1"
-                    >
-                      Next Text
-                    </Button>
-                  </>
-                )}
-                <Button variant="success" onClick={handleCompleteLesson} disabled={completing} size="sm" className={text?.bookId ? 'ms-1' : ''}>
-                  {completing ? <Spinner animation="border" size="sm" /> : (nextTextId === null ? 'Finish Book' : 'Complete Lesson')}
-                </Button>
-              </div>
-            )}
           </div>
         </div>
 

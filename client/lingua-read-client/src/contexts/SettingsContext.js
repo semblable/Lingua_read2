@@ -24,6 +24,7 @@ const defaultSettings = {
   translationTargetLanguageCode: 'EN',
   autoAdvanceToNextLesson: false,
   showProgressStats: true,
+  showDesktopLessonControls: true,
   lineSpacing: 1.5, // Added lineSpacing
   discordWeeklyReportEnabled: false,
   discordWebhookUrl: '',

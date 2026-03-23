@@ -41,6 +41,7 @@ namespace LinguaReadApi.Models
         public bool AutoAdvanceToNextLesson { get; set; } = false; // automatically go to next lesson after completion
         public bool ShowProgressStats { get; set; } = true; // show progress statistics
         public bool AutoMoveFinishedLessons { get; set; } = false; // automatically move finished lessons to "Finished" folder
+        public bool ShowDesktopLessonControls { get; set; } = true; // persist lesson controls panel visibility
 
         // Audiobook Playback State
         public int? CurrentAudiobookTrackId { get; set; } // FK to AudiobookTrack

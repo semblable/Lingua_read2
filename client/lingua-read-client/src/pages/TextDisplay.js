@@ -359,24 +359,30 @@ const SecondaryControls = React.memo(({
 }) => (
   <>
     <ButtonGroup size="sm" className="me-1" aria-label="Reading density">
-        <Button
-          variant={globalSettings.readingDensity === 'compact' ? 'primary' : 'outline-secondary'}
-          onClick={() => setReadingDensity('compact')}
-        >
-          Compact
-        </Button>
-        <Button
-          variant={globalSettings.readingDensity === 'balanced' ? 'primary' : 'outline-secondary'}
-          onClick={() => setReadingDensity('balanced')}
-        >
-          Balanced
-        </Button>
-        <Button
-          variant={globalSettings.readingDensity === 'spacious' ? 'primary' : 'outline-secondary'}
-          onClick={() => setReadingDensity('spacious')}
-        >
-          Spacious
-        </Button>
+        <OverlayTrigger placement="top" overlay={<Tooltip>Compact density</Tooltip>}>
+          <Button
+            variant={globalSettings.readingDensity === 'compact' ? 'primary' : 'outline-secondary'}
+            onClick={() => setReadingDensity('compact')}
+          >
+            S
+          </Button>
+        </OverlayTrigger>
+        <OverlayTrigger placement="top" overlay={<Tooltip>Balanced density</Tooltip>}>
+          <Button
+            variant={globalSettings.readingDensity === 'balanced' ? 'primary' : 'outline-secondary'}
+            onClick={() => setReadingDensity('balanced')}
+          >
+            M
+          </Button>
+        </OverlayTrigger>
+        <OverlayTrigger placement="top" overlay={<Tooltip>Spacious density</Tooltip>}>
+          <Button
+            variant={globalSettings.readingDensity === 'spacious' ? 'primary' : 'outline-secondary'}
+            onClick={() => setReadingDensity('spacious')}
+          >
+            L
+          </Button>
+        </OverlayTrigger>
       </ButtonGroup>
     <ButtonGroup size="sm" className="me-1">
       <Button
@@ -435,27 +441,30 @@ const SecondaryControls = React.memo(({
       </Button>
     </ButtonGroup>
     <ButtonGroup size="sm" className="me-1" aria-label="Reader text width">
-      <Button
-        variant={globalSettings.readerContentWidth <= 660 ? 'primary' : 'outline-secondary'}
-        onClick={() => setReaderContentWidth(620)}
-        title="Narrow text column"
-      >
-        Narrow
-      </Button>
-      <Button
-        variant={globalSettings.readerContentWidth > 660 && globalSettings.readerContentWidth < 820 ? 'primary' : 'outline-secondary'}
-        onClick={() => setReaderContentWidth(740)}
-        title="Balanced text column"
-      >
-        Medium
-      </Button>
-      <Button
-        variant={globalSettings.readerContentWidth >= 820 ? 'primary' : 'outline-secondary'}
-        onClick={() => setReaderContentWidth(900)}
-        title="Wide text column"
-      >
-        Wide
-      </Button>
+      <OverlayTrigger placement="top" overlay={<Tooltip>Narrow text column</Tooltip>}>
+        <Button
+          variant={globalSettings.readerContentWidth <= 660 ? 'primary' : 'outline-secondary'}
+          onClick={() => setReaderContentWidth(620)}
+        >
+          N
+        </Button>
+      </OverlayTrigger>
+      <OverlayTrigger placement="top" overlay={<Tooltip>Medium text column</Tooltip>}>
+        <Button
+          variant={globalSettings.readerContentWidth > 660 && globalSettings.readerContentWidth < 820 ? 'primary' : 'outline-secondary'}
+          onClick={() => setReaderContentWidth(740)}
+        >
+          M
+        </Button>
+      </OverlayTrigger>
+      <OverlayTrigger placement="top" overlay={<Tooltip>Wide text column</Tooltip>}>
+        <Button
+          variant={globalSettings.readerContentWidth >= 820 ? 'primary' : 'outline-secondary'}
+          onClick={() => setReaderContentWidth(900)}
+        >
+          W
+        </Button>
+      </OverlayTrigger>
     </ButtonGroup>
     {!isMobile && (
       <ButtonGroup size="sm" className="me-1" aria-label="Reader panel visibility">
@@ -531,7 +540,7 @@ const SecondaryControls = React.memo(({
         onClick={handleFullTextTranslation}
         className="me-1"
       >
-        Translate Text
+        Translate
       </Button>
     )}
     {text && !loading && (
@@ -543,7 +552,7 @@ const SecondaryControls = React.memo(({
         className="ms-1"
         title="Translate unknown/learning words"
       >
-        {translatingUnknown ? <Spinner size="sm" /> : 'Translate ?'}
+        {translatingUnknown ? <Spinner size="sm" /> : 'Auto ?'}
       </Button>
     )}
     {text && !loading && (
@@ -555,7 +564,7 @@ const SecondaryControls = React.memo(({
         className="ms-1"
         title="Mark all untracked words as Known"
       >
-        {isMarkingAll ? <Spinner size="sm" /> : 'Mark All Known'}
+        {isMarkingAll ? <Spinner size="sm" /> : 'All Known'}
       </Button>
     )}
   </>
@@ -822,7 +831,7 @@ const LessonHeader = React.memo(({
               aria-expanded={showDesktopLessonControls}
               aria-label={showDesktopLessonControls ? 'Hide lesson controls panel' : 'Show lesson controls panel'}
             >
-              {showDesktopLessonControls ? 'Hide Panel' : 'Show Panel'}
+              {showDesktopLessonControls ? 'Hide' : 'Show'}
             </Button>
           </div>
         </div>
@@ -1508,7 +1517,7 @@ const TextDisplay = () => {
   const [showMoreControls, setShowMoreControls] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [showMobileHeader, setShowMobileHeader] = useState(false);
-  const [showDesktopLessonControls, setShowDesktopLessonControls] = useState(true);
+  const showDesktopLessonControls = globalSettings.showDesktopLessonControls ?? true;
   const [isWordPanelOpen, setIsWordPanelOpen] = useState(false);
   const [isAudioPlaying, setIsAudioPlaying] = useState(false);
   const [currentSegmentIndex, setCurrentSegmentIndex] = useState(0);
@@ -1765,6 +1774,14 @@ const TextDisplay = () => {
     updateUserSettings({ showWordInfoPanel: nextValue })
       .catch(err => console.error('[Save Settings] Failed to save word info panel visibility via API:', err));
   }, [updateSetting]);
+
+  const setShowDesktopLessonControls = useCallback((nextValue) => {
+    const val = typeof nextValue === 'function' ? nextValue(globalSettings.showDesktopLessonControls ?? true) : nextValue;
+    updateSetting('showDesktopLessonControls', val);
+    localStorage.setItem('showDesktopLessonControls', val.toString());
+    updateUserSettings({ showDesktopLessonControls: val })
+      .catch(err => console.error('[Save Settings] Failed to save desktop lesson controls visibility via API:', err));
+  }, [updateSetting, globalSettings.showDesktopLessonControls]);
 
   const setReaderParagraphIndent = useCallback((nextValue) => {
     updateSetting('readerParagraphIndent', nextValue);

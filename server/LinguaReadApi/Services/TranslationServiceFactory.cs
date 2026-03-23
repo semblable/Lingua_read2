@@ -78,6 +78,11 @@ namespace LinguaReadApi.Services
         {
             return _service.ExplainSentenceAsync(text, sourceLanguage, targetLanguage, _userId);
         }
+
+        public Task<string> TranslateSelectionWithContextAsync(string selectedText, string sentenceContext, string sourceLanguage, string targetLanguage)
+        {
+            return _service.TranslateSelectionWithContextAsync(selectedText, sentenceContext, sourceLanguage, targetLanguage, _userId);
+        }
     }
 
     /// <summary>

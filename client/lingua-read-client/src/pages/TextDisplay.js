@@ -4,7 +4,7 @@ import { useParams, useNavigate } from 'react-router-dom'; // Removed unused Lin
 import { FixedSizeList as List } from 'react-window';
 import {
   getText, createWord, updateWord, updateLastRead, completeLesson, getBook, // Use completeLesson instead of completeText
-  translateText, translateSentence, translateFullText, updateUserSettings, // Added updateUserSettings, removed unused getUserSettings
+  translateText, translateSentence, translateFullText, translateSelectionWithContext, updateUserSettings, // Added updateUserSettings, removed unused getUserSettings
   explainSentence, mineSentence,
   batchTranslateWords, addTermsBatch, getLanguage, // Added getLanguage (Phase 3)
   getSentenceProgress, logSentenceReadActivity,
@@ -1594,6 +1594,21 @@ const TextDisplay = () => {
     }
   }, []);
 
+  const getSentenceContextFromNode = useCallback((node) => {
+    const container = textContentRef.current;
+    let currentNode = node;
+    while (currentNode && currentNode !== container) {
+      if (
+        currentNode.nodeType === Node.ELEMENT_NODE &&
+        currentNode.classList?.contains('sentence')
+      ) {
+        return currentNode.textContent?.replace(/\s+/g, ' ').trim() || '';
+      }
+      currentNode = currentNode.parentNode;
+    }
+    return '';
+  }, []);
+
   const handleAudioPlaybackStateChange = useCallback((nextIsPlaying) => {
     if (nextIsPlaying) {
       cancelSpeech();
@@ -1745,13 +1760,16 @@ const TextDisplay = () => {
     return { ...baseStyle, ...(statusStyles[wordStatus] || statusStyles[0]) };
   }, [globalSettings?.highlightKnownWords]); // Use globalSettings from context
 
-  const triggerAutoTranslation = useCallback(async (termToTranslate) => {
+  const triggerAutoTranslation = useCallback(async (termToTranslate, options = {}) => {
+    const { sentenceContext = '' } = options;
     // Use globalSettings from context
     if (!termToTranslate || !globalSettings.autoTranslateWords || !text?.languageCode) return;
     setIsTranslating(true);
     setWordTranslationError('');
     try {
-      const result = await translateText(termToTranslate, text.languageCode, 'EN');
+      const result = sentenceContext
+        ? await translateSelectionWithContext(termToTranslate, sentenceContext, text.languageCode, 'EN')
+        : await translateText(termToTranslate, text.languageCode, 'EN');
       if (result?.translatedText) {
         setTranslation(result.translatedText);
         setDisplayedWord(prev => (prev && prev.term === termToTranslate ? { ...prev, translation: result.translatedText } : prev));
@@ -1827,7 +1845,7 @@ const TextDisplay = () => {
     return { selection, range, container, selectedText };
   }, []);
 
-  const handleSelectedText = useCallback((selectedText) => {
+  const handleSelectedText = useCallback((selectedText, sentenceContext = '') => {
     if (!selectedText) {
       lastHandledSelectionRef.current = '';
       return;
@@ -1841,8 +1859,11 @@ const TextDisplay = () => {
     suppressWordClickUntilRef.current = Date.now() + 400;
     setTimeout(() => {
       handleWordClick(selectedText);
+      if (sentenceContext) {
+        triggerAutoTranslation(selectedText, { sentenceContext });
+      }
     }, 0);
-  }, [handleWordClick]);
+  }, [handleWordClick, triggerAutoTranslation]);
 
   const handleSelectableWordClick = useCallback((event, word) => {
     event.stopPropagation();
@@ -1872,9 +1893,10 @@ const TextDisplay = () => {
     }
 
     const { selection, range, container, selectedText } = selectionDetails;
+    const sentenceContext = getSentenceContextFromNode(range.commonAncestorContainer);
     focusSentenceIndexFromNode(range.commonAncestorContainer);
     if (isMobile) {
-      handleSelectedText(selectedText);
+      handleSelectedText(selectedText, sentenceContext);
       return;
     }
 
@@ -1967,14 +1989,14 @@ const TextDisplay = () => {
       selection.removeAllRanges();
       selection.addRange(newRange);
 
-      handleSelectedText(newRange.toString().trim());
+      handleSelectedText(newRange.toString().trim(), sentenceContext);
     } catch (e) {
       console.warn("Error adjusting selection range:", e);
       // Fallback: use original selection text if possible
-      handleSelectedText(selection.toString().trim());
+      handleSelectedText(selection.toString().trim(), sentenceContext);
     }
 
-  }, [focusSentenceIndexFromNode, getSelectionDetails, handleSelectedText, isMobile]); // textContentRef is a stable ref
+  }, [focusSentenceIndexFromNode, getSelectionDetails, getSentenceContextFromNode, handleSelectedText, isMobile]); // textContentRef is a stable ref
 
   const scheduleWordSelection = useCallback((delayMs) => {
     clearPendingSelection();
@@ -2776,7 +2798,7 @@ const TextDisplay = () => {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [hoveredWordTerm, processingWord, isTranslating, getWordData, setWords, selectedWord, displayedWord, text?.textId, text?.languageCode, globalSettings.autoTranslateWords, triggerAutoTranslation]); // Use globalSettings
+  }, [hoveredWordTerm, processingWord, isTranslating, getWordData, setWords, selectedWord, displayedWord, text?.textId, text?.languageCode, currentSentenceSegment?.text, globalSettings.autoTranslateWords, triggerAutoTranslation]); // Use globalSettings
   // --- End Keyboard Shortcuts ---
 
   // Removed redundant text selection listener useEffect hook
@@ -2811,7 +2833,7 @@ const TextDisplay = () => {
       setSaveSuccess(true); setTimeout(() => setSaveSuccess(false), 2000);
     } catch (error) { console.error('Error saving word:', error); alert(`Failed to save word: ${error.message}`); }
     finally { setProcessingWord(false); }
-  }, [selectedWord, displayedWord, processingWord, isTranslating, translation, text?.textId, words, getWordData, setWords, setDisplayedWord, setSaveSuccess, setProcessingWord]); // createWord/updateWord are module imports (stable); omit to satisfy exhaustive-deps
+  }, [selectedWord, displayedWord, processingWord, isTranslating, translation, text?.textId, currentSentenceSegment?.text, words, getWordData, setWords, setDisplayedWord, setSaveSuccess, setProcessingWord]); // createWord/updateWord are module imports (stable); omit to satisfy exhaustive-deps
 
   // Handler for saving translation via Enter key (Moved after handleSaveWord)
   const handleTranslationKeyDown = useCallback((event) => {

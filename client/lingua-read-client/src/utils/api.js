@@ -775,6 +775,30 @@ export const translateSentence = async (text, sourceLanguageCode, targetLanguage
   }
 };
 
+export const translateSelectionWithContext = async (selectedText, sentenceContext, sourceLanguageCode, targetLanguageCode) => {
+  try {
+    const payload = {
+      selectedText,
+      sentenceContext,
+      sourceLanguageCode,
+      targetLanguageCode
+    };
+
+    const response = await fetchApi('/sentencetranslation/selection', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json; charset=utf-8'
+      },
+      body: JSON.stringify(payload)
+    });
+
+    return response;
+  } catch (error) {
+    console.error('Selection translation failed:', error);
+    throw error;
+  }
+};
+
 export const explainSentence = async (text, sourceLanguageCode, targetLanguageCode) => {
   try {
     const payload = {

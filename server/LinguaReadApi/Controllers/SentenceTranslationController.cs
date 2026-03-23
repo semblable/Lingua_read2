@@ -171,6 +171,55 @@ namespace LinguaReadApi.Controllers
             }
         }
 
+        /// <summary>
+        /// Translates only the selected text while using full sentence context for disambiguation.
+        /// </summary>
+        [HttpPost("selection")]
+        public async Task<ActionResult<SelectionTranslationResponse>> TranslateSelection([FromBody] SelectionTranslationRequest request)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(request.SelectedText))
+                {
+                    return BadRequest(new { message = "Selected text cannot be empty" });
+                }
+
+                if (string.IsNullOrWhiteSpace(request.SentenceContext))
+                {
+                    return BadRequest(new { message = "Sentence context cannot be empty" });
+                }
+
+                var userId = GetUserId();
+                var translationService = await _translationServiceFactory.GetServiceForUserAsync(userId);
+
+                var translatedSelection = await translationService.TranslateSelectionWithContextAsync(
+                    request.SelectedText,
+                    request.SentenceContext,
+                    request.SourceLanguageCode,
+                    request.TargetLanguageCode);
+
+                if (string.IsNullOrWhiteSpace(translatedSelection))
+                {
+                    _logger.LogWarning("Selection translation service returned empty result");
+                    return StatusCode(500, new { message = "Translation service returned empty result" });
+                }
+
+                return Ok(new SelectionTranslationResponse
+                {
+                    SelectedText = request.SelectedText,
+                    SentenceContext = request.SentenceContext,
+                    TranslatedText = translatedSelection.Trim(),
+                    SourceLanguageCode = request.SourceLanguageCode,
+                    TargetLanguageCode = request.TargetLanguageCode
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error during selection translation");
+                return StatusCode(500, new { message = $"Selection translation failed: {ex.Message}" });
+            }
+        }
+
         private Guid GetUserId()
         {
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
@@ -216,6 +265,39 @@ namespace LinguaReadApi.Controllers
 
         [JsonPropertyName("explanationText")]
         public string ExplanationText { get; set; } = string.Empty;
+
+        [JsonPropertyName("sourceLanguageCode")]
+        public string SourceLanguageCode { get; set; } = string.Empty;
+
+        [JsonPropertyName("targetLanguageCode")]
+        public string TargetLanguageCode { get; set; } = string.Empty;
+    }
+
+    public class SelectionTranslationRequest
+    {
+        [JsonPropertyName("selectedText")]
+        public string SelectedText { get; set; } = string.Empty;
+
+        [JsonPropertyName("sentenceContext")]
+        public string SentenceContext { get; set; } = string.Empty;
+
+        [JsonPropertyName("sourceLanguageCode")]
+        public string SourceLanguageCode { get; set; } = string.Empty;
+
+        [JsonPropertyName("targetLanguageCode")]
+        public string TargetLanguageCode { get; set; } = string.Empty;
+    }
+
+    public class SelectionTranslationResponse
+    {
+        [JsonPropertyName("selectedText")]
+        public string SelectedText { get; set; } = string.Empty;
+
+        [JsonPropertyName("sentenceContext")]
+        public string SentenceContext { get; set; } = string.Empty;
+
+        [JsonPropertyName("translatedText")]
+        public string TranslatedText { get; set; } = string.Empty;
 
         [JsonPropertyName("sourceLanguageCode")]
         public string SourceLanguageCode { get; set; } = string.Empty;

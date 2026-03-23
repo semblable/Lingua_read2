@@ -16,6 +16,7 @@ namespace LinguaReadApi.Services
         Task<string> TranslateSentenceAsync(string text, string sourceLanguage, string targetLanguage);
     Task<string> TranslateFullTextAsync(string text, string sourceLanguage, string targetLanguage);
     Task<string> ExplainSentenceAsync(string text, string sourceLanguage, string targetLanguage);
+    Task<string> TranslateSelectionWithContextAsync(string selectedText, string sentenceContext, string sourceLanguage, string targetLanguage);
     }
 
     public class GeminiTranslationService : ISentenceTranslationService
@@ -55,6 +56,11 @@ namespace LinguaReadApi.Services
         public Task<string> ExplainSentenceAsync(string text, string sourceLanguage, string targetLanguage)
         {
             return ExplainAsync(text, sourceLanguage, targetLanguage);
+        }
+
+        public Task<string> TranslateSelectionWithContextAsync(string selectedText, string sentenceContext, string sourceLanguage, string targetLanguage)
+        {
+            return TranslateSelectionWithContextInternalAsync(selectedText, sentenceContext, sourceLanguage, targetLanguage);
         }
 
         private async Task<string> TranslateAsync(string text, string sourceLanguage, string targetLanguage, bool includeSentenceTags)
@@ -332,6 +338,124 @@ Text:
             {
                 _logger.LogError(ex, "Error during sentence explanation");
                 return $"Explanation error: {ex.Message}";
+            }
+        }
+
+        private async Task<string> TranslateSelectionWithContextInternalAsync(string selectedText, string sentenceContext, string sourceLanguage, string targetLanguage)
+        {
+            if (string.IsNullOrWhiteSpace(selectedText) || string.IsNullOrWhiteSpace(sentenceContext))
+            {
+                _logger.LogWarning("Empty selected text or sentence context provided for selection translation");
+                return string.Empty;
+            }
+
+            try
+            {
+                string finalTargetCode = targetLanguage;
+                if (!string.IsNullOrEmpty(sourceLanguage))
+                {
+                    var allLanguages = await _languageService.GetAllLanguagesAsync();
+                    var sourceLanguageConfig = allLanguages.FirstOrDefault(l => l.Code.Equals(sourceLanguage, StringComparison.OrdinalIgnoreCase));
+                    if (sourceLanguageConfig != null && !string.IsNullOrEmpty(sourceLanguageConfig.GeminiTargetCode))
+                    {
+                        finalTargetCode = sourceLanguageConfig.GeminiTargetCode;
+                    }
+                }
+
+                string prompt = $@"You are translating only a highlighted span from a sentence.
+Source language: {sourceLanguage}
+Target language: {finalTargetCode}
+
+Sentence context:
+{sentenceContext}
+
+Highlighted text to translate:
+{selectedText}
+
+Strict instructions:
+1. Translate ONLY the highlighted text, using the sentence context for meaning.
+2. Return ONLY the translated highlighted text.
+3. Do NOT include the original text, explanations, notes, or formatting.";
+
+                var requestPayload = new GeminiRequest
+                {
+                    Contents = new[]
+                    {
+                        new Content
+                        {
+                            Parts = new[]
+                            {
+                                new Part { Text = prompt }
+                            }
+                        }
+                    },
+                    GenerationConfig = new GenerationConfig
+                    {
+                        Temperature = 0.2,
+                        TopK = 32,
+                        TopP = 1.0,
+                        MaxOutputTokens = 1024,
+                        ResponseMimeType = "text/plain"
+                    }
+                };
+
+                var options = new JsonSerializerOptions
+                {
+                    PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                    WriteIndented = false
+                };
+
+                string jsonPayload = JsonSerializer.Serialize(requestPayload, options);
+                var modelsToTry = new List<string> { _primaryModel };
+                if (!string.Equals(_fallbackModel, _primaryModel, StringComparison.OrdinalIgnoreCase))
+                {
+                    modelsToTry.Add(_fallbackModel);
+                }
+
+                HttpStatusCode? lastStatus = null;
+                foreach (var model in modelsToTry)
+                {
+                    const int maxAttempts = 3;
+                    for (int attempt = 1; attempt <= maxAttempts; attempt++)
+                    {
+                        var endpoint = $"{_baseUrl}/models/{model}:generateContent?key={_apiKey}";
+                        var content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
+                        var response = await _httpClient.PostAsync(endpoint, content);
+                        var responseContent = await response.Content.ReadAsStringAsync();
+
+                        if (!response.IsSuccessStatusCode)
+                        {
+                            lastStatus = response.StatusCode;
+                            var isRetryable = response.StatusCode == HttpStatusCode.ServiceUnavailable ||
+                                              response.StatusCode == HttpStatusCode.TooManyRequests;
+                            if (isRetryable && attempt < maxAttempts)
+                            {
+                                var delayMs = (int)Math.Pow(2, attempt - 1) * 1000;
+                                await Task.Delay(delayMs);
+                                continue;
+                            }
+                            break;
+                        }
+
+                        var geminiResponse = JsonSerializer.Deserialize<GeminiResponse>(responseContent, options);
+                        if (geminiResponse?.Candidates != null &&
+                            geminiResponse.Candidates.Length > 0 &&
+                            geminiResponse.Candidates[0].Content?.Parts != null &&
+                            geminiResponse.Candidates[0].Content.Parts.Length > 0)
+                        {
+                            return (geminiResponse.Candidates[0].Content.Parts[0].Text ?? string.Empty).Trim();
+                        }
+
+                        return "Translation failed: Could not extract result";
+                    }
+                }
+
+                return $"Translation error: {lastStatus}";
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error during selection translation");
+                return $"Translation error: {ex.Message}";
             }
         }
     }

@@ -76,6 +76,11 @@ namespace LinguaReadApi.Services
             return ExplainAsync(text, sourceLanguage, targetLanguage, userId);
         }
 
+        public Task<string> TranslateSelectionWithContextAsync(string selectedText, string sentenceContext, string sourceLanguage, string targetLanguage, Guid userId)
+        {
+            return TranslateSelectionWithContextInternalAsync(selectedText, sentenceContext, sourceLanguage, targetLanguage, userId);
+        }
+
         private async Task<string> TranslateAsync(string text, string sourceLanguage, string targetLanguage, Guid userId, bool includeSentenceTags)
         {
             if (string.IsNullOrWhiteSpace(text))
@@ -486,6 +491,134 @@ Text:
             }
 
             return $"Translation error: {lastStatus}";
+        }
+
+        private async Task<string> TranslateSelectionWithContextInternalAsync(string selectedText, string sentenceContext, string sourceLanguage, string targetLanguage, Guid userId)
+        {
+            if (string.IsNullOrWhiteSpace(selectedText) || string.IsNullOrWhiteSpace(sentenceContext))
+            {
+                _logger.LogWarning("Empty selected text or sentence context provided for selection translation");
+                return string.Empty;
+            }
+
+            try
+            {
+                var userSettings = await _context.UserSettings.FirstOrDefaultAsync(s => s.UserId == userId);
+                if (userSettings == null || string.IsNullOrWhiteSpace(userSettings.OpenRouterApiKey))
+                {
+                    _logger.LogWarning("OpenRouter API key not configured for user {UserId}", userId);
+                    return "Translation error: OpenRouter API key not configured";
+                }
+
+                var apiKey = userSettings.OpenRouterApiKey;
+                var model = userSettings.OpenRouterModel;
+                string finalTargetCode = targetLanguage;
+
+                if (!string.IsNullOrEmpty(sourceLanguage))
+                {
+                    var allLanguages = await _languageService.GetAllLanguagesAsync();
+                    var sourceLanguageConfig = allLanguages.FirstOrDefault(l => l.Code.Equals(sourceLanguage, StringComparison.OrdinalIgnoreCase));
+                    if (sourceLanguageConfig != null && !string.IsNullOrEmpty(sourceLanguageConfig.GeminiTargetCode))
+                    {
+                        finalTargetCode = sourceLanguageConfig.GeminiTargetCode;
+                    }
+                }
+
+                string prompt = $@"You are translating only a highlighted span from a sentence.
+Source language: {sourceLanguage}
+Target language: {finalTargetCode}
+
+Sentence context:
+{sentenceContext}
+
+Highlighted text to translate:
+{selectedText}
+
+Strict instructions:
+1. Translate ONLY the highlighted text, using the sentence context for meaning.
+2. Return ONLY the translated highlighted text.
+3. Do NOT include the original text, explanations, notes, or formatting.";
+
+                var requestPayload = new OpenRouterRequest
+                {
+                    Model = model,
+                    Messages = new[]
+                    {
+                        new OpenRouterMessage
+                        {
+                            Role = "user",
+                            Content = prompt
+                        }
+                    },
+                    Temperature = 0.2,
+                    MaxTokens = 1024,
+                    TopP = 1.0
+                };
+
+                var options = new JsonSerializerOptions
+                {
+                    PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                    WriteIndented = false
+                };
+
+                string jsonPayload = JsonSerializer.Serialize(requestPayload, options);
+                const int maxAttempts = 3;
+                HttpStatusCode? lastStatus = null;
+
+                for (int attempt = 1; attempt <= maxAttempts; attempt++)
+                {
+                    var request = new HttpRequestMessage(HttpMethod.Post, BaseUrl);
+                    request.Headers.Add("Authorization", $"Bearer {apiKey}");
+                    request.Headers.Add("HTTP-Referer", "https://lingua-read.app");
+                    request.Headers.Add("X-Title", "Lingua-Read");
+                    request.Content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
+
+                    var response = await _httpClient.SendAsync(request);
+                    var responseContent = await response.Content.ReadAsStringAsync();
+
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        lastStatus = response.StatusCode;
+                        var isRetryable = response.StatusCode == HttpStatusCode.ServiceUnavailable ||
+                                          response.StatusCode == HttpStatusCode.TooManyRequests;
+                        if (isRetryable && attempt < maxAttempts)
+                        {
+                            var delayMs = (int)Math.Pow(2, attempt - 1) * 1000;
+                            await Task.Delay(delayMs);
+                            continue;
+                        }
+
+                        return $"Translation error: {response.StatusCode}";
+                    }
+
+                    var openRouterResponse = JsonSerializer.Deserialize<OpenRouterResponse>(responseContent, options);
+                    if (openRouterResponse?.Error != null)
+                    {
+                        return $"Translation error: {openRouterResponse.Error.Message}";
+                    }
+
+                    if (openRouterResponse?.Choices != null &&
+                        openRouterResponse.Choices.Length > 0 &&
+                        openRouterResponse.Choices[0].Message?.Content != null)
+                    {
+                        return openRouterResponse.Choices[0].Message!.Content.Trim();
+                    }
+
+                    return "Translation failed: Could not extract result";
+                }
+
+                return $"Translation error: {lastStatus}";
+            }
+            catch (TaskCanceledException ex) when (ex.InnerException is TimeoutException || ex.CancellationToken.IsCancellationRequested)
+            {
+                _logger.LogError(ex, "OpenRouter selection translation timed out after {Timeout}s", RequestTimeout.TotalSeconds);
+                return "Translation error: Request timed out.";
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error during OpenRouter selection translation");
+                return $"Translation error: {ex.Message}";
+            }
         }
     }
 }

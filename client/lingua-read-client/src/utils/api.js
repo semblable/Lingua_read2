@@ -1127,3 +1127,17 @@ export const getSrsStats = async (languageId = null) => {
   const queryString = params.toString();
   return await fetchApi(`/srs/stats${queryString ? `?${queryString}` : ''}`);
 };
+
+export const undoSrsReview = async () => {
+  return await fetchApi('/srs/undo', {
+    method: 'POST'
+  });
+};
+
+export const getSrsForecast = async (languageId = null, days = 14) => {
+  const params = new URLSearchParams();
+  if (languageId) params.append('languageId', languageId);
+  params.append('days', days);
+  const queryString = params.toString();
+  return await fetchApi(`/srs/forecast${queryString ? `?${queryString}` : ''}`);
+};

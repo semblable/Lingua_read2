@@ -29,6 +29,7 @@ namespace LinguaReadApi.Data
         public DbSet<UserSentenceProgress> UserSentenceProgresses { get; set; }
         public DbSet<SrsCardReview> SrsCardReviews { get; set; }
         public DbSet<SrsPhrase> SrsPhrases { get; set; }
+        public DbSet<SrsReviewLog> SrsReviewLogs { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -278,6 +279,19 @@ namespace LinguaReadApi.Data
                 .HasOne(scr => scr.Word)
                 .WithMany()
                 .HasForeignKey(scr => scr.WordId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // Configure SrsReviewLog entity
+            modelBuilder.Entity<SrsReviewLog>()
+                .HasOne(srl => srl.User)
+                .WithMany()
+                .HasForeignKey(srl => srl.UserId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            modelBuilder.Entity<SrsReviewLog>()
+                .HasOne(srl => srl.SrsCardReview)
+                .WithMany()
+                .HasForeignKey(srl => srl.SrsCardReviewId)
                 .OnDelete(DeleteBehavior.Cascade);
 
             // Configure SrsPhrase entity

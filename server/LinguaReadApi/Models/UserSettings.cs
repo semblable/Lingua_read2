@@ -79,6 +79,10 @@ namespace LinguaReadApi.Models
         public DateTime? SrsDailyStudyDate { get; set; }
         public int SrsDailyNewCardsStudied { get; set; } = 0;
         public int SrsDailyReviewsStudied { get; set; } = 0;
+
+        // SRS Streak Tracking
+        public int SrsCurrentStreak { get; set; } = 0;
+        public int SrsLongestStreak { get; set; } = 0;
         
         // Creation timestamps
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Container, Card, Button, Spinner, Alert, Form, Row, Col, Badge, ProgressBar, ButtonGroup, Modal } from 'react-bootstrap';
 import { SettingsContext } from '../contexts/SettingsContext';
-import { getAllLanguages, getSrsDueCards, submitSrsReview, getSrsStats, updateUserSettings } from '../utils/api';
+import { getAllLanguages, getSrsDueCards, submitSrsReview, getSrsStats, updateUserSettings, undoSrsReview, getSrsForecast } from '../utils/api';
 
 const GRADE_LABELS = [
   { grade: 0, label: 'Again', variant: 'danger', key: '1' },
@@ -72,19 +72,11 @@ const SrsReview = () => {
   // Stats
   const [stats, setStats] = useState(null);
   const [statsLoading, setStatsLoading] = useState(false);
+  const [forecast, setForecast] = useState([]);
 
-  // Load languages
-  useEffect(() => {
-    const loadLanguages = async () => {
-      try {
-        const data = await getAllLanguages();
-        setLanguages(data || []);
-      } catch (err) {
-        console.error('Failed to load languages:', err);
-      }
-    };
-    loadLanguages();
-  }, []);
+  // Undo state
+  const [undoVisible, setUndoVisible] = useState(false);
+  const [undoTimer, setUndoTimer] = useState(0);
 
   // Load stats when language changes
   const loadStats = useCallback(async () => {
@@ -93,8 +85,10 @@ const SrsReview = () => {
     try {
       const data = await getSrsStats(selectedLanguage);
       setStats(data);
+      const forecastData = await getSrsForecast(selectedLanguage, 14);
+      setForecast(forecastData);
     } catch (err) {
-      console.error('Failed to load stats:', err);
+      console.error('Failed to load stats or forecast:', err);
     } finally {
       setStatsLoading(false);
     }
@@ -146,10 +140,14 @@ const SrsReview = () => {
   const handleGrade = useCallback(async (grade) => {
     if (!currentCard || submitting) return;
     setSubmitting(true);
+    setUndoVisible(false); // Hide any existing undo before submitting new
 
     try {
       await submitSrsReview(currentCard.srsCardReviewId, grade);
       setReviewedCount(prev => prev + 1);
+
+      setUndoVisible(true);
+      setUndoTimer(5);
 
       if (currentIndex + 1 >= cards.length) {
         setSessionComplete(true);
@@ -164,6 +162,37 @@ const SrsReview = () => {
       setSubmitting(false);
     }
   }, [currentCard, currentIndex, cards.length, submitting, loadStats]);
+
+  const handleUndo = async () => {
+    try {
+      setSubmitting(true);
+      await undoSrsReview();
+      setUndoVisible(false);
+      setReviewedCount(prev => Math.max(0, prev - 1));
+      
+      if (sessionComplete) {
+        setSessionComplete(false);
+        setCurrentIndex(cards.length - 1);
+      } else {
+        setCurrentIndex(prev => Math.max(0, prev - 1));
+      }
+      setIsFlipped(true); // Show back of the card they just undid
+      loadStats(); // Refresh limits
+    } catch (err) {
+      setError(`Failed to undo: ${err.message}`);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  useEffect(() => {
+    if (undoTimer > 0 && undoVisible) {
+      const timer = setTimeout(() => setUndoTimer(t => t - 1), 1000);
+      return () => clearTimeout(timer);
+    } else if (undoTimer === 0) {
+      setUndoVisible(false);
+    }
+  }, [undoTimer, undoVisible]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -261,6 +290,10 @@ const SrsReview = () => {
         {stats && (
           <Card className="mb-3 shadow-sm">
             <Card.Body className="py-2">
+              <div className="d-flex justify-content-between align-items-center mb-2 mt-2">
+                <Badge bg="danger" className="px-3 py-2" style={{ fontSize: '1rem' }}>🔥 Streak: {stats.currentStreak} ({stats.longestStreak} max)</Badge>
+                <div className="fw-bold text-success" style={{ fontSize: '1.1rem' }}>Retention: {stats.retentionRate}%</div>
+              </div>
               <Row className="text-center">
                 <Col><div className="fw-bold text-danger">{stats.dueCount}</div><small className="text-muted">Due</small></Col>
                 <Col><div className="fw-bold text-info">{stats.newCards}</div><small className="text-muted">New</small></Col>
@@ -286,6 +319,29 @@ const SrsReview = () => {
             </Card.Body>
           </Card>
         )}
+
+        {forecast && forecast.length > 0 && !statsLoading && (
+          <Card className="mb-3 shadow-sm">
+            <Card.Body className="py-2">
+              <small className="text-muted fw-bold mb-2 d-block text-center">Upcoming Reviews (14 Days)</small>
+              <div className="d-flex align-items-end justify-content-between" style={{ height: '80px' }}>
+                {forecast.map((day, idx) => {
+                  const maxCount = Math.max(...forecast.map(f => f.count), 1);
+                  const heightPct = (day.count / maxCount) * 100;
+                  const dateObj = new Date(day.date);
+                  const dayStr = idx === 0 ? 'Today' : dateObj.toLocaleDateString(undefined, { weekday: 'short' });
+                  return (
+                    <div key={idx} className="d-flex flex-column align-items-center" style={{ flex: 1 }} title={`${day.date}: ${day.count} cards`}>
+                      <div className="bg-primary rounded-top" style={{ width: '60%', height: `${Math.max(heightPct, 5)}%`, opacity: day.count > 0 ? 0.8 : 0.2, minHeight: '4px' }}></div>
+                      <small style={{ fontSize: '0.65rem', marginTop: '4px' }} className="text-muted text-truncate w-100 text-center">{dayStr}</small>
+                    </div>
+                  );
+                })}
+              </div>
+            </Card.Body>
+          </Card>
+        )}
+
         {statsLoading && <div className="text-center mb-3"><Spinner size="sm" /></div>}
 
         <Card className="shadow-sm">
@@ -445,6 +501,11 @@ const SrsReview = () => {
           style={{ height: '8px' }}
           variant="success"
         />
+        {undoVisible && (
+          <Button variant="warning" size="sm" onClick={handleUndo} disabled={submitting}>
+            ↩ Undo ({undoTimer}s)
+          </Button>
+        )}
         <Button
           variant="outline-secondary"
           size="sm"

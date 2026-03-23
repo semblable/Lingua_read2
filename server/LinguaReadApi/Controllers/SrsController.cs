@@ -178,21 +178,55 @@ namespace LinguaReadApi.Controllers
             if (card == null)
                 return NotFound("Card not found.");
 
-            // Update daily limit tracking before SM2 alters repetitions
+            // 1. Streak Tracking
             var settings = await _context.UserSettings.FirstOrDefaultAsync(u => u.UserId == userId);
             var today = DateTime.UtcNow.Date;
             if (settings != null)
             {
-                if (settings.SrsDailyStudyDate?.Date != today)
+                var lastStudyDate = settings.SrsDailyStudyDate?.Date;
+                if (lastStudyDate != today)
                 {
+                    // Update streak
+                    if (lastStudyDate == today.AddDays(-1))
+                    {
+                        settings.SrsCurrentStreak += 1; // Continued streak
+                    }
+                    else
+                    {
+                        settings.SrsCurrentStreak = 1; // Reset or slow-started streak
+                    }
+
+                    settings.SrsLongestStreak = Math.Max(settings.SrsLongestStreak, settings.SrsCurrentStreak);
+
+                    // Reset daily limits
                     settings.SrsDailyStudyDate = today;
                     settings.SrsDailyNewCardsStudied = 0;
                     settings.SrsDailyReviewsStudied = 0;
+                }
+                else if (settings.SrsCurrentStreak == 0)
+                {
+                    // Edge case: manual reset or starting today
+                    settings.SrsCurrentStreak = 1;
+                    settings.SrsLongestStreak = Math.Max(settings.SrsLongestStreak, 1);
                 }
                 
                 if (card.Repetitions == 0) settings.SrsDailyNewCardsStudied++;
                 else settings.SrsDailyReviewsStudied++;
             }
+
+            // 2. Logging for Undo & Retention
+            var reviewLog = new SrsReviewLog
+            {
+                UserId = userId,
+                SrsCardReviewId = dto.SrsCardReviewId,
+                Grade = dto.Grade,
+                OldInterval = card.Interval,
+                OldEaseFactor = card.EaseFactor,
+                OldRepetitions = card.Repetitions,
+                OldNextReviewAt = card.NextReviewAt,
+                ReviewedAt = DateTime.UtcNow
+            };
+            _context.SrsReviewLogs.Add(reviewLog);
 
             // Apply SM-2 algorithm
             ApplySm2(card, dto.Grade);
@@ -256,6 +290,127 @@ namespace LinguaReadApi.Controllers
             await _context.SaveChangesAsync();
 
             return Ok(new { Message = "Sentence mined successfully.", SrsPhraseId = phrase.SrsPhraseId });
+        }
+
+        // GET: api/srs/last-review
+        [HttpGet("last-review")]
+        public async Task<ActionResult<SrsReviewLogDto>> GetLastReview()
+        {
+            var userId = GetUserId();
+            // Get the latest review log from the last 15 minutes
+            var cutoffTime = DateTime.UtcNow.AddMinutes(-15);
+            var lastReviewLog = await _context.SrsReviewLogs
+                .AsNoTracking()
+                .Where(log => log.UserId == userId && log.ReviewedAt >= cutoffTime)
+                .OrderByDescending(log => log.ReviewedAt)
+                .Select(log => new SrsReviewLogDto
+                {
+                    SrsReviewLogId = log.SrsReviewLogId,
+                    SrsCardReviewId = log.SrsCardReviewId,
+                    Grade = log.Grade,
+                    ReviewedAt = log.ReviewedAt
+                })
+                .FirstOrDefaultAsync();
+
+            if (lastReviewLog == null) return NotFound();
+
+            return lastReviewLog;
+        }
+
+        // POST: api/srs/undo
+        [HttpPost("undo")]
+        public async Task<IActionResult> UndoLastReview()
+        {
+            var userId = GetUserId();
+            var cutoffTime = DateTime.UtcNow.AddMinutes(-15);
+            
+            var lastLog = await _context.SrsReviewLogs
+                .Where(log => log.UserId == userId && log.ReviewedAt >= cutoffTime)
+                .OrderByDescending(log => log.ReviewedAt)
+                .FirstOrDefaultAsync();
+
+            if (lastLog == null) return NotFound(new { Message = "No recent review found to undo." });
+
+            var card = await _context.SrsCardReviews
+                .FirstOrDefaultAsync(scr => scr.SrsCardReviewId == lastLog.SrsCardReviewId && scr.UserId == userId);
+
+            if (card == null) return NotFound();
+
+            // Restore state
+            bool wasNewBefore = lastLog.OldRepetitions == 0;
+            bool isNewNow = card.Repetitions == 0;
+
+            card.Interval = lastLog.OldInterval;
+            card.EaseFactor = lastLog.OldEaseFactor;
+            card.Repetitions = lastLog.OldRepetitions;
+            card.NextReviewAt = lastLog.OldNextReviewAt;
+            card.LastReviewedAt = null; // Slightly inaccurate but serves the purpose to unmark "ReviewedToday"
+
+            // Revert daily limits
+            var settings = await _context.UserSettings.FirstOrDefaultAsync(u => u.UserId == userId);
+            var today = DateTime.UtcNow.Date;
+            if (settings != null && settings.SrsDailyStudyDate?.Date == today)
+            {
+                if (wasNewBefore) 
+                {
+                    settings.SrsDailyNewCardsStudied = Math.Max(0, settings.SrsDailyNewCardsStudied - 1);
+                } 
+                else 
+                {
+                    settings.SrsDailyReviewsStudied = Math.Max(0, settings.SrsDailyReviewsStudied - 1);
+                }
+            }
+
+            // Remove the log
+            _context.SrsReviewLogs.Remove(lastLog);
+
+            await _context.SaveChangesAsync();
+            return Ok(new { Message = "Undo successful." });
+        }
+
+        // GET: api/srs/forecast?languageId=1&days=14
+        [HttpGet("forecast")]
+        public async Task<ActionResult<List<SrsForecastDto>>> GetForecast([FromQuery] int? languageId = null, [FromQuery] int days = 14)
+        {
+            var userId = GetUserId();
+            var today = DateTime.UtcNow.Date;
+            var endDate = today.AddDays(days);
+
+            var query = _context.SrsCardReviews
+                .AsNoTracking()
+                .Where(scr => scr.UserId == userId && scr.NextReviewAt < endDate);
+
+            if (languageId.HasValue)
+            {
+                query = query.Where(scr => scr.Word.LanguageId == languageId.Value);
+            }
+
+            // Grouping by Date locally as Date property translations can be tricky in EF depending on DB provider
+            var cards = await query
+                .Select(scr => new { scr.NextReviewAt })
+                .ToListAsync();
+
+            var grouped = cards
+                .Select(c => c.NextReviewAt < today ? today : c.NextReviewAt.Date) // Compress past-due into today
+                .GroupBy(d => d)
+                .Select(g => new SrsForecastDto
+                {
+                    Date = g.Key.ToString("yyyy-MM-dd"),
+                    Count = g.Count()
+                })
+                .OrderBy(f => f.Date)
+                .ToList();
+
+            // Fill empty days for charting consistency
+            var forecastList = new List<SrsForecastDto>();
+            for(int i = 0; i < days; i++)
+            {
+                var targetDateStr = today.AddDays(i).ToString("yyyy-MM-dd");
+                var dayData = grouped.FirstOrDefault(g => g.Date == targetDateStr);
+                forecastList.Add(dayData ?? new SrsForecastDto { Date = targetDateStr, Count = 0 });
+            }
+
+            return forecastList;
         }
 
         // GET: api/srs/phrases/5
@@ -332,11 +487,24 @@ namespace LinguaReadApi.Controllers
                 c.LastReviewedAt.HasValue &&
                 c.LastReviewedAt.Value.Date == now.Date);
 
-            // Fetch settings for limit info
+            // Fetch settings for limit info and streak
             var settings = await _context.UserSettings.AsNoTracking().FirstOrDefaultAsync(u => u.UserId == userId);
             
             int studiedNew = (settings?.SrsDailyStudyDate?.Date == now.Date) ? settings.SrsDailyNewCardsStudied : 0;
             int studiedReviews = (settings?.SrsDailyStudyDate?.Date == now.Date) ? settings.SrsDailyReviewsStudied : 0;
+
+            // Calculate Retention Rate (Last 30 Days)
+            var thirtyDaysAgo = now.AddDays(-30);
+            var recentLogs = await _context.SrsReviewLogs
+                .AsNoTracking()
+                .Where(log => log.UserId == userId && log.ReviewedAt >= thirtyDaysAgo)
+                .ToListAsync();
+
+            int totalRecentReviews = recentLogs.Count;
+            int goodRecentReviews = recentLogs.Count(log => log.Grade >= 2);
+            double retentionRate = totalRecentReviews > 0 
+                ? Math.Round((double)goodRecentReviews / totalRecentReviews * 100, 1) 
+                : 0;
 
             return new SrsStatsDto
             {
@@ -350,7 +518,10 @@ namespace LinguaReadApi.Controllers
                 MaxNewCards = settings?.SrsMaxNewCards ?? 20,
                 MaxReviews = settings?.SrsMaxReviews ?? 100,
                 StudiedNewCardsToday = studiedNew,
-                StudiedReviewsToday = studiedReviews
+                StudiedReviewsToday = studiedReviews,
+                CurrentStreak = settings?.SrsCurrentStreak ?? 0,
+                LongestStreak = settings?.SrsLongestStreak ?? 0,
+                RetentionRate = retentionRate
             };
         }
 
@@ -523,5 +694,23 @@ namespace LinguaReadApi.Controllers
         public int MaxReviews { get; set; }
         public int StudiedNewCardsToday { get; set; }
         public int StudiedReviewsToday { get; set; }
+
+        public int CurrentStreak { get; set; }
+        public int LongestStreak { get; set; }
+        public double RetentionRate { get; set; }
+    }
+
+    public class SrsReviewLogDto
+    {
+        public int SrsReviewLogId { get; set; }
+        public int SrsCardReviewId { get; set; }
+        public int Grade { get; set; }
+        public DateTime ReviewedAt { get; set; }
+    }
+
+    public class SrsForecastDto
+    {
+        public string Date { get; set; } = string.Empty;
+        public int Count { get; set; }
     }
 }

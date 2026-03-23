@@ -737,17 +737,13 @@ const LessonHeader = React.memo(({
   words,
   isAudioLesson,
   book,
-  primaryControls,
-  secondaryControls,
   translateUnknownError,
   audioSrc,
   textId,
   audioRef,
   onTimeUpdate,
   onPlaybackStateChange,
-  segmentPlaybackRequest,
-  showDesktopLessonControls,
-  setShowDesktopLessonControls
+  segmentPlaybackRequest
 }) => {
   if (isMobile) return null;
 
@@ -778,26 +774,6 @@ const LessonHeader = React.memo(({
           {!isAudioLesson && book?.audiobookTracks?.length > 0 && (
             <AudiobookPlayer type="book" book={book} />
           )}
-
-          {/* Controls - inline */}
-          <div className="d-flex align-items-center gap-1 ms-auto flex-wrap lesson-header-actions">
-            <Button
-              variant={showDesktopLessonControls ? 'outline-secondary' : 'primary'}
-              size="sm"
-              onClick={() => setShowDesktopLessonControls(prev => !prev)}
-              className="lesson-header-controls-toggle"
-              aria-expanded={showDesktopLessonControls}
-              aria-label={showDesktopLessonControls ? 'Hide lesson controls panel' : 'Show lesson controls panel'}
-            >
-              {showDesktopLessonControls ? 'Hide Panel' : 'Show Panel'}
-            </Button>
-            {showDesktopLessonControls && (
-              <>
-                {primaryControls}
-                {secondaryControls}
-              </>
-            )}
-          </div>
         </div>
         {translateUnknownError && <Alert variant="danger" className="mt-1 mb-0 p-1 small">{translateUnknownError}</Alert>}
       </Card.Body>
@@ -3167,8 +3143,6 @@ const TextDisplay = () => {
         words={words}
         isAudioLesson={isAudioLesson}
         book={book}
-        primaryControls={primaryControls}
-        secondaryControls={secondaryControls}
         translateUnknownError={translateUnknownError}
         audioSrc={audioSrc}
         textId={textId}
@@ -3176,8 +3150,6 @@ const TextDisplay = () => {
         onTimeUpdate={handleAudioTimeUpdate}
         onPlaybackStateChange={handleAudioPlaybackStateChange}
         segmentPlaybackRequest={segmentPlaybackRequest}
-        showDesktopLessonControls={showDesktopLessonControls}
-        setShowDesktopLessonControls={setShowDesktopLessonControls}
       />
 
       {/* Mobile Audio Player - Show for audio lessons on mobile only */}
@@ -3211,8 +3183,60 @@ const TextDisplay = () => {
           }}
         >
           <div className="d-flex flex-column" style={{ minHeight: '100%', height: '100%' }}>
-            {/* Lesson / book actions at top of reader column */}
-            {(!isAudioLesson || text?.bookId) && (
+            {/* Desktop: lesson tools strip (toggle + optional density/size controls); book / lesson actions on the right */}
+            {!isMobile && (
+              <div className="flex-shrink-0 pt-2 pb-2 px-2 border-bottom reader-actions-bar">
+                <div className="d-flex flex-wrap align-items-center justify-content-between gap-2">
+                  <div className="d-flex flex-wrap align-items-center gap-1">
+                    <Button
+                      variant={showDesktopLessonControls ? 'outline-secondary' : 'primary'}
+                      size="sm"
+                      onClick={() => setShowDesktopLessonControls(prev => !prev)}
+                      className="lesson-header-controls-toggle"
+                      aria-expanded={showDesktopLessonControls}
+                      aria-label={showDesktopLessonControls ? 'Hide lesson controls panel' : 'Show lesson controls panel'}
+                    >
+                      {showDesktopLessonControls ? 'Hide Panel' : 'Show Panel'}
+                    </Button>
+                    {showDesktopLessonControls && (
+                      <div className="d-flex flex-wrap align-items-center gap-1">
+                        {primaryControls}
+                        {secondaryControls}
+                      </div>
+                    )}
+                  </div>
+                  {(!isAudioLesson || text?.bookId) && (
+                    <div className="d-flex flex-wrap align-items-center justify-content-end gap-1">
+                      {text?.bookId && (
+                        <>
+                          <Button
+                            variant="outline-secondary"
+                            onClick={() => navigate(`/texts/${previousTextId}`)}
+                            disabled={!previousTextId}
+                            size="sm"
+                          >
+                            Previous Text
+                          </Button>
+                          <Button
+                            variant="outline-secondary"
+                            onClick={() => navigate(`/texts/${nextTextId}`)}
+                            disabled={!nextTextId}
+                            size="sm"
+                          >
+                            Next Text
+                          </Button>
+                        </>
+                      )}
+                      <Button variant="success" onClick={handleCompleteLesson} disabled={completing} size="sm">
+                        {completing ? <Spinner animation="border" size="sm" /> : (nextTextId === null ? 'Finish Book' : 'Complete Lesson')}
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+            {/* Mobile: book / lesson actions only (controls stay in mobile header menu) */}
+            {isMobile && (!isAudioLesson || text?.bookId) && (
               <div className="flex-shrink-0 pt-2 pb-2 px-2 text-end border-bottom reader-actions-bar">
                 {text?.bookId && (
                   <>

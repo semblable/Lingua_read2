@@ -398,7 +398,13 @@ const AudiobookPlayer = ({
       return;
     }
 
-    resetSegmentPlayback();
+    // Don't reset an in-flight segment request that was just configured by
+    // the segment effect — only reset if there is no pending segment or the
+    // request ID changed (i.e. the segment is genuinely stale after a src swap).
+    if (!segmentPlaybackRequest?.requestId ||
+        segmentPlaybackRef.current.requestId !== segmentPlaybackRequest.requestId) {
+      resetSegmentPlayback();
+    }
     sourceSwapRef.current = {
       previousSrc: currentSrc,
       nextSrc
@@ -414,7 +420,7 @@ const AudiobookPlayer = ({
     if (isPlayingRef.current) {
       requestAudioPlay('Auto-play on track change failed');
     }
-  }, [currentTrack, isInitialized, audioRef, buildTrackSrc, requestAudioPlay, resetSegmentPlayback]);
+  }, [currentTrack, isInitialized, audioRef, buildTrackSrc, requestAudioPlay, resetSegmentPlayback, segmentPlaybackRequest]);
 
   useEffect(() => {
     const audio = audioRef.current;

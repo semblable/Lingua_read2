@@ -523,7 +523,10 @@ describe('TextDisplay', () => {
 
     await waitFor(() => expect(getText).toHaveBeenCalled());
     const word = await screen.findByText('Hola');
-    fireEvent.click(word);
+
+    await act(async () => {
+      fireEvent.click(word);
+    });
 
     // Word info panel should appear (word was clicked)
     expect(screen.getByText('Word Info')).toBeInTheDocument();
@@ -548,7 +551,10 @@ describe('TextDisplay', () => {
 
     await waitFor(() => expect(getText).toHaveBeenCalled());
     const word = await screen.findByText('Hola');
-    fireEvent.click(word);
+
+    await act(async () => {
+      fireEvent.click(word);
+    });
 
     // Word info panel should still appear
     expect(screen.getByText('Word Info')).toBeInTheDocument();
@@ -561,10 +567,18 @@ describe('TextDisplay', () => {
 
     await waitFor(() => expect(getText).toHaveBeenCalled());
     const word = await screen.findByText('Hello');
-    fireEvent.click(word);
+
+    await act(async () => {
+      fireEvent.click(word);
+    });
 
     await waitFor(() => {
       expect(translateText).toHaveBeenCalledWith('Hello', 'ES', 'EN');
+    });
+
+    // Flush all pending async state updates from the translate callback
+    await act(async () => {
+      await new Promise(r => setTimeout(r, 0));
     });
   });
 
@@ -573,7 +587,10 @@ describe('TextDisplay', () => {
 
     await waitFor(() => expect(getText).toHaveBeenCalled());
     const word = await screen.findByText('Hello');
-    fireEvent.click(word);
+
+    await act(async () => {
+      fireEvent.click(word);
+    });
 
     expect(translateText).not.toHaveBeenCalled();
   });

@@ -14,6 +14,7 @@ import {
   completeLesson,
   getBook,
   translateText,
+  translateSelectionWithContext,
   translateSentence,
   explainSentence,
   translateFullText,
@@ -33,6 +34,7 @@ jest.mock('../utils/api', () => ({
   completeLesson: jest.fn(),
   getBook: jest.fn(),
   translateText: jest.fn(),
+  translateSelectionWithContext: jest.fn(),
   translateSentence: jest.fn(),
   explainSentence: jest.fn(),
   translateFullText: jest.fn(),
@@ -144,6 +146,7 @@ describe('TextDisplay', () => {
     completeLesson.mockReset();
     getBook.mockReset();
     translateText.mockReset();
+    translateSelectionWithContext.mockReset();
     translateSentence.mockReset();
     explainSentence.mockReset();
     translateFullText.mockReset();
@@ -158,6 +161,7 @@ describe('TextDisplay', () => {
     cancelSpeech.mockClear();
     isSpeechSynthesisSupported.mockReturnValue(true);
     translateText.mockResolvedValue({ translatedText: 'Translated selection' });
+    translateSelectionWithContext.mockResolvedValue({ translatedText: 'Translated selection' });
     translateSentence.mockResolvedValue({ translatedText: 'Sentence translation' });
     explainSentence.mockResolvedValue({ explanationText: 'Grammar: Greeting.\nNuance: Friendly.\nCulture/Context: None.\nNatural phrasing: Common opener.' });
     getSentenceProgress.mockResolvedValue({
@@ -233,7 +237,7 @@ describe('TextDisplay', () => {
     });
 
     await waitFor(() => {
-      expect(translateText).toHaveBeenCalledWith('Hello world', 'ES', 'EN');
+      expect(translateSelectionWithContext).toHaveBeenCalledWith('Hello world', 'Hello world.', 'ES', 'EN');
     });
   });
 

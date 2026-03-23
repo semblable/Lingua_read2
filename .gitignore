@@ -40,6 +40,7 @@ Thumbs.db
 *.tsbuildinfo # TypeScript build info
 
 # AI Assistant artifacts and planning files
+.claude/ # Claude Code artifacts and worktrees
 .gemini/ # Antigravity/Gemini AI assistant artifacts
 **/brain/ # AI planning documents
 **/*.plan.md # Generated Cursor plan files

@@ -47,9 +47,12 @@ Thumbs.db
 **/walkthrough.md # Auto-generated walkthroughs
 **/task.md # Auto-generated task files
 
-# Test output files
-test-output*.txt
+# Test / CLI redirected output (not public/robots.txt or other real content)
 **/test-output*.txt
+**/test_output*.txt
+**/test_results*.txt
+**/test-final.txt
+**/ef_output.txt
 
 # ===================================================================
 # General Development / Logs

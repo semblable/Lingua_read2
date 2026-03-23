@@ -40,9 +40,12 @@ namespace LinguaReadApi.Controllers
 
             // 1. Get User Limits
             var settings = await _context.UserSettings.FirstOrDefaultAsync(u => u.UserId == userId);
-            int maxNew = settings?.SrsMaxNewCards ?? 20;
-            int maxReviews = settings?.SrsMaxReviews ?? 100;
-            string reviewOrder = settings?.SrsReviewOrder ?? "mix";
+            // Migration AddAnkiSrsSettings defaulted these columns to 0; 0 is not a valid cap (pools stay empty).
+            int maxNew = EffectiveSrsMaxNew(settings?.SrsMaxNewCards);
+            int maxReviews = EffectiveSrsMaxReviews(settings?.SrsMaxReviews);
+            string reviewOrder = string.IsNullOrWhiteSpace(settings?.SrsReviewOrder)
+                ? "mix"
+                : settings!.SrsReviewOrder;
 
             int studiedNew = (settings?.SrsDailyStudyDate?.Date == today) ? settings.SrsDailyNewCardsStudied : 0;
             int studiedReviews = (settings?.SrsDailyStudyDate?.Date == today) ? settings.SrsDailyReviewsStudied : 0;
@@ -564,8 +567,8 @@ namespace LinguaReadApi.Controllers
                 MatureCards = matureCards,
                 TotalPhrases = totalPhrases,
                 ReviewedToday = reviewedToday,
-                MaxNewCards = settings?.SrsMaxNewCards ?? 20,
-                MaxReviews = settings?.SrsMaxReviews ?? 100,
+                MaxNewCards = EffectiveSrsMaxNew(settings?.SrsMaxNewCards),
+                MaxReviews = EffectiveSrsMaxReviews(settings?.SrsMaxReviews),
                 StudiedNewCardsToday = studiedNew,
                 StudiedReviewsToday = studiedReviews,
                 CurrentStreak = settings?.SrsCurrentStreak ?? 0,
@@ -848,6 +851,12 @@ namespace LinguaReadApi.Controllers
             }
             return Guid.Parse(userIdClaim);
         }
+
+        /// <summary>Daily new-card cap: DB may store 0 from an old migration default; treat as app default.</summary>
+        private static int EffectiveSrsMaxNew(int? stored) => stored is > 0 ? stored.Value : 20;
+
+        /// <summary>Daily review cap: same as <see cref="EffectiveSrsMaxNew"/>.</summary>
+        private static int EffectiveSrsMaxReviews(int? stored) => stored is > 0 ? stored.Value : 100;
     }
 
     // --- DTOs ---

@@ -2027,11 +2027,22 @@ namespace LinguaReadApi.Controllers
                 {
                      return BadRequest("Cannot delete book. Ensure all associated texts/lessons are removed first.");
                 }
-                // Log the exception details for debugging
-                // logger.LogError(ex, "Error deleting book with ID {BookId}", id);
                 return StatusCode(StatusCodes.Status500InternalServerError, "Error deleting book.");
             }
 
+            // Clean up audiobook files from disk
+            try
+            {
+                var audiobookDir = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "audiobooks", id.ToString());
+                if (Directory.Exists(audiobookDir))
+                {
+                    Directory.Delete(audiobookDir, recursive: true);
+                }
+            }
+            catch (Exception)
+            {
+                // Log but don't fail the delete — DB record is already gone
+            }
 
             return NoContent();
         }

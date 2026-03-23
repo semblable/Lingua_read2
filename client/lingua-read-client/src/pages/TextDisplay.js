@@ -68,8 +68,8 @@ const parseSrtContent = (srtContent) => {
       textBuffer.push(trimmedLine);
     }
   }
-  if (currentEntry && currentEntry.startTime >= 0 && textBuffer.length > 0) {
-    currentEntry.text = textBuffer.join('\n').trim();
+  if (currentEntry && currentEntry.startTime >= 0) {
+    currentEntry.text = textBuffer.length > 0 ? textBuffer.join('\n').trim() : '';
     entries.push(currentEntry);
   }
   console.log(`[SRT Parser] Parsed ${entries.length} entries.`);
@@ -1919,6 +1919,7 @@ const TextDisplay = () => {
     lastHandledSelectionRef.current = '';
     if (isAudioLesson && globalSettings.pauseOnWordClick) {
       pauseAudioPlayback();
+      setSegmentPlaybackRequest(null);
     }
     setSelectedWord(word);
     setProcessingWord(false);
@@ -2813,7 +2814,7 @@ const TextDisplay = () => {
       return;
     }
 
-    const currentLineIndex = srtLines.findIndex(line => newTime >= line.startTime && newTime < line.endTime);
+    const currentLineIndex = srtLines.findIndex(line => newTime >= line.startTime && newTime <= line.endTime);
     const currentLine = currentLineIndex !== -1 ? srtLines[currentLineIndex] : null;
 
     if (isSentenceMode && currentLineIndex !== -1 && currentLineIndex !== currentSegmentIndex) {

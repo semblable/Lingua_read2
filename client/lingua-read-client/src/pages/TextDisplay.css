@@ -42,6 +42,17 @@
   border-color: var(--theme-border-color, #e9ecef) !important;
 }
 
+/* Compact controls buttons */
+.lesson-controls-expanded-panel .btn-sm {
+  padding: 0.15rem 0.35rem;
+  font-size: 0.75rem;
+  line-height: 1.3;
+}
+
+.lesson-controls-expanded-panel .btn-group {
+  margin-right: 0.25rem !important;
+}
+
 .lesson-controls-section-reader-actions:empty {
   display: none;
 }

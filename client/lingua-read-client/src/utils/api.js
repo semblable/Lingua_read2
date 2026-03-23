@@ -29,6 +29,39 @@ const getToken = () => {
   }
 };
 
+// Auto-relogin: attempt to get a fresh token when a 401 is received
+let _reloginPromise = null;
+const attemptRelogin = async () => {
+  // Deduplicate concurrent relogin attempts
+  if (_reloginPromise) return _reloginPromise;
+  _reloginPromise = (async () => {
+    try {
+      console.log('[Auth] Token expired or lost, attempting auto-relogin...');
+      const fullUrl = API_URL + '/auth/login';
+      const res = await fetch(fullUrl, { method: 'POST', credentials: 'include', mode: 'cors' });
+      if (!res.ok) return null;
+      const data = await res.json();
+      if (data?.token) {
+        localStorage.setItem('token', data.token);
+        // Update Zustand store if available
+        try {
+          const { useAuthStore } = await import('./store');
+          useAuthStore.getState().setToken(data.token);
+        } catch (_) { /* store not available */ }
+        console.log('[Auth] Auto-relogin successful.');
+        return data.token;
+      }
+      return null;
+    } catch (err) {
+      console.error('[Auth] Auto-relogin failed:', err.message);
+      return null;
+    } finally {
+      _reloginPromise = null;
+    }
+  })();
+  return _reloginPromise;
+};
+
 // --- NEW HELPER: Upload with Progress (XHR) ---
 const uploadWithProgress = (endpoint, formData, onProgress) => {
   return new Promise((resolve, reject) => {
@@ -141,12 +174,13 @@ const fetchApi = async (endpoint, options = {}) => {
       // Allow /usersettings even without token initially? Or rely on context to call only when logged in?
       // For now, let's assume /usersettings REQUIRES auth like others, except login/register.
       if (endpoint !== '/auth/login' && endpoint !== '/auth/register') {
-        // --- DEBUG: Log auth error trigger ---
-        if (endpoint === '/usersettings') {
-          console.log(`[fetchApi DEBUG /usersettings] Throwing 'Authentication required' because token check failed.`);
+        // Token missing — attempt auto-relogin before failing
+        const freshToken = await attemptRelogin();
+        if (freshToken) {
+          headers.Authorization = `Bearer ${freshToken.trim()}`;
+        } else {
+          throw new Error('Authentication required');
         }
-        // --- END DEBUG ---
-        throw new Error('Authentication required');
       }
     }
 
@@ -165,7 +199,25 @@ const fetchApi = async (endpoint, options = {}) => {
     // Construct the full URL properly
     const fullUrl = API_URL + endpoint; // Directly concatenate the relative path
 
-    const response = await fetch(fullUrl.toString(), requestConfig);
+    let response = await fetch(fullUrl.toString(), requestConfig);
+
+    // Handle 401: attempt auto-relogin and retry once
+    if (response.status === 401 && endpoint !== '/auth/login') {
+      const newToken = await attemptRelogin();
+      if (newToken) {
+        headers.Authorization = `Bearer ${newToken.trim()}`;
+        const retryConfig = { ...options, headers, credentials: 'include', mode: 'cors' };
+        const retryResponse = await fetch(fullUrl.toString(), retryConfig);
+        if (retryResponse.ok) {
+          const ct = retryResponse.headers.get('content-type');
+          if (ct && ct.includes('application/json')) return await retryResponse.json();
+          const txt = await retryResponse.text();
+          return { message: txt || retryResponse.statusText };
+        }
+        // Retry also failed — fall through to error handling with retry response
+        response = retryResponse;
+      }
+    }
 
     // Handle response
     if (!response.ok) {

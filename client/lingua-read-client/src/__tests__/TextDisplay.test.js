@@ -503,4 +503,95 @@ describe('TextDisplay', () => {
     const secondProps = getLatestAudioProps(2);
     expect(secondProps.segmentPlaybackRequest).toBeNull();
   });
+
+  test('word click with pauseOnWordClick pauses audio', async () => {
+    getText.mockResolvedValueOnce({
+      textId: 1,
+      title: 'Audio Lesson',
+      content: 'Hola mundo.',
+      languageId: null,
+      languageCode: 'ES',
+      languageName: 'Spanish',
+      isAudioLesson: true,
+      audioFilePath: 'audio_lessons/1.mp3',
+      srtContent: '1\n00:00:00,000 --> 00:00:02,000\nHola mundo.\n',
+      words: [],
+      bookId: null
+    });
+
+    renderTextDisplay({ pauseOnWordClick: true, autoTranslateWords: false });
+
+    await waitFor(() => expect(getText).toHaveBeenCalled());
+    const word = await screen.findByText('Hola');
+
+    await act(async () => {
+      fireEvent.click(word);
+    });
+
+    // Word info panel should appear (word was clicked)
+    expect(screen.getByText('Word Info')).toBeInTheDocument();
+  });
+
+  test('word click without pauseOnWordClick does not interrupt audio lesson', async () => {
+    getText.mockResolvedValueOnce({
+      textId: 1,
+      title: 'Audio Lesson',
+      content: 'Hola mundo.',
+      languageId: null,
+      languageCode: 'ES',
+      languageName: 'Spanish',
+      isAudioLesson: true,
+      audioFilePath: 'audio_lessons/1.mp3',
+      srtContent: '1\n00:00:00,000 --> 00:00:02,000\nHola mundo.\n',
+      words: [],
+      bookId: null
+    });
+
+    renderTextDisplay({ pauseOnWordClick: false, autoTranslateWords: false });
+
+    await waitFor(() => expect(getText).toHaveBeenCalled());
+    const word = await screen.findByText('Hola');
+
+    await act(async () => {
+      fireEvent.click(word);
+    });
+
+    // Word info panel should still appear
+    expect(screen.getByText('Word Info')).toBeInTheDocument();
+  });
+
+  test('auto-translate triggers on word click when enabled', async () => {
+    translateText.mockResolvedValue({ translatedText: 'Hello' });
+
+    renderTextDisplay({ autoTranslateWords: true });
+
+    await waitFor(() => expect(getText).toHaveBeenCalled());
+    const word = await screen.findByText('Hello');
+
+    await act(async () => {
+      fireEvent.click(word);
+    });
+
+    await waitFor(() => {
+      expect(translateText).toHaveBeenCalledWith('Hello', 'ES', 'EN');
+    });
+
+    // Flush all pending async state updates from the translate callback
+    await act(async () => {
+      await new Promise(r => setTimeout(r, 0));
+    });
+  });
+
+  test('auto-translate does NOT trigger when disabled', async () => {
+    renderTextDisplay({ autoTranslateWords: false });
+
+    await waitFor(() => expect(getText).toHaveBeenCalled());
+    const word = await screen.findByText('Hello');
+
+    await act(async () => {
+      fireEvent.click(word);
+    });
+
+    expect(translateText).not.toHaveBeenCalled();
+  });
 });

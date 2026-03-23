@@ -115,6 +115,7 @@ namespace LinguaReadApi.Controllers
                 AutoAdvanceToNextLesson = settings.AutoAdvanceToNextLesson,
                 AutoMoveFinishedLessons = settings.AutoMoveFinishedLessons, // Added
                 ShowProgressStats = settings.ShowProgressStats,
+                ShowDesktopLessonControls = settings.ShowDesktopLessonControls,
                 CurrentAudiobookTrackId = settings.CurrentAudiobookTrackId, // Added
                 CurrentAudiobookPosition = settings.CurrentAudiobookPosition, // Added
                 LeftPanelWidth = settings.LeftPanelWidth, // Map panel width to DTO
@@ -127,7 +128,11 @@ namespace LinguaReadApi.Controllers
                 OpenRouterApiKey = settings.OpenRouterApiKey,
                 OpenRouterModel = settings.OpenRouterModel,
                 OpenRouterReasoningEnabled = settings.OpenRouterReasoningEnabled,
-                OpenRouterReasoningEffort = settings.OpenRouterReasoningEffort
+                OpenRouterReasoningEffort = settings.OpenRouterReasoningEffort,
+                SrsMaxNewCards = settings.SrsMaxNewCards,
+                SrsMaxReviews = settings.SrsMaxReviews,
+                SrsReviewOrder = settings.SrsReviewOrder ?? "mix",
+                SrsLearningStepMinutes = settings.SrsLearningStepMinutes ?? "1,10"
             };
         }
 
@@ -208,6 +213,7 @@ namespace LinguaReadApi.Controllers
             settings.AutoAdvanceToNextLesson = updateDto.AutoAdvanceToNextLesson ?? settings.AutoAdvanceToNextLesson;
             settings.AutoMoveFinishedLessons = updateDto.AutoMoveFinishedLessons ?? settings.AutoMoveFinishedLessons; // Update property
             settings.ShowProgressStats = updateDto.ShowProgressStats ?? settings.ShowProgressStats;
+            settings.ShowDesktopLessonControls = updateDto.ShowDesktopLessonControls ?? settings.ShowDesktopLessonControls;
             settings.LeftPanelWidth = updateDto.LeftPanelWidth ?? settings.LeftPanelWidth; // Update panel width
             settings.DiscordWeeklyReportEnabled = updateDto.DiscordWeeklyReportEnabled ?? settings.DiscordWeeklyReportEnabled;
             if (updateDto.DiscordWebhookUrl != null)
@@ -253,8 +259,24 @@ namespace LinguaReadApi.Controllers
                     settings.OpenRouterReasoningEffort = normalizedEffort;
                 }
             }
+            settings.SrsMaxNewCards = updateDto.SrsMaxNewCards ?? settings.SrsMaxNewCards;
+            settings.SrsMaxReviews = updateDto.SrsMaxReviews ?? settings.SrsMaxReviews;
+            if (!string.IsNullOrWhiteSpace(updateDto.SrsReviewOrder))
+            {
+                var normalizedOrder = updateDto.SrsReviewOrder.Trim().ToLowerInvariant();
+                if (normalizedOrder is "mix" or "new_first" or "reviews_first")
+                {
+                    settings.SrsReviewOrder = normalizedOrder;
+                }
+            }
+            if (updateDto.SrsLearningStepMinutes != null)
+            {
+                settings.SrsLearningStepMinutes = string.IsNullOrWhiteSpace(updateDto.SrsLearningStepMinutes)
+                    ? "1,10"
+                    : updateDto.SrsLearningStepMinutes.Trim();
+            }
             settings.UpdatedAt = DateTime.UtcNow;
-            
+
             await _context.SaveChangesAsync();
             
             return new UserSettingsDto
@@ -280,6 +302,7 @@ namespace LinguaReadApi.Controllers
                 AutoAdvanceToNextLesson = settings.AutoAdvanceToNextLesson,
                 AutoMoveFinishedLessons = settings.AutoMoveFinishedLessons, // Update property
                 ShowProgressStats = settings.ShowProgressStats,
+                ShowDesktopLessonControls = settings.ShowDesktopLessonControls,
                 LeftPanelWidth = settings.LeftPanelWidth, // Map panel width to DTO
                 DiscordWeeklyReportEnabled = settings.DiscordWeeklyReportEnabled,
                 DiscordWebhookUrl = settings.DiscordWebhookUrl,
@@ -290,7 +313,11 @@ namespace LinguaReadApi.Controllers
                 OpenRouterApiKey = settings.OpenRouterApiKey,
                 OpenRouterModel = settings.OpenRouterModel,
                 OpenRouterReasoningEnabled = settings.OpenRouterReasoningEnabled,
-                OpenRouterReasoningEffort = settings.OpenRouterReasoningEffort
+                OpenRouterReasoningEffort = settings.OpenRouterReasoningEffort,
+                SrsMaxNewCards = settings.SrsMaxNewCards,
+                SrsMaxReviews = settings.SrsMaxReviews,
+                SrsReviewOrder = settings.SrsReviewOrder ?? "mix",
+                SrsLearningStepMinutes = settings.SrsLearningStepMinutes ?? "1,10"
             };
         }
 
@@ -651,6 +678,7 @@ namespace LinguaReadApi.Controllers
         public bool AutoAdvanceToNextLesson { get; set; } = false;
         public bool AutoMoveFinishedLessons { get; set; } = false; // Added property
         public bool ShowProgressStats { get; set; } = true;
+        public bool ShowDesktopLessonControls { get; set; } = true;
         public int? CurrentAudiobookTrackId { get; set; } // Added
         public double? CurrentAudiobookPosition { get; set; } // Added
         public bool DiscordWeeklyReportEnabled { get; set; } = false;
@@ -663,6 +691,12 @@ namespace LinguaReadApi.Controllers
         public string OpenRouterModel { get; set; } = "google/gemini-2.5-flash-preview-05-20:free";
         public bool OpenRouterReasoningEnabled { get; set; } = false;
         public string OpenRouterReasoningEffort { get; set; } = "medium";
+
+        // SRS Settings
+        public int SrsMaxNewCards { get; set; } = 20;
+        public int SrsMaxReviews { get; set; } = 100;
+        public string SrsReviewOrder { get; set; } = "mix";
+        public string? SrsLearningStepMinutes { get; set; } = "1,10";
     }
 
     public class UpdateUserSettingsDto
@@ -701,6 +735,7 @@ namespace LinguaReadApi.Controllers
         public bool? AutoAdvanceToNextLesson { get; set; }
         public bool? AutoMoveFinishedLessons { get; set; } // Added property
         public bool? ShowProgressStats { get; set; }
+        public bool? ShowDesktopLessonControls { get; set; }
 
         public bool? DiscordWeeklyReportEnabled { get; set; }
 
@@ -729,6 +764,19 @@ namespace LinguaReadApi.Controllers
 
         [StringLength(20)]
         public string? OpenRouterReasoningEffort { get; set; }
+
+        // SRS Settings
+        [Range(1, 9999)]
+        public int? SrsMaxNewCards { get; set; }
+
+        [Range(1, 9999)]
+        public int? SrsMaxReviews { get; set; }
+
+        [StringLength(20)]
+        public string? SrsReviewOrder { get; set; }
+
+        [StringLength(50)]
+        public string? SrsLearningStepMinutes { get; set; }
     }
 
     public class UpdateAudiobookProgressDto

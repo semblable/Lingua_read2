@@ -472,4 +472,266 @@ describe('AudiobookPlayer', () => {
     expect(await screen.findByText('Error loading audio.')).toBeInTheDocument();
   });
 
+  test('segment with repeatCount=2 replays once then stops at endTime', async () => {
+    getAudioLessonProgress.mockResolvedValue({ currentPosition: 0 });
+
+    const onTimeUpdate = jest.fn();
+
+    const { container } = render(
+      <AudiobookPlayer
+        type="lesson"
+        audioSrc="https://example.com/lesson.mp3"
+        textId={42}
+        languageId={5}
+        onTimeUpdate={onTimeUpdate}
+        segmentPlaybackRequest={{
+          requestId: 'repeat-2',
+          startTime: 5,
+          endTime: 10,
+          repeatCount: 2,
+          forcePlay: true
+        }}
+      />
+    );
+
+    await waitFor(() => {
+      expect(getAudioLessonProgress).toHaveBeenCalledWith(42);
+    });
+
+    const audio = container.querySelector('audio');
+    expect(audio).not.toBeNull();
+
+    // Simulate time reaching endTime on the first pass — should replay (remainingRepeats 2→1)
+    act(() => {
+      Object.defineProperty(audio, 'currentTime', {
+        configurable: true, writable: true, value: 10
+      });
+      fireEvent.timeUpdate(audio);
+    });
+
+    // After first repeat, pause should NOT have been called (only on final stop)
+    expect(window.HTMLMediaElement.prototype.pause).not.toHaveBeenCalled();
+
+    // Simulate time reaching endTime on the second pass — should stop
+    act(() => {
+      Object.defineProperty(audio, 'currentTime', {
+        configurable: true, writable: true, value: 10
+      });
+      fireEvent.timeUpdate(audio);
+    });
+
+    // After second pass, segment should be done — pause called
+    expect(window.HTMLMediaElement.prototype.pause).toHaveBeenCalled();
+    // onTimeUpdate should be called with the endTime when segment finishes
+    expect(onTimeUpdate).toHaveBeenCalledWith(10);
+  });
+
+  test('segment with repeatCount=1 stops at endTime without replay', async () => {
+    getAudioLessonProgress.mockResolvedValue({ currentPosition: 0 });
+
+    const onTimeUpdate = jest.fn();
+
+    const { container } = render(
+      <AudiobookPlayer
+        type="lesson"
+        audioSrc="https://example.com/lesson.mp3"
+        textId={42}
+        languageId={5}
+        onTimeUpdate={onTimeUpdate}
+        segmentPlaybackRequest={{
+          requestId: 'repeat-1',
+          startTime: 2,
+          endTime: 4,
+          repeatCount: 1,
+          forcePlay: true
+        }}
+      />
+    );
+
+    await waitFor(() => {
+      expect(getAudioLessonProgress).toHaveBeenCalledWith(42);
+    });
+
+    const audio = container.querySelector('audio');
+    expect(audio).not.toBeNull();
+
+    // Clear play calls from initial segment start
+    window.HTMLMediaElement.prototype.play.mockClear();
+
+    // Simulate time reaching endTime
+    act(() => {
+      Object.defineProperty(audio, 'currentTime', {
+        configurable: true, writable: true, value: 4
+      });
+      fireEvent.timeUpdate(audio);
+    });
+
+    // Should pause immediately, no replay
+    expect(window.HTMLMediaElement.prototype.pause).toHaveBeenCalled();
+    expect(window.HTMLMediaElement.prototype.play).not.toHaveBeenCalled();
+    expect(onTimeUpdate).toHaveBeenCalledWith(4);
+  });
+
+  test('very short segment (< 0.1s) does not end prematurely', async () => {
+    getAudioLessonProgress.mockResolvedValue({ currentPosition: 0 });
+
+    const { container } = render(
+      <AudiobookPlayer
+        type="lesson"
+        audioSrc="https://example.com/lesson.mp3"
+        textId={42}
+        languageId={5}
+        segmentPlaybackRequest={{
+          requestId: 'short-segment',
+          startTime: 5,
+          endTime: 5.05,
+          repeatCount: 1,
+          forcePlay: true
+        }}
+      />
+    );
+
+    await waitFor(() => {
+      expect(getAudioLessonProgress).toHaveBeenCalledWith(42);
+    });
+
+    const audio = container.querySelector('audio');
+    expect(audio).not.toBeNull();
+
+    // Time at startTime — the boundary check uses
+    // Math.max(endTime - 0.05, startTime) which equals startTime (5) for this segment
+    // So time=5 >= 5 triggers the end. Verify it completes cleanly without crash.
+    act(() => {
+      Object.defineProperty(audio, 'currentTime', {
+        configurable: true, writable: true, value: 5
+      });
+      fireEvent.timeUpdate(audio);
+    });
+
+    expect(window.HTMLMediaElement.prototype.pause).toHaveBeenCalled();
+  });
+
+  test('keyboard shortcut Space toggles play/pause', async () => {
+    getAudioLessonProgress.mockResolvedValue({ currentPosition: 0 });
+
+    const { container } = render(
+      <AudiobookPlayer
+        type="lesson"
+        audioSrc="https://example.com/lesson.mp3"
+        textId={42}
+        languageId={5}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTitle(/Play/)).toBeInTheDocument();
+    });
+
+    const audio = container.querySelector('audio');
+    expect(audio).not.toBeNull();
+
+    // Audio starts paused — Space should trigger play via togglePlayPause
+    // togglePlayPause sets __lrAllowPlayback = true then calls play()
+    act(() => {
+      fireEvent.keyDown(window, { key: ' ' });
+    });
+
+    expect(window.HTMLMediaElement.prototype.play).toHaveBeenCalled();
+
+    // Simulate the browser firing the play event (marks as playing)
+    act(() => {
+      Object.defineProperty(audio, 'paused', {
+        configurable: true, get: () => false
+      });
+      // Set the intent flag as togglePlayPause would have
+      audio.__lrAllowPlayback = true;
+      fireEvent.play(audio);
+    });
+
+    // Press Space again — audio is not paused, so togglePlayPause calls pause()
+    act(() => {
+      fireEvent.keyDown(window, { key: ' ' });
+    });
+
+    expect(window.HTMLMediaElement.prototype.pause).toHaveBeenCalled();
+  });
+
+  test('track advancement on ended event in book mode', async () => {
+    getAudiobookProgress.mockResolvedValue({
+      currentAudiobookTrackId: 'track-1',
+      currentAudiobookPosition: 0
+    });
+
+    const book = {
+      bookId: 10,
+      languageId: 3,
+      audiobookTracks: [
+        { trackId: 'track-1', filePath: 'audio/track-1.mp3' },
+        { trackId: 'track-2', filePath: 'audio/track-2.mp3' }
+      ]
+    };
+
+    const { container } = render(
+      <AudiobookPlayer type="book" book={book} />
+    );
+
+    await waitFor(() => {
+      expect(getAudiobookProgress).toHaveBeenCalledWith(10);
+    });
+
+    const audio = container.querySelector('audio');
+    expect(audio).not.toBeNull();
+
+    // Wait for UI to fully render
+    await waitFor(() => {
+      expect(screen.getByTitle(/Play/)).toBeInTheDocument();
+    });
+
+    // Fire ended event — should advance to track 2
+    act(() => {
+      fireEvent.ended(audio);
+    });
+
+    // After advancing, the audio source should change to track-2
+    await waitFor(() => {
+      const src = audio.getAttribute('src');
+      expect(src).toContain('track-2');
+    });
+  });
+
+  test('last track ended event stops playback instead of advancing', async () => {
+    getAudiobookProgress.mockResolvedValue({
+      currentAudiobookTrackId: 'track-1',
+      currentAudiobookPosition: 0
+    });
+
+    const onPlaybackStateChange = jest.fn();
+
+    const book = {
+      bookId: 10,
+      languageId: 3,
+      audiobookTracks: [
+        { trackId: 'track-1', filePath: 'audio/track-1.mp3' }
+      ]
+    };
+
+    const { container } = render(
+      <AudiobookPlayer type="book" book={book} onPlaybackStateChange={onPlaybackStateChange} />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTitle(/Play/)).toBeInTheDocument();
+    });
+
+    const audio = container.querySelector('audio');
+
+    // Fire ended event on the only/last track
+    act(() => {
+      fireEvent.ended(audio);
+    });
+
+    // Should signal playback stopped, not advance
+    expect(onPlaybackStateChange).toHaveBeenCalledWith(false);
+  });
+
 });

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Container, Card, Button, Spinner, Alert, Form, Row, Col, Badge, ProgressBar, ButtonGroup, Modal } from 'react-bootstrap';
 import { SettingsContext } from '../contexts/SettingsContext';
 import { getAllLanguages, getSrsDueCards, submitSrsReview, getSrsStats, updateUserSettings, undoSrsReview, getSrsForecast, suspendSrsCard, burySrsCard, updateSrsCard, getSrsHeatmap } from '../utils/api';
+import './SrsReview.css';
 
 const FLAG_COLORS = ['', '🟥', '🟧', '🟨', '🟩'];
 const FLAG_LABELS = ['None', 'Red', 'Orange', 'Yellow', 'Green'];
@@ -59,15 +60,25 @@ const SrsReview = () => {
   }, [settings]);
 
   const handleSaveSettings = async () => {
+    const maxNew = parseInt(localSettings.srsMaxNewCards, 10);
+    const maxReviews = parseInt(localSettings.srsMaxReviews, 10);
+    if (isNaN(maxNew) || maxNew < 1) {
+      setError('Max new cards must be a positive number.');
+      return;
+    }
+    if (isNaN(maxReviews) || maxReviews < 1) {
+      setError('Max reviews must be a positive number.');
+      return;
+    }
     try {
       await updateUserSettings({
-        srsMaxNewCards: parseInt(localSettings.srsMaxNewCards, 10),
-        srsMaxReviews: parseInt(localSettings.srsMaxReviews, 10),
+        srsMaxNewCards: maxNew,
+        srsMaxReviews: maxReviews,
         srsReviewOrder: localSettings.srsReviewOrder,
         srsLearningStepMinutes: localSettings.srsLearningStepMinutes
       });
-      updateSetting('srsMaxNewCards', parseInt(localSettings.srsMaxNewCards, 10));
-      updateSetting('srsMaxReviews', parseInt(localSettings.srsMaxReviews, 10));
+      updateSetting('srsMaxNewCards', maxNew);
+      updateSetting('srsMaxReviews', maxReviews);
       updateSetting('srsReviewOrder', localSettings.srsReviewOrder);
       updateSetting('srsLearningStepMinutes', localSettings.srsLearningStepMinutes);
       setShowSettingsModal(false);
@@ -286,13 +297,7 @@ const SrsReview = () => {
     const parts = sentence.split(regex);
     return parts.map((part, i) =>
       i % 2 === 1
-        ? <span key={i} style={{
-            backgroundColor: '#ffdd66',
-            color: '#000',
-            padding: '1px 4px',
-            borderRadius: '3px',
-            fontWeight: 'bold'
-          }}>{part}</span>
+        ? <span key={i} className="srs-term-highlight">{part}</span>
         : part
     );
   };
@@ -349,16 +354,23 @@ const SrsReview = () => {
     }
   };
 
+  // Remove card from session and handle index/completion
+  const removeCardFromSession = (cardId) => {
+    setCards(prev => {
+      const updated = prev.filter(c => c.srsCardReviewId !== cardId);
+      if (updated.length === 0 || currentIndex >= updated.length) {
+        setSessionComplete(true);
+        loadStats();
+      }
+      return updated;
+    });
+  };
+
   // Suspend card handler
   const handleSuspend = async (cardId) => {
     try {
       await suspendSrsCard(cardId);
-      // Remove card from session
-      setCards(prev => prev.filter(c => c.srsCardReviewId !== cardId));
-      if (currentIndex >= cards.length - 1) {
-        setSessionComplete(true);
-        loadStats();
-      }
+      removeCardFromSession(cardId);
     } catch (err) {
       setError(`Failed to suspend: ${err.message}`);
     }
@@ -368,12 +380,7 @@ const SrsReview = () => {
   const handleBury = async (cardId) => {
     try {
       await burySrsCard(cardId);
-      // Remove card from session
-      setCards(prev => prev.filter(c => c.srsCardReviewId !== cardId));
-      if (currentIndex >= cards.length - 1) {
-        setSessionComplete(true);
-        loadStats();
-      }
+      removeCardFromSession(cardId);
     } catch (err) {
       setError(`Failed to bury: ${err.message}`);
     }
@@ -434,11 +441,11 @@ const SrsReview = () => {
             {week.map((day, di) => (
               <div
                 key={di}
+                className="srs-heatmap-cell"
                 title={day ? `${day.date}: ${day.count} reviews` : ''}
                 style={{
                   width: '10px',
                   height: '10px',
-                  borderRadius: '2px',
                   backgroundColor: day ? getColor(day.count) : 'transparent',
                 }}
               />
@@ -459,34 +466,41 @@ const SrsReview = () => {
 
         {/* Stats Card */}
         {stats && (
-          <Card className="mb-3 shadow-sm">
-            <Card.Body className="py-2">
-              <div className="d-flex justify-content-between align-items-center mb-2 mt-2">
-                <Badge bg="danger" className="px-3 py-2" style={{ fontSize: '1rem' }}>🔥 Streak: {stats.currentStreak} ({stats.longestStreak} max)</Badge>
-                <div className="fw-bold text-success" style={{ fontSize: '1.1rem' }}>Retention: {stats.retentionRate}%</div>
+          <Card className="mb-3 shadow-sm srs-stats-card">
+            <Card.Body className="py-3">
+              <div className="d-flex justify-content-between align-items-center mb-3">
+                <Badge bg="danger" className="srs-streak-badge">Streak: {stats.currentStreak}d ({stats.longestStreak} best)</Badge>
+                <Badge bg="success" className="srs-streak-badge">Retention: {stats.retentionRate}%</Badge>
               </div>
-              <Row className="text-center">
-                <Col><div className="fw-bold text-danger">{stats.dueCount}</div><small className="text-muted">Due</small></Col>
-                <Col><div className="fw-bold text-info">{stats.newCards}</div><small className="text-muted">New</small></Col>
-                <Col><div className="fw-bold text-warning">{stats.learningCards}</div><small className="text-muted">Learning</small></Col>
-                <Col><div className="fw-bold text-success">{stats.matureCards}</div><small className="text-muted">Mature</small></Col>
-                <Col><div className="fw-bold">{stats.reviewedToday}</div><small className="text-muted">Total Today</small></Col>
+              <Row className="text-center g-2 mb-3">
+                <Col><div className="srs-stat-value text-danger">{stats.dueCount}</div><div className="srs-stat-label">Due</div></Col>
+                <Col><div className="srs-stat-value text-info">{stats.newCards}</div><div className="srs-stat-label">New</div></Col>
+                <Col><div className="srs-stat-value text-warning">{stats.learningCards}</div><div className="srs-stat-label">Learning</div></Col>
+                <Col><div className="srs-stat-value text-success">{stats.matureCards}</div><div className="srs-stat-label">Mature</div></Col>
+                <Col><div className="srs-stat-value">{stats.reviewedToday}</div><div className="srs-stat-label">Today</div></Col>
               </Row>
-              <hr className="my-2" />
-              <Row className="text-center">
-                <Col>
-                  <div className="fw-bold text-info">
-                    {stats.studiedNewCardsToday} <span className="text-muted fw-normal">/ {stats.maxNewCards}</span>
-                  </div>
-                  <small className="text-muted">New Today</small>
-                </Col>
-                <Col>
-                  <div className="fw-bold text-primary">
-                    {stats.studiedReviewsToday} <span className="text-muted fw-normal">/ {stats.maxReviews}</span>
-                  </div>
-                  <small className="text-muted">Reviews Today</small>
-                </Col>
-              </Row>
+              <div className="border-top pt-2">
+                <Row className="text-center g-2">
+                  <Col>
+                    <ProgressBar
+                      now={stats.maxNewCards > 0 ? (stats.studiedNewCardsToday / stats.maxNewCards) * 100 : 0}
+                      variant="info"
+                      style={{ height: '4px' }}
+                      className="mb-1"
+                    />
+                    <small className="text-muted">{stats.studiedNewCardsToday}/{stats.maxNewCards} new</small>
+                  </Col>
+                  <Col>
+                    <ProgressBar
+                      now={stats.maxReviews > 0 ? (stats.studiedReviewsToday / stats.maxReviews) * 100 : 0}
+                      variant="primary"
+                      style={{ height: '4px' }}
+                      className="mb-1"
+                    />
+                    <small className="text-muted">{stats.studiedReviewsToday}/{stats.maxReviews} reviews</small>
+                  </Col>
+                </Row>
+              </div>
             </Card.Body>
           </Card>
         )}
@@ -525,7 +539,7 @@ const SrsReview = () => {
 
         {statsLoading && <div className="text-center mb-3"><Spinner size="sm" /></div>}
 
-        <Card className="shadow-sm">
+        <Card className="shadow-sm srs-setup-card">
           <Card.Body>
             <Form.Group className="mb-3">
               <Form.Label>Language</Form.Label>
@@ -647,18 +661,19 @@ const SrsReview = () => {
   if (sessionComplete) {
     return (
       <Container className="mt-4" style={{ maxWidth: '600px' }}>
-        <Card className="shadow-sm text-center">
+        <Card className="srs-complete-card text-center">
           <Card.Body className="py-5">
-            <h2 className="mb-3">🎉 Session Complete!</h2>
-            <p className="lead mb-4">
-              You reviewed <strong>{reviewedCount}</strong> card{reviewedCount !== 1 ? 's' : ''}.
+            <div className="srs-complete-emoji">🎉</div>
+            <h3 className="mb-2">Session Complete</h3>
+            <p className="text-muted mb-4">
+              You reviewed <strong>{reviewedCount}</strong> card{reviewedCount !== 1 ? 's' : ''}
             </p>
 
             {stats && (
-              <Row className="text-center mb-4">
-                <Col><div className="fw-bold text-danger h4">{stats.dueCount}</div><small className="text-muted">Still Due</small></Col>
-                <Col><div className="fw-bold h4">{stats.reviewedToday}</div><small className="text-muted">Reviewed Today</small></Col>
-                <Col><div className="fw-bold text-success h4">{stats.matureCards}</div><small className="text-muted">Mature</small></Col>
+              <Row className="text-center mb-4 g-3">
+                <Col><div className="srs-stat-value text-danger">{stats.dueCount}</div><div className="srs-stat-label">Still Due</div></Col>
+                <Col><div className="srs-stat-value">{stats.reviewedToday}</div><div className="srs-stat-label">Today</div></Col>
+                <Col><div className="srs-stat-value text-success">{stats.matureCards}</div><div className="srs-stat-label">Mature</div></Col>
               </Row>
             )}
 
@@ -688,8 +703,7 @@ const SrsReview = () => {
         <small className="text-muted">{reviewedCount}/{cards.length}</small>
         <ProgressBar
           now={(reviewedCount / cards.length) * 100}
-          className="flex-grow-1"
-          style={{ height: '8px' }}
+          className="flex-grow-1 srs-progress-bar"
           variant="success"
         />
         {undoVisible && (
@@ -713,7 +727,7 @@ const SrsReview = () => {
       {error && <Alert variant="danger" className="mb-2" dismissible onClose={() => setError(null)}>{error}</Alert>}
 
       {currentCard && (
-        <Card className="shadow-sm" style={{ minHeight: '400px' }}>
+        <Card className="srs-review-card" style={{ minHeight: '400px' }}>
           <Card.Body className="d-flex flex-column">
             {/* Card Header */}
             <div className="d-flex justify-content-between align-items-center mb-2">
@@ -769,46 +783,35 @@ const SrsReview = () => {
             >
               {primaryPhrase ? (
                 <div>
-                  <p className="lead mb-2" style={{ fontSize: '1.3rem', lineHeight: '1.8' }}>
+                  <p className="srs-sentence mb-2">
                     {renderSentenceWithHighlight(primaryPhrase.sentence, currentCard.term)}
                   </p>
                 </div>
               ) : (
-                <p className="lead mb-2" style={{ fontSize: '1.5rem' }}>
-                  <span style={{
-                    backgroundColor: '#ffdd66',
-                    color: '#000',
-                    padding: '2px 8px',
-                    borderRadius: '4px',
-                    fontWeight: 'bold'
-                  }}>
-                    {currentCard.term}
-                  </span>
+                <p className="mb-2" style={{ fontSize: '1.5rem' }}>
+                  <span className="srs-term-highlight">{currentCard.term}</span>
                 </p>
               )}
 
               {!isFlipped && (
-                <div className="mt-3">
-                  <small className="text-muted">
-                    Click or press <kbd>Space</kbd> to reveal
-                  </small>
+                <div className="mt-3 srs-reveal-hint">
+                  Click or press <kbd>Space</kbd> to reveal
                 </div>
               )}
 
               {/* Back: Translation & Details */}
               {isFlipped && (
-                <div className="mt-3 pt-3 border-top w-100" style={{ animation: 'fadeIn 0.2s ease-in' }}>
+                <div className="srs-answer-area mt-3 pt-3 border-top w-100">
                   <h4 className="mb-1">{currentCard.term}</h4>
-                  <p className="text-muted mb-2" style={{ fontSize: '1.2rem' }}>
-                    {currentCard.translation || <em>No translation</em>}
+                  <p className="srs-translation mb-2">
+                    {currentCard.translation || <em className="text-muted">No translation</em>}
                   </p>
 
-                  {/* Additional phrases */}
                   {otherPhrases.length > 0 && (
                     <div className="mt-2 text-start">
                       <small className="text-muted d-block mb-1">Other mined sentences:</small>
                       {otherPhrases.map((phrase) => (
-                        <small key={phrase.srsPhraseId} className="d-block text-muted mb-1" style={{ fontStyle: 'italic' }}>
+                        <small key={phrase.srsPhraseId} className="srs-other-phrases d-block mb-1">
                           "{phrase.sentence}"
                         </small>
                       ))}
@@ -820,23 +823,20 @@ const SrsReview = () => {
 
             {/* Grade Buttons */}
             {isFlipped && (
-              <div className="mt-3">
-                <ButtonGroup className="w-100">
-                  {GRADE_LABELS.map(({ grade, label, variant, key }) => (
-                    <Button
-                      key={grade}
-                      variant={variant}
-                      onClick={() => handleGrade(grade)}
-                      disabled={submitting}
-                      className="py-2"
-                      style={{ flex: 1 }}
-                    >
-                      <div className="fw-bold">{label}</div>
-                      <small style={{ opacity: 0.8 }}>{getIntervalLabel(grade, currentCard)}</small>
-                      <div><kbd>{key}</kbd></div>
-                    </Button>
-                  ))}
-                </ButtonGroup>
+              <div className="mt-3 srs-grade-buttons">
+                {GRADE_LABELS.map(({ grade, label, variant, key }) => (
+                  <Button
+                    key={grade}
+                    variant={variant}
+                    onClick={() => handleGrade(grade)}
+                    disabled={submitting}
+                    className="srs-grade-btn"
+                  >
+                    <div className="fw-bold">{label}</div>
+                    <div className="interval-label">{getIntervalLabel(grade, currentCard)}</div>
+                    <kbd>{key}</kbd>
+                  </Button>
+                ))}
               </div>
             )}
           </Card.Body>

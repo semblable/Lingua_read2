@@ -18,63 +18,7 @@ import { getBookmarkedSentences, toggleBookmark } from '../utils/bookmarks'; // 
 import { extractTranslatedTextFromPairedTags } from '../utils/translationTags';
 import { parseSentenceExplanation } from '../utils/parseSentenceExplanation';
 import { cancelSpeech, isSpeechSynthesisSupported, speakText } from '../utils/browserTts';
-
-// --- SRT Parsing Utilities ---
-const parseSrtTime = (timeString) => {
-  if (!timeString) return 0;
-  const parts = timeString.split(':');
-  const secondsParts = parts[2]?.split(',');
-  if (!secondsParts || secondsParts.length < 2) return 0;
-  const hours = parseInt(parts[0], 10);
-  const minutes = parseInt(parts[1], 10);
-  const seconds = parseInt(secondsParts[0], 10);
-  const milliseconds = parseInt(secondsParts[1], 10);
-  if (isNaN(hours) || isNaN(minutes) || isNaN(seconds) || isNaN(milliseconds)) return 0;
-  return hours * 3600 + minutes * 60 + seconds + milliseconds / 1000;
-};
-
-const parseSrtContent = (srtContent) => {
-  if (!srtContent) return [];
-  const lines = srtContent.trim().split(/\r?\n/);
-  const entries = [];
-  let currentEntry = null;
-  let textBuffer = [];
-  for (const line of lines) {
-    const trimmedLine = line.trim();
-    if (currentEntry === null) {
-      if (/^\d+$/.test(trimmedLine)) {
-        currentEntry = { id: parseInt(trimmedLine, 10), startTime: 0, endTime: 0, text: '' };
-        textBuffer = [];
-      }
-    } else if (currentEntry.startTime === 0 && trimmedLine.includes('-->')) {
-      const timeParts = trimmedLine.split(' --> ');
-      if (timeParts.length === 2) {
-        currentEntry.startTime = parseSrtTime(timeParts[0]);
-        currentEntry.endTime = parseSrtTime(timeParts[1]);
-      }
-    } else if (trimmedLine === '') {
-      if (currentEntry && currentEntry.startTime >= 0 && textBuffer.length > 0) { // Allow 0 start time
-        currentEntry.text = textBuffer.join('\n').trim();
-        entries.push(currentEntry);
-        currentEntry = null;
-        textBuffer = [];
-      } else if (currentEntry && currentEntry.startTime >= 0) {
-        currentEntry.text = '';
-        entries.push(currentEntry);
-        currentEntry = null;
-        textBuffer = [];
-      }
-    } else if (currentEntry) {
-      textBuffer.push(trimmedLine);
-    }
-  }
-  if (currentEntry && currentEntry.startTime >= 0 && textBuffer.length > 0) {
-    currentEntry.text = textBuffer.join('\n').trim();
-    entries.push(currentEntry);
-  }
-  console.log(`[SRT Parser] Parsed ${entries.length} entries.`);
-  return entries;
-};
+import { parseSrtContent, findSrtLineIndex } from '../utils/srtParser';
 
 const normalizeAssetUrl = (value) => {
   if (!value) return null;
@@ -359,24 +303,30 @@ const SecondaryControls = React.memo(({
 }) => (
   <>
     <ButtonGroup size="sm" className="me-1" aria-label="Reading density">
-        <Button
-          variant={globalSettings.readingDensity === 'compact' ? 'primary' : 'outline-secondary'}
-          onClick={() => setReadingDensity('compact')}
-        >
-          Compact
-        </Button>
-        <Button
-          variant={globalSettings.readingDensity === 'balanced' ? 'primary' : 'outline-secondary'}
-          onClick={() => setReadingDensity('balanced')}
-        >
-          Balanced
-        </Button>
-        <Button
-          variant={globalSettings.readingDensity === 'spacious' ? 'primary' : 'outline-secondary'}
-          onClick={() => setReadingDensity('spacious')}
-        >
-          Spacious
-        </Button>
+        <OverlayTrigger placement="top" overlay={<Tooltip>Compact density</Tooltip>}>
+          <Button
+            variant={globalSettings.readingDensity === 'compact' ? 'primary' : 'outline-secondary'}
+            onClick={() => setReadingDensity('compact')}
+          >
+            S
+          </Button>
+        </OverlayTrigger>
+        <OverlayTrigger placement="top" overlay={<Tooltip>Balanced density</Tooltip>}>
+          <Button
+            variant={globalSettings.readingDensity === 'balanced' ? 'primary' : 'outline-secondary'}
+            onClick={() => setReadingDensity('balanced')}
+          >
+            M
+          </Button>
+        </OverlayTrigger>
+        <OverlayTrigger placement="top" overlay={<Tooltip>Spacious density</Tooltip>}>
+          <Button
+            variant={globalSettings.readingDensity === 'spacious' ? 'primary' : 'outline-secondary'}
+            onClick={() => setReadingDensity('spacious')}
+          >
+            L
+          </Button>
+        </OverlayTrigger>
       </ButtonGroup>
     <ButtonGroup size="sm" className="me-1">
       <Button
@@ -435,27 +385,30 @@ const SecondaryControls = React.memo(({
       </Button>
     </ButtonGroup>
     <ButtonGroup size="sm" className="me-1" aria-label="Reader text width">
-      <Button
-        variant={globalSettings.readerContentWidth <= 660 ? 'primary' : 'outline-secondary'}
-        onClick={() => setReaderContentWidth(620)}
-        title="Narrow text column"
-      >
-        Narrow
-      </Button>
-      <Button
-        variant={globalSettings.readerContentWidth > 660 && globalSettings.readerContentWidth < 820 ? 'primary' : 'outline-secondary'}
-        onClick={() => setReaderContentWidth(740)}
-        title="Balanced text column"
-      >
-        Medium
-      </Button>
-      <Button
-        variant={globalSettings.readerContentWidth >= 820 ? 'primary' : 'outline-secondary'}
-        onClick={() => setReaderContentWidth(900)}
-        title="Wide text column"
-      >
-        Wide
-      </Button>
+      <OverlayTrigger placement="top" overlay={<Tooltip>Narrow text column</Tooltip>}>
+        <Button
+          variant={globalSettings.readerContentWidth <= 660 ? 'primary' : 'outline-secondary'}
+          onClick={() => setReaderContentWidth(620)}
+        >
+          N
+        </Button>
+      </OverlayTrigger>
+      <OverlayTrigger placement="top" overlay={<Tooltip>Medium text column</Tooltip>}>
+        <Button
+          variant={globalSettings.readerContentWidth > 660 && globalSettings.readerContentWidth < 820 ? 'primary' : 'outline-secondary'}
+          onClick={() => setReaderContentWidth(740)}
+        >
+          M
+        </Button>
+      </OverlayTrigger>
+      <OverlayTrigger placement="top" overlay={<Tooltip>Wide text column</Tooltip>}>
+        <Button
+          variant={globalSettings.readerContentWidth >= 820 ? 'primary' : 'outline-secondary'}
+          onClick={() => setReaderContentWidth(900)}
+        >
+          W
+        </Button>
+      </OverlayTrigger>
     </ButtonGroup>
     {!isMobile && (
       <ButtonGroup size="sm" className="me-1" aria-label="Reader panel visibility">
@@ -531,7 +484,7 @@ const SecondaryControls = React.memo(({
         onClick={handleFullTextTranslation}
         className="me-1"
       >
-        Translate Text
+        Translate
       </Button>
     )}
     {text && !loading && (
@@ -543,7 +496,7 @@ const SecondaryControls = React.memo(({
         className="ms-1"
         title="Translate unknown/learning words"
       >
-        {translatingUnknown ? <Spinner size="sm" /> : 'Translate ?'}
+        {translatingUnknown ? <Spinner size="sm" /> : 'Auto ?'}
       </Button>
     )}
     {text && !loading && (
@@ -555,7 +508,7 @@ const SecondaryControls = React.memo(({
         className="ms-1"
         title="Mark all untracked words as Known"
       >
-        {isMarkingAll ? <Spinner size="sm" /> : 'Mark All Known'}
+        {isMarkingAll ? <Spinner size="sm" /> : 'All Known'}
       </Button>
     )}
   </>
@@ -822,7 +775,7 @@ const LessonHeader = React.memo(({
               aria-expanded={showDesktopLessonControls}
               aria-label={showDesktopLessonControls ? 'Hide lesson controls panel' : 'Show lesson controls panel'}
             >
-              {showDesktopLessonControls ? 'Hide Panel' : 'Show Panel'}
+              {showDesktopLessonControls ? 'Hide' : 'Show'}
             </Button>
           </div>
         </div>
@@ -1508,7 +1461,7 @@ const TextDisplay = () => {
   const [showMoreControls, setShowMoreControls] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [showMobileHeader, setShowMobileHeader] = useState(false);
-  const [showDesktopLessonControls, setShowDesktopLessonControls] = useState(true);
+  const showDesktopLessonControls = globalSettings.showDesktopLessonControls ?? true;
   const [isWordPanelOpen, setIsWordPanelOpen] = useState(false);
   const [isAudioPlaying, setIsAudioPlaying] = useState(false);
   const [currentSegmentIndex, setCurrentSegmentIndex] = useState(0);
@@ -1766,6 +1719,14 @@ const TextDisplay = () => {
       .catch(err => console.error('[Save Settings] Failed to save word info panel visibility via API:', err));
   }, [updateSetting]);
 
+  const setShowDesktopLessonControls = useCallback((nextValue) => {
+    const val = typeof nextValue === 'function' ? nextValue(globalSettings.showDesktopLessonControls ?? true) : nextValue;
+    updateSetting('showDesktopLessonControls', val);
+    localStorage.setItem('showDesktopLessonControls', val.toString());
+    updateUserSettings({ showDesktopLessonControls: val })
+      .catch(err => console.error('[Save Settings] Failed to save desktop lesson controls visibility via API:', err));
+  }, [updateSetting, globalSettings.showDesktopLessonControls]);
+
   const setReaderParagraphIndent = useCallback((nextValue) => {
     updateSetting('readerParagraphIndent', nextValue);
     localStorage.setItem('readerParagraphIndent', nextValue.toString());
@@ -1902,6 +1863,7 @@ const TextDisplay = () => {
     lastHandledSelectionRef.current = '';
     if (isAudioLesson && globalSettings.pauseOnWordClick) {
       pauseAudioPlayback();
+      setSegmentPlaybackRequest(null);
     }
     setSelectedWord(word);
     setProcessingWord(false);
@@ -2796,7 +2758,7 @@ const TextDisplay = () => {
       return;
     }
 
-    const currentLineIndex = srtLines.findIndex(line => newTime >= line.startTime && newTime < line.endTime);
+    const currentLineIndex = findSrtLineIndex(srtLines, newTime);
     const currentLine = currentLineIndex !== -1 ? srtLines[currentLineIndex] : null;
 
     if (isSentenceMode && currentLineIndex !== -1 && currentLineIndex !== currentSegmentIndex) {

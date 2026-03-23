@@ -174,6 +174,7 @@ const SrsReview = () => {
   }, [currentCard, currentIndex, cards.length, submitting, loadStats]);
 
   const handleUndo = async () => {
+    if (submitting) return;
     try {
       setSubmitting(true);
       await undoSrsReview();
@@ -251,7 +252,7 @@ const SrsReview = () => {
   // Highlight target word in sentence
   const renderSentenceWithHighlight = (sentence, term) => {
     if (!sentence || !term) return sentence;
-    const regex = new RegExp(`(\\b${term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b)`, 'gi');
+    const regex = new RegExp(`(${term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
     const parts = sentence.split(regex);
     return parts.map((part, i) =>
       regex.test(part)

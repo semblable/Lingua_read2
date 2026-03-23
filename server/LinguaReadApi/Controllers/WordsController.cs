@@ -428,6 +428,16 @@ namespace LinguaReadApi.Controllers
             // Update word status
             word.Status = updateWordDto.Status;
 
+            if (word.Status < 5)
+            {
+                var existingCard = await _context.SrsCardReviews
+                    .FirstOrDefaultAsync(scr => scr.WordId == word.WordId && scr.UserId == userId);
+                if (existingCard == null)
+                {
+                    _context.SrsCardReviews.Add(new SrsCardReview { WordId = word.WordId, UserId = userId });
+                }
+            }
+
             // Update translation only if provided
             if (updateWordDto.Translation != null) // Check if translation was provided in the request
             {

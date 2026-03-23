@@ -1594,19 +1594,68 @@ const TextDisplay = () => {
     }
   }, []);
 
-  const getSentenceContextFromNode = useCallback((node) => {
-    const container = textContentRef.current;
-    let currentNode = node;
-    while (currentNode && currentNode !== container) {
-      if (
-        currentNode.nodeType === Node.ELEMENT_NODE &&
-        currentNode.classList?.contains('sentence')
-      ) {
-        return currentNode.textContent?.replace(/\s+/g, ' ').trim() || '';
-      }
-      currentNode = currentNode.parentNode;
+  /** Max chars sent as sentenceContext to avoid huge payloads; backend may also limit. */
+  const MAX_AI_CONTEXT_CHARS = 100000;
+
+  const normalizeReaderText = (s) => (s || '').replace(/\s+/g, ' ').trim();
+
+  const clampContext = (t) => {
+    if (!t) return '';
+    return t.length > MAX_AI_CONTEXT_CHARS ? t.slice(0, MAX_AI_CONTEXT_CHARS) : t;
+  };
+
+  /**
+   * Context for AI selection translation: prefer one .sentence, then a block (paragraph / group),
+   * then full reader column, then the selection itself (so large / multi-sentence highlights still use AI).
+   */
+  const buildAiSelectionContext = useCallback((range, container, selectedText) => {
+    if (!range || !container) {
+      return clampContext(normalizeReaderText(selectedText));
     }
-    return '';
+
+    let node = range.commonAncestorContainer;
+    if (node?.nodeType === Node.TEXT_NODE) {
+      node = node.parentNode;
+    }
+
+    let walk = node;
+    while (walk && walk !== container) {
+      if (walk.nodeType === Node.ELEMENT_NODE && walk.classList?.contains('sentence')) {
+        const t = normalizeReaderText(walk.textContent);
+        if (t) return clampContext(t);
+      }
+      walk = walk.parentNode;
+    }
+
+    const blockClassHints = [
+      'reading-block',
+      'reader-paragraph',
+      'reader-title-block',
+      'reading-block-group',
+      'text-content',
+      'sentence-mode-text',
+      'sentence-mode-card',
+      'audio-transcript-container',
+      'srt-line',
+      'reader-title-line'
+    ];
+    walk = node;
+    while (walk && walk !== container) {
+      if (walk.nodeType === Node.ELEMENT_NODE && walk.classList) {
+        for (const cls of blockClassHints) {
+          if (walk.classList.contains(cls)) {
+            const t = normalizeReaderText(walk.textContent);
+            if (t) return clampContext(t);
+          }
+        }
+      }
+      walk = walk.parentNode;
+    }
+
+    const full = normalizeReaderText(container.textContent);
+    if (full) return clampContext(full);
+
+    return clampContext(normalizeReaderText(selectedText));
   }, []);
 
   const handleAudioPlaybackStateChange = useCallback((nextIsPlaying) => {
@@ -1784,7 +1833,8 @@ const TextDisplay = () => {
     }
   }, [globalSettings.autoTranslateWords, text?.languageCode, setTranslation, setDisplayedWord, setIsTranslating, setWordTranslationError]); // Use globalSettings from context
 
-  const handleWordClick = useCallback((word) => {
+  const handleWordClick = useCallback((word, options = {}) => {
+    const { skipAutoTranslate = false } = options;
     clearPendingSelection();
     lastHandledSelectionRef.current = '';
     if (isAudioLesson && globalSettings.pauseOnWordClick) {
@@ -1800,12 +1850,12 @@ const TextDisplay = () => {
     if (existingWord) {
       setDisplayedWord(existingWord);
       setTranslation(existingWord.translation || '');
-      if (!existingWord.translation) triggerAutoTranslation(word);
+      if (!existingWord.translation && !skipAutoTranslate) triggerAutoTranslation(word);
     } else {
       const newWord = { term: word, status: 0, translation: '', isNew: true };
       setDisplayedWord(newWord);
       setTranslation('');
-      triggerAutoTranslation(word);
+      if (!skipAutoTranslate) triggerAutoTranslation(word);
     }
   }, [clearPendingSelection, getWordData, globalSettings.pauseOnWordClick, isAudioLesson, triggerAutoTranslation, setSelectedWord, setTranslation, setWordTranslationError, setDisplayedWord, isMobile, pauseAudioPlayback]); // Dependencies using globalSettings don't need it listed if context handles updates
 
@@ -1858,8 +1908,9 @@ const TextDisplay = () => {
     lastHandledSelectionRef.current = selectedText;
     suppressWordClickUntilRef.current = Date.now() + 400;
     setTimeout(() => {
-      handleWordClick(selectedText);
-      if (sentenceContext) {
+      const useAiContext = Boolean(sentenceContext && sentenceContext.trim());
+      handleWordClick(selectedText, { skipAutoTranslate: useAiContext });
+      if (useAiContext) {
         triggerAutoTranslation(selectedText, { sentenceContext });
       }
     }, 0);
@@ -1893,7 +1944,7 @@ const TextDisplay = () => {
     }
 
     const { selection, range, container, selectedText } = selectionDetails;
-    const sentenceContext = getSentenceContextFromNode(range.commonAncestorContainer);
+    const sentenceContext = buildAiSelectionContext(range, container, selectedText);
     focusSentenceIndexFromNode(range.commonAncestorContainer);
     if (isMobile) {
       handleSelectedText(selectedText, sentenceContext);
@@ -1960,11 +2011,9 @@ const TextDisplay = () => {
     let startWordSpan = findWordSpan(startNode) || findWordSpanNearText(startNode, startOffset, true);
     let endWordSpan = findWordSpan(endNode) || findWordSpanNearText(endNode, endOffset, false);
 
-    // If selection starts/ends outside any word span, maybe abort
+    // Large / multi-block selections may not map to word spans; still translate via AI with full context.
     if (!startWordSpan || !endWordSpan) {
-      console.warn("Selection boundary outside clickable words.");
-      // Optionally clear selection or do nothing
-      // selection.removeAllRanges();
+      handleSelectedText(selectedText, sentenceContext);
       return;
     }
 
@@ -1996,7 +2045,7 @@ const TextDisplay = () => {
       handleSelectedText(selection.toString().trim(), sentenceContext);
     }
 
-  }, [focusSentenceIndexFromNode, getSelectionDetails, getSentenceContextFromNode, handleSelectedText, isMobile]); // textContentRef is a stable ref
+  }, [focusSentenceIndexFromNode, getSelectionDetails, buildAiSelectionContext, handleSelectedText, isMobile]); // textContentRef is a stable ref
 
   const scheduleWordSelection = useCallback((delayMs) => {
     clearPendingSelection();

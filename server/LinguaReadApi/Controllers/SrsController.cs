@@ -90,7 +90,10 @@ namespace LinguaReadApi.Controllers
             var newCardsPool = new List<SrsCardReview>();
             if (remainingNew > 0)
             {
-                var newCardsQuery = query.Where(scr => !scr.IsLearning && scr.Repetitions == 0 && scr.LastReviewedAt == null).OrderBy(scr => scr.NextReviewAt);
+                var newCardsQuery = query
+                    .Where(scr => !scr.IsLearning && scr.Repetitions == 0 && scr.LastReviewedAt == null)
+                    .OrderByDescending(scr => scr.Word.TextWords.Count) // Prioritize highest frequency words
+                    .ThenBy(scr => scr.CreatedAt);
                 newCardsPool = await newCardsQuery.Take(Math.Max(limit * 2, remainingNew * 2)).ToListAsync();
             }
 

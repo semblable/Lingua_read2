@@ -413,6 +413,40 @@ namespace LinguaReadApi.Controllers
                 }
             }
 
+            // Revert streak if this undo leaves no other reviews today
+            if (settings != null && settings.SrsDailyStudyDate?.Date == today)
+            {
+                bool hasOtherReviewsToday = await _context.SrsReviewLogs
+                    .AnyAsync(log => log.UserId == userId
+                        && log.SrsCardReviewId != lastLog.SrsCardReviewId
+                        && log.ReviewedAt.Date == today);
+
+                if (!hasOtherReviewsToday)
+                {
+                    // This was the only review today — revert the streak increment
+                    var yesterday = today.AddDays(-1);
+                    var previousLog = await _context.SrsReviewLogs
+                        .AsNoTracking()
+                        .Where(log => log.UserId == userId && log.ReviewedAt.Date < today)
+                        .OrderByDescending(log => log.ReviewedAt)
+                        .FirstOrDefaultAsync();
+
+                    if (previousLog != null && previousLog.ReviewedAt.Date == yesterday)
+                    {
+                        // Had a streak going before today — just decrement
+                        settings.SrsCurrentStreak = Math.Max(0, settings.SrsCurrentStreak - 1);
+                    }
+                    else
+                    {
+                        // No review yesterday — streak was started fresh today, reset to 0
+                        settings.SrsCurrentStreak = 0;
+                    }
+                    settings.SrsDailyStudyDate = previousLog?.ReviewedAt.Date;
+                    settings.SrsDailyNewCardsStudied = 0;
+                    settings.SrsDailyReviewsStudied = 0;
+                }
+            }
+
             // Remove the log
             _context.SrsReviewLogs.Remove(lastLog);
 
@@ -530,7 +564,7 @@ namespace LinguaReadApi.Controllers
             var dueCount = allCards.Count(c => c.NextReviewAt <= now);
             var totalCards = allCards.Count;
             var newCards = allCards.Count(c => c.Repetitions == 0 && c.LastReviewedAt == null);
-            var learningCards = allCards.Count(c => (c.Repetitions > 0 || c.LastReviewedAt != null) && c.Interval < 21);
+            var learningCards = allCards.Count(c => c.IsLearning || ((c.Repetitions > 0 || c.LastReviewedAt != null) && c.Interval < 21));
             var matureCards = allCards.Count(c => c.Interval >= 21);
 
             var totalPhrases = await _context.SrsPhrases
@@ -672,8 +706,8 @@ namespace LinguaReadApi.Controllers
 
             if (card == null) return NotFound(new { Message = "No SRS card found for this word." });
 
-            // Only apply if card has some history (repetitions > 2)
-            if (card.Repetitions <= 2)
+            // Only apply if card has graduated and has some history
+            if (card.IsLearning || card.Repetitions <= 2)
                 return Ok(new { Message = "Card too new for reading credit.", Applied = false });
 
             // Boost: multiply interval by 1.1, cap at current next review + 2 days

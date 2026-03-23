@@ -59,15 +59,25 @@ const SrsReview = () => {
   }, [settings]);
 
   const handleSaveSettings = async () => {
+    const maxNew = parseInt(localSettings.srsMaxNewCards, 10);
+    const maxReviews = parseInt(localSettings.srsMaxReviews, 10);
+    if (isNaN(maxNew) || maxNew < 1) {
+      setError('Max new cards must be a positive number.');
+      return;
+    }
+    if (isNaN(maxReviews) || maxReviews < 1) {
+      setError('Max reviews must be a positive number.');
+      return;
+    }
     try {
       await updateUserSettings({
-        srsMaxNewCards: parseInt(localSettings.srsMaxNewCards, 10),
-        srsMaxReviews: parseInt(localSettings.srsMaxReviews, 10),
+        srsMaxNewCards: maxNew,
+        srsMaxReviews: maxReviews,
         srsReviewOrder: localSettings.srsReviewOrder,
         srsLearningStepMinutes: localSettings.srsLearningStepMinutes
       });
-      updateSetting('srsMaxNewCards', parseInt(localSettings.srsMaxNewCards, 10));
-      updateSetting('srsMaxReviews', parseInt(localSettings.srsMaxReviews, 10));
+      updateSetting('srsMaxNewCards', maxNew);
+      updateSetting('srsMaxReviews', maxReviews);
       updateSetting('srsReviewOrder', localSettings.srsReviewOrder);
       updateSetting('srsLearningStepMinutes', localSettings.srsLearningStepMinutes);
       setShowSettingsModal(false);
@@ -349,16 +359,23 @@ const SrsReview = () => {
     }
   };
 
+  // Remove card from session and handle index/completion
+  const removeCardFromSession = (cardId) => {
+    setCards(prev => {
+      const updated = prev.filter(c => c.srsCardReviewId !== cardId);
+      if (updated.length === 0 || currentIndex >= updated.length) {
+        setSessionComplete(true);
+        loadStats();
+      }
+      return updated;
+    });
+  };
+
   // Suspend card handler
   const handleSuspend = async (cardId) => {
     try {
       await suspendSrsCard(cardId);
-      // Remove card from session
-      setCards(prev => prev.filter(c => c.srsCardReviewId !== cardId));
-      if (currentIndex >= cards.length - 1) {
-        setSessionComplete(true);
-        loadStats();
-      }
+      removeCardFromSession(cardId);
     } catch (err) {
       setError(`Failed to suspend: ${err.message}`);
     }
@@ -368,12 +385,7 @@ const SrsReview = () => {
   const handleBury = async (cardId) => {
     try {
       await burySrsCard(cardId);
-      // Remove card from session
-      setCards(prev => prev.filter(c => c.srsCardReviewId !== cardId));
-      if (currentIndex >= cards.length - 1) {
-        setSessionComplete(true);
-        loadStats();
-      }
+      removeCardFromSession(cardId);
     } catch (err) {
       setError(`Failed to bury: ${err.message}`);
     }

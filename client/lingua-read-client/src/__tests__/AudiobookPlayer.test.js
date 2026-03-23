@@ -497,6 +497,9 @@ describe('AudiobookPlayer', () => {
     await waitFor(() => {
       expect(getAudioLessonProgress).toHaveBeenCalledWith(42);
     });
+    await waitFor(() => {
+      expect(screen.getByTitle(/Play/)).toBeInTheDocument();
+    });
 
     const audio = container.querySelector('audio');
     expect(audio).not.toBeNull();
@@ -551,6 +554,9 @@ describe('AudiobookPlayer', () => {
     await waitFor(() => {
       expect(getAudioLessonProgress).toHaveBeenCalledWith(42);
     });
+    await waitFor(() => {
+      expect(screen.getByTitle(/Play/)).toBeInTheDocument();
+    });
 
     const audio = container.querySelector('audio');
     expect(audio).not.toBeNull();
@@ -593,6 +599,9 @@ describe('AudiobookPlayer', () => {
 
     await waitFor(() => {
       expect(getAudioLessonProgress).toHaveBeenCalledWith(42);
+    });
+    await waitFor(() => {
+      expect(screen.getByTitle(/Play/)).toBeInTheDocument();
     });
 
     const audio = container.querySelector('audio');

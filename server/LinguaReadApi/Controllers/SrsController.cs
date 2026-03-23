@@ -85,13 +85,23 @@ namespace LinguaReadApi.Controllers
             }
 
             // 3. Separate Queries & Over-fetch
-            var newCardsQuery = query.Where(scr => scr.Repetitions == 0).OrderBy(scr => scr.NextReviewAt);
-            var reviewCardsQuery = query.Where(scr => scr.Repetitions > 0).OrderBy(scr => scr.NextReviewAt);
+            var learningCardsPool = await query.Where(scr => scr.IsLearning).OrderBy(scr => scr.NextReviewAt).ToListAsync();
+            
+            var newCardsPool = new List<SrsCardReview>();
+            if (remainingNew > 0)
+            {
+                var newCardsQuery = query.Where(scr => !scr.IsLearning && scr.Repetitions == 0 && scr.LastReviewedAt == null).OrderBy(scr => scr.NextReviewAt);
+                newCardsPool = await newCardsQuery.Take(Math.Max(limit * 2, remainingNew * 2)).ToListAsync();
+            }
 
-            var newCardsPool = await newCardsQuery.Take(Math.Max(limit * 2, remainingNew * 2)).ToListAsync();
-            var reviewCardsPool = await reviewCardsQuery.Take(Math.Max(limit * 2, remainingReviews * 2)).ToListAsync();
+            var reviewCardsPool = new List<SrsCardReview>();
+            if (remainingReviews > 0)
+            {
+                var reviewCardsQuery = query.Where(scr => !scr.IsLearning && (scr.Repetitions > 0 || scr.LastReviewedAt != null)).OrderBy(scr => scr.NextReviewAt);
+                reviewCardsPool = await reviewCardsQuery.Take(Math.Max(limit * 2, remainingReviews * 2)).ToListAsync();
+            }
 
-            var allFetchedCards = newCardsPool.Concat(reviewCardsPool).ToList();
+            var allFetchedCards = learningCardsPool.Concat(newCardsPool).Concat(reviewCardsPool).ToList();
             if (!allFetchedCards.Any()) return new List<SrsDueCardDto>();
 
             // 4. Fetch Phrases for 1T validation
@@ -103,6 +113,7 @@ namespace LinguaReadApi.Controllers
             var phrasesByWordId = phrases.GroupBy(p => p.WordId).ToDictionary(g => g.Key, g => g.ToList());
 
             // 5. Apply 1T filter to build lists
+            var validLearningCards = new List<SrsDueCardDto>();
             var validNewCards = new List<SrsDueCardDto>();
             var validReviewCards = new List<SrsDueCardDto>();
 
@@ -149,7 +160,8 @@ namespace LinguaReadApi.Controllers
                     UnknownWordsInPhrase = unknownWordsInBestPhrase
                 };
 
-                if (card.Repetitions == 0) validNewCards.Add(dto);
+                if (card.IsLearning) validLearningCards.Add(dto);
+                else if (card.Repetitions == 0 && card.LastReviewedAt == null) validNewCards.Add(dto);
                 else validReviewCards.Add(dto);
             }
 
@@ -159,6 +171,7 @@ namespace LinguaReadApi.Controllers
 
             // 7. Apply Order
             var rawResult = new List<SrsDueCardDto>();
+            rawResult.AddRange(validLearningCards); // Learning cards ignore limits and sort first
             if (reviewOrder == "new_first")
             {
                 rawResult.AddRange(validNewCards);
@@ -229,8 +242,14 @@ namespace LinguaReadApi.Controllers
                     settings.SrsLongestStreak = Math.Max(settings.SrsLongestStreak, 1);
                 }
                 
-                if (card.Repetitions == 0) settings.SrsDailyNewCardsStudied++;
-                else settings.SrsDailyReviewsStudied++;
+                // Only increment limits if this is the FIRST review of this card today
+                bool isFirstReviewToday = card.LastReviewedAt == null || card.LastReviewedAt.Value.Date != today;
+                if (isFirstReviewToday)
+                {
+                    bool wasBrandNew = card.Repetitions == 0 && card.LastReviewedAt == null;
+                    if (wasBrandNew) settings.SrsDailyNewCardsStudied++;
+                    else settings.SrsDailyReviewsStudied++;
+                }
             }
 
             // 2. Logging for Undo & Retention
@@ -245,6 +264,7 @@ namespace LinguaReadApi.Controllers
                 OldNextReviewAt = card.NextReviewAt,
                 OldIsLearning = card.IsLearning,
                 OldCurrentLearningStepIndex = card.CurrentLearningStepIndex,
+                OldLastReviewedAt = card.LastReviewedAt,
                 ReviewedAt = DateTime.UtcNow
             };
             _context.SrsReviewLogs.Add(reviewLog);
@@ -361,23 +381,23 @@ namespace LinguaReadApi.Controllers
             if (card == null) return NotFound();
 
             // Restore state
-            bool wasNewBefore = lastLog.OldRepetitions == 0;
-            bool isNewNow = card.Repetitions == 0;
-
             card.Interval = lastLog.OldInterval;
             card.EaseFactor = lastLog.OldEaseFactor;
             card.Repetitions = lastLog.OldRepetitions;
             card.NextReviewAt = lastLog.OldNextReviewAt;
             card.IsLearning = lastLog.OldIsLearning;
             card.CurrentLearningStepIndex = lastLog.OldCurrentLearningStepIndex;
-            card.LastReviewedAt = null; // Slightly inaccurate but serves the purpose to unmark "ReviewedToday"
+            card.LastReviewedAt = lastLog.OldLastReviewedAt;
 
             // Revert daily limits
             var settings = await _context.UserSettings.FirstOrDefaultAsync(u => u.UserId == userId);
             var today = DateTime.UtcNow.Date;
-            if (settings != null && settings.SrsDailyStudyDate?.Date == today)
+            bool wasFirstReviewToday = lastLog.OldLastReviewedAt == null || lastLog.OldLastReviewedAt.Value.Date != today;
+
+            if (settings != null && settings.SrsDailyStudyDate?.Date == today && wasFirstReviewToday && lastLog.ReviewedAt.Date == today)
             {
-                if (wasNewBefore) 
+                bool wasBrandNewBefore = lastLog.OldRepetitions == 0 && lastLog.OldLastReviewedAt == null;
+                if (wasBrandNewBefore) 
                 {
                     settings.SrsDailyNewCardsStudied = Math.Max(0, settings.SrsDailyNewCardsStudied - 1);
                 } 
@@ -501,8 +521,8 @@ namespace LinguaReadApi.Controllers
 
             var dueCount = allCards.Count(c => c.NextReviewAt <= now);
             var totalCards = allCards.Count;
-            var newCards = allCards.Count(c => c.Repetitions == 0);
-            var learningCards = allCards.Count(c => c.Repetitions > 0 && c.Interval < 21);
+            var newCards = allCards.Count(c => c.Repetitions == 0 && c.LastReviewedAt == null);
+            var learningCards = allCards.Count(c => (c.Repetitions > 0 || c.LastReviewedAt != null) && c.Interval < 21);
             var matureCards = allCards.Count(c => c.Interval >= 21);
 
             var totalPhrases = await _context.SrsPhrases
@@ -689,7 +709,7 @@ namespace LinguaReadApi.Controllers
                         card.IsLearning = false;
                         card.CurrentLearningStepIndex = 0;
                         card.Interval = 1;
-                        card.Repetitions = 1;
+                        if (card.Repetitions == 0 && card.LastReviewedAt == null) card.Repetitions = 1;
                         if (grade == 3) card.Interval = (int)Math.Round(card.Interval * 1.3);
                         card.NextReviewAt = DateTime.UtcNow.AddDays(card.Interval);
                     }
@@ -713,7 +733,7 @@ namespace LinguaReadApi.Controllers
                 // Lapse: enter learning phase
                 card.IsLearning = true;
                 card.CurrentLearningStepIndex = 0;
-                card.Repetitions = 0;
+                // Retain Repetitions for lapse differentiation
                 int stepMinutes = learningSteps.Count > 0 ? learningSteps[0] : 1;
                 card.Interval = 0;
                 card.NextReviewAt = DateTime.UtcNow.AddMinutes(stepMinutes);
@@ -721,9 +741,9 @@ namespace LinguaReadApi.Controllers
             else
             {
                 // Passed (normal SM-2 flow)
-                if (card.Repetitions == 0)
+                if (card.Repetitions == 0 && card.LastReviewedAt == null)
                     card.Interval = 1;
-                else if (card.Repetitions == 1)
+                else if (card.Repetitions == 1 || (card.Repetitions == 0 && card.LastReviewedAt != null))
                     card.Interval = 6;
                 else
                     card.Interval = (int)Math.Round(card.Interval * card.EaseFactor);

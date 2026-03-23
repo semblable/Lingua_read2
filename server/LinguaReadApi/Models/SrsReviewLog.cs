@@ -28,6 +28,7 @@ namespace LinguaReadApi.Models
         public DateTime OldNextReviewAt { get; set; }
         public bool OldIsLearning { get; set; } = false;
         public int OldCurrentLearningStepIndex { get; set; } = 0;
+        public DateTime? OldLastReviewedAt { get; set; }
 
         // Navigation properties
         public virtual User User { get; set; } = null!;

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useContext } from 'react';
-import { Container, Card, Button, Spinner, Alert, Form, Row, Col, Badge, ProgressBar } from 'react-bootstrap';
+import { Container, Card, Button, Spinner, Alert, Form, Row, Col, Badge, ProgressBar, OverlayTrigger, Tooltip } from 'react-bootstrap';
 import { useNavigate } from 'react-router-dom';
 import { getAllLanguages, generateSrsStory, submitSrsReview, getSrsStats, createWord, getWordsByLanguage } from '../utils/api';
 import { SettingsContext } from '../contexts/SettingsContext';
@@ -240,7 +240,7 @@ const SrsStoryReview = () => {
         const isActive = activeWord?.wordId === matchedWord.wordId;
         const refKey = `${matchedWord.wordId}-${idx}`;
 
-        return (
+        const wordSpan = (
           <span
             key={idx}
             ref={el => { wordRefs.current[refKey] = el; }}
@@ -252,13 +252,26 @@ const SrsStoryReview = () => {
             {token}
           </span>
         );
+
+        return matchedWord.translation ? (
+          <OverlayTrigger
+            key={idx}
+            placement="top"
+            delay={{ show: 300, hide: 0 }}
+            overlay={<Tooltip id={`tip-${idx}`}>{matchedWord.translation}</Tooltip>}
+          >
+            {wordSpan}
+          </OverlayTrigger>
+        ) : wordSpan;
       }
 
       // Non-target tokens: make actual words clickable for lookup
       if (cleanToken.length > 0) {
         const refKey = `lookup-${idx}`;
         const existing = existingWordsMap[cleanToken];
-        return (
+        const translation = existing?.translation?.translation || existing?.translation;
+
+        const wordSpan = (
           <span
             key={idx}
             ref={el => { wordRefs.current[refKey] = el; }}
@@ -270,6 +283,17 @@ const SrsStoryReview = () => {
             {token}
           </span>
         );
+
+        return (translation && typeof translation === 'string') ? (
+          <OverlayTrigger
+            key={idx}
+            placement="top"
+            delay={{ show: 300, hide: 0 }}
+            overlay={<Tooltip id={`tip-${idx}`}>{translation}</Tooltip>}
+          >
+            {wordSpan}
+          </OverlayTrigger>
+        ) : wordSpan;
       }
 
       return <span key={idx}>{token}</span>;

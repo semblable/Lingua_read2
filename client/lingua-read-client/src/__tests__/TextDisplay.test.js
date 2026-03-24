@@ -595,4 +595,155 @@ describe('TextDisplay', () => {
 
     expect(translateText).not.toHaveBeenCalled();
   });
+
+  // --- Parallel loading optimization tests ---
+
+  test('parallel loading: fetches language config and sentence progress with languageId', async () => {
+    getText.mockResolvedValueOnce({
+      textId: 1,
+      title: 'Lesson',
+      content: 'Hola mundo.',
+      languageId: 5,
+      languageCode: 'ES',
+      languageName: 'Spanish',
+      isAudioLesson: false,
+      words: [{ wordId: 1, term: 'hola', status: 3, translation: 'hello' }],
+      bookId: null
+    });
+    getLanguage.mockResolvedValueOnce({ languageId: 5, name: 'Spanish', code: 'ES' });
+    global.fetch = jest.fn(() =>
+      Promise.resolve({ ok: true, json: () => Promise.resolve([]) })
+    );
+
+    renderTextDisplay();
+
+    await waitFor(() => expect(getText).toHaveBeenCalled());
+    // Text should render while parallel fetches proceed
+    expect(await screen.findByText('Lesson')).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(getLanguage).toHaveBeenCalledWith(5);
+      expect(getSentenceProgress).toHaveBeenCalledWith(1);
+    });
+
+    delete global.fetch;
+  });
+
+  test('parallel loading: fetches book data when bookId is present', async () => {
+    getText.mockResolvedValueOnce({
+      textId: 2,
+      title: 'Chapter 1',
+      content: 'Content here.',
+      languageId: null,
+      languageCode: 'ES',
+      languageName: 'Spanish',
+      isAudioLesson: false,
+      words: [],
+      bookId: 10
+    });
+    updateLastRead.mockResolvedValueOnce({});
+    getBook.mockResolvedValueOnce({
+      bookId: 10,
+      title: 'My Book',
+      parts: [
+        { textId: 1, title: 'Intro' },
+        { textId: 2, title: 'Chapter 1' },
+        { textId: 3, title: 'Chapter 2' }
+      ]
+    });
+
+    renderTextDisplay();
+
+    await waitFor(() => expect(getText).toHaveBeenCalled());
+    expect(await screen.findByText('Chapter 1')).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(updateLastRead).toHaveBeenCalledWith(10, 2);
+      expect(getBook).toHaveBeenCalledWith(10);
+    });
+  });
+
+  test('parallel loading: text renders immediately before all fetches complete', async () => {
+    // Make parallel fetches hang indefinitely
+    let resolveLanguage;
+    const languagePromise = new Promise(resolve => { resolveLanguage = resolve; });
+    getLanguage.mockReturnValueOnce(languagePromise);
+    getSentenceProgress.mockReturnValueOnce(new Promise(() => {})); // never resolves
+
+    getText.mockResolvedValueOnce({
+      textId: 1,
+      title: 'Quick Text',
+      content: 'Fast render.',
+      languageId: 5,
+      languageCode: 'ES',
+      languageName: 'Spanish',
+      isAudioLesson: false,
+      words: [],
+      bookId: null
+    });
+    global.fetch = jest.fn(() => new Promise(() => {})); // fetchAllLanguageWords hangs
+
+    renderTextDisplay();
+
+    // Text should render even though parallel fetches haven't completed
+    expect(await screen.findByText('Quick Text')).toBeInTheDocument();
+    expect(await screen.findByText('Fast')).toBeInTheDocument();
+
+    // Clean up
+    resolveLanguage({ languageId: 5, name: 'Spanish', code: 'ES' });
+    delete global.fetch;
+  });
+
+  test('parallel loading: handles getLanguage failure gracefully', async () => {
+    getText.mockResolvedValueOnce({
+      textId: 1,
+      title: 'Test',
+      content: 'Content.',
+      languageId: 5,
+      languageCode: 'ES',
+      languageName: 'Spanish',
+      isAudioLesson: false,
+      words: [],
+      bookId: null
+    });
+    getLanguage.mockRejectedValueOnce(new Error('Network error'));
+    global.fetch = jest.fn(() =>
+      Promise.resolve({ ok: true, json: () => Promise.resolve([]) })
+    );
+
+    renderTextDisplay();
+
+    // getLanguage failure sets error state which shows warning alert
+    await waitFor(() => {
+      expect(getLanguage).toHaveBeenCalledWith(5);
+    });
+    expect(await screen.findByText(/Warning: Failed to load language config/)).toBeInTheDocument();
+
+    delete global.fetch;
+  });
+
+  test('parallel loading: handles getBook failure gracefully', async () => {
+    getText.mockResolvedValueOnce({
+      textId: 2,
+      title: 'Chapter',
+      content: 'Book content.',
+      languageId: null,
+      languageCode: 'ES',
+      languageName: 'Spanish',
+      isAudioLesson: false,
+      words: [],
+      bookId: 10
+    });
+    updateLastRead.mockRejectedValueOnce(new Error('Server error'));
+
+    renderTextDisplay();
+
+    // Should still render text despite book fetch failure
+    expect(await screen.findByText('Chapter')).toBeInTheDocument();
+    expect(await screen.findByText('Book')).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(updateLastRead).toHaveBeenCalledWith(10, 2);
+    });
+  });
 });

@@ -24,17 +24,19 @@ namespace LinguaReadApi.Controllers
         private readonly AppDbContext _context;
         private readonly ILogger<TextsController> _logger;
         private readonly IUserActivityService _userActivityService; // Inject activity service
+        private readonly IServiceScopeFactory _scopeFactory;
         private const int MaxRecentTexts = 5;
         private static readonly JsonSerializerOptions StructuredContentJsonOptions = new(JsonSerializerDefaults.Web)
         {
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase
         };
 
-        public TextsController(AppDbContext context, ILogger<TextsController> logger, IUserActivityService userActivityService) // Inject services
+        public TextsController(AppDbContext context, ILogger<TextsController> logger, IUserActivityService userActivityService, IServiceScopeFactory scopeFactory) // Inject services
         {
             _context = context;
             _logger = logger;
             _userActivityService = userActivityService; // Assign service
+            _scopeFactory = scopeFactory;
         }
 
         // GET: api/texts
@@ -135,27 +137,25 @@ namespace LinguaReadApi.Controllers
                 }
             }
 
-            // --- Step 2: Perform separate update for LastAccessedAt ---
-            try
+            // --- Step 2: Fire-and-forget update for LastAccessedAt (non-critical) ---
+            _ = Task.Run(async () =>
             {
-                var textToUpdate = new Text { TextId = id, UserId = userId }; // Create minimal entity stub
-                _context.Texts.Attach(textToUpdate); // Attach the stub
-                textToUpdate.LastAccessedAt = DateTime.UtcNow; // Mark only LastAccessedAt as modified
-                 _context.Entry(textToUpdate).Property(x => x.LastAccessedAt).IsModified = true;
-
-                await _context.SaveChangesAsync(); // Save only the timestamp change
-                // Removed reference to LastAccessedAt on textDto (does not exist in DTO)
-            }
-            catch (DbUpdateConcurrencyException ex)
-            {
-                 _logger.LogWarning(ex, "Concurrency error updating LastAccessedAt for TextId {TextId}", id);
-                 // Non-critical, proceed with returning potentially slightly stale LastAccessedAt in DTO
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error saving LastAccessedAt for TextId {TextId}", id);
-                // Non-critical, proceed with returning potentially slightly stale LastAccessedAt in DTO
-            }
+                try
+                {
+                    using var scope = _scopeFactory.CreateScope();
+                    var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                    var textToUpdate = new Text { TextId = id, UserId = userId };
+                    dbContext.Texts.Attach(textToUpdate);
+                    textToUpdate.LastAccessedAt = DateTime.UtcNow;
+                    dbContext.Entry(textToUpdate).Property(x => x.LastAccessedAt).IsModified = true;
+                    await dbContext.SaveChangesAsync();
+                }
+                catch (Exception ex)
+                {
+                    // Non-critical - log but don't fail the request
+                    _logger.LogWarning(ex, "Background update of LastAccessedAt failed for TextId {TextId}", id);
+                }
+            });
             // --- End Update ---
 
             // --- Step 3: Return the DTO ---

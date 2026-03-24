@@ -638,7 +638,13 @@ const MobileLessonHeader = React.memo(({
   readerLessonActions,
   isAudioLesson,
   isAudioPlaying,
-  toggleAudioPlayback
+  toggleAudioPlayback,
+  audioSrc,
+  textId,
+  audioRef,
+  onTimeUpdate,
+  onPlaybackStateChange,
+  segmentPlaybackRequest
 }) => {
   if (!isMobile) return null;
 
@@ -712,6 +718,21 @@ const MobileLessonHeader = React.memo(({
             </div>
           </div>
         </Collapse>
+        {isAudioLesson && audioSrc && (
+          <div className="audio-player-container p-2 theme-aware-audio-player-container">
+            <AudiobookPlayer
+              key="lesson-audio-player-topbar"
+              type="lesson"
+              audioSrc={audioSrc}
+              textId={textId}
+              languageId={text?.languageId}
+              audioRef={audioRef}
+              onTimeUpdate={onTimeUpdate}
+              onPlaybackStateChange={onPlaybackStateChange}
+              segmentPlaybackRequest={segmentPlaybackRequest}
+            />
+          </div>
+        )}
       </div>
     </>
   );
@@ -1412,6 +1433,7 @@ const TextDisplay = () => {
   const audioRef = useRef(null);
   const listRef = useRef(null);
   const autoScrollRafRef = useRef(null);
+  const contentTouchMovedRef = useRef(false);
   // Removed resizeDividerRef
 
   // --- State Declarations ---
@@ -1420,6 +1442,7 @@ const TextDisplay = () => {
   const [text, setText] = useState(null);
   const [book, setBook] = useState(null);
   const [words, setWords] = useState([]);
+  const [languageWordsLoaded, setLanguageWordsLoaded] = useState(false);
   const [selectedWord, setSelectedWord] = useState('');
   const [hoveredWordTerm, setHoveredWordTerm] = useState(null);
   const [translation, setTranslation] = useState('');
@@ -1782,15 +1805,16 @@ const TextDisplay = () => {
     if (!languageId) return; // Guard against missing languageId
     try {
       // Corrected URL construction: Removed redundant '/api' prefix
-      const response = await fetch(`${API_URL}/words/language/${languageId}`, {
+      const response = await fetch(`${API_URL}/words/language/${languageId}?skipSort=true`, {
         headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}`, 'Accept': 'application/json' }
       });
       if (!response.ok) throw new Error('Failed to fetch language words');
       const allLanguageWords = await response.json();
       // Replace the entire words state with the newly fetched data
       setWords(allLanguageWords);
+      setLanguageWordsLoaded(true);
       console.log(`[fetchAllLanguageWords] Replaced words state with ${allLanguageWords.length} words from backend.`);
-    } catch (error) { console.error('Error fetching language words:', error); }
+    } catch (error) { console.error('Error fetching language words:', error); setLanguageWordsLoaded(true); }
   }, [setWords]); // Dependency: setWords
 
   const prevFetchAllLanguageWordsRef = useRef(fetchAllLanguageWords);
@@ -1820,6 +1844,8 @@ const TextDisplay = () => {
 
   const getWordStyle = useCallback((wordStatus) => {
     const baseStyle = { cursor: 'pointer', padding: '2px 0', margin: '0 2px', borderRadius: '3px', transition: 'all 0.2s' };
+    // Suppress highlights until full language words have loaded to avoid flash of "new" status
+    if (!languageWordsLoaded) return { ...baseStyle, backgroundColor: 'transparent', color: 'inherit' };
     // Use globalSettings from context
     if (!globalSettings?.highlightKnownWords && wordStatus === 5) return { ...baseStyle, backgroundColor: 'transparent', color: 'inherit' };
     if (wordStatus === 5) return { ...baseStyle, backgroundColor: 'transparent', color: 'inherit' };
@@ -1831,7 +1857,7 @@ const TextDisplay = () => {
       4: { backgroundColor: 'var(--status-4-color, #99dd66)', color: '#000' },
     };
     return { ...baseStyle, ...(statusStyles[wordStatus] || statusStyles[0]) };
-  }, [globalSettings?.highlightKnownWords]); // Use globalSettings from context
+  }, [languageWordsLoaded, globalSettings?.highlightKnownWords]); // Use globalSettings from context
 
   const triggerAutoTranslation = useCallback(async (termToTranslate, options = {}) => {
     const { sentenceContext = '' } = options;
@@ -1870,6 +1896,8 @@ const TextDisplay = () => {
     setWordTranslationError('');
     if (isMobile) {
       setIsWordPanelOpen(true);
+      setShowMobileHeader(false);
+      setShowMoreControls(false);
     }
     const existingWord = getWordData(word);
     if (existingWord) {
@@ -1965,6 +1993,9 @@ const TextDisplay = () => {
     const selectionDetails = getSelectionDetails();
     if (!selectionDetails) {
       lastHandledSelectionRef.current = '';
+      if (isMobile && !contentTouchMovedRef.current && !hasActiveTextSelection()) {
+        setShowMobileHeader(prev => !prev);
+      }
       return;
     }
 
@@ -2070,7 +2101,7 @@ const TextDisplay = () => {
       handleSelectedText(selection.toString().trim(), sentenceContext);
     }
 
-  }, [focusSentenceIndexFromNode, getSelectionDetails, buildAiSelectionContext, handleSelectedText, isMobile]); // textContentRef is a stable ref
+  }, [focusSentenceIndexFromNode, getSelectionDetails, buildAiSelectionContext, handleSelectedText, isMobile, hasActiveTextSelection]); // textContentRef is a stable ref
 
   const scheduleWordSelection = useCallback((delayMs) => {
     clearPendingSelection();
@@ -2142,7 +2173,7 @@ const TextDisplay = () => {
             <span
               key={`phrase-${currentKeyIndex++}-${phraseTerm.replace(/\s+/g, '-')}`}
               style={{ ...styles.highlightedWord, ...getWordStyle(phraseStatus) }}
-              className={`clickable-word word-status-${phraseStatus}`} // Treat phrase like a word visually/interactively
+              className={`clickable-word${languageWordsLoaded ? ` word-status-${phraseStatus}` : ''}`}
               onTouchStart={handleSelectableWordTouchStart}
               onTouchEnd={handleSelectableWordTouchEnd}
               onClick={(e) => handleSelectableWordClick(e, phraseTerm)}
@@ -2193,7 +2224,7 @@ const TextDisplay = () => {
           <span
             key={`word-${currentKeyIndex++}-${currentWord}`}
             style={{ ...styles.highlightedWord, ...getWordStyle(wordStatus) }}
-            className={`clickable-word word-status-${wordStatus}`}
+            className={`clickable-word${languageWordsLoaded ? ` word-status-${wordStatus}` : ''}`}
             onTouchStart={handleSelectableWordTouchStart}
             onTouchEnd={handleSelectableWordTouchEnd}
             onClick={(e) => handleSelectableWordClick(e, currentWord)}
@@ -2223,7 +2254,7 @@ const TextDisplay = () => {
     return elements;
     // --- End Phase 2 Logic ---
 
-  }, [knownPhrases, getWordData, getWordStyle, handleSelectableWordClick, handleSelectableWordTouchEnd, handleSelectableWordTouchStart, setHoveredWordTerm]); // Removed unnecessary 'words' dependency
+  }, [knownPhrases, getWordData, getWordStyle, languageWordsLoaded, handleSelectableWordClick, handleSelectableWordTouchEnd, handleSelectableWordTouchStart, setHoveredWordTerm]); // Removed unnecessary 'words' dependency
 
 
   const getFontFamilyForList = useCallback(() => {
@@ -2278,12 +2309,12 @@ const TextDisplay = () => {
   const mobileReadingConfig = useMemo(() => {
     switch (readingDensity) {
       case 'compact':
-        return { lineSpacing: 1.4, chunkSize: 3, blockPadding: '0.7rem 0.8rem' };
+        return { lineSpacing: 1.4, chunkSize: 3, blockPadding: '0.5rem 0.65rem' };
       case 'spacious':
-        return { lineSpacing: 1.9, chunkSize: 1, blockPadding: '1.05rem 1rem' };
+        return { lineSpacing: 1.9, chunkSize: 1, blockPadding: '0.8rem 0.85rem' };
       case 'balanced':
       default:
-        return { lineSpacing: 1.65, chunkSize: 2, blockPadding: '0.9rem 0.9rem' };
+        return { lineSpacing: 1.65, chunkSize: 2, blockPadding: '0.65rem 0.75rem' };
     }
   }, [readingDensity]);
 
@@ -2635,6 +2666,7 @@ const TextDisplay = () => {
 
       if (!isSameText) {
         setLoading(true);
+        setLanguageWordsLoaded(false);
         setError('');
         setBook(null);
         setPreviousTextId(null);
@@ -2683,58 +2715,100 @@ const TextDisplay = () => {
           setSrtLines([]);
           if (displayMode !== 'text') setDisplayMode('text');
         }
-        // Fetch all words for the language AND the language configuration itself (Phase 3)
-        if (data.languageId) {
-          await fetchAllLanguageWords(data.languageId);
-          try {
-            // Assuming getLanguage exists in api.js from Phase 1/2
-            const langConfigData = await getLanguage(data.languageId); // Make sure getLanguage is imported
-            setLanguageConfig(langConfigData);
-            console.log('[Language Config] Fetched:', langConfigData);
-          } catch (langErr) {
-            console.error('Failed to fetch language configuration:', langErr);
-            setError(prev => `${prev} (Warning: Failed to load language config)`);
-            setLanguageConfig(null); // Ensure it's null on error
-          }
-        } else {
-          setLanguageConfig(null); // Reset if no languageId
+        // Show text immediately with text-specific words while background data loads
+        setLoading(false);
+
+        // Load bookmarks synchronously (localStorage, no network)
+        if (data?.textId) {
+          const loadedBookmarks = getBookmarkedSentences(data.textId);
+          setBookmarkedIndices(loadedBookmarks);
+          console.log(`[Bookmarks] Loaded ${loadedBookmarks.length} bookmarks for text ${data.textId}`);
         }
+
+        // --- Parallel fetch of all independent data ---
+        const promises = [];
+
+        // 0: Language words
+        promises.push(
+          data.languageId
+            ? fetchAllLanguageWords(data.languageId)
+            : Promise.resolve(null)
+        );
+
+        // 1: Language config
+        promises.push(
+          data.languageId
+            ? getLanguage(data.languageId)
+            : Promise.resolve(null)
+        );
+
+        // 2: Book data (updateLastRead then getBook, chained but parallel with others)
+        promises.push(
+          data.bookId
+            ? updateLastRead(data.bookId, data.textId).then(() => getBook(data.bookId))
+            : Promise.resolve(null)
+        );
+
+        // 3: Sentence progress
+        promises.push(
+          data?.textId
+            ? getSentenceProgress(data.textId)
+            : Promise.resolve(null)
+        );
+
+        const results = await Promise.allSettled(promises);
+
+        // Process result 0: fetchAllLanguageWords (already sets state internally)
+        if (results[0].status === 'rejected') {
+          console.error('Failed to fetch language words:', results[0].reason);
+        }
+        // Ensure highlights are enabled even if no languageId (fetchAllLanguageWords wasn't called)
+        if (!data.languageId) setLanguageWordsLoaded(true);
+
+        // Process result 1: language config
+        if (results[1].status === 'fulfilled' && results[1].value) {
+          setLanguageConfig(results[1].value);
+          console.log('[Language Config] Fetched:', results[1].value);
+        } else {
+          if (results[1].status === 'rejected') {
+            console.error('Failed to fetch language configuration:', results[1].reason);
+            setError(prev => `${prev} (Warning: Failed to load language config)`);
+          }
+          setLanguageConfig(null);
+        }
+
+        // Process result 2: book
         if (data.bookId) {
-          try {
-            await updateLastRead(data.bookId, data.textId);
-            const bookData = await getBook(data.bookId);
+          if (results[2].status === 'fulfilled' && results[2].value) {
+            const bookData = results[2].value;
             setBook(bookData);
             if (bookData?.parts) {
               const currentPartIndex = bookData.parts.findIndex(part => part.textId === parseInt(textId));
               setPreviousTextId(currentPartIndex > 0 ? bookData.parts[currentPartIndex - 1].textId : null);
               setNextTextId(currentPartIndex >= 0 && currentPartIndex < bookData.parts.length - 1 ? bookData.parts[currentPartIndex + 1].textId : null);
             }
-          } catch (bookErr) {
-            console.error('Failed to get book data:', bookErr);
-            // Don't block text display if book fetch fails, but player won't show
+          } else {
+            console.error('Failed to get book data:', results[2].reason);
           }
         } else {
           setPreviousTextId(null);
           setNextTextId(null);
         }
-        // Load bookmarks after text is set
-        if (data?.textId) {
-          const loadedBookmarks = getBookmarkedSentences(data.textId);
-          setBookmarkedIndices(loadedBookmarks);
-          console.log(`[Bookmarks] Loaded ${loadedBookmarks.length} bookmarks for text ${data.textId}`);
-          try {
-            const sentenceProgress = await getSentenceProgress(data.textId);
-            const initialIndex = Math.max(0, sentenceProgress?.lastSegmentIndex || 0);
-            setCurrentSegmentIndex(initialIndex);
-            setCreditedSegmentIndices(sentenceProgress?.creditedSegmentIndices || []);
-          } catch (sentenceProgressErr) {
-            console.error('Failed to fetch sentence progress:', sentenceProgressErr);
-            setCreditedSegmentIndices([]);
-            setCurrentSegmentIndex(0);
-          } finally {
-            setSentenceProgressLoaded(true);
+
+        // Process result 3: sentence progress
+        if (results[3].status === 'fulfilled' && results[3].value) {
+          const sentenceProgress = results[3].value;
+          const initialIndex = Math.max(0, sentenceProgress?.lastSegmentIndex || 0);
+          setCurrentSegmentIndex(initialIndex);
+          setCreditedSegmentIndices(sentenceProgress?.creditedSegmentIndices || []);
+        } else {
+          if (results[3].status === 'rejected') {
+            console.error('Failed to fetch sentence progress:', results[3].reason);
           }
+          setCreditedSegmentIndices([]);
+          setCurrentSegmentIndex(0);
         }
+        setSentenceProgressLoaded(true);
       } catch (err) { setError(err.message || 'Failed to load text'); }
       finally { setLoading(false); }
     };
@@ -3172,6 +3246,12 @@ const TextDisplay = () => {
         isAudioLesson={isAudioLesson}
         isAudioPlaying={isAudioPlaying}
         toggleAudioPlayback={toggleAudioPlayback}
+        audioSrc={audioSrc}
+        textId={textId}
+        audioRef={audioRef}
+        onTimeUpdate={handleAudioTimeUpdate}
+        onPlaybackStateChange={handleAudioPlaybackStateChange}
+        segmentPlaybackRequest={segmentPlaybackRequest}
       />
       <LessonHeader
         isMobile={isMobile}
@@ -3224,7 +3304,12 @@ const TextDisplay = () => {
           }}
         >
           <div className="d-flex flex-column" style={{ minHeight: '100%', height: '100%' }}>
-            <div className={`flex-grow-1 reader-main-surface reader-main-surface-${readingUiMode}`} ref={readingContainerRef}>
+            <div
+              className={`flex-grow-1 reader-main-surface reader-main-surface-${readingUiMode}`}
+              ref={readingContainerRef}
+              onTouchStart={() => { contentTouchMovedRef.current = false; }}
+              onTouchMove={() => { contentTouchMovedRef.current = true; }}
+            >
               <div
                 className={`reader-main-surface-inner reader-main-surface-inner-${readingUiMode}`}
                 style={{ '--reader-content-max-width': `${globalSettings.readerContentWidth || 740}px` }}

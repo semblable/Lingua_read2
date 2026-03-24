@@ -6,6 +6,7 @@ using LinguaReadApi.Services;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
@@ -109,7 +110,7 @@ public class SentenceModeActivityTests
         context.ChangeTracker.Clear();
 
         var service = new UserActivityService(context, NullLogger<UserActivityService>.Instance);
-        var controller = new TextsController(context, NullLogger<TextsController>.Instance, service)
+        var controller = new TextsController(context, NullLogger<TextsController>.Instance, service, CreateScopeFactory(context))
         {
             ControllerContext = BuildControllerContext(userId)
         };
@@ -172,7 +173,7 @@ public class SentenceModeActivityTests
         context.ChangeTracker.Clear();
 
         var service = new UserActivityService(context, NullLogger<UserActivityService>.Instance);
-        var controller = new TextsController(context, NullLogger<TextsController>.Instance, service)
+        var controller = new TextsController(context, NullLogger<TextsController>.Instance, service, CreateScopeFactory(context))
         {
             ControllerContext = BuildControllerContext(userId)
         };
@@ -227,7 +228,7 @@ public class SentenceModeActivityTests
         context.ChangeTracker.Clear();
 
         var service = new UserActivityService(context, NullLogger<UserActivityService>.Instance);
-        var controller = new TextsController(context, NullLogger<TextsController>.Instance, service)
+        var controller = new TextsController(context, NullLogger<TextsController>.Instance, service, CreateScopeFactory(context))
         {
             ControllerContext = BuildControllerContext(userId)
         };
@@ -270,6 +271,14 @@ public class SentenceModeActivityTests
             .Options;
 
         return new AppDbContext(options);
+    }
+
+    private static IServiceScopeFactory CreateScopeFactory(AppDbContext context)
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(context);
+        services.AddSingleton<AppDbContext>(context);
+        return services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
     }
 
     private static void SeedUserLanguageAndText(AppDbContext context, Guid userId, int textId, string content)

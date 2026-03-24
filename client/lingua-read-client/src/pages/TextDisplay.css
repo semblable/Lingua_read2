@@ -73,6 +73,11 @@
 
 .lesson-topbar-open {
   display: block;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1020;
 }
 
 .mobile-lesson-fab {
@@ -632,7 +637,8 @@
   }
 
   .left-panel {
-    height: 65vh !important;
+    min-height: 65vh !important;
+    height: auto !important;
   }
 
   .right-panel {
@@ -648,14 +654,14 @@
   .reading-block-group {
     display: flex;
     flex-direction: column;
-    gap: 0.6rem;
-    padding: 0 var(--space-sm);
+    gap: 0.4rem;
+    padding: 0 var(--space-xs);
   }
 
   .reading-block {
     margin: 0;
-    padding: var(--mobile-reading-block-padding, 0.9rem 0.9rem);
-    border-radius: 12px;
+    padding: var(--mobile-reading-block-padding, 0.65rem 0.75rem);
+    border-radius: 10px;
     background: var(--theme-surface-bg, #fff);
     box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
     line-height: var(--mobile-reading-line-height, calc(var(--reading-line-height) + 0.2));
@@ -666,8 +672,29 @@
   .reader-ui-modern .srt-line,
   .reader-ui-modern .sentence-mode-card,
   .reader-ui-modern .right-panel-modern > .card {
-    border-radius: 18px;
-    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.08);
+    border-radius: 14px;
+    box-shadow: 0 1px 6px rgba(0, 0, 0, 0.08);
+  }
+
+  .reader-ui-modern .reading-block-group {
+    gap: 0.4rem;
+    padding: 0;
+  }
+
+  .reader-ui-modern .reading-block {
+    padding: var(--mobile-reading-block-padding, 0.65rem 0.75rem);
+  }
+
+  .reader-main-surface-modern {
+    padding: 0.15rem;
+  }
+
+  .reader-main-surface-inner-modern {
+    padding: 0.35rem 0.15rem 1rem;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    max-width: 100%;
   }
 
   .reader-title-block {

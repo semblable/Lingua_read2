@@ -1,0 +1,287 @@
+using System.Security.Claims;
+using LinguaReadApi.Controllers;
+using LinguaReadApi.Data;
+using LinguaReadApi.Models;
+using LinguaReadApi.Services;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
+using Xunit;
+
+namespace LinguaReadApi.Tests;
+
+public class LessonLoadingOptimizationTests
+{
+    // --- GetText Tests ---
+
+    [Fact]
+    public async Task GetText_ReturnsTextWithWords()
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        SeedUserLanguageAndText(context, userId, textId: 1, content: "Hola mundo");
+
+        var word = new Word { WordId = 1, UserId = userId, LanguageId = 1, Term = "hola", Status = 3 };
+        context.Words.Add(word);
+        context.WordTranslations.Add(new WordTranslation { WordId = 1, Translation = "hello" });
+        context.TextWords.Add(new TextWord { TextWordId = 1, TextId = 1, WordId = 1, CreatedAt = DateTime.UtcNow });
+        await context.SaveChangesAsync();
+        context.ChangeTracker.Clear();
+
+        var controller = CreateTextsController(context, userId);
+        var result = await controller.GetText(1);
+
+        var okResult = Assert.IsType<ActionResult<TextDetailDto>>(result);
+        var dto = okResult.Value;
+        Assert.NotNull(dto);
+        Assert.Equal(1, dto!.TextId);
+        Assert.Equal("Hola mundo", dto.Content);
+        Assert.Single(dto.Words);
+        Assert.Equal("hola", dto.Words[0].Term);
+        Assert.Equal("hello", dto.Words[0].Translation);
+        Assert.Equal(3, dto.Words[0].Status);
+    }
+
+    [Fact]
+    public async Task GetText_ReturnsNotFound_ForOtherUsersText()
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        var otherUserId = Guid.NewGuid();
+        SeedUserLanguageAndText(context, userId, textId: 1, content: "Private text");
+
+        var controller = CreateTextsController(context, otherUserId);
+        var result = await controller.GetText(1);
+
+        Assert.IsType<NotFoundResult>(result.Result);
+    }
+
+    [Fact]
+    public async Task GetText_UpdatesLastAccessedAt_InBackground()
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        SeedUserLanguageAndText(context, userId, textId: 1, content: "Test");
+
+        var textBefore = await context.Texts.AsNoTracking().SingleAsync(t => t.TextId == 1);
+        var beforeTime = textBefore.LastAccessedAt;
+
+        var controller = CreateTextsController(context, userId);
+        var result = await controller.GetText(1);
+
+        Assert.NotNull(result.Value);
+
+        // Give the background task a moment to complete
+        await Task.Delay(200);
+
+        var textAfter = await context.Texts.AsNoTracking().SingleAsync(t => t.TextId == 1);
+        Assert.True(textAfter.LastAccessedAt > beforeTime || beforeTime == default,
+            "LastAccessedAt should be updated after GetText");
+    }
+
+    [Fact]
+    public async Task GetText_ReturnsLanguageInfo()
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        SeedUserLanguageAndText(context, userId, textId: 1, content: "Test");
+
+        var controller = CreateTextsController(context, userId);
+        var result = await controller.GetText(1);
+
+        var dto = result.Value;
+        Assert.NotNull(dto);
+        Assert.Equal("Spanish", dto!.LanguageName);
+        Assert.Equal("ES", dto.LanguageCode);
+        Assert.Equal(1, dto.LanguageId);
+    }
+
+    // --- GetWordsByLanguage skipSort Tests ---
+
+    [Fact]
+    public async Task GetWordsByLanguage_DefaultSort_ReturnsWordsSortedByTerm()
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        SeedUserAndLanguage(context, userId);
+        SeedWords(context, userId);
+        context.ChangeTracker.Clear();
+
+        var controller = CreateWordsController(context, userId);
+        var result = await controller.GetWordsByLanguage(1);
+
+        var okResult = Assert.IsType<ActionResult<IEnumerable<WordResponseDto>>>(result);
+        var words = okResult.Value!.ToList();
+        Assert.Equal(3, words.Count);
+        // Default sort is by term ascending
+        Assert.Equal("alpha", words[0].Term);
+        Assert.Equal("beta", words[1].Term);
+        Assert.Equal("gamma", words[2].Term);
+    }
+
+    [Fact]
+    public async Task GetWordsByLanguage_SkipSort_ReturnsAllWordsWithoutGuaranteedOrder()
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        SeedUserAndLanguage(context, userId);
+        SeedWords(context, userId);
+        context.ChangeTracker.Clear();
+
+        var controller = CreateWordsController(context, userId);
+        var result = await controller.GetWordsByLanguage(1, skipSort: true);
+
+        var okResult = Assert.IsType<ActionResult<IEnumerable<WordResponseDto>>>(result);
+        var words = okResult.Value!.ToList();
+        Assert.Equal(3, words.Count);
+        // All words should be present regardless of sort
+        Assert.Contains(words, w => w.Term == "alpha");
+        Assert.Contains(words, w => w.Term == "beta");
+        Assert.Contains(words, w => w.Term == "gamma");
+    }
+
+    [Fact]
+    public async Task GetWordsByLanguage_SkipSort_StillAppliesStatusFilter()
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        SeedUserAndLanguage(context, userId);
+        SeedWords(context, userId);
+        context.ChangeTracker.Clear();
+
+        var controller = CreateWordsController(context, userId);
+        var result = await controller.GetWordsByLanguage(1, status: "3", skipSort: true);
+
+        var okResult = Assert.IsType<ActionResult<IEnumerable<WordResponseDto>>>(result);
+        var words = okResult.Value!.ToList();
+        Assert.Single(words);
+        Assert.Equal("beta", words[0].Term);
+    }
+
+    [Fact]
+    public async Task GetWordsByLanguage_ExplicitSort_IgnoresSkipSort()
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        SeedUserAndLanguage(context, userId);
+        SeedWords(context, userId);
+        context.ChangeTracker.Clear();
+
+        var controller = CreateWordsController(context, userId);
+        // skipSort=false (default) + explicit sort
+        var result = await controller.GetWordsByLanguage(1, sortBy: "term_desc");
+
+        var okResult = Assert.IsType<ActionResult<IEnumerable<WordResponseDto>>>(result);
+        var words = okResult.Value!.ToList();
+        Assert.Equal("gamma", words[0].Term);
+        Assert.Equal("beta", words[1].Term);
+        Assert.Equal("alpha", words[2].Term);
+    }
+
+    [Fact]
+    public async Task GetWordsByLanguage_ReturnsOnlyOwnWords()
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        var otherUserId = Guid.NewGuid();
+        SeedUserAndLanguage(context, userId);
+        // Add another user
+        context.Users.Add(new User { Id = otherUserId, UserName = "other", Email = "other@test.com" });
+        context.SaveChanges();
+
+        SeedWords(context, userId);
+        // Add a word for the other user
+        context.Words.Add(new Word { WordId = 100, UserId = otherUserId, LanguageId = 1, Term = "othersword", Status = 1 });
+        context.SaveChanges();
+        context.ChangeTracker.Clear();
+
+        var controller = CreateWordsController(context, userId);
+        var result = await controller.GetWordsByLanguage(1, skipSort: true);
+
+        var words = result.Value!.ToList();
+        Assert.Equal(3, words.Count);
+        Assert.DoesNotContain(words, w => w.Term == "othersword");
+    }
+
+    // --- Helpers ---
+
+    private static TextsController CreateTextsController(AppDbContext context, Guid userId)
+    {
+        var scopeFactory = CreateScopeFactory(context);
+        var service = new UserActivityService(context, NullLogger<UserActivityService>.Instance);
+        return new TextsController(context, NullLogger<TextsController>.Instance, service, scopeFactory)
+        {
+            ControllerContext = BuildControllerContext(userId)
+        };
+    }
+
+    private static WordsController CreateWordsController(AppDbContext context, Guid userId)
+    {
+        return new WordsController(context)
+        {
+            ControllerContext = BuildControllerContext(userId)
+        };
+    }
+
+    private static IServiceScopeFactory CreateScopeFactory(AppDbContext context)
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(context);
+        return services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
+    }
+
+    private static ControllerContext BuildControllerContext(Guid userId)
+    {
+        return new ControllerContext
+        {
+            HttpContext = new DefaultHttpContext
+            {
+                User = new ClaimsPrincipal(new ClaimsIdentity(
+                [
+                    new Claim(ClaimTypes.NameIdentifier, userId.ToString())
+                ], "TestAuth"))
+            }
+        };
+    }
+
+    private static AppDbContext CreateContext()
+    {
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        return new AppDbContext(options);
+    }
+
+    private static void SeedUserAndLanguage(AppDbContext context, Guid userId)
+    {
+        context.Users.Add(new User { Id = userId, UserName = "tester", Email = "tester@example.com" });
+        context.Languages.Add(new Language { LanguageId = 1, Name = "Spanish", Code = "ES" });
+        context.SaveChanges();
+    }
+
+    private static void SeedUserLanguageAndText(AppDbContext context, Guid userId, int textId, string content)
+    {
+        SeedUserAndLanguage(context, userId);
+        context.Texts.Add(new Text
+        {
+            TextId = textId,
+            UserId = userId,
+            LanguageId = 1,
+            Title = "Test text",
+            Content = content
+        });
+        context.SaveChanges();
+    }
+
+    private static void SeedWords(AppDbContext context, Guid userId)
+    {
+        context.Words.AddRange(
+            new Word { WordId = 1, UserId = userId, LanguageId = 1, Term = "gamma", Status = 5 },
+            new Word { WordId = 2, UserId = userId, LanguageId = 1, Term = "alpha", Status = 1 },
+            new Word { WordId = 3, UserId = userId, LanguageId = 1, Term = "beta", Status = 3 }
+        );
+        context.SaveChanges();
+    }
+}

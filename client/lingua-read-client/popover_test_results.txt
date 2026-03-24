@@ -1,0 +1,96 @@
+﻿
+> lingua-read-client@0.1.0 test
+> react-scripts test SrsWordPopover
+
+  console.error
+    Warning: `ReactDOMTestUtils.act` is deprecated in favor of `React.act`. Import `act` from `react` instead of `react-dom/test-utils`. See https://react.dev/warnings/react-dom-test-utils for more info.
+
+    [0m [90m 21 |[39m
+     [90m 22 |[39m   it([32m'renders correctly when show is true'[39m[33m,[39m [36masync[39m () [33m=>[39m {
+    [31m[1m>[22m[39m[90m 23 |[39m     render(
+     [90m    |[39m           [31m[1m^[22m[39m
+     [90m 24 |[39m       [33m<[39m[33mSrsWordPopover[39m
+     [90m 25 |[39m         word[33m=[39m{mockWord}
+     [90m 26 |[39m         targetRef[33m=[39m{mockTargetRef}[0m
+
+      at printWarning (node_modules/react-dom/cjs/react-dom-test-utils.development.js:71:30)
+      at error (node_modules/react-dom/cjs/react-dom-test-utils.development.js:45:7)
+      at actWithWarning (node_modules/react-dom/cjs/react-dom-test-utils.development.js:1736:7)
+      at node_modules/@testing-library/react/dist/act-compat.js:63:25
+      at renderRoot (node_modules/@testing-library/react/dist/pure.js:159:26)
+      at render (node_modules/@testing-library/react/dist/pure.js:246:10)
+      at Object.<anonymous> (src/__tests__/SrsWordPopover.test.js:23:11)
+      at TestScheduler.scheduleTests (node_modules/@jest/core/build/TestScheduler.js:333:13)
+      at runJest (node_modules/@jest/core/build/runJest.js:404:19)
+      at _run10000 (node_modules/@jest/core/build/cli/index.js:320:7)
+      at runCLI (node_modules/@jest/core/build/cli/index.js:173:3)
+
+  console.error
+    Warning: An update to Overlay inside a test was not wrapped in act(...).
+    
+    When testing, code that causes React state updates should be wrapped into act(...):
+    
+    act(() => {
+      /* fire events that update state */
+    });
+    /* assert on the output */
+    
+    This ensures that you're testing the behavior the user would see in the browser. Learn more at https://reactjs.org/link/wrap-tests-with-act
+        at C:\Users\kamil\Lingua-Read\client\lingua-read-client\node_modules\react-bootstrap\cjs\Overlay.js:31:13
+        at SrsWordPopover (C:\Users\kamil\Lingua-Read\client\lingua-read-client\src\components\SrsWordPopover.js:14:27)
+
+      at printWarning (node_modules/react-dom/cjs/react-dom.development.js:86:30)
+      at error (node_modules/react-dom/cjs/react-dom.development.js:60:7)
+      at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-dom/cjs/react-dom.development.js:27628:9)
+      at scheduleUpdateOnFiber (node_modules/react-dom/cjs/react-dom.development.js:25547:5)
+      at dispatchSetState (node_modules/react-dom/cjs/react-dom.development.js:16708:7)
+      at Object.current (node_modules/react-bootstrap/cjs/Overlay.js:45:5)
+      at Object.onFirstUpdate (node_modules/@restart/hooks/cjs/useEventCallback.js:11:31)
+      at node_modules/@restart/ui/cjs/popper.js:1665:17
+
+  console.error
+    Warning: An update to Overlay inside a test was not wrapped in act(...).
+    
+    When testing, code that causes React state updates should be wrapped into act(...):
+    
+    act(() => {
+      /* fire events that update state */
+    });
+    /* assert on the output */
+    
+    This ensures that you're testing the behavior the user would see in the browser. Learn more at https://reactjs.org/link/wrap-tests-with-act
+        at C:\Users\kamil\Lingua-Read\client\lingua-read-client\node_modules\react-bootstrap\cjs\Overlay.js:31:13
+        at SrsWordPopover (C:\Users\kamil\Lingua-Read\client\lingua-read-client\src\components\SrsWordPopover.js:14:27)
+
+      at printWarning (node_modules/react-dom/cjs/react-dom.development.js:86:30)
+      at error (node_modules/react-dom/cjs/react-dom.development.js:60:7)
+      at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-dom/cjs/react-dom.development.js:27628:9)
+      at scheduleUpdateOnFiber (node_modules/react-dom/cjs/react-dom.development.js:25547:5)
+      at dispatchSetState (node_modules/react-dom/cjs/react-dom.development.js:16708:7)
+      at Object.current (node_modules/react-bootstrap/cjs/Overlay.js:45:5)
+      at Object.onFirstUpdate (node_modules/@restart/hooks/cjs/useEventCallback.js:11:31)
+      at node_modules/@restart/ui/cjs/popper.js:1665:17
+
+  console.error
+    Warning: An update to Overlay inside a test was not wrapped in act(...).
+    
+    When testing, code that causes React state updates should be wrapped into act(...):
+    
+    act(() => {
+      /* fire events that update state */
+    });
+    /* assert on the output */
+    
+    This ensures that you're testing the behavior the user would see in the browser. Learn more at https://reactjs.org/link/wrap-tests-with-act
+        at C:\Users\kamil\Lingua-Read\client\lingua-read-client\node_modules\react-bootstrap\cjs\Overlay.js:31:13
+        at SrsWordPopover (C:\Users\kamil\Lingua-Read\client\lingua-read-client\src\components\SrsWordPopover.js:14:27)
+
+      at printWarning (node_modules/react-dom/cjs/react-dom.development.js:86:30)
+      at error (node_modules/react-dom/cjs/react-dom.development.js:60:7)
+      at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-dom/cjs/react-dom.development.js:27628:9)
+      at scheduleUpdateOnFiber (node_modules/react-dom/cjs/react-dom.development.js:25547:5)
+      at dispatchSetState (node_modules/react-dom/cjs/react-dom.development.js:16708:7)
+      at Object.current (node_modules/react-bootstrap/cjs/Overlay.js:45:5)
+      at Object.onFirstUpdate (node_modules/@restart/hooks/cjs/useEventCallback.js:11:31)
+      at node_modules/@restart/ui/cjs/popper.js:1665:17
+

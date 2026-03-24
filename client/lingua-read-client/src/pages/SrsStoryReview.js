@@ -234,7 +234,7 @@ const SrsStoryReview = () => {
 
         <Card className="shadow-sm" style={{ borderRadius: '12px', border: 'none' }}>
           <Card.Body>
-            <Form.Group className="mb-3">
+            <Form.Group className="mb-3" controlId="srs-language-select">
               <Form.Label>Language</Form.Label>
               <Form.Select value={selectedLanguage} onChange={handleLanguageChange}>
                 <option value="">-- Select Language --</option>
@@ -262,7 +262,7 @@ const SrsStoryReview = () => {
               </div>
             </Form.Group>
 
-            <Form.Group className="mb-3">
+            <Form.Group className="mb-3" controlId="srs-theme-input">
               <Form.Label>Theme/Topic <small className="text-muted">(optional)</small></Form.Label>
               <Form.Control
                 type="text"
@@ -274,7 +274,7 @@ const SrsStoryReview = () => {
 
             <Row className="mb-3">
               <Col>
-                <Form.Group>
+                <Form.Group controlId="srs-max-words-range">
                   <Form.Label>Max Words to Include</Form.Label>
                   <Form.Range
                     min={3}
@@ -286,7 +286,7 @@ const SrsStoryReview = () => {
                 </Form.Group>
               </Col>
               <Col>
-                <Form.Group>
+                <Form.Group controlId="srs-max-length-range">
                   <Form.Label>Story Length</Form.Label>
                   <Form.Range
                     min={100}

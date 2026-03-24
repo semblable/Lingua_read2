@@ -32,6 +32,7 @@ namespace LinguaReadApi.Services
             { "meta-llama/llama-3.3-8b-instruct:free", 8192 },
             { "qwen/qwen3-4b:free", 4096 },
             { "mistralai/mistral-small-3.1-24b-instruct:free", 8192 },
+            { "mistralai/mistral-small-2603", 16384 },
             { "deepseek/deepseek-r1:free", 8192 },
             // Paid models
             { "anthropic/claude-3.5-sonnet", 8192 },

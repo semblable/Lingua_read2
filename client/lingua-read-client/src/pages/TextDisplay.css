@@ -637,7 +637,8 @@
   }
 
   .left-panel {
-    height: 65vh !important;
+    min-height: 65vh !important;
+    height: auto !important;
   }
 
   .right-panel {

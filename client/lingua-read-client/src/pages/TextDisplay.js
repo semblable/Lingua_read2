@@ -2305,12 +2305,12 @@ const TextDisplay = () => {
   const mobileReadingConfig = useMemo(() => {
     switch (readingDensity) {
       case 'compact':
-        return { lineSpacing: 1.4, chunkSize: 3, blockPadding: '0.7rem 0.8rem' };
+        return { lineSpacing: 1.4, chunkSize: 3, blockPadding: '0.5rem 0.65rem' };
       case 'spacious':
-        return { lineSpacing: 1.9, chunkSize: 1, blockPadding: '1.05rem 1rem' };
+        return { lineSpacing: 1.9, chunkSize: 1, blockPadding: '0.8rem 0.85rem' };
       case 'balanced':
       default:
-        return { lineSpacing: 1.65, chunkSize: 2, blockPadding: '0.9rem 0.9rem' };
+        return { lineSpacing: 1.65, chunkSize: 2, blockPadding: '0.65rem 0.75rem' };
     }
   }, [readingDensity]);
 

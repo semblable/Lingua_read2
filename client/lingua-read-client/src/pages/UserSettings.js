@@ -223,7 +223,10 @@ const UserSettings = () => {
         'sentenceTtsEnabled', 'defaultLanguageId', 'translationTargetLanguageCode',
         'autoAdvanceToNextLesson', 'autoMoveFinishedLessons', 'showProgressStats', 'lineSpacing',
         'discordWeeklyReportEnabled', 'discordWebhookUrl', 'discordWeeklyReportDayOfWeek',
-        'discordWeeklyReportHourLocal', 'discordTimezoneOffsetMinutes'
+        'discordWeeklyReportHourLocal', 'discordTimezoneOffsetMinutes',
+        'useOpenRouter', 'openRouterApiKey', 'openRouterModel',
+        'openRouterReasoningEnabled', 'openRouterReasoningEffort',
+        'openRouterStoryReasoningEnabled', 'openRouterStoryReasoningEffort'
       ];
       settingsToSync.forEach(key => {
         updateSetting(key, settings[key]);

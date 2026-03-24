@@ -1442,6 +1442,7 @@ const TextDisplay = () => {
   const [text, setText] = useState(null);
   const [book, setBook] = useState(null);
   const [words, setWords] = useState([]);
+  const [languageWordsLoaded, setLanguageWordsLoaded] = useState(false);
   const [selectedWord, setSelectedWord] = useState('');
   const [hoveredWordTerm, setHoveredWordTerm] = useState(null);
   const [translation, setTranslation] = useState('');
@@ -1811,8 +1812,9 @@ const TextDisplay = () => {
       const allLanguageWords = await response.json();
       // Replace the entire words state with the newly fetched data
       setWords(allLanguageWords);
+      setLanguageWordsLoaded(true);
       console.log(`[fetchAllLanguageWords] Replaced words state with ${allLanguageWords.length} words from backend.`);
-    } catch (error) { console.error('Error fetching language words:', error); }
+    } catch (error) { console.error('Error fetching language words:', error); setLanguageWordsLoaded(true); }
   }, [setWords]); // Dependency: setWords
 
   const prevFetchAllLanguageWordsRef = useRef(fetchAllLanguageWords);
@@ -1842,6 +1844,8 @@ const TextDisplay = () => {
 
   const getWordStyle = useCallback((wordStatus) => {
     const baseStyle = { cursor: 'pointer', padding: '2px 0', margin: '0 2px', borderRadius: '3px', transition: 'all 0.2s' };
+    // Suppress highlights until full language words have loaded to avoid flash of "new" status
+    if (!languageWordsLoaded) return { ...baseStyle, backgroundColor: 'transparent', color: 'inherit' };
     // Use globalSettings from context
     if (!globalSettings?.highlightKnownWords && wordStatus === 5) return { ...baseStyle, backgroundColor: 'transparent', color: 'inherit' };
     if (wordStatus === 5) return { ...baseStyle, backgroundColor: 'transparent', color: 'inherit' };
@@ -1853,7 +1857,7 @@ const TextDisplay = () => {
       4: { backgroundColor: 'var(--status-4-color, #99dd66)', color: '#000' },
     };
     return { ...baseStyle, ...(statusStyles[wordStatus] || statusStyles[0]) };
-  }, [globalSettings?.highlightKnownWords]); // Use globalSettings from context
+  }, [languageWordsLoaded, globalSettings?.highlightKnownWords]); // Use globalSettings from context
 
   const triggerAutoTranslation = useCallback(async (termToTranslate, options = {}) => {
     const { sentenceContext = '' } = options;
@@ -2662,6 +2666,7 @@ const TextDisplay = () => {
 
       if (!isSameText) {
         setLoading(true);
+        setLanguageWordsLoaded(false);
         setError('');
         setBook(null);
         setPreviousTextId(null);
@@ -2757,6 +2762,8 @@ const TextDisplay = () => {
         if (results[0].status === 'rejected') {
           console.error('Failed to fetch language words:', results[0].reason);
         }
+        // Ensure highlights are enabled even if no languageId (fetchAllLanguageWords wasn't called)
+        if (!data.languageId) setLanguageWordsLoaded(true);
 
         // Process result 1: language config
         if (results[1].status === 'fulfilled' && results[1].value) {

@@ -662,16 +662,16 @@ const MobileLessonHeader = React.memo(({
 
   return (
     <>
-      {isAudioLesson && (
-        <div className="mobile-lesson-fab">
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={handleToggleHeader}
-            aria-label={showMobileHeader ? 'Close lesson controls' : 'Open lesson controls'}
-          >
-            {showMobileHeader ? 'Hide' : 'Lesson'}
-          </Button>
+      <div className="mobile-lesson-fab">
+        <Button
+          variant="primary"
+          size="sm"
+          onClick={handleToggleHeader}
+          aria-label={showMobileHeader ? 'Close lesson controls' : 'Open lesson controls'}
+        >
+          {showMobileHeader ? 'Hide' : 'Lesson'}
+        </Button>
+        {isAudioLesson && (
           <Button
             variant={isAudioPlaying ? 'warning' : 'outline-primary'}
             size="sm"
@@ -680,8 +680,8 @@ const MobileLessonHeader = React.memo(({
           >
             {isAudioPlaying ? 'Pause' : 'Play'}
           </Button>
-        </div>
-      )}
+        )}
+      </div>
       <div className={`lesson-topbar navbar-custom-bg ${showMobileHeader ? 'lesson-topbar-open' : 'lesson-topbar-closed'}`}>
         <div className="lesson-topbar-content">
           <div className="lesson-topbar-title">{text.title}</div>

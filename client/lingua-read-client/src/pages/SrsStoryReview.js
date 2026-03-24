@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback, useContext } from 'react';
 import { Container, Card, Button, Spinner, Alert, Form, Row, Col, Badge, ProgressBar, OverlayTrigger, Tooltip } from 'react-bootstrap';
 import { useNavigate } from 'react-router-dom';
-import { getAllLanguages, generateSrsStory, submitSrsReview, getSrsStats, createWord, getWordsByLanguage } from '../utils/api';
+import { getAllLanguages, generateSrsStory, submitSrsReview, getSrsStats, createWord, getWordsByLanguage, getSrsStories } from '../utils/api';
 import { SettingsContext } from '../contexts/SettingsContext';
 import SrsWordPopover from '../components/SrsWordPopover';
 import WordLookupPopover from '../components/WordLookupPopover';
@@ -22,7 +22,9 @@ const SrsStoryReview = () => {
   );
   const [statusFilter, setStatusFilter] = useState([1, 2, 3, 4, 5]);
   const [theme, setTheme] = useState('');
-  const [maxWords, setMaxWords] = useState(15);
+  const [maxWords, setMaxWords] = useState(() =>
+    Math.min(30, Math.max(3, settings.srsMaxNewCards || 15))
+  );
   const [maxLength, setMaxLength] = useState(400);
   const [style, setStyle] = useState('');
   const [customStyle, setCustomStyle] = useState('');
@@ -33,8 +35,10 @@ const SrsStoryReview = () => {
   const [targetWords, setTargetWords] = useState([]);
   const [usedWords, setUsedWords] = useState([]);
   const [reviewedWords, setReviewedWords] = useState(new Set());
+  const [sessionGrades, setSessionGrades] = useState([]); // Track grades for session summary
   const [error, setError] = useState('');
   const [stats, setStats] = useState(null);
+  const [pastStories, setPastStories] = useState([]);
 
   // Popover state
   const [activeWord, setActiveWord] = useState(null);
@@ -70,6 +74,8 @@ const SrsStoryReview = () => {
     try {
       const data = await getSrsStats(selectedLanguage);
       setStats(data);
+      const stories = await getSrsStories(selectedLanguage);
+      setPastStories(stories);
     } catch (err) {
       console.error('Failed to load stats:', err);
     }
@@ -115,6 +121,7 @@ const SrsStoryReview = () => {
       setTargetWords(result.targetWords);
       setUsedWords(result.usedWords.map(w => w.toLowerCase()));
       setReviewedWords(new Set());
+      setSessionGrades([]);
       setStoryTextId(result.textId);
       setLanguageCode(result.languageCode || '');
       setPhase('story');
@@ -139,17 +146,9 @@ const SrsStoryReview = () => {
     try {
       await submitSrsReview(word.srsCardReviewId, grade);
       setReviewedWords(prev => new Set([...prev, word.wordId]));
+      setSessionGrades(prev => [...prev, grade]);
       setActiveWord(null);
       setActiveRef(null);
-
-      // Check completion
-      const usedTargetWords = targetWords.filter(tw =>
-        usedWords.includes(tw.term.toLowerCase())
-      );
-      if (reviewedWords.size + 1 >= usedTargetWords.length) {
-        setTimeout(() => setPhase('complete'), 500);
-        loadStats();
-      }
     } catch (err) {
       setError(`Failed to submit review: ${err.message}`);
     } finally {
@@ -452,6 +451,23 @@ const SrsStoryReview = () => {
         </Card>
 
         {error && <Alert variant="danger" className="mt-3" dismissible onClose={() => setError('')}>{error}</Alert>}
+
+        {pastStories.length > 0 && (
+          <Card className="mt-3 shadow-sm" style={{ borderRadius: '12px', border: 'none' }}>
+            <Card.Body className="py-2">
+              <small className="text-muted fw-bold d-block mb-2">Past Stories</small>
+              {pastStories.slice(0, 5).map(s => (
+                <div key={s.textId} className="border-bottom py-1" style={{ fontSize: '0.85rem' }}>
+                  <div className="d-flex justify-content-between">
+                    <span className="text-truncate" style={{ maxWidth: '70%' }}>{s.title}</span>
+                    <small className="text-muted">{new Date(s.createdAt).toLocaleDateString()}</small>
+                  </div>
+                  <small className="text-muted">{s.contentPreview}</small>
+                </div>
+              ))}
+            </Card.Body>
+          </Card>
+        )}
       </Container>
     );
   }
@@ -519,8 +535,12 @@ const SrsStoryReview = () => {
         </Card>
 
         <div className="d-flex gap-2">
-          <Button variant="outline-secondary" size="sm" onClick={() => { setPhase('complete'); loadStats(); }}>
-            Finish Early
+          <Button
+            variant={reviewedCount >= totalToReview ? 'success' : 'outline-secondary'}
+            size="sm"
+            onClick={() => { setPhase('complete'); loadStats(); }}
+          >
+            {reviewedCount >= totalToReview ? 'Finish Review' : 'Finish Early'}
           </Button>
           <Button variant="outline-primary" size="sm" onClick={() => { setPhase('setup'); setStory(''); setTargetWords([]); }}>
             New Story
@@ -565,6 +585,23 @@ const SrsStoryReview = () => {
           <p className="text-muted mb-3">
             You reviewed <strong>{reviewedCount}</strong> out of <strong>{totalToReview}</strong> words in context.
           </p>
+          {sessionGrades.length > 0 && (
+            <div className="d-flex justify-content-center gap-3 mb-3">
+              {[
+                { grade: 0, label: 'Again', variant: 'danger' },
+                { grade: 1, label: 'Hard', variant: 'warning' },
+                { grade: 2, label: 'Good', variant: 'success' },
+                { grade: 3, label: 'Easy', variant: 'info' },
+              ].map(({ grade, label, variant }) => {
+                const count = sessionGrades.filter(g => g === grade).length;
+                return count > 0 ? (
+                  <Badge key={grade} bg={variant} style={{ fontSize: '0.85rem', padding: '0.4rem 0.7rem' }}>
+                    {label}: {count}
+                  </Badge>
+                ) : null;
+              })}
+            </div>
+          )}
           {stats && (
             <div className="mb-3">
               <Badge bg="danger" className="me-2" style={{ fontSize: '0.9rem', padding: '0.4rem 0.8rem' }}>

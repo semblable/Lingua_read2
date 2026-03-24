@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Container, Card, Button, Spinner, Alert, Form, Row, Col, Badge, ProgressBar, ButtonGroup, Modal } from 'react-bootstrap';
 import { useNavigate } from 'react-router-dom';
 import { SettingsContext } from '../contexts/SettingsContext';
-import { getAllLanguages, getSrsDueCards, submitSrsReview, getSrsStats, updateUserSettings, undoSrsReview, getSrsForecast, suspendSrsCard, burySrsCard, updateSrsCard, getSrsHeatmap } from '../utils/api';
+import { getAllLanguages, getSrsDueCards, submitSrsReview, getSrsStats, updateUserSettings, undoSrsReview, getSrsForecast, suspendSrsCard, burySrsCard, updateSrsCard, getSrsHeatmap, getSrsAnalytics } from '../utils/api';
 import './SrsReview.css';
 
 const FLAG_COLORS = ['', '🟥', '🟧', '🟨', '🟩'];
@@ -109,6 +109,7 @@ const SrsReview = () => {
   const [statsLoading, setStatsLoading] = useState(false);
   const [forecast, setForecast] = useState([]);
   const [heatmap, setHeatmap] = useState([]);
+  const [analytics, setAnalytics] = useState(null);
 
   // Undo state
   const [undoVisible, setUndoVisible] = useState(false);
@@ -125,6 +126,8 @@ const SrsReview = () => {
       setForecast(forecastData);
       const heatmapData = await getSrsHeatmap(365);
       setHeatmap(heatmapData);
+      const analyticsData = await getSrsAnalytics(selectedLanguage);
+      setAnalytics(analyticsData);
     } catch (err) {
       console.error('Failed to load stats, forecast, or heatmap:', err);
     } finally {
@@ -536,6 +539,86 @@ const SrsReview = () => {
             <Card.Body className="py-2">
               <small className="text-muted fw-bold mb-2 d-block text-center">Review Activity (Past Year)</small>
               {renderHeatmap()}
+            </Card.Body>
+          </Card>
+        )}
+
+        {/* Analytics: Retention by Status & Grade Distribution */}
+        {analytics && !statsLoading && (
+          <Row className="mb-3 g-3">
+            <Col md={6}>
+              <Card className="shadow-sm h-100">
+                <Card.Body className="py-2">
+                  <small className="text-muted fw-bold mb-2 d-block text-center">Retention by Status (30d)</small>
+                  {analytics.retentionByStatus.map(r => (
+                    <div key={r.status} className="d-flex align-items-center mb-1">
+                      <Badge bg={STATUS_VARIANTS[r.status]} className="me-2" style={{ width: '70px', fontSize: '0.7rem' }}>
+                        {STATUS_LABELS[r.status]}
+                      </Badge>
+                      <ProgressBar
+                        now={r.retentionRate}
+                        variant={r.retentionRate >= 80 ? 'success' : r.retentionRate >= 60 ? 'warning' : 'danger'}
+                        style={{ height: '8px', flex: 1 }}
+                      />
+                      <small className="ms-2 text-muted" style={{ width: '40px', textAlign: 'right' }}>{r.retentionRate}%</small>
+                    </div>
+                  ))}
+                  {analytics.retentionByStatus.length === 0 && (
+                    <small className="text-muted d-block text-center">No review data yet</small>
+                  )}
+                </Card.Body>
+              </Card>
+            </Col>
+            <Col md={6}>
+              <Card className="shadow-sm h-100">
+                <Card.Body className="py-2">
+                  <small className="text-muted fw-bold mb-2 d-block text-center">Grade Distribution (30d)</small>
+                  {[
+                    { grade: 0, label: 'Again', variant: 'danger' },
+                    { grade: 1, label: 'Hard', variant: 'warning' },
+                    { grade: 2, label: 'Good', variant: 'success' },
+                    { grade: 3, label: 'Easy', variant: 'info' },
+                  ].map(({ grade, label, variant }) => {
+                    const item = analytics.gradeDistribution.find(g => g.grade === grade);
+                    const count = item?.count || 0;
+                    const total = analytics.totalReviewsLast30Days || 1;
+                    const pct = Math.round((count / total) * 100);
+                    return (
+                      <div key={grade} className="d-flex align-items-center mb-1">
+                        <small className="me-2" style={{ width: '45px', fontSize: '0.75rem' }}>{label}</small>
+                        <ProgressBar now={pct} variant={variant} style={{ height: '8px', flex: 1 }} />
+                        <small className="ms-2 text-muted" style={{ width: '50px', textAlign: 'right' }}>{count} ({pct}%)</small>
+                      </div>
+                    );
+                  })}
+                  <div className="text-center mt-1">
+                    <small className="text-muted">{analytics.avgReviewsPerDay} avg/day &middot; {analytics.cardsMaturedThisWeek} matured this week</small>
+                  </div>
+                </Card.Body>
+              </Card>
+            </Col>
+          </Row>
+        )}
+
+        {/* Leech Cards */}
+        {analytics && analytics.leechCards.length > 0 && !statsLoading && (
+          <Card className="mb-3 shadow-sm border-warning">
+            <Card.Body className="py-2">
+              <small className="text-muted fw-bold mb-2 d-block">Leeches — cards with 3+ lapses (30d)</small>
+              <div className="d-flex flex-wrap gap-2">
+                {analytics.leechCards.map(lc => (
+                  <Badge
+                    key={lc.srsCardReviewId}
+                    bg="warning"
+                    text="dark"
+                    className="d-flex align-items-center gap-1"
+                    style={{ fontSize: '0.75rem', padding: '0.3rem 0.6rem' }}
+                    title={`${lc.translation} — ${lc.lapseCount} lapses, ease ${lc.easeFactor.toFixed(2)}`}
+                  >
+                    {lc.term} <span className="opacity-75">({lc.lapseCount}x)</span>
+                  </Badge>
+                ))}
+              </div>
             </Card.Body>
           </Card>
         )}

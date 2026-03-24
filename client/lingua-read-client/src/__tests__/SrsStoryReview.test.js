@@ -205,11 +205,15 @@ describe('SrsStoryReview', () => {
     const easyButton = await screen.findByRole('button', { name: /Easy/i });
     fireEvent.click(easyButton);
 
-    // Wait for transition to complete phase
+    // All words graded — "Finish Review" button should appear
     await waitFor(() => {
-      expect(screen.getByText('Story Complete!')).toBeInTheDocument();
-    }, { timeout: 1500 }); // There is a 500ms timeout in the component
-    
+      expect(screen.getByRole('button', { name: /Finish Review/i })).toBeInTheDocument();
+    });
+
+    // Click Finish Review to complete
+    fireEvent.click(screen.getByRole('button', { name: /Finish Review/i }));
+
+    expect(await screen.findByText('Story Complete!')).toBeInTheDocument();
     expect(screen.getByText(/You reviewed/)).toBeInTheDocument();
   });
 
@@ -453,9 +457,12 @@ describe('SrsStoryReview', () => {
     const goodButton = await screen.findByRole('button', { name: /Good/i });
     fireEvent.click(goodButton);
 
-    // Should complete since there's only one word
+    // All words graded — click Finish Review
     await waitFor(() => {
-      expect(screen.getByText('Story Complete!')).toBeInTheDocument();
-    }, { timeout: 1500 });
+      expect(screen.getByRole('button', { name: /Finish Review/i })).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Finish Review/i }));
+
+    expect(await screen.findByText('Story Complete!')).toBeInTheDocument();
   });
 });

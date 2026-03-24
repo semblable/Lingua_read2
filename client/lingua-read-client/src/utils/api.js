@@ -1261,6 +1261,20 @@ export const getSrsHeatmap = async (days = 365) => {
   return await fetchApi(`/srs/heatmap${queryString ? `?${queryString}` : ''}`);
 };
 
+export const getSrsAnalytics = async (languageId = null) => {
+  const params = new URLSearchParams();
+  if (languageId) params.append('languageId', languageId);
+  const queryString = params.toString();
+  return await fetchApi(`/srs/analytics${queryString ? `?${queryString}` : ''}`);
+};
+
+export const getSrsStories = async (languageId = null) => {
+  const params = new URLSearchParams();
+  if (languageId) params.append('languageId', languageId);
+  const queryString = params.toString();
+  return await fetchApi(`/srs/stories${queryString ? `?${queryString}` : ''}`);
+};
+
 export const applySrsReadingCredit = async (wordId) => {
   return await fetchApi(`/srs/reading-credit/${wordId}`, { method: 'POST' });
 };

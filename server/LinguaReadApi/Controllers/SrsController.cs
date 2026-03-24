@@ -881,6 +881,144 @@ namespace LinguaReadApi.Controllers
             return unknownCount;
         }
 
+        // GET: api/srs/stories?languageId=1
+        [HttpGet("stories")]
+        public async Task<ActionResult<List<SrsStoryListDto>>> GetStories([FromQuery] int? languageId = null)
+        {
+            var userId = GetUserId();
+
+            var query = _context.Texts
+                .AsNoTracking()
+                .Where(t => t.UserId == userId && t.Tag == "srs-story");
+
+            if (languageId.HasValue)
+                query = query.Where(t => t.LanguageId == languageId.Value);
+
+            var stories = await query
+                .Include(t => t.Language)
+                .OrderByDescending(t => t.CreatedAt)
+                .Take(20)
+                .Select(t => new SrsStoryListDto
+                {
+                    TextId = t.TextId,
+                    Title = t.Title,
+                    LanguageName = t.Language.Name,
+                    CreatedAt = t.CreatedAt,
+                    ContentPreview = t.Content.Length > 120 ? t.Content.Substring(0, 120) + "…" : t.Content
+                })
+                .ToListAsync();
+
+            return stories;
+        }
+
+        // GET: api/srs/analytics?languageId=1
+        [HttpGet("analytics")]
+        public async Task<ActionResult<SrsAnalyticsDto>> GetAnalytics([FromQuery] int? languageId = null)
+        {
+            var userId = GetUserId();
+            var now = DateTime.UtcNow;
+            var thirtyDaysAgo = now.AddDays(-30);
+
+            // Fetch all review logs for the last 30 days with card info
+            var recentLogs = await _context.SrsReviewLogs
+                .AsNoTracking()
+                .Where(log => log.UserId == userId && log.ReviewedAt >= thirtyDaysAgo)
+                .Include(log => log.SrsCardReview)
+                    .ThenInclude(scr => scr.Word)
+                        .ThenInclude(w => w.Translation)
+                .ToListAsync();
+
+            if (languageId.HasValue)
+                recentLogs = recentLogs.Where(log => log.SrsCardReview.Word.LanguageId == languageId.Value).ToList();
+
+            // 1. Retention by word status
+            var retentionByStatus = recentLogs
+                .GroupBy(log => log.SrsCardReview.Word.Status)
+                .Select(g => new RetentionByStatusDto
+                {
+                    Status = g.Key,
+                    TotalReviews = g.Count(),
+                    GoodReviews = g.Count(l => l.Grade >= 2),
+                    RetentionRate = g.Count() > 0 ? Math.Round((double)g.Count(l => l.Grade >= 2) / g.Count() * 100, 1) : 0
+                })
+                .OrderBy(r => r.Status)
+                .ToList();
+
+            // 2. Accuracy trend (daily retention rate for last 30 days)
+            var accuracyTrend = recentLogs
+                .GroupBy(log => log.ReviewedAt.Date)
+                .Select(g => new AccuracyTrendDto
+                {
+                    Date = g.Key.ToString("yyyy-MM-dd"),
+                    TotalReviews = g.Count(),
+                    GoodReviews = g.Count(l => l.Grade >= 2),
+                    RetentionRate = g.Count() > 0 ? Math.Round((double)g.Count(l => l.Grade >= 2) / g.Count() * 100, 1) : 0
+                })
+                .OrderBy(a => a.Date)
+                .ToList();
+
+            // 3. Grade distribution
+            var gradeDistribution = recentLogs
+                .GroupBy(log => log.Grade)
+                .Select(g => new GradeDistributionDto { Grade = g.Key, Count = g.Count() })
+                .OrderBy(g => g.Grade)
+                .ToList();
+
+            // 4. Reviews per day (last 30 days)
+            var reviewsPerDay = recentLogs
+                .GroupBy(log => log.ReviewedAt.Date)
+                .Select(g => new ReviewsPerDayDto
+                {
+                    Date = g.Key.ToString("yyyy-MM-dd"),
+                    Count = g.Count()
+                })
+                .OrderBy(r => r.Date)
+                .ToList();
+
+            // 5. Leech detection (cards with 3+ "Again" grades in last 30 days)
+            var leechCards = recentLogs
+                .Where(log => log.Grade == 0)
+                .GroupBy(log => log.SrsCardReviewId)
+                .Where(g => g.Count() >= 3)
+                .Select(g =>
+                {
+                    var card = g.First().SrsCardReview;
+                    return new LeechCardDto
+                    {
+                        SrsCardReviewId = card.SrsCardReviewId,
+                        WordId = card.WordId,
+                        Term = card.Word.Term,
+                        Translation = card.Word.Translation?.Translation ?? "",
+                        LapseCount = g.Count(),
+                        WordStatus = card.Word.Status,
+                        EaseFactor = card.EaseFactor
+                    };
+                })
+                .OrderByDescending(l => l.LapseCount)
+                .Take(20)
+                .ToList();
+
+            // 6. Cards matured this week
+            var weekAgo = now.AddDays(-7);
+            var maturedThisWeek = await _context.SrsCardReviews
+                .AsNoTracking()
+                .Where(scr => scr.UserId == userId && scr.Interval >= 21
+                    && scr.LastReviewedAt.HasValue && scr.LastReviewedAt >= weekAgo)
+                .CountAsync();
+
+            return new SrsAnalyticsDto
+            {
+                RetentionByStatus = retentionByStatus,
+                AccuracyTrend = accuracyTrend,
+                GradeDistribution = gradeDistribution,
+                ReviewsPerDay = reviewsPerDay,
+                LeechCards = leechCards,
+                CardsMaturedThisWeek = maturedThisWeek,
+                TotalReviewsLast30Days = recentLogs.Count,
+                AvgReviewsPerDay = recentLogs.Count > 0 ? Math.Round((double)recentLogs.Count / 30, 1) : 0
+            };
+        }
+
         // POST: api/srs/story-generate
         [HttpPost("story-generate")]
         public async Task<ActionResult<SrsStoryGenerateResponse>> GenerateStoryFromDueWords([FromBody] SrsStoryGenerateRequest request)
@@ -1109,6 +1247,67 @@ Requirements:
     {
         public string Date { get; set; } = string.Empty;
         public int ReviewCount { get; set; }
+    }
+
+    // --- Analytics DTOs ---
+    public class SrsAnalyticsDto
+    {
+        public List<RetentionByStatusDto> RetentionByStatus { get; set; } = new();
+        public List<AccuracyTrendDto> AccuracyTrend { get; set; } = new();
+        public List<GradeDistributionDto> GradeDistribution { get; set; } = new();
+        public List<ReviewsPerDayDto> ReviewsPerDay { get; set; } = new();
+        public List<LeechCardDto> LeechCards { get; set; } = new();
+        public int CardsMaturedThisWeek { get; set; }
+        public int TotalReviewsLast30Days { get; set; }
+        public double AvgReviewsPerDay { get; set; }
+    }
+
+    public class RetentionByStatusDto
+    {
+        public int Status { get; set; }
+        public int TotalReviews { get; set; }
+        public int GoodReviews { get; set; }
+        public double RetentionRate { get; set; }
+    }
+
+    public class AccuracyTrendDto
+    {
+        public string Date { get; set; } = string.Empty;
+        public int TotalReviews { get; set; }
+        public int GoodReviews { get; set; }
+        public double RetentionRate { get; set; }
+    }
+
+    public class GradeDistributionDto
+    {
+        public int Grade { get; set; }
+        public int Count { get; set; }
+    }
+
+    public class ReviewsPerDayDto
+    {
+        public string Date { get; set; } = string.Empty;
+        public int Count { get; set; }
+    }
+
+    public class LeechCardDto
+    {
+        public int SrsCardReviewId { get; set; }
+        public int WordId { get; set; }
+        public string Term { get; set; } = string.Empty;
+        public string Translation { get; set; } = string.Empty;
+        public int LapseCount { get; set; }
+        public int WordStatus { get; set; }
+        public double EaseFactor { get; set; }
+    }
+
+    public class SrsStoryListDto
+    {
+        public int TextId { get; set; }
+        public string Title { get; set; } = string.Empty;
+        public string LanguageName { get; set; } = string.Empty;
+        public DateTime CreatedAt { get; set; }
+        public string ContentPreview { get; set; } = string.Empty;
     }
 
     public class SrsStoryGenerateRequest

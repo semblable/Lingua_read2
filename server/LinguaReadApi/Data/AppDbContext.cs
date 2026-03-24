@@ -270,6 +270,9 @@ namespace LinguaReadApi.Data
                 .IsUnique();
 
             modelBuilder.Entity<SrsCardReview>()
+                .HasIndex(scr => new { scr.UserId, scr.NextReviewAt });
+
+            modelBuilder.Entity<SrsCardReview>()
                 .HasOne(scr => scr.User)
                 .WithMany()
                 .HasForeignKey(scr => scr.UserId)

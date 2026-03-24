@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using System;
 using System.ComponentModel.DataAnnotations;
 using System.Security.Claims;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Linq;
 using System.Collections.Generic;
@@ -85,7 +86,8 @@ namespace LinguaReadApi.Controllers
             {
                 var tagList = tags.Split(',').Select(t => t.Trim().ToLowerInvariant()).Where(t => t.Length > 0).ToList();
                 if (tagList.Any())
-                    query = query.Where(scr => scr.Tags != null && tagList.Any(t => scr.Tags.ToLower().Contains(t)));
+                    query = query.Where(scr => scr.Tags != null && tagList.Any(t =>
+                        ("," + scr.Tags.ToLower() + ",").Contains("," + t + ",")));
             }
 
             // 3. Separate Queries & Over-fetch
@@ -219,6 +221,12 @@ namespace LinguaReadApi.Controllers
             if (card == null)
                 return NotFound("Card not found.");
 
+            if (card.IsSuspended)
+                return BadRequest(new { Message = "Card is suspended." });
+
+            if (card.BuriedUntil.HasValue && card.BuriedUntil.Value > DateTime.UtcNow)
+                return BadRequest(new { Message = "Card is buried." });
+
             // 1. Streak Tracking
             var settings = await _context.UserSettings.FirstOrDefaultAsync(u => u.UserId == userId);
             var today = DateTime.UtcNow.Date;
@@ -311,6 +319,12 @@ namespace LinguaReadApi.Controllers
 
             if (word == null)
                 return NotFound("Word not found.");
+
+            // Check for duplicate phrase
+            var duplicateExists = await _context.SrsPhrases
+                .AnyAsync(sp => sp.WordId == dto.WordId && sp.UserId == userId && sp.Sentence == dto.Sentence);
+            if (duplicateExists)
+                return Conflict(new { Message = "This sentence has already been mined for this word." });
 
             // Create the phrase
             var phrase = new SrsPhrase
@@ -421,7 +435,7 @@ namespace LinguaReadApi.Controllers
             {
                 bool hasOtherReviewsToday = await _context.SrsReviewLogs
                     .AnyAsync(log => log.UserId == userId
-                        && log.SrsCardReviewId != lastLog.SrsCardReviewId
+                        && log.SrsReviewLogId != lastLog.SrsReviewLogId
                         && log.ReviewedAt.Date == today);
 
                 if (!hasOtherReviewsToday)
@@ -713,9 +727,9 @@ namespace LinguaReadApi.Controllers
             if (card.IsLearning || card.Repetitions <= 2)
                 return Ok(new { Message = "Card too new for reading credit.", Applied = false });
 
-            // Boost: multiply interval by 1.1, cap at current next review + 2 days
+            // Boost: multiply interval by 1.1, cap at 10% increase (minimum +2 days)
             var boostedInterval = (int)Math.Round(card.Interval * 1.1);
-            var maxInterval = card.Interval + 2;
+            var maxInterval = card.Interval + Math.Max(2, card.Interval / 10);
             card.Interval = Math.Min(boostedInterval, maxInterval);
             card.NextReviewAt = DateTime.UtcNow.AddDays(card.Interval);
 
@@ -753,9 +767,8 @@ namespace LinguaReadApi.Controllers
                         // Graduate: exit learning phase
                         card.IsLearning = false;
                         card.CurrentLearningStepIndex = 0;
-                        card.Interval = 1;
+                        card.Interval = (grade == 3) ? 2 : 1; // Easy bonus: 2 days instead of 1
                         if (card.Repetitions == 0 && card.LastReviewedAt == null) card.Repetitions = 1;
-                        if (grade == 3) card.Interval = (int)Math.Round(card.Interval * 1.3);
                         card.NextReviewAt = DateTime.UtcNow.AddDays(card.Interval);
                     }
                     else
@@ -775,10 +788,10 @@ namespace LinguaReadApi.Controllers
             // Card is NOT in learning phase
             if (grade < 2)
             {
-                // Lapse: enter learning phase
+                // Lapse: enter learning phase and reset repetitions
                 card.IsLearning = true;
                 card.CurrentLearningStepIndex = 0;
-                // Retain Repetitions for lapse differentiation
+                card.Repetitions = 0;
                 int stepMinutes = learningSteps.Count > 0 ? learningSteps[0] : 1;
                 card.Interval = 0;
                 card.NextReviewAt = DateTime.UtcNow.AddMinutes(stepMinutes);
@@ -831,11 +844,9 @@ namespace LinguaReadApi.Controllers
             if (string.IsNullOrWhiteSpace(sentence))
                 return 0;
 
-            // Tokenize sentence into words (simple split, lowercase)
-            var sentenceWords = sentence
-                .Split(new[] { ' ', ',', '.', '!', '?', ';', ':', '"', '\'', '(', ')', '[', ']', '{', '}', '—', '–', '-', '…' },
-                    StringSplitOptions.RemoveEmptyEntries)
-                .Select(w => w.Trim().ToLowerInvariant())
+            // Tokenize sentence into words, preserving internal apostrophes and hyphens
+            var sentenceWords = Regex.Split(sentence, @"[\s,.:;!?""()\[\]{}\—\–\…«»]+")
+                .Select(w => w.Trim().Trim('\'', '\u2019', '\u2018').ToLowerInvariant())
                 .Where(w => w.Length > 0)
                 .Distinct()
                 .ToList();

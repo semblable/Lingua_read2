@@ -219,10 +219,12 @@ const SrsStoryReview = () => {
       // Try to match against target words
       let matchedWord = wordLookup[cleanToken];
 
-      // Try prefix matching for morphological variants
+      // Try prefix matching for morphological variants (e.g. "laufen" matches "laufend")
       if (!matchedWord) {
         for (const [term, tw] of Object.entries(wordLookup)) {
-          if (cleanToken.length >= 3 && (cleanToken.startsWith(term) || term.startsWith(cleanToken))) {
+          if (cleanToken.length >= 3 && term.length >= 3
+            && cleanToken.startsWith(term)
+            && cleanToken.length / term.length <= 1.5) {
             matchedWord = tw;
             break;
           }

@@ -30,8 +30,12 @@ namespace LinguaReadApi.Controllers
                 return (storyText, usedWords);
             }
 
-            // Fallback: assume all target words were used
-            return (rawResponse, new List<string>(targetWordTerms));
+            // Fallback: scan story text for target word occurrences
+            var storyLower = rawResponse.ToLowerInvariant();
+            var foundWords = targetWordTerms
+                .Where(w => storyLower.Contains(w.ToLowerInvariant()))
+                .ToList();
+            return (rawResponse, foundWords);
         }
     }
 }

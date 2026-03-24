@@ -145,8 +145,9 @@ namespace LinguaReadApi.Services
                             }
                         }
 
-                        _logger.LogWarning("Could not extract story from Gemini response structure (model={Model}).", model);
-                        return "Story generation failed: Could not extract result";
+                        _logger.LogWarning("Could not extract story from Gemini response structure (model={Model}). Response={Response}",
+                            model, responseContent.Substring(0, Math.Min(1000, responseContent.Length)));
+                        return "Story generation failed: Could not extract result. Check logs for details.";
                     }
                 }
 

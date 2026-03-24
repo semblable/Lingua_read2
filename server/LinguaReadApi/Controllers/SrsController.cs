@@ -965,7 +965,7 @@ Requirements:
 
             // 5. Generate story using user's configured AI provider
             var storyService = await _storyGenerationServiceFactory.GetServiceForUserAsync(userId);
-            var rawResponse = await storyService.GenerateStoryAsync(prompt, maxOutputTokens: request.MaxLength * 3);
+            var rawResponse = await storyService.GenerateStoryAsync(prompt, maxOutputTokens: 20000);
 
             // 6. Parse USED_WORDS from response
             var (storyText, usedWords) = SrsStoryResponseParser.Parse(

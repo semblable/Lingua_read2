@@ -165,15 +165,23 @@ namespace LinguaReadApi.Services
 
                     if (openRouterResponse?.Choices != null &&
                         openRouterResponse.Choices.Length > 0 &&
-                        openRouterResponse.Choices[0].Message?.Content != null)
+                        openRouterResponse.Choices[0].Message != null)
                     {
-                        var generatedStory = openRouterResponse.Choices[0].Message!.Content;
-                        _logger.LogInformation("Story generation successful using OpenRouter, length: {Length}", generatedStory.Length);
-                        return generatedStory;
+                        var content = openRouterResponse.Choices[0].Message!.Content;
+                        if (!string.IsNullOrEmpty(content))
+                        {
+                            _logger.LogInformation("Story generation successful using OpenRouter, length: {Length}", content.Length);
+                            return content;
+                        }
+
+                        _logger.LogWarning("OpenRouter returned empty content. FinishReason={FinishReason}, Response={Response}",
+                            openRouterResponse.Choices[0].FinishReason, responseContent.Substring(0, Math.Min(1000, responseContent.Length)));
+                        return "Story generation failed: Model returned empty response. Try a different model or shorter story length.";
                     }
 
-                    _logger.LogWarning("Could not extract story from OpenRouter response");
-                    return "Story generation failed: Could not extract result";
+                    _logger.LogWarning("Could not extract story from OpenRouter response structure. Response={Response}",
+                        responseContent.Substring(0, Math.Min(1000, responseContent.Length)));
+                    return "Story generation failed: Could not extract result. Check logs for details.";
                 }
 
                 return $"Story generation error: {lastStatus}";

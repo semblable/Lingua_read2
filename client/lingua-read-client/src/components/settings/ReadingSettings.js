@@ -1,0 +1,93 @@
+import React from 'react';
+import { Form } from 'react-bootstrap';
+
+const ReadingSettings = ({ settings, handleChange, languages, loadingLanguages }) => {
+  return (
+    <>
+      <div className="settings-control-group">
+        <Form.Group className="mb-3" controlId="autoTranslateWords">
+          <Form.Check
+            type="switch"
+            name="autoTranslateWords"
+            label="Automatically translate words when clicked"
+            checked={settings.autoTranslateWords}
+            onChange={handleChange}
+          />
+        </Form.Group>
+
+        <Form.Group className="mb-3" controlId="pauseOnWordClick">
+          <Form.Check
+            type="switch"
+            name="pauseOnWordClick"
+            label="Pause audio when a word or phrase is opened"
+            checked={settings.pauseOnWordClick}
+            onChange={handleChange}
+          />
+        </Form.Group>
+
+        <Form.Group className="mb-3" controlId="highlightKnownWords">
+          <Form.Check
+            type="switch"
+            name="highlightKnownWords"
+            label="Highlight words based on knowledge level"
+            checked={settings.highlightKnownWords}
+            onChange={handleChange}
+          />
+        </Form.Group>
+
+        <Form.Group className="mb-0" controlId="sentenceTtsEnabled">
+          <Form.Check
+            type="switch"
+            name="sentenceTtsEnabled"
+            label="Enable browser text-to-speech controls in the reader"
+            checked={settings.sentenceTtsEnabled}
+            onChange={handleChange}
+          />
+        </Form.Group>
+      </div>
+
+      <div className="settings-control-group">
+        <Form.Group className="mb-3" controlId="defaultLanguageId">
+          <Form.Label>Default Language for New Texts</Form.Label>
+          <Form.Select
+            name="defaultLanguageId"
+            value={settings.defaultLanguageId}
+            onChange={handleChange}
+            disabled={loadingLanguages}
+          >
+            <option value={0}>No default (ask each time)</option>
+            {languages.map(language => (
+              <option key={language.languageId} value={language.languageId}>
+                {language.name}
+              </option>
+            ))}
+          </Form.Select>
+        </Form.Group>
+
+        <Form.Group className="mb-0" controlId="translationTargetLanguageCode">
+          <Form.Label>Translation Target Language</Form.Label>
+          <Form.Select
+            name="translationTargetLanguageCode"
+            value={settings.translationTargetLanguageCode}
+            onChange={handleChange}
+            disabled={loadingLanguages}
+          >
+            <option value="EN">English</option>
+            {languages
+              .filter(language => language.code && language.code.toLowerCase() !== 'en')
+              .map(language => (
+                <option key={`target-${language.languageId}`} value={language.code.toUpperCase()}>
+                  {language.name}
+                </option>
+              ))}
+          </Form.Select>
+          <Form.Text className="text-muted">
+            Used for word and sentence translation results in the reader.
+          </Form.Text>
+        </Form.Group>
+      </div>
+    </>
+  );
+};
+
+export default ReadingSettings;

@@ -1,11 +1,28 @@
-import React, { useState, useEffect, useRef, useContext } from 'react'; // Added useRef, useContext
-import { Container, Card, Form, Button, Alert, Spinner, Row, Col } from 'react-bootstrap';
+import React, { useState, useEffect, useRef, useContext, useCallback } from 'react';
+import { Container, Form, Button, Alert, Spinner } from 'react-bootstrap';
 import {
-  getUserSettings, updateUserSettings, getAllLanguages, // Changed getLanguages to getAllLanguages
-  backupDatabase, restoreDatabase, resetUserStatistics, sendDiscordReport, getAudioStorageSize // Import new API functions
+  getUserSettings, updateUserSettings, getAllLanguages,
+  backupDatabase, restoreDatabase, resetUserStatistics, sendDiscordReport, getAudioStorageSize
 } from '../utils/api';
-import * as api from '../utils/api'; // Import api object for test button
-import { SettingsContext } from '../contexts/SettingsContext'; // Import SettingsContext
+import * as api from '../utils/api';
+import { SettingsContext } from '../contexts/SettingsContext';
+import AppearanceSettings from '../components/settings/AppearanceSettings';
+import ReadingSettings from '../components/settings/ReadingSettings';
+import NavigationSettings from '../components/settings/NavigationSettings';
+import AiProviderSettings from '../components/settings/AiProviderSettings';
+import DiscordSettings from '../components/settings/DiscordSettings';
+import DataManagementSettings from '../components/settings/DataManagementSettings';
+import './UserSettings.css';
+
+const SECTIONS = [
+  { id: 'appearance', label: 'Appearance', icon: '\uD83C\uDFA8' },
+  { id: 'reading', label: 'Reading', icon: '\uD83D\uDCDA' },
+  { id: 'navigation', label: 'Navigation', icon: '\u2699\uFE0F' },
+  { id: 'ai', label: 'AI Provider', icon: '\uD83E\uDD16' },
+  { id: 'discord', label: 'Discord', icon: '\uD83D\uDCE8' },
+  { id: 'data', label: 'Data', icon: '\uD83D\uDDC4\uFE0F' },
+];
+
 const UserSettings = () => {
   const browserTimezoneOffsetMinutes = -new Date().getTimezoneOffset();
   const [settings, setSettings] = useState({
@@ -18,7 +35,7 @@ const UserSettings = () => {
     showWordInfoPanel: true,
     readerParagraphIndent: true,
     readerTextAlignment: 'left',
-    leftPanelWidth: 85, // Added initial state
+    leftPanelWidth: 85,
     autoTranslateWords: true,
     pauseOnWordClick: false,
     highlightKnownWords: true,
@@ -26,9 +43,9 @@ const UserSettings = () => {
     defaultLanguageId: 0,
     translationTargetLanguageCode: 'EN',
     autoAdvanceToNextLesson: false,
-    autoMoveFinishedLessons: false, // Added property
+    autoMoveFinishedLessons: false,
     showProgressStats: true,
-    lineSpacing: 1.5, // Added lineSpacing setting
+    lineSpacing: 1.5,
     discordWeeklyReportEnabled: false,
     discordWebhookUrl: '',
     discordWeeklyReportDayOfWeek: 'Monday',
@@ -49,39 +66,37 @@ const UserSettings = () => {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
   const [loadingLanguages, setLoadingLanguages] = useState(true);
+  const [hasChanges, setHasChanges] = useState(false);
+  const [activeSection, setActiveSection] = useState('appearance');
 
-  // --- State for Backup/Restore ---
+  // Backup/Restore state
   const [isBackingUp, setIsBackingUp] = useState(false);
   const [backupMessage, setBackupMessage] = useState({ type: '', text: '' });
   const [isRestoring, setIsRestoring] = useState(false);
   const [restoreMessage, setRestoreMessage] = useState({ type: '', text: '' });
   const [restoreFile, setRestoreFile] = useState(null);
-  const fileInputRef = useRef(null); // Ref for file input
+  const fileInputRef = useRef(null);
   const [isResettingStats, setIsResettingStats] = useState(false);
   const [resetStatsMessage, setResetStatsMessage] = useState({ type: '', text: '' });
-  // --- End Backup/Restore State ---
 
-  // --- Discord Report State ---
+  // Discord report state
   const [reportPeriod, setReportPeriod] = useState('week');
   const [reportDays, setReportDays] = useState(30);
   const [isSendingReport, setIsSendingReport] = useState(false);
   const [reportMessage, setReportMessage] = useState({ type: '', text: '' });
-  // --- End Discord Report State ---
 
-  // --- OpenRouter Test State ---
+  // OpenRouter test state
   const [testingOpenRouter, setTestingOpenRouter] = useState(false);
   const [openRouterTestResult, setOpenRouterTestResult] = useState(null);
-  // --- End OpenRouter Test State ---
 
-  // --- Audio Storage State ---
+  // Audio storage state
   const [audioStorage, setAudioStorage] = useState(null);
   const [loadingStorage, setLoadingStorage] = useState(false);
   const [storageError, setStorageError] = useState('');
-  // --- End Audio Storage State ---
 
-  // Removed unused isAdmin placeholder
+  // Section refs for scroll
+  const sectionRefs = useRef({});
 
-  // Get updateSetting function from context
   const { updateSetting } = useContext(SettingsContext);
 
   useEffect(() => {
@@ -98,7 +113,7 @@ const UserSettings = () => {
           showWordInfoPanel: data.showWordInfoPanel ?? true,
           readerParagraphIndent: data.readerParagraphIndent ?? true,
           readerTextAlignment: data.readerTextAlignment || 'left',
-          leftPanelWidth: data.leftPanelWidth || 85, // Fetch panel width
+          leftPanelWidth: data.leftPanelWidth || 85,
           autoTranslateWords: data.autoTranslateWords ?? true,
           pauseOnWordClick: data.pauseOnWordClick ?? false,
           highlightKnownWords: data.highlightKnownWords ?? true,
@@ -106,9 +121,9 @@ const UserSettings = () => {
           defaultLanguageId: data.defaultLanguageId || 0,
           translationTargetLanguageCode: data.translationTargetLanguageCode || 'EN',
           autoAdvanceToNextLesson: data.autoAdvanceToNextLesson ?? false,
-          autoMoveFinishedLessons: data.autoMoveFinishedLessons ?? false, // Map response
+          autoMoveFinishedLessons: data.autoMoveFinishedLessons ?? false,
           showProgressStats: data.showProgressStats ?? true,
-          lineSpacing: data.lineSpacing || 1.5, // Fetch lineSpacing
+          lineSpacing: data.lineSpacing || 1.5,
           discordWeeklyReportEnabled: data.discordWeeklyReportEnabled ?? false,
           discordWebhookUrl: data.discordWebhookUrl || '',
           discordWeeklyReportDayOfWeek: data.discordWeeklyReportDayOfWeek || 'Monday',
@@ -131,8 +146,8 @@ const UserSettings = () => {
 
     const fetchLanguages = async () => {
       try {
-        const data = await getAllLanguages(); // Use getAllLanguages
-        setLanguages(data || []); // Ensure it's an array
+        const data = await getAllLanguages();
+        setLanguages(data || []);
       } catch (err) {
         console.error('Failed to load languages:', err);
       } finally {
@@ -160,35 +175,21 @@ const UserSettings = () => {
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
-
     let processedValue = value;
     if (type === 'checkbox') {
       processedValue = checked;
     } else if (
-      type === 'number' ||
-      type === 'range' ||
-      name === 'textSize' ||
-      name === 'readerContentWidth' ||
-      name === 'leftPanelWidth' ||
-      name === 'lineSpacing' ||
-      name === 'defaultLanguageId' ||
-      name === 'discordWeeklyReportHourLocal' ||
+      type === 'number' || type === 'range' ||
+      name === 'textSize' || name === 'readerContentWidth' ||
+      name === 'leftPanelWidth' || name === 'lineSpacing' ||
+      name === 'defaultLanguageId' || name === 'discordWeeklyReportHourLocal' ||
       name === 'discordTimezoneOffsetMinutes'
-    ) { // Treat these fields as numbers
-      if (name === 'lineSpacing') {
-        processedValue = parseFloat(value);
-      } else {
-        processedValue = parseInt(value, 10);
-      }
-      if (isNaN(processedValue)) { // Handle potential NaN if parsing fails (e.g., for "0")
-        processedValue = 0; // Default to 0 if parsing fails or value is "0"
-      }
+    ) {
+      processedValue = name === 'lineSpacing' ? parseFloat(value) : parseInt(value, 10);
+      if (isNaN(processedValue)) processedValue = 0;
     }
-
-    setSettings(prevSettings => ({
-      ...prevSettings,
-      [name]: processedValue
-    }));
+    setSettings(prev => ({ ...prev, [name]: processedValue }));
+    setHasChanges(true);
   };
 
   const handleSubmit = async (e) => {
@@ -200,106 +201,38 @@ const UserSettings = () => {
     try {
       await updateUserSettings(settings);
 
-      // Apply theme change immediately and save to localStorage
+      // Apply theme
       localStorage.setItem('theme', settings.theme);
-      document.body.classList.remove('light-theme', 'dark-theme', 'classic-dark-theme'); // Clear existing theme classes
-
+      document.body.classList.remove('light-theme', 'dark-theme', 'classic-dark-theme');
       if (settings.theme === 'dark') {
         document.body.classList.add('dark-theme');
       } else if (settings.theme === 'light') {
         document.body.classList.add('light-theme');
       } else if (settings.theme === 'classic-dark') {
         document.body.classList.add('classic-dark-theme');
-      } else { // System theme (defaults to light/dark based on system)
+      } else {
         const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-        if (prefersDark) {
-          document.body.classList.add('dark-theme'); // Or classic-dark-theme if preferred for system dark
-        } else {
-          document.body.classList.add('light-theme');
-        }
+        document.body.classList.add(prefersDark ? 'dark-theme' : 'light-theme');
       }
 
-      // Update global context after successful API save
-      updateSetting('theme', settings.theme);
-      localStorage.setItem('theme', settings.theme); // Ensure theme is saved here too
-
-      updateSetting('textSize', settings.textSize);
-      localStorage.setItem('textSize', settings.textSize.toString());
-
-      updateSetting('textFont', settings.textFont);
-      localStorage.setItem('textFont', settings.textFont);
-
-      updateSetting('readingUiMode', settings.readingUiMode);
-      localStorage.setItem('readingUiMode', settings.readingUiMode);
-
-      updateSetting('readerContentWidth', settings.readerContentWidth);
-      localStorage.setItem('readerContentWidth', settings.readerContentWidth.toString());
-
-      updateSetting('readingDensity', settings.readingDensity);
-      localStorage.setItem('readingDensity', settings.readingDensity);
-
-      updateSetting('showWordInfoPanel', settings.showWordInfoPanel);
-      localStorage.setItem('showWordInfoPanel', settings.showWordInfoPanel.toString());
-
-      updateSetting('readerParagraphIndent', settings.readerParagraphIndent);
-      localStorage.setItem('readerParagraphIndent', settings.readerParagraphIndent.toString());
-
-      updateSetting('readerTextAlignment', settings.readerTextAlignment);
-      localStorage.setItem('readerTextAlignment', settings.readerTextAlignment);
-
-      updateSetting('leftPanelWidth', settings.leftPanelWidth);
-      localStorage.setItem('leftPanelWidth', settings.leftPanelWidth.toString());
-
-      updateSetting('autoTranslateWords', settings.autoTranslateWords);
-      localStorage.setItem('autoTranslateWords', settings.autoTranslateWords.toString());
-
-      updateSetting('pauseOnWordClick', settings.pauseOnWordClick);
-      localStorage.setItem('pauseOnWordClick', settings.pauseOnWordClick.toString());
-
-      updateSetting('highlightKnownWords', settings.highlightKnownWords);
-      localStorage.setItem('highlightKnownWords', settings.highlightKnownWords.toString());
-
-      updateSetting('sentenceTtsEnabled', settings.sentenceTtsEnabled);
-      localStorage.setItem('sentenceTtsEnabled', settings.sentenceTtsEnabled.toString());
-
-      updateSetting('defaultLanguageId', settings.defaultLanguageId);
-      localStorage.setItem('defaultLanguageId', settings.defaultLanguageId.toString());
-
-      updateSetting('translationTargetLanguageCode', settings.translationTargetLanguageCode);
-      localStorage.setItem('translationTargetLanguageCode', settings.translationTargetLanguageCode);
-
-      updateSetting('autoAdvanceToNextLesson', settings.autoAdvanceToNextLesson);
-      localStorage.setItem('autoAdvanceToNextLesson', settings.autoAdvanceToNextLesson.toString());
-
-      updateSetting('autoMoveFinishedLessons', settings.autoMoveFinishedLessons);
-      localStorage.setItem('autoMoveFinishedLessons', settings.autoMoveFinishedLessons.toString());
-
-      updateSetting('showProgressStats', settings.showProgressStats);
-      localStorage.setItem('showProgressStats', settings.showProgressStats.toString());
-
-      updateSetting('lineSpacing', settings.lineSpacing); // Update context for lineSpacing
-      localStorage.setItem('lineSpacing', settings.lineSpacing.toString()); // Save lineSpacing to localStorage
-
-      updateSetting('discordWeeklyReportEnabled', settings.discordWeeklyReportEnabled);
-      localStorage.setItem('discordWeeklyReportEnabled', settings.discordWeeklyReportEnabled.toString());
-
-      updateSetting('discordWebhookUrl', settings.discordWebhookUrl);
-      localStorage.setItem('discordWebhookUrl', settings.discordWebhookUrl || '');
-
-      updateSetting('discordWeeklyReportDayOfWeek', settings.discordWeeklyReportDayOfWeek);
-      localStorage.setItem('discordWeeklyReportDayOfWeek', settings.discordWeeklyReportDayOfWeek);
-
-      updateSetting('discordWeeklyReportHourLocal', settings.discordWeeklyReportHourLocal);
-      localStorage.setItem('discordWeeklyReportHourLocal', settings.discordWeeklyReportHourLocal.toString());
-
-      updateSetting('discordTimezoneOffsetMinutes', settings.discordTimezoneOffsetMinutes);
-      localStorage.setItem('discordTimezoneOffsetMinutes', settings.discordTimezoneOffsetMinutes.toString());
+      // Update context and localStorage for all settings
+      const settingsToSync = [
+        'theme', 'textSize', 'textFont', 'readingUiMode', 'readerContentWidth',
+        'readingDensity', 'showWordInfoPanel', 'readerParagraphIndent', 'readerTextAlignment',
+        'leftPanelWidth', 'autoTranslateWords', 'pauseOnWordClick', 'highlightKnownWords',
+        'sentenceTtsEnabled', 'defaultLanguageId', 'translationTargetLanguageCode',
+        'autoAdvanceToNextLesson', 'autoMoveFinishedLessons', 'showProgressStats', 'lineSpacing',
+        'discordWeeklyReportEnabled', 'discordWebhookUrl', 'discordWeeklyReportDayOfWeek',
+        'discordWeeklyReportHourLocal', 'discordTimezoneOffsetMinutes'
+      ];
+      settingsToSync.forEach(key => {
+        updateSetting(key, settings[key]);
+        localStorage.setItem(key, settings[key] != null ? settings[key].toString() : '');
+      });
 
       setSuccess(true);
-      // Hide success message after 3 seconds
-      setTimeout(() => {
-        setSuccess(false);
-      }, 3000);
+      setHasChanges(false);
+      setTimeout(() => setSuccess(false), 3000);
     } catch (err) {
       setError(err.message || 'Failed to update settings. Please try again.');
     } finally {
@@ -322,23 +255,18 @@ const UserSettings = () => {
 
   const handleSetBrowserTimezone = () => {
     const offsetMinutes = -new Date().getTimezoneOffset();
-    setSettings(prevSettings => ({
-      ...prevSettings,
-      discordTimezoneOffsetMinutes: offsetMinutes
-    }));
+    setSettings(prev => ({ ...prev, discordTimezoneOffsetMinutes: offsetMinutes }));
+    setHasChanges(true);
   };
 
-  // --- Backup/Restore Handlers ---
   const handleBackupClick = async () => {
     setIsBackingUp(true);
     setBackupMessage({ type: '', text: '' });
     try {
       const result = await backupDatabase();
       setBackupMessage({ type: 'success', text: result.message || 'Backup download started.' });
-      // Clear message after a few seconds
       setTimeout(() => setBackupMessage({ type: '', text: '' }), 5000);
     } catch (err) {
-      console.error("Backup failed:", err);
       setBackupMessage({ type: 'danger', text: `Backup failed: ${err.message}` });
     } finally {
       setIsBackingUp(false);
@@ -348,7 +276,7 @@ const UserSettings = () => {
   const handleRestoreFileChange = (e) => {
     if (e.target.files && e.target.files.length > 0) {
       setRestoreFile(e.target.files[0]);
-      setRestoreMessage({ type: '', text: '' }); // Clear previous messages
+      setRestoreMessage({ type: '', text: '' });
     } else {
       setRestoreFile(null);
     }
@@ -359,39 +287,30 @@ const UserSettings = () => {
       setRestoreMessage({ type: 'warning', text: 'Please select a backup file to restore.' });
       return;
     }
-
     const confirmation = window.confirm(
       "WARNING: Restoring from this backup will completely overwrite the current database.\n\n" +
       "All data added since this backup was created WILL BE LOST.\n\n" +
       "This action is IRREVERSIBLE.\n\n" +
       "Are you absolutely sure you want to proceed?"
     );
-
     if (!confirmation) {
       setRestoreMessage({ type: 'info', text: 'Restore cancelled.' });
       return;
     }
-
     setIsRestoring(true);
     setRestoreMessage({ type: '', text: '' });
-
     try {
       const result = await restoreDatabase(restoreFile);
       setRestoreMessage({ type: 'success', text: result.message || 'Database restored successfully. Please refresh or restart the application.' });
-      setRestoreFile(null); // Clear file input
-      if (fileInputRef.current) {
-        fileInputRef.current.value = ''; // Reset file input visually
-      }
+      setRestoreFile(null);
+      if (fileInputRef.current) fileInputRef.current.value = '';
     } catch (err) {
-      console.error("Restore failed:", err);
       setRestoreMessage({ type: 'danger', text: `Restore failed: ${err.message}` });
     } finally {
       setIsRestoring(false);
     }
   };
-  // --- End Backup/Restore Handlers ---
 
-  // --- Reset Statistics Handler ---
   const handleResetStatistics = async () => {
     const confirmation = window.confirm(
       "Are you sure you want to reset all your reading and listening statistics?\n\n" +
@@ -399,29 +318,44 @@ const UserSettings = () => {
       "Your account, books, texts, and learned word statuses will NOT be affected.\n\n" +
       "This action cannot be undone."
     );
-
     if (!confirmation) {
       setResetStatsMessage({ type: 'info', text: 'Statistics reset cancelled.' });
       return;
     }
-
     setIsResettingStats(true);
     setResetStatsMessage({ type: '', text: '' });
-
     try {
       const result = await resetUserStatistics();
       setResetStatsMessage({ type: 'success', text: result.message || 'Statistics reset successfully.' });
-      // Optionally clear message after a few seconds
       setTimeout(() => setResetStatsMessage({ type: '', text: '' }), 5000);
     } catch (err) {
-      console.error("Reset statistics failed:", err);
       setResetStatsMessage({ type: 'danger', text: `Reset failed: ${err.message}` });
     } finally {
       setIsResettingStats(false);
     }
   };
-  // --- End Reset Statistics Handler ---
 
+  const handleTestOpenRouter = useCallback(async () => {
+    setTestingOpenRouter(true);
+    setOpenRouterTestResult(null);
+    try {
+      await api.updateUserSettings(settings);
+      const result = await api.testOpenRouterConnection();
+      setOpenRouterTestResult(result);
+    } catch (err) {
+      setOpenRouterTestResult({ success: false, message: err.message });
+    } finally {
+      setTestingOpenRouter(false);
+    }
+  }, [settings]);
+
+  const scrollToSection = (sectionId) => {
+    setActiveSection(sectionId);
+    const el = sectionRefs.current[sectionId];
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  };
 
   if (loading) {
     return (
@@ -434,710 +368,143 @@ const UserSettings = () => {
   }
 
   return (
-    <Container className="py-5">
-      <Card className="shadow-sm">
-        <Card.Body className="p-4">
-          <h2 className="mb-4">User Settings</h2>
+    <Container className="py-4" style={{ maxWidth: '1100px' }}>
+      <h2 className="settings-page-header">Settings</h2>
 
-          {error && <Alert variant="danger">{error}</Alert>}
-          {success && <Alert variant="success">Settings updated successfully!</Alert>}
+      {error && <Alert variant="danger" dismissible onClose={() => setError('')}>{error}</Alert>}
+      {success && <Alert variant="success">Settings saved successfully!</Alert>}
 
-          <Form onSubmit={handleSubmit}>
-            {/* --- Existing UI Preferences --- */}
-            <h4 className="mt-4 mb-3">UI Preferences</h4>
-            {/* ... (theme, text size, font) ... */}
-            <Row className="mb-3">
-              <Col md={6}>
-                <Form.Group controlId="theme">
-                  <Form.Label>Theme</Form.Label>
-                  <Form.Select
-                    name="theme"
-                    value={settings.theme}
-                    onChange={handleChange}
-                  >
-                    <option value="light">Light</option>
-                    <option value="dark">Dark</option>
-                    <option value="classic-dark">Classic Dark</option>
-                    <option value="system">System Default</option>
-                  </Form.Select>
-                </Form.Group>
-              </Col>
+      <div className="settings-layout">
+        {/* Sidebar */}
+        <nav className="settings-sidebar">
+          {SECTIONS.map(s => (
+            <button
+              key={s.id}
+              className={`settings-sidebar-item ${activeSection === s.id ? 'active' : ''}`}
+              onClick={() => scrollToSection(s.id)}
+              type="button"
+            >
+              <span className="settings-sidebar-icon">{s.icon}</span>
+              {s.label}
+            </button>
+          ))}
+        </nav>
 
-              <Col md={6}>
-                <Form.Group controlId="textSize">
-                  <Form.Label>Text Size ({settings.textSize}px)</Form.Label>
-                  <Form.Range
-                    name="textSize"
-                    min={10}
-                    max={36}
-                    value={settings.textSize}
-                    onChange={handleChange}
-                  />
-                  <div className="d-flex justify-content-between">
-                    <small>Small</small>
-                    <small>Large</small>
-                  </div>
-                </Form.Group>
-              </Col>
-            </Row>
-
-            <Form.Group className="mb-4" controlId="textFont">
-              <Form.Label>Font Family</Form.Label>
-              <Form.Select
-                name="textFont"
-                value={settings.textFont}
-                onChange={handleChange}
-              >
-                <option value="default">Default (Inter)</option>
-                <option value="serif">Serif (Lora)</option>
-                <option value="open-sans">Open Sans</option>
-                <option value="lato">Lato</option>
-                <option value="atkinson">Atkinson Hyperlegible</option>
-                <option value="merriweather">Merriweather</option>
-                <option value="roboto-slab">Roboto Slab</option>
-                <option value="monospace">Monospace</option>
-                <option value="comic-sans">Comic Sans</option>
-                <option value="dyslexic">OpenDyslexic</option>
-              </Form.Select>
-            </Form.Group>
-
-            {/* Added Left Panel Width Slider */}
-            <Form.Group className="mb-4" controlId="leftPanelWidth">
-              <Form.Label>Reading Panel Width ({settings.leftPanelWidth}%)</Form.Label>
-              <Form.Range
-                name="leftPanelWidth"
-                min={20}
-                max={85} // Increased max width to 85%
-                value={settings.leftPanelWidth}
-                onChange={handleChange}
-              />
-              <div className="d-flex justify-content-between">
-                <small>Narrow</small>
-                <small>Wide</small>
+        {/* Content */}
+        <div className="settings-content">
+          <Form onSubmit={handleSubmit} id="settings-form">
+            {/* Appearance */}
+            <div ref={el => sectionRefs.current.appearance = el} className="settings-section-card mb-4">
+              <div className="settings-section-header">
+                <span className="settings-section-header-icon">{'\uD83C\uDFA8'}</span>
+                <span>Appearance</span>
               </div>
-            </Form.Group>
+              <AppearanceSettings settings={settings} handleChange={handleChange} />
+            </div>
 
-            <Form.Group className="mb-4" controlId="lineSpacing">
-              <Form.Label>Line Spacing</Form.Label>
-              <Form.Select
-                name="lineSpacing"
-                value={settings.lineSpacing}
-                onChange={handleChange}
-              >
-                <option value={1.5}>Default</option>
-                <option value={1.75}>Relaxed</option>
-                <option value={2.0}>Spacious</option>
-              </Form.Select>
-            </Form.Group>
-
-            <Form.Group className="mb-4" controlId="readingUiMode">
-              <Form.Label>Reader Display Mode</Form.Label>
-              <Form.Select
-                name="readingUiMode"
-                value={settings.readingUiMode}
-                onChange={handleChange}
-              >
-                <option value="classic">Classic</option>
-                <option value="modern">Modern</option>
-              </Form.Select>
-            </Form.Group>
-
-            <Form.Group className="mb-4" controlId="readerContentWidth">
-              <Form.Label>Reader Text Width ({settings.readerContentWidth}px)</Form.Label>
-              <Form.Range
-                name="readerContentWidth"
-                min={520}
-                max={980}
-                step={20}
-                value={settings.readerContentWidth}
-                onChange={handleChange}
-              />
-              <div className="d-flex justify-content-between">
-                <small>Narrow</small>
-                <small>Wide</small>
+            {/* Reading */}
+            <div ref={el => sectionRefs.current.reading = el} className="settings-section-card mb-4">
+              <div className="settings-section-header">
+                <span className="settings-section-header-icon">{'\uD83D\uDCDA'}</span>
+                <span>Reading</span>
               </div>
-            </Form.Group>
-
-            <Form.Group className="mb-4" controlId="readingDensity">
-              <Form.Label>Reading Density</Form.Label>
-              <Form.Select
-                name="readingDensity"
-                value={settings.readingDensity}
-                onChange={handleChange}
-              >
-                <option value="compact">Compact</option>
-                <option value="balanced">Balanced</option>
-                <option value="spacious">Spacious</option>
-              </Form.Select>
-            </Form.Group>
-
-            <Form.Group className="mb-3" controlId="showWordInfoPanel">
-              <Form.Check
-                type="checkbox"
-                name="showWordInfoPanel"
-                label="Show word info side panel by default on desktop"
-                checked={settings.showWordInfoPanel}
-                onChange={handleChange}
+              <ReadingSettings
+                settings={settings}
+                handleChange={handleChange}
+                languages={languages}
+                loadingLanguages={loadingLanguages}
               />
-            </Form.Group>
+            </div>
 
-            <Form.Group className="mb-3" controlId="readerParagraphIndent">
-              <Form.Check
-                type="checkbox"
-                name="readerParagraphIndent"
-                label="Indent body paragraphs"
-                checked={settings.readerParagraphIndent}
-                onChange={handleChange}
-              />
-            </Form.Group>
-
-            <Form.Group className="mb-4" controlId="readerTextAlignment">
-              <Form.Label>Body Text Alignment</Form.Label>
-              <Form.Select
-                name="readerTextAlignment"
-                value={settings.readerTextAlignment}
-                onChange={handleChange}
-              >
-                <option value="left">Ragged Right</option>
-                <option value="justify">Justified</option>
-              </Form.Select>
-            </Form.Group>
-
-
-            {/* --- Existing Reading Preferences --- */}
-            <h4 className="mt-4 mb-3">Reading Preferences</h4>
-            {/* ... (auto translate, highlight, default language) ... */}
-            <Form.Group className="mb-3" controlId="autoTranslateWords">
-              <Form.Check
-                type="checkbox"
-                name="autoTranslateWords"
-                label="Automatically translate words when clicked"
-                checked={settings.autoTranslateWords}
-                onChange={handleChange}
-              />
-            </Form.Group>
-
-            <Form.Group className="mb-3" controlId="pauseOnWordClick">
-              <Form.Check
-                type="checkbox"
-                name="pauseOnWordClick"
-                label="Pause audio when a word or phrase is opened"
-                checked={settings.pauseOnWordClick}
-                onChange={handleChange}
-              />
-            </Form.Group>
-
-            <Form.Group className="mb-3" controlId="highlightKnownWords">
-              <Form.Check
-                type="checkbox"
-                name="highlightKnownWords"
-                label="Highlight words based on knowledge level"
-                checked={settings.highlightKnownWords}
-                onChange={handleChange}
-              />
-            </Form.Group>
-
-            <Form.Group className="mb-3" controlId="sentenceTtsEnabled">
-              <Form.Check
-                type="checkbox"
-                name="sentenceTtsEnabled"
-                label="Enable browser text-to-speech controls in the reader"
-                checked={settings.sentenceTtsEnabled}
-                onChange={handleChange}
-              />
-            </Form.Group>
-
-            <Form.Group className="mb-4" controlId="defaultLanguageId">
-              <Form.Label>Default Language for New Texts</Form.Label>
-              <Form.Select
-                name="defaultLanguageId"
-                value={settings.defaultLanguageId}
-                onChange={handleChange}
-                disabled={loadingLanguages}
-              >
-                <option value={0}>No default (ask each time)</option>
-                {languages.map(language => (
-                  <option key={language.languageId} value={language.languageId}>
-                    {language.name}
-                  </option>
-                ))}
-              </Form.Select>
-            </Form.Group>
-
-            <Form.Group className="mb-4" controlId="translationTargetLanguageCode">
-              <Form.Label>Translation Target Language</Form.Label>
-              <Form.Select
-                name="translationTargetLanguageCode"
-                value={settings.translationTargetLanguageCode}
-                onChange={handleChange}
-                disabled={loadingLanguages}
-              >
-                <option value="EN">English</option>
-                {languages
-                  .filter(language => language.code && language.code.toLowerCase() !== 'en')
-                  .map(language => (
-                    <option key={`target-${language.languageId}`} value={language.code.toUpperCase()}>
-                      {language.name}
-                    </option>
-                  ))}
-              </Form.Select>
-              <Form.Text className="text-muted">
-                Used for word and sentence translation results in the reader.
-              </Form.Text>
-            </Form.Group>
-
-
-            {/* --- Existing Navigation Preferences --- */}
-            <h4 className="mt-4 mb-3">Navigation Preferences</h4>
-            {/* ... (auto advance, show stats) ... */}
-            <Form.Group className="mb-3" controlId="autoAdvanceToNextLesson">
-              <Form.Check
-                type="checkbox"
-                name="autoAdvanceToNextLesson"
-                label="Automatically advance to next lesson after completion"
-                checked={settings.autoAdvanceToNextLesson}
-                onChange={handleChange}
-              />
-            </Form.Group>
-
-            <Form.Group className="mb-3" controlId="autoMoveFinishedLessons">
-              <Form.Check
-                type="checkbox"
-                name="autoMoveFinishedLessons"
-                label="Automatically move finished lessons to 'Finished' folder"
-                checked={settings.autoMoveFinishedLessons || false}
-                onChange={handleChange}
-              />
-            </Form.Group>
-
-            <Form.Group className="mb-4" controlId="showProgressStats">
-              <Form.Check
-                type="checkbox"
-                name="showProgressStats"
-                label="Show progress statistics after completing a lesson"
-                checked={settings.showProgressStats}
-                onChange={handleChange}
-              />
-            </Form.Group>
-
-            {/* --- AI Provider Settings --- */}
-            <h4 className="mt-4 mb-3">AI Provider</h4>
-            <Form.Group className="mb-3" controlId="useOpenRouter">
-              <Form.Check
-                type="checkbox"
-                name="useOpenRouter"
-                label="Use OpenRouter instead of Gemini for translation and story generation"
-                checked={settings.useOpenRouter}
-                onChange={handleChange}
-              />
-              <Form.Text muted>
-                OpenRouter provides access to multiple AI models. You'll need an API key from openrouter.ai.
-              </Form.Text>
-            </Form.Group>
-
-            {settings.useOpenRouter && (
-              <>
-                <Form.Group className="mb-3" controlId="openRouterApiKey">
-                  <Form.Label>OpenRouter API Key</Form.Label>
-                  <Form.Control
-                    type="password"
-                    name="openRouterApiKey"
-                    placeholder="sk-or-..."
-                    value={settings.openRouterApiKey}
-                    onChange={handleChange}
-                  />
-                  <Form.Text muted>
-                    Get your API key from <a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer">openrouter.ai/keys</a>
-                  </Form.Text>
-                </Form.Group>
-
-                <Form.Group className="mb-3" controlId="openRouterModel">
-                  <Form.Label>Model Name</Form.Label>
-                  <Form.Control
-                    type="text"
-                    name="openRouterModel"
-                    placeholder="google/gemini-2.5-flash-preview-05-20:free"
-                    value={settings.openRouterModel}
-                    onChange={handleChange}
-                  />
-                  <Form.Text muted>
-                    Paste any model name from <a href="https://openrouter.ai/models" target="_blank" rel="noopener noreferrer">openrouter.ai/models</a>.
-                    Free models end with ":free".
-                  </Form.Text>
-                </Form.Group>
-
-                <small className="text-muted d-block mb-2 fw-bold">Translation Reasoning</small>
-                <Form.Group className="mb-3" controlId="openRouterReasoningEnabled">
-                  <Form.Check
-                    type="checkbox"
-                    name="openRouterReasoningEnabled"
-                    label="Enable reasoning tokens for translations"
-                    checked={settings.openRouterReasoningEnabled}
-                    onChange={handleChange}
-                  />
-                </Form.Group>
-
-                <Form.Group className="mb-3" controlId="openRouterReasoningEffort">
-                  <Form.Label>Translation Reasoning Effort</Form.Label>
-                  <Form.Select
-                    name="openRouterReasoningEffort"
-                    value={settings.openRouterReasoningEffort}
-                    onChange={handleChange}
-                    disabled={!settings.openRouterReasoningEnabled}
-                  >
-                    <option value="xhigh">xhigh</option>
-                    <option value="high">high</option>
-                    <option value="medium">medium</option>
-                    <option value="low">low</option>
-                    <option value="minimal">minimal</option>
-                    <option value="none">none</option>
-                  </Form.Select>
-                  <Form.Text muted>
-                    Sent as `reasoning.effort` to OpenRouter for translations.
-                  </Form.Text>
-                </Form.Group>
-
-                <small className="text-muted d-block mb-2 fw-bold">Story Generation Reasoning</small>
-                <Form.Group className="mb-3" controlId="openRouterStoryReasoningEnabled">
-                  <Form.Check
-                    type="checkbox"
-                    name="openRouterStoryReasoningEnabled"
-                    label="Enable reasoning tokens for story generation"
-                    checked={settings.openRouterStoryReasoningEnabled}
-                    onChange={handleChange}
-                  />
-                </Form.Group>
-
-                <Form.Group className="mb-3" controlId="openRouterStoryReasoningEffort">
-                  <Form.Label>Story Generation Reasoning Effort</Form.Label>
-                  <Form.Select
-                    name="openRouterStoryReasoningEffort"
-                    value={settings.openRouterStoryReasoningEffort}
-                    onChange={handleChange}
-                    disabled={!settings.openRouterStoryReasoningEnabled}
-                  >
-                    <option value="xhigh">xhigh</option>
-                    <option value="high">high</option>
-                    <option value="medium">medium</option>
-                    <option value="low">low</option>
-                    <option value="minimal">minimal</option>
-                    <option value="none">none</option>
-                  </Form.Select>
-                  <Form.Text muted>
-                    Sent as `reasoning.effort` to OpenRouter for story generation.
-                  </Form.Text>
-                </Form.Group>
-
-                <div className="mb-4">
-                  <Button
-                    variant="outline-secondary"
-                    size="sm"
-                    onClick={async () => {
-                      setTestingOpenRouter(true);
-                      setOpenRouterTestResult(null);
-                      try {
-                        // First save current settings
-                        await api.updateUserSettings(settings);
-                        // Then test
-                        const result = await api.testOpenRouterConnection();
-                        setOpenRouterTestResult(result);
-                      } catch (err) {
-                        setOpenRouterTestResult({ success: false, message: err.message });
-                      } finally {
-                        setTestingOpenRouter(false);
-                      }
-                    }}
-                    disabled={testingOpenRouter || !settings.openRouterApiKey}
-                  >
-                    {testingOpenRouter ? 'Testing...' : 'Test Connection'}
-                  </Button>
-                  {openRouterTestResult && (
-                    <Alert
-                      variant={openRouterTestResult.success ? 'success' : 'danger'}
-                      className="mt-2 mb-0"
-                      style={{ fontSize: '0.9em' }}
-                    >
-                      <strong>{openRouterTestResult.success ? '✓' : '✗'}</strong> {openRouterTestResult.message}
-                      {openRouterTestResult.details && (
-                        <div className="mt-1" style={{ fontSize: '0.85em', opacity: 0.8 }}>
-                          {openRouterTestResult.details.substring(0, 200)}
-                        </div>
-                      )}
-                    </Alert>
-                  )}
-                </div>
-              </>
-            )}
-
-            {/* --- Discord Reports --- */}
-            <h4 className="mt-4 mb-3">Discord Reports</h4>
-            <Form.Group className="mb-3" controlId="discordWeeklyReportEnabled">
-              <Form.Check
-                type="checkbox"
-                name="discordWeeklyReportEnabled"
-                label="Send me a weekly activity report on Discord"
-                checked={settings.discordWeeklyReportEnabled}
-                onChange={handleChange}
-              />
-            </Form.Group>
-            <Form.Group className="mb-4" controlId="discordWebhookUrl">
-              <Form.Label>Discord Webhook URL</Form.Label>
-              <Form.Control
-                type="url"
-                name="discordWebhookUrl"
-                placeholder="https://discord.com/api/webhooks/..."
-                value={settings.discordWebhookUrl}
-                onChange={handleChange}
-              />
-              <Form.Text muted>
-                Create a webhook in your Discord channel settings and paste the URL here.
-              </Form.Text>
-            </Form.Group>
-            <Row className="mb-3">
-              <Col md={6}>
-                <Form.Group controlId="discordWeeklyReportDayOfWeek">
-                  <Form.Label>Report Day</Form.Label>
-                  <Form.Select
-                    name="discordWeeklyReportDayOfWeek"
-                    value={settings.discordWeeklyReportDayOfWeek}
-                    onChange={handleChange}
-                  >
-                    <option value="Monday">Monday</option>
-                    <option value="Tuesday">Tuesday</option>
-                    <option value="Wednesday">Wednesday</option>
-                    <option value="Thursday">Thursday</option>
-                    <option value="Friday">Friday</option>
-                    <option value="Saturday">Saturday</option>
-                    <option value="Sunday">Sunday</option>
-                  </Form.Select>
-                </Form.Group>
-              </Col>
-              <Col md={6}>
-                <Form.Group controlId="discordWeeklyReportHourLocal">
-                  <Form.Label>Report Hour (Local)</Form.Label>
-                  <Form.Select
-                    name="discordWeeklyReportHourLocal"
-                    value={settings.discordWeeklyReportHourLocal}
-                    onChange={handleChange}
-                  >
-                    {Array.from({ length: 24 }, (_, hour) => (
-                      <option key={hour} value={hour}>
-                        {hour.toString().padStart(2, '0')}:00
-                      </option>
-                    ))}
-                  </Form.Select>
-                </Form.Group>
-              </Col>
-            </Row>
-            <Form.Group className="mb-4" controlId="discordTimezoneOffsetMinutes">
-              <Form.Label>Timezone Offset (minutes from UTC)</Form.Label>
-              <Form.Control
-                type="number"
-                name="discordTimezoneOffsetMinutes"
-                value={settings.discordTimezoneOffsetMinutes}
-                onChange={handleChange}
-                min={-840}
-                max={840}
-              />
-              <div className="mt-2">
-                <Button
-                  variant="outline-secondary"
-                  size="sm"
-                  onClick={handleSetBrowserTimezone}
-                >
-                  Use browser timezone
-                </Button>
+            {/* Navigation */}
+            <div ref={el => sectionRefs.current.navigation = el} className="settings-section-card mb-4">
+              <div className="settings-section-header">
+                <span className="settings-section-header-icon">{'\u2699\uFE0F'}</span>
+                <span>Navigation</span>
               </div>
-              <Form.Text muted>
-                Example: UTC+2 is 120, UTC-5 is -300.
-              </Form.Text>
-            </Form.Group>
+              <NavigationSettings settings={settings} handleChange={handleChange} />
+            </div>
 
-            <Card className="mb-4">
-              <Card.Body>
-                <Card.Title>Send Report Now</Card.Title>
-                <Card.Text className="text-muted">
-                  Send an activity report immediately using your selected timeframe.
-                </Card.Text>
-                {reportMessage.text && (
-                  <Alert variant={reportMessage.type} className="mt-2">
-                    {reportMessage.text}
-                  </Alert>
-                )}
-                <Row className="mb-3">
-                  <Col md={6}>
-                    <Form.Group controlId="reportPeriod">
-                      <Form.Label>Report Period</Form.Label>
-                      <Form.Select
-                        value={reportPeriod}
-                        onChange={(e) => setReportPeriod(e.target.value)}
-                      >
-                        <option value="week">Last 7 days</option>
-                        <option value="month">Last 30 days</option>
-                        <option value="year">Last 365 days</option>
-                        <option value="all">All time</option>
-                        <option value="days">Custom days</option>
-                      </Form.Select>
-                    </Form.Group>
-                  </Col>
-                  <Col md={6}>
-                    <Form.Group controlId="reportDays">
-                      <Form.Label>Custom Days</Form.Label>
-                      <Form.Control
-                        type="number"
-                        min={1}
-                        max={3650}
-                        value={reportDays}
-                        disabled={reportPeriod !== 'days'}
-                        onChange={(e) => setReportDays(parseInt(e.target.value, 10) || 1)}
-                      />
-                    </Form.Group>
-                  </Col>
-                </Row>
-                <Button
-                  variant="primary"
-                  onClick={handleSendReportNow}
-                  disabled={isSendingReport || (reportPeriod === 'days' && (!reportDays || reportDays <= 0))}
-                >
-                  {isSendingReport ? 'Sending...' : 'Send Report Now'}
-                </Button>
-              </Card.Body>
-            </Card>
+            {/* AI Provider */}
+            <div ref={el => sectionRefs.current.ai = el} className="settings-section-card mb-4">
+              <div className="settings-section-header">
+                <span className="settings-section-header-icon">{'\uD83E\uDD16'}</span>
+                <span>AI Provider</span>
+              </div>
+              <AiProviderSettings
+                settings={settings}
+                handleChange={handleChange}
+                testingOpenRouter={testingOpenRouter}
+                openRouterTestResult={openRouterTestResult}
+                onTestConnection={handleTestOpenRouter}
+              />
+            </div>
 
-
-            <div className="d-grid gap-2 mb-4"> {/* Added mb-4 */}
-              <Button
-                variant="primary"
-                type="submit"
-                disabled={saving}
-              >
-                {saving ? (
-                  <>
-                    <Spinner animation="border" size="sm" className="me-2" />
-                    Saving...
-                  </>
-                ) : 'Save Settings'}
-              </Button>
+            {/* Discord */}
+            <div ref={el => sectionRefs.current.discord = el} className="settings-section-card mb-4">
+              <div className="settings-section-header">
+                <span className="settings-section-header-icon">{'\uD83D\uDCE8'}</span>
+                <span>Discord Reports</span>
+              </div>
+              <DiscordSettings
+                settings={settings}
+                handleChange={handleChange}
+                onSetBrowserTimezone={handleSetBrowserTimezone}
+                reportPeriod={reportPeriod}
+                setReportPeriod={setReportPeriod}
+                reportDays={reportDays}
+                setReportDays={setReportDays}
+                isSendingReport={isSendingReport}
+                reportMessage={reportMessage}
+                onSendReportNow={handleSendReportNow}
+              />
             </div>
           </Form>
 
-          {/* --- Data Management Section --- */}
-          {/* Removed isAdmin check to make available to all users */}
-          <>
-            <hr />
-            <h4 className="mt-4 mb-3">Data Management</h4> {/* Renamed Header */}
-            <p className="text-muted small">Use these options with caution.</p>
+          {/* Data Management - outside form since it has independent actions */}
+          <div ref={el => sectionRefs.current.data = el} className="settings-section-card mb-4">
+            <div className="settings-section-header">
+              <span className="settings-section-header-icon">{'\uD83D\uDDC4\uFE0F'}</span>
+              <span>Data Management</span>
+            </div>
+            <DataManagementSettings
+              audioStorage={audioStorage}
+              loadingStorage={loadingStorage}
+              storageError={storageError}
+              isBackingUp={isBackingUp}
+              backupMessage={backupMessage}
+              onBackupClick={handleBackupClick}
+              restoreFile={restoreFile}
+              isRestoring={isRestoring}
+              restoreMessage={restoreMessage}
+              onRestoreFileChange={handleRestoreFileChange}
+              onRestoreClick={handleRestoreClick}
+              fileInputRef={fileInputRef}
+              isResettingStats={isResettingStats}
+              resetStatsMessage={resetStatsMessage}
+              onResetStatistics={handleResetStatistics}
+            />
+          </div>
+        </div>
+      </div>
 
-            {/* Audio Storage Section */}
-            <Card className="mb-3">
-              <Card.Body>
-                <Card.Title>Audio Storage</Card.Title>
-                <Card.Text>Total size of your audiobooks and audio lessons.</Card.Text>
-                {loadingStorage && <Spinner animation="border" size="sm" />}
-                {storageError && <Alert variant="danger" className="mt-2">{storageError}</Alert>}
-                {audioStorage && !loadingStorage && (
-                  <div className="mt-2">
-                    <Row>
-                      <Col md={6}>
-                        <strong>Total Size:</strong> {audioStorage.totalSizeGB > 0.1
-                          ? `${audioStorage.totalSizeGB} GB`
-                          : `${audioStorage.totalSizeMB} MB`}
-                      </Col>
-                      <Col md={6}>
-                        <strong>Total Files:</strong> {audioStorage.totalFiles}
-                      </Col>
-                    </Row>
-                    <div className="mt-2">
-                      <small className="text-muted">
-                        Maximum upload size per book: 5 GB
-                      </small>
-                    </div>
-                  </div>
-                )}
-              </Card.Body>
-            </Card>
-
-            {/* Backup Section */}
-            <Card className="mb-3">
-              <Card.Body>
-                <Card.Title>Backup</Card.Title>
-                <Card.Text>Download a full backup of the application database.</Card.Text>
-                {backupMessage.text && <Alert variant={backupMessage.type} className="mt-2">{backupMessage.text}</Alert>}
-                <Button
-                  variant="secondary"
-                  onClick={handleBackupClick}
-                  disabled={isBackingUp}
-                >
-                  {isBackingUp ? (
-                    <>
-                      <Spinner animation="border" size="sm" className="me-2" />
-                      Backing up...
-                    </>
-                  ) : 'Download Backup'}
-                </Button>
-              </Card.Body>
-            </Card>
-
-            {/* Restore Section */}
-            <Card>
-              <Card.Body>
-                <Card.Title>Restore</Card.Title>
-                <Card.Text className="text-danger fw-bold">
-                  WARNING: Restoring from a backup will overwrite ALL current data. This action is irreversible.
-                </Card.Text>
-                <Form.Group controlId="restoreFile" className="mb-3">
-                  <Form.Label>Select Backup File (.backup)</Form.Label>
-                  <Form.Control
-                    type="file"
-                    accept=".backup" // Suggest correct file type
-                    onChange={handleRestoreFileChange}
-                    ref={fileInputRef} // Assign ref
-                    disabled={isRestoring}
-                  />
-                </Form.Group>
-                {restoreMessage.text && <Alert variant={restoreMessage.type} className="mt-2">{restoreMessage.text}</Alert>}
-                <Button
-                  variant="danger"
-                  onClick={handleRestoreClick}
-                  disabled={isRestoring || !restoreFile}
-                >
-                  {isRestoring ? (
-                    <>
-                      <Spinner animation="border" size="sm" className="me-2" />
-                      Restoring...
-                    </>
-                  ) : 'Restore from Backup'}
-                </Button>
-              </Card.Body>
-            </Card>
-
-            {/* Reset Statistics Section */}
-            <Card className="mt-3">
-              <Card.Body>
-                <Card.Title>Reset Statistics</Card.Title>
-                <Card.Text className="text-warning fw-bold">
-                  Reset all reading/listening history and aggregate counts (words read, time listened, texts/books completed). Your learned words status, books, and texts themselves will remain. This action is irreversible.
-                </Card.Text>
-                {resetStatsMessage.text && <Alert variant={resetStatsMessage.type} className="mt-2">{resetStatsMessage.text}</Alert>}
-                <Button
-                  variant="warning" // Use warning color for caution
-                  onClick={handleResetStatistics}
-                  disabled={isResettingStats}
-                >
-                  {isResettingStats ? (
-                    <>
-                      <Spinner animation="border" size="sm" className="me-2" />
-                      Resetting...
-                    </>
-                  ) : 'Reset All Statistics'}
-                </Button>
-              </Card.Body>
-            </Card>
-          </>
-          {/* --- End Data Management Section --- */} {/* Updated comment */}
-
-        </Card.Body>
-      </Card>
+      {/* Sticky Save Bar */}
+      <div className={`settings-save-bar ${hasChanges ? '' : 'settings-save-bar--hidden'}`}>
+        <span className="settings-save-indicator">Unsaved changes</span>
+        <Button
+          variant="primary"
+          type="submit"
+          form="settings-form"
+          disabled={saving}
+        >
+          {saving ? (
+            <>
+              <Spinner animation="border" size="sm" className="me-2" />
+              Saving...
+            </>
+          ) : 'Save Settings'}
+        </Button>
+      </div>
     </Container>
   );
 };

@@ -1,0 +1,13 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "client",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "npm", "start"],
+      "port": 3000,
+      "autoPort": true,
+      "cwd": "client/lingua-read-client"
+    }
+  ]
+}

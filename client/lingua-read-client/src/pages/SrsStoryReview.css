@@ -1,0 +1,122 @@
+/* SRS Story Review Styles */
+
+.srs-story-card {
+  border: none;
+  border-radius: 16px;
+  overflow: hidden;
+}
+
+.srs-story-container {
+  padding: 1.5rem;
+}
+
+.srs-story-text {
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+/* Target word highlighting */
+.srs-story-target-word {
+  background-color: rgba(255, 224, 102, 0.3);
+  border-bottom: 2px dotted #ffc107;
+  padding: 1px 2px;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: background-color 0.2s ease, border-color 0.2s ease;
+}
+
+.srs-story-target-word:hover {
+  background-color: rgba(255, 224, 102, 0.5);
+  border-bottom-color: #ff9800;
+}
+
+.srs-story-target-active {
+  background-color: rgba(255, 193, 7, 0.4);
+  border-bottom: 2px solid #ff9800;
+}
+
+/* Reviewed word style */
+.srs-story-target-reviewed {
+  background-color: rgba(40, 167, 69, 0.15);
+  border-bottom: 2px solid rgba(40, 167, 69, 0.4);
+  cursor: default;
+  opacity: 0.8;
+}
+
+.srs-story-target-reviewed:hover {
+  background-color: rgba(40, 167, 69, 0.15);
+}
+
+/* Popover styling */
+.srs-story-popover {
+  min-width: 220px;
+  max-width: 300px;
+}
+
+.srs-story-popover .popover-header {
+  font-size: 0.95rem;
+  padding: 0.4rem 0.75rem;
+  background: var(--theme-surface-bg, #f8f9fa);
+}
+
+.srs-story-popover .popover-body {
+  padding: 0.5rem 0.75rem;
+}
+
+/* Word legend badges */
+.srs-story-word-badge {
+  font-size: 0.75rem;
+  padding: 0.3rem 0.6rem;
+  border-radius: 12px;
+}
+
+.srs-story-word-badge-pending {
+  background-color: transparent !important;
+  color: var(--theme-text, #333) !important;
+  border: 1px solid var(--bs-primary, #0d6efd);
+}
+
+/* Dark theme adjustments */
+.dark-theme .srs-story-target-word,
+.classic-dark-theme .srs-story-target-word {
+  background-color: rgba(255, 224, 102, 0.15);
+  border-bottom-color: #ffc107;
+}
+
+.dark-theme .srs-story-target-word:hover,
+.classic-dark-theme .srs-story-target-word:hover {
+  background-color: rgba(255, 224, 102, 0.25);
+}
+
+.dark-theme .srs-story-target-active,
+.classic-dark-theme .srs-story-target-active {
+  background-color: rgba(255, 193, 7, 0.25);
+}
+
+.dark-theme .srs-story-target-reviewed,
+.classic-dark-theme .srs-story-target-reviewed {
+  background-color: rgba(40, 167, 69, 0.1);
+  border-bottom-color: rgba(40, 167, 69, 0.3);
+}
+
+.dark-theme .srs-story-word-badge-pending,
+.classic-dark-theme .srs-story-word-badge-pending {
+  color: var(--theme-text, #e0e0e0) !important;
+  border-color: var(--bs-primary, #6ea8fe);
+}
+
+/* Mobile adjustments */
+@media (max-width: 576px) {
+  .srs-story-container {
+    padding: 1rem;
+  }
+
+  .srs-story-text {
+    font-size: 1rem !important;
+    line-height: 1.8 !important;
+  }
+
+  .srs-story-popover {
+    min-width: 200px;
+  }
+}

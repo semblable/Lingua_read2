@@ -9,6 +9,7 @@ using System.Linq;
 using System.Collections.Generic;
 using LinguaReadApi.Data;
 using LinguaReadApi.Models;
+using LinguaReadApi.Services;
 
 namespace LinguaReadApi.Controllers
 {
@@ -18,10 +19,12 @@ namespace LinguaReadApi.Controllers
     public class SrsController : ControllerBase
     {
         private readonly AppDbContext _context;
+        private readonly IStoryGenerationServiceFactory _storyGenerationServiceFactory;
 
-        public SrsController(AppDbContext context)
+        public SrsController(AppDbContext context, IStoryGenerationServiceFactory storyGenerationServiceFactory)
         {
             _context = context;
+            _storyGenerationServiceFactory = storyGenerationServiceFactory;
         }
 
         // GET: api/srs/due?languageId=1&status=1,2&onlyOneTarget=false&limit=20
@@ -878,6 +881,119 @@ namespace LinguaReadApi.Controllers
             return unknownCount;
         }
 
+        // POST: api/srs/story-generate
+        [HttpPost("story-generate")]
+        public async Task<ActionResult<SrsStoryGenerateResponse>> GenerateStoryFromDueWords([FromBody] SrsStoryGenerateRequest request)
+        {
+            if (!ModelState.IsValid)
+                return BadRequest(ModelState);
+
+            var userId = GetUserId();
+            var now = DateTime.UtcNow;
+
+            // 1. Fetch due cards (simplified query - no daily limits, just get due words)
+            var query = _context.SrsCardReviews
+                .AsNoTracking()
+                .Where(scr => scr.UserId == userId && scr.NextReviewAt <= now)
+                .Where(scr => !scr.IsSuspended)
+                .Where(scr => scr.BuriedUntil == null || scr.BuriedUntil <= now)
+                .Include(scr => scr.Word)
+                    .ThenInclude(w => w.Translation)
+                .AsQueryable();
+
+            query = query.Where(scr => scr.Word.LanguageId == request.LanguageId);
+
+            if (!string.IsNullOrEmpty(request.Status))
+            {
+                var statusList = request.Status.Split(',').Select(s => s.Trim()).Where(s => int.TryParse(s, out _)).Select(int.Parse).ToList();
+                if (statusList.Any()) query = query.Where(scr => statusList.Contains(scr.Word.Status));
+            }
+
+            // 2. Prioritize: Learning > New > Familiar, then oldest due first
+            var allDueCards = await query
+                .OrderBy(scr => scr.IsLearning ? 0 : (scr.Repetitions == 0 && scr.LastReviewedAt == null ? 1 : 2))
+                .ThenBy(scr => scr.NextReviewAt)
+                .Take(request.MaxWords)
+                .ToListAsync();
+
+            if (!allDueCards.Any())
+                return Ok(new SrsStoryGenerateResponse { Story = "", TargetWords = new(), UsedWords = new() });
+
+            // 3. Build target words list
+            var targetWords = allDueCards.Select(card => new SrsStoryWordDto
+            {
+                SrsCardReviewId = card.SrsCardReviewId,
+                WordId = card.WordId,
+                Term = card.Word.Term,
+                Translation = card.Word.Translation?.Translation ?? "",
+                WordStatus = card.Word.Status,
+                EaseFactor = card.EaseFactor,
+                Interval = card.Interval,
+                Repetitions = card.Repetitions,
+                IsLearning = card.IsLearning,
+                CurrentLearningStepIndex = card.CurrentLearningStepIndex
+            }).ToList();
+
+            // 4. Build prompt
+            var language = await _context.Languages.AsNoTracking()
+                .FirstOrDefaultAsync(l => l.LanguageId == request.LanguageId);
+            var languageName = language?.Name ?? "the target language";
+
+            // Auto-compute level based on word status mix
+            var avgStatus = targetWords.Average(w => w.WordStatus);
+            var level = avgStatus <= 2.0 ? "beginner" : avgStatus <= 3.5 ? "intermediate" : "advanced";
+
+            var wordList = string.Join("\n", targetWords.Select(w => $"- {w.Term} ({w.Translation})"));
+
+            var prompt = $@"Write a short story in {languageName} at {level} level.
+
+You MUST naturally incorporate ALL of the following vocabulary words into the story. Each word must appear at least once in clear, meaningful context.
+
+Vocabulary words to include:
+{wordList}
+
+Requirements:
+- Write approximately {request.MaxLength} words
+- Use vocabulary and grammar appropriate for {level} level learners
+- Each target word should appear in a clear, meaningful context
+- The story should be coherent and interesting, not a forced list of sentences
+- Return ONLY the story text
+- After the story, on a new line, write ""USED_WORDS:"" followed by a comma-separated list of the target words you actually used (in their exact base form as provided above)
+
+{(string.IsNullOrWhiteSpace(request.Theme) ? "Choose an interesting everyday topic." : $"Theme/topic: {request.Theme}")}";
+
+            // 5. Generate story using user's configured AI provider
+            var storyService = await _storyGenerationServiceFactory.GetServiceForUserAsync(userId);
+            var rawResponse = await storyService.GenerateStoryAsync(prompt, languageName, level, request.MaxLength);
+
+            // 6. Parse USED_WORDS from response
+            var storyText = rawResponse;
+            var usedWords = new List<string>();
+
+            var usedWordsIndex = rawResponse.LastIndexOf("USED_WORDS:", StringComparison.OrdinalIgnoreCase);
+            if (usedWordsIndex >= 0)
+            {
+                storyText = rawResponse.Substring(0, usedWordsIndex).Trim();
+                var usedWordsLine = rawResponse.Substring(usedWordsIndex + "USED_WORDS:".Length).Trim();
+                usedWords = usedWordsLine.Split(',')
+                    .Select(w => w.Trim())
+                    .Where(w => !string.IsNullOrEmpty(w))
+                    .ToList();
+            }
+            else
+            {
+                // Fallback: assume all target words were used
+                usedWords = targetWords.Select(w => w.Term).ToList();
+            }
+
+            return Ok(new SrsStoryGenerateResponse
+            {
+                Story = storyText,
+                TargetWords = targetWords,
+                UsedWords = usedWords
+            });
+        }
+
         private Guid GetUserId()
         {
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
@@ -990,5 +1106,42 @@ namespace LinguaReadApi.Controllers
     {
         public string Date { get; set; } = string.Empty;
         public int ReviewCount { get; set; }
+    }
+
+    public class SrsStoryGenerateRequest
+    {
+        [Required]
+        public int LanguageId { get; set; }
+
+        public string? Theme { get; set; }
+
+        [Range(1, 50)]
+        public int MaxWords { get; set; } = 15;
+
+        [Range(50, 1000)]
+        public int MaxLength { get; set; } = 400;
+
+        public string? Status { get; set; }
+    }
+
+    public class SrsStoryGenerateResponse
+    {
+        public string Story { get; set; } = string.Empty;
+        public List<SrsStoryWordDto> TargetWords { get; set; } = new();
+        public List<string> UsedWords { get; set; } = new();
+    }
+
+    public class SrsStoryWordDto
+    {
+        public int SrsCardReviewId { get; set; }
+        public int WordId { get; set; }
+        public string Term { get; set; } = string.Empty;
+        public string Translation { get; set; } = string.Empty;
+        public int WordStatus { get; set; }
+        public double EaseFactor { get; set; }
+        public int Interval { get; set; }
+        public int Repetitions { get; set; }
+        public bool IsLearning { get; set; }
+        public int CurrentLearningStepIndex { get; set; }
     }
 }

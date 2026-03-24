@@ -41,7 +41,10 @@ const Navigation = () => {
 
                 <Nav.Link as={Link} to="/statistics">Statistics</Nav.Link>
                 <Nav.Link as={Link} to="/terms">Terms</Nav.Link>
-                <Nav.Link as={Link} to="/srs">SRS</Nav.Link>
+                <NavDropdown title="SRS" id="srs-dropdown">
+                  <NavDropdown.Item as={Link} to="/srs">Card Review</NavDropdown.Item>
+                  <NavDropdown.Item as={Link} to="/srs/story">Story Review</NavDropdown.Item>
+                </NavDropdown>
               </>
             )}
           </Nav>

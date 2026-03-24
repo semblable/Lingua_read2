@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Container, Card, Button, Spinner, Alert, Form, Row, Col, Badge, ProgressBar, ButtonGroup, Modal } from 'react-bootstrap';
+import { useNavigate } from 'react-router-dom';
 import { SettingsContext } from '../contexts/SettingsContext';
 import { getAllLanguages, getSrsDueCards, submitSrsReview, getSrsStats, updateUserSettings, undoSrsReview, getSrsForecast, suspendSrsCard, burySrsCard, updateSrsCard, getSrsHeatmap } from '../utils/api';
 import './SrsReview.css';
@@ -18,6 +19,8 @@ const STATUS_LABELS = { 1: 'New', 2: 'Learning', 3: 'Familiar', 4: 'Advanced', 5
 const STATUS_VARIANTS = { 1: 'danger', 2: 'warning', 3: 'info', 4: 'primary', 5: 'success' };
 
 const SrsReview = () => {
+  const navigate = useNavigate();
+
   // Setup state
   const [languages, setLanguages] = useState([]);
   const [selectedLanguage, setSelectedLanguage] = useState(() =>
@@ -588,6 +591,14 @@ const SrsReview = () => {
                 disabled={!selectedLanguage || loading}
               >
                 {loading ? <><Spinner size="sm" className="me-2" />Loading...</> : 'Start Review'}
+              </Button>
+              <Button
+                variant="outline-info"
+                size="lg"
+                onClick={() => navigate('/srs/story')}
+                title="Generate a story with your due words"
+              >
+                Story Mode
               </Button>
               <Button
                 variant="outline-secondary"

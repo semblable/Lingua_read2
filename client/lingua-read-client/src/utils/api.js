@@ -802,6 +802,20 @@ export const generateStory = async (prompt, language, level, maxLength) => {
   }
 };
 
+// SRS Story Generation API
+export const generateSrsStory = async (languageId, { theme, maxWords, maxLength, status } = {}) => {
+  try {
+    const payload = { languageId, theme, maxWords, maxLength, status: status?.join(',') };
+    return await fetchApi('/srs/story-generate', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  } catch (error) {
+    console.error('SRS story generation failed:', error);
+    throw error;
+  }
+};
+
 export const translateSentence = async (text, sourceLanguageCode, targetLanguageCode) => {
   try {
     console.log('Initiating sentence translation request');

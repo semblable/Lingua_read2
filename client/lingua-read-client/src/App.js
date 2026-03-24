@@ -27,6 +27,7 @@ import LanguagesPage from './components/settings/LanguagesPage';
 import BatchAudioCreate from './pages/BatchAudioCreate';
 import TermsPage from './pages/TermsPage';
 import SrsReview from './pages/SrsReview';
+import SrsStoryReview from './pages/SrsStoryReview';
 
 // Simple loading component
 const Loading = () => <div className="d-flex justify-content-center align-items-center vh-100">Loading...</div>;
@@ -204,6 +205,7 @@ const AppContent = () => {
             <Route path="/statistics" element={<Statistics />} />
             <Route path="/terms" element={<TermsPage />} />
             <Route path="/srs" element={<SrsReview />} />
+            <Route path="/srs/story" element={<SrsStoryReview />} />
 
             {/* Settings route */}
             <Route path="/settings" element={<UserSettings />} />

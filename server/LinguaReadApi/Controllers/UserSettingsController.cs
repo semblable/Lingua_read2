@@ -85,9 +85,11 @@ namespace LinguaReadApi.Controllers
                     OpenRouterApiKey = null,
                     OpenRouterModel = "google/gemini-2.5-flash-preview-05-20:free",
                     OpenRouterReasoningEnabled = false,
-                    OpenRouterReasoningEffort = "medium"
+                    OpenRouterReasoningEffort = "medium",
+                    OpenRouterStoryReasoningEnabled = false,
+                    OpenRouterStoryReasoningEffort = "medium"
                 };
-                
+
                 _context.UserSettings.Add(settings);
                 await _context.SaveChangesAsync();
             }
@@ -129,6 +131,8 @@ namespace LinguaReadApi.Controllers
                 OpenRouterModel = settings.OpenRouterModel,
                 OpenRouterReasoningEnabled = settings.OpenRouterReasoningEnabled,
                 OpenRouterReasoningEffort = settings.OpenRouterReasoningEffort,
+                OpenRouterStoryReasoningEnabled = settings.OpenRouterStoryReasoningEnabled,
+                OpenRouterStoryReasoningEffort = settings.OpenRouterStoryReasoningEffort,
                 SrsMaxNewCards = settings.SrsMaxNewCards,
                 SrsMaxReviews = settings.SrsMaxReviews,
                 SrsReviewOrder = settings.SrsReviewOrder ?? "mix",
@@ -259,6 +263,15 @@ namespace LinguaReadApi.Controllers
                     settings.OpenRouterReasoningEffort = normalizedEffort;
                 }
             }
+            settings.OpenRouterStoryReasoningEnabled = updateDto.OpenRouterStoryReasoningEnabled ?? settings.OpenRouterStoryReasoningEnabled;
+            if (!string.IsNullOrWhiteSpace(updateDto.OpenRouterStoryReasoningEffort))
+            {
+                var normalizedEffort = updateDto.OpenRouterStoryReasoningEffort.Trim().ToLowerInvariant();
+                if (normalizedEffort is "xhigh" or "high" or "medium" or "low" or "minimal" or "none")
+                {
+                    settings.OpenRouterStoryReasoningEffort = normalizedEffort;
+                }
+            }
             settings.SrsMaxNewCards = updateDto.SrsMaxNewCards ?? settings.SrsMaxNewCards;
             settings.SrsMaxReviews = updateDto.SrsMaxReviews ?? settings.SrsMaxReviews;
             if (!string.IsNullOrWhiteSpace(updateDto.SrsReviewOrder))
@@ -314,6 +327,8 @@ namespace LinguaReadApi.Controllers
                 OpenRouterModel = settings.OpenRouterModel,
                 OpenRouterReasoningEnabled = settings.OpenRouterReasoningEnabled,
                 OpenRouterReasoningEffort = settings.OpenRouterReasoningEffort,
+                OpenRouterStoryReasoningEnabled = settings.OpenRouterStoryReasoningEnabled,
+                OpenRouterStoryReasoningEffort = settings.OpenRouterStoryReasoningEffort,
                 SrsMaxNewCards = settings.SrsMaxNewCards,
                 SrsMaxReviews = settings.SrsMaxReviews,
                 SrsReviewOrder = settings.SrsReviewOrder ?? "mix",
@@ -691,6 +706,8 @@ namespace LinguaReadApi.Controllers
         public string OpenRouterModel { get; set; } = "google/gemini-2.5-flash-preview-05-20:free";
         public bool OpenRouterReasoningEnabled { get; set; } = false;
         public string OpenRouterReasoningEffort { get; set; } = "medium";
+        public bool OpenRouterStoryReasoningEnabled { get; set; } = false;
+        public string OpenRouterStoryReasoningEffort { get; set; } = "medium";
 
         // SRS Settings
         public int SrsMaxNewCards { get; set; } = 20;
@@ -764,6 +781,11 @@ namespace LinguaReadApi.Controllers
 
         [StringLength(20)]
         public string? OpenRouterReasoningEffort { get; set; }
+
+        public bool? OpenRouterStoryReasoningEnabled { get; set; }
+
+        [StringLength(20)]
+        public string? OpenRouterStoryReasoningEffort { get; set; }
 
         // SRS Settings
         [Range(1, 9999)]

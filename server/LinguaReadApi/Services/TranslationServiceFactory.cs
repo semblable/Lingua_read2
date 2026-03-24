@@ -141,9 +141,9 @@ namespace LinguaReadApi.Services
             _userId = userId;
         }
 
-        public Task<string> GenerateStoryAsync(string prompt, string language, string level, int maxLength)
+        public Task<string> GenerateStoryAsync(string prompt, int maxOutputTokens = 20000)
         {
-            return _service.GenerateStoryAsync(prompt, language, level, maxLength, _userId);
+            return _service.GenerateStoryAsync(prompt, maxOutputTokens, _userId);
         }
     }
 }

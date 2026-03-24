@@ -803,9 +803,9 @@ export const generateStory = async (prompt, language, level, maxLength) => {
 };
 
 // SRS Story Generation API
-export const generateSrsStory = async (languageId, { theme, maxWords, maxLength, status } = {}) => {
+export const generateSrsStory = async (languageId, { theme, maxWords, maxLength, status, style } = {}) => {
   try {
-    const payload = { languageId, theme, maxWords, maxLength, status: status?.join(',') };
+    const payload = { languageId, theme, maxWords, maxLength, style, status: status?.join(',') };
     return await fetchApi('/srs/story-generate', {
       method: 'POST',
       body: JSON.stringify(payload)

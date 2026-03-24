@@ -198,4 +198,250 @@ describe('SrsStoryReview', () => {
     
     expect(screen.getByText(/You reviewed/)).toBeInTheDocument();
   });
+
+  // --- Error State Tests ---
+
+  it('shows error and returns to setup when story generation fails', async () => {
+    generateSrsStory.mockRejectedValue(new Error('API timeout'));
+    renderComponent();
+
+    const select = await screen.findByLabelText(/Language/i);
+    await waitFor(() => {
+      expect(within(select).queryByText('Spanish')).toBeInTheDocument();
+    });
+    fireEvent.change(select, { target: { value: '1' } });
+
+    const generateBtn = screen.getByRole('button', { name: /Generate Story/i });
+    await waitFor(() => {
+      expect(generateBtn).not.toBeDisabled();
+    });
+    fireEvent.click(generateBtn);
+
+    // Should show error alert and return to setup phase
+    expect(await screen.findByText(/Failed to generate story: API timeout/)).toBeInTheDocument();
+    // Setup phase should still be visible (generate button present)
+    expect(screen.getByRole('button', { name: /Generate Story/i })).toBeInTheDocument();
+  });
+
+  it('shows error on review failure without losing story phase', async () => {
+    submitSrsReview.mockRejectedValue(new Error('Review failed'));
+    renderComponent();
+
+    const select = await screen.findByLabelText(/Language/i);
+    await waitFor(() => {
+      expect(within(select).queryByText('Spanish')).toBeInTheDocument();
+    });
+    fireEvent.change(select, { target: { value: '1' } });
+
+    const generateBtn = screen.getByRole('button', { name: /Generate Story/i });
+    await waitFor(() => {
+      expect(generateBtn).not.toBeDisabled();
+    });
+    fireEvent.click(generateBtn);
+
+    // Wait for story
+    const storyText = await screen.findByTestId('srs-story-text');
+    const gatoEl = within(storyText).getByText('gato');
+    fireEvent.click(gatoEl);
+
+    const goodButton = await screen.findByRole('button', { name: /Good/i });
+    fireEvent.click(goodButton);
+
+    // Error should appear but story phase should remain
+    expect(await screen.findByText(/Failed to submit review: Review failed/)).toBeInTheDocument();
+    // Story text should still be visible
+    expect(screen.getByTestId('srs-story-text')).toBeInTheDocument();
+  });
+
+  it('shows no due words message when story result is empty', async () => {
+    generateSrsStory.mockResolvedValue({ story: '', targetWords: [], usedWords: [] });
+    renderComponent();
+
+    const select = await screen.findByLabelText(/Language/i);
+    await waitFor(() => {
+      expect(within(select).queryByText('Spanish')).toBeInTheDocument();
+    });
+    fireEvent.change(select, { target: { value: '1' } });
+
+    const generateBtn = screen.getByRole('button', { name: /Generate Story/i });
+    await waitFor(() => {
+      expect(generateBtn).not.toBeDisabled();
+    });
+    fireEvent.click(generateBtn);
+
+    expect(await screen.findByText(/No due words found/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Generate Story/i })).toBeInTheDocument();
+  });
+
+  // --- Style Selection Tests ---
+
+  it('includes style in API call when a style is selected', async () => {
+    renderComponent();
+
+    const select = await screen.findByLabelText(/Language/i);
+    await waitFor(() => {
+      expect(within(select).queryByText('Spanish')).toBeInTheDocument();
+    });
+    fireEvent.change(select, { target: { value: '1' } });
+
+    // Click on "Funny" style badge
+    const funnyBadge = screen.getByText('Funny');
+    fireEvent.click(funnyBadge);
+
+    const generateBtn = screen.getByRole('button', { name: /Generate Story/i });
+    await waitFor(() => {
+      expect(generateBtn).not.toBeDisabled();
+    });
+    fireEvent.click(generateBtn);
+
+    await waitFor(() => {
+      expect(generateSrsStory).toHaveBeenCalledWith(1, expect.objectContaining({
+        style: 'Funny'
+      }));
+    });
+  });
+
+  it('toggles style off when clicking same style again', async () => {
+    renderComponent();
+
+    await screen.findByLabelText(/Language/i);
+
+    const absurdBadge = screen.getByText('Absurd');
+    fireEvent.click(absurdBadge);
+    // Click again to deselect
+    fireEvent.click(absurdBadge);
+
+    // Select language and generate to verify no style is passed
+    const select = screen.getByLabelText(/Language/i);
+    await waitFor(() => {
+      expect(within(select).queryByText('Spanish')).toBeInTheDocument();
+    });
+    fireEvent.change(select, { target: { value: '1' } });
+
+    const generateBtn = screen.getByRole('button', { name: /Generate Story/i });
+    await waitFor(() => {
+      expect(generateBtn).not.toBeDisabled();
+    });
+    fireEvent.click(generateBtn);
+
+    await waitFor(() => {
+      expect(generateSrsStory).toHaveBeenCalledWith(1, expect.objectContaining({
+        style: undefined
+      }));
+    });
+  });
+
+  // --- Edge Case Tests ---
+
+  it('transitions to complete phase when "Finish Early" is clicked', async () => {
+    renderComponent();
+
+    const select = await screen.findByLabelText(/Language/i);
+    await waitFor(() => {
+      expect(within(select).queryByText('Spanish')).toBeInTheDocument();
+    });
+    fireEvent.change(select, { target: { value: '1' } });
+
+    const generateBtn = screen.getByRole('button', { name: /Generate Story/i });
+    await waitFor(() => {
+      expect(generateBtn).not.toBeDisabled();
+    });
+    fireEvent.click(generateBtn);
+
+    await screen.findByTestId('srs-story-text');
+
+    const finishBtn = screen.getByRole('button', { name: /Finish Early/i });
+    fireEvent.click(finishBtn);
+
+    expect(await screen.findByText('Story Complete!')).toBeInTheDocument();
+  });
+
+  it('resets to setup phase when "New Story" is clicked', async () => {
+    renderComponent();
+
+    const select = await screen.findByLabelText(/Language/i);
+    await waitFor(() => {
+      expect(within(select).queryByText('Spanish')).toBeInTheDocument();
+    });
+    fireEvent.change(select, { target: { value: '1' } });
+
+    const generateBtn = screen.getByRole('button', { name: /Generate Story/i });
+    await waitFor(() => {
+      expect(generateBtn).not.toBeDisabled();
+    });
+    fireEvent.click(generateBtn);
+
+    await screen.findByTestId('srs-story-text');
+
+    const newStoryBtn = screen.getByRole('button', { name: /New Story/i });
+    fireEvent.click(newStoryBtn);
+
+    // Should be back in setup phase
+    expect(await screen.findByRole('button', { name: /Generate Story/i })).toBeInTheDocument();
+  });
+
+  it('shows unused words in "Not in story" section', async () => {
+    generateSrsStory.mockResolvedValue({
+      story: 'El gato corre.',
+      targetWords: [
+        { wordId: 10, srsCardReviewId: 101, term: 'gato', translation: 'cat', wordStatus: 3 },
+        { wordId: 11, srsCardReviewId: 102, term: 'perro', translation: 'dog', wordStatus: 2 }
+      ],
+      usedWords: ['gato'] // only gato was used, perro was not
+    });
+    renderComponent();
+
+    const select = await screen.findByLabelText(/Language/i);
+    await waitFor(() => {
+      expect(within(select).queryByText('Spanish')).toBeInTheDocument();
+    });
+    fireEvent.change(select, { target: { value: '1' } });
+
+    const generateBtn = screen.getByRole('button', { name: /Generate Story/i });
+    await waitFor(() => {
+      expect(generateBtn).not.toBeDisabled();
+    });
+    fireEvent.click(generateBtn);
+
+    await screen.findByTestId('srs-story-text');
+
+    // Should show unused word
+    expect(screen.getByText(/Not in story:/)).toBeInTheDocument();
+    expect(screen.getByText(/perro/)).toBeInTheDocument();
+  });
+
+  it('works with a single target word', async () => {
+    generateSrsStory.mockResolvedValue({
+      story: 'El gato duerme.',
+      targetWords: [
+        { wordId: 10, srsCardReviewId: 101, term: 'gato', translation: 'cat', wordStatus: 3 }
+      ],
+      usedWords: ['gato']
+    });
+    renderComponent();
+
+    const select = await screen.findByLabelText(/Language/i);
+    await waitFor(() => {
+      expect(within(select).queryByText('Spanish')).toBeInTheDocument();
+    });
+    fireEvent.change(select, { target: { value: '1' } });
+
+    const generateBtn = screen.getByRole('button', { name: /Generate Story/i });
+    await waitFor(() => {
+      expect(generateBtn).not.toBeDisabled();
+    });
+    fireEvent.click(generateBtn);
+
+    const storyText = await screen.findByTestId('srs-story-text');
+    const gatoEl = within(storyText).getByText('gato');
+    fireEvent.click(gatoEl);
+
+    const goodButton = await screen.findByRole('button', { name: /Good/i });
+    fireEvent.click(goodButton);
+
+    // Should complete since there's only one word
+    await waitFor(() => {
+      expect(screen.getByText('Story Complete!')).toBeInTheDocument();
+    }, { timeout: 1500 });
+  });
 });

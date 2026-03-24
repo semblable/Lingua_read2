@@ -38,7 +38,9 @@ const UserSettings = () => {
     openRouterApiKey: '',
     openRouterModel: 'google/gemini-2.5-flash-preview-05-20:free',
     openRouterReasoningEnabled: false,
-    openRouterReasoningEffort: 'medium'
+    openRouterReasoningEffort: 'medium',
+    openRouterStoryReasoningEnabled: false,
+    openRouterStoryReasoningEffort: 'medium'
   });
 
   const [languages, setLanguages] = useState([]);
@@ -116,7 +118,9 @@ const UserSettings = () => {
           openRouterApiKey: data.openRouterApiKey || '',
           openRouterModel: data.openRouterModel || 'google/gemini-2.5-flash-preview-05-20:free',
           openRouterReasoningEnabled: data.openRouterReasoningEnabled ?? false,
-          openRouterReasoningEffort: data.openRouterReasoningEffort || 'medium'
+          openRouterReasoningEffort: data.openRouterReasoningEffort || 'medium',
+          openRouterStoryReasoningEnabled: data.openRouterStoryReasoningEnabled ?? false,
+          openRouterStoryReasoningEffort: data.openRouterStoryReasoningEffort || 'medium'
         });
       } catch (err) {
         setError('Failed to load settings. Please try again later.');
@@ -762,18 +766,19 @@ const UserSettings = () => {
                   </Form.Text>
                 </Form.Group>
 
+                <small className="text-muted d-block mb-2 fw-bold">Translation Reasoning</small>
                 <Form.Group className="mb-3" controlId="openRouterReasoningEnabled">
                   <Form.Check
                     type="checkbox"
                     name="openRouterReasoningEnabled"
-                    label="Enable reasoning tokens for OpenRouter requests"
+                    label="Enable reasoning tokens for translations"
                     checked={settings.openRouterReasoningEnabled}
                     onChange={handleChange}
                   />
                 </Form.Group>
 
                 <Form.Group className="mb-3" controlId="openRouterReasoningEffort">
-                  <Form.Label>Reasoning Effort</Form.Label>
+                  <Form.Label>Translation Reasoning Effort</Form.Label>
                   <Form.Select
                     name="openRouterReasoningEffort"
                     value={settings.openRouterReasoningEffort}
@@ -788,7 +793,38 @@ const UserSettings = () => {
                     <option value="none">none</option>
                   </Form.Select>
                   <Form.Text muted>
-                    Sent as `reasoning.effort` to OpenRouter when enabled.
+                    Sent as `reasoning.effort` to OpenRouter for translations.
+                  </Form.Text>
+                </Form.Group>
+
+                <small className="text-muted d-block mb-2 fw-bold">Story Generation Reasoning</small>
+                <Form.Group className="mb-3" controlId="openRouterStoryReasoningEnabled">
+                  <Form.Check
+                    type="checkbox"
+                    name="openRouterStoryReasoningEnabled"
+                    label="Enable reasoning tokens for story generation"
+                    checked={settings.openRouterStoryReasoningEnabled}
+                    onChange={handleChange}
+                  />
+                </Form.Group>
+
+                <Form.Group className="mb-3" controlId="openRouterStoryReasoningEffort">
+                  <Form.Label>Story Generation Reasoning Effort</Form.Label>
+                  <Form.Select
+                    name="openRouterStoryReasoningEffort"
+                    value={settings.openRouterStoryReasoningEffort}
+                    onChange={handleChange}
+                    disabled={!settings.openRouterStoryReasoningEnabled}
+                  >
+                    <option value="xhigh">xhigh</option>
+                    <option value="high">high</option>
+                    <option value="medium">medium</option>
+                    <option value="low">low</option>
+                    <option value="minimal">minimal</option>
+                    <option value="none">none</option>
+                  </Form.Select>
+                  <Form.Text muted>
+                    Sent as `reasoning.effort` to OpenRouter for story generation.
                   </Form.Text>
                 </Form.Group>
 

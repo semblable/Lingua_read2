@@ -13,7 +13,7 @@ namespace LinguaReadApi.Services
 {
     public interface IStoryGenerationService
     {
-        Task<string> GenerateStoryAsync(string prompt, string language, string level, int maxLength);
+        Task<string> GenerateStoryAsync(string prompt, int maxOutputTokens = 20000);
     }
 
     public class GeminiStoryGenerationService : IStoryGenerationService
@@ -38,7 +38,7 @@ namespace LinguaReadApi.Services
             _logger.LogDebug($"Using base URL: {_baseUrl}");
         }
 
-        public async Task<string> GenerateStoryAsync(string prompt, string language, string level, int maxLength)
+        public async Task<string> GenerateStoryAsync(string prompt, int maxOutputTokens = 20000)
         {
             if (string.IsNullOrWhiteSpace(prompt))
             {
@@ -48,16 +48,8 @@ namespace LinguaReadApi.Services
 
             try
             {
-                _logger.LogInformation($"Generating story with prompt: '{prompt}', language: {language}, level: {level}");
-                
-                // Create a well-structured prompt for story generation
-                string fullPrompt = $"Write a {level} level story in {language} about: {prompt}\n\n" +
-                                    $"Requirements:\n" +
-                                    $"- Write approximately {maxLength} words\n" +
-                                    $"- Use vocabulary and grammar appropriate for {level} level learners\n" +
-                                    $"- Include diverse sentence structures\n" +
-                                    $"- Use everyday vocabulary with occasional new words for learning\n" +
-                                    $"- Return ONLY the story with no additional text or explanations";
+                _logger.LogInformation("Generating story with Gemini, prompt length: {Length} chars, maxOutputTokens: {MaxTokens}",
+                    prompt.Length, maxOutputTokens);
 
                 // Create request payload according to Gemini API specs
                 var requestPayload = new GeminiRequest
@@ -68,7 +60,7 @@ namespace LinguaReadApi.Services
                         {
                             Parts = new[]
                             {
-                                new Part { Text = fullPrompt }
+                                new Part { Text = prompt }
                             }
                         }
                     },
@@ -77,7 +69,7 @@ namespace LinguaReadApi.Services
                         Temperature = 0.7,
                         TopK = 40,
                         TopP = 0.95,
-                        MaxOutputTokens = 20000, // Increased token limit
+                        MaxOutputTokens = maxOutputTokens,
                         ResponseMimeType = "text/plain"
                     }
                 };

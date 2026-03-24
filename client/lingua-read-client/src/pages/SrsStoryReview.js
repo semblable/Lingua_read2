@@ -7,6 +7,7 @@ import './SrsStoryReview.css';
 
 const STATUS_LABELS = { 1: 'New', 2: 'Learning', 3: 'Familiar', 4: 'Advanced', 5: 'Known' };
 const STATUS_VARIANTS = { 1: 'danger', 2: 'warning', 3: 'info', 4: 'primary', 5: 'success' };
+const STYLE_OPTIONS = ['Absurd', 'Funny', 'Romance', 'Mystery', 'Horror', 'Fairytale', 'Noir', 'Casual'];
 
 const SrsStoryReview = () => {
   const navigate = useNavigate();
@@ -20,6 +21,8 @@ const SrsStoryReview = () => {
   const [theme, setTheme] = useState('');
   const [maxWords, setMaxWords] = useState(15);
   const [maxLength, setMaxLength] = useState(400);
+  const [style, setStyle] = useState('');
+  const [customStyle, setCustomStyle] = useState('');
 
   // Session state
   const [phase, setPhase] = useState('setup'); // setup | loading | story | complete
@@ -81,11 +84,13 @@ const SrsStoryReview = () => {
     setPhase('loading');
 
     try {
+      const effectiveStyle = style === 'Custom' ? customStyle : style;
       const result = await generateSrsStory(parseInt(selectedLanguage), {
         theme: theme || undefined,
         maxWords,
         maxLength,
-        status: statusFilter
+        status: statusFilter,
+        style: effectiveStyle || undefined
       });
 
       if (!result.story || result.targetWords.length === 0) {
@@ -270,6 +275,44 @@ const SrsStoryReview = () => {
                 value={theme}
                 onChange={e => setTheme(e.target.value)}
               />
+            </Form.Group>
+
+            <Form.Group className="mb-3">
+              <Form.Label>Story Style <small className="text-muted">(optional)</small></Form.Label>
+              <div className="d-flex flex-wrap gap-1 mb-1">
+                {STYLE_OPTIONS.map(s => (
+                  <Badge
+                    key={s}
+                    bg={style === s ? 'primary' : 'light'}
+                    text={style === s ? 'white' : 'dark'}
+                    role="button"
+                    className="px-2 py-1"
+                    style={{ cursor: 'pointer', border: '1px solid #dee2e6' }}
+                    onClick={() => setStyle(prev => prev === s ? '' : s)}
+                  >
+                    {s}
+                  </Badge>
+                ))}
+                <Badge
+                  bg={style === 'Custom' ? 'primary' : 'light'}
+                  text={style === 'Custom' ? 'white' : 'dark'}
+                  role="button"
+                  className="px-2 py-1"
+                  style={{ cursor: 'pointer', border: '1px solid #dee2e6' }}
+                  onClick={() => setStyle(prev => prev === 'Custom' ? '' : 'Custom')}
+                >
+                  Custom...
+                </Badge>
+              </div>
+              {style === 'Custom' && (
+                <Form.Control
+                  type="text"
+                  size="sm"
+                  placeholder="Describe your desired style..."
+                  value={customStyle}
+                  onChange={e => setCustomStyle(e.target.value)}
+                />
+              )}
             </Form.Group>
 
             <Row className="mb-3">

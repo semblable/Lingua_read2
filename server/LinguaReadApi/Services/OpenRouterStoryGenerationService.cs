@@ -57,7 +57,7 @@ namespace LinguaReadApi.Services
             _logger.LogInformation("OpenRouterStoryGenerationService initialized with {Timeout}s timeout", RequestTimeout.TotalSeconds);
         }
 
-        public async Task<string> GenerateStoryAsync(string prompt, string language, string level, int maxLength, Guid userId)
+        public async Task<string> GenerateStoryAsync(string prompt, int maxOutputTokens, Guid userId)
         {
             if (string.IsNullOrWhiteSpace(prompt))
             {
@@ -78,31 +78,21 @@ namespace LinguaReadApi.Services
                 var apiKey = userSettings.OpenRouterApiKey;
                 var model = userSettings.OpenRouterModel;
                 var reasoningOptions = BuildReasoningOptions(userSettings);
-                
-                // Validate requested length against model output limit
+
+                // Cap output tokens to model limit if needed
                 var outputLimit = GetModelOutputLimit(model);
-                var estimatedOutputTokens = (int)(maxLength * 1.5); // Words to tokens
-                
-                if (estimatedOutputTokens > outputLimit)
+                var effectiveMaxTokens = Math.Min(maxOutputTokens, outputLimit);
+
+                if (maxOutputTokens > outputLimit)
                 {
-                    _logger.LogWarning("Requested story length ({Words} words ≈ {Tokens} tokens) exceeds model limit ({Limit}). Capping.",
-                        maxLength, estimatedOutputTokens, outputLimit);
-                    maxLength = (int)(outputLimit / 1.5);
+                    _logger.LogWarning("Requested maxOutputTokens ({Requested}) exceeds model limit ({Limit}). Capping.",
+                        maxOutputTokens, outputLimit);
                 }
 
-                _logger.LogInformation("Generating story with OpenRouter model {Model}: '{Prompt}', language: {Language}, level: {Level}, maxLength: {MaxLength}",
-                    model, prompt, language, level, maxLength);
+                _logger.LogInformation("Generating story with OpenRouter model {Model}, prompt length: {Length} chars, maxTokens: {MaxTokens}",
+                    model, prompt.Length, effectiveMaxTokens);
 
-                // Create story generation prompt (same as Gemini prompt)
-                string fullPrompt = $"Write a {level} level story in {language} about: {prompt}\n\n" +
-                                    $"Requirements:\n" +
-                                    $"- Write approximately {maxLength} words\n" +
-                                    $"- Use vocabulary and grammar appropriate for {level} level learners\n" +
-                                    $"- Include diverse sentence structures\n" +
-                                    $"- Use everyday vocabulary with occasional new words for learning\n" +
-                                    $"- Return ONLY the story with no additional text or explanations";
-
-                // Create OpenRouter request
+                // Create OpenRouter request — prompt is pre-built by the caller
                 var requestPayload = new OpenRouterRequest
                 {
                     Model = model,
@@ -111,11 +101,11 @@ namespace LinguaReadApi.Services
                         new OpenRouterMessage
                         {
                             Role = "user",
-                            Content = fullPrompt
+                            Content = prompt
                         }
                     },
                     Temperature = 0.7,
-                    MaxTokens = Math.Min(20000, outputLimit),
+                    MaxTokens = effectiveMaxTokens,
                     TopP = 0.95,
                     Reasoning = reasoningOptions
                 };
@@ -212,22 +202,7 @@ namespace LinguaReadApi.Services
 
         private static OpenRouterReasoningOptions? BuildReasoningOptions(Models.UserSettings userSettings)
         {
-            if (!userSettings.OpenRouterReasoningEnabled)
-            {
-                return null;
-            }
-
-            var effort = (userSettings.OpenRouterReasoningEffort ?? string.Empty).Trim().ToLowerInvariant();
-            if (!SupportedReasoningEfforts.Contains(effort))
-            {
-                effort = "medium";
-            }
-
-            return new OpenRouterReasoningOptions
-            {
-                Enabled = true,
-                Effort = effort
-            };
+            return Controllers.OpenRouterStoryReasoningHelper.BuildReasoningOptions(userSettings);
         }
     }
 }

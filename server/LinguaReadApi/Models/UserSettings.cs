@@ -77,6 +77,12 @@ namespace LinguaReadApi.Models
 
         [StringLength(20)]
         public string OpenRouterReasoningEffort { get; set; } = "medium";
+
+        // Separate reasoning settings for story generation (translation uses the above)
+        public bool OpenRouterStoryReasoningEnabled { get; set; } = false;
+
+        [StringLength(20)]
+        public string OpenRouterStoryReasoningEffort { get; set; } = "medium";
         
         // SRS Limits & Preferences
         public int SrsMaxNewCards { get; set; } = 20;

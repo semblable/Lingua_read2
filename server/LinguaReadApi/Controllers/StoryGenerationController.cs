@@ -43,12 +43,16 @@ namespace LinguaReadApi.Controllers
             var userId = GetUserId();
             var storyGenerationService = await _storyGenerationServiceFactory.GetServiceForUserAsync(userId);
 
-            var generatedStory = await storyGenerationService.GenerateStoryAsync(
-                request.Prompt,
-                request.Language,
-                request.Level,
-                request.MaxLength
-            );
+            // Build the full prompt — services are thin API clients
+            string fullPrompt = $"Write a {request.Level} level story in {request.Language} about: {request.Prompt}\n\n" +
+                                $"Requirements:\n" +
+                                $"- Write approximately {request.MaxLength} words\n" +
+                                $"- Use vocabulary and grammar appropriate for {request.Level} level learners\n" +
+                                $"- Include diverse sentence structures\n" +
+                                $"- Use everyday vocabulary with occasional new words for learning\n" +
+                                $"- Return ONLY the story with no additional text or explanations";
+
+            var generatedStory = await storyGenerationService.GenerateStoryAsync(fullPrompt, maxOutputTokens: 20000);
 
             return Ok(new StoryGenerationResponse { GeneratedStory = generatedStory });
         }

@@ -960,31 +960,16 @@ Requirements:
 - Return ONLY the story text
 - After the story, on a new line, write ""USED_WORDS:"" followed by a comma-separated list of the target words you actually used (in their exact base form as provided above)
 
-{(string.IsNullOrWhiteSpace(request.Theme) ? "Choose an interesting everyday topic." : $"Theme/topic: {request.Theme}")}";
+{(string.IsNullOrWhiteSpace(request.Theme) ? "Choose an interesting everyday topic." : $"Theme/topic: {request.Theme}")}
+{(string.IsNullOrWhiteSpace(request.Style) ? "" : $"Writing style/tone: {request.Style}. Write the story in this style.")}";
 
             // 5. Generate story using user's configured AI provider
             var storyService = await _storyGenerationServiceFactory.GetServiceForUserAsync(userId);
-            var rawResponse = await storyService.GenerateStoryAsync(prompt, languageName, level, request.MaxLength);
+            var rawResponse = await storyService.GenerateStoryAsync(prompt, maxOutputTokens: request.MaxLength * 3);
 
             // 6. Parse USED_WORDS from response
-            var storyText = rawResponse;
-            var usedWords = new List<string>();
-
-            var usedWordsIndex = rawResponse.LastIndexOf("USED_WORDS:", StringComparison.OrdinalIgnoreCase);
-            if (usedWordsIndex >= 0)
-            {
-                storyText = rawResponse.Substring(0, usedWordsIndex).Trim();
-                var usedWordsLine = rawResponse.Substring(usedWordsIndex + "USED_WORDS:".Length).Trim();
-                usedWords = usedWordsLine.Split(',')
-                    .Select(w => w.Trim())
-                    .Where(w => !string.IsNullOrEmpty(w))
-                    .ToList();
-            }
-            else
-            {
-                // Fallback: assume all target words were used
-                usedWords = targetWords.Select(w => w.Term).ToList();
-            }
+            var (storyText, usedWords) = SrsStoryResponseParser.Parse(
+                rawResponse, targetWords.Select(w => w.Term).ToList());
 
             return Ok(new SrsStoryGenerateResponse
             {
@@ -1118,10 +1103,13 @@ Requirements:
         [Range(1, 50)]
         public int MaxWords { get; set; } = 15;
 
-        [Range(50, 1000)]
+        [Range(50, 800)]
         public int MaxLength { get; set; } = 400;
 
         public string? Status { get; set; }
+
+        [StringLength(50)]
+        public string? Style { get; set; }
     }
 
     public class SrsStoryGenerateResponse

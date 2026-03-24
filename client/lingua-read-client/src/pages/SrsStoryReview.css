@@ -105,6 +105,31 @@
   border-color: var(--bs-primary, #6ea8fe);
 }
 
+/* Non-target clickable words (lookup) */
+.srs-story-lookup-word {
+  cursor: pointer;
+  border-radius: 2px;
+  transition: background-color 0.15s ease;
+}
+
+.srs-story-lookup-word:hover {
+  background-color: rgba(0, 123, 255, 0.08);
+}
+
+.srs-story-lookup-known {
+  border-bottom: 1px dotted rgba(0, 123, 255, 0.3);
+}
+
+.dark-theme .srs-story-lookup-word:hover,
+.classic-dark-theme .srs-story-lookup-word:hover {
+  background-color: rgba(100, 160, 255, 0.1);
+}
+
+.dark-theme .srs-story-lookup-known,
+.classic-dark-theme .srs-story-lookup-known {
+  border-bottom-color: rgba(100, 160, 255, 0.3);
+}
+
 /* Mobile adjustments */
 @media (max-width: 576px) {
   .srs-story-container {

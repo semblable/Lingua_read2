@@ -46,7 +46,7 @@ namespace LinguaReadApi.Controllers
             var userId = GetUserId();
 
             var texts = await _context.Texts
-                .Where(t => t.UserId == userId)
+                .Where(t => t.UserId == userId && t.Tag != "srs-story")
                 .Include(t => t.Language)
                 .Include(t => t.Book) // Include Book for BookTitle
                 .OrderByDescending(t => t.CreatedAt) // Order by creation date by default
@@ -173,7 +173,7 @@ namespace LinguaReadApi.Controllers
             var userId = GetUserId();
 
             var recentTexts = await _context.Texts
-                .Where(t => t.UserId == userId && t.LastAccessedAt != null)
+                .Where(t => t.UserId == userId && t.LastAccessedAt != null && t.Tag != "srs-story")
                 .OrderByDescending(t => t.LastAccessedAt)
                 .Take(MaxRecentTexts)
                 .Include(t => t.Language)

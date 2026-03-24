@@ -1,8 +1,10 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useContext } from 'react';
 import { Container, Card, Button, Spinner, Alert, Form, Row, Col, Badge, ProgressBar } from 'react-bootstrap';
 import { useNavigate } from 'react-router-dom';
-import { getAllLanguages, generateSrsStory, submitSrsReview, getSrsStats } from '../utils/api';
+import { getAllLanguages, generateSrsStory, submitSrsReview, getSrsStats, createWord, getWordsByLanguage } from '../utils/api';
+import { SettingsContext } from '../contexts/SettingsContext';
 import SrsWordPopover from '../components/SrsWordPopover';
+import WordLookupPopover from '../components/WordLookupPopover';
 import './SrsStoryReview.css';
 
 const STATUS_LABELS = { 1: 'New', 2: 'Learning', 3: 'Familiar', 4: 'Advanced', 5: 'Known' };
@@ -11,6 +13,7 @@ const STYLE_OPTIONS = ['Absurd', 'Funny', 'Romance', 'Mystery', 'Horror', 'Fairy
 
 const SrsStoryReview = () => {
   const navigate = useNavigate();
+  const { settings } = useContext(SettingsContext);
 
   // Setup state
   const [languages, setLanguages] = useState([]);
@@ -37,6 +40,15 @@ const SrsStoryReview = () => {
   const [activeWord, setActiveWord] = useState(null);
   const [activeRef, setActiveRef] = useState(null);
   const [grading, setGrading] = useState(false);
+
+  // Story metadata for word saving
+  const [storyTextId, setStoryTextId] = useState(null);
+  const [languageCode, setLanguageCode] = useState('');
+  const [existingWordsMap, setExistingWordsMap] = useState({});
+
+  // Lookup popover state (non-target words)
+  const [lookupWord, setLookupWord] = useState(null);
+  const [lookupRef, setLookupRef] = useState(null);
 
   // Word refs for popover positioning
   const wordRefs = useRef({});
@@ -103,7 +115,19 @@ const SrsStoryReview = () => {
       setTargetWords(result.targetWords);
       setUsedWords(result.usedWords.map(w => w.toLowerCase()));
       setReviewedWords(new Set());
+      setStoryTextId(result.textId);
+      setLanguageCode(result.languageCode || '');
       setPhase('story');
+
+      // Load existing vocabulary for this language (for lookup)
+      try {
+        const words = await getWordsByLanguage(parseInt(selectedLanguage));
+        const map = {};
+        words.forEach(w => { map[w.term.toLowerCase()] = w; });
+        setExistingWordsMap(map);
+      } catch (e) {
+        console.error('Failed to load vocabulary:', e);
+      }
     } catch (err) {
       setError(`Failed to generate story: ${err.message}`);
       setPhase('setup');
@@ -135,6 +159,8 @@ const SrsStoryReview = () => {
 
   const handleWordClick = (word, refKey) => {
     if (reviewedWords.has(word.wordId)) return;
+    setLookupWord(null);
+    setLookupRef(null);
     if (activeWord?.wordId === word.wordId) {
       setActiveWord(null);
       setActiveRef(null);
@@ -142,6 +168,34 @@ const SrsStoryReview = () => {
       setActiveWord(word);
       setActiveRef(wordRefs.current[refKey]);
     }
+  };
+
+  // Sentence context extraction helper
+  const getSentenceContext = useCallback((wordText) => {
+    if (!story) return '';
+    const sentences = story.split(/(?<=[.!?])\s+/);
+    const lower = wordText.toLowerCase();
+    return sentences.find(s => s.toLowerCase().includes(lower)) || '';
+  }, [story]);
+
+  // Non-target word click handler
+  const handleLookupClick = (tokenText, refKey) => {
+    setActiveWord(null);
+    setActiveRef(null);
+    const clean = tokenText.replace(/[.,!?;:"""''()[\]{}\-—–…«»]/g, '').toLowerCase();
+    if (!clean) return;
+    setLookupWord({ text: clean, sentenceContext: getSentenceContext(clean) });
+    setLookupRef(wordRefs.current[refKey]);
+  };
+
+  // Save word from lookup popover
+  const handleSaveWord = async (term, translation, status) => {
+    if (!storyTextId) return;
+    const result = await createWord(storyTextId, term, status, translation, lookupWord?.sentenceContext || '');
+    setExistingWordsMap(prev => ({
+      ...prev,
+      [term.toLowerCase()]: { ...result, term, translation: result.translation?.translation || translation, status }
+    }));
   };
 
   // Tokenize story and match target words
@@ -192,6 +246,24 @@ const SrsStoryReview = () => {
             ref={el => { wordRefs.current[refKey] = el; }}
             className={`srs-story-target-word ${isReviewed ? 'srs-story-target-reviewed' : ''} ${isActive ? 'srs-story-target-active' : ''}`}
             onClick={() => handleWordClick(matchedWord, refKey)}
+            role="button"
+            tabIndex={0}
+          >
+            {token}
+          </span>
+        );
+      }
+
+      // Non-target tokens: make actual words clickable for lookup
+      if (cleanToken.length > 0) {
+        const refKey = `lookup-${idx}`;
+        const existing = existingWordsMap[cleanToken];
+        return (
+          <span
+            key={idx}
+            ref={el => { wordRefs.current[refKey] = el; }}
+            className={`srs-story-lookup-word${existing ? ' srs-story-lookup-known' : ''}`}
+            onClick={() => handleLookupClick(token, refKey)}
             role="button"
             tabIndex={0}
           >
@@ -431,7 +503,7 @@ const SrsStoryReview = () => {
           </Button>
         </div>
 
-        {/* Popover for active word */}
+        {/* Popover for active SRS target word */}
         <SrsWordPopover
           word={activeWord}
           targetRef={activeRef}
@@ -439,6 +511,19 @@ const SrsStoryReview = () => {
           onHide={() => { setActiveWord(null); setActiveRef(null); }}
           onGrade={handleGrade}
           disabled={grading}
+        />
+
+        {/* Popover for non-target word lookup */}
+        <WordLookupPopover
+          word={lookupWord?.text}
+          targetRef={lookupRef}
+          show={!!lookupWord}
+          onHide={() => { setLookupWord(null); setLookupRef(null); }}
+          onSave={handleSaveWord}
+          sourceLanguageCode={languageCode}
+          targetLanguageCode={settings.translationTargetLanguageCode || 'EN'}
+          sentenceContext={lookupWord?.sentenceContext || ''}
+          existingWord={lookupWord ? existingWordsMap[lookupWord.text.toLowerCase()] : null}
         />
 
         {error && <Alert variant="danger" className="mt-3" dismissible onClose={() => setError('')}>{error}</Alert>}

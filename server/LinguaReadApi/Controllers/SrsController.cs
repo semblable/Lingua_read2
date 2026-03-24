@@ -971,9 +971,27 @@ Requirements:
             var (storyText, usedWords) = SrsStoryResponseParser.Parse(
                 rawResponse, targetWords.Select(w => w.Term).ToList());
 
+            // 7. Save story as a Text record so words can be saved against it
+            var storyTitle = string.IsNullOrWhiteSpace(request.Theme)
+                ? $"SRS Story — {now:yyyy-MM-dd HH:mm}"
+                : $"SRS Story: {request.Theme}";
+            var storyTextRecord = new Text
+            {
+                Title = storyTitle,
+                Content = storyText,
+                LanguageId = request.LanguageId,
+                UserId = userId,
+                Tag = "srs-story",
+                CreatedAt = now
+            };
+            _context.Texts.Add(storyTextRecord);
+            await _context.SaveChangesAsync();
+
             return Ok(new SrsStoryGenerateResponse
             {
                 Story = storyText,
+                TextId = storyTextRecord.TextId,
+                LanguageCode = language?.Code ?? "",
                 TargetWords = targetWords,
                 UsedWords = usedWords
             });
@@ -1115,6 +1133,8 @@ Requirements:
     public class SrsStoryGenerateResponse
     {
         public string Story { get; set; } = string.Empty;
+        public int TextId { get; set; }
+        public string LanguageCode { get; set; } = string.Empty;
         public List<SrsStoryWordDto> TargetWords { get; set; } = new();
         public List<string> UsedWords { get; set; } = new();
     }

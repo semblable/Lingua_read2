@@ -2,7 +2,8 @@ import React from 'react';
 import { render, screen, fireEvent, waitFor, within, waitForElementToBeRemoved } from '@testing-library/react';
 import { BrowserRouter } from 'react-router-dom';
 import SrsStoryReview from '../pages/SrsStoryReview';
-import { getAllLanguages, getSrsStats, generateSrsStory, submitSrsReview } from '../utils/api';
+import { getAllLanguages, getSrsStats, generateSrsStory, submitSrsReview, getWordsByLanguage } from '../utils/api';
+import { SettingsContext } from '../contexts/SettingsContext';
 import '@testing-library/jest-dom';
 
 // Mock the API calls
@@ -11,7 +12,15 @@ jest.mock('../utils/api', () => ({
   getSrsStats: jest.fn(),
   generateSrsStory: jest.fn(),
   submitSrsReview: jest.fn(),
+  createWord: jest.fn(),
+  getWordsByLanguage: jest.fn(),
+  translateSelectionWithContext: jest.fn(),
 }));
+
+const mockSettings = {
+  translationTargetLanguageCode: 'EN',
+  autoTranslateWords: true,
+};
 
 // Mock localStorage
 const mockLocalStorage = (() => {
@@ -51,6 +60,8 @@ describe('SrsStoryReview', () => {
 
   const mockStoryResult = {
     story: 'El gato rápido corre.',
+    textId: 99,
+    languageCode: 'es',
     targetWords: [
       { wordId: 10, srsCardReviewId: 101, term: 'gato', translation: 'cat', wordStatus: 3 },
       { wordId: 11, srsCardReviewId: 102, term: 'rápido', translation: 'fast', wordStatus: 2 }
@@ -65,12 +76,15 @@ describe('SrsStoryReview', () => {
     getSrsStats.mockResolvedValue(mockStats);
     generateSrsStory.mockResolvedValue(mockStoryResult);
     submitSrsReview.mockResolvedValue({});
+    getWordsByLanguage.mockResolvedValue([]);
   });
 
   const renderComponent = () => render(
-    <BrowserRouter>
-      <SrsStoryReview />
-    </BrowserRouter>
+    <SettingsContext.Provider value={{ settings: mockSettings, loadingSettings: false }}>
+      <BrowserRouter>
+        <SrsStoryReview />
+      </BrowserRouter>
+    </SettingsContext.Provider>
   );
 
   it('renders setup phase initially with language options', async () => {

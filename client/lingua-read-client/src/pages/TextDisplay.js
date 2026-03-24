@@ -638,7 +638,13 @@ const MobileLessonHeader = React.memo(({
   readerLessonActions,
   isAudioLesson,
   isAudioPlaying,
-  toggleAudioPlayback
+  toggleAudioPlayback,
+  audioSrc,
+  textId,
+  audioRef,
+  onTimeUpdate,
+  onPlaybackStateChange,
+  segmentPlaybackRequest
 }) => {
   if (!isMobile) return null;
 
@@ -712,6 +718,21 @@ const MobileLessonHeader = React.memo(({
             </div>
           </div>
         </Collapse>
+        {isAudioLesson && audioSrc && (
+          <div className="audio-player-container p-2 theme-aware-audio-player-container">
+            <AudiobookPlayer
+              key="lesson-audio-player-topbar"
+              type="lesson"
+              audioSrc={audioSrc}
+              textId={textId}
+              languageId={text?.languageId}
+              audioRef={audioRef}
+              onTimeUpdate={onTimeUpdate}
+              onPlaybackStateChange={onPlaybackStateChange}
+              segmentPlaybackRequest={segmentPlaybackRequest}
+            />
+          </div>
+        )}
       </div>
     </>
   );
@@ -1412,6 +1433,7 @@ const TextDisplay = () => {
   const audioRef = useRef(null);
   const listRef = useRef(null);
   const autoScrollRafRef = useRef(null);
+  const contentTouchMovedRef = useRef(false);
   // Removed resizeDividerRef
 
   // --- State Declarations ---
@@ -1870,6 +1892,8 @@ const TextDisplay = () => {
     setWordTranslationError('');
     if (isMobile) {
       setIsWordPanelOpen(true);
+      setShowMobileHeader(false);
+      setShowMoreControls(false);
     }
     const existingWord = getWordData(word);
     if (existingWord) {
@@ -1965,6 +1989,9 @@ const TextDisplay = () => {
     const selectionDetails = getSelectionDetails();
     if (!selectionDetails) {
       lastHandledSelectionRef.current = '';
+      if (isMobile && !contentTouchMovedRef.current && !hasActiveTextSelection()) {
+        setShowMobileHeader(prev => !prev);
+      }
       return;
     }
 
@@ -2070,7 +2097,7 @@ const TextDisplay = () => {
       handleSelectedText(selection.toString().trim(), sentenceContext);
     }
 
-  }, [focusSentenceIndexFromNode, getSelectionDetails, buildAiSelectionContext, handleSelectedText, isMobile]); // textContentRef is a stable ref
+  }, [focusSentenceIndexFromNode, getSelectionDetails, buildAiSelectionContext, handleSelectedText, isMobile, hasActiveTextSelection]); // textContentRef is a stable ref
 
   const scheduleWordSelection = useCallback((delayMs) => {
     clearPendingSelection();
@@ -3172,6 +3199,12 @@ const TextDisplay = () => {
         isAudioLesson={isAudioLesson}
         isAudioPlaying={isAudioPlaying}
         toggleAudioPlayback={toggleAudioPlayback}
+        audioSrc={audioSrc}
+        textId={textId}
+        audioRef={audioRef}
+        onTimeUpdate={handleAudioTimeUpdate}
+        onPlaybackStateChange={handleAudioPlaybackStateChange}
+        segmentPlaybackRequest={segmentPlaybackRequest}
       />
       <LessonHeader
         isMobile={isMobile}
@@ -3224,7 +3257,12 @@ const TextDisplay = () => {
           }}
         >
           <div className="d-flex flex-column" style={{ minHeight: '100%', height: '100%' }}>
-            <div className={`flex-grow-1 reader-main-surface reader-main-surface-${readingUiMode}`} ref={readingContainerRef}>
+            <div
+              className={`flex-grow-1 reader-main-surface reader-main-surface-${readingUiMode}`}
+              ref={readingContainerRef}
+              onTouchStart={() => { contentTouchMovedRef.current = false; }}
+              onTouchMove={() => { contentTouchMovedRef.current = true; }}
+            >
               <div
                 className={`reader-main-surface-inner reader-main-surface-inner-${readingUiMode}`}
                 style={{ '--reader-content-max-width': `${globalSettings.readerContentWidth || 740}px` }}

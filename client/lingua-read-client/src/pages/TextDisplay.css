@@ -73,6 +73,11 @@
 
 .lesson-topbar-open {
   display: block;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1020;
 }
 
 .mobile-lesson-fab {
@@ -668,6 +673,18 @@
   .reader-ui-modern .right-panel-modern > .card {
     border-radius: 18px;
     box-shadow: 0 10px 28px rgba(0, 0, 0, 0.08);
+  }
+
+  .reader-main-surface-modern {
+    padding: 0.25rem;
+  }
+
+  .reader-main-surface-inner-modern {
+    padding: 0.5rem 0.25rem 1rem;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    max-width: 100%;
   }
 
   .reader-title-block {

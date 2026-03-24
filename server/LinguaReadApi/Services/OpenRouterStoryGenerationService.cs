@@ -39,8 +39,8 @@ namespace LinguaReadApi.Services
             { "google/gemini-pro-1.5", 65535 },
         };
         
-        // Default output limit for unknown models
-        private const int DefaultOutputLimit = 4096;
+        // Default output limit for unknown models (generous to avoid truncation)
+        private const int DefaultOutputLimit = 16384;
         private static readonly HashSet<string> SupportedReasoningEfforts = new(StringComparer.OrdinalIgnoreCase)
         {
             "xhigh", "high", "medium", "low", "minimal", "none"
@@ -208,7 +208,7 @@ namespace LinguaReadApi.Services
             return DefaultOutputLimit;
         }
 
-        private static OpenRouterReasoningOptions? BuildReasoningOptions(Models.UserSettings userSettings)
+        private static OpenRouterReasoningOptions BuildReasoningOptions(Models.UserSettings userSettings)
         {
             return Controllers.OpenRouterStoryReasoningHelper.BuildReasoningOptions(userSettings);
         }

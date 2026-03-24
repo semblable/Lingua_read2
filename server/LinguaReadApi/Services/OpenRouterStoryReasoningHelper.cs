@@ -13,10 +13,17 @@ namespace LinguaReadApi.Controllers
             "xhigh", "high", "medium", "low", "minimal", "none"
         };
 
-        public static Services.OpenRouterReasoningOptions? BuildReasoningOptions(Models.UserSettings userSettings)
+        public static Services.OpenRouterReasoningOptions BuildReasoningOptions(Models.UserSettings userSettings)
         {
             if (!userSettings.OpenRouterStoryReasoningEnabled)
-                return null;
+            {
+                // Explicitly disable reasoning to prevent models from using it by default
+                // (reasoning tokens count against output limit and can consume entire budget)
+                return new Services.OpenRouterReasoningOptions
+                {
+                    Effort = "none"
+                };
+            }
 
             var effort = (userSettings.OpenRouterStoryReasoningEffort ?? string.Empty).Trim().ToLowerInvariant();
             if (!SupportedEfforts.Contains(effort))

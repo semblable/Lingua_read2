@@ -87,7 +87,7 @@ public class SrsStoryGenerationTests
     // --- OpenRouter Reasoning Options Tests ---
 
     [Fact]
-    public void BuildReasoningOptions_DisabledStoryReasoning_ReturnsNull()
+    public void BuildReasoningOptions_DisabledStoryReasoning_ReturnsEffortNone()
     {
         var settings = new Models.UserSettings
         {
@@ -96,7 +96,9 @@ public class SrsStoryGenerationTests
         };
 
         var result = OpenRouterStoryReasoningHelper.BuildReasoningOptions(settings);
-        Assert.Null(result);
+        Assert.NotNull(result);
+        Assert.Null(result.Enabled);
+        Assert.Equal("none", result.Effort);
     }
 
     [Fact]

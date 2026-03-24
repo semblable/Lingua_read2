@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within, waitForElementToBeRemoved } from '@testing-library/react';
 import { BrowserRouter } from 'react-router-dom';
 import SrsStoryReview from '../pages/SrsStoryReview';
 import { getAllLanguages, getSrsStats, generateSrsStory, submitSrsReview } from '../utils/api';
@@ -20,6 +20,9 @@ const mockLocalStorage = (() => {
     getItem: jest.fn((key) => store[key] || null),
     setItem: jest.fn((key, value) => {
       store[key] = value.toString();
+    }),
+    removeItem: jest.fn((key) => {
+      delete store[key];
     }),
     clear: jest.fn(() => {
       store = {};
@@ -57,6 +60,7 @@ describe('SrsStoryReview', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockLocalStorage.clear();
     getAllLanguages.mockResolvedValue(mockLanguages);
     getSrsStats.mockResolvedValue(mockStats);
     generateSrsStory.mockResolvedValue(mockStoryResult);
@@ -78,7 +82,7 @@ describe('SrsStoryReview', () => {
     
     // Wait for languages to be loaded and rendered in select
     const select = await screen.findByLabelText(/Language/i);
-    expect(within(select).getByText('Spanish')).toBeInTheDocument();
+    await within(select).findByText('Spanish');
     
     // Generate button should be disabled initially
     const generateBtn = screen.getByRole('button', { name: /Generate Story/i });
@@ -89,6 +93,10 @@ describe('SrsStoryReview', () => {
     renderComponent();
     
     const select = await screen.findByLabelText(/Language/i);
+    // Wait for options to be populated
+    await waitFor(() => {
+      expect(within(select).queryByText('Spanish')).toBeInTheDocument();
+    });
     fireEvent.change(select, { target: { value: '1' } });
 
     // Should load stats on language change
@@ -97,11 +105,13 @@ describe('SrsStoryReview', () => {
     });
 
     // Check stats are displayed
-    expect(screen.getByText('15')).toBeInTheDocument(); // dueCount
+    expect(await screen.findByText('15')).toBeInTheDocument(); // dueCount
     
-    // Generate button should now be enabled
+    // Generate button should now be enabled - wait for it
     const generateBtn = screen.getByRole('button', { name: /Generate Story/i });
-    expect(generateBtn).not.toBeDisabled();
+    await waitFor(() => {
+      expect(generateBtn).not.toBeDisabled();
+    });
   });
 
   it('progresses to story phase when generate is clicked', async () => {
@@ -109,10 +119,17 @@ describe('SrsStoryReview', () => {
     
     // Select language
     const select = await screen.findByLabelText(/Language/i);
+    // Wait for options to be populated
+    await waitFor(() => {
+      expect(within(select).queryByText('Spanish')).toBeInTheDocument();
+    });
     fireEvent.change(select, { target: { value: '1' } });
     
-    // Click Generate
+    // Wait for button to be enabled before clicking
     const generateBtn = await screen.findByRole('button', { name: /Generate Story/i });
+    await waitFor(() => {
+      expect(generateBtn).not.toBeDisabled();
+    });
     fireEvent.click(generateBtn);
 
     // Should enter loading phase briefly (but JS execution is fast, it might skip to story)
@@ -123,7 +140,10 @@ describe('SrsStoryReview', () => {
 
     // Story text and words should appear
     expect(await screen.findByText(/El/)).toBeInTheDocument();
-    expect(screen.getByText('gato')).toHaveClass('srs-story-target-word');
+    
+    // Find 'gato' specifically in the story text to avoid ambiguity with the legend
+    const storyText = await screen.findByTestId('srs-story-text');
+    expect(within(storyText).getByText('gato')).toHaveClass('srs-story-target-word');
   });
 
   it('allows grading a word and completes story when all words graded', async () => {
@@ -131,12 +151,23 @@ describe('SrsStoryReview', () => {
     
     // Setup and generate
     const select = await screen.findByLabelText(/Language/i);
+    // Wait for options to be populated
+    await waitFor(() => {
+      expect(within(select).queryByText('Spanish')).toBeInTheDocument();
+    });
     fireEvent.change(select, { target: { value: '1' } });
-    fireEvent.click(screen.getByRole('button', { name: /Generate Story/i }));
+    
+    const generateBtn = screen.getByRole('button', { name: /Generate Story/i });
+    await waitFor(() => {
+      expect(generateBtn).not.toBeDisabled();
+    });
+    fireEvent.click(generateBtn);
 
     // Wait for story to render
-    const wordElements = await screen.findAllByText(/(gato|rápido)/);
-    const gatoEl = wordElements.find(el => el.textContent === 'gato');
+    await screen.findByText(/El/);
+    const storyText = screen.getByTestId('srs-story-text');
+    
+    const gatoEl = await within(storyText).findByText('gato');
     
     // Click target word
     fireEvent.click(gatoEl);
@@ -150,8 +181,11 @@ describe('SrsStoryReview', () => {
       expect(submitSrsReview).toHaveBeenCalledWith(101, 2);
     });
 
+    // Wait for popover to close before clicking the next word
+    await waitForElementToBeRemoved(() => screen.queryByRole('button', { name: /Good/i }));
+
     // Now grade the second word to complete the story
-    const rapidoEl = wordElements.find(el => el.textContent === 'rápido');
+    const rapidoEl = within(storyText).getByText('rápido');
     fireEvent.click(rapidoEl);
     
     const easyButton = await screen.findByRole('button', { name: /Easy/i });

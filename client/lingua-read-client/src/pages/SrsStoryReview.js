@@ -350,7 +350,7 @@ const SrsStoryReview = () => {
         {/* Story card */}
         <Card className="shadow-sm mb-3 srs-story-card">
           <Card.Body className="srs-story-container">
-            <div className="srs-story-text" style={{ fontSize: '1.15rem', lineHeight: '2' }}>
+            <div className="srs-story-text" data-testid="srs-story-text" style={{ fontSize: '1.15rem', lineHeight: '2' }}>
               {renderStory()}
             </div>
           </Card.Body>

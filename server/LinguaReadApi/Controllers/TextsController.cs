@@ -153,8 +153,7 @@ namespace LinguaReadApi.Controllers
                 catch (Exception ex)
                 {
                     // Non-critical - log but don't fail the request
-                    var logger = _scopeFactory.CreateScope().ServiceProvider.GetRequiredService<ILogger<TextsController>>();
-                    logger.LogWarning(ex, "Background update of LastAccessedAt failed for TextId {TextId}", id);
+                    _logger.LogWarning(ex, "Background update of LastAccessedAt failed for TextId {TextId}", id);
                 }
             });
             // --- End Update ---

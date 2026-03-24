@@ -237,7 +237,8 @@ namespace LinguaReadApi.Controllers
             int languageId,
             [FromQuery] string? status = null,     // Comma-separated list of statuses (e.g., "1,2,5")
             [FromQuery] string? sortBy = null,     // Sort criteria (e.g., "term_asc", "status_desc")
-            [FromQuery] string? searchTerm = null) // Search term for Term or Translation
+            [FromQuery] string? searchTerm = null, // Search term for Term or Translation
+            [FromQuery] bool skipSort = false)      // Skip sorting for performance when caller doesn't need order
         {
             var userId = GetUserId();
 
@@ -269,28 +270,31 @@ namespace LinguaReadApi.Controllers
                                        (w.Translation != null && w.Translation.Translation.ToLower().Contains(termLower)));
             }
 
-            // Apply sorting
-            switch (sortBy?.ToLowerInvariant())
+            // Apply sorting (skip when caller only needs unsorted data, e.g. for Map-based lookups)
+            if (!skipSort)
             {
-                case "term_desc":
-                    query = query.OrderByDescending(w => w.Term);
-                    break;
-                case "status_asc":
-                    query = query.OrderBy(w => w.Status).ThenBy(w => w.Term);
-                    break;
-                case "status_desc":
-                    query = query.OrderByDescending(w => w.Status).ThenBy(w => w.Term);
-                    break;
-                case "created_asc":
-                    query = query.OrderBy(w => w.CreatedAt);
-                    break;
-                case "created_desc":
-                    query = query.OrderByDescending(w => w.CreatedAt);
-                    break;
-                case "term_asc":
-                default:
-                    query = query.OrderBy(w => w.Term);
-                    break;
+                switch (sortBy?.ToLowerInvariant())
+                {
+                    case "term_desc":
+                        query = query.OrderByDescending(w => w.Term);
+                        break;
+                    case "status_asc":
+                        query = query.OrderBy(w => w.Status).ThenBy(w => w.Term);
+                        break;
+                    case "status_desc":
+                        query = query.OrderByDescending(w => w.Status).ThenBy(w => w.Term);
+                        break;
+                    case "created_asc":
+                        query = query.OrderBy(w => w.CreatedAt);
+                        break;
+                    case "created_desc":
+                        query = query.OrderByDescending(w => w.CreatedAt);
+                        break;
+                    case "term_asc":
+                    default:
+                        query = query.OrderBy(w => w.Term);
+                        break;
+                }
             }
 
             var words = await query

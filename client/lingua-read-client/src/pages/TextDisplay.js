@@ -1804,7 +1804,7 @@ const TextDisplay = () => {
     if (!languageId) return; // Guard against missing languageId
     try {
       // Corrected URL construction: Removed redundant '/api' prefix
-      const response = await fetch(`${API_URL}/words/language/${languageId}`, {
+      const response = await fetch(`${API_URL}/words/language/${languageId}?skipSort=true`, {
         headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}`, 'Accept': 'application/json' }
       });
       if (!response.ok) throw new Error('Failed to fetch language words');
@@ -2710,58 +2710,98 @@ const TextDisplay = () => {
           setSrtLines([]);
           if (displayMode !== 'text') setDisplayMode('text');
         }
-        // Fetch all words for the language AND the language configuration itself (Phase 3)
-        if (data.languageId) {
-          await fetchAllLanguageWords(data.languageId);
-          try {
-            // Assuming getLanguage exists in api.js from Phase 1/2
-            const langConfigData = await getLanguage(data.languageId); // Make sure getLanguage is imported
-            setLanguageConfig(langConfigData);
-            console.log('[Language Config] Fetched:', langConfigData);
-          } catch (langErr) {
-            console.error('Failed to fetch language configuration:', langErr);
-            setError(prev => `${prev} (Warning: Failed to load language config)`);
-            setLanguageConfig(null); // Ensure it's null on error
-          }
-        } else {
-          setLanguageConfig(null); // Reset if no languageId
+        // Show text immediately with text-specific words while background data loads
+        setLoading(false);
+
+        // Load bookmarks synchronously (localStorage, no network)
+        if (data?.textId) {
+          const loadedBookmarks = getBookmarkedSentences(data.textId);
+          setBookmarkedIndices(loadedBookmarks);
+          console.log(`[Bookmarks] Loaded ${loadedBookmarks.length} bookmarks for text ${data.textId}`);
         }
+
+        // --- Parallel fetch of all independent data ---
+        const promises = [];
+
+        // 0: Language words
+        promises.push(
+          data.languageId
+            ? fetchAllLanguageWords(data.languageId)
+            : Promise.resolve(null)
+        );
+
+        // 1: Language config
+        promises.push(
+          data.languageId
+            ? getLanguage(data.languageId)
+            : Promise.resolve(null)
+        );
+
+        // 2: Book data (updateLastRead then getBook, chained but parallel with others)
+        promises.push(
+          data.bookId
+            ? updateLastRead(data.bookId, data.textId).then(() => getBook(data.bookId))
+            : Promise.resolve(null)
+        );
+
+        // 3: Sentence progress
+        promises.push(
+          data?.textId
+            ? getSentenceProgress(data.textId)
+            : Promise.resolve(null)
+        );
+
+        const results = await Promise.allSettled(promises);
+
+        // Process result 0: fetchAllLanguageWords (already sets state internally)
+        if (results[0].status === 'rejected') {
+          console.error('Failed to fetch language words:', results[0].reason);
+        }
+
+        // Process result 1: language config
+        if (results[1].status === 'fulfilled' && results[1].value) {
+          setLanguageConfig(results[1].value);
+          console.log('[Language Config] Fetched:', results[1].value);
+        } else {
+          if (results[1].status === 'rejected') {
+            console.error('Failed to fetch language configuration:', results[1].reason);
+            setError(prev => `${prev} (Warning: Failed to load language config)`);
+          }
+          setLanguageConfig(null);
+        }
+
+        // Process result 2: book
         if (data.bookId) {
-          try {
-            await updateLastRead(data.bookId, data.textId);
-            const bookData = await getBook(data.bookId);
+          if (results[2].status === 'fulfilled' && results[2].value) {
+            const bookData = results[2].value;
             setBook(bookData);
             if (bookData?.parts) {
               const currentPartIndex = bookData.parts.findIndex(part => part.textId === parseInt(textId));
               setPreviousTextId(currentPartIndex > 0 ? bookData.parts[currentPartIndex - 1].textId : null);
               setNextTextId(currentPartIndex >= 0 && currentPartIndex < bookData.parts.length - 1 ? bookData.parts[currentPartIndex + 1].textId : null);
             }
-          } catch (bookErr) {
-            console.error('Failed to get book data:', bookErr);
-            // Don't block text display if book fetch fails, but player won't show
+          } else {
+            console.error('Failed to get book data:', results[2].reason);
           }
         } else {
           setPreviousTextId(null);
           setNextTextId(null);
         }
-        // Load bookmarks after text is set
-        if (data?.textId) {
-          const loadedBookmarks = getBookmarkedSentences(data.textId);
-          setBookmarkedIndices(loadedBookmarks);
-          console.log(`[Bookmarks] Loaded ${loadedBookmarks.length} bookmarks for text ${data.textId}`);
-          try {
-            const sentenceProgress = await getSentenceProgress(data.textId);
-            const initialIndex = Math.max(0, sentenceProgress?.lastSegmentIndex || 0);
-            setCurrentSegmentIndex(initialIndex);
-            setCreditedSegmentIndices(sentenceProgress?.creditedSegmentIndices || []);
-          } catch (sentenceProgressErr) {
-            console.error('Failed to fetch sentence progress:', sentenceProgressErr);
-            setCreditedSegmentIndices([]);
-            setCurrentSegmentIndex(0);
-          } finally {
-            setSentenceProgressLoaded(true);
+
+        // Process result 3: sentence progress
+        if (results[3].status === 'fulfilled' && results[3].value) {
+          const sentenceProgress = results[3].value;
+          const initialIndex = Math.max(0, sentenceProgress?.lastSegmentIndex || 0);
+          setCurrentSegmentIndex(initialIndex);
+          setCreditedSegmentIndices(sentenceProgress?.creditedSegmentIndices || []);
+        } else {
+          if (results[3].status === 'rejected') {
+            console.error('Failed to fetch sentence progress:', results[3].reason);
           }
+          setCreditedSegmentIndices([]);
+          setCurrentSegmentIndex(0);
         }
+        setSentenceProgressLoaded(true);
       } catch (err) { setError(err.message || 'Failed to load text'); }
       finally { setLoading(false); }
     };

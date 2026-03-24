@@ -25,7 +25,7 @@ public class SrsControllerTests
         return new AppDbContext(options);
     }
 
-    private static SrsController CreateController(AppDbContext context, Guid userId, IStoryGenerationServiceFactory factory = null)
+    private static SrsController CreateController(AppDbContext context, Guid userId, IStoryGenerationServiceFactory? factory = null)
     {
         var controller = new SrsController(context, factory ?? Mock.Of<IStoryGenerationServiceFactory>())
         {
@@ -134,7 +134,7 @@ public class SrsControllerTests
         var response = Assert.IsType<SrsStoryGenerateResponse>(okResult.Value);
 
         Assert.Equal("El gato corre por el parque.", response.Story);
-        Assert.Equal(1, response.UsedWords.Count); // Fallback scans story text - only "gato" appears
+        Assert.Single(response.UsedWords); // Fallback scans story text - only "gato" appears
         Assert.Contains("gato", response.UsedWords);
     }
 }

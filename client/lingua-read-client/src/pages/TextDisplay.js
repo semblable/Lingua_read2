@@ -2173,7 +2173,7 @@ const TextDisplay = () => {
             <span
               key={`phrase-${currentKeyIndex++}-${phraseTerm.replace(/\s+/g, '-')}`}
               style={{ ...styles.highlightedWord, ...getWordStyle(phraseStatus) }}
-              className={`clickable-word word-status-${phraseStatus}`} // Treat phrase like a word visually/interactively
+              className={`clickable-word${languageWordsLoaded ? ` word-status-${phraseStatus}` : ''}`}
               onTouchStart={handleSelectableWordTouchStart}
               onTouchEnd={handleSelectableWordTouchEnd}
               onClick={(e) => handleSelectableWordClick(e, phraseTerm)}
@@ -2224,7 +2224,7 @@ const TextDisplay = () => {
           <span
             key={`word-${currentKeyIndex++}-${currentWord}`}
             style={{ ...styles.highlightedWord, ...getWordStyle(wordStatus) }}
-            className={`clickable-word word-status-${wordStatus}`}
+            className={`clickable-word${languageWordsLoaded ? ` word-status-${wordStatus}` : ''}`}
             onTouchStart={handleSelectableWordTouchStart}
             onTouchEnd={handleSelectableWordTouchEnd}
             onClick={(e) => handleSelectableWordClick(e, currentWord)}
@@ -2254,7 +2254,7 @@ const TextDisplay = () => {
     return elements;
     // --- End Phase 2 Logic ---
 
-  }, [knownPhrases, getWordData, getWordStyle, handleSelectableWordClick, handleSelectableWordTouchEnd, handleSelectableWordTouchStart, setHoveredWordTerm]); // Removed unnecessary 'words' dependency
+  }, [knownPhrases, getWordData, getWordStyle, languageWordsLoaded, handleSelectableWordClick, handleSelectableWordTouchEnd, handleSelectableWordTouchStart, setHoveredWordTerm]); // Removed unnecessary 'words' dependency
 
 
   const getFontFamilyForList = useCallback(() => {

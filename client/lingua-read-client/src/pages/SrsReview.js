@@ -634,6 +634,28 @@ const SrsReview = () => {
                     title={`${lc.translation} — ${lc.lapseCount} lapses, ease ${lc.easeFactor.toFixed(2)}`}
                   >
                     {lc.term} <span className="opacity-75">({lc.lapseCount}x)</span>
+                    <span
+                      role="button"
+                      title="Bury until tomorrow"
+                      className="ms-1 opacity-50"
+                      style={{ cursor: 'pointer', fontSize: '0.7rem' }}
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        try { await burySrsCard(lc.srsCardReviewId); loadStats(); }
+                        catch (err) { setError(`Failed to bury: ${err.message}`); }
+                      }}
+                    >⏸</span>
+                    <span
+                      role="button"
+                      title="Suspend card"
+                      className="opacity-50"
+                      style={{ cursor: 'pointer', fontSize: '0.7rem' }}
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        try { await suspendSrsCard(lc.srsCardReviewId); loadStats(); }
+                        catch (err) { setError(`Failed to suspend: ${err.message}`); }
+                      }}
+                    >⛔</span>
                   </Badge>
                 ))}
               </div>

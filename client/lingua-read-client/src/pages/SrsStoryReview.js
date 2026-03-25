@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useContext } from 'react';
-import { Container, Card, Button, Spinner, Alert, Form, Row, Col, Badge, ProgressBar, OverlayTrigger, Tooltip } from 'react-bootstrap';
+import { Container, Card, Button, Spinner, Alert, Form, Row, Col, Badge, ProgressBar, OverlayTrigger, Tooltip, ButtonGroup, ToggleButton } from 'react-bootstrap';
 import { useNavigate } from 'react-router-dom';
 import { getAllLanguages, generateSrsStory, submitSrsReview, getSrsStats, createWord, getWordsByLanguage, getSrsStories } from '../utils/api';
 import { SettingsContext } from '../contexts/SettingsContext';
@@ -21,6 +21,7 @@ const SrsStoryReview = () => {
     localStorage.getItem('srsSelectedLanguage') || ''
   );
   const [statusFilter, setStatusFilter] = useState([1, 2, 3, 4, 5]);
+  const [cardType, setCardType] = useState('all'); // "all", "new", "review"
   const [theme, setTheme] = useState('');
   const [maxWords, setMaxWords] = useState(() =>
     Math.min(30, Math.max(3, settings.srsMaxNewCards || 15))
@@ -108,7 +109,8 @@ const SrsStoryReview = () => {
         maxWords,
         maxLength,
         status: statusFilter,
-        style: effectiveStyle || undefined
+        style: effectiveStyle || undefined,
+        cardType: cardType !== 'all' ? cardType : undefined
       });
 
       if (!result.story || result.targetWords.length === 0) {
@@ -329,6 +331,8 @@ const SrsStoryReview = () => {
                 <Col><div className="fw-bold text-info">{stats.newCards}</div><small className="text-muted">New</small></Col>
                 <Col><div className="fw-bold text-warning">{stats.learningCards}</div><small className="text-muted">Learning</small></Col>
                 <Col><div className="fw-bold text-success">{stats.matureCards}</div><small className="text-muted">Mature</small></Col>
+                <Col><div className="fw-bold text-primary">{Math.max(0, (stats.maxNewCards || 20) - (stats.studiedNewCardsToday || 0))}</div><small className="text-muted">New Left</small></Col>
+                <Col><div className="fw-bold text-secondary">{Math.max(0, (stats.maxReviews || 100) - (stats.studiedReviewsToday || 0))}</div><small className="text-muted">Rev Left</small></Col>
               </Row>
             </Card.Body>
           </Card>
@@ -362,6 +366,39 @@ const SrsStoryReview = () => {
                   />
                 ))}
               </div>
+            </Form.Group>
+
+            <Form.Group className="mb-3">
+              <Form.Label>Card Source</Form.Label>
+              <div>
+                <ButtonGroup>
+                  {[
+                    { value: 'all', label: 'All Words' },
+                    { value: 'new', label: 'New Only' },
+                    { value: 'review', label: 'Review Only' },
+                  ].map(opt => (
+                    <ToggleButton
+                      key={opt.value}
+                      id={`card-type-${opt.value}`}
+                      type="radio"
+                      variant={cardType === opt.value ? 'primary' : 'outline-secondary'}
+                      name="cardType"
+                      value={opt.value}
+                      checked={cardType === opt.value}
+                      onChange={e => setCardType(e.currentTarget.value)}
+                      size="sm"
+                    >
+                      {opt.label}
+                    </ToggleButton>
+                  ))}
+                </ButtonGroup>
+              </div>
+              {stats && cardType === 'new' && Math.max(0, (stats.maxNewCards || 20) - (stats.studiedNewCardsToday || 0)) === 0 && (
+                <small className="text-danger d-block mt-1">Daily new card limit reached.</small>
+              )}
+              {stats && cardType === 'review' && Math.max(0, (stats.maxReviews || 100) - (stats.studiedReviewsToday || 0)) === 0 && (
+                <small className="text-danger d-block mt-1">Daily review limit reached.</small>
+              )}
             </Form.Group>
 
             <Form.Group className="mb-3" controlId="srs-theme-input">

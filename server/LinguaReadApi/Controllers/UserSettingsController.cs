@@ -136,7 +136,9 @@ namespace LinguaReadApi.Controllers
                 SrsMaxNewCards = settings.SrsMaxNewCards,
                 SrsMaxReviews = settings.SrsMaxReviews,
                 SrsReviewOrder = settings.SrsReviewOrder ?? "mix",
-                SrsLearningStepMinutes = settings.SrsLearningStepMinutes ?? "1,10"
+                SrsLearningStepMinutes = settings.SrsLearningStepMinutes ?? "1,10",
+                SrsMaxIntervalDays = settings.SrsMaxIntervalDays,
+                SrsLapseMinimumIntervalDays = settings.SrsLapseMinimumIntervalDays
             };
         }
 
@@ -288,6 +290,8 @@ namespace LinguaReadApi.Controllers
                     ? "1,10"
                     : updateDto.SrsLearningStepMinutes.Trim();
             }
+            settings.SrsMaxIntervalDays = updateDto.SrsMaxIntervalDays ?? settings.SrsMaxIntervalDays;
+            settings.SrsLapseMinimumIntervalDays = updateDto.SrsLapseMinimumIntervalDays ?? settings.SrsLapseMinimumIntervalDays;
             settings.UpdatedAt = DateTime.UtcNow;
 
             await _context.SaveChangesAsync();
@@ -332,7 +336,9 @@ namespace LinguaReadApi.Controllers
                 SrsMaxNewCards = settings.SrsMaxNewCards,
                 SrsMaxReviews = settings.SrsMaxReviews,
                 SrsReviewOrder = settings.SrsReviewOrder ?? "mix",
-                SrsLearningStepMinutes = settings.SrsLearningStepMinutes ?? "1,10"
+                SrsLearningStepMinutes = settings.SrsLearningStepMinutes ?? "1,10",
+                SrsMaxIntervalDays = settings.SrsMaxIntervalDays,
+                SrsLapseMinimumIntervalDays = settings.SrsLapseMinimumIntervalDays
             };
         }
 
@@ -714,6 +720,8 @@ namespace LinguaReadApi.Controllers
         public int SrsMaxReviews { get; set; } = 100;
         public string SrsReviewOrder { get; set; } = "mix";
         public string? SrsLearningStepMinutes { get; set; } = "1,10";
+        public int SrsMaxIntervalDays { get; set; } = 36500;
+        public int SrsLapseMinimumIntervalDays { get; set; } = 1;
     }
 
     public class UpdateUserSettingsDto
@@ -799,6 +807,12 @@ namespace LinguaReadApi.Controllers
 
         [StringLength(50)]
         public string? SrsLearningStepMinutes { get; set; }
+
+        [Range(1, 36500)]
+        public int? SrsMaxIntervalDays { get; set; }
+
+        [Range(1, 365)]
+        public int? SrsLapseMinimumIntervalDays { get; set; }
     }
 
     public class UpdateAudiobookProgressDto

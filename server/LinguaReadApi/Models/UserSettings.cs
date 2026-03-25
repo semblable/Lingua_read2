@@ -97,6 +97,10 @@ namespace LinguaReadApi.Models
         // SRS Learning Steps
         public string SrsLearningStepMinutes { get; set; } = "1,10"; // comma-separated step intervals in minutes
 
+        // SRS Advanced Settings
+        public int SrsMaxIntervalDays { get; set; } = 36500; // Maximum review interval in days (Anki default ~100 years)
+        public int SrsLapseMinimumIntervalDays { get; set; } = 1; // Minimum interval after lapse re-graduation
+
         // SRS Streak Tracking
         public int SrsCurrentStreak { get; set; } = 0;
         public int SrsLongestStreak { get; set; } = 0;

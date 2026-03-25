@@ -50,7 +50,9 @@ const SrsReview = () => {
     srsMaxNewCards: 20,
     srsMaxReviews: 100,
     srsReviewOrder: 'mix',
-    srsLearningStepMinutes: '1,10'
+    srsLearningStepMinutes: '1,10',
+    srsMaxIntervalDays: 36500,
+    srsLapseMinimumIntervalDays: 1
   });
 
   useEffect(() => {
@@ -58,7 +60,9 @@ const SrsReview = () => {
       srsMaxNewCards: settings?.srsMaxNewCards ?? 20,
       srsMaxReviews: settings?.srsMaxReviews ?? 100,
       srsReviewOrder: settings?.srsReviewOrder ?? 'mix',
-      srsLearningStepMinutes: settings?.srsLearningStepMinutes ?? '1,10'
+      srsLearningStepMinutes: settings?.srsLearningStepMinutes ?? '1,10',
+      srsMaxIntervalDays: settings?.srsMaxIntervalDays ?? 36500,
+      srsLapseMinimumIntervalDays: settings?.srsLapseMinimumIntervalDays ?? 1
     });
   }, [settings]);
 
@@ -73,17 +77,31 @@ const SrsReview = () => {
       setError('Max reviews must be a positive number.');
       return;
     }
+    const maxInterval = parseInt(localSettings.srsMaxIntervalDays, 10);
+    const lapseMin = parseInt(localSettings.srsLapseMinimumIntervalDays, 10);
+    if (isNaN(maxInterval) || maxInterval < 1) {
+      setError('Max interval must be at least 1 day.');
+      return;
+    }
+    if (isNaN(lapseMin) || lapseMin < 1) {
+      setError('Lapse minimum interval must be at least 1 day.');
+      return;
+    }
     try {
       await updateUserSettings({
         srsMaxNewCards: maxNew,
         srsMaxReviews: maxReviews,
         srsReviewOrder: localSettings.srsReviewOrder,
-        srsLearningStepMinutes: localSettings.srsLearningStepMinutes
+        srsLearningStepMinutes: localSettings.srsLearningStepMinutes,
+        srsMaxIntervalDays: maxInterval,
+        srsLapseMinimumIntervalDays: lapseMin
       });
       updateSetting('srsMaxNewCards', maxNew);
       updateSetting('srsMaxReviews', maxReviews);
       updateSetting('srsReviewOrder', localSettings.srsReviewOrder);
       updateSetting('srsLearningStepMinutes', localSettings.srsLearningStepMinutes);
+      updateSetting('srsMaxIntervalDays', maxInterval);
+      updateSetting('srsLapseMinimumIntervalDays', lapseMin);
       setShowSettingsModal(false);
       loadStats(); // refresh visual stats
     } catch (err) {
@@ -740,6 +758,28 @@ const SrsReview = () => {
                 onChange={e => setLocalSettings(p => ({ ...p, srsLearningStepMinutes: e.target.value }))}
               />
               <Form.Text className="text-muted">E.g. "1, 10" means 1 minute then 10 minute step before graduating.</Form.Text>
+            </Form.Group>
+            <Form.Group className="mb-3">
+              <Form.Label>Maximum Interval (days)</Form.Label>
+              <Form.Control
+                type="number"
+                min={1}
+                max={36500}
+                value={localSettings.srsMaxIntervalDays}
+                onChange={e => setLocalSettings(p => ({ ...p, srsMaxIntervalDays: e.target.value }))}
+              />
+              <Form.Text className="text-muted">Cards won't be scheduled further than this many days into the future. Default: 36500 (~100 years).</Form.Text>
+            </Form.Group>
+            <Form.Group className="mb-3">
+              <Form.Label>Lapse Minimum Interval (days)</Form.Label>
+              <Form.Control
+                type="number"
+                min={1}
+                max={365}
+                value={localSettings.srsLapseMinimumIntervalDays}
+                onChange={e => setLocalSettings(p => ({ ...p, srsLapseMinimumIntervalDays: e.target.value }))}
+              />
+              <Form.Text className="text-muted">After failing a card, its interval won't go below this value after re-learning. Default: 1.</Form.Text>
             </Form.Group>
           </Modal.Body>
           <Modal.Footer>

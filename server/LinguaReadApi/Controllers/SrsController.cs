@@ -288,9 +288,11 @@ namespace LinguaReadApi.Controllers
 
             // Parse learning steps from user settings
             var learningSteps = ParseLearningSteps(settings?.SrsLearningStepMinutes);
+            int maxIntervalDays = settings?.SrsMaxIntervalDays > 0 ? settings.SrsMaxIntervalDays : 36500;
+            int lapseMinIntervalDays = settings?.SrsLapseMinimumIntervalDays > 0 ? settings.SrsLapseMinimumIntervalDays : 1;
 
             // Apply SM-2 algorithm with learning steps
-            ApplySm2(card, dto.Grade, learningSteps);
+            ApplySm2(card, dto.Grade, learningSteps, maxIntervalDays, lapseMinIntervalDays);
 
             await _context.SaveChangesAsync();
 
@@ -738,7 +740,7 @@ namespace LinguaReadApi.Controllers
         }
 
         // --- SM-2 Algorithm with Learning Steps ---
-        private void ApplySm2(SrsCardReview card, int grade, List<int> learningSteps)
+        private void ApplySm2(SrsCardReview card, int grade, List<int> learningSteps, int maxIntervalDays = 36500, int lapseMinIntervalDays = 1)
         {
             // grade: 0=Again, 1=Hard, 2=Good, 3=Easy
 
@@ -767,8 +769,18 @@ namespace LinguaReadApi.Controllers
                         // Graduate: exit learning phase
                         card.IsLearning = false;
                         card.CurrentLearningStepIndex = 0;
-                        card.Interval = (grade == 3) ? 2 : 1; // Easy bonus: 2 days instead of 1
-                        if (card.Repetitions == 0 && card.LastReviewedAt == null) card.Repetitions = 1;
+                        bool isRelearning = card.Repetitions > 0 || card.LastReviewedAt != null;
+                        if (isRelearning)
+                        {
+                            // Re-learning graduation: use lapse minimum interval
+                            card.Interval = (grade == 3) ? Math.Max(lapseMinIntervalDays, 1) * 2 : Math.Max(lapseMinIntervalDays, 1);
+                        }
+                        else
+                        {
+                            card.Interval = (grade == 3) ? 2 : 1; // First-time graduation
+                            card.Repetitions = 1;
+                        }
+                        card.Interval = Math.Min(card.Interval, maxIntervalDays);
                         card.NextReviewAt = DateTime.UtcNow.AddDays(card.Interval);
                     }
                     else
@@ -811,6 +823,9 @@ namespace LinguaReadApi.Controllers
                 // Easy bonus
                 if (grade == 3)
                     card.Interval = (int)Math.Round(card.Interval * 1.3);
+
+                // Cap at maximum interval
+                card.Interval = Math.Min(card.Interval, maxIntervalDays);
 
                 card.NextReviewAt = DateTime.UtcNow.AddDays(Math.Max(card.Interval, 0));
             }
@@ -1040,33 +1055,85 @@ namespace LinguaReadApi.Controllers
             var userId = GetUserId();
             var now = DateTime.UtcNow;
 
-            // 1. Fetch due cards (simplified query - no daily limits, just get due words)
-            var query = _context.SrsCardReviews
+            // 1. Load user settings for daily limits
+            var settings = await _context.UserSettings.FirstOrDefaultAsync(u => u.UserId == userId);
+            var today = now.Date;
+            int studiedNew = (settings?.SrsDailyStudyDate?.Date == today) ? settings.SrsDailyNewCardsStudied : 0;
+            int studiedReviews = (settings?.SrsDailyStudyDate?.Date == today) ? settings.SrsDailyReviewsStudied : 0;
+            int effectiveMaxNew = (settings?.SrsMaxNewCards ?? 0) == 0 ? 20 : settings!.SrsMaxNewCards;
+            int effectiveMaxReviews = (settings?.SrsMaxReviews ?? 0) == 0 ? 100 : settings!.SrsMaxReviews;
+            int remainingNew = Math.Max(0, effectiveMaxNew - studiedNew);
+            int remainingReviews = Math.Max(0, effectiveMaxReviews - studiedReviews);
+
+            // 2. Fetch due cards with card type filter and daily limits
+            var baseQuery = _context.SrsCardReviews
                 .AsNoTracking()
                 .Where(scr => scr.UserId == userId && scr.NextReviewAt <= now)
                 .Where(scr => !scr.IsSuspended)
                 .Where(scr => scr.BuriedUntil == null || scr.BuriedUntil <= now)
                 .Include(scr => scr.Word)
                     .ThenInclude(w => w.Translation)
-                .AsQueryable();
-
-            query = query.Where(scr => scr.Word.LanguageId == request.LanguageId);
+                .Where(scr => scr.Word.LanguageId == request.LanguageId);
 
             if (!string.IsNullOrEmpty(request.Status))
             {
                 var statusList = request.Status.Split(',').Select(s => s.Trim()).Where(s => int.TryParse(s, out _)).Select(int.Parse).ToList();
-                if (statusList.Any()) query = query.Where(scr => statusList.Contains(scr.Word.Status));
+                if (statusList.Any()) baseQuery = baseQuery.Where(scr => statusList.Contains(scr.Word.Status));
             }
 
-            // 2. Prioritize: Learning > New > Familiar, then oldest due first
-            var allDueCards = await query
-                .OrderBy(scr => scr.IsLearning ? 0 : (scr.Repetitions == 0 && scr.LastReviewedAt == null ? 1 : 2))
-                .ThenBy(scr => scr.NextReviewAt)
-                .Take(request.MaxWords)
-                .ToListAsync();
+            var cardType = (request.CardType ?? "all").Trim().ToLowerInvariant();
+
+            // Fetch cards based on card type, respecting daily limits
+            var allDueCards = new List<SrsCardReview>();
+
+            if (cardType == "new")
+            {
+                allDueCards = await baseQuery
+                    .Where(scr => scr.Repetitions == 0 && scr.LastReviewedAt == null)
+                    .OrderBy(scr => scr.NextReviewAt)
+                    .Take(Math.Min(request.MaxWords, remainingNew))
+                    .ToListAsync();
+            }
+            else if (cardType == "review")
+            {
+                // Learning cards + review cards
+                var learningCards = await baseQuery
+                    .Where(scr => scr.IsLearning)
+                    .OrderBy(scr => scr.NextReviewAt)
+                    .Take(request.MaxWords)
+                    .ToListAsync();
+                var reviewCards = await baseQuery
+                    .Where(scr => !scr.IsLearning && (scr.Repetitions > 0 || scr.LastReviewedAt != null))
+                    .OrderBy(scr => scr.NextReviewAt)
+                    .Take(Math.Min(request.MaxWords, remainingReviews))
+                    .ToListAsync();
+                allDueCards = learningCards.Concat(reviewCards).Take(request.MaxWords).ToList();
+            }
+            else // "all"
+            {
+                // Learning cards (no limit)
+                var learningCards = await baseQuery
+                    .Where(scr => scr.IsLearning)
+                    .OrderBy(scr => scr.NextReviewAt)
+                    .Take(request.MaxWords)
+                    .ToListAsync();
+                // New cards (capped by remaining budget)
+                var newCards = await baseQuery
+                    .Where(scr => !scr.IsLearning && scr.Repetitions == 0 && scr.LastReviewedAt == null)
+                    .OrderBy(scr => scr.NextReviewAt)
+                    .Take(Math.Min(request.MaxWords, remainingNew))
+                    .ToListAsync();
+                // Review cards (capped by remaining budget)
+                var reviewCards = await baseQuery
+                    .Where(scr => !scr.IsLearning && (scr.Repetitions > 0 || scr.LastReviewedAt != null))
+                    .OrderBy(scr => scr.NextReviewAt)
+                    .Take(Math.Min(request.MaxWords, remainingReviews))
+                    .ToListAsync();
+                allDueCards = learningCards.Concat(newCards).Concat(reviewCards).Take(request.MaxWords).ToList();
+            }
 
             if (!allDueCards.Any())
-                return Ok(new SrsStoryGenerateResponse { Story = "", TargetWords = new(), UsedWords = new() });
+                return Ok(new SrsStoryGenerateResponse { Story = "", TargetWords = new(), UsedWords = new(), RemainingNewBudget = remainingNew, RemainingReviewBudget = remainingReviews });
 
             // 3. Build target words list
             var targetWords = allDueCards.Select(card => new SrsStoryWordDto
@@ -1142,7 +1209,9 @@ Requirements:
                 TextId = storyTextRecord.TextId,
                 LanguageCode = language?.Code ?? "",
                 TargetWords = targetWords,
-                UsedWords = usedWords
+                UsedWords = usedWords,
+                RemainingNewBudget = remainingNew,
+                RemainingReviewBudget = remainingReviews
             });
         }
 
@@ -1338,6 +1407,9 @@ Requirements:
 
         [StringLength(50)]
         public string? Style { get; set; }
+
+        [StringLength(10)]
+        public string? CardType { get; set; } // "new", "review", "all" (default)
     }
 
     public class SrsStoryGenerateResponse
@@ -1347,6 +1419,8 @@ Requirements:
         public string LanguageCode { get; set; } = string.Empty;
         public List<SrsStoryWordDto> TargetWords { get; set; } = new();
         public List<string> UsedWords { get; set; } = new();
+        public int RemainingNewBudget { get; set; }
+        public int RemainingReviewBudget { get; set; }
     }
 
     public class SrsStoryWordDto

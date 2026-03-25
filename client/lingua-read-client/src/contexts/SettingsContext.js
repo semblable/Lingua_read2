@@ -34,6 +34,8 @@ const defaultSettings = {
   srsMaxNewCards: 20,
   srsMaxReviews: 100,
   srsReviewOrder: 'mix',
+  srsMaxIntervalDays: 36500,
+  srsLapseMinimumIntervalDays: 1,
   // Add other settings as needed
 };
 
@@ -90,6 +92,8 @@ export const SettingsProvider = ({ children }) => {
         srsMaxNewCards: data.srsMaxNewCards ?? defaultSettings.srsMaxNewCards,
         srsMaxReviews: data.srsMaxReviews ?? defaultSettings.srsMaxReviews,
         srsReviewOrder: data.srsReviewOrder || defaultSettings.srsReviewOrder,
+        srsMaxIntervalDays: data.srsMaxIntervalDays ?? defaultSettings.srsMaxIntervalDays,
+        srsLapseMinimumIntervalDays: data.srsLapseMinimumIntervalDays ?? defaultSettings.srsLapseMinimumIntervalDays,
       });
     } catch (err) {
       console.error('[SettingsContext] Failed to load settings:', err);

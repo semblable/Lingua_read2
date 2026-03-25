@@ -1083,7 +1083,10 @@ namespace LinguaReadApi.Controllers
 
             var cardType = (request.CardType ?? "all").Trim().ToLowerInvariant();
 
-            // Fetch cards based on card type, respecting daily limits
+            // Fetch a larger candidate pool (3x MaxWords) so the AI can pick the most fitting words
+            int poolSize = request.MaxWords * 3;
+
+            // Fetch cards based on card type, respecting daily limits for the pool
             var allDueCards = new List<SrsCardReview>();
 
             if (cardType == "new")
@@ -1091,7 +1094,7 @@ namespace LinguaReadApi.Controllers
                 allDueCards = await baseQuery
                     .Where(scr => scr.Repetitions == 0 && scr.LastReviewedAt == null)
                     .OrderBy(scr => scr.NextReviewAt)
-                    .Take(Math.Min(request.MaxWords, remainingNew))
+                    .Take(Math.Min(poolSize, remainingNew))
                     .ToListAsync();
             }
             else if (cardType == "review")
@@ -1100,14 +1103,14 @@ namespace LinguaReadApi.Controllers
                 var learningCards = await baseQuery
                     .Where(scr => scr.IsLearning)
                     .OrderBy(scr => scr.NextReviewAt)
-                    .Take(request.MaxWords)
+                    .Take(poolSize)
                     .ToListAsync();
                 var reviewCards = await baseQuery
                     .Where(scr => !scr.IsLearning && (scr.Repetitions > 0 || scr.LastReviewedAt != null))
                     .OrderBy(scr => scr.NextReviewAt)
-                    .Take(Math.Min(request.MaxWords, remainingReviews))
+                    .Take(Math.Min(poolSize, remainingReviews))
                     .ToListAsync();
-                allDueCards = learningCards.Concat(reviewCards).Take(request.MaxWords).ToList();
+                allDueCards = learningCards.Concat(reviewCards).Take(poolSize).ToList();
             }
             else // "all"
             {
@@ -1115,21 +1118,21 @@ namespace LinguaReadApi.Controllers
                 var learningCards = await baseQuery
                     .Where(scr => scr.IsLearning)
                     .OrderBy(scr => scr.NextReviewAt)
-                    .Take(request.MaxWords)
+                    .Take(poolSize)
                     .ToListAsync();
                 // New cards (capped by remaining budget)
                 var newCards = await baseQuery
                     .Where(scr => !scr.IsLearning && scr.Repetitions == 0 && scr.LastReviewedAt == null)
                     .OrderBy(scr => scr.NextReviewAt)
-                    .Take(Math.Min(request.MaxWords, remainingNew))
+                    .Take(Math.Min(poolSize, remainingNew))
                     .ToListAsync();
                 // Review cards (capped by remaining budget)
                 var reviewCards = await baseQuery
                     .Where(scr => !scr.IsLearning && (scr.Repetitions > 0 || scr.LastReviewedAt != null))
                     .OrderBy(scr => scr.NextReviewAt)
-                    .Take(Math.Min(request.MaxWords, remainingReviews))
+                    .Take(Math.Min(poolSize, remainingReviews))
                     .ToListAsync();
-                allDueCards = learningCards.Concat(newCards).Concat(reviewCards).Take(request.MaxWords).ToList();
+                allDueCards = learningCards.Concat(newCards).Concat(reviewCards).Take(poolSize).ToList();
             }
 
             if (!allDueCards.Any())
@@ -1161,18 +1164,24 @@ namespace LinguaReadApi.Controllers
 
             var wordList = string.Join("\n", targetWords.Select(w => $"- {w.Term} ({w.Translation})"));
 
+            var hasPool = targetWords.Count > request.MaxWords;
+            var selectionInstruction = hasPool
+                ? $"From the vocabulary pool below, SELECT exactly {request.MaxWords} words that work best together in a coherent story. Prioritize words that naturally fit the same theme or narrative. You do NOT need to use all words — pick the {request.MaxWords} most fitting ones."
+                : "You MUST naturally incorporate ALL of the following vocabulary words into the story. Each word must appear at least once in clear, meaningful context.";
+
             var prompt = $@"Write a short story in {languageName} at {level} level.
 
-You MUST naturally incorporate ALL of the following vocabulary words into the story. Each word must appear at least once in clear, meaningful context.
+{selectionInstruction}
 
-Vocabulary words to include:
+Vocabulary {(hasPool ? "pool" : "words to include")}:
 {wordList}
 
 Requirements:
 - Write approximately {request.MaxLength} words
 - Use vocabulary and grammar appropriate for {level} level learners
-- Each target word should appear in a clear, meaningful context
+- Each selected word should appear in a clear, meaningful context
 - The story should be coherent and interesting, not a forced list of sentences
+- Prefer words that naturally cluster around a common theme for better story flow
 - Return ONLY the story text
 - After the story, on a new line, write ""USED_WORDS:"" followed by a comma-separated list of the target words you actually used (in their exact base form as provided above)
 
@@ -1186,6 +1195,12 @@ Requirements:
             // 6. Parse USED_WORDS from response
             var (storyText, usedWords) = SrsStoryResponseParser.Parse(
                 rawResponse, targetWords.Select(w => w.Term).ToList());
+
+            // Filter targetWords to only those actually used by the AI
+            var usedWordsLower = usedWords.Select(w => w.ToLowerInvariant()).ToHashSet();
+            var usedTargetWords = targetWords
+                .Where(tw => usedWordsLower.Contains(tw.Term.ToLowerInvariant()))
+                .ToList();
 
             // 7. Save story as a Text record so words can be saved against it
             var storyTitle = string.IsNullOrWhiteSpace(request.Theme)
@@ -1208,7 +1223,7 @@ Requirements:
                 Story = storyText,
                 TextId = storyTextRecord.TextId,
                 LanguageCode = language?.Code ?? "",
-                TargetWords = targetWords,
+                TargetWords = usedTargetWords,
                 UsedWords = usedWords,
                 RemainingNewBudget = remainingNew,
                 RemainingReviewBudget = remainingReviews

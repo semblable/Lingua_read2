@@ -94,6 +94,18 @@ const Library = () => {
     clearSelection();
   }, [fetchContents, fetchAllFolders, clearSelection]);
 
+  // Re-fetch when the page becomes visible again (e.g. returning from TextDisplay/BookDetail)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        fetchContents();
+        fetchAllFolders();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [fetchContents, fetchAllFolders]);
+
   // Get unique languages from current items
   const uniqueLanguages = useMemo(() => {
     const langs = new Set();

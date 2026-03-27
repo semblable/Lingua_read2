@@ -1533,12 +1533,6 @@ const TextDisplay = () => {
   }, [isAudioLesson, srtLines, displayMode, currentSrtLineId, globalSettings.sentenceMode, currentSegmentIndex, isMobile]);
 
   // --- Effects ---
-  useEffect(() => {
-  }, []);
-
-  useEffect(() => {
-  }, [globalSettings.lineSpacing]);
-
   // --- End Effects ---
   useEffect(() => {
     if (typeof window === 'undefined') return;

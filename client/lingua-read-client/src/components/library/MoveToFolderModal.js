@@ -31,24 +31,33 @@ const MoveToFolderModal = ({ show, onHide, folders, onMove, itemCount }) => {
     return FOLDER_COLORS[folder.color] || folder.color;
   };
 
-  const renderFolder = (folder, depth = 0) => (
-    <React.Fragment key={folder.folderId}>
-      <ListGroup.Item
-        action
-        active={selectedFolderId === folder.folderId}
-        onClick={() => setSelectedFolderId(folder.folderId)}
-        style={{ paddingLeft: `${1 + depth * 1.5}rem` }}
-        className="d-flex align-items-center"
-      >
-        <i className="bi bi-folder-fill me-2" style={{ color: getFolderColor(folder) }}></i>
-        {folder.name}
-        {folder.itemCount > 0 && (
-          <small className="text-muted ms-auto">{folder.itemCount}</small>
-        )}
-      </ListGroup.Item>
-      {getChildren(folder.folderId).map(child => renderFolder(child, depth + 1))}
-    </React.Fragment>
-  );
+  const selectedStyle = {
+    outline: '2px solid #0d6efd',
+    outlineOffset: '-2px',
+    fontWeight: 600
+  };
+
+  const renderFolder = (folder, depth = 0) => {
+    const isSelected = selectedFolderId === folder.folderId;
+    return (
+      <React.Fragment key={folder.folderId}>
+        <ListGroup.Item
+          action
+          onClick={() => setSelectedFolderId(folder.folderId)}
+          style={{ paddingLeft: `${1 + depth * 1.5}rem`, ...(isSelected ? selectedStyle : {}) }}
+          className="d-flex align-items-center"
+        >
+          <i className="bi bi-folder-fill me-2" style={{ color: getFolderColor(folder) }}></i>
+          {folder.name}
+          <span className="ms-auto d-flex align-items-center gap-2">
+            {folder.itemCount > 0 && <small className="text-muted">{folder.itemCount}</small>}
+            {isSelected && <i className="bi bi-check-circle-fill text-primary"></i>}
+          </span>
+        </ListGroup.Item>
+        {getChildren(folder.folderId).map(child => renderFolder(child, depth + 1))}
+      </React.Fragment>
+    );
+  };
 
   return (
     <Modal show={show} onHide={onHide} onExited={handleExited} centered>
@@ -57,15 +66,21 @@ const MoveToFolderModal = ({ show, onHide, folders, onMove, itemCount }) => {
       </Modal.Header>
       <Modal.Body style={{ maxHeight: '400px', overflowY: 'auto' }}>
         <ListGroup variant="flush">
-          <ListGroup.Item
-            action
-            active={selectedFolderId === null}
-            onClick={() => setSelectedFolderId(null)}
-            className="d-flex align-items-center"
-          >
-            <i className="bi bi-house me-2"></i>
-            Library Root
-          </ListGroup.Item>
+          {(() => {
+            const isSelected = selectedFolderId === null;
+            return (
+              <ListGroup.Item
+                action
+                onClick={() => setSelectedFolderId(null)}
+                style={isSelected ? selectedStyle : {}}
+                className="d-flex align-items-center"
+              >
+                <i className="bi bi-house me-2"></i>
+                Library Root
+                {isSelected && <i className="bi bi-check-circle-fill text-primary ms-auto"></i>}
+              </ListGroup.Item>
+            );
+          })()}
           {rootFolders.map(folder => renderFolder(folder))}
         </ListGroup>
         {folders.length === 0 && (

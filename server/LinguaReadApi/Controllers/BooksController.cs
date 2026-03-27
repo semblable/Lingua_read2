@@ -1711,28 +1711,34 @@ namespace LinguaReadApi.Controllers
             book.LastReadAt = DateTime.UtcNow;
             book.LastReadTextId = text.TextId;
             book.LastReadPartId = text.PartNumber;
-            
+
+            // Mark the text/part as finished so FinishedPartCount updates in library
+            if (!text.IsFinished)
+            {
+                text.IsFinished = true;
+            }
+
             await _context.SaveChangesAsync();
             
-            // Calculate completion percentage based on text position
-            // Get total number of texts/parts in this book
+            // Calculate completion percentage based on actual finished parts count
             int totalTexts = await _context.Texts
                 .Where(t => t.BookId == id)
                 .CountAsync();
 
+            int finishedTexts = await _context.Texts
+                .Where(t => t.BookId == id && t.IsFinished)
+                .CountAsync();
+
             double completionPercentage;
-            // Check if this is the last lesson
-            if (totalTexts > 0 && text.PartNumber == totalTexts)
+            if (totalTexts > 0 && finishedTexts >= totalTexts)
             {
                 book.IsFinished = true;
                 completionPercentage = 100.0;
             }
             else
             {
-                // Calculate progress based on current part number and format to 2 decimal places
-                // Use ?? 0 to handle potential (though unlikely) null PartNumber
                 completionPercentage = totalTexts > 0
-                    ? Math.Round(((double)(text.PartNumber ?? 0) / totalTexts) * 100, 2)
+                    ? Math.Round((double)finishedTexts / totalTexts * 100, 2)
                     : 0;
             }
             // Save changes again to persist IsFinished if updated

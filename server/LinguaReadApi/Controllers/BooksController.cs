@@ -26,14 +26,16 @@ namespace LinguaReadApi.Controllers
     public class BooksController : ControllerBase
     {
         private readonly AppDbContext _context;
+        private readonly ILogger<BooksController> _logger;
         private static readonly JsonSerializerOptions StructuredContentJsonOptions = new(JsonSerializerDefaults.Web)
         {
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase
         };
 
-        public BooksController(AppDbContext context)
+        public BooksController(AppDbContext context, ILogger<BooksController> logger)
         {
             _context = context;
+            _logger = logger;
         }
 
         // GET: api/books

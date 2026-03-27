@@ -333,7 +333,6 @@ const SecondaryControls = React.memo(({
         variant="outline-secondary"
         onClick={() => {
           const newSize = Math.max(12, globalSettings.textSize - 2);
-          console.log('[Save Settings] Saving Text Size via API:', newSize);
           updateSetting('textSize', newSize);
           updateUserSettings({ textSize: newSize })
             .catch(err => console.error('[Save Settings] Failed to save text size via API:', err));
@@ -346,7 +345,6 @@ const SecondaryControls = React.memo(({
         variant="outline-secondary"
         onClick={() => {
           const newSize = Math.min(32, globalSettings.textSize + 2);
-          console.log('[Save Settings] Saving Text Size via API:', newSize);
           updateSetting('textSize', newSize);
           updateUserSettings({ textSize: newSize })
             .catch(err => console.error('[Save Settings] Failed to save text size via API:', err));
@@ -914,7 +912,6 @@ const WordInfoPanel = React.memo(({
                   if (!selectedWord) return;
                   const term = encodeURIComponent(selectedWord);
                   const url = dict.urlTemplate.replace('###', term);
-                  console.log(`[Dictionary] Clicked: ${dict.dictionaryId}, Type: ${dict.displayType}, URL: ${url}`);
                   if (dict.displayType === 'popup') {
                     window.open(url, '_blank', 'noopener,noreferrer');
                     setEmbeddedUrl(null);
@@ -1537,12 +1534,9 @@ const TextDisplay = () => {
 
   // --- Effects ---
   useEffect(() => {
-    console.log('[TextDisplay] Mounted');
-    return () => console.log('[TextDisplay] Unmounted');
   }, []);
 
   useEffect(() => {
-    console.log('[TextDisplay] globalSettings.lineSpacing updated:', globalSettings.lineSpacing);
   }, [globalSettings.lineSpacing]);
 
   // --- End Effects ---
@@ -1813,7 +1807,6 @@ const TextDisplay = () => {
       // Replace the entire words state with the newly fetched data
       setWords(allLanguageWords);
       setLanguageWordsLoaded(true);
-      console.log(`[fetchAllLanguageWords] Replaced words state with ${allLanguageWords.length} words from backend.`);
     } catch (error) { console.error('Error fetching language words:', error); setLanguageWordsLoaded(true); }
   }, [setWords]); // Dependency: setWords
 
@@ -2281,9 +2274,7 @@ const TextDisplay = () => {
   }), [globalSettings.textSize, getFontFamilyForList]); // getFontFamilyForList already depends on textFont
 
   const handleLineClick = useCallback((startTime) => {
-    console.log(`[handleLineClick] Attempting seek to: ${startTime} (Type: ${typeof startTime})`);
     if (audioRef.current) {
-      console.log(`[handleLineClick] audioRef found. Current time before seek: ${audioRef.current.currentTime}`);
       audioRef.current.currentTime = startTime;
       audioCurrentTimeRef.current = startTime;
 
@@ -2302,7 +2293,6 @@ const TextDisplay = () => {
         if (audioRef.current) { console.log(`[handleLineClick] audioRef current time after seek attempt: ${audioRef.current.currentTime}`); }
       }, 0);
     } else {
-      console.log('[handleLineClick] audioRef.current is null!');
     }
   }, [currentSegmentIndex, displayMode, isAudioLesson, isSentenceMode, srtLines]);
 
@@ -2628,7 +2618,6 @@ const TextDisplay = () => {
     if (isMobile || hasActiveTextSelection()) return;
     if (!text?.textId || typeof sentenceIndex !== 'number') return;
 
-    console.log(`[Bookmark] Toggling bookmark for text ${text.textId}, sentence ${sentenceIndex}`);
     toggleBookmark(text.textId, sentenceIndex); // Call the utility
 
     // Re-fetch bookmarks from storage and update state to trigger UI refresh
@@ -2649,10 +2638,8 @@ const TextDisplay = () => {
   useEffect(() => {
     // --- Debug: Check what triggered this effect ---
     if (prevFetchAllLanguageWordsRef.current !== fetchAllLanguageWords) {
-      console.log('[TextDisplay] fetchText Effect triggered by: fetchAllLanguageWords change');
       prevFetchAllLanguageWordsRef.current = fetchAllLanguageWords;
     } else {
-      console.log(`[TextDisplay] fetchText Effect triggered by: textId change (${textId}) or mount`);
     }
 
     // --- Set initial panel width from global settings ---
@@ -2684,7 +2671,6 @@ const TextDisplay = () => {
         skipInitialAudioLessonSegmentPlaybackRef.current = true;
         pendingSentenceCreditRef.current = new Set();
       } else {
-        console.log(`[TextDisplay] Refreshing data for same text ${textId} (skipping loading state)`);
       }
 
       try {
@@ -2695,14 +2681,12 @@ const TextDisplay = () => {
           if (!isAudioLesson) setIsAudioLesson(true);
 
           // --- DEBUG: Log the path being used ---
-          console.log(`[Audio Lesson DEBUG] Setting audio source. data.audioFilePath = "${data.audioFilePath}"`);
           // Correctly set audio source - remove API_URL prefix as it's a direct file path
           const newAudioSrc = `/${data.audioFilePath}`;
           if (audioSrc !== newAudioSrc) {
             setAudioSrc(newAudioSrc);
           }
           // --- DEBUG: Log after setting src and check if load() needs to be called ---
-          console.log(`[Audio Lesson DEBUG] Set audioSrc to: ${newAudioSrc}. Checking audioRef...`);
           // Load call moved to a separate useEffect hook dependent on audioSrc
           // --- END DEBUG ---
           // --- END DEBUG ---
@@ -2722,7 +2706,6 @@ const TextDisplay = () => {
         if (data?.textId) {
           const loadedBookmarks = getBookmarkedSentences(data.textId);
           setBookmarkedIndices(loadedBookmarks);
-          console.log(`[Bookmarks] Loaded ${loadedBookmarks.length} bookmarks for text ${data.textId}`);
         }
 
         // --- Parallel fetch of all independent data ---
@@ -2768,7 +2751,6 @@ const TextDisplay = () => {
         // Process result 1: language config
         if (results[1].status === 'fulfilled' && results[1].value) {
           setLanguageConfig(results[1].value);
-          console.log('[Language Config] Fetched:', results[1].value);
         } else {
           if (results[1].status === 'rejected') {
             console.error('Failed to fetch language configuration:', results[1].reason);
@@ -2901,10 +2883,8 @@ const TextDisplay = () => {
             let translationToUse = wordData.translation || '';
             if (!translationToUse && text?.languageCode) {
               try {
-                console.log(`[Keyboard Shortcut] Fetching translation for "${hoveredWordTerm}"...`);
                 const result = await translateText(hoveredWordTerm, text.languageCode, translationTargetLanguageCode);
                 translationToUse = result?.translatedText || '';
-                console.log(`[Keyboard Shortcut] Got translation: "${translationToUse}"`);
               } catch (err) {
                 console.error(`[Keyboard Shortcut] Failed to fetch translation for ${hoveredWordTerm}:`, err);
                 // Continue with empty translation rather than failing
@@ -2925,10 +2905,8 @@ const TextDisplay = () => {
               let translationToUse = '';
               if (text?.languageCode) {
                 try {
-                  console.log(`[Keyboard Shortcut] Fetching translation for new word "${hoveredWordTerm}"...`);
                   const result = await translateText(hoveredWordTerm, text.languageCode, translationTargetLanguageCode);
                   translationToUse = result?.translatedText || '';
-                  console.log(`[Keyboard Shortcut] Got translation for new word: "${translationToUse}"`);
                 } catch (err) {
                   console.error(`[Keyboard Shortcut] Failed to fetch translation for ${hoveredWordTerm}:`, err);
                   // Continue with empty translation rather than failing
@@ -2965,7 +2943,6 @@ const TextDisplay = () => {
     // Ensure selectedWord is used here, as displayedWord might be slightly different if selection changed rapidly
     const termToSave = selectedWord || displayedWord?.term;
     if (!termToSave || processingWord || isTranslating) {
-      console.log(`[handleSaveWord] Aborted: termToSave=${termToSave}, processingWord=${processingWord}, isTranslating=${isTranslating}`); // Added logging
       return;
     }
     setSaveSuccess(false); setProcessingWord(true);
@@ -2995,10 +2972,8 @@ const TextDisplay = () => {
       if (displayedWord) {
         // Determine the status to save (current status, or 1 if untracked)
         const statusToSave = displayedWord.status > 0 ? displayedWord.status : 1;
-        console.log(`[Enter Save] Saving word: "${displayedWord.term}", Status: ${statusToSave}, Translation: "${translation}"`); // Added logging
         handleSaveWord(statusToSave); // handleSaveWord is now defined before this
       } else {
-        console.log('[Enter Save] No displayedWord, cannot save.'); // Added logging
       }
     }
   }, [displayedWord, handleSaveWord, translation]); // handleSaveWord dependency is now safe
@@ -3176,7 +3151,6 @@ const TextDisplay = () => {
   // --- End Loading/Error States ---
 
   // DEBUG: Log isAudioLesson state before rendering
-  console.log(`[Render Check] isAudioLesson state: ${isAudioLesson}`);
 
   const primaryControls = (
     <PrimaryControls

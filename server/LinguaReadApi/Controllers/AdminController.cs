@@ -154,7 +154,7 @@ namespace LinguaReadApi.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Exception occurred during database restore request processing.");
-                return StatusCode(500, $"Internal server error during restore: {ex.Message}");
+                return StatusCode(500, "Restore failed. Check server logs.");
             }
         }
 

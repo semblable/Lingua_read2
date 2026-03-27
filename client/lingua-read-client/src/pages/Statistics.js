@@ -53,16 +53,13 @@ const Statistics = () => {
   // Helper function to safely calculate total words read
   const calculateTotalWordsRead = (statistics) => {
     if (!statistics) {
-      console.log('No statistics provided to calculateTotalWordsRead');
       return 0;
     }
 
-    console.log('Calculating total words read from:', statistics);
 
     // First check if we have TotalWordsRead directly on the statistics object
     if (statistics.TotalWordsRead || statistics.totalWordsRead) {
       const directTotal = statistics.TotalWordsRead || statistics.totalWordsRead;
-      console.log(`Using direct TotalWordsRead value: ${directTotal}`);
       return directTotal;
     }
 
@@ -71,30 +68,23 @@ const Statistics = () => {
 
     if (Array.isArray(statistics.LanguageStatistics)) {
       langStats = statistics.LanguageStatistics;
-      console.log('Using LanguageStatistics array (PascalCase)');
     } else if (Array.isArray(statistics.languageStatistics)) {
       langStats = statistics.languageStatistics;
-      console.log('Using languageStatistics array (camelCase)');
     } else {
-      console.log('No language statistics array found, trying to convert from object if present');
       // Try to handle if it's an object instead of an array
       if (statistics.LanguageStatistics && typeof statistics.LanguageStatistics === 'object') {
         langStats = Object.values(statistics.LanguageStatistics);
-        console.log('Converted LanguageStatistics object to array');
       } else if (statistics.languageStatistics && typeof statistics.languageStatistics === 'object') {
         langStats = Object.values(statistics.languageStatistics);
-        console.log('Converted languageStatistics object to array');
       }
     }
 
     // Log for debugging
-    console.log('Language statistics for total words calculation:', langStats);
 
     // Handle both camelCase and PascalCase property names
     try {
       const total = langStats.reduce((total, lang) => {
         if (!lang) {
-          console.log('Found null/undefined language entry in array');
           return total;
         }
 
@@ -103,11 +93,9 @@ const Statistics = () => {
           lang.totalWordsRead ||
           0;
 
-        console.log(`Language ${lang.LanguageName || lang.languageName || 'unknown'}: ${wordsRead} words read`);
         return total + wordsRead;
       }, 0);
 
-      console.log(`Total words read calculated from language stats: ${total}`);
       return total;
     } catch (err) {
       console.error('Error calculating total words read:', err);
@@ -121,11 +109,9 @@ const Statistics = () => {
       setError(''); // Reset any existing errors
 
       try {
-        console.log('Starting statistics fetch in Statistics component...');
         const data = await getUserStatistics();
 
         // Debug output for the raw data
-        console.log('Statistics data received in component:', data);
 
         if (!data) {
           console.error('No data returned from getUserStatistics');
@@ -156,9 +142,6 @@ const Statistics = () => {
           data.FinishedBooks = data.FinishedBooks || data.finishedBooks || 0;
 
           // Debug logging
-          console.log('Normalized language statistics:', data.LanguageStatistics);
-          console.log('Total languages:', data.TotalLanguages || data.totalLanguages || 0);
-          console.log('Total words read calculation:', calculateTotalWordsRead(data));
         }
 
         setStats(data);
@@ -195,13 +178,11 @@ const Statistics = () => {
   const fetchReadingActivityData = async (period, languageId = null) => {
     setLoadingActivity(true);
     try {
-      console.log(`Starting reading activity fetch for period: ${period}, languageId: ${languageId}`);
       // Pass timezone offset for all periods except 'all'
       const timezoneOffsetMinutes = period !== 'all' ? new Date().getTimezoneOffset() : null;
       // Convert 'all' string to null for API
       const langId = languageId === 'all' ? null : languageId;
       const data = await getReadingActivity(period, timezoneOffsetMinutes, langId);
-      console.log('Reading activity data received:', data);
 
       if (!data) {
         console.error('No activity data returned from getReadingActivity');
@@ -213,7 +194,6 @@ const Statistics = () => {
       data.ActivityByDate = data.ActivityByDate || data.activityByDate || {};
       data.ActivityByLanguage = data.ActivityByLanguage || data.activityByLanguage || {};
       data.TotalWordsRead = data.TotalWordsRead || data.totalWordsRead || 0;
-      console.log('Normalized reading activity data:', data);
       setReadingActivity(data);
     } catch (err) {
       console.error('Failed to load reading activity', err);
@@ -226,13 +206,11 @@ const Statistics = () => {
   const fetchListeningActivityData = async (period, languageId = null) => {
     setLoadingListeningActivity(true);
     try {
-      console.log(`Starting listening activity fetch for period: ${period}, languageId: ${languageId}`);
       // Pass timezone offset for all periods except 'all'
       const timezoneOffsetMinutes = period !== 'all' ? new Date().getTimezoneOffset() : null;
       // Convert 'all' string to null for API
       const langId = languageId === 'all' ? null : languageId;
       const data = await getListeningActivity(period, timezoneOffsetMinutes, langId);
-      console.log('Raw listening activity data received:', data);
 
       if (!data || data.error) {
         console.error('No listening activity data or error in response:', data?.error);
@@ -248,7 +226,6 @@ const Statistics = () => {
           languageName: item.LanguageName || item.languageName || 'Unknown',
           totalSeconds: item.TotalSeconds || item.totalSeconds || 0
         }));
-        console.log('Normalized listening activity data:', JSON.stringify(data));
         setListeningActivity(data);
       }
     } catch (err) {
@@ -270,10 +247,8 @@ const Statistics = () => {
 
   // Re-fetch data when the page becomes visible again (keep existing logic)
   useEffect(() => {
-    console.log('[Stats Visibility useEffect] Setting up visibility listener.'); // Log hook trigger
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
-        console.log('[Stats Visibility] Page became visible, triggering re-fetch...');
         // Re-trigger the fetch functions using the current activityPeriod and selectedLanguage
         fetchReadingActivityData(activityPeriod, selectedLanguage);
         fetchListeningActivityData(activityPeriod, selectedLanguage);
@@ -290,7 +265,6 @@ const Statistics = () => {
 
   // Callback function for successful manual entry
   const handleManualSubmitSuccess = () => {
-    console.log("Manual entry successful, refreshing activity data...");
     // Re-fetch data for the current period and language
     fetchReadingActivityData(activityPeriod, selectedLanguage);
     fetchListeningActivityData(activityPeriod, selectedLanguage);
@@ -571,7 +545,6 @@ const Statistics = () => {
   // const totalWordsRead = calculateTotalWordsRead(stats); // Removed unused variable assignment
 
   // Filter language statistics if a specific language is selected
-  console.log('languagesArray', languagesArray);
 
   // Prepare data for activity charts
   const readingActivityByDate = prepareActivityByDateData();

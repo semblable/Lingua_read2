@@ -70,13 +70,11 @@ const BatchAudioCreate = () => {
         }
 
         // --- Start: Fuzzy Pairing Validation using Normalization (with Debugging) ---
-        console.log("[Debug Validation] Starting fuzzy pairing validation..."); // DEBUG LOG
         const fileList = Array.from(files).sort((a, b) =>
             a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })
         );
         const mp3Files = fileList.filter(f => f.name.toLowerCase().endsWith('.mp3'));
         const srtFiles = fileList.filter(f => f.name.toLowerCase().endsWith('.srt'));
-        console.log(`[Debug Validation] Found ${mp3Files.length} MP3s and ${srtFiles.length} SRTs.`); // DEBUG LOG
 
         // Function to normalize base names: trim whitespace/punctuation, convert to lowercase
         const normalizeBaseName = (name) => {
@@ -104,7 +102,6 @@ const BatchAudioCreate = () => {
             for (const pattern of patterns) {
                 const match = srtFileName.match(pattern);
                 if (match) {
-                    console.log(`[Debug extractSrtInfo] File: ${srtFileName}, Matched pattern, Base: "${match[1]}", Lang: ${match[2]}`); // DEBUG
                     return {
                         baseName: match[1].trim(), // Trim whitespace from base name
                         lang: match[2].toLowerCase(),
@@ -114,7 +111,6 @@ const BatchAudioCreate = () => {
             }
 
             // If none matched, it's an invalid format
-            console.log(`[Debug extractSrtInfo] File: ${srtFileName}, NO PATTERN MATCHED`); // DEBUG
             return { error: 'Invalid Format (expected base + lang suffix like __fr, _fr, -fr, .fr)', originalFullName: srtFileName };
         };
 
@@ -128,25 +124,20 @@ const BatchAudioCreate = () => {
         };
 
         // 1. Process and Normalize MP3s
-        console.log("[Debug Validation] --- Processing MP3s ---"); // DEBUG LOG
         mp3Files.forEach(mp3File => {
             const rawBaseName = mp3File.name.replace(/\.mp3$/i, '').trim(); // Trim whitespace
             const normalized = normalizeBaseName(rawBaseName);
-            console.log(`[Debug MP3] File: "${mp3File.name}", Raw Base: "${rawBaseName}", Normalized: "${normalized}"`); // DEBUG LOG
             if (!mp3sByNormalizedBase.has(normalized)) mp3sByNormalizedBase.set(normalized, []);
             mp3sByNormalizedBase.get(normalized).push(mp3File);
         });
 
         // 2. Process, Validate Format, and Normalize SRTs
-        console.log("[Debug Validation] --- Processing SRTs ---"); // DEBUG LOG
         srtFiles.forEach(srtFile => {
             const info = extractSrtInfo(srtFile.name);
             if (info.error) {
-                console.log(`[Debug SRT] File: ${srtFile.name}, Format Error: ${info.error}`); // DEBUG LOG
                 addProblem(srtFile.name, info.error);
             } else {
                 const normalized = normalizeBaseName(info.baseName);
-                console.log(`[Debug SRT] File: ${srtFile.name}, Raw Base: "${info.baseName}", Normalized: "${normalized}", Lang: ${info.lang}`); // DEBUG LOG
                 if (!srtsByNormalizedBase.has(normalized)) srtsByNormalizedBase.set(normalized, []);
                 // Store the original file along with extracted info
                 srtsByNormalizedBase.get(normalized).push({ ...info, file: srtFile });
@@ -154,7 +145,6 @@ const BatchAudioCreate = () => {
         });
 
         // 3. Attempt Pairing and Identify Issues
-        console.log("[Debug Validation] --- Attempting Pairing ---"); // DEBUG LOG
         const pairedMp3s = new Set();
         const pairedSrts = new Set();
         const ambiguousMatches = new Set(); // Store normalized names with >1 MP3 or >1 SRT
@@ -183,18 +173,15 @@ const BatchAudioCreate = () => {
 
         mp3sByNormalizedBase.forEach((mp3List, normalizedName) => {
             const matchingSrtList = findFuzzyMatch(normalizedName, srtsByNormalizedBase);
-            console.log(`[Debug Pair Check] Normalized Name: "${normalizedName}", MP3s: ${mp3List.length}, SRTs: ${matchingSrtList ? matchingSrtList.length : 0}`); // DEBUG LOG
 
             // Check for ambiguity first
             let isAmbiguous = false;
             if (mp3List.length > 1) {
-                console.log(`[Debug Ambiguity] Normalized Name: "${normalizedName}" has ${mp3List.length} MP3s: ${mp3List.map(f => f.name).join(', ')}`); // DEBUG LOG
                 ambiguousMatches.add(normalizedName);
                 mp3List.forEach(f => addProblem(f.name, `Ambiguous Match (multiple MP3s normalize to '${normalizedName}')`));
                 isAmbiguous = true;
             }
             if (matchingSrtList && matchingSrtList.length > 1) {
-                console.log(`[Debug Ambiguity] Normalized Name: "${normalizedName}" has ${matchingSrtList.length} SRTs: ${matchingSrtList.map(s => s.originalFullName).join(', ')}`); // DEBUG LOG
                 ambiguousMatches.add(normalizedName);
                 matchingSrtList.forEach(s => addProblem(s.originalFullName, `Ambiguous Match (multiple SRTs normalize to '${normalizedName}')`));
                 isAmbiguous = true;
@@ -204,12 +191,10 @@ const BatchAudioCreate = () => {
             if (!isAmbiguous) {
                 if (mp3List.length === 1 && matchingSrtList && matchingSrtList.length === 1) {
                     // Perfect 1-to-1 match based on normalized name
-                    console.log(`[Debug Pair Success] Normalized: "${normalizedName}", MP3: ${mp3List[0].name}, SRT: ${matchingSrtList[0].originalFullName}`); // DEBUG LOG
                     pairedMp3s.add(mp3List[0].name);
                     pairedSrts.add(matchingSrtList[0].originalFullName);
                 } else if (mp3List.length === 1 && !matchingSrtList) {
                     // MP3 exists, but no SRT normalizes to the same name (and MP3 wasn't ambiguous)
-                    console.log(`[Debug Pair Fail] MP3 ${mp3List[0].name} (Normalized: "${normalizedName}") found no matching SRT.`); // DEBUG LOG
                     addProblem(mp3List[0].name, 'Missing Matching SRT');
                 }
                 // Note: The case where SRT exists but MP3 doesn't is handled in step 4
@@ -217,21 +202,17 @@ const BatchAudioCreate = () => {
         });
 
         // 4. Identify Unpaired SRTs (that weren't ambiguous or invalid format)
-        console.log("[Debug Validation] --- Checking Unpaired SRTs ---"); // DEBUG LOG
         srtsByNormalizedBase.forEach((srtList, normalizedName) => {
             srtList.forEach(srtInfo => {
                 // Check if this SRT was successfully paired OR if it was already flagged (e.g., ambiguous, invalid format)
                 if (!pairedSrts.has(srtInfo.originalFullName) && !problematicFiles.has(srtInfo.originalFullName)) {
-                    console.log(`[Debug Unpaired SRT Check] SRT: ${srtInfo.originalFullName} (Normalized: "${normalizedName}") was not paired and not previously flagged.`); // DEBUG LOG
                     // Try fuzzy matching before marking as missing
                     const fuzzyMp3Match = findFuzzyMatch(normalizedName, mp3sByNormalizedBase);
                     if (!fuzzyMp3Match) {
                         // No MP3 existed with the same normalized name (even fuzzy)
-                        console.log(`[Debug Unpaired SRT] Reason: No MP3 found with normalized name "${normalizedName}".`); // DEBUG LOG
                         addProblem(srtInfo.originalFullName, 'Missing Matching MP3');
                     } else if (ambiguousMatches.has(normalizedName)) {
                         // An MP3 existed, but it was part of an ambiguous match
-                        console.log(`[Debug Unpaired SRT] Reason: Corresponding MP3(s) for normalized name "${normalizedName}" were ambiguous.`); // DEBUG LOG
                         addProblem(srtInfo.originalFullName, 'Unpaired (Related MP3 was ambiguous)');
                     } else {
                         // Should not happen if logic is correct: MP3 exists, is unique, SRT exists, is unique, but not paired?
@@ -244,7 +225,6 @@ const BatchAudioCreate = () => {
 
 
         if (problematicFiles.size > 0) {
-            console.log("[Debug Validation] Found problems:", problematicFiles); // DEBUG LOG
             const errorMessages = [];
             problematicFiles.forEach((reasons, fileName) => {
                 errorMessages.push(`${fileName} (${Array.from(reasons).join(', ')})`);
@@ -261,7 +241,6 @@ const BatchAudioCreate = () => {
             // setError("Could not reliably pair all files. Please check names.");
             // return;
         }
-        console.log("[Debug Validation] Validation successful."); // DEBUG LOG
 
         // --- End: Fuzzy Pairing Validation using Normalization (with Debugging) ---
 

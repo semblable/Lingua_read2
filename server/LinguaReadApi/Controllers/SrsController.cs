@@ -1233,11 +1233,11 @@ Requirements:
         private Guid GetUserId()
         {
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-            if (string.IsNullOrEmpty(userIdClaim))
+            if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var userId))
             {
                 throw new UnauthorizedAccessException("User ID not found in token");
             }
-            return Guid.Parse(userIdClaim);
+            return userId;
         }
 
         /// <summary>Daily new-card cap: DB may store 0 from an old migration default; treat as app default.</summary>

@@ -306,10 +306,10 @@ namespace LinguaReadApi.Controllers
         {
             var userId = GetUserId();
 
-            // Parse comma-separated IDs (guard against empty string which causes int.Parse to throw)
-            var textIdList = string.IsNullOrWhiteSpace(textIds) ? new List<int>() : textIds.Split(',').Select(int.Parse).ToList();
-            var bookIdList = string.IsNullOrWhiteSpace(bookIds) ? new List<int>() : bookIds.Split(',').Select(int.Parse).ToList();
-            var folderIdList = string.IsNullOrWhiteSpace(folderIds) ? new List<int>() : folderIds.Split(',').Select(int.Parse).ToList();
+            // Parse comma-separated IDs, ignoring any non-integer values
+            var textIdList = textIds?.Split(',').Select(s => int.TryParse(s, out var id) ? (int?)id : null).Where(id => id.HasValue).Select(id => id!.Value).ToList() ?? new List<int>();
+            var bookIdList = bookIds?.Split(',').Select(s => int.TryParse(s, out var id) ? (int?)id : null).Where(id => id.HasValue).Select(id => id!.Value).ToList() ?? new List<int>();
+            var folderIdList = folderIds?.Split(',').Select(s => int.TryParse(s, out var id) ? (int?)id : null).Where(id => id.HasValue).Select(id => id!.Value).ToList() ?? new List<int>();
 
             // Delete texts (and their TextWords via cascade)
             if (textIdList.Any())

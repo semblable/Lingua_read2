@@ -1,11 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Container, Row, Col, Button, ListGroup, Card, Spinner, Alert } from 'react-bootstrap';
-import LanguageForm from './LanguageForm'; // <-- Import the form component
-import { getAllLanguages } from '../../utils/api'; // <-- Import API function
-// TODO: Import Zustand store hook if needed
+import LanguageForm from './LanguageForm';
+import { getAllLanguages, deleteLanguage } from '../../utils/api';
 
 function LanguagesPage() {
-    // TODO: Add state for languages list, selected language, loading, errors etc.
     const [languages, setLanguages] = useState([]);
     const [isLoading, setIsLoading] = useState(true); // Start loading initially
     const [error, setError] = useState(null);
@@ -34,30 +32,22 @@ function LanguagesPage() {
 
     // --- Handlers for LanguageForm ---
     const handleSave = () => {
-        console.log("Language saved (placeholder) - Refetching list and clearing selection.");
-        setSelectedLanguage(null); // Clear selection after save
-        fetchLanguages(); // Refetch the list to show changes
+        setSelectedLanguage(null);
+        fetchLanguages();
     };
 
     const handleCancel = () => {
-        console.log("Form cancelled.");
-        setSelectedLanguage(null); // Clear selection
+        setSelectedLanguage(null);
     };
 
-    const handleDelete = (languageId) => {
-        // This function will be passed to LanguageForm, which calls it after confirmation
-        console.log(`TODO: Call API to delete language ID: ${languageId}`);
-        // Example:
-        // try {
-        //     await deleteLanguage(languageId);
-        //     handleSave(); // Reuse save logic to refetch and clear selection
-        // } catch (err) {
-        //     setError(err.message || 'Failed to delete language.');
-        // }
-        handleSave(); // Temporarily just refetch and clear
+    const handleDelete = async (languageId) => {
+        try {
+            await deleteLanguage(languageId);
+            handleSave();
+        } catch (err) {
+            setError(err.message || 'Failed to delete language.');
+        }
     };
-
-    // TODO: Implement functions for fetching, adding, updating, deleting languages
 
     return (
         <Container fluid className="mt-4">

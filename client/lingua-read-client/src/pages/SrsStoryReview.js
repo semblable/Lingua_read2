@@ -132,7 +132,7 @@ const SrsStoryReview = () => {
       try {
         const words = await getWordsByLanguage(parseInt(selectedLanguage));
         const map = {};
-        words.forEach(w => { map[w.term.toLowerCase()] = w; });
+        words.forEach(w => { if (w.term) map[w.term.toLowerCase()] = w; });
         setExistingWordsMap(map);
       } catch (e) {
         console.error('Failed to load vocabulary:', e);

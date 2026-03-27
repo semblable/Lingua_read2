@@ -36,7 +36,6 @@ const attemptRelogin = async () => {
   if (_reloginPromise) return _reloginPromise;
   _reloginPromise = (async () => {
     try {
-      console.log('[Auth] Token expired or lost, attempting auto-relogin...');
       const fullUrl = API_URL + '/auth/login';
       const res = await fetch(fullUrl, { method: 'POST', credentials: 'include', mode: 'cors' });
       if (!res.ok) return null;
@@ -48,7 +47,6 @@ const attemptRelogin = async () => {
           const { useAuthStore } = await import('./store');
           useAuthStore.getState().setToken(data.token);
         } catch (_) { /* store not available */ }
-        console.log('[Auth] Auto-relogin successful.');
         return data.token;
       }
       return null;
@@ -67,7 +65,6 @@ const uploadWithProgress = (endpoint, formData, onProgress) => {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     const fullUrl = API_URL + (endpoint.startsWith('/') ? endpoint : '/' + endpoint);
-    console.log(`[API Upload] Starting upload to ${fullUrl}`);
 
     // Upload progress event
     if (onProgress) {
@@ -158,12 +155,6 @@ const fetchApi = async (endpoint, options = {}) => {
       'Accept': 'application/json',
       'Content-Type': 'application/json'
     };
-
-    // --- DEBUG: Log token status specifically for /usersettings ---
-    if (endpoint === '/usersettings') {
-      console.log(`[fetchApi DEBUG /usersettings] Token check: token exists=${!!token}, type=${typeof token}, trimmed length=${token?.trim().length ?? 'N/A'}`);
-    }
-    // --- END DEBUG ---
 
     // Only add Authorization header if token exists and is a string
     if (token && typeof token === 'string' && token.trim() !== '') {
@@ -269,7 +260,6 @@ const fetchApiDownload = async (endpoint, options = {}) => {
 
   try {
     const token = getToken();
-    console.log('[API Download Debug] Endpoint:', endpoint);
     const headers = {
       // Accept might vary depending on what the server sends, but often octet-stream for downloads
       'Accept': 'application/octet-stream',
@@ -291,10 +281,8 @@ const fetchApiDownload = async (endpoint, options = {}) => {
     };
 
     const fullUrl = API_URL + endpoint; // Directly concatenate the relative path
-    console.log('[API Download Debug] Full URL:', fullUrl.toString());
 
     const response = await fetch(fullUrl.toString(), requestConfig);
-    console.log('[API Download Debug] Response status:', response.status);
 
     if (!response.ok) {
       let errorMessage = `HTTP error! Status: ${response.status}`;
@@ -339,7 +327,6 @@ const fetchApiDownload = async (endpoint, options = {}) => {
 // Simple test function to check API connectivity
 export const testApiConnection = async () => {
   try {
-    console.log('Testing API connection to server using /api/Health');
     // Use the dedicated, unauthenticated health check endpoint
     const response = await fetch(`${API_URL}/Health`, {
       method: 'GET',
@@ -348,7 +335,6 @@ export const testApiConnection = async () => {
       },
       mode: 'cors'
     });
-    console.log('API response status:', response.status);
     return response.ok;
   } catch (error) {
     console.error('API connection error:', error);
@@ -439,7 +425,6 @@ export const createText = (title, content, languageId, tag = null) => {
 // Modified to use XHR for progress
 export const createAudioLesson = async (title, languageId, audioFile, srtFile, tag = null, onProgress = null) => {
   const endpoint = '/texts/audio';
-  console.log(`[API] Creating audio lesson: "${title}" with tag: ${tag || 'none'}`);
 
   try {
     const formData = new FormData();

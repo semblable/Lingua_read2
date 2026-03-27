@@ -15,10 +15,12 @@ namespace LinguaReadApi.Controllers
     public class LanguagesController : ControllerBase
     {
         private readonly ILanguageService _languageService;
+        private readonly ILogger<LanguagesController> _logger;
 
-        public LanguagesController(ILanguageService languageService)
+        public LanguagesController(ILanguageService languageService, ILogger<LanguagesController> logger)
         {
             _languageService = languageService;
+            _logger = logger;
         }
 
         // GET: api/languages
@@ -35,15 +37,8 @@ namespace LinguaReadApi.Controllers
             }
             catch (Exception ex)
             {
-                Console.WriteLine("=== ERROR in GetAllLanguages ===");
-                Console.WriteLine($"Message: {ex.Message}");
-                Console.WriteLine($"StackTrace: {ex.StackTrace}");
-                if (ex.InnerException != null)
-                {
-                    Console.WriteLine($"InnerException: {ex.InnerException.Message}");
-                    Console.WriteLine($"Inner StackTrace: {ex.InnerException.StackTrace}");
-                }
-                return StatusCode(500, $"Server error: {ex.Message}");
+                _logger.LogError(ex, "Error in GetAllLanguages");
+                return StatusCode(500, "An error occurred while retrieving languages.");
             }
         }
 
@@ -65,7 +60,7 @@ namespace LinguaReadApi.Controllers
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error getting language by ID {id}: {ex.Message}");
+                _logger.LogError(ex, "Error getting language by ID {LanguageId}", id);
                 return StatusCode(500, "An error occurred while retrieving the language.");
             }
         }
@@ -98,7 +93,7 @@ namespace LinguaReadApi.Controllers
             }
             catch (DbUpdateException ex) // Catch potential unique constraint violations
             {
-                 Console.WriteLine($"Error creating language: {ex.InnerException?.Message ?? ex.Message}");
+                 _logger.LogError(ex, "Error creating language");
                  // Check if it's a unique constraint violation (specific error code/message depends on DB)
                  if (ex.InnerException?.Message.Contains("duplicate key value violates unique constraint") ?? false)
                  {
@@ -108,7 +103,7 @@ namespace LinguaReadApi.Controllers
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error creating language: {ex.Message}");
+                _logger.LogError(ex, "Error creating language");
                 return StatusCode(500, "An error occurred while creating the language.");
             }
         }
@@ -149,7 +144,7 @@ namespace LinguaReadApi.Controllers
             }
             catch (DbUpdateException ex) // Catch potential unique constraint violations on update
             {
-                 Console.WriteLine($"Error updating language {id}: {ex.InnerException?.Message ?? ex.Message}");
+                 _logger.LogError(ex, "Error updating language {LanguageId}", id);
                  if (ex.InnerException?.Message.Contains("duplicate key value violates unique constraint") ?? false)
                  {
                      return Conflict("A language with the same Name or Code already exists.");
@@ -158,7 +153,7 @@ namespace LinguaReadApi.Controllers
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error updating language {id}: {ex.Message}");
+                _logger.LogError(ex, "Error updating language {LanguageId}", id);
                 return StatusCode(500, "An error occurred while updating the language.");
             }
         }
@@ -183,7 +178,7 @@ namespace LinguaReadApi.Controllers
             }
             catch (DbUpdateException ex) // Catch potential constraint violations on delete
             {
-                 Console.WriteLine($"Error deleting language {id}: {ex.InnerException?.Message ?? ex.Message}");
+                 _logger.LogError(ex, "Error deleting language {LanguageId}", id);
                  // Check if it's a foreign key constraint violation
                  if (ex.InnerException is Npgsql.PostgresException pgEx && pgEx.SqlState == "23503") // 23503 = foreign_key_violation
                  {
@@ -193,7 +188,7 @@ namespace LinguaReadApi.Controllers
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error deleting language {id}: {ex.Message}");
+                _logger.LogError(ex, "Error deleting language {LanguageId}", id);
                 return StatusCode(500, "An error occurred while deleting the language.");
             }
         }

@@ -60,11 +60,11 @@ namespace LinguaReadApi.Controllers
         private Guid GetUserId()
         {
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-            if (string.IsNullOrEmpty(userIdClaim))
+            if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var userId))
             {
                 throw new UnauthorizedAccessException("User ID not found in token");
             }
-            return Guid.Parse(userIdClaim);
+            return userId;
         }
     }
 

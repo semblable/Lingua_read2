@@ -190,62 +190,71 @@ namespace LinguaReadApi.Controllers
                         {
                             // Optionally handle tags that are too long (e.g., log, skip, return error)
                             // For now, we'll just skip them to avoid database errors
-                            Console.WriteLine($"Skipping tag '{tagName}' because it exceeds the maximum length of 50 characters.");
+                            _logger.LogWarning("Skipping tag '{TagName}' because it exceeds the maximum length of 50 characters.", tagName);
                         }
                     }
                 }
             }
 
             // 3. Add Book and New Tags to Context
-            _context.Books.Add(book);
-            if (newTagsToCreate.Any())
+            await using var transaction = await _context.Database.BeginTransactionAsync();
+            try
             {
-                _context.Tags.AddRange(newTagsToCreate);
-            }
-
-            // 4. Save Book and New Tags (Gets BookId and TagIds)
-            await _context.SaveChangesAsync();
-
-            // 5. Create BookTag Associations
-            if (tagsToAssociate.Any())
-            {
-                foreach (var tag in tagsToAssociate)
+                _context.Books.Add(book);
+                if (newTagsToCreate.Any())
                 {
-                    // Ensure the tag has an ID (it should after the previous SaveChanges)
-                    if (tag.TagId > 0)
-                    {
-                         _context.BookTags.Add(new BookTag { BookId = book.BookId, TagId = tag.TagId });
-                    }
-                    else
-                    {
-                        // This case might happen if a tag was skipped due to length
-                        Console.WriteLine($"Warning: Could not associate tag '{tag.Name}' as it might have been skipped or failed to save.");
-                    }
+                    _context.Tags.AddRange(newTagsToCreate);
                 }
-                // 6. Save Associations
+
+                // 4. Save Book and New Tags (Gets BookId and TagIds)
                 await _context.SaveChangesAsync();
-            }
 
-
-            // 7. Create initial text parts (Existing Logic)
-            if (!string.IsNullOrEmpty(createBookDto.Content))
-            {
-                var textParts = SplitContent(createBookDto.Content, createBookDto.SplitMethod, createBookDto.MaxSegmentSize);
-                for (int i = 0; i < textParts.Count; i++)
+                // 5. Create BookTag Associations
+                if (tagsToAssociate.Any())
                 {
-                    var text = new Text
+                    foreach (var tag in tagsToAssociate)
                     {
-                        Title = $"{book.Title} - Part {i + 1}",
-                        Content = textParts[i],
-                        LanguageId = book.LanguageId,
-                        UserId = userId,
-                        BookId = book.BookId,
-                        PartNumber = i + 1,
-                        CreatedAt = DateTime.UtcNow
-                    };
-                    _context.Texts.Add(text);
+                        // Ensure the tag has an ID (it should after the previous SaveChanges)
+                        if (tag.TagId > 0)
+                        {
+                             _context.BookTags.Add(new BookTag { BookId = book.BookId, TagId = tag.TagId });
+                        }
+                        else
+                        {
+                            _logger.LogWarning("Could not associate tag '{TagName}' as it might have been skipped or failed to save.", tag.Name);
+                        }
+                    }
+                    // 6. Save Associations
+                    await _context.SaveChangesAsync();
                 }
-                await _context.SaveChangesAsync(); // Save Texts
+
+                // 7. Create initial text parts (Existing Logic)
+                if (!string.IsNullOrEmpty(createBookDto.Content))
+                {
+                    var textParts = SplitContent(createBookDto.Content, createBookDto.SplitMethod, createBookDto.MaxSegmentSize);
+                    for (int i = 0; i < textParts.Count; i++)
+                    {
+                        var text = new Text
+                        {
+                            Title = $"{book.Title} - Part {i + 1}",
+                            Content = textParts[i],
+                            LanguageId = book.LanguageId,
+                            UserId = userId,
+                            BookId = book.BookId,
+                            PartNumber = i + 1,
+                            CreatedAt = DateTime.UtcNow
+                        };
+                        _context.Texts.Add(text);
+                    }
+                    await _context.SaveChangesAsync(); // Save Texts
+                }
+
+                await transaction.CommitAsync();
+            }
+            catch (DbUpdateException ex)
+            {
+                _logger.LogError(ex, "Database error creating book '{Title}' for user {UserId}", createBookDto.Title, userId);
+                return StatusCode(500, "A database error occurred while creating the book.");
             }
 
             // 8. Prepare Response DTO
@@ -329,9 +338,8 @@ namespace LinguaReadApi.Controllers
             }
             catch (Exception ex)
             {
-                // Log the exception (replace Console.WriteLine with proper logging in production)
-                Console.WriteLine($"Error processing uploaded file '{uploadDto.File.FileName}': {ex.ToString()}");
-                return StatusCode(StatusCodes.Status500InternalServerError, $"Error processing uploaded file: {ex.Message}");
+                _logger.LogError(ex, "Error processing uploaded file '{FileName}'", uploadDto.File.FileName);
+                return StatusCode(StatusCodes.Status500InternalServerError, "Error processing uploaded file.");
             }
 
             if (fileExtension != ".epub" && string.IsNullOrWhiteSpace(bookContent))
@@ -384,7 +392,7 @@ namespace LinguaReadApi.Controllers
                             newTagsToCreate.Add(newTag);
                             tagsToAssociate.Add(newTag);
                         } else {
-                             Console.WriteLine($"Skipping tag '{tagName}' during upload because it exceeds the maximum length of 50 characters.");
+                             _logger.LogWarning("Skipping tag '{TagName}' during upload because it exceeds the maximum length of 50 characters.", tagName);
                              // Optionally add to ModelState or return BadRequest
                         }
                     }
@@ -406,7 +414,7 @@ namespace LinguaReadApi.Controllers
             }
             catch (DbUpdateException ex)
             {
-                 Console.WriteLine($"Error saving book/new tags during upload: {ex.ToString()}");
+                 _logger.LogError(ex, "Error saving book/new tags during upload");
                  return StatusCode(StatusCodes.Status500InternalServerError, "Error saving book metadata.");
             }
 
@@ -421,7 +429,7 @@ namespace LinguaReadApi.Controllers
                          _context.BookTags.Add(new BookTag { BookId = book.BookId, TagId = tag.TagId });
                      } else {
                          // This might happen if a new tag failed to save for some reason
-                         Console.WriteLine($"Warning: Could not associate tag '{tag.Name}' during upload as it lacks an ID.");
+                         _logger.LogWarning("Could not associate tag '{TagName}' during upload as it lacks an ID.", tag.Name);
                      }
                 }
                 // 6. Save Associations
@@ -431,7 +439,7 @@ namespace LinguaReadApi.Controllers
                  }
                  catch (DbUpdateException ex)
                  {
-                     Console.WriteLine($"Error saving book tag associations during upload: {ex.ToString()}");
+                     _logger.LogError(ex, "Error saving book tag associations during upload");
                      // Consider if this error is critical enough to stop; maybe just log and continue
                  }
             }
@@ -503,7 +511,7 @@ namespace LinguaReadApi.Controllers
             }
             catch (Exception ex)
             {
-                 Console.WriteLine($"Error splitting or saving text parts during upload: {ex.ToString()}");
+                 _logger.LogError(ex, "Error splitting or saving text parts during upload");
                  CleanupBookAssets(userId, book.BookId);
                  _context.Books.Remove(book); // Attempt to clean up book if text splitting fails
                  await _context.SaveChangesAsync();
@@ -588,7 +596,7 @@ namespace LinguaReadApi.Controllers
                 if (fileExtension != ".mp3")
                 {
                     // Log or return specific error for non-mp3 files? For now, skip.
-                    Console.WriteLine($"Skipping non-MP3 file: {file.FileName}");
+                    _logger.LogWarning("Skipping non-MP3 file: {FileName}", file.FileName);
                     continue;
                 }
 
@@ -620,7 +628,7 @@ namespace LinguaReadApi.Controllers
                 catch (Exception ex)
                 {
                     // Log error saving file
-                    Console.WriteLine($"Error saving audiobook file '{file.FileName}' for book {bookId}: {ex.Message}");
+                    _logger.LogError(ex, "Error saving audiobook file '{FileName}' for book {BookId}", file.FileName, bookId);
                     // Consider how to handle partial failures - rollback? return error?
                     // For now, continue processing other files but maybe return a specific status code later.
                 }
@@ -1913,7 +1921,7 @@ namespace LinguaReadApi.Controllers
                         }
                         else
                         {
-                            Console.WriteLine($"Skipping tag '{tagName}' during update because it exceeds the maximum length of 50 characters.");
+                            _logger.LogWarning("Skipping tag '{TagName}' during update because it exceeds the maximum length of 50 characters.", tagName);
                             // Optionally add to ModelState or return BadRequest
                         }
                     }
@@ -1993,7 +2001,7 @@ namespace LinguaReadApi.Controllers
             catch (DbUpdateException ex) // Catch potential issues during save
             {
                 // Log error, return appropriate status code
-                Console.WriteLine($"Error updating book tags: {ex.Message}"); // Basic logging
+                _logger.LogError(ex, "Error updating book tags");
                 return StatusCode(StatusCodes.Status500InternalServerError, "An error occurred while updating tags.");
             }
 
@@ -2052,12 +2060,12 @@ namespace LinguaReadApi.Controllers
         private Guid GetUserId()
         {
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-            if (string.IsNullOrEmpty(userIdClaim))
+            if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var userId))
             {
                 throw new UnauthorizedAccessException("User ID not found in token");
             }
-            
-            return Guid.Parse(userIdClaim);
+
+            return userId;
         }
 
         private async Task<bool> BookExists(int id, Guid userId)

@@ -21,7 +21,8 @@ import {
   updateFolder,
   deleteFolder as deleteFolderApi,
   moveLibraryItems,
-  reorderLibraryItems
+  reorderLibraryItems,
+  deleteLibraryItems
 } from '../utils/api';
 import FolderCard from '../components/library/FolderCard';
 import LibraryBookCard from '../components/library/LibraryBookCard';
@@ -68,15 +69,14 @@ const Library = () => {
     setLoading(true);
     setError(null);
     try {
-      const langId = languageFilter || null;
-      const data = await getLibraryContents(currentFolderId, langId);
+      const data = await getLibraryContents(currentFolderId);
       setContents(data);
     } catch (err) {
       setError(err.message || 'Failed to load library');
     } finally {
       setLoading(false);
     }
-  }, [currentFolderId, languageFilter, setContents, setLoading, setError]);
+  }, [currentFolderId, setContents, setLoading, setError]);
 
   const fetchAllFolders = useCallback(async () => {
     try {
@@ -101,24 +101,35 @@ const Library = () => {
     return [...langs].sort();
   }, [books, texts]);
 
-  // Filter items by search query
+  // Filter items by search query and language
   const filteredFolders = useMemo(() => {
-    if (!searchQuery) return folders;
-    const q = searchQuery.toLowerCase();
-    return folders.filter(f => f.name.toLowerCase().includes(q));
+    let result = folders;
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      result = result.filter(f => f.name.toLowerCase().includes(q));
+    }
+    return result;
   }, [folders, searchQuery]);
 
   const filteredBooks = useMemo(() => {
-    if (!searchQuery) return books;
-    const q = searchQuery.toLowerCase();
-    return books.filter(b => b.title.toLowerCase().includes(q));
-  }, [books, searchQuery]);
+    let result = books;
+    if (languageFilter) result = result.filter(b => b.languageName === languageFilter);
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      result = result.filter(b => b.title.toLowerCase().includes(q));
+    }
+    return result;
+  }, [books, searchQuery, languageFilter]);
 
   const filteredTexts = useMemo(() => {
-    if (!searchQuery) return texts;
-    const q = searchQuery.toLowerCase();
-    return texts.filter(t => t.title.toLowerCase().includes(q));
-  }, [texts, searchQuery]);
+    let result = texts;
+    if (languageFilter) result = result.filter(t => t.languageName === languageFilter);
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      result = result.filter(t => t.title.toLowerCase().includes(q));
+    }
+    return result;
+  }, [texts, searchQuery, languageFilter]);
 
   // Build sortable IDs for dnd-kit
   const sortableIds = useMemo(() => [
@@ -172,6 +183,35 @@ const Library = () => {
     clearSelection();
     await fetchContents();
     await fetchAllFolders();
+  };
+
+  const handleDeleteSelected = async () => {
+    const count = selectedItems.length;
+    const hasBooks = selectedItems.some(i => i.type === 'book');
+    const hasFolders = selectedItems.some(i => i.type === 'folder');
+    let msg = `Delete ${count} selected item${count !== 1 ? 's' : ''}?`;
+    if (hasBooks) msg += '\n\nBooks and all their parts will be permanently deleted.';
+    if (hasFolders) msg += '\n\nFolder contents will be moved to the parent folder.';
+    msg += '\n\nThis cannot be undone.';
+
+    if (!window.confirm(msg)) return;
+
+    const textIds = selectedItems.filter(i => i.type === 'text').map(i => i.id);
+    const bookIds = selectedItems.filter(i => i.type === 'book').map(i => i.id);
+    const folderIds = selectedItems.filter(i => i.type === 'folder').map(i => i.id);
+
+    try {
+      await deleteLibraryItems(
+        textIds.length > 0 ? textIds : null,
+        bookIds.length > 0 ? bookIds : null,
+        folderIds.length > 0 ? folderIds : null
+      );
+      clearSelection();
+      await fetchContents();
+      await fetchAllFolders();
+    } catch (err) {
+      setError(`Failed to delete items: ${err.message}`);
+    }
   };
 
   const handleNavigateFolder = (id) => {
@@ -332,6 +372,9 @@ const Library = () => {
                 <i className="bi bi-box-arrow-up me-1"></i>Move to Root
               </Button>
             )}
+            <Button size="sm" variant="outline-danger" onClick={handleDeleteSelected}>
+              <i className="bi bi-trash me-1"></i>Delete
+            </Button>
             <Button size="sm" variant="outline-secondary" onClick={clearSelection}>
               Clear
             </Button>
@@ -365,6 +408,8 @@ const Library = () => {
                       onDelete={handleDeleteFolder}
                       onChangeColor={handleChangeColor}
                       isOver={activeId && activeId !== `folder-${folder.folderId}`}
+                      isSelected={!!selectedItems.find(i => i.id === folder.folderId && i.type === 'folder')}
+                      onSelect={toggleSelectItem}
                     />
                   </Col>
                 ))}

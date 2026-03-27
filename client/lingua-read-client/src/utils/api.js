@@ -1281,12 +1281,19 @@ export const applySrsReadingCredit = async (wordId) => {
 
 // ==================== Library / Folders ====================
 
-export const getLibraryContents = async (folderId = null, languageId = null) => {
+export const getLibraryContents = async (folderId = null) => {
   const params = new URLSearchParams();
   if (folderId) params.append('folderId', folderId);
-  if (languageId) params.append('languageId', languageId);
   const queryString = params.toString();
   return await fetchApi(`/folders/library${queryString ? `?${queryString}` : ''}`);
+};
+
+export const deleteLibraryItems = async (textIds = null, bookIds = null, folderIds = null) => {
+  const params = new URLSearchParams();
+  if (textIds?.length) params.append('textIds', textIds.join(','));
+  if (bookIds?.length) params.append('bookIds', bookIds.join(','));
+  if (folderIds?.length) params.append('folderIds', folderIds.join(','));
+  return await fetchApi(`/folders/delete-items?${params.toString()}`, { method: 'DELETE' });
 };
 
 export const getFolders = async () => {

@@ -14,7 +14,7 @@ const FOLDER_COLORS = {
   yellow: '#F1C40F'
 };
 
-const FolderCard = ({ folder, onClick, onRename, onDelete, onChangeColor, isOver }) => {
+const FolderCard = ({ folder, onClick, onRename, onDelete, onChangeColor, isOver, isSelected, onSelect }) => {
   const [showDropdown, setShowDropdown] = useState(false);
 
   const {
@@ -63,6 +63,14 @@ const FolderCard = ({ folder, onClick, onRename, onDelete, onChangeColor, isOver
             {folder.itemCount > 0 && (
               <small className="text-muted">{folder.itemCount} item{folder.itemCount !== 1 ? 's' : ''}</small>
             )}
+          </div>
+          <div className="form-check me-2" onClick={(e) => e.stopPropagation()}>
+            <input
+              className="form-check-input"
+              type="checkbox"
+              checked={isSelected}
+              onChange={() => onSelect(folder.folderId, 'folder')}
+            />
           </div>
           <Dropdown
             show={showDropdown}

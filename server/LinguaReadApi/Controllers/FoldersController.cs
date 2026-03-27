@@ -48,11 +48,10 @@ namespace LinguaReadApi.Controllers
             return folders;
         }
 
-        // GET: api/folders/library?folderId=&languageId=
+        // GET: api/folders/library?folderId=
         [HttpGet("library")]
         public async Task<ActionResult<LibraryContentsDto>> GetLibraryContents(
-            [FromQuery] int? folderId = null,
-            [FromQuery] int? languageId = null)
+            [FromQuery] int? folderId = null)
         {
             var userId = GetUserId();
 
@@ -99,13 +98,8 @@ namespace LinguaReadApi.Controllers
             }
 
             // Get child folders
-            var foldersQuery = _context.Folders
-                .Where(f => f.UserId == userId && f.ParentFolderId == folderId);
-
-            if (languageId.HasValue)
-                foldersQuery = foldersQuery.Where(f => f.LanguageId == null || f.LanguageId == languageId.Value);
-
-            var folders = await foldersQuery
+            var folders = await _context.Folders
+                .Where(f => f.UserId == userId && f.ParentFolderId == folderId)
                 .OrderBy(f => f.SortOrder)
                 .ThenBy(f => f.Name)
                 .Select(f => new FolderDto
@@ -122,13 +116,8 @@ namespace LinguaReadApi.Controllers
                 .ToListAsync();
 
             // Get books in this folder
-            var booksQuery = _context.Books
-                .Where(b => b.UserId == userId && b.FolderId == folderId);
-
-            if (languageId.HasValue)
-                booksQuery = booksQuery.Where(b => b.LanguageId == languageId.Value);
-
-            var books = await booksQuery
+            var books = await _context.Books
+                .Where(b => b.UserId == userId && b.FolderId == folderId)
                 .Include(b => b.Language)
                 .Include(b => b.Texts)
                 .Include(b => b.BookTags).ThenInclude(bt => bt.Tag)
@@ -155,13 +144,8 @@ namespace LinguaReadApi.Controllers
                 .ToListAsync();
 
             // Get standalone texts in this folder (not part of a book, not srs-story)
-            var textsQuery = _context.Texts
-                .Where(t => t.UserId == userId && t.BookId == null && t.Tag != "srs-story" && t.FolderId == folderId);
-
-            if (languageId.HasValue)
-                textsQuery = textsQuery.Where(t => t.LanguageId == languageId.Value);
-
-            var texts = await textsQuery
+            var texts = await _context.Texts
+                .Where(t => t.UserId == userId && t.BookId == null && t.Tag != "srs-story" && t.FolderId == folderId)
                 .Include(t => t.Language)
                 .OrderBy(t => t.SortOrder)
                 .ThenByDescending(t => t.CreatedAt)
@@ -307,6 +291,62 @@ namespace LinguaReadApi.Controllers
             _context.Folders.Remove(folder);
             await _context.SaveChangesAsync();
 
+            return NoContent();
+        }
+
+        // DELETE: api/folders/delete-items
+        [HttpDelete("delete-items")]
+        public async Task<IActionResult> DeleteItems([FromQuery] string? textIds = null, [FromQuery] string? bookIds = null, [FromQuery] string? folderIds = null)
+        {
+            var userId = GetUserId();
+
+            // Parse comma-separated IDs
+            var textIdList = textIds?.Split(',').Select(int.Parse).ToList() ?? new List<int>();
+            var bookIdList = bookIds?.Split(',').Select(int.Parse).ToList() ?? new List<int>();
+            var folderIdList = folderIds?.Split(',').Select(int.Parse).ToList() ?? new List<int>();
+
+            // Delete texts (and their TextWords via cascade)
+            if (textIdList.Any())
+            {
+                var texts = await _context.Texts
+                    .Where(t => textIdList.Contains(t.TextId) && t.UserId == userId)
+                    .ToListAsync();
+                _context.Texts.RemoveRange(texts);
+            }
+
+            // Delete books (and their texts via cascade)
+            if (bookIdList.Any())
+            {
+                var books = await _context.Books
+                    .Where(b => bookIdList.Contains(b.BookId) && b.UserId == userId)
+                    .ToListAsync();
+                _context.Books.RemoveRange(books);
+            }
+
+            // Delete folders (move contents to parent first)
+            if (folderIdList.Any())
+            {
+                foreach (var fId in folderIdList)
+                {
+                    var folder = await _context.Folders
+                        .FirstOrDefaultAsync(f => f.FolderId == fId && f.UserId == userId);
+                    if (folder == null) continue;
+
+                    // Move children to parent
+                    var childFolders = await _context.Folders.Where(f => f.ParentFolderId == fId).ToListAsync();
+                    foreach (var child in childFolders) child.ParentFolderId = folder.ParentFolderId;
+
+                    var childTexts = await _context.Texts.Where(t => t.FolderId == fId).ToListAsync();
+                    foreach (var t in childTexts) t.FolderId = folder.ParentFolderId;
+
+                    var childBooks = await _context.Books.Where(b => b.FolderId == fId).ToListAsync();
+                    foreach (var b in childBooks) b.FolderId = folder.ParentFolderId;
+
+                    _context.Folders.Remove(folder);
+                }
+            }
+
+            await _context.SaveChangesAsync();
             return NoContent();
         }
 

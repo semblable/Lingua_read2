@@ -3030,7 +3030,7 @@ const TextDisplay = () => {
       console.error("Failed to mine sentence:", err);
       alert(`Failed to mine sentence: ${err.message}`);
     }
-  }, [displayedWord, currentSentenceSegment, text, mineSentence]);
+  }, [displayedWord, currentSentenceSegment, text]);
 
   const handleTranslateUnknownWords = async () => {
     if (!text || !text.content || !text.languageId) return;

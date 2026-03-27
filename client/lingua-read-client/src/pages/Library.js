@@ -54,6 +54,7 @@ const Library = () => {
   const [languageFilter, setLanguageFilter] = useState(() => {
     return localStorage.getItem('libraryLanguageFilter') || '';
   });
+  const [tagFilter, setTagFilter] = useState('');
 
   useEffect(() => {
     localStorage.setItem('libraryLanguageFilter', languageFilter);
@@ -101,6 +102,14 @@ const Library = () => {
     return [...langs].sort();
   }, [books, texts]);
 
+  // Get unique tags from current items
+  const uniqueTags = useMemo(() => {
+    const tags = new Set();
+    books.forEach(b => b.tags?.forEach(t => tags.add(t)));
+    texts.forEach(t => t.tag && tags.add(t.tag));
+    return [...tags].sort();
+  }, [books, texts]);
+
   // Filter items by search query and language
   const filteredFolders = useMemo(() => {
     let result = folders;
@@ -114,22 +123,24 @@ const Library = () => {
   const filteredBooks = useMemo(() => {
     let result = books;
     if (languageFilter) result = result.filter(b => b.languageName === languageFilter);
+    if (tagFilter) result = result.filter(b => b.tags?.includes(tagFilter));
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
       result = result.filter(b => b.title.toLowerCase().includes(q));
     }
     return result;
-  }, [books, searchQuery, languageFilter]);
+  }, [books, searchQuery, languageFilter, tagFilter]);
 
   const filteredTexts = useMemo(() => {
     let result = texts;
     if (languageFilter) result = result.filter(t => t.languageName === languageFilter);
+    if (tagFilter) result = result.filter(t => t.tag === tagFilter);
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
       result = result.filter(t => t.title.toLowerCase().includes(q));
     }
     return result;
-  }, [texts, searchQuery, languageFilter]);
+  }, [texts, searchQuery, languageFilter, tagFilter]);
 
   // Build sortable IDs for dnd-kit
   const sortableIds = useMemo(() => [
@@ -145,12 +156,14 @@ const Library = () => {
     await createFolder(name, parentId, color);
     await fetchContents();
     await fetchAllFolders();
+    // errors propagate to modal for display
   };
 
   const handleRenameFolder = async (folderId, data) => {
     await updateFolder(folderId, data);
     await fetchContents();
     await fetchAllFolders();
+    // errors propagate to modal for display
   };
 
   const handleDeleteFolder = async (folder) => {
@@ -174,15 +187,19 @@ const Library = () => {
     const textIds = selectedItems.filter(i => i.type === 'text').map(i => i.id);
     const bookIds = selectedItems.filter(i => i.type === 'book').map(i => i.id);
     const folderIds = selectedItems.filter(i => i.type === 'folder').map(i => i.id);
-    await moveLibraryItems(
-      textIds.length > 0 ? textIds : null,
-      bookIds.length > 0 ? bookIds : null,
-      folderIds.length > 0 ? folderIds : null,
-      targetFolderId
-    );
-    clearSelection();
-    await fetchContents();
-    await fetchAllFolders();
+    try {
+      await moveLibraryItems(
+        textIds.length > 0 ? textIds : null,
+        bookIds.length > 0 ? bookIds : null,
+        folderIds.length > 0 ? folderIds : null,
+        targetFolderId
+      );
+      clearSelection();
+      await fetchContents();
+      await fetchAllFolders();
+    } catch (err) {
+      setError(`Failed to move items: ${err.message}`);
+    }
   };
 
   const handleDeleteSelected = async () => {
@@ -294,9 +311,19 @@ const Library = () => {
     <Container className="py-4 main-content-padding">
       {/* Header */}
       <div className="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-        <h2 className="mb-0">
-          <i className="bi bi-collection me-2"></i>
+        <h2 className="mb-0 d-flex align-items-center gap-2">
+          <i className="bi bi-collection"></i>
           Library
+          {currentFolder && (
+            <Button
+              size="sm"
+              variant="outline-secondary"
+              onClick={() => { setRenameFolder(currentFolder); setShowRenameModal(true); }}
+              title="Edit folder"
+            >
+              <i className="bi bi-pencil me-1"></i>Edit Folder
+            </Button>
+          )}
         </h2>
         <div className="d-flex align-items-center gap-2 flex-wrap">
           {/* Search */}
@@ -320,6 +347,20 @@ const Library = () => {
               <option key={lang} value={lang}>{lang}</option>
             ))}
           </Form.Select>
+          {/* Tag filter */}
+          {uniqueTags.length > 0 && (
+            <Form.Select
+              size="sm"
+              value={tagFilter}
+              onChange={(e) => setTagFilter(e.target.value)}
+              style={{ width: '150px' }}
+            >
+              <option value="">All Tags</option>
+              {uniqueTags.map(tag => (
+                <option key={tag} value={tag}>{tag}</option>
+              ))}
+            </Form.Select>
+          )}
           {/* Actions */}
           <Button size="sm" variant="outline-primary" onClick={() => setShowCreateFolder(true)}>
             <i className="bi bi-folder-plus me-1"></i>New Folder
@@ -348,7 +389,7 @@ const Library = () => {
             <Breadcrumb.Item
               key={crumb.folderId}
               onClick={() => handleNavigateFolder(crumb.folderId)}
-              active={idx === breadcrumbs.length - 1 && !currentFolder}
+              active={idx === breadcrumbs.length - 1}
             >
               {crumb.name}
             </Breadcrumb.Item>

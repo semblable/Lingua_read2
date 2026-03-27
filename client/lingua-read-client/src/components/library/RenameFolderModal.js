@@ -1,23 +1,31 @@
 import React, { useState, useEffect } from 'react';
-import { Modal, Form, Button } from 'react-bootstrap';
+import { Modal, Form, Button, Alert } from 'react-bootstrap';
+import { FOLDER_COLORS } from './FolderCard';
 
 const RenameFolderModal = ({ show, onHide, folder, onSubmit }) => {
   const [name, setName] = useState('');
+  const [color, setColor] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
-    if (folder) setName(folder.name);
+    if (folder) {
+      setName(folder.name);
+      setColor(folder.color || '');
+    }
+    setError(null);
   }, [folder]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!name.trim() || !folder) return;
     setSubmitting(true);
+    setError(null);
     try {
-      await onSubmit(folder.folderId, { name: name.trim() });
+      await onSubmit(folder.folderId, { name: name.trim(), color: color || '' });
       onHide();
     } catch (err) {
-      // handled by parent
+      setError(err.message || 'Failed to rename folder');
     } finally {
       setSubmitting(false);
     }
@@ -27,17 +35,57 @@ const RenameFolderModal = ({ show, onHide, folder, onSubmit }) => {
     <Modal show={show} onHide={onHide} centered>
       <Form onSubmit={handleSubmit}>
         <Modal.Header closeButton>
-          <Modal.Title>Rename Folder</Modal.Title>
+          <Modal.Title>Edit Folder</Modal.Title>
         </Modal.Header>
         <Modal.Body>
-          <Form.Control
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            autoFocus
-            maxLength={200}
-            required
-          />
+          {error && <Alert variant="danger" className="py-2 mb-2">{error}</Alert>}
+          <Form.Group className="mb-3">
+            <Form.Label>Folder Name</Form.Label>
+            <Form.Control
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              autoFocus
+              maxLength={200}
+              required
+            />
+          </Form.Group>
+          <Form.Group>
+            <Form.Label>Color (optional)</Form.Label>
+            <div className="d-flex gap-2 flex-wrap">
+              <span
+                onClick={() => setColor('')}
+                style={{
+                  width: 28,
+                  height: 28,
+                  borderRadius: '50%',
+                  backgroundColor: '#6c757d',
+                  display: 'inline-block',
+                  cursor: 'pointer',
+                  border: color === '' ? '3px solid #000' : '3px solid transparent',
+                  transition: 'border-color 0.15s'
+                }}
+                title="Default"
+              ></span>
+              {Object.entries(FOLDER_COLORS).map(([colorName, colorValue]) => (
+                <span
+                  key={colorName}
+                  onClick={() => setColor(color === colorName ? '' : colorName)}
+                  style={{
+                    width: 28,
+                    height: 28,
+                    borderRadius: '50%',
+                    backgroundColor: colorValue,
+                    display: 'inline-block',
+                    cursor: 'pointer',
+                    border: color === colorName ? '3px solid #000' : '3px solid transparent',
+                    transition: 'border-color 0.15s'
+                  }}
+                  title={colorName}
+                ></span>
+              ))}
+            </div>
+          </Form.Group>
         </Modal.Body>
         <Modal.Footer>
           <Button variant="secondary" onClick={onHide}>Cancel</Button>

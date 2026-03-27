@@ -81,17 +81,19 @@ namespace LinguaReadApi.Controllers
 
                 currentFolder = folder;
 
-                // Build breadcrumb chain by walking up parents
+                // Build breadcrumb chain — load all user folders once to avoid N+1 queries
+                var allUserFolders = await _context.Folders
+                    .Where(f => f.UserId == userId)
+                    .Select(f => new { f.FolderId, f.Name, f.ParentFolderId })
+                    .ToListAsync();
+                var folderLookup = allUserFolders.ToDictionary(f => f.FolderId);
+
                 var visited = new HashSet<int>();
                 int? parentId = folderId;
                 while (parentId.HasValue)
                 {
-                    if (!visited.Add(parentId.Value)) break; // prevent infinite loop
-                    var parent = await _context.Folders
-                        .Where(f => f.FolderId == parentId.Value && f.UserId == userId)
-                        .Select(f => new { f.FolderId, f.Name, f.ParentFolderId })
-                        .FirstOrDefaultAsync();
-                    if (parent == null) break;
+                    if (!visited.Add(parentId.Value)) break; // prevent infinite loop on corrupt data
+                    if (!folderLookup.TryGetValue(parentId.Value, out var parent)) break;
                     breadcrumbs.Insert(0, new BreadcrumbDto { FolderId = parent.FolderId, Name = parent.Name });
                     parentId = parent.ParentFolderId;
                 }
@@ -246,6 +248,9 @@ namespace LinguaReadApi.Controllers
                         .AnyAsync(f => f.FolderId == dto.ParentFolderId.Value && f.UserId == userId);
                     if (!parentExists)
                         return BadRequest("Target parent folder not found");
+
+                    if (await WouldCreateCycle(id, dto.ParentFolderId.Value, userId))
+                        return BadRequest("Cannot move a folder into its own descendant");
                 }
 
                 folder.ParentFolderId = dto.ParentFolderId.Value == 0 ? null : dto.ParentFolderId.Value;
@@ -300,10 +305,10 @@ namespace LinguaReadApi.Controllers
         {
             var userId = GetUserId();
 
-            // Parse comma-separated IDs
-            var textIdList = textIds?.Split(',').Select(int.Parse).ToList() ?? new List<int>();
-            var bookIdList = bookIds?.Split(',').Select(int.Parse).ToList() ?? new List<int>();
-            var folderIdList = folderIds?.Split(',').Select(int.Parse).ToList() ?? new List<int>();
+            // Parse comma-separated IDs (guard against empty string which causes int.Parse to throw)
+            var textIdList = string.IsNullOrWhiteSpace(textIds) ? new List<int>() : textIds.Split(',').Select(int.Parse).ToList();
+            var bookIdList = string.IsNullOrWhiteSpace(bookIds) ? new List<int>() : bookIds.Split(',').Select(int.Parse).ToList();
+            var folderIdList = string.IsNullOrWhiteSpace(folderIds) ? new List<int>() : folderIds.Split(',').Select(int.Parse).ToList();
 
             // Delete texts (and their TextWords via cascade)
             if (textIdList.Any())
@@ -399,6 +404,16 @@ namespace LinguaReadApi.Controllers
             // Move folders
             if (dto.FolderIds?.Any() == true)
             {
+                if (dto.TargetFolderId.HasValue)
+                {
+                    foreach (var fId in dto.FolderIds)
+                    {
+                        if (fId == dto.TargetFolderId.Value) continue;
+                        if (await WouldCreateCycle(fId, dto.TargetFolderId.Value, userId))
+                            return BadRequest($"Cannot move a folder into its own descendant");
+                    }
+                }
+
                 var folders = await _context.Folders
                     .Where(f => dto.FolderIds.Contains(f.FolderId) && f.UserId == userId)
                     .ToListAsync();
@@ -486,6 +501,24 @@ namespace LinguaReadApi.Controllers
             return Math.Max(maxFolderSort, Math.Max(maxBookSort, maxTextSort));
         }
 
+        // Returns true if moving movingFolderId to targetParentId would create a cycle
+        // (i.e., targetParentId is a descendant of movingFolderId)
+        private async Task<bool> WouldCreateCycle(int movingFolderId, int targetParentId, Guid userId)
+        {
+            var visited = new HashSet<int>();
+            int? current = targetParentId;
+            while (current.HasValue)
+            {
+                if (!visited.Add(current.Value)) return false; // existing cycle guard
+                if (current.Value == movingFolderId) return true;
+                current = await _context.Folders
+                    .Where(f => f.FolderId == current.Value && f.UserId == userId)
+                    .Select(f => f.ParentFolderId)
+                    .FirstOrDefaultAsync();
+            }
+            return false;
+        }
+
         private Guid GetUserId()
         {
             var userIdClaim = User.FindFirstValue(ClaimTypes.NameIdentifier);
@@ -571,6 +604,7 @@ namespace LinguaReadApi.Controllers
     {
         public string? Name { get; set; }
         public string? Color { get; set; }
+        // null = no change; 0 = move to root (library root); positive int = target folder ID
         public int? ParentFolderId { get; set; }
     }
 

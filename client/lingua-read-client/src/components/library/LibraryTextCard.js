@@ -36,7 +36,7 @@ const LibraryTextCard = ({ text, isSelected, onSelect }) => {
             >
               <i className="bi bi-grip-vertical"></i>
             </div>
-            <div className="flex-grow-1 min-width-0">
+            <div className="flex-grow-1" style={{ minWidth: 0 }}>
               <Card.Title as="h6" className="text-truncate mb-0">
                 {text.isAudioLesson && <i className="bi bi-headphones me-1" title="Audio Lesson"></i>}
                 {text.isFinished && <i className="bi bi-check-circle-fill text-success me-1" title="Completed"></i>}

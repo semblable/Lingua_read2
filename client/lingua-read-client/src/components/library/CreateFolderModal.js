@@ -1,23 +1,25 @@
 import React, { useState } from 'react';
-import { Modal, Form, Button } from 'react-bootstrap';
+import { Modal, Form, Button, Alert } from 'react-bootstrap';
 import { FOLDER_COLORS } from './FolderCard';
 
 const CreateFolderModal = ({ show, onHide, onSubmit, parentFolderId = null }) => {
   const [name, setName] = useState('');
   const [color, setColor] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState(null);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!name.trim()) return;
     setSubmitting(true);
+    setError(null);
     try {
       await onSubmit(name.trim(), parentFolderId, color || null);
       setName('');
       setColor('');
       onHide();
     } catch (err) {
-      // error handled by parent
+      setError(err.message || 'Failed to create folder');
     } finally {
       setSubmitting(false);
     }
@@ -26,6 +28,7 @@ const CreateFolderModal = ({ show, onHide, onSubmit, parentFolderId = null }) =>
   const handleExited = () => {
     setName('');
     setColor('');
+    setError(null);
   };
 
   return (
@@ -35,6 +38,7 @@ const CreateFolderModal = ({ show, onHide, onSubmit, parentFolderId = null }) =>
           <Modal.Title>Create Folder</Modal.Title>
         </Modal.Header>
         <Modal.Body>
+          {error && <Alert variant="danger" className="py-2">{error}</Alert>}
           <Form.Group className="mb-3">
             <Form.Label>Folder Name</Form.Label>
             <Form.Control

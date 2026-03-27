@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Card, Dropdown, Badge } from 'react-bootstrap';
+import { Card, Dropdown } from 'react-bootstrap';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 

@@ -67,19 +67,19 @@ const LibraryBookCard = ({ book, isSelected, onSelect }) => {
           </div>
           <small className="text-muted mb-2">{book.languageName}</small>
 
-          {book.totalWords > 0 && (
+          {book.partCount > 0 && (
             <div className="mb-2">
               <ProgressBar
                 now={book.completionPercentage}
-                label={`${book.completionPercentage}%`}
                 className="themed-progress-bar"
                 style={{ height: '0.5rem' }}
+                title={`${book.finishedPartCount}/${book.partCount} parts finished`}
               />
             </div>
           )}
 
           <div className="text-muted small mt-auto">
-            {book.partCount} part{book.partCount !== 1 ? 's' : ''}
+            {book.finishedPartCount}/{book.partCount} part{book.partCount !== 1 ? 's' : ''}
             {book.tags?.length > 0 && (
               <span className="ms-2">
                 {book.tags.map(tag => (

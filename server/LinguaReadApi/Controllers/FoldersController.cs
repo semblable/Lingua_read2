@@ -133,6 +133,7 @@ namespace LinguaReadApi.Controllers
                     CoverImagePath = b.CoverImagePath,
                     LanguageName = b.Language.Name,
                     PartCount = b.Texts.Count,
+                    FinishedPartCount = b.Texts.Count(t => t.IsFinished),
                     LastReadTextId = b.LastReadTextId,
                     LastReadAt = b.LastReadAt,
                     TotalWords = b.TotalWords,
@@ -566,6 +567,7 @@ namespace LinguaReadApi.Controllers
         public string? CoverImagePath { get; set; }
         public string LanguageName { get; set; } = string.Empty;
         public int PartCount { get; set; }
+        public int FinishedPartCount { get; set; }
         public int? LastReadTextId { get; set; }
         public DateTime? LastReadAt { get; set; }
         public int TotalWords { get; set; }
@@ -575,8 +577,8 @@ namespace LinguaReadApi.Controllers
         public int SortOrder { get; set; }
         public int? FolderId { get; set; }
         public List<string> Tags { get; set; } = new();
-        public double CompletionPercentage => TotalWords > 0
-            ? Math.Round((double)(KnownWords + LearningWords) / TotalWords * 100, 1) : 0;
+        public double CompletionPercentage => PartCount > 0
+            ? Math.Round((double)FinishedPartCount / PartCount * 100, 1) : 0;
     }
 
     public class LibraryTextDto

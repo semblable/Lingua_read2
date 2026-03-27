@@ -42,10 +42,18 @@ namespace LinguaReadApi.Models
         [ForeignKey("Book")]
         public int? BookId { get; set; }
 
+        // Optional Folder relationship
+        [ForeignKey("Folder")]
+        public int? FolderId { get; set; }
+
+        // Position within folder for custom ordering
+        public int SortOrder { get; set; } = 0;
+
         // Navigation properties
         public virtual User User { get; set; } = null!;
         public virtual Language Language { get; set; } = null!;
         public virtual Book? Book { get; set; } // Made nullable to match BookId
+        public virtual Folder? Folder { get; set; }
         public virtual ICollection<TextWord> TextWords { get; set; } = new List<TextWord>();
 
         // Properties for Audio Lessons

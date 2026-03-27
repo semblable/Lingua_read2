@@ -30,6 +30,7 @@ namespace LinguaReadApi.Data
         public DbSet<SrsCardReview> SrsCardReviews { get; set; }
         public DbSet<SrsPhrase> SrsPhrases { get; set; }
         public DbSet<SrsReviewLog> SrsReviewLogs { get; set; }
+        public DbSet<Folder> Folders { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -316,6 +317,46 @@ namespace LinguaReadApi.Data
                 .HasForeignKey(sp => sp.TextId)
                 .IsRequired(false)
                 .OnDelete(DeleteBehavior.SetNull); // If text deleted, keep phrase but null out TextId
+
+            // Configure Folder entity
+            modelBuilder.Entity<Folder>()
+                .HasOne(f => f.User)
+                .WithMany()
+                .HasForeignKey(f => f.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<Folder>()
+                .HasOne(f => f.Language)
+                .WithMany()
+                .HasForeignKey(f => f.LanguageId)
+                .IsRequired(false)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            modelBuilder.Entity<Folder>()
+                .HasOne(f => f.ParentFolder)
+                .WithMany(f => f.ChildFolders)
+                .HasForeignKey(f => f.ParentFolderId)
+                .IsRequired(false)
+                .OnDelete(DeleteBehavior.Restrict); // Don't cascade delete children — move to parent instead
+
+            modelBuilder.Entity<Folder>()
+                .HasIndex(f => new { f.UserId, f.ParentFolderId });
+
+            // Folder - Text: One-to-Many
+            modelBuilder.Entity<Text>()
+                .HasOne(t => t.Folder)
+                .WithMany(f => f.Texts)
+                .HasForeignKey(t => t.FolderId)
+                .IsRequired(false)
+                .OnDelete(DeleteBehavior.SetNull); // If folder deleted, texts move to root
+
+            // Folder - Book: One-to-Many
+            modelBuilder.Entity<Book>()
+                .HasOne(b => b.Folder)
+                .WithMany(f => f.Books)
+                .HasForeignKey(b => b.FolderId)
+                .IsRequired(false)
+                .OnDelete(DeleteBehavior.SetNull); // If folder deleted, books move to root
         }
     }
 }

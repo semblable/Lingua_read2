@@ -95,11 +95,11 @@ const Home = () => {
         <Col md={6} lg={5} className="mb-4"> {/* Adjusted column size */}
           <Card className="h-100 shadow-sm">
             <Card.Body className="d-flex flex-column"> {/* Use flex for button alignment */}
-              <Card.Title>My Books</Card.Title>
+              <Card.Title>My Library</Card.Title>
               <Card.Text>
-                View your imported books and standalone texts.
+                Browse your books, texts, and folders.
               </Card.Text>
-              <Button as={Link} to="/books" variant="primary" className="mt-auto">Go to My Books</Button> {/* mt-auto pushes button down */}
+              <Button as={Link} to="/library" variant="primary" className="mt-auto">Go to Library</Button> {/* mt-auto pushes button down */}
             </Card.Body>
           </Card>
         </Col>

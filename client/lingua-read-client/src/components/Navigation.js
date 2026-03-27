@@ -27,16 +27,13 @@ const Navigation = () => {
             {/* but the logic here assumes token will be set quickly */}
             {token && ( // Keep token check for conditional rendering of user-specific links
               <>
-                <NavDropdown title="Books" id="books-dropdown">
-                  <NavDropdown.Item as={Link} to="/books">My Books</NavDropdown.Item>
-                  <NavDropdown.Item as={Link} to="/books/create">Add New Book</NavDropdown.Item>
-                </NavDropdown>
+                <Nav.Link as={Link} to="/library">Library</Nav.Link>
 
-                <NavDropdown title="Texts" id="texts-dropdown">
-                  <NavDropdown.Item as={Link} to="/texts">My Texts</NavDropdown.Item>
-                  <NavDropdown.Item as={Link} to="/texts/create">Add Individual Text</NavDropdown.Item>
+                <NavDropdown title="Add" id="add-content-dropdown">
+                  <NavDropdown.Item as={Link} to="/books/create">Add Book</NavDropdown.Item>
+                  <NavDropdown.Item as={Link} to="/texts/create">Add Text</NavDropdown.Item>
                   <NavDropdown.Item as={Link} to="/texts/create-audio">Add Audio Lesson</NavDropdown.Item>
-                  <NavDropdown.Item as={Link} to="/texts/create-batch-audio">Add Batch Audio</NavDropdown.Item>
+                  <NavDropdown.Item as={Link} to="/texts/create-batch-audio">Batch Audio</NavDropdown.Item>
                 </NavDropdown>
 
                 <Nav.Link as={Link} to="/statistics">Statistics</Nav.Link>

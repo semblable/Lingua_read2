@@ -28,6 +28,7 @@ import BatchAudioCreate from './pages/BatchAudioCreate';
 import TermsPage from './pages/TermsPage';
 import SrsReview from './pages/SrsReview';
 import SrsStoryReview from './pages/SrsStoryReview';
+import Library from './pages/Library';
 
 // Simple loading component
 const Loading = () => <div className="d-flex justify-content-center align-items-center vh-100">Loading...</div>;
@@ -189,6 +190,10 @@ const AppContent = () => {
           {/* Protected Routes */}
           {/* Ensure ProtectedRoute still redirects to "/" if token is somehow missing after loading */}
           <Route element={<ProtectedRoute token={token} isLoading={isLoading} />}>
+            {/* Library routes */}
+            <Route path="/library" element={<Library />} />
+            <Route path="/library/:folderId" element={<Library />} />
+
             {/* Book routes */}
             <Route path="/books" element={<BookList />} />
             <Route path="/books/create" element={<BookCreate />} />

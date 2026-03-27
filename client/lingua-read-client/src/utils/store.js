@@ -59,6 +59,37 @@ export const useCurrentTextStore = create((set) => ({
   }))
 }));
 
+// Library Store
+export const useLibraryStore = create((set) => ({
+  currentFolder: null,
+  breadcrumbs: [],
+  folders: [],
+  books: [],
+  texts: [],
+  allFolders: [], // flat list of all folders for move-to-folder modal
+  loading: false,
+  error: null,
+  selectedItems: [], // { id, type } for multi-select
+  setContents: (data) => set({
+    currentFolder: data.currentFolder,
+    breadcrumbs: data.breadcrumbs,
+    folders: data.folders,
+    books: data.books,
+    texts: data.texts
+  }),
+  setAllFolders: (folders) => set({ allFolders: folders }),
+  setLoading: (loading) => set({ loading }),
+  setError: (error) => set({ error }),
+  toggleSelectItem: (id, type) => set((state) => {
+    const exists = state.selectedItems.find(i => i.id === id && i.type === type);
+    if (exists) {
+      return { selectedItems: state.selectedItems.filter(i => !(i.id === id && i.type === type)) };
+    }
+    return { selectedItems: [...state.selectedItems, { id, type }] };
+  }),
+  clearSelection: () => set({ selectedItems: [] })
+}));
+
 // Word Modal Store
 export const useWordModalStore = create((set) => ({
   isOpen: false,

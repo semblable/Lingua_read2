@@ -45,12 +45,20 @@ namespace LinguaReadApi.Models
         
         [ForeignKey("LastReadText")]
         public int? LastReadTextId { get; set; }
+
+        // Optional Folder relationship
+        [ForeignKey("Folder")]
+        public int? FolderId { get; set; }
+
+        // Position within folder for custom ordering
+        public int SortOrder { get; set; } = 0;
         
         // Navigation properties
         public virtual User User { get; set; } = null!;
         public virtual Language Language { get; set; } = null!;
         public virtual Text LastReadText { get; set; } = null!;
         public virtual ICollection<Text> Texts { get; set; } = new List<Text>();
+        public virtual Folder? Folder { get; set; }
         public virtual ICollection<BookTag> BookTags { get; set; } = new List<BookTag>();
         public virtual ICollection<AudiobookTrack> AudiobookTracks { get; set; } = new List<AudiobookTrack>(); // Added for Audiobook feature
     }

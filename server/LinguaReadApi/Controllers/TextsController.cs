@@ -60,7 +60,9 @@ namespace LinguaReadApi.Controllers
                     IsAudioLesson = t.IsAudioLesson,
                     BookId = t.BookId,
                     BookTitle = t.Book != null ? t.Book.Title : null, // Include BookTitle
-                    IsFinished = t.IsFinished
+                    IsFinished = t.IsFinished,
+                    FolderId = t.FolderId,
+                    SortOrder = t.SortOrder
                 })
                 .ToListAsync();
 
@@ -1077,6 +1079,8 @@ namespace LinguaReadApi.Controllers
         public string? BookTitle { get; set; } // Include BookTitle
         public bool IsFinished { get; set; }
         public double? AudioProgress { get; set; }
+        public int? FolderId { get; set; }
+        public int SortOrder { get; set; }
     }
 
     public class TextDetailDto

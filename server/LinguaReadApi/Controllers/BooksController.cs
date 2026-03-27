@@ -62,7 +62,9 @@ namespace LinguaReadApi.Controllers
                     LearningWords = b.LearningWords,
                     IsFinished = b.IsFinished,
                     CoverImagePath = b.CoverImagePath,
-                    Tags = b.BookTags.Select(bt => bt.Tag.Name).ToList() // Map Tag names
+                    Tags = b.BookTags.Select(bt => bt.Tag.Name).ToList(), // Map Tag names
+                    FolderId = b.FolderId,
+                    SortOrder = b.SortOrder
                 })
                 .ToListAsync();
                 
@@ -2131,6 +2133,8 @@ namespace LinguaReadApi.Controllers
         public double CompletionPercentage => TotalWords > 0 ? 
             Math.Round((double)(KnownWords + LearningWords) / TotalWords * 100, 1) : 0;
         public List<string> Tags { get; set; } = new List<string>(); // Added Tags
+        public int? FolderId { get; set; }
+        public int SortOrder { get; set; }
     }
 
     public class BookDetailDto

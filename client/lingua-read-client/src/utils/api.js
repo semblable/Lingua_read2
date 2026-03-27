@@ -1278,3 +1278,49 @@ export const getSrsStories = async (languageId = null) => {
 export const applySrsReadingCredit = async (wordId) => {
   return await fetchApi(`/srs/reading-credit/${wordId}`, { method: 'POST' });
 };
+
+// ==================== Library / Folders ====================
+
+export const getLibraryContents = async (folderId = null, languageId = null) => {
+  const params = new URLSearchParams();
+  if (folderId) params.append('folderId', folderId);
+  if (languageId) params.append('languageId', languageId);
+  const queryString = params.toString();
+  return await fetchApi(`/folders/library${queryString ? `?${queryString}` : ''}`);
+};
+
+export const getFolders = async () => {
+  return await fetchApi('/folders');
+};
+
+export const createFolder = async (name, parentFolderId = null, color = null, languageId = null) => {
+  return await fetchApi('/folders', {
+    method: 'POST',
+    body: JSON.stringify({ name, parentFolderId, color, languageId })
+  });
+};
+
+export const updateFolder = async (folderId, data) => {
+  return await fetchApi(`/folders/${folderId}`, {
+    method: 'PUT',
+    body: JSON.stringify(data)
+  });
+};
+
+export const deleteFolder = async (folderId) => {
+  return await fetchApi(`/folders/${folderId}`, { method: 'DELETE' });
+};
+
+export const moveLibraryItems = async (textIds = null, bookIds = null, folderIds = null, targetFolderId = null) => {
+  return await fetchApi('/folders/move-items', {
+    method: 'PUT',
+    body: JSON.stringify({ textIds, bookIds, folderIds, targetFolderId })
+  });
+};
+
+export const reorderLibraryItems = async (folderId, items) => {
+  return await fetchApi('/folders/reorder', {
+    method: 'PUT',
+    body: JSON.stringify({ folderId, items })
+  });
+};

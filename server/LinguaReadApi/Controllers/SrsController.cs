@@ -1084,7 +1084,7 @@ namespace LinguaReadApi.Controllers
             var cardType = (request.CardType ?? "all").Trim().ToLowerInvariant();
 
             // Fetch a larger candidate pool (3x MaxWords) so the AI can pick the most fitting words
-            int poolSize = request.MaxWords * 3;
+            int poolSize = request.MaxWords * 5;
 
             // Fetch cards based on card type, respecting daily limits for the pool
             var allDueCards = new List<SrsCardReview>();
@@ -1182,8 +1182,11 @@ Requirements:
 - Each selected word should appear in a clear, meaningful context
 - The story should be coherent and interesting, not a forced list of sentences
 - Prefer words that naturally cluster around a common theme for better story flow
+- Maintain consistent verb tenses throughout the story. Choose a tense that naturally fits the majority of the provided vocabulary word forms.
+- Use each vocabulary word in its EXACT provided form — do not conjugate or decline it differently. Build sentences around the words so they fit naturally as given.
 - Return ONLY the story text
 - After the story, on a new line, write ""USED_WORDS:"" followed by a comma-separated list of the target words you actually used (in their exact base form as provided above)
+{(string.IsNullOrWhiteSpace(request.Tense) ? "" : $"- Write the narrative in {request.Tense} tense. If a vocabulary word's form doesn't match this tense, embed it in dialogue, a quotation, or a subordinate clause where its original form is grammatically correct.")}
 
 {(string.IsNullOrWhiteSpace(request.Theme) ? "Choose an interesting everyday topic." : $"Theme/topic: {request.Theme}")}
 {(string.IsNullOrWhiteSpace(request.Style) ? "" : $"Writing style/tone: {request.Style}. Write the story in this style.")}";
@@ -1425,6 +1428,9 @@ Requirements:
 
         [StringLength(10)]
         public string? CardType { get; set; } // "new", "review", "all" (default)
+
+        [StringLength(20)]
+        public string? Tense { get; set; } // "past", "present", "future", or null (AI chooses)
     }
 
     public class SrsStoryGenerateResponse

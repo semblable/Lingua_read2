@@ -10,6 +10,7 @@ import './SrsStoryReview.css';
 const STATUS_LABELS = { 1: 'New', 2: 'Learning', 3: 'Familiar', 4: 'Advanced', 5: 'Known' };
 const STATUS_VARIANTS = { 1: 'danger', 2: 'warning', 3: 'info', 4: 'primary', 5: 'success' };
 const STYLE_OPTIONS = ['Absurd', 'Funny', 'Romance', 'Mystery', 'Horror', 'Fairytale', 'Noir', 'Casual'];
+const TENSE_OPTIONS = ['Past', 'Present', 'Future'];
 
 const SrsStoryReview = () => {
   const navigate = useNavigate();
@@ -29,6 +30,7 @@ const SrsStoryReview = () => {
   const [maxLength, setMaxLength] = useState(400);
   const [style, setStyle] = useState('');
   const [customStyle, setCustomStyle] = useState('');
+  const [tense, setTense] = useState('');
 
   // Session state
   const [phase, setPhase] = useState('setup'); // setup | loading | story | complete
@@ -110,7 +112,8 @@ const SrsStoryReview = () => {
         maxLength,
         status: statusFilter,
         style: effectiveStyle || undefined,
-        cardType: cardType !== 'all' ? cardType : undefined
+        cardType: cardType !== 'all' ? cardType : undefined,
+        tense: tense ? tense.toLowerCase() : undefined
       });
 
       if (!result.story || result.targetWords.length === 0) {
@@ -447,6 +450,25 @@ const SrsStoryReview = () => {
                   onChange={e => setCustomStyle(e.target.value)}
                 />
               )}
+            </Form.Group>
+
+            <Form.Group className="mb-3">
+              <Form.Label>Narrative Tense <small className="text-muted">(optional)</small></Form.Label>
+              <div className="d-flex flex-wrap gap-1">
+                {TENSE_OPTIONS.map(t => (
+                  <Badge
+                    key={t}
+                    bg={tense === t ? 'primary' : 'light'}
+                    text={tense === t ? 'white' : 'dark'}
+                    role="button"
+                    className="px-2 py-1"
+                    style={{ cursor: 'pointer', border: '1px solid #dee2e6' }}
+                    onClick={() => setTense(prev => prev === t ? '' : t)}
+                  >
+                    {t}
+                  </Badge>
+                ))}
+              </div>
             </Form.Group>
 
             <Row className="mb-3">

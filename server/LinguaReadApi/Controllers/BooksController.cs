@@ -1737,6 +1737,7 @@ namespace LinguaReadApi.Controllers
             }
             else
             {
+                book.IsFinished = false;
                 completionPercentage = totalTexts > 0
                     ? Math.Round((double)finishedTexts / totalTexts * 100, 2)
                     : 0;

@@ -50,59 +50,6 @@ const Statistics = () => {
     checkConnectivity();
   }, []);
 
-  // Helper function to safely calculate total words read
-  const calculateTotalWordsRead = (statistics) => {
-    if (!statistics) {
-      return 0;
-    }
-
-
-    // First check if we have TotalWordsRead directly on the statistics object
-    if (statistics.TotalWordsRead || statistics.totalWordsRead) {
-      const directTotal = statistics.TotalWordsRead || statistics.totalWordsRead;
-      return directTotal;
-    }
-
-    // Try to get language statistics, handling different case possibilities
-    let langStats = [];
-
-    if (Array.isArray(statistics.LanguageStatistics)) {
-      langStats = statistics.LanguageStatistics;
-    } else if (Array.isArray(statistics.languageStatistics)) {
-      langStats = statistics.languageStatistics;
-    } else {
-      // Try to handle if it's an object instead of an array
-      if (statistics.LanguageStatistics && typeof statistics.LanguageStatistics === 'object') {
-        langStats = Object.values(statistics.LanguageStatistics);
-      } else if (statistics.languageStatistics && typeof statistics.languageStatistics === 'object') {
-        langStats = Object.values(statistics.languageStatistics);
-      }
-    }
-
-    // Log for debugging
-
-    // Handle both camelCase and PascalCase property names
-    try {
-      const total = langStats.reduce((total, lang) => {
-        if (!lang) {
-          return total;
-        }
-
-        // Check for both camelCase and PascalCase versions of the property
-        const wordsRead = lang.TotalWordsRead ||
-          lang.totalWordsRead ||
-          0;
-
-        return total + wordsRead;
-      }, 0);
-
-      return total;
-    } catch (err) {
-      console.error('Error calculating total words read:', err);
-      return 0;
-    }
-  };
-
   useEffect(() => {
     const fetchStats = async () => {
       setLoading(true);
@@ -339,7 +286,7 @@ const Statistics = () => {
     let formatted = '';
     if (hours > 0) formatted += `${hours}h `;
     if (minutes > 0 || hours > 0) formatted += `${minutes}m `; // Show minutes if hours exist or minutes > 0
-    if (hours === 0 && minutes < 10) formatted += `${seconds}s`; // Only show seconds if duration is short
+    if (hours === 0 && minutes === 0) formatted += `${seconds}s`; // Only show seconds for sub-minute durations
 
     return formatted.trim() || '0s'; // Handle case where duration is < 1s
   };
@@ -744,8 +691,8 @@ const Statistics = () => {
           <Card className="text-center h-100 border-0 shadow-sm hover-elevate transition-all" style={{ borderRadius: 'var(--radius-lg)', background: 'rgba(255, 255, 255, 0.7)', backdropFilter: 'blur(10px)' }}>
             <Card.Body className="d-flex flex-column justify-content-center">
               <Card.Title className="text-muted small text-uppercase fw-bold mb-3 ls-wide">Activities</Card.Title>
-              <Card.Text className="fs-1 fw-bold mb-0" style={{ color: 'var(--primary-color)' }}>{readingActivity?.ActivityLogs?.length || 0}</Card.Text>
-              <div className="small text-muted mt-1 fw-medium">entries recorded</div>
+              <Card.Text className="fs-1 fw-bold mb-0" style={{ color: 'var(--primary-color)' }}>{Object.keys(readingActivity?.ActivityByDate || {}).length}</Card.Text>
+              <div className="small text-muted mt-1 fw-medium">active days</div>
             </Card.Body>
           </Card>
         </Col>
@@ -758,7 +705,7 @@ const Statistics = () => {
               <Card.Text className="fs-1 fw-bold text-accent mb-0" style={{ color: 'var(--accent-color)' }}>
                 {activityPeriod === 'all'
                   ? '-'
-                  : (readingActivity?.TotalWordsRead / (activityPeriod === 'last_day' ? 1 : activityPeriod === 'last_week' ? 7 : activityPeriod === 'last_month' ? 30 : activityPeriod === 'last_90' ? 90 : 180)).toFixed(0)
+                  : ((readingActivity?.TotalWordsRead || 0) / (activityPeriod === 'last_day' ? 1 : activityPeriod === 'last_week' ? 7 : activityPeriod === 'last_month' ? 30 : activityPeriod === 'last_90' ? 90 : 180)).toFixed(0)
                 }
               </Card.Text>
               <div className="small text-muted mt-1 fw-medium">words / day</div>
@@ -953,7 +900,7 @@ const Statistics = () => {
                 </div>
                 <div className="d-flex justify-content-between mb-3">
                   <span className="text-muted small">Listening Time</span>
-                  <span className="fw-bold text-primary">{Math.round(lang.totalSecondsListened / 60)}m</span>
+                  <span className="fw-bold text-primary">{formatDuration(activityPeriod === 'all' ? lang.totalSecondsListened : lang.periodSecondsListened)}</span>
                 </div>
 
                 <hr className="opacity-10" />

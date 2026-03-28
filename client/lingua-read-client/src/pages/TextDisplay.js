@@ -2970,7 +2970,7 @@ const TextDisplay = () => {
       } else {
       }
     }
-  }, [displayedWord, handleSaveWord, translation]); // handleSaveWord dependency is now safe
+  }, [displayedWord, handleSaveWord]); // handleSaveWord dependency is now safe
 
   const handleFullTextTranslation = async () => {
     if (!text || !text.content) return;

@@ -834,3 +834,12 @@ body.classic-dark-theme .theme-aware-audio-player-container audio::-moz-media-co
    However, full cross-browser custom styling of audio controls is complex.
    The filter is a broad approach.
 */
+
+/* End-of-text completion button */
+.reader-end-of-text-actions {
+  display: flex;
+  justify-content: center;
+  padding: 2rem 1rem 3rem;
+  margin-top: 1.5rem;
+  border-top: 1px solid var(--theme-border-color, #e9ecef);
+}

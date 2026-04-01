@@ -636,13 +636,7 @@ const MobileLessonHeader = React.memo(({
   readerLessonActions,
   isAudioLesson,
   isAudioPlaying,
-  toggleAudioPlayback,
-  audioSrc,
-  textId,
-  audioRef,
-  onTimeUpdate,
-  onPlaybackStateChange,
-  segmentPlaybackRequest
+  toggleAudioPlayback
 }) => {
   if (!isMobile) return null;
 
@@ -716,21 +710,6 @@ const MobileLessonHeader = React.memo(({
             </div>
           </div>
         </Collapse>
-        {isAudioLesson && audioSrc && (
-          <div className="audio-player-container p-2 theme-aware-audio-player-container">
-            <AudiobookPlayer
-              key="lesson-audio-player-topbar"
-              type="lesson"
-              audioSrc={audioSrc}
-              textId={textId}
-              languageId={text?.languageId}
-              audioRef={audioRef}
-              onTimeUpdate={onTimeUpdate}
-              onPlaybackStateChange={onPlaybackStateChange}
-              segmentPlaybackRequest={segmentPlaybackRequest}
-            />
-          </div>
-        )}
       </div>
     </>
   );
@@ -1054,7 +1033,10 @@ const StandardTextView = React.memo(({
   setSentenceTtsEnabled,
   sentenceTtsRate,
   setSentenceTtsRate,
-  onSpeakSentence
+  onSpeakSentence,
+  handleCompleteLesson,
+  completing,
+  nextTextId
 }) => {
   if (!text?.content) return null;
   const displayBlocks = buildDisplayBlocks(text.content, text.structuredContent);
@@ -1210,6 +1192,16 @@ const StandardTextView = React.memo(({
             </p>
           );
         })}
+      </div>
+      <div className="reader-end-of-text-actions">
+        <Button
+          variant="success"
+          size="lg"
+          onClick={handleCompleteLesson}
+          disabled={completing}
+        >
+          {completing ? <Spinner animation="border" size="sm" /> : (nextTextId === null ? 'Finish Book' : 'Complete Lesson')}
+        </Button>
       </div>
     </div>
   );
@@ -3214,12 +3206,6 @@ const TextDisplay = () => {
         isAudioLesson={isAudioLesson}
         isAudioPlaying={isAudioPlaying}
         toggleAudioPlayback={toggleAudioPlayback}
-        audioSrc={audioSrc}
-        textId={textId}
-        audioRef={audioRef}
-        onTimeUpdate={handleAudioTimeUpdate}
-        onPlaybackStateChange={handleAudioPlaybackStateChange}
-        segmentPlaybackRequest={segmentPlaybackRequest}
       />
       <LessonHeader
         isMobile={isMobile}
@@ -3350,6 +3336,9 @@ const TextDisplay = () => {
                     sentenceTtsRate={sentenceTtsRate}
                     setSentenceTtsRate={setSentenceTtsRate}
                     onSpeakSentence={speakCurrentSentence}
+                    handleCompleteLesson={handleCompleteLesson}
+                    completing={completing}
+                    nextTextId={nextTextId}
                   />
                 )}
               </div>

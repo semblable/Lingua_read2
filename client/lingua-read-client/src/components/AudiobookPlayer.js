@@ -110,6 +110,12 @@ const AudiobookPlayer = ({
     return `lesson:${textId || 'none'}:${audioSrc || 'none'}`;
   }, [audioSrc, book?.bookId, isBookMode, textId]);
 
+  const positionStorageKey = useMemo(() => {
+    if (isBookMode && book?.bookId) return `audioPos:book:${book.bookId}`;
+    if (!isBookMode && textId) return `audioPos:lesson:${textId}`;
+    return null;
+  }, [isBookMode, book?.bookId, textId]);
+
   // Core Playback State
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -278,6 +284,24 @@ const AudiobookPlayer = ({
           }
         }
 
+        // Check localStorage for a newer position (handles mobile refresh where server save was lost)
+        if (positionStorageKey) {
+          try {
+            const localRaw = localStorage.getItem(positionStorageKey);
+            if (localRaw) {
+              const localData = JSON.parse(localRaw);
+              const serverTime = lastServerUpdateRef.current || 0;
+              if (localData.timestamp > serverTime && localData.position > 0) {
+                console.log(`[AudioPlayer] Using localStorage position (newer): ${localData.position}`);
+                savedPosition = localData.position;
+                if (isBookMode && localData.trackIndex != null) {
+                  savedTrackIndex = localData.trackIndex;
+                }
+              }
+            }
+          } catch { /* corrupted or unavailable */ }
+        }
+
         if (mounted) {
           setCurrentTrackIndex(savedTrackIndex);
 
@@ -291,6 +315,22 @@ const AudiobookPlayer = ({
         }
       } catch (e) {
         console.error("Failed to load progress:", e);
+        // Fallback to localStorage if server is unreachable
+        if (mounted && positionStorageKey) {
+          try {
+            const localRaw = localStorage.getItem(positionStorageKey);
+            if (localRaw) {
+              const localData = JSON.parse(localRaw);
+              if (localData.position > 0) {
+                console.log(`[AudioPlayer] Server unreachable, restoring from localStorage: ${localData.position}`);
+                if (isBookMode && localData.trackIndex != null) {
+                  setCurrentTrackIndex(localData.trackIndex);
+                }
+                queueInitialSeek(localData.position);
+              }
+            }
+          } catch { /* corrupted or unavailable */ }
+        }
         if (mounted && isBookMode) setIsInitialized(true);
       } finally {
         if (mounted && isBookMode) setIsLoading(false);
@@ -302,7 +342,7 @@ const AudiobookPlayer = ({
     return () => {
       mounted = false;
     };
-  }, [book?.bookId, isBookMode, queueInitialSeek, sourceTracks, textId]);
+  }, [book?.bookId, isBookMode, positionStorageKey, queueInitialSeek, sourceTracks, textId]);
 
 
 
@@ -645,6 +685,18 @@ const AudiobookPlayer = ({
     const track = playlistSnapshot[currentTrackIndexSnapshot];
     if (!track) return;
 
+    // Save to localStorage as fallback (survives failed keepalive requests on mobile refresh)
+    if (positionStorageKey && currentPos > 0) {
+      try {
+        localStorage.setItem(positionStorageKey, JSON.stringify({
+          position: currentPos,
+          trackId: track.trackId,
+          trackIndex: currentTrackIndexSnapshot,
+          timestamp: Date.now()
+        }));
+      } catch { /* quota exceeded or unavailable */ }
+    }
+
     try {
       if (isBookModeSnapshot && bookId) {
         await updateAudiobookProgress(bookId, {
@@ -666,7 +718,7 @@ const AudiobookPlayer = ({
       }
       console.error("Save progress failed", e);
     }
-  }, [audioRef]);
+  }, [audioRef, positionStorageKey]);
 
   useEffect(() => {
     saveProgressRef.current = saveProgress;

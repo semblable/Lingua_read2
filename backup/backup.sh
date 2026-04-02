@@ -1,8 +1,9 @@
 #!/bin/bash
 set -e
 TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+DATE=$(date +%Y%m%d)
 BACKUP_DIR=/backups
-mkdir -p "$BACKUP_DIR/db" "$BACKUP_DIR/logs"
+mkdir -p "$BACKUP_DIR/db" "$BACKUP_DIR/logs" "$BACKUP_DIR/errors"
 
 echo "=== Backup started: $TIMESTAMP ==="
 
@@ -13,12 +14,14 @@ PGPASSWORD="$POSTGRES_PASSWORD" pg_dump \
   | gzip > "$BACKUP_DIR/db/db-$TIMESTAMP.sql.gz"
 echo "[db] Saved: db-$TIMESTAMP.sql.gz"
 
-# 2. Collect last 24h of logs from all compose containers
+# 2. Collect last 24h of logs from all compose containers + extract errors
 echo "[logs] Collecting..."
 CONTAINERS=$(docker ps --filter "label=com.docker.compose.project" --format "{{.Names}}")
 for container in $CONTAINERS; do
-  docker logs --since 24h "$container" \
-    > "$BACKUP_DIR/logs/${container}-$TIMESTAMP.log" 2>&1 || true
+  LOG_FILE="$BACKUP_DIR/logs/${container}-$TIMESTAMP.log"
+  docker logs --since 24h --timestamps "$container" > "$LOG_FILE" 2>&1 || true
+  grep -iE "(error|exception|fatal|panic|critical)" "$LOG_FILE" \
+    > "$BACKUP_DIR/errors/${container}-$TIMESTAMP.err" 2>/dev/null || true
 done
 echo "[logs] Done."
 
@@ -29,7 +32,8 @@ rclone sync "$BACKUP_DIR" gdrive:lingua-read-backups \
   --log-level INFO
 
 # 4. Prune local copies older than 7 days
-find "$BACKUP_DIR/db"   -name "*.sql.gz" -mtime +7 -delete
-find "$BACKUP_DIR/logs" -name "*.log"    -mtime +7 -delete
+find "$BACKUP_DIR/db"     -name "*.sql.gz" -mtime +7 -delete
+find "$BACKUP_DIR/logs"   -name "*.log"    -mtime +7 -delete
+find "$BACKUP_DIR/errors" -name "*.err"    -mtime +7 -delete
 
 echo "=== Backup complete: $TIMESTAMP ==="

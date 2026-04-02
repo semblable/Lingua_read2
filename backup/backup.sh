@@ -19,9 +19,9 @@ echo "[logs] Collecting..."
 CONTAINERS=$(docker ps --filter "label=com.docker.compose.project" --format "{{.Names}}")
 for container in $CONTAINERS; do
   LOG_FILE="$BACKUP_DIR/logs/${container}-$TIMESTAMP.log"
-  docker logs --since 24h "$container" > "$LOG_FILE" 2>&1 || true
+  docker logs --since 24h --timestamps "$container" > "$LOG_FILE" 2>&1 || true
   grep -iE "(error|exception|fatal|panic|critical)" "$LOG_FILE" \
-    >> "$BACKUP_DIR/errors/${container}-$DATE.err" 2>/dev/null || true
+    > "$BACKUP_DIR/errors/${container}-$TIMESTAMP.err" 2>/dev/null || true
 done
 echo "[logs] Done."
 

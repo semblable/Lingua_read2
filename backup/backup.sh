@@ -20,7 +20,7 @@ CONTAINERS=$(docker ps --filter "label=com.docker.compose.project" --format "{{.
 for container in $CONTAINERS; do
   LOG_FILE="$BACKUP_DIR/logs/${container}-$TIMESTAMP.log"
   docker logs --since 24h --timestamps "$container" > "$LOG_FILE" 2>&1 || true
-  grep -iE "(error|exception|fatal|panic|critical)" "$LOG_FILE" \
+  grep -iE '(fail:|warn|crit|alert|emerg|error|exception|fatal|panic|unhandled|deadlock|timed? out|refused|out of memory|" 5[0-9]{2} ")' "$LOG_FILE" \
     > "$BACKUP_DIR/errors/${container}-$TIMESTAMP.err" 2>/dev/null || true
 done
 echo "[logs] Done."

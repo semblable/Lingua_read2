@@ -2787,6 +2787,9 @@ const TextDisplay = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [textId, fetchAllLanguageWords]); // 'text' and 'isAudioLesson' are intentionally omitted to prevent loops; cleanup captures correct 'text' via closure.
 
+  // Ref to hold the latest handleTranslateUnknownWords (assigned after function definition below)
+  const handleTranslateUnknownWordsRef = useRef(null);
+
   // Auto-translate all unknown words on open (if setting enabled)
   useEffect(() => {
     if (
@@ -2794,10 +2797,11 @@ const TextDisplay = () => {
       languageWordsLoaded &&
       text?.content &&
       text?.languageId &&
-      !autoTranslateTriggeredRef.current
+      !autoTranslateTriggeredRef.current &&
+      handleTranslateUnknownWordsRef.current
     ) {
       autoTranslateTriggeredRef.current = true;
-      handleTranslateUnknownWords({ silent: true });
+      handleTranslateUnknownWordsRef.current({ silent: true });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [languageWordsLoaded, text, globalSettings.autoTranslateOnOpen]);
@@ -3044,6 +3048,7 @@ const TextDisplay = () => {
     } catch (err) { console.error("Error translating unknown words:", err); setTranslateUnknownError(`Failed: ${err.message}`); if (!silent) alert(`Error: ${err.message}`); }
     finally { setTranslatingUnknown(false); }
   };
+  handleTranslateUnknownWordsRef.current = handleTranslateUnknownWords;
 
   const handleMarkAllUnknownAsKnown = async () => {
     if (!text || !text.content || !text.languageId || !text.textId) return;

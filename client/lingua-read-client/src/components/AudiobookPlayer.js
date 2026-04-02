@@ -284,15 +284,15 @@ const AudiobookPlayer = ({
           }
         }
 
-        // Check localStorage for a newer position (handles mobile refresh where server save was lost)
-        if (positionStorageKey) {
+        // Check localStorage fallback only when server returned no position
+        // (e.g. mobile refresh where keepalive save was dropped)
+        if (positionStorageKey && savedPosition <= 0) {
           try {
             const localRaw = localStorage.getItem(positionStorageKey);
             if (localRaw) {
               const localData = JSON.parse(localRaw);
-              const serverTime = lastServerUpdateRef.current || 0;
-              if (localData.timestamp > serverTime && localData.position > 0) {
-                console.log(`[AudioPlayer] Using localStorage position (newer): ${localData.position}`);
+              if (localData.position > 0) {
+                console.log(`[AudioPlayer] Server had no position, restoring from localStorage: ${localData.position}`);
                 savedPosition = localData.position;
                 if (isBookMode && localData.trackIndex != null) {
                   savedTrackIndex = localData.trackIndex;

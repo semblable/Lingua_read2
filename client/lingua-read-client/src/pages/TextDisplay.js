@@ -546,7 +546,7 @@ const PrimaryControls = React.memo(({
     </Button>
     {isAudioLesson && !text?.bookId && (
       <Button variant="success" onClick={handleCompleteLesson} disabled={completing} size="sm" className="ms-1">
-        {completing ? <Spinner animation="border" size="sm" /> : (nextTextId === null ? 'Finish Book' : 'Complete Lesson')}
+        {completing ? <Spinner animation="border" size="sm" /> : (nextTextId === null && text?.bookId ? 'Finish Book' : 'Complete Lesson')}
       </Button>
     )}
     {text?.bookId && (
@@ -617,7 +617,7 @@ const ReaderLessonActions = React.memo(({
           size="sm"
           className={showBookNav ? 'ms-1' : ''}
         >
-          {completing ? <Spinner animation="border" size="sm" /> : (nextTextId === null ? 'Finish Book' : 'Complete Lesson')}
+          {completing ? <Spinner animation="border" size="sm" /> : (nextTextId === null && text?.bookId ? 'Finish Book' : 'Complete Lesson')}
         </Button>
       )}
     </div>
@@ -1200,7 +1200,7 @@ const StandardTextView = React.memo(({
           onClick={handleCompleteLesson}
           disabled={completing}
         >
-          {completing ? <Spinner animation="border" size="sm" /> : (nextTextId === null ? 'Finish Book' : 'Complete Lesson')}
+          {completing ? <Spinner animation="border" size="sm" /> : (nextTextId === null && text?.bookId ? 'Finish Book' : 'Complete Lesson')}
         </Button>
       </div>
     </div>

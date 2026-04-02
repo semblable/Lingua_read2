@@ -680,7 +680,7 @@ const Statistics = () => {
           <Card className="text-center h-100 border-0 shadow-sm hover-elevate transition-all" style={{ borderRadius: 'var(--radius-lg)', background: 'rgba(255, 255, 255, 0.7)', backdropFilter: 'blur(10px)' }}>
             <Card.Body className="d-flex flex-column justify-content-center">
               <Card.Title className="text-muted small text-uppercase fw-bold mb-3 ls-wide">Time Listened</Card.Title>
-              <Card.Text className="fs-1 fw-bold text-primary mb-0">{Math.round((listeningActivity?.TotalSecondsListened || 0) / 60)}m</Card.Text>
+              <Card.Text className="fs-1 fw-bold text-primary mb-0">{Math.round((listeningActivity?.TotalListeningSeconds || 0) / 60)}m</Card.Text>
               <div className="small text-muted mt-1 fw-medium">in selected period</div>
             </Card.Body>
           </Card>

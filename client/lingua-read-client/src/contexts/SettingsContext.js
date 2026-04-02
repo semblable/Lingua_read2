@@ -33,10 +33,11 @@ const defaultSettings = {
   discordWeeklyReportHourLocal: 8,
   discordTimezoneOffsetMinutes: 0,
   srsMaxNewCards: 20,
-  srsMaxReviews: 100,
+  srsMaxReviews: 200,
   srsReviewOrder: 'mix',
   srsMaxIntervalDays: 36500,
   srsLapseMinimumIntervalDays: 1,
+  srsLearningStepMinutes: '1,10',
   // Add other settings as needed
 };
 
@@ -96,6 +97,7 @@ export const SettingsProvider = ({ children }) => {
         srsReviewOrder: data.srsReviewOrder || defaultSettings.srsReviewOrder,
         srsMaxIntervalDays: data.srsMaxIntervalDays ?? defaultSettings.srsMaxIntervalDays,
         srsLapseMinimumIntervalDays: data.srsLapseMinimumIntervalDays ?? defaultSettings.srsLapseMinimumIntervalDays,
+        srsLearningStepMinutes: data.srsLearningStepMinutes || defaultSettings.srsLearningStepMinutes,
       });
     } catch (err) {
       console.error('[SettingsContext] Failed to load settings:', err);

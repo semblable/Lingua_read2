@@ -722,7 +722,7 @@ namespace LinguaReadApi.Controllers
 
         // SRS Settings
         public int SrsMaxNewCards { get; set; } = 20;
-        public int SrsMaxReviews { get; set; } = 100;
+        public int SrsMaxReviews { get; set; } = 200;
         public string SrsReviewOrder { get; set; } = "mix";
         public string? SrsLearningStepMinutes { get; set; } = "1,10";
         public int SrsMaxIntervalDays { get; set; } = 36500;

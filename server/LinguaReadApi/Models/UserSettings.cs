@@ -87,7 +87,7 @@ namespace LinguaReadApi.Models
         
         // SRS Limits & Preferences
         public int SrsMaxNewCards { get; set; } = 20;
-        public int SrsMaxReviews { get; set; } = 100;
+        public int SrsMaxReviews { get; set; } = 200;
         public string SrsReviewOrder { get; set; } = "mix"; // "mix", "new_first", "reviews_first"
 
         // SRS Daily Tracking

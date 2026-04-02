@@ -777,7 +777,7 @@ namespace LinguaReadApi.Controllers
                         }
                         else
                         {
-                            card.Interval = (grade == 3) ? 2 : 1; // First-time graduation
+                            card.Interval = (grade == 3) ? 4 : 1; // First-time graduation
                             card.Repetitions = 1;
                         }
                         card.Interval = Math.Min(card.Interval, maxIntervalDays);
@@ -1247,7 +1247,7 @@ Requirements:
         private static int EffectiveSrsMaxNew(int? stored) => stored is > 0 ? stored.Value : 20;
 
         /// <summary>Daily review cap: same as <see cref="EffectiveSrsMaxNew"/>.</summary>
-        private static int EffectiveSrsMaxReviews(int? stored) => stored is > 0 ? stored.Value : 100;
+        private static int EffectiveSrsMaxReviews(int? stored) => stored is > 0 ? stored.Value : 200;
     }
 
     // --- DTOs ---

@@ -48,7 +48,7 @@ const SrsReview = () => {
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [localSettings, setLocalSettings] = useState({
     srsMaxNewCards: 20,
-    srsMaxReviews: 100,
+    srsMaxReviews: 200,
     srsReviewOrder: 'mix',
     srsLearningStepMinutes: '1,10',
     srsMaxIntervalDays: 36500,
@@ -346,11 +346,17 @@ const SrsReview = () => {
           return learningSteps.length > 0 ? `${learningSteps[0]}m` : '1m';
         case 2: { // Good: next step or graduate
           const nextStep = stepIdx + 1;
-          if (nextStep >= learningSteps.length) return '1d'; // graduate
+          if (nextStep >= learningSteps.length) {
+            const isRelearning = card.repetitions > 0 || card.lastReviewedAt != null;
+            const lapseMin = parseInt(localSettings.srsLapseMinimumIntervalDays, 10) || 1;
+            return isRelearning ? `${lapseMin}d` : '1d';
+          }
           return `${learningSteps[nextStep]}m`;
         }
         case 3: { // Easy: graduate immediately
-          return '1d';
+          const isRelearning = card.repetitions > 0 || card.lastReviewedAt != null;
+          const lapseMin = parseInt(localSettings.srsLapseMinimumIntervalDays, 10) || 1;
+          return isRelearning ? `${lapseMin * 2}d` : '4d';
         }
         default: return '';
       }

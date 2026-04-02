@@ -1423,6 +1423,7 @@ const TextDisplay = () => {
   const listRef = useRef(null);
   const autoScrollRafRef = useRef(null);
   const contentTouchMovedRef = useRef(false);
+  const autoTranslateTriggeredRef = useRef(false);
   // Removed resizeDividerRef
 
   // --- State Declarations ---
@@ -2640,6 +2641,7 @@ const TextDisplay = () => {
       if (!isSameText) {
         setLoading(true);
         setLanguageWordsLoaded(false);
+        autoTranslateTriggeredRef.current = false;
         setError('');
         setBook(null);
         setPreviousTextId(null);
@@ -2785,6 +2787,20 @@ const TextDisplay = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [textId, fetchAllLanguageWords]); // 'text' and 'isAudioLesson' are intentionally omitted to prevent loops; cleanup captures correct 'text' via closure.
 
+  // Auto-translate all unknown words on open (if setting enabled)
+  useEffect(() => {
+    if (
+      globalSettings.autoTranslateOnOpen &&
+      languageWordsLoaded &&
+      text?.content &&
+      text?.languageId &&
+      !autoTranslateTriggeredRef.current
+    ) {
+      autoTranslateTriggeredRef.current = true;
+      handleTranslateUnknownWords({ silent: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [languageWordsLoaded, text, globalSettings.autoTranslateOnOpen]);
 
   // Audio Time Update Handler - updates ref and checks for line changes
   // Audio Time Update Handler - NOW STABLE (using refs)
@@ -2993,7 +3009,7 @@ const TextDisplay = () => {
     }
   }, [displayedWord, currentSentenceSegment, text]);
 
-  const handleTranslateUnknownWords = async () => {
+  const handleTranslateUnknownWords = async ({ silent = false } = {}) => {
     if (!text || !text.content || !text.languageId) return;
     setTranslatingUnknown(true); setTranslateUnknownError('');
     try {
@@ -3002,7 +3018,7 @@ const TextDisplay = () => {
       const uniqueWordsInText = [...new Set(textWords.map(w => w.toLowerCase()))];
       const wordsMap = wordMap; // Reuse the memoized map
       const unknownWords = uniqueWordsInText.filter(word => !wordsMap.has(word) || (wordsMap.get(word)?.status <= 2 && !wordsMap.get(word)?.translation));
-      if (unknownWords.length === 0) { alert("No words found needing translation."); setTranslatingUnknown(false); return; } // Exit early
+      if (unknownWords.length === 0) { if (!silent) alert("No words found needing translation."); setTranslatingUnknown(false); return; } // Exit early
       const translations = await batchTranslateWords(unknownWords, translationTargetLanguageCode, text.languageCode);
       const originalCaseMap = new Map();
       textWords.forEach(w => { const lower = w.toLowerCase(); if (!originalCaseMap.has(lower)) { originalCaseMap.set(lower, w); } });
@@ -3011,7 +3027,7 @@ const TextDisplay = () => {
         translation: translations[word.toLowerCase()] || ''
       })).filter(t => t.translation);
 
-      if (termsToAdd.length === 0) { alert("No translations received."); setTranslatingUnknown(false); return; } // Exit early
+      if (termsToAdd.length === 0) { if (!silent) alert("No translations received."); setTranslatingUnknown(false); return; } // Exit early
 
       // Two-step workflow: first fetch translations, then save terms+translations
       try {
@@ -3019,13 +3035,13 @@ const TextDisplay = () => {
       } catch (saveError) {
         console.error("Error saving translated terms:", saveError);
         setTranslateUnknownError(`Failed to save terms: ${saveError.message}`);
-        alert(`Error saving terms: ${saveError.message}`);
+        if (!silent) alert(`Error saving terms: ${saveError.message}`);
         setTranslatingUnknown(false);
         return;
       }
       await fetchAllLanguageWords(text.languageId);
-      alert(`Successfully translated and updated ${termsToAdd.length} words.`);
-    } catch (err) { console.error("Error translating unknown words:", err); setTranslateUnknownError(`Failed: ${err.message}`); alert(`Error: ${err.message}`); }
+      if (!silent) alert(`Successfully translated and updated ${termsToAdd.length} words.`);
+    } catch (err) { console.error("Error translating unknown words:", err); setTranslateUnknownError(`Failed: ${err.message}`); if (!silent) alert(`Error: ${err.message}`); }
     finally { setTranslatingUnknown(false); }
   };
 

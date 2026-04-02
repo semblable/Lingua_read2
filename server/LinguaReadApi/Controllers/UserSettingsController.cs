@@ -63,6 +63,7 @@ namespace LinguaReadApi.Controllers
                     ReaderParagraphIndent = true,
                     ReaderTextAlignment = "left",
                     AutoTranslateWords = true,
+                    AutoTranslateOnOpen = false,
                     PauseOnWordClick = false,
                     HighlightKnownWords = true,
                     SentenceMode = false,
@@ -106,6 +107,7 @@ namespace LinguaReadApi.Controllers
                 ReaderParagraphIndent = settings.ReaderParagraphIndent,
                 ReaderTextAlignment = settings.ReaderTextAlignment,
                 AutoTranslateWords = settings.AutoTranslateWords,
+                AutoTranslateOnOpen = settings.AutoTranslateOnOpen,
                 PauseOnWordClick = settings.PauseOnWordClick,
                 HighlightKnownWords = settings.HighlightKnownWords,
                 SentenceMode = settings.SentenceMode,
@@ -205,6 +207,7 @@ namespace LinguaReadApi.Controllers
                 }
             }
             settings.AutoTranslateWords = updateDto.AutoTranslateWords ?? settings.AutoTranslateWords;
+            settings.AutoTranslateOnOpen = updateDto.AutoTranslateOnOpen ?? settings.AutoTranslateOnOpen;
             settings.PauseOnWordClick = updateDto.PauseOnWordClick ?? settings.PauseOnWordClick;
             settings.HighlightKnownWords = updateDto.HighlightKnownWords ?? settings.HighlightKnownWords;
             settings.SentenceMode = updateDto.SentenceMode ?? settings.SentenceMode;
@@ -308,6 +311,7 @@ namespace LinguaReadApi.Controllers
                 ReaderParagraphIndent = settings.ReaderParagraphIndent,
                 ReaderTextAlignment = settings.ReaderTextAlignment,
                 AutoTranslateWords = settings.AutoTranslateWords,
+                AutoTranslateOnOpen = settings.AutoTranslateOnOpen,
                 PauseOnWordClick = settings.PauseOnWordClick,
                 HighlightKnownWords = settings.HighlightKnownWords,
                 SentenceMode = settings.SentenceMode,
@@ -688,6 +692,7 @@ namespace LinguaReadApi.Controllers
         public string ReaderTextAlignment { get; set; } = "left";
         public int LeftPanelWidth { get; set; } // Already added in previous step, ensure it's correct
         public bool AutoTranslateWords { get; set; } = true;
+        public bool AutoTranslateOnOpen { get; set; } = false;
         public bool PauseOnWordClick { get; set; } = false;
         public bool HighlightKnownWords { get; set; } = true;
         public bool SentenceMode { get; set; } = false;
@@ -746,6 +751,7 @@ namespace LinguaReadApi.Controllers
         [Range(10, 100)] // Widen range to accept broader values
         public int? LeftPanelWidth { get; set; } // Already added in previous step, ensure it's correct
         public bool? AutoTranslateWords { get; set; }
+        public bool? AutoTranslateOnOpen { get; set; }
         public bool? PauseOnWordClick { get; set; }
         public bool? HighlightKnownWords { get; set; }
         public bool? SentenceMode { get; set; }

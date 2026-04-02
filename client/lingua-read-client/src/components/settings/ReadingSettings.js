@@ -15,6 +15,16 @@ const ReadingSettings = ({ settings, handleChange, languages, loadingLanguages }
           />
         </Form.Group>
 
+        <Form.Group className="mb-3" controlId="autoTranslateOnOpen">
+          <Form.Check
+            type="switch"
+            name="autoTranslateOnOpen"
+            label="Automatically translate all unknown words when opening a text"
+            checked={settings.autoTranslateOnOpen}
+            onChange={handleChange}
+          />
+        </Form.Group>
+
         <Form.Group className="mb-3" controlId="pauseOnWordClick">
           <Form.Check
             type="switch"

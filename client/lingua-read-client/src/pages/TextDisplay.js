@@ -1424,6 +1424,7 @@ const TextDisplay = () => {
   const autoScrollRafRef = useRef(null);
   const contentTouchMovedRef = useRef(false);
   const autoTranslateTriggeredRef = useRef(false);
+  const autoTranslateTextIdRef = useRef(null);
   // Removed resizeDividerRef
 
   // --- State Declarations ---
@@ -2642,6 +2643,7 @@ const TextDisplay = () => {
         setLoading(true);
         setLanguageWordsLoaded(false);
         autoTranslateTriggeredRef.current = false;
+        autoTranslateTextIdRef.current = null;
         setError('');
         setBook(null);
         setPreviousTextId(null);
@@ -2792,6 +2794,7 @@ const TextDisplay = () => {
 
   // Auto-translate all unknown words on open (if setting enabled)
   useEffect(() => {
+    let cancelled = false;
     if (
       globalSettings.autoTranslateOnOpen &&
       languageWordsLoaded &&
@@ -2800,9 +2803,17 @@ const TextDisplay = () => {
       !autoTranslateTriggeredRef.current &&
       handleTranslateUnknownWordsRef.current
     ) {
+      // Skip if a previous text's auto-translate is still in-flight
+      if (autoTranslateTextIdRef.current && autoTranslateTextIdRef.current !== text.textId) {
+        return;
+      }
       autoTranslateTriggeredRef.current = true;
-      handleTranslateUnknownWordsRef.current({ silent: true });
+      autoTranslateTextIdRef.current = text.textId;
+      handleTranslateUnknownWordsRef.current({ silent: true }).then(() => {
+        if (!cancelled) autoTranslateTextIdRef.current = null;
+      });
     }
+    return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [languageWordsLoaded, text, globalSettings.autoTranslateOnOpen]);
 
@@ -3015,6 +3026,7 @@ const TextDisplay = () => {
 
   const handleTranslateUnknownWords = async ({ silent = false } = {}) => {
     if (!text || !text.content || !text.languageId) return;
+    const callingTextId = text.textId; // Capture which text we're translating for
     setTranslatingUnknown(true); setTranslateUnknownError('');
     try {
       const wordsRegex = /\p{L}+(['-]\p{L}+)*/gu;
@@ -3024,6 +3036,8 @@ const TextDisplay = () => {
       const unknownWords = uniqueWordsInText.filter(word => !wordsMap.has(word) || (wordsMap.get(word)?.status <= 2 && !wordsMap.get(word)?.translation));
       if (unknownWords.length === 0) { if (!silent) alert("No words found needing translation."); setTranslatingUnknown(false); return; } // Exit early
       const translations = await batchTranslateWords(unknownWords, translationTargetLanguageCode, text.languageCode);
+      // Bail out if user navigated away during the API call
+      if (silent && autoTranslateTextIdRef.current !== callingTextId) { setTranslatingUnknown(false); return; }
       const originalCaseMap = new Map();
       textWords.forEach(w => { const lower = w.toLowerCase(); if (!originalCaseMap.has(lower)) { originalCaseMap.set(lower, w); } });
       const termsToAdd = unknownWords.map(word => ({
@@ -3043,6 +3057,8 @@ const TextDisplay = () => {
         setTranslatingUnknown(false);
         return;
       }
+      // Bail out if user navigated away before refreshing word list
+      if (silent && autoTranslateTextIdRef.current !== callingTextId) { setTranslatingUnknown(false); return; }
       await fetchAllLanguageWords(text.languageId);
       if (!silent) alert(`Successfully translated and updated ${termsToAdd.length} words.`);
     } catch (err) { console.error("Error translating unknown words:", err); setTranslateUnknownError(`Failed: ${err.message}`); if (!silent) alert(`Error: ${err.message}`); }

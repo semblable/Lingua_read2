@@ -156,6 +156,7 @@ namespace LinguaReadApi.Controllers
                     Repetitions = card.Repetitions,
                     IsLearning = card.IsLearning,
                     CurrentLearningStepIndex = card.CurrentLearningStepIndex,
+                    HasEverGraduated = card.HasEverGraduated,
                     IsSuspended = card.IsSuspended,
                     Flag = card.Flag,
                     Tags = card.Tags,
@@ -282,6 +283,7 @@ namespace LinguaReadApi.Controllers
                 OldIsLearning = card.IsLearning,
                 OldCurrentLearningStepIndex = card.CurrentLearningStepIndex,
                 OldLastReviewedAt = card.LastReviewedAt,
+                OldHasEverGraduated = card.HasEverGraduated,
                 ReviewedAt = DateTime.UtcNow
             };
             _context.SrsReviewLogs.Add(reviewLog);
@@ -413,6 +415,7 @@ namespace LinguaReadApi.Controllers
             card.IsLearning = lastLog.OldIsLearning;
             card.CurrentLearningStepIndex = lastLog.OldCurrentLearningStepIndex;
             card.LastReviewedAt = lastLog.OldLastReviewedAt;
+            card.HasEverGraduated = lastLog.OldHasEverGraduated;
 
             // Revert daily limits
             var settings = await _context.UserSettings.FirstOrDefaultAsync(u => u.UserId == userId);
@@ -762,14 +765,15 @@ namespace LinguaReadApi.Controllers
                 }
                 else
                 {
-                    // Good/Easy: advance to next step
+                    // Good/Easy: advance to next step (Easy graduates immediately from any step)
                     card.CurrentLearningStepIndex++;
+                    if (grade == 3) card.CurrentLearningStepIndex = learningSteps.Count; // Easy: skip to graduation
                     if (card.CurrentLearningStepIndex >= learningSteps.Count)
                     {
                         // Graduate: exit learning phase
                         card.IsLearning = false;
                         card.CurrentLearningStepIndex = 0;
-                        bool isRelearning = card.Repetitions > 0 || card.LastReviewedAt != null;
+                        bool isRelearning = card.HasEverGraduated;
                         if (isRelearning)
                         {
                             // Re-learning graduation: use lapse minimum interval
@@ -779,6 +783,7 @@ namespace LinguaReadApi.Controllers
                         {
                             card.Interval = (grade == 3) ? 4 : 1; // First-time graduation
                             card.Repetitions = 1;
+                            card.HasEverGraduated = true;
                         }
                         card.Interval = Math.Min(card.Interval, maxIntervalDays);
                         card.NextReviewAt = DateTime.UtcNow.AddDays(card.Interval);
@@ -1150,7 +1155,8 @@ namespace LinguaReadApi.Controllers
                 Interval = card.Interval,
                 Repetitions = card.Repetitions,
                 IsLearning = card.IsLearning,
-                CurrentLearningStepIndex = card.CurrentLearningStepIndex
+                CurrentLearningStepIndex = card.CurrentLearningStepIndex,
+                HasEverGraduated = card.HasEverGraduated
             }).ToList();
 
             // 4. Build prompt
@@ -1264,6 +1270,7 @@ Requirements:
         public int Repetitions { get; set; }
         public bool IsLearning { get; set; }
         public int CurrentLearningStepIndex { get; set; }
+        public bool HasEverGraduated { get; set; }
         public bool IsSuspended { get; set; }
         public int Flag { get; set; }
         public string? Tags { get; set; }
@@ -1456,5 +1463,6 @@ Requirements:
         public int Repetitions { get; set; }
         public bool IsLearning { get; set; }
         public int CurrentLearningStepIndex { get; set; }
+        public bool HasEverGraduated { get; set; }
     }
 }

@@ -347,14 +347,14 @@ const SrsReview = () => {
         case 2: { // Good: next step or graduate
           const nextStep = stepIdx + 1;
           if (nextStep >= learningSteps.length) {
-            const isRelearning = card.repetitions > 0 || card.lastReviewedAt != null;
+            const isRelearning = card.hasEverGraduated;
             const lapseMin = parseInt(localSettings.srsLapseMinimumIntervalDays, 10) || 1;
             return isRelearning ? `${lapseMin}d` : '1d';
           }
           return `${learningSteps[nextStep]}m`;
         }
-        case 3: { // Easy: graduate immediately
-          const isRelearning = card.repetitions > 0 || card.lastReviewedAt != null;
+        case 3: { // Easy: graduate immediately (from any step)
+          const isRelearning = card.hasEverGraduated;
           const lapseMin = parseInt(localSettings.srsLapseMinimumIntervalDays, 10) || 1;
           return isRelearning ? `${lapseMin * 2}d` : '4d';
         }

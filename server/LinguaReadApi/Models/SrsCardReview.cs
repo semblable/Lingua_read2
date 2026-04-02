@@ -34,6 +34,9 @@ namespace LinguaReadApi.Models
         public bool IsSuspended { get; set; } = false;
         public DateTime? BuriedUntil { get; set; }
 
+        // Graduation tracking
+        public bool HasEverGraduated { get; set; } = false;
+
         // Card Flags/Tags
         public int Flag { get; set; } = 0;        // 0=none, 1-4=colored flags
         public string? Tags { get; set; }          // comma-separated user tags

@@ -297,9 +297,10 @@ jobs:
             dc up -d --force-recreate nginx
 
             # Start backup service only after rclone is configured (run setup.sh once to enable).
+            # Uses --profile backup so the service is invisible to normal dc up/pull/ps commands.
             if [ -f "secrets/rclone.conf" ]; then
-              dc pull backup
-              dc up -d --force-recreate backup
+              sudo docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile backup pull backup
+              sudo docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile backup up -d --force-recreate backup
             else
               echo "Skipping backup service: secrets/rclone.conf not found (run setup.sh to enable)"
             fi

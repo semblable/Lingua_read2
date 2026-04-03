@@ -1,14 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { Form, Button, Card, Row, Col } from 'react-bootstrap';
-import { useAuthStore } from '../utils/store';
 import { getUserSettings, updateUserSettings } from '../utils/api';
 
 const UserSettings = () => {
-  const { token } = useAuthStore();
   const [settings, setSettings] = useState({
     textSize: 'medium',
     theme: 'dark',
-    textFont: 'default', // Added textFont default
+    textFont: 'default',
     highlighting: 'on',
     highlightKnownWords: true
   });
@@ -17,10 +15,7 @@ const UserSettings = () => {
   const [message, setMessage] = useState('');
 
   useEffect(() => {
-    // Fetch user settings
     const fetchSettings = async () => {
-      if (!token) return;
-
       try {
         setLoading(true);
         const response = await getUserSettings();
@@ -28,7 +23,6 @@ const UserSettings = () => {
         if (response) {
           setSettings(response);
 
-          // Apply theme from settings
           if (response.theme === 'dark') {
             document.body.classList.add('dark-theme');
           } else {
@@ -44,7 +38,7 @@ const UserSettings = () => {
     };
 
     fetchSettings();
-  }, [token]);
+  }, []);
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;

@@ -109,17 +109,8 @@ export const SettingsProvider = ({ children }) => {
   }, []);
 
   useEffect(() => {
-    // Fetch settings when the provider mounts
-    // Check if user is logged in before fetching? Maybe fetchApi handles this?
-    // Assuming fetchApi throws error if not logged in for protected routes like /usersettings
-    const token = localStorage.getItem('token');
-    if (token) { // Only fetch if token exists
-        fetchSettings();
-    } else {
-        console.log('[SettingsContext] No token found, using default settings.');
-        setSettings(defaultSettings);
-        setLoadingSettings(false);
-    }
+    // Fetch settings when the provider mounts (only rendered when authenticated)
+    fetchSettings();
   }, [fetchSettings]);
 
   // Function to update a specific setting locally
@@ -133,17 +124,9 @@ export const SettingsProvider = ({ children }) => {
     // for better control over saving state (e.g., after debouncing).
   }, []);
 
-  // Function to manually refetch settings if needed (e.g., after login/logout)
+  // Function to manually refetch settings if needed
   const refetchSettings = useCallback(async () => {
-      const token = localStorage.getItem('token');
-      if (token) {
-          await fetchSettings();
-      } else {
-          console.log('[SettingsContext] Refetch requested, but no token found. Resetting to defaults.');
-          setSettings(defaultSettings);
-          setLoadingSettings(false); // Ensure loading is false if reset
-          setErrorSettings(null); // Clear any previous errors
-      }
+      await fetchSettings();
   }, [fetchSettings]);
 
 

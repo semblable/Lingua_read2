@@ -227,9 +227,10 @@ const Statistics = () => {
 
       // Call the admin endpoint to initialize languages
       const response = await fetch(`${API_URL}/admin/initialize-languages`, {
+        credentials: 'include',
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
-          'Accept': 'application/json'
+          'Accept': 'application/json',
+          'X-Requested-With': 'XMLHttpRequest'
         }
       });
 

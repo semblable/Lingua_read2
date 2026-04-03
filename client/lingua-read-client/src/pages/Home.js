@@ -1,26 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import { Container, Row, Col, Card, Button, ListGroup, Spinner, Alert } from 'react-bootstrap';
 import { Link } from 'react-router-dom';
-import { useAuthStore } from '../utils/store';
-import { getRecentTexts } from '../utils/api'; // Import the new API function
+import { getRecentTexts } from '../utils/api';
 
 const Home = () => {
-  const { token } = useAuthStore();
   const [recentTexts, setRecentTexts] = useState([]);
   const [loadingRecent, setLoadingRecent] = useState(false);
   const [errorRecent, setErrorRecent] = useState('');
 
   useEffect(() => {
     const fetchRecent = async () => {
-      if (!token) {
-        setRecentTexts([]); // Clear recent texts if logged out
-        return;
-      }
       setLoadingRecent(true);
       setErrorRecent('');
       try {
         const data = await getRecentTexts();
-        setRecentTexts(data || []); // Ensure data is an array
+        setRecentTexts(data || []);
       } catch (err) {
         setErrorRecent('Failed to load recent texts. Please try again later.');
         console.error("Error fetching recent texts:", err);
@@ -30,7 +24,7 @@ const Home = () => {
     };
 
     fetchRecent();
-  }, [token]); // Re-fetch when token changes (login/logout)
+  }, []);
 
   const renderRecentTexts = () => {
     if (loadingRecent) {
@@ -74,19 +68,16 @@ const Home = () => {
       {/* Removed outer Row/Col structure that centered everything */}
 
       {/* --- Continue Reading Section --- */}
-      {/* Keep token check here as it depends on fetched data */}
-      {token && (
-        <Row className="justify-content-center mb-4">
-          <Col md={10} lg={8}> {/* Adjusted column size */}
-            <Card className="shadow-sm">
-              <Card.Header as="h5">Continue Reading</Card.Header>
-              <Card.Body>
-                {renderRecentTexts()}
-              </Card.Body>
-            </Card>
-          </Col>
-        </Row>
-      )}
+      <Row className="justify-content-center mb-4">
+        <Col md={10} lg={8}>
+          <Card className="shadow-sm">
+            <Card.Header as="h5">Continue Reading</Card.Header>
+            <Card.Body>
+              {renderRecentTexts()}
+            </Card.Body>
+          </Card>
+        </Col>
+      </Row>
       {/* --- End Continue Reading Section --- */}
 
       {/* --- Action Cards Section --- */}

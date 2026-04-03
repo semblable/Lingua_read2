@@ -4,35 +4,30 @@ import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import App from '../App';
 import { useAuthStore } from '../utils/store';
-import { login, getUserSettings, getRecentTexts } from '../utils/api';
-import { jwtDecode } from 'jwt-decode';
+import { authStatus, getUserSettings, getRecentTexts } from '../utils/api';
 
 jest.mock('../utils/api', () => ({
-  login: jest.fn(),
+  authStatus: jest.fn(),
+  authLogin: jest.fn(),
+  authLogout: jest.fn(),
+  authSetup: jest.fn(),
   getUserSettings: jest.fn(),
   getRecentTexts: jest.fn()
 }));
 
-jest.mock('jwt-decode', () => ({
-  jwtDecode: jest.fn()
-}));
-
 describe('App', () => {
   beforeEach(() => {
-    localStorage.clear();
-    useAuthStore.setState({ token: null, user: null });
-    login.mockReset();
+    useAuthStore.setState({ isAuthenticated: false, user: null, isLoading: true, needsSetup: false });
+    authStatus.mockReset();
     getUserSettings.mockReset();
     getRecentTexts.mockReset();
-    jwtDecode.mockReset();
   });
 
-  test('renders loading then navigation after auto-login', async () => {
-    login.mockResolvedValue({ token: 'test-token' });
-    jwtDecode.mockReturnValue({
-      exp: Date.now() / 1000 + 3600,
-      sub: 'user-1',
-      email: 'user@example.com'
+  test('renders loading then navigation after auth check', async () => {
+    authStatus.mockResolvedValue({
+      authenticated: true,
+      needsSetup: false,
+      user: { id: 'user-1', email: 'user@example.com' }
     });
     getUserSettings.mockResolvedValue({});
     getRecentTexts.mockResolvedValue([]);

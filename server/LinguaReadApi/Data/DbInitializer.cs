@@ -95,9 +95,10 @@ namespace LinguaReadApi.Data
 
                 // --- Seed Default User ---
                 // Check if the default user needs seeding (INDEPENDENTLY of languages)
-                if (!context.Users.Any(u => u.Id == DefaultUserId))
+                var existingUser = context.Users.FirstOrDefault(u => u.Id == DefaultUserId);
+                if (existingUser == null)
                 {
-                    Console.WriteLine($"Creating default user: {DefaultUserEmail} with ID: {DefaultUserId}"); // Add log
+                    Console.WriteLine($"Creating default user: {DefaultUserEmail} with ID: {DefaultUserId}");
                     var defaultUser = new User
                     {
                         Id = DefaultUserId,
@@ -105,22 +106,44 @@ namespace LinguaReadApi.Data
                         NormalizedUserName = DefaultUserEmail.ToUpperInvariant(),
                         Email = DefaultUserEmail,
                         NormalizedEmail = DefaultUserEmail.ToUpperInvariant(),
-                        EmailConfirmed = true, // Assume confirmed for simplicity
-                        PasswordHash = null, // No password needed
-                        SecurityStamp = Guid.NewGuid().ToString("D"), // Required by Identity
+                        EmailConfirmed = true,
+                        PasswordHash = null,
+                        SecurityStamp = Guid.NewGuid().ToString("D"),
                         CreatedAt = DateTime.UtcNow,
-                        // Initialize other User properties if necessary
                         LockoutEnabled = false,
                         TwoFactorEnabled = false,
                         PhoneNumberConfirmed = false,
                         AccessFailedCount = 0
                     };
-                    Console.WriteLine("[DbInitializer] Attempting to add default user to context...");
+
+                    // Bootstrap password from env var if provided
+                    var initialPassword = Environment.GetEnvironmentVariable("Auth__InitialPassword");
+                    if (!string.IsNullOrWhiteSpace(initialPassword))
+                    {
+                        var passwordHasher = serviceProvider.GetRequiredService<IPasswordHasher<User>>();
+                        defaultUser.PasswordHash = passwordHasher.HashPassword(defaultUser, initialPassword);
+                        Console.WriteLine("[DbInitializer] Initial password set from environment variable.");
+                    }
+
                     context.Users.Add(defaultUser);
-                    Console.WriteLine("[DbInitializer] Default user added to context.");
-                    userSeeded = true; // Mark that the user was added
-                } else {
-                    Console.WriteLine($"[DbInitializer] Default user with ID {DefaultUserId} already exists. Skipping creation.");
+                    userSeeded = true;
+                }
+                else
+                {
+                    Console.WriteLine($"[DbInitializer] Default user with ID {DefaultUserId} already exists.");
+
+                    // If user has no password and env var is set, bootstrap the password
+                    if (string.IsNullOrEmpty(existingUser.PasswordHash))
+                    {
+                        var initialPassword = Environment.GetEnvironmentVariable("Auth__InitialPassword");
+                        if (!string.IsNullOrWhiteSpace(initialPassword))
+                        {
+                            var passwordHasher = serviceProvider.GetRequiredService<IPasswordHasher<User>>();
+                            existingUser.PasswordHash = passwordHasher.HashPassword(existingUser, initialPassword);
+                            userSeeded = true; // trigger SaveChanges
+                            Console.WriteLine("[DbInitializer] Password bootstrapped from environment variable for existing user.");
+                        }
+                    }
                 }
 
 

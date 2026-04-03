@@ -127,6 +127,18 @@ builder.Services.AddAuthentication(options =>
             Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"] ?? throw new InvalidOperationException("JWT Key is not configured"))
         )
     };
+    options.Events = new JwtBearerEvents
+    {
+        OnMessageReceived = context =>
+        {
+            var cookieToken = context.Request.Cookies[".LinguaRead.Auth"];
+            if (!string.IsNullOrEmpty(cookieToken))
+            {
+                context.Token = cookieToken;
+            }
+            return Task.CompletedTask;
+        }
+    };
 });
 
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
@@ -165,7 +177,7 @@ builder.Services.AddCors(options =>
         }
 
         policy.WithMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
-              .WithHeaders("Content-Type", "Authorization", "Accept")
+              .WithHeaders("Content-Type", "Authorization", "Accept", "X-Requested-With")
               .AllowCredentials();
     });
 });
@@ -297,6 +309,26 @@ app.UseStaticFiles(new StaticFileOptions
 
 app.UseAuthentication();
 app.UseAuthorization();
+
+// Lightweight CSRF protection for cookie-based auth.
+// Cross-origin forms cannot set custom headers, so requiring X-Requested-With
+// on mutating requests prevents CSRF when using SameSite=Lax cookies.
+app.Use(async (context, next) =>
+{
+    if (context.Request.Cookies.ContainsKey(".LinguaRead.Auth") &&
+        !HttpMethods.IsGet(context.Request.Method) &&
+        !HttpMethods.IsHead(context.Request.Method) &&
+        !HttpMethods.IsOptions(context.Request.Method))
+    {
+        if (!context.Request.Headers.ContainsKey("X-Requested-With"))
+        {
+            context.Response.StatusCode = 403;
+            await context.Response.WriteAsync("Missing CSRF header");
+            return;
+        }
+    }
+    await next();
+});
 
 app.MapControllers();
 

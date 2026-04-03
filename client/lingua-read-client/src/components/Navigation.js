@@ -5,13 +5,12 @@ import { useAuthStore } from '../utils/store';
 
 
 const Navigation = () => {
-  const { token, /*user,*/ clearToken } = useAuthStore(); // Removed unused user
+  const { isAuthenticated, logout } = useAuthStore();
   const navigate = useNavigate();
 
-  const handleLogout = () => {
-    clearToken();
-    localStorage.removeItem('token'); // Also clear from localStorage
-    navigate('/'); // Navigate to home page after logout
+  const handleLogout = async () => {
+    await logout();
+    navigate('/login');
   };
 
   return (
@@ -25,7 +24,7 @@ const Navigation = () => {
             {/* Navigation items are now always shown since login is automatic */}
             {/* We might still want to hide them briefly during initial loading in App.js, */}
             {/* but the logic here assumes token will be set quickly */}
-            {token && ( // Keep token check for conditional rendering of user-specific links
+            {isAuthenticated && (
               <>
                 <Nav.Link as={Link} to="/library">Library</Nav.Link>
 
@@ -48,7 +47,7 @@ const Navigation = () => {
 
           <Nav>
             {/* Account dropdown is always shown if logged in (which should be always after load) */}
-            {token && ( // Keep token check
+            {isAuthenticated && (
               <NavDropdown title="Account" id="account-dropdown" align="end">
                 <NavDropdown.Item as={Link} to="/settings">User Settings</NavDropdown.Item>
                 <NavDropdown.Item as={Link} to="/settings/languages">Languages</NavDropdown.Item>

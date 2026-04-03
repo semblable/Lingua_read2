@@ -1,5 +1,3 @@
-// import storage from './storage'; // Removed unused storage
-
 // Dynamically set API URL based on platform.
 //
 // - Web (behind Nginx): default to `/api`
@@ -15,49 +13,53 @@ const MOBILE_API_BASE_URL =
 const isWeb = typeof window !== 'undefined' && typeof document !== 'undefined';
 export const API_URL = isWeb ? WEB_API_BASE_URL : MOBILE_API_BASE_URL;
 
-// Helper function to get token from storage
-const getToken = () => {
-  try {
-    const token = localStorage.getItem('token');
-    if (!token) {
-      return null;
-    }
-    return token;
-  } catch (error) {
-    console.error('Error retrieving token:', error);
-    return null;
-  }
+// --- Auth API (raw fetch, used by store before fetchApi is appropriate) ---
+export const authStatus = async () => {
+  const res = await fetch(API_URL + '/auth/status', {
+    credentials: 'include',
+    headers: { 'Accept': 'application/json' }
+  });
+  if (!res.ok) throw new Error('Failed to check auth status');
+  return res.json();
 };
 
-// Auto-relogin: attempt to get a fresh token when a 401 is received
-let _reloginPromise = null;
-const attemptRelogin = async () => {
-  // Deduplicate concurrent relogin attempts
-  if (_reloginPromise) return _reloginPromise;
-  _reloginPromise = (async () => {
-    try {
-      const fullUrl = API_URL + '/auth/login';
-      const res = await fetch(fullUrl, { method: 'POST', credentials: 'include', mode: 'cors' });
-      if (!res.ok) return null;
-      const data = await res.json();
-      if (data?.token) {
-        localStorage.setItem('token', data.token);
-        // Update Zustand store if available
-        try {
-          const { useAuthStore } = await import('./store');
-          useAuthStore.getState().setToken(data.token);
-        } catch (_) { /* store not available */ }
-        return data.token;
-      }
-      return null;
-    } catch (err) {
-      console.error('[Auth] Auto-relogin failed:', err.message);
-      return null;
-    } finally {
-      _reloginPromise = null;
-    }
-  })();
-  return _reloginPromise;
+export const authLogin = (password) => {
+  return fetch(API_URL + '/auth/login', {
+    method: 'POST',
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Requested-With': 'XMLHttpRequest'
+    },
+    body: JSON.stringify({ password })
+  });
+};
+
+export const authLogout = () => {
+  return fetch(API_URL + '/auth/logout', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'X-Requested-With': 'XMLHttpRequest' }
+  });
+};
+
+export const authSetup = (password) => {
+  return fetch(API_URL + '/auth/setup', {
+    method: 'POST',
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Requested-With': 'XMLHttpRequest'
+    },
+    body: JSON.stringify({ password })
+  });
+};
+
+// Redirect to login on 401
+const handleUnauthorized = () => {
+  if (window.location.pathname !== '/login') {
+    window.location.href = '/login';
+  }
 };
 
 // --- NEW HELPER: Upload with Progress (XHR) ---
@@ -82,16 +84,8 @@ const uploadWithProgress = (endpoint, formData, onProgress) => {
     }
 
     xhr.open('POST', fullUrl);
-    xhr.withCredentials = true; // IMPORTANT: For cookies if needed, or consistent with fetch credentials: 'include'
-
-    // Set Auth Header
-    const token = getToken();
-    if (token && typeof token === 'string' && token.trim() !== '') {
-      xhr.setRequestHeader('Authorization', `Bearer ${token.trim()}`);
-    } else {
-      reject(new Error('Authentication required for upload.'));
-      return;
-    }
+    xhr.withCredentials = true; // Send httpOnly auth cookie
+    xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest'); // CSRF protection
 
     // Response handler
     xhr.onload = () => {
@@ -149,31 +143,11 @@ const fetchApi = async (endpoint, options = {}) => {
   }
 
   try {
-    const token = getToken();
-
     const headers = {
       'Accept': 'application/json',
-      'Content-Type': 'application/json'
+      'Content-Type': 'application/json',
+      'X-Requested-With': 'XMLHttpRequest'
     };
-
-    // Only add Authorization header if token exists and is a string
-    if (token && typeof token === 'string' && token.trim() !== '') {
-      const cleanToken = token.trim();
-      headers.Authorization = `Bearer ${cleanToken}`;
-      // Authorization header added
-    } else {
-      // Allow /usersettings even without token initially? Or rely on context to call only when logged in?
-      // For now, let's assume /usersettings REQUIRES auth like others, except login/register.
-      if (endpoint !== '/auth/login' && endpoint !== '/auth/register') {
-        // Token missing — attempt auto-relogin before failing
-        const freshToken = await attemptRelogin();
-        if (freshToken) {
-          headers.Authorization = `Bearer ${freshToken.trim()}`;
-        } else {
-          throw new Error('Authentication required');
-        }
-      }
-    }
 
     // Add any additional headers from options
     if (options.headers) {
@@ -188,26 +162,14 @@ const fetchApi = async (endpoint, options = {}) => {
     };
 
     // Construct the full URL properly
-    const fullUrl = API_URL + endpoint; // Directly concatenate the relative path
+    const fullUrl = API_URL + endpoint;
 
-    let response = await fetch(fullUrl.toString(), requestConfig);
+    const response = await fetch(fullUrl.toString(), requestConfig);
 
-    // Handle 401: attempt auto-relogin and retry once
-    if (response.status === 401 && endpoint !== '/auth/login') {
-      const newToken = await attemptRelogin();
-      if (newToken) {
-        headers.Authorization = `Bearer ${newToken.trim()}`;
-        const retryConfig = { ...options, headers, credentials: 'include', mode: 'cors' };
-        const retryResponse = await fetch(fullUrl.toString(), retryConfig);
-        if (retryResponse.ok) {
-          const ct = retryResponse.headers.get('content-type');
-          if (ct && ct.includes('application/json')) return await retryResponse.json();
-          const txt = await retryResponse.text();
-          return { message: txt || retryResponse.statusText };
-        }
-        // Retry also failed — fall through to error handling with retry response
-        response = retryResponse;
-      }
+    // Handle 401: redirect to login
+    if (response.status === 401) {
+      handleUnauthorized();
+      throw new Error('Authentication required');
     }
 
     // Handle response
@@ -259,19 +221,10 @@ const fetchApiDownload = async (endpoint, options = {}) => {
   }
 
   try {
-    const token = getToken();
     const headers = {
-      // Accept might vary depending on what the server sends, but often octet-stream for downloads
       'Accept': 'application/octet-stream',
-      // No Content-Type needed for GET
+      'X-Requested-With': 'XMLHttpRequest'
     };
-
-    if (token && typeof token === 'string' && token.trim() !== '') {
-      headers.Authorization = `Bearer ${token.trim()}`;
-    } else {
-      // Authentication is likely required for admin actions
-      throw new Error('Authentication required for download');
-    }
 
     const requestConfig = {
       ...options,
@@ -280,7 +233,7 @@ const fetchApiDownload = async (endpoint, options = {}) => {
       mode: 'cors'
     };
 
-    const fullUrl = API_URL + endpoint; // Directly concatenate the relative path
+    const fullUrl = API_URL + endpoint;
 
     const response = await fetch(fullUrl.toString(), requestConfig);
 
@@ -342,16 +295,7 @@ export const testApiConnection = async () => {
   }
 };
 
-// Auth API
-// Modified for auto-login: No longer sends email/password
-export const login = () => {
-  return fetchApi('/auth/login', {
-    method: 'POST'
-    // No body needed for the auto-login endpoint
-  });
-};
-
-// REMOVED register function as it's no longer used
+// REMOVED old auto-login function — auth now uses cookie-based login via authLogin()
 
 // Languages API
 export const getLanguages = () => {
@@ -1113,20 +1057,12 @@ export const restoreDatabase = async (backupFile) => {
   }
 
   try {
-    const token = getToken();
     const headers = {
-      'Accept': 'application/json', // Expect JSON response (success/error message)
-      // DO NOT set Content-Type for FormData
+      'Accept': 'application/json',
+      'X-Requested-With': 'XMLHttpRequest'
     };
 
-    if (token && typeof token === 'string' && token.trim() !== '') {
-      headers.Authorization = `Bearer ${token.trim()}`;
-    } else {
-      throw new Error('Authentication required for database restore');
-    }
-
     const formData = new FormData();
-    // Key 'backupFile' must match the parameter name in AdminController.RestoreDatabase
     formData.append('backupFile', backupFile);
 
     const requestConfig = {

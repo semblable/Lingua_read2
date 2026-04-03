@@ -1,30 +1,58 @@
 import { create } from 'zustand';
-import { jwtDecode } from 'jwt-decode';
+import { authStatus, authLogin, authLogout, authSetup } from './api';
 
 // Auth Store
 export const useAuthStore = create((set) => ({
-  token: null,
+  isAuthenticated: false,
   user: null,
-  setToken: (token) => {
+  isLoading: true,
+  needsSetup: false,
+  checkAuth: async () => {
+    set({ isLoading: true });
     try {
-      localStorage.setItem('token', token);
-      const decodedToken = jwtDecode(token);
+      const data = await authStatus();
       set({
-        token,
-        user: {
-          id: decodedToken.sub,
-          email: decodedToken.email
-        }
+        isAuthenticated: data.authenticated,
+        needsSetup: data.needsSetup,
+        user: data.user || null,
+        isLoading: false
       });
-    } catch (error) {
-      console.error('Failed to decode token, clearing auth state.', error);
-      localStorage.removeItem('token');
-      set({ token: null, user: null });
+    } catch {
+      set({ isAuthenticated: false, user: null, isLoading: false, needsSetup: false });
     }
   },
-  clearToken: () => {
-    localStorage.removeItem('token');
-    set({ token: null, user: null });
+  login: async (password) => {
+    const res = await authLogin(password);
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.message || 'Login failed.');
+    }
+    // After successful login, re-check auth status to get user info
+    const status = await authStatus();
+    set({
+      isAuthenticated: status.authenticated,
+      user: status.user || null,
+      needsSetup: false
+    });
+  },
+  logout: async () => {
+    try {
+      await authLogout();
+    } catch { /* ignore */ }
+    set({ isAuthenticated: false, user: null });
+  },
+  setup: async (password) => {
+    const res = await authSetup(password);
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.message || 'Setup failed.');
+    }
+    const status = await authStatus();
+    set({
+      isAuthenticated: status.authenticated,
+      user: status.user || null,
+      needsSetup: false
+    });
   }
 }));
 

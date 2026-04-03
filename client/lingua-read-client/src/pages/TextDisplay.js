@@ -1788,7 +1788,8 @@ const TextDisplay = () => {
     try {
       // Corrected URL construction: Removed redundant '/api' prefix
       const response = await fetch(`${API_URL}/words/language/${languageId}?skipSort=true`, {
-        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}`, 'Accept': 'application/json' }
+        credentials: 'include',
+        headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' }
       });
       if (!response.ok) throw new Error('Failed to fetch language words');
       const allLanguageWords = await response.json();

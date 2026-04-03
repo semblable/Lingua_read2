@@ -89,6 +89,7 @@ services:
 
   backup:
     image: ghcr.io/${GHCR_REPO:-semblable/lingua-read-backup}:${BACKUP_IMAGE_TAG:-latest}
+    profiles: ["backup"]
     restart: unless-stopped
     depends_on:
       db:

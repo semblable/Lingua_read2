@@ -7,3 +7,5 @@ obj
 TestResults
 .DS_Store
 Thumbs.db
+.env
+appsettings.Local.json

@@ -163,8 +163,6 @@ server/LinguaReadApi/node_modules/
 # "Ignore entire wwwroot as nothing else needs tracking and it contains user uploads"
 # This is a strong reason to keep it if it's true for this project.
 server/LinguaReadApi/wwwroot/
-server/LinguaReadApi/wwwroot/audio_lessons/
-server/LinguaReadApi/wwwroot/audiobooks/
 
 # ===================================================================
 # Scripts and Data Files

@@ -109,7 +109,11 @@ const uploadWithProgress = (endpoint, formData, onProgress) => {
           resolve({ message: xhr.statusText }); // Fallback
         }
       } else {
-        // Error
+        if (xhr.status === 401) {
+          handleUnauthorized();
+          reject(new Error('Authentication required'));
+          return;
+        }
         try {
           const json = JSON.parse(xhr.responseText);
           const message = json.message || json.title || `Upload failed: ${xhr.status} ${xhr.statusText}`;
@@ -238,6 +242,10 @@ const fetchApiDownload = async (endpoint, options = {}) => {
     const response = await fetch(fullUrl.toString(), requestConfig);
 
     if (!response.ok) {
+      if (response.status === 401) {
+        handleUnauthorized();
+        throw new Error('Authentication required');
+      }
       let errorMessage = `HTTP error! Status: ${response.status}`;
       try {
         // Try to parse error as JSON first
@@ -294,8 +302,6 @@ export const testApiConnection = async () => {
     return false;
   }
 };
-
-// REMOVED old auto-login function — auth now uses cookie-based login via authLogin()
 
 // Languages API
 export const getLanguages = () => {

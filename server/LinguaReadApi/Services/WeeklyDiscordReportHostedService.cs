@@ -28,6 +28,8 @@ namespace LinguaReadApi.Services
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
+            _logger.LogInformation("Discord weekly report service started.");
+
             while (!stoppingToken.IsCancellationRequested)
             {
                 var options = _optionsMonitor.CurrentValue;
@@ -43,6 +45,9 @@ namespace LinguaReadApi.Services
                     using var scope = _serviceProvider.CreateScope();
                     var reportService = scope.ServiceProvider.GetRequiredService<DiscordReportService>();
                     var nowUtc = DateTime.UtcNow;
+                    _logger.LogDebug(
+                        "Discord weekly report poll at {NowUtc}, interval={PollMinutes}m",
+                        nowUtc, options.PollIntervalMinutes);
                     var result = await reportService.SendDueWeeklyReportsAsync(options, nowUtc, false, stoppingToken);
 
                     _logger.LogInformation(

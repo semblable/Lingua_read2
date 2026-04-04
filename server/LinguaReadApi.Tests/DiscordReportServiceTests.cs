@@ -2,7 +2,6 @@ using System;
 using System.IO;
 using System.Net;
 using System.Net.Http;
-using System.Reflection;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
@@ -77,12 +76,10 @@ public class DiscordReportServiceTests
         Assert.Equal(1, result.SentCount);
         Assert.NotNull(handler.FirstPayloadContent);
 
-        var payloadJson = ExtractPayloadJson(handler.FirstPayloadContent);
-        using var payloadDoc = JsonDocument.Parse(payloadJson);
-        var content = payloadDoc.RootElement.GetProperty("content").GetString();
-        Assert.NotNull(content);
-        Assert.Contains("Total words read: 120", content);
-        Assert.Contains("Total listening time: 1h", content);
+        var embed = ExtractFirstEmbed(handler.FirstPayloadContent);
+        var fields = GetEmbedFields(embed);
+        Assert.Equal("120", fields["Words Read"]);
+        Assert.Equal("1h", fields["Listening"]);
 
         var updatedSettings = await context.UserSettings.SingleAsync(us => us.UserId == userId);
         Assert.Equal(new DateTime(2026, 1, 26, 8, 0, 0, DateTimeKind.Utc), updatedSettings.DiscordWeeklyReportLastSentAt);
@@ -219,12 +216,9 @@ public class DiscordReportServiceTests
         Assert.True(result.Sent);
         Assert.NotNull(handler.FirstPayloadContent);
 
-        var payloadJson = ExtractPayloadJson(handler.FirstPayloadContent);
-        using var payloadDoc = JsonDocument.Parse(payloadJson);
-        var content = payloadDoc.RootElement.GetProperty("content").GetString();
-        Assert.NotNull(content);
-        Assert.Contains("Total words read: 200", content);
-        Assert.DoesNotContain("Total words read: 50", content);
+        var embed = ExtractFirstEmbed(handler.FirstPayloadContent);
+        var fields = GetEmbedFields(embed);
+        Assert.Equal("200", fields["Words Read"]);
     }
 
     [Fact]
@@ -295,11 +289,11 @@ public class DiscordReportServiceTests
         Assert.True(result.Sent);
         Assert.NotNull(handler.FirstPayloadContent);
 
-        var payloadJson = ExtractPayloadJson(handler.FirstPayloadContent);
-        using var payloadDoc = JsonDocument.Parse(payloadJson);
-        var content = payloadDoc.RootElement.GetProperty("content").GetString();
-        Assert.NotNull(content);
-        Assert.Contains("Portuguese: 0 words, 30m, 1 sessions", content);
+        var embed = ExtractFirstEmbed(handler.FirstPayloadContent);
+        var fields = GetEmbedFields(embed);
+        Assert.Contains("Portuguese", fields["Languages"]);
+        Assert.Contains("30m", fields["Languages"]);
+        Assert.Contains("1 sessions", fields["Languages"]);
     }
 
     [Fact]
@@ -360,48 +354,62 @@ public class DiscordReportServiceTests
         Assert.True(result.Sent);
         Assert.NotNull(handler.FirstPayloadContent);
 
-        var payloadJson = ExtractPayloadJson(handler.FirstPayloadContent);
-        using var payloadDoc = JsonDocument.Parse(payloadJson);
-        var content = payloadDoc.RootElement.GetProperty("content").GetString();
-        Assert.NotNull(content);
-        Assert.Contains("Portuguese: 0 words, 20m, 2 sessions", content);
+        var embed = ExtractFirstEmbed(handler.FirstPayloadContent);
+        var fields = GetEmbedFields(embed);
+        Assert.Contains("Portuguese", fields["Languages"]);
+        Assert.Contains("20m", fields["Languages"]);
+        Assert.Contains("2 sessions", fields["Languages"]);
     }
 
     [Fact]
-    public async Task SendReportForUserAsync_UsesRelayCompatibleMultipartForAttachments()
+    public async Task SendReportForUserAsync_SendsJsonPayloadWithEmbeds()
     {
-        var tempFile = Path.GetTempFileName();
-        await File.WriteAllTextAsync(tempFile, "<html><body>report</body></html>");
+        using var context = CreateDbContext();
+        var handler = new CapturingHttpMessageHandler();
+        var httpClientFactory = new StubHttpClientFactory(handler);
+        var service = new DiscordReportService(
+            context,
+            httpClientFactory,
+            NullLogger<DiscordReportService>.Instance,
+            new StubDatabaseAdminService());
 
-        try
+        var userId = Guid.NewGuid();
+        var settings = new UserSettings
         {
-            var endpointKindType = typeof(DiscordReportService).Assembly.GetType("LinguaReadApi.Services.WebhookEndpointKind");
-            Assert.NotNull(endpointKindType);
+            UserId = userId,
+            DiscordWeeklyReportEnabled = true,
+            DiscordWebhookUrl = "https://discord.com/api/webhooks/test/test",
+            DiscordWeeklyReportDayOfWeek = "Monday",
+            DiscordWeeklyReportHourLocal = 8,
+            DiscordTimezoneOffsetMinutes = 0
+        };
 
-            var relayKind = Enum.Parse(endpointKindType!, "ReportRelay");
-            var createWebhookContentMethod = typeof(DiscordReportService).GetMethod(
-                "CreateWebhookContent",
-                BindingFlags.NonPublic | BindingFlags.Static);
+        context.Users.Add(new User { Id = userId, Email = "embed@example.com", UserName = "embed@example.com" });
+        context.UserSettings.Add(settings);
+        await context.SaveChangesAsync();
 
-            Assert.NotNull(createWebhookContentMethod);
+        var startUtc = new DateTime(2026, 3, 14, 0, 0, 0, DateTimeKind.Utc);
+        var endUtc = new DateTime(2026, 3, 21, 0, 0, 0, DateTimeKind.Utc);
 
-            using var content = (HttpContent?)createWebhookContentMethod!.Invoke(
-                null,
-                new object[] { "Report attachment: report.html", new[] { tempFile }, relayKind });
+        var result = await service.SendReportForUserAsync(settings, startUtc, endUtc, false, CancellationToken.None);
 
-            Assert.NotNull(content);
-            Assert.NotNull(content!.Headers.ContentType);
-            Assert.Contains("multipart/form-data", content.Headers.ContentType!.ToString());
+        Assert.True(result.Sent);
 
-            var rawBody = await content.ReadAsStringAsync();
-            Assert.Contains("name=content", rawBody);
-            Assert.Contains("payload_json", rawBody);
-            Assert.Contains("files[0]", rawBody);
-        }
-        finally
-        {
-            File.Delete(tempFile);
-        }
+        // Verify it's plain JSON, not multipart
+        var request = handler.Requests[0];
+        Assert.Contains("application/json", request.ContentType);
+
+        // Verify embed structure
+        using var doc = JsonDocument.Parse(handler.FirstPayloadContent!);
+        var root = doc.RootElement;
+        Assert.True(root.TryGetProperty("embeds", out var embeds));
+        Assert.Equal(1, embeds.GetArrayLength());
+
+        var embed = embeds[0];
+        Assert.Equal(0x6366F1, embed.GetProperty("color").GetInt32());
+        Assert.True(embed.TryGetProperty("title", out _));
+        Assert.True(embed.TryGetProperty("footer", out _));
+        Assert.True(embed.TryGetProperty("timestamp", out _));
     }
 
     [Fact]
@@ -432,6 +440,45 @@ public class DiscordReportServiceTests
         Assert.False(result.Sent);
         Assert.False(result.Skipped);
         Assert.Equal("Discord webhook URL is invalid.", result.Reason);
+    }
+
+    [Fact]
+    public async Task SendReportForUserAsync_ZeroActivity_ShowsStatusField()
+    {
+        using var context = CreateDbContext();
+        var handler = new CapturingHttpMessageHandler();
+        var httpClientFactory = new StubHttpClientFactory(handler);
+        var service = new DiscordReportService(
+            context,
+            httpClientFactory,
+            NullLogger<DiscordReportService>.Instance,
+            new StubDatabaseAdminService());
+
+        var userId = Guid.NewGuid();
+        var settings = new UserSettings
+        {
+            UserId = userId,
+            DiscordWeeklyReportEnabled = true,
+            DiscordWebhookUrl = "https://discord.com/api/webhooks/test/test",
+            DiscordWeeklyReportDayOfWeek = "Monday",
+            DiscordWeeklyReportHourLocal = 8,
+            DiscordTimezoneOffsetMinutes = 0
+        };
+
+        context.Users.Add(new User { Id = userId, Email = "zero@example.com", UserName = "zero@example.com" });
+        context.UserSettings.Add(settings);
+        await context.SaveChangesAsync();
+
+        var startUtc = new DateTime(2026, 3, 14, 0, 0, 0, DateTimeKind.Utc);
+        var endUtc = new DateTime(2026, 3, 21, 0, 0, 0, DateTimeKind.Utc);
+
+        var result = await service.SendReportForUserAsync(settings, startUtc, endUtc, false, CancellationToken.None);
+
+        Assert.True(result.Sent);
+
+        var embed = ExtractFirstEmbed(handler.FirstPayloadContent);
+        var fields = GetEmbedFields(embed);
+        Assert.Contains("No activity", fields["Status"]);
     }
 
     private static AppDbContext CreateDbContext()
@@ -503,32 +550,28 @@ public class DiscordReportServiceTests
         }
     }
 
-    private static string ExtractPayloadJson(string? rawPayload)
+    private static JsonElement ExtractFirstEmbed(string? rawPayload)
     {
-        if (string.IsNullOrWhiteSpace(rawPayload))
-        {
-            return "{}";
-        }
+        Assert.NotNull(rawPayload);
+        using var doc = JsonDocument.Parse(rawPayload!);
+        var embeds = doc.RootElement.GetProperty("embeds");
+        Assert.True(embeds.GetArrayLength() > 0, "Expected at least one embed");
+        return embeds[0].Clone();
+    }
 
-        var payloadIndex = rawPayload.IndexOf("payload_json", StringComparison.Ordinal);
-        if (payloadIndex < 0)
+    private static Dictionary<string, string> GetEmbedFields(JsonElement embed)
+    {
+        var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (embed.TryGetProperty("fields", out var fields))
         {
-            return rawPayload;
+            foreach (var field in fields.EnumerateArray())
+            {
+                var name = field.GetProperty("name").GetString()!;
+                var value = field.GetProperty("value").GetString()!;
+                result[name] = value;
+            }
         }
-
-        var jsonStart = rawPayload.IndexOf("{\"content\"", payloadIndex, StringComparison.Ordinal);
-        if (jsonStart < 0)
-        {
-            return rawPayload;
-        }
-
-        var jsonEnd = rawPayload.IndexOf("}\r\n--", jsonStart, StringComparison.Ordinal);
-        if (jsonEnd < 0)
-        {
-            return rawPayload.Substring(jsonStart);
-        }
-
-        return rawPayload.Substring(jsonStart, jsonEnd - jsonStart + 1);
+        return result;
     }
 
     private sealed record CapturedRequest(string? RequestUri, string? ContentType, string? Body);

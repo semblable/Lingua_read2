@@ -113,6 +113,7 @@ const BookCreate = () => {
       }
 
       // --- Start: Audiobook Upload Logic ---
+      let audioUploadFailed = false;
       if (audioFiles.length > 0 && newBook?.bookId) {
         console.log(`Book created/uploaded (ID: ${newBook.bookId}), now uploading ${audioFiles.length} audio tracks...`);
         setAudioUploadError('');
@@ -121,8 +122,6 @@ const BookCreate = () => {
 
         const audioFormData = new FormData();
         audioFiles.forEach(f => audioFormData.append('Files', f));
-
-        let audioUploadFailed = false;
         try {
           await uploadAudiobookTracks(newBook.bookId, audioFormData, (progress) => {
             setUploadProgress(progress);

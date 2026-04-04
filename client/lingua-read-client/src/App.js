@@ -1,32 +1,34 @@
-import React, { useEffect, useContext } from 'react';
+import React, { useEffect, useContext, Suspense, lazy } from 'react';
 import { Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import { useAuthStore } from './utils/store';
 import 'bootstrap/dist/css/bootstrap.min.css';
 import './App.css';
 import { SettingsProvider, SettingsContext } from './contexts/SettingsContext';
 
-// Components
+// Components (always needed)
 import Navigation from './components/Navigation';
 
-// Pages
+// Pages needed on initial render (eager)
 import Home from './pages/Home';
 import Login from './pages/Login';
 import Setup from './pages/Setup';
-import TextList from './pages/TextList';
-import TextCreate from './pages/TextCreate';
-import TextDisplay from './pages/TextDisplay';
-import BookList from './pages/BookList';
-import BookCreate from './pages/BookCreate';
-import BookDetail from './pages/BookDetail';
-import Statistics from './pages/Statistics';
-import UserSettings from './pages/UserSettings';
-import CreateAudioLesson from './pages/CreateAudioLesson';
-import LanguagesPage from './components/settings/LanguagesPage';
-import BatchAudioCreate from './pages/BatchAudioCreate';
-import TermsPage from './pages/TermsPage';
-import SrsReview from './pages/SrsReview';
-import SrsStoryReview from './pages/SrsStoryReview';
-import Library from './pages/Library';
+
+// Pages loaded on-demand (lazy)
+const TextList = lazy(() => import('./pages/TextList'));
+const TextCreate = lazy(() => import('./pages/TextCreate'));
+const TextDisplay = lazy(() => import('./pages/TextDisplay'));
+const BookList = lazy(() => import('./pages/BookList'));
+const BookCreate = lazy(() => import('./pages/BookCreate'));
+const BookDetail = lazy(() => import('./pages/BookDetail'));
+const Statistics = lazy(() => import('./pages/Statistics'));
+const UserSettings = lazy(() => import('./pages/UserSettings'));
+const CreateAudioLesson = lazy(() => import('./pages/CreateAudioLesson'));
+const LanguagesPage = lazy(() => import('./components/settings/LanguagesPage'));
+const BatchAudioCreate = lazy(() => import('./pages/BatchAudioCreate'));
+const TermsPage = lazy(() => import('./pages/TermsPage'));
+const SrsReview = lazy(() => import('./pages/SrsReview'));
+const SrsStoryReview = lazy(() => import('./pages/SrsStoryReview'));
+const Library = lazy(() => import('./pages/Library'));
 
 // Simple loading component
 const Loading = () => <div className="d-flex justify-content-center align-items-center vh-100">Loading...</div>;
@@ -104,35 +106,37 @@ const AuthenticatedApp = () => {
     <div className="App">
       <Navigation />
       <div className="container-fluid p-0 m-0">
-        <Routes>
-          <Route path="/" element={<Home />} />
-          <Route path="/login" element={<Navigate to="/" />} />
+        <Suspense fallback={<Loading />}>
+          <Routes>
+            <Route path="/" element={<Home />} />
+            <Route path="/login" element={<Navigate to="/" />} />
 
-          <Route element={<ProtectedRoute isAuthenticated={isAuthenticated} isLoading={isLoading} />}>
-            <Route path="/library" element={<Library />} />
-            <Route path="/library/:folderId" element={<Library />} />
+            <Route element={<ProtectedRoute isAuthenticated={isAuthenticated} isLoading={isLoading} />}>
+              <Route path="/library" element={<Library />} />
+              <Route path="/library/:folderId" element={<Library />} />
 
-            <Route path="/books" element={<BookList />} />
-            <Route path="/books/create" element={<BookCreate />} />
-            <Route path="/books/:bookId" element={<BookDetail />} />
+              <Route path="/books" element={<BookList />} />
+              <Route path="/books/create" element={<BookCreate />} />
+              <Route path="/books/:bookId" element={<BookDetail />} />
 
-            <Route path="/texts" element={<TextList />} />
-            <Route path="/texts/create" element={<TextCreate />} />
-            <Route path="/texts/:textId" element={<TextDisplay />} />
-            <Route path="/texts/create-audio" element={<CreateAudioLesson />} />
-            <Route path="/texts/create-batch-audio" element={<BatchAudioCreate />} />
+              <Route path="/texts" element={<TextList />} />
+              <Route path="/texts/create" element={<TextCreate />} />
+              <Route path="/texts/:textId" element={<TextDisplay />} />
+              <Route path="/texts/create-audio" element={<CreateAudioLesson />} />
+              <Route path="/texts/create-batch-audio" element={<BatchAudioCreate />} />
 
-            <Route path="/statistics" element={<Statistics />} />
-            <Route path="/terms" element={<TermsPage />} />
-            <Route path="/srs" element={<SrsReview />} />
-            <Route path="/srs/story" element={<SrsStoryReview />} />
+              <Route path="/statistics" element={<Statistics />} />
+              <Route path="/terms" element={<TermsPage />} />
+              <Route path="/srs" element={<SrsReview />} />
+              <Route path="/srs/story" element={<SrsStoryReview />} />
 
-            <Route path="/settings" element={<UserSettings />} />
-            <Route path="/settings/languages" element={<LanguagesPage />} />
-          </Route>
+              <Route path="/settings" element={<UserSettings />} />
+              <Route path="/settings/languages" element={<LanguagesPage />} />
+            </Route>
 
-          <Route path="*" element={<Navigate to="/" />} />
-        </Routes>
+            <Route path="*" element={<Navigate to="/" />} />
+          </Routes>
+        </Suspense>
       </div>
     </div>
   );

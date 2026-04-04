@@ -122,6 +122,7 @@ const BookCreate = () => {
         const audioFormData = new FormData();
         audioFiles.forEach(f => audioFormData.append('Files', f));
 
+        let audioUploadFailed = false;
         try {
           await uploadAudiobookTracks(newBook.bookId, audioFormData, (progress) => {
             setUploadProgress(progress);
@@ -129,14 +130,15 @@ const BookCreate = () => {
           console.log(`All ${audioFiles.length} audio tracks uploaded successfully.`);
         } catch (audioErr) {
           console.error('Failed to upload audio tracks:', audioErr);
-          setAudioUploadError('Failed to upload audio tracks. You can retry in the book details.');
+          audioUploadFailed = true;
         }
       }
       // --- End: Audiobook Upload Logic ---
 
-      // Navigate even if audio upload failed, but maybe show a message?
-      // We could pass state via navigation if needed: navigate(`/books/${newBook.bookId}`, { state: { audioUploadError: audioUploadError } });
-      navigate(`/books/${newBook.bookId}`);
+      navigate(
+        `/books/${newBook.bookId}`,
+        audioUploadFailed ? { state: { audioUploadWarning: 'Failed to upload audio tracks. You can retry here.' } } : undefined
+      );
 
     } catch (err) {
       const errorMsg = err.response?.data?.message || err.message || `Failed to ${activeTab === 'manual' ? 'create' : 'upload'} book. Please try again.`;

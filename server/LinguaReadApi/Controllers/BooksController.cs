@@ -610,11 +610,11 @@ namespace LinguaReadApi.Controllers
                     var relativeFilePath = Path.Combine(relativeBookAudioPath, safeFileName);
                     var absoluteFilePath = Path.Combine(absoluteBookAudioPath, safeFileName);
 
+                    savedFilePaths.Add(absoluteFilePath);
                     using (var stream = new FileStream(absoluteFilePath, FileMode.Create))
                     {
                         await file.CopyToAsync(stream);
                     }
-                    savedFilePaths.Add(absoluteFilePath);
 
                     var newTrack = new AudiobookTrack
                     {

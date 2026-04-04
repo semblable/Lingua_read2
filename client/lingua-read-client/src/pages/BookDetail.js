@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react'; // Add useCallback, useMemo
 import { Container, Row, Col, Card, Button, Alert, Spinner, ListGroup, Badge, ProgressBar, Modal, Form } from 'react-bootstrap'; // Add Form
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useParams, useNavigate, useLocation, Link } from 'react-router-dom';
 import { getBook, finishBook, updateBook, deleteBook, getText, updateText, deleteText, uploadAudiobookTracks } from '../utils/api'; // Import new API functions + uploadAudiobookTracks
 import { formatDate, /*calculateReadingTime*/ } from '../utils/helpers'; // Removed unused calculateReadingTime
 // Removed AudiobookPlayer import
@@ -20,6 +20,7 @@ const BookDetail = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const navigate = useNavigate();
+  const location = useLocation();
   const [finishingBook, setFinishingBook] = useState(false);
   const [showStatsModal, setShowStatsModal] = useState(false);
   const [stats, setStats] = useState(null);
@@ -56,6 +57,12 @@ const BookDetail = () => {
   useEffect(() => {
     fetchBook();
   }, [fetchBook]); // Use fetchBook as dependency
+
+  useEffect(() => {
+    if (location.state?.audioUploadWarning) {
+      setUploadError(location.state.audioUploadWarning);
+    }
+  }, [location.state]);
 
   // Sort parts naturally (e.g. Part 1, Part 2, ... Part 10)
   const sortedParts = useMemo(() => {

@@ -12,8 +12,8 @@ echo "=== Backup started: $TIMESTAMP ==="
 echo "[db] Dumping..."
 PGPASSWORD="$POSTGRES_PASSWORD" pg_dump \
   -h db -U "$POSTGRES_USER" "$POSTGRES_DB" \
-  | gzip > "$BACKUP_DIR/db/$YEAR/$MONTH/db-$TIMESTAMP.sql.gz"
-echo "[db] Saved: db/$YEAR/$MONTH/db-$TIMESTAMP.sql.gz"
+  -Fc -f "$BACKUP_DIR/db/$YEAR/$MONTH/db-$TIMESTAMP.backup"
+echo "[db] Saved: db/$YEAR/$MONTH/db-$TIMESTAMP.backup"
 
 # 2. Collect last 24h of logs from all compose containers + extract errors
 echo "[logs] Collecting..."
@@ -33,7 +33,7 @@ rclone copy "$BACKUP_DIR" gdrive:lingua-read-backups \
   --log-level INFO
 
 # 4. Prune local copies older than 7 days
-find "$BACKUP_DIR/db"     -name "*.sql.gz" -mtime +7 -delete
+find "$BACKUP_DIR/db"     -name "*.backup" -mtime +7 -delete
 find "$BACKUP_DIR/logs"   -name "*.log"    -mtime +7 -delete
 find "$BACKUP_DIR/errors" -name "*.err"    -mtime +7 -delete
 

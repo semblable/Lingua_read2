@@ -587,67 +587,69 @@ namespace LinguaReadApi.Controllers
 
             // 3. Process uploaded files
             var addedTracks = new List<AudiobookTrack>();
+            var savedFilePaths = new List<string>();
             int currentMaxTrackNumber = book.AudiobookTracks.Any() ? book.AudiobookTracks.Max(t => t.TrackNumber) : 0;
+            var allowedAudioExtensions = new HashSet<string> { ".mp3", ".m4b", ".m4a", ".ogg", ".flac", ".wav" };
 
-            foreach (var file in uploadDto.Files)
+            try
             {
-                if (file.Length == 0) continue;
-
-                // Basic check for MP3 extension (can be improved with MIME type checking)
-                var fileExtension = Path.GetExtension(file.FileName)?.ToLowerInvariant();
-                if (fileExtension != ".mp3")
+                foreach (var file in uploadDto.Files)
                 {
-                    // Log or return specific error for non-mp3 files? For now, skip.
-                    _logger.LogWarning("Skipping non-MP3 file: {FileName}", file.FileName);
-                    continue;
-                }
+                    if (file.Length == 0) continue;
 
-                currentMaxTrackNumber++;
-                var trackNumber = currentMaxTrackNumber;
-                // Sanitize filename or create a structured one
-                var safeFileName = $"track_{trackNumber}{fileExtension}"; // Example: track_1.mp3
-                var relativeFilePath = Path.Combine(relativeBookAudioPath, safeFileName);
-                var absoluteFilePath = Path.Combine(absoluteBookAudioPath, safeFileName);
+                    var fileExtension = Path.GetExtension(file.FileName)?.ToLowerInvariant();
+                    if (string.IsNullOrEmpty(fileExtension) || !allowedAudioExtensions.Contains(fileExtension))
+                    {
+                        _logger.LogWarning("Skipping unsupported audio file: {FileName}", file.FileName);
+                        continue;
+                    }
 
-                try
-                {
-                    // Save the file
+                    currentMaxTrackNumber++;
+                    var trackNumber = currentMaxTrackNumber;
+                    var safeFileName = $"track_{trackNumber}{fileExtension}";
+                    var relativeFilePath = Path.Combine(relativeBookAudioPath, safeFileName);
+                    var absoluteFilePath = Path.Combine(absoluteBookAudioPath, safeFileName);
+
                     using (var stream = new FileStream(absoluteFilePath, FileMode.Create))
                     {
                         await file.CopyToAsync(stream);
                     }
+                    savedFilePaths.Add(absoluteFilePath);
 
-                    // Create AudiobookTrack entity
                     var newTrack = new AudiobookTrack
                     {
                         BookId = bookId,
-                        FilePath = relativeFilePath.Replace('\\', '/'), // Store with forward slashes for web compatibility
+                        FilePath = relativeFilePath.Replace('\\', '/'),
                         TrackNumber = trackNumber,
-                        Duration = null // TODO: Optionally add duration extraction later
+                        Duration = null
                     };
                     addedTracks.Add(newTrack);
                 }
-                catch (Exception ex)
+
+                if (!addedTracks.Any())
                 {
-                    // Log error saving file
-                    _logger.LogError(ex, "Error saving audiobook file '{FileName}' for book {BookId}", file.FileName, bookId);
-                    // Consider how to handle partial failures - rollback? return error?
-                    // For now, continue processing other files but maybe return a specific status code later.
+                    return BadRequest("No valid audio files were processed. Supported formats: MP3, M4B, M4A, OGG, FLAC, WAV.");
                 }
-            }
 
-            if (!addedTracks.Any())
+                // 4. Add new tracks to context and save
+                _context.AudiobookTracks.AddRange(addedTracks);
+                await _context.SaveChangesAsync();
+
+                return NoContent();
+            }
+            catch (Exception ex)
             {
-                return BadRequest("No valid MP3 files were processed.");
+                _logger.LogError(ex, "Error during audiobook upload for book {BookId}. Cleaning up {FileCount} saved files.", bookId, savedFilePaths.Count);
+
+                // Clean up any files written during this request
+                foreach (var filePath in savedFilePaths)
+                {
+                    try { System.IO.File.Delete(filePath); }
+                    catch (Exception deleteEx) { _logger.LogWarning(deleteEx, "Failed to clean up file: {FilePath}", filePath); }
+                }
+
+                return StatusCode(StatusCodes.Status500InternalServerError, "Failed to save audiobook tracks. Please try again.");
             }
-
-            // 4. Add new tracks to context and save
-            _context.AudiobookTracks.AddRange(addedTracks);
-            await _context.SaveChangesAsync();
-
-            // 5. Return success response (e.g., list of created track info or just Ok)
-            // Returning NoContent for simplicity
-            return NoContent();
         }
 
         // Helper method to split content into parts

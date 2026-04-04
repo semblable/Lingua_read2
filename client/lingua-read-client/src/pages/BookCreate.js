@@ -114,36 +114,22 @@ const BookCreate = () => {
 
       // --- Start: Audiobook Upload Logic ---
       if (audioFiles.length > 0 && newBook?.bookId) {
-        console.log(`Book created/uploaded (ID: ${newBook.bookId}), now uploading audio tracks...`);
-        setAudioUploadError(''); // Clear previous audio error
+        console.log(`Book created/uploaded (ID: ${newBook.bookId}), now uploading ${audioFiles.length} audio tracks...`);
+        setAudioUploadError('');
+        setLoadingText(`Uploading ${audioFiles.length} audio track${audioFiles.length > 1 ? 's' : ''}...`);
+        setUploadProgress(0);
 
-        let successCount = 0;
-        let failCount = 0;
-        const totalFiles = audioFiles.length;
+        const audioFormData = new FormData();
+        audioFiles.forEach(f => audioFormData.append('Files', f));
 
-        for (let i = 0; i < totalFiles; i++) {
-          setLoadingText(`Uploading audio track ${i + 1} of ${totalFiles}...`);
-          setUploadProgress(0); // Reset progress for each file
-
-          const audioFormData = new FormData();
-          audioFormData.append('Files', audioFiles[i]);
-
-          try {
-            console.log(`Uploading audio file ${i + 1}/${totalFiles}: ${audioFiles[i].name}`);
-            await uploadAudiobookTracks(newBook.bookId, audioFormData, (progress) => {
-              setUploadProgress(progress);
-            });
-            successCount++;
-          } catch (audioErr) {
-            console.error(`Failed to upload ${audioFiles[i].name}:`, audioErr);
-            failCount++;
-          }
-        }
-
-        if (failCount > 0) {
-          setAudioUploadError(`Uploaded ${successCount} tracks, but failed ${failCount}. You can retry in the book details.`);
-        } else {
-          console.log(`All ${successCount} audio tracks uploaded successfully.`);
+        try {
+          await uploadAudiobookTracks(newBook.bookId, audioFormData, (progress) => {
+            setUploadProgress(progress);
+          });
+          console.log(`All ${audioFiles.length} audio tracks uploaded successfully.`);
+        } catch (audioErr) {
+          console.error('Failed to upload audio tracks:', audioErr);
+          setAudioUploadError('Failed to upload audio tracks. You can retry in the book details.');
         }
       }
       // --- End: Audiobook Upload Logic ---
@@ -346,12 +332,12 @@ const BookCreate = () => {
               <Form.Control
                 type="file"
                 multiple
-                accept=".mp3"
+                accept=".mp3,.m4b,.m4a,.ogg,.flac,.wav"
                 onChange={handleAudioFileChange}
                 disabled={loading}
               />
               <Form.Text className="text-muted">
-                Select one or more MP3 files if you want to add an audiobook component now. You can also add them later.
+                Select one or more audio files (MP3, M4B, M4A, OGG, FLAC, WAV) if you want to add an audiobook component now. You can also add them later.
               </Form.Text>
               {audioUploadError && <Alert variant="warning" className="mt-2">{audioUploadError}</Alert>}
             </Form.Group>

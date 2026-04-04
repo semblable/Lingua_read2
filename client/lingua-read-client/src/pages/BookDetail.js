@@ -206,7 +206,7 @@ const BookDetail = () => {
 
   const handleAudioUpload = async () => {
     if (selectedFiles.length === 0) {
-      setUploadError('Please select one or more MP3 files to upload.');
+      setUploadError('Please select one or more audio files to upload.');
       return;
     }
 
@@ -214,44 +214,26 @@ const BookDetail = () => {
     setUploadError('');
     setUploadSuccess('');
 
-    let successCount = 0;
-    let failCount = 0;
     // Sort files naturally by name to ensure 1.mp3 comes before 10.mp3 if 2.mp3 exists, etc.
     const sortedFiles = [...selectedFiles].sort((a, b) =>
       a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })
     );
-    const totalFiles = sortedFiles.length;
 
     try {
-      for (let i = 0; i < totalFiles; i++) {
-        const file = sortedFiles[i];
-        // Update success message to show progress instead of success
-        setUploadSuccess(`Uploading file ${i + 1} of ${totalFiles}: ${file.name}...`);
-        setUploadProgress(0);
+      setUploadSuccess(`Uploading ${sortedFiles.length} audio track${sortedFiles.length > 1 ? 's' : ''}...`);
+      setUploadProgress(0);
 
-        const formData = new FormData();
-        formData.append('Files', file); // API expects 'Files' but we send one at a time which works as it appends
+      const formData = new FormData();
+      sortedFiles.forEach(f => formData.append('Files', f));
 
-        try {
-          await uploadAudiobookTracks(bookId, formData, (progress) => {
-            setUploadProgress(progress);
-          });
-          successCount++;
-        } catch (err) {
-          console.error(`Failed to upload ${file.name}:`, err);
-          failCount++;
-          // Optionally stop or continue. We'll continue to try others.
-          // Append error to a running log? For now just log to console.
-        }
-      }
+      await uploadAudiobookTracks(bookId, formData, (progress) => {
+        setUploadProgress(progress);
+      });
 
-      setUploadSuccess(`Successfully uploaded ${successCount} audio track(s). ${failCount > 0 ? `${failCount} failed.` : ''}`);
-      setUploadProgress(0); // Reset after done
-      if (failCount > 0) {
-        setUploadError(`Failed to upload ${failCount} files. Check console for details.`);
-      }
+      setUploadSuccess(`Successfully uploaded ${sortedFiles.length} audio track(s).`);
+      setUploadProgress(0);
 
-      setSelectedFiles([]); // Clear selection after operations
+      setSelectedFiles([]);
       // Refresh book data to show the new tracks
       await fetchBook();
     } catch (err) {
@@ -418,16 +400,16 @@ const BookDetail = () => {
           {uploadSuccess && <Alert variant="success">{uploadSuccess}</Alert>}
           <Form>
             <Form.Group controlId="audiobook-upload-input" className="mb-3">
-              <Form.Label>Upload MP3 Tracks</Form.Label>
+              <Form.Label>Upload Audio Tracks</Form.Label>
               <Form.Control
                 type="file"
                 multiple
-                accept=".mp3"
+                accept=".mp3,.m4b,.m4a,.ogg,.flac,.wav"
                 onChange={handleFileChange}
                 disabled={uploadingAudio}
               />
               <Form.Text className="text-muted">
-                Select one or more MP3 files for the audiobook. They will be ordered based on upload sequence or filename (ensure consistent naming for correct order if needed).
+                Select one or more audio files (MP3, M4B, M4A, OGG, FLAC, WAV) for the audiobook. They will be ordered based on upload sequence or filename.
               </Form.Text>
             </Form.Group>
             <Button

@@ -311,6 +311,7 @@
   padding-right: 0;
   text-indent: 0;
   font-size: 1.03em;
+  line-height: var(--reading-line-height);
 }
 
 .reader-paragraph-classic {

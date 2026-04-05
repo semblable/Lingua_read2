@@ -702,8 +702,7 @@ a:focus {
 .text-content {
   font-size: 1.125rem;
   /* Slightly smaller than before, but with better base rem */
-  line-height: 1.7;
-  /* Keep generous line height for readability */
+  line-height: var(--reading-line-height, 1.5);
   /* font-family can be overridden by user settings for serif (Lora) */
 }
 

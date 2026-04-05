@@ -102,6 +102,23 @@ const AuthenticatedApp = () => {
     document.body.style.setProperty('--reading-line-height', initialLineSpacing);
   }, []);
 
+  // Apply paragraph spacing from settings
+  useEffect(() => {
+    if (settingsContext && settingsContext.settings && settingsContext.settings.paragraphSpacing) {
+      document.body.style.setProperty('--reader-paragraph-spacing', settingsContext.settings.paragraphSpacing + 'em');
+      localStorage.setItem('paragraphSpacing', settingsContext.settings.paragraphSpacing);
+    } else {
+      const saved = localStorage.getItem('paragraphSpacing') || '1.0';
+      document.body.style.setProperty('--reader-paragraph-spacing', saved + 'em');
+    }
+  }, [settingsContext]);
+
+  // Load initial paragraph spacing from localStorage on mount
+  useEffect(() => {
+    const initial = localStorage.getItem('paragraphSpacing') || '1.0';
+    document.body.style.setProperty('--reader-paragraph-spacing', initial + 'em');
+  }, []);
+
   return (
     <div className="App">
       <Navigation />

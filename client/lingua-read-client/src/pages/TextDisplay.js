@@ -293,6 +293,7 @@ const SecondaryControls = React.memo(({
   leftPanelWidth,
   setLeftPanelWidth,
   handleLineSpacingChange,
+  handleParagraphSpacingChange,
   text,
   loading,
   handleFullTextTranslation,
@@ -471,6 +472,37 @@ const SecondaryControls = React.memo(({
             aria-label="Set line spacing to spacious"
           >
             2.0
+          </Button>
+        </OverlayTrigger>
+      </ButtonGroup>
+    )}
+    {!isMobile && (
+      <ButtonGroup size="sm" className="me-1">
+        <OverlayTrigger placement="top" overlay={<Tooltip>Paragraph Spacing: Tight</Tooltip>}>
+          <Button
+            variant={parseFloat(globalSettings.paragraphSpacing) === 0.6 ? 'primary' : 'outline-secondary'}
+            onClick={() => handleParagraphSpacingChange(0.6)}
+            aria-label="Set tight paragraph spacing"
+          >
+            ¶T
+          </Button>
+        </OverlayTrigger>
+        <OverlayTrigger placement="top" overlay={<Tooltip>Paragraph Spacing: Normal</Tooltip>}>
+          <Button
+            variant={parseFloat(globalSettings.paragraphSpacing) === 1.0 ? 'primary' : 'outline-secondary'}
+            onClick={() => handleParagraphSpacingChange(1.0)}
+            aria-label="Set normal paragraph spacing"
+          >
+            ¶N
+          </Button>
+        </OverlayTrigger>
+        <OverlayTrigger placement="top" overlay={<Tooltip>Paragraph Spacing: Relaxed</Tooltip>}>
+          <Button
+            variant={parseFloat(globalSettings.paragraphSpacing) === 1.6 ? 'primary' : 'outline-secondary'}
+            onClick={() => handleParagraphSpacingChange(1.6)}
+            aria-label="Set relaxed paragraph spacing"
+          >
+            ¶R
           </Button>
         </OverlayTrigger>
       </ButtonGroup>
@@ -1699,6 +1731,15 @@ const TextDisplay = () => {
       document.body.style.setProperty('--reading-line-height', numericSpacing.toString()); // Apply immediately
       updateUserSettings({ lineSpacing: numericSpacing })
         .catch(err => console.error('[Save Settings] Failed to save line spacing via API:', err));
+    }
+  };
+
+  const handleParagraphSpacingChange = (newSpacing) => {
+    const numeric = parseFloat(newSpacing);
+    if (!isNaN(numeric)) {
+      updateSetting('paragraphSpacing', numeric);
+      localStorage.setItem('paragraphSpacing', numeric.toString());
+      document.body.style.setProperty('--reader-paragraph-spacing', numeric + 'em');
     }
   };
 
@@ -3205,6 +3246,7 @@ const TextDisplay = () => {
       leftPanelWidth={leftPanelWidth}
       setLeftPanelWidth={setLeftPanelWidth}
       handleLineSpacingChange={handleLineSpacingChange}
+      handleParagraphSpacingChange={handleParagraphSpacingChange}
       text={text}
       loading={loading}
       handleFullTextTranslation={handleFullTextTranslation}

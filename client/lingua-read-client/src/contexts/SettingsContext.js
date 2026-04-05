@@ -26,7 +26,8 @@ const defaultSettings = {
   autoAdvanceToNextLesson: false,
   showProgressStats: true,
   showDesktopLessonControls: true,
-  lineSpacing: 1.5, // Added lineSpacing
+  lineSpacing: 1.5,
+  paragraphSpacing: 1.0,
   discordWeeklyReportEnabled: false,
   discordWebhookUrl: '',
   discordWeeklyReportDayOfWeek: 'Monday',
@@ -88,6 +89,7 @@ const mergeSettings = (data) => ({
   autoAdvanceToNextLesson: data.autoAdvanceToNextLesson ?? defaultSettings.autoAdvanceToNextLesson,
   showProgressStats: data.showProgressStats ?? defaultSettings.showProgressStats,
   lineSpacing: data.lineSpacing || defaultSettings.lineSpacing,
+  paragraphSpacing: data.paragraphSpacing || defaultSettings.paragraphSpacing,
   discordWeeklyReportEnabled: data.discordWeeklyReportEnabled ?? defaultSettings.discordWeeklyReportEnabled,
   discordWebhookUrl: data.discordWebhookUrl || defaultSettings.discordWebhookUrl,
   discordWeeklyReportDayOfWeek: data.discordWeeklyReportDayOfWeek || defaultSettings.discordWeeklyReportDayOfWeek,

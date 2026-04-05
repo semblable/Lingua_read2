@@ -250,7 +250,7 @@
 
 /* Paragraph styling */
 .reader-paragraph {
-  margin-bottom: var(--space-md);
+  margin-bottom: var(--reader-paragraph-spacing, 1em);
   text-indent: var(--space-lg);
   line-height: var(--reading-line-height);
   padding-left: var(--space-sm);
@@ -306,7 +306,7 @@
 }
 
 .reader-paragraph-modern {
-  margin-bottom: 1.35rem;
+  margin-bottom: var(--reader-paragraph-spacing, 1em);
   padding-left: 0;
   padding-right: 0;
   text-indent: 0;

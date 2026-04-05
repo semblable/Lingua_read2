@@ -28,8 +28,9 @@ echo "[logs] Done."
 
 # 3. Upload to Google Drive
 echo "[rclone] Uploading..."
+cp /rclone/rclone.conf /tmp/rclone.conf
 rclone copy "$BACKUP_DIR" gdrive:lingua-read-backups \
-  --config /rclone/rclone.conf \
+  --config /tmp/rclone.conf \
   --log-level INFO
 
 # 4. Prune local copies older than 7 days

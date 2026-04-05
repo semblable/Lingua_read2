@@ -31,6 +31,7 @@ const DiscordSettings = ({
           <Form.Control
             type="url"
             name="discordWebhookUrl"
+            autoComplete="off"
             placeholder="https://discord.com/api/webhooks/..."
             value={settings.discordWebhookUrl}
             onChange={handleChange}

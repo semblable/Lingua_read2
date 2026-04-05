@@ -46,7 +46,16 @@ builder.Services.AddControllers();
 // Configure DbContext with PostgreSQL
 builder.Services.AddDbContext<AppDbContext>(options =>
 {
-    options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection"));
+    options.UseNpgsql(
+        builder.Configuration.GetConnectionString("DefaultConnection"),
+        npgsqlOptions =>
+        {
+            npgsqlOptions.EnableRetryOnFailure(
+                maxRetryCount: 5,
+                maxRetryDelay: TimeSpan.FromSeconds(30),
+                errorCodesToAdd: null);
+            npgsqlOptions.CommandTimeout(60);
+        });
 
     // Sensitive EF Core logging should be Development-only.
     if (builder.Environment.IsDevelopment())

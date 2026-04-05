@@ -33,6 +33,7 @@ const AiProviderSettings = ({
               <Form.Control
                 type="password"
                 name="openRouterApiKey"
+                autoComplete="off"
                 placeholder="sk-or-..."
                 value={settings.openRouterApiKey}
                 onChange={handleChange}

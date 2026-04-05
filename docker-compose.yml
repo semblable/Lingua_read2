@@ -29,7 +29,7 @@ services:
         condition: service_healthy
     environment:
       # For ASP.NET Core Connection String
-      ConnectionStrings__DefaultConnection: Host=db;Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}
+      ConnectionStrings__DefaultConnection: Host=db;Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD};Pooling=true;Minimum Pool Size=2;Maximum Pool Size=20;Connection Idle Lifetime=300
       # For pg_dump/pg_restore in DatabaseAdminService
       PGHOST: db
       PGPORT: 5432

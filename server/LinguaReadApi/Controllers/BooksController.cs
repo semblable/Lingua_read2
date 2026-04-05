@@ -86,6 +86,7 @@ namespace LinguaReadApi.Controllers
                 .Include(b => b.BookTags) // Include BookTags
                     .ThenInclude(bt => bt.Tag) // Then include Tags
                 .Include(b => b.AudiobookTracks) // Include AudiobookTracks
+                .AsSplitQuery()
                 .FirstOrDefaultAsync();
                 
             if (book == null)

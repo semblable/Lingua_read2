@@ -123,6 +123,7 @@ namespace LinguaReadApi.Controllers
                 .Include(b => b.Language)
                 .Include(b => b.Texts)
                 .Include(b => b.BookTags).ThenInclude(bt => bt.Tag)
+                .AsSplitQuery()
                 .OrderBy(b => b.SortOrder)
                 .ThenByDescending(b => b.CreatedAt)
                 .Select(b => new LibraryBookDto

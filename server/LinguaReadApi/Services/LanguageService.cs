@@ -22,6 +22,7 @@ namespace LinguaReadApi.Services
             var languages = await _context.Languages
                                  .Include(l => l.Dictionaries)
                                  .Include(l => l.SentenceSplitExceptions)
+                                 .AsSplitQuery()
                                  .AsNoTracking()
                                  .ToListAsync();
 
@@ -41,6 +42,7 @@ namespace LinguaReadApi.Services
             var language = await _context.Languages
                                  .Include(l => l.Dictionaries)
                                  .Include(l => l.SentenceSplitExceptions)
+                                 .AsSplitQuery()
                                  .AsNoTracking()
                                  .FirstOrDefaultAsync(l => l.LanguageId == id);
 
@@ -80,6 +82,7 @@ namespace LinguaReadApi.Services
             var existingLanguage = await _context.Languages
                                                  .Include(l => l.Dictionaries)
                                                  .Include(l => l.SentenceSplitExceptions)
+                                                 .AsSplitQuery()
                                                  .FirstOrDefaultAsync(l => l.LanguageId == id);
 
             if (existingLanguage == null)

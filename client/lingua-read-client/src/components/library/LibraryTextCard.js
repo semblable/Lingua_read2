@@ -5,7 +5,7 @@ import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { formatDate } from '../../utils/helpers';
 
-const LibraryTextCard = ({ text, isSelected, onSelect }) => {
+const LibraryTextCard = ({ text, isSelected, onSelect, onItemClick }) => {
   const {
     attributes,
     listeners,
@@ -25,8 +25,16 @@ const LibraryTextCard = ({ text, isSelected, onSelect }) => {
   };
 
   return (
-    <div ref={setNodeRef} style={style} {...attributes}>
-      <Card className={`h-100 shadow-sm ${isSelected ? 'border-primary border-2' : ''}`}>
+    <div ref={setNodeRef} style={style} {...attributes} data-selectable-id={text.textId} data-selectable-type="text">
+      <Card
+        className={`h-100 shadow-sm ${isSelected ? 'border-primary border-2' : ''}`}
+        onClick={(e) => {
+          if ((e.ctrlKey || e.metaKey || e.shiftKey) && onItemClick) {
+            e.preventDefault();
+            onItemClick(text.textId, 'text', e);
+          }
+        }}
+      >
         <Card.Body className="d-flex flex-column">
           <div className="d-flex align-items-start mb-1">
             <div

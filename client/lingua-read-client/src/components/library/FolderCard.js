@@ -14,7 +14,7 @@ const FOLDER_COLORS = {
   yellow: '#F1C40F'
 };
 
-const FolderCard = ({ folder, onClick, onRename, onDelete, onChangeColor, isOver, isSelected, onSelect }) => {
+const FolderCard = ({ folder, onClick, onRename, onDelete, onChangeColor, isOver, isSelected, onSelect, onItemClick }) => {
   const [showDropdown, setShowDropdown] = useState(false);
 
   const {
@@ -39,10 +39,17 @@ const FolderCard = ({ folder, onClick, onRename, onDelete, onChangeColor, isOver
   const folderColor = folder.color ? (FOLDER_COLORS[folder.color] || folder.color) : '#6c757d';
 
   return (
-    <div ref={setNodeRef} style={style} {...attributes}>
+    <div ref={setNodeRef} style={style} {...attributes} data-selectable-id={folder.folderId} data-selectable-type="folder">
       <Card
         className={`h-100 shadow-sm ${isOver ? 'border-primary border-2' : ''}`}
-        onClick={() => onClick(folder.folderId)}
+        onClick={(e) => {
+          if ((e.ctrlKey || e.metaKey || e.shiftKey) && onItemClick) {
+            e.preventDefault();
+            onItemClick(folder.folderId, 'folder', e);
+          } else {
+            onClick(folder.folderId);
+          }
+        }}
         style={{ borderLeft: `4px solid ${folderColor}` }}
       >
         <Card.Body className="d-flex align-items-center py-3">

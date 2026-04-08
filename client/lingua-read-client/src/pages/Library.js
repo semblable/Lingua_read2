@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { Container, Row, Col, Button, Spinner, Alert, Breadcrumb, Form, Badge, Dropdown } from 'react-bootstrap';
 import { Link, useParams, useNavigate } from 'react-router-dom';
 import {
@@ -30,6 +30,8 @@ import LibraryTextCard from '../components/library/LibraryTextCard';
 import CreateFolderModal from '../components/library/CreateFolderModal';
 import MoveToFolderModal from '../components/library/MoveToFolderModal';
 import RenameFolderModal from '../components/library/RenameFolderModal';
+import SelectionRectangle from '../components/library/SelectionRectangle';
+import { useDragSelect } from '../hooks/useDragSelect';
 
 const Library = () => {
   const { folderId } = useParams();
@@ -38,9 +40,9 @@ const Library = () => {
 
   const {
     currentFolder, breadcrumbs, folders, books, texts,
-    allFolders, loading, error, selectedItems,
+    allFolders, loading, error, selectedItems, lastClickedItem,
     setContents, setAllFolders, setLoading, setError,
-    toggleSelectItem, clearSelection
+    setSelectedItems, setLastClickedItem, toggleSelectItem, clearSelection
   } = useLibraryStore();
 
   const [showCreateFolder, setShowCreateFolder] = useState(false);
@@ -60,9 +62,16 @@ const Library = () => {
     localStorage.setItem('libraryLanguageFilter', languageFilter);
   }, [languageFilter]);
 
+  // Drag-select
+  const containerRef = useRef(null);
+  const { selectionRect, isDragSelecting } = useDragSelect({
+    containerRef,
+    enabled: !activeId
+  });
+
   const sensors = useSensors(
     useSensor(PointerSensor, {
-      activationConstraint: { distance: 8 }
+      activationConstraint: { distance: isDragSelecting ? 99999 : 8 }
     })
   );
 
@@ -251,6 +260,45 @@ const Library = () => {
     }
   };
 
+  // Flat list of all visible items for shift-click range selection
+  const flatItems = useMemo(() => [
+    ...filteredFolders.map(f => ({ id: f.folderId, type: 'folder' })),
+    ...filteredBooks.map(b => ({ id: b.bookId, type: 'book' })),
+    ...filteredTexts.map(t => ({ id: t.textId, type: 'text' })),
+  ], [filteredFolders, filteredBooks, filteredTexts]);
+
+  // Ctrl+click / Shift+click handler for cards
+  const handleItemClick = useCallback((id, type, event) => {
+    if (event.shiftKey && lastClickedItem) {
+      // Range selection
+      const lastIdx = flatItems.findIndex(i => i.id === lastClickedItem.id && i.type === lastClickedItem.type);
+      const curIdx = flatItems.findIndex(i => i.id === id && i.type === type);
+      if (lastIdx !== -1 && curIdx !== -1) {
+        const start = Math.min(lastIdx, curIdx);
+        const end = Math.max(lastIdx, curIdx);
+        const range = flatItems.slice(start, end + 1);
+        if (event.ctrlKey || event.metaKey) {
+          // Additive range: merge with existing
+          const merged = [...selectedItems];
+          range.forEach(item => {
+            if (!merged.find(m => m.id === item.id && m.type === item.type)) {
+              merged.push(item);
+            }
+          });
+          setSelectedItems(merged);
+        } else {
+          setSelectedItems(range);
+        }
+      }
+    } else if (event.ctrlKey || event.metaKey) {
+      toggleSelectItem(id, type);
+      setLastClickedItem({ id, type });
+    } else {
+      setSelectedItems([{ id, type }]);
+      setLastClickedItem({ id, type });
+    }
+  }, [lastClickedItem, flatItems, selectedItems, setSelectedItems, toggleSelectItem, setLastClickedItem]);
+
   // Drag and drop handlers
   const handleDragStart = (event) => {
     setActiveId(event.active.id);
@@ -435,92 +483,106 @@ const Library = () => {
         </Alert>
       )}
 
+      {/* Selection shortcuts hint */}
+      {selectedItems.length === 0 && totalItems > 0 && (
+        <div className="text-muted small mb-2" style={{ opacity: 0.7 }}>
+          <i className="bi bi-info-circle me-1"></i>
+          <kbd>Ctrl</kbd>+click to multi-select &middot; <kbd>Shift</kbd>+click for range &middot; Drag empty space to lasso-select
+        </div>
+      )}
+
       {error && <Alert variant="danger" dismissible onClose={() => setError(null)}>{error}</Alert>}
 
       {/* Content */}
-      <DndContext
-        sensors={sensors}
-        collisionDetection={closestCenter}
-        onDragStart={handleDragStart}
-        onDragEnd={handleDragEnd}
-      >
-        <SortableContext items={sortableIds} strategy={rectSortingStrategy}>
-          {/* Folders section */}
-          {filteredFolders.length > 0 && (
-            <>
-              <h6 className="text-muted text-uppercase small mb-2 mt-3">
-                <i className="bi bi-folder me-1"></i>Folders
-              </h6>
-              <Row xs={1} md={2} lg={3} className="g-3 mb-3">
-                {filteredFolders.map(folder => (
-                  <Col key={folder.folderId}>
-                    <FolderCard
-                      folder={folder}
-                      onClick={handleNavigateFolder}
-                      onRename={(f) => { setRenameFolder(f); setShowRenameModal(true); }}
-                      onDelete={handleDeleteFolder}
-                      onChangeColor={handleChangeColor}
-                      isOver={activeId && activeId !== `folder-${folder.folderId}`}
-                      isSelected={!!selectedItems.find(i => i.id === folder.folderId && i.type === 'folder')}
-                      onSelect={toggleSelectItem}
-                    />
-                  </Col>
-                ))}
-              </Row>
-            </>
-          )}
+      <div ref={containerRef} className="library-grid-container">
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragStart={handleDragStart}
+          onDragEnd={handleDragEnd}
+        >
+          <SortableContext items={sortableIds} strategy={rectSortingStrategy}>
+            {/* Folders section */}
+            {filteredFolders.length > 0 && (
+              <>
+                <h6 className="text-muted text-uppercase small mb-2 mt-3">
+                  <i className="bi bi-folder me-1"></i>Folders
+                </h6>
+                <Row xs={1} md={2} lg={3} className="g-3 mb-3">
+                  {filteredFolders.map(folder => (
+                    <Col key={folder.folderId}>
+                      <FolderCard
+                        folder={folder}
+                        onClick={handleNavigateFolder}
+                        onRename={(f) => { setRenameFolder(f); setShowRenameModal(true); }}
+                        onDelete={handleDeleteFolder}
+                        onChangeColor={handleChangeColor}
+                        isOver={activeId && activeId !== `folder-${folder.folderId}`}
+                        isSelected={!!selectedItems.find(i => i.id === folder.folderId && i.type === 'folder')}
+                        onSelect={toggleSelectItem}
+                        onItemClick={handleItemClick}
+                      />
+                    </Col>
+                  ))}
+                </Row>
+              </>
+            )}
 
-          {/* Books section */}
-          {filteredBooks.length > 0 && (
-            <>
-              <h6 className="text-muted text-uppercase small mb-2 mt-3">
-                <i className="bi bi-book me-1"></i>Books
-              </h6>
-              <Row xs={1} sm={2} md={3} lg={4} className="g-3 mb-3">
-                {filteredBooks.map(book => (
-                  <Col key={book.bookId}>
-                    <LibraryBookCard
-                      book={book}
-                      isSelected={!!selectedItems.find(i => i.id === book.bookId && i.type === 'book')}
-                      onSelect={toggleSelectItem}
-                    />
-                  </Col>
-                ))}
-              </Row>
-            </>
-          )}
+            {/* Books section */}
+            {filteredBooks.length > 0 && (
+              <>
+                <h6 className="text-muted text-uppercase small mb-2 mt-3">
+                  <i className="bi bi-book me-1"></i>Books
+                </h6>
+                <Row xs={1} sm={2} md={3} lg={4} className="g-3 mb-3">
+                  {filteredBooks.map(book => (
+                    <Col key={book.bookId}>
+                      <LibraryBookCard
+                        book={book}
+                        isSelected={!!selectedItems.find(i => i.id === book.bookId && i.type === 'book')}
+                        onSelect={toggleSelectItem}
+                        onItemClick={handleItemClick}
+                      />
+                    </Col>
+                  ))}
+                </Row>
+              </>
+            )}
 
-          {/* Texts section */}
-          {filteredTexts.length > 0 && (
-            <>
-              <h6 className="text-muted text-uppercase small mb-2 mt-3">
-                <i className="bi bi-file-text me-1"></i>Texts
-              </h6>
-              <Row xs={1} sm={2} md={3} lg={4} className="g-3 mb-3">
-                {filteredTexts.map(text => (
-                  <Col key={text.textId}>
-                    <LibraryTextCard
-                      text={text}
-                      isSelected={!!selectedItems.find(i => i.id === text.textId && i.type === 'text')}
-                      onSelect={toggleSelectItem}
-                    />
-                  </Col>
-                ))}
-              </Row>
-            </>
-          )}
-        </SortableContext>
+            {/* Texts section */}
+            {filteredTexts.length > 0 && (
+              <>
+                <h6 className="text-muted text-uppercase small mb-2 mt-3">
+                  <i className="bi bi-file-text me-1"></i>Texts
+                </h6>
+                <Row xs={1} sm={2} md={3} lg={4} className="g-3 mb-3">
+                  {filteredTexts.map(text => (
+                    <Col key={text.textId}>
+                      <LibraryTextCard
+                        text={text}
+                        isSelected={!!selectedItems.find(i => i.id === text.textId && i.type === 'text')}
+                        onSelect={toggleSelectItem}
+                        onItemClick={handleItemClick}
+                      />
+                    </Col>
+                  ))}
+                </Row>
+              </>
+            )}
+          </SortableContext>
 
-        <DragOverlay>
-          {activeId ? (
-            <div style={{ opacity: 0.8, transform: 'scale(1.02)', boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }}>
-              <div className="bg-white rounded p-2 border">
-                <i className="bi bi-arrows-move me-2"></i>Moving item...
+          <DragOverlay>
+            {activeId ? (
+              <div style={{ opacity: 0.8, transform: 'scale(1.02)', boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }}>
+                <div className="bg-white rounded p-2 border">
+                  <i className="bi bi-arrows-move me-2"></i>Moving item...
+                </div>
               </div>
-            </div>
-          ) : null}
-        </DragOverlay>
-      </DndContext>
+            ) : null}
+          </DragOverlay>
+        </DndContext>
+      </div>
+      <SelectionRectangle rect={selectionRect} />
 
       {/* Empty state */}
       {!loading && totalItems === 0 && (

@@ -1040,3 +1040,16 @@ html {
 .translation-segment-color-5 {
   color: var(--translated-text-color-5);
 }
+
+/* Drag-select rubber band */
+.drag-select-rectangle {
+  background-color: rgba(13, 110, 253, 0.1);
+  border: 1px solid rgba(13, 110, 253, 0.5);
+  pointer-events: none;
+  z-index: 1000;
+}
+
+.library-grid-container.is-drag-selecting {
+  user-select: none;
+  -webkit-user-select: none;
+}

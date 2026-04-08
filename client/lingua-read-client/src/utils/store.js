@@ -108,6 +108,9 @@ export const useLibraryStore = create((set) => ({
   setAllFolders: (folders) => set({ allFolders: folders }),
   setLoading: (loading) => set({ loading }),
   setError: (error) => set({ error }),
+  setSelectedItems: (items) => set({ selectedItems: items }),
+  lastClickedItem: null,
+  setLastClickedItem: (item) => set({ lastClickedItem: item }),
   toggleSelectItem: (id, type) => set((state) => {
     const exists = state.selectedItems.find(i => i.id === id && i.type === type);
     if (exists) {
@@ -115,7 +118,7 @@ export const useLibraryStore = create((set) => ({
     }
     return { selectedItems: [...state.selectedItems, { id, type }] };
   }),
-  clearSelection: () => set({ selectedItems: [] })
+  clearSelection: () => set({ selectedItems: [], lastClickedItem: null })
 }));
 
 // Word Modal Store

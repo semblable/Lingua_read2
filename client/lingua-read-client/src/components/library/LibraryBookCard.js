@@ -10,7 +10,7 @@ const normalizeCoverUrl = (value) => {
   return `/${value.replace(/^\/+/, '')}`;
 };
 
-const LibraryBookCard = ({ book, isSelected, onSelect }) => {
+const LibraryBookCard = ({ book, isSelected, onSelect, onItemClick }) => {
   const {
     attributes,
     listeners,
@@ -30,8 +30,16 @@ const LibraryBookCard = ({ book, isSelected, onSelect }) => {
   };
 
   return (
-    <div ref={setNodeRef} style={style} {...attributes}>
-      <Card className={`h-100 shadow-sm book-card ${isSelected ? 'border-primary border-2' : ''}`}>
+    <div ref={setNodeRef} style={style} {...attributes} data-selectable-id={book.bookId} data-selectable-type="book">
+      <Card
+        className={`h-100 shadow-sm book-card ${isSelected ? 'border-primary border-2' : ''}`}
+        onClick={(e) => {
+          if ((e.ctrlKey || e.metaKey || e.shiftKey) && onItemClick) {
+            e.preventDefault();
+            onItemClick(book.bookId, 'book', e);
+          }
+        }}
+      >
         {book.coverImagePath && (
           <Card.Img
             variant="top"

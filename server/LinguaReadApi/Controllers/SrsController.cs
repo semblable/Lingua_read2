@@ -583,7 +583,8 @@ namespace LinguaReadApi.Controllers
                 .Include(scr => scr.Word)
                 .ToListAsync();
 
-            var dueCount = allCards.Count(c => c.NextReviewAt <= now);
+            var dueCards = allCards.Where(c => c.NextReviewAt <= now).ToList();
+            var dueCount = dueCards.Count;
             var totalCards = allCards.Count;
             var newCards = allCards.Count(c => c.Repetitions == 0 && c.LastReviewedAt == null);
             var learningCards = allCards.Count(c => c.IsLearning || ((c.Repetitions > 0 || c.LastReviewedAt != null) && c.Interval < 21));
@@ -603,6 +604,17 @@ namespace LinguaReadApi.Controllers
             int studiedNew = (settings?.SrsDailyStudyDate?.Date == now.Date) ? settings.SrsDailyNewCardsStudied : 0;
             int studiedReviews = (settings?.SrsDailyStudyDate?.Date == now.Date) ? settings.SrsDailyReviewsStudied : 0;
 
+            // Calculate reviewable count (quota-aware) to match what GetDueCards would serve
+            int maxNew = EffectiveSrsMaxNew(settings?.SrsMaxNewCards);
+            int maxReviews = EffectiveSrsMaxReviews(settings?.SrsMaxReviews);
+            int remainingNew = Math.Max(0, maxNew - studiedNew);
+            int remainingReviews = Math.Max(0, maxReviews - studiedReviews);
+
+            int dueLearnCount = dueCards.Count(c => c.IsLearning);
+            int dueNewCount = dueCards.Count(c => !c.IsLearning && c.Repetitions == 0 && c.LastReviewedAt == null);
+            int dueReviewCount = dueCards.Count(c => !c.IsLearning && (c.Repetitions > 0 || c.LastReviewedAt != null));
+            int reviewableCount = dueLearnCount + Math.Min(dueNewCount, remainingNew) + Math.Min(dueReviewCount, remainingReviews);
+
             // Calculate Retention Rate (Last 30 Days)
             var thirtyDaysAgo = now.AddDays(-30);
             var recentLogs = await _context.SrsReviewLogs
@@ -619,6 +631,7 @@ namespace LinguaReadApi.Controllers
             return new SrsStatsDto
             {
                 DueCount = dueCount,
+                ReviewableCount = reviewableCount,
                 TotalCards = totalCards,
                 NewCards = newCards,
                 LearningCards = learningCards,
@@ -1311,6 +1324,7 @@ Requirements:
     public class SrsStatsDto
     {
         public int DueCount { get; set; }
+        public int ReviewableCount { get; set; }
         public int TotalCards { get; set; }
         public int NewCards { get; set; }
         public int LearningCards { get; set; }

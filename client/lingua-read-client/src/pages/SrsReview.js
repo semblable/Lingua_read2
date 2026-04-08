@@ -503,7 +503,10 @@ const SrsReview = () => {
                 <Badge bg="success" className="srs-streak-badge">Retention: {stats.retentionRate}%</Badge>
               </div>
               <Row className="text-center g-2 mb-3">
-                <Col><div className="srs-stat-value text-danger">{stats.dueCount}</div><div className="srs-stat-label">Due</div></Col>
+                <Col>
+                  <div className="srs-stat-value text-danger">{stats.reviewableCount ?? stats.dueCount}</div>
+                  <div className="srs-stat-label">Due{stats.reviewableCount != null && stats.reviewableCount < stats.dueCount ? <small className="text-muted"> ({stats.dueCount} total)</small> : ''}</div>
+                </Col>
                 <Col><div className="srs-stat-value text-info">{stats.newCards}</div><div className="srs-stat-label">New</div></Col>
                 <Col><div className="srs-stat-value text-warning">{stats.learningCards}</div><div className="srs-stat-label">Learning</div></Col>
                 <Col><div className="srs-stat-value text-success">{stats.matureCards}</div><div className="srs-stat-label">Mature</div></Col>
@@ -832,11 +835,23 @@ const SrsReview = () => {
             </p>
 
             {stats && (
-              <Row className="text-center mb-4 g-3">
-                <Col><div className="srs-stat-value text-danger">{stats.dueCount}</div><div className="srs-stat-label">Still Due</div></Col>
-                <Col><div className="srs-stat-value">{stats.reviewedToday}</div><div className="srs-stat-label">Today</div></Col>
-                <Col><div className="srs-stat-value text-success">{stats.matureCards}</div><div className="srs-stat-label">Mature</div></Col>
-              </Row>
+              <>
+                <Row className="text-center mb-3 g-3">
+                  <Col>
+                    <div className="srs-stat-value text-danger">{stats.reviewableCount ?? stats.dueCount}</div>
+                    <div className="srs-stat-label">Still Due{stats.reviewableCount != null && stats.reviewableCount < stats.dueCount ? <small className="text-muted"> ({stats.dueCount} total)</small> : ''}</div>
+                  </Col>
+                  <Col><div className="srs-stat-value">{stats.reviewedToday}</div><div className="srs-stat-label">Today</div></Col>
+                  <Col><div className="srs-stat-value text-success">{stats.matureCards}</div><div className="srs-stat-label">Mature</div></Col>
+                </Row>
+                {stats.dueCount > 0 && (stats.reviewableCount ?? stats.dueCount) === 0 && (
+                  <Alert variant="info" className="mb-4 text-start py-2 small">
+                    {stats.studiedNewCardsToday >= stats.maxNewCards && <div>New card limit reached ({stats.maxNewCards}/day)</div>}
+                    {stats.studiedReviewsToday >= stats.maxReviews && <div>Review limit reached ({stats.maxReviews}/day)</div>}
+                    <div className="text-muted mt-1">Adjust limits in settings to review more.</div>
+                  </Alert>
+                )}
+              </>
             )}
 
             <div className="d-flex gap-2 justify-content-center">

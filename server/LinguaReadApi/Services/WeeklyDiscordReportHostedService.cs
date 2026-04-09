@@ -10,8 +10,6 @@ namespace LinguaReadApi.Services
 {
     public class WeeklyDiscordReportHostedService : BackgroundService
     {
-        private static readonly TimeSpan DisabledPollInterval = TimeSpan.FromMinutes(30);
-
         private readonly IServiceProvider _serviceProvider;
         private readonly IOptionsMonitor<DiscordReportOptions> _optionsMonitor;
         private readonly ILogger<WeeklyDiscordReportHostedService> _logger;
@@ -33,12 +31,6 @@ namespace LinguaReadApi.Services
             while (!stoppingToken.IsCancellationRequested)
             {
                 var options = _optionsMonitor.CurrentValue;
-                if (!options.WeeklyReportEnabled)
-                {
-                    _logger.LogDebug("Discord weekly reporting is disabled (Discord:WeeklyReportEnabled=false).");
-                    await Task.Delay(DisabledPollInterval, stoppingToken);
-                    continue;
-                }
 
                 try
                 {

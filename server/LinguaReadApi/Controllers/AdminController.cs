@@ -172,7 +172,6 @@ namespace LinguaReadApi.Controllers
             var baseOptions = _discordReportOptions.Value;
             var options = new DiscordReportOptions
             {
-                WeeklyReportEnabled = baseOptions.WeeklyReportEnabled,
                 WeeklyReportDayOfWeek = baseOptions.WeeklyReportDayOfWeek,
                 WeeklyReportHourUtc = baseOptions.WeeklyReportHourUtc,
                 DryRun = dryRun || baseOptions.DryRun,

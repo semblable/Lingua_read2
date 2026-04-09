@@ -69,7 +69,7 @@ public class DiscordReportServiceTests
         await context.SaveChangesAsync();
 
         var nowUtc = new DateTime(2026, 1, 26, 10, 0, 0, DateTimeKind.Utc);
-        var options = new DiscordReportOptions { WeeklyReportEnabled = true };
+        var options = new DiscordReportOptions();
 
         var result = await service.SendDueWeeklyReportsAsync(options, nowUtc, false, CancellationToken.None);
 
@@ -113,7 +113,7 @@ public class DiscordReportServiceTests
         await context.SaveChangesAsync();
 
         var nowUtc = new DateTime(2026, 1, 26, 6, 0, 0, DateTimeKind.Utc);
-        var options = new DiscordReportOptions { WeeklyReportEnabled = true };
+        var options = new DiscordReportOptions();
 
         var result = await service.SendDueWeeklyReportsAsync(options, nowUtc, false, CancellationToken.None);
 
@@ -150,7 +150,7 @@ public class DiscordReportServiceTests
         await context.SaveChangesAsync();
 
         var nowUtc = new DateTime(2026, 1, 26, 10, 0, 0, DateTimeKind.Utc);
-        var options = new DiscordReportOptions { WeeklyReportEnabled = true };
+        var options = new DiscordReportOptions();
 
         var result = await service.SendDueWeeklyReportsAsync(options, nowUtc, true, CancellationToken.None);
 

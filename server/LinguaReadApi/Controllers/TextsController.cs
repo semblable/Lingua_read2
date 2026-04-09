@@ -174,18 +174,30 @@ namespace LinguaReadApi.Controllers
         {
             var userId = GetUserId();
 
-            var recentTexts = await _context.Texts
-                .Where(t => t.UserId == userId && t.LastAccessedAt != null && t.Tag != "srs-story")
+            var baseQuery = _context.Texts
+                .Where(t => t.UserId == userId
+                         && t.LastAccessedAt != null
+                         && t.Tag != "srs-story");
+
+            // For book-bound texts: keep only the most recently accessed part per book.
+            var latestPerBook = baseQuery
+                .Where(t => t.BookId != null)
+                .GroupBy(t => t.BookId)
+                .Select(g => g.OrderByDescending(t => t.LastAccessedAt).First());
+
+            // Standalone texts (no book) are always kept.
+            var standalone = baseQuery.Where(t => t.BookId == null);
+
+            var recentTexts = await latestPerBook
+                .Concat(standalone)
                 .OrderByDescending(t => t.LastAccessedAt)
                 .Take(MaxRecentTexts)
-                .Include(t => t.Language)
-                .Include(t => t.Book) // Include Book for title and context
-                .Select(t => new RecentTextDto // Use a specific DTO for recent texts
+                .Select(t => new RecentTextDto
                 {
                     TextId = t.TextId,
                     Title = t.Title,
                     LanguageName = t.Language.Name,
-                    LastAccessedAt = t.LastAccessedAt ?? DateTime.MinValue, // Use default if somehow null despite Where clause
+                    LastAccessedAt = t.LastAccessedAt ?? DateTime.MinValue,
                     IsAudioLesson = t.IsAudioLesson,
                     BookId = t.BookId,
                     BookTitle = t.Book != null ? t.Book.Title : null,

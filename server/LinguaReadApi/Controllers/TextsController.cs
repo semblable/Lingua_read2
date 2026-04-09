@@ -174,24 +174,16 @@ namespace LinguaReadApi.Controllers
         {
             var userId = GetUserId();
 
-            var baseQuery = _context.Texts
+            // Stream candidates ordered by recency, then collapse in memory so each
+            // book contributes at most one entry (its most recently accessed part).
+            // Standalone texts (no book) are always kept. EF Core's GroupBy + First
+            // pattern doesn't translate cleanly here, so we dedupe client-side over a
+            // tight, projection-only query.
+            var candidates = await _context.Texts
                 .Where(t => t.UserId == userId
                          && t.LastAccessedAt != null
-                         && t.Tag != "srs-story");
-
-            // For book-bound texts: keep only the most recently accessed part per book.
-            var latestPerBook = baseQuery
-                .Where(t => t.BookId != null)
-                .GroupBy(t => t.BookId)
-                .Select(g => g.OrderByDescending(t => t.LastAccessedAt).First());
-
-            // Standalone texts (no book) are always kept.
-            var standalone = baseQuery.Where(t => t.BookId == null);
-
-            var recentTexts = await latestPerBook
-                .Concat(standalone)
+                         && t.Tag != "srs-story")
                 .OrderByDescending(t => t.LastAccessedAt)
-                .Take(MaxRecentTexts)
                 .Select(t => new RecentTextDto
                 {
                     TextId = t.TextId,
@@ -204,6 +196,21 @@ namespace LinguaReadApi.Controllers
                     PartNumber = t.PartNumber
                 })
                 .ToListAsync();
+
+            var seenBookIds = new HashSet<int>();
+            var recentTexts = new List<RecentTextDto>(MaxRecentTexts);
+            foreach (var dto in candidates)
+            {
+                if (dto.BookId.HasValue && !seenBookIds.Add(dto.BookId.Value))
+                {
+                    continue;
+                }
+                recentTexts.Add(dto);
+                if (recentTexts.Count >= MaxRecentTexts)
+                {
+                    break;
+                }
+            }
 
             return recentTexts;
         }

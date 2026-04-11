@@ -211,7 +211,7 @@ public class LessonLoadingOptimizationTests
     {
         var scopeFactory = CreateScopeFactory(context);
         var service = new UserActivityService(context, NullLogger<UserActivityService>.Instance);
-        return new TextsController(context, NullLogger<TextsController>.Instance, service, scopeFactory)
+        return new TextsController(context, NullLogger<TextsController>.Instance, service, scopeFactory, new WordLinkingChannel())
         {
             ControllerContext = BuildControllerContext(userId)
         };

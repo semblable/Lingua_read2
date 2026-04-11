@@ -25,18 +25,20 @@ namespace LinguaReadApi.Controllers
         private readonly ILogger<TextsController> _logger;
         private readonly IUserActivityService _userActivityService; // Inject activity service
         private readonly IServiceScopeFactory _scopeFactory;
+        private readonly WordLinkingChannel _wordLinkingChannel;
         private const int MaxRecentTexts = 5;
         private static readonly JsonSerializerOptions StructuredContentJsonOptions = new(JsonSerializerDefaults.Web)
         {
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase
         };
 
-        public TextsController(AppDbContext context, ILogger<TextsController> logger, IUserActivityService userActivityService, IServiceScopeFactory scopeFactory) // Inject services
+        public TextsController(AppDbContext context, ILogger<TextsController> logger, IUserActivityService userActivityService, IServiceScopeFactory scopeFactory, WordLinkingChannel wordLinkingChannel) // Inject services
         {
             _context = context;
             _logger = logger;
             _userActivityService = userActivityService; // Assign service
             _scopeFactory = scopeFactory;
+            _wordLinkingChannel = wordLinkingChannel;
         }
 
         // GET: api/texts
@@ -106,7 +108,9 @@ namespace LinguaReadApi.Controllers
                      BookTitle = text.Book != null ? text.Book.Title : null,
                      IsAudioLesson = text.IsAudioLesson,
                      AudioFilePath = text.AudioFilePath,
-                     SrtContent = text.SrtContent,
+                     SrtContent = null, // Loaded lazily via /api/texts/{id}/srt
+                     HasSrtContent = text.SrtContent != null,
+                     WordLinkingStatus = text.WordLinkingStatus,
                      StructuredContentRaw = text.StructuredContent,
                      CreatedAt = text.CreatedAt,
                      // Optimized: TextWords now contains unique links, so we can project directly
@@ -166,6 +170,40 @@ namespace LinguaReadApi.Controllers
 
             // Removed legacy mapping code. Use the projected DTO directly.
             return textDto;
+        }
+
+        // GET: api/texts/{id}/srt - Lazy-load SRT content separately from main text payload
+        [HttpGet("{id}/srt")]
+        public async Task<ActionResult<string>> GetSrtContent(int id)
+        {
+            var userId = GetUserId();
+            var srtContent = await _context.Texts
+                .AsNoTracking()
+                .Where(t => t.TextId == id && t.UserId == userId)
+                .Select(t => t.SrtContent)
+                .FirstOrDefaultAsync();
+
+            if (srtContent == null)
+                return NotFound();
+
+            return Content(srtContent, "text/plain");
+        }
+
+        // GET: api/texts/{id}/word-linking-status - Poll word linking status
+        [HttpGet("{id}/word-linking-status")]
+        public async Task<ActionResult> GetWordLinkingStatus(int id)
+        {
+            var userId = GetUserId();
+            var status = await _context.Texts
+                .AsNoTracking()
+                .Where(t => t.TextId == id && t.UserId == userId)
+                .Select(t => new { t.WordLinkingStatus })
+                .FirstOrDefaultAsync();
+
+            if (status == null)
+                return NotFound();
+
+            return Ok(status);
         }
 
         // GET: api/texts/recent
@@ -403,11 +441,13 @@ namespace LinguaReadApi.Controllers
                     LastAccessedAt = null // Explicitly null on creation
                 };
 
+                text.WordLinkingStatus = "processing";
                 _context.Texts.Add(text);
                 await _context.SaveChangesAsync();
 
-                // --- Parse and link words from transcript ---
-                await LinkWordsToTextInternal(text.TextId, transcript, text.LanguageId, userId);
+                // --- Queue word linking to run in background ---
+                await _wordLinkingChannel.Writer.WriteAsync(
+                    new WordLinkingRequest(text.TextId, transcript, text.LanguageId, userId));
 
                 // --- 4. Return Response ---
                 var language = await _context.Languages.FindAsync(text.LanguageId);
@@ -459,6 +499,17 @@ namespace LinguaReadApi.Controllers
 
         private async Task LinkWordsToTextInternal(int textId, string content, int languageId, Guid userId)
         {
+            await LinkWordsToTextInternal(textId, content, languageId, userId, _context);
+        }
+
+        /// <summary>
+        /// Chunked word-linking implementation that can work with any DbContext instance.
+        /// Processes words in batches to avoid massive SQL IN clauses.
+        /// </summary>
+        private static async Task LinkWordsToTextInternal(int textId, string content, int languageId, Guid userId, AppDbContext context)
+        {
+            const int WordBatchSize = 500;
+
             if (string.IsNullOrWhiteSpace(content)) return;
 
             // 1. Basic word parsing: split on whitespace and punctuation
@@ -472,18 +523,24 @@ namespace LinguaReadApi.Controllers
 
             var uniqueWords = wordsInText.Distinct().ToList();
 
-            // 2. Fetch existing words for this user and language
-            var existingWordsList = await _context.Words
-                .AsNoTracking()
-                .Where(w => w.UserId == userId && w.LanguageId == languageId && uniqueWords.Contains(w.Term.ToLower()))
-                .ToListAsync();
+            // 2. Fetch existing words in batches to avoid massive WHERE IN clauses
+            var existingWordsList = new List<Word>();
+            foreach (var batch in uniqueWords.Chunk(WordBatchSize))
+            {
+                var batchList = batch.ToList();
+                var batchResults = await context.Words
+                    .AsNoTracking()
+                    .Where(w => w.UserId == userId && w.LanguageId == languageId && batchList.Contains(w.Term.ToLower()))
+                    .ToListAsync();
+                existingWordsList.AddRange(batchResults);
+            }
 
             // Handle potential duplicates in DB safely
             var existingWords = existingWordsList
                 .GroupBy(w => w.Term.ToLowerInvariant())
                 .ToDictionary(g => g.Key, g => g.First());
 
-            // 3. Create missing words
+            // 3. Create missing words in batches
             var newWords = new List<Word>();
             foreach (var wordTerm in uniqueWords)
             {
@@ -497,20 +554,22 @@ namespace LinguaReadApi.Controllers
                         Status = 0, // Default status
                         CreatedAt = DateTime.UtcNow
                     };
-                    _context.Words.Add(newWord);
                     newWords.Add(newWord);
                     existingWords[wordTerm] = newWord;
                 }
             }
 
-            if (newWords.Any())
+            // Save new words in batches
+            foreach (var batch in newWords.Chunk(WordBatchSize))
             {
-                await _context.SaveChangesAsync(); // Save new words to get their IDs
+                context.Words.AddRange(batch);
+                await context.SaveChangesAsync();
+                context.ChangeTracker.Clear();
             }
 
-            // 4. Link only UNIQUE word occurrences via TextWord bulk insert
+            // 4. Link only UNIQUE word occurrences via TextWord bulk insert (batched)
             var textWordsToAdd = new List<TextWord>();
-            foreach (var wordTerm in uniqueWords) // Changed to uniqueWords: Link each word only once per text
+            foreach (var wordTerm in uniqueWords)
             {
                 if (existingWords.TryGetValue(wordTerm, out var word))
                 {
@@ -523,10 +582,11 @@ namespace LinguaReadApi.Controllers
                 }
             }
 
-            if (textWordsToAdd.Any())
+            foreach (var batch in textWordsToAdd.Chunk(WordBatchSize))
             {
-                await _context.TextWords.AddRangeAsync(textWordsToAdd);
-                await _context.SaveChangesAsync();
+                await context.TextWords.AddRangeAsync(batch);
+                await context.SaveChangesAsync();
+                context.ChangeTracker.Clear();
             }
         }
 
@@ -638,7 +698,8 @@ namespace LinguaReadApi.Controllers
                             AudioFilePath = audioFilePath,
                             SrtContent = srtContent,
                             Tag = dto.Tag,
-                            LastAccessedAt = null // Explicitly null on creation
+                            LastAccessedAt = null, // Explicitly null on creation
+                            WordLinkingStatus = "processing"
                         };
                         _context.Texts.Add(text);
                         createdLessons.Add((text, transcript));
@@ -694,17 +755,17 @@ namespace LinguaReadApi.Controllers
                  await _context.SaveChangesAsync();
                  _logger.LogInformation("Attempted to save {CreatedCount} new audio lessons for user {UserId}.", createdCount, userId);
 
-                 // --- Parse and link words for each successfully created lesson ---
+                 // --- Queue word linking for each lesson in background ---
                  foreach (var (t, transcript) in createdLessons)
                  {
                      try
                      {
-                         await LinkWordsToTextInternal(t.TextId, transcript, t.LanguageId, userId);
+                         await _wordLinkingChannel.Writer.WriteAsync(
+                             new WordLinkingRequest(t.TextId, transcript, t.LanguageId, userId));
                      }
                      catch (Exception wordLinkEx)
                      {
-                         _logger.LogError(wordLinkEx, "Failed to link words for lesson {TextId} in batch upload.", t.TextId);
-                         // Don't fail the whole batch if word linking fails for one lesson, but log it
+                         _logger.LogError(wordLinkEx, "Failed to queue word linking for lesson {TextId} in batch upload.", t.TextId);
                      }
                  }
             }
@@ -1116,6 +1177,8 @@ namespace LinguaReadApi.Controllers
         public bool IsAudioLesson { get; set; }
         public string? AudioFilePath { get; set; }
         public string? SrtContent { get; set; }
+        public bool HasSrtContent { get; set; }
+        public string? WordLinkingStatus { get; set; }
         public List<ReaderContentBlock> StructuredContent { get; set; } = new List<ReaderContentBlock>();
         public List<WordDto> Words { get; set; } = new List<WordDto>();
         [JsonIgnore]

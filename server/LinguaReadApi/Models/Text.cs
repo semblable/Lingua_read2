@@ -63,5 +63,9 @@ namespace LinguaReadApi.Models
 
         // New field to track completion status
         public bool IsFinished { get; set; } = false;
+
+        // Background word-linking status: null (legacy/done), "processing", "completed", "failed"
+        [StringLength(20)]
+        public string? WordLinkingStatus { get; set; }
     }
 }

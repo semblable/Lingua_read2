@@ -3,7 +3,7 @@ import { Container, Card, Spinner, Alert, Button, Modal, Form, Row, Col, Badge, 
 import { useParams, useNavigate } from 'react-router-dom'; // Removed unused Link import
 import { FixedSizeList as List } from 'react-window';
 import {
-  getText, createWord, updateWord, updateLastRead, completeLesson, getBook, // Use completeLesson instead of completeText
+  getText, getTextSrt, getWordLinkingStatus, createWord, updateWord, updateLastRead, completeLesson, getBook, // Use completeLesson instead of completeText
   translateText, translateSentence, translateFullText, translateSelectionWithContext, updateUserSettings, // Added updateUserSettings, removed unused getUserSettings
   explainSentence, mineSentence,
   batchTranslateWords, addTermsBatch, getLanguage, // Added getLanguage (Phase 3)
@@ -2709,21 +2709,37 @@ const TextDisplay = () => {
         const data = await getText(textId);
         setText(data);
         setWords(data.words || []);
-        if (data.isAudioLesson && data.audioFilePath && data.srtContent) {
+        if (data.isAudioLesson && data.audioFilePath && data.hasSrtContent) {
           if (!isAudioLesson) setIsAudioLesson(true);
 
-          // --- DEBUG: Log the path being used ---
-          // Correctly set audio source - remove API_URL prefix as it's a direct file path
           const newAudioSrc = `/${data.audioFilePath}`;
           if (audioSrc !== newAudioSrc) {
             setAudioSrc(newAudioSrc);
           }
-          // --- DEBUG: Log after setting src and check if load() needs to be called ---
-          // Load call moved to a separate useEffect hook dependent on audioSrc
-          // --- END DEBUG ---
-          // --- END DEBUG ---
-          setSrtLines(parseSrtContent(data.srtContent));
+
+          // Lazy-load SRT content separately to avoid large payloads
+          getTextSrt(textId).then(srtText => {
+            if (srtText) setSrtLines(parseSrtContent(srtText));
+          }).catch(err => console.error('Failed to load SRT:', err));
+
           if (displayMode !== 'audio') setDisplayMode('audio');
+
+          // Poll for word linking completion if still processing
+          if (data.wordLinkingStatus === 'processing') {
+            const pollInterval = setInterval(async () => {
+              try {
+                const statusData = await getWordLinkingStatus(textId);
+                if (statusData.wordLinkingStatus !== 'processing') {
+                  clearInterval(pollInterval);
+                  // Reload words when processing completes
+                  const refreshed = await getText(textId);
+                  setWords(refreshed.words || []);
+                }
+              } catch { clearInterval(pollInterval); }
+            }, 5000);
+            // Cleanup on unmount
+            return () => clearInterval(pollInterval);
+          }
 
         } else {
           if (isAudioLesson) setIsAudioLesson(false);

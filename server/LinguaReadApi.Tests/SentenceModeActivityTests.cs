@@ -110,7 +110,7 @@ public class SentenceModeActivityTests
         context.ChangeTracker.Clear();
 
         var service = new UserActivityService(context, NullLogger<UserActivityService>.Instance);
-        var controller = new TextsController(context, NullLogger<TextsController>.Instance, service, CreateScopeFactory(context))
+        var controller = new TextsController(context, NullLogger<TextsController>.Instance, service, CreateScopeFactory(context), new WordLinkingChannel())
         {
             ControllerContext = BuildControllerContext(userId)
         };
@@ -173,7 +173,7 @@ public class SentenceModeActivityTests
         context.ChangeTracker.Clear();
 
         var service = new UserActivityService(context, NullLogger<UserActivityService>.Instance);
-        var controller = new TextsController(context, NullLogger<TextsController>.Instance, service, CreateScopeFactory(context))
+        var controller = new TextsController(context, NullLogger<TextsController>.Instance, service, CreateScopeFactory(context), new WordLinkingChannel())
         {
             ControllerContext = BuildControllerContext(userId)
         };
@@ -228,7 +228,7 @@ public class SentenceModeActivityTests
         context.ChangeTracker.Clear();
 
         var service = new UserActivityService(context, NullLogger<UserActivityService>.Instance);
-        var controller = new TextsController(context, NullLogger<TextsController>.Instance, service, CreateScopeFactory(context))
+        var controller = new TextsController(context, NullLogger<TextsController>.Instance, service, CreateScopeFactory(context), new WordLinkingChannel())
         {
             ControllerContext = BuildControllerContext(userId)
         };

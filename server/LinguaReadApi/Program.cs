@@ -110,6 +110,10 @@ builder.Services.AddScoped<IStoryGenerationServiceFactory, StoryGenerationServic
 // Register Database Admin Service
 builder.Services.AddScoped<IDatabaseAdminService, DatabaseAdminService>(); // <-- Add this line
 
+// Word linking background processing
+builder.Services.AddSingleton<WordLinkingChannel>();
+builder.Services.AddHostedService<WordLinkingBackgroundService>();
+
 // Register Language Service (New)
 builder.Services.AddScoped<ILanguageService, LanguageService>();
 builder.Services.AddScoped<IUserActivityService, UserActivityService>(); // Register UserActivityService

@@ -354,6 +354,22 @@ export const getText = (textId) => {
   return fetchApi(`/texts/${textId}`);
 };
 
+export const getTextSrt = async (textId) => {
+  const fullUrl = API_URL + `/texts/${textId}/srt`;
+  const response = await fetch(fullUrl, {
+    headers: { 'X-Requested-With': 'XMLHttpRequest' },
+    credentials: 'include',
+    mode: 'cors'
+  });
+  if (response.status === 401) { handleUnauthorized(); throw new Error('Authentication required'); }
+  if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
+  return response.text();
+};
+
+export const getWordLinkingStatus = (textId) => {
+  return fetchApi(`/texts/${textId}/word-linking-status`);
+};
+
 // Add getRecentTexts function
 export const getRecentTexts = () => {
   return fetchApi('/texts/recent');

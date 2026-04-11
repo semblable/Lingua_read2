@@ -8,6 +8,8 @@ import { getBookmarkedSentences, toggleBookmark } from '../utils/bookmarks';
 import { speakText, cancelSpeech, isSpeechSynthesisSupported } from '../utils/browserTts';
 import {
   getText,
+  getTextSrt,
+  getWordLinkingStatus,
   createWord,
   updateWord,
   updateLastRead,
@@ -28,6 +30,8 @@ import {
 
 jest.mock('../utils/api', () => ({
   getText: jest.fn(),
+  getTextSrt: jest.fn(),
+  getWordLinkingStatus: jest.fn(),
   createWord: jest.fn(),
   updateWord: jest.fn(),
   updateLastRead: jest.fn(),
@@ -157,6 +161,10 @@ describe('TextDisplay', () => {
     getLanguage.mockReset();
     getSentenceProgress.mockReset();
     logSentenceReadActivity.mockReset();
+    getTextSrt.mockReset();
+    getTextSrt.mockResolvedValue('');
+    getWordLinkingStatus.mockReset();
+    getWordLinkingStatus.mockResolvedValue({ wordLinkingStatus: null });
     toggleBookmark.mockReset();
     speakText.mockClear();
     cancelSpeech.mockClear();
@@ -404,10 +412,11 @@ describe('TextDisplay', () => {
       languageName: 'Spanish',
       isAudioLesson: true,
       audioFilePath: 'audio_lessons/1.mp3',
-      srtContent: '1\n00:00:00,000 --> 00:00:02,000\nHola mundo.\n',
+      hasSrtContent: true,
       words: [],
       bookId: null
     });
+    getTextSrt.mockResolvedValueOnce('1\n00:00:00,000 --> 00:00:02,000\nHola mundo.\n');
 
     renderTextDisplay({ readingUiMode: 'modern' });
 
@@ -436,7 +445,7 @@ describe('TextDisplay', () => {
         languageName: 'Spanish',
         isAudioLesson: true,
         audioFilePath: 'audio_lessons/1.mp3',
-        srtContent: '1\n00:00:00,000 --> 00:00:02,000\nHola mundo.\n',
+        hasSrtContent: true,
         words: [],
         bookId: null
       })
@@ -449,10 +458,13 @@ describe('TextDisplay', () => {
         languageName: 'Spanish',
         isAudioLesson: true,
         audioFilePath: 'audio_lessons/2.mp3',
-        srtContent: '1\n00:00:00,000 --> 00:00:02,000\nBuenos dias.\n',
+        hasSrtContent: true,
         words: [],
         bookId: null
       });
+    getTextSrt
+      .mockResolvedValueOnce('1\n00:00:00,000 --> 00:00:02,000\nHola mundo.\n')
+      .mockResolvedValueOnce('1\n00:00:00,000 --> 00:00:02,000\nBuenos dias.\n');
 
     getSentenceProgress
       .mockResolvedValueOnce({
@@ -515,10 +527,11 @@ describe('TextDisplay', () => {
       languageName: 'Spanish',
       isAudioLesson: true,
       audioFilePath: 'audio_lessons/1.mp3',
-      srtContent: '1\n00:00:00,000 --> 00:00:02,000\nHola mundo.\n',
+      hasSrtContent: true,
       words: [],
       bookId: null
     });
+    getTextSrt.mockResolvedValueOnce('1\n00:00:00,000 --> 00:00:02,000\nHola mundo.\n');
 
     renderTextDisplay({ pauseOnWordClick: true, autoTranslateWords: false });
 
@@ -543,10 +556,11 @@ describe('TextDisplay', () => {
       languageName: 'Spanish',
       isAudioLesson: true,
       audioFilePath: 'audio_lessons/1.mp3',
-      srtContent: '1\n00:00:00,000 --> 00:00:02,000\nHola mundo.\n',
+      hasSrtContent: true,
       words: [],
       bookId: null
     });
+    getTextSrt.mockResolvedValueOnce('1\n00:00:00,000 --> 00:00:02,000\nHola mundo.\n');
 
     renderTextDisplay({ pauseOnWordClick: false, autoTranslateWords: false });
 

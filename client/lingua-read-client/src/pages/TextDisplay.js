@@ -2232,10 +2232,17 @@ const TextDisplay = () => {
       if (wordPattern.test(char)) {
         let currentWord = char;
         let wordEndIndex = currentIndex + 1;
-        // Accumulate subsequent word characters
-        while (wordEndIndex < content.length && wordPattern.test(content[wordEndIndex])) {
-          currentWord += content[wordEndIndex];
-          wordEndIndex++;
+        // Accumulate subsequent word characters (including hyphens connecting letters, e.g. "beijá-lo")
+        while (wordEndIndex < content.length) {
+          if (wordPattern.test(content[wordEndIndex])) {
+            currentWord += content[wordEndIndex];
+            wordEndIndex++;
+          } else if (content[wordEndIndex] === '-' && wordEndIndex + 1 < content.length && wordPattern.test(content[wordEndIndex + 1])) {
+            currentWord += content[wordEndIndex];
+            wordEndIndex++;
+          } else {
+            break;
+          }
         }
 
         // Process the accumulated word
@@ -3089,7 +3096,15 @@ const TextDisplay = () => {
     try {
       const wordsRegex = /\p{L}+(['-]\p{L}+)*/gu;
       const textWords = text.content.match(wordsRegex) || [];
-      const uniqueWordsInText = [...new Set(textWords.map(w => w.toLowerCase()))];
+      // Also extract parts of hyphenated words so they get individual translations
+      const allWords = [];
+      textWords.forEach(w => {
+        allWords.push(w);
+        if (w.includes('-')) {
+          w.split('-').forEach(part => { if (part) allWords.push(part); });
+        }
+      });
+      const uniqueWordsInText = [...new Set(allWords.map(w => w.toLowerCase()))];
       const wordsMap = wordMap; // Reuse the memoized map
       const unknownWords = uniqueWordsInText.filter(word => !wordsMap.has(word) || (wordsMap.get(word)?.status <= 2 && !wordsMap.get(word)?.translation));
       if (unknownWords.length === 0) { if (!silent) alert("No words found needing translation."); setTranslatingUnknown(false); return; } // Exit early
@@ -3097,7 +3112,7 @@ const TextDisplay = () => {
       // Bail out if user navigated away during the API call
       if (silent && autoTranslateTextIdRef.current !== callingTextId) { setTranslatingUnknown(false); return; }
       const originalCaseMap = new Map();
-      textWords.forEach(w => { const lower = w.toLowerCase(); if (!originalCaseMap.has(lower)) { originalCaseMap.set(lower, w); } });
+      allWords.forEach(w => { const lower = w.toLowerCase(); if (!originalCaseMap.has(lower)) { originalCaseMap.set(lower, w); } });
       const termsToAdd = unknownWords.map(word => ({
         term: originalCaseMap.get(word) || word,
         translation: translations[word.toLowerCase()] || ''
@@ -3130,12 +3145,20 @@ const TextDisplay = () => {
     try {
       const wordsRegex = /\p{L}+(['-]\p{L}+)*/gu;
       const textWords = text.content.match(wordsRegex) || [];
-      const uniqueWordsInText = [...new Set(textWords.map(w => w.toLowerCase()))];
+      // Also extract parts of hyphenated words
+      const allWords = [];
+      textWords.forEach(w => {
+        allWords.push(w);
+        if (w.includes('-')) {
+          w.split('-').forEach(part => { if (part) allWords.push(part); });
+        }
+      });
+      const uniqueWordsInText = [...new Set(allWords.map(w => w.toLowerCase()))];
       const wordsMap = new Map(words.map(w => [w.term.toLowerCase(), w]));
       const unknownWords = uniqueWordsInText.filter(word => !wordsMap.has(word));
       if (unknownWords.length === 0) { alert("No untracked words found."); setIsMarkingAll(false); return; } // Exit early
       const originalCaseMap = new Map();
-      textWords.forEach(w => { const lower = w.toLowerCase(); if (!originalCaseMap.has(lower)) { originalCaseMap.set(lower, w); } });
+      allWords.forEach(w => { const lower = w.toLowerCase(); if (!originalCaseMap.has(lower)) { originalCaseMap.set(lower, w); } });
       const termsToMark = unknownWords.map(word => ({ term: originalCaseMap.get(word) || word, translation: null }));
       await addTermsBatch(text.languageId, termsToMark);
       await fetchAllLanguageWords(text.languageId);

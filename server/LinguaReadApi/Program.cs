@@ -48,12 +48,19 @@ builder.Services.Configure<FormOptions>(options =>
 // token providers (password reset, email confirmation, 2FA) and any cookie/antiforgery
 // payloads. Persist them to a mounted volume and pin the application name so keys remain
 // valid across deployments.
-var dataProtectionKeysPath = Environment.GetEnvironmentVariable("DATA_PROTECTION_KEYS_PATH")
-    ?? "/app/keys";
-Directory.CreateDirectory(dataProtectionKeysPath);
-builder.Services.AddDataProtection()
-    .PersistKeysToFileSystem(new DirectoryInfo(dataProtectionKeysPath))
-    .SetApplicationName("LinguaReadApi");
+//
+// Default to a path relative to ContentRootPath so tests (which don't have /app writable)
+// still work. In Docker, WORKDIR is /app so this resolves to /app/keys — matching the
+// volume mount in docker-compose.yml.
+if (!builder.Environment.IsEnvironment("Testing"))
+{
+    var dataProtectionKeysPath = Environment.GetEnvironmentVariable("DATA_PROTECTION_KEYS_PATH")
+        ?? Path.Combine(builder.Environment.ContentRootPath, "keys");
+    Directory.CreateDirectory(dataProtectionKeysPath);
+    builder.Services.AddDataProtection()
+        .PersistKeysToFileSystem(new DirectoryInfo(dataProtectionKeysPath))
+        .SetApplicationName("LinguaReadApi");
+}
 
 // Add services to the container.
 builder.Services.AddControllers();

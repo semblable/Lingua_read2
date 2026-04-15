@@ -53,6 +53,7 @@ services:
       - api_audio_lessons:/app/wwwroot/audio_lessons
       - api_audiobooks:/app/wwwroot/audiobooks
       - api_epub_assets:/app/wwwroot/epub_assets
+      - api_dp_keys:/app/keys
     expose:
       - "5000"
     healthcheck:
@@ -103,4 +104,5 @@ volumes:
   api_audio_lessons:
   api_audiobooks:
   api_epub_assets:
+  api_dp_keys:
   backup_data:

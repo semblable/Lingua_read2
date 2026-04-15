@@ -14,6 +14,7 @@ using Microsoft.AspNetCore.Server.Kestrel.Core; // Needed for KestrelServerOptio
 using DotNetEnv; // <-- Add this using directive
 using Microsoft.AspNetCore.Identity; // Keep one Identity using
 using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.AspNetCore.DataProtection;
 // using Microsoft.AspNetCore.Identity.EntityFrameworkCore; // This namespace is not needed directly here
 
 // --- Load .env file ---
@@ -40,6 +41,19 @@ builder.Services.Configure<FormOptions>(options =>
     options.ValueCountLimit = int.MaxValue; // Or a specific large value
     // options.MemoryBufferThreshold = int.MaxValue; // REMOVED - Use default disk buffering for large files
 });
+
+// --- Persist Data Protection keys ---
+// Without this, ASP.NET Core stores keys in ~/.aspnet/DataProtection-Keys inside the
+// container, which is lost whenever the container is rebuilt. That invalidates Identity
+// token providers (password reset, email confirmation, 2FA) and any cookie/antiforgery
+// payloads. Persist them to a mounted volume and pin the application name so keys remain
+// valid across deployments.
+var dataProtectionKeysPath = Environment.GetEnvironmentVariable("DATA_PROTECTION_KEYS_PATH")
+    ?? "/app/keys";
+Directory.CreateDirectory(dataProtectionKeysPath);
+builder.Services.AddDataProtection()
+    .PersistKeysToFileSystem(new DirectoryInfo(dataProtectionKeysPath))
+    .SetApplicationName("LinguaReadApi");
 
 // Add services to the container.
 builder.Services.AddControllers();

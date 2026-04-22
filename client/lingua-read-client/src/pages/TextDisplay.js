@@ -844,7 +844,9 @@ const WordInfoPanel = React.memo(({
   isSpeakingWord,
   onSpeakWord,
   handleMineSentence,
-  onReadingCredit
+  onReadingCredit,
+  onRetranslateWithContext,
+  canRetranslate
 }) => {
   if (!displayedWord) return <p>Click/hover on a word.</p>;
   return (
@@ -896,13 +898,25 @@ const WordInfoPanel = React.memo(({
       />
       {isTranslating && <Spinner size="sm" />}
       {wordTranslationError && <Alert variant="danger" size="sm">{wordTranslationError}</Alert>}
-      <div className="d-flex flex-wrap gap-1 mt-2">
+      {onRetranslateWithContext && (
+        <Button
+          variant="outline-primary"
+          size="sm"
+          className="mt-2"
+          onClick={onRetranslateWithContext}
+          disabled={!canRetranslate || isTranslating || processingWord}
+          title="Re-translate this word with AI using the current sentence as context"
+        >
+          {isTranslating ? 'Translating...' : 'AI Translate'}
+        </Button>
+      )}
+      <div className="d-flex flex-wrap gap-1 mt-2 word-status-row">
         {[1, 2, 3, 4, 5].map(s => (
           <Button
             key={s}
             variant="outline-secondary"
             size="sm"
-            className="py-0 px-2"
+            className="py-0 px-2 word-status-btn"
             onClick={() => handleSaveWord(s)}
             disabled={processingWord || isTranslating || !selectedWord}
           >
@@ -1883,9 +1897,10 @@ const TextDisplay = () => {
   }, [languageWordsLoaded, globalSettings?.highlightKnownWords]); // Use globalSettings from context
 
   const triggerAutoTranslation = useCallback(async (termToTranslate, options = {}) => {
-    const { sentenceContext = '' } = options;
+    const { sentenceContext = '', force = false } = options;
     // Use globalSettings from context
-    if (!termToTranslate || !globalSettings.autoTranslateWords || !text?.languageCode) return;
+    if (!termToTranslate || !text?.languageCode) return;
+    if (!force && !globalSettings.autoTranslateWords) return;
     setIsTranslating(true);
     setWordTranslationError('');
     try {
@@ -3500,6 +3515,14 @@ const TextDisplay = () => {
                       console.error('Reading credit failed:', err);
                     }
                   }}
+                  onRetranslateWithContext={() => {
+                    if (!displayedWord?.term) return;
+                    triggerAutoTranslation(displayedWord.term, {
+                      sentenceContext: currentSentenceSegment?.text || '',
+                      force: true,
+                    });
+                  }}
+                  canRetranslate={!!displayedWord?.term && !!currentSentenceSegment?.text}
                 />
               </div>
 
@@ -3567,6 +3590,14 @@ const TextDisplay = () => {
                     console.error('Reading credit failed:', err);
                   }
                 }}
+                onRetranslateWithContext={() => {
+                  if (!displayedWord?.term) return;
+                  triggerAutoTranslation(displayedWord.term, {
+                    sentenceContext: currentSentenceSegment?.text || '',
+                    force: true,
+                  });
+                }}
+                canRetranslate={!!displayedWord?.term && !!currentSentenceSegment?.text}
               />
             </div>
           </div>

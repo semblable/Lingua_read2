@@ -580,6 +580,20 @@
     padding-bottom: calc(var(--space-lg) + 3.5rem);
   }
 
+  .word-info-sheet .word-status-row {
+    gap: 0.4rem !important;
+  }
+
+  .word-info-sheet .word-status-btn,
+  .word-info-sheet .btn.word-status-btn {
+    min-width: 44px;
+    min-height: 40px;
+    padding: 0.4rem 0.7rem;
+    font-size: 0.95rem;
+    line-height: 1.2;
+    flex: 1 1 auto;
+  }
+
   .lesson-topbar {
     padding: var(--space-sm);
   }

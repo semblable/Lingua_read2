@@ -586,11 +586,15 @@ const TextDisplay = () => {
     if (!isPhrase && globalSettings.tooltipOnlyForSavedWords) {
       const existing = getWordData(word);
       if (existing && !existing.isNew) {
+        // Cancel the pending processWordSelection scheduled by the container's
+        // touchend handler — otherwise it fires ~650ms later, finds no real
+        // selection, and toggles the mobile header.
+        clearPendingSelection();
         return;
       }
     }
     handleWordClick(word);
-  }, [focusSentenceIndexFromNode, handleWordClick, hasActiveTextSelection, getWordData, globalSettings.tooltipOnlyForSavedWords]);
+  }, [clearPendingSelection, focusSentenceIndexFromNode, handleWordClick, hasActiveTextSelection, getWordData, globalSettings.tooltipOnlyForSavedWords]);
 
   const handleSelectableWordTouchStart = useCallback(() => {
     selectableWordTouchStartRef.current = Date.now();

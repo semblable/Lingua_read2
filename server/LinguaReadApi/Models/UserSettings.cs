@@ -20,6 +20,7 @@ namespace LinguaReadApi.Models
         [StringLength(20)]
         public string ReadingDensity { get; set; } = "balanced"; // compact, balanced, spacious
         public bool ShowWordInfoPanel { get; set; } = true; // show desktop word info panel by default
+        public bool TooltipOnlyForSavedWords { get; set; } = false; // when true, clicking an already-saved single word only shows hover tooltip
         public bool ReaderParagraphIndent { get; set; } = true; // indent body paragraphs in reading mode
         [StringLength(20)]
         public string ReaderTextAlignment { get; set; } = "left"; // left, justify

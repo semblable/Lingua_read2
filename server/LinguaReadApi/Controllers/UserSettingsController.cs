@@ -60,6 +60,7 @@ namespace LinguaReadApi.Controllers
                     ReaderContentWidth = 740,
                     ReadingDensity = "balanced",
                     ShowWordInfoPanel = true,
+                    TooltipOnlyForSavedWords = false,
                     ReaderParagraphIndent = true,
                     ReaderTextAlignment = "left",
                     AutoTranslateWords = true,
@@ -104,6 +105,7 @@ namespace LinguaReadApi.Controllers
                 ReaderContentWidth = settings.ReaderContentWidth,
                 ReadingDensity = settings.ReadingDensity,
                 ShowWordInfoPanel = settings.ShowWordInfoPanel,
+                TooltipOnlyForSavedWords = settings.TooltipOnlyForSavedWords,
                 ReaderParagraphIndent = settings.ReaderParagraphIndent,
                 ReaderTextAlignment = settings.ReaderTextAlignment,
                 AutoTranslateWords = settings.AutoTranslateWords,
@@ -197,6 +199,7 @@ namespace LinguaReadApi.Controllers
                 }
             }
             settings.ShowWordInfoPanel = updateDto.ShowWordInfoPanel ?? settings.ShowWordInfoPanel;
+            settings.TooltipOnlyForSavedWords = updateDto.TooltipOnlyForSavedWords ?? settings.TooltipOnlyForSavedWords;
             settings.ReaderParagraphIndent = updateDto.ReaderParagraphIndent ?? settings.ReaderParagraphIndent;
             if (!string.IsNullOrWhiteSpace(updateDto.ReaderTextAlignment))
             {
@@ -308,6 +311,7 @@ namespace LinguaReadApi.Controllers
                 ReaderContentWidth = settings.ReaderContentWidth,
                 ReadingDensity = settings.ReadingDensity,
                 ShowWordInfoPanel = settings.ShowWordInfoPanel,
+                TooltipOnlyForSavedWords = settings.TooltipOnlyForSavedWords,
                 ReaderParagraphIndent = settings.ReaderParagraphIndent,
                 ReaderTextAlignment = settings.ReaderTextAlignment,
                 AutoTranslateWords = settings.AutoTranslateWords,
@@ -688,6 +692,7 @@ namespace LinguaReadApi.Controllers
         public int ReaderContentWidth { get; set; } = 740;
         public string ReadingDensity { get; set; } = "balanced";
         public bool ShowWordInfoPanel { get; set; } = true;
+        public bool TooltipOnlyForSavedWords { get; set; } = false;
         public bool ReaderParagraphIndent { get; set; } = true;
         public string ReaderTextAlignment { get; set; } = "left";
         public int LeftPanelWidth { get; set; } // Already added in previous step, ensure it's correct
@@ -744,6 +749,7 @@ namespace LinguaReadApi.Controllers
         [StringLength(20)]
         public string? ReadingDensity { get; set; }
         public bool? ShowWordInfoPanel { get; set; }
+        public bool? TooltipOnlyForSavedWords { get; set; }
         public bool? ReaderParagraphIndent { get; set; }
         [StringLength(20)]
         public string? ReaderTextAlignment { get; set; }

@@ -577,14 +577,20 @@ const TextDisplay = () => {
     }, 0);
   }, [handleWordClick, triggerAutoTranslation]);
 
-  const handleSelectableWordClick = useCallback((event, word) => {
+  const handleSelectableWordClick = useCallback((event, word, isPhrase = false) => {
     event.stopPropagation();
     if (Date.now() < suppressWordClickUntilRef.current || hasActiveTextSelection()) {
       return;
     }
     focusSentenceIndexFromNode(event.target);
+    if (!isPhrase && globalSettings.tooltipOnlyForSavedWords) {
+      const existing = getWordData(word);
+      if (existing && !existing.isNew) {
+        return;
+      }
+    }
     handleWordClick(word);
-  }, [focusSentenceIndexFromNode, handleWordClick, hasActiveTextSelection]);
+  }, [focusSentenceIndexFromNode, handleWordClick, hasActiveTextSelection, getWordData, globalSettings.tooltipOnlyForSavedWords]);
 
   const handleSelectableWordTouchStart = useCallback(() => {
     selectableWordTouchStartRef.current = Date.now();
@@ -793,7 +799,7 @@ const TextDisplay = () => {
               className={`clickable-word${languageWordsLoaded ? ` word-status-${phraseStatus}` : ''}`}
               onTouchStart={handleSelectableWordTouchStart}
               onTouchEnd={handleSelectableWordTouchEnd}
-              onClick={(e) => handleSelectableWordClick(e, phraseTerm)}
+              onClick={(e) => handleSelectableWordClick(e, phraseTerm, true)}
               onMouseEnter={() => setHoveredWordTerm(phraseTerm)}
               onMouseLeave={() => setHoveredWordTerm(null)}
             >

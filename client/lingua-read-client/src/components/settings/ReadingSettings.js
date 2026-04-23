@@ -45,6 +45,19 @@ const ReadingSettings = ({ settings, handleChange, languages, loadingLanguages }
           />
         </Form.Group>
 
+        <Form.Group className="mb-3" controlId="tooltipOnlyForSavedWords">
+          <Form.Check
+            type="switch"
+            name="tooltipOnlyForSavedWords"
+            label="Only show hover tooltip for saved words (skip Word Info panel)"
+            checked={settings.tooltipOnlyForSavedWords}
+            onChange={handleChange}
+          />
+          <Form.Text className="text-muted">
+            New (unsaved) words and multi-word phrases still open the Word Info panel.
+          </Form.Text>
+        </Form.Group>
+
         <Form.Group className="mb-0" controlId="sentenceTtsEnabled">
           <Form.Check
             type="switch"

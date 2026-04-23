@@ -250,6 +250,55 @@ describe('TextDisplay', () => {
     });
   });
 
+  test('mobile repeated selectionchange for same selection does not loop the Word Info sheet', async () => {
+    window.matchMedia = jest.fn().mockImplementation(() => ({
+      matches: true,
+      addEventListener: jest.fn(),
+      removeEventListener: jest.fn()
+    }));
+
+    renderTextDisplay({ autoTranslateWords: true });
+
+    await waitFor(() => expect(getText).toHaveBeenCalled());
+    const word = await screen.findByText('Hello');
+    const textContent = word.closest('.text-content');
+    expect(textContent).not.toBeNull();
+
+    const mockSelection = {
+      isCollapsed: false,
+      rangeCount: 1,
+      anchorNode: textContent,
+      focusNode: textContent,
+      toString: () => 'Hello world',
+      getRangeAt: () => ({
+        commonAncestorContainer: textContent
+      })
+    };
+    window.getSelection = jest.fn(() => mockSelection);
+
+    // First selection — should open the panel and translate.
+    act(() => {
+      document.dispatchEvent(new Event('selectionchange'));
+      jest.advanceTimersByTime(1000);
+    });
+
+    await waitFor(() => {
+      expect(translateSelectionWithContext).toHaveBeenCalledTimes(1);
+    });
+    expect(await screen.findByText('Word Info')).toBeInTheDocument();
+
+    // Mobile browsers re-fire selectionchange while selection handles remain
+    // active. Those repeat events should NOT close and re-open the sheet.
+    act(() => {
+      document.dispatchEvent(new Event('selectionchange'));
+      document.dispatchEvent(new Event('selectionchange'));
+      jest.advanceTimersByTime(2000);
+    });
+
+    expect(screen.getByText('Word Info')).toBeInTheDocument();
+    expect(translateSelectionWithContext).toHaveBeenCalledTimes(1);
+  });
+
   test('mobile context menu does not toggle bookmarks while selecting', async () => {
     window.matchMedia = jest.fn().mockImplementation(() => ({
       matches: true,

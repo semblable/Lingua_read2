@@ -490,9 +490,11 @@ const TextDisplay = () => {
   }, [globalSettings.autoTranslateWords, text?.languageCode, translationTargetLanguageCode, setTranslation, setDisplayedWord, setIsTranslating, setWordTranslationError]); // Use globalSettings from context
 
   const handleWordClick = useCallback((word, options = {}) => {
-    const { skipAutoTranslate = false } = options;
+    const { skipAutoTranslate = false, preserveLastHandledSelection = false } = options;
     clearPendingSelection();
-    lastHandledSelectionRef.current = '';
+    if (!preserveLastHandledSelection) {
+      lastHandledSelectionRef.current = '';
+    }
     if (isAudioLesson && globalSettings.pauseOnWordClick) {
       pauseAudioPlayback();
       setSegmentPlaybackRequest(null);
@@ -568,7 +570,7 @@ const TextDisplay = () => {
     suppressWordClickUntilRef.current = Date.now() + 400;
     setTimeout(() => {
       const useAiContext = Boolean(sentenceContext && sentenceContext.trim());
-      handleWordClick(selectedText, { skipAutoTranslate: useAiContext });
+      handleWordClick(selectedText, { skipAutoTranslate: useAiContext, preserveLastHandledSelection: true });
       if (useAiContext) {
         triggerAutoTranslation(selectedText, { sentenceContext });
       }
@@ -740,6 +742,15 @@ const TextDisplay = () => {
       const focusNode = selection.focusNode;
       if (!container || !anchorNode || !focusNode) return;
       if (!container.contains(anchorNode) || !container.contains(focusNode)) return;
+
+      // If this selection already matches the word we're currently showing, do
+      // nothing. Mobile browsers fire selectionchange repeatedly while the
+      // selection handles are visible; without this guard the panel toggles
+      // open/closed in a loop.
+      const selectedText = selection.toString().trim();
+      if (selectedText && selectedText === lastHandledSelectionRef.current) {
+        return;
+      }
 
       setIsWordPanelOpen(false);
       scheduleWordSelection(900);
@@ -2124,7 +2135,10 @@ const TextDisplay = () => {
       {isMobile && isWordPanelOpen && (
         <div
           className="word-info-sheet-backdrop"
-          onClick={() => setIsWordPanelOpen(false)}
+          onClick={() => {
+            setIsWordPanelOpen(false);
+            lastHandledSelectionRef.current = '';
+          }}
           role="presentation"
         >
           <div className="word-info-sheet" onClick={(event) => event.stopPropagation()} role="dialog" aria-label="Word information">

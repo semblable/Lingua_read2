@@ -102,6 +102,62 @@ public class CompleteLessonTests
     }
 
     [Fact]
+    public async Task CompleteLesson_RecomputesBookWordStats_AfterPromotions()
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        SeedBookWithTwoParts(context, userId, out var bookId, out var firstTextId);
+
+        context.Words.AddRange(
+            new Word { WordId = 30, UserId = userId, LanguageId = 1, Term = "hola", Status = 3 },
+            new Word { WordId = 31, UserId = userId, LanguageId = 1, Term = "amigo", Status = 1 },
+            new Word { WordId = 32, UserId = userId, LanguageId = 1, Term = "mundo", Status = 5 });
+        context.TextWords.AddRange(
+            new TextWord { TextWordId = 300, TextId = firstTextId, WordId = 30 },
+            new TextWord { TextWordId = 301, TextId = firstTextId, WordId = 31 },
+            new TextWord { TextWordId = 302, TextId = firstTextId, WordId = 32 });
+        await context.SaveChangesAsync();
+
+        var controller = CreateController(context, userId);
+        var result = await controller.CompleteLesson(bookId, new CompleteLessonDto { TextId = firstTextId });
+
+        var stats = Assert.IsType<BookStatsDto>(result.Value);
+        Assert.Equal(3, stats.TotalWords);
+        Assert.Equal(2, stats.KnownWords); // hola 3 -> 4, mundo stays mastered
+        Assert.Equal(1, stats.LearningWords); // amigo 1 -> 2
+
+        context.ChangeTracker.Clear();
+        var book = await context.Books.SingleAsync();
+        Assert.Equal(stats.TotalWords, book.TotalWords);
+        Assert.Equal(stats.KnownWords, book.KnownWords);
+        Assert.Equal(stats.LearningWords, book.LearningWords);
+    }
+
+    [Fact]
+    public async Task CompleteLesson_DeduplicatesBookWordStats_AcrossRepeatedLinks()
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        SeedBookWithTwoParts(context, userId, out var bookId, out var firstTextId);
+
+        var secondTextId = firstTextId + 1;
+        context.Words.Add(new Word { WordId = 40, UserId = userId, LanguageId = 1, Term = "hola", Status = 3 });
+        context.TextWords.AddRange(
+            new TextWord { TextWordId = 400, TextId = firstTextId, WordId = 40 },
+            new TextWord { TextWordId = 401, TextId = firstTextId, WordId = 40 },
+            new TextWord { TextWordId = 402, TextId = secondTextId, WordId = 40 });
+        await context.SaveChangesAsync();
+
+        var controller = CreateController(context, userId);
+        var result = await controller.CompleteLesson(bookId, new CompleteLessonDto { TextId = firstTextId });
+
+        var stats = Assert.IsType<BookStatsDto>(result.Value);
+        Assert.Equal(1, stats.TotalWords);
+        Assert.Equal(1, stats.KnownWords);
+        Assert.Equal(0, stats.LearningWords);
+    }
+
+    [Fact]
     public async Task CompleteLesson_DedupsImmediateRetry()
     {
         await using var context = CreateContext();

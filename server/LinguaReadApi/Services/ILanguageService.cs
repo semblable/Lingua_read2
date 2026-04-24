@@ -1,4 +1,5 @@
 using LinguaReadApi.Models;
+using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 
@@ -35,6 +36,13 @@ namespace LinguaReadApi.Services
         /// </summary>
         /// <returns>True if deletion was successful, false otherwise (e.g., not found).</returns>
         Task<bool> DeleteLanguageAsync(int id);
+
+        /// <summary>
+        /// Deletes all user-owned content (texts, books, words, activity, stats) for a language
+        /// while preserving the language configuration, dictionaries, and sentence-split exceptions.
+        /// </summary>
+        /// <returns>True if the reset was performed, false if the language does not exist.</returns>
+        Task<bool> ResetLanguageContentAsync(int languageId, Guid userId);
 
         /// <summary>
         /// Gets languages marked as active for translation.

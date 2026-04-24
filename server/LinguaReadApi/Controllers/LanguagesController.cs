@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore; // <-- Add this for DbUpdateException
 using System;
 using System.Collections.Generic;
+using System.Security.Claims;
 using System.Threading.Tasks;
 
 namespace LinguaReadApi.Controllers
@@ -191,6 +192,51 @@ namespace LinguaReadApi.Controllers
                 _logger.LogError(ex, "Error deleting language {LanguageId}", id);
                 return StatusCode(500, "An error occurred while deleting the language.");
             }
+        }
+
+        // POST: api/languages/{id}/reset-content
+        /// <summary>
+        /// Deletes all of the current user's content for the given language (texts, books, words,
+        /// activity, statistics) while preserving the language configuration itself.
+        /// </summary>
+        [HttpPost("{id}/reset-content")]
+        public async Task<IActionResult> ResetLanguageContent(int id)
+        {
+            Guid userId;
+            try
+            {
+                userId = GetUserId();
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return Unauthorized();
+            }
+
+            try
+            {
+                var success = await _languageService.ResetLanguageContentAsync(id, userId);
+                if (!success)
+                {
+                    return NotFound($"Language with ID {id} not found.");
+                }
+                _logger.LogInformation("Reset content for language {LanguageId} and user {UserId}", id, userId);
+                return NoContent();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error resetting content for language {LanguageId}", id);
+                return StatusCode(500, "An error occurred while resetting the language content.");
+            }
+        }
+
+        private Guid GetUserId()
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var userId))
+            {
+                throw new UnauthorizedAccessException("User ID not found in token");
+            }
+            return userId;
         }
     }
 }

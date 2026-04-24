@@ -345,6 +345,14 @@ export const deleteLanguage = (languageId) => {
   });
 };
 
+// Deletes all user content (texts, books, words, activity, stats) for a language,
+// keeping the language configuration itself.
+export const resetLanguageContent = (languageId) => {
+  return fetchApi(`/languages/${languageId}/reset-content`, {
+    method: 'POST'
+  });
+};
+
 // Texts API
 export const getTexts = () => {
   return fetchApi('/texts');

@@ -49,6 +49,10 @@ function LanguagesPage() {
         }
     };
 
+    const handleResetContent = () => {
+        fetchLanguages();
+    };
+
     return (
         <Container fluid className="mt-4">
             <Row>
@@ -90,6 +94,7 @@ function LanguagesPage() {
                                     onSave={handleSave}
                                     onCancel={handleCancel}
                                     onDelete={handleDelete} // Pass the delete handler
+                                    onResetContent={handleResetContent}
                                 />
                             :
                                 <Card>

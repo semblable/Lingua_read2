@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Form, Button, Row, Col, Card, InputGroup, Alert } from 'react-bootstrap';
-import { createLanguage, updateLanguage, deleteLanguage } from '../../utils/api'; // <-- Import deleteLanguage
+import { createLanguage, updateLanguage, deleteLanguage, resetLanguageContent } from '../../utils/api'; // <-- Import deleteLanguage
 
 // Initial empty state for a new language
 const initialLanguageState = {
@@ -19,7 +19,7 @@ const initialLanguageState = {
     geminiTargetCode: ''
 };
 
-function LanguageForm({ language, onSave, onCancel, onDelete }) {
+function LanguageForm({ language, onSave, onCancel, onDelete, onResetContent }) {
     const [formData, setFormData] = useState(initialLanguageState);
     const [isSaving, setIsSaving] = useState(false);
     const [error, setError] = useState(null);
@@ -135,6 +135,26 @@ function LanguageForm({ language, onSave, onCancel, onDelete }) {
             onSave(); // Notify parent component (e.g., to refetch list and clear selection)
         } catch (err) {
             setError(err.message || 'Failed to save language.');
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    const handleResetContentClick = async () => {
+        if (!formData.languageId) return;
+        const message =
+            `Delete ALL your content for "${formData.name}"?\n\n` +
+            `This will remove: texts, books, words, translations, reading/listening activity, and statistics for this language.\n\n` +
+            `This will KEEP: the language itself, its dictionaries, sentence-split exceptions, and all other settings.\n\n` +
+            `This cannot be undone.`;
+        if (!window.confirm(message)) return;
+        setIsSaving(true);
+        setError(null);
+        try {
+            await resetLanguageContent(formData.languageId);
+            if (onResetContent) onResetContent(formData.languageId);
+        } catch (err) {
+            setError(err.message || 'Failed to reset language content.');
         } finally {
             setIsSaving(false);
         }
@@ -426,9 +446,14 @@ function LanguageForm({ language, onSave, onCancel, onDelete }) {
                     </Button>
                 </div>
                 {formData.languageId && (
-                     <Button variant="danger" onClick={handleDeleteClick} disabled={isSaving}>
-                        Delete Language
-                    </Button>
+                    <div>
+                        <Button variant="warning" onClick={handleResetContentClick} disabled={isSaving} className="me-2">
+                            Reset Content
+                        </Button>
+                        <Button variant="danger" onClick={handleDeleteClick} disabled={isSaving}>
+                            Delete Language
+                        </Button>
+                    </div>
                 )}
             </div>
         </Form>

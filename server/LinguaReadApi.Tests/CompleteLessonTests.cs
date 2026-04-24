@@ -104,6 +104,30 @@ public class CompleteLessonTests
     }
 
     [Fact]
+    public async Task CompleteLesson_PromotesOnlyWordsInBookLanguage()
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        SeedBookWithTwoParts(context, userId, out var bookId, out var firstTextId);
+
+        context.Languages.Add(new Language { LanguageId = 2, Name = "Portuguese", Code = "PT" });
+        context.Words.AddRange(
+            new Word { WordId = 12, UserId = userId, LanguageId = 2, Term = "hola", Status = 1 },
+            new Word { WordId = 13, UserId = userId, LanguageId = 1, Term = "hola", Status = 3 });
+        context.TextWords.Add(new TextWord { TextWordId = 120, TextId = firstTextId, WordId = 13 });
+        await context.SaveChangesAsync();
+
+        var controller = CreateController(context, userId);
+        await controller.CompleteLesson(bookId, new CompleteLessonDto { TextId = firstTextId });
+
+        context.ChangeTracker.Clear();
+        var otherLanguageWord = await context.Words.SingleAsync(w => w.WordId == 12);
+        var bookLanguageWord = await context.Words.SingleAsync(w => w.WordId == 13);
+        Assert.Equal(1, otherLanguageWord.Status);
+        Assert.Equal(4, bookLanguageWord.Status);
+    }
+
+    [Fact]
     public async Task CompleteLesson_RecomputesBookWordStats_AfterPromotions()
     {
         await using var context = CreateContext();

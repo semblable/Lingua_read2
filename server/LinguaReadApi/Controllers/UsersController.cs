@@ -655,6 +655,7 @@ namespace LinguaReadApi.Controllers
                         stat.TotalWordsRead = 0;
                         stat.TotalSecondsListened = 0;
                         stat.TotalTextsCompleted = 0;
+                        stat.TotalTextCompletions = 0;
                         stat.TotalBooksCompleted = 0;
                         // Add any other relevant aggregate fields from UserLanguageStatistics model here if needed
                         _context.Entry(stat).State = EntityState.Modified;

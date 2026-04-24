@@ -123,6 +123,7 @@ public class SentenceModeActivityTests
         var stats = await context.UserLanguageStatistics.SingleAsync();
         Assert.Equal(4, stats.TotalWordsRead);
         Assert.Equal(1, stats.TotalTextsCompleted);
+        Assert.Equal(1, stats.TotalTextCompletions);
 
         var completionActivity = await context.UserActivities.SingleAsync(activity => activity.ActivityType == "TextCompleted");
         Assert.Equal(2, completionActivity.WordCount);
@@ -185,9 +186,51 @@ public class SentenceModeActivityTests
         var stats = await context.UserLanguageStatistics.SingleAsync();
         Assert.Equal(4, stats.TotalWordsRead);
         Assert.Equal(1, stats.TotalTextsCompleted);
+        Assert.Equal(1, stats.TotalTextCompletions);
 
         var completionActivity = await context.UserActivities.SingleAsync(a => a.ActivityType == "TextCompleted");
         Assert.Equal(0, completionActivity.WordCount);
+    }
+
+    [Fact]
+    public async Task CompleteText_CountsRepeatCompletionsWithoutDoubleCountingUniqueTexts()
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        var textId = 35;
+        const int languageId = 1;
+
+        SeedUserLanguageAndText(context, userId, textId, "hello world");
+        var words = new[]
+        {
+            new Word { WordId = 115, UserId = userId, LanguageId = languageId, Term = "hello", Status = 5 },
+            new Word { WordId = 116, UserId = userId, LanguageId = languageId, Term = "world", Status = 4 }
+        };
+        await context.Words.AddRangeAsync(words);
+        await context.TextWords.AddRangeAsync(words.Select((word, index) => new TextWord
+        {
+            TextWordId = 215 + index,
+            TextId = textId,
+            WordId = word.WordId,
+            CreatedAt = DateTime.UtcNow
+        }));
+        await context.SaveChangesAsync();
+        context.ChangeTracker.Clear();
+
+        var service = new UserActivityService(context, NullLogger<UserActivityService>.Instance);
+        var controller = new TextsController(context, NullLogger<TextsController>.Instance, service, CreateScopeFactory(context), new WordLinkingChannel())
+        {
+            ControllerContext = BuildControllerContext(userId)
+        };
+
+        await controller.CompleteText(textId);
+        context.ChangeTracker.Clear();
+        await controller.CompleteText(textId);
+
+        var stats = await context.UserLanguageStatistics.SingleAsync();
+        Assert.Equal(4, stats.TotalWordsRead);
+        Assert.Equal(1, stats.TotalTextsCompleted);
+        Assert.Equal(2, stats.TotalTextCompletions);
     }
 
     [Fact]
@@ -240,6 +283,40 @@ public class SentenceModeActivityTests
         var textAfter = await context.Texts.AsNoTracking().SingleAsync(t => t.TextId == textId);
         Assert.True(textAfter.IsFinished);
         Assert.Equal("Finished", textAfter.Tag);
+    }
+
+    [Fact]
+    public async Task ResetStatistics_ClearsTotalTextCompletions()
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        await context.UserLanguageStatistics.AddAsync(new UserLanguageStatistics
+        {
+            UserId = userId,
+            LanguageId = 1,
+            TotalWordsRead = 100,
+            TotalTextsCompleted = 3,
+            TotalTextCompletions = 7,
+            TotalBooksCompleted = 2,
+            TotalSecondsListened = 60,
+            LastUpdatedAt = DateTime.UtcNow
+        });
+        await context.SaveChangesAsync();
+
+        var controller = new UsersController(context, NullLogger<UsersController>.Instance)
+        {
+            ControllerContext = BuildControllerContext(userId)
+        };
+
+        var result = await controller.ResetStatistics();
+
+        Assert.IsType<OkObjectResult>(result);
+        var stats = await context.UserLanguageStatistics.SingleAsync();
+        Assert.Equal(0, stats.TotalWordsRead);
+        Assert.Equal(0, stats.TotalTextsCompleted);
+        Assert.Equal(0, stats.TotalTextCompletions);
+        Assert.Equal(0, stats.TotalBooksCompleted);
+        Assert.Equal(0, stats.TotalSecondsListened);
     }
 
     private static UserActivityController CreateUserActivityController(AppDbContext context, Guid userId)

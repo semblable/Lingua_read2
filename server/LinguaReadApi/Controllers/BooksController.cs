@@ -1729,10 +1729,16 @@ namespace LinguaReadApi.Controllers
 
                     // Get unique words from this text
                     var textWords = text.TextWords.Select(tw => tw.Word).ToList();
+                    var textWordTerms = textWords
+                        .Select(tw => tw.Term.ToLower())
+                        .Distinct()
+                        .ToList();
 
                     // Update user's words (promotion helps mastery on re-reads too; capped at 5)
                     var userWords = await _context.Words
-                        .Where(w => w.UserId == userId && textWords.Select(tw => tw.Term.ToLower()).Contains(w.Term.ToLower()))
+                        .Where(w => w.UserId == userId
+                            && w.LanguageId == book.LanguageId
+                            && textWordTerms.Contains(w.Term.ToLower()))
                         .ToListAsync();
 
                     var bumped = new Dictionary<int, int>();

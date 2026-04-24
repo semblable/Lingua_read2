@@ -1088,7 +1088,13 @@ namespace LinguaReadApi.Controllers
             try
             {
                 // Only credit the remaining unread words so sentence-mode progress does not double count.
-                await _userActivityService.LogTextCompletedActivity(userId, text.LanguageId, textId, completionWordCredit, text.IsAudioLesson);
+                await _userActivityService.LogTextCompletedActivity(
+                    userId,
+                    text.LanguageId,
+                    textId,
+                    completionWordCredit,
+                    text.IsAudioLesson,
+                    isFirstCompletion: !text.IsFinished);
                 // TODO: Optionally call UpdateUserLanguageStats here or within LogTextCompletedActivity
                 // await _userActivityService.UpdateUserLanguageStats(userId, text.LanguageId);
             }

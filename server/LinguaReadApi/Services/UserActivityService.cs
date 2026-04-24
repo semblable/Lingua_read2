@@ -18,7 +18,7 @@ namespace LinguaReadApi.Services
             _logger = logger;
         }
 
-        public async Task LogTextCompletedActivity(Guid userId, int languageId, int textId, int wordCount, bool isListening)
+        public async Task LogTextCompletedActivity(Guid userId, int languageId, int textId, int wordCount, bool isListening, bool isFirstCompletion)
         {
             try
             {
@@ -34,7 +34,8 @@ namespace LinguaReadApi.Services
                         UserId = userId,
                         LanguageId = languageId,
                         TotalWordsRead = wordCount,
-                        TotalTextsCompleted = 1,
+                        TotalTextsCompleted = isFirstCompletion ? 1 : 0,
+                        TotalTextCompletions = 1,
                         // Initialize other counters if needed (e.g., listening)
                         TotalSecondsListened = isListening ? 0 : 0, // Placeholder - need actual duration if isListening
                         LastUpdatedAt = DateTime.UtcNow
@@ -45,7 +46,11 @@ namespace LinguaReadApi.Services
                 else
                 {
                     stats.TotalWordsRead += wordCount;
-                    stats.TotalTextsCompleted += 1;
+                    if (isFirstCompletion)
+                    {
+                        stats.TotalTextsCompleted += 1;
+                    }
+                    stats.TotalTextCompletions += 1;
                     // Update listening time if applicable and duration is available
                     // stats.TotalSecondsListened += isListening ? duration : 0;
                     stats.LastUpdatedAt = DateTime.UtcNow;

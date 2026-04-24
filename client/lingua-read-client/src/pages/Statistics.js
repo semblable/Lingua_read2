@@ -126,8 +126,8 @@ const Statistics = () => {
   const fetchReadingActivityData = async (period, languageId = null) => {
     setLoadingActivity(true);
     try {
-      // Pass timezone offset for all periods except 'all'
-      const timezoneOffsetMinutes = period !== 'all' ? new Date().getTimezoneOffset() : null;
+      // Always pass local offset in minutes from UTC (east-positive)
+      const timezoneOffsetMinutes = -new Date().getTimezoneOffset();
       // Convert 'all' string to null for API
       const langId = languageId === 'all' ? null : languageId;
       const data = await getReadingActivity(period, timezoneOffsetMinutes, langId);
@@ -154,8 +154,8 @@ const Statistics = () => {
   const fetchListeningActivityData = async (period, languageId = null) => {
     setLoadingListeningActivity(true);
     try {
-      // Pass timezone offset for all periods except 'all'
-      const timezoneOffsetMinutes = period !== 'all' ? new Date().getTimezoneOffset() : null;
+      // Always pass local offset in minutes from UTC (east-positive)
+      const timezoneOffsetMinutes = -new Date().getTimezoneOffset();
       // Convert 'all' string to null for API
       const langId = languageId === 'all' ? null : languageId;
       const data = await getListeningActivity(period, timezoneOffsetMinutes, langId);

@@ -75,7 +75,9 @@ public async Task<IActionResult> LogListeningActivity([FromBody] LogListeningReq
 
         // --- Update UserLanguageStatistics cumulative listening time ---
         var stats = await _context.UserLanguageStatistics
-            .FirstOrDefaultAsync(uls => uls.UserId == userId && uls.LanguageId == request.LanguageId);
+            .Where(uls => uls.UserId == userId && uls.LanguageId == request.LanguageId)
+            .OrderBy(uls => uls.UserLanguageStatisticsId)
+            .FirstOrDefaultAsync();
 
         if (stats == null)
         {
@@ -207,7 +209,9 @@ public async Task<IActionResult> LogManualActivity([FromBody] LogManualActivityR
         try
         {
             var stats = await _context.UserLanguageStatistics
-                .FirstOrDefaultAsync(uls => uls.UserId == userId && uls.LanguageId == request.LanguageId);
+                .Where(uls => uls.UserId == userId && uls.LanguageId == request.LanguageId)
+                .OrderBy(uls => uls.UserLanguageStatisticsId)
+                .FirstOrDefaultAsync();
 
             if (stats == null)
             {
@@ -392,7 +396,9 @@ public async Task<ActionResult<SentenceProgressDto>> LogSentenceRead([FromBody] 
         });
 
         var stats = await _context.UserLanguageStatistics
-            .FirstOrDefaultAsync(uls => uls.UserId == userId && uls.LanguageId == text.LanguageId);
+            .Where(uls => uls.UserId == userId && uls.LanguageId == text.LanguageId)
+            .OrderBy(uls => uls.UserLanguageStatisticsId)
+            .FirstOrDefaultAsync();
 
         if (stats == null)
         {

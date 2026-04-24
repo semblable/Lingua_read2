@@ -78,24 +78,24 @@ namespace LinguaReadApi.Controllers
 
             try
             {
-                var memoryStream = new MemoryStream();
-                using (var fileStream = new FileStream(backupFilePath, FileMode.Open, FileAccess.Read, FileShare.Read))
+                var fileName = Path.GetFileName(backupFilePath);
+                // DeleteOnClose removes the temp file once the response stream finishes; avoids buffering the whole backup in RAM.
+                var fileStream = new FileStream(
+                    backupFilePath,
+                    FileMode.Open,
+                    FileAccess.Read,
+                    FileShare.Read,
+                    bufferSize: 64 * 1024,
+                    options: FileOptions.Asynchronous | FileOptions.DeleteOnClose);
+
+                return new FileStreamResult(fileStream, "application/octet-stream")
                 {
-                    await fileStream.CopyToAsync(memoryStream);
-                }
-                memoryStream.Position = 0;
-
-                // Clean up the temporary file after reading it into memory
-                System.IO.File.Delete(backupFilePath);
-                _logger.LogInformation("Temporary backup file deleted: {BackupFilePath}", backupFilePath);
-
-
-                return File(memoryStream, "application/octet-stream", Path.GetFileName(backupFilePath));
+                    FileDownloadName = fileName
+                };
             }
             catch (Exception ex)
             {
-                 _logger.LogError(ex, "Error reading or deleting backup file: {BackupFilePath}", backupFilePath);
-                 // Attempt cleanup again just in case
+                 _logger.LogError(ex, "Error opening backup file for streaming: {BackupFilePath}", backupFilePath);
                  if (System.IO.File.Exists(backupFilePath)) System.IO.File.Delete(backupFilePath);
                  return StatusCode(500, "Error processing backup file.");
             }

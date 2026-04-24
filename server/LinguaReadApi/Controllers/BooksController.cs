@@ -1654,145 +1654,151 @@ namespace LinguaReadApi.Controllers
             // Count all words in the text (not just unique words)
             int totalWordCount = WordCountUtility.CountTotalWords(text.Content);
 
-            double completionPercentage;
-
-            await using var transaction = await _context.Database.BeginTransactionAsync();
             try
             {
-                // book.Language was eager-loaded above; mutate it in place rather than refetching.
-                var language = book.Language;
-                if (language != null)
-                {
-                    language.WordsRead += totalWordCount;
+                var strategy = _context.Database.CreateExecutionStrategy();
 
-                    _context.UserActivities.Add(new UserActivity
-                    {
-                        UserId = userId,
-                        LanguageId = language.LanguageId,
-                        ActivityType = "TextCompleted",
-                        WordCount = totalWordCount,
-                        Timestamp = now
-                    });
-                }
-
-                // Update UserLanguageStatistics for completed lesson
-                var stats = await _context.UserLanguageStatistics
-                    .FirstOrDefaultAsync(uls => uls.UserId == userId && uls.LanguageId == book.LanguageId);
-                if (stats == null)
+                return await strategy.ExecuteAsync<ActionResult<BookStatsDto>>(async () =>
                 {
-                    stats = new UserLanguageStatistics
+                    double completionPercentage;
+
+                    await using var transaction = await _context.Database.BeginTransactionAsync();
+
+                    // book.Language was eager-loaded above; mutate it in place rather than refetching.
+                    var language = book.Language;
+                    if (language != null)
                     {
-                        UserId = userId,
-                        LanguageId = book.LanguageId,
-                        TotalWordsRead = totalWordCount,
-                        TotalTextsCompleted = isFirstCompletion ? 1 : 0,
-                        TotalTextCompletions = 1,
-                        LastUpdatedAt = now
+                        language.WordsRead += totalWordCount;
+
+                        _context.UserActivities.Add(new UserActivity
+                        {
+                            UserId = userId,
+                            LanguageId = language.LanguageId,
+                            ActivityType = "TextCompleted",
+                            WordCount = totalWordCount,
+                            Timestamp = now
+                        });
+                    }
+
+                    // Update UserLanguageStatistics for completed lesson
+                    var stats = await _context.UserLanguageStatistics
+                        .FirstOrDefaultAsync(uls => uls.UserId == userId && uls.LanguageId == book.LanguageId);
+                    if (stats == null)
+                    {
+                        stats = new UserLanguageStatistics
+                        {
+                            UserId = userId,
+                            LanguageId = book.LanguageId,
+                            TotalWordsRead = totalWordCount,
+                            TotalTextsCompleted = isFirstCompletion ? 1 : 0,
+                            TotalTextCompletions = 1,
+                            LastUpdatedAt = now
+                        };
+                        _context.UserLanguageStatistics.Add(stats);
+                    }
+                    else
+                    {
+                        stats.TotalWordsRead += totalWordCount;
+                        if (isFirstCompletion)
+                        {
+                            stats.TotalTextsCompleted += 1;
+                        }
+                        stats.TotalTextCompletions += 1;
+                        stats.LastUpdatedAt = now;
+                    }
+
+                    // Pre-count texts once; the only IsFinished flip in this request is the current
+                    // text when isFirstCompletion is true, so the post-update count is derivable.
+                    var textCounts = await _context.Texts
+                        .Where(t => t.BookId == id)
+                        .GroupBy(t => 1)
+                        .Select(g => new { Total = g.Count(), Finished = g.Count(t => t.IsFinished) })
+                        .FirstOrDefaultAsync();
+                    int totalTexts = textCounts?.Total ?? 0;
+                    int existingFinished = textCounts?.Finished ?? 0;
+
+                    // Snapshot distinct book-word statuses in one query; recompute book stats in memory
+                    // after applying word promotions so no extra SQL round-trips are needed.
+                    var bookWordStatuses = await _context.TextWords
+                        .Where(tw => tw.Text.BookId == id)
+                        .Select(tw => new { tw.WordId, tw.Word.Status })
+                        .Distinct()
+                        .ToListAsync();
+
+                    // Get unique words from this text
+                    var textWords = text.TextWords.Select(tw => tw.Word).ToList();
+
+                    // Update user's words (promotion helps mastery on re-reads too; capped at 5)
+                    var userWords = await _context.Words
+                        .Where(w => w.UserId == userId && textWords.Select(tw => tw.Term.ToLower()).Contains(w.Term.ToLower()))
+                        .ToListAsync();
+
+                    var bumped = new Dictionary<int, int>();
+                    foreach (var word in textWords)
+                    {
+                        var userWord = userWords.FirstOrDefault(w => w.Term.ToLower() == word.Term.ToLower());
+                        if (userWord != null && userWord.Status < 5)
+                        {
+                            userWord.Status = Math.Min(userWord.Status + 1, 5);
+                            bumped[userWord.WordId] = userWord.Status;
+                        }
+                    }
+
+                    int bookTotal = 0, bookKnown = 0, bookLearning = 0;
+                    foreach (var w in bookWordStatuses)
+                    {
+                        int s = bumped.TryGetValue(w.WordId, out var newStatus) ? newStatus : w.Status;
+                        bookTotal++;
+                        if (s >= 4) bookKnown++;
+                        else if (s >= 2) bookLearning++;
+                    }
+                    book.TotalWords = bookTotal;
+                    book.KnownWords = bookKnown;
+                    book.LearningWords = bookLearning;
+
+                    book.LastReadAt = now;
+                    book.LastReadTextId = text.TextId;
+                    book.LastReadPartId = text.PartNumber;
+
+                    // Mark the text/part as finished so FinishedPartCount updates in library
+                    if (!text.IsFinished)
+                    {
+                        text.IsFinished = true;
+                    }
+                    text.LastCompletedAt = now;
+
+                    int finishedTexts = existingFinished + (isFirstCompletion ? 1 : 0);
+                    if (totalTexts > 0 && finishedTexts >= totalTexts)
+                    {
+                        book.IsFinished = true;
+                        completionPercentage = 100.0;
+                    }
+                    else
+                    {
+                        book.IsFinished = false;
+                        completionPercentage = totalTexts > 0
+                            ? Math.Round((double)finishedTexts / totalTexts * 100, 2)
+                            : 0;
+                    }
+
+                    await _context.SaveChangesAsync();
+                    await transaction.CommitAsync();
+
+                    return new BookStatsDto
+                    {
+                        TotalWords = book.TotalWords,
+                        KnownWords = book.KnownWords,
+                        LearningWords = book.LearningWords,
+                        CompletionPercentage = completionPercentage,
+                        IsFinished = book.IsFinished
                     };
-                    _context.UserLanguageStatistics.Add(stats);
-                }
-                else
-                {
-                    stats.TotalWordsRead += totalWordCount;
-                    if (isFirstCompletion)
-                    {
-                        stats.TotalTextsCompleted += 1;
-                    }
-                    stats.TotalTextCompletions += 1;
-                    stats.LastUpdatedAt = now;
-                }
-
-                // Pre-count texts once; the only IsFinished flip in this request is the current
-                // text when isFirstCompletion is true, so the post-update count is derivable.
-                var textCounts = await _context.Texts
-                    .Where(t => t.BookId == id)
-                    .GroupBy(t => 1)
-                    .Select(g => new { Total = g.Count(), Finished = g.Count(t => t.IsFinished) })
-                    .FirstOrDefaultAsync();
-                int totalTexts = textCounts?.Total ?? 0;
-                int existingFinished = textCounts?.Finished ?? 0;
-
-                // Snapshot distinct book-word statuses in one query; recompute book stats in memory
-                // after applying word promotions so no extra SQL round-trips are needed.
-                var bookWordStatuses = await _context.TextWords
-                    .Where(tw => tw.Text.BookId == id)
-                    .Select(tw => new { tw.WordId, tw.Word.Status })
-                    .Distinct()
-                    .ToListAsync();
-
-                // Get unique words from this text
-                var textWords = text.TextWords.Select(tw => tw.Word).ToList();
-
-                // Update user's words (promotion helps mastery on re-reads too; capped at 5)
-                var userWords = await _context.Words
-                    .Where(w => w.UserId == userId && textWords.Select(tw => tw.Term.ToLower()).Contains(w.Term.ToLower()))
-                    .ToListAsync();
-
-                var bumped = new Dictionary<int, int>();
-                foreach (var word in textWords)
-                {
-                    var userWord = userWords.FirstOrDefault(w => w.Term.ToLower() == word.Term.ToLower());
-                    if (userWord != null && userWord.Status < 5)
-                    {
-                        userWord.Status = Math.Min(userWord.Status + 1, 5);
-                        bumped[userWord.WordId] = userWord.Status;
-                    }
-                }
-
-                int bookTotal = 0, bookKnown = 0, bookLearning = 0;
-                foreach (var w in bookWordStatuses)
-                {
-                    int s = bumped.TryGetValue(w.WordId, out var newStatus) ? newStatus : w.Status;
-                    bookTotal++;
-                    if (s >= 4) bookKnown++;
-                    else if (s >= 2) bookLearning++;
-                }
-                book.TotalWords = bookTotal;
-                book.KnownWords = bookKnown;
-                book.LearningWords = bookLearning;
-
-                book.LastReadAt = now;
-                book.LastReadTextId = text.TextId;
-                book.LastReadPartId = text.PartNumber;
-
-                // Mark the text/part as finished so FinishedPartCount updates in library
-                if (!text.IsFinished)
-                {
-                    text.IsFinished = true;
-                }
-                text.LastCompletedAt = now;
-
-                int finishedTexts = existingFinished + (isFirstCompletion ? 1 : 0);
-                if (totalTexts > 0 && finishedTexts >= totalTexts)
-                {
-                    book.IsFinished = true;
-                    completionPercentage = 100.0;
-                }
-                else
-                {
-                    book.IsFinished = false;
-                    completionPercentage = totalTexts > 0
-                        ? Math.Round((double)finishedTexts / totalTexts * 100, 2)
-                        : 0;
-                }
-
-                await _context.SaveChangesAsync();
-                await transaction.CommitAsync();
+                });
             }
             catch (DbUpdateException ex)
             {
                 _logger.LogError(ex, "Failed to complete lesson for book {BookId}, text {TextId}", id, lessonDto.TextId);
                 return StatusCode(500, "Failed to record lesson completion.");
             }
-
-            return new BookStatsDto
-            {
-                TotalWords = book.TotalWords,
-                KnownWords = book.KnownWords,
-                LearningWords = book.LearningWords,
-                CompletionPercentage = completionPercentage,
-                IsFinished = book.IsFinished
-            };
         }
 
         // PUT: api/books/5/finish

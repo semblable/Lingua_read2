@@ -5,6 +5,44 @@ using System.Threading.Tasks;
 
 namespace LinguaReadApi.Services
 {
+    public enum DeleteLanguageStatus
+    {
+        Deleted,
+        NotFound,
+        BlockedByDependencies
+    }
+
+    public sealed record LanguageDeleteDependencies(
+        int Texts,
+        int Books,
+        int Words,
+        int UserActivities,
+        int UserLanguageStatistics)
+    {
+        public bool HasAny =>
+            Texts > 0 ||
+            Books > 0 ||
+            Words > 0 ||
+            UserActivities > 0 ||
+            UserLanguageStatistics > 0;
+    }
+
+    public sealed record DeleteLanguageResult(
+        DeleteLanguageStatus Status,
+        LanguageDeleteDependencies Dependencies)
+    {
+        public static DeleteLanguageResult Deleted() =>
+            new(DeleteLanguageStatus.Deleted, EmptyDependencies);
+
+        public static DeleteLanguageResult NotFound() =>
+            new(DeleteLanguageStatus.NotFound, EmptyDependencies);
+
+        public static DeleteLanguageResult Blocked(LanguageDeleteDependencies dependencies) =>
+            new(DeleteLanguageStatus.BlockedByDependencies, dependencies);
+
+        private static readonly LanguageDeleteDependencies EmptyDependencies = new(0, 0, 0, 0, 0);
+    }
+
     /// <summary>
     /// Defines the contract for managing language configurations.
     /// </summary>
@@ -34,8 +72,7 @@ namespace LinguaReadApi.Services
         /// <summary>
         /// Deletes a language configuration by its ID.
         /// </summary>
-        /// <returns>True if deletion was successful, false otherwise (e.g., not found).</returns>
-        Task<bool> DeleteLanguageAsync(int id);
+        Task<DeleteLanguageResult> DeleteLanguageAsync(int id);
 
         /// <summary>
         /// Deletes all user-owned content (texts, books, words, activity, stats) for a language

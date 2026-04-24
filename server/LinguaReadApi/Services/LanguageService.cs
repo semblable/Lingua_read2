@@ -162,28 +162,37 @@ namespace LinguaReadApi.Services
         }
 
 
-        public async Task<bool> DeleteLanguageAsync(int id)
+        public async Task<DeleteLanguageResult> DeleteLanguageAsync(int id)
         {
             var language = await _context.Languages.FindAsync(id);
             if (language == null)
             {
-                return false; // Not found
+                return DeleteLanguageResult.NotFound();
             }
 
-            // EF Core cascade delete should handle related entities based on configuration in AppDbContext
+            var dependencies = new LanguageDeleteDependencies(
+                Texts: await _context.Texts.CountAsync(t => t.LanguageId == id),
+                Books: await _context.Books.CountAsync(b => b.LanguageId == id),
+                Words: await _context.Words.CountAsync(w => w.LanguageId == id),
+                UserActivities: await _context.UserActivities.CountAsync(ua => ua.LanguageId == id),
+                UserLanguageStatistics: await _context.UserLanguageStatistics.CountAsync(uls => uls.LanguageId == id));
+
+            if (dependencies.HasAny)
+            {
+                return DeleteLanguageResult.Blocked(dependencies);
+            }
+
             _context.Languages.Remove(language);
 
             try
             {
                 await _context.SaveChangesAsync();
-                return true;
+                return DeleteLanguageResult.Deleted();
             }
             catch (DbUpdateException ex)
             {
-                 // Handle potential foreign key constraint issues if cascade delete isn't configured correctly
-                 // or if other entities still reference this language restrictively.
-                 Console.WriteLine($"Error deleting language: {ex.InnerException?.Message ?? ex.Message}");
-                 return false;
+                Console.WriteLine($"Error deleting language: {ex.InnerException?.Message ?? ex.Message}");
+                return DeleteLanguageResult.Blocked(dependencies);
             }
         }
 

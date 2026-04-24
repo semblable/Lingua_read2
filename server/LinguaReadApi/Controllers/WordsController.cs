@@ -79,22 +79,16 @@ namespace LinguaReadApi.Controllers
                     existingWord.Status = createWordDto.Status;
                 }
 
+                var responseTranslation = existingWord.Translation?.Translation ?? "";
+
                 // Update translation if provided and different or missing
                 if (!string.IsNullOrEmpty(createWordDto.Translation))
                 {
-                    if (existingWord.Translation == null)
+                    if (existingWord.Translation == null ||
+                        createWordDto.Translation != existingWord.Translation.Translation)
                     {
-                        existingWord.Translation = new WordTranslation
-                        {
-                            WordId = existingWord.WordId,
-                            Translation = createWordDto.Translation,
-                            CreatedAt = DateTime.UtcNow
-                        };
-                    }
-                    else if (createWordDto.Translation != existingWord.Translation.Translation)
-                    {
-                        existingWord.Translation.Translation = createWordDto.Translation;
-                        existingWord.Translation.UpdatedAt = DateTime.UtcNow;
+                        await UpsertWordTranslationAsync(existingWord.WordId, createWordDto.Translation);
+                        responseTranslation = createWordDto.Translation;
                     }
                 }
 
@@ -133,7 +127,7 @@ namespace LinguaReadApi.Controllers
                     WordId = existingWord.WordId,
                     Term = existingWord.Term,
                     Status = existingWord.Status,
-                    Translation = existingWord.Translation?.Translation ?? "", // Handle null translation
+                    Translation = responseTranslation,
                     IsNew = false
                 });
             }
@@ -161,17 +155,12 @@ namespace LinguaReadApi.Controllers
             };
             _context.Set<TextWord>().Add(textWord);
 
-            WordTranslation? wordTranslation = null;
+            var responseTranslationForNewWord = "";
             // Create translation only if provided
             if (!string.IsNullOrEmpty(createWordDto.Translation))
             {
-                wordTranslation = new WordTranslation
-                {
-                    WordId = word.WordId,
-                    Translation = createWordDto.Translation,
-                    CreatedAt = DateTime.UtcNow
-                };
-                _context.WordTranslations.Add(wordTranslation);
+                await UpsertWordTranslationAsync(word.WordId, createWordDto.Translation);
+                responseTranslationForNewWord = createWordDto.Translation;
             }
 
             // Auto-mine sentence if provided
@@ -201,7 +190,7 @@ namespace LinguaReadApi.Controllers
                 WordId = word.WordId,
                 Term = word.Term,
                 Status = word.Status,
-                Translation = wordTranslation?.Translation ?? "", // Handle null translation
+                Translation = responseTranslationForNewWord,
                 IsNew = true
             });
         }
@@ -445,20 +434,7 @@ namespace LinguaReadApi.Controllers
             // Update translation only if provided
             if (updateWordDto.Translation != null) // Check if translation was provided in the request
             {
-                if (word.Translation == null)
-                {
-                    word.Translation = new WordTranslation
-                    {
-                        WordId = word.WordId,
-                        Translation = updateWordDto.Translation,
-                        CreatedAt = DateTime.UtcNow
-                    };
-                }
-                else
-                {
-                    word.Translation.Translation = updateWordDto.Translation;
-                    word.Translation.UpdatedAt = DateTime.UtcNow;
-                }
+                await UpsertWordTranslationAsync(word.WordId, updateWordDto.Translation);
             }
 
             await _context.SaveChangesAsync();
@@ -510,7 +486,7 @@ namespace LinguaReadApi.Controllers
                 .ToListAsync();
 
             var wordsToCreate = new List<Word>();
-            var translationsToCreate = new List<WordTranslation>();
+            var translationsToUpsert = new List<(Word Word, string Translation)>();
             // Build a case-insensitive lookup for existing words
             var existingWordsLookup = new Dictionary<string, Word>(StringComparer.OrdinalIgnoreCase);
             foreach (var w in existingWords)
@@ -535,17 +511,11 @@ namespace LinguaReadApi.Controllers
                     {
                         if (existingWord.Translation == null)
                         {
-                            translationsToCreate.Add(new WordTranslation
-                            {
-                                Word = existingWord,
-                                Translation = termDto.Translation,
-                                CreatedAt = DateTime.UtcNow
-                            });
+                            translationsToUpsert.Add((existingWord, termDto.Translation));
                         }
                         else if (existingWord.Translation.Translation != termDto.Translation)
                         {
-                            existingWord.Translation.Translation = termDto.Translation;
-                            existingWord.Translation.UpdatedAt = DateTime.UtcNow;
+                            translationsToUpsert.Add((existingWord, termDto.Translation));
                         }
                     }
                 }
@@ -567,12 +537,7 @@ namespace LinguaReadApi.Controllers
 
                     if (!string.IsNullOrEmpty(termDto.Translation))
                     {
-                        translationsToCreate.Add(new WordTranslation
-                        {
-                            Word = newWord,
-                            Translation = termDto.Translation,
-                            CreatedAt = DateTime.UtcNow
-                        });
+                        translationsToUpsert.Add((newWord, termDto.Translation));
                     }
                     // Add to lookup to prevent duplicate inserts in this batch
                     existingWordsLookup[trimmedTerm] = newWord;
@@ -582,14 +547,17 @@ namespace LinguaReadApi.Controllers
             {
                 _context.Words.AddRange(wordsToCreate);
             }
-            if (translationsToCreate.Any())
-            {
-                 _context.WordTranslations.AddRange(translationsToCreate);
-            }
-
             try
             {
                 var changedCount = await _context.SaveChangesAsync();
+                foreach (var translationToUpsert in translationsToUpsert)
+                {
+                    await UpsertWordTranslationAsync(translationToUpsert.Word.WordId, translationToUpsert.Translation);
+                }
+                if (translationsToUpsert.Any() && !_context.Database.IsRelational())
+                {
+                    changedCount += await _context.SaveChangesAsync();
+                }
                 // Return a summary of actions or just success
                 return Ok(new { Message = $"Batch processed. {changedCount} database changes saved." });
             }
@@ -683,6 +651,37 @@ namespace LinguaReadApi.Controllers
                 return $"\"{escapedField}\"";
             }
             return field;
+        }
+
+        private async Task UpsertWordTranslationAsync(int wordId, string translation)
+        {
+            var now = DateTime.UtcNow;
+
+            if (_context.Database.IsRelational())
+            {
+                await _context.Database.ExecuteSqlInterpolatedAsync($@"
+INSERT INTO ""WordTranslations"" (""WordId"", ""Translation"", ""CreatedAt"", ""UpdatedAt"")
+VALUES ({wordId}, {translation}, {now}, NULL)
+ON CONFLICT (""WordId"") DO UPDATE
+SET ""Translation"" = EXCLUDED.""Translation"",
+    ""UpdatedAt"" = {now}");
+                return;
+            }
+
+            var existingTranslation = await _context.WordTranslations.FindAsync(wordId);
+            if (existingTranslation == null)
+            {
+                _context.WordTranslations.Add(new WordTranslation
+                {
+                    WordId = wordId,
+                    Translation = translation,
+                    CreatedAt = now
+                });
+                return;
+            }
+
+            existingTranslation.Translation = translation;
+            existingTranslation.UpdatedAt = now;
         }
 
 

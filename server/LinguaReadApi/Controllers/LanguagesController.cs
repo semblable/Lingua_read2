@@ -168,12 +168,20 @@ namespace LinguaReadApi.Controllers
         {
             try
             {
-                var success = await _languageService.DeleteLanguageAsync(id);
-                if (!success)
+                var result = await _languageService.DeleteLanguageAsync(id);
+                if (result.Status == DeleteLanguageStatus.NotFound)
                 {
-                    // The service returns false if the language wasn't found
                     return NotFound($"Language with ID {id} not found.");
                 }
+                if (result.Status == DeleteLanguageStatus.BlockedByDependencies)
+                {
+                    return Conflict(new
+                    {
+                        Message = $"Cannot delete language {id} because it has historical or user data. Use reset content for per-user cleanup.",
+                        Dependencies = result.Dependencies
+                    });
+                }
+
                 // Return 204 No Content on successful deletion
                 return NoContent();
             }

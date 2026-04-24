@@ -706,7 +706,7 @@ namespace LinguaReadApi.Controllers
         public int TotalSecondsListened { get; set; } // Cumulative listening time
         public int BookCount { get; set; } // Total books started in this language
         public int FinishedBookCount { get; set; } // Total books finished in this language
-        public string CefrLevel { get; set; } = "A1";
+        public string? CefrLevel { get; set; }
         public string? NextCefrLevel { get; set; }
         public int KnownWordsToNextLevel { get; set; }
     }
@@ -728,7 +728,7 @@ namespace LinguaReadApi.Controllers
         public string LanguageName { get; set; } = string.Empty;
         public int KnownWords { get; set; }
         public int TotalWords { get; set; }
-        public string CefrLevel { get; set; } = "A1";
+        public string? CefrLevel { get; set; }
         public string? NextCefrLevel { get; set; }
         public int KnownWordsToNextLevel { get; set; }
         public int TodayWordsRead { get; set; }

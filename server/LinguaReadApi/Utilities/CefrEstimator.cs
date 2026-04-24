@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace LinguaReadApi.Utilities
 {
@@ -6,16 +7,48 @@ namespace LinguaReadApi.Utilities
     {
         private static readonly string[] Levels = { "A1", "A2", "B1", "B2", "C1", "C2" };
 
-        private static readonly int[] DefaultThresholds = { 0, 1000, 2000, 4000, 8000, 16000 };
+        // Per-language known-word thresholds for A1 / A2 / B1 / B2 / C1 / C2.
+        // Lookup by ISO-639 language prefix. Below the A1 threshold the learner
+        // is treated as "pre-A1" (level = null, next = A1).
+        private static readonly Dictionary<string, int[]> ThresholdsByLanguage =
+            new(StringComparer.OrdinalIgnoreCase)
+            {
+                ["en"] = new[] { 500, 1500, 6000, 12000, 20750, 30250 },
+                ["fr"] = new[] { 680, 2040, 8160, 16320, 28220, 41140 },
+                ["es"] = new[] { 670, 2010, 8040, 16080, 27805, 40535 },
+                ["de"] = new[] { 690, 2070, 8280, 16560, 28635, 41745 },
+                ["it"] = new[] { 720, 2160, 8640, 17280, 29880, 43560 },
+                ["pt"] = new[] { 665, 1995, 7980, 15960, 27598, 40233 },
+                ["ru"] = new[] { 855, 2565, 10260, 20520, 35483, 51728 },
+                ["zh"] = new[] { 585, 1755, 7020, 14040, 24278, 35393 },
+                ["ja"] = new[] { 665, 1995, 7980, 15960, 27598, 40233 },
+                ["ko"] = new[] { 1085, 3255, 13020, 26040, 45028, 65643 },
+                ["ar"] = new[] { 945, 2835, 11340, 22680, 39218, 57173 },
+                ["uk"] = new[] { 990, 2970, 11880, 23760, 41085, 59895 },
+                ["nl"] = new[] { 560, 1680, 6720, 13440, 23240, 33880 },
+                ["sv"] = new[] { 545, 1635, 6540, 13080, 22618, 32973 },
+                ["pl"] = new[] { 850, 2550, 10200, 20400, 35275, 51425 },
+                ["ro"] = new[] { 760, 2280, 9120, 18240, 31540, 45890 },
+                ["el"] = new[] { 865, 2595, 10380, 20760, 35898, 52333 },
+            };
 
-        private static readonly int[] CjkThresholds = { 0, 500, 1500, 3000, 6000, 12000 };
+        // Fallback thresholds when the language code is not in the table above.
+        // Matches English as a reasonable middle-of-the-road default.
+        private static readonly int[] DefaultThresholds =
+            { 500, 1500, 6000, 12000, 20750, 30250 };
 
-        public static (string Level, string? NextLevel, int KnownToNext) Estimate(
+        public static (string? Level, string? NextLevel, int KnownToNext) Estimate(
             int knownWords, string? languageCode)
         {
             if (knownWords < 0) knownWords = 0;
 
-            var thresholds = IsCjk(languageCode) ? CjkThresholds : DefaultThresholds;
+            var thresholds = ResolveThresholds(languageCode);
+
+            // Below the A1 threshold: pre-A1, next target is A1.
+            if (knownWords < thresholds[0])
+            {
+                return (null, Levels[0], thresholds[0] - knownWords);
+            }
 
             int levelIndex = 0;
             for (int i = Levels.Length - 1; i >= 0; i--)
@@ -36,11 +69,11 @@ namespace LinguaReadApi.Utilities
             return (level, nextLevel, knownToNext);
         }
 
-        private static bool IsCjk(string? languageCode)
+        private static int[] ResolveThresholds(string? languageCode)
         {
-            if (string.IsNullOrEmpty(languageCode)) return false;
+            if (string.IsNullOrEmpty(languageCode)) return DefaultThresholds;
             var prefix = languageCode.Split('-')[0].ToLowerInvariant();
-            return prefix == "ja" || prefix == "zh" || prefix == "ko";
+            return ThresholdsByLanguage.TryGetValue(prefix, out var t) ? t : DefaultThresholds;
         }
     }
 }

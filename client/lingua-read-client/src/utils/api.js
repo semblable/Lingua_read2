@@ -565,6 +565,15 @@ export const getUserStatistics = () => {
   return fetchApi('/users/statistics');
 };
 
+export const getDashboard = async (timezoneOffsetMinutes = null) => {
+  const params = new URLSearchParams();
+  if (timezoneOffsetMinutes !== null && timezoneOffsetMinutes !== undefined) {
+    params.append('timezoneOffsetMinutes', timezoneOffsetMinutes);
+  }
+  const qs = params.toString();
+  return fetchApi(`/users/dashboard${qs ? `?${qs}` : ''}`);
+};
+
 export const getReadingActivity = async (period = 'all', timezoneOffsetMinutes = null, languageId = null) => {
   try {
     const params = new URLSearchParams({ period });

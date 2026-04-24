@@ -9,6 +9,7 @@ import {
   ResponsiveContainer, Cell, PieChart, Pie, AreaChart, Area, BarChart, Bar
 } from 'recharts';
 import ManualEntryModal from '../components/ManualEntryModal'; // Import the modal component
+import CefrBadge from '../components/dashboard/CefrBadge';
 
 const Statistics = () => {
   const location = useLocation();
@@ -451,6 +452,7 @@ const Statistics = () => {
       // Robustly map both PascalCase and camelCase to camelCase for frontend
       uniqueLanguages[langId].totalWordsRead = stat.TotalWordsRead ?? stat.totalWordsRead ?? 0;
       uniqueLanguages[langId].totalSecondsListened = stat.TotalSecondsListened ?? stat.totalSecondsListened ?? 0;
+      uniqueLanguages[langId].cefrLevel = stat.CefrLevel ?? stat.cefrLevel ?? null;
       // DO NOT populate totalWordsRead or totalSecondsListened here, use activity endpoints below
     }
   });
@@ -721,7 +723,10 @@ const Statistics = () => {
       {languagesArray.length > 0 ? (
         languagesArray.map(lang => (
           <Card key={lang.languageId} className="mb-4">
-            <Card.Header as="h5">{lang.languageName}</Card.Header>
+            <Card.Header as="h5" className="d-flex justify-content-between align-items-center">
+              <span>{lang.languageName}</span>
+              {lang.cefrLevel && <CefrBadge level={lang.cefrLevel} />}
+            </Card.Header>
             <Card.Body>
               <Row>
                 {/* Vocabulary Stats */}

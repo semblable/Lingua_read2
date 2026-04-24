@@ -8,6 +8,7 @@ using System.Security.Claims;
 using System.Threading.Tasks;
 using LinguaReadApi.Data;
 using LinguaReadApi.Models;
+using LinguaReadApi.Utilities;
 using Microsoft.Extensions.Logging;
 
 namespace LinguaReadApi.Controllers
@@ -72,21 +73,23 @@ namespace LinguaReadApi.Controllers
                 .Distinct()
                 .ToList();
 
-            // Resolve names for any language id (e.g. words exist but no ULS row and no books yet)
-            var languageNamesById = await _context.Languages
+            // Resolve names and codes for any language id (e.g. words exist but no ULS row and no books yet)
+            var languageInfoById = await _context.Languages
                 .AsNoTracking()
                 .Where(l => allLanguageIds.Contains(l.LanguageId))
-                .ToDictionaryAsync(l => l.LanguageId, l => l.Name);
+                .ToDictionaryAsync(l => l.LanguageId, l => new { l.Name, l.Code });
 
             var languageStats = new List<LanguageStatisticsDto>();
-            
+
             foreach(var langId in allLanguageIds)
             {
                 // Try to find name in userLangStats first
                 string langName = "Unknown";
+                string langCode = string.Empty;
                 if (userLangStats.TryGetValue(langId, out var uls) && uls.Language != null)
                 {
                     langName = uls.Language.Name;
+                    langCode = uls.Language.Code ?? string.Empty;
                 }
                 else
                 {
@@ -95,12 +98,14 @@ namespace LinguaReadApi.Controllers
                     if (book != null && book.Language != null)
                     {
                         langName = book.Language.Name;
+                        langCode = book.Language.Code ?? string.Empty;
                     }
                 }
 
-                if (langName == "Unknown" && languageNamesById.TryGetValue(langId, out var nameFromDb))
+                if (languageInfoById.TryGetValue(langId, out var info))
                 {
-                    langName = nameFromDb;
+                    if (langName == "Unknown") langName = info.Name;
+                    if (string.IsNullOrEmpty(langCode)) langCode = info.Code ?? string.Empty;
                 }
 
                 // Get word stats
@@ -111,22 +116,28 @@ namespace LinguaReadApi.Controllers
                     count = ws.TotalCount;
                     known = ws.KnownCount;
                 }
-                
+
                 // Get general stats (or default)
                 var stats = uls ?? new UserLanguageStatistics { LanguageId = langId };
+
+                var (cefrLevel, nextCefrLevel, knownToNext) = CefrEstimator.Estimate(known, langCode);
 
                 languageStats.Add(new LanguageStatisticsDto
                 {
                     LanguageId = langId,
                     LanguageName = langName,
+                    LanguageCode = langCode,
                     WordCount = count, // Total Encountered
                     KnownWords = known,
                     LearningWords = count - known,
-                    TotalWordsRead = (int)stats.TotalWordsRead, 
+                    TotalWordsRead = (int)stats.TotalWordsRead,
                     TotalTextsCompleted = stats.TotalTextsCompleted,
-                    TotalSecondsListened = (int)stats.TotalSecondsListened, 
+                    TotalSecondsListened = (int)stats.TotalSecondsListened,
                     BookCount = books.Count(b => b.LanguageId == langId),
-                    FinishedBookCount = books.Count(b => b.LanguageId == langId && b.IsFinished) 
+                    FinishedBookCount = books.Count(b => b.LanguageId == langId && b.IsFinished),
+                    CefrLevel = cefrLevel,
+                    NextCefrLevel = nextCefrLevel,
+                    KnownWordsToNextLevel = knownToNext
                 });
             }
                 
@@ -371,6 +382,232 @@ namespace LinguaReadApi.Controllers
         }
  
 
+        // GET: api/users/dashboard
+        [HttpGet("dashboard")]
+        public async Task<ActionResult<DashboardDto>> GetDashboard([FromQuery] int? timezoneOffsetMinutes = null)
+        {
+            var userId = GetUserId();
+
+            try
+            {
+                int tzOffset = timezoneOffsetMinutes.GetValueOrDefault(0);
+                DateTime nowUtc = DateTime.UtcNow;
+                DateTime nowLocal = nowUtc.AddMinutes(tzOffset);
+                DateTime todayLocalDate = nowLocal.Date;
+                DateTime todayStartUtc = todayLocalDate.AddMinutes(-tzOffset);
+                DateTime weekStartUtc = todayLocalDate.AddDays(-6).AddMinutes(-tzOffset);
+                DateTime sparkStartUtc = todayLocalDate.AddDays(-13).AddMinutes(-tzOffset);
+                DateTime streakWindowStartUtc = todayLocalDate.AddDays(-365).AddMinutes(-tzOffset);
+
+                // Per-language word counts (total + known)
+                var wordStatsByLanguage = await _context.Words
+                    .Where(w => w.UserId == userId)
+                    .GroupBy(w => w.LanguageId)
+                    .Select(g => new
+                    {
+                        LanguageId = g.Key,
+                        TotalCount = g.Count(),
+                        KnownCount = g.Count(w => w.Status >= 4)
+                    })
+                    .ToDictionaryAsync(g => g.LanguageId, g => g);
+
+                // Pull all relevant UserActivity rows in one go (reading + listening) from the oldest
+                // window we need so we can bucket for today / week / sparkline / streak client-side.
+                var activityRows = await _context.UserActivities
+                    .Where(a => a.UserId == userId && a.Timestamp >= streakWindowStartUtc)
+                    .Select(a => new
+                    {
+                        a.LanguageId,
+                        a.ActivityType,
+                        a.WordCount,
+                        a.ListeningDurationSeconds,
+                        a.Timestamp
+                    })
+                    .ToListAsync();
+
+                bool IsReading(string type) =>
+                    type == "LessonCompleted" || type == "BookFinished" ||
+                    type == "ManualReading" || type == "TextCompleted";
+
+                bool IsListening(string type) =>
+                    type == "Listening" || type == "ManualListening";
+
+                // Precompute local-date for each row
+                var rowsWithLocal = activityRows.Select(r => new
+                {
+                    r.LanguageId,
+                    r.ActivityType,
+                    r.WordCount,
+                    r.ListeningDurationSeconds,
+                    r.Timestamp,
+                    LocalDate = r.Timestamp.AddMinutes(tzOffset).Date
+                }).ToList();
+
+                // All language ids with either words or any activity
+                var allLanguageIds = wordStatsByLanguage.Keys
+                    .Union(rowsWithLocal.Select(r => r.LanguageId))
+                    .Distinct()
+                    .ToList();
+
+                if (!allLanguageIds.Any())
+                {
+                    return new DashboardDto();
+                }
+
+                var languageInfo = await _context.Languages
+                    .AsNoTracking()
+                    .Where(l => allLanguageIds.Contains(l.LanguageId))
+                    .ToDictionaryAsync(l => l.LanguageId, l => new { l.Name, l.Code });
+
+                // Most-recent unfinished text per language (for "Continue reading" quick link)
+                var continueReading = await _context.Texts
+                    .Where(t => t.UserId == userId
+                             && t.LastAccessedAt != null
+                             && !t.IsFinished
+                             && t.Tag != "srs-story"
+                             && allLanguageIds.Contains(t.LanguageId))
+                    .GroupBy(t => t.LanguageId)
+                    .Select(g => g
+                        .OrderByDescending(t => t.LastAccessedAt)
+                        .Select(t => new { t.LanguageId, t.TextId })
+                        .FirstOrDefault())
+                    .ToListAsync();
+                var continueByLanguage = continueReading
+                    .Where(x => x != null)
+                    .ToDictionary(x => x!.LanguageId, x => x!.TextId);
+
+                // Build per-language DTOs
+                var languageDtos = new List<DashboardLanguageDto>();
+                foreach (var langId in allLanguageIds)
+                {
+                    string name = "Unknown";
+                    string code = string.Empty;
+                    if (languageInfo.TryGetValue(langId, out var info))
+                    {
+                        name = info.Name;
+                        code = info.Code ?? string.Empty;
+                    }
+
+                    int total = 0, known = 0;
+                    if (wordStatsByLanguage.TryGetValue(langId, out var ws))
+                    {
+                        total = ws.TotalCount;
+                        known = ws.KnownCount;
+                    }
+
+                    var (cefr, nextCefr, knownToNext) = CefrEstimator.Estimate(known, code);
+
+                    var langRows = rowsWithLocal.Where(r => r.LanguageId == langId).ToList();
+
+                    int todayWords = langRows
+                        .Where(r => IsReading(r.ActivityType) && r.LocalDate == todayLocalDate)
+                        .Sum(r => r.WordCount);
+
+                    int todayListen = langRows
+                        .Where(r => IsListening(r.ActivityType) && r.LocalDate == todayLocalDate)
+                        .Sum(r => r.ListeningDurationSeconds ?? 0);
+
+                    var weekLocalStart = todayLocalDate.AddDays(-6);
+                    int weekWords = langRows
+                        .Where(r => IsReading(r.ActivityType) && r.LocalDate >= weekLocalStart)
+                        .Sum(r => r.WordCount);
+
+                    int weekListen = langRows
+                        .Where(r => IsListening(r.ActivityType) && r.LocalDate >= weekLocalStart)
+                        .Sum(r => r.ListeningDurationSeconds ?? 0);
+
+                    var sparkLocalStart = todayLocalDate.AddDays(-13);
+                    var wordsByDate = langRows
+                        .Where(r => IsReading(r.ActivityType) && r.LocalDate >= sparkLocalStart)
+                        .GroupBy(r => r.LocalDate)
+                        .ToDictionary(g => g.Key, g => g.Sum(r => r.WordCount));
+
+                    var sparkline = new List<DailyCountDto>(14);
+                    for (int i = 13; i >= 0; i--)
+                    {
+                        var d = todayLocalDate.AddDays(-i);
+                        wordsByDate.TryGetValue(d, out int count);
+                        sparkline.Add(new DailyCountDto
+                        {
+                            Date = d.ToString("yyyy-MM-dd"),
+                            Count = count
+                        });
+                    }
+
+                    // Reading streak: walk back from today over days with ANY reading activity.
+                    var readingDays = new HashSet<DateTime>(
+                        langRows
+                            .Where(r => IsReading(r.ActivityType))
+                            .Select(r => r.LocalDate));
+                    int streak = 0;
+                    var cursor = todayLocalDate;
+                    // Allow today to have no reading yet without breaking yesterday's streak.
+                    if (!readingDays.Contains(cursor))
+                    {
+                        cursor = cursor.AddDays(-1);
+                    }
+                    while (readingDays.Contains(cursor))
+                    {
+                        streak++;
+                        cursor = cursor.AddDays(-1);
+                    }
+
+                    DateTime? lastActivity = langRows.Any()
+                        ? langRows.Max(r => r.Timestamp)
+                        : (DateTime?)null;
+
+                    continueByLanguage.TryGetValue(langId, out int continueId);
+
+                    languageDtos.Add(new DashboardLanguageDto
+                    {
+                        LanguageId = langId,
+                        LanguageCode = code,
+                        LanguageName = name,
+                        KnownWords = known,
+                        TotalWords = total,
+                        CefrLevel = cefr,
+                        NextCefrLevel = nextCefr,
+                        KnownWordsToNextLevel = knownToNext,
+                        TodayWordsRead = todayWords,
+                        TodayListeningSeconds = todayListen,
+                        WeekWordsRead = weekWords,
+                        WeekListeningSeconds = weekListen,
+                        CurrentReadingStreakDays = streak,
+                        Last14DaysWords = sparkline,
+                        ContinueReadingTextId = continueId == 0 ? (int?)null : continueId,
+                        LastActivityAt = lastActivity
+                    });
+                }
+
+                languageDtos = languageDtos
+                    .OrderByDescending(l => l.LastActivityAt ?? DateTime.MinValue)
+                    .ThenByDescending(l => l.KnownWords)
+                    .ToList();
+
+                var weekLocalStartTop = todayLocalDate.AddDays(-6);
+                var dto = new DashboardDto
+                {
+                    TotalKnownWords = languageDtos.Sum(l => l.KnownWords),
+                    TotalWordsReadWeek = rowsWithLocal
+                        .Where(r => IsReading(r.ActivityType) && r.LocalDate >= weekLocalStartTop)
+                        .Sum(r => r.WordCount),
+                    TotalReadingSecondsWeek = 0, // Not tracked; word count is the primary reading metric.
+                    TotalListeningSecondsWeek = rowsWithLocal
+                        .Where(r => IsListening(r.ActivityType) && r.LocalDate >= weekLocalStartTop)
+                        .Sum(r => (long)(r.ListeningDurationSeconds ?? 0)),
+                    TotalLanguages = languageDtos.Count,
+                    Languages = languageDtos
+                };
+
+                return dto;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error building dashboard for user {UserId}", userId);
+                return StatusCode(500, new { message = "Error building dashboard", error = ex.Message });
+            }
+        }
+
         // POST: api/users/reset-statistics
         [HttpPost("reset-statistics")]
         public async Task<IActionResult> ResetStatistics()
@@ -460,6 +697,7 @@ namespace LinguaReadApi.Controllers
     {
         public int LanguageId { get; set; }
         public string LanguageName { get; set; } = string.Empty;
+        public string LanguageCode { get; set; } = string.Empty;
         public int WordCount { get; set; } // Total unique words encountered for this language
         public int KnownWords { get; set; } // Added: Words with status >= 4
         public int LearningWords { get; set; } // Added: Words with status < 4
@@ -468,5 +706,44 @@ namespace LinguaReadApi.Controllers
         public int TotalSecondsListened { get; set; } // Cumulative listening time
         public int BookCount { get; set; } // Total books started in this language
         public int FinishedBookCount { get; set; } // Total books finished in this language
+        public string CefrLevel { get; set; } = "A1";
+        public string? NextCefrLevel { get; set; }
+        public int KnownWordsToNextLevel { get; set; }
+    }
+
+    public class DashboardDto
+    {
+        public int TotalKnownWords { get; set; }
+        public long TotalReadingSecondsWeek { get; set; }
+        public int TotalWordsReadWeek { get; set; }
+        public long TotalListeningSecondsWeek { get; set; }
+        public int TotalLanguages { get; set; }
+        public List<DashboardLanguageDto> Languages { get; set; } = new List<DashboardLanguageDto>();
+    }
+
+    public class DashboardLanguageDto
+    {
+        public int LanguageId { get; set; }
+        public string LanguageCode { get; set; } = string.Empty;
+        public string LanguageName { get; set; } = string.Empty;
+        public int KnownWords { get; set; }
+        public int TotalWords { get; set; }
+        public string CefrLevel { get; set; } = "A1";
+        public string? NextCefrLevel { get; set; }
+        public int KnownWordsToNextLevel { get; set; }
+        public int TodayWordsRead { get; set; }
+        public int TodayListeningSeconds { get; set; }
+        public int WeekWordsRead { get; set; }
+        public int WeekListeningSeconds { get; set; }
+        public int CurrentReadingStreakDays { get; set; }
+        public List<DailyCountDto> Last14DaysWords { get; set; } = new List<DailyCountDto>();
+        public int? ContinueReadingTextId { get; set; }
+        public DateTime? LastActivityAt { get; set; }
+    }
+
+    public class DailyCountDto
+    {
+        public string Date { get; set; } = string.Empty;
+        public int Count { get; set; }
     }
 } 

@@ -35,6 +35,7 @@ const Navigation = () => {
                   <NavDropdown.Item as={Link} to="/texts/create-batch-audio">Batch Audio</NavDropdown.Item>
                 </NavDropdown>
 
+                <Nav.Link as={Link} to="/dashboard">Dashboard</Nav.Link>
                 <Nav.Link as={Link} to="/statistics">Statistics</Nav.Link>
                 <Nav.Link as={Link} to="/terms">Terms</Nav.Link>
                 <NavDropdown title="SRS" id="srs-dropdown">

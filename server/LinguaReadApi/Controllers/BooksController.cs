@@ -1719,43 +1719,18 @@ namespace LinguaReadApi.Controllers
                     int totalTexts = textCounts?.Total ?? 0;
                     int existingFinished = textCounts?.Finished ?? 0;
 
-                    // Snapshot distinct book-word statuses in one query; recompute book stats in memory
-                    // after applying word promotions so no extra SQL round-trips are needed.
+                    // Snapshot distinct book-word statuses in one query; lesson completion should
+                    // not mutate word familiarity, only recompute the book's cached stats.
                     var bookWordStatuses = await _context.TextWords
                         .Where(tw => tw.Text.BookId == id)
                         .Select(tw => new { tw.WordId, tw.Word.Status })
                         .Distinct()
                         .ToListAsync();
 
-                    // Get unique words from this text
-                    var textWords = text.TextWords.Select(tw => tw.Word).ToList();
-                    var textWordTerms = textWords
-                        .Select(tw => tw.Term.ToLower())
-                        .Distinct()
-                        .ToList();
-
-                    // Update user's words (promotion helps mastery on re-reads too; capped at 5)
-                    var userWords = await _context.Words
-                        .Where(w => w.UserId == userId
-                            && w.LanguageId == book.LanguageId
-                            && textWordTerms.Contains(w.Term.ToLower()))
-                        .ToListAsync();
-
-                    var bumped = new Dictionary<int, int>();
-                    foreach (var word in textWords)
-                    {
-                        var userWord = userWords.FirstOrDefault(w => w.Term.ToLower() == word.Term.ToLower());
-                        if (userWord != null && userWord.Status < 5)
-                        {
-                            userWord.Status = Math.Min(userWord.Status + 1, 5);
-                            bumped[userWord.WordId] = userWord.Status;
-                        }
-                    }
-
                     int bookTotal = 0, bookKnown = 0, bookLearning = 0;
                     foreach (var w in bookWordStatuses)
                     {
-                        int s = bumped.TryGetValue(w.WordId, out var newStatus) ? newStatus : w.Status;
+                        int s = w.Status;
                         bookTotal++;
                         if (s >= 4) bookKnown++;
                         else if (s >= 2) bookLearning++;

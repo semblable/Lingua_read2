@@ -78,13 +78,12 @@ public class CompleteLessonTests
     }
 
     [Fact]
-    public async Task CompleteLesson_PromotesKnownWords_ButCapsAtFive()
+    public async Task CompleteLesson_DoesNotPromoteWordStatuses()
     {
         await using var context = CreateContext();
         var userId = Guid.NewGuid();
         SeedBookWithTwoParts(context, userId, out var bookId, out var firstTextId);
 
-        // Link two of the three tokens to user-owned words so the promotion path runs.
         var wordHola = new Word { WordId = 10, UserId = userId, LanguageId = 1, Term = "hola", Status = 3 };
         var wordMundo = new Word { WordId = 11, UserId = userId, LanguageId = 1, Term = "mundo", Status = 5 };
         context.Words.AddRange(wordHola, wordMundo);
@@ -99,12 +98,12 @@ public class CompleteLessonTests
         context.ChangeTracker.Clear();
         var reloadedHola = await context.Words.SingleAsync(w => w.WordId == 10);
         var reloadedMundo = await context.Words.SingleAsync(w => w.WordId == 11);
-        Assert.Equal(4, reloadedHola.Status); // 3 -> 4
-        Assert.Equal(5, reloadedMundo.Status); // already mastered, no change
+        Assert.Equal(3, reloadedHola.Status);
+        Assert.Equal(5, reloadedMundo.Status);
     }
 
     [Fact]
-    public async Task CompleteLesson_PromotesOnlyWordsInBookLanguage()
+    public async Task CompleteLesson_DoesNotPromoteWordsInBookLanguage()
     {
         await using var context = CreateContext();
         var userId = Guid.NewGuid();
@@ -124,11 +123,11 @@ public class CompleteLessonTests
         var otherLanguageWord = await context.Words.SingleAsync(w => w.WordId == 12);
         var bookLanguageWord = await context.Words.SingleAsync(w => w.WordId == 13);
         Assert.Equal(1, otherLanguageWord.Status);
-        Assert.Equal(4, bookLanguageWord.Status);
+        Assert.Equal(3, bookLanguageWord.Status);
     }
 
     [Fact]
-    public async Task CompleteLesson_RecomputesBookWordStats_AfterPromotions()
+    public async Task CompleteLesson_RecomputesBookWordStats_FromCurrentStatuses()
     {
         await using var context = CreateContext();
         var userId = Guid.NewGuid();
@@ -149,8 +148,8 @@ public class CompleteLessonTests
 
         var stats = Assert.IsType<BookStatsDto>(result.Value);
         Assert.Equal(3, stats.TotalWords);
-        Assert.Equal(2, stats.KnownWords); // hola 3 -> 4, mundo stays mastered
-        Assert.Equal(1, stats.LearningWords); // amigo 1 -> 2
+        Assert.Equal(1, stats.KnownWords); // mundo is mastered
+        Assert.Equal(1, stats.LearningWords); // hola remains learning
 
         context.ChangeTracker.Clear();
         var book = await context.Books.SingleAsync();
@@ -179,8 +178,8 @@ public class CompleteLessonTests
 
         var stats = Assert.IsType<BookStatsDto>(result.Value);
         Assert.Equal(1, stats.TotalWords);
-        Assert.Equal(1, stats.KnownWords);
-        Assert.Equal(0, stats.LearningWords);
+        Assert.Equal(0, stats.KnownWords);
+        Assert.Equal(1, stats.LearningWords);
     }
 
     [Fact]
@@ -213,7 +212,7 @@ public class CompleteLessonTests
         Assert.Equal(1, langStats.TotalTextCompletions);
 
         var reloadedWord = await context.Words.SingleAsync(w => w.WordId == 20);
-        Assert.Equal(4, reloadedWord.Status); // bumped once, not twice
+        Assert.Equal(3, reloadedWord.Status);
     }
 
     [Fact]

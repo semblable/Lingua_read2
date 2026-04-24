@@ -10,6 +10,7 @@ using System.ComponentModel.DataAnnotations;
 using System.IO; // Added for file streams
 using System.Globalization;
 using System.Net;
+using System.Data;
 using System.Text; // Added for StreamReader encoding
 using System.Text.Json;
 using System.Text.RegularExpressions; // Added for Regex HTML stripping
@@ -1585,74 +1586,12 @@ namespace LinguaReadApi.Controllers
         public async Task<ActionResult<BookStatsDto>> CompleteLesson(int id, [FromBody] CompleteLessonDto lessonDto)
         {
             var userId = GetUserId();
-            
-            var book = await _context.Books
-                .Where(b => b.BookId == id && b.UserId == userId)
-                .Include(b => b.Language)  // Include the language
-                .FirstOrDefaultAsync();
-                
-            if (book == null)
-            {
-                return NotFound();
-            }
-            
-            if (book.Language == null)
-            {
-                return BadRequest("Book language not found");
-            }
-            
-            // Verify the text belongs to this book
-            var text = await _context.Texts
-                .Include(t => t.TextWords)
-                .ThenInclude(tw => tw.Word)
-                .Where(t => t.TextId == lessonDto.TextId && t.BookId == id)
-                .FirstOrDefaultAsync();
-                
-            if (text == null)
-            {
-                return NotFound("Text not found or does not belong to this book");
-            }
-
-            var now = DateTime.UtcNow;
 
             // Retry dedup: a completion of the same text within this window is treated as the
             // same logical action (double-click, connection retry, page reload on a flaky link)
             // and must not double-count. 10s is short enough that a deliberate re-read cannot
             // realistically fit inside it, even for very short texts.
             var retryWindow = TimeSpan.FromSeconds(10);
-            bool isRetry = text.LastCompletedAt.HasValue
-                && now - text.LastCompletedAt.Value < retryWindow;
-
-            if (isRetry)
-            {
-                var retryCounts = await _context.Texts
-                    .Where(t => t.BookId == id)
-                    .GroupBy(t => 1)
-                    .Select(g => new { Total = g.Count(), Finished = g.Count(t => t.IsFinished) })
-                    .FirstOrDefaultAsync();
-                int totalTextsRetry = retryCounts?.Total ?? 0;
-                int finishedTextsRetry = retryCounts?.Finished ?? 0;
-                double pctRetry = totalTextsRetry > 0
-                    ? Math.Round((double)finishedTextsRetry / totalTextsRetry * 100, 2)
-                    : 0;
-
-                return new BookStatsDto
-                {
-                    TotalWords = book.TotalWords,
-                    KnownWords = book.KnownWords,
-                    LearningWords = book.LearningWords,
-                    CompletionPercentage = pctRetry,
-                    IsFinished = book.IsFinished
-                };
-            }
-
-            // First-time completion increments the "unique texts finished" counter.
-            // A re-read (past the retry window, already finished) only bumps the "total completions"
-            // counter and credits reading volume/activity — not TotalTextsCompleted.
-            bool isFirstCompletion = !text.IsFinished;
-
-            // Count all words in the text (not just unique words)
-            int totalWordCount = WordCountUtility.CountTotalWords(text.Content);
 
             try
             {
@@ -1660,9 +1599,72 @@ namespace LinguaReadApi.Controllers
 
                 return await strategy.ExecuteAsync<ActionResult<BookStatsDto>>(async () =>
                 {
+                    _context.ChangeTracker.Clear();
+                    var now = DateTime.UtcNow;
                     double completionPercentage;
 
-                    await using var transaction = await _context.Database.BeginTransactionAsync();
+                    await using var transaction = await _context.Database.BeginTransactionAsync(IsolationLevel.Serializable);
+
+                    var book = await _context.Books
+                        .Where(b => b.BookId == id && b.UserId == userId)
+                        .Include(b => b.Language)
+                        .FirstOrDefaultAsync();
+
+                    if (book == null)
+                    {
+                        return NotFound();
+                    }
+
+                    if (book.Language == null)
+                    {
+                        return BadRequest("Book language not found");
+                    }
+
+                    // Verify the text belongs to this book
+                    var text = await _context.Texts
+                        .Include(t => t.TextWords)
+                        .ThenInclude(tw => tw.Word)
+                        .Where(t => t.TextId == lessonDto.TextId && t.BookId == id)
+                        .FirstOrDefaultAsync();
+
+                    if (text == null)
+                    {
+                        return NotFound("Text not found or does not belong to this book");
+                    }
+
+                    bool isRetry = text.LastCompletedAt.HasValue
+                        && now - text.LastCompletedAt.Value < retryWindow;
+
+                    if (isRetry)
+                    {
+                        var retryCounts = await _context.Texts
+                            .Where(t => t.BookId == id)
+                            .GroupBy(t => 1)
+                            .Select(g => new { Total = g.Count(), Finished = g.Count(t => t.IsFinished) })
+                            .FirstOrDefaultAsync();
+                        int totalTextsRetry = retryCounts?.Total ?? 0;
+                        int finishedTextsRetry = retryCounts?.Finished ?? 0;
+                        double pctRetry = totalTextsRetry > 0
+                            ? Math.Round((double)finishedTextsRetry / totalTextsRetry * 100, 2)
+                            : 0;
+
+                        return new BookStatsDto
+                        {
+                            TotalWords = book.TotalWords,
+                            KnownWords = book.KnownWords,
+                            LearningWords = book.LearningWords,
+                            CompletionPercentage = pctRetry,
+                            IsFinished = book.IsFinished
+                        };
+                    }
+
+                    // First-time completion increments the "unique texts finished" counter.
+                    // A re-read (past the retry window, already finished) only bumps the "total completions"
+                    // counter and credits reading volume/activity — not TotalTextsCompleted.
+                    bool isFirstCompletion = !text.IsFinished;
+
+                    // Count all words in the text (not just unique words)
+                    int totalWordCount = WordCountUtility.CountTotalWords(text.Content);
 
                     // book.Language was eager-loaded above; mutate it in place rather than refetching.
                     var language = book.Language;

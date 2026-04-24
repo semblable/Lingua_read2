@@ -7,7 +7,9 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.InMemory.Infrastructure.Internal;
+using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Data.Sqlite;
 using Xunit;
 
 namespace LinguaReadApi.Tests;
@@ -223,6 +225,82 @@ public class CompleteLessonTests
     }
 
     [Fact]
+    public async Task CompleteLesson_Dedups_WhenCallerContextHasStaleTrackedText()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var root = new InMemoryDatabaseRoot();
+        var options = CreateSharedInMemoryOptions(dbName, root);
+        var userId = Guid.NewGuid();
+
+        await using (var seedContext = new AppDbContext(options))
+        {
+            SeedBookWithTwoParts(seedContext, userId, out _, out _);
+        }
+
+        await using var staleContext = new AppDbContext(options);
+        await using var freshContext = new AppDbContext(options);
+
+        // Track the text before completion so this context has a stale copy (LastCompletedAt == null).
+        var staleText = await staleContext.Texts.SingleAsync(t => t.TextId == 1);
+        Assert.Null(staleText.LastCompletedAt);
+
+        // Complete once with a different context.
+        var freshController = CreateController(freshContext, userId);
+        await freshController.CompleteLesson(1, new CompleteLessonDto { TextId = 1 });
+
+        // Replay on the stale context should still dedup (controller clears tracker and re-reads).
+        var staleController = CreateController(staleContext, userId);
+        await staleController.CompleteLesson(1, new CompleteLessonDto { TextId = 1 });
+
+        await using var verifyContext = new AppDbContext(options);
+        Assert.Single(await verifyContext.UserActivities.ToListAsync());
+        var langStats = await verifyContext.UserLanguageStatistics.SingleAsync();
+        Assert.Equal(1, langStats.TotalTextCompletions);
+        Assert.Equal(1, langStats.TotalTextsCompleted);
+    }
+
+    [Fact]
+    public async Task CompleteLesson_DedupsConcurrentDuplicateRequests()
+    {
+        var connectionString = new SqliteConnectionStringBuilder
+        {
+            DataSource = $"CompleteLessonConcurrency{Guid.NewGuid():N}",
+            Mode = SqliteOpenMode.Memory,
+            Cache = SqliteCacheMode.Shared
+        }.ToString();
+
+        await using var keepAliveConnection = new SqliteConnection(connectionString);
+        await keepAliveConnection.OpenAsync();
+
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseSqlite(connectionString)
+            .Options;
+
+        var userId = Guid.NewGuid();
+        await using (var setupContext = new AppDbContext(options))
+        {
+            await setupContext.Database.EnsureCreatedAsync();
+            SeedBookWithTwoParts(setupContext, userId, out _, out _);
+        }
+
+        await using var context1 = new AppDbContext(options);
+        await using var context2 = new AppDbContext(options);
+
+        var controller1 = CreateController(context1, userId);
+        var controller2 = CreateController(context2, userId);
+
+        var task1 = controller1.CompleteLesson(1, new CompleteLessonDto { TextId = 1 });
+        var task2 = controller2.CompleteLesson(1, new CompleteLessonDto { TextId = 1 });
+        await Task.WhenAll(task1, task2);
+
+        await using var verifyContext = new AppDbContext(options);
+        Assert.Single(await verifyContext.UserActivities.ToListAsync());
+        var langStats = await verifyContext.UserLanguageStatistics.SingleAsync();
+        Assert.Equal(1, langStats.TotalTextCompletions);
+        Assert.Equal(1, langStats.TotalTextsCompleted);
+    }
+
+    [Fact]
     public async Task CompleteLesson_ReturnsNotFound_ForOtherUsersBook()
     {
         await using var context = CreateContext();
@@ -295,6 +373,14 @@ public class CompleteLessonTests
             .Options;
 
         return new AppDbContext(options);
+    }
+
+    private static DbContextOptions<AppDbContext> CreateSharedInMemoryOptions(string dbName, InMemoryDatabaseRoot root)
+    {
+        return new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(dbName, root)
+            .ConfigureWarnings(w => w.Ignore(InMemoryEventId.TransactionIgnoredWarning))
+            .Options;
     }
 
     private static void SeedBookWithTwoParts(AppDbContext context, Guid userId, out int bookId, out int firstTextId)

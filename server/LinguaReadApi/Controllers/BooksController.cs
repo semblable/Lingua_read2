@@ -169,11 +169,9 @@ namespace LinguaReadApi.Controllers
 
                 if (distinctNormalizedTags.Any())
                 {
-                    // Fetch all tags into memory first to perform case-insensitive comparison client-side
-                    var allTags = await _context.Tags.ToListAsync();
-                    var existingTags = allTags
-                        .Where(t => distinctNormalizedTags.Contains(t.Name.ToLowerInvariant()))
-                        .ToList();
+                    var existingTags = await _context.Tags
+                        .Where(t => distinctNormalizedTags.Contains(t.Name.ToLower()))
+                        .ToListAsync();
 
                     tagsToAssociate.AddRange(existingTags);
 
@@ -377,11 +375,9 @@ namespace LinguaReadApi.Controllers
 
                 if (distinctNormalizedTags.Any())
                 {
-                    // Fetch all tags into memory first to perform case-insensitive comparison client-side
-                    var allTagsUpload = await _context.Tags.ToListAsync();
-                    var existingTags = allTagsUpload
-                        .Where(t => distinctNormalizedTags.Contains(t.Name.ToLowerInvariant()))
-                        .ToList();
+                    var existingTags = await _context.Tags
+                        .Where(t => distinctNormalizedTags.Contains(t.Name.ToLower()))
+                        .ToListAsync();
                     tagsToAssociate.AddRange(existingTags);
 
                     var existingTagNames = existingTags.Select(t => t.Name.ToLowerInvariant()).ToList();
@@ -1629,12 +1625,13 @@ namespace LinguaReadApi.Controllers
 
             if (isRetry)
             {
-                int totalTextsRetry = await _context.Texts
+                var retryCounts = await _context.Texts
                     .Where(t => t.BookId == id)
-                    .CountAsync();
-                int finishedTextsRetry = await _context.Texts
-                    .Where(t => t.BookId == id && t.IsFinished)
-                    .CountAsync();
+                    .GroupBy(t => 1)
+                    .Select(g => new { Total = g.Count(), Finished = g.Count(t => t.IsFinished) })
+                    .FirstOrDefaultAsync();
+                int totalTextsRetry = retryCounts?.Total ?? 0;
+                int finishedTextsRetry = retryCounts?.Finished ?? 0;
                 double pctRetry = totalTextsRetry > 0
                     ? Math.Round((double)finishedTextsRetry / totalTextsRetry * 100, 2)
                     : 0;
@@ -1662,28 +1659,20 @@ namespace LinguaReadApi.Controllers
             await using var transaction = await _context.Database.BeginTransactionAsync();
             try
             {
-                // Get the language directly from the database to update it
-                var language = await _context.Languages.FindAsync(book.LanguageId);
+                // book.Language was eager-loaded above; mutate it in place rather than refetching.
+                var language = book.Language;
                 if (language != null)
                 {
-                    // Update the language WordsRead counter
                     language.WordsRead += totalWordCount;
 
-                    // Explicitly mark the language entity as modified
-                    _context.Entry(language).State = EntityState.Modified;
-
-                    // Track this reading activity for statistics (streaks count re-reads too)
-                    var activity = new UserActivity
+                    _context.UserActivities.Add(new UserActivity
                     {
                         UserId = userId,
                         LanguageId = language.LanguageId,
                         ActivityType = "TextCompleted",
                         WordCount = totalWordCount,
                         Timestamp = now
-                    };
-                    _context.UserActivities.Add(activity);
-
-                    await _context.SaveChangesAsync();
+                    });
                 }
 
                 // Update UserLanguageStatistics for completed lesson
@@ -1712,7 +1701,24 @@ namespace LinguaReadApi.Controllers
                     stats.TotalTextCompletions += 1;
                     stats.LastUpdatedAt = now;
                 }
-                await _context.SaveChangesAsync();
+
+                // Pre-count texts once; the only IsFinished flip in this request is the current
+                // text when isFirstCompletion is true, so the post-update count is derivable.
+                var textCounts = await _context.Texts
+                    .Where(t => t.BookId == id)
+                    .GroupBy(t => 1)
+                    .Select(g => new { Total = g.Count(), Finished = g.Count(t => t.IsFinished) })
+                    .FirstOrDefaultAsync();
+                int totalTexts = textCounts?.Total ?? 0;
+                int existingFinished = textCounts?.Finished ?? 0;
+
+                // Snapshot distinct book-word statuses in one query; recompute book stats in memory
+                // after applying word promotions so no extra SQL round-trips are needed.
+                var bookWordStatuses = await _context.TextWords
+                    .Where(tw => tw.Text.BookId == id)
+                    .Select(tw => new { tw.WordId, tw.Word.Status })
+                    .Distinct()
+                    .ToListAsync();
 
                 // Get unique words from this text
                 var textWords = text.TextWords.Select(tw => tw.Word).ToList();
@@ -1722,38 +1728,28 @@ namespace LinguaReadApi.Controllers
                     .Where(w => w.UserId == userId && textWords.Select(tw => tw.Term.ToLower()).Contains(w.Term.ToLower()))
                     .ToListAsync();
 
+                var bumped = new Dictionary<int, int>();
                 foreach (var word in textWords)
                 {
                     var userWord = userWords.FirstOrDefault(w => w.Term.ToLower() == word.Term.ToLower());
-                    if (userWord != null)
+                    if (userWord != null && userWord.Status < 5)
                     {
-                        if (userWord.Status < 5) // Only update if not mastered
-                        {
-                            userWord.Status = Math.Min(userWord.Status + 1, 5);
-                        }
+                        userWord.Status = Math.Min(userWord.Status + 1, 5);
+                        bumped[userWord.WordId] = userWord.Status;
                     }
                 }
 
-                // Update book stats
-                book.TotalWords = await _context.TextWords
-                    .Where(tw => tw.Text.BookId == id)
-                    .Select(tw => tw.Word)
-                    .Distinct()
-                    .CountAsync();
-
-                book.KnownWords = await _context.TextWords
-                    .Where(tw => tw.Text.BookId == id)
-                    .Select(tw => tw.Word)
-                    .Where(w => w.Status >= 4)
-                    .Distinct()
-                    .CountAsync();
-
-                book.LearningWords = await _context.TextWords
-                    .Where(tw => tw.Text.BookId == id)
-                    .Select(tw => tw.Word)
-                    .Where(w => w.Status >= 2 && w.Status < 4)
-                    .Distinct()
-                    .CountAsync();
+                int bookTotal = 0, bookKnown = 0, bookLearning = 0;
+                foreach (var w in bookWordStatuses)
+                {
+                    int s = bumped.TryGetValue(w.WordId, out var newStatus) ? newStatus : w.Status;
+                    bookTotal++;
+                    if (s >= 4) bookKnown++;
+                    else if (s >= 2) bookLearning++;
+                }
+                book.TotalWords = bookTotal;
+                book.KnownWords = bookKnown;
+                book.LearningWords = bookLearning;
 
                 book.LastReadAt = now;
                 book.LastReadTextId = text.TextId;
@@ -1766,17 +1762,7 @@ namespace LinguaReadApi.Controllers
                 }
                 text.LastCompletedAt = now;
 
-                await _context.SaveChangesAsync();
-
-                // Calculate completion percentage based on actual finished parts count
-                int totalTexts = await _context.Texts
-                    .Where(t => t.BookId == id)
-                    .CountAsync();
-
-                int finishedTexts = await _context.Texts
-                    .Where(t => t.BookId == id && t.IsFinished)
-                    .CountAsync();
-
+                int finishedTexts = existingFinished + (isFirstCompletion ? 1 : 0);
                 if (totalTexts > 0 && finishedTexts >= totalTexts)
                 {
                     book.IsFinished = true;
@@ -1789,9 +1775,8 @@ namespace LinguaReadApi.Controllers
                         ? Math.Round((double)finishedTexts / totalTexts * 100, 2)
                         : 0;
                 }
-                // Save changes again to persist IsFinished if updated
-                await _context.SaveChangesAsync();
 
+                await _context.SaveChangesAsync();
                 await transaction.CommitAsync();
             }
             catch (DbUpdateException ex)
@@ -1964,11 +1949,9 @@ namespace LinguaReadApi.Controllers
 
                 if (desiredTagNamesLower.Any())
                 {
-                    // Fetch all tags into memory first to perform case-insensitive comparison client-side
-                    var allTagsUpdate = await _context.Tags.ToListAsync();
-                    var existingTags = allTagsUpdate
-                        .Where(t => desiredTagNamesLower.Contains(t.Name.ToLowerInvariant()))
-                        .ToList();
+                    var existingTags = await _context.Tags
+                        .Where(t => desiredTagNamesLower.Contains(t.Name.ToLower()))
+                        .ToListAsync();
 
                     desiredTags.AddRange(existingTags);
 
@@ -2035,7 +2018,7 @@ namespace LinguaReadApi.Controllers
                 {
                      // Re-fetch the desired tags now that they have IDs
                      var finalTagsToAdd = await _context.Tags
-                         .Where(t => tagNamesToAdd.Contains(t.Name.ToLowerInvariant()))
+                         .Where(t => tagNamesToAdd.Contains(t.Name.ToLower()))
                          .ToListAsync();
 
                      foreach (var tag in finalTagsToAdd)

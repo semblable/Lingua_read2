@@ -142,7 +142,15 @@ namespace LinguaReadApi.Data
                 .WithMany()
                 .HasForeignKey(ua => ua.LanguageId)
                 .OnDelete(DeleteBehavior.Restrict);
-                
+
+            modelBuilder.Entity<UserActivity>()
+                .HasIndex(a => new { a.UserId, a.Timestamp })
+                .HasDatabaseName("IX_UserActivities_UserId_Timestamp");
+
+            modelBuilder.Entity<UserActivity>()
+                .HasIndex(a => new { a.UserId, a.LanguageId, a.Timestamp })
+                .HasDatabaseName("IX_UserActivities_UserId_LanguageId_Timestamp");
+
             // User - UserSettings: One-to-One
             modelBuilder.Entity<UserSettings>()
                 .HasOne(us => us.User)

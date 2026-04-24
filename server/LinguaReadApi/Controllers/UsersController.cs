@@ -251,32 +251,22 @@ namespace LinguaReadApi.Controllers
                     query = query.Where(a => a.LanguageId == languageId.Value);
                 }
 
-                var activities = await query
-                    .Include(a => a.Language) // Include Language for grouping
-                    .OrderBy(a => a.Timestamp)
+                var byDate = await query
+                    .GroupBy(a => a.Timestamp.Date)
+                    .Select(g => new { Date = g.Key, WordCount = g.Sum(a => a.WordCount) })
                     .ToListAsync();
 
-                _logger.LogInformation("Found {ActivityCount} activities for the period.", activities.Count);
+                var byLanguage = await query
+                    .Where(a => a.Language != null)
+                    .GroupBy(a => a.Language!.Name)
+                    .Select(g => new { Name = g.Key, WordCount = g.Sum(a => a.WordCount) })
+                    .ToListAsync();
 
-                // Aggregate by date
-                var activityByDate = activities
-                    .GroupBy(a => a.Timestamp.Date)
-                    .ToDictionary(
-                        g => g.Key.ToString("yyyy-MM-dd"),
-                        g => g.Sum(a => a.WordCount)
-                    );
+                _logger.LogInformation("Aggregated reading activity across {DateCount} dates and {LangCount} languages.", byDate.Count, byLanguage.Count);
 
-                // Aggregate by language
-                var activityByLanguage = activities
-                    .Where(a => a.Language != null) // Ensure language is loaded
-                    .GroupBy(a => a.Language!.Name) // Group by language name
-                    .ToDictionary(
-                        g => g.Key,
-                        g => g.Sum(a => a.WordCount)
-                    );
-                    
-                // Calculate total words read in the period
-                int totalWordsRead = activities.Sum(a => a.WordCount);
+                var activityByDate = byDate.ToDictionary(x => x.Date.ToString("yyyy-MM-dd"), x => x.WordCount);
+                var activityByLanguage = byLanguage.ToDictionary(x => x.Name, x => x.WordCount);
+                int totalWordsRead = byDate.Sum(x => x.WordCount);
 
                 var result = new
                 {
@@ -358,35 +348,25 @@ namespace LinguaReadApi.Controllers
                     query = query.Where(a => a.LanguageId == languageId.Value);
                 }
 
-                var activities = await query
-                    .Include(a => a.Language) // Include Language for grouping by name
-                    .OrderBy(a => a.Timestamp)
+                var byDate = await query
+                    .GroupBy(a => a.Timestamp.Date)
+                    .Select(g => new { Date = g.Key, TotalSeconds = g.Sum(a => a.ListeningDurationSeconds ?? 0) })
                     .ToListAsync();
 
-                _logger.LogInformation("Found {ActivityCount} listening activities for the period.", activities.Count);
-
-                // Aggregate by date
-                var activityByDate = activities
-                    .GroupBy(a => a.Timestamp.Date)
-                    .Select(g => new {
-                        Date = g.Key.ToString("yyyy-MM-dd"),
-                        TotalSeconds = g.Sum(a => a.ListeningDurationSeconds ?? 0) // Sum duration
-                    })
-                    .ToDictionary(g => g.Date, g => g.TotalSeconds);
-
-                // Aggregate by language
-                var activityByLanguage = activities
-                    .Where(a => a.Language != null) // Ensure language is loaded
-                    .GroupBy(a => new { a.LanguageId, a.Language!.Name }) // Group by language ID and name
+                var activityByLanguage = await query
+                    .Where(a => a.Language != null)
+                    .GroupBy(a => new { a.LanguageId, a.Language!.Name })
                     .Select(g => new {
                         LanguageId = g.Key.LanguageId,
                         LanguageName = g.Key.Name,
-                        TotalSeconds = g.Sum(a => a.ListeningDurationSeconds ?? 0) // Sum duration
+                        TotalSeconds = g.Sum(a => a.ListeningDurationSeconds ?? 0)
                     })
-                    .ToList(); // Keep as a list as requested in the plan
+                    .ToListAsync();
 
-                // Calculate total listening time in the period
-                long totalListeningSeconds = activities.Sum(a => a.ListeningDurationSeconds ?? 0);
+                _logger.LogInformation("Aggregated listening activity across {DateCount} dates and {LangCount} languages.", byDate.Count, activityByLanguage.Count);
+
+                var activityByDate = byDate.ToDictionary(x => x.Date.ToString("yyyy-MM-dd"), x => x.TotalSeconds);
+                long totalListeningSeconds = byDate.Sum(x => (long)x.TotalSeconds);
 
                 var result = new
                 {

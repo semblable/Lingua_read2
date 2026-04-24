@@ -21,10 +21,33 @@ namespace LinguaReadApi.Controllers
         private readonly AppDbContext _context;
         private readonly ILogger<UsersController> _logger;
 
+        // Process-lifetime set of language codes already warned about (fallback CEFR
+        // thresholds). Prevents log spam when a user has many texts in an unlisted language.
+        private static readonly HashSet<string> _warnedFallbackLanguages =
+            new(StringComparer.OrdinalIgnoreCase);
+        private static readonly object _warnedFallbackLock = new();
+
         public UsersController(AppDbContext context, ILogger<UsersController> logger)
         {
             _context = context;
             _logger = logger;
+        }
+
+        private void WarnOnceForFallbackLanguage(string? languageCode)
+        {
+            if (string.IsNullOrEmpty(languageCode)) return;
+            if (CefrEstimator.HasThresholdsFor(languageCode)) return;
+            bool added;
+            lock (_warnedFallbackLock)
+            {
+                added = _warnedFallbackLanguages.Add(languageCode);
+            }
+            if (added)
+            {
+                _logger.LogWarning(
+                    "CEFR estimate for language '{LanguageCode}' is using fallback thresholds; results are approximate.",
+                    languageCode);
+            }
         }
 
         // GET: api/users/statistics
@@ -120,7 +143,8 @@ namespace LinguaReadApi.Controllers
                 // Get general stats (or default)
                 var stats = uls ?? new UserLanguageStatistics { LanguageId = langId };
 
-                var (cefrLevel, nextCefrLevel, knownToNext) = CefrEstimator.Estimate(known, langCode);
+                var cefr = CefrEstimator.Estimate(known, langCode);
+                if (cefr.IsApproximate) WarnOnceForFallbackLanguage(langCode);
 
                 languageStats.Add(new LanguageStatisticsDto
                 {
@@ -135,9 +159,11 @@ namespace LinguaReadApi.Controllers
                     TotalSecondsListened = (int)stats.TotalSecondsListened,
                     BookCount = books.Count(b => b.LanguageId == langId),
                     FinishedBookCount = books.Count(b => b.LanguageId == langId && b.IsFinished),
-                    CefrLevel = cefrLevel,
-                    NextCefrLevel = nextCefrLevel,
-                    KnownWordsToNextLevel = knownToNext
+                    CefrLevel = cefr.Level,
+                    NextCefrLevel = cefr.NextLevel,
+                    KnownWordsToNextLevel = cefr.KnownToNext,
+                    BandProgressPercent = cefr.BandProgressPercent,
+                    IsCefrApproximate = cefr.IsApproximate
                 });
             }
                 
@@ -394,9 +420,6 @@ namespace LinguaReadApi.Controllers
                 DateTime nowUtc = DateTime.UtcNow;
                 DateTime nowLocal = nowUtc.AddMinutes(tzOffset);
                 DateTime todayLocalDate = nowLocal.Date;
-                DateTime todayStartUtc = todayLocalDate.AddMinutes(-tzOffset);
-                DateTime weekStartUtc = todayLocalDate.AddDays(-6).AddMinutes(-tzOffset);
-                DateTime sparkStartUtc = todayLocalDate.AddDays(-13).AddMinutes(-tzOffset);
                 DateTime streakWindowStartUtc = todayLocalDate.AddDays(-365).AddMinutes(-tzOffset);
 
                 // Per-language word counts (total + known)
@@ -459,22 +482,26 @@ namespace LinguaReadApi.Controllers
                     .Where(l => allLanguageIds.Contains(l.LanguageId))
                     .ToDictionaryAsync(l => l.LanguageId, l => new { l.Name, l.Code });
 
-                // Most-recent unfinished text per language (for "Continue reading" quick link)
-                var continueReading = await _context.Texts
+                // Most-recent unfinished text per language (for "Continue reading" quick link).
+                // Pull the full set ordered and dedupe client-side — EF Core's translation of
+                // GroupBy+FirstOrDefault against PostgreSQL is fragile.
+                var candidateTexts = await _context.Texts
                     .Where(t => t.UserId == userId
                              && t.LastAccessedAt != null
                              && !t.IsFinished
                              && t.Tag != "srs-story"
                              && allLanguageIds.Contains(t.LanguageId))
-                    .GroupBy(t => t.LanguageId)
-                    .Select(g => g
-                        .OrderByDescending(t => t.LastAccessedAt)
-                        .Select(t => new { t.LanguageId, t.TextId })
-                        .FirstOrDefault())
+                    .OrderByDescending(t => t.LastAccessedAt)
+                    .Select(t => new { t.LanguageId, t.TextId })
                     .ToListAsync();
-                var continueByLanguage = continueReading
-                    .Where(x => x != null)
-                    .ToDictionary(x => x!.LanguageId, x => x!.TextId);
+                var continueByLanguage = new Dictionary<int, int>();
+                foreach (var t in candidateTexts)
+                {
+                    if (!continueByLanguage.ContainsKey(t.LanguageId))
+                    {
+                        continueByLanguage[t.LanguageId] = t.TextId;
+                    }
+                }
 
                 // Build per-language DTOs
                 var languageDtos = new List<DashboardLanguageDto>();
@@ -495,7 +522,8 @@ namespace LinguaReadApi.Controllers
                         known = ws.KnownCount;
                     }
 
-                    var (cefr, nextCefr, knownToNext) = CefrEstimator.Estimate(known, code);
+                    var cefr = CefrEstimator.Estimate(known, code);
+                    if (cefr.IsApproximate) WarnOnceForFallbackLanguage(code);
 
                     var langRows = rowsWithLocal.Where(r => r.LanguageId == langId).ToList();
 
@@ -556,7 +584,7 @@ namespace LinguaReadApi.Controllers
                         ? langRows.Max(r => r.Timestamp)
                         : (DateTime?)null;
 
-                    continueByLanguage.TryGetValue(langId, out int continueId);
+                    int? continueId = continueByLanguage.TryGetValue(langId, out var cid) ? cid : (int?)null;
 
                     languageDtos.Add(new DashboardLanguageDto
                     {
@@ -565,16 +593,18 @@ namespace LinguaReadApi.Controllers
                         LanguageName = name,
                         KnownWords = known,
                         TotalWords = total,
-                        CefrLevel = cefr,
-                        NextCefrLevel = nextCefr,
-                        KnownWordsToNextLevel = knownToNext,
+                        CefrLevel = cefr.Level,
+                        NextCefrLevel = cefr.NextLevel,
+                        KnownWordsToNextLevel = cefr.KnownToNext,
+                        BandProgressPercent = cefr.BandProgressPercent,
+                        IsCefrApproximate = cefr.IsApproximate,
                         TodayWordsRead = todayWords,
                         TodayListeningSeconds = todayListen,
                         WeekWordsRead = weekWords,
                         WeekListeningSeconds = weekListen,
                         CurrentReadingStreakDays = streak,
                         Last14DaysWords = sparkline,
-                        ContinueReadingTextId = continueId == 0 ? (int?)null : continueId,
+                        ContinueReadingTextId = continueId,
                         LastActivityAt = lastActivity
                     });
                 }
@@ -709,6 +739,8 @@ namespace LinguaReadApi.Controllers
         public string? CefrLevel { get; set; }
         public string? NextCefrLevel { get; set; }
         public int KnownWordsToNextLevel { get; set; }
+        public int BandProgressPercent { get; set; }
+        public bool IsCefrApproximate { get; set; }
     }
 
     public class DashboardDto
@@ -731,6 +763,8 @@ namespace LinguaReadApi.Controllers
         public string? CefrLevel { get; set; }
         public string? NextCefrLevel { get; set; }
         public int KnownWordsToNextLevel { get; set; }
+        public int BandProgressPercent { get; set; }
+        public bool IsCefrApproximate { get; set; }
         public int TodayWordsRead { get; set; }
         public int TodayListeningSeconds { get; set; }
         public int WeekWordsRead { get; set; }

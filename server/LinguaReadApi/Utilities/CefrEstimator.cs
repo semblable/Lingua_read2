@@ -33,21 +33,36 @@ namespace LinguaReadApi.Utilities
             };
 
         // Fallback thresholds when the language code is not in the table above.
-        // Matches English as a reasonable middle-of-the-road default.
+        // Matches English as a middle-of-the-road default. Estimates returned
+        // from this fallback are flagged as approximate so the UI can mark them.
         private static readonly int[] DefaultThresholds =
             { 500, 1500, 6000, 12000, 20750, 30250 };
 
-        public static (string? Level, string? NextLevel, int KnownToNext) Estimate(
-            int knownWords, string? languageCode)
+        public readonly record struct Result(
+            string? Level,
+            string? NextLevel,
+            int KnownToNext,
+            int BandProgressPercent,
+            bool IsApproximate);
+
+        public static Result Estimate(int knownWords, string? languageCode)
         {
             if (knownWords < 0) knownWords = 0;
 
-            var thresholds = ResolveThresholds(languageCode);
+            var (thresholds, isApproximate) = ResolveThresholds(languageCode);
 
-            // Below the A1 threshold: pre-A1, next target is A1.
+            // Below the A1 threshold: pre-A1, next target is A1, band runs 0 -> A1.
             if (knownWords < thresholds[0])
             {
-                return (null, Levels[0], thresholds[0] - knownWords);
+                int pct = thresholds[0] == 0
+                    ? 0
+                    : (int)Math.Round((double)knownWords / thresholds[0] * 100);
+                return new Result(
+                    Level: null,
+                    NextLevel: Levels[0],
+                    KnownToNext: thresholds[0] - knownWords,
+                    BandProgressPercent: Math.Clamp(pct, 0, 100),
+                    IsApproximate: isApproximate);
             }
 
             int levelIndex = 0;
@@ -62,18 +77,44 @@ namespace LinguaReadApi.Utilities
 
             string level = Levels[levelIndex];
             string? nextLevel = levelIndex < Levels.Length - 1 ? Levels[levelIndex + 1] : null;
-            int knownToNext = nextLevel != null
-                ? Math.Max(0, thresholds[levelIndex + 1] - knownWords)
-                : 0;
 
-            return (level, nextLevel, knownToNext);
+            int knownToNext;
+            int bandProgressPercent;
+            if (nextLevel != null)
+            {
+                int bandStart = thresholds[levelIndex];
+                int bandEnd = thresholds[levelIndex + 1];
+                int bandSize = Math.Max(1, bandEnd - bandStart);
+                int intoBand = Math.Max(0, knownWords - bandStart);
+                knownToNext = Math.Max(0, bandEnd - knownWords);
+                bandProgressPercent = Math.Clamp(
+                    (int)Math.Round((double)intoBand / bandSize * 100), 0, 100);
+            }
+            else
+            {
+                knownToNext = 0;
+                bandProgressPercent = 100;
+            }
+
+            return new Result(level, nextLevel, knownToNext, bandProgressPercent, isApproximate);
         }
 
-        private static int[] ResolveThresholds(string? languageCode)
+        // Exposes the lookup result so callers can log a one-time warning for
+        // languages that fall back to the default table.
+        private static (int[] Thresholds, bool IsApproximate) ResolveThresholds(string? languageCode)
         {
-            if (string.IsNullOrEmpty(languageCode)) return DefaultThresholds;
+            if (string.IsNullOrEmpty(languageCode)) return (DefaultThresholds, true);
             var prefix = languageCode.Split('-')[0].ToLowerInvariant();
-            return ThresholdsByLanguage.TryGetValue(prefix, out var t) ? t : DefaultThresholds;
+            return ThresholdsByLanguage.TryGetValue(prefix, out var t)
+                ? (t, false)
+                : (DefaultThresholds, true);
+        }
+
+        public static bool HasThresholdsFor(string? languageCode)
+        {
+            if (string.IsNullOrEmpty(languageCode)) return false;
+            var prefix = languageCode.Split('-')[0].ToLowerInvariant();
+            return ThresholdsByLanguage.ContainsKey(prefix);
         }
     }
 }

@@ -20,10 +20,14 @@ const normaliseLang = (l) => ({
   languageName: pick(l, 'languageName', 'LanguageName') || 'Unknown',
   knownWords: pick(l, 'knownWords', 'KnownWords') || 0,
   totalWords: pick(l, 'totalWords', 'TotalWords') || 0,
-  cefrLevel: pick(l, 'cefrLevel', 'CefrLevel') || 'A1',
+  cefrLevel: pick(l, 'cefrLevel', 'CefrLevel') || null,
   nextCefrLevel: pick(l, 'nextCefrLevel', 'NextCefrLevel') || null,
   knownWordsToNextLevel:
     pick(l, 'knownWordsToNextLevel', 'KnownWordsToNextLevel') || 0,
+  bandProgressPercent:
+    pick(l, 'bandProgressPercent', 'BandProgressPercent') || 0,
+  isCefrApproximate:
+    pick(l, 'isCefrApproximate', 'IsCefrApproximate') || false,
   todayWordsRead: pick(l, 'todayWordsRead', 'TodayWordsRead') || 0,
   todayListeningSeconds:
     pick(l, 'todayListeningSeconds', 'TodayListeningSeconds') || 0,

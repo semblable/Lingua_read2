@@ -22,6 +22,8 @@ const LanguageDashboardCard = ({ lang }) => {
     cefrLevel,
     nextCefrLevel,
     knownWordsToNextLevel,
+    bandProgressPercent,
+    isCefrApproximate,
     todayWordsRead,
     todayListeningSeconds,
     currentReadingStreakDays,
@@ -29,17 +31,7 @@ const LanguageDashboardCard = ({ lang }) => {
     continueReadingTextId,
   } = lang;
 
-  const bandProgress = nextCefrLevel
-    ? Math.max(
-        0,
-        Math.min(
-          100,
-          (knownWords /
-            Math.max(1, knownWords + knownWordsToNextLevel)) *
-            100
-        )
-      )
-    : 100;
+  const bandProgress = Math.max(0, Math.min(100, bandProgressPercent || 0));
 
   const sparkData = (last14DaysWords || []).map((d) => ({
     date: d.date,
@@ -57,7 +49,18 @@ const LanguageDashboardCard = ({ lang }) => {
               {totalWords.toLocaleString()} words encountered
             </small>
           </div>
-          <CefrBadge level={cefrLevel} />
+          <div className="text-end">
+            <CefrBadge level={cefrLevel} />
+            {isCefrApproximate && (
+              <div
+                className="text-muted"
+                style={{ fontSize: '0.7rem', lineHeight: 1 }}
+                title="CEFR estimate uses fallback thresholds for this language"
+              >
+                approx.
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="mb-3">

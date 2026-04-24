@@ -198,51 +198,56 @@ namespace LinguaReadApi.Services
 
         public async Task<bool> ResetLanguageContentAsync(int languageId, Guid userId)
         {
-            var languageExists = await _context.Languages
-                .AsNoTracking()
-                .AnyAsync(l => l.LanguageId == languageId);
-            if (!languageExists)
+            var strategy = _context.Database.CreateExecutionStrategy();
+
+            return await strategy.ExecuteAsync(async () =>
             {
-                return false;
-            }
+                var languageExists = await _context.Languages
+                    .AsNoTracking()
+                    .AnyAsync(l => l.LanguageId == languageId);
+                if (!languageExists)
+                {
+                    return false;
+                }
 
-            await using var transaction = await _context.Database.BeginTransactionAsync();
+                await using var transaction = await _context.Database.BeginTransactionAsync();
 
-            // SrsPhrase.WordId is Restrict, so remove phrases tied to this user's words in this language
-            // before deleting the words themselves.
-            await _context.SrsPhrases
-                .Where(sp => sp.UserId == userId
-                             && _context.Words.Any(w => w.WordId == sp.WordId
-                                                        && w.UserId == userId
-                                                        && w.LanguageId == languageId))
-                .ExecuteDeleteAsync();
+                // SrsPhrase.WordId is Restrict, so remove phrases tied to this user's words in this language
+                // before deleting the words themselves.
+                await _context.SrsPhrases
+                    .Where(sp => sp.UserId == userId
+                                 && _context.Words.Any(w => w.WordId == sp.WordId
+                                                            && w.UserId == userId
+                                                            && w.LanguageId == languageId))
+                    .ExecuteDeleteAsync();
 
-            // Texts first — cascades TextWords, UserSentenceProgress, UserAudioLessonProgress,
-            // and nulls SrsPhrase.TextId for phrases in other languages that happened to reference these texts.
-            await _context.Texts
-                .Where(t => t.UserId == userId && t.LanguageId == languageId)
-                .ExecuteDeleteAsync();
+                // Texts first — cascades TextWords, UserSentenceProgress, UserAudioLessonProgress,
+                // and nulls SrsPhrase.TextId for phrases in other languages that happened to reference these texts.
+                await _context.Texts
+                    .Where(t => t.UserId == userId && t.LanguageId == languageId)
+                    .ExecuteDeleteAsync();
 
-            // Books — cascades UserBookProgress, AudiobookTracks, and any remaining linked texts.
-            await _context.Books
-                .Where(b => b.UserId == userId && b.LanguageId == languageId)
-                .ExecuteDeleteAsync();
+                // Books — cascades UserBookProgress, AudiobookTracks, and any remaining linked texts.
+                await _context.Books
+                    .Where(b => b.UserId == userId && b.LanguageId == languageId)
+                    .ExecuteDeleteAsync();
 
-            // Words — cascades WordTranslation, SrsCardReview (and SrsReviewLog via SrsCardReview).
-            await _context.Words
-                .Where(w => w.UserId == userId && w.LanguageId == languageId)
-                .ExecuteDeleteAsync();
+                // Words — cascades WordTranslation, SrsCardReview (and SrsReviewLog via SrsCardReview).
+                await _context.Words
+                    .Where(w => w.UserId == userId && w.LanguageId == languageId)
+                    .ExecuteDeleteAsync();
 
-            await _context.UserActivities
-                .Where(ua => ua.UserId == userId && ua.LanguageId == languageId)
-                .ExecuteDeleteAsync();
+                await _context.UserActivities
+                    .Where(ua => ua.UserId == userId && ua.LanguageId == languageId)
+                    .ExecuteDeleteAsync();
 
-            await _context.UserLanguageStatistics
-                .Where(uls => uls.UserId == userId && uls.LanguageId == languageId)
-                .ExecuteDeleteAsync();
+                await _context.UserLanguageStatistics
+                    .Where(uls => uls.UserId == userId && uls.LanguageId == languageId)
+                    .ExecuteDeleteAsync();
 
-            await transaction.CommitAsync();
-            return true;
+                await transaction.CommitAsync();
+                return true;
+            });
         }
 
         public async Task<IEnumerable<Language>> GetLanguagesForTranslationAsync()

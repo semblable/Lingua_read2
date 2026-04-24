@@ -1616,7 +1616,44 @@ namespace LinguaReadApi.Controllers
             {
                 return NotFound("Text not found or does not belong to this book");
             }
-            
+
+            var now = DateTime.UtcNow;
+
+            // Retry dedup: a completion of the same text within this window is treated as the
+            // same logical action (double-click, connection retry, page reload on a flaky link)
+            // and must not double-count. 10s is short enough that a deliberate re-read cannot
+            // realistically fit inside it, even for very short texts.
+            var retryWindow = TimeSpan.FromSeconds(10);
+            bool isRetry = text.LastCompletedAt.HasValue
+                && now - text.LastCompletedAt.Value < retryWindow;
+
+            if (isRetry)
+            {
+                int totalTextsRetry = await _context.Texts
+                    .Where(t => t.BookId == id)
+                    .CountAsync();
+                int finishedTextsRetry = await _context.Texts
+                    .Where(t => t.BookId == id && t.IsFinished)
+                    .CountAsync();
+                double pctRetry = totalTextsRetry > 0
+                    ? Math.Round((double)finishedTextsRetry / totalTextsRetry * 100, 2)
+                    : 0;
+
+                return new BookStatsDto
+                {
+                    TotalWords = book.TotalWords,
+                    KnownWords = book.KnownWords,
+                    LearningWords = book.LearningWords,
+                    CompletionPercentage = pctRetry,
+                    IsFinished = book.IsFinished
+                };
+            }
+
+            // First-time completion increments the "unique texts finished" counter.
+            // A re-read (past the retry window, already finished) only bumps the "total completions"
+            // counter and credits reading volume/activity — not TotalTextsCompleted.
+            bool isFirstCompletion = !text.IsFinished;
+
             // Count all words in the text (not just unique words)
             int totalWordCount = WordCountUtility.CountTotalWords(text.Content);
 
@@ -1635,14 +1672,14 @@ namespace LinguaReadApi.Controllers
                     // Explicitly mark the language entity as modified
                     _context.Entry(language).State = EntityState.Modified;
 
-                    // Track this reading activity for statistics
+                    // Track this reading activity for statistics (streaks count re-reads too)
                     var activity = new UserActivity
                     {
                         UserId = userId,
                         LanguageId = language.LanguageId,
                         ActivityType = "TextCompleted",
                         WordCount = totalWordCount,
-                        Timestamp = DateTime.UtcNow
+                        Timestamp = now
                     };
                     _context.UserActivities.Add(activity);
 
@@ -1659,23 +1696,28 @@ namespace LinguaReadApi.Controllers
                         UserId = userId,
                         LanguageId = book.LanguageId,
                         TotalWordsRead = totalWordCount,
-                        TotalTextsCompleted = 1,
-                        LastUpdatedAt = DateTime.UtcNow
+                        TotalTextsCompleted = isFirstCompletion ? 1 : 0,
+                        TotalTextCompletions = 1,
+                        LastUpdatedAt = now
                     };
                     _context.UserLanguageStatistics.Add(stats);
                 }
                 else
                 {
                     stats.TotalWordsRead += totalWordCount;
-                    stats.TotalTextsCompleted += 1;
-                    stats.LastUpdatedAt = DateTime.UtcNow;
+                    if (isFirstCompletion)
+                    {
+                        stats.TotalTextsCompleted += 1;
+                    }
+                    stats.TotalTextCompletions += 1;
+                    stats.LastUpdatedAt = now;
                 }
                 await _context.SaveChangesAsync();
 
                 // Get unique words from this text
                 var textWords = text.TextWords.Select(tw => tw.Word).ToList();
 
-                // Update user's words
+                // Update user's words (promotion helps mastery on re-reads too; capped at 5)
                 var userWords = await _context.Words
                     .Where(w => w.UserId == userId && textWords.Select(tw => tw.Term.ToLower()).Contains(w.Term.ToLower()))
                     .ToListAsync();
@@ -1713,7 +1755,7 @@ namespace LinguaReadApi.Controllers
                     .Distinct()
                     .CountAsync();
 
-                book.LastReadAt = DateTime.UtcNow;
+                book.LastReadAt = now;
                 book.LastReadTextId = text.TextId;
                 book.LastReadPartId = text.PartNumber;
 
@@ -1722,6 +1764,7 @@ namespace LinguaReadApi.Controllers
                 {
                     text.IsFinished = true;
                 }
+                text.LastCompletedAt = now;
 
                 await _context.SaveChangesAsync();
 

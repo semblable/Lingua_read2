@@ -18,7 +18,8 @@ namespace LinguaReadApi.Models
         public Language Language { get; set; } = null!; // Navigation property
 
         public long TotalWordsRead { get; set; } = 0;
-        public int TotalTextsCompleted { get; set; } = 0;
+        public int TotalTextsCompleted { get; set; } = 0; // Unique texts finished (first-time only)
+        public int TotalTextCompletions { get; set; } = 0; // Every completion incl. re-reads
         public int TotalBooksCompleted { get; set; } = 0; // Add field for books too
         public long TotalSecondsListened { get; set; } = 0; // Add field for listening
 

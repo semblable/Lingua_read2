@@ -64,6 +64,10 @@ namespace LinguaReadApi.Models
         // New field to track completion status
         public bool IsFinished { get; set; } = false;
 
+        // Timestamp of the most recent completion (first-time or re-read).
+        // Used by CompleteLesson to dedupe retries within a short window.
+        public DateTime? LastCompletedAt { get; set; }
+
         // Background word-linking status: null (legacy/done), "processing", "completed", "failed"
         [StringLength(20)]
         public string? WordLinkingStatus { get; set; }

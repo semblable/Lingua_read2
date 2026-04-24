@@ -40,9 +40,11 @@ public class CompleteLessonTests
         var langStats = await context.UserLanguageStatistics.SingleAsync();
         Assert.Equal(3, langStats.TotalWordsRead);
         Assert.Equal(1, langStats.TotalTextsCompleted);
+        Assert.Equal(1, langStats.TotalTextCompletions);
 
         var text = await context.Texts.SingleAsync(t => t.TextId == firstTextId);
         Assert.True(text.IsFinished);
+        Assert.NotNull(text.LastCompletedAt);
 
         var book = await context.Books.SingleAsync();
         Assert.False(book.IsFinished);
@@ -68,6 +70,7 @@ public class CompleteLessonTests
         context.ChangeTracker.Clear();
         var langStats = await context.UserLanguageStatistics.SingleAsync();
         Assert.Equal(2, langStats.TotalTextsCompleted);
+        Assert.Equal(2, langStats.TotalTextCompletions);
         var book = await context.Books.SingleAsync();
         Assert.True(book.IsFinished);
     }
@@ -96,6 +99,71 @@ public class CompleteLessonTests
         var reloadedMundo = await context.Words.SingleAsync(w => w.WordId == 11);
         Assert.Equal(4, reloadedHola.Status); // 3 -> 4
         Assert.Equal(5, reloadedMundo.Status); // already mastered, no change
+    }
+
+    [Fact]
+    public async Task CompleteLesson_DedupsImmediateRetry()
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        SeedBookWithTwoParts(context, userId, out var bookId, out var firstTextId);
+
+        var word = new Word { WordId = 20, UserId = userId, LanguageId = 1, Term = "hola", Status = 3 };
+        context.Words.Add(word);
+        context.TextWords.Add(new TextWord { TextWordId = 200, TextId = firstTextId, WordId = 20 });
+        await context.SaveChangesAsync();
+
+        var controller = CreateController(context, userId);
+        await controller.CompleteLesson(bookId, new CompleteLessonDto { TextId = firstTextId });
+        // Immediate second call — simulates a retry on a flaky connection / double-click.
+        await controller.CompleteLesson(bookId, new CompleteLessonDto { TextId = firstTextId });
+
+        context.ChangeTracker.Clear();
+
+        // None of the counters should double.
+        var language = await context.Languages.SingleAsync();
+        Assert.Equal(3, language.WordsRead);
+        Assert.Single(await context.UserActivities.ToListAsync());
+
+        var langStats = await context.UserLanguageStatistics.SingleAsync();
+        Assert.Equal(3, langStats.TotalWordsRead);
+        Assert.Equal(1, langStats.TotalTextsCompleted);
+        Assert.Equal(1, langStats.TotalTextCompletions);
+
+        var reloadedWord = await context.Words.SingleAsync(w => w.WordId == 20);
+        Assert.Equal(4, reloadedWord.Status); // bumped once, not twice
+    }
+
+    [Fact]
+    public async Task CompleteLesson_CountsReread_WhenPastRetryWindow()
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        SeedBookWithTwoParts(context, userId, out var bookId, out var firstTextId);
+
+        var controller = CreateController(context, userId);
+        await controller.CompleteLesson(bookId, new CompleteLessonDto { TextId = firstTextId });
+
+        // Push the last-completed timestamp well outside the retry window.
+        var completedText = await context.Texts.SingleAsync(t => t.TextId == firstTextId);
+        completedText.LastCompletedAt = DateTime.UtcNow.AddMinutes(-5);
+        await context.SaveChangesAsync();
+        context.ChangeTracker.Clear();
+
+        // Re-read.
+        await controller.CompleteLesson(bookId, new CompleteLessonDto { TextId = firstTextId });
+
+        context.ChangeTracker.Clear();
+        var language = await context.Languages.SingleAsync();
+        Assert.Equal(6, language.WordsRead); // 3 + 3, re-read credits word volume
+
+        var activities = await context.UserActivities.ToListAsync();
+        Assert.Equal(2, activities.Count); // re-read logs a new activity row (streak coverage)
+
+        var langStats = await context.UserLanguageStatistics.SingleAsync();
+        Assert.Equal(6, langStats.TotalWordsRead);
+        Assert.Equal(1, langStats.TotalTextsCompleted);   // unique texts stays at 1
+        Assert.Equal(2, langStats.TotalTextCompletions);  // completions (with repeats) = 2
     }
 
     [Fact]

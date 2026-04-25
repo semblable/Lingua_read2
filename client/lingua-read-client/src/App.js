@@ -30,6 +30,7 @@ const SrsReview = lazy(() => import('./pages/SrsReview'));
 const SrsStoryReview = lazy(() => import('./pages/SrsStoryReview'));
 const Library = lazy(() => import('./pages/Library'));
 const Dashboard = lazy(() => import('./pages/Dashboard'));
+const Goals = lazy(() => import('./pages/Goals'));
 
 // Simple loading component
 const Loading = () => <div className="d-flex justify-content-center align-items-center vh-100">Loading...</div>;
@@ -144,6 +145,7 @@ const AuthenticatedApp = () => {
               <Route path="/texts/create-batch-audio" element={<BatchAudioCreate />} />
 
               <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/goals" element={<Goals />} />
               <Route path="/statistics" element={<Statistics />} />
               <Route path="/terms" element={<TermsPage />} />
               <Route path="/srs" element={<SrsReview />} />

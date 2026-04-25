@@ -582,6 +582,57 @@ export const getDashboard = async (timezoneOffsetMinutes = null) => {
   return fetchApi(`/users/dashboard${qs ? `?${qs}` : ''}`);
 };
 
+// --- Goals API ---
+const tzOffset = () => -new Date().getTimezoneOffset();
+
+export const getGoals = (status = 'active') => {
+  const params = new URLSearchParams({ status, timezoneOffsetMinutes: tzOffset() });
+  return fetchApi(`/goals?${params.toString()}`);
+};
+
+export const getGoal = (goalId) => {
+  const params = new URLSearchParams({ timezoneOffsetMinutes: tzOffset() });
+  return fetchApi(`/goals/${goalId}?${params.toString()}`);
+};
+
+export const createGoal = (payload) => {
+  const params = new URLSearchParams({ timezoneOffsetMinutes: tzOffset() });
+  return fetchApi(`/goals?${params.toString()}`, {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+};
+
+export const updateGoal = (goalId, payload) => {
+  const params = new URLSearchParams({ timezoneOffsetMinutes: tzOffset() });
+  return fetchApi(`/goals/${goalId}?${params.toString()}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload)
+  });
+};
+
+export const archiveGoal = (goalId) =>
+  fetchApi(`/goals/${goalId}/archive`, { method: 'POST' });
+
+export const restoreGoal = (goalId) =>
+  fetchApi(`/goals/${goalId}/restore`, { method: 'POST' });
+
+export const deleteGoal = (goalId) =>
+  fetchApi(`/goals/${goalId}`, { method: 'DELETE' });
+
+export const getGoalSuggestion = ({ type, languageId = null, recurrence = 0, mode = 1 }) => {
+  const params = new URLSearchParams({
+    type,
+    recurrence,
+    mode,
+    timezoneOffsetMinutes: tzOffset()
+  });
+  if (languageId !== null && languageId !== undefined) {
+    params.append('languageId', languageId);
+  }
+  return fetchApi(`/goals/suggestions?${params.toString()}`);
+};
+
 export const getReadingActivity = async (period = 'all', timezoneOffsetMinutes = null, languageId = null) => {
   try {
     const params = new URLSearchParams({ period });

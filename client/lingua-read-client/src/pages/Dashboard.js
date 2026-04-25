@@ -3,6 +3,7 @@ import { Container, Row, Col, Card, Spinner, Alert, Button } from 'react-bootstr
 import { Link } from 'react-router-dom';
 import { getDashboard } from '../utils/api';
 import LanguageDashboardCard from '../components/dashboard/LanguageDashboardCard';
+import GoalsCard from '../components/goals/GoalsCard';
 
 // Normalise keys from the API. The backend emits PascalCase camel-cased by
 // System.Text.Json defaults (camelCase), but older endpoints in the codebase
@@ -188,6 +189,8 @@ const Dashboard = () => {
           </Card>
         </Col>
       </Row>
+
+      <GoalsCard defaultLanguageId={languages[0]?.languageId} />
 
       <Row className="g-3">
         {languages.map((lang) => (

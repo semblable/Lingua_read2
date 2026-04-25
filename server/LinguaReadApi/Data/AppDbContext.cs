@@ -31,6 +31,8 @@ namespace LinguaReadApi.Data
         public DbSet<SrsPhrase> SrsPhrases { get; set; }
         public DbSet<SrsReviewLog> SrsReviewLogs { get; set; }
         public DbSet<Folder> Folders { get; set; }
+        public DbSet<UserGoal> UserGoals { get; set; }
+        public DbSet<UserGoalPeriod> UserGoalPeriods { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -365,6 +367,36 @@ namespace LinguaReadApi.Data
                 .HasForeignKey(b => b.FolderId)
                 .IsRequired(false)
                 .OnDelete(DeleteBehavior.SetNull); // If folder deleted, books move to root
+
+            // Configure UserGoal entity
+            modelBuilder.Entity<UserGoal>()
+                .HasOne(g => g.User)
+                .WithMany()
+                .HasForeignKey(g => g.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<UserGoal>()
+                .HasOne(g => g.Language)
+                .WithMany()
+                .HasForeignKey(g => g.LanguageId)
+                .IsRequired(false)
+                .OnDelete(DeleteBehavior.SetNull); // language removed -> goal auto-archived in code; FK set null
+
+            modelBuilder.Entity<UserGoal>()
+                .HasIndex(g => new { g.UserId, g.ArchivedAt });
+
+            modelBuilder.Entity<UserGoal>()
+                .HasIndex(g => new { g.UserId, g.LanguageId });
+
+            // Configure UserGoalPeriod entity
+            modelBuilder.Entity<UserGoalPeriod>()
+                .HasOne(p => p.Goal)
+                .WithMany(g => g.Periods)
+                .HasForeignKey(p => p.GoalId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<UserGoalPeriod>()
+                .HasIndex(p => new { p.GoalId, p.PeriodEnd });
         }
     }
 }

@@ -138,6 +138,7 @@ builder.Services.AddHostedService<WordLinkingBackgroundService>();
 // Register Language Service (New)
 builder.Services.AddScoped<ILanguageService, LanguageService>();
 builder.Services.AddScoped<IUserActivityService, UserActivityService>(); // Register UserActivityService
+builder.Services.AddScoped<IGoalProgressService, GoalProgressService>();
 
 // Configure JWT Authentication
 builder.Services.AddAuthentication(options =>

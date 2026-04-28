@@ -5,9 +5,13 @@ const VocabIndicator = ({ text, className = '' }) => {
   const { settings } = useContext(SettingsContext);
   const mode = settings?.libraryUnknownIndicator || 'both';
 
-  if (mode === 'none' || !text || !text.totalUniqueWords || text.totalUniqueWords <= 0) {
-    return null;
+  if (mode === 'none' || !text) return null;
+
+  const status = text.wordLinkingStatus;
+  if (status === 'processing') {
+    return <small className={`text-muted ${className}`}>indexing vocabulary…</small>;
   }
+  if (status === 'failed') return null;
 
   const pctNew = Math.round(text.percentNew ?? 0);
   const pctLearning = Math.round(text.percentLearning ?? 0);
@@ -21,7 +25,7 @@ const VocabIndicator = ({ text, className = '' }) => {
     parts.push(<span key="learning" style={{ color: '#d97706' }}>{pctLearning}% learning</span>);
   }
 
-  const tooltip = `${text.newWords ?? 0} new · ${text.learningWords ?? 0} learning · ${text.totalUniqueWords} unique words`;
+  const tooltip = `${text.newWords ?? 0} new · ${text.learningWords ?? 0} learning · ${text.totalUniqueWords ?? 0} unique words`;
 
   return (
     <small className={className} title={tooltip}>

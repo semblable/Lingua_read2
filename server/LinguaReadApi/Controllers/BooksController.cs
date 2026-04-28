@@ -17,6 +17,7 @@ using System.Text.RegularExpressions; // Added for Regex HTML stripping
 using VersOne.Epub; // Added for EPUB parsing
 using LinguaReadApi.Data;
 using LinguaReadApi.Models;
+using LinguaReadApi.Services;
 using LinguaReadApi.Utilities;
 
 namespace LinguaReadApi.Controllers
@@ -28,15 +29,17 @@ namespace LinguaReadApi.Controllers
     {
         private readonly AppDbContext _context;
         private readonly ILogger<BooksController> _logger;
+        private readonly WordLinkingChannel _wordLinkingChannel;
         private static readonly JsonSerializerOptions StructuredContentJsonOptions = new(JsonSerializerDefaults.Web)
         {
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase
         };
 
-        public BooksController(AppDbContext context, ILogger<BooksController> logger)
+        public BooksController(AppDbContext context, ILogger<BooksController> logger, WordLinkingChannel wordLinkingChannel)
         {
             _context = context;
             _logger = logger;
+            _wordLinkingChannel = wordLinkingChannel;
         }
 
         // GET: api/books
@@ -110,7 +113,8 @@ namespace LinguaReadApi.Controllers
                     TextId = t.TextId,
                     Title = t.Title,
                     PartNumber = t.PartNumber ?? 0,
-                    CreatedAt = t.CreatedAt
+                    CreatedAt = t.CreatedAt,
+                    WordLinkingStatus = t.WordLinkingStatus
                 }).ToList(),
 
                 Tags = book.BookTags.Select(bt => new TagDto // Map Tags to TagDto
@@ -126,6 +130,39 @@ namespace LinguaReadApi.Controllers
                     Duration = at.Duration
                 }).ToList()
             };
+
+            // Lazy-backfill word linking for parts that were never indexed (older imports
+            // didn't queue linking on upload). Marking them "processing" before enqueueing
+            // prevents re-queueing if the user reloads while linking is in flight.
+            var partsNeedingLink = book.Texts
+                .Where(t => t.WordLinkingStatus != "completed" && t.WordLinkingStatus != "processing")
+                .ToList();
+            if (partsNeedingLink.Count > 0)
+            {
+                foreach (var t in partsNeedingLink)
+                {
+                    t.WordLinkingStatus = "processing";
+                }
+                await _context.SaveChangesAsync();
+                foreach (var t in partsNeedingLink)
+                {
+                    try
+                    {
+                        await _wordLinkingChannel.Writer.WriteAsync(
+                            new WordLinkingRequest(t.TextId, t.Content ?? string.Empty, t.LanguageId, userId));
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Failed to enqueue lazy word linking for TextId {TextId}", t.TextId);
+                    }
+                }
+                // Reflect the new status in the DTO we already constructed.
+                var statusById = book.Texts.ToDictionary(t => t.TextId, t => t.WordLinkingStatus);
+                foreach (var p in bookDetail.Parts)
+                {
+                    if (statusById.TryGetValue(p.TextId, out var st)) p.WordLinkingStatus = st;
+                }
+            }
 
             // Batch-fetch unique-word stats per part (new vs learning vs known).
             var partTextIds = bookDetail.Parts.Select(p => p.TextId).ToList();
@@ -477,6 +514,7 @@ namespace LinguaReadApi.Controllers
 
             // --- Text Splitting and Creation ---
             int partCount = 0;
+            var partsForLinking = new List<Text>();
             try
             {
                 if (epubBook != null)
@@ -513,9 +551,11 @@ namespace LinguaReadApi.Controllers
                             UserId = userId,
                             BookId = book.BookId,
                             PartNumber = i + 1,
-                            CreatedAt = DateTime.UtcNow
+                            CreatedAt = DateTime.UtcNow,
+                            WordLinkingStatus = "processing"
                         };
                         _context.Texts.Add(text);
+                        partsForLinking.Add(text);
                     }
                 }
                 else
@@ -533,12 +573,28 @@ namespace LinguaReadApi.Controllers
                             UserId = userId,
                             BookId = book.BookId,
                             PartNumber = i + 1,
-                            CreatedAt = DateTime.UtcNow
+                            CreatedAt = DateTime.UtcNow,
+                            WordLinkingStatus = "processing"
                         };
                         _context.Texts.Add(text);
+                        partsForLinking.Add(text);
                     }
                 }
                 await _context.SaveChangesAsync(); // Save Texts
+
+                // Queue word linking for each part (TextIds are now populated).
+                foreach (var t in partsForLinking)
+                {
+                    try
+                    {
+                        await _wordLinkingChannel.Writer.WriteAsync(
+                            new WordLinkingRequest(t.TextId, t.Content, t.LanguageId, userId));
+                    }
+                    catch (Exception linkEx)
+                    {
+                        _logger.LogError(linkEx, "Failed to queue word linking for book part TextId {TextId}", t.TextId);
+                    }
+                }
             }
             catch (Exception ex)
             {
@@ -2247,6 +2303,7 @@ namespace LinguaReadApi.Controllers
         public int LearningWords { get; set; }
         public double PercentNew { get; set; }
         public double PercentLearning { get; set; }
+        public string? WordLinkingStatus { get; set; }
     }
 
     public class CreateBookDto

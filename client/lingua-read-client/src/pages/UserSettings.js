@@ -223,7 +223,7 @@ const UserSettings = () => {
         'readingDensity', 'showWordInfoPanel', 'readerParagraphIndent', 'readerTextAlignment',
         'leftPanelWidth', 'autoTranslateWords', 'pauseOnWordClick', 'highlightKnownWords',
         'tooltipOnlyForSavedWords', 'sentenceTtsEnabled', 'defaultLanguageId', 'translationTargetLanguageCode',
-        'autoAdvanceToNextLesson', 'autoMoveFinishedLessons', 'showProgressStats', 'lineSpacing',
+        'autoAdvanceToNextLesson', 'autoMoveFinishedLessons', 'showProgressStats', 'libraryUnknownIndicator', 'lineSpacing',
         'discordWeeklyReportEnabled', 'discordWebhookUrl', 'discordWeeklyReportDayOfWeek',
         'discordWeeklyReportHourLocal', 'discordTimezoneOffsetMinutes',
         'useOpenRouter', 'openRouterApiKey', 'openRouterModel',

@@ -73,11 +73,35 @@ namespace LinguaReadApi.Controllers
                 .Where(p => p.UserId == userId)
                 .ToDictionaryAsync(p => p.TextId, p => p.CurrentPosition);
 
+            // Batch-fetch unique-word stats per text (new vs learning vs known).
+            var textIds = texts.Select(t => t.TextId).ToList();
+            var statsRaw = await _context.TextWords
+                .AsNoTracking()
+                .Where(tw => textIds.Contains(tw.TextId))
+                .GroupBy(tw => tw.TextId)
+                .Select(g => new
+                {
+                    TextId = g.Key,
+                    Total = g.Count(),
+                    New = g.Count(tw => tw.Word.Status == 0),
+                    Learning = g.Count(tw => tw.Word.Status > 0 && tw.Word.Status < 5)
+                })
+                .ToListAsync();
+            var statsDict = statsRaw.ToDictionary(s => s.TextId);
+
             foreach (var text in texts)
             {
                 if (text.IsAudioLesson && progressDict.TryGetValue(text.TextId, out var progress))
                 {
                     text.AudioProgress = progress;
+                }
+                if (statsDict.TryGetValue(text.TextId, out var s) && s.Total > 0)
+                {
+                    text.TotalUniqueWords = s.Total;
+                    text.NewWords = s.New;
+                    text.LearningWords = s.Learning;
+                    text.PercentNew = 100.0 * s.New / s.Total;
+                    text.PercentLearning = 100.0 * s.Learning / s.Total;
                 }
             }
 
@@ -1167,6 +1191,11 @@ namespace LinguaReadApi.Controllers
         public double? AudioProgress { get; set; }
         public int? FolderId { get; set; }
         public int SortOrder { get; set; }
+        public int TotalUniqueWords { get; set; }
+        public int NewWords { get; set; }
+        public int LearningWords { get; set; }
+        public double PercentNew { get; set; }
+        public double PercentLearning { get; set; }
     }
 
     public class TextDetailDto

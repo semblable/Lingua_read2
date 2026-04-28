@@ -27,6 +27,7 @@ const defaultSettings = {
   autoAdvanceToNextLesson: false,
   showProgressStats: true,
   showDesktopLessonControls: true,
+  libraryUnknownIndicator: 'both', // 'none' | 'new' | 'learning' | 'both'
   lineSpacing: 1.5,
   paragraphSpacing: 1.0,
   discordWeeklyReportEnabled: false,
@@ -90,6 +91,8 @@ const mergeSettings = (data) => ({
   translationTargetLanguageCode: data.translationTargetLanguageCode || defaultSettings.translationTargetLanguageCode,
   autoAdvanceToNextLesson: data.autoAdvanceToNextLesson ?? defaultSettings.autoAdvanceToNextLesson,
   showProgressStats: data.showProgressStats ?? defaultSettings.showProgressStats,
+  showDesktopLessonControls: data.showDesktopLessonControls ?? defaultSettings.showDesktopLessonControls,
+  libraryUnknownIndicator: data.libraryUnknownIndicator || defaultSettings.libraryUnknownIndicator,
   lineSpacing: data.lineSpacing || defaultSettings.lineSpacing,
   paragraphSpacing: data.paragraphSpacing || defaultSettings.paragraphSpacing,
   discordWeeklyReportEnabled: data.discordWeeklyReportEnabled ?? defaultSettings.discordWeeklyReportEnabled,

@@ -3,6 +3,7 @@ import { Container, Row, Col, Card, Button, Alert, Spinner, ListGroup, Badge, Pr
 import { useParams, useNavigate, useLocation, Link } from 'react-router-dom';
 import { getBook, finishBook, updateBook, deleteBook, getText, updateText, deleteText, uploadAudiobookTracks } from '../utils/api'; // Import new API functions + uploadAudiobookTracks
 import { formatDate, /*calculateReadingTime*/ } from '../utils/helpers'; // Removed unused calculateReadingTime
+import VocabIndicator from '../components/library/VocabIndicator';
 // Removed AudiobookPlayer import
 
 const normalizeCoverUrl = (value) => {
@@ -364,6 +365,7 @@ const BookDetail = () => {
               <div>
                 <h6 className="mb-0">{part.title}</h6>
                 <small className="text-muted">Added: {formatDate(part.createdAt)}</small>
+                <VocabIndicator text={part} className="d-block" />
               </div>
               <div>
                 <Badge bg="primary" pill className="me-2">

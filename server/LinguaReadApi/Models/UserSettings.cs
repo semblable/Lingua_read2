@@ -45,6 +45,10 @@ namespace LinguaReadApi.Models
         public bool AutoMoveFinishedLessons { get; set; } = false; // automatically move finished lessons to "Finished" folder
         public bool ShowDesktopLessonControls { get; set; } = true; // persist lesson controls panel visibility
 
+        // Library card vocab indicator: "none" | "new" | "learning" | "both"
+        [StringLength(16)]
+        public string LibraryUnknownIndicator { get; set; } = "both";
+
         // Audiobook Playback State
         public int? CurrentAudiobookTrackId { get; set; } // FK to AudiobookTrack
         public double? CurrentAudiobookPosition { get; set; } // Position in seconds

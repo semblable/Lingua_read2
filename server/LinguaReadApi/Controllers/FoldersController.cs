@@ -167,6 +167,36 @@ namespace LinguaReadApi.Controllers
                 })
                 .ToListAsync();
 
+            // Batch-fetch unique-word stats per text (new vs learning vs known).
+            if (texts.Count > 0)
+            {
+                var textIds = texts.Select(t => t.TextId).ToList();
+                var statsRaw = await _context.TextWords
+                    .AsNoTracking()
+                    .Where(tw => textIds.Contains(tw.TextId))
+                    .GroupBy(tw => tw.TextId)
+                    .Select(g => new
+                    {
+                        TextId = g.Key,
+                        Total = g.Count(),
+                        New = g.Count(tw => tw.Word.Status == 0),
+                        Learning = g.Count(tw => tw.Word.Status > 0 && tw.Word.Status < 5)
+                    })
+                    .ToListAsync();
+                var statsDict = statsRaw.ToDictionary(s => s.TextId);
+                foreach (var t in texts)
+                {
+                    if (statsDict.TryGetValue(t.TextId, out var s) && s.Total > 0)
+                    {
+                        t.TotalUniqueWords = s.Total;
+                        t.NewWords = s.New;
+                        t.LearningWords = s.Learning;
+                        t.PercentNew = 100.0 * s.New / s.Total;
+                        t.PercentLearning = 100.0 * s.Learning / s.Total;
+                    }
+                }
+            }
+
             return new LibraryContentsDto
             {
                 CurrentFolder = currentFolder,
@@ -593,6 +623,11 @@ namespace LinguaReadApi.Controllers
         public bool IsFinished { get; set; }
         public int SortOrder { get; set; }
         public int? FolderId { get; set; }
+        public int TotalUniqueWords { get; set; }
+        public int NewWords { get; set; }
+        public int LearningWords { get; set; }
+        public double PercentNew { get; set; }
+        public double PercentLearning { get; set; }
     }
 
     public class CreateFolderDto

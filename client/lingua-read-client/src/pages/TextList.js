@@ -3,7 +3,6 @@ import { Container, Row, Col, Card, Button, Spinner, Alert, Form, ButtonGroup, B
 import { Link } from 'react-router-dom';
 import { useTextsStore } from '../utils/store';
 import { getTexts, deleteText } from '../utils/api'; // Import deleteText
-import VocabIndicator from '../components/library/VocabIndicator';
 // Assuming Bootstrap Icons are linked globally or via a library like react-bootstrap-icons
 // For simplicity, using class names directly: <i className="bi bi-headphones"></i> <i className="bi bi-trash"></i>
 
@@ -235,7 +234,6 @@ const TextList = () => {
                   </Card.Subtitle>
                   {/* Removed content preview */}
                   <div className="mt-3">
-                    <VocabIndicator text={text} className="d-block mb-1" />
                     <small className="text-muted">
                       Created: {text.createdAt ? new Date(text.createdAt).toLocaleDateString() : 'N/A'}
                     </small>

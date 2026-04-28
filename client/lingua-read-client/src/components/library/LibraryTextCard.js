@@ -4,7 +4,6 @@ import { Link } from 'react-router-dom';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { formatDate } from '../../utils/helpers';
-import VocabIndicator from './VocabIndicator';
 
 const LibraryTextCard = ({ text, isSelected, onSelect, onItemClick }) => {
   const {
@@ -65,7 +64,6 @@ const LibraryTextCard = ({ text, isSelected, onSelect, onItemClick }) => {
             <small className="text-muted">{text.languageName}</small>
             {text.tag && <Badge bg="secondary" style={{ fontSize: '0.65rem' }}>{text.tag}</Badge>}
           </div>
-          <VocabIndicator text={text} className="d-block mb-1" />
           <small className="text-muted mt-auto">
             {formatDate(text.createdAt)}
           </small>

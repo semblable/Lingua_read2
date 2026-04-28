@@ -112,7 +112,6 @@ namespace LinguaReadApi.Controllers
                     PartNumber = t.PartNumber ?? 0,
                     CreatedAt = t.CreatedAt
                 }).ToList(),
-
                 Tags = book.BookTags.Select(bt => new TagDto // Map Tags to TagDto
                 {
                     TagId = bt.TagId,
@@ -126,37 +125,7 @@ namespace LinguaReadApi.Controllers
                     Duration = at.Duration
                 }).ToList()
             };
-
-            // Batch-fetch unique-word stats per part (new vs learning vs known).
-            var partTextIds = bookDetail.Parts.Select(p => p.TextId).ToList();
-            if (partTextIds.Count > 0)
-            {
-                var statsRaw = await _context.TextWords
-                    .AsNoTracking()
-                    .Where(tw => partTextIds.Contains(tw.TextId))
-                    .GroupBy(tw => tw.TextId)
-                    .Select(g => new
-                    {
-                        TextId = g.Key,
-                        Total = g.Count(),
-                        New = g.Count(tw => tw.Word.Status == 0),
-                        Learning = g.Count(tw => tw.Word.Status > 0 && tw.Word.Status < 5)
-                    })
-                    .ToListAsync();
-                var statsDict = statsRaw.ToDictionary(s => s.TextId);
-                foreach (var part in bookDetail.Parts)
-                {
-                    if (statsDict.TryGetValue(part.TextId, out var s) && s.Total > 0)
-                    {
-                        part.TotalUniqueWords = s.Total;
-                        part.NewWords = s.New;
-                        part.LearningWords = s.Learning;
-                        part.PercentNew = 100.0 * s.New / s.Total;
-                        part.PercentLearning = 100.0 * s.Learning / s.Total;
-                    }
-                }
-            }
-
+            
             return bookDetail;
         }
 
@@ -2242,11 +2211,6 @@ namespace LinguaReadApi.Controllers
         public string Title { get; set; } = string.Empty;
         public int PartNumber { get; set; }
         public DateTime CreatedAt { get; set; }
-        public int TotalUniqueWords { get; set; }
-        public int NewWords { get; set; }
-        public int LearningWords { get; set; }
-        public double PercentNew { get; set; }
-        public double PercentLearning { get; set; }
     }
 
     public class CreateBookDto

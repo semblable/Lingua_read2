@@ -122,7 +122,6 @@ namespace LinguaReadApi.Controllers
                 AutoMoveFinishedLessons = settings.AutoMoveFinishedLessons, // Added
                 ShowProgressStats = settings.ShowProgressStats,
                 ShowDesktopLessonControls = settings.ShowDesktopLessonControls,
-                LibraryUnknownIndicator = settings.LibraryUnknownIndicator ?? "both",
                 CurrentAudiobookTrackId = settings.CurrentAudiobookTrackId, // Added
                 CurrentAudiobookPosition = settings.CurrentAudiobookPosition, // Added
                 LeftPanelWidth = settings.LeftPanelWidth, // Map panel width to DTO
@@ -227,14 +226,6 @@ namespace LinguaReadApi.Controllers
             settings.AutoMoveFinishedLessons = updateDto.AutoMoveFinishedLessons ?? settings.AutoMoveFinishedLessons; // Update property
             settings.ShowProgressStats = updateDto.ShowProgressStats ?? settings.ShowProgressStats;
             settings.ShowDesktopLessonControls = updateDto.ShowDesktopLessonControls ?? settings.ShowDesktopLessonControls;
-            if (!string.IsNullOrWhiteSpace(updateDto.LibraryUnknownIndicator))
-            {
-                var normalizedIndicator = updateDto.LibraryUnknownIndicator.Trim().ToLowerInvariant();
-                if (normalizedIndicator is "none" or "new" or "learning" or "both")
-                {
-                    settings.LibraryUnknownIndicator = normalizedIndicator;
-                }
-            }
             settings.LeftPanelWidth = updateDto.LeftPanelWidth ?? settings.LeftPanelWidth; // Update panel width
             settings.DiscordWeeklyReportEnabled = updateDto.DiscordWeeklyReportEnabled ?? settings.DiscordWeeklyReportEnabled;
             if (updateDto.DiscordWebhookUrl != null)
@@ -337,7 +328,6 @@ namespace LinguaReadApi.Controllers
                 AutoMoveFinishedLessons = settings.AutoMoveFinishedLessons, // Update property
                 ShowProgressStats = settings.ShowProgressStats,
                 ShowDesktopLessonControls = settings.ShowDesktopLessonControls,
-                LibraryUnknownIndicator = settings.LibraryUnknownIndicator ?? "both",
                 LeftPanelWidth = settings.LeftPanelWidth, // Map panel width to DTO
                 DiscordWeeklyReportEnabled = settings.DiscordWeeklyReportEnabled,
                 DiscordWebhookUrl = settings.DiscordWebhookUrl,
@@ -720,7 +710,6 @@ namespace LinguaReadApi.Controllers
         public bool AutoMoveFinishedLessons { get; set; } = false; // Added property
         public bool ShowProgressStats { get; set; } = true;
         public bool ShowDesktopLessonControls { get; set; } = true;
-        public string LibraryUnknownIndicator { get; set; } = "both";
         public int? CurrentAudiobookTrackId { get; set; } // Added
         public double? CurrentAudiobookPosition { get; set; } // Added
         public bool DiscordWeeklyReportEnabled { get; set; } = false;
@@ -784,9 +773,6 @@ namespace LinguaReadApi.Controllers
         public bool? AutoMoveFinishedLessons { get; set; } // Added property
         public bool? ShowProgressStats { get; set; }
         public bool? ShowDesktopLessonControls { get; set; }
-
-        [StringLength(16)]
-        public string? LibraryUnknownIndicator { get; set; }
 
         public bool? DiscordWeeklyReportEnabled { get; set; }
 

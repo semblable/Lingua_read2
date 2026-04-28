@@ -971,11 +971,6 @@ namespace LinguaReadApi.Migrations
                     b.Property<int>("LeftPanelWidth")
                         .HasColumnType("integer");
 
-                    b.Property<string>("LibraryUnknownIndicator")
-                        .IsRequired()
-                        .HasMaxLength(16)
-                        .HasColumnType("character varying(16)");
-
                     b.Property<string>("OpenRouterApiKey")
                         .HasMaxLength(256)
                         .HasColumnType("character varying(256)");

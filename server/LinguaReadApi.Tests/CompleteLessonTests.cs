@@ -2,6 +2,7 @@ using System.Security.Claims;
 using LinguaReadApi.Controllers;
 using LinguaReadApi.Data;
 using LinguaReadApi.Models;
+using LinguaReadApi.Services;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -372,7 +373,7 @@ public class CompleteLessonTests
 
     private static BooksController CreateController(AppDbContext context, Guid userId)
     {
-        return new BooksController(context, NullLogger<BooksController>.Instance)
+        return new BooksController(context, NullLogger<BooksController>.Instance, new WordLinkingChannel())
         {
             ControllerContext = new ControllerContext
             {

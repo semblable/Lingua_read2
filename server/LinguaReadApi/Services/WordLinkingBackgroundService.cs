@@ -130,20 +130,11 @@ namespace LinguaReadApi.Services
                 context.ChangeTracker.Clear();
             }
 
-            // Skip TextWord rows that already exist (e.g. from prior user clicks); the
-            // unique (TextId, WordId) index would otherwise reject the whole batch.
-            var existingTextWordIds = new HashSet<int>(
-                await context.TextWords
-                    .AsNoTracking()
-                    .Where(tw => tw.TextId == request.TextId)
-                    .Select(tw => tw.WordId)
-                    .ToListAsync());
-
+            // Create TextWord links in batches
             var textWordsToAdd = new List<TextWord>();
             foreach (var wordTerm in uniqueWords)
             {
-                if (existingWords.TryGetValue(wordTerm, out var word) &&
-                    !existingTextWordIds.Contains(word.WordId))
+                if (existingWords.TryGetValue(wordTerm, out var word))
                 {
                     textWordsToAdd.Add(new TextWord
                     {

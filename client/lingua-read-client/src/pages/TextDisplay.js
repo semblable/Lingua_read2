@@ -771,12 +771,21 @@ const TextDisplay = () => {
   useEffect(() => {
     if (!isMobile) return undefined;
 
+    // Track the live selection only for dedupe — don't schedule translation
+    // from selectionchange itself, since it fires repeatedly during a drag and
+    // would surface the translation while the user is still adjusting handles.
     const handleSelectionChange = () => {
       const selection = window.getSelection();
       if (!selection || selection.isCollapsed) {
         lastHandledSelectionRef.current = '';
-        return;
       }
+    };
+
+    // Translation fires on release (pointerup) — covers touch release and the
+    // end of a selection-handle drag.
+    const handlePointerUp = () => {
+      const selection = window.getSelection();
+      if (!selection || selection.isCollapsed) return;
 
       const container = textContentRef.current;
       const anchorNode = selection.anchorNode;
@@ -784,22 +793,22 @@ const TextDisplay = () => {
       if (!container || !anchorNode || !focusNode) return;
       if (!container.contains(anchorNode) || !container.contains(focusNode)) return;
 
-      // If this selection already matches the word we're currently showing, do
-      // nothing. Mobile browsers fire selectionchange repeatedly while the
-      // selection handles are visible; without this guard the panel toggles
-      // open/closed in a loop.
       const selectedText = selection.toString().trim();
-      if (selectedText && selectedText === lastHandledSelectionRef.current) {
-        return;
-      }
+      if (!selectedText || selectedText === lastHandledSelectionRef.current) return;
 
       setIsWordPanelOpen(false);
-      scheduleWordSelection(350);
+      // Small delay so the browser's own selection-handle gestures settle
+      // before we read the final range.
+      scheduleWordSelection(120);
     };
 
     document.addEventListener('selectionchange', handleSelectionChange);
+    document.addEventListener('pointerup', handlePointerUp);
+    document.addEventListener('touchend', handlePointerUp);
     return () => {
       document.removeEventListener('selectionchange', handleSelectionChange);
+      document.removeEventListener('pointerup', handlePointerUp);
+      document.removeEventListener('touchend', handlePointerUp);
     };
   }, [isMobile, scheduleWordSelection]);
   // --- End New Word-Granularity Selection Logic ---

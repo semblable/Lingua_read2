@@ -179,6 +179,11 @@ const TextDisplay = () => {
     }
   }, []);
 
+  const clearMobileSelectionPending = useCallback(() => {
+    mobileSelectionPendingRef.current = false;
+    clearMobileSelectionRetry();
+  }, [clearMobileSelectionRetry]);
+
   const isSentenceMode = globalSettings.sentenceMode;
   const sentenceAudioRepeats = globalSettings.sentenceAudioRepeats || 1;
   const sentenceTtsEnabled = globalSettings.sentenceTtsEnabled ?? false;
@@ -783,16 +788,20 @@ const TextDisplay = () => {
       if (mobileSelectionPendingRef.current) {
         processWordSelection();
       }
+      if (mobileSelectionPendingRef.current) {
+        mobileSelectionPendingRef.current = false;
+      }
+      mobileSelectionRetryRef.current = null;
     }, 550);
   }, [isMobile, scheduleWordSelection, clearMobileSelectionRetry, processWordSelection]);
 
   useEffect(() => {
     return () => {
       clearPendingSelection();
-      clearMobileSelectionRetry();
+      clearMobileSelectionPending();
       translationAbortRef.current?.abort();
     };
-  }, [clearPendingSelection, clearMobileSelectionRetry]);
+  }, [clearPendingSelection, clearMobileSelectionPending]);
 
   useEffect(() => {
     if (!isMobile) return undefined;
@@ -802,8 +811,6 @@ const TextDisplay = () => {
     const handleSelectionChange = () => {
       const selection = window.getSelection();
       if (!selection || selection.isCollapsed) {
-        mobileSelectionPendingRef.current = false;
-        clearMobileSelectionRetry();
         lastHandledSelectionRef.current = '';
         return;
       }
@@ -834,11 +841,17 @@ const TextDisplay = () => {
       scheduleWordSelection(60);
     };
 
+    const handleTouchStart = () => {
+      clearMobileSelectionPending();
+    };
+
     document.addEventListener('selectionchange', handleSelectionChange);
+    document.addEventListener('touchstart', handleTouchStart, true);
     return () => {
       document.removeEventListener('selectionchange', handleSelectionChange);
+      document.removeEventListener('touchstart', handleTouchStart, true);
     };
-  }, [isMobile, scheduleWordSelection, clearMobileSelectionRetry]);
+  }, [isMobile, scheduleWordSelection, clearMobileSelectionPending]);
   // --- End New Word-Granularity Selection Logic ---
 
 

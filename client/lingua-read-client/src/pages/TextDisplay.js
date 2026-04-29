@@ -110,6 +110,9 @@ const TextDisplay = () => {
   const mobileSelectionWasActiveAtTouchStartRef = useRef(false);
   const mobileTouchStartedRef = useRef(false);
   const mobileTouchMovedRef = useRef(false);
+  const mobileSelectionInitialTextRef = useRef('');
+  const mobileSelectionGrewRef = useRef(false);
+  const mobileSelectionStabilityRef = useRef(null);
   const lastHandledSelectionRef = useRef('');
   const suppressWordClickUntilRef = useRef(0);
   const selectableWordTouchStartRef = useRef(0);
@@ -184,13 +187,23 @@ const TextDisplay = () => {
     }
   }, []);
 
+  const clearMobileSelectionStability = useCallback(() => {
+    if (mobileSelectionStabilityRef.current) {
+      clearTimeout(mobileSelectionStabilityRef.current);
+      mobileSelectionStabilityRef.current = null;
+    }
+  }, []);
+
   const clearMobileSelectionPending = useCallback(() => {
     mobileSelectionPendingRef.current = false;
     mobileSelectionObservedRef.current = false;
     mobileSelectionWasActiveAtTouchStartRef.current = false;
     mobileTouchMovedRef.current = false;
+    mobileSelectionInitialTextRef.current = '';
+    mobileSelectionGrewRef.current = false;
     clearMobileSelectionRetry();
-  }, [clearMobileSelectionRetry]);
+    clearMobileSelectionStability();
+  }, [clearMobileSelectionRetry, clearMobileSelectionStability]);
 
   const isSentenceMode = globalSettings.sentenceMode;
   const sentenceAudioRepeats = globalSettings.sentenceAudioRepeats || 1;
@@ -682,7 +695,10 @@ const TextDisplay = () => {
       mobileSelectionWasActiveAtTouchStartRef.current = false;
       mobileTouchStartedRef.current = false;
       mobileTouchMovedRef.current = false;
+      mobileSelectionInitialTextRef.current = '';
+      mobileSelectionGrewRef.current = false;
       clearMobileSelectionRetry();
+      clearMobileSelectionStability();
       handleSelectedText(selectedText, sentenceContext);
       return;
     }
@@ -781,7 +797,7 @@ const TextDisplay = () => {
       handleSelectedText(selection.toString().trim(), sentenceContext);
     }
 
-  }, [focusSentenceIndexFromNode, getSelectionDetails, buildAiSelectionContext, handleSelectedText, isMobile, clearMobileSelectionRetry]); // textContentRef is a stable ref
+  }, [focusSentenceIndexFromNode, getSelectionDetails, buildAiSelectionContext, handleSelectedText, isMobile, clearMobileSelectionRetry, clearMobileSelectionStability]); // textContentRef is a stable ref
 
   const scheduleWordSelection = useCallback((delayMs) => {
     clearPendingSelection();
@@ -801,7 +817,8 @@ const TextDisplay = () => {
       mobileTouchStartedRef.current &&
       mobileSelectionObservedRef.current &&
       !mobileSelectionWasActiveAtTouchStartRef.current &&
-      !mobileTouchMovedRef.current
+      !mobileTouchMovedRef.current &&
+      !mobileSelectionGrewRef.current
     ) {
       mobileTouchStartedRef.current = false;
       clearMobileSelectionPending();
@@ -841,6 +858,9 @@ const TextDisplay = () => {
       if (!selection || selection.isCollapsed) {
         lastHandledSelectionRef.current = '';
         mobileSelectionObservedRef.current = false;
+        mobileSelectionInitialTextRef.current = '';
+        mobileSelectionGrewRef.current = false;
+        clearMobileSelectionStability();
         return;
       }
 
@@ -868,6 +888,29 @@ const TextDisplay = () => {
       }
 
       mobileSelectionObservedRef.current = true;
+
+      const selectedText = selection.toString().trim();
+      if (!mobileSelectionInitialTextRef.current) {
+        mobileSelectionInitialTextRef.current = selectedText;
+      } else if (selectedText && selectedText !== mobileSelectionInitialTextRef.current) {
+        mobileSelectionGrewRef.current = true;
+      }
+
+      // iOS often suppresses touchend after the OS takes over native selection.
+      // Once we've seen the selection grow past its initial long-press word, run
+      // a stability timer that fires shortly after the user stops adjusting.
+      if (mobileSelectionGrewRef.current) {
+        clearMobileSelectionStability();
+        mobileSelectionStabilityRef.current = setTimeout(() => {
+          mobileSelectionStabilityRef.current = null;
+          if (!mobileSelectionObservedRef.current) {
+            return;
+          }
+          mobileSelectionPendingRef.current = false;
+          processWordSelection();
+        }, 500);
+      }
+
       if (!mobileSelectionPendingRef.current) {
         return;
       }
@@ -877,11 +920,16 @@ const TextDisplay = () => {
 
     const handleTouchStart = () => {
       const hadReaderSelection = Boolean(getSelectionDetails());
+      const existingText = hadReaderSelection
+        ? (window.getSelection()?.toString().trim() || '')
+        : '';
       clearMobileSelectionPending();
       mobileTouchStartedRef.current = true;
       mobileTouchMovedRef.current = false;
       mobileSelectionWasActiveAtTouchStartRef.current = hadReaderSelection;
       mobileSelectionObservedRef.current = hadReaderSelection;
+      mobileSelectionInitialTextRef.current = existingText;
+      mobileSelectionGrewRef.current = false;
     };
 
     const handleTouchMove = () => {
@@ -901,7 +949,8 @@ const TextDisplay = () => {
       if (
         mobileTouchStartedRef.current &&
         !mobileSelectionWasActiveAtTouchStartRef.current &&
-        !mobileTouchMovedRef.current
+        !mobileTouchMovedRef.current &&
+        !mobileSelectionGrewRef.current
       ) {
         return;
       }
@@ -932,7 +981,7 @@ const TextDisplay = () => {
       document.removeEventListener('touchend', handleTouchRelease, true);
       document.removeEventListener('touchcancel', handleTouchRelease, true);
     };
-  }, [isMobile, getSelectionDetails, scheduleWordSelection, clearMobileSelectionPending, clearMobileSelectionRetry, processWordSelection]);
+  }, [isMobile, getSelectionDetails, scheduleWordSelection, clearMobileSelectionPending, clearMobileSelectionRetry, clearMobileSelectionStability, processWordSelection]);
   // --- End New Word-Granularity Selection Logic ---
 
 

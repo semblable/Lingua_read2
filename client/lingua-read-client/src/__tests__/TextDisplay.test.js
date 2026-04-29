@@ -420,6 +420,86 @@ describe('TextDisplay', () => {
     expect(await screen.findByText('Word Info')).toBeInTheDocument();
   });
 
+  test('mobile drag selection finalizes via stability timer when touchend is suppressed', async () => {
+    window.matchMedia = jest.fn().mockImplementation(() => ({
+      matches: true,
+      addEventListener: jest.fn(),
+      removeEventListener: jest.fn()
+    }));
+
+    renderTextDisplay({ autoTranslateWords: true });
+
+    await waitFor(() => expect(getText).toHaveBeenCalled());
+    const word = await screen.findByText('Hello');
+    const textContent = word.closest('.text-content');
+    expect(textContent).not.toBeNull();
+
+    const noSelection = {
+      isCollapsed: true,
+      rangeCount: 0,
+      anchorNode: null,
+      focusNode: null,
+      toString: () => ''
+    };
+    const initialSelection = {
+      isCollapsed: false,
+      rangeCount: 1,
+      anchorNode: textContent,
+      focusNode: textContent,
+      toString: () => 'Hello',
+      getRangeAt: () => ({
+        commonAncestorContainer: textContent
+      })
+    };
+    const grownSelection = {
+      isCollapsed: false,
+      rangeCount: 1,
+      anchorNode: textContent,
+      focusNode: textContent,
+      toString: () => 'Hello world',
+      getRangeAt: () => ({
+        commonAncestorContainer: textContent
+      })
+    };
+    let currentSelection = noSelection;
+    window.getSelection = jest.fn(() => currentSelection);
+
+    act(() => {
+      fireEvent.touchStart(textContent);
+    });
+
+    currentSelection = initialSelection;
+    act(() => {
+      document.dispatchEvent(new Event('selectionchange'));
+      jest.advanceTimersByTime(50);
+    });
+    expect(translateSelectionWithContext).not.toHaveBeenCalled();
+
+    currentSelection = grownSelection;
+    act(() => {
+      document.dispatchEvent(new Event('selectionchange'));
+      jest.advanceTimersByTime(50);
+    });
+    expect(translateSelectionWithContext).not.toHaveBeenCalled();
+
+    // No touchend fires (iOS-style suppression). The stability timer should
+    // finalize the selection on its own after the user stops adjusting.
+    act(() => {
+      jest.advanceTimersByTime(700);
+    });
+
+    await waitFor(() => {
+      expect(translateSelectionWithContext).toHaveBeenCalledWith(
+        'Hello world',
+        'Hello world.',
+        'ES',
+        'EN',
+        expect.objectContaining({ signal: expect.anything() })
+      );
+    });
+    expect(await screen.findByText('Word Info')).toBeInTheDocument();
+  });
+
   test('mobile repeated touchend for same selection does not loop the Word Info sheet', async () => {
     window.matchMedia = jest.fn().mockImplementation(() => ({
       matches: true,

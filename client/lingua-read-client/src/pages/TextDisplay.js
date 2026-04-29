@@ -115,6 +115,7 @@ const TextDisplay = () => {
   const audioDrivenSentenceSyncRef = useRef(false);
   const lastAutoSegmentPlaybackKeyRef = useRef('');
   const skipInitialAudioLessonSegmentPlaybackRef = useRef(true);
+  const textLoadRequestVersionRef = useRef(0);
   // --- End State Declarations ---
 
   // Create refs for values used in handleAudioTimeUpdate to keep the callback stable
@@ -421,7 +422,7 @@ const TextDisplay = () => {
       .catch(err => console.error('[Save Settings] Failed to save sentence TTS rate via API:', err));
   }, [sentenceTtsRate, updateSetting]);
 
-  const fetchAllLanguageWords = useCallback(async (languageId) => {
+  const fetchAllLanguageWords = useCallback(async (languageId, shouldApply = () => true) => {
     if (!languageId) return; // Guard against missing languageId
     try {
       // Corrected URL construction: Removed redundant '/api' prefix
@@ -431,10 +432,14 @@ const TextDisplay = () => {
       });
       if (!response.ok) throw new Error('Failed to fetch language words');
       const allLanguageWords = await response.json();
+      if (!shouldApply()) return;
       // Replace the entire words state with the newly fetched data
       setWords(allLanguageWords);
       setLanguageWordsLoaded(true);
-    } catch (error) { console.error('Error fetching language words:', error); setLanguageWordsLoaded(true); }
+    } catch (error) {
+      console.error('Error fetching language words:', error);
+      if (shouldApply()) setLanguageWordsLoaded(true);
+    }
   }, [setWords]); // Dependency: setWords
 
   const prevFetchAllLanguageWordsRef = useRef(fetchAllLanguageWords);
@@ -1358,6 +1363,50 @@ const TextDisplay = () => {
 
   // Fetch Text Data, Restore Audio Time & Playback Rate
   useEffect(() => {
+    const requestVersion = textLoadRequestVersionRef.current + 1;
+    textLoadRequestVersionRef.current = requestVersion;
+    let cancelled = false;
+    let wordLinkingPollInterval = null;
+    const isCurrentRequest = () => !cancelled && textLoadRequestVersionRef.current === requestVersion;
+    const clearWordLinkingPoll = () => {
+      if (wordLinkingPollInterval) {
+        clearInterval(wordLinkingPollInterval);
+        wordLinkingPollInterval = null;
+      }
+    };
+    const refreshWordsAfterLinking = async () => {
+      try {
+        const refreshed = await getText(textId);
+        if (isCurrentRequest()) {
+          setWords(refreshed.words || []);
+        }
+      } catch (refreshErr) {
+        if (isCurrentRequest()) {
+          console.error('Failed to refresh words after linking completed:', refreshErr);
+        }
+      }
+    };
+    const checkWordLinkingStatus = async () => {
+      if (!isCurrentRequest()) return;
+      try {
+        const statusData = await getWordLinkingStatus(textId);
+        if (!isCurrentRequest()) return;
+        if (statusData.wordLinkingStatus !== 'processing') {
+          clearWordLinkingPoll();
+          await refreshWordsAfterLinking();
+        }
+      } catch (pollErr) {
+        if (isCurrentRequest()) {
+          console.error('Failed to poll word linking status:', pollErr);
+        }
+        clearWordLinkingPoll();
+      }
+    };
+    const startWordLinkingPoll = () => {
+      clearWordLinkingPoll();
+      wordLinkingPollInterval = setInterval(checkWordLinkingStatus, 5000);
+    };
+
     // --- Debug: Check what triggered this effect ---
     if (prevFetchAllLanguageWordsRef.current !== fetchAllLanguageWords) {
       prevFetchAllLanguageWordsRef.current = fetchAllLanguageWords;
@@ -1390,8 +1439,8 @@ const TextDisplay = () => {
         setVisibleExplanationIndex(null);
         setCreditedSegmentIndices([]);
         setSentenceProgressLoaded(false);
-      setSegmentPlaybackRequest(null);
-      lastAutoSegmentPlaybackKeyRef.current = '';
+        setSegmentPlaybackRequest(null);
+        lastAutoSegmentPlaybackKeyRef.current = '';
         skipInitialAudioLessonSegmentPlaybackRef.current = true;
         pendingSentenceCreditRef.current = new Set();
       } else {
@@ -1399,6 +1448,7 @@ const TextDisplay = () => {
 
       try {
         const data = await getText(textId);
+        if (!isCurrentRequest()) return;
         setText(data);
         setWords(data.words || []);
         if (data.isAudioLesson && data.audioFilePath && data.hasSrtContent) {
@@ -1411,26 +1461,16 @@ const TextDisplay = () => {
 
           // Lazy-load SRT content separately to avoid large payloads
           getTextSrt(textId).then(srtText => {
-            if (srtText) setSrtLines(parseSrtContent(srtText));
-          }).catch(err => console.error('Failed to load SRT:', err));
+            if (isCurrentRequest() && srtText) setSrtLines(parseSrtContent(srtText));
+          }).catch(err => {
+            if (isCurrentRequest()) console.error('Failed to load SRT:', err);
+          });
 
           if (displayMode !== 'audio') setDisplayMode('audio');
 
           // Poll for word linking completion if still processing
           if (data.wordLinkingStatus === 'processing') {
-            const pollInterval = setInterval(async () => {
-              try {
-                const statusData = await getWordLinkingStatus(textId);
-                if (statusData.wordLinkingStatus !== 'processing') {
-                  clearInterval(pollInterval);
-                  // Reload words when processing completes
-                  const refreshed = await getText(textId);
-                  setWords(refreshed.words || []);
-                }
-              } catch { clearInterval(pollInterval); }
-            }, 5000);
-            // Cleanup on unmount
-            return () => clearInterval(pollInterval);
+            startWordLinkingPoll();
           }
 
         } else {
@@ -1454,7 +1494,7 @@ const TextDisplay = () => {
         // 0: Language words
         promises.push(
           data.languageId
-            ? fetchAllLanguageWords(data.languageId)
+            ? fetchAllLanguageWords(data.languageId, isCurrentRequest)
             : Promise.resolve(null)
         );
 
@@ -1480,6 +1520,7 @@ const TextDisplay = () => {
         );
 
         const results = await Promise.allSettled(promises);
+        if (!isCurrentRequest()) return;
 
         // Process result 0: fetchAllLanguageWords (already sets state internally)
         if (results[0].status === 'rejected') {
@@ -1531,10 +1572,19 @@ const TextDisplay = () => {
           setCurrentSegmentIndex(0);
         }
         setSentenceProgressLoaded(true);
-      } catch (err) { setError(err.message || 'Failed to load text'); }
-      finally { setLoading(false); }
+      } catch (err) {
+        if (isCurrentRequest()) setError(err.message || 'Failed to load text');
+      }
+      finally {
+        if (isCurrentRequest()) setLoading(false);
+      }
     };
     fetchText();
+
+    return () => {
+      cancelled = true;
+      clearWordLinkingPoll();
+    };
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [textId, fetchAllLanguageWords]); // 'text' and 'isAudioLesson' are intentionally omitted to prevent loops; cleanup captures correct 'text' via closure.

@@ -313,6 +313,55 @@ describe('TextDisplay', () => {
     expect(await screen.findByText('Word Info')).toBeInTheDocument();
   });
 
+  test('mobile initial long-press selection does not finalize on first selected word', async () => {
+    window.matchMedia = jest.fn().mockImplementation(() => ({
+      matches: true,
+      addEventListener: jest.fn(),
+      removeEventListener: jest.fn()
+    }));
+
+    renderTextDisplay({ autoTranslateWords: true });
+
+    await waitFor(() => expect(getText).toHaveBeenCalled());
+    const word = await screen.findByText('Hello');
+    const textContent = word.closest('.text-content');
+    expect(textContent).not.toBeNull();
+
+    const noSelection = {
+      isCollapsed: true,
+      rangeCount: 0,
+      anchorNode: null,
+      focusNode: null,
+      toString: () => ''
+    };
+    const withSelection = {
+      isCollapsed: false,
+      rangeCount: 1,
+      anchorNode: textContent,
+      focusNode: textContent,
+      toString: () => 'Hello',
+      getRangeAt: () => ({
+        commonAncestorContainer: textContent
+      })
+    };
+    let currentSelection = noSelection;
+    window.getSelection = jest.fn(() => currentSelection);
+
+    act(() => {
+      fireEvent.touchStart(textContent);
+    });
+
+    currentSelection = withSelection;
+    act(() => {
+      document.dispatchEvent(new Event('selectionchange'));
+      fireEvent.touchEnd(textContent);
+      jest.advanceTimersByTime(1000);
+    });
+
+    expect(translateSelectionWithContext).not.toHaveBeenCalled();
+    expect(screen.queryByText('Word Info')).not.toBeInTheDocument();
+  });
+
   test('mobile repeated touchend for same selection does not loop the Word Info sheet', async () => {
     window.matchMedia = jest.fn().mockImplementation(() => ({
       matches: true,

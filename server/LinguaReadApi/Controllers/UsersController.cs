@@ -244,7 +244,9 @@ namespace LinguaReadApi.Controllers
 
                 var query = _context.UserActivities
                     .Where(a => a.UserId == userId && a.Timestamp >= startDate &&
-                                (a.ActivityType == "LessonCompleted" || a.ActivityType == "BookFinished" || a.ActivityType == "ManualReading" || a.ActivityType == "TextCompleted")); // Added TextCompleted
+                                (a.ActivityType == "Reading" || a.ActivityType == "LessonCompleted" ||
+                                 a.ActivityType == "BookFinished" || a.ActivityType == "ManualReading" ||
+                                 a.ActivityType == "TextCompleted")); // Added TextCompleted
 
                 if (languageId.HasValue)
                 {
@@ -429,7 +431,7 @@ namespace LinguaReadApi.Controllers
                     .ToListAsync();
 
                 bool IsReading(string type) =>
-                    type == "LessonCompleted" || type == "BookFinished" ||
+                    type == "Reading" || type == "LessonCompleted" || type == "BookFinished" ||
                     type == "ManualReading" || type == "TextCompleted";
 
                 bool IsListening(string type) =>

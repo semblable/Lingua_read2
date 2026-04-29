@@ -464,7 +464,9 @@ public async Task<ActionResult<ReadingStatsDto>> GetReadingStats([FromQuery] str
     var readingActivities = await _context.UserActivities
         .Where(ua => ua.UserId == userId &&
                      ua.Timestamp >= startDate &&
-                     (ua.ActivityType == "Reading" || ua.ActivityType == "ManualReading" || ua.ActivityType == "TextCompleted")) // Include relevant types
+                     (ua.ActivityType == "Reading" || ua.ActivityType == "ManualReading" ||
+                      ua.ActivityType == "TextCompleted" || ua.ActivityType == "LessonCompleted" ||
+                      ua.ActivityType == "BookFinished")) // Include relevant types
         .ToListAsync();
 
     var stats = new ReadingStatsDto();

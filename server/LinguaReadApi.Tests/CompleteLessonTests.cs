@@ -78,6 +78,78 @@ public class CompleteLessonTests
     }
 
     [Fact]
+    public async Task FinishBook_AfterCompletingAllLessons_DoesNotCreditBookWordsAgain()
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        SeedBookWithTwoParts(context, userId, out var bookId, out var firstTextId);
+        var secondTextId = firstTextId + 1;
+
+        var controller = CreateController(context, userId);
+        await controller.CompleteLesson(bookId, new CompleteLessonDto { TextId = firstTextId });
+        await controller.CompleteLesson(bookId, new CompleteLessonDto { TextId = secondTextId });
+
+        context.ChangeTracker.Clear();
+        var result = await controller.FinishBook(bookId);
+
+        var stats = Assert.IsType<BookStatsDto>(result.Value);
+        Assert.True(stats.IsFinished);
+
+        context.ChangeTracker.Clear();
+
+        var language = await context.Languages.SingleAsync();
+        Assert.Equal(4, language.WordsRead);
+
+        var activities = await context.UserActivities.OrderBy(a => a.ActivityId).ToListAsync();
+        Assert.Equal(2, activities.Count);
+        Assert.All(activities, activity => Assert.Equal("TextCompleted", activity.ActivityType));
+        Assert.Equal(4, activities.Sum(a => a.WordCount));
+
+        var langStats = await context.UserLanguageStatistics.SingleAsync();
+        Assert.Equal(4, langStats.TotalWordsRead);
+        Assert.Equal(2, langStats.TotalTextsCompleted);
+        Assert.Equal(2, langStats.TotalTextCompletions);
+    }
+
+    [Fact]
+    public async Task FinishBook_CreditsOnlyUnfinishedLessonsAndMarksTextsFinished()
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        SeedBookWithTwoParts(context, userId, out var bookId, out var firstTextId);
+
+        var controller = CreateController(context, userId);
+        await controller.CompleteLesson(bookId, new CompleteLessonDto { TextId = firstTextId });
+
+        context.ChangeTracker.Clear();
+        var result = await controller.FinishBook(bookId);
+
+        var stats = Assert.IsType<BookStatsDto>(result.Value);
+        Assert.True(stats.IsFinished);
+
+        context.ChangeTracker.Clear();
+
+        var language = await context.Languages.SingleAsync();
+        Assert.Equal(4, language.WordsRead);
+
+        var activities = await context.UserActivities.OrderBy(a => a.ActivityId).ToListAsync();
+        Assert.Equal(2, activities.Count);
+        Assert.Equal("TextCompleted", activities[0].ActivityType);
+        Assert.Equal(3, activities[0].WordCount);
+        Assert.Equal("BookFinished", activities[1].ActivityType);
+        Assert.Equal(1, activities[1].WordCount);
+
+        var langStats = await context.UserLanguageStatistics.SingleAsync();
+        Assert.Equal(4, langStats.TotalWordsRead);
+        Assert.Equal(2, langStats.TotalTextsCompleted);
+        Assert.Equal(2, langStats.TotalTextCompletions);
+
+        var texts = await context.Texts.OrderBy(t => t.TextId).ToListAsync();
+        Assert.All(texts, text => Assert.True(text.IsFinished));
+        Assert.All(texts, text => Assert.NotNull(text.LastCompletedAt));
+    }
+
+    [Fact]
     public async Task CompleteLesson_DoesNotPromoteWordStatuses()
     {
         await using var context = CreateContext();

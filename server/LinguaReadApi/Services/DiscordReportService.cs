@@ -23,7 +23,9 @@ namespace LinguaReadApi.Services
         {
             "Reading",
             "ManualReading",
-            "TextCompleted"
+            "TextCompleted",
+            "LessonCompleted",
+            "BookFinished"
         };
 
         private static readonly HashSet<string> ListeningActivityTypes = new(StringComparer.OrdinalIgnoreCase)

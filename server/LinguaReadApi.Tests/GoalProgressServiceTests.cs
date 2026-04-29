@@ -136,6 +136,35 @@ public class GoalProgressServiceTests
     }
 
     [Fact]
+    public async Task OneShot_Delta_WordsRead_IncludesCorrectedBookFinishedCredit()
+    {
+        await using var ctx = NewContext();
+        var userId = Guid.NewGuid();
+        Seed(ctx, userId, 1);
+
+        var goal = new UserGoal
+        {
+            UserId = userId,
+            LanguageId = 1,
+            GoalType = GoalType.WordsRead,
+            Mode = GoalMode.Delta,
+            TargetValue = 100,
+            BaselineValue = 0,
+            CreatedAt = DateTime.UtcNow.AddDays(-1)
+        };
+
+        ctx.UserActivities.AddRange(
+            new UserActivity { UserId = userId, LanguageId = 1, ActivityType = "TextCompleted", WordCount = 3, Timestamp = DateTime.UtcNow },
+            new UserActivity { UserId = userId, LanguageId = 1, ActivityType = "BookFinished", WordCount = 1, Timestamp = DateTime.UtcNow });
+        await ctx.SaveChangesAsync();
+
+        var svc = new GoalProgressService(ctx);
+        var dtos = await svc.ComputeAsync(userId, new[] { goal }, 0, DateTime.UtcNow);
+
+        Assert.Equal(4, dtos[0].Progress);
+    }
+
+    [Fact]
     public async Task OneShot_Delta_ListeningSeconds_OnlyListeningTypesCount()
     {
         await using var ctx = NewContext();

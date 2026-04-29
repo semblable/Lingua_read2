@@ -118,7 +118,7 @@ public class UserActivityControllerTests
     }
 
     [Fact]
-    public async Task GetReadingStats_SumsOnlyReadingManualReadingAndTextCompleted()
+    public async Task GetReadingStats_SumsAllReadingActivityTypes()
     {
         await using var context = CreateContext();
         var userId = Guid.NewGuid();
@@ -161,6 +161,26 @@ public class UserActivityControllerTests
                 UserId = userId,
                 LanguageId = language.LanguageId,
                 Language = language,
+                ActivityType = "LessonCompleted",
+                WordCount = 11,
+                Timestamp = now,
+                ListeningDurationSeconds = 0
+            },
+            new UserActivity
+            {
+                UserId = userId,
+                LanguageId = language.LanguageId,
+                Language = language,
+                ActivityType = "BookFinished",
+                WordCount = 7,
+                Timestamp = now,
+                ListeningDurationSeconds = 0
+            },
+            new UserActivity
+            {
+                UserId = userId,
+                LanguageId = language.LanguageId,
+                Language = language,
                 ActivityType = "Listening",
                 WordCount = 999,
                 Timestamp = now,
@@ -175,10 +195,10 @@ public class UserActivityControllerTests
         var ok = Assert.IsType<OkObjectResult>(result.Result);
         var dto = Assert.IsType<UserActivityController.ReadingStatsDto>(ok.Value);
 
-        Assert.Equal(18, dto.TotalWordsRead);
-        Assert.Equal(18, dto.ActivityByDate.Values.Sum());
+        Assert.Equal(36, dto.TotalWordsRead);
+        Assert.Equal(36, dto.ActivityByDate.Values.Sum());
         Assert.Single(dto.ActivityByLanguage);
-        Assert.Equal(18, dto.ActivityByLanguage[0].TotalWords);
+        Assert.Equal(36, dto.ActivityByLanguage[0].TotalWords);
     }
 
     [Fact]

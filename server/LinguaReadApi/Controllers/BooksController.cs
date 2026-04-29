@@ -1789,6 +1789,7 @@ namespace LinguaReadApi.Controllers
         public async Task<ActionResult<BookStatsDto>> FinishBook(int id)
         {
             var userId = GetUserId();
+            var now = DateTime.UtcNow;
             
             var book = await _context.Books
                 .Where(b => b.BookId == id && b.UserId == userId)
@@ -1805,25 +1806,55 @@ namespace LinguaReadApi.Controllers
             {
                 return BadRequest("Book language not found");
             }
-            
-            // Count all words in all texts of the book
-            int totalWordCount = WordCountUtility.CountWordsInTexts(book.Texts);
-            
-            // Update the language WordsRead counter
-            WordCountUtility.UpdateLanguageWordCount(book.Language, totalWordCount);
-            // Explicitly mark the language entity as modified
-            _context.Entry(book.Language).State = EntityState.Modified;
-            
-            // Track this reading activity for statistics
-            var activity = new UserActivity
+
+            var unfinishedTexts = book.Texts
+                .Where(t => !t.IsFinished)
+                .ToList();
+            int remainingWordCredit = WordCountUtility.CountWordsInTexts(unfinishedTexts);
+            int newlyFinishedTextCount = unfinishedTexts.Count;
+
+            if (remainingWordCredit > 0)
             {
-                UserId = userId,
-                LanguageId = book.LanguageId,
-                ActivityType = "BookFinished",
-                WordCount = totalWordCount,
-                Timestamp = DateTime.UtcNow
-            };
-            _context.UserActivities.Add(activity);
+                // Finishing a book credits only unread parts; completed lessons have already
+                // produced TextCompleted rows.
+                WordCountUtility.UpdateLanguageWordCount(book.Language, remainingWordCredit);
+                _context.Entry(book.Language).State = EntityState.Modified;
+
+                _context.UserActivities.Add(new UserActivity
+                {
+                    UserId = userId,
+                    LanguageId = book.LanguageId,
+                    ActivityType = "BookFinished",
+                    WordCount = remainingWordCredit,
+                    Timestamp = now
+                });
+            }
+
+            if (remainingWordCredit > 0 || newlyFinishedTextCount > 0)
+            {
+                var stats = await _context.UserLanguageStatistics
+                    .FirstOrDefaultAsync(uls => uls.UserId == userId && uls.LanguageId == book.LanguageId);
+                if (stats == null)
+                {
+                    stats = new UserLanguageStatistics
+                    {
+                        UserId = userId,
+                        LanguageId = book.LanguageId,
+                        TotalWordsRead = remainingWordCredit,
+                        TotalTextsCompleted = newlyFinishedTextCount,
+                        TotalTextCompletions = newlyFinishedTextCount,
+                        LastUpdatedAt = now
+                    };
+                    _context.UserLanguageStatistics.Add(stats);
+                }
+                else
+                {
+                    stats.TotalWordsRead += remainingWordCredit;
+                    stats.TotalTextsCompleted += newlyFinishedTextCount;
+                    stats.TotalTextCompletions += newlyFinishedTextCount;
+                    stats.LastUpdatedAt = now;
+                }
+            }
             
             // Get all unique words from all texts in the book
             var textWords = await _context.TextWords
@@ -1838,12 +1869,18 @@ namespace LinguaReadApi.Controllers
             {
                 word.Status = 5; // Mastered
             }
+
+            foreach (var text in unfinishedTexts)
+            {
+                text.IsFinished = true;
+                text.LastCompletedAt = now;
+            }
             
             // Update book stats
             book.TotalWords = uniqueWords.Count;
             book.KnownWords = uniqueWords.Count; // All words are now known
             book.LearningWords = 0;
-            book.LastReadAt = DateTime.UtcNow;
+            book.LastReadAt = now;
             book.IsFinished = true;
             
             await _context.SaveChangesAsync();

@@ -59,6 +59,7 @@ namespace LinguaReadApi.Controllers
                     ReadingUiMode = "classic",
                     ReaderContentWidth = 740,
                     ReadingDensity = "balanced",
+                    LineSpacing = 1.5,
                     ShowWordInfoPanel = true,
                     TooltipOnlyForSavedWords = false,
                     ReaderParagraphIndent = true,
@@ -104,6 +105,7 @@ namespace LinguaReadApi.Controllers
                 ReadingUiMode = settings.ReadingUiMode,
                 ReaderContentWidth = settings.ReaderContentWidth,
                 ReadingDensity = settings.ReadingDensity,
+                LineSpacing = settings.LineSpacing,
                 ShowWordInfoPanel = settings.ShowWordInfoPanel,
                 TooltipOnlyForSavedWords = settings.TooltipOnlyForSavedWords,
                 ReaderParagraphIndent = settings.ReaderParagraphIndent,
@@ -198,6 +200,7 @@ namespace LinguaReadApi.Controllers
                     settings.ReadingDensity = normalizedReadingDensity;
                 }
             }
+            settings.LineSpacing = updateDto.LineSpacing ?? settings.LineSpacing;
             settings.ShowWordInfoPanel = updateDto.ShowWordInfoPanel ?? settings.ShowWordInfoPanel;
             settings.TooltipOnlyForSavedWords = updateDto.TooltipOnlyForSavedWords ?? settings.TooltipOnlyForSavedWords;
             settings.ReaderParagraphIndent = updateDto.ReaderParagraphIndent ?? settings.ReaderParagraphIndent;
@@ -310,6 +313,7 @@ namespace LinguaReadApi.Controllers
                 ReadingUiMode = settings.ReadingUiMode,
                 ReaderContentWidth = settings.ReaderContentWidth,
                 ReadingDensity = settings.ReadingDensity,
+                LineSpacing = settings.LineSpacing,
                 ShowWordInfoPanel = settings.ShowWordInfoPanel,
                 TooltipOnlyForSavedWords = settings.TooltipOnlyForSavedWords,
                 ReaderParagraphIndent = settings.ReaderParagraphIndent,
@@ -691,6 +695,7 @@ namespace LinguaReadApi.Controllers
         public string ReadingUiMode { get; set; } = "classic";
         public int ReaderContentWidth { get; set; } = 740;
         public string ReadingDensity { get; set; } = "balanced";
+        public double LineSpacing { get; set; } = 1.5;
         public bool ShowWordInfoPanel { get; set; } = true;
         public bool TooltipOnlyForSavedWords { get; set; } = false;
         public bool ReaderParagraphIndent { get; set; } = true;
@@ -748,6 +753,8 @@ namespace LinguaReadApi.Controllers
         public int? ReaderContentWidth { get; set; }
         [StringLength(20)]
         public string? ReadingDensity { get; set; }
+        [Range(1.0, 3.0)]
+        public double? LineSpacing { get; set; }
         public bool? ShowWordInfoPanel { get; set; }
         public bool? TooltipOnlyForSavedWords { get; set; }
         public bool? ReaderParagraphIndent { get; set; }

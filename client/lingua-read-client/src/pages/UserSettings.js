@@ -37,6 +37,7 @@ const UserSettings = () => {
     readerTextAlignment: 'left',
     leftPanelWidth: 85,
     autoTranslateWords: true,
+    autoTranslateOnOpen: false,
     pauseOnWordClick: false,
     highlightKnownWords: true,
     tooltipOnlyForSavedWords: false,
@@ -116,6 +117,7 @@ const UserSettings = () => {
           readerTextAlignment: data.readerTextAlignment || 'left',
           leftPanelWidth: data.leftPanelWidth || 85,
           autoTranslateWords: data.autoTranslateWords ?? true,
+          autoTranslateOnOpen: data.autoTranslateOnOpen ?? false,
           pauseOnWordClick: data.pauseOnWordClick ?? false,
           highlightKnownWords: data.highlightKnownWords ?? true,
           tooltipOnlyForSavedWords: data.tooltipOnlyForSavedWords ?? false,
@@ -201,16 +203,17 @@ const UserSettings = () => {
     setSuccess(false);
 
     try {
-      await updateUserSettings(settings);
+      const savedSettings = await updateUserSettings(settings);
+      const persistedSettings = { ...settings, ...savedSettings };
 
       // Apply theme
-      localStorage.setItem('theme', settings.theme);
+      localStorage.setItem('theme', persistedSettings.theme);
       document.body.classList.remove('light-theme', 'dark-theme', 'classic-dark-theme');
-      if (settings.theme === 'dark') {
+      if (persistedSettings.theme === 'dark') {
         document.body.classList.add('dark-theme');
-      } else if (settings.theme === 'light') {
+      } else if (persistedSettings.theme === 'light') {
         document.body.classList.add('light-theme');
-      } else if (settings.theme === 'classic-dark') {
+      } else if (persistedSettings.theme === 'classic-dark') {
         document.body.classList.add('classic-dark-theme');
       } else {
         const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
@@ -221,7 +224,7 @@ const UserSettings = () => {
       const settingsToSync = [
         'theme', 'textSize', 'textFont', 'readingUiMode', 'readerContentWidth',
         'readingDensity', 'showWordInfoPanel', 'readerParagraphIndent', 'readerTextAlignment',
-        'leftPanelWidth', 'autoTranslateWords', 'pauseOnWordClick', 'highlightKnownWords',
+        'leftPanelWidth', 'autoTranslateWords', 'autoTranslateOnOpen', 'pauseOnWordClick', 'highlightKnownWords',
         'tooltipOnlyForSavedWords', 'sentenceTtsEnabled', 'defaultLanguageId', 'translationTargetLanguageCode',
         'autoAdvanceToNextLesson', 'autoMoveFinishedLessons', 'showProgressStats', 'lineSpacing',
         'discordWeeklyReportEnabled', 'discordWebhookUrl', 'discordWeeklyReportDayOfWeek',
@@ -231,9 +234,10 @@ const UserSettings = () => {
         'openRouterStoryReasoningEnabled', 'openRouterStoryReasoningEffort'
       ];
       settingsToSync.forEach(key => {
-        updateSetting(key, settings[key]);
-        localStorage.setItem(key, settings[key] != null ? settings[key].toString() : '');
+        updateSetting(key, persistedSettings[key]);
+        localStorage.setItem(key, persistedSettings[key] != null ? persistedSettings[key].toString() : '');
       });
+      localStorage.setItem('cachedSettings', JSON.stringify(persistedSettings));
 
       setSuccess(true);
       setHasChanges(false);

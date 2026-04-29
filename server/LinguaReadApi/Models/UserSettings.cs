@@ -19,6 +19,8 @@ namespace LinguaReadApi.Models
         public int ReaderContentWidth { get; set; } = 740; // max readable text column width in px
         [StringLength(20)]
         public string ReadingDensity { get; set; } = "balanced"; // compact, balanced, spacious
+        [Range(1.0, 3.0)]
+        public double LineSpacing { get; set; } = 1.5; // reading line height multiplier
         public bool ShowWordInfoPanel { get; set; } = true; // show desktop word info panel by default
         public bool TooltipOnlyForSavedWords { get; set; } = false; // when true, clicking an already-saved single word only shows hover tooltip
         public bool ReaderParagraphIndent { get; set; } = true; // indent body paragraphs in reading mode

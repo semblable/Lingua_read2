@@ -30,6 +30,7 @@ public class UserSettingsControllerTests
         var dto = Assert.IsType<UserSettingsDto>(result.Value);
         Assert.Equal("light", dto.Theme);
         Assert.Equal(16, dto.TextSize);
+        Assert.Equal(1.5, dto.LineSpacing);
         Assert.False(dto.UseOpenRouter);
         Assert.Equal("google/gemini-2.5-flash-preview-05-20:free", dto.OpenRouterModel);
 
@@ -73,7 +74,9 @@ public class UserSettingsControllerTests
             UseOpenRouter = true,
             OpenRouterModel = "anthropic/claude-3-haiku",
             AutoTranslateWords = false,
+            AutoTranslateOnOpen = true,
             PauseOnWordClick = true,
+            LineSpacing = 1.75,
             LeftPanelWidth = 72
         };
 
@@ -85,12 +88,16 @@ public class UserSettingsControllerTests
         Assert.True(dto.UseOpenRouter);
         Assert.Equal("anthropic/claude-3-haiku", dto.OpenRouterModel);
         Assert.False(dto.AutoTranslateWords);
+        Assert.True(dto.AutoTranslateOnOpen);
         Assert.True(dto.PauseOnWordClick);
+        Assert.Equal(1.75, dto.LineSpacing);
         Assert.Equal(72, dto.LeftPanelWidth);
 
         var row = await context.UserSettings.SingleAsync();
         Assert.Equal("dark", row.Theme);
         Assert.True(row.UseOpenRouter);
+        Assert.True(row.AutoTranslateOnOpen);
+        Assert.Equal(1.75, row.LineSpacing);
         Assert.Equal(72, row.LeftPanelWidth);
     }
 

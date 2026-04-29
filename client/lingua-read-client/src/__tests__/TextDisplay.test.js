@@ -229,7 +229,7 @@ describe('TextDisplay', () => {
       languageName: 'Spanish',
       isAudioLesson: false,
       words: [
-        { wordId: 1, term: 'Hello', status: 2, translation: 'hola', isNew: false }
+        { wordId: 1, term: 'Hello', status: 1, translation: 'hola', isNew: true }
       ],
       bookId: null
     });
@@ -245,6 +245,75 @@ describe('TextDisplay', () => {
     expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument();
 
     confirmSpy.mockRestore();
+  });
+
+  test('AI Translate reuses highlighted text context', async () => {
+    getText.mockResolvedValueOnce({
+      textId: 1,
+      title: 'Sample Text',
+      content: 'Hello world. Another sentence!',
+      languageId: null,
+      languageCode: 'ES',
+      languageName: 'Spanish',
+      isAudioLesson: false,
+      words: [],
+      bookId: null
+    });
+
+    renderTextDisplay({ autoTranslateWords: true });
+
+    await waitFor(() => expect(getText).toHaveBeenCalled());
+    const word = await screen.findByText('Hello');
+    const textContent = word.closest('.text-content');
+    expect(textContent).not.toBeNull();
+
+    const mockSelection = {
+      isCollapsed: false,
+      rangeCount: 1,
+      anchorNode: textContent,
+      focusNode: textContent,
+      removeAllRanges: jest.fn(),
+      addRange: jest.fn(),
+      toString: () => 'Hello world Another',
+      getRangeAt: () => ({
+        commonAncestorContainer: textContent,
+        startContainer: textContent,
+        endContainer: textContent,
+        startOffset: 999,
+        endOffset: 999
+      })
+    };
+    window.getSelection = jest.fn(() => mockSelection);
+
+    act(() => {
+      fireEvent.mouseUp(textContent);
+      jest.advanceTimersByTime(200);
+    });
+
+    await waitFor(() => {
+      expect(translateSelectionWithContext).toHaveBeenCalledWith(
+        'Hello world Another',
+        'Hello world. Another sentence!',
+        'ES',
+        'EN',
+        expect.objectContaining({ signal: expect.anything() })
+      );
+    });
+
+    const aiTranslateButton = await screen.findByRole('button', { name: 'AI Translate' });
+    await waitFor(() => expect(aiTranslateButton).not.toBeDisabled());
+    translateSelectionWithContext.mockClear();
+    fireEvent.click(aiTranslateButton);
+
+    await waitFor(() => {
+      expect(translateSelectionWithContext).toHaveBeenCalledWith(
+        'Hello world Another',
+        'Hello world. Another sentence!',
+        'ES',
+        'EN',
+        expect.objectContaining({ signal: expect.anything() })
+      );
+    });
   });
 
   test('mobile touchend translates the full selected text on release', async () => {

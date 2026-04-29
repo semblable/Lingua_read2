@@ -59,7 +59,7 @@ const WordInfoPanel = React.memo(({
             SRS ✓
           </Button>
         )}
-        {onDeleteWord && displayedWord?.wordId && !displayedWord?.isNew && (
+        {onDeleteWord && displayedWord?.wordId && (
           <Button
             variant="outline-danger"
             size="sm"

@@ -53,6 +53,7 @@ const TextDisplay = () => {
   const [isTranslating, setIsTranslating] = useState(false);
   const [processingWord, setProcessingWord] = useState(false);
   const [displayedWord, setDisplayedWord] = useState(null);
+  const [selectedWordAiContext, setSelectedWordAiContext] = useState('');
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [wordTranslationError, setWordTranslationError] = useState('');
   const [translatingUnknown, setTranslatingUnknown] = useState(false);
@@ -511,7 +512,7 @@ const TextDisplay = () => {
 
     const cacheKey = `${text.languageCode}|${translationTargetLanguageCode}|${sentenceContext ? 'sel' : 'word'}|${sentenceContext}|${termToTranslate}`;
     const cached = translationCacheRef.current.get(cacheKey);
-    if (cached) {
+    if (!force && cached) {
       // Refresh LRU position
       translationCacheRef.current.delete(cacheKey);
       translationCacheRef.current.set(cacheKey, cached);
@@ -563,7 +564,7 @@ const TextDisplay = () => {
   }, [globalSettings.autoTranslateWords, text?.languageCode, translationTargetLanguageCode, setTranslation, setDisplayedWord, setIsTranslating, setWordTranslationError]);
 
   const handleWordClick = useCallback((word, options = {}) => {
-    const { skipAutoTranslate = false, preserveLastHandledSelection = false } = options;
+    const { skipAutoTranslate = false, preserveLastHandledSelection = false, selectionContext = '' } = options;
     clearPendingSelection();
     if (!preserveLastHandledSelection) {
       lastHandledSelectionRef.current = '';
@@ -573,6 +574,7 @@ const TextDisplay = () => {
       setSegmentPlaybackRequest(null);
     }
     setSelectedWord(word);
+    setSelectedWordAiContext(selectionContext);
     setProcessingWord(false);
     setWordTranslationError('');
     if (isMobile) {
@@ -632,6 +634,7 @@ const TextDisplay = () => {
   const handleSelectedText = useCallback((selectedText, sentenceContext = '') => {
     if (!selectedText) {
       lastHandledSelectionRef.current = '';
+      setSelectedWordAiContext('');
       return;
     }
 
@@ -643,7 +646,7 @@ const TextDisplay = () => {
     suppressWordClickUntilRef.current = Date.now() + 400;
     setTimeout(() => {
       const useAiContext = Boolean(sentenceContext && sentenceContext.trim());
-      handleWordClick(selectedText, { skipAutoTranslate: useAiContext, preserveLastHandledSelection: true });
+      handleWordClick(selectedText, { skipAutoTranslate: useAiContext, preserveLastHandledSelection: true, selectionContext: sentenceContext });
       if (useAiContext) {
         triggerAutoTranslation(selectedText, { sentenceContext });
       }
@@ -1935,6 +1938,8 @@ const TextDisplay = () => {
     }
   }, [displayedWord, getWordData, isTranslating, processingWord, selectedWord, setWords]);
 
+  const wordInfoRetranslateContext = selectedWordAiContext || currentSentenceSegment?.text || '';
+
   // Handler for saving translation via Enter key (Moved after handleSaveWord)
   const handleTranslationKeyDown = useCallback((event) => {
     if (event.key === 'Enter' && !event.shiftKey) {
@@ -2389,11 +2394,11 @@ const TextDisplay = () => {
                   onRetranslateWithContext={() => {
                     if (!displayedWord?.term) return;
                     triggerAutoTranslation(displayedWord.term, {
-                      sentenceContext: currentSentenceSegment?.text || '',
+                      sentenceContext: wordInfoRetranslateContext,
                       force: true,
                     });
                   }}
-                  canRetranslate={!!displayedWord?.term && !!currentSentenceSegment?.text}
+                  canRetranslate={!!displayedWord?.term && !!wordInfoRetranslateContext}
                   onDeleteWord={handleDeleteWord}
                 />
               </div>
@@ -2468,11 +2473,11 @@ const TextDisplay = () => {
                 onRetranslateWithContext={() => {
                   if (!displayedWord?.term) return;
                   triggerAutoTranslation(displayedWord.term, {
-                    sentenceContext: currentSentenceSegment?.text || '',
+                    sentenceContext: wordInfoRetranslateContext,
                     force: true,
                   });
                 }}
-                canRetranslate={!!displayedWord?.term && !!currentSentenceSegment?.text}
+                canRetranslate={!!displayedWord?.term && !!wordInfoRetranslateContext}
                 onDeleteWord={handleDeleteWord}
               />
             </div>

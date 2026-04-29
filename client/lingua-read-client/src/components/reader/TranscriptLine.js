@@ -2,7 +2,7 @@ import React from 'react';
 
 const TranscriptLine = React.memo(({ index, style, data }) => {
   const {
-    lines, currentLineId, processLineContent, handleLineClick, getFontStyling, currentLineSpacing
+    lines, currentLineId, processLineContent, handleLineClick, getFontStyling, currentLineSpacing, hasSelection
   } = data;
   const line = lines[index];
   if (!line) return null;
@@ -19,7 +19,10 @@ const TranscriptLine = React.memo(({ index, style, data }) => {
           transition: 'background-color 0.3s ease',
           cursor: 'pointer'
         }}
-        onClick={() => handleLineClick(line.startTime)}
+        onClick={() => {
+          if (hasSelection?.()) return;
+          handleLineClick(line.startTime);
+        }}
       >
         {processLineContent(line.text)}
       </p>

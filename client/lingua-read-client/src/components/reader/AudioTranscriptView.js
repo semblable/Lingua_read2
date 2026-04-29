@@ -23,12 +23,12 @@ const AudioTranscriptView = React.memo(({
   const effectiveLineSpacing = isMobile ? mobileReadingConfig.lineSpacing : globalSettings.lineSpacing;
   const listHeight = readingContainerRef.current ? readingContainerRef.current.clientHeight - 30 : 600;
 
-  if (isMobile) {
-    const hasSelection = () => {
-      const selection = window.getSelection();
-      return Boolean(selection && !selection.isCollapsed && selection.toString().trim());
-    };
+  const hasSelection = () => {
+    const selection = window.getSelection();
+    return Boolean(selection && !selection.isCollapsed && selection.toString().trim());
+  };
 
+  if (isMobile) {
     const handleTouchStart = () => {
       touchMovedRef.current = false;
     };
@@ -80,14 +80,24 @@ const AudioTranscriptView = React.memo(({
   }
 
   const calculatedItemSize = (globalSettings.textSize * effectiveLineSpacing * 1.6) + 18;
+  const desktopItemData = {
+    ...itemData,
+    hasSelection
+  };
+
   return (
-    <div className="audio-transcript-container" style={{ height: '100%', overflow: 'hidden' }}>
+    <div
+      className="audio-transcript-container"
+      ref={textContentRef}
+      style={{ height: '100%', overflow: 'hidden' }}
+      onMouseUp={handleWordSelection}
+    >
       <List
         height={listHeight}
         itemCount={srtLines.length}
         itemSize={calculatedItemSize}
         width="100%"
-        itemData={itemData}
+        itemData={desktopItemData}
         overscanCount={5}
         ref={listRef}
         style={{ paddingRight: '15px', paddingLeft: '15px' }}

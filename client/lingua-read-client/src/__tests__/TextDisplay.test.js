@@ -1251,6 +1251,63 @@ describe('TextDisplay', () => {
     expect(screen.getByText('Word Info')).toBeInTheDocument();
   });
 
+  test('desktop audio transcript selection triggers contextual translation', async () => {
+    getText.mockResolvedValueOnce({
+      textId: 1,
+      title: 'Audio Lesson',
+      content: 'Hola mundo.',
+      languageId: null,
+      languageCode: 'ES',
+      languageName: 'Spanish',
+      isAudioLesson: true,
+      audioFilePath: 'audio_lessons/1.mp3',
+      hasSrtContent: true,
+      words: [],
+      bookId: null
+    });
+    getTextSrt.mockResolvedValueOnce('1\n00:00:00,000 --> 00:00:02,000\nHola mundo.\n');
+
+    renderTextDisplay({ autoTranslateWords: true });
+
+    await waitFor(() => expect(getText).toHaveBeenCalled());
+    const word = await screen.findByText('Hola');
+    const transcriptContainer = word.closest('.audio-transcript-container');
+    expect(transcriptContainer).not.toBeNull();
+
+    const mockSelection = {
+      isCollapsed: false,
+      rangeCount: 1,
+      anchorNode: transcriptContainer,
+      focusNode: transcriptContainer,
+      removeAllRanges: jest.fn(),
+      addRange: jest.fn(),
+      toString: () => 'Hola mundo',
+      getRangeAt: () => ({
+        commonAncestorContainer: transcriptContainer,
+        startContainer: transcriptContainer,
+        endContainer: transcriptContainer,
+        startOffset: 999,
+        endOffset: 999
+      })
+    };
+    window.getSelection = jest.fn(() => mockSelection);
+
+    act(() => {
+      fireEvent.mouseUp(transcriptContainer);
+      jest.advanceTimersByTime(200);
+    });
+
+    await waitFor(() => {
+      expect(translateSelectionWithContext).toHaveBeenCalledWith(
+        'Hola mundo',
+        'Hola mundo.',
+        'ES',
+        'EN',
+        expect.objectContaining({ signal: expect.anything() })
+      );
+    });
+  });
+
   test('auto-translate triggers on word click when enabled', async () => {
     translateText.mockResolvedValue({ translatedText: 'Hello' });
 

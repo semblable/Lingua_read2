@@ -109,6 +109,7 @@ const TextDisplay = () => {
   const mobileSelectionObservedRef = useRef(false);
   const mobileSelectionWasActiveAtTouchStartRef = useRef(false);
   const mobileTouchStartedRef = useRef(false);
+  const mobileTouchMovedRef = useRef(false);
   const lastHandledSelectionRef = useRef('');
   const suppressWordClickUntilRef = useRef(0);
   const selectableWordTouchStartRef = useRef(0);
@@ -187,6 +188,7 @@ const TextDisplay = () => {
     mobileSelectionPendingRef.current = false;
     mobileSelectionObservedRef.current = false;
     mobileSelectionWasActiveAtTouchStartRef.current = false;
+    mobileTouchMovedRef.current = false;
     clearMobileSelectionRetry();
   }, [clearMobileSelectionRetry]);
 
@@ -679,6 +681,7 @@ const TextDisplay = () => {
       mobileSelectionObservedRef.current = false;
       mobileSelectionWasActiveAtTouchStartRef.current = false;
       mobileTouchStartedRef.current = false;
+      mobileTouchMovedRef.current = false;
       clearMobileSelectionRetry();
       handleSelectedText(selectedText, sentenceContext);
       return;
@@ -797,7 +800,8 @@ const TextDisplay = () => {
     if (
       mobileTouchStartedRef.current &&
       mobileSelectionObservedRef.current &&
-      !mobileSelectionWasActiveAtTouchStartRef.current
+      !mobileSelectionWasActiveAtTouchStartRef.current &&
+      !mobileTouchMovedRef.current
     ) {
       mobileTouchStartedRef.current = false;
       clearMobileSelectionPending();
@@ -875,8 +879,13 @@ const TextDisplay = () => {
       const hadReaderSelection = Boolean(getSelectionDetails());
       clearMobileSelectionPending();
       mobileTouchStartedRef.current = true;
+      mobileTouchMovedRef.current = false;
       mobileSelectionWasActiveAtTouchStartRef.current = hadReaderSelection;
       mobileSelectionObservedRef.current = hadReaderSelection;
+    };
+
+    const handleTouchMove = () => {
+      mobileTouchMovedRef.current = true;
     };
 
     const handleTouchRelease = (event) => {
@@ -891,7 +900,8 @@ const TextDisplay = () => {
 
       if (
         mobileTouchStartedRef.current &&
-        !mobileSelectionWasActiveAtTouchStartRef.current
+        !mobileSelectionWasActiveAtTouchStartRef.current &&
+        !mobileTouchMovedRef.current
       ) {
         return;
       }
@@ -912,11 +922,13 @@ const TextDisplay = () => {
 
     document.addEventListener('selectionchange', handleSelectionChange);
     document.addEventListener('touchstart', handleTouchStart, true);
+    document.addEventListener('touchmove', handleTouchMove, true);
     document.addEventListener('touchend', handleTouchRelease, true);
     document.addEventListener('touchcancel', handleTouchRelease, true);
     return () => {
       document.removeEventListener('selectionchange', handleSelectionChange);
       document.removeEventListener('touchstart', handleTouchStart, true);
+      document.removeEventListener('touchmove', handleTouchMove, true);
       document.removeEventListener('touchend', handleTouchRelease, true);
       document.removeEventListener('touchcancel', handleTouchRelease, true);
     };

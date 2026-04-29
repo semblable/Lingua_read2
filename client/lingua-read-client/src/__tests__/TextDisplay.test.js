@@ -362,6 +362,64 @@ describe('TextDisplay', () => {
     expect(screen.queryByText('Word Info')).not.toBeInTheDocument();
   });
 
+  test('mobile drag selection finalizes when released', async () => {
+    window.matchMedia = jest.fn().mockImplementation(() => ({
+      matches: true,
+      addEventListener: jest.fn(),
+      removeEventListener: jest.fn()
+    }));
+
+    renderTextDisplay({ autoTranslateWords: true });
+
+    await waitFor(() => expect(getText).toHaveBeenCalled());
+    const word = await screen.findByText('Hello');
+    const textContent = word.closest('.text-content');
+    expect(textContent).not.toBeNull();
+
+    const noSelection = {
+      isCollapsed: true,
+      rangeCount: 0,
+      anchorNode: null,
+      focusNode: null,
+      toString: () => ''
+    };
+    const withSelection = {
+      isCollapsed: false,
+      rangeCount: 1,
+      anchorNode: textContent,
+      focusNode: textContent,
+      toString: () => 'Hello world',
+      getRangeAt: () => ({
+        commonAncestorContainer: textContent
+      })
+    };
+    let currentSelection = noSelection;
+    window.getSelection = jest.fn(() => currentSelection);
+
+    act(() => {
+      fireEvent.touchStart(textContent);
+    });
+
+    currentSelection = withSelection;
+    act(() => {
+      document.dispatchEvent(new Event('selectionchange'));
+      fireEvent.touchMove(textContent);
+      fireEvent.touchEnd(textContent);
+      jest.advanceTimersByTime(1000);
+    });
+
+    await waitFor(() => {
+      expect(translateSelectionWithContext).toHaveBeenCalledWith(
+        'Hello world',
+        'Hello world.',
+        'ES',
+        'EN',
+        expect.objectContaining({ signal: expect.anything() })
+      );
+    });
+    expect(await screen.findByText('Word Info')).toBeInTheDocument();
+  });
+
   test('mobile repeated touchend for same selection does not loop the Word Info sheet', async () => {
     window.matchMedia = jest.fn().mockImplementation(() => ({
       matches: true,

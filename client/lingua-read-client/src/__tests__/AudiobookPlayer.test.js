@@ -29,6 +29,33 @@ const createDeferred = () => {
   return { promise, resolve, reject };
 };
 
+const renderReadyLessonPlayer = async (props = {}) => {
+  getAudioLessonProgress.mockResolvedValue({ currentPosition: 0 });
+
+  const rendered = render(
+    <AudiobookPlayer
+      type="lesson"
+      audioSrc="https://example.com/lesson.mp3"
+      textId={42}
+      languageId={5}
+      {...props}
+    />
+  );
+
+  await waitFor(() => {
+    expect(screen.getByTitle(/Play/)).toBeInTheDocument();
+  });
+  await waitFor(() => {
+    expect(getAudioLessonProgress).toHaveBeenCalledWith(42);
+  });
+  await act(async () => {});
+
+  const audio = rendered.container.querySelector('audio');
+  expect(audio).not.toBeNull();
+
+  return { ...rendered, audio };
+};
+
 describe('AudiobookPlayer', () => {
   beforeEach(() => {
     // Mock HTMLMediaElement methods that JSDOM doesn't implement
@@ -44,6 +71,7 @@ describe('AudiobookPlayer', () => {
   });
 
   afterEach(() => {
+    jest.useRealTimers();
     jest.restoreAllMocks();
   });
 
@@ -124,6 +152,114 @@ describe('AudiobookPlayer', () => {
     await waitFor(() => {
       expect(screen.getByTitle(/Play/)).toBeInTheDocument();
     });
+  });
+
+  test('logs partial listening duration when paused before periodic interval', async () => {
+    const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(1000);
+    const { audio } = await renderReadyLessonPlayer();
+
+    act(() => {
+      audio.__lrAllowPlayback = true;
+      fireEvent.play(audio);
+    });
+    await act(async () => {});
+
+    nowSpy.mockReturnValue(9000);
+    act(() => {
+      fireEvent.pause(audio);
+    });
+
+    expect(logListeningActivity).toHaveBeenCalledTimes(1);
+    expect(logListeningActivity).toHaveBeenCalledWith(5, 8);
+  });
+
+  test('logs periodic chunks and only remaining listening duration on pause', async () => {
+    const { audio } = await renderReadyLessonPlayer();
+    const intervalCallbacks = [];
+    jest.spyOn(window, 'setInterval').mockImplementation((callback) => {
+      intervalCallbacks.push(callback);
+      return intervalCallbacks.length;
+    });
+    jest.spyOn(window, 'clearInterval').mockImplementation(() => {});
+    const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(1000);
+
+    act(() => {
+      audio.__lrAllowPlayback = true;
+      fireEvent.play(audio);
+    });
+    await act(async () => {});
+
+    nowSpy.mockReturnValue(11000);
+    act(() => {
+      intervalCallbacks[0]();
+    });
+
+    expect(logListeningActivity).toHaveBeenCalledTimes(1);
+    expect(logListeningActivity).toHaveBeenCalledWith(5, 10);
+
+    nowSpy.mockReturnValue(14500);
+    act(() => {
+      fireEvent.pause(audio);
+    });
+
+    expect(logListeningActivity).toHaveBeenCalledTimes(2);
+    expect(logListeningActivity).toHaveBeenLastCalledWith(5, 3);
+  });
+
+  test('flushes pending listening duration on unmount', async () => {
+    const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(1000);
+    const { audio, unmount } = await renderReadyLessonPlayer();
+
+    act(() => {
+      audio.__lrAllowPlayback = true;
+      fireEvent.play(audio);
+    });
+    await act(async () => {});
+
+    nowSpy.mockReturnValue(6500);
+    unmount();
+
+    expect(logListeningActivity).toHaveBeenCalledTimes(1);
+    expect(logListeningActivity).toHaveBeenCalledWith(5, 5);
+  });
+
+  test('flushes pending listening duration on page lifecycle exit', async () => {
+    const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(1000);
+    const { audio } = await renderReadyLessonPlayer();
+
+    act(() => {
+      audio.__lrAllowPlayback = true;
+      fireEvent.play(audio);
+    });
+    await act(async () => {});
+
+    nowSpy.mockReturnValue(7500);
+    act(() => {
+      window.dispatchEvent(new Event('pagehide'));
+    });
+
+    expect(logListeningActivity).toHaveBeenCalledTimes(1);
+    expect(logListeningActivity).toHaveBeenCalledWith(5, 6);
+  });
+
+  test('does not double-log listening duration on repeated pause events', async () => {
+    const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(1000);
+    const { audio } = await renderReadyLessonPlayer();
+
+    act(() => {
+      audio.__lrAllowPlayback = true;
+      fireEvent.play(audio);
+    });
+    await act(async () => {});
+
+    nowSpy.mockReturnValue(9000);
+    act(() => {
+      fireEvent.pause(audio);
+      fireEvent.pause(audio);
+    });
+
+    expect(logListeningActivity).toHaveBeenCalledTimes(1);
+    expect(logListeningActivity).toHaveBeenCalledWith(5, 8);
   });
 
   test('manual pause cancels active segment playback boundary', async () => {

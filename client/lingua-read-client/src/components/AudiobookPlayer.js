@@ -44,6 +44,7 @@ const setAudioPlaybackIntent = (audio, shouldPlay) => {
 };
 
 const getAudioPlaybackIntent = (audio) => Boolean(audio?.__lrAllowPlayback);
+const LISTENING_ACTIVITY_FLUSH_SECONDS = 10;
 
 const AudiobookPlayer = ({
   type = 'book',
@@ -79,6 +80,10 @@ const AudiobookPlayer = ({
   const restoredContentKeyRef = useRef('');
   const playbackStartedContentKeyRef = useRef('');
   const userPositionIntentContentKeyRef = useRef('');
+  const listeningLastCheckpointAtRef = useRef(null);
+  const pendingListeningSecondsRef = useRef(0);
+  const listeningActivityLanguageIdRef = useRef(null);
+  const flushListeningActivityRef = useRef(null);
 
   // NOTE: Removed unused progressSaveRef
 
@@ -156,6 +161,10 @@ const AudiobookPlayer = ({
       isPlaying
     };
   }, [book?.bookId, currentTrackIndex, isBookMode, isInitialized, isPlaying, playlist, textId]);
+
+  useEffect(() => {
+    listeningActivityLanguageIdRef.current = effectiveLanguageId;
+  }, [effectiveLanguageId]);
 
   // --- THREE: Data Derivation ---
 
@@ -724,21 +733,54 @@ const AudiobookPlayer = ({
     saveProgressRef.current = saveProgress;
   }, [saveProgress]);
 
+  const flushListeningActivity = useCallback((force = false) => {
+    const now = Date.now();
+    const lastCheckpointAt = listeningLastCheckpointAtRef.current;
+
+    if (lastCheckpointAt != null) {
+      const elapsedSeconds = (now - lastCheckpointAt) / 1000;
+      if (elapsedSeconds > 0) {
+        pendingListeningSecondsRef.current += elapsedSeconds;
+      }
+      listeningLastCheckpointAtRef.current = now;
+    } else if (isPlayingRef.current) {
+      listeningLastCheckpointAtRef.current = now;
+    }
+
+    const secondsToLog = Math.floor(pendingListeningSecondsRef.current);
+    if (secondsToLog <= 0 || (!force && secondsToLog < LISTENING_ACTIVITY_FLUSH_SECONDS)) {
+      return;
+    }
+
+    const languageIdForActivity = listeningActivityLanguageIdRef.current;
+    if (!languageIdForActivity) {
+      return;
+    }
+
+    pendingListeningSecondsRef.current -= secondsToLog;
+    Promise.resolve(logListeningActivity(languageIdForActivity, secondsToLog)).catch(e => {
+      pendingListeningSecondsRef.current += secondsToLog;
+      console.error('Log listening activity failed', e);
+    });
+  }, []);
+
+  useEffect(() => {
+    flushListeningActivityRef.current = flushListeningActivity;
+  }, [flushListeningActivity]);
+
   // Periodic Save
   useEffect(() => {
     const interval = setInterval(() => {
       if (isPlaying) {
         saveProgress();
-        if (effectiveLanguageId) {
-          logListeningActivity(effectiveLanguageId, 10);
-        }
+        flushListeningActivity();
       }
     }, 10000);
 
     return () => {
       clearInterval(interval);
     };
-  }, [isPlaying, saveProgress, effectiveLanguageId]);
+  }, [isPlaying, saveProgress, flushListeningActivity]);
 
   // Save on Unmount / Pause
   // Ref to track previous playing state to valid "Pause" event
@@ -746,19 +788,26 @@ const AudiobookPlayer = ({
 
   useEffect(() => {
     if (isPlaying) {
+      if (listeningLastCheckpointAtRef.current == null) {
+        listeningLastCheckpointAtRef.current = Date.now();
+      }
       wasPlayingRef.current = true;
     } else if (wasPlayingRef.current) {
       // Transitioned from True -> False
       console.log("[AudioPlayer] Paused - Saving progress.");
+      flushListeningActivity(true);
+      listeningLastCheckpointAtRef.current = null;
       saveProgress(true); // Force save on pause
       wasPlayingRef.current = false;
     }
-  }, [isPlaying, saveProgress]);
+  }, [isPlaying, saveProgress, flushListeningActivity]);
 
   // Save on Unmount (React Lifecycle)
   useEffect(() => {
     return () => {
       console.log("[AudioPlayer] Unmounting - Saving progress.");
+      flushListeningActivityRef.current?.(true);
+      listeningLastCheckpointAtRef.current = null;
       saveProgressRef.current?.(true);
     };
   }, []);
@@ -767,6 +816,8 @@ const AudiobookPlayer = ({
   useEffect(() => {
     const handleUnload = () => {
       lifecycleSaveRef.current = true;
+      flushListeningActivityRef.current?.(true);
+      listeningLastCheckpointAtRef.current = null;
       saveProgressRef.current?.(true);
     };
     window.addEventListener('pagehide', handleUnload);

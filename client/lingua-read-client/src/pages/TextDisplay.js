@@ -771,9 +771,8 @@ const TextDisplay = () => {
   useEffect(() => {
     if (!isMobile) return undefined;
 
-    // Track the live selection only for dedupe — don't schedule translation
-    // from selectionchange itself, since it fires repeatedly during a drag and
-    // would surface the translation while the user is still adjusting handles.
+    // Clear the dedupe ref when the user collapses the selection, so the same
+    // phrase can be re-selected later and re-trigger a translation.
     const handleSelectionChange = () => {
       const selection = window.getSelection();
       if (!selection || selection.isCollapsed) {
@@ -781,36 +780,11 @@ const TextDisplay = () => {
       }
     };
 
-    // Translation fires on release (pointerup) — covers touch release and the
-    // end of a selection-handle drag.
-    const handlePointerUp = () => {
-      const selection = window.getSelection();
-      if (!selection || selection.isCollapsed) return;
-
-      const container = textContentRef.current;
-      const anchorNode = selection.anchorNode;
-      const focusNode = selection.focusNode;
-      if (!container || !anchorNode || !focusNode) return;
-      if (!container.contains(anchorNode) || !container.contains(focusNode)) return;
-
-      const selectedText = selection.toString().trim();
-      if (!selectedText || selectedText === lastHandledSelectionRef.current) return;
-
-      setIsWordPanelOpen(false);
-      // Small delay so the browser's own selection-handle gestures settle
-      // before we read the final range.
-      scheduleWordSelection(120);
-    };
-
     document.addEventListener('selectionchange', handleSelectionChange);
-    document.addEventListener('pointerup', handlePointerUp);
-    document.addEventListener('touchend', handlePointerUp);
     return () => {
       document.removeEventListener('selectionchange', handleSelectionChange);
-      document.removeEventListener('pointerup', handlePointerUp);
-      document.removeEventListener('touchend', handlePointerUp);
     };
-  }, [isMobile, scheduleWordSelection]);
+  }, [isMobile]);
   // --- End New Word-Granularity Selection Logic ---
 
 

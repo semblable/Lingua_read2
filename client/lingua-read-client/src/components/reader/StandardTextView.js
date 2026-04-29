@@ -121,7 +121,7 @@ const StandardTextView = React.memo(({
           '--mobile-reading-line-height': mobileReadingConfig.lineSpacing
         }}
         onMouseUp={handleWordSelection}
-        {...(isMobile ? {} : { onTouchEnd: handleWordSelection })}
+        onTouchEnd={handleWordSelection}
       >
         {displayBlocks.map((block) => {
           if (block.type === 'image') {

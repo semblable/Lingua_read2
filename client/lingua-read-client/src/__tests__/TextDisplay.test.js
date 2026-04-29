@@ -214,7 +214,7 @@ describe('TextDisplay', () => {
     expect(screen.getByText(/Untracked/i)).toBeInTheDocument();
   });
 
-  test('mobile pointerup translates the full selected text on release', async () => {
+  test('mobile touchend translates the full selected text on release', async () => {
     window.matchMedia = jest.fn().mockImplementation(() => ({
       matches: true,
       addEventListener: jest.fn(),
@@ -240,16 +240,16 @@ describe('TextDisplay', () => {
     };
     window.getSelection = jest.fn(() => mockSelection);
 
-    // selectionchange while dragging — should NOT trigger translation.
+    // selectionchange while dragging — should NOT trigger translation by itself.
     act(() => {
       document.dispatchEvent(new Event('selectionchange'));
       jest.advanceTimersByTime(1000);
     });
     expect(translateSelectionWithContext).not.toHaveBeenCalled();
 
-    // Release fires pointerup → translation kicks in.
+    // Release fires touchend on the text container → translation kicks in.
     act(() => {
-      document.dispatchEvent(new Event('pointerup'));
+      fireEvent.touchEnd(textContent);
       jest.advanceTimersByTime(1000);
     });
 
@@ -264,7 +264,7 @@ describe('TextDisplay', () => {
     });
   });
 
-  test('mobile repeated pointerup for same selection does not loop the Word Info sheet', async () => {
+  test('mobile repeated touchend for same selection does not loop the Word Info sheet', async () => {
     window.matchMedia = jest.fn().mockImplementation(() => ({
       matches: true,
       addEventListener: jest.fn(),
@@ -292,7 +292,7 @@ describe('TextDisplay', () => {
 
     // First release — should open the panel and translate.
     act(() => {
-      document.dispatchEvent(new Event('pointerup'));
+      fireEvent.touchEnd(textContent);
       jest.advanceTimersByTime(1000);
     });
 
@@ -301,11 +301,11 @@ describe('TextDisplay', () => {
     });
     expect(await screen.findByText('Word Info')).toBeInTheDocument();
 
-    // Releasing again on the same selection (e.g. tapping selection handles)
-    // should not re-fire translation or flicker the sheet.
+    // Releasing again on the same selection (e.g. tapping after release) must
+    // not re-fire translation or flicker the sheet.
     act(() => {
-      document.dispatchEvent(new Event('pointerup'));
-      document.dispatchEvent(new Event('pointerup'));
+      fireEvent.touchEnd(textContent);
+      fireEvent.touchEnd(textContent);
       jest.advanceTimersByTime(2000);
     });
 

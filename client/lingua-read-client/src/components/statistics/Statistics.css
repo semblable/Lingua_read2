@@ -1,0 +1,82 @@
+.stats-filter-bar {
+  align-items: center;
+  background: var(--theme-surface-bg);
+  border: 1px solid var(--theme-border-color, var(--border-color));
+  border-radius: var(--radius-lg);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.5rem;
+}
+
+.stats-filter-select {
+  background-color: var(--theme-surface-bg);
+  border-color: var(--theme-border-color, var(--border-color));
+  border-radius: var(--radius-md);
+  color: var(--theme-text, var(--font-color));
+  width: auto;
+}
+
+.stats-card {
+  background: var(--theme-surface-bg);
+  border: 1px solid var(--theme-border-color, var(--border-color));
+  border-radius: var(--radius-lg);
+}
+
+.stats-eyebrow {
+  color: var(--text-muted, #6c757d);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.stats-card-value {
+  font-size: clamp(2rem, 4vw, 3rem);
+  font-weight: 700;
+  line-height: 1;
+}
+
+.stats-card-progress {
+  border-radius: 999px;
+  height: 6px;
+}
+
+.stats-chart {
+  height: 270px;
+}
+
+.stats-empty-chart {
+  align-items: center;
+  display: flex;
+  height: 100%;
+  justify-content: center;
+  min-height: 220px;
+  text-align: center;
+}
+
+.stats-language-metric {
+  align-items: center;
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
+}
+
+.stats-stacked-progress {
+  border-radius: 999px;
+  height: 1.25rem;
+}
+
+@media (max-width: 575.98px) {
+  .stats-filter-bar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .stats-filter-select,
+  .stats-filter-bar .btn {
+    width: 100%;
+  }
+}
+

@@ -253,28 +253,33 @@ namespace LinguaReadApi.Controllers
                     query = query.Where(a => a.LanguageId == languageId.Value);
                 }
 
+                int tzOffset = timezoneOffsetMinutes.GetValueOrDefault(0);
+
                 var byDate = await query
-                    .GroupBy(a => a.Timestamp.Date)
+                    .GroupBy(a => a.Timestamp.AddMinutes(tzOffset).Date)
                     .Select(g => new { Date = g.Key, WordCount = g.Sum(a => a.WordCount) })
                     .ToListAsync();
 
                 var byLanguage = await query
                     .Where(a => a.Language != null)
-                    .GroupBy(a => a.Language!.Name)
-                    .Select(g => new { Name = g.Key, WordCount = g.Sum(a => a.WordCount) })
+                    .GroupBy(a => new { a.LanguageId, a.Language!.Name })
+                    .Select(g => new {
+                        LanguageId = g.Key.LanguageId,
+                        LanguageName = g.Key.Name,
+                        TotalWords = g.Sum(a => a.WordCount)
+                    })
                     .ToListAsync();
 
                 _logger.LogInformation("Aggregated reading activity across {DateCount} dates and {LangCount} languages.", byDate.Count, byLanguage.Count);
 
                 var activityByDate = byDate.ToDictionary(x => x.Date.ToString("yyyy-MM-dd"), x => x.WordCount);
-                var activityByLanguage = byLanguage.ToDictionary(x => x.Name, x => x.WordCount);
                 int totalWordsRead = byDate.Sum(x => x.WordCount);
 
                 var result = new
                 {
                     TotalWordsRead = totalWordsRead,
                     ActivityByDate = activityByDate,
-                    ActivityByLanguage = activityByLanguage,
+                    ActivityByLanguage = byLanguage,
                     Period = period,
                     StartDate = startDate == DateTime.MinValue ? "all" : startDate.ToString("yyyy-MM-dd")
                 };
@@ -350,8 +355,10 @@ namespace LinguaReadApi.Controllers
                     query = query.Where(a => a.LanguageId == languageId.Value);
                 }
 
+                int tzOffset = timezoneOffsetMinutes.GetValueOrDefault(0);
+
                 var byDate = await query
-                    .GroupBy(a => a.Timestamp.Date)
+                    .GroupBy(a => a.Timestamp.AddMinutes(tzOffset).Date)
                     .Select(g => new { Date = g.Key, TotalSeconds = g.Sum(a => a.ListeningDurationSeconds ?? 0) })
                     .ToListAsync();
 

@@ -84,6 +84,7 @@ const AudiobookPlayer = ({
   const pendingListeningSecondsRef = useRef(0);
   const listeningActivityLanguageIdRef = useRef(null);
   const flushListeningActivityRef = useRef(null);
+  const isAudioStallingRef = useRef(false);
 
   // NOTE: Removed unused progressSaveRef
 
@@ -597,10 +598,22 @@ const AudiobookPlayer = ({
     const audio = audioRef.current;
     if (!audio) return;
 
-    const onWaiting = () => setIsBuffering(true);
+    const onWaiting = () => {
+      setIsBuffering(true);
+      // Stop accruing listening seconds while audio is stalled — capture the
+      // elapsed run up to now into pending, then null the checkpoint so the
+      // periodic interval doesn't restart accrual mid-buffer.
+      isAudioStallingRef.current = true;
+      flushListeningActivityRef.current?.(false);
+      listeningLastCheckpointAtRef.current = null;
+    };
     const onPlaying = () => {
       sourceSwapRef.current = { previousSrc: '', nextSrc: '' };
       setIsBuffering(false);
+      isAudioStallingRef.current = false;
+      if (isPlayingRef.current) {
+        listeningLastCheckpointAtRef.current = Date.now();
+      }
     };
     const onPlay = () => {
       if (!getAudioPlaybackIntent(audio)) {
@@ -743,11 +756,16 @@ const AudiobookPlayer = ({
         pendingListeningSecondsRef.current += elapsedSeconds;
       }
       listeningLastCheckpointAtRef.current = now;
-    } else if (isPlayingRef.current) {
+    } else if (isPlayingRef.current && !isAudioStallingRef.current) {
       listeningLastCheckpointAtRef.current = now;
     }
 
-    const secondsToLog = Math.floor(pendingListeningSecondsRef.current);
+    // On force flush (pause / unmount / page lifecycle) round the sub-second
+    // remainder so it isn't repeatedly truncated away. Periodic flushes still
+    // floor so they never report seconds that haven't accumulated yet.
+    const secondsToLog = force
+      ? Math.round(pendingListeningSecondsRef.current)
+      : Math.floor(pendingListeningSecondsRef.current);
     if (secondsToLog <= 0 || (!force && secondsToLog < LISTENING_ACTIVITY_FLUSH_SECONDS)) {
       return;
     }
@@ -757,8 +775,16 @@ const AudiobookPlayer = ({
       return;
     }
 
+    const isLifecycleFlush = lifecycleSaveRef.current || (typeof document !== 'undefined' && document.hidden);
     pendingListeningSecondsRef.current -= secondsToLog;
-    Promise.resolve(logListeningActivity(languageIdForActivity, secondsToLog)).catch(e => {
+    const logPromise = isLifecycleFlush
+      ? logListeningActivity(languageIdForActivity, secondsToLog, { keepalive: true })
+      : logListeningActivity(languageIdForActivity, secondsToLog);
+    Promise.resolve(logPromise).catch(e => {
+      if (isLifecycleFlush && isLifecycleNetworkError(e)) {
+        console.debug('[AudioPlayer] Ignoring page-lifecycle listening flush interruption.', e);
+        return;
+      }
       pendingListeningSecondsRef.current += secondsToLog;
       console.error('Log listening activity failed', e);
     });

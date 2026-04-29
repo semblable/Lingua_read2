@@ -1056,10 +1056,11 @@ export const getAudioLessonProgress = async (textId) => {
 };
 
 // Added logListeningActivity function
-export const logListeningActivity = async (languageId, durationSeconds) => {
+export const logListeningActivity = async (languageId, durationSeconds, options = {}) => {
   console.log(`[API] Logging listening activity: Lang ${languageId}, Duration ${durationSeconds}s`);
   const payload = { languageId, durationSeconds };
   return await fetchApi('/activity/logListening', {
+    ...options,
     method: 'POST',
     body: JSON.stringify(payload)
   });

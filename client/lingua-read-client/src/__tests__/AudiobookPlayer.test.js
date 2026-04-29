@@ -203,7 +203,8 @@ describe('AudiobookPlayer', () => {
     });
 
     expect(logListeningActivity).toHaveBeenCalledTimes(2);
-    expect(logListeningActivity).toHaveBeenLastCalledWith(5, 3);
+    // 3.5s remaining is rounded on force flush (was floor → 3 prior to remainder fix)
+    expect(logListeningActivity).toHaveBeenLastCalledWith(5, 4);
   });
 
   test('flushes pending listening duration on unmount', async () => {
@@ -220,7 +221,8 @@ describe('AudiobookPlayer', () => {
     unmount();
 
     expect(logListeningActivity).toHaveBeenCalledTimes(1);
-    expect(logListeningActivity).toHaveBeenCalledWith(5, 5);
+    // 5.5s rounds to 6 on force flush (was floor → 5 prior to remainder fix)
+    expect(logListeningActivity).toHaveBeenCalledWith(5, 6);
   });
 
   test('flushes pending listening duration on page lifecycle exit', async () => {
@@ -239,7 +241,79 @@ describe('AudiobookPlayer', () => {
     });
 
     expect(logListeningActivity).toHaveBeenCalledTimes(1);
-    expect(logListeningActivity).toHaveBeenCalledWith(5, 6);
+    // 6.5s rounds to 7 on force flush (was floor → 6 prior to remainder fix)
+    expect(logListeningActivity).toHaveBeenLastCalledWith(5, 7, { keepalive: true });
+  });
+
+  test('does not accrue listening seconds while audio is buffering', async () => {
+    const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(1000);
+    const { audio } = await renderReadyLessonPlayer();
+
+    act(() => {
+      audio.__lrAllowPlayback = true;
+      fireEvent.play(audio);
+    });
+    await act(async () => {});
+
+    // Played 3s, then network stalls.
+    nowSpy.mockReturnValue(4000);
+    act(() => {
+      fireEvent(audio, new Event('waiting'));
+    });
+
+    // 6s pass while buffering — should NOT count toward listening time.
+    nowSpy.mockReturnValue(10000);
+    act(() => {
+      fireEvent(audio, new Event('playing'));
+    });
+
+    // Play another 4s, then pause.
+    nowSpy.mockReturnValue(14000);
+    act(() => {
+      fireEvent.pause(audio);
+    });
+
+    // Total listened: 3s (pre-buffer) + 4s (post-buffer) = 7s.
+    // Without the fix this would be 13s (3 + 6 buffer + 4).
+    expect(logListeningActivity).toHaveBeenCalledTimes(1);
+    expect(logListeningActivity).toHaveBeenCalledWith(5, 7);
+  });
+
+  test('preserves sub-second listening remainder across pause and resume', async () => {
+    const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(1000);
+    const { audio } = await renderReadyLessonPlayer();
+
+    act(() => {
+      audio.__lrAllowPlayback = true;
+      fireEvent.play(audio);
+    });
+    await act(async () => {});
+
+    // Play 3.4s — rounds to 3, leaves +0.4s residual in pending.
+    nowSpy.mockReturnValue(4400);
+    act(() => {
+      fireEvent.pause(audio);
+    });
+    expect(logListeningActivity).toHaveBeenLastCalledWith(5, 3);
+
+    // Resume and play 4.4s more. pending = 0.4 (residual) + 4.4 = 4.8 → round 5.
+    // Total reported: 3 + 5 = 8s for 7.8s actually listened (delta +0.2).
+    // Pre-fix behavior: floor(3.4)=3 then floor(4.4)=4 → 7s for 7.8s (delta -0.8),
+    // and the dropped fractions could compound across many short pauses.
+    nowSpy.mockReturnValue(4400);
+    act(() => {
+      audio.__lrAllowPlayback = true;
+      fireEvent.play(audio);
+    });
+    await act(async () => {});
+
+    nowSpy.mockReturnValue(8800);
+    act(() => {
+      fireEvent.pause(audio);
+    });
+
+    expect(logListeningActivity).toHaveBeenCalledTimes(2);
+    expect(logListeningActivity).toHaveBeenLastCalledWith(5, 5);
   });
 
   test('does not double-log listening duration on repeated pause events', async () => {

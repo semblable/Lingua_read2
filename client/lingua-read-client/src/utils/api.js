@@ -734,6 +734,19 @@ export const updateWord = async (wordId, status, translation) => {
   }
 };
 
+export const deleteWord = async (wordId) => {
+  try {
+    if (!wordId) throw new Error('Word ID is required');
+
+    return await fetchApi(`/words/${wordId}`, {
+      method: 'DELETE'
+    });
+  } catch (error) {
+    console.error('Error in deleteWord:', error);
+    throw error;
+  }
+};
+
 // Fetches words for a specific language, with optional filtering and sorting
 export const getWordsByLanguage = (languageId, statusFilter = [], sortBy = 'term_asc', searchTerm = '') => {
   const params = new URLSearchParams();

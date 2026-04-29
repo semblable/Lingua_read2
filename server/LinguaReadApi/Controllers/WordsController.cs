@@ -442,6 +442,54 @@ namespace LinguaReadApi.Controllers
             return NoContent();
         }
 
+        // DELETE: api/words/5
+        [HttpDelete("{id}")]
+        public async Task<IActionResult> DeleteWord(int id)
+        {
+            var userId = GetUserId();
+
+            var word = await _context.Words
+                .FirstOrDefaultAsync(w => w.WordId == id && w.UserId == userId);
+
+            if (word == null)
+            {
+                return NotFound();
+            }
+
+            var srsCards = await _context.SrsCardReviews
+                .Where(scr => scr.WordId == id && scr.UserId == userId)
+                .ToListAsync();
+            var srsCardIds = srsCards.Select(scr => scr.SrsCardReviewId).ToList();
+
+            if (srsCardIds.Any())
+            {
+                var srsReviewLogs = await _context.SrsReviewLogs
+                    .Where(log => log.UserId == userId && srsCardIds.Contains(log.SrsCardReviewId))
+                    .ToListAsync();
+                _context.SrsReviewLogs.RemoveRange(srsReviewLogs);
+            }
+
+            var srsPhrases = await _context.SrsPhrases
+                .Where(sp => sp.WordId == id && sp.UserId == userId)
+                .ToListAsync();
+            var textWords = await _context.TextWords
+                .Where(tw => tw.WordId == id)
+                .ToListAsync();
+            var translations = await _context.WordTranslations
+                .Where(wt => wt.WordId == id)
+                .ToListAsync();
+
+            _context.SrsPhrases.RemoveRange(srsPhrases);
+            _context.TextWords.RemoveRange(textWords);
+            _context.WordTranslations.RemoveRange(translations);
+            _context.SrsCardReviews.RemoveRange(srsCards);
+            _context.Words.Remove(word);
+
+            await _context.SaveChangesAsync();
+
+            return NoContent();
+        }
+
         // POST: api/words/batch
         [HttpPost("batch")]
         public async Task<IActionResult> AddTermsBatch([FromBody] AddTermBatchDto batchDto)

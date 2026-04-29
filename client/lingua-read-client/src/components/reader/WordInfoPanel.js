@@ -21,7 +21,8 @@ const WordInfoPanel = React.memo(({
   handleMineSentence,
   onReadingCredit,
   onRetranslateWithContext,
-  canRetranslate
+  canRetranslate,
+  onDeleteWord
 }) => {
   if (!displayedWord) return <p>Click/hover on a word.</p>;
   return (
@@ -56,6 +57,17 @@ const WordInfoPanel = React.memo(({
             title="Boost SRS interval (reading credit)"
           >
             SRS ✓
+          </Button>
+        )}
+        {onDeleteWord && displayedWord?.wordId && !displayedWord?.isNew && (
+          <Button
+            variant="outline-danger"
+            size="sm"
+            onClick={onDeleteWord}
+            disabled={processingWord || isTranslating}
+            title="Delete this term"
+          >
+            Delete
           </Button>
         )}
       </div>

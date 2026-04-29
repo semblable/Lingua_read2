@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback, useRef, useMemo, useContext } 
 import { Container, Card, Spinner, Alert, Button, Modal, Row, Col, Badge, ProgressBar, OverlayTrigger, Tooltip } from 'react-bootstrap';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
-  getText, getTextSrt, getWordLinkingStatus, createWord, updateWord, updateLastRead, completeLesson, getBook,
+  getText, getTextSrt, getWordLinkingStatus, createWord, updateWord, deleteWord, updateLastRead, completeLesson, getBook,
   translateText, translateSentence, translateFullText, translateSelectionWithContext, updateUserSettings,
   explainSentence, mineSentence,
   batchTranslateWords, addTermsBatch, getLanguage,
@@ -1907,6 +1907,34 @@ const TextDisplay = () => {
     finally { setProcessingWord(false); }
   }, [selectedWord, displayedWord, processingWord, isTranslating, translation, text?.textId, currentSentenceSegment?.text, words, getWordData, setWords, setDisplayedWord, setSaveSuccess, setProcessingWord]); // createWord/updateWord are module imports (stable); omit to satisfy exhaustive-deps
 
+  const handleDeleteWord = useCallback(async () => {
+    const wordToDelete = displayedWord?.wordId ? displayedWord : getWordData(selectedWord);
+    if (!wordToDelete?.wordId || processingWord || isTranslating) {
+      return;
+    }
+    if (!window.confirm(`Delete term "${wordToDelete.term}"? This will also remove its SRS data and cannot be undone.`)) {
+      return;
+    }
+
+    setProcessingWord(true);
+    setSaveSuccess(false);
+    try {
+      await deleteWord(wordToDelete.wordId);
+      setWords(prevWords => prevWords.filter(w => w.wordId !== wordToDelete.wordId));
+      setDisplayedWord(prev => (
+        prev?.wordId === wordToDelete.wordId
+          ? { term: wordToDelete.term, status: 0, translation: '', isNew: true }
+          : prev
+      ));
+      setTranslation('');
+    } catch (error) {
+      console.error('Error deleting word:', error);
+      alert(`Failed to delete word: ${error.message}`);
+    } finally {
+      setProcessingWord(false);
+    }
+  }, [displayedWord, getWordData, isTranslating, processingWord, selectedWord, setWords]);
+
   // Handler for saving translation via Enter key (Moved after handleSaveWord)
   const handleTranslationKeyDown = useCallback((event) => {
     if (event.key === 'Enter' && !event.shiftKey) {
@@ -2366,6 +2394,7 @@ const TextDisplay = () => {
                     });
                   }}
                   canRetranslate={!!displayedWord?.term && !!currentSentenceSegment?.text}
+                  onDeleteWord={handleDeleteWord}
                 />
               </div>
 
@@ -2444,6 +2473,7 @@ const TextDisplay = () => {
                   });
                 }}
                 canRetranslate={!!displayedWord?.term && !!currentSentenceSegment?.text}
+                onDeleteWord={handleDeleteWord}
               />
             </div>
           </div>

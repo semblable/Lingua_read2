@@ -191,6 +191,54 @@ public class DatabaseIntegrityFixTests
         Assert.NotNull(translations[0].UpdatedAt);
     }
 
+    [Fact]
+    public async Task DeleteWord_RemovesOwnedWordAndDependencies_OnlyForCurrentUser()
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        var otherUserId = Guid.NewGuid();
+        SeedUserAndLanguage(context, userId);
+        context.Users.Add(new User { Id = otherUserId, UserName = "other", Email = "other@example.com" });
+        context.Texts.Add(new Text
+        {
+            TextId = 1,
+            UserId = userId,
+            LanguageId = 1,
+            Title = "Target Text",
+            Content = "hola"
+        });
+        context.Words.AddRange(
+            new Word { WordId = 1, UserId = userId, LanguageId = 1, Term = "hola", Status = 2 },
+            new Word { WordId = 2, UserId = otherUserId, LanguageId = 1, Term = "hola", Status = 2 });
+        context.TextWords.Add(new TextWord { TextId = 1, WordId = 1 });
+        context.WordTranslations.Add(new WordTranslation { WordId = 1, Translation = "hello" });
+        context.SrsPhrases.Add(new SrsPhrase { UserId = userId, WordId = 1, Sentence = "hola mundo" });
+        context.SrsCardReviews.Add(new SrsCardReview { SrsCardReviewId = 1, UserId = userId, WordId = 1 });
+        context.SrsReviewLogs.Add(new SrsReviewLog
+        {
+            UserId = userId,
+            SrsCardReviewId = 1,
+            Grade = 2,
+            OldNextReviewAt = DateTime.UtcNow
+        });
+        await context.SaveChangesAsync();
+
+        var controller = CreateWordsController(context, userId);
+
+        var deleteResult = await controller.DeleteWord(1);
+        var otherUserDeleteResult = await controller.DeleteWord(2);
+
+        Assert.IsType<NoContentResult>(deleteResult);
+        Assert.IsType<NotFoundResult>(otherUserDeleteResult);
+        Assert.False(await context.Words.AnyAsync(w => w.WordId == 1));
+        Assert.False(await context.TextWords.AnyAsync(tw => tw.WordId == 1));
+        Assert.False(await context.WordTranslations.AnyAsync(wt => wt.WordId == 1));
+        Assert.False(await context.SrsPhrases.AnyAsync(sp => sp.WordId == 1));
+        Assert.False(await context.SrsCardReviews.AnyAsync(scr => scr.WordId == 1));
+        Assert.False(await context.SrsReviewLogs.AnyAsync(log => log.SrsCardReviewId == 1));
+        Assert.True(await context.Words.AnyAsync(w => w.WordId == 2 && w.UserId == otherUserId));
+    }
+
     private static WordsController CreateWordsController(AppDbContext context, Guid userId)
     {
         return new WordsController(context)

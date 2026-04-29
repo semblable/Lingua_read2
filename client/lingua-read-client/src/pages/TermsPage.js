@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Container, Row, Col, Table, Form, Button, Spinner, Alert, DropdownButton, Dropdown, Pagination, Badge } from 'react-bootstrap'; // Added Pagination, Badge
-import { getAllLanguages, getPaginatedWordsByLanguage, exportWordsCsv, addTermsBatch } from '../utils/api'; // Changed to use paginated API
+import { getAllLanguages, getPaginatedWordsByLanguage, exportWordsCsv, addTermsBatch, deleteWord } from '../utils/api'; // Changed to use paginated API
 import { saveAs } from 'file-saver';
 import Papa from 'papaparse';
 
@@ -16,6 +16,7 @@ const TermsPage = () => {
     const [error, setError] = useState(null);
     const [searchTerm, setSearchTerm] = useState('');
     const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
+    const [deletingWordId, setDeletingWordId] = useState(null);
 
     // Pagination State
     const [currentPage, setCurrentPage] = useState(1);
@@ -141,6 +142,27 @@ const TermsPage = () => {
             console.error(err);
         } finally {
             setLoading(false);
+        }
+    };
+
+    const handleDeleteTerm = async (term) => {
+        if (!term?.wordId) return;
+        if (!window.confirm(`Delete term "${term.term}"? This will also remove its SRS data and cannot be undone.`)) return;
+
+        setDeletingWordId(term.wordId);
+        setError(null);
+        try {
+            await deleteWord(term.wordId);
+            if (terms.length === 1 && currentPage > 1) {
+                setCurrentPage(prev => Math.max(prev - 1, 1));
+            } else {
+                await fetchTerms();
+            }
+        } catch (err) {
+            setError(`Failed to delete term: ${err.message}`);
+            console.error(err);
+        } finally {
+            setDeletingWordId(null);
         }
     };
 
@@ -430,6 +452,7 @@ const TermsPage = () => {
                                     <th onClick={() => handleSort('created')} style={{ cursor: 'pointer', width: '180px' }}>
                                         Date Added{renderSortIndicator('created')}
                                     </th>
+                                    <th style={{ width: '100px' }}>Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -440,11 +463,21 @@ const TermsPage = () => {
                                             <td>{term.translation}</td>
                                             <td className="text-center">{getStatusBadge(term.status)}</td>
                                             <td>{new Date(term.createdAt).toLocaleString()}</td>
+                                            <td className="text-center">
+                                                <Button
+                                                    variant="outline-danger"
+                                                    size="sm"
+                                                    onClick={() => handleDeleteTerm(term)}
+                                                    disabled={deletingWordId === term.wordId || importLoading}
+                                                >
+                                                    {deletingWordId === term.wordId ? 'Deleting...' : 'Delete'}
+                                                </Button>
+                                            </td>
                                         </tr>
                                     ))
                                 ) : (
                                     <tr>
-                                        <td colSpan="4" className="text-center">No terms found for the selected criteria.</td>
+                                        <td colSpan="5" className="text-center">No terms found for the selected criteria.</td>
                                     </tr>
                                 )}
                             </tbody>

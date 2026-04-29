@@ -12,6 +12,7 @@ import {
   getWordLinkingStatus,
   createWord,
   updateWord,
+  deleteWord,
   updateLastRead,
   completeLesson,
   getBook,
@@ -34,6 +35,7 @@ jest.mock('../utils/api', () => ({
   getWordLinkingStatus: jest.fn(),
   createWord: jest.fn(),
   updateWord: jest.fn(),
+  deleteWord: jest.fn(),
   updateLastRead: jest.fn(),
   completeLesson: jest.fn(),
   getBook: jest.fn(),
@@ -147,6 +149,7 @@ describe('TextDisplay', () => {
     getBookmarkedSentences.mockReturnValue([]);
     createWord.mockReset();
     updateWord.mockReset();
+    deleteWord.mockReset();
     updateLastRead.mockReset();
     completeLesson.mockReset();
     getBook.mockReset();
@@ -212,6 +215,36 @@ describe('TextDisplay', () => {
     expect(screen.getByText('Word Info')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Hello' })).toBeInTheDocument();
     expect(screen.getByText(/Untracked/i)).toBeInTheDocument();
+  });
+
+  test('deleting a tracked word from Word Info removes it locally', async () => {
+    const confirmSpy = jest.spyOn(window, 'confirm').mockReturnValue(true);
+    deleteWord.mockResolvedValue({});
+    getText.mockResolvedValueOnce({
+      textId: 1,
+      title: 'Sample Text',
+      content: 'Hello world.',
+      languageId: null,
+      languageCode: 'ES',
+      languageName: 'Spanish',
+      isAudioLesson: false,
+      words: [
+        { wordId: 1, term: 'Hello', status: 2, translation: 'hola', isNew: false }
+      ],
+      bookId: null
+    });
+
+    renderTextDisplay();
+
+    await waitFor(() => expect(getText).toHaveBeenCalled());
+    fireEvent.click(await screen.findByText('Hello'));
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+
+    await waitFor(() => expect(deleteWord).toHaveBeenCalledWith(1));
+    await waitFor(() => expect(screen.getByText(/Untracked/i)).toBeInTheDocument());
+    expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument();
+
+    confirmSpy.mockRestore();
   });
 
   test('mobile touchend translates the full selected text on release', async () => {

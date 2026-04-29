@@ -196,7 +196,9 @@ const fetchApi = async (endpoint, options = {}) => {
         error: errorMessage
       });
 
-      throw new Error(errorMessage);
+      const err = new Error(errorMessage);
+      err.status = response.status;
+      throw err;
     }
 
     // Parse successful response
@@ -785,7 +787,7 @@ export const exportWordsCsv = (languageId = null, statusFilter = []) => {
 };
 
 // Translation API
-export const translateText = async (text, sourceLanguageCode, targetLanguageCode) => {
+export const translateText = async (text, sourceLanguageCode, targetLanguageCode, { signal } = {}) => {
   try {
     const payload = {
       text,
@@ -794,7 +796,8 @@ export const translateText = async (text, sourceLanguageCode, targetLanguageCode
     };
     return await fetchApi('/translation', {
       method: 'POST',
-      body: JSON.stringify(payload)
+      body: JSON.stringify(payload),
+      signal
     });
   } catch (error) {
     console.error('Translation failed:', error);
@@ -835,7 +838,7 @@ export const generateSrsStory = async (languageId, { theme, maxWords, maxLength,
   }
 };
 
-export const translateSentence = async (text, sourceLanguageCode, targetLanguageCode) => {
+export const translateSentence = async (text, sourceLanguageCode, targetLanguageCode, { signal } = {}) => {
   try {
     console.log('Initiating sentence translation request');
 
@@ -850,7 +853,8 @@ export const translateSentence = async (text, sourceLanguageCode, targetLanguage
       headers: {
         'Content-Type': 'application/json; charset=utf-8'
       },
-      body: JSON.stringify(payload)
+      body: JSON.stringify(payload),
+      signal
     });
 
     return response;
@@ -860,7 +864,7 @@ export const translateSentence = async (text, sourceLanguageCode, targetLanguage
   }
 };
 
-export const translateSelectionWithContext = async (selectedText, sentenceContext, sourceLanguageCode, targetLanguageCode) => {
+export const translateSelectionWithContext = async (selectedText, sentenceContext, sourceLanguageCode, targetLanguageCode, { signal } = {}) => {
   try {
     const payload = {
       selectedText,
@@ -874,7 +878,8 @@ export const translateSelectionWithContext = async (selectedText, sentenceContex
       headers: {
         'Content-Type': 'application/json; charset=utf-8'
       },
-      body: JSON.stringify(payload)
+      body: JSON.stringify(payload),
+      signal
     });
 
     return response;

@@ -60,11 +60,14 @@ namespace LinguaReadApi.Controllers
                     return StatusCode(500, new { message = "Translation service returned empty result" });
                 }
 
+                var upstreamError = TryMapUpstreamError(translatedText, "Translation error:");
+                if (upstreamError != null) return upstreamError;
+
                 // Keep a defensive fallback in case a provider still returns paired tags.
                 translatedText = PairedTranslationTagExtractor.ExtractTranslatedTextOnly(translatedText);
 
                 _logger.LogInformation($"Translation successful, result length: {translatedText.Length}");
-                
+
                 return Ok(new SentenceTranslationResponse
                 {
                     OriginalText = request.Text,
@@ -112,6 +115,9 @@ namespace LinguaReadApi.Controllers
                     return StatusCode(500, new { message = "Translation service returned empty result" });
                 }
 
+                var upstreamError = TryMapUpstreamError(translatedText, "Translation error:");
+                if (upstreamError != null) return upstreamError;
+
                 _logger.LogInformation($"Full text translation successful, result length: {translatedText.Length}");
                 
                 return Ok(new SentenceTranslationResponse
@@ -155,6 +161,9 @@ namespace LinguaReadApi.Controllers
                     _logger.LogWarning("Explanation service returned empty result");
                     return StatusCode(500, new { message = "Explanation service returned empty result" });
                 }
+
+                var upstreamError = TryMapUpstreamError(explanationText, "Explanation error:");
+                if (upstreamError != null) return upstreamError;
 
                 return Ok(new SentenceExplanationResponse
                 {
@@ -204,6 +213,9 @@ namespace LinguaReadApi.Controllers
                     return StatusCode(500, new { message = "Translation service returned empty result" });
                 }
 
+                var upstreamError = TryMapUpstreamError(translatedSelection, "Translation error:");
+                if (upstreamError != null) return upstreamError;
+
                 return Ok(new SelectionTranslationResponse
                 {
                     SelectedText = request.SelectedText,
@@ -228,6 +240,21 @@ namespace LinguaReadApi.Controllers
                 throw new UnauthorizedAccessException("User ID not found in token");
             }
             return userId;
+        }
+
+        // Provider services return error strings prefixed with "Translation error:" or
+        // "Explanation error:" rather than throwing. Surface upstream rate-limit hits as
+        // HTTP 429 so the client can show a clear message; other upstream errors as 502.
+        private ActionResult? TryMapUpstreamError(string? result, string defaultErrorPrefix)
+        {
+            if (string.IsNullOrWhiteSpace(result)) return null;
+            if (!result.StartsWith(defaultErrorPrefix, StringComparison.Ordinal)) return null;
+
+            if (result.Contains("TooManyRequests", StringComparison.Ordinal))
+            {
+                return StatusCode(StatusCodes.Status429TooManyRequests, new { message = "Provider rate limit reached. Try again in a few seconds." });
+            }
+            return StatusCode(StatusCodes.Status502BadGateway, new { message = result });
         }
     }
 

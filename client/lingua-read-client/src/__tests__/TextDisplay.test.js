@@ -246,7 +246,13 @@ describe('TextDisplay', () => {
     });
 
     await waitFor(() => {
-      expect(translateSelectionWithContext).toHaveBeenCalledWith('Hello world', 'Hello world.', 'ES', 'EN');
+      expect(translateSelectionWithContext).toHaveBeenCalledWith(
+        'Hello world',
+        'Hello world.',
+        'ES',
+        'EN',
+        expect.objectContaining({ signal: expect.anything() })
+      );
     });
   });
 
@@ -297,6 +303,117 @@ describe('TextDisplay', () => {
 
     expect(screen.getByText('Word Info')).toBeInTheDocument();
     expect(translateSelectionWithContext).toHaveBeenCalledTimes(1);
+  });
+
+  test('mobile: mouseup with no selection does not toggle the lesson header', async () => {
+    window.matchMedia = jest.fn().mockImplementation(() => ({
+      matches: true,
+      addEventListener: jest.fn(),
+      removeEventListener: jest.fn()
+    }));
+
+    renderTextDisplay();
+
+    await waitFor(() => expect(getText).toHaveBeenCalled());
+    const word = await screen.findByText('Hello');
+    const textContent = word.closest('.text-content');
+    expect(textContent).not.toBeNull();
+
+    // Mobile FAB shows "Lesson" while header is hidden, "Hide" when open.
+    const fab = screen.getByRole('button', { name: /Open lesson controls/i });
+    expect(fab).toHaveTextContent('Lesson');
+
+    // Simulate the path that previously toggled the mobile header: mouseup /
+    // touchend on the reading surface with no live selection. Before the fix,
+    // processWordSelection() would flip the header. After the fix, it must not.
+    window.getSelection = jest.fn(() => ({
+      isCollapsed: true,
+      rangeCount: 0,
+      toString: () => ''
+    }));
+
+    act(() => {
+      fireEvent.mouseUp(textContent);
+      jest.advanceTimersByTime(1000);
+    });
+
+    // FAB still says "Lesson" — header did not flip to "Hide".
+    expect(screen.getByRole('button', { name: /Open lesson controls/i })).toHaveTextContent('Lesson');
+  });
+
+  test('rapid word clicks abort the previous in-flight translation', async () => {
+    renderTextDisplay({ autoTranslateWords: true });
+
+    await waitFor(() => expect(getText).toHaveBeenCalled());
+    const helloWord = await screen.findByText('Hello');
+    const worldWord = await screen.findByText('world');
+
+    // Now that the component has rendered, swap translateText to a never-resolving
+    // implementation that captures each call's signal. This keeps the first call
+    // "in flight" so the second click can abort it.
+    const signals = [];
+    translateText.mockImplementation((_term, _src, _tgt, opts) => {
+      signals.push(opts?.signal);
+      return new Promise(() => {}); // never resolves
+    });
+
+    await act(async () => { fireEvent.click(helloWord); });
+    await waitFor(() => expect(signals).toHaveLength(1));
+    expect(signals[0].aborted).toBe(false);
+
+    await act(async () => { fireEvent.click(worldWord); });
+    await waitFor(() => expect(signals).toHaveLength(2));
+
+    // First request's signal must be aborted by the second click; the second is live.
+    expect(signals[0].aborted).toBe(true);
+    expect(signals[1].aborted).toBe(false);
+  });
+
+  test('repeating the same word translation hits the cache (no extra API call)', async () => {
+    translateText.mockResolvedValue({ translatedText: 'Hola' });
+
+    getText.mockResolvedValueOnce({
+      textId: 1,
+      title: 'Sample Text',
+      content: 'Hello world.',
+      languageId: null,
+      languageCode: 'ES',
+      languageName: 'Spanish',
+      isAudioLesson: false,
+      words: [],
+      bookId: null
+    });
+
+    renderTextDisplay({ autoTranslateWords: true });
+
+    await waitFor(() => expect(getText).toHaveBeenCalled());
+    const word = await screen.findByText('Hello');
+
+    await act(async () => { fireEvent.click(word); });
+    await waitFor(() => expect(translateText).toHaveBeenCalledTimes(1));
+    await act(async () => { await Promise.resolve(); });
+
+    // Click the same word again — should serve from cache, no new API call.
+    await act(async () => { fireEvent.click(word); });
+    await act(async () => { await Promise.resolve(); });
+
+    expect(translateText).toHaveBeenCalledTimes(1);
+  });
+
+  test('429 from translation surfaces a clear rate-limit message', async () => {
+    const err = new Error('Provider rate limit reached.');
+    err.status = 429;
+    translateText.mockRejectedValueOnce(err);
+
+    renderTextDisplay({ autoTranslateWords: true });
+
+    await waitFor(() => expect(getText).toHaveBeenCalled());
+    const word = await screen.findByText('Hello');
+
+    await act(async () => { fireEvent.click(word); });
+    await act(async () => { await Promise.resolve(); });
+
+    expect(await screen.findByText(/rate limit reached/i)).toBeInTheDocument();
   });
 
   test('mobile context menu does not toggle bookmarks while selecting', async () => {
@@ -637,7 +754,12 @@ describe('TextDisplay', () => {
     });
 
     await waitFor(() => {
-      expect(translateText).toHaveBeenCalledWith('Hello', 'ES', 'EN');
+      expect(translateText).toHaveBeenCalledWith(
+        'Hello',
+        'ES',
+        'EN',
+        expect.objectContaining({ signal: expect.anything() })
+      );
     });
 
     // Flush all pending async state updates from the translate callback

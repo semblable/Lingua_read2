@@ -36,7 +36,6 @@ const TextDisplay = () => {
   const audioRef = useRef(null);
   const listRef = useRef(null);
   const autoScrollRafRef = useRef(null);
-  const contentTouchMovedRef = useRef(false);
   const autoTranslateTriggeredRef = useRef(false);
   const autoTranslateTextIdRef = useRef(null);
   // Removed resizeDividerRef
@@ -108,6 +107,8 @@ const TextDisplay = () => {
   const lastHandledSelectionRef = useRef('');
   const suppressWordClickUntilRef = useRef(0);
   const selectableWordTouchStartRef = useRef(0);
+  const translationAbortRef = useRef(null);
+  const translationCacheRef = useRef(new Map());
   const pendingSentenceCreditRef = useRef(new Set());
   const audioDrivenSentenceSyncRef = useRef(false);
   const lastAutoSegmentPlaybackKeyRef = useRef('');
@@ -466,28 +467,61 @@ const TextDisplay = () => {
 
   const triggerAutoTranslation = useCallback(async (termToTranslate, options = {}) => {
     const { sentenceContext = '', force = false } = options;
-    // Use globalSettings from context
     if (!termToTranslate || !text?.languageCode) return;
     if (!force && !globalSettings.autoTranslateWords) return;
+
+    const cacheKey = `${text.languageCode}|${translationTargetLanguageCode}|${sentenceContext ? 'sel' : 'word'}|${sentenceContext}|${termToTranslate}`;
+    const cached = translationCacheRef.current.get(cacheKey);
+    if (cached) {
+      // Refresh LRU position
+      translationCacheRef.current.delete(cacheKey);
+      translationCacheRef.current.set(cacheKey, cached);
+      setIsTranslating(false);
+      setWordTranslationError('');
+      setTranslation(cached);
+      setDisplayedWord(prev => (prev && prev.term === termToTranslate ? { ...prev, translation: cached } : prev));
+      return;
+    }
+
+    translationAbortRef.current?.abort();
+    const controller = new AbortController();
+    translationAbortRef.current = controller;
+
     setIsTranslating(true);
     setWordTranslationError('');
     try {
       const result = sentenceContext
-        ? await translateSelectionWithContext(termToTranslate, sentenceContext, text.languageCode, translationTargetLanguageCode)
-        : await translateText(termToTranslate, text.languageCode, translationTargetLanguageCode);
+        ? await translateSelectionWithContext(termToTranslate, sentenceContext, text.languageCode, translationTargetLanguageCode, { signal: controller.signal })
+        : await translateText(termToTranslate, text.languageCode, translationTargetLanguageCode, { signal: controller.signal });
       if (result?.translatedText) {
+        const cache = translationCacheRef.current;
+        cache.set(cacheKey, result.translatedText);
+        if (cache.size > 100) {
+          const oldestKey = cache.keys().next().value;
+          cache.delete(oldestKey);
+        }
         setTranslation(result.translatedText);
         setDisplayedWord(prev => (prev && prev.term === termToTranslate ? { ...prev, translation: result.translatedText } : prev));
       } else {
         setWordTranslationError('Translation not found.');
       }
     } catch (err) {
+      if (err.name === 'AbortError' || controller.signal.aborted) {
+        return;
+      }
       console.error('Auto-translation failed:', err);
-      setWordTranslationError(`Translation failed: ${err.message}`);
+      if (err.status === 429) {
+        setWordTranslationError('Provider rate limit reached — try again in a few seconds.');
+      } else {
+        setWordTranslationError(`Translation failed: ${err.message}`);
+      }
     } finally {
-      setIsTranslating(false);
+      if (translationAbortRef.current === controller) {
+        translationAbortRef.current = null;
+        setIsTranslating(false);
+      }
     }
-  }, [globalSettings.autoTranslateWords, text?.languageCode, translationTargetLanguageCode, setTranslation, setDisplayedWord, setIsTranslating, setWordTranslationError]); // Use globalSettings from context
+  }, [globalSettings.autoTranslateWords, text?.languageCode, translationTargetLanguageCode, setTranslation, setDisplayedWord, setIsTranslating, setWordTranslationError]);
 
   const handleWordClick = useCallback((word, options = {}) => {
     const { skipAutoTranslate = false, preserveLastHandledSelection = false } = options;
@@ -586,9 +620,6 @@ const TextDisplay = () => {
     if (!isPhrase && globalSettings.tooltipOnlyForSavedWords) {
       const existing = getWordData(word);
       if (existing && !existing.isNew) {
-        // Cancel the pending processWordSelection scheduled by the container's
-        // touchend handler — otherwise it fires ~650ms later, finds no real
-        // selection, and toggles the mobile header.
         clearPendingSelection();
         return;
       }
@@ -611,9 +642,6 @@ const TextDisplay = () => {
     const selectionDetails = getSelectionDetails();
     if (!selectionDetails) {
       lastHandledSelectionRef.current = '';
-      if (isMobile && !contentTouchMovedRef.current && !hasActiveTextSelection()) {
-        setShowMobileHeader(prev => !prev);
-      }
       return;
     }
 
@@ -730,11 +758,14 @@ const TextDisplay = () => {
   }, [clearPendingSelection, processWordSelection]);
 
   const handleWordSelection = useCallback(() => {
-    scheduleWordSelection(isMobile ? 650 : 120);
+    scheduleWordSelection(isMobile ? 350 : 120);
   }, [isMobile, scheduleWordSelection]);
 
   useEffect(() => {
-    return () => clearPendingSelection();
+    return () => {
+      clearPendingSelection();
+      translationAbortRef.current?.abort();
+    };
   }, [clearPendingSelection]);
 
   useEffect(() => {
@@ -763,7 +794,7 @@ const TextDisplay = () => {
       }
 
       setIsWordPanelOpen(false);
-      scheduleWordSelection(900);
+      scheduleWordSelection(350);
     };
 
     document.addEventListener('selectionchange', handleSelectionChange);
@@ -1984,8 +2015,6 @@ const TextDisplay = () => {
             <div
               className={`flex-grow-1 reader-main-surface reader-main-surface-${readingUiMode}`}
               ref={readingContainerRef}
-              onTouchStart={() => { contentTouchMovedRef.current = false; }}
-              onTouchMove={() => { contentTouchMovedRef.current = true; }}
             >
               <div
                 className={`reader-main-surface-inner reader-main-surface-inner-${readingUiMode}`}

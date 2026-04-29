@@ -231,10 +231,11 @@ namespace LinguaReadApi.Services
                     if (!response.IsSuccessStatusCode)
                     {
                         lastStatus = response.StatusCode;
-                        var isRetryable = response.StatusCode == HttpStatusCode.ServiceUnavailable ||
-                                          response.StatusCode == HttpStatusCode.TooManyRequests;
+                        var is429 = response.StatusCode == HttpStatusCode.TooManyRequests;
+                        var attemptsBudget = is429 ? 2 : maxAttempts;
+                        var isRetryable = is429 || response.StatusCode == HttpStatusCode.ServiceUnavailable;
 
-                        if (isRetryable && attempt < maxAttempts)
+                        if (isRetryable && attempt < attemptsBudget)
                         {
                             var delayMs = (int)Math.Pow(2, attempt - 1) * 1000;
                             await Task.Delay(delayMs);
@@ -459,13 +460,17 @@ Text:
                 if (!response.IsSuccessStatusCode)
                 {
                     lastStatus = response.StatusCode;
-                    var isRetryable = response.StatusCode == HttpStatusCode.ServiceUnavailable ||
-                                      response.StatusCode == HttpStatusCode.TooManyRequests;
+                    var is429 = response.StatusCode == HttpStatusCode.TooManyRequests;
+                    var is503 = response.StatusCode == HttpStatusCode.ServiceUnavailable;
+                    // 429 retries are capped at 2 attempts (1 retry) — provider RPM caps don't
+                    // resolve in 1-2s, and extra retries just amplify invisible 429s.
+                    var attemptsBudget = is429 ? 2 : maxAttempts;
+                    var isRetryable = is503 || is429;
 
                     _logger.LogWarning("OpenRouter API error (attempt={Attempt}/{Max}): {StatusCode}. Retryable={Retryable}. Response={Response}",
-                        attempt, maxAttempts, response.StatusCode, isRetryable, responseContent);
+                        attempt, attemptsBudget, response.StatusCode, isRetryable, responseContent);
 
-                    if (isRetryable && attempt < maxAttempts)
+                    if (isRetryable && attempt < attemptsBudget)
                     {
                         var delayMs = (int)Math.Pow(2, attempt - 1) * 1000;
                         await Task.Delay(delayMs);
@@ -589,9 +594,10 @@ Strict instructions:
                     if (!response.IsSuccessStatusCode)
                     {
                         lastStatus = response.StatusCode;
-                        var isRetryable = response.StatusCode == HttpStatusCode.ServiceUnavailable ||
-                                          response.StatusCode == HttpStatusCode.TooManyRequests;
-                        if (isRetryable && attempt < maxAttempts)
+                        var is429 = response.StatusCode == HttpStatusCode.TooManyRequests;
+                        var attemptsBudget = is429 ? 2 : maxAttempts;
+                        var isRetryable = is429 || response.StatusCode == HttpStatusCode.ServiceUnavailable;
+                        if (isRetryable && attempt < attemptsBudget)
                         {
                             var delayMs = (int)Math.Pow(2, attempt - 1) * 1000;
                             await Task.Delay(delayMs);

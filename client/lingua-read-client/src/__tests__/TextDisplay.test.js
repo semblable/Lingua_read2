@@ -313,6 +313,63 @@ describe('TextDisplay', () => {
     expect(translateSelectionWithContext).toHaveBeenCalledTimes(1);
   });
 
+  test('mobile selectionchange triggers translation when selection appears after touchend', async () => {
+    window.matchMedia = jest.fn().mockImplementation(() => ({
+      matches: true,
+      addEventListener: jest.fn(),
+      removeEventListener: jest.fn()
+    }));
+
+    renderTextDisplay({ autoTranslateWords: true });
+
+    await waitFor(() => expect(getText).toHaveBeenCalled());
+    const word = await screen.findByText('Hello');
+    const textContent = word.closest('.text-content');
+    expect(textContent).not.toBeNull();
+
+    const noSelection = {
+      isCollapsed: true,
+      rangeCount: 0,
+      anchorNode: null,
+      focusNode: null,
+      toString: () => ''
+    };
+    const withSelection = {
+      isCollapsed: false,
+      rangeCount: 1,
+      anchorNode: textContent,
+      focusNode: textContent,
+      toString: () => 'Hello world',
+      getRangeAt: () => ({
+        commonAncestorContainer: textContent
+      })
+    };
+    let currentSelection = noSelection;
+    window.getSelection = jest.fn(() => currentSelection);
+
+    act(() => {
+      fireEvent.touchEnd(textContent);
+      jest.advanceTimersByTime(220);
+    });
+    expect(translateSelectionWithContext).not.toHaveBeenCalled();
+
+    currentSelection = withSelection;
+    act(() => {
+      document.dispatchEvent(new Event('selectionchange'));
+      jest.advanceTimersByTime(120);
+    });
+
+    await waitFor(() => {
+      expect(translateSelectionWithContext).toHaveBeenCalledWith(
+        'Hello world',
+        'Hello world.',
+        'ES',
+        'EN',
+        expect.objectContaining({ signal: expect.anything() })
+      );
+    });
+  });
+
   test('mobile: mouseup with no selection does not toggle the lesson header', async () => {
     window.matchMedia = jest.fn().mockImplementation(() => ({
       matches: true,

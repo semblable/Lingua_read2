@@ -104,6 +104,8 @@ const TextDisplay = () => {
   const [isSpeakingSentence, setIsSpeakingSentence] = useState(false);
   const [isSpeakingWord, setIsSpeakingWord] = useState(false);
   const selectionDebounceRef = useRef(null);
+  const mobileSelectionRetryRef = useRef(null);
+  const mobileSelectionPendingRef = useRef(false);
   const lastHandledSelectionRef = useRef('');
   const suppressWordClickUntilRef = useRef(0);
   const selectableWordTouchStartRef = useRef(0);
@@ -167,6 +169,13 @@ const TextDisplay = () => {
     if (selectionDebounceRef.current) {
       clearTimeout(selectionDebounceRef.current);
       selectionDebounceRef.current = null;
+    }
+  }, []);
+
+  const clearMobileSelectionRetry = useCallback(() => {
+    if (mobileSelectionRetryRef.current) {
+      clearTimeout(mobileSelectionRetryRef.current);
+      mobileSelectionRetryRef.current = null;
     }
   }, []);
 
@@ -641,7 +650,9 @@ const TextDisplay = () => {
   const processWordSelection = useCallback(() => {
     const selectionDetails = getSelectionDetails();
     if (!selectionDetails) {
-      lastHandledSelectionRef.current = '';
+      if (!isMobile) {
+        lastHandledSelectionRef.current = '';
+      }
       return;
     }
 
@@ -649,6 +660,8 @@ const TextDisplay = () => {
     const sentenceContext = buildAiSelectionContext(range, container, selectedText);
     focusSentenceIndexFromNode(range.commonAncestorContainer);
     if (isMobile) {
+      mobileSelectionPendingRef.current = false;
+      clearMobileSelectionRetry();
       handleSelectedText(selectedText, sentenceContext);
       return;
     }
@@ -747,7 +760,7 @@ const TextDisplay = () => {
       handleSelectedText(selection.toString().trim(), sentenceContext);
     }
 
-  }, [focusSentenceIndexFromNode, getSelectionDetails, buildAiSelectionContext, handleSelectedText, isMobile, hasActiveTextSelection]); // textContentRef is a stable ref
+  }, [focusSentenceIndexFromNode, getSelectionDetails, buildAiSelectionContext, handleSelectedText, isMobile, hasActiveTextSelection, clearMobileSelectionRetry]); // textContentRef is a stable ref
 
   const scheduleWordSelection = useCallback((delayMs) => {
     clearPendingSelection();
@@ -758,15 +771,28 @@ const TextDisplay = () => {
   }, [clearPendingSelection, processWordSelection]);
 
   const handleWordSelection = useCallback(() => {
-    scheduleWordSelection(isMobile ? 350 : 120);
-  }, [isMobile, scheduleWordSelection]);
+    if (!isMobile) {
+      scheduleWordSelection(120);
+      return;
+    }
+
+    mobileSelectionPendingRef.current = true;
+    scheduleWordSelection(200);
+    clearMobileSelectionRetry();
+    mobileSelectionRetryRef.current = setTimeout(() => {
+      if (mobileSelectionPendingRef.current) {
+        processWordSelection();
+      }
+    }, 550);
+  }, [isMobile, scheduleWordSelection, clearMobileSelectionRetry, processWordSelection]);
 
   useEffect(() => {
     return () => {
       clearPendingSelection();
+      clearMobileSelectionRetry();
       translationAbortRef.current?.abort();
     };
-  }, [clearPendingSelection]);
+  }, [clearPendingSelection, clearMobileSelectionRetry]);
 
   useEffect(() => {
     if (!isMobile) return undefined;
@@ -776,15 +802,43 @@ const TextDisplay = () => {
     const handleSelectionChange = () => {
       const selection = window.getSelection();
       if (!selection || selection.isCollapsed) {
+        mobileSelectionPendingRef.current = false;
+        clearMobileSelectionRetry();
         lastHandledSelectionRef.current = '';
+        return;
       }
+
+      if (!mobileSelectionPendingRef.current || !textContentRef.current || selection.rangeCount === 0) {
+        return;
+      }
+
+      let range;
+      try {
+        range = selection.getRangeAt(0);
+      } catch {
+        return;
+      }
+
+      const container = textContentRef.current;
+      const anchorNode = selection.anchorNode;
+      const focusNode = selection.focusNode;
+      if (!anchorNode || !focusNode) return;
+      if (
+        !container.contains(range.commonAncestorContainer) ||
+        !container.contains(anchorNode) ||
+        !container.contains(focusNode)
+      ) {
+        return;
+      }
+
+      scheduleWordSelection(60);
     };
 
     document.addEventListener('selectionchange', handleSelectionChange);
     return () => {
       document.removeEventListener('selectionchange', handleSelectionChange);
     };
-  }, [isMobile]);
+  }, [isMobile, scheduleWordSelection, clearMobileSelectionRetry]);
   // --- End New Word-Granularity Selection Logic ---
 
 

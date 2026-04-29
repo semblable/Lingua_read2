@@ -146,6 +146,37 @@ export const periodDayCount = (period) => {
   }
 };
 
+export const supportsPreviousPeriod = (period) => periodDayCount(period) !== null;
+
+export const previousPeriodLabel = (period) => {
+  switch (period) {
+    case 'last_day':
+      return 'vs previous day';
+    case 'last_week':
+      return 'vs previous 7 days';
+    case 'last_month':
+      return 'vs previous 30 days';
+    case 'last_90':
+      return 'vs previous 90 days';
+    case 'last_180':
+      return 'vs previous 180 days';
+    default:
+      return '';
+  }
+};
+
+export const computeDelta = (current, previous) => {
+  const cur = numberOrZero(current);
+  const prev = numberOrZero(previous);
+  if (prev === 0) return null;
+  const diff = cur - prev;
+  const pct = Math.round((diff / prev) * 100);
+  let direction = 'flat';
+  if (diff > 0) direction = 'up';
+  else if (diff < 0) direction = 'down';
+  return { diff, pct, direction, previous: prev };
+};
+
 export const buildLanguageStats = ({ stats, readingActivity, listeningActivity, period }) => {
   const languages = new Map();
 

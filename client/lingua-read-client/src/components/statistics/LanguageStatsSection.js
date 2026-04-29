@@ -3,17 +3,26 @@ import { Alert, Badge, Card, Col, ProgressBar, Row } from 'react-bootstrap';
 import CefrBadge from '../dashboard/CefrBadge';
 import { formatDuration } from '../../utils/statistics';
 
-const LanguageStatsSection = ({ languages, loadingActivity }) => {
+const LanguageStatsSection = ({ languages, loadingActivity, selectedLanguageId, onSelectLanguage }) => {
   if (languages.length === 0) {
     return <Alert variant="info">No language-specific data available yet.</Alert>;
   }
+
+  const handleSelect = (languageId) => {
+    if (typeof onSelectLanguage !== 'function') return;
+    if (String(selectedLanguageId) === String(languageId)) {
+      onSelectLanguage('all');
+    } else {
+      onSelectLanguage(String(languageId));
+    }
+  };
 
   return (
     <section className="mb-4">
       <div className="d-flex justify-content-between align-items-end mb-3 flex-wrap gap-2">
         <div>
           <h3 className="h4 fw-bold mb-1">Statistics by Language</h3>
-          <div className="text-muted small">Vocabulary, reading, and listening in one place.</div>
+          <div className="text-muted small">Vocabulary, reading, and listening in one place. Click a card to filter the page.</div>
         </div>
       </div>
 
@@ -25,10 +34,30 @@ const LanguageStatsSection = ({ languages, loadingActivity }) => {
           const learningPercent = language.totalWordsEncountered > 0
             ? Math.round((language.learningWords / language.totalWordsEncountered) * 100)
             : 0;
+          const isSelected = String(selectedLanguageId) === String(language.languageId);
+          const clickable = typeof onSelectLanguage === 'function';
+
+          const cardProps = clickable
+            ? {
+                role: 'button',
+                tabIndex: 0,
+                onClick: () => handleSelect(language.languageId),
+                onKeyDown: (e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    handleSelect(language.languageId);
+                  }
+                },
+                'aria-pressed': isSelected
+              }
+            : {};
 
           return (
             <Col md={6} xl={4} key={language.languageId}>
-              <Card className="stats-card h-100 shadow-sm">
+              <Card
+                className={`stats-card h-100 shadow-sm${clickable ? ' stats-card-clickable' : ''}${isSelected ? ' stats-card-selected' : ''}`}
+                {...cardProps}
+              >
                 <Card.Body>
                   <div className="d-flex justify-content-between align-items-start mb-3">
                     <div>

@@ -8,7 +8,8 @@ import {
 import {
   normalizeListeningActivity,
   normalizeReadingActivity,
-  normalizeStatistics
+  normalizeStatistics,
+  supportsPreviousPeriod
 } from '../utils/statistics';
 
 const emptyReadingActivity = normalizeReadingActivity();
@@ -18,6 +19,8 @@ export const useStatisticsData = ({ period, languageId }) => {
   const [stats, setStats] = useState(null);
   const [readingActivity, setReadingActivity] = useState(emptyReadingActivity);
   const [listeningActivity, setListeningActivity] = useState(emptyListeningActivity);
+  const [previousReadingActivity, setPreviousReadingActivity] = useState(emptyReadingActivity);
+  const [previousListeningActivity, setPreviousListeningActivity] = useState(emptyListeningActivity);
   const [loadingStats, setLoadingStats] = useState(true);
   const [loadingActivity, setLoadingActivity] = useState(true);
   const [error, setError] = useState('');
@@ -58,15 +61,25 @@ export const useStatisticsData = ({ period, languageId }) => {
     requestIdRef.current = requestId;
     setLoadingActivity(true);
 
+    const includePrevious = supportsPreviousPeriod(period);
+
     try {
       const timezoneOffsetMinutes = -new Date().getTimezoneOffset();
       const selectedLanguageId = languageId === 'all' ? null : languageId;
-      const [readingData, listeningData] = await Promise.all([
+      const requests = [
         getReadingActivity(period, timezoneOffsetMinutes, selectedLanguageId),
         getListeningActivity(period, timezoneOffsetMinutes, selectedLanguageId)
-      ]);
+      ];
+      if (includePrevious) {
+        requests.push(getReadingActivity(period, timezoneOffsetMinutes, selectedLanguageId, 1));
+        requests.push(getListeningActivity(period, timezoneOffsetMinutes, selectedLanguageId, 1));
+      }
+
+      const results = await Promise.all(requests);
 
       if (requestIdRef.current !== requestId) return;
+
+      const [readingData, listeningData, prevReadingData, prevListeningData] = results;
 
       if (readingData?.error) {
         console.error('Failed to load reading activity:', readingData.error);
@@ -81,11 +94,32 @@ export const useStatisticsData = ({ period, languageId }) => {
       } else {
         setListeningActivity(normalizeListeningActivity(listeningData));
       }
+
+      if (includePrevious) {
+        if (prevReadingData?.error) {
+          console.error('Failed to load previous reading activity:', prevReadingData.error);
+          setPreviousReadingActivity(emptyReadingActivity);
+        } else {
+          setPreviousReadingActivity(normalizeReadingActivity(prevReadingData));
+        }
+
+        if (prevListeningData?.error) {
+          console.error('Failed to load previous listening activity:', prevListeningData.error);
+          setPreviousListeningActivity(emptyListeningActivity);
+        } else {
+          setPreviousListeningActivity(normalizeListeningActivity(prevListeningData));
+        }
+      } else {
+        setPreviousReadingActivity(emptyReadingActivity);
+        setPreviousListeningActivity(emptyListeningActivity);
+      }
     } catch (err) {
       if (requestIdRef.current !== requestId) return;
       console.error('Failed to load activity:', err);
       setReadingActivity(emptyReadingActivity);
       setListeningActivity(emptyListeningActivity);
+      setPreviousReadingActivity(emptyReadingActivity);
+      setPreviousListeningActivity(emptyListeningActivity);
     } finally {
       if (requestIdRef.current === requestId) {
         setLoadingActivity(false);
@@ -122,6 +156,8 @@ export const useStatisticsData = ({ period, languageId }) => {
     stats,
     readingActivity,
     listeningActivity,
+    previousReadingActivity,
+    previousListeningActivity,
     loading: loadingStats,
     loadingActivity,
     error,

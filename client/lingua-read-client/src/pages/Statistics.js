@@ -4,13 +4,16 @@ import { Alert, Button, Container, Spinner } from 'react-bootstrap';
 import { API_URL } from '../utils/api';
 import ManualEntryModal from '../components/ManualEntryModal';
 import ActivityCharts from '../components/statistics/ActivityCharts';
+import ActivityHeatmap from '../components/statistics/ActivityHeatmap';
 import ActivityTables from '../components/statistics/ActivityTables';
 import LanguageStatsSection from '../components/statistics/LanguageStatsSection';
+import MilestoneCards from '../components/statistics/MilestoneCards';
 import StatsFilters from '../components/statistics/StatsFilters';
 import StatsSummaryCards from '../components/statistics/StatsSummaryCards';
 import {
   buildLanguageStats,
-  getDisplayStats
+  getDisplayStats,
+  supportsPreviousPeriod
 } from '../utils/statistics';
 import useStatisticsData from '../hooks/useStatisticsData';
 import '../components/statistics/Statistics.css';
@@ -25,6 +28,8 @@ const Statistics = () => {
     stats,
     readingActivity,
     listeningActivity,
+    previousReadingActivity,
+    previousListeningActivity,
     loading,
     loadingActivity,
     error,
@@ -58,6 +63,8 @@ const Statistics = () => {
   const selectedLanguageName = selectedLanguage === 'all'
     ? 'All Languages'
     : languages.find((language) => String(language.languageId) === String(selectedLanguage))?.languageName || 'Selected Language';
+
+  const showComparison = supportsPreviousPeriod(activityPeriod);
 
   const handleInitializeLanguages = async () => {
     try {
@@ -131,7 +138,19 @@ const Statistics = () => {
       <div className="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
         <div>
           <h2 className="fw-bold mb-1">Statistics</h2>
-          <div className="text-muted">{selectedLanguageName}</div>
+          <div className="text-muted d-flex align-items-center gap-2">
+            <span>{selectedLanguageName}</span>
+            {selectedLanguage !== 'all' && (
+              <Button
+                variant="link"
+                size="sm"
+                className="p-0 text-decoration-none"
+                onClick={() => setSelectedLanguage('all')}
+              >
+                Clear filter
+              </Button>
+            )}
+          </div>
         </div>
         <StatsFilters
           activityPeriod={activityPeriod}
@@ -162,19 +181,37 @@ const Statistics = () => {
         displayStats={displayStats}
         readingActivity={readingActivity}
         listeningActivity={listeningActivity}
+        previousReadingActivity={previousReadingActivity}
+        previousListeningActivity={previousListeningActivity}
         activityPeriod={activityPeriod}
         totalLanguages={languages.length}
       />
+
+      <MilestoneCards languages={languages} selectedLanguage={selectedLanguage} />
 
       <ActivityCharts
         displayStats={displayStats}
         readingActivity={readingActivity}
         listeningActivity={listeningActivity}
+        previousReadingActivity={previousReadingActivity}
+        previousListeningActivity={previousListeningActivity}
         languages={languages}
         loadingActivity={loadingActivity}
+        showComparison={showComparison}
       />
 
-      <LanguageStatsSection languages={languages} loadingActivity={loadingActivity} />
+      <ActivityHeatmap
+        readingActivity={readingActivity}
+        listeningActivity={listeningActivity}
+        period={activityPeriod}
+      />
+
+      <LanguageStatsSection
+        languages={languages}
+        loadingActivity={loadingActivity}
+        selectedLanguageId={selectedLanguage}
+        onSelectLanguage={setSelectedLanguage}
+      />
 
       <ActivityTables
         readingActivity={readingActivity}
@@ -191,4 +228,3 @@ const Statistics = () => {
 };
 
 export default Statistics;
-

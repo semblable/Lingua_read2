@@ -635,7 +635,7 @@ export const getGoalSuggestion = ({ type, languageId = null, recurrence = 0, mod
   return fetchApi(`/goals/suggestions?${params.toString()}`);
 };
 
-export const getReadingActivity = async (period = 'all', timezoneOffsetMinutes = null, languageId = null) => {
+export const getReadingActivity = async (period = 'all', timezoneOffsetMinutes = null, languageId = null, offset = 0) => {
   try {
     const params = new URLSearchParams({ period });
     if (timezoneOffsetMinutes !== null) {
@@ -643,6 +643,9 @@ export const getReadingActivity = async (period = 'all', timezoneOffsetMinutes =
     }
     if (languageId !== null) {
       params.append('languageId', languageId);
+    }
+    if (offset && offset > 0) {
+      params.append('offset', offset);
     }
     console.log(`[API] Getting reading activity with params: ${params.toString()}`);
     const data = await fetchApi(`/users/reading-activity?${params.toString()}`);
@@ -654,7 +657,7 @@ export const getReadingActivity = async (period = 'all', timezoneOffsetMinutes =
 };
 
 // Fetch listening activity data
-export const getListeningActivity = async (period = 'all', timezoneOffsetMinutes = null, languageId = null) => {
+export const getListeningActivity = async (period = 'all', timezoneOffsetMinutes = null, languageId = null, offset = 0) => {
   try {
     const params = new URLSearchParams({ period });
     if (timezoneOffsetMinutes !== null && timezoneOffsetMinutes !== undefined) {
@@ -662,6 +665,9 @@ export const getListeningActivity = async (period = 'all', timezoneOffsetMinutes
     }
     if (languageId !== null && languageId !== undefined) {
       params.append('languageId', languageId);
+    }
+    if (offset && offset > 0) {
+      params.append('offset', offset);
     }
     console.log(`[API] Fetching listening activity with params: ${params.toString()}`);
     const data = await fetchApi(`/users/listening-activity?${params.toString()}`);

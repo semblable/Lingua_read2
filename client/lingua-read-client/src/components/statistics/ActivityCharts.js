@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Card, Col, Row, Spinner } from 'react-bootstrap';
 import {
   Area,
@@ -30,24 +30,76 @@ const ChartCard = ({ title, summary, children }) => (
   </Card>
 );
 
+const buildComparisonSeries = (current, previous, currentKey, previousKey) => {
+  const cur = Array.isArray(current) ? current : [];
+  const prev = Array.isArray(previous) ? previous : [];
+  const length = Math.max(cur.length, prev.length);
+  const series = [];
+  for (let i = 0; i < length; i += 1) {
+    const c = cur[i];
+    const p = prev[i];
+    series.push({
+      label: c?.date || p?.date || `Day ${i + 1}`,
+      [currentKey]: c ? c[currentKey] ?? c.wordsRead ?? c.minutesListened ?? 0 : null,
+      [previousKey]: p ? p[currentKey] ?? p.wordsRead ?? p.minutesListened ?? 0 : null
+    });
+  }
+  return series;
+};
+
 const ActivityCharts = ({
   displayStats,
   readingActivity,
   listeningActivity,
+  previousReadingActivity,
+  previousListeningActivity,
   languages,
-  loadingActivity
+  loadingActivity,
+  showComparison
 }) => {
   const wordBreakdown = [
     { name: 'Known', value: displayStats.knownWords, fill: '#2ECC71' },
     { name: 'Learning', value: displayStats.learningWords, fill: '#F1C40F' }
   ].filter((item) => item.value > 0);
-  const readingByDate = readingActivity.activityByDate || [];
-  const listeningByDate = listeningActivity.listeningByDate || [];
+
+  const readingByDate = useMemo(
+    () => readingActivity.activityByDate || [],
+    [readingActivity]
+  );
+  const listeningByDate = useMemo(
+    () => listeningActivity.listeningByDate || [],
+    [listeningActivity]
+  );
+  const prevReadingByDate = useMemo(
+    () => previousReadingActivity?.activityByDate || [],
+    [previousReadingActivity]
+  );
+  const prevListeningByDate = useMemo(
+    () => previousListeningActivity?.listeningByDate || [],
+    [previousListeningActivity]
+  );
+
+  const hasReadingComparison = showComparison && prevReadingByDate.length > 0;
+  const hasListeningComparison = showComparison && prevListeningByDate.length > 0;
+
+  const readingSeries = useMemo(() => {
+    if (!hasReadingComparison) return readingByDate;
+    return buildComparisonSeries(readingByDate, prevReadingByDate, 'wordsRead', 'previousWordsRead');
+  }, [hasReadingComparison, readingByDate, prevReadingByDate]);
+
+  const listeningSeries = useMemo(() => {
+    if (!hasListeningComparison) return listeningByDate;
+    return buildComparisonSeries(listeningByDate, prevListeningByDate, 'minutesListened', 'previousMinutesListened');
+  }, [hasListeningComparison, listeningByDate, prevListeningByDate]);
+
   const languageVocabulary = languages.map((language) => ({
     name: language.languageName,
     known: language.knownWords,
     learning: language.learningWords
   }));
+
+  const readingXKey = hasReadingComparison ? 'label' : 'date';
+  const listeningXKey = hasListeningComparison ? 'label' : 'date';
 
   return (
     <>
@@ -84,22 +136,41 @@ const ActivityCharts = ({
         </Col>
 
         <Col lg={4}>
-          <ChartCard title="Words Read Over Time" summary="Daily reading activity for the selected period">
+          <ChartCard
+            title="Words Read Over Time"
+            summary={hasReadingComparison ? 'Current vs previous period' : 'Daily reading activity for the selected period'}
+          >
             {loadingActivity ? (
               <EmptyChart><Spinner animation="border" size="sm" /></EmptyChart>
-            ) : readingByDate.length > 0 ? (
+            ) : readingSeries.length > 0 ? (
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={readingByDate}>
+                <AreaChart data={readingSeries}>
                   <defs>
                     <linearGradient id="statsWordsRead" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="5%" stopColor="#3498DB" stopOpacity={0.3} />
                       <stop offset="95%" stopColor="#3498DB" stopOpacity={0} />
                     </linearGradient>
+                    <linearGradient id="statsWordsReadPrev" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#95A5A6" stopOpacity={0.2} />
+                      <stop offset="95%" stopColor="#95A5A6" stopOpacity={0} />
+                    </linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                  <XAxis dataKey="date" tick={{ fontSize: 10 }} />
+                  <XAxis dataKey={readingXKey} tick={{ fontSize: 10 }} />
                   <YAxis tick={{ fontSize: 10 }} />
                   <Tooltip />
+                  {hasReadingComparison && <Legend />}
+                  {hasReadingComparison && (
+                    <Area
+                      type="monotone"
+                      dataKey="previousWordsRead"
+                      name="Previous period"
+                      stroke="#95A5A6"
+                      strokeWidth={1.5}
+                      strokeDasharray="4 3"
+                      fill="url(#statsWordsReadPrev)"
+                    />
+                  )}
                   <Area
                     type="monotone"
                     dataKey="wordsRead"
@@ -117,16 +188,28 @@ const ActivityCharts = ({
         </Col>
 
         <Col lg={4}>
-          <ChartCard title="Listening Over Time" summary="Daily listening minutes for the selected period">
+          <ChartCard
+            title="Listening Over Time"
+            summary={hasListeningComparison ? 'Current vs previous period' : 'Daily listening minutes for the selected period'}
+          >
             {loadingActivity ? (
               <EmptyChart><Spinner animation="border" size="sm" /></EmptyChart>
-            ) : listeningByDate.length > 0 ? (
+            ) : listeningSeries.length > 0 ? (
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={listeningByDate}>
+                <BarChart data={listeningSeries}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                  <XAxis dataKey="date" tick={{ fontSize: 10 }} />
+                  <XAxis dataKey={listeningXKey} tick={{ fontSize: 10 }} />
                   <YAxis tick={{ fontSize: 10 }} />
                   <Tooltip />
+                  {hasListeningComparison && <Legend />}
+                  {hasListeningComparison && (
+                    <Bar
+                      dataKey="previousMinutesListened"
+                      name="Previous period"
+                      fill="#BDC3C7"
+                      radius={[4, 4, 0, 0]}
+                    />
+                  )}
                   <Bar
                     dataKey="minutesListened"
                     name="Minutes listened"
@@ -166,4 +249,3 @@ const ActivityCharts = ({
 };
 
 export default ActivityCharts;
-

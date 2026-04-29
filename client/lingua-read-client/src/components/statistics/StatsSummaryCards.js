@@ -1,9 +1,23 @@
 import React from 'react';
 import { Col, Row } from 'react-bootstrap';
 import StatCard from './StatCard';
-import { formatDuration, periodDayCount } from '../../utils/statistics';
+import {
+  computeDelta,
+  formatDuration,
+  periodDayCount,
+  previousPeriodLabel,
+  supportsPreviousPeriod
+} from '../../utils/statistics';
 
-const StatsSummaryCards = ({ displayStats, readingActivity, listeningActivity, activityPeriod, totalLanguages }) => {
+const StatsSummaryCards = ({
+  displayStats,
+  readingActivity,
+  listeningActivity,
+  previousReadingActivity,
+  previousListeningActivity,
+  activityPeriod,
+  totalLanguages
+}) => {
   const completionPercentage = displayStats.totalWords > 0
     ? Math.round((displayStats.knownWords / displayStats.totalWords) * 100)
     : 0;
@@ -11,6 +25,24 @@ const StatsSummaryCards = ({ displayStats, readingActivity, listeningActivity, a
   const dailyAverage = days
     ? Math.round((readingActivity.totalWordsRead || 0) / days).toLocaleString()
     : '-';
+
+  const showDeltas = supportsPreviousPeriod(activityPeriod);
+  const deltaLabel = previousPeriodLabel(activityPeriod);
+
+  const wordsReadDelta = showDeltas
+    ? computeDelta(readingActivity.totalWordsRead || 0, previousReadingActivity?.totalWordsRead || 0)
+    : null;
+  const listeningDelta = showDeltas
+    ? computeDelta(listeningActivity.totalListeningSeconds || 0, previousListeningActivity?.totalListeningSeconds || 0)
+    : null;
+  const activeDaysDelta = showDeltas
+    ? computeDelta(
+        (readingActivity.activityByDate || []).length,
+        (previousReadingActivity?.activityByDate || []).length
+      )
+    : null;
+
+  const withLabel = (delta) => (delta ? { ...delta, label: deltaLabel } : null);
 
   return (
     <>
@@ -54,6 +86,7 @@ const StatsSummaryCards = ({ displayStats, readingActivity, listeningActivity, a
             title="Words Read"
             value={(readingActivity.totalWordsRead || 0).toLocaleString()}
             detail="in selected period"
+            delta={withLabel(wordsReadDelta)}
           />
         </Col>
         <Col sm={6} xl={3}>
@@ -62,6 +95,7 @@ const StatsSummaryCards = ({ displayStats, readingActivity, listeningActivity, a
             value={formatDuration(listeningActivity.totalListeningSeconds || 0)}
             detail="in selected period"
             tone="primary"
+            delta={withLabel(listeningDelta)}
           />
         </Col>
         <Col sm={6} xl={3}>
@@ -69,6 +103,7 @@ const StatsSummaryCards = ({ displayStats, readingActivity, listeningActivity, a
             title="Active Days"
             value={(readingActivity.activityByDate || []).length.toLocaleString()}
             detail="days with reading"
+            delta={withLabel(activeDaysDelta)}
           />
         </Col>
         <Col sm={6} xl={3}>
@@ -85,4 +120,3 @@ const StatsSummaryCards = ({ displayStats, readingActivity, listeningActivity, a
 };
 
 export default StatsSummaryCards;
-

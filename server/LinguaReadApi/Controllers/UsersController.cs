@@ -194,14 +194,15 @@ namespace LinguaReadApi.Controllers
         }
 
         [HttpGet("reading-activity")] // Corrected route to match frontend api.js
-        public async Task<IActionResult> GetReadingActivity([FromQuery] string period = "all", [FromQuery] int? timezoneOffsetMinutes = null, [FromQuery] int? languageId = null)
+        public async Task<IActionResult> GetReadingActivity([FromQuery] string period = "all", [FromQuery] int? timezoneOffsetMinutes = null, [FromQuery] int? languageId = null, [FromQuery] int offset = 0)
         {
-            _logger.LogInformation("Getting reading activity for period: {Period}, timezoneOffsetMinutes: {TimezoneOffset}, languageId: {LanguageId}", period, timezoneOffsetMinutes, languageId);
+            _logger.LogInformation("Getting reading activity for period: {Period}, offset: {Offset}, timezoneOffsetMinutes: {TimezoneOffset}, languageId: {LanguageId}", period, offset, timezoneOffsetMinutes, languageId);
             var userId = GetUserId();
 
             try
             {
                 DateTime startDate;
+                DateTime endDate;
                 DateTime nowUtc = DateTime.UtcNow;
                 DateTime nowLocal;
 
@@ -213,6 +214,9 @@ namespace LinguaReadApi.Controllers
                 {
                     nowLocal = nowUtc;
                 }
+
+                int? lengthDays = PeriodLengthDays(period);
+                int effectiveOffset = lengthDays.HasValue && offset > 0 ? offset : 0;
 
                 switch (period.ToLower())
                 {
@@ -240,13 +244,30 @@ namespace LinguaReadApi.Controllers
                         break;
                 }
 
-                _logger.LogDebug("Fetching activities from {StartDate} for user {UserId} (timezoneOffsetMinutes: {TimezoneOffset}, languageId: {LanguageId})", startDate, userId, timezoneOffsetMinutes, languageId);
+                if (effectiveOffset > 0 && lengthDays.HasValue)
+                {
+                    DateTime origStart = startDate;
+                    endDate = origStart.AddDays(-lengthDays.Value * (effectiveOffset - 1));
+                    startDate = endDate.AddDays(-lengthDays.Value);
+                    _logger.LogDebug("Applied offset {Offset} (length {Length}d): startDate {StartDate}, endDate {EndDate}", effectiveOffset, lengthDays.Value, startDate, endDate);
+                }
+                else
+                {
+                    endDate = DateTime.MaxValue;
+                }
+
+                _logger.LogDebug("Fetching activities from {StartDate} to {EndDate} for user {UserId} (timezoneOffsetMinutes: {TimezoneOffset}, languageId: {LanguageId})", startDate, endDate, userId, timezoneOffsetMinutes, languageId);
 
                 var query = _context.UserActivities
                     .Where(a => a.UserId == userId && a.Timestamp >= startDate &&
                                 (a.ActivityType == "Reading" || a.ActivityType == "LessonCompleted" ||
                                  a.ActivityType == "BookFinished" || a.ActivityType == "ManualReading" ||
                                  a.ActivityType == "TextCompleted")); // Added TextCompleted
+
+                if (effectiveOffset > 0)
+                {
+                    query = query.Where(a => a.Timestamp < endDate);
+                }
 
                 if (languageId.HasValue)
                 {
@@ -281,7 +302,9 @@ namespace LinguaReadApi.Controllers
                     ActivityByDate = activityByDate,
                     ActivityByLanguage = byLanguage,
                     Period = period,
-                    StartDate = startDate == DateTime.MinValue ? "all" : startDate.ToString("yyyy-MM-dd")
+                    Offset = effectiveOffset,
+                    StartDate = startDate == DateTime.MinValue ? "all" : startDate.ToString("yyyy-MM-dd"),
+                    EndDate = effectiveOffset > 0 ? endDate.ToString("yyyy-MM-dd") : null
                 };
 
                 _logger.LogInformation("Successfully retrieved and aggregated reading activity data.");
@@ -296,14 +319,15 @@ namespace LinguaReadApi.Controllers
 
         // GET: api/users/listening-activity
         [HttpGet("listening-activity")]
-        public async Task<IActionResult> GetListeningActivity([FromQuery] string period = "all", [FromQuery] int? timezoneOffsetMinutes = null, [FromQuery] int? languageId = null)
+        public async Task<IActionResult> GetListeningActivity([FromQuery] string period = "all", [FromQuery] int? timezoneOffsetMinutes = null, [FromQuery] int? languageId = null, [FromQuery] int offset = 0)
         {
-            _logger.LogInformation("Getting listening activity for period: {Period}, timezoneOffsetMinutes: {TimezoneOffset}, languageId: {LanguageId}", period, timezoneOffsetMinutes, languageId);
+            _logger.LogInformation("Getting listening activity for period: {Period}, offset: {Offset}, timezoneOffsetMinutes: {TimezoneOffset}, languageId: {LanguageId}", period, offset, timezoneOffsetMinutes, languageId);
             var userId = GetUserId();
 
             try
             {
                 DateTime startDate;
+                DateTime endDate;
                 DateTime nowUtc = DateTime.UtcNow;
                 DateTime nowLocal;
 
@@ -315,6 +339,9 @@ namespace LinguaReadApi.Controllers
                 {
                     nowLocal = nowUtc;
                 }
+
+                int? lengthDays = PeriodLengthDays(period);
+                int effectiveOffset = lengthDays.HasValue && offset > 0 ? offset : 0;
 
                 switch (period.ToLower())
                 {
@@ -342,13 +369,30 @@ namespace LinguaReadApi.Controllers
                         break;
                 }
 
-                _logger.LogDebug("Fetching listening activities from {StartDate} for user {UserId} (languageId: {LanguageId})", startDate, userId, languageId);
+                if (effectiveOffset > 0 && lengthDays.HasValue)
+                {
+                    DateTime origStart = startDate;
+                    endDate = origStart.AddDays(-lengthDays.Value * (effectiveOffset - 1));
+                    startDate = endDate.AddDays(-lengthDays.Value);
+                    _logger.LogDebug("Applied offset {Offset} (length {Length}d): startDate {StartDate}, endDate {EndDate}", effectiveOffset, lengthDays.Value, startDate, endDate);
+                }
+                else
+                {
+                    endDate = DateTime.MaxValue;
+                }
+
+                _logger.LogDebug("Fetching listening activities from {StartDate} to {EndDate} for user {UserId} (languageId: {LanguageId})", startDate, endDate, userId, languageId);
 
                 var query = _context.UserActivities
                     .Where(a => a.UserId == userId
                                 && (a.ActivityType == "Listening" || a.ActivityType == "ManualListening") // Include manual listening
                                 && a.ListeningDurationSeconds.HasValue && a.ListeningDurationSeconds > 0 // Ensure we only count activities with positive duration
                                 && a.Timestamp >= startDate);
+
+                if (effectiveOffset > 0)
+                {
+                    query = query.Where(a => a.Timestamp < endDate);
+                }
 
                 if (languageId.HasValue)
                 {
@@ -383,7 +427,9 @@ namespace LinguaReadApi.Controllers
                     ListeningByDate = activityByDate, // Renamed for clarity
                     ListeningByLanguage = activityByLanguage, // Renamed for clarity
                     Period = period,
-                    StartDate = startDate == DateTime.MinValue ? "all" : startDate.ToString("yyyy-MM-dd")
+                    Offset = effectiveOffset,
+                    StartDate = startDate == DateTime.MinValue ? "all" : startDate.ToString("yyyy-MM-dd"),
+                    EndDate = effectiveOffset > 0 ? endDate.ToString("yyyy-MM-dd") : null
                 };
 
                 _logger.LogInformation("Successfully retrieved and aggregated listening activity data.");
@@ -698,6 +744,19 @@ namespace LinguaReadApi.Controllers
             }
 
             return userId;
+        }
+
+        private static int? PeriodLengthDays(string? period)
+        {
+            return period?.ToLower() switch
+            {
+                "last_day" => 1,
+                "last_week" => 7,
+                "last_month" => 30,
+                "last_90" => 90,
+                "last_180" => 180,
+                _ => null
+            };
         }
     }
 

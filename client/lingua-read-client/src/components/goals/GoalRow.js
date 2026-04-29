@@ -1,7 +1,6 @@
 import React from 'react';
 import { Badge, ProgressBar, Button } from 'react-bootstrap';
 import {
-  GOAL_TYPE,
   TYPE_ICONS,
   formatMetric,
   formatScope,

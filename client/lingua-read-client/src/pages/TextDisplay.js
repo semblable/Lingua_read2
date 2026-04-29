@@ -106,6 +106,7 @@ const TextDisplay = () => {
   const selectionDebounceRef = useRef(null);
   const mobileSelectionRetryRef = useRef(null);
   const mobileSelectionPendingRef = useRef(false);
+  const mobileSelectionObservedRef = useRef(false);
   const lastHandledSelectionRef = useRef('');
   const suppressWordClickUntilRef = useRef(0);
   const selectableWordTouchStartRef = useRef(0);
@@ -182,6 +183,7 @@ const TextDisplay = () => {
 
   const clearMobileSelectionPending = useCallback(() => {
     mobileSelectionPendingRef.current = false;
+    mobileSelectionObservedRef.current = false;
     clearMobileSelectionRetry();
   }, [clearMobileSelectionRetry]);
 
@@ -770,7 +772,7 @@ const TextDisplay = () => {
       handleSelectedText(selection.toString().trim(), sentenceContext);
     }
 
-  }, [focusSentenceIndexFromNode, getSelectionDetails, buildAiSelectionContext, handleSelectedText, isMobile, hasActiveTextSelection, clearMobileSelectionRetry]); // textContentRef is a stable ref
+  }, [focusSentenceIndexFromNode, getSelectionDetails, buildAiSelectionContext, handleSelectedText, isMobile, clearMobileSelectionRetry]); // textContentRef is a stable ref
 
   const scheduleWordSelection = useCallback((delayMs) => {
     clearPendingSelection();
@@ -817,10 +819,11 @@ const TextDisplay = () => {
       const selection = window.getSelection();
       if (!selection || selection.isCollapsed) {
         lastHandledSelectionRef.current = '';
+        mobileSelectionObservedRef.current = false;
         return;
       }
 
-      if (!mobileSelectionPendingRef.current || !textContentRef.current || selection.rangeCount === 0) {
+      if (!textContentRef.current || selection.rangeCount === 0) {
         return;
       }
 
@@ -843,6 +846,11 @@ const TextDisplay = () => {
         return;
       }
 
+      mobileSelectionObservedRef.current = true;
+      if (!mobileSelectionPendingRef.current) {
+        return;
+      }
+
       scheduleWordSelection(60);
     };
 
@@ -850,13 +858,35 @@ const TextDisplay = () => {
       clearMobileSelectionPending();
     };
 
+    const handleTouchRelease = () => {
+      if (!mobileSelectionObservedRef.current) {
+        return;
+      }
+
+      mobileSelectionPendingRef.current = true;
+      scheduleWordSelection(60);
+      clearMobileSelectionRetry();
+      mobileSelectionRetryRef.current = setTimeout(() => {
+        if (mobileSelectionPendingRef.current) {
+          processWordSelection();
+        }
+        mobileSelectionPendingRef.current = false;
+        mobileSelectionObservedRef.current = false;
+        mobileSelectionRetryRef.current = null;
+      }, 550);
+    };
+
     document.addEventListener('selectionchange', handleSelectionChange);
     document.addEventListener('touchstart', handleTouchStart, true);
+    document.addEventListener('touchend', handleTouchRelease, true);
+    document.addEventListener('touchcancel', handleTouchRelease, true);
     return () => {
       document.removeEventListener('selectionchange', handleSelectionChange);
       document.removeEventListener('touchstart', handleTouchStart, true);
+      document.removeEventListener('touchend', handleTouchRelease, true);
+      document.removeEventListener('touchcancel', handleTouchRelease, true);
     };
-  }, [isMobile, scheduleWordSelection, clearMobileSelectionPending]);
+  }, [isMobile, scheduleWordSelection, clearMobileSelectionPending, clearMobileSelectionRetry, processWordSelection]);
   // --- End New Word-Granularity Selection Logic ---
 
 

@@ -264,6 +264,55 @@ describe('TextDisplay', () => {
     });
   });
 
+  test('mobile document touchend finalizes native selection handles', async () => {
+    window.matchMedia = jest.fn().mockImplementation(() => ({
+      matches: true,
+      addEventListener: jest.fn(),
+      removeEventListener: jest.fn()
+    }));
+
+    renderTextDisplay({ autoTranslateWords: true });
+
+    await waitFor(() => expect(getText).toHaveBeenCalled());
+    const word = await screen.findByText('Hello');
+    const textContent = word.closest('.text-content');
+    expect(textContent).not.toBeNull();
+
+    const mockSelection = {
+      isCollapsed: false,
+      rangeCount: 1,
+      anchorNode: textContent,
+      focusNode: textContent,
+      toString: () => 'Hello world',
+      getRangeAt: () => ({
+        commonAncestorContainer: textContent
+      })
+    };
+    window.getSelection = jest.fn(() => mockSelection);
+
+    act(() => {
+      document.dispatchEvent(new Event('selectionchange'));
+      jest.advanceTimersByTime(1000);
+    });
+    expect(translateSelectionWithContext).not.toHaveBeenCalled();
+
+    act(() => {
+      fireEvent.touchEnd(document);
+      jest.advanceTimersByTime(1000);
+    });
+
+    await waitFor(() => {
+      expect(translateSelectionWithContext).toHaveBeenCalledWith(
+        'Hello world',
+        'Hello world.',
+        'ES',
+        'EN',
+        expect.objectContaining({ signal: expect.anything() })
+      );
+    });
+    expect(await screen.findByText('Word Info')).toBeInTheDocument();
+  });
+
   test('mobile repeated touchend for same selection does not loop the Word Info sheet', async () => {
     window.matchMedia = jest.fn().mockImplementation(() => ({
       matches: true,

@@ -28,8 +28,10 @@ const Statistics = () => {
     stats,
     readingActivity,
     listeningActivity,
+    knownWordsActivity,
     previousReadingActivity,
     previousListeningActivity,
+    previousKnownWordsActivity,
     loading,
     loadingActivity,
     error,
@@ -193,8 +195,10 @@ const Statistics = () => {
         displayStats={displayStats}
         readingActivity={readingActivity}
         listeningActivity={listeningActivity}
+        knownWordsActivity={knownWordsActivity}
         previousReadingActivity={previousReadingActivity}
         previousListeningActivity={previousListeningActivity}
+        previousKnownWordsActivity={previousKnownWordsActivity}
         languages={languages}
         loadingActivity={loadingActivity}
         showComparison={showComparison}

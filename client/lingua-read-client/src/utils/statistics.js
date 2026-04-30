@@ -116,6 +116,33 @@ export const normalizeListeningActivity = (activity = {}) => {
   };
 };
 
+export const normalizeKnownWordsActivity = (activity = {}) => {
+  const rawByLanguage = pick(activity, 'knownWordsByLanguage', 'KnownWordsByLanguage') || [];
+
+  return {
+    totalKnownWords: numberOrZero(pick(activity, 'totalKnownWords', 'TotalKnownWords')),
+    knownWordsByDate: normalizeActivityByDate(pick(activity, 'knownWordsByDate', 'KnownWordsByDate'))
+      .map((item) => ({ date: item.date, knownWords: item.value }))
+      .sort((a, b) => new Date(a.date) - new Date(b.date)),
+    knownWordsByLanguage: Array.isArray(rawByLanguage)
+      ? rawByLanguage.map((language) => ({
+        languageId: pick(language, 'languageId', 'LanguageId'),
+        languageName: pick(language, 'languageName', 'LanguageName', 'name', 'Name') || 'Unknown',
+        totalKnown: numberOrZero(pick(language, 'totalKnown', 'TotalKnown'))
+      }))
+      : []
+  };
+};
+
+export const toCumulative = (series, key) => {
+  if (!Array.isArray(series)) return [];
+  let total = 0;
+  return series.map((point) => {
+    total += Number(point?.[key]) || 0;
+    return { ...point, [key]: total };
+  });
+};
+
 export const formatDuration = (totalSeconds) => {
   const secondsTotal = numberOrZero(totalSeconds);
   if (secondsTotal === 0) return '0m';

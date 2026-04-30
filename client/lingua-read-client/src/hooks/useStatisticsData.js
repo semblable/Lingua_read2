@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  getKnownWordsActivity,
   getListeningActivity,
   getReadingActivity,
   getUserStatistics,
   testApiConnection
 } from '../utils/api';
 import {
+  normalizeKnownWordsActivity,
   normalizeListeningActivity,
   normalizeReadingActivity,
   normalizeStatistics,
@@ -14,13 +16,16 @@ import {
 
 const emptyReadingActivity = normalizeReadingActivity();
 const emptyListeningActivity = normalizeListeningActivity();
+const emptyKnownWordsActivity = normalizeKnownWordsActivity();
 
 export const useStatisticsData = ({ period, languageId }) => {
   const [stats, setStats] = useState(null);
   const [readingActivity, setReadingActivity] = useState(emptyReadingActivity);
   const [listeningActivity, setListeningActivity] = useState(emptyListeningActivity);
+  const [knownWordsActivity, setKnownWordsActivity] = useState(emptyKnownWordsActivity);
   const [previousReadingActivity, setPreviousReadingActivity] = useState(emptyReadingActivity);
   const [previousListeningActivity, setPreviousListeningActivity] = useState(emptyListeningActivity);
+  const [previousKnownWordsActivity, setPreviousKnownWordsActivity] = useState(emptyKnownWordsActivity);
   const [loadingStats, setLoadingStats] = useState(true);
   const [loadingActivity, setLoadingActivity] = useState(true);
   const [error, setError] = useState('');
@@ -68,18 +73,27 @@ export const useStatisticsData = ({ period, languageId }) => {
       const selectedLanguageId = languageId === 'all' ? null : languageId;
       const requests = [
         getReadingActivity(period, timezoneOffsetMinutes, selectedLanguageId),
-        getListeningActivity(period, timezoneOffsetMinutes, selectedLanguageId)
+        getListeningActivity(period, timezoneOffsetMinutes, selectedLanguageId),
+        getKnownWordsActivity(period, timezoneOffsetMinutes, selectedLanguageId)
       ];
       if (includePrevious) {
         requests.push(getReadingActivity(period, timezoneOffsetMinutes, selectedLanguageId, 1));
         requests.push(getListeningActivity(period, timezoneOffsetMinutes, selectedLanguageId, 1));
+        requests.push(getKnownWordsActivity(period, timezoneOffsetMinutes, selectedLanguageId, 1));
       }
 
       const results = await Promise.all(requests);
 
       if (requestIdRef.current !== requestId) return;
 
-      const [readingData, listeningData, prevReadingData, prevListeningData] = results;
+      const [
+        readingData,
+        listeningData,
+        knownWordsData,
+        prevReadingData,
+        prevListeningData,
+        prevKnownWordsData
+      ] = results;
 
       if (readingData?.error) {
         console.error('Failed to load reading activity:', readingData.error);
@@ -93,6 +107,13 @@ export const useStatisticsData = ({ period, languageId }) => {
         setListeningActivity(emptyListeningActivity);
       } else {
         setListeningActivity(normalizeListeningActivity(listeningData));
+      }
+
+      if (knownWordsData?.error) {
+        console.error('Failed to load known-words activity:', knownWordsData.error);
+        setKnownWordsActivity(emptyKnownWordsActivity);
+      } else {
+        setKnownWordsActivity(normalizeKnownWordsActivity(knownWordsData));
       }
 
       if (includePrevious) {
@@ -109,17 +130,27 @@ export const useStatisticsData = ({ period, languageId }) => {
         } else {
           setPreviousListeningActivity(normalizeListeningActivity(prevListeningData));
         }
+
+        if (prevKnownWordsData?.error) {
+          console.error('Failed to load previous known-words activity:', prevKnownWordsData.error);
+          setPreviousKnownWordsActivity(emptyKnownWordsActivity);
+        } else {
+          setPreviousKnownWordsActivity(normalizeKnownWordsActivity(prevKnownWordsData));
+        }
       } else {
         setPreviousReadingActivity(emptyReadingActivity);
         setPreviousListeningActivity(emptyListeningActivity);
+        setPreviousKnownWordsActivity(emptyKnownWordsActivity);
       }
     } catch (err) {
       if (requestIdRef.current !== requestId) return;
       console.error('Failed to load activity:', err);
       setReadingActivity(emptyReadingActivity);
       setListeningActivity(emptyListeningActivity);
+      setKnownWordsActivity(emptyKnownWordsActivity);
       setPreviousReadingActivity(emptyReadingActivity);
       setPreviousListeningActivity(emptyListeningActivity);
+      setPreviousKnownWordsActivity(emptyKnownWordsActivity);
     } finally {
       if (requestIdRef.current === requestId) {
         setLoadingActivity(false);
@@ -156,8 +187,10 @@ export const useStatisticsData = ({ period, languageId }) => {
     stats,
     readingActivity,
     listeningActivity,
+    knownWordsActivity,
     previousReadingActivity,
     previousListeningActivity,
+    previousKnownWordsActivity,
     loading: loadingStats,
     loadingActivity,
     error,

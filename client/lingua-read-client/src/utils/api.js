@@ -679,6 +679,28 @@ export const getListeningActivity = async (period = 'all', timezoneOffsetMinutes
 };
 
 
+// Fetch cumulative known-words activity (words by Status >= 4 grouped by CreatedAt date)
+export const getKnownWordsActivity = async (period = 'all', timezoneOffsetMinutes = null, languageId = null, offset = 0) => {
+  try {
+    const params = new URLSearchParams({ period });
+    if (timezoneOffsetMinutes !== null && timezoneOffsetMinutes !== undefined) {
+      params.append('timezoneOffsetMinutes', timezoneOffsetMinutes);
+    }
+    if (languageId !== null && languageId !== undefined) {
+      params.append('languageId', languageId);
+    }
+    if (offset && offset > 0) {
+      params.append('offset', offset);
+    }
+    const data = await fetchApi(`/users/known-words-activity?${params.toString()}`);
+    return data;
+  } catch (error) {
+    console.error('Error getting known-words activity:', error);
+    return { error: error.message };
+  }
+};
+
+
 // User Statistics API
 export const resetUserStatistics = () => {
   console.log('[API] Resetting user statistics.');

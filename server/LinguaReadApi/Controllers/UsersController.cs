@@ -441,7 +441,117 @@ namespace LinguaReadApi.Controllers
                 return StatusCode(500, new { message = "Error retrieving listening activity data", error = ex.Message });
             }
         }
- 
+
+        // GET: api/users/known-words-activity
+        [HttpGet("known-words-activity")]
+        public async Task<IActionResult> GetKnownWordsActivity([FromQuery] string period = "all", [FromQuery] int? timezoneOffsetMinutes = null, [FromQuery] int? languageId = null, [FromQuery] int offset = 0)
+        {
+            _logger.LogInformation("Getting known-words activity for period: {Period}, offset: {Offset}, timezoneOffsetMinutes: {TimezoneOffset}, languageId: {LanguageId}", period, offset, timezoneOffsetMinutes, languageId);
+            var userId = GetUserId();
+
+            try
+            {
+                DateTime startDate;
+                DateTime endDate;
+                DateTime nowUtc = DateTime.UtcNow;
+                DateTime nowLocal = timezoneOffsetMinutes.HasValue
+                    ? nowUtc.AddMinutes(timezoneOffsetMinutes.Value)
+                    : nowUtc;
+
+                int? lengthDays = PeriodLengthDays(period);
+                int effectiveOffset = lengthDays.HasValue && offset > 0 ? offset : 0;
+
+                switch (period.ToLower())
+                {
+                    case "last_day":
+                        startDate = nowLocal.Date.AddMinutes(-timezoneOffsetMinutes.GetValueOrDefault(0));
+                        break;
+                    case "last_week":
+                        startDate = nowLocal.Date.AddDays(-6).AddMinutes(-timezoneOffsetMinutes.GetValueOrDefault(0));
+                        break;
+                    case "last_month":
+                        startDate = nowLocal.Date.AddDays(-29).AddMinutes(-timezoneOffsetMinutes.GetValueOrDefault(0));
+                        break;
+                    case "last_90":
+                        startDate = nowLocal.Date.AddDays(-89).AddMinutes(-timezoneOffsetMinutes.GetValueOrDefault(0));
+                        break;
+                    case "last_180":
+                        startDate = nowLocal.Date.AddDays(-179).AddMinutes(-timezoneOffsetMinutes.GetValueOrDefault(0));
+                        break;
+                    case "all":
+                    default:
+                        startDate = DateTime.MinValue;
+                        break;
+                }
+
+                if (effectiveOffset > 0 && lengthDays.HasValue)
+                {
+                    DateTime origStart = startDate;
+                    endDate = origStart.AddDays(-lengthDays.Value * (effectiveOffset - 1));
+                    startDate = endDate.AddDays(-lengthDays.Value);
+                }
+                else
+                {
+                    endDate = DateTime.MaxValue;
+                }
+
+                // Status >= 4 is treated as "known". CreatedAt is used as a proxy for the
+                // date the word entered the user's vocabulary (no per-status-change history).
+                var query = _context.Words
+                    .Where(w => w.UserId == userId && w.Status >= 4 && w.CreatedAt >= startDate);
+
+                if (effectiveOffset > 0)
+                {
+                    query = query.Where(w => w.CreatedAt < endDate);
+                }
+
+                if (languageId.HasValue)
+                {
+                    query = query.Where(w => w.LanguageId == languageId.Value);
+                }
+
+                int tzOffset = timezoneOffsetMinutes.GetValueOrDefault(0);
+
+                var byDate = await query
+                    .GroupBy(w => w.CreatedAt.AddMinutes(tzOffset).Date)
+                    .Select(g => new { Date = g.Key, Count = g.Count() })
+                    .ToListAsync();
+
+                var byLanguage = await query
+                    .Where(w => w.Language != null)
+                    .GroupBy(w => new { w.LanguageId, w.Language!.Name })
+                    .Select(g => new
+                    {
+                        LanguageId = g.Key.LanguageId,
+                        LanguageName = g.Key.Name,
+                        TotalKnown = g.Count()
+                    })
+                    .ToListAsync();
+
+                var knownWordsByDate = byDate.ToDictionary(x => x.Date.ToString("yyyy-MM-dd"), x => x.Count);
+                int totalKnownWords = byDate.Sum(x => x.Count);
+
+                var result = new
+                {
+                    TotalKnownWords = totalKnownWords,
+                    KnownWordsByDate = knownWordsByDate,
+                    KnownWordsByLanguage = byLanguage,
+                    Period = period,
+                    Offset = effectiveOffset,
+                    StartDate = startDate == DateTime.MinValue ? "all" : startDate.ToString("yyyy-MM-dd"),
+                    EndDate = effectiveOffset > 0 ? endDate.ToString("yyyy-MM-dd") : null
+                };
+
+                _logger.LogInformation("Successfully retrieved known-words activity across {DateCount} dates.", byDate.Count);
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving known-words activity for user {UserId} and period {Period}", userId, period);
+                return StatusCode(500, new { message = "Error retrieving known-words activity", error = ex.Message });
+            }
+        }
+
 
         // GET: api/users/dashboard
         [HttpGet("dashboard")]

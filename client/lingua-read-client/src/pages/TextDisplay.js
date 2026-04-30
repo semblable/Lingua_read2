@@ -1480,6 +1480,12 @@ const TextDisplay = () => {
     setBookmarkedIndices(updatedBookmarks);
   }, [hasActiveTextSelection, isMobile, text?.textId, setBookmarkedIndices]); // Dependencies: textId and the state setter
 
+  const handleToggleBookmarkForCurrentSentence = useCallback(() => {
+    if (!text?.textId || typeof currentSegmentIndex !== 'number') return;
+    toggleBookmark(text.textId, currentSegmentIndex);
+    setBookmarkedIndices(getBookmarkedSentences(text.textId));
+  }, [text?.textId, currentSegmentIndex, setBookmarkedIndices]);
+
   // --- End Bookmark Helper Functions ---
 
   // --- End Helper Functions & Memoized Values ---
@@ -2400,6 +2406,8 @@ const TextDisplay = () => {
                   }}
                   canRetranslate={!!displayedWord?.term && !!wordInfoRetranslateContext}
                   onDeleteWord={handleDeleteWord}
+                  isSentenceBookmarked={isBookmarked(currentSegmentIndex)}
+                  onToggleBookmark={handleToggleBookmarkForCurrentSentence}
                 />
               </div>
 
@@ -2479,6 +2487,8 @@ const TextDisplay = () => {
                 }}
                 canRetranslate={!!displayedWord?.term && !!wordInfoRetranslateContext}
                 onDeleteWord={handleDeleteWord}
+                isSentenceBookmarked={isBookmarked(currentSegmentIndex)}
+                onToggleBookmark={handleToggleBookmarkForCurrentSentence}
               />
             </div>
           </div>

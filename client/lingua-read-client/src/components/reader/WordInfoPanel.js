@@ -22,7 +22,9 @@ const WordInfoPanel = React.memo(({
   onReadingCredit,
   onRetranslateWithContext,
   canRetranslate,
-  onDeleteWord
+  onDeleteWord,
+  isSentenceBookmarked,
+  onToggleBookmark
 }) => {
   if (!displayedWord) return <p>Click/hover on a word.</p>;
   return (
@@ -49,6 +51,16 @@ const WordInfoPanel = React.memo(({
         >
           Mine Sentence
         </Button>
+        {onToggleBookmark && (
+          <Button
+            variant={isSentenceBookmarked ? 'warning' : 'outline-warning'}
+            size="sm"
+            onClick={onToggleBookmark}
+            title={isSentenceBookmarked ? 'Remove bookmark from this sentence' : 'Bookmark this sentence'}
+          >
+            {isSentenceBookmarked ? '🔖 Bookmarked' : '🔖 Bookmark'}
+          </Button>
+        )}
         {displayedWord?.wordId && !displayedWord?.isNew && displayedWord?.status >= 3 && displayedWord?.status <= 4 && (
           <Button
             variant="outline-info"

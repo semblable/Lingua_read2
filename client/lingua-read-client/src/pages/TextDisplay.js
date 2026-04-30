@@ -117,6 +117,8 @@ const TextDisplay = () => {
   const lastHandledSelectionRef = useRef('');
   const suppressWordClickUntilRef = useRef(0);
   const selectableWordTouchStartRef = useRef(0);
+  const lastSentenceTapRef = useRef({ sentenceIndex: null, time: 0 });
+  const sentenceTouchMovedRef = useRef(false);
   const translationAbortRef = useRef(null);
   const translationCacheRef = useRef(new Map());
   const pendingSentenceCreditRef = useRef(new Set());
@@ -1480,6 +1482,50 @@ const TextDisplay = () => {
     setBookmarkedIndices(updatedBookmarks);
   }, [hasActiveTextSelection, isMobile, text?.textId, setBookmarkedIndices]); // Dependencies: textId and the state setter
 
+  const handleSentenceTouchStart = useCallback(() => {
+    if (!isMobile) return;
+    sentenceTouchMovedRef.current = false;
+  }, [isMobile]);
+
+  const handleSentenceTouchMove = useCallback(() => {
+    if (!isMobile) return;
+    sentenceTouchMovedRef.current = true;
+  }, [isMobile]);
+
+  const handleSentenceTouchEnd = useCallback((sentenceIndex) => {
+    if (!isMobile) return;
+    if (!text?.textId || typeof sentenceIndex !== 'number') return;
+
+    const now = Date.now();
+    const prev = lastSentenceTapRef.current;
+    const moved = sentenceTouchMovedRef.current;
+    sentenceTouchMovedRef.current = false;
+
+    const isDoubleTap =
+      !moved &&
+      prev.sentenceIndex === sentenceIndex &&
+      now - prev.time <= 300 &&
+      !hasActiveTextSelection() &&
+      !mobileSelectionPendingRef.current &&
+      !mobileSelectionGrewRef.current;
+
+    if (!isDoubleTap) {
+      lastSentenceTapRef.current = { sentenceIndex, time: now };
+      return;
+    }
+
+    // Reset so a third tap doesn't immediately re-toggle.
+    lastSentenceTapRef.current = { sentenceIndex: null, time: 0 };
+
+    toggleBookmark(text.textId, sentenceIndex);
+    setBookmarkedIndices(getBookmarkedSentences(text.textId));
+
+    // Suppress the second tap's pending word onClick and dismiss the popup
+    // that opened from the first tap.
+    suppressWordClickUntilRef.current = Date.now() + 600;
+    setIsWordPanelOpen(false);
+  }, [hasActiveTextSelection, isMobile, text?.textId, setBookmarkedIndices, setIsWordPanelOpen]);
+
   // --- End Bookmark Helper Functions ---
 
   // --- End Helper Functions & Memoized Values ---
@@ -2120,6 +2166,9 @@ const TextDisplay = () => {
               data-sentence-index={currentSentenceIndex}
               onContextMenu={(e) => handleSentenceContextMenu(e, currentSentenceIndex)}
               onClickCapture={(e) => focusSentenceIndexFromNode(e.target)}
+              onTouchStart={handleSentenceTouchStart}
+              onTouchMove={handleSentenceTouchMove}
+              onTouchEnd={() => handleSentenceTouchEnd(currentSentenceIndex)}
               onTouchEndCapture={(e) => focusSentenceIndexFromNode(e.target)}
               style={{ display: 'inline' }} // Keep inline display
             >
@@ -2135,7 +2184,7 @@ const TextDisplay = () => {
     });
 
     return { sentenceElements, nextSentenceIndex: sentenceIndex };
-  }, [focusSentenceIndexFromNode, handleSentenceContextMenu, isBookmarked]); // Dependencies
+  }, [focusSentenceIndexFromNode, handleSentenceContextMenu, handleSentenceTouchStart, handleSentenceTouchMove, handleSentenceTouchEnd, isBookmarked]); // Dependencies
 
   // --- End New Sentence Rendering Logic ---
 

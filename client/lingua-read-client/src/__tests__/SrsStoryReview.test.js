@@ -2,7 +2,7 @@ import React from 'react';
 import { render, screen, fireEvent, waitFor, within, waitForElementToBeRemoved } from '@testing-library/react';
 import { BrowserRouter } from 'react-router-dom';
 import SrsStoryReview from '../pages/SrsStoryReview';
-import { getAllLanguages, getSrsStats, generateSrsStory, submitSrsReview, getWordsByLanguage } from '../utils/api';
+import { getAllLanguages, getSrsStats, generateSrsStory, submitSrsReview, getWordsByLanguage, getSrsStories } from '../utils/api';
 import { SettingsContext } from '../contexts/SettingsContext';
 import '@testing-library/jest-dom';
 
@@ -14,6 +14,7 @@ jest.mock('../utils/api', () => ({
   submitSrsReview: jest.fn(),
   createWord: jest.fn(),
   getWordsByLanguage: jest.fn(),
+  getSrsStories: jest.fn(),
   translateSelectionWithContext: jest.fn(),
 }));
 
@@ -77,6 +78,7 @@ describe('SrsStoryReview', () => {
     generateSrsStory.mockResolvedValue(mockStoryResult);
     submitSrsReview.mockResolvedValue({});
     getWordsByLanguage.mockResolvedValue([]);
+    getSrsStories.mockResolvedValue([]);
   });
 
   const renderComponent = () => render(

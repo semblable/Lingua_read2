@@ -1045,7 +1045,7 @@ describe('TextDisplay', () => {
 
     await waitFor(() => expect(getText).toHaveBeenCalled());
     fireEvent.click(await screen.findByText('Hello'));
-    fireEvent.click(await screen.findByRole('button', { name: /Speak Word/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /^Speak$/i }));
 
     await waitFor(() => {
       expect(speakText).toHaveBeenCalledWith(expect.objectContaining({
@@ -1063,7 +1063,7 @@ describe('TextDisplay', () => {
     fireEvent.click(await screen.findByText('Hello'));
 
     expect(screen.queryByRole('button', { name: /Speak Sentence/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /Speak Word/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Speak$/i })).not.toBeInTheDocument();
     expect(screen.queryByText(/TTS On/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/TTS Off/i)).not.toBeInTheDocument();
   });

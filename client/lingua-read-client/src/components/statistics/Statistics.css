@@ -93,19 +93,76 @@
   box-shadow: 0 0 0 2px rgba(13, 110, 253, 0.2);
 }
 
-.stats-heatmap {
-  display: grid;
-  gap: 3px;
-  grid-auto-flow: column;
-  grid-template-rows: repeat(7, minmax(10px, 14px));
+/* GitHub-style heatmap layout */
+.stats-heatmap-outer {
+  display: flex;
+  gap: 4px;
   overflow-x: auto;
   padding: 4px 0;
 }
 
+.stats-heatmap-day-labels {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  gap: 3px;
+}
+
+.stats-heatmap-month-spacer {
+  height: 20px;
+}
+
+.stats-heatmap-day-label {
+  color: var(--text-muted, #6c757d);
+  font-size: 10px;
+  height: 14px;
+  line-height: 14px;
+  padding-right: 4px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.stats-heatmap-right {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  gap: 0;
+}
+
+.stats-heatmap-month-row {
+  height: 20px;
+  margin-bottom: 2px;
+  position: relative;
+}
+
+.stats-heatmap-month-label {
+  bottom: 0;
+  color: var(--text-muted, #6c757d);
+  font-size: 11px;
+  position: absolute;
+  white-space: nowrap;
+}
+
+.stats-heatmap-weeks {
+  display: flex;
+  gap: 3px;
+}
+
+.stats-heatmap-week {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
 .stats-heatmap-cell {
   border-radius: 2px;
+  flex-shrink: 0;
   height: 14px;
   width: 14px;
+}
+
+.stats-heatmap-level-empty {
+  background: transparent;
 }
 
 .stats-heatmap-level-0 {
@@ -139,13 +196,19 @@
     width: 100%;
   }
 
-  .stats-heatmap {
-    grid-template-rows: repeat(7, minmax(10px, 12px));
-  }
-
   .stats-heatmap-cell {
     height: 12px;
     width: 12px;
+  }
+
+  .stats-heatmap-day-label {
+    font-size: 9px;
+    height: 12px;
+    line-height: 12px;
+  }
+
+  .stats-heatmap-month-label {
+    font-size: 10px;
   }
 }
 

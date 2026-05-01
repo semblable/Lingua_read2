@@ -1,0 +1,302 @@
+name: Deploy GCP
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-gcp-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_API: ${{ github.repository_owner }}/lingua-read-api
+  IMAGE_NGINX: ${{ github.repository_owner }}/lingua-read-nginx
+  IMAGE_BACKUP: ${{ github.repository_owner }}/lingua-read-backup
+
+jobs:
+  ci_dotnet:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v5
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', '**/*.props', '**/*.targets', 'global.json') }}
+          restore-keys: |
+            nuget-${{ runner.os }}-
+
+      - name: Restore
+        run: dotnet restore Lingua_Read.sln
+
+      - name: Build
+        run: dotnet build Lingua_Read.sln -c Release --no-restore
+
+      - name: Test
+        run: dotnet test Lingua_Read.sln -c Release --no-build
+
+  ci_client:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: client/lingua-read-client/package-lock.json
+
+      - name: Install client deps
+        run: npm ci --legacy-peer-deps
+        working-directory: client/lingua-read-client
+
+      - name: Test client
+        run: npm test -- --watchAll=false
+        working-directory: client/lingua-read-client
+        env:
+          CI: true
+
+  build_api:
+    runs-on: ubuntu-latest
+    needs: [ ci_dotnet ]
+    outputs:
+      image_tag: ${{ steps.image_tag.outputs.value }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Compute API image tag
+        id: image_tag
+        run: echo "value=sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker meta (api)
+        id: meta_api
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_API }}
+          tags: |
+            type=sha,format=short,prefix=sha-
+            type=raw,value=latest
+
+      - name: Build & push (api)
+        uses: docker/build-push-action@v7
+        with:
+          context: ./server/LinguaReadApi
+          file: ./server/LinguaReadApi/Dockerfile
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_API }}:${{ steps.image_tag.outputs.value }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_API }}:latest
+          labels: ${{ steps.meta_api.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  build_nginx:
+    runs-on: ubuntu-latest
+    needs: [ ci_client ]
+    outputs:
+      image_tag: ${{ steps.image_tag.outputs.value }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Compute Nginx image tag
+        id: image_tag
+        run: echo "value=sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker meta (nginx)
+        id: meta_nginx
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NGINX }}
+          tags: |
+            type=sha,format=short,prefix=sha-
+            type=raw,value=latest
+
+      - name: Build & push (nginx)
+        uses: docker/build-push-action@v7
+        with:
+          context: ./client/lingua-read-client
+          file: ./client/lingua-read-client/Dockerfile
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NGINX }}:${{ steps.image_tag.outputs.value }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NGINX }}:latest
+          labels: ${{ steps.meta_nginx.outputs.labels }}
+          cache-from: |
+            type=gha
+            type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NGINX }}:buildcache
+          cache-to: |
+            type=gha,mode=max
+            type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NGINX }}:buildcache,mode=max
+
+  build_backup:
+    runs-on: ubuntu-latest
+    outputs:
+      image_tag: ${{ steps.image_tag.outputs.value }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Compute backup image tag
+        id: image_tag
+        run: echo "value=sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build & push (backup)
+        uses: docker/build-push-action@v7
+        with:
+          context: ./backup
+          file: ./backup/Dockerfile
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_BACKUP }}:${{ steps.image_tag.outputs.value }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_BACKUP }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy_gcp:
+    runs-on: ubuntu-latest
+    needs: [ build_api, build_nginx, build_backup ]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Copy docker-compose and config files via SCP
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.GCP_DEPLOY_HOST }}
+          username: ${{ secrets.GCP_DEPLOY_USER }}
+          key: ${{ secrets.GCP_DEPLOY_SSH_KEY }}
+          source: "docker-compose.yml,docker-compose.prod.yml,client/lingua-read-client/nginx.ssl.conf,setup.sh"
+          target: ${{ secrets.GCP_DEPLOY_PATH }}
+
+      - name: SSH deploy (GCP)
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.GCP_DEPLOY_HOST }}
+          username: ${{ secrets.GCP_DEPLOY_USER }}
+          key: ${{ secrets.GCP_DEPLOY_SSH_KEY }}
+          script_stop: true
+          script: |
+            set -euo pipefail
+            cd "${{ secrets.GCP_DEPLOY_PATH }}"
+
+            # Always use the same compose files (matches pull/up) for ps/logs during failures.
+            dc() {
+              docker compose -f docker-compose.yml -f docker-compose.prod.yml "$@"
+            }
+
+            # Write environment to .env (kept in GitHub Secrets as multiline text).
+            cat > .env <<'EOF'
+            ${{ secrets.GCP_PRODUCTION_ENV }}
+            EOF
+            cat >> .env <<'EOF'
+            API_IMAGE_TAG=${{ needs.build_api.outputs.image_tag }}
+            NGINX_IMAGE_TAG=${{ needs.build_nginx.outputs.image_tag }}
+            BACKUP_IMAGE_TAG=${{ needs.build_backup.outputs.image_tag }}
+            EOF
+            chmod 600 .env
+
+            # Ensure TLS certs exist for the production Nginx config.
+            # If you haven't provisioned real certs yet, generate a temporary self-signed pair.
+            mkdir -p certs
+            if [ ! -s certs/fullchain.pem ] || [ ! -s certs/privkey.pem ]; then
+              echo "TLS certs missing at ./certs; generating self-signed certs (temporary)"
+              if ! command -v openssl >/dev/null 2>&1; then
+                sudo apt-get update
+                sudo apt-get install -y openssl
+              fi
+              openssl req -x509 -nodes -newkey rsa:2048 -days 365 \
+                -keyout certs/privkey.pem \
+                -out certs/fullchain.pem \
+                -subj "/CN=${HOSTNAME:-localhost}"
+              chmod 600 certs/privkey.pem certs/fullchain.pem
+            fi
+
+            echo "${{ secrets.GHCR_PAT }}" | docker login ghcr.io -u "${{ secrets.GHCR_USERNAME }}" --password-stdin
+
+            dc pull api nginx
+            dc up -d --force-recreate api
+            api_container_id=$(dc ps -q api)
+            if [ -z "$api_container_id" ]; then
+              echo "Could not resolve api container id after recreate"
+              dc ps
+              dc logs --no-color --tail=200 api || true
+              exit 1
+            fi
+
+            # Readiness: DB connectivity + seeded default user (see GET /api/Health/ready).
+            # Nginx is Basic-Auth protected; smoke tests call Kestrel inside the api container.
+            ok=""
+            for i in $(seq 1 60); do
+              if docker exec "$api_container_id" curl -fsS http://localhost:5000/api/Health/ready >/dev/null; then
+                ok="yes"
+                break
+              fi
+              echo "Waiting for API readiness (GET /api/Health/ready)... ($i/60)"
+              sleep 2
+            done
+
+            if [ "$ok" = "yes" ]; then
+              echo "Readiness check OK (database + default user)"
+            else
+              echo "Readiness check FAILED (expected HTTP 200 from /api/Health/ready); dumping status/logs"
+              dc ps
+              dc logs --no-color --tail=200 api || true
+              exit 1
+            fi
+
+            echo "Deploy gate passed: API readiness confirmed; skipping authenticated smoke test."
+            dc up -d --force-recreate nginx
+
+            # Start backup service only after rclone is configured (run setup.sh once to enable).
+            # Uses --profile backup so the service is invisible to normal dc up/pull/ps commands.
+            if [ -f "secrets/rclone.conf" ]; then
+              docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile backup pull backup
+              docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile backup up -d --force-recreate backup
+            else
+              echo "Skipping backup service: secrets/rclone.conf not found (run setup.sh to enable)"
+            fi

@@ -11,10 +11,6 @@ namespace LinguaReadApi.Data.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.DropIndex(
-                name: "IX_Books_UserId",
-                table: "Books");
-
             migrationBuilder.AddColumn<string>(
                 name: "HardcoverApiToken",
                 table: "UserSettings",
@@ -174,11 +170,6 @@ namespace LinguaReadApi.Data.Migrations
             migrationBuilder.DropColumn(
                 name: "ReleaseDate",
                 table: "Books");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_Books_UserId",
-                table: "Books",
-                column: "UserId");
         }
     }
 }

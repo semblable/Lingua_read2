@@ -265,6 +265,43 @@ public class HardcoverServiceTests
     }
 
     [Fact]
+    public async Task SyncProgressAsync_ExistingHardcoverUserBook_UpdatesExistingReadProgress()
+    {
+        await using var context = CreateContext();
+        var userId = await SeedUserWithSettingsAsync(context, hardcoverToken: "token", syncEnabled: true);
+        var languageId = await SeedLanguageAsync(context);
+        var book = new Book
+        {
+            UserId = userId,
+            LanguageId = languageId,
+            Title = "Existing Progress Book",
+            HardcoverBookId = 99,
+            HardcoverEditionId = 123,
+            PageCount = 200
+        };
+        context.Books.Add(book);
+        await context.SaveChangesAsync();
+        context.Texts.Add(new Text { UserId = userId, LanguageId = languageId, BookId = book.BookId, Title = "Part 1", Content = "one", PartNumber = 1, IsFinished = true });
+        await context.SaveChangesAsync();
+
+        var handler = new QueueMessageHandler([
+            JsonResponse("""{ "data": { "me": { "user_books": [{ "id": 777, "status_id": 2, "user_book_reads": [{ "id": 999 }] }] } } }"""),
+            JsonResponse("""{ "data": { "update_user_book": { "id": 777, "error": null, "user_book": { "id": 777, "status_id": 3 } } } }"""),
+            JsonResponse("""{ "data": { "update_user_book_read": { "id": 999, "error": null, "user_book_read": { "id": 999 } } } }""")
+        ]);
+        var service = CreateService(context, handler);
+
+        var result = await service.SyncProgressAsync(userId, book.BookId, requireSyncEnabled: true);
+
+        Assert.True(result.Success);
+        var saved = await context.Books.SingleAsync();
+        Assert.Equal(777, saved.HardcoverUserBookId);
+        Assert.Equal(999, saved.HardcoverUserBookReadId);
+        Assert.Contains(handler.RequestBodies, body => body.Contains("update_user_book_read"));
+        Assert.DoesNotContain(handler.RequestBodies, body => body.Contains("insert_user_book_read"));
+    }
+
+    [Fact]
     public async Task SyncAllAsync_ImportsMetadataAndSyncsEachBook()
     {
         await using var context = CreateContext();
@@ -390,19 +427,24 @@ public class HardcoverServiceTests
         public string? LastAuthorizationScheme { get; private set; }
         public string? LastAuthorizationParameter { get; private set; }
         public int RequestCount { get; private set; }
+        public List<string> RequestBodies { get; } = [];
 
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             RequestCount++;
             LastAuthorizationScheme = request.Headers.Authorization?.Scheme;
             LastAuthorizationParameter = request.Headers.Authorization?.Parameter;
+            if (request.Content != null)
+            {
+                RequestBodies.Add(await request.Content.ReadAsStringAsync(cancellationToken));
+            }
 
             if (_responses.Count == 0)
             {
                 throw new InvalidOperationException("No queued HTTP response for Hardcover test.");
             }
 
-            return Task.FromResult(_responses.Dequeue());
+            return _responses.Dequeue();
         }
     }
 

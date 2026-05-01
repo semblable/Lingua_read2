@@ -70,6 +70,9 @@ namespace LinguaReadApi.Data
                 .OnDelete(DeleteBehavior.Cascade);
 
             modelBuilder.Entity<Book>()
+                .HasIndex(b => b.UserId);
+
+            modelBuilder.Entity<Book>()
                 .HasIndex(b => new { b.UserId, b.HardcoverBookId })
                 .HasFilter("\"HardcoverBookId\" IS NOT NULL")
                 .IsUnique();

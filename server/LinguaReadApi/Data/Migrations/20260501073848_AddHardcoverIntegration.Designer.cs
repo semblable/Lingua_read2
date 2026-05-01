@@ -155,6 +155,8 @@ namespace LinguaReadApi.Data.Migrations
 
                     b.HasIndex("LastReadTextId");
 
+                    b.HasIndex("UserId");
+
                     b.HasIndex("UserId", "HardcoverBookId")
                         .IsUnique()
                         .HasFilter("\"HardcoverBookId\" IS NOT NULL");

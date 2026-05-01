@@ -66,7 +66,7 @@ const HardcoverSettings = ({
             size="sm"
             type="button"
             onClick={onTestConnection}
-            disabled={testingHardcover || (!settings.hasHardcoverApiToken && !token.trim())}
+            disabled={testingHardcover || !settings.hasHardcoverApiToken}
           >
             {testingHardcover ? 'Testing...' : 'Test Connection'}
           </Button>

@@ -47,6 +47,16 @@ describe('HardcoverSettings', () => {
     expect(screen.getByRole('button', { name: /sync all books/i })).toBeDisabled();
   });
 
+  test('does not test unsaved token values', () => {
+    renderSettings();
+
+    fireEvent.change(screen.getByPlaceholderText('Paste your Hardcover API token'), {
+      target: { value: 'unsaved-token' }
+    });
+
+    expect(screen.getByRole('button', { name: /test connection/i })).toBeDisabled();
+  });
+
   test('enables sync-all and clear when configured', () => {
     const props = renderSettings({
       hasHardcoverApiToken: true,

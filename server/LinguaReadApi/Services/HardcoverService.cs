@@ -213,7 +213,7 @@ public sealed class HardcoverService : IHardcoverService
             userBookReadId = await UpsertUserBookReadAsync(
                 settings.HardcoverApiToken!,
                 userBook.UserBookId,
-                book.HardcoverUserBookReadId,
+                book.HardcoverUserBookReadId ?? userBook.UserBookReadId,
                 book.HardcoverEditionId,
                 estimatedProgressPages,
                 completion >= 100 || book.IsFinished,
@@ -221,7 +221,7 @@ public sealed class HardcoverService : IHardcoverService
         }
 
         book.HardcoverUserBookId = userBook.UserBookId;
-        book.HardcoverUserBookReadId = userBookReadId ?? book.HardcoverUserBookReadId;
+        book.HardcoverUserBookReadId = userBookReadId ?? book.HardcoverUserBookReadId ?? userBook.UserBookReadId;
         book.HardcoverLastSyncedAt = DateTime.UtcNow;
         settings.HardcoverLastSyncAt = DateTime.UtcNow;
         await _context.SaveChangesAsync(cancellationToken);
@@ -518,8 +518,11 @@ public sealed class HardcoverService : IHardcoverService
     {
         if (book.HardcoverUserBookId.HasValue)
         {
+            var existingUserBook = !book.HardcoverUserBookReadId.HasValue && book.HardcoverBookId.HasValue
+                ? await FindUserBookAsync(token, book.HardcoverBookId.Value, cancellationToken)
+                : null;
             await UpdateUserBookAsync(token, book.HardcoverUserBookId.Value, statusId, book.HardcoverEditionId, cancellationToken);
-            return new HardcoverUserBook(book.HardcoverUserBookId.Value, statusId);
+            return new HardcoverUserBook(book.HardcoverUserBookId.Value, statusId, existingUserBook?.UserBookReadId);
         }
 
         var existing = await FindUserBookAsync(token, book.HardcoverBookId!.Value, cancellationToken);
@@ -555,7 +558,7 @@ public sealed class HardcoverService : IHardcoverService
         var userBookId = result.TryGetProperty("id", out var id) && id.ValueKind == JsonValueKind.Number
             ? id.GetInt32()
             : result.GetProperty("user_book").GetProperty("id").GetInt32();
-        return new HardcoverUserBook(userBookId, statusId);
+        return new HardcoverUserBook(userBookId, statusId, null);
     }
 
     private async Task<HardcoverUserBook?> FindUserBookAsync(string token, int hardcoverBookId, CancellationToken cancellationToken)
@@ -580,9 +583,20 @@ public sealed class HardcoverService : IHardcoverService
             return null;
         }
 
+        int? userBookReadId = null;
+        if (userBook.TryGetProperty("user_book_reads", out var userBookReads) && userBookReads.ValueKind == JsonValueKind.Array)
+        {
+            var userBookRead = userBookReads.EnumerateArray().FirstOrDefault();
+            if (userBookRead.ValueKind == JsonValueKind.Object)
+            {
+                userBookReadId = GetInt(userBookRead, "id");
+            }
+        }
+
         return new HardcoverUserBook(
             userBook.GetProperty("id").GetInt32(),
-            userBook.GetProperty("status_id").GetInt32());
+            userBook.GetProperty("status_id").GetInt32(),
+            userBookReadId);
     }
 
     private async Task UpdateUserBookAsync(string token, int userBookId, int statusId, int? editionId, CancellationToken cancellationToken)
@@ -848,4 +862,4 @@ public sealed record HardcoverBookCandidate(
 
 internal sealed record HardcoverUser(int Id, string? Username);
 
-internal sealed record HardcoverUserBook(int UserBookId, int StatusId);
+internal sealed record HardcoverUserBook(int UserBookId, int StatusId, int? UserBookReadId);

@@ -18,6 +18,8 @@ const SecondaryControls = React.memo(({
   text,
   loading,
   handleFullTextTranslation,
+  handleOpenSummaryPopup,
+  isSummarizing,
   handleTranslateUnknownWords,
   translatingUnknown,
   handleMarkAllUnknownAsKnown,
@@ -236,6 +238,17 @@ const SecondaryControls = React.memo(({
         className="me-1"
       >
         Translate
+      </Button>
+    )}
+    {text && !loading && (
+      <Button
+        variant="outline-info"
+        size="sm"
+        onClick={handleOpenSummaryPopup}
+        disabled={isSummarizing}
+        className="me-1"
+      >
+        {isSummarizing ? <Spinner size="sm" /> : 'Summarize'}
       </Button>
     )}
     {text && !loading && (

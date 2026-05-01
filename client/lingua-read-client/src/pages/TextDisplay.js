@@ -5,11 +5,12 @@ import {
   getText, getTextSrt, getWordLinkingStatus, createWord, updateWord, deleteWord, updateLastRead, completeLesson, getBook,
   translateText, translateSentence, translateFullText, translateSelectionWithContext, updateUserSettings,
   explainSentence, mineSentence,
-  batchTranslateWords, addTermsBatch, getLanguage,
+  batchTranslateWords, addTermsBatch, getLanguage, getAllLanguages, summarizeText,
   getSentenceProgress, logSentenceReadActivity,
   API_URL, applySrsReadingCredit
 } from '../utils/api';
 import TranslationPopup from '../components/TranslationPopup';
+import SummaryPopup from '../components/SummaryPopup';
 import AudiobookPlayer from '../components/AudiobookPlayer';
 import './TextDisplay.css';
 import { SettingsContext } from '../contexts/SettingsContext';
@@ -70,6 +71,13 @@ const TextDisplay = () => {
   // Use SettingsContext instead of local state for settings that are now global
   const { settings: globalSettings, updateSetting } = useContext(SettingsContext);
   const translationTargetLanguageCode = (globalSettings.translationTargetLanguageCode || 'EN').toUpperCase();
+  const [showSummaryPopup, setShowSummaryPopup] = useState(false);
+  const [summaryText, setSummaryText] = useState('');
+  const [summaryError, setSummaryError] = useState('');
+  const [isSummarizing, setIsSummarizing] = useState(false);
+  const [summaryTargetLanguage, setSummaryTargetLanguage] = useState(translationTargetLanguageCode);
+  const [summaryLanguages, setSummaryLanguages] = useState([]);
+  const [isLoadingSummaryLanguages, setIsLoadingSummaryLanguages] = useState(false);
   // Local state only for panel width, as it's specific to this component's layout control
   const [leftPanelWidth, setLeftPanelWidth] = useState(globalSettings.leftPanelWidth || 85);
   // Local state for userSettings specific to TextDisplay (like textSize) if needed, or use globalSettings directly
@@ -1969,6 +1977,53 @@ const TextDisplay = () => {
     finally { setIsFullTextTranslating(false); }
   };
 
+  const loadSummaryLanguages = useCallback(async () => {
+    if (summaryLanguages.length > 0 || isLoadingSummaryLanguages) return;
+
+    setIsLoadingSummaryLanguages(true);
+    try {
+      const languages = await getAllLanguages();
+      setSummaryLanguages(Array.isArray(languages) ? languages : []);
+    } catch (languagesError) {
+      console.error('Failed to load summary languages:', languagesError);
+      setSummaryLanguages([]);
+    } finally {
+      setIsLoadingSummaryLanguages(false);
+    }
+  }, [isLoadingSummaryLanguages, summaryLanguages.length]);
+
+  const handleOpenSummaryPopup = useCallback(() => {
+    if (!text?.content) return;
+
+    setSummaryTargetLanguage(translationTargetLanguageCode);
+    setSummaryText('');
+    setSummaryError('');
+    setShowSummaryPopup(true);
+    loadSummaryLanguages();
+  }, [loadSummaryLanguages, text?.content, translationTargetLanguageCode]);
+
+  const handleSummarizeText = useCallback(async () => {
+    if (!text?.content) return;
+
+    setIsSummarizing(true);
+    setSummaryText('');
+    setSummaryError('');
+
+    try {
+      const response = await summarizeText(
+        text.content,
+        text.languageCode || 'auto',
+        summaryTargetLanguage,
+        200
+      );
+      setSummaryText(response?.summaryText || 'Summary failed.');
+    } catch (summaryErr) {
+      setSummaryError(`Summary failed: ${summaryErr.message}`);
+    } finally {
+      setIsSummarizing(false);
+    }
+  }, [summaryTargetLanguage, text?.content, text?.languageCode]);
+
   const handleMineSentence = useCallback(async () => {
     const sentenceToMine = currentSentenceSegment?.text;
     const wordId = displayedWord?.wordId;
@@ -2188,6 +2243,8 @@ const TextDisplay = () => {
       text={text}
       loading={loading}
       handleFullTextTranslation={handleFullTextTranslation}
+      handleOpenSummaryPopup={handleOpenSummaryPopup}
+      isSummarizing={isSummarizing}
       handleTranslateUnknownWords={handleTranslateUnknownWords}
       translatingUnknown={translatingUnknown}
       handleMarkAllUnknownAsKnown={handleMarkAllUnknownAsKnown}
@@ -2518,6 +2575,20 @@ const TextDisplay = () => {
         </Modal.Footer>
       </Modal>
       <TranslationPopup show={showTranslationPopup} handleClose={() => setShowTranslationPopup(false)} originalText={text?.content || ''} translatedText={fullTextTranslation} isTranslating={isFullTextTranslating} />
+      <SummaryPopup
+        show={showSummaryPopup}
+        handleClose={() => setShowSummaryPopup(false)}
+        title={text?.title || 'Current text'}
+        sourceLanguage={text?.languageName || text?.languageCode || 'Auto'}
+        targetLanguage={summaryTargetLanguage}
+        setTargetLanguage={setSummaryTargetLanguage}
+        languages={summaryLanguages}
+        isLoadingLanguages={isLoadingSummaryLanguages}
+        summaryText={summaryText}
+        isSummarizing={isSummarizing}
+        error={summaryError}
+        onSummarize={handleSummarizeText}
+      />
 
     </div>
   );

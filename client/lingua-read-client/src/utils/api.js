@@ -896,6 +896,26 @@ export const generateStory = async (prompt, language, level, maxLength) => {
   }
 };
 
+// Summarization API
+export const summarizeText = async (text, sourceLanguageCode, targetLanguageCode, maxSummaryWords = 200) => {
+  try {
+    const payload = {
+      text,
+      sourceLanguageCode,
+      targetLanguageCode,
+      maxSummaryWords
+    };
+
+    return await fetchApi('/summarization', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  } catch (error) {
+    console.error('Summarization failed:', error);
+    throw error;
+  }
+};
+
 // SRS Story Generation API
 export const generateSrsStory = async (languageId, { theme, maxWords, maxLength, status, style, cardType, tense } = {}) => {
   try {

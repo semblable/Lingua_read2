@@ -146,4 +146,66 @@ namespace LinguaReadApi.Services
             return _service.GenerateStoryAsync(prompt, maxOutputTokens, _userId);
         }
     }
+
+    /// <summary>
+    /// Factory interface for getting the appropriate summarization service based on user settings
+    /// </summary>
+    public interface ISummarizationServiceFactory
+    {
+        Task<ISummarizationService> GetServiceForUserAsync(Guid userId);
+    }
+
+    /// <summary>
+    /// Factory that selects between Gemini and OpenRouter summarization services based on user preferences
+    /// </summary>
+    public class SummarizationServiceFactory : ISummarizationServiceFactory
+    {
+        private readonly GeminiSummarizationService _geminiService;
+        private readonly OpenRouterSummarizationService _openRouterService;
+        private readonly AppDbContext _context;
+
+        public SummarizationServiceFactory(
+            GeminiSummarizationService geminiService,
+            OpenRouterSummarizationService openRouterService,
+            AppDbContext context)
+        {
+            _geminiService = geminiService;
+            _openRouterService = openRouterService;
+            _context = context;
+        }
+
+        public async Task<ISummarizationService> GetServiceForUserAsync(Guid userId)
+        {
+            var userSettings = await _context.UserSettings.FirstOrDefaultAsync(s => s.UserId == userId);
+
+            if (userSettings != null &&
+                userSettings.UseOpenRouter &&
+                !string.IsNullOrWhiteSpace(userSettings.OpenRouterApiKey))
+            {
+                return new OpenRouterSummarizationServiceAdapter(_openRouterService, userId);
+            }
+
+            return _geminiService;
+        }
+    }
+
+    /// <summary>
+    /// Adapter to make OpenRouterSummarizationService implement ISummarizationService
+    /// </summary>
+    public class OpenRouterSummarizationServiceAdapter : ISummarizationService
+    {
+        private readonly OpenRouterSummarizationService _service;
+        private readonly Guid _userId;
+
+        public OpenRouterSummarizationServiceAdapter(OpenRouterSummarizationService service, Guid userId)
+        {
+            _service = service;
+            _userId = userId;
+        }
+
+        public Task<string> SummarizeAsync(string text, string sourceLanguage, string targetLanguage, int maxSummaryWords = 200)
+        {
+            return _service.SummarizeAsync(text, sourceLanguage, targetLanguage, maxSummaryWords, _userId);
+        }
+    }
 }

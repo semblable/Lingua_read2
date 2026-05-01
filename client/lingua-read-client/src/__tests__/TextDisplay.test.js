@@ -25,6 +25,8 @@ import {
   batchTranslateWords,
   addTermsBatch,
   getLanguage,
+  getAllLanguages,
+  summarizeText,
   getSentenceProgress,
   logSentenceReadActivity
 } from '../utils/api';
@@ -48,6 +50,8 @@ jest.mock('../utils/api', () => ({
   batchTranslateWords: jest.fn(),
   addTermsBatch: jest.fn(),
   getLanguage: jest.fn(),
+  getAllLanguages: jest.fn(),
+  summarizeText: jest.fn(),
   getSentenceProgress: jest.fn(),
   logSentenceReadActivity: jest.fn(),
   API_URL: 'http://test.local'
@@ -162,6 +166,8 @@ describe('TextDisplay', () => {
     batchTranslateWords.mockReset();
     addTermsBatch.mockReset();
     getLanguage.mockReset();
+    getAllLanguages.mockReset();
+    summarizeText.mockReset();
     getSentenceProgress.mockReset();
     logSentenceReadActivity.mockReset();
     getTextSrt.mockReset();
@@ -175,6 +181,11 @@ describe('TextDisplay', () => {
     translateText.mockResolvedValue({ translatedText: 'Translated selection' });
     translateSelectionWithContext.mockResolvedValue({ translatedText: 'Translated selection' });
     translateSentence.mockResolvedValue({ translatedText: 'Sentence translation' });
+    getAllLanguages.mockResolvedValue([
+      { languageId: 1, code: 'DE', name: 'German' },
+      { languageId: 2, code: 'ES', name: 'Spanish' }
+    ]);
+    summarizeText.mockResolvedValue({ summaryText: 'A concise summary.' });
     explainSentence.mockResolvedValue({ explanationText: 'Grammar: Greeting.\nNuance: Friendly.\nCulture/Context: None.\nNatural phrasing: Common opener.' });
     getSentenceProgress.mockResolvedValue({
       textId: 1,
@@ -203,6 +214,36 @@ describe('TextDisplay', () => {
     await waitFor(() => expect(getText).toHaveBeenCalled());
     expect(await screen.findByText('Sample Text')).toBeInTheDocument();
     expect(await screen.findByText('Hello')).toBeInTheDocument();
+  });
+
+  test('summarizes the current text in the selected language', async () => {
+    renderTextDisplay();
+
+    await waitFor(() => expect(getText).toHaveBeenCalled());
+    expect(await screen.findByText('Sample Text')).toBeInTheDocument();
+    const summarizeButton = await screen.findByRole('button', { name: 'Summarize' });
+    await act(async () => {
+      fireEvent.click(summarizeButton);
+    });
+
+    expect(await screen.findByRole('heading', { name: 'Summarize Text' })).toBeInTheDocument();
+    await waitFor(() => expect(getAllLanguages).toHaveBeenCalled());
+    await screen.findByRole('option', { name: 'German' });
+
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Summary language'), {
+        target: { value: 'DE' }
+      });
+    });
+    expect(screen.getByLabelText('Summary language')).toHaveValue('DE');
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Generate Summary' }));
+    });
+
+    await waitFor(() => {
+      expect(summarizeText).toHaveBeenCalledWith('Hello world.', 'ES', 'DE', 200);
+    });
+    expect(await screen.findByText('A concise summary.')).toBeInTheDocument();
   });
 
   test('clicking a word opens Word Info panel', async () => {

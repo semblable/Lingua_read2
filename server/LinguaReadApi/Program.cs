@@ -120,13 +120,19 @@ builder.Services.AddScoped<ISentenceTranslationService, GeminiTranslationService
 builder.Services.AddScoped<GeminiStoryGenerationService>();
 builder.Services.AddScoped<IStoryGenerationService, GeminiStoryGenerationService>();
 
+// Register Gemini Summarization Service (concrete type for factory)
+builder.Services.AddScoped<GeminiSummarizationService>();
+builder.Services.AddScoped<ISummarizationService, GeminiSummarizationService>();
+
 // Register OpenRouter Services
 builder.Services.AddScoped<OpenRouterTranslationService>();
 builder.Services.AddScoped<OpenRouterStoryGenerationService>();
+builder.Services.AddScoped<OpenRouterSummarizationService>();
 
 // Register Service Factories (select between Gemini/OpenRouter per-user)
 builder.Services.AddScoped<ITranslationServiceFactory, TranslationServiceFactory>();
 builder.Services.AddScoped<IStoryGenerationServiceFactory, StoryGenerationServiceFactory>();
+builder.Services.AddScoped<ISummarizationServiceFactory, SummarizationServiceFactory>();
 
 // Register Database Admin Service
 builder.Services.AddScoped<IDatabaseAdminService, DatabaseAdminService>(); // <-- Add this line

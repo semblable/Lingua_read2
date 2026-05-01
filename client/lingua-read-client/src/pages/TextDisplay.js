@@ -132,6 +132,7 @@ const TextDisplay = () => {
   const lastAutoSegmentPlaybackKeyRef = useRef('');
   const skipInitialAudioLessonSegmentPlaybackRef = useRef(true);
   const textLoadRequestVersionRef = useRef(0);
+  const currentTextIdForSummaryRef = useRef(null);
   // --- End State Declarations ---
 
   // Create refs for values used in handleAudioTimeUpdate to keep the callback stable
@@ -159,6 +160,10 @@ const TextDisplay = () => {
       listRef: listRef // Store the ref object
     };
   }, [isAudioLesson, srtLines, displayMode, currentSrtLineId, globalSettings.sentenceMode, currentSegmentIndex, isMobile]);
+
+  useEffect(() => {
+    currentTextIdForSummaryRef.current = text?.textId ?? null;
+  }, [text?.textId]);
 
   // --- Effects ---
   // --- End Effects ---
@@ -2005,6 +2010,7 @@ const TextDisplay = () => {
   const handleSummarizeText = useCallback(async () => {
     if (!text?.content) return;
 
+    const requestTextId = text.textId ?? null;
     setIsSummarizing(true);
     setSummaryText('');
     setSummaryError('');
@@ -2016,13 +2022,15 @@ const TextDisplay = () => {
         summaryTargetLanguage,
         200
       );
+      if (currentTextIdForSummaryRef.current !== requestTextId) return;
       setSummaryText(response?.summaryText || 'Summary failed.');
     } catch (summaryErr) {
+      if (currentTextIdForSummaryRef.current !== requestTextId) return;
       setSummaryError(`Summary failed: ${summaryErr.message}`);
     } finally {
       setIsSummarizing(false);
     }
-  }, [summaryTargetLanguage, text?.content, text?.languageCode]);
+  }, [summaryTargetLanguage, text?.content, text?.languageCode, text?.textId]);
 
   const handleMineSentence = useCallback(async () => {
     const sentenceToMine = currentSentenceSegment?.text;

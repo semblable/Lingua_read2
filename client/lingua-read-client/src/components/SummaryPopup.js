@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useEffect } from 'react';
 import { Alert, Button, Form, Modal, Spinner } from 'react-bootstrap';
 
 const SummaryPopup = ({
@@ -26,8 +26,27 @@ const SummaryPopup = ({
       options.push({ code, name: language.name || code });
     });
 
+    // Keep <select> controlled value valid if API is slow/failed or code is not in DB list yet
+    if (targetLanguage) {
+      const code = targetLanguage.toUpperCase();
+      if (code && !seen.has(code)) {
+        seen.add(code);
+        options.push({ code, name: code });
+      }
+    }
+
     return options;
-  }, [languages]);
+  }, [languages, targetLanguage]);
+
+  const selectValue = languageOptions.some(o => o.code === targetLanguage)
+    ? targetLanguage
+    : (languageOptions[0]?.code ?? 'EN');
+
+  useEffect(() => {
+    if (show && selectValue !== targetLanguage) {
+      setTargetLanguage(selectValue);
+    }
+  }, [show, selectValue, targetLanguage, setTargetLanguage]);
 
   return (
     <Modal
@@ -51,7 +70,7 @@ const SummaryPopup = ({
         <Form.Group className="mb-3" controlId="summaryTargetLanguage">
           <Form.Label>Summary language</Form.Label>
           <Form.Select
-            value={targetLanguage}
+            value={selectValue}
             onChange={(event) => setTargetLanguage(event.target.value)}
             disabled={isSummarizing || isLoadingLanguages}
           >
@@ -96,7 +115,7 @@ const SummaryPopup = ({
         <Button variant="secondary" onClick={handleClose}>
           Close
         </Button>
-        <Button variant="primary" onClick={onSummarize} disabled={isSummarizing || !targetLanguage}>
+        <Button variant="primary" onClick={onSummarize} disabled={isSummarizing || !selectValue}>
           {isSummarizing ? <Spinner size="sm" className="me-2" /> : null}
           Generate Summary
         </Button>

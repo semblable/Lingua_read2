@@ -72,6 +72,10 @@ namespace LinguaReadApi.Controllers
                     TargetLanguageCode = request.TargetLanguageCode
                 });
             }
+            catch (UnauthorizedAccessException)
+            {
+                return Unauthorized();
+            }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error during summarization");

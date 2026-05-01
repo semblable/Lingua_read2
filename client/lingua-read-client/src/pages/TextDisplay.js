@@ -163,6 +163,9 @@ const TextDisplay = () => {
 
   useEffect(() => {
     currentTextIdForSummaryRef.current = text?.textId ?? null;
+    setShowSummaryPopup(false);
+    setSummaryText('');
+    setSummaryError('');
   }, [text?.textId]);
 
   // --- Effects ---

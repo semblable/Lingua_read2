@@ -99,7 +99,7 @@ namespace LinguaReadApi.Services
                             continue;
                         }
 
-                        return $"Summarization error: {response.StatusCode}";
+                        break;
                     }
 
                     var openRouterResponse = JsonSerializer.Deserialize<OpenRouterResponse>(responseContent, options);

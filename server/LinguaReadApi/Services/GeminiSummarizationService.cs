@@ -78,6 +78,7 @@ namespace LinguaReadApi.Services
                 }
 
                 HttpStatusCode? lastStatus = null;
+                var extractionFailed = false;
                 foreach (var model in modelsToTry)
                 {
                     const int maxAttempts = 3;
@@ -124,8 +125,14 @@ namespace LinguaReadApi.Services
                         }
 
                         _logger.LogWarning("Could not extract summary from Gemini response (model={Model})", model);
-                        return "Summarization error: Could not extract result";
+                        extractionFailed = true;
+                        break;
                     }
+                }
+
+                if (extractionFailed && lastStatus == null)
+                {
+                    return "Summarization error: Could not extract result";
                 }
 
                 return $"Summarization error: {lastStatus}";

@@ -57,7 +57,10 @@ namespace LinguaReadApi.Services
                         }
                     },
                     Temperature = 0.3,
-                    MaxTokens = Math.Max(512, maxSummaryWords * 5),
+                    // Generous budget: thinking-capable models (Gemini 2.5/3, DeepSeek R1, etc.)
+                    // spend tokens on reasoning before visible output; a tight cap returns empty
+                    // content with finishReason=length.
+                    MaxTokens = Math.Max(8192, maxSummaryWords * 20),
                     TopP = 1.0,
                     Reasoning = Controllers.OpenRouterStoryReasoningHelper.BuildReasoningOptions(userSettings)
                 };

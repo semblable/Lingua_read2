@@ -59,7 +59,10 @@ namespace LinguaReadApi.Services
                         Temperature = 0.3,
                         TopK = 32,
                         TopP = 1.0,
-                        MaxOutputTokens = Math.Max(512, maxSummaryWords * 5),
+                        // Generous budget: Gemini 2.5/3 thinking models spend output tokens on
+                        // internal reasoning before emitting visible text, so a tight cap can
+                        // result in empty content parts.
+                        MaxOutputTokens = Math.Max(8192, maxSummaryWords * 20),
                         ResponseMimeType = "text/plain"
                     }
                 };
@@ -124,7 +127,8 @@ namespace LinguaReadApi.Services
                             }
                         }
 
-                        _logger.LogWarning("Could not extract summary from Gemini response (model={Model})", model);
+                        _logger.LogWarning("Could not extract summary from Gemini response (model={Model}). Response={Response}",
+                            model, responseContent.Substring(0, Math.Min(1000, responseContent.Length)));
                         extractionFailed = true;
                         break;
                     }

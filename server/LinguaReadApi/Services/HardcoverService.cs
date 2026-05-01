@@ -124,7 +124,7 @@ public sealed class HardcoverService : IHardcoverService
 
         var changed = new List<string>();
 
-        if (string.IsNullOrWhiteSpace(book.Description) && !string.IsNullOrWhiteSpace(candidate.Description))
+        if (IsEmptyOrUploadPlaceholder(book.Description) && !string.IsNullOrWhiteSpace(candidate.Description))
         {
             book.Description = Truncate(candidate.Description!, 1000);
             changed.Add("description");
@@ -499,10 +499,20 @@ public sealed class HardcoverService : IHardcoverService
             book.HardcoverSlug = Truncate(candidate.Slug!, 250);
         }
 
-        if (string.IsNullOrWhiteSpace(book.Description) && !string.IsNullOrWhiteSpace(candidate.Description))
+        if (IsEmptyOrUploadPlaceholder(book.Description) && !string.IsNullOrWhiteSpace(candidate.Description))
         {
             book.Description = Truncate(candidate.Description!, 1000);
         }
+    }
+
+    private static bool IsEmptyOrUploadPlaceholder(string? description)
+    {
+        if (string.IsNullOrWhiteSpace(description))
+        {
+            return true;
+        }
+
+        return description.TrimStart().StartsWith("Uploaded from ", StringComparison.Ordinal);
     }
 
     private static double CalculatePartCompletion(Book book)

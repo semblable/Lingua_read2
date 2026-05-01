@@ -35,7 +35,7 @@ public class HardcoverServiceTests
         await using var context = CreateContext();
         var userId = await SeedUserWithSettingsAsync(context, hardcoverToken: "hardcover-token");
         var handler = new QueueMessageHandler([
-            JsonResponse("""{ "data": { "me": { "id": 42, "username": "reader" } } }""")
+            JsonResponse("""{ "data": { "me": [{ "id": 42, "username": "reader" }] } }""")
         ]);
         var service = CreateService(context, handler);
 
@@ -285,7 +285,7 @@ public class HardcoverServiceTests
         await context.SaveChangesAsync();
 
         var handler = new QueueMessageHandler([
-            JsonResponse("""{ "data": { "me": { "user_books": [{ "id": 777, "status_id": 2, "user_book_reads": [{ "id": 999 }] }] } } }"""),
+            JsonResponse("""{ "data": { "me": [{ "user_books": [{ "id": 777, "status_id": 2, "user_book_reads": [{ "id": 999 }] }] }] } }"""),
             JsonResponse("""{ "data": { "update_user_book": { "id": 777, "error": null, "user_book": { "id": 777, "status_id": 3 } } } }"""),
             JsonResponse("""{ "data": { "update_user_book_read": { "id": 999, "error": null, "user_book_read": { "id": 999 } } } }""")
         ]);

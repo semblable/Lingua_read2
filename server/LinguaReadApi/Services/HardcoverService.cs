@@ -295,7 +295,7 @@ public sealed class HardcoverService : IHardcoverService
     {
         const string query = "query { me { id username } }";
         var data = await ExecuteGraphQlAsync(token, query, null, cancellationToken);
-        var me = data.GetProperty("me");
+        var me = GetMeElement(data);
         return new HardcoverUser(me.GetProperty("id").GetInt32(), me.GetProperty("username").GetString());
     }
 
@@ -576,7 +576,7 @@ public sealed class HardcoverService : IHardcoverService
             """;
 
         var data = await ExecuteGraphQlAsync(token, query, new { bookId = hardcoverBookId }, cancellationToken);
-        var userBooks = data.GetProperty("me").GetProperty("user_books");
+        var userBooks = GetMeElement(data).GetProperty("user_books");
         var userBook = userBooks.EnumerateArray().FirstOrDefault();
         if (userBook.ValueKind != JsonValueKind.Object)
         {
@@ -704,6 +704,26 @@ public sealed class HardcoverService : IHardcoverService
         }
 
         return document.RootElement.GetProperty("data").Clone();
+    }
+
+    private static JsonElement GetMeElement(JsonElement data)
+    {
+        var me = data.GetProperty("me");
+        if (me.ValueKind == JsonValueKind.Object)
+        {
+            return me;
+        }
+
+        if (me.ValueKind == JsonValueKind.Array)
+        {
+            var firstUser = me.EnumerateArray().FirstOrDefault();
+            if (firstUser.ValueKind == JsonValueKind.Object)
+            {
+                return firstUser;
+            }
+        }
+
+        throw new InvalidOperationException("Hardcover API did not return the current user.");
     }
 
     private static string NormalizeToken(string token)

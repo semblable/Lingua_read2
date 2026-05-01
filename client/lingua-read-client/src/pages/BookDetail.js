@@ -451,6 +451,18 @@ const BookDetail = () => {
             {book.hardcoverBookId ? (
               <div className="text-muted small">
                 Linked to Hardcover book #{book.hardcoverBookId}
+                {book.hardcoverSlug && (
+                  <>
+                    {' | '}
+                    <a
+                      href={`https://hardcover.app/books/${book.hardcoverSlug}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      View on Hardcover
+                    </a>
+                  </>
+                )}
                 {book.hardcoverLastSyncedAt && <> | Last synced: {formatDate(book.hardcoverLastSyncedAt)}</>}
               </div>
             ) : (

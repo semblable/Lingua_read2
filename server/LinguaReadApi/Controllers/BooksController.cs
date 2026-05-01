@@ -76,6 +76,7 @@ namespace LinguaReadApi.Controllers
                     CoverImagePath = b.CoverImagePath,
                     HardcoverBookId = b.HardcoverBookId,
                     HardcoverEditionId = b.HardcoverEditionId,
+                    HardcoverSlug = b.HardcoverSlug,
                     HardcoverUserBookId = b.HardcoverUserBookId,
                     HardcoverMatchedAt = b.HardcoverMatchedAt,
                     HardcoverLastSyncedAt = b.HardcoverLastSyncedAt,
@@ -126,6 +127,7 @@ namespace LinguaReadApi.Controllers
                 CoverImagePath = book.CoverImagePath,
                 HardcoverBookId = book.HardcoverBookId,
                 HardcoverEditionId = book.HardcoverEditionId,
+                HardcoverSlug = book.HardcoverSlug,
                 HardcoverUserBookId = book.HardcoverUserBookId,
                 HardcoverMatchedAt = book.HardcoverMatchedAt,
                 HardcoverLastSyncedAt = book.HardcoverLastSyncedAt,
@@ -2265,6 +2267,7 @@ namespace LinguaReadApi.Controllers
         public bool IsFinished { get; set; }
         public int? HardcoverBookId { get; set; }
         public int? HardcoverEditionId { get; set; }
+        public string? HardcoverSlug { get; set; }
         public int? HardcoverUserBookId { get; set; }
         public DateTime? HardcoverMatchedAt { get; set; }
         public DateTime? HardcoverLastSyncedAt { get; set; }
@@ -2292,6 +2295,7 @@ namespace LinguaReadApi.Controllers
         public int? LastReadTextId { get; set; }
         public int? HardcoverBookId { get; set; }
         public int? HardcoverEditionId { get; set; }
+        public string? HardcoverSlug { get; set; }
         public int? HardcoverUserBookId { get; set; }
         public DateTime? HardcoverMatchedAt { get; set; }
         public DateTime? HardcoverLastSyncedAt { get; set; }

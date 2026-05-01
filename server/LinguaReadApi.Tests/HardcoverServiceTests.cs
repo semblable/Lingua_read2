@@ -117,6 +117,7 @@ public class HardcoverServiceTests
                 "books": [{
                   "id": 328491,
                   "title": "Oathbringer",
+                  "slug": "oathbringer",
                   "description": "A book",
                   "pages": 1248,
                   "release_date": "2017-11-14",
@@ -137,6 +138,53 @@ public class HardcoverServiceTests
         Assert.Equal(328491, saved.HardcoverBookId);
         Assert.Equal(1, saved.HardcoverEditionId);
         Assert.Equal(1248, saved.PageCount);
+        Assert.Equal("oathbringer", saved.HardcoverSlug);
+        Assert.Equal("A book", saved.Description);
+    }
+
+    [Fact]
+    public async Task MatchBookAsync_DoesNotOverwriteExistingDescription()
+    {
+        await using var context = CreateContext();
+        var userId = await SeedUserWithSettingsAsync(context, hardcoverToken: "token");
+        var book = new Book
+        {
+            UserId = userId,
+            LanguageId = await SeedLanguageAsync(context),
+            Title = "Oathbringer",
+            Description = "Local description"
+        };
+        context.Books.Add(book);
+        await context.SaveChangesAsync();
+
+        var handler = new QueueMessageHandler([
+            JsonResponse("""{ "data": { "search": { "ids": [328491] } } }"""),
+            JsonResponse("""
+            {
+              "data": {
+                "books": [{
+                  "id": 328491,
+                  "title": "Oathbringer",
+                  "slug": "oathbringer",
+                  "description": "Remote description",
+                  "pages": 1248,
+                  "release_date": "2017-11-14",
+                  "image": { "url": "https://example.test/cover.jpg" },
+                  "contributions": [{ "author": { "name": "Brandon Sanderson" } }],
+                  "editions": [{ "id": 1, "title": "Oathbringer", "isbn_13": "9780765326379", "pages": 1248, "release_date": "2017-11-14", "publisher": { "name": "Tor" }, "image": { "url": "https://example.test/edition.jpg" } }]
+                }]
+              }
+            }
+            """)
+        ]);
+        var service = CreateService(context, handler);
+
+        var result = await service.MatchBookAsync(userId, book.BookId);
+
+        Assert.True(result.Applied);
+        var saved = await context.Books.SingleAsync();
+        Assert.Equal("Local description", saved.Description);
+        Assert.Equal("oathbringer", saved.HardcoverSlug);
     }
 
     [Fact]
@@ -163,6 +211,7 @@ public class HardcoverServiceTests
                 "books": [{
                   "id": 328491,
                   "title": "Oathbringer",
+                  "slug": "oathbringer",
                   "description": "Imported description",
                   "pages": 1248,
                   "release_date": "2017-11-14",

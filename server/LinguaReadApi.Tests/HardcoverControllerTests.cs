@@ -36,7 +36,7 @@ public class HardcoverControllerTests
         {
             MatchResult = new HardcoverMatchResult(
                 true,
-                new HardcoverBookCandidate(55, 66, "Book", null, null, null, null, null, null, null, 1),
+                new HardcoverBookCandidate(55, 66, "Book", null, null, null, null, null, null, null, null, 1),
                 [],
                 "matched")
         };

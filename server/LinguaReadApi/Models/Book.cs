@@ -37,6 +37,9 @@ namespace LinguaReadApi.Models
 
         public int? HardcoverEditionId { get; set; }
 
+        [StringLength(250)]
+        public string? HardcoverSlug { get; set; }
+
         public int? HardcoverUserBookId { get; set; }
 
         public int? HardcoverUserBookReadId { get; set; }

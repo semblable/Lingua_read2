@@ -351,6 +351,7 @@ public sealed class HardcoverService : IHardcoverService
               books(where: { id: { _in: $ids } }, limit: 10) {
                 id
                 title
+                slug
                 description
                 pages
                 release_date
@@ -380,6 +381,7 @@ public sealed class HardcoverService : IHardcoverService
               books(where: { title: { _eq: $title } }, limit: 10) {
                 id
                 title
+                slug
                 description
                 pages
                 release_date
@@ -428,6 +430,7 @@ public sealed class HardcoverService : IHardcoverService
                 BookId: GetInt(book, "id") ?? 0,
                 EditionId: bestEdition.ValueKind == JsonValueKind.Object ? GetInt(bestEdition, "id") : null,
                 Title: GetString(book, "title") ?? string.Empty,
+                Slug: GetString(book, "slug"),
                 Description: GetString(book, "description"),
                 Author: author,
                 Isbn13: bestEdition.ValueKind == JsonValueKind.Object ? GetString(bestEdition, "isbn_13") : null,
@@ -489,6 +492,16 @@ public sealed class HardcoverService : IHardcoverService
         if (!book.PageCount.HasValue && candidate.Pages.HasValue)
         {
             book.PageCount = candidate.Pages.Value;
+        }
+
+        if (!string.IsNullOrWhiteSpace(candidate.Slug))
+        {
+            book.HardcoverSlug = Truncate(candidate.Slug!, 250);
+        }
+
+        if (string.IsNullOrWhiteSpace(book.Description) && !string.IsNullOrWhiteSpace(candidate.Description))
+        {
+            book.Description = Truncate(candidate.Description!, 1000);
         }
     }
 
@@ -871,6 +884,7 @@ public sealed record HardcoverBookCandidate(
     int BookId,
     int? EditionId,
     string Title,
+    string? Slug,
     string? Description,
     string? Author,
     string? Isbn13,

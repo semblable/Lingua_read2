@@ -143,6 +143,21 @@ describe('BookDetail Hardcover integration', () => {
     expect(getBook).toHaveBeenCalledTimes(2);
   });
 
+  test('renders "View on Hardcover" link when slug is present', async () => {
+    getBook.mockResolvedValue({
+      ...defaultBook,
+      hardcoverBookId: 55,
+      hardcoverSlug: 'remote-book'
+    });
+
+    renderBookDetail();
+
+    const link = await screen.findByRole('link', { name: /view on hardcover/i });
+    expect(link).toHaveAttribute('href', 'https://hardcover.app/books/remote-book');
+    expect(link).toHaveAttribute('target', '_blank');
+    expect(link).toHaveAttribute('rel', expect.stringContaining('noopener'));
+  });
+
   test('syncs Hardcover progress and surfaces result', async () => {
     getBook.mockResolvedValue({
       ...defaultBook,

@@ -1069,7 +1069,7 @@ export const getAudioStorageSize = async () => {
 };
 
 // Updated updateAudiobookProgress function (requires bookId)
-export const updateAudiobookProgress = async (bookId, progressData) => {
+export const updateAudiobookProgress = async (bookId, progressData, options = {}) => {
   // progressData should be { currentAudiobookTrackId: number | null, currentAudiobookPosition: number | null }
   const payload = {
     bookId: bookId,
@@ -1078,6 +1078,7 @@ export const updateAudiobookProgress = async (bookId, progressData) => {
   };
   console.log('[API] Updating audiobook progress via UserActivityController:', payload);
   return await fetchApi('/activity/audiobookprogress', {
+    ...options,
     method: 'PUT',
     body: JSON.stringify(payload)
   });

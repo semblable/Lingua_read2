@@ -46,6 +46,15 @@ const setAudioPlaybackIntent = (audio, shouldPlay) => {
 const getAudioPlaybackIntent = (audio) => Boolean(audio?.__lrAllowPlayback);
 const LISTENING_ACTIVITY_FLUSH_SECONDS = 10;
 
+const getTrackDisplayName = (track) => {
+  if (!track) return '';
+  if (track.title) return track.title;
+
+  const path = track.filePath || track.url || '';
+  const fileName = path.split(/[\\/]/).pop() || '';
+  return fileName.replace(/\.[^/.]+$/, '') || 'Untitled track';
+};
+
 const AudiobookPlayer = ({
   type = 'book',
   book,
@@ -267,6 +276,7 @@ const AudiobookPlayer = ({
       try {
         let savedTrackIndex = 0;
         let savedPosition = 0;
+        let serverUpdateTime = null;
 
         if (isBookMode && book?.bookId) {
           setIsLoading(true);
@@ -281,7 +291,11 @@ const AudiobookPlayer = ({
           }
           // Store server update time for cross-device sync
           if (progress?.updatedAt) {
-            lastServerUpdateRef.current = new Date(progress.updatedAt).getTime();
+            const parsedServerUpdateTime = new Date(progress.updatedAt).getTime();
+            if (Number.isFinite(parsedServerUpdateTime)) {
+              serverUpdateTime = parsedServerUpdateTime;
+              lastServerUpdateRef.current = serverUpdateTime;
+            }
           }
         } else if (!isBookMode && textId) {
           const progress = await getAudioLessonProgress(textId);
@@ -290,22 +304,41 @@ const AudiobookPlayer = ({
             console.log(`[AudioPlayer] Restoring Lesson progress: Pos ${savedPosition}`);
           }
           if (progress?.updatedAt) {
-            lastServerUpdateRef.current = new Date(progress.updatedAt).getTime();
+            const parsedServerUpdateTime = new Date(progress.updatedAt).getTime();
+            if (Number.isFinite(parsedServerUpdateTime)) {
+              serverUpdateTime = parsedServerUpdateTime;
+              lastServerUpdateRef.current = serverUpdateTime;
+            }
           }
         }
 
-        // Check localStorage fallback only when server returned no position
-        // (e.g. mobile refresh where keepalive save was dropped)
-        if (positionStorageKey && savedPosition <= 0) {
+        // Use localStorage when the server has no position, or when the local
+        // checkpoint is clearly newer than the last server write.
+        if (positionStorageKey) {
           try {
             const localRaw = localStorage.getItem(positionStorageKey);
             if (localRaw) {
               const localData = JSON.parse(localRaw);
-              if (localData.position > 0) {
-                console.log(`[AudioPlayer] Server had no position, restoring from localStorage: ${localData.position}`);
-                savedPosition = localData.position;
-                if (isBookMode && localData.trackIndex != null) {
-                  savedTrackIndex = localData.trackIndex;
+              const localPosition = Number(localData.position) || 0;
+              const localTimestamp = Number(localData.timestamp) || 0;
+              const localIsFresher = serverUpdateTime != null && localTimestamp > serverUpdateTime + 2000;
+              const shouldUseLocal = savedPosition <= 0 || localIsFresher;
+
+              if (localPosition > 0 && shouldUseLocal) {
+                let localTrackIndex = savedTrackIndex;
+
+                if (isBookMode) {
+                  if (localData.trackId != null) {
+                    localTrackIndex = sourceTracks.findIndex(t => t.trackId === localData.trackId);
+                  } else if (localData.trackIndex != null) {
+                    localTrackIndex = Number(localData.trackIndex);
+                  }
+                }
+
+                if (!isBookMode || (Number.isInteger(localTrackIndex) && localTrackIndex >= 0 && localTrackIndex < sourceTracks.length)) {
+                  console.log(`[AudioPlayer] Restoring from localStorage: ${localPosition}`);
+                  savedPosition = localPosition;
+                  savedTrackIndex = localTrackIndex;
                 }
               }
             }
@@ -359,6 +392,7 @@ const AudiobookPlayer = ({
 
   // --- FIVE: Active Track Management ---
   const currentTrack = playlist[currentTrackIndex];
+  const currentTrackDisplayName = getTrackDisplayName(currentTrack);
 
   const resetSegmentPlayback = useCallback(() => {
     segmentPlaybackRef.current = createSegmentPlaybackState();
@@ -720,13 +754,15 @@ const AudiobookPlayer = ({
     }
 
     try {
+      const isPageLifecycleSave = lifecycleSaveRef.current || document.hidden;
       if (isBookModeSnapshot && bookId) {
         await updateAudiobookProgress(bookId, {
           currentAudiobookTrackId: track.trackId,
           currentAudiobookPosition: currentPos
+        }, {
+          keepalive: isPageLifecycleSave
         });
       } else if (textIdSnapshot) {
-        const isPageLifecycleSave = lifecycleSaveRef.current || document.hidden;
         await updateAudioLessonProgress(textIdSnapshot, {
           currentPosition: currentPos
         }, {
@@ -1077,6 +1113,19 @@ const AudiobookPlayer = ({
       ) : (
         <>
           {error && <Alert variant="danger" size="sm" className="p-1 mb-1">{error}</Alert>}
+
+          {isBookMode && playlist.length > 1 && (
+            <div className="audiobook-player__track-info mb-1" title={currentTrackDisplayName}>
+              <span className="fw-semibold">
+                Track {currentTrackIndex + 1} of {playlist.length}
+              </span>
+              {currentTrackDisplayName && (
+                <span className="text-truncate">
+                  {currentTrackDisplayName}
+                </span>
+              )}
+            </div>
+          )}
 
           <div className="d-flex align-items-center gap-3">
             {/* Progress Section */}

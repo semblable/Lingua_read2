@@ -68,11 +68,13 @@ describe('AudiobookPlayer', () => {
     getAudioLessonProgress.mockReset();
     updateAudioLessonProgress.mockReset();
     logListeningActivity.mockReset();
+    localStorage.clear();
   });
 
   afterEach(() => {
     jest.useRealTimers();
     jest.restoreAllMocks();
+    localStorage.clear();
   });
 
   test('book mode calls API to restore progress', async () => {
@@ -100,6 +102,108 @@ describe('AudiobookPlayer', () => {
     // Verify the UI is rendered
     await waitFor(() => {
       expect(screen.getByTitle(/Play/)).toBeInTheDocument();
+    });
+  });
+
+  test('book mode prefers fresher local progress over stale non-zero server progress', async () => {
+    getAudiobookProgress.mockResolvedValue({
+      currentAudiobookTrackId: 'track-1',
+      currentAudiobookPosition: 12,
+      updatedAt: '2026-05-01T09:59:50.000Z'
+    });
+    localStorage.setItem('audioPos:book:10', JSON.stringify({
+      position: 42,
+      trackId: 'track-2',
+      trackIndex: 1,
+      timestamp: Date.parse('2026-05-01T10:00:00.000Z')
+    }));
+
+    const book = {
+      bookId: 10,
+      languageId: 3,
+      audiobookTracks: [
+        { trackId: 'track-1', filePath: 'audio/track-1.mp3' },
+        { trackId: 'track-2', filePath: 'audio/track-2.mp3' }
+      ]
+    };
+
+    const { container } = render(<AudiobookPlayer type="book" book={book} />);
+
+    await waitFor(() => {
+      expect(screen.getByTitle(/Play/)).toBeInTheDocument();
+    });
+
+    const audio = container.querySelector('audio');
+    expect(audio).not.toBeNull();
+    await waitFor(() => {
+      expect(audio.getAttribute('src')).toContain('track-2');
+    });
+    expect(screen.getByText('00:42')).toBeInTheDocument();
+  });
+
+  test('book mode saves progress with keepalive on page lifecycle exit', async () => {
+    getAudiobookProgress.mockResolvedValue({
+      currentAudiobookTrackId: 'track-1',
+      currentAudiobookPosition: 0
+    });
+
+    const book = {
+      bookId: 10,
+      languageId: 3,
+      audiobookTracks: [
+        { trackId: 'track-1', filePath: 'audio/track-1.mp3' },
+        { trackId: 'track-2', filePath: 'audio/track-2.mp3' }
+      ]
+    };
+
+    const { container } = render(<AudiobookPlayer type="book" book={book} />);
+
+    await waitFor(() => {
+      expect(screen.getByTitle(/Play/)).toBeInTheDocument();
+    });
+
+    const audio = container.querySelector('audio');
+    expect(audio).not.toBeNull();
+    Object.defineProperty(audio, 'currentTime', {
+      configurable: true,
+      writable: true,
+      value: 37
+    });
+
+    act(() => {
+      window.dispatchEvent(new Event('pagehide'));
+    });
+
+    await waitFor(() => {
+      expect(updateAudiobookProgress).toHaveBeenCalledWith(10, {
+        currentAudiobookTrackId: 'track-1',
+        currentAudiobookPosition: 37
+      }, {
+        keepalive: true
+      });
+    });
+  });
+
+  test('book mode shows the current track number and name', async () => {
+    getAudiobookProgress.mockResolvedValue({
+      currentAudiobookTrackId: 'track-2',
+      currentAudiobookPosition: 0
+    });
+
+    const book = {
+      bookId: 10,
+      languageId: 3,
+      audiobookTracks: [
+        { trackId: 'track-1', title: 'Chapter 1', filePath: 'audio/track-1.mp3' },
+        { trackId: 'track-2', title: 'Chapter 2', filePath: 'audio/track-2.mp3' }
+      ]
+    };
+
+    render(<AudiobookPlayer type="book" book={book} />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Track 2 of 2')).toBeInTheDocument();
+      expect(screen.getByText('Chapter 2')).toBeInTheDocument();
     });
   });
 

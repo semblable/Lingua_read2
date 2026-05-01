@@ -6,6 +6,15 @@
   min-width: 0;
 }
 
+.audiobook-player__track-info {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+  color: var(--bs-secondary-color);
+  font-size: 0.75rem;
+}
+
 /* Ensure controls are visible and properly laid out */
 .audiobook-player__rate-group,
 .audiobook-player__volume-group {

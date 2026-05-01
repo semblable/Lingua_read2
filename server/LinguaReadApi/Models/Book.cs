@@ -19,6 +19,31 @@ namespace LinguaReadApi.Models
 
         [StringLength(500)]
         public string? CoverImagePath { get; set; }
+
+        [StringLength(200)]
+        public string? Author { get; set; }
+
+        [StringLength(20)]
+        public string? Isbn13 { get; set; }
+
+        [StringLength(200)]
+        public string? Publisher { get; set; }
+
+        public DateTime? ReleaseDate { get; set; }
+
+        public int? PageCount { get; set; }
+
+        public int? HardcoverBookId { get; set; }
+
+        public int? HardcoverEditionId { get; set; }
+
+        public int? HardcoverUserBookId { get; set; }
+
+        public int? HardcoverUserBookReadId { get; set; }
+
+        public DateTime? HardcoverMatchedAt { get; set; }
+
+        public DateTime? HardcoverLastSyncedAt { get; set; }
         
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
         

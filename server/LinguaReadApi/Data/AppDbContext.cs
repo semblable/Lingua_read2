@@ -68,6 +68,11 @@ namespace LinguaReadApi.Data
                 .WithMany(u => u.Books)
                 .HasForeignKey(b => b.UserId)
                 .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<Book>()
+                .HasIndex(b => new { b.UserId, b.HardcoverBookId })
+                .HasFilter("\"HardcoverBookId\" IS NOT NULL")
+                .IsUnique();
             
             // Language - Book: One-to-Many
             modelBuilder.Entity<Book>()

@@ -2,7 +2,8 @@ import React, { useState, useEffect, useRef, useContext, useCallback } from 'rea
 import { Container, Form, Button, Alert, Spinner } from 'react-bootstrap';
 import {
   getUserSettings, updateUserSettings, getAllLanguages,
-  backupDatabase, restoreDatabase, resetUserStatistics, sendDiscordReport, getAudioStorageSize
+  backupDatabase, restoreDatabase, resetUserStatistics, sendDiscordReport, getAudioStorageSize,
+  getHardcoverStatus, syncAllHardcover
 } from '../utils/api';
 import * as api from '../utils/api';
 import { SettingsContext } from '../contexts/SettingsContext';
@@ -11,6 +12,7 @@ import ReadingSettings from '../components/settings/ReadingSettings';
 import NavigationSettings from '../components/settings/NavigationSettings';
 import AiProviderSettings from '../components/settings/AiProviderSettings';
 import DiscordSettings from '../components/settings/DiscordSettings';
+import HardcoverSettings from '../components/settings/HardcoverSettings';
 import DataManagementSettings from '../components/settings/DataManagementSettings';
 import './UserSettings.css';
 
@@ -20,6 +22,7 @@ const SECTIONS = [
   { id: 'navigation', label: 'Navigation', icon: '\u2699\uFE0F' },
   { id: 'ai', label: 'AI Provider', icon: '\uD83E\uDD16' },
   { id: 'discord', label: 'Discord', icon: '\uD83D\uDCE8' },
+  { id: 'hardcover', label: 'Hardcover', icon: 'HC' },
   { id: 'data', label: 'Data', icon: '\uD83D\uDDC4\uFE0F' },
 ];
 
@@ -53,6 +56,9 @@ const UserSettings = () => {
     discordWeeklyReportDayOfWeek: 'Monday',
     discordWeeklyReportHourLocal: 8,
     discordTimezoneOffsetMinutes: browserTimezoneOffsetMinutes,
+    hardcoverSyncEnabled: false,
+    hasHardcoverApiToken: false,
+    hardcoverLastSyncAt: null,
     useOpenRouter: false,
     openRouterApiKey: '',
     openRouterModel: 'google/gemini-2.5-flash-preview-05-20:free',
@@ -86,6 +92,12 @@ const UserSettings = () => {
   const [reportDays, setReportDays] = useState(30);
   const [isSendingReport, setIsSendingReport] = useState(false);
   const [reportMessage, setReportMessage] = useState({ type: '', text: '' });
+
+  // Hardcover state
+  const [testingHardcover, setTestingHardcover] = useState(false);
+  const [hardcoverTestResult, setHardcoverTestResult] = useState(null);
+  const [syncingHardcover, setSyncingHardcover] = useState(false);
+  const [hardcoverSyncMessage, setHardcoverSyncMessage] = useState({ type: '', text: '' });
 
   // OpenRouter test state
   const [testingOpenRouter, setTestingOpenRouter] = useState(false);
@@ -133,6 +145,9 @@ const UserSettings = () => {
           discordWeeklyReportDayOfWeek: data.discordWeeklyReportDayOfWeek || 'Monday',
           discordWeeklyReportHourLocal: data.discordWeeklyReportHourLocal ?? 8,
           discordTimezoneOffsetMinutes: data.discordTimezoneOffsetMinutes ?? browserTimezoneOffsetMinutes,
+          hardcoverSyncEnabled: data.hardcoverSyncEnabled ?? false,
+          hasHardcoverApiToken: data.hasHardcoverApiToken ?? false,
+          hardcoverLastSyncAt: data.hardcoverLastSyncAt ?? null,
           useOpenRouter: data.useOpenRouter ?? false,
           openRouterApiKey: data.openRouterApiKey || '',
           openRouterModel: data.openRouterModel || 'google/gemini-2.5-flash-preview-05-20:free',
@@ -229,6 +244,7 @@ const UserSettings = () => {
         'autoAdvanceToNextLesson', 'autoMoveFinishedLessons', 'showProgressStats', 'lineSpacing',
         'discordWeeklyReportEnabled', 'discordWebhookUrl', 'discordWeeklyReportDayOfWeek',
         'discordWeeklyReportHourLocal', 'discordTimezoneOffsetMinutes',
+        'hardcoverSyncEnabled', 'hasHardcoverApiToken', 'hardcoverLastSyncAt',
         'useOpenRouter', 'openRouterApiKey', 'openRouterModel',
         'openRouterReasoningEnabled', 'openRouterReasoningEffort',
         'openRouterStoryReasoningEnabled', 'openRouterStoryReasoningEffort'
@@ -358,6 +374,78 @@ const UserSettings = () => {
     }
   }, [settings]);
 
+  const handleTestHardcover = useCallback(async () => {
+    setTestingHardcover(true);
+    setHardcoverTestResult(null);
+    setHardcoverSyncMessage({ type: '', text: '' });
+    try {
+      const result = await getHardcoverStatus();
+      setHardcoverTestResult(result);
+    } catch (err) {
+      setHardcoverTestResult({ connected: false, message: err.message || 'Failed to test Hardcover connection.' });
+    } finally {
+      setTestingHardcover(false);
+    }
+  }, []);
+
+  const handleSaveHardcoverToken = useCallback(async (token) => {
+    if (!token.trim()) return;
+    setHardcoverSyncMessage({ type: '', text: '' });
+    try {
+      const saved = await updateUserSettings({
+        hardcoverApiToken: token.trim(),
+        hardcoverSyncEnabled: settings.hardcoverSyncEnabled
+      });
+      setSettings(prev => ({
+        ...prev,
+        hasHardcoverApiToken: saved.hasHardcoverApiToken ?? true,
+        hardcoverSyncEnabled: saved.hardcoverSyncEnabled ?? prev.hardcoverSyncEnabled,
+        hardcoverLastSyncAt: saved.hardcoverLastSyncAt ?? prev.hardcoverLastSyncAt
+      }));
+      setHardcoverSyncMessage({ type: 'success', text: 'Hardcover token saved.' });
+      const status = await getHardcoverStatus();
+      setHardcoverTestResult(status);
+    } catch (err) {
+      setHardcoverSyncMessage({ type: 'danger', text: err.message || 'Failed to save Hardcover token.' });
+    }
+  }, [settings.hardcoverSyncEnabled]);
+
+  const handleClearHardcoverToken = useCallback(async () => {
+    setHardcoverSyncMessage({ type: '', text: '' });
+    setHardcoverTestResult(null);
+    try {
+      await updateUserSettings({ clearHardcoverApiToken: true });
+      setSettings(prev => ({
+        ...prev,
+        hasHardcoverApiToken: false,
+        hardcoverSyncEnabled: false,
+        hardcoverLastSyncAt: null
+      }));
+      setHasChanges(false);
+      setHardcoverSyncMessage({ type: 'success', text: 'Hardcover token cleared.' });
+    } catch (err) {
+      setHardcoverSyncMessage({ type: 'danger', text: err.message || 'Failed to clear Hardcover token.' });
+    }
+  }, []);
+
+  const handleSyncAllHardcover = useCallback(async () => {
+    setSyncingHardcover(true);
+    setHardcoverSyncMessage({ type: '', text: '' });
+    try {
+      const result = await syncAllHardcover();
+      setHardcoverSyncMessage({ type: 'success', text: result.message || 'Hardcover sync completed.' });
+      const refreshed = await getUserSettings();
+      setSettings(prev => ({
+        ...prev,
+        hardcoverLastSyncAt: refreshed.hardcoverLastSyncAt ?? prev.hardcoverLastSyncAt
+      }));
+    } catch (err) {
+      setHardcoverSyncMessage({ type: 'danger', text: err.message || 'Hardcover sync failed.' });
+    } finally {
+      setSyncingHardcover(false);
+    }
+  }, []);
+
   const scrollToSection = (sectionId) => {
     setActiveSection(sectionId);
     const el = sectionRefs.current[sectionId];
@@ -466,6 +554,26 @@ const UserSettings = () => {
                 isSendingReport={isSendingReport}
                 reportMessage={reportMessage}
                 onSendReportNow={handleSendReportNow}
+              />
+            </div>
+
+            {/* Hardcover */}
+            <div ref={el => sectionRefs.current.hardcover = el} className="settings-section-card mb-4">
+              <div className="settings-section-header">
+                <span className="settings-section-header-icon">HC</span>
+                <span>Hardcover</span>
+              </div>
+              <HardcoverSettings
+                settings={settings}
+                handleChange={handleChange}
+                testingHardcover={testingHardcover}
+                hardcoverTestResult={hardcoverTestResult}
+                syncingHardcover={syncingHardcover}
+                hardcoverSyncMessage={hardcoverSyncMessage}
+                onTestConnection={handleTestHardcover}
+                onSaveToken={handleSaveHardcoverToken}
+                onClearToken={handleClearHardcoverToken}
+                onSyncAll={handleSyncAllHardcover}
               />
             </div>
           </Form>

@@ -17,6 +17,7 @@ using System.Text.RegularExpressions; // Added for Regex HTML stripping
 using VersOne.Epub; // Added for EPUB parsing
 using LinguaReadApi.Data;
 using LinguaReadApi.Models;
+using LinguaReadApi.Services;
 using LinguaReadApi.Utilities;
 
 namespace LinguaReadApi.Controllers
@@ -28,15 +29,17 @@ namespace LinguaReadApi.Controllers
     {
         private readonly AppDbContext _context;
         private readonly ILogger<BooksController> _logger;
+        private readonly IHardcoverService? _hardcoverService;
         private static readonly JsonSerializerOptions StructuredContentJsonOptions = new(JsonSerializerDefaults.Web)
         {
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase
         };
 
-        public BooksController(AppDbContext context, ILogger<BooksController> logger)
+        public BooksController(AppDbContext context, ILogger<BooksController> logger, IHardcoverService? hardcoverService = null)
         {
             _context = context;
             _logger = logger;
+            _hardcoverService = hardcoverService;
         }
 
         // GET: api/books
@@ -55,9 +58,15 @@ namespace LinguaReadApi.Controllers
                     BookId = b.BookId,
                     Title = b.Title,
                     Description = b.Description,
+                    Author = b.Author,
+                    Isbn13 = b.Isbn13,
+                    Publisher = b.Publisher,
+                    ReleaseDate = b.ReleaseDate,
+                    PageCount = b.PageCount,
                     LanguageName = b.Language.Name,
                     CreatedAt = b.CreatedAt,
                     PartCount = b.Texts.Count,
+                    FinishedPartCount = b.Texts.Count(t => t.IsFinished),
                     LastReadTextId = b.LastReadTextId,
                     LastReadAt = b.LastReadAt,
                     TotalWords = b.TotalWords,
@@ -65,6 +74,11 @@ namespace LinguaReadApi.Controllers
                     LearningWords = b.LearningWords,
                     IsFinished = b.IsFinished,
                     CoverImagePath = b.CoverImagePath,
+                    HardcoverBookId = b.HardcoverBookId,
+                    HardcoverEditionId = b.HardcoverEditionId,
+                    HardcoverUserBookId = b.HardcoverUserBookId,
+                    HardcoverMatchedAt = b.HardcoverMatchedAt,
+                    HardcoverLastSyncedAt = b.HardcoverLastSyncedAt,
                     Tags = b.BookTags.Select(bt => bt.Tag.Name).ToList(), // Map Tag names
                     FolderId = b.FolderId,
                     SortOrder = b.SortOrder
@@ -100,17 +114,28 @@ namespace LinguaReadApi.Controllers
                 BookId = book.BookId,
                 Title = book.Title,
                 Description = book.Description,
+                Author = book.Author,
+                Isbn13 = book.Isbn13,
+                Publisher = book.Publisher,
+                ReleaseDate = book.ReleaseDate,
+                PageCount = book.PageCount,
                 LanguageName = book.Language.Name,
                 LanguageId = book.LanguageId,
                 CreatedAt = book.CreatedAt,
                 LastReadTextId = book.LastReadTextId,
                 CoverImagePath = book.CoverImagePath,
+                HardcoverBookId = book.HardcoverBookId,
+                HardcoverEditionId = book.HardcoverEditionId,
+                HardcoverUserBookId = book.HardcoverUserBookId,
+                HardcoverMatchedAt = book.HardcoverMatchedAt,
+                HardcoverLastSyncedAt = book.HardcoverLastSyncedAt,
                 Parts = book.Texts.OrderBy(t => t.PartNumber).Select(t => new TextPartDto
                 {
                     TextId = t.TextId,
                     Title = t.Title,
                     PartNumber = t.PartNumber ?? 0,
-                    CreatedAt = t.CreatedAt
+                    CreatedAt = t.CreatedAt,
+                    IsFinished = t.IsFinished
                 }).ToList(),
                 Tags = book.BookTags.Select(bt => new TagDto // Map Tags to TagDto
                 {
@@ -1767,7 +1792,7 @@ namespace LinguaReadApi.Controllers
                     await _context.SaveChangesAsync();
                     await transaction.CommitAsync();
 
-                    return new BookStatsDto
+                    var result = new BookStatsDto
                     {
                         TotalWords = book.TotalWords,
                         KnownWords = book.KnownWords,
@@ -1775,6 +1800,9 @@ namespace LinguaReadApi.Controllers
                         CompletionPercentage = completionPercentage,
                         IsFinished = book.IsFinished
                     };
+
+                    await TriggerHardcoverProgressSyncAsync(userId, id);
+                    return result;
                 });
             }
             catch (DbUpdateException ex)
@@ -1884,6 +1912,7 @@ namespace LinguaReadApi.Controllers
             book.IsFinished = true;
             
             await _context.SaveChangesAsync();
+            await TriggerHardcoverProgressSyncAsync(userId, id);
             
             return new BookStatsDto
             {
@@ -2146,6 +2175,23 @@ namespace LinguaReadApi.Controllers
             return await _context.Books.AnyAsync(e => e.BookId == id && e.UserId == userId);
         }
 
+        private async Task TriggerHardcoverProgressSyncAsync(Guid userId, int bookId)
+        {
+            if (_hardcoverService == null)
+            {
+                return;
+            }
+
+            try
+            {
+                await _hardcoverService.SyncProgressAsync(userId, bookId, requireSyncEnabled: true, HttpContext.RequestAborted);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Hardcover progress sync failed for book {BookId}", bookId);
+            }
+        }
+
         private sealed class StructuredEpubImportResult
         {
             public StructuredEpubImportResult(List<StructuredTextPart> parts, string plainText, string? coverImagePath)
@@ -2202,17 +2248,28 @@ namespace LinguaReadApi.Controllers
         public string Title { get; set; } = string.Empty;
         public string Description { get; set; } = string.Empty;
         public string? CoverImagePath { get; set; }
+        public string? Author { get; set; }
+        public string? Isbn13 { get; set; }
+        public string? Publisher { get; set; }
+        public DateTime? ReleaseDate { get; set; }
+        public int? PageCount { get; set; }
         public string LanguageName { get; set; } = string.Empty;
         public DateTime CreatedAt { get; set; }
         public int PartCount { get; set; }
+        public int FinishedPartCount { get; set; }
         public int? LastReadTextId { get; set; }
         public DateTime? LastReadAt { get; set; }
         public int TotalWords { get; set; }
         public int KnownWords { get; set; }
         public int LearningWords { get; set; }
         public bool IsFinished { get; set; }
-        public double CompletionPercentage => TotalWords > 0 ? 
-            Math.Round((double)(KnownWords + LearningWords) / TotalWords * 100, 1) : 0;
+        public int? HardcoverBookId { get; set; }
+        public int? HardcoverEditionId { get; set; }
+        public int? HardcoverUserBookId { get; set; }
+        public DateTime? HardcoverMatchedAt { get; set; }
+        public DateTime? HardcoverLastSyncedAt { get; set; }
+        public double CompletionPercentage => PartCount > 0 ?
+            Math.Round((double)FinishedPartCount / PartCount * 100, 1) : (IsFinished ? 100 : 0);
         public List<string> Tags { get; set; } = new List<string>(); // Added Tags
         public int? FolderId { get; set; }
         public int SortOrder { get; set; }
@@ -2224,10 +2281,20 @@ namespace LinguaReadApi.Controllers
         public string Title { get; set; } = string.Empty;
         public string Description { get; set; } = string.Empty;
         public string? CoverImagePath { get; set; }
+        public string? Author { get; set; }
+        public string? Isbn13 { get; set; }
+        public string? Publisher { get; set; }
+        public DateTime? ReleaseDate { get; set; }
+        public int? PageCount { get; set; }
         public string LanguageName { get; set; } = string.Empty;
         public int LanguageId { get; set; }
         public DateTime CreatedAt { get; set; }
         public int? LastReadTextId { get; set; }
+        public int? HardcoverBookId { get; set; }
+        public int? HardcoverEditionId { get; set; }
+        public int? HardcoverUserBookId { get; set; }
+        public DateTime? HardcoverMatchedAt { get; set; }
+        public DateTime? HardcoverLastSyncedAt { get; set; }
         public List<TextPartDto> Parts { get; set; } = new List<TextPartDto>();
         public List<TagDto> Tags { get; set; } = new List<TagDto>();
         public List<AudiobookTrackDto> AudiobookTracks { get; set; } = new List<AudiobookTrackDto>(); // Added for Audiobook feature
@@ -2248,6 +2315,7 @@ namespace LinguaReadApi.Controllers
         public string Title { get; set; } = string.Empty;
         public int PartNumber { get; set; }
         public DateTime CreatedAt { get; set; }
+        public bool IsFinished { get; set; }
     }
 
     public class CreateBookDto

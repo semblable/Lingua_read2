@@ -2,6 +2,7 @@ using System.Security.Claims;
 using LinguaReadApi.Controllers;
 using LinguaReadApi.Data;
 using LinguaReadApi.Models;
+using LinguaReadApi.Services;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -440,11 +441,70 @@ public class CompleteLessonTests
         Assert.IsType<NotFoundObjectResult>(result.Result);
     }
 
+    [Fact]
+    public async Task CompleteLesson_WhenHardcoverServiceConfigured_TriggersNonBlockingProgressSync()
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        SeedBookWithTwoParts(context, userId, out var bookId, out var firstTextId);
+        var hardcoverService = new RecordingHardcoverService();
+
+        var controller = CreateController(context, userId, hardcoverService);
+
+        var result = await controller.CompleteLesson(bookId, new CompleteLessonDto { TextId = firstTextId });
+
+        Assert.IsType<BookStatsDto>(result.Value);
+        Assert.Equal(1, hardcoverService.SyncCalls);
+        Assert.Equal(userId, hardcoverService.LastUserId);
+        Assert.Equal(bookId, hardcoverService.LastBookId);
+        Assert.True(hardcoverService.LastRequireSyncEnabled);
+    }
+
+    [Fact]
+    public async Task CompleteLesson_WhenHardcoverSyncFails_StillCompletesLesson()
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        SeedBookWithTwoParts(context, userId, out var bookId, out var firstTextId);
+        var hardcoverService = new RecordingHardcoverService
+        {
+            ThrowOnSync = true
+        };
+
+        var controller = CreateController(context, userId, hardcoverService);
+
+        var result = await controller.CompleteLesson(bookId, new CompleteLessonDto { TextId = firstTextId });
+
+        var stats = Assert.IsType<BookStatsDto>(result.Value);
+        Assert.Equal(50.0, stats.CompletionPercentage);
+        Assert.Equal(1, hardcoverService.SyncCalls);
+        var text = await context.Texts.SingleAsync(t => t.TextId == firstTextId);
+        Assert.True(text.IsFinished);
+    }
+
+    [Fact]
+    public async Task FinishBook_WhenHardcoverServiceConfigured_TriggersProgressSync()
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        SeedBookWithTwoParts(context, userId, out var bookId, out _);
+        var hardcoverService = new RecordingHardcoverService();
+
+        var controller = CreateController(context, userId, hardcoverService);
+
+        var result = await controller.FinishBook(bookId);
+
+        Assert.IsType<BookStatsDto>(result.Value);
+        Assert.Equal(1, hardcoverService.SyncCalls);
+        Assert.Equal(bookId, hardcoverService.LastBookId);
+        Assert.True(hardcoverService.LastRequireSyncEnabled);
+    }
+
     // --- Helpers ---
 
-    private static BooksController CreateController(AppDbContext context, Guid userId)
+    private static BooksController CreateController(AppDbContext context, Guid userId, IHardcoverService? hardcoverService = null)
     {
-        return new BooksController(context, NullLogger<BooksController>.Instance)
+        return new BooksController(context, NullLogger<BooksController>.Instance, hardcoverService)
         {
             ControllerContext = new ControllerContext
             {
@@ -515,5 +575,40 @@ public class CompleteLessonTests
                 PartNumber = 2
             });
         context.SaveChanges();
+    }
+
+    private sealed class RecordingHardcoverService : IHardcoverService
+    {
+        public int SyncCalls { get; private set; }
+        public Guid LastUserId { get; private set; }
+        public int LastBookId { get; private set; }
+        public bool LastRequireSyncEnabled { get; private set; }
+        public bool ThrowOnSync { get; init; }
+
+        public Task<HardcoverConnectionResult> GetStatusAsync(Guid userId, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new HardcoverConnectionResult(true, true, true, 1, "reader", "ok"));
+
+        public Task<HardcoverMatchResult> MatchBookAsync(Guid userId, int bookId, int? hardcoverBookId = null, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new HardcoverMatchResult(false, null, [], "not used"));
+
+        public Task<HardcoverMetadataImportResult> ImportMetadataAsync(Guid userId, int bookId, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new HardcoverMetadataImportResult(false, [], [], "not used"));
+
+        public Task<HardcoverProgressSyncResult> SyncProgressAsync(Guid userId, int bookId, bool requireSyncEnabled = false, CancellationToken cancellationToken = default)
+        {
+            SyncCalls++;
+            LastUserId = userId;
+            LastBookId = bookId;
+            LastRequireSyncEnabled = requireSyncEnabled;
+            if (ThrowOnSync)
+            {
+                throw new InvalidOperationException("Hardcover unavailable");
+            }
+
+            return Task.FromResult(new HardcoverProgressSyncResult(bookId, true, false, 50, 2, 100, "synced"));
+        }
+
+        public Task<HardcoverSyncAllResult> SyncAllAsync(Guid userId, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new HardcoverSyncAllResult([], "not used"));
     }
 }

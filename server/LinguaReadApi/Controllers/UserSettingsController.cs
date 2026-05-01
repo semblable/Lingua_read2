@@ -84,6 +84,8 @@ namespace LinguaReadApi.Controllers
                     DiscordWeeklyReportDayOfWeek = "Monday",
                     DiscordWeeklyReportHourLocal = 8,
                     DiscordTimezoneOffsetMinutes = 0,
+                    HardcoverSyncEnabled = false,
+                    HardcoverApiToken = null,
                     UseOpenRouter = false,
                     OpenRouterApiKey = null,
                     OpenRouterModel = "google/gemini-2.5-flash-preview-05-20:free",
@@ -132,6 +134,9 @@ namespace LinguaReadApi.Controllers
                 DiscordWeeklyReportDayOfWeek = settings.DiscordWeeklyReportDayOfWeek,
                 DiscordWeeklyReportHourLocal = settings.DiscordWeeklyReportHourLocal,
                 DiscordTimezoneOffsetMinutes = settings.DiscordTimezoneOffsetMinutes,
+                HardcoverSyncEnabled = settings.HardcoverSyncEnabled,
+                HasHardcoverApiToken = !string.IsNullOrWhiteSpace(settings.HardcoverApiToken),
+                HardcoverLastSyncAt = settings.HardcoverLastSyncAt,
                 UseOpenRouter = settings.UseOpenRouter,
                 OpenRouterApiKey = settings.OpenRouterApiKey,
                 OpenRouterModel = settings.OpenRouterModel,
@@ -254,6 +259,18 @@ namespace LinguaReadApi.Controllers
             {
                 settings.DiscordTimezoneOffsetMinutes = updateDto.DiscordTimezoneOffsetMinutes.Value;
             }
+            settings.HardcoverSyncEnabled = updateDto.HardcoverSyncEnabled ?? settings.HardcoverSyncEnabled;
+            if (updateDto.ClearHardcoverApiToken == true)
+            {
+                settings.HardcoverApiToken = null;
+                settings.HardcoverSyncEnabled = false;
+            }
+            else if (updateDto.HardcoverApiToken != null)
+            {
+                settings.HardcoverApiToken = string.IsNullOrWhiteSpace(updateDto.HardcoverApiToken)
+                    ? null
+                    : updateDto.HardcoverApiToken.Trim();
+            }
             settings.UseOpenRouter = updateDto.UseOpenRouter ?? settings.UseOpenRouter;
             if (updateDto.OpenRouterApiKey != null)
             {
@@ -338,6 +355,9 @@ namespace LinguaReadApi.Controllers
                 DiscordWeeklyReportDayOfWeek = settings.DiscordWeeklyReportDayOfWeek,
                 DiscordWeeklyReportHourLocal = settings.DiscordWeeklyReportHourLocal,
                 DiscordTimezoneOffsetMinutes = settings.DiscordTimezoneOffsetMinutes,
+                HardcoverSyncEnabled = settings.HardcoverSyncEnabled,
+                HasHardcoverApiToken = !string.IsNullOrWhiteSpace(settings.HardcoverApiToken),
+                HardcoverLastSyncAt = settings.HardcoverLastSyncAt,
                 UseOpenRouter = settings.UseOpenRouter,
                 OpenRouterApiKey = settings.OpenRouterApiKey,
                 OpenRouterModel = settings.OpenRouterModel,
@@ -722,6 +742,9 @@ namespace LinguaReadApi.Controllers
         public string DiscordWeeklyReportDayOfWeek { get; set; } = "Monday";
         public int DiscordWeeklyReportHourLocal { get; set; } = 8;
         public int DiscordTimezoneOffsetMinutes { get; set; } = 0;
+        public bool HardcoverSyncEnabled { get; set; } = false;
+        public bool HasHardcoverApiToken { get; set; } = false;
+        public DateTime? HardcoverLastSyncAt { get; set; }
         public bool UseOpenRouter { get; set; } = false;
         public string? OpenRouterApiKey { get; set; }
         public string OpenRouterModel { get; set; } = "google/gemini-2.5-flash-preview-05-20:free";
@@ -794,6 +817,14 @@ namespace LinguaReadApi.Controllers
 
         [Range(-840, 840)]
         public int? DiscordTimezoneOffsetMinutes { get; set; }
+
+        // Hardcover Settings
+        public bool? HardcoverSyncEnabled { get; set; }
+
+        [StringLength(2048)]
+        public string? HardcoverApiToken { get; set; }
+
+        public bool? ClearHardcoverApiToken { get; set; }
 
         // OpenRouter Settings
         public bool? UseOpenRouter { get; set; }

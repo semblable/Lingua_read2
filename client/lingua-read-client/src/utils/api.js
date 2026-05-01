@@ -570,6 +570,37 @@ export const finishBook = (bookId) => {
   });
 };
 
+// Hardcover API
+export const getHardcoverStatus = () => {
+  return fetchApi('/hardcover/status');
+};
+
+export const matchHardcoverBook = (bookId, hardcoverBookId = null) => {
+  const body = hardcoverBookId ? JSON.stringify({ hardcoverBookId }) : undefined;
+  return fetchApi(`/hardcover/match/${bookId}`, {
+    method: 'POST',
+    ...(body ? { body } : {})
+  });
+};
+
+export const importHardcoverMetadata = (bookId) => {
+  return fetchApi(`/hardcover/import-metadata/${bookId}`, {
+    method: 'POST'
+  });
+};
+
+export const syncHardcoverProgress = (bookId) => {
+  return fetchApi(`/hardcover/sync-progress/${bookId}`, {
+    method: 'POST'
+  });
+};
+
+export const syncAllHardcover = () => {
+  return fetchApi('/hardcover/sync-all', {
+    method: 'POST'
+  });
+};
+
 // User Statistics API
 export const getUserStatistics = () => {
   return fetchApi('/users/statistics');

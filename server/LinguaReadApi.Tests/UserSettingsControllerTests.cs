@@ -139,6 +139,35 @@ public class UserSettingsControllerTests
         Assert.Null(row.OpenRouterApiKey);
     }
 
+    [Fact]
+    public async Task UpdateUserSettings_StoresHardcoverTokenButOnlyReturnsPresenceFlag()
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        context.Users.Add(new User { Id = userId, UserName = "u", Email = "u@test.com" });
+        await context.SaveChangesAsync();
+
+        var controller = CreateController(context, userId);
+
+        var result = await controller.UpdateUserSettings(new UpdateUserSettingsDto
+        {
+            HardcoverApiToken = "  hardcover-secret  ",
+            HardcoverSyncEnabled = true
+        });
+
+        var dto = Assert.IsType<UserSettingsDto>(result.Value);
+        Assert.True(dto.HasHardcoverApiToken);
+        Assert.True(dto.HardcoverSyncEnabled);
+
+        var row = await context.UserSettings.SingleAsync();
+        Assert.Equal("hardcover-secret", row.HardcoverApiToken);
+
+        await controller.UpdateUserSettings(new UpdateUserSettingsDto { ClearHardcoverApiToken = true });
+        row = await context.UserSettings.AsNoTracking().SingleAsync();
+        Assert.Null(row.HardcoverApiToken);
+        Assert.False(row.HardcoverSyncEnabled);
+    }
+
     private static UserSettingsController CreateController(AppDbContext context, Guid userId)
     {
         var discord = new DiscordReportService(

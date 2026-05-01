@@ -68,6 +68,14 @@ namespace LinguaReadApi.Models
 
         public DateTime? DiscordWeeklyReportLastSentAt { get; set; }
 
+        // Hardcover integration
+        public bool HardcoverSyncEnabled { get; set; } = false;
+
+        [StringLength(2048)]
+        public string? HardcoverApiToken { get; set; }
+
+        public DateTime? HardcoverLastSyncAt { get; set; }
+
         // AI Provider Settings (OpenRouter)
         public bool UseOpenRouter { get; set; } = false; // Toggle between Gemini/OpenRouter
         

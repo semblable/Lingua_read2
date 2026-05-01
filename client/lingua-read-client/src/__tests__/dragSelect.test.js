@@ -1,5 +1,5 @@
-import React from 'react';
-import { render, screen, fireEvent, act } from '@testing-library/react';
+import React, { act } from 'react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { useLibraryStore } from '../utils/store';
 import { useDragSelect } from '../hooks/useDragSelect';

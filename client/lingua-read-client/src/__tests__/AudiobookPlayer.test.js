@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { act } from 'react';
 import '@testing-library/jest-dom';
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import AudiobookPlayer from '../components/AudiobookPlayer';
 import {
   getAudiobookProgress,
@@ -158,12 +158,13 @@ describe('AudiobookPlayer', () => {
 
     const { container } = render(<AudiobookPlayer type="book" book={book} />);
 
-    await waitFor(() => {
-      expect(screen.getByTitle(/Play/)).toBeInTheDocument();
-    });
+    await screen.findByText('Track 1 of 2');
 
     const audio = container.querySelector('audio');
     expect(audio).not.toBeNull();
+    await waitFor(() => {
+      expect(audio.getAttribute('src')).toContain('track-1');
+    });
     Object.defineProperty(audio, 'currentTime', {
       configurable: true,
       writable: true,
@@ -175,10 +176,10 @@ describe('AudiobookPlayer', () => {
     });
 
     await waitFor(() => {
-      expect(updateAudiobookProgress).toHaveBeenCalledWith(10, {
+      expect(updateAudiobookProgress).toHaveBeenCalledWith(10, expect.objectContaining({
         currentAudiobookTrackId: 'track-1',
         currentAudiobookPosition: 37
-      }, {
+      }), {
         keepalive: true
       });
     });

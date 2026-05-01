@@ -94,9 +94,6 @@ client/lingua-read-client/build/
 # Yarn PnP
 client/lingua-read-client/.pnp.*
 
-# Expo specific cache/build files (if applicable)
-client/lingua-read-client/.expo/
-
 # Environment variables
 # Ignore all .env files in the client folder except .env.example
 client/lingua-read-client/.env

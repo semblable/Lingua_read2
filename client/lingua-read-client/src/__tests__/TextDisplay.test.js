@@ -1447,6 +1447,10 @@ describe('TextDisplay', () => {
   });
 
   test('parallel loading: handles getLanguage failure gracefully', async () => {
+    // Intentional failure path — silence the console.error the component emits
+    // so it doesn't pollute CI logs, and assert it was actually called.
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+
     getText.mockResolvedValueOnce({
       textId: 1,
       title: 'Test',
@@ -1470,11 +1474,19 @@ describe('TextDisplay', () => {
       expect(getLanguage).toHaveBeenCalledWith(5);
     });
     expect(await screen.findByText(/Warning: Failed to load language config/)).toBeInTheDocument();
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      'Failed to fetch language configuration:',
+      expect.any(Error)
+    );
 
+    consoleErrorSpy.mockRestore();
     delete global.fetch;
   });
 
   test('parallel loading: handles getBook failure gracefully', async () => {
+    // Intentional failure path — silence the console.error and assert on it.
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+
     getText.mockResolvedValueOnce({
       textId: 2,
       title: 'Chapter',
@@ -1497,5 +1509,13 @@ describe('TextDisplay', () => {
     await waitFor(() => {
       expect(updateLastRead).toHaveBeenCalledWith(10, 2);
     });
+    await waitFor(() => {
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        'Failed to get book data:',
+        expect.any(Error)
+      );
+    });
+
+    consoleErrorSpy.mockRestore();
   });
 });

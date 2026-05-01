@@ -197,8 +197,14 @@ describe('SrsStoryReview', () => {
       expect(submitSrsReview).toHaveBeenCalledWith(101, 2);
     });
 
-    // Wait for popover to close before clicking the next word
-    await waitForElementToBeRemoved(() => screen.queryByRole('button', { name: /Good/i }));
+    // Wait for popover to close before clicking the next word.
+    // Using waitFor here (instead of waitForElementToBeRemoved) because the
+    // popover may already be gone by the time we check — submitSrsReview
+    // resolves synchronously and React flushes the state update during the
+    // preceding waitFor, so the "Good" button can disappear before this line.
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: /Good/i })).not.toBeInTheDocument();
+    });
 
     // Now grade the second word to complete the story
     const rapidoEl = within(storyText).getByText('rápido');

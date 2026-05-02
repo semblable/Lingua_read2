@@ -548,7 +548,7 @@ export const updateLastRead = (bookId, textId) => {
   });
 };
 
-export const completeLesson = (bookId, textId) => {
+export const completeLesson = (bookId, textId, skipStats = false) => {
   if (bookId) {
     // Existing call for lessons within books
     return fetchApi(`/books/${bookId}/complete-lesson`, {
@@ -557,7 +557,7 @@ export const completeLesson = (bookId, textId) => {
     });
   } else {
     // New call for standalone texts (Assumes backend endpoint PUT /api/texts/{textId}/complete exists)
-    return fetchApi(`/texts/${textId}/complete`, {
+    return fetchApi(`/texts/${textId}/complete${skipStats ? '?skipStats=true' : ''}`, {
       method: 'PUT'
       // Body might not be needed if textId is in the URL
     });

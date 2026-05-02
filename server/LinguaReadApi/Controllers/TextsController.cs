@@ -1057,7 +1057,7 @@ namespace LinguaReadApi.Controllers
 
         // PUT: api/texts/{textId}/complete
         [HttpPut("{textId}/complete")] // Corrected route: combines with controller route "/api/texts"
-        public async Task<ActionResult<TextStatsDto>> CompleteText(int textId)
+        public async Task<ActionResult<TextStatsDto>> CompleteText(int textId, [FromQuery] bool skipStats = false)
         {
             var userId = GetUserId();
 
@@ -1085,23 +1085,26 @@ namespace LinguaReadApi.Controllers
             var completionWordCredit = Math.Max(totalActualWordCount - alreadyCreditedWordCount, 0);
 
             // --- 2. Log Activity ---
-            try
+            if (!skipStats)
             {
-                // Only credit the remaining unread words so sentence-mode progress does not double count.
-                await _userActivityService.LogTextCompletedActivity(
-                    userId,
-                    text.LanguageId,
-                    textId,
-                    completionWordCredit,
-                    text.IsAudioLesson,
-                    isFirstCompletion: !text.IsFinished);
-                // TODO: Optionally call UpdateUserLanguageStats here or within LogTextCompletedActivity
-                // await _userActivityService.UpdateUserLanguageStats(userId, text.LanguageId);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to log TextCompleted activity or update stats for UserId {UserId}, TextId {TextId}", userId, textId);
-                // Decide if this should prevent completion - likely not critical, just log.
+                try
+                {
+                    // Only credit the remaining unread words so sentence-mode progress does not double count.
+                    await _userActivityService.LogTextCompletedActivity(
+                        userId,
+                        text.LanguageId,
+                        textId,
+                        completionWordCredit,
+                        text.IsAudioLesson,
+                        isFirstCompletion: !text.IsFinished);
+                    // TODO: Optionally call UpdateUserLanguageStats here or within LogTextCompletedActivity
+                    // await _userActivityService.UpdateUserLanguageStats(userId, text.LanguageId);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to log TextCompleted activity or update stats for UserId {UserId}, TextId {TextId}", userId, textId);
+                    // Decide if this should prevent completion - likely not critical, just log.
+                }
             }
 
             // --- 3. Update Text Status (If applicable) ---

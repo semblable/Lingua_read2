@@ -2154,6 +2154,16 @@ const TextDisplay = () => {
     finally { setCompleting(false); }
   };
 
+  const handleCompleteLessonNoStats = async () => {
+    if (!text?.textId) return;
+    setCompleting(true);
+    try {
+      await completeLesson(text?.bookId, text.textId, true);
+      navigate('/texts');
+    } catch (error) { alert(`Failed to complete lesson: ${error.message}`); }
+    finally { setCompleting(false); }
+  };
+
   // --- New Sentence Rendering Logic ---
   // Takes processed elements for a block (e.g., paragraph) and a starting index,
   // returns rendered sentence elements and the next sentence index.
@@ -2230,6 +2240,7 @@ const TextDisplay = () => {
       setSentenceModeEnabled={setSentenceModeEnabled}
       text={text}
       handleCompleteLesson={handleCompleteLesson}
+      handleCompleteLessonNoStats={handleCompleteLessonNoStats}
       completing={completing}
       nextTextId={nextTextId}
       navigate={navigate}

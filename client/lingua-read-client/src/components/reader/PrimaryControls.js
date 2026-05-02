@@ -9,6 +9,7 @@ const PrimaryControls = React.memo(({
   setSentenceModeEnabled,
   text,
   handleCompleteLesson,
+  handleCompleteLessonNoStats,
   completing,
   nextTextId,
   navigate
@@ -34,9 +35,14 @@ const PrimaryControls = React.memo(({
       Sentence Mode
     </Button>
     {isAudioLesson && !text?.bookId && (
-      <Button variant="success" onClick={handleCompleteLesson} disabled={completing} size="sm" className="ms-1">
-        {completing ? <Spinner animation="border" size="sm" /> : (nextTextId === null && text?.bookId ? 'Finish Book' : 'Complete Lesson')}
-      </Button>
+      <>
+        <Button variant="success" onClick={handleCompleteLesson} disabled={completing} size="sm" className="ms-1">
+          {completing ? <Spinner animation="border" size="sm" /> : (nextTextId === null && text?.bookId ? 'Finish Book' : 'Complete Lesson')}
+        </Button>
+        <Button variant="outline-success" onClick={handleCompleteLessonNoStats} disabled={completing} size="sm" className="ms-1">
+          Finish (no stats)
+        </Button>
+      </>
     )}
     {text?.bookId && (
       <Button

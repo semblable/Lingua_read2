@@ -11,7 +11,6 @@ const PrimaryControls = React.memo(({
   handleCompleteLesson,
   handleCompleteLessonNoStats,
   completing,
-  nextTextId,
   navigate
 }) => (
   <>
@@ -37,7 +36,7 @@ const PrimaryControls = React.memo(({
     {isAudioLesson && !text?.bookId && (
       <>
         <Button variant="success" onClick={handleCompleteLesson} disabled={completing} size="sm" className="ms-1">
-          {completing ? <Spinner animation="border" size="sm" /> : (nextTextId === null && text?.bookId ? 'Finish Book' : 'Complete Lesson')}
+          {completing ? <Spinner animation="border" size="sm" /> : 'Complete Lesson'}
         </Button>
         <Button variant="outline-success" onClick={handleCompleteLessonNoStats} disabled={completing} size="sm" className="ms-1">
           Finish (no stats)

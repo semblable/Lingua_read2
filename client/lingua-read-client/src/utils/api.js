@@ -550,6 +550,9 @@ export const updateLastRead = (bookId, textId) => {
 
 export const completeLesson = (bookId, textId, skipStats = false) => {
   if (bookId) {
+    if (skipStats) {
+      throw new Error('completeLesson: skipStats is only supported for standalone texts. Book lessons would silently still record stats.');
+    }
     // Existing call for lessons within books
     return fetchApi(`/books/${bookId}/complete-lesson`, {
       method: 'PUT',

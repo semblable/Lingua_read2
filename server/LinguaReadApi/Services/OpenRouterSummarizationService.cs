@@ -57,7 +57,13 @@ namespace LinguaReadApi.Services
                 var prompt = OpenRouterTaskConfig.ResolvePromptOrDefault(
                     userSettings.CustomSummarizationPrompt,
                     defaultPrompt,
-                    summarizationVars);
+                    summarizationVars,
+                    out var unknownSummarizationPlaceholders);
+                if (unknownSummarizationPlaceholders.Count > 0)
+                {
+                    _logger.LogWarning("Custom summarization prompt contains unknown placeholders: {Placeholders}. Known: text, sourceLanguage, targetLanguage, maxSummaryWords.",
+                        string.Join(", ", unknownSummarizationPlaceholders));
+                }
                 var model = OpenRouterTaskConfig.ResolveModel(userSettings, OpenRouterTask.Summarization);
                 var requestPayload = new OpenRouterRequest
                 {

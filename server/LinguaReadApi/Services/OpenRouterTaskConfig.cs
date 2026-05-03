@@ -34,12 +34,22 @@ namespace LinguaReadApi.Services
             string defaultPrompt,
             IReadOnlyDictionary<string, string?> vars)
         {
+            return ResolvePromptOrDefault(customTemplate, defaultPrompt, vars, out _);
+        }
+
+        public static string ResolvePromptOrDefault(
+            string? customTemplate,
+            string defaultPrompt,
+            IReadOnlyDictionary<string, string?> vars,
+            out IReadOnlyList<string> unknownPlaceholders)
+        {
             if (string.IsNullOrWhiteSpace(customTemplate))
             {
+                unknownPlaceholders = System.Array.Empty<string>();
                 return defaultPrompt;
             }
 
-            return PromptTemplateRenderer.Render(customTemplate, vars);
+            return PromptTemplateRenderer.Render(customTemplate, vars, out unknownPlaceholders);
         }
     }
 }

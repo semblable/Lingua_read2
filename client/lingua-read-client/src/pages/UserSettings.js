@@ -65,7 +65,15 @@ const UserSettings = () => {
     openRouterReasoningEnabled: false,
     openRouterReasoningEffort: 'medium',
     openRouterStoryReasoningEnabled: false,
-    openRouterStoryReasoningEffort: 'medium'
+    openRouterStoryReasoningEffort: 'medium',
+    openRouterTranslationModel: '',
+    openRouterExplanationModel: '',
+    openRouterStoryModel: '',
+    openRouterSummarizationModel: '',
+    customTranslationPrompt: '',
+    customExplanationPrompt: '',
+    customStoryPrompt: '',
+    customSummarizationPrompt: ''
   });
 
   const [languages, setLanguages] = useState([]);
@@ -154,7 +162,15 @@ const UserSettings = () => {
           openRouterReasoningEnabled: data.openRouterReasoningEnabled ?? false,
           openRouterReasoningEffort: data.openRouterReasoningEffort || 'medium',
           openRouterStoryReasoningEnabled: data.openRouterStoryReasoningEnabled ?? false,
-          openRouterStoryReasoningEffort: data.openRouterStoryReasoningEffort || 'medium'
+          openRouterStoryReasoningEffort: data.openRouterStoryReasoningEffort || 'medium',
+          openRouterTranslationModel: data.openRouterTranslationModel ?? '',
+          openRouterExplanationModel: data.openRouterExplanationModel ?? '',
+          openRouterStoryModel: data.openRouterStoryModel ?? '',
+          openRouterSummarizationModel: data.openRouterSummarizationModel ?? '',
+          customTranslationPrompt: data.customTranslationPrompt ?? '',
+          customExplanationPrompt: data.customExplanationPrompt ?? '',
+          customStoryPrompt: data.customStoryPrompt ?? '',
+          customSummarizationPrompt: data.customSummarizationPrompt ?? ''
         });
       } catch (err) {
         setError('Failed to load settings. Please try again later.');
@@ -247,7 +263,11 @@ const UserSettings = () => {
         'hardcoverSyncEnabled', 'hasHardcoverApiToken', 'hardcoverLastSyncAt',
         'useOpenRouter', 'openRouterApiKey', 'openRouterModel',
         'openRouterReasoningEnabled', 'openRouterReasoningEffort',
-        'openRouterStoryReasoningEnabled', 'openRouterStoryReasoningEffort'
+        'openRouterStoryReasoningEnabled', 'openRouterStoryReasoningEffort',
+        'openRouterTranslationModel', 'openRouterExplanationModel',
+        'openRouterStoryModel', 'openRouterSummarizationModel',
+        'customTranslationPrompt', 'customExplanationPrompt',
+        'customStoryPrompt', 'customSummarizationPrompt'
       ];
       settingsToSync.forEach(key => {
         updateSetting(key, persistedSettings[key]);

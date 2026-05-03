@@ -69,4 +69,43 @@ public class PromptTemplateRendererTests
         var result = PromptTemplateRenderer.Render(template, new Dictionary<string, string?>());
         Assert.Equal(template, result);
     }
+
+    [Fact]
+    public void Render_ReportsUnknownPlaceholders()
+    {
+        var template = "{text} -> {targetLang} (typo) and {text} again";
+        var vars = new Dictionary<string, string?>
+        {
+            ["text"] = "hello",
+            ["targetLanguage"] = "fr"
+        };
+
+        var result = PromptTemplateRenderer.Render(template, vars, out var unknown);
+
+        Assert.Equal("hello -> {targetLang} (typo) and hello again", result);
+        Assert.Contains("targetLang", unknown);
+        Assert.DoesNotContain("text", unknown);
+    }
+
+    [Fact]
+    public void Render_DoesNotReportPlaceholderLikeTokensWithSpaces()
+    {
+        var template = "Inline JSON {\"foo\": 1} should not warn";
+        var result = PromptTemplateRenderer.Render(template, new Dictionary<string, string?>(), out var unknown);
+
+        Assert.Equal(template, result);
+        Assert.Empty(unknown);
+    }
+
+    [Fact]
+    public void Render_EmptyUnknownList_WhenAllPlaceholdersResolved()
+    {
+        var template = "{a} and {b}";
+        var vars = new Dictionary<string, string?> { ["a"] = "1", ["b"] = "2" };
+
+        var result = PromptTemplateRenderer.Render(template, vars, out var unknown);
+
+        Assert.Equal("1 and 2", result);
+        Assert.Empty(unknown);
+    }
 }

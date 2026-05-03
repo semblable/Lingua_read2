@@ -200,7 +200,13 @@ namespace LinguaReadApi.Services
                 string prompt = OpenRouterTaskConfig.ResolvePromptOrDefault(
                     userSettings.CustomExplanationPrompt,
                     defaultExplanationPrompt,
-                    explanationVars);
+                    explanationVars,
+                    out var unknownExplanationPlaceholders);
+                if (unknownExplanationPlaceholders.Count > 0)
+                {
+                    _logger.LogWarning("Custom explanation prompt contains unknown placeholders: {Placeholders}. Known: text, sourceLanguage, explanationLanguage, targetLanguage.",
+                        string.Join(", ", unknownExplanationPlaceholders));
+                }
 
                 var requestPayload = new OpenRouterRequest
                 {
@@ -444,7 +450,12 @@ Text:
                     ["sourceLanguage"] = sourceLanguage,
                     ["targetLanguage"] = targetLanguage
                 };
-                prompt = OpenRouterTaskConfig.ResolvePromptOrDefault(customPrompt, defaultPlainPrompt, vars);
+                prompt = OpenRouterTaskConfig.ResolvePromptOrDefault(customPrompt, defaultPlainPrompt, vars, out var unknownTranslationPlaceholders);
+                if (unknownTranslationPlaceholders.Count > 0)
+                {
+                    _logger.LogWarning("Custom translation prompt contains unknown placeholders: {Placeholders}. Known: text, sourceLanguage, targetLanguage.",
+                        string.Join(", ", unknownTranslationPlaceholders));
+                }
             }
 
             // Create OpenRouter request
@@ -596,7 +607,13 @@ Strict instructions:
                 string prompt = OpenRouterTaskConfig.ResolvePromptOrDefault(
                     userSettings.CustomTranslationPrompt,
                     defaultSelectionPrompt,
-                    selectionVars);
+                    selectionVars,
+                    out var unknownSelectionPlaceholders);
+                if (unknownSelectionPlaceholders.Count > 0)
+                {
+                    _logger.LogWarning("Custom translation prompt (selection path) contains unknown placeholders: {Placeholders}. Known: selectedText, sentenceContext, sourceLanguage, targetLanguage, text.",
+                        string.Join(", ", unknownSelectionPlaceholders));
+                }
 
                 var requestPayload = new OpenRouterRequest
                 {

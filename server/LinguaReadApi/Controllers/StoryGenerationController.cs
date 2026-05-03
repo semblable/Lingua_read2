@@ -68,10 +68,21 @@ namespace LinguaReadApi.Controllers
                 ["maxLength"] = request.MaxLength.ToString(CultureInfo.InvariantCulture)
             };
 
+            // Custom prompts are an OpenRouter feature — Gemini path keeps the built-in template.
+            string? customPrompt = (userSettings?.UseOpenRouter == true)
+                ? userSettings.CustomStoryPrompt
+                : null;
+
             string fullPrompt = OpenRouterTaskConfig.ResolvePromptOrDefault(
-                userSettings?.CustomStoryPrompt,
+                customPrompt,
                 defaultPrompt,
-                storyVars);
+                storyVars,
+                out var unknownStoryPlaceholders);
+            if (unknownStoryPlaceholders.Count > 0)
+            {
+                _logger.LogWarning("Custom story prompt contains unknown placeholders: {Placeholders}. Known: level, language, prompt, maxLength.",
+                    string.Join(", ", unknownStoryPlaceholders));
+            }
 
             var generatedStory = await storyGenerationService.GenerateStoryAsync(fullPrompt, maxOutputTokens: 20000);
 

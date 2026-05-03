@@ -579,6 +579,68 @@ const TextDisplay = () => {
     }
   }, [globalSettings.autoTranslateWords, text?.languageCode, translationTargetLanguageCode, setTranslation, setDisplayedWord, setIsTranslating, setWordTranslationError]);
 
+  const appendAutoTranslation = useCallback(async (termToTranslate, options = {}) => {
+    const { sentenceContext = '' } = options;
+    if (!termToTranslate || !text?.languageCode || !sentenceContext) return;
+
+    translationAbortRef.current?.abort();
+    const controller = new AbortController();
+    translationAbortRef.current = controller;
+
+    setIsTranslating(true);
+    setWordTranslationError('');
+    try {
+      const result = await translateSelectionWithContext(
+        termToTranslate,
+        sentenceContext,
+        text.languageCode,
+        translationTargetLanguageCode,
+        { signal: controller.signal }
+      );
+      const newTranslation = result?.translatedText?.trim();
+      if (!newTranslation) {
+        setWordTranslationError('Translation not found.');
+        return;
+      }
+
+      const cacheKey = `${text.languageCode}|${translationTargetLanguageCode}|sel|${sentenceContext}|${termToTranslate}`;
+      const cache = translationCacheRef.current;
+      cache.set(cacheKey, newTranslation);
+      if (cache.size > 100) {
+        const oldestKey = cache.keys().next().value;
+        cache.delete(oldestKey);
+      }
+
+      setTranslation(prev => {
+        const existing = (prev || '').trim();
+        if (!existing) return newTranslation;
+        const haystack = existing.toLowerCase();
+        const needle = newTranslation.toLowerCase();
+        if (haystack === needle || haystack.split(/\s*,\s*/).includes(needle)) {
+          return existing;
+        }
+        const combined = `${existing}, ${newTranslation}`;
+        setDisplayedWord(prevWord => (prevWord && prevWord.term === termToTranslate ? { ...prevWord, translation: combined } : prevWord));
+        return combined;
+      });
+    } catch (err) {
+      if (err.name === 'AbortError' || controller.signal.aborted) {
+        return;
+      }
+      console.error('Append translation failed:', err);
+      if (err.status === 429) {
+        setWordTranslationError('Provider rate limit reached — try again in a few seconds.');
+      } else {
+        setWordTranslationError(`Translation failed: ${err.message}`);
+      }
+    } finally {
+      if (translationAbortRef.current === controller) {
+        translationAbortRef.current = null;
+        setIsTranslating(false);
+      }
+    }
+  }, [text?.languageCode, translationTargetLanguageCode, setTranslation, setDisplayedWord, setIsTranslating, setWordTranslationError]);
+
   const handleWordClick = useCallback((word, options = {}) => {
     const { skipAutoTranslate = false, preserveLastHandledSelection = false, selectionContext = '' } = options;
     clearPendingSelection();
@@ -2484,6 +2546,13 @@ const TextDisplay = () => {
                     });
                   }}
                   canRetranslate={!!displayedWord?.term && !!wordInfoRetranslateContext}
+                  onAddTranslationWithContext={() => {
+                    if (!displayedWord?.term) return;
+                    appendAutoTranslation(displayedWord.term, {
+                      sentenceContext: wordInfoRetranslateContext,
+                    });
+                  }}
+                  canAddTranslation={!!displayedWord?.term && !!wordInfoRetranslateContext}
                   onDeleteWord={handleDeleteWord}
                   isSentenceBookmarked={isBookmarked(currentSegmentIndex)}
                   onToggleBookmark={handleToggleBookmarkForCurrentSentence}
@@ -2565,6 +2634,13 @@ const TextDisplay = () => {
                   });
                 }}
                 canRetranslate={!!displayedWord?.term && !!wordInfoRetranslateContext}
+                onAddTranslationWithContext={() => {
+                  if (!displayedWord?.term) return;
+                  appendAutoTranslation(displayedWord.term, {
+                    sentenceContext: wordInfoRetranslateContext,
+                  });
+                }}
+                canAddTranslation={!!displayedWord?.term && !!wordInfoRetranslateContext}
                 onDeleteWord={handleDeleteWord}
                 isSentenceBookmarked={isBookmarked(currentSegmentIndex)}
                 onToggleBookmark={handleToggleBookmarkForCurrentSentence}

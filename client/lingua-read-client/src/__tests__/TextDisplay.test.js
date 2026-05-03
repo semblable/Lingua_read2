@@ -1524,6 +1524,62 @@ describe('TextDisplay', () => {
     delete global.fetch;
   });
 
+  test('+ AI button appends a context translation alongside the existing one', async () => {
+    getText.mockResolvedValueOnce({
+      textId: 1,
+      title: 'Sample Text',
+      content: 'Hello world.',
+      languageId: null,
+      languageCode: 'ES',
+      languageName: 'Spanish',
+      isAudioLesson: false,
+      words: [
+        { wordId: 1, term: 'Hello', status: 1, translation: 'first', isNew: false }
+      ],
+      bookId: null
+    });
+
+    renderTextDisplay({ autoTranslateWords: false });
+
+    await waitFor(() => expect(getText).toHaveBeenCalled());
+    fireEvent.click(await screen.findByText('Hello'));
+
+    expect(screen.getByText('Word Info')).toBeInTheDocument();
+    const textarea = screen.getByPlaceholderText('Translation/Notes (Enter to save)');
+    expect(textarea).toHaveValue('first');
+
+    translateSelectionWithContext.mockResolvedValueOnce({ translatedText: 'second' });
+
+    const addButton = await screen.findByRole('button', { name: /Add AI translation/i });
+    expect(addButton).not.toBeDisabled();
+
+    await act(async () => {
+      fireEvent.click(addButton);
+    });
+
+    await waitFor(() => {
+      expect(translateSelectionWithContext).toHaveBeenCalledWith(
+        'Hello',
+        'Hello world.',
+        'ES',
+        'EN',
+        expect.objectContaining({ signal: expect.anything() })
+      );
+    });
+
+    await waitFor(() => {
+      expect(textarea).toHaveValue('first, second');
+    });
+
+    // Clicking again with the same translation must not duplicate.
+    translateSelectionWithContext.mockResolvedValueOnce({ translatedText: 'second' });
+    await act(async () => {
+      fireEvent.click(addButton);
+    });
+    await act(async () => { await Promise.resolve(); });
+    expect(textarea).toHaveValue('first, second');
+  });
+
   test('parallel loading: handles getBook failure gracefully', async () => {
     // Intentional failure path — silence the console.error and assert on it.
     const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});

@@ -22,6 +22,8 @@ const WordInfoPanel = React.memo(({
   onReadingCredit,
   onRetranslateWithContext,
   canRetranslate,
+  onAddTranslationWithContext,
+  canAddTranslation,
   onDeleteWord,
   isSentenceBookmarked,
   onToggleBookmark
@@ -71,6 +73,19 @@ const WordInfoPanel = React.memo(({
             title="Re-translate this word with AI using the current sentence as context"
           >
             {isTranslating ? 'Translating...' : 'AI Translate'}
+          </Button>
+        )}
+        {onAddTranslationWithContext && (
+          <Button
+            variant="outline-primary"
+            size="sm"
+            className="py-0 px-2"
+            onClick={onAddTranslationWithContext}
+            disabled={!canAddTranslation || isTranslating || processingWord}
+            title="Add an AI translation alongside the existing one"
+            aria-label="Add AI translation"
+          >
+            + AI
           </Button>
         )}
         {sentenceTtsEnabled && (

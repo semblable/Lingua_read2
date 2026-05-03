@@ -40,8 +40,10 @@ function ManualEntryModal({ show, onHide, onSubmitSuccess }) {
     }, [show, languages.length]); // Depend on show and languages.length
 
     const handleInputChange = (setter) => (event) => {
-        // Allow only numbers for words and minutes
-        const value = event.target.value.replace(/[^0-9]/g, '');
+        // Allow digits and a single optional leading minus (for corrections)
+        const value = event.target.value
+            .replace(/[^0-9-]/g, '')
+            .replace(/(?!^)-/g, '');
         setter(value);
     };
 
@@ -69,8 +71,8 @@ function ManualEntryModal({ show, onHide, onSubmitSuccess }) {
              setError('Please enter words read or minutes listened.');
              return;
         }
-        if ((!isNaN(words) && words <= 0) || (!isNaN(minutes) && minutes <= 0)) {
-            setError('Words read and minutes listened must be positive numbers if entered.');
+        if ((!isNaN(words) && words === 0) || (!isNaN(minutes) && minutes === 0)) {
+            setError('Words read and minutes listened must be non-zero if entered. Use a negative number to subtract from today\'s total.');
             return;
         }
 
@@ -79,8 +81,8 @@ function ManualEntryModal({ show, onHide, onSubmitSuccess }) {
         try {
             const payload = {
                 languageId: parseInt(selectedLanguage, 10),
-                wordCount: !isNaN(words) && words > 0 ? words : null,
-                listeningDurationSeconds: !isNaN(minutes) && minutes > 0 ? minutes * 60 : null,
+                wordCount: !isNaN(words) && words !== 0 ? words : null,
+                listeningDurationSeconds: !isNaN(minutes) && minutes !== 0 ? minutes * 60 : null,
             };
 
             // Ensure at least one value is being sent
@@ -144,27 +146,33 @@ function ManualEntryModal({ show, onHide, onSubmitSuccess }) {
                         <Form.Group className="mb-3" controlId="manualWordsRead">
                             <Form.Label>Words Read (Optional)</Form.Label>
                             <Form.Control
-                                type="text" // Use text to allow custom numeric handling
-                                inputMode="numeric" // Hint for mobile keyboards
-                                pattern="[0-9]*" // Pattern for validation (optional)
+                                type="text"
+                                inputMode="text"
+                                pattern="-?[0-9]*"
                                 placeholder="e.g., 1500"
                                 value={wordsRead}
                                 onChange={handleInputChange(setWordsRead)}
                                 disabled={isLoading}
                             />
+                            <Form.Text muted>
+                                Enter a negative number (e.g. -100) to correct an over-count.
+                            </Form.Text>
                         </Form.Group>
 
                         <Form.Group className="mb-3" controlId="manualMinutesListened">
                             <Form.Label>Time Listened (Minutes, Optional)</Form.Label>
                             <Form.Control
                                 type="text"
-                                inputMode="numeric"
-                                pattern="[0-9]*"
+                                inputMode="text"
+                                pattern="-?[0-9]*"
                                 placeholder="e.g., 45"
                                 value={minutesListened}
                                 onChange={handleInputChange(setMinutesListened)}
                                 disabled={isLoading}
                             />
+                            <Form.Text muted>
+                                Enter a negative number (e.g. -10) to correct an over-count.
+                            </Form.Text>
                         </Form.Group>
 
                         <div className="d-grid gap-2">

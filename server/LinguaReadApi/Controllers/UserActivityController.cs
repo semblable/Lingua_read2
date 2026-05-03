@@ -133,15 +133,15 @@ public async Task<IActionResult> LogManualActivity([FromBody] LogManualActivityR
         _logger.LogWarning("Manual activity log request received with no WordCount or DurationSeconds.");
         return BadRequest("Either WordCount or ListeningDurationSeconds must be provided.");
     }
-    if (request.WordCount.HasValue && request.WordCount <= 0)
+    if (request.WordCount.HasValue && request.WordCount == 0)
     {
         _logger.LogWarning("Invalid manual WordCount received: {WordCount}.", request.WordCount);
-        return BadRequest("WordCount must be positive if provided.");
+        return BadRequest("WordCount must be non-zero if provided.");
     }
-    if (request.ListeningDurationSeconds.HasValue && request.ListeningDurationSeconds <= 0)
+    if (request.ListeningDurationSeconds.HasValue && request.ListeningDurationSeconds == 0)
     {
         _logger.LogWarning("Invalid manual ListeningDurationSeconds received: {DurationSeconds}.", request.ListeningDurationSeconds);
-        return BadRequest("ListeningDurationSeconds must be positive if provided.");
+        return BadRequest("ListeningDurationSeconds must be non-zero if provided.");
     }
 
     // Check if LanguageId exists (optional but good practice)
@@ -165,7 +165,7 @@ public async Task<IActionResult> LogManualActivity([FromBody] LogManualActivityR
     var now = DateTime.UtcNow;
 
     // Create Reading Activity if WordCount provided
-    if (request.WordCount.HasValue && request.WordCount > 0)
+    if (request.WordCount.HasValue && request.WordCount != 0)
     {
         activitiesToAdd.Add(new UserActivity
         {
@@ -180,7 +180,7 @@ public async Task<IActionResult> LogManualActivity([FromBody] LogManualActivityR
     }
 
     // Create Listening Activity if Duration provided
-    if (request.ListeningDurationSeconds.HasValue && request.ListeningDurationSeconds > 0)
+    if (request.ListeningDurationSeconds.HasValue && request.ListeningDurationSeconds != 0)
     {
         activitiesToAdd.Add(new UserActivity
         {

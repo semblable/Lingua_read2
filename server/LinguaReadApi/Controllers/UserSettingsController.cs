@@ -144,6 +144,14 @@ namespace LinguaReadApi.Controllers
                 OpenRouterReasoningEffort = settings.OpenRouterReasoningEffort,
                 OpenRouterStoryReasoningEnabled = settings.OpenRouterStoryReasoningEnabled,
                 OpenRouterStoryReasoningEffort = settings.OpenRouterStoryReasoningEffort,
+                OpenRouterTranslationModel = settings.OpenRouterTranslationModel,
+                OpenRouterExplanationModel = settings.OpenRouterExplanationModel,
+                OpenRouterStoryModel = settings.OpenRouterStoryModel,
+                OpenRouterSummarizationModel = settings.OpenRouterSummarizationModel,
+                CustomTranslationPrompt = settings.CustomTranslationPrompt,
+                CustomExplanationPrompt = settings.CustomExplanationPrompt,
+                CustomStoryPrompt = settings.CustomStoryPrompt,
+                CustomSummarizationPrompt = settings.CustomSummarizationPrompt,
                 SrsMaxNewCards = settings.SrsMaxNewCards,
                 SrsMaxReviews = settings.SrsMaxReviews,
                 SrsReviewOrder = settings.SrsReviewOrder ?? "mix",
@@ -300,6 +308,54 @@ namespace LinguaReadApi.Controllers
                     settings.OpenRouterStoryReasoningEffort = normalizedEffort;
                 }
             }
+            if (updateDto.OpenRouterTranslationModel != null)
+            {
+                settings.OpenRouterTranslationModel = string.IsNullOrWhiteSpace(updateDto.OpenRouterTranslationModel)
+                    ? null
+                    : updateDto.OpenRouterTranslationModel.Trim();
+            }
+            if (updateDto.OpenRouterExplanationModel != null)
+            {
+                settings.OpenRouterExplanationModel = string.IsNullOrWhiteSpace(updateDto.OpenRouterExplanationModel)
+                    ? null
+                    : updateDto.OpenRouterExplanationModel.Trim();
+            }
+            if (updateDto.OpenRouterStoryModel != null)
+            {
+                settings.OpenRouterStoryModel = string.IsNullOrWhiteSpace(updateDto.OpenRouterStoryModel)
+                    ? null
+                    : updateDto.OpenRouterStoryModel.Trim();
+            }
+            if (updateDto.OpenRouterSummarizationModel != null)
+            {
+                settings.OpenRouterSummarizationModel = string.IsNullOrWhiteSpace(updateDto.OpenRouterSummarizationModel)
+                    ? null
+                    : updateDto.OpenRouterSummarizationModel.Trim();
+            }
+            if (updateDto.CustomTranslationPrompt != null)
+            {
+                settings.CustomTranslationPrompt = string.IsNullOrWhiteSpace(updateDto.CustomTranslationPrompt)
+                    ? null
+                    : updateDto.CustomTranslationPrompt;
+            }
+            if (updateDto.CustomExplanationPrompt != null)
+            {
+                settings.CustomExplanationPrompt = string.IsNullOrWhiteSpace(updateDto.CustomExplanationPrompt)
+                    ? null
+                    : updateDto.CustomExplanationPrompt;
+            }
+            if (updateDto.CustomStoryPrompt != null)
+            {
+                settings.CustomStoryPrompt = string.IsNullOrWhiteSpace(updateDto.CustomStoryPrompt)
+                    ? null
+                    : updateDto.CustomStoryPrompt;
+            }
+            if (updateDto.CustomSummarizationPrompt != null)
+            {
+                settings.CustomSummarizationPrompt = string.IsNullOrWhiteSpace(updateDto.CustomSummarizationPrompt)
+                    ? null
+                    : updateDto.CustomSummarizationPrompt;
+            }
             settings.SrsMaxNewCards = updateDto.SrsMaxNewCards ?? settings.SrsMaxNewCards;
             settings.SrsMaxReviews = updateDto.SrsMaxReviews ?? settings.SrsMaxReviews;
             if (!string.IsNullOrWhiteSpace(updateDto.SrsReviewOrder))
@@ -365,6 +421,14 @@ namespace LinguaReadApi.Controllers
                 OpenRouterReasoningEffort = settings.OpenRouterReasoningEffort,
                 OpenRouterStoryReasoningEnabled = settings.OpenRouterStoryReasoningEnabled,
                 OpenRouterStoryReasoningEffort = settings.OpenRouterStoryReasoningEffort,
+                OpenRouterTranslationModel = settings.OpenRouterTranslationModel,
+                OpenRouterExplanationModel = settings.OpenRouterExplanationModel,
+                OpenRouterStoryModel = settings.OpenRouterStoryModel,
+                OpenRouterSummarizationModel = settings.OpenRouterSummarizationModel,
+                CustomTranslationPrompt = settings.CustomTranslationPrompt,
+                CustomExplanationPrompt = settings.CustomExplanationPrompt,
+                CustomStoryPrompt = settings.CustomStoryPrompt,
+                CustomSummarizationPrompt = settings.CustomSummarizationPrompt,
                 SrsMaxNewCards = settings.SrsMaxNewCards,
                 SrsMaxReviews = settings.SrsMaxReviews,
                 SrsReviewOrder = settings.SrsReviewOrder ?? "mix",
@@ -753,6 +817,18 @@ namespace LinguaReadApi.Controllers
         public bool OpenRouterStoryReasoningEnabled { get; set; } = false;
         public string OpenRouterStoryReasoningEffort { get; set; } = "medium";
 
+        // Per-task model overrides
+        public string? OpenRouterTranslationModel { get; set; }
+        public string? OpenRouterExplanationModel { get; set; }
+        public string? OpenRouterStoryModel { get; set; }
+        public string? OpenRouterSummarizationModel { get; set; }
+
+        // Per-task custom prompt overrides
+        public string? CustomTranslationPrompt { get; set; }
+        public string? CustomExplanationPrompt { get; set; }
+        public string? CustomStoryPrompt { get; set; }
+        public string? CustomSummarizationPrompt { get; set; }
+
         // SRS Settings
         public int SrsMaxNewCards { get; set; } = 20;
         public int SrsMaxReviews { get; set; } = 200;
@@ -844,6 +920,32 @@ namespace LinguaReadApi.Controllers
 
         [StringLength(20)]
         public string? OpenRouterStoryReasoningEffort { get; set; }
+
+        // Per-task model overrides (empty/whitespace clears the override)
+        [StringLength(100)]
+        public string? OpenRouterTranslationModel { get; set; }
+
+        [StringLength(100)]
+        public string? OpenRouterExplanationModel { get; set; }
+
+        [StringLength(100)]
+        public string? OpenRouterStoryModel { get; set; }
+
+        [StringLength(100)]
+        public string? OpenRouterSummarizationModel { get; set; }
+
+        // Per-task custom prompts (empty/whitespace clears the override)
+        [StringLength(8000)]
+        public string? CustomTranslationPrompt { get; set; }
+
+        [StringLength(8000)]
+        public string? CustomExplanationPrompt { get; set; }
+
+        [StringLength(8000)]
+        public string? CustomStoryPrompt { get; set; }
+
+        [StringLength(8000)]
+        public string? CustomSummarizationPrompt { get; set; }
 
         // SRS Settings
         [Range(1, 9999)]

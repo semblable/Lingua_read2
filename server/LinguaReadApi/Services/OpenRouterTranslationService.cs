@@ -104,8 +104,9 @@ namespace LinguaReadApi.Services
                 }
 
                 var apiKey = userSettings.OpenRouterApiKey;
-                var model = userSettings.OpenRouterModel;
+                var model = OpenRouterTaskConfig.ResolveModel(userSettings, OpenRouterTask.Translation);
                 var reasoningOptions = BuildReasoningOptions(userSettings);
+                var customPrompt = userSettings.CustomTranslationPrompt;
 
                 // --- Determine the final target language code ---
                 string finalTargetCode = targetLanguage;
@@ -132,7 +133,7 @@ namespace LinguaReadApi.Services
                 if (includeSentenceTags && text.Length > MaxCharsPerChunk)
                 {
                     _logger.LogInformation("Text exceeds chunk limit ({Length} > {Limit}), splitting into chunks", text.Length, MaxCharsPerChunk);
-                    return await TranslateInChunksAsync(text, sourceLanguage, finalTargetCode, apiKey, model, reasoningOptions);
+                    return await TranslateInChunksAsync(text, sourceLanguage, finalTargetCode, apiKey, model, reasoningOptions, customPrompt);
                 }
 
                 // Validate against context limit
@@ -142,7 +143,7 @@ namespace LinguaReadApi.Services
                     return $"Translation error: Text too long for selected model ({estimatedTokens} tokens > {contextLimit} limit). Try a model with larger context.";
                 }
 
-                return await TranslateSingleChunkAsync(text, sourceLanguage, finalTargetCode, apiKey, model, includeSentenceTags, reasoningOptions);
+                return await TranslateSingleChunkAsync(text, sourceLanguage, finalTargetCode, apiKey, model, includeSentenceTags, reasoningOptions, customPrompt);
             }
             catch (TaskCanceledException ex) when (ex.InnerException is TimeoutException || ex.CancellationToken.IsCancellationRequested)
             {
@@ -174,7 +175,7 @@ namespace LinguaReadApi.Services
                 }
 
                 var apiKey = userSettings.OpenRouterApiKey;
-                var model = userSettings.OpenRouterModel;
+                var model = OpenRouterTaskConfig.ResolveModel(userSettings, OpenRouterTask.Explanation);
                 var reasoningOptions = BuildReasoningOptions(userSettings);
                 string explanationLanguage = targetLanguage;
 
@@ -188,7 +189,18 @@ namespace LinguaReadApi.Services
                     }
                 }
 
-                string prompt = SentenceExplanationPrompt.Build(text, sourceLanguage, explanationLanguage);
+                string defaultExplanationPrompt = SentenceExplanationPrompt.Build(text, sourceLanguage, explanationLanguage);
+                var explanationVars = new Dictionary<string, string?>
+                {
+                    ["text"] = text,
+                    ["sourceLanguage"] = sourceLanguage,
+                    ["explanationLanguage"] = explanationLanguage,
+                    ["targetLanguage"] = explanationLanguage
+                };
+                string prompt = OpenRouterTaskConfig.ResolvePromptOrDefault(
+                    userSettings.CustomExplanationPrompt,
+                    defaultExplanationPrompt,
+                    explanationVars);
 
                 var requestPayload = new OpenRouterRequest
                 {
@@ -285,7 +297,7 @@ namespace LinguaReadApi.Services
             return DefaultContextLimit;
         }
 
-        private async Task<string> TranslateInChunksAsync(string text, string sourceLanguage, string targetLanguage, string apiKey, string model, OpenRouterReasoningOptions? reasoningOptions)
+        private async Task<string> TranslateInChunksAsync(string text, string sourceLanguage, string targetLanguage, string apiKey, string model, OpenRouterReasoningOptions? reasoningOptions, string? customPrompt)
         {
             // Split text into sentences to maintain meaning
             var chunks = SplitTextIntoChunks(text, MaxCharsPerChunk);
@@ -298,8 +310,8 @@ namespace LinguaReadApi.Services
             {
                 chunkIndex++;
                 _logger.LogInformation("Translating chunk {Index}/{Total} ({Length} chars)", chunkIndex, chunks.Count, chunk.Length);
-                
-                var result = await TranslateSingleChunkAsync(chunk, sourceLanguage, targetLanguage, apiKey, model, includeSentenceTags: true, reasoningOptions);
+
+                var result = await TranslateSingleChunkAsync(chunk, sourceLanguage, targetLanguage, apiKey, model, includeSentenceTags: true, reasoningOptions, customPrompt);
                 
                 // Check for errors
                 if (result.StartsWith("Translation error:"))
@@ -380,10 +392,9 @@ namespace LinguaReadApi.Services
             return chunks;
         }
 
-        private async Task<string> TranslateSingleChunkAsync(string text, string sourceLanguage, string targetLanguage, string apiKey, string model, bool includeSentenceTags, OpenRouterReasoningOptions? reasoningOptions)
+        private async Task<string> TranslateSingleChunkAsync(string text, string sourceLanguage, string targetLanguage, string apiKey, string model, bool includeSentenceTags, OpenRouterReasoningOptions? reasoningOptions, string? customPrompt = null)
         {
-            string prompt = includeSentenceTags
-                ? $@"Translate the following text from {sourceLanguage} to {targetLanguage}, sentence by sentence.
+            string defaultTaggedPrompt = $@"Translate the following text from {sourceLanguage} to {targetLanguage}, sentence by sentence.
 **Strict Instructions:**
 1. For EACH sentence in the original text:
    - Output the original sentence wrapped EXACTLY like this: `<o s=""N"">Original Sentence</o>`
@@ -402,8 +413,9 @@ Example Output:
 <o s=""1"">Hello world.</o><t s=""1"">Bonjour le monde.</t><o s=""2"">How are you?</o><t s=""2"">Comment allez-vous?</t>
 
 **Text to translate:**
-{text}"
-                : $@"Translate the following sentence or short passage from {sourceLanguage} to {targetLanguage}.
+{text}";
+
+            string defaultPlainPrompt = $@"Translate the following sentence or short passage from {sourceLanguage} to {targetLanguage}.
 **Strict Instructions:**
 1. Return ONLY the translated text in {targetLanguage}.
 2. Do NOT include the original text.
@@ -414,6 +426,26 @@ Example Output:
 
 Text:
 {text}";
+
+            string prompt;
+            if (includeSentenceTags)
+            {
+                if (!string.IsNullOrWhiteSpace(customPrompt))
+                {
+                    _logger.LogInformation("Custom translation prompt provided but tagged-output path requires the structural <o>/<t> template. Ignoring override for full-text translation.");
+                }
+                prompt = defaultTaggedPrompt;
+            }
+            else
+            {
+                var vars = new Dictionary<string, string?>
+                {
+                    ["text"] = text,
+                    ["sourceLanguage"] = sourceLanguage,
+                    ["targetLanguage"] = targetLanguage
+                };
+                prompt = OpenRouterTaskConfig.ResolvePromptOrDefault(customPrompt, defaultPlainPrompt, vars);
+            }
 
             // Create OpenRouter request
             var requestPayload = new OpenRouterRequest
@@ -524,7 +556,7 @@ Text:
                 }
 
                 var apiKey = userSettings.OpenRouterApiKey;
-                var model = userSettings.OpenRouterModel;
+                var model = OpenRouterTaskConfig.ResolveModel(userSettings, OpenRouterTask.Translation);
                 var reasoningOptions = BuildReasoningOptions(userSettings);
                 string finalTargetCode = targetLanguage;
 
@@ -538,7 +570,7 @@ Text:
                     }
                 }
 
-                string prompt = $@"You are translating only a highlighted span from a sentence.
+                string defaultSelectionPrompt = $@"You are translating only a highlighted span from a sentence.
 Source language: {sourceLanguage}
 Target language: {finalTargetCode}
 
@@ -552,6 +584,19 @@ Strict instructions:
 1. Translate ONLY the highlighted text, using the sentence context for meaning.
 2. Return ONLY the translated highlighted text.
 3. Do NOT include the original text, explanations, notes, or formatting.";
+
+                var selectionVars = new Dictionary<string, string?>
+                {
+                    ["selectedText"] = selectedText,
+                    ["sentenceContext"] = sentenceContext,
+                    ["sourceLanguage"] = sourceLanguage,
+                    ["targetLanguage"] = finalTargetCode,
+                    ["text"] = selectedText
+                };
+                string prompt = OpenRouterTaskConfig.ResolvePromptOrDefault(
+                    userSettings.CustomTranslationPrompt,
+                    defaultSelectionPrompt,
+                    selectionVars);
 
                 var requestPayload = new OpenRouterRequest
                 {

@@ -1,10 +1,14 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System;
+using System.Collections.Generic;
+using System.Globalization;
 using System.Security.Claims;
 using System.Threading.Tasks;
 using System.ComponentModel.DataAnnotations;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using LinguaReadApi.Data;
 using LinguaReadApi.Services;
 
 namespace LinguaReadApi.Controllers
@@ -15,13 +19,16 @@ namespace LinguaReadApi.Controllers
     public class StoryGenerationController : ControllerBase
     {
         private readonly IStoryGenerationServiceFactory _storyGenerationServiceFactory;
+        private readonly AppDbContext _context;
         private readonly ILogger<StoryGenerationController> _logger;
 
         public StoryGenerationController(
             IStoryGenerationServiceFactory storyGenerationServiceFactory,
+            AppDbContext context,
             ILogger<StoryGenerationController> logger)
         {
             _storyGenerationServiceFactory = storyGenerationServiceFactory;
+            _context = context;
             _logger = logger;
         }
 
@@ -44,13 +51,27 @@ namespace LinguaReadApi.Controllers
             var storyGenerationService = await _storyGenerationServiceFactory.GetServiceForUserAsync(userId);
 
             // Build the full prompt — services are thin API clients
-            string fullPrompt = $"Write a {request.Level} level story in {request.Language} about: {request.Prompt}\n\n" +
-                                $"Requirements:\n" +
-                                $"- Write approximately {request.MaxLength} words\n" +
-                                $"- Use vocabulary and grammar appropriate for {request.Level} level learners\n" +
-                                $"- Include diverse sentence structures\n" +
-                                $"- Use everyday vocabulary with occasional new words for learning\n" +
-                                $"- Return ONLY the story with no additional text or explanations";
+            string defaultPrompt = $"Write a {request.Level} level story in {request.Language} about: {request.Prompt}\n\n" +
+                                   $"Requirements:\n" +
+                                   $"- Write approximately {request.MaxLength} words\n" +
+                                   $"- Use vocabulary and grammar appropriate for {request.Level} level learners\n" +
+                                   $"- Include diverse sentence structures\n" +
+                                   $"- Use everyday vocabulary with occasional new words for learning\n" +
+                                   $"- Return ONLY the story with no additional text or explanations";
+
+            var userSettings = await _context.UserSettings.FirstOrDefaultAsync(s => s.UserId == userId);
+            var storyVars = new Dictionary<string, string?>
+            {
+                ["level"] = request.Level,
+                ["language"] = request.Language,
+                ["prompt"] = request.Prompt,
+                ["maxLength"] = request.MaxLength.ToString(CultureInfo.InvariantCulture)
+            };
+
+            string fullPrompt = OpenRouterTaskConfig.ResolvePromptOrDefault(
+                userSettings?.CustomStoryPrompt,
+                defaultPrompt,
+                storyVars);
 
             var generatedStory = await storyGenerationService.GenerateStoryAsync(fullPrompt, maxOutputTokens: 20000);
 

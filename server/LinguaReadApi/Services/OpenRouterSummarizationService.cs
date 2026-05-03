@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Globalization;
 using System.Net;
 using System.Net.Http;
 using System.Text;
@@ -44,10 +46,22 @@ namespace LinguaReadApi.Services
                     return "Summarization error: OpenRouter API key not configured";
                 }
 
-                var prompt = SummarizationPrompt.Build(text, sourceLanguage, targetLanguage, maxSummaryWords);
+                var defaultPrompt = SummarizationPrompt.Build(text, sourceLanguage, targetLanguage, maxSummaryWords);
+                var summarizationVars = new Dictionary<string, string?>
+                {
+                    ["text"] = text,
+                    ["sourceLanguage"] = sourceLanguage,
+                    ["targetLanguage"] = targetLanguage,
+                    ["maxSummaryWords"] = maxSummaryWords.ToString(CultureInfo.InvariantCulture)
+                };
+                var prompt = OpenRouterTaskConfig.ResolvePromptOrDefault(
+                    userSettings.CustomSummarizationPrompt,
+                    defaultPrompt,
+                    summarizationVars);
+                var model = OpenRouterTaskConfig.ResolveModel(userSettings, OpenRouterTask.Summarization);
                 var requestPayload = new OpenRouterRequest
                 {
-                    Model = userSettings.OpenRouterModel,
+                    Model = model,
                     Messages = new[]
                     {
                         new OpenRouterMessage

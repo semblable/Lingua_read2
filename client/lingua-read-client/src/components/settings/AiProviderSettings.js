@@ -125,6 +125,73 @@ const AiProviderSettings = ({
           </div>
 
           <div className="settings-control-group">
+            <small className="text-muted d-block mb-2 fw-bold">Per-task model & prompt overrides</small>
+            <Form.Text className="text-muted d-block mb-3">
+              Leave a model field empty to fall back to the default model above. Leave a prompt
+              field empty to use the built-in template. Prompts support placeholders like{' '}
+              <code>{'{text}'}</code>, <code>{'{sourceLanguage}'}</code>,{' '}
+              <code>{'{targetLanguage}'}</code>, <code>{'{explanationLanguage}'}</code>,{' '}
+              <code>{'{maxSummaryWords}'}</code>, <code>{'{level}'}</code>,{' '}
+              <code>{'{language}'}</code>, <code>{'{prompt}'}</code>, <code>{'{maxLength}'}</code>,{' '}
+              <code>{'{selectedText}'}</code>, <code>{'{sentenceContext}'}</code>.
+              Note: full-text translation always uses the structural tagged template (custom
+              translation prompts apply only to single-sentence and selection translations).
+            </Form.Text>
+
+            {[
+              {
+                key: 'Translation',
+                label: 'Translation (sentence + selection)',
+                modelName: 'openRouterTranslationModel',
+                promptName: 'customTranslationPrompt'
+              },
+              {
+                key: 'Explanation',
+                label: 'Sentence explanation',
+                modelName: 'openRouterExplanationModel',
+                promptName: 'customExplanationPrompt'
+              },
+              {
+                key: 'Story',
+                label: 'Story generation',
+                modelName: 'openRouterStoryModel',
+                promptName: 'customStoryPrompt'
+              },
+              {
+                key: 'Summarization',
+                label: 'Summarization',
+                modelName: 'openRouterSummarizationModel',
+                promptName: 'customSummarizationPrompt'
+              }
+            ].map(task => (
+              <div key={task.key} className="mb-3 pb-3 border-bottom">
+                <Form.Group className="mb-2" controlId={task.modelName}>
+                  <Form.Label className="mb-1">{task.label} — model</Form.Label>
+                  <Form.Control
+                    type="text"
+                    name={task.modelName}
+                    placeholder="(use default model above)"
+                    value={settings[task.modelName] || ''}
+                    onChange={handleChange}
+                  />
+                </Form.Group>
+                <Form.Group className="mb-0" controlId={task.promptName}>
+                  <Form.Label className="mb-1">{task.label} — custom prompt</Form.Label>
+                  <Form.Control
+                    as="textarea"
+                    rows={3}
+                    name={task.promptName}
+                    placeholder="(leave empty to use built-in default)"
+                    value={settings[task.promptName] || ''}
+                    onChange={handleChange}
+                    style={{ fontFamily: 'monospace', fontSize: '0.85em' }}
+                  />
+                </Form.Group>
+              </div>
+            ))}
+          </div>
+
+          <div className="settings-control-group">
             <Button
               variant="outline-secondary"
               size="sm"

@@ -168,6 +168,97 @@ public class UserSettingsControllerTests
         Assert.False(row.HardcoverSyncEnabled);
     }
 
+    [Fact]
+    public async Task UpdateUserSettings_PersistsPerTaskOpenRouterModelsAndPrompts()
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        context.Users.Add(new User { Id = userId, UserName = "u", Email = "u@test.com" });
+        await context.SaveChangesAsync();
+
+        var controller = CreateController(context, userId);
+
+        var update = new UpdateUserSettingsDto
+        {
+            OpenRouterTranslationModel = "anthropic/claude-3.5-sonnet",
+            OpenRouterExplanationModel = "openai/gpt-4o",
+            OpenRouterStoryModel = "google/gemini-pro-1.5",
+            OpenRouterSummarizationModel = "meta-llama/llama-3.3-8b-instruct:free",
+            CustomTranslationPrompt = "Translate {text} to {targetLanguage}.",
+            CustomExplanationPrompt = "Explain {text} in {explanationLanguage}.",
+            CustomStoryPrompt = "Write a {level} {language} story about {prompt} in {maxLength} words.",
+            CustomSummarizationPrompt = "Summarize {text} in under {maxSummaryWords} words in {targetLanguage}."
+        };
+
+        var result = await controller.UpdateUserSettings(update);
+
+        var dto = Assert.IsType<UserSettingsDto>(result.Value);
+        Assert.Equal("anthropic/claude-3.5-sonnet", dto.OpenRouterTranslationModel);
+        Assert.Equal("openai/gpt-4o", dto.OpenRouterExplanationModel);
+        Assert.Equal("google/gemini-pro-1.5", dto.OpenRouterStoryModel);
+        Assert.Equal("meta-llama/llama-3.3-8b-instruct:free", dto.OpenRouterSummarizationModel);
+        Assert.Equal("Translate {text} to {targetLanguage}.", dto.CustomTranslationPrompt);
+        Assert.Equal("Explain {text} in {explanationLanguage}.", dto.CustomExplanationPrompt);
+        Assert.Equal("Write a {level} {language} story about {prompt} in {maxLength} words.", dto.CustomStoryPrompt);
+        Assert.Equal("Summarize {text} in under {maxSummaryWords} words in {targetLanguage}.", dto.CustomSummarizationPrompt);
+
+        var row = await context.UserSettings.AsNoTracking().SingleAsync();
+        Assert.Equal("anthropic/claude-3.5-sonnet", row.OpenRouterTranslationModel);
+        Assert.Equal("Explain {text} in {explanationLanguage}.", row.CustomExplanationPrompt);
+
+        // GET should round-trip the same values.
+        var getResult = await controller.GetUserSettings();
+        var getDto = Assert.IsType<UserSettingsDto>(getResult.Value);
+        Assert.Equal("google/gemini-pro-1.5", getDto.OpenRouterStoryModel);
+        Assert.Equal("Summarize {text} in under {maxSummaryWords} words in {targetLanguage}.", getDto.CustomSummarizationPrompt);
+    }
+
+    [Fact]
+    public async Task UpdateUserSettings_ClearsPerTaskFields_WhenWhitespaceOnly()
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        context.Users.Add(new User { Id = userId, UserName = "u", Email = "u@test.com" });
+        await context.UserSettings.AddAsync(new UserSettings
+        {
+            UserId = userId,
+            OpenRouterTranslationModel = "previous/model",
+            OpenRouterExplanationModel = "previous/exp",
+            OpenRouterStoryModel = "previous/story",
+            OpenRouterSummarizationModel = "previous/sum",
+            CustomTranslationPrompt = "old translation prompt",
+            CustomExplanationPrompt = "old explanation prompt",
+            CustomStoryPrompt = "old story prompt",
+            CustomSummarizationPrompt = "old summary prompt",
+            CreatedAt = DateTime.UtcNow
+        });
+        await context.SaveChangesAsync();
+
+        var controller = CreateController(context, userId);
+
+        await controller.UpdateUserSettings(new UpdateUserSettingsDto
+        {
+            OpenRouterTranslationModel = "   ",
+            OpenRouterExplanationModel = "",
+            OpenRouterStoryModel = "  ",
+            OpenRouterSummarizationModel = "\t",
+            CustomTranslationPrompt = "   ",
+            CustomExplanationPrompt = "",
+            CustomStoryPrompt = "  ",
+            CustomSummarizationPrompt = "\n"
+        });
+
+        var row = await context.UserSettings.AsNoTracking().SingleAsync();
+        Assert.Null(row.OpenRouterTranslationModel);
+        Assert.Null(row.OpenRouterExplanationModel);
+        Assert.Null(row.OpenRouterStoryModel);
+        Assert.Null(row.OpenRouterSummarizationModel);
+        Assert.Null(row.CustomTranslationPrompt);
+        Assert.Null(row.CustomExplanationPrompt);
+        Assert.Null(row.CustomStoryPrompt);
+        Assert.Null(row.CustomSummarizationPrompt);
+    }
+
     private static UserSettingsController CreateController(AppDbContext context, Guid userId)
     {
         var discord = new DiscordReportService(

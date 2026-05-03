@@ -95,7 +95,33 @@ namespace LinguaReadApi.Models
 
         [StringLength(20)]
         public string OpenRouterStoryReasoningEffort { get; set; } = "medium";
-        
+
+        // Per-task model overrides (OpenRouter). Empty/null = fall back to OpenRouterModel.
+        [StringLength(100)]
+        public string? OpenRouterTranslationModel { get; set; }
+
+        [StringLength(100)]
+        public string? OpenRouterExplanationModel { get; set; }
+
+        [StringLength(100)]
+        public string? OpenRouterStoryModel { get; set; }
+
+        [StringLength(100)]
+        public string? OpenRouterSummarizationModel { get; set; }
+
+        // Per-task custom prompt overrides. Empty/null = use built-in default template.
+        [StringLength(8000)]
+        public string? CustomTranslationPrompt { get; set; }
+
+        [StringLength(8000)]
+        public string? CustomExplanationPrompt { get; set; }
+
+        [StringLength(8000)]
+        public string? CustomStoryPrompt { get; set; }
+
+        [StringLength(8000)]
+        public string? CustomSummarizationPrompt { get; set; }
+
         // SRS Limits & Preferences
         public int SrsMaxNewCards { get; set; } = 20;
         public int SrsMaxReviews { get; set; } = 200;

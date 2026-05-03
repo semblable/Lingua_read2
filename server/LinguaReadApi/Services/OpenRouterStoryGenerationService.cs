@@ -77,7 +77,7 @@ namespace LinguaReadApi.Services
                 }
 
                 var apiKey = userSettings.OpenRouterApiKey;
-                var model = userSettings.OpenRouterModel;
+                var model = OpenRouterTaskConfig.ResolveModel(userSettings, OpenRouterTask.Story);
                 var reasoningOptions = BuildReasoningOptions(userSettings);
 
                 // Cap output tokens to model limit if needed

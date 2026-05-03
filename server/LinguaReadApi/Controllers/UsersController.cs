@@ -386,7 +386,7 @@ namespace LinguaReadApi.Controllers
                 var query = _context.UserActivities
                     .Where(a => a.UserId == userId
                                 && (a.ActivityType == "Listening" || a.ActivityType == "ManualListening") // Include manual listening
-                                && a.ListeningDurationSeconds.HasValue && a.ListeningDurationSeconds > 0 // Ensure we only count activities with positive duration
+                                && a.ListeningDurationSeconds.HasValue && a.ListeningDurationSeconds != 0 // Skip zero-duration noise; negatives are valid corrections
                                 && a.Timestamp >= startDate);
 
                 if (effectiveOffset > 0)

@@ -1,41 +1,74 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
+using System.Text.Json;
 
 namespace LinguaReadApi.Controllers
 {
     /// <summary>
-    /// Parses the raw AI response from story generation to extract story text and used words.
+    /// Parses the raw AI response from SRS micro-context generation.
+    /// Expects a JSON array of {term, context} objects, optionally wrapped in a markdown fence
+    /// or surrounded by commentary. Returns an empty list on any parse failure.
     /// </summary>
     public static class SrsStoryResponseParser
     {
-        /// <summary>
-        /// Parses the raw response, separating story text from the USED_WORDS marker.
-        /// Falls back to all target words if no marker is found.
-        /// </summary>
-        public static (string Story, List<string> UsedWords) Parse(string rawResponse, List<string> targetWordTerms)
-        {
-            if (string.IsNullOrEmpty(rawResponse))
-                return (rawResponse ?? "", new List<string>(targetWordTerms));
+        public readonly record struct MicroContext(string Term, string Context);
 
-            var usedWordsIndex = rawResponse.LastIndexOf("USED_WORDS:", StringComparison.OrdinalIgnoreCase);
-            if (usedWordsIndex >= 0)
+        public static List<MicroContext> ParseMicroContexts(string rawResponse)
+        {
+            var result = new List<MicroContext>();
+            if (string.IsNullOrWhiteSpace(rawResponse)) return result;
+
+            var jsonText = ExtractJsonArray(rawResponse);
+            if (jsonText is null) return result;
+
+            try
             {
-                var storyText = rawResponse.Substring(0, usedWordsIndex).Trim();
-                var usedWordsLine = rawResponse.Substring(usedWordsIndex + "USED_WORDS:".Length).Trim();
-                var usedWords = usedWordsLine.Split(',')
-                    .Select(w => w.Trim())
-                    .Where(w => !string.IsNullOrEmpty(w))
-                    .ToList();
-                return (storyText, usedWords);
+                using var doc = JsonDocument.Parse(jsonText);
+                if (doc.RootElement.ValueKind != JsonValueKind.Array) return result;
+
+                foreach (var element in doc.RootElement.EnumerateArray())
+                {
+                    if (element.ValueKind != JsonValueKind.Object) continue;
+                    if (!element.TryGetProperty("term", out var termProp)) continue;
+                    if (!element.TryGetProperty("context", out var contextProp)) continue;
+                    if (termProp.ValueKind != JsonValueKind.String) continue;
+                    if (contextProp.ValueKind != JsonValueKind.String) continue;
+
+                    var term = termProp.GetString()?.Trim() ?? "";
+                    var context = contextProp.GetString()?.Trim() ?? "";
+                    if (term.Length == 0 || context.Length == 0) continue;
+
+                    result.Add(new MicroContext(term, context));
+                }
+            }
+            catch (JsonException)
+            {
+                return new List<MicroContext>();
             }
 
-            // Fallback: scan story text for target word occurrences
-            var storyLower = rawResponse.ToLowerInvariant();
-            var foundWords = targetWordTerms
-                .Where(w => storyLower.Contains(w.ToLowerInvariant()))
-                .ToList();
-            return (rawResponse, foundWords);
+            return result;
+        }
+
+        private static string? ExtractJsonArray(string raw)
+        {
+            var trimmed = raw.Trim();
+
+            // Strip ```json … ``` or ``` … ``` fence
+            if (trimmed.StartsWith("```"))
+            {
+                var firstNewline = trimmed.IndexOf('\n');
+                if (firstNewline > 0) trimmed = trimmed[(firstNewline + 1)..];
+                var fenceEnd = trimmed.LastIndexOf("```", StringComparison.Ordinal);
+                if (fenceEnd >= 0) trimmed = trimmed[..fenceEnd];
+                trimmed = trimmed.Trim();
+            }
+
+            // Find the outermost [ … ]
+            var start = trimmed.IndexOf('[');
+            var end = trimmed.LastIndexOf(']');
+            if (start < 0 || end <= start) return null;
+
+            return trimmed.Substring(start, end - start + 1);
         }
     }
 }

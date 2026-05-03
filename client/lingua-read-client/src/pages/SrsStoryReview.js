@@ -3,14 +3,17 @@ import { Container, Card, Button, Spinner, Alert, Form, Row, Col, Badge, Progres
 import { useNavigate } from 'react-router-dom';
 import { getAllLanguages, generateSrsStory, submitSrsReview, getSrsStats, createWord, getWordsByLanguage, getSrsStories } from '../utils/api';
 import { SettingsContext } from '../contexts/SettingsContext';
-import SrsWordPopover from '../components/SrsWordPopover';
 import WordLookupPopover from '../components/WordLookupPopover';
 import './SrsStoryReview.css';
 
 const STATUS_LABELS = { 1: 'New', 2: 'Learning', 3: 'Familiar', 4: 'Advanced', 5: 'Known' };
 const STATUS_VARIANTS = { 1: 'danger', 2: 'warning', 3: 'info', 4: 'primary', 5: 'success' };
-const STYLE_OPTIONS = ['Absurd', 'Funny', 'Romance', 'Mystery', 'Horror', 'Fairytale', 'Noir', 'Casual'];
-const TENSE_OPTIONS = ['Past', 'Present', 'Future'];
+const GRADE_BUTTONS = [
+  { grade: 0, label: 'Again', variant: 'outline-danger' },
+  { grade: 1, label: 'Hard', variant: 'outline-warning' },
+  { grade: 2, label: 'Good', variant: 'outline-success' },
+  { grade: 3, label: 'Easy', variant: 'outline-info' },
+];
 
 const SrsStoryReview = () => {
   const navigate = useNavigate();
@@ -22,31 +25,19 @@ const SrsStoryReview = () => {
     localStorage.getItem('srsSelectedLanguage') || ''
   );
   const [statusFilter, setStatusFilter] = useState([1, 2, 3, 4, 5]);
-  const [cardType, setCardType] = useState('all'); // "all", "new", "review"
-  const [theme, setTheme] = useState('');
+  const [cardType, setCardType] = useState('all');
   const [maxWords, setMaxWords] = useState(() =>
     Math.min(30, Math.max(3, settings.srsMaxNewCards || 15))
   );
-  const [maxLength, setMaxLength] = useState(400);
-  const [style, setStyle] = useState('');
-  const [customStyle, setCustomStyle] = useState('');
-  const [tense, setTense] = useState('');
 
   // Session state
-  const [phase, setPhase] = useState('setup'); // setup | loading | story | complete
-  const [story, setStory] = useState('');
-  const [targetWords, setTargetWords] = useState([]);
-  const [usedWords, setUsedWords] = useState([]);
-  const [reviewedWords, setReviewedWords] = useState(new Set());
-  const [sessionGrades, setSessionGrades] = useState([]); // Track grades for session summary
+  const [phase, setPhase] = useState('setup'); // setup | loading | review | complete
+  const [microContexts, setMicroContexts] = useState([]);
+  const [reviewedWords, setReviewedWords] = useState(new Map()); // wordId -> grade
   const [error, setError] = useState('');
   const [stats, setStats] = useState(null);
   const [pastStories, setPastStories] = useState([]);
-
-  // Popover state
-  const [activeWord, setActiveWord] = useState(null);
-  const [activeRef, setActiveRef] = useState(null);
-  const [grading, setGrading] = useState(false);
+  const [gradingWordId, setGradingWordId] = useState(null);
 
   // Story metadata for word saving
   const [storyTextId, setStoryTextId] = useState(null);
@@ -61,24 +52,20 @@ const SrsStoryReview = () => {
   const wordRefs = useRef({});
 
   useEffect(() => {
-    const fetchLanguages = async () => {
+    (async () => {
       try {
-        const data = await getAllLanguages();
-        setLanguages(data);
+        setLanguages(await getAllLanguages());
       } catch (err) {
         console.error('Failed to load languages:', err);
       }
-    };
-    fetchLanguages();
+    })();
   }, []);
 
   const loadStats = useCallback(async () => {
     if (!selectedLanguage) return;
     try {
-      const data = await getSrsStats(selectedLanguage);
-      setStats(data);
-      const stories = await getSrsStories(selectedLanguage);
-      setPastStories(stories);
+      setStats(await getSrsStats(selectedLanguage));
+      setPastStories(await getSrsStories(selectedLanguage));
     } catch (err) {
       console.error('Failed to load stats:', err);
     }
@@ -105,33 +92,25 @@ const SrsStoryReview = () => {
     setPhase('loading');
 
     try {
-      const effectiveStyle = style === 'Custom' ? customStyle : style;
       const result = await generateSrsStory(parseInt(selectedLanguage), {
-        theme: theme || undefined,
         maxWords,
-        maxLength,
         status: statusFilter,
-        style: effectiveStyle || undefined,
         cardType: cardType !== 'all' ? cardType : undefined,
-        tense: tense ? tense.toLowerCase() : undefined
       });
 
-      if (!result.story || result.targetWords.length === 0) {
-        setError('No due words found for this language. Try standard review or come back later.');
+      if (!result.microContexts || result.microContexts.length === 0) {
+        setError('No micro-contexts generated. Either no due words or the AI returned an unparseable response — try again.');
         setPhase('setup');
         return;
       }
 
-      setStory(result.story);
-      setTargetWords(result.targetWords);
-      setUsedWords(result.usedWords.map(w => w.toLowerCase()));
-      setReviewedWords(new Set());
-      setSessionGrades([]);
+      setMicroContexts(result.microContexts);
+      setReviewedWords(new Map());
       setStoryTextId(result.textId);
       setLanguageCode(result.languageCode || '');
-      setPhase('story');
+      setPhase('review');
 
-      // Load existing vocabulary for this language (for lookup)
+      // Load existing vocabulary for this language (for non-target lookups)
       try {
         const words = await getWordsByLanguage(parseInt(selectedLanguage));
         const map = {};
@@ -141,58 +120,31 @@ const SrsStoryReview = () => {
         console.error('Failed to load vocabulary:', e);
       }
     } catch (err) {
-      setError(`Failed to generate story: ${err.message}`);
+      setError(`Failed to generate micro-contexts: ${err.message}`);
       setPhase('setup');
     }
   };
 
-  const handleGrade = async (word, grade) => {
-    setGrading(true);
+  const handleGrade = async (mc, grade) => {
+    if (reviewedWords.has(mc.wordId)) return;
+    setGradingWordId(mc.wordId);
     try {
-      await submitSrsReview(word.srsCardReviewId, grade);
-      setReviewedWords(prev => new Set([...prev, word.wordId]));
-      setSessionGrades(prev => [...prev, grade]);
-      setActiveWord(null);
-      setActiveRef(null);
+      await submitSrsReview(mc.srsCardReviewId, grade);
+      setReviewedWords(prev => new Map(prev).set(mc.wordId, grade));
     } catch (err) {
       setError(`Failed to submit review: ${err.message}`);
     } finally {
-      setGrading(false);
+      setGradingWordId(null);
     }
   };
 
-  const handleWordClick = (word, refKey) => {
-    if (reviewedWords.has(word.wordId)) return;
-    setLookupWord(null);
-    setLookupRef(null);
-    if (activeWord?.wordId === word.wordId) {
-      setActiveWord(null);
-      setActiveRef(null);
-    } else {
-      setActiveWord(word);
-      setActiveRef(wordRefs.current[refKey]);
-    }
-  };
-
-  // Sentence context extraction helper
-  const getSentenceContext = useCallback((wordText) => {
-    if (!story) return '';
-    const sentences = story.split(/(?<=[.!?])\s+/);
-    const lower = wordText.toLowerCase();
-    return sentences.find(s => s.toLowerCase().includes(lower)) || '';
-  }, [story]);
-
-  // Non-target word click handler
-  const handleLookupClick = (tokenText, refKey) => {
-    setActiveWord(null);
-    setActiveRef(null);
+  const handleLookupClick = (tokenText, refKey, sentenceContext) => {
     const clean = tokenText.replace(/[.,!?;:"""''()[\]{}\-—–…«»]/g, '').toLowerCase();
     if (!clean) return;
-    setLookupWord({ text: clean, sentenceContext: getSentenceContext(clean) });
+    setLookupWord({ text: clean, sentenceContext });
     setLookupRef(wordRefs.current[refKey]);
   };
 
-  // Save word from lookup popover
   const handleSaveWord = async (term, translation, status) => {
     if (!storyTextId) return;
     const result = await createWord(storyTextId, term, status, translation, lookupWord?.sentenceContext || '');
@@ -202,125 +154,71 @@ const SrsStoryReview = () => {
     }));
   };
 
-  // Tokenize story and match target words
-  const renderStory = () => {
-    if (!story) return null;
+  // Render a single micro-context with the target term highlighted and other words clickable.
+  const renderContextBody = (mc, idx) => {
+    const targetLower = mc.term.toLowerCase();
+    const tokens = mc.context.split(/(\s+|[.,!?;:"""''()[\]{}\-—–…«»])/);
 
-    // Build a lookup of target words that were actually used
-    const wordLookup = {};
-    targetWords.forEach(tw => {
-      if (usedWords.includes(tw.term.toLowerCase())) {
-        wordLookup[tw.term.toLowerCase()] = tw;
-      }
-    });
-
-    // Split story into tokens (words and non-words)
-    const tokens = story.split(/(\s+|[.,!?;:"""''()[\]{}\-—–…«»])/);
-    const matchedWordIds = new Set(); // Track which words have already been matched
-
-    return tokens.map((token, idx) => {
+    return tokens.map((token, tIdx) => {
       const cleanToken = token.replace(/[.,!?;:"""''()[\]{}\-—–…«»]/g, '').toLowerCase();
+      if (!cleanToken) return <span key={tIdx}>{token}</span>;
 
-      // Try to match against target words
-      let matchedWord = wordLookup[cleanToken];
+      // Match the target term: exact, or morphological prefix (mirrors old story logic)
+      const isExact = cleanToken === targetLower;
+      const isPrefixMatch =
+        !isExact &&
+        cleanToken.length >= 3 && targetLower.length >= 3 &&
+        cleanToken.startsWith(targetLower) &&
+        cleanToken.length / targetLower.length <= 1.5;
 
-      // Try prefix matching for morphological variants (e.g. "laufen" matches "laufend")
-      if (!matchedWord) {
-        for (const [term, tw] of Object.entries(wordLookup)) {
-          if (cleanToken.length >= 3 && term.length >= 3
-            && cleanToken.startsWith(term)
-            && cleanToken.length / term.length <= 1.5) {
-            matchedWord = tw;
-            break;
-          }
-        }
-      }
-
-      if (matchedWord && !matchedWordIds.has(matchedWord.wordId)) {
-        // Only mark first occurrence to avoid confusion
-        // Actually, mark all occurrences but only grade once
-      }
-
-      if (matchedWord) {
-        const isReviewed = reviewedWords.has(matchedWord.wordId);
-        const isActive = activeWord?.wordId === matchedWord.wordId;
-        const refKey = `${matchedWord.wordId}-${idx}`;
-
-        const wordSpan = (
-          <span
-            key={idx}
-            ref={el => { wordRefs.current[refKey] = el; }}
-            className={`srs-story-target-word ${isReviewed ? 'srs-story-target-reviewed' : ''} ${isActive ? 'srs-story-target-active' : ''}`}
-            onClick={() => handleWordClick(matchedWord, refKey)}
-            role="button"
-            tabIndex={0}
-          >
+      if (isExact || isPrefixMatch) {
+        return (
+          <span key={tIdx} className="srs-story-target-word srs-microcontext-target">
             {token}
           </span>
         );
-
-        return matchedWord.translation ? (
-          <OverlayTrigger
-            key={idx}
-            placement="top"
-            delay={{ show: 300, hide: 0 }}
-            overlay={<Tooltip id={`tip-${idx}`}>{matchedWord.translation}</Tooltip>}
-          >
-            {wordSpan}
-          </OverlayTrigger>
-        ) : wordSpan;
       }
 
-      // Non-target tokens: make actual words clickable for lookup
-      if (cleanToken.length > 0) {
-        const refKey = `lookup-${idx}`;
-        const existing = existingWordsMap[cleanToken];
-        const translation = existing?.translation?.translation || existing?.translation;
+      // Non-target token: clickable lookup
+      const refKey = `mc-${idx}-${tIdx}`;
+      const existing = existingWordsMap[cleanToken];
+      const translation = existing?.translation?.translation || existing?.translation;
 
-        const wordSpan = (
-          <span
-            key={idx}
-            ref={el => { wordRefs.current[refKey] = el; }}
-            className={`srs-story-lookup-word${existing ? ' srs-story-lookup-known' : ''}`}
-            onClick={() => handleLookupClick(token, refKey)}
-            role="button"
-            tabIndex={0}
-          >
-            {token}
-          </span>
-        );
+      const wordSpan = (
+        <span
+          key={tIdx}
+          ref={el => { wordRefs.current[refKey] = el; }}
+          className={`srs-story-lookup-word${existing ? ' srs-story-lookup-known' : ''}`}
+          onClick={() => handleLookupClick(token, refKey, mc.context)}
+          role="button"
+          tabIndex={0}
+        >
+          {token}
+        </span>
+      );
 
-        return (translation && typeof translation === 'string') ? (
-          <OverlayTrigger
-            key={idx}
-            placement="top"
-            delay={{ show: 300, hide: 0 }}
-            overlay={<Tooltip id={`tip-${idx}`}>{translation}</Tooltip>}
-          >
-            {wordSpan}
-          </OverlayTrigger>
-        ) : wordSpan;
-      }
-
-      return <span key={idx}>{token}</span>;
+      return (translation && typeof translation === 'string') ? (
+        <OverlayTrigger
+          key={tIdx}
+          placement="top"
+          delay={{ show: 300, hide: 0 }}
+          overlay={<Tooltip id={`tip-${idx}-${tIdx}`}>{translation}</Tooltip>}
+        >
+          {wordSpan}
+        </OverlayTrigger>
+      ) : wordSpan;
     });
   };
 
-  const usedTargetWords = targetWords.filter(tw =>
-    usedWords.includes(tw.term.toLowerCase())
-  );
-  const unusedTargetWords = targetWords.filter(tw =>
-    !usedWords.includes(tw.term.toLowerCase())
-  );
   const reviewedCount = reviewedWords.size;
-  const totalToReview = usedTargetWords.length;
+  const totalToReview = microContexts.length;
 
   // --- Setup Phase ---
   if (phase === 'setup') {
     return (
       <Container className="mt-4" style={{ maxWidth: '700px' }}>
         <div className="d-flex justify-content-between align-items-center mb-3">
-          <h2 className="mb-0">Story Review</h2>
+          <h2 className="mb-0">Micro-Context Review</h2>
           <Button variant="outline-secondary" size="sm" onClick={() => navigate('/srs')}>
             Card Review
           </Button>
@@ -404,100 +302,16 @@ const SrsStoryReview = () => {
               )}
             </Form.Group>
 
-            <Form.Group className="mb-3" controlId="srs-theme-input">
-              <Form.Label>Theme/Topic <small className="text-muted">(optional)</small></Form.Label>
-              <Form.Control
-                type="text"
-                placeholder="e.g. A day at the market, Mystery story..."
-                value={theme}
-                onChange={e => setTheme(e.target.value)}
+            <Form.Group controlId="srs-max-words-range" className="mb-3">
+              <Form.Label>Max Words to Include</Form.Label>
+              <Form.Range
+                min={3}
+                max={30}
+                value={maxWords}
+                onChange={e => setMaxWords(parseInt(e.target.value))}
               />
+              <div className="text-center text-muted">{maxWords} micro-contexts</div>
             </Form.Group>
-
-            <Form.Group className="mb-3">
-              <Form.Label>Story Style <small className="text-muted">(optional)</small></Form.Label>
-              <div className="d-flex flex-wrap gap-1 mb-1">
-                {STYLE_OPTIONS.map(s => (
-                  <Badge
-                    key={s}
-                    bg={style === s ? 'primary' : 'light'}
-                    text={style === s ? 'white' : 'dark'}
-                    role="button"
-                    className="px-2 py-1"
-                    style={{ cursor: 'pointer', border: '1px solid #dee2e6' }}
-                    onClick={() => setStyle(prev => prev === s ? '' : s)}
-                  >
-                    {s}
-                  </Badge>
-                ))}
-                <Badge
-                  bg={style === 'Custom' ? 'primary' : 'light'}
-                  text={style === 'Custom' ? 'white' : 'dark'}
-                  role="button"
-                  className="px-2 py-1"
-                  style={{ cursor: 'pointer', border: '1px solid #dee2e6' }}
-                  onClick={() => setStyle(prev => prev === 'Custom' ? '' : 'Custom')}
-                >
-                  Custom...
-                </Badge>
-              </div>
-              {style === 'Custom' && (
-                <Form.Control
-                  type="text"
-                  size="sm"
-                  placeholder="Describe your desired style..."
-                  value={customStyle}
-                  onChange={e => setCustomStyle(e.target.value)}
-                />
-              )}
-            </Form.Group>
-
-            <Form.Group className="mb-3">
-              <Form.Label>Narrative Tense <small className="text-muted">(optional)</small></Form.Label>
-              <div className="d-flex flex-wrap gap-1">
-                {TENSE_OPTIONS.map(t => (
-                  <Badge
-                    key={t}
-                    bg={tense === t ? 'primary' : 'light'}
-                    text={tense === t ? 'white' : 'dark'}
-                    role="button"
-                    className="px-2 py-1"
-                    style={{ cursor: 'pointer', border: '1px solid #dee2e6' }}
-                    onClick={() => setTense(prev => prev === t ? '' : t)}
-                  >
-                    {t}
-                  </Badge>
-                ))}
-              </div>
-            </Form.Group>
-
-            <Row className="mb-3">
-              <Col>
-                <Form.Group controlId="srs-max-words-range">
-                  <Form.Label>Max Words to Include</Form.Label>
-                  <Form.Range
-                    min={3}
-                    max={30}
-                    value={maxWords}
-                    onChange={e => setMaxWords(parseInt(e.target.value))}
-                  />
-                  <div className="text-center text-muted">{maxWords} words</div>
-                </Form.Group>
-              </Col>
-              <Col>
-                <Form.Group controlId="srs-max-length-range">
-                  <Form.Label>Story Length</Form.Label>
-                  <Form.Range
-                    min={100}
-                    max={800}
-                    step={50}
-                    value={maxLength}
-                    onChange={e => setMaxLength(parseInt(e.target.value))}
-                  />
-                  <div className="text-center text-muted">~{maxLength} words</div>
-                </Form.Group>
-              </Col>
-            </Row>
 
             <Button
               variant="primary"
@@ -506,7 +320,7 @@ const SrsStoryReview = () => {
               onClick={handleGenerate}
               disabled={!selectedLanguage}
             >
-              Generate Story
+              Generate Micro-Contexts
             </Button>
           </Card.Body>
         </Card>
@@ -516,7 +330,7 @@ const SrsStoryReview = () => {
         {pastStories.length > 0 && (
           <Card className="mt-3 shadow-sm" style={{ borderRadius: '12px', border: 'none' }}>
             <Card.Body className="py-2">
-              <small className="text-muted fw-bold d-block mb-2">Past Stories</small>
+              <small className="text-muted fw-bold d-block mb-2">Past Sessions</small>
               {pastStories.slice(0, 5).map(s => (
                 <div key={s.textId} className="border-bottom py-1" style={{ fontSize: '0.85rem' }}>
                   <div className="d-flex justify-content-between">
@@ -539,21 +353,20 @@ const SrsStoryReview = () => {
       <Container className="mt-4 text-center" style={{ maxWidth: '700px' }}>
         <Card className="shadow-sm p-5" style={{ borderRadius: '16px', border: 'none' }}>
           <Spinner animation="border" variant="primary" className="mb-3" />
-          <h5>Crafting your story...</h5>
-          <p className="text-muted">Generating a story with your vocabulary words</p>
+          <h5>Building micro-contexts...</h5>
+          <p className="text-muted">Generating one isolated context per due word</p>
         </Card>
       </Container>
     );
   }
 
-  // --- Story Phase ---
-  if (phase === 'story') {
+  // --- Review Phase ---
+  if (phase === 'review') {
     return (
       <Container className="mt-4" style={{ maxWidth: '800px' }}>
-        {/* Progress header */}
         <div className="mb-3">
           <div className="d-flex justify-content-between align-items-center mb-2">
-            <h5 className="mb-0">Story Review</h5>
+            <h5 className="mb-0">Micro-Context Review</h5>
             <Badge bg="secondary">{reviewedCount}/{totalToReview} reviewed</Badge>
           </div>
           <ProgressBar
@@ -563,39 +376,66 @@ const SrsStoryReview = () => {
           />
         </div>
 
-        {/* Story card */}
-        <Card className="shadow-sm mb-3 srs-story-card">
-          <Card.Body className="srs-story-container">
-            <div className="srs-story-text" data-testid="srs-story-text" style={{ fontSize: '1.15rem', lineHeight: '2' }}>
-              {renderStory()}
-            </div>
-          </Card.Body>
-        </Card>
+        {microContexts.map((mc, idx) => {
+          const reviewedGrade = reviewedWords.get(mc.wordId);
+          const isReviewed = reviewedGrade !== undefined;
+          const isGrading = gradingWordId === mc.wordId;
 
-        {/* Word legend */}
-        <Card className="shadow-sm mb-3" style={{ borderRadius: '12px', border: 'none' }}>
-          <Card.Body className="py-2">
-            <small className="text-muted d-block mb-2 fw-bold">Target Words — click to review</small>
-            <div className="d-flex flex-wrap gap-2">
-              {usedTargetWords.map(tw => (
-                <Badge
-                  key={tw.wordId}
-                  bg={reviewedWords.has(tw.wordId) ? 'success' : 'outline-primary'}
-                  className={`srs-story-word-badge ${reviewedWords.has(tw.wordId) ? '' : 'srs-story-word-badge-pending'}`}
-                >
-                  {tw.term} {reviewedWords.has(tw.wordId) ? '✓' : ''}
-                </Badge>
-              ))}
-            </div>
-            {unusedTargetWords.length > 0 && (
-              <div className="mt-2">
-                <small className="text-muted">Not in story: {unusedTargetWords.map(w => w.term).join(', ')}</small>
-              </div>
-            )}
-          </Card.Body>
-        </Card>
+          if (isReviewed) {
+            const gradeLabel = GRADE_BUTTONS.find(g => g.grade === reviewedGrade)?.label ?? '';
+            return (
+              <Card
+                key={mc.wordId}
+                className="srs-microcontext-card srs-microcontext-card-reviewed mb-2 shadow-sm"
+                data-testid="srs-microcontext-reviewed"
+              >
+                <Card.Body className="py-2 d-flex justify-content-between align-items-center">
+                  <span>
+                    <Badge bg="success" className="me-2">✓</Badge>
+                    <strong>{mc.term}</strong>
+                    {mc.translation && <span className="text-muted ms-2">— {mc.translation}</span>}
+                  </span>
+                  <Badge bg="secondary">{gradeLabel}</Badge>
+                </Card.Body>
+              </Card>
+            );
+          }
 
-        <div className="d-flex gap-2">
+          return (
+            <Card key={mc.wordId} className="srs-microcontext-card mb-3 shadow-sm" data-testid="srs-microcontext-card">
+              <Card.Body>
+                <div className="d-flex justify-content-between align-items-baseline mb-2">
+                  <h6 className="mb-0">
+                    <span className="srs-microcontext-term">{mc.term}</span>
+                    {mc.translation && <small className="text-muted ms-2">— {mc.translation}</small>}
+                  </h6>
+                  <Badge bg={STATUS_VARIANTS[mc.wordStatus] || 'secondary'} pill>
+                    {STATUS_LABELS[mc.wordStatus] || '?'}
+                  </Badge>
+                </div>
+                <div className="srs-microcontext-body" style={{ fontSize: '1.1rem', lineHeight: '1.8' }}>
+                  {renderContextBody(mc, idx)}
+                </div>
+                <div className="d-flex gap-2 mt-3">
+                  {GRADE_BUTTONS.map(({ grade, label, variant }) => (
+                    <Button
+                      key={grade}
+                      variant={variant}
+                      size="sm"
+                      className="flex-fill"
+                      disabled={isGrading}
+                      onClick={() => handleGrade(mc, grade)}
+                    >
+                      {label}
+                    </Button>
+                  ))}
+                </div>
+              </Card.Body>
+            </Card>
+          );
+        })}
+
+        <div className="d-flex gap-2 mt-3">
           <Button
             variant={reviewedCount >= totalToReview ? 'success' : 'outline-secondary'}
             size="sm"
@@ -603,22 +443,11 @@ const SrsStoryReview = () => {
           >
             {reviewedCount >= totalToReview ? 'Finish Review' : 'Finish Early'}
           </Button>
-          <Button variant="outline-primary" size="sm" onClick={() => { setPhase('setup'); setStory(''); setTargetWords([]); }}>
-            New Story
+          <Button variant="outline-primary" size="sm" onClick={() => { setPhase('setup'); setMicroContexts([]); }}>
+            New Session
           </Button>
         </div>
 
-        {/* Popover for active SRS target word */}
-        <SrsWordPopover
-          word={activeWord}
-          targetRef={activeRef}
-          show={!!activeWord}
-          onHide={() => { setActiveWord(null); setActiveRef(null); }}
-          onGrade={handleGrade}
-          disabled={grading}
-        />
-
-        {/* Popover for non-target word lookup */}
         <WordLookupPopover
           word={lookupWord?.text}
           targetRef={lookupRef}
@@ -638,11 +467,12 @@ const SrsStoryReview = () => {
 
   // --- Complete Phase ---
   if (phase === 'complete') {
+    const sessionGrades = Array.from(reviewedWords.values());
     return (
       <Container className="mt-4" style={{ maxWidth: '600px' }}>
         <Card className="shadow-sm text-center p-4" style={{ borderRadius: '16px', border: 'none' }}>
           <div style={{ fontSize: '3rem' }}>🎉</div>
-          <h3 className="mt-2">Story Complete!</h3>
+          <h3 className="mt-2">Session Complete!</h3>
           <p className="text-muted mb-3">
             You reviewed <strong>{reviewedCount}</strong> out of <strong>{totalToReview}</strong> words in context.
           </p>
@@ -674,7 +504,7 @@ const SrsStoryReview = () => {
             </div>
           )}
           <div className="d-flex gap-2 justify-content-center">
-            <Button variant="primary" onClick={() => { setPhase('setup'); setStory(''); setTargetWords([]); setReviewedWords(new Set()); }}>
+            <Button variant="primary" onClick={() => { setPhase('setup'); setMicroContexts([]); setReviewedWords(new Map()); }}>
               Generate Another
             </Button>
             <Button variant="outline-secondary" onClick={() => navigate('/srs')}>

@@ -1101,8 +1101,8 @@ namespace LinguaReadApi.Controllers
 
             var cardType = (request.CardType ?? "all").Trim().ToLowerInvariant();
 
-            // Fetch a larger candidate pool (3x MaxWords) so the AI can pick the most fitting words
-            int poolSize = request.MaxWords * 5;
+            // One micro-context per due card; cap directly at MaxWords (no pool/AI selection step).
+            int poolSize = request.MaxWords;
 
             // Fetch cards based on card type, respecting daily limits for the pool
             var allDueCards = new List<SrsCardReview>();
@@ -1154,7 +1154,7 @@ namespace LinguaReadApi.Controllers
             }
 
             if (!allDueCards.Any())
-                return Ok(new SrsStoryGenerateResponse { Story = "", TargetWords = new(), UsedWords = new(), RemainingNewBudget = remainingNew, RemainingReviewBudget = remainingReviews });
+                return Ok(new SrsStoryGenerateResponse { MicroContexts = new(), RemainingNewBudget = remainingNew, RemainingReviewBudget = remainingReviews });
 
             // 3. Build target words list
             var targetWords = allDueCards.Select(card => new SrsStoryWordDto
@@ -1183,55 +1183,69 @@ namespace LinguaReadApi.Controllers
 
             var wordList = string.Join("\n", targetWords.Select(w => $"- {w.Term} ({w.Translation})"));
 
-            var hasPool = targetWords.Count > request.MaxWords;
-            var selectionInstruction = hasPool
-                ? $"From the vocabulary pool below, SELECT exactly {request.MaxWords} words that work best together in a coherent story. Prioritize words that naturally fit the same theme or narrative. You do NOT need to use all words — pick the {request.MaxWords} most fitting ones."
-                : "You MUST naturally incorporate ALL of the following vocabulary words into the story. Each word must appear at least once in clear, meaningful context.";
+            var defaultPrompt = $@"For each vocabulary word below, write a short, natural micro-context in {languageName} that uses the word in its EXACT provided form.
 
-            var prompt = $@"Write a short story in {languageName} at {level} level.
-
-{selectionInstruction}
-
-Vocabulary {(hasPool ? "pool" : "words to include")}:
+Vocabulary:
 {wordList}
 
-Requirements:
-- Write approximately {request.MaxLength} words
-- Use vocabulary and grammar appropriate for {level} level learners
-- Each selected word should appear in a clear, meaningful context
-- The story should be coherent and interesting, not a forced list of sentences
-- Prefer words that naturally cluster around a common theme for better story flow
-- Maintain consistent verb tenses throughout the story. Choose a tense that naturally fits the majority of the provided vocabulary word forms.
-- Use each vocabulary word in its EXACT provided form — do not conjugate or decline it differently. Build sentences around the words so they fit naturally as given.
-- Return ONLY the story text
-- After the story, on a new line, write ""USED_WORDS:"" followed by a comma-separated list of the target words you actually used (in their exact base form as provided above)
-{(string.IsNullOrWhiteSpace(request.Tense) ? "" : $"- Write the narrative in {request.Tense} tense. If a vocabulary word's form doesn't match this tense, embed it in dialogue, a quotation, or a subordinate clause where its original form is grammatically correct.")}
+Rules:
+1. Each word must appear in its EXACT given form. First analyze its gender, number, person, and tense; then invent characters, objects, and scenarios that natively fit those grammatical requirements. Do NOT force the form onto an incompatible noun, gender, or tense.
+2. 2–3 short sentences per word. A brief micro-dialogue is fine. The context must read naturally to a {level}-level learner.
+3. Each context is independent — do NOT carry characters or storyline between words.
+4. Return ONLY a JSON array, no markdown fences, no commentary, no trailing text.
 
-{(string.IsNullOrWhiteSpace(request.Theme) ? "Choose an interesting everyday topic." : $"Theme/topic: {request.Theme}")}
-{(string.IsNullOrWhiteSpace(request.Style) ? "" : $"Writing style/tone: {request.Style}. Write the story in this style.")}";
+Format (one object per provided word, in the same order):
+[
+  {{""term"": ""<exact term as given>"", ""context"": ""<2–3 sentences>""}},
+  ...
+]";
 
-            // 5. Generate story using user's configured AI provider
+            // CustomStoryPrompt may still be set from the old story-mode era; substitute the same
+            // {language}, {level}, {wordList} placeholders so existing templates that ask for
+            // micro-context output keep working. Templates written for narrative output will likely
+            // produce non-JSON responses and the parser will return an empty list.
+            var settingsForPrompt = settings ?? new Models.UserSettings();
+            var promptVars = new Dictionary<string, string?>
+            {
+                ["language"] = languageName,
+                ["level"] = level,
+                ["wordList"] = wordList
+            };
+            var prompt = OpenRouterTaskConfig.ResolvePromptOrDefault(
+                settingsForPrompt.CustomStoryPrompt, defaultPrompt, promptVars);
+
+            // 5. Generate using user's configured AI provider
             var storyService = await _storyGenerationServiceFactory.GetServiceForUserAsync(userId);
             var rawResponse = await storyService.GenerateStoryAsync(prompt, maxOutputTokens: 20000);
 
-            // 6. Parse USED_WORDS from response
-            var (storyText, usedWords) = SrsStoryResponseParser.Parse(
-                rawResponse, targetWords.Select(w => w.Term).ToList());
+            // 6. Parse JSON micro-context array
+            var parsed = SrsStoryResponseParser.ParseMicroContexts(rawResponse);
 
-            // Filter targetWords to only those actually used by the AI
-            var usedWordsLower = usedWords.Select(w => w.ToLowerInvariant()).ToHashSet();
-            var usedTargetWords = targetWords
-                .Where(tw => usedWordsLower.Contains(tw.Term.ToLowerInvariant()))
-                .ToList();
+            // Match each parsed entry back to a target card by exact term (case-insensitive).
+            var targetByTerm = targetWords.ToDictionary(t => t.Term.ToLowerInvariant(), t => t);
+            var seenWordIds = new HashSet<int>();
+            var microContexts = new List<SrsMicroContextDto>();
+            foreach (var mc in parsed)
+            {
+                if (!targetByTerm.TryGetValue(mc.Term.Trim().ToLowerInvariant(), out var tw)) continue;
+                if (!seenWordIds.Add(tw.WordId)) continue;
+                microContexts.Add(new SrsMicroContextDto
+                {
+                    SrsCardReviewId = tw.SrsCardReviewId,
+                    WordId = tw.WordId,
+                    Term = tw.Term,
+                    Translation = tw.Translation,
+                    Context = mc.Context,
+                    WordStatus = tw.WordStatus
+                });
+            }
 
-            // 7. Save story as a Text record so words can be saved against it
-            var storyTitle = string.IsNullOrWhiteSpace(request.Theme)
-                ? $"SRS Story — {now:yyyy-MM-dd HH:mm}"
-                : $"SRS Story: {request.Theme}";
+            // 7. Save concatenated contexts as a Text record so saved-from-lookup words have a TextId.
+            var combined = string.Join("\n\n", microContexts.Select(m => $"**{m.Term}** — {m.Context}"));
             var storyTextRecord = new Text
             {
-                Title = storyTitle,
-                Content = storyText,
+                Title = $"SRS Micro-Contexts — {now:yyyy-MM-dd HH:mm}",
+                Content = combined,
                 LanguageId = request.LanguageId,
                 UserId = userId,
                 Tag = "srs-story",
@@ -1242,11 +1256,9 @@ Requirements:
 
             return Ok(new SrsStoryGenerateResponse
             {
-                Story = storyText,
+                MicroContexts = microContexts,
                 TextId = storyTextRecord.TextId,
                 LanguageCode = language?.Code ?? "",
-                TargetWords = usedTargetWords,
-                UsedWords = usedWords,
                 RemainingNewBudget = remainingNew,
                 RemainingReviewBudget = remainingReviews
             });
@@ -1434,33 +1446,20 @@ Requirements:
         [Required]
         public int LanguageId { get; set; }
 
-        public string? Theme { get; set; }
-
         [Range(1, 50)]
         public int MaxWords { get; set; } = 15;
 
-        [Range(50, 800)]
-        public int MaxLength { get; set; } = 400;
-
         public string? Status { get; set; }
-
-        [StringLength(50)]
-        public string? Style { get; set; }
 
         [StringLength(10)]
         public string? CardType { get; set; } // "new", "review", "all" (default)
-
-        [StringLength(20)]
-        public string? Tense { get; set; } // "past", "present", "future", or null (AI chooses)
     }
 
     public class SrsStoryGenerateResponse
     {
-        public string Story { get; set; } = string.Empty;
+        public List<SrsMicroContextDto> MicroContexts { get; set; } = new();
         public int TextId { get; set; }
         public string LanguageCode { get; set; } = string.Empty;
-        public List<SrsStoryWordDto> TargetWords { get; set; } = new();
-        public List<string> UsedWords { get; set; } = new();
         public int RemainingNewBudget { get; set; }
         public int RemainingReviewBudget { get; set; }
     }
@@ -1478,5 +1477,15 @@ Requirements:
         public bool IsLearning { get; set; }
         public int CurrentLearningStepIndex { get; set; }
         public bool HasEverGraduated { get; set; }
+    }
+
+    public class SrsMicroContextDto
+    {
+        public int SrsCardReviewId { get; set; }
+        public int WordId { get; set; }
+        public string Term { get; set; } = string.Empty;
+        public string Translation { get; set; } = string.Empty;
+        public string Context { get; set; } = string.Empty;
+        public int WordStatus { get; set; }
     }
 }

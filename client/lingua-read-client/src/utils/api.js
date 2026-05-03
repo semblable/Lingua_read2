@@ -919,16 +919,16 @@ export const summarizeText = async (text, sourceLanguageCode, targetLanguageCode
   }
 };
 
-// SRS Story Generation API
-export const generateSrsStory = async (languageId, { theme, maxWords, maxLength, status, style, cardType, tense } = {}) => {
+// SRS Micro-Context Generation API
+export const generateSrsStory = async (languageId, { maxWords, status, cardType } = {}) => {
   try {
-    const payload = { languageId, theme, maxWords, maxLength, style, status: status?.join(','), cardType, tense };
+    const payload = { languageId, maxWords, status: status?.join(','), cardType };
     return await fetchApi('/srs/story-generate', {
       method: 'POST',
       body: JSON.stringify(payload)
     });
   } catch (error) {
-    console.error('SRS story generation failed:', error);
+    console.error('SRS micro-context generation failed:', error);
     throw error;
   }
 };

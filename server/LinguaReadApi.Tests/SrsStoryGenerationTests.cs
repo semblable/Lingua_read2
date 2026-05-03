@@ -5,83 +5,117 @@ namespace LinguaReadApi.Tests;
 
 public class SrsStoryGenerationTests
 {
-    // --- USED_WORDS Parsing Tests ---
+    // --- Micro-context JSON Parsing Tests ---
 
     [Fact]
-    public void ParseUsedWords_WithUsedWordsAtEnd_ExtractsCorrectly()
+    public void ParseMicroContexts_BareJsonArray_ParsesAllEntries()
     {
-        var raw = "El gato rápido corre por el parque.\nUSED_WORDS: gato, rápido, parque";
-        var (story, usedWords) = SrsStoryResponseParser.Parse(raw, new List<string> { "gato", "rápido", "parque" });
+        var raw = @"[
+  {""term"": ""gato"", ""context"": ""El gato duerme. Está muy tranquilo.""},
+  {""term"": ""parque"", ""context"": ""Voy al parque cada mañana. Me gusta correr ahí.""}
+]";
+        var result = SrsStoryResponseParser.ParseMicroContexts(raw);
 
-        Assert.Equal("El gato rápido corre por el parque.", story);
-        Assert.Equal(3, usedWords.Count);
-        Assert.Contains("gato", usedWords);
-        Assert.Contains("rápido", usedWords);
-        Assert.Contains("parque", usedWords);
+        Assert.Equal(2, result.Count);
+        Assert.Equal("gato", result[0].Term);
+        Assert.StartsWith("El gato duerme.", result[0].Context);
+        Assert.Equal("parque", result[1].Term);
     }
 
     [Fact]
-    public void ParseUsedWords_CaseInsensitive_ExtractsCorrectly()
+    public void ParseMicroContexts_FencedJson_StripsFenceAndParses()
     {
-        var raw = "A story here.\nused_words: word1, word2";
-        var (story, usedWords) = SrsStoryResponseParser.Parse(raw, new List<string> { "word1", "word2" });
+        var raw = "```json\n[{\"term\": \"perro\", \"context\": \"El perro corre.\"}]\n```";
+        var result = SrsStoryResponseParser.ParseMicroContexts(raw);
 
-        Assert.Equal("A story here.", story);
-        Assert.Equal(2, usedWords.Count);
+        Assert.Single(result);
+        Assert.Equal("perro", result[0].Term);
+        Assert.Equal("El perro corre.", result[0].Context);
     }
 
     [Fact]
-    public void ParseUsedWords_NoUsedWordsMarker_FallsBackToAllTargetWords()
+    public void ParseMicroContexts_PlainFence_StripsFenceAndParses()
     {
-        var raw = "El gato rápido corre por el parque.";
-        var targetWords = new List<string> { "gato", "rápido" };
-        var (story, usedWords) = SrsStoryResponseParser.Parse(raw, targetWords);
+        var raw = "```\n[{\"term\": \"casa\", \"context\": \"Mi casa es grande.\"}]\n```";
+        var result = SrsStoryResponseParser.ParseMicroContexts(raw);
 
-        Assert.Equal(raw, story);
-        Assert.Equal(targetWords, usedWords);
+        Assert.Single(result);
+        Assert.Equal("casa", result[0].Term);
     }
 
     [Fact]
-    public void ParseUsedWords_EmptyWordList_ReturnsEmptyList()
+    public void ParseMicroContexts_SurroundingCommentary_ExtractsArray()
     {
-        var raw = "A story.\nUSED_WORDS: ";
-        var (story, usedWords) = SrsStoryResponseParser.Parse(raw, new List<string>());
+        var raw = "Sure, here is the JSON you requested:\n[{\"term\": \"libro\", \"context\": \"Leo un libro.\"}]\n\nLet me know if you need more.";
+        var result = SrsStoryResponseParser.ParseMicroContexts(raw);
 
-        Assert.Equal("A story.", story);
-        Assert.Empty(usedWords);
+        Assert.Single(result);
+        Assert.Equal("libro", result[0].Term);
     }
 
     [Fact]
-    public void ParseUsedWords_ExtraWhitespaceAndCommas_HandlesGracefully()
+    public void ParseMicroContexts_MalformedJson_ReturnsEmptyList()
     {
-        var raw = "Story text.\nUSED_WORDS:  gato ,  rápido ,, , parque  ";
-        var (story, usedWords) = SrsStoryResponseParser.Parse(raw, new List<string> { "gato", "rápido", "parque" });
+        var raw = "[{\"term\": \"gato\", \"context\": ";
+        var result = SrsStoryResponseParser.ParseMicroContexts(raw);
 
-        Assert.Equal("Story text.", story);
-        Assert.Equal(3, usedWords.Count);
-        Assert.Contains("gato", usedWords);
-        Assert.Contains("rápido", usedWords);
-        Assert.Contains("parque", usedWords);
+        Assert.Empty(result);
     }
 
     [Fact]
-    public void ParseUsedWords_UsedWordsInMiddleOfText_UsesLastOccurrence()
+    public void ParseMicroContexts_EmptyTermOrContext_FiltersEntry()
     {
-        var raw = "The word USED_WORDS: appears in the story.\n\nUSED_WORDS: gato, perro";
-        var (story, usedWords) = SrsStoryResponseParser.Parse(raw, new List<string> { "gato", "perro" });
+        var raw = @"[
+  {""term"": """", ""context"": ""Some context.""},
+  {""term"": ""gato"", ""context"": """"},
+  {""term"": ""perro"", ""context"": ""El perro ladra.""}
+]";
+        var result = SrsStoryResponseParser.ParseMicroContexts(raw);
 
-        Assert.Equal("The word USED_WORDS: appears in the story.", story);
-        Assert.Equal(2, usedWords.Count);
+        Assert.Single(result);
+        Assert.Equal("perro", result[0].Term);
     }
 
     [Fact]
-    public void ParseUsedWords_EmptyResponse_ReturnsEmptyStoryAndFallback()
+    public void ParseMicroContexts_MissingFields_FiltersEntry()
     {
-        var targetWords = new List<string> { "word1" };
-        var (story, usedWords) = SrsStoryResponseParser.Parse("", targetWords);
+        var raw = @"[
+  {""term"": ""gato""},
+  {""context"": ""orphan context""},
+  {""term"": ""perro"", ""context"": ""El perro ladra.""}
+]";
+        var result = SrsStoryResponseParser.ParseMicroContexts(raw);
 
-        Assert.Equal("", story);
-        Assert.Equal(targetWords, usedWords);
+        Assert.Single(result);
+        Assert.Equal("perro", result[0].Term);
+    }
+
+    [Fact]
+    public void ParseMicroContexts_EmptyInput_ReturnsEmptyList()
+    {
+        Assert.Empty(SrsStoryResponseParser.ParseMicroContexts(""));
+        Assert.Empty(SrsStoryResponseParser.ParseMicroContexts("   "));
+        Assert.Empty(SrsStoryResponseParser.ParseMicroContexts(null!));
+    }
+
+    [Fact]
+    public void ParseMicroContexts_NoJsonArrayPresent_ReturnsEmptyList()
+    {
+        var raw = "I'm sorry, I can't help with that.";
+        var result = SrsStoryResponseParser.ParseMicroContexts(raw);
+
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public void ParseMicroContexts_TrimsTermAndContextWhitespace()
+    {
+        var raw = @"[{""term"": ""  gato  "", ""context"": ""  El gato duerme.  ""}]";
+        var result = SrsStoryResponseParser.ParseMicroContexts(raw);
+
+        Assert.Single(result);
+        Assert.Equal("gato", result[0].Term);
+        Assert.Equal("El gato duerme.", result[0].Context);
     }
 
     // --- OpenRouter Reasoning Options Tests ---
@@ -128,28 +162,5 @@ public class SrsStoryGenerationTests
         var result = OpenRouterStoryReasoningHelper.BuildReasoningOptions(settings);
         Assert.NotNull(result);
         Assert.Equal("medium", result!.Effort);
-    }
-
-    // --- Story Style in DTO Tests ---
-
-    [Fact]
-    public void SrsStoryGenerateRequest_StyleField_AcceptsValues()
-    {
-        var request = new SrsStoryGenerateRequest
-        {
-            LanguageId = 1,
-            MaxWords = 15,
-            MaxLength = 400,
-            Style = "Absurd"
-        };
-
-        Assert.Equal("Absurd", request.Style);
-    }
-
-    [Fact]
-    public void SrsStoryGenerateRequest_StyleField_NullByDefault()
-    {
-        var request = new SrsStoryGenerateRequest { LanguageId = 1 };
-        Assert.Null(request.Style);
     }
 }

@@ -71,12 +71,11 @@ public class SrsControllerTests
 
         var okResult = Assert.IsType<OkObjectResult>(result.Result);
         var response = Assert.IsType<SrsStoryGenerateResponse>(okResult.Value);
-        Assert.Empty(response.TargetWords);
-        Assert.Equal("", response.Story);
+        Assert.Empty(response.MicroContexts);
     }
 
     [Fact]
-    public async Task GenerateStoryFromDueWords_CallsAiServiceAndParsesOutput()
+    public async Task GenerateStoryFromDueWords_CallsAiServiceAndParsesJsonOutput()
     {
         using var context = CreateContext();
         var userId = Guid.NewGuid();
@@ -85,42 +84,43 @@ public class SrsControllerTests
 
         var mockService = new Mock<IStoryGenerationService>();
         mockService.Setup(s => s.GenerateStoryAsync(It.IsAny<string>(), It.IsAny<int>()))
-                   .ReturnsAsync("El gato y el perro. USED_WORDS: gato, perro");
+                   .ReturnsAsync(@"[
+  {""term"": ""gato"", ""context"": ""El gato duerme en el sofá. Está muy tranquilo.""},
+  {""term"": ""perro"", ""context"": ""Mi perro corre por el parque.""}
+]");
 
         var mockFactory = new Mock<IStoryGenerationServiceFactory>();
         mockFactory.Setup(f => f.GetServiceForUserAsync(userId)).ReturnsAsync(mockService.Object);
 
         var controller = CreateController(context, userId, mockFactory.Object);
 
-        var request = new SrsStoryGenerateRequest 
-        { 
-            LanguageId = languageId, 
-            MaxWords = 5,
-            MaxLength = 100
-        };
-        
+        var request = new SrsStoryGenerateRequest { LanguageId = languageId, MaxWords = 5 };
         var result = await controller.GenerateStoryFromDueWords(request);
 
         var okResult = Assert.IsType<OkObjectResult>(result.Result);
         var response = Assert.IsType<SrsStoryGenerateResponse>(okResult.Value);
-        
-        Assert.Equal("El gato y el perro.", response.Story);
-        Assert.Equal(2, response.TargetWords.Count);
-        Assert.Contains("gato", response.UsedWords);
-        Assert.Contains("perro", response.UsedWords);
+
+        Assert.Equal(2, response.MicroContexts.Count);
+        Assert.Contains(response.MicroContexts, m => m.Term == "gato" && m.Context.StartsWith("El gato"));
+        Assert.Contains(response.MicroContexts, m => m.Term == "perro" && m.Context.Contains("parque"));
+        Assert.NotEqual(0, response.TextId);
     }
 
     [Fact]
-    public async Task GenerateStoryFromDueWords_UsesFallbackParsing_WhenDelimiterMissing()
+    public async Task GenerateStoryFromDueWords_FiltersUnmatchedTerms()
     {
         using var context = CreateContext();
         var userId = Guid.NewGuid();
         int languageId = 1;
         SeedData(context, userId, languageId);
 
+        // AI returns one matching term and one stray term not in the deck
         var mockService = new Mock<IStoryGenerationService>();
         mockService.Setup(s => s.GenerateStoryAsync(It.IsAny<string>(), It.IsAny<int>()))
-                   .ReturnsAsync("El gato corre por el parque.");
+                   .ReturnsAsync(@"[
+  {""term"": ""gato"", ""context"": ""El gato corre.""},
+  {""term"": ""elefante"", ""context"": ""El elefante es grande.""}
+]");
 
         var mockFactory = new Mock<IStoryGenerationServiceFactory>();
         mockFactory.Setup(f => f.GetServiceForUserAsync(userId)).ReturnsAsync(mockService.Object);
@@ -133,8 +133,33 @@ public class SrsControllerTests
         var okResult = Assert.IsType<OkObjectResult>(result.Result);
         var response = Assert.IsType<SrsStoryGenerateResponse>(okResult.Value);
 
-        Assert.Equal("El gato corre por el parque.", response.Story);
-        Assert.Single(response.UsedWords); // Fallback scans story text - only "gato" appears
-        Assert.Contains("gato", response.UsedWords);
+        Assert.Single(response.MicroContexts);
+        Assert.Equal("gato", response.MicroContexts[0].Term);
+    }
+
+    [Fact]
+    public async Task GenerateStoryFromDueWords_MalformedJson_ReturnsEmptyMicroContexts()
+    {
+        using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        int languageId = 1;
+        SeedData(context, userId, languageId);
+
+        var mockService = new Mock<IStoryGenerationService>();
+        mockService.Setup(s => s.GenerateStoryAsync(It.IsAny<string>(), It.IsAny<int>()))
+                   .ReturnsAsync("Sorry, I can't help with that.");
+
+        var mockFactory = new Mock<IStoryGenerationServiceFactory>();
+        mockFactory.Setup(f => f.GetServiceForUserAsync(userId)).ReturnsAsync(mockService.Object);
+
+        var controller = CreateController(context, userId, mockFactory.Object);
+
+        var request = new SrsStoryGenerateRequest { LanguageId = languageId };
+        var result = await controller.GenerateStoryFromDueWords(request);
+
+        var okResult = Assert.IsType<OkObjectResult>(result.Result);
+        var response = Assert.IsType<SrsStoryGenerateResponse>(okResult.Value);
+
+        Assert.Empty(response.MicroContexts);
     }
 }

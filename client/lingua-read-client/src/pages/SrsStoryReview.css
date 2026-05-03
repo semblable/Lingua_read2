@@ -130,6 +130,30 @@
   border-bottom-color: rgba(100, 160, 255, 0.3);
 }
 
+/* Micro-context cards (per-word feed) */
+.srs-microcontext-card {
+  border: none;
+  border-radius: 12px;
+}
+
+.srs-microcontext-card-reviewed {
+  opacity: 0.75;
+  border-radius: 8px;
+}
+
+.srs-microcontext-term {
+  font-weight: 600;
+}
+
+.srs-microcontext-target {
+  cursor: default;
+}
+
+.srs-microcontext-body {
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
 /* Mobile adjustments */
 @media (max-width: 576px) {
   .srs-story-container {

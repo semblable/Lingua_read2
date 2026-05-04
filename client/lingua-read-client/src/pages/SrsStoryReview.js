@@ -34,6 +34,7 @@ const SrsStoryReview = () => {
   const [phase, setPhase] = useState('setup'); // setup | loading | review | complete
   const [microContexts, setMicroContexts] = useState([]);
   const [reviewedWords, setReviewedWords] = useState(new Map()); // wordId -> grade
+  const [revealedWords, setRevealedWords] = useState(new Set()); // wordIds whose translation is unhidden
   const [error, setError] = useState('');
   const [stats, setStats] = useState(null);
   const [pastStories, setPastStories] = useState([]);
@@ -106,6 +107,7 @@ const SrsStoryReview = () => {
 
       setMicroContexts(result.microContexts);
       setReviewedWords(new Map());
+      setRevealedWords(new Set());
       setStoryTextId(result.textId);
       setLanguageCode(result.languageCode || '');
       setPhase('review');
@@ -415,6 +417,7 @@ const SrsStoryReview = () => {
             );
           }
 
+          const isRevealed = revealedWords.has(mc.wordId);
           return (
             <Card key={mc.wordId} className="srs-microcontext-card mb-3 shadow-sm" data-testid="srs-microcontext-card">
               <Card.Body>
@@ -424,7 +427,9 @@ const SrsStoryReview = () => {
                     {mc.usedForm && mc.usedForm.toLowerCase() !== mc.term.toLowerCase() && (
                       <small className="srs-microcontext-usedform ms-2">→ {mc.usedForm}</small>
                     )}
-                    {mc.translation && <small className="text-muted ms-2">— {mc.translation}</small>}
+                    {isRevealed && mc.translation && (
+                      <small className="text-muted ms-2" data-testid="srs-microcontext-translation">— {mc.translation}</small>
+                    )}
                   </h6>
                   <Badge bg={STATUS_VARIANTS[mc.wordStatus] || 'secondary'} pill>
                     {STATUS_LABELS[mc.wordStatus] || '?'}
@@ -433,20 +438,32 @@ const SrsStoryReview = () => {
                 <div className="srs-microcontext-body" style={{ fontSize: '1.1rem', lineHeight: '1.8' }}>
                   {renderContextBody(mc, idx)}
                 </div>
-                <div className="d-flex gap-2 mt-3">
-                  {GRADE_BUTTONS.map(({ grade, label, variant }) => (
-                    <Button
-                      key={grade}
-                      variant={variant}
-                      size="sm"
-                      className="flex-fill"
-                      disabled={isGrading}
-                      onClick={() => handleGrade(mc, grade)}
-                    >
-                      {label}
-                    </Button>
-                  ))}
-                </div>
+                {isRevealed ? (
+                  <div className="d-flex gap-2 mt-3" data-testid="srs-microcontext-grade-row">
+                    {GRADE_BUTTONS.map(({ grade, label, variant }) => (
+                      <Button
+                        key={grade}
+                        variant={variant}
+                        size="sm"
+                        className="flex-fill"
+                        disabled={isGrading}
+                        onClick={() => handleGrade(mc, grade)}
+                      >
+                        {label}
+                      </Button>
+                    ))}
+                  </div>
+                ) : (
+                  <Button
+                    variant="outline-primary"
+                    size="sm"
+                    className="w-100 mt-3"
+                    onClick={() => setRevealedWords(prev => new Set(prev).add(mc.wordId))}
+                    data-testid="srs-microcontext-reveal"
+                  >
+                    Show translation
+                  </Button>
+                )}
               </Card.Body>
             </Card>
           );
@@ -521,7 +538,7 @@ const SrsStoryReview = () => {
             </div>
           )}
           <div className="d-flex gap-2 justify-content-center">
-            <Button variant="primary" onClick={() => { setPhase('setup'); setMicroContexts([]); setReviewedWords(new Map()); }}>
+            <Button variant="primary" onClick={() => { setPhase('setup'); setMicroContexts([]); setReviewedWords(new Map()); setRevealedWords(new Set()); }}>
               Generate Another
             </Button>
             <Button variant="outline-secondary" onClick={() => navigate('/srs')}>

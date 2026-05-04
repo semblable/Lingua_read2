@@ -159,7 +159,8 @@ describe('SrsStoryReview (micro-contexts)', () => {
     const cards = await screen.findAllByTestId('srs-microcontext-card');
     expect(cards).toHaveLength(2);
 
-    // Grade first card "Good" (grade=2)
+    // Reveal first card, then grade "Good" (grade=2)
+    fireEvent.click(within(cards[0]).getByTestId('srs-microcontext-reveal'));
     fireEvent.click(within(cards[0]).getByRole('button', { name: /^Good$/ }));
     await waitFor(() => {
       expect(submitSrsReview).toHaveBeenCalledWith(101, 2);
@@ -170,9 +171,10 @@ describe('SrsStoryReview (micro-contexts)', () => {
       expect(screen.getAllByTestId('srs-microcontext-reviewed')).toHaveLength(1);
     });
 
-    // Second card still active — grade "Easy" (grade=3)
+    // Second card still active — reveal then grade "Easy" (grade=3)
     const remainingCards = screen.getAllByTestId('srs-microcontext-card');
     expect(remainingCards).toHaveLength(1);
+    fireEvent.click(within(remainingCards[0]).getByTestId('srs-microcontext-reveal'));
     fireEvent.click(within(remainingCards[0]).getByRole('button', { name: /^Easy$/ }));
     await waitFor(() => {
       expect(submitSrsReview).toHaveBeenCalledWith(102, 3);
@@ -209,6 +211,7 @@ describe('SrsStoryReview (micro-contexts)', () => {
     fireEvent.click(await screen.findByRole('button', generateBtnQuery));
 
     const cards = await screen.findAllByTestId('srs-microcontext-card');
+    fireEvent.click(within(cards[0]).getByTestId('srs-microcontext-reveal'));
     fireEvent.click(within(cards[0]).getByRole('button', { name: /^Good$/ }));
 
     expect(await screen.findByText(/Failed to submit review: Review failed/)).toBeInTheDocument();
@@ -333,6 +336,7 @@ describe('SrsStoryReview (micro-contexts)', () => {
     const cards = await screen.findAllByTestId('srs-microcontext-card');
     expect(cards).toHaveLength(1);
 
+    fireEvent.click(within(cards[0]).getByTestId('srs-microcontext-reveal'));
     fireEvent.click(within(cards[0]).getByRole('button', { name: /^Good$/ }));
     await waitFor(() => {
       expect(submitSrsReview).toHaveBeenCalledWith(101, 2);
@@ -343,5 +347,35 @@ describe('SrsStoryReview (micro-contexts)', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: /Finish Review/i }));
     expect(await screen.findByText('Session Complete!')).toBeInTheDocument();
+  });
+
+  it('hides translation and grade buttons until reveal is clicked', async () => {
+    renderComponent();
+    await selectSpanish();
+    fireEvent.click(await screen.findByRole('button', generateBtnQuery));
+
+    const cards = await screen.findAllByTestId('srs-microcontext-card');
+    const firstCard = cards[0];
+
+    // Before reveal: no translation, no grade row, reveal button present
+    expect(within(firstCard).queryByTestId('srs-microcontext-translation')).not.toBeInTheDocument();
+    expect(within(firstCard).queryByTestId('srs-microcontext-grade-row')).not.toBeInTheDocument();
+    expect(within(firstCard).queryByText(/— cat/)).not.toBeInTheDocument();
+    expect(within(firstCard).getByTestId('srs-microcontext-reveal')).toBeInTheDocument();
+
+    // Context (with highlighted target) is visible — that's the prompt
+    expect(within(firstCard).getByText(/duerme/)).toBeInTheDocument();
+
+    // Click reveal
+    fireEvent.click(within(firstCard).getByTestId('srs-microcontext-reveal'));
+
+    // After reveal: translation + grade row appear, reveal button gone
+    expect(within(firstCard).getByTestId('srs-microcontext-translation')).toBeInTheDocument();
+    expect(within(firstCard).getByText(/— cat/)).toBeInTheDocument();
+    expect(within(firstCard).getByTestId('srs-microcontext-grade-row')).toBeInTheDocument();
+    expect(within(firstCard).queryByTestId('srs-microcontext-reveal')).not.toBeInTheDocument();
+
+    // The other card stays hidden until its own reveal
+    expect(within(cards[1]).queryByTestId('srs-microcontext-translation')).not.toBeInTheDocument();
   });
 });

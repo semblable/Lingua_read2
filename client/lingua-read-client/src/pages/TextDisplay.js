@@ -18,7 +18,7 @@ import { getBookmarkedSentences, toggleBookmark } from '../utils/bookmarks';
 import { extractTranslatedTextFromPairedTags } from '../utils/translationTags';
 import { cancelSpeech, isSpeechSynthesisSupported, speakText } from '../utils/browserTts';
 import { parseSrtContent, findSrtLineIndex } from '../utils/srtParser';
-import { styles, splitTextIntoSentenceSegments } from '../utils/readerText';
+import { styles, splitTextIntoSentenceSegments, WORD_PATTERN, splitElision } from '../utils/readerText';
 import PrimaryControls from '../components/reader/PrimaryControls';
 import SecondaryControls from '../components/reader/SecondaryControls';
 import ReaderLessonActions from '../components/reader/ReaderLessonActions';
@@ -1075,7 +1075,8 @@ const TextDisplay = () => {
     const elements = [];
     let currentIndex = 0;
     let currentKeyIndex = 0;
-    const wordPattern = /\p{L}|[']/u; // Match letters and apostrophes for word accumulation
+    const langCode = text?.languageCode;
+    const isKnownWord = (w) => Boolean(getWordData(w));
 
     while (currentIndex < content.length) {
       let phraseMatched = false;
@@ -1125,15 +1126,15 @@ const TextDisplay = () => {
       const char = content[currentIndex];
 
       // Check if it's the start of a potential word
-      if (wordPattern.test(char)) {
+      if (WORD_PATTERN.test(char)) {
         let currentWord = char;
         let wordEndIndex = currentIndex + 1;
         // Accumulate subsequent word characters (including hyphens connecting letters, e.g. "beijá-lo")
         while (wordEndIndex < content.length) {
-          if (wordPattern.test(content[wordEndIndex])) {
+          if (WORD_PATTERN.test(content[wordEndIndex])) {
             currentWord += content[wordEndIndex];
             wordEndIndex++;
-          } else if (content[wordEndIndex] === '-' && wordEndIndex + 1 < content.length && wordPattern.test(content[wordEndIndex + 1])) {
+          } else if (content[wordEndIndex] === '-' && wordEndIndex + 1 < content.length && WORD_PATTERN.test(content[wordEndIndex + 1])) {
             currentWord += content[wordEndIndex];
             wordEndIndex++;
           } else {
@@ -1141,33 +1142,38 @@ const TextDisplay = () => {
           }
         }
 
-        // Process the accumulated word
-        const wordData = getWordData(currentWord);
-        const wordStatus = wordData ? wordData.status : 0;
-        const wordTranslation = wordData ? wordData.translation : null;
+        // Optional elision split for fr/it/ca/oc (e.g. "l'eau" -> ["l'", "eau"]).
+        // Saved glued forms are preserved via isKnownWord.
+        const tokens = splitElision(currentWord, langCode, isKnownWord);
 
-        const wordSpan = (
-          <span
-            key={`word-${currentKeyIndex++}-${currentWord}`}
-            style={{ ...styles.highlightedWord, ...getWordStyle(wordStatus) }}
-            className={`clickable-word${languageWordsLoaded ? ` word-status-${wordStatus}` : ''}`}
-            onTouchStart={handleSelectableWordTouchStart}
-            onTouchEnd={handleSelectableWordTouchEnd}
-            onClick={(e) => handleSelectableWordClick(e, currentWord)}
-            onMouseEnter={() => setHoveredWordTerm(currentWord)}
-            onMouseLeave={() => setHoveredWordTerm(null)}
-          >
-            {currentWord}
-          </span>
-        );
+        for (const token of tokens) {
+          const wordData = getWordData(token);
+          const wordStatus = wordData ? wordData.status : 0;
+          const wordTranslation = wordData ? wordData.translation : null;
 
-        elements.push(
-          wordTranslation ? (
-            <OverlayTrigger key={`tooltip-${currentKeyIndex++}-${currentWord}`} placement="top" overlay={<Tooltip id={`tooltip-${currentKeyIndex}-${currentWord}`}>{wordTranslation}</Tooltip>}>
-              {wordSpan}
-            </OverlayTrigger>
-          ) : wordSpan
-        );
+          const wordSpan = (
+            <span
+              key={`word-${currentKeyIndex++}-${token}`}
+              style={{ ...styles.highlightedWord, ...getWordStyle(wordStatus) }}
+              className={`clickable-word${languageWordsLoaded ? ` word-status-${wordStatus}` : ''}`}
+              onTouchStart={handleSelectableWordTouchStart}
+              onTouchEnd={handleSelectableWordTouchEnd}
+              onClick={(e) => handleSelectableWordClick(e, token)}
+              onMouseEnter={() => setHoveredWordTerm(token)}
+              onMouseLeave={() => setHoveredWordTerm(null)}
+            >
+              {token}
+            </span>
+          );
+
+          elements.push(
+            wordTranslation ? (
+              <OverlayTrigger key={`tooltip-${currentKeyIndex++}-${token}`} placement="top" overlay={<Tooltip id={`tooltip-${currentKeyIndex}-${token}`}>{wordTranslation}</Tooltip>}>
+                {wordSpan}
+              </OverlayTrigger>
+            ) : wordSpan
+          );
+        }
 
         currentIndex = wordEndIndex; // Move index past the processed word
       } else {
@@ -1180,7 +1186,7 @@ const TextDisplay = () => {
     return elements;
     // --- End Phase 2 Logic ---
 
-  }, [knownPhrases, getWordData, getWordStyle, languageWordsLoaded, handleSelectableWordClick, handleSelectableWordTouchEnd, handleSelectableWordTouchStart, setHoveredWordTerm]); // Removed unnecessary 'words' dependency
+  }, [knownPhrases, getWordData, getWordStyle, languageWordsLoaded, handleSelectableWordClick, handleSelectableWordTouchEnd, handleSelectableWordTouchStart, setHoveredWordTerm, text?.languageCode]); // Removed unnecessary 'words' dependency
 
 
   const getFontFamilyForList = useCallback(() => {

@@ -199,6 +199,33 @@ export const splitTextIntoSentenceSegments = (content, structuredContent = []) =
   return segments;
 };
 
+// Word-character pattern used by the reader's tokenizer.
+// Matches Unicode letters plus ASCII apostrophe ('), typographic right single quote (U+2019),
+// and modifier letter apostrophe (U+02BC) — common in copy-pasted ebook/news text.
+export const WORD_PATTERN = /\p{L}|['’ʼ]/u;
+
+// Languages where elision (article + apostrophe + noun, e.g. "l'eau", "dell'acqua")
+// is productive and should be split into two tokens at render time.
+export const ELISION_PREFIXES = {
+  fr: ['l', 'd', 'c', 'j', 'm', 'n', 's', 't', 'qu', 'jusqu', 'lorsqu', 'puisqu', 'quoiqu'],
+  it: ['l', 'un', 'dell', 'all', 'sull', 'nell', 'dall', 'quest', 'quell', 'sant', 'bell', 'dov', 'po'],
+  ca: ['l', 'd', 'm', 's', 't', 'n'],
+  oc: ['l', 'd', 'm', 's', 't', 'n', 'qu'],
+};
+
+// Split an accumulated word like "l'eau" into ["l'", "eau"] for elision-productive
+// languages. Returns [word] unchanged when no split applies.
+// `isKnown(word)` lets callers preserve a glued form the user explicitly saved.
+export const splitElision = (word, langCode, isKnown = () => false) => {
+  const prefixes = ELISION_PREFIXES[langCode?.toLowerCase()];
+  if (!prefixes || isKnown(word)) return [word];
+  const m = word.match(/^([^'’ʼ]+)(['’ʼ])(.+)$/);
+  if (!m) return [word];
+  const [, head, apos, tail] = m;
+  if (!prefixes.includes(head.toLowerCase())) return [word];
+  return [head + apos, tail];
+};
+
 export const styles = {
   highlightedWord: {
     cursor: 'pointer',

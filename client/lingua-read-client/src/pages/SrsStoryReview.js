@@ -154,39 +154,23 @@ const SrsStoryReview = () => {
     }));
   };
 
-  // Render a single micro-context with the target term highlighted and other words clickable.
-  const renderContextBody = (mc, idx) => {
-    const targetLower = mc.term.toLowerCase();
-    const tokens = mc.context.split(/(\s+|[.,!?;:"""''()[\]{}\-—–…«»])/);
-
+  // Render the lookup-clickable token stream for a slice of context. Used for the
+  // before/after pieces around the highlighted target span. Non-target tokens stay
+  // clickable for WordLookupPopover; the target-form span is rendered separately
+  // by renderContextBody().
+  const renderLookupTokens = (text, mc, idx, sliceKey) => {
+    const tokens = text.split(/(\s+|[.,!?;:"""''()[\]{}\-—–…«»])/);
     return tokens.map((token, tIdx) => {
       const cleanToken = token.replace(/[.,!?;:"""''()[\]{}\-—–…«»]/g, '').toLowerCase();
-      if (!cleanToken) return <span key={tIdx}>{token}</span>;
+      if (!cleanToken) return <span key={`${sliceKey}-${tIdx}`}>{token}</span>;
 
-      // Match the target term: exact, or morphological prefix (mirrors old story logic)
-      const isExact = cleanToken === targetLower;
-      const isPrefixMatch =
-        !isExact &&
-        cleanToken.length >= 3 && targetLower.length >= 3 &&
-        cleanToken.startsWith(targetLower) &&
-        cleanToken.length / targetLower.length <= 1.5;
-
-      if (isExact || isPrefixMatch) {
-        return (
-          <span key={tIdx} className="srs-story-target-word srs-microcontext-target">
-            {token}
-          </span>
-        );
-      }
-
-      // Non-target token: clickable lookup
-      const refKey = `mc-${idx}-${tIdx}`;
+      const refKey = `mc-${idx}-${sliceKey}-${tIdx}`;
       const existing = existingWordsMap[cleanToken];
       const translation = existing?.translation?.translation || existing?.translation;
 
       const wordSpan = (
         <span
-          key={tIdx}
+          key={`${sliceKey}-${tIdx}`}
           ref={el => { wordRefs.current[refKey] = el; }}
           className={`srs-story-lookup-word${existing ? ' srs-story-lookup-known' : ''}`}
           onClick={() => handleLookupClick(token, refKey, mc.context)}
@@ -199,15 +183,45 @@ const SrsStoryReview = () => {
 
       return (translation && typeof translation === 'string') ? (
         <OverlayTrigger
-          key={tIdx}
+          key={`${sliceKey}-${tIdx}`}
           placement="top"
           delay={{ show: 300, hide: 0 }}
-          overlay={<Tooltip id={`tip-${idx}-${tIdx}`}>{translation}</Tooltip>}
+          overlay={<Tooltip id={`tip-${idx}-${sliceKey}-${tIdx}`}>{translation}</Tooltip>}
         >
           {wordSpan}
         </OverlayTrigger>
       ) : wordSpan;
     });
+  };
+
+  // Render a single micro-context. Highlights the AI-declared `usedForm` as a single
+  // contiguous span (case-insensitive substring match against the context). Falls back
+  // to the raw `term` when usedForm is missing. The text on either side flows through
+  // the lookup-token renderer so non-target words remain clickable.
+  const renderContextBody = (mc, idx) => {
+    const needle = (mc.usedForm || mc.term || '').trim();
+    const ctx = mc.context;
+
+    const matchIdx = needle
+      ? ctx.toLowerCase().indexOf(needle.toLowerCase())
+      : -1;
+
+    if (matchIdx < 0) {
+      // Couldn't locate the target form anywhere — render the whole context as lookup tokens.
+      return renderLookupTokens(ctx, mc, idx, 'all');
+    }
+
+    const before = ctx.slice(0, matchIdx);
+    const matched = ctx.slice(matchIdx, matchIdx + needle.length);
+    const after = ctx.slice(matchIdx + needle.length);
+
+    return (
+      <>
+        {renderLookupTokens(before, mc, idx, 'before')}
+        <span className="srs-story-target-word srs-microcontext-target">{matched}</span>
+        {renderLookupTokens(after, mc, idx, 'after')}
+      </>
+    );
   };
 
   const reviewedCount = reviewedWords.size;
@@ -407,6 +421,9 @@ const SrsStoryReview = () => {
                 <div className="d-flex justify-content-between align-items-baseline mb-2">
                   <h6 className="mb-0">
                     <span className="srs-microcontext-term">{mc.term}</span>
+                    {mc.usedForm && mc.usedForm.toLowerCase() !== mc.term.toLowerCase() && (
+                      <small className="srs-microcontext-usedform ms-2">→ {mc.usedForm}</small>
+                    )}
                     {mc.translation && <small className="text-muted ms-2">— {mc.translation}</small>}
                   </h6>
                   <Badge bg={STATUS_VARIANTS[mc.wordStatus] || 'secondary'} pill>

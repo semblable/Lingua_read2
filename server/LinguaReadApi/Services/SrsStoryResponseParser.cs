@@ -11,7 +11,7 @@ namespace LinguaReadApi.Controllers
     /// </summary>
     public static class SrsStoryResponseParser
     {
-        public readonly record struct MicroContext(string Term, string Context);
+        public readonly record struct MicroContext(string Term, string Context, string UsedForm);
 
         public static List<MicroContext> ParseMicroContexts(string rawResponse)
         {
@@ -38,7 +38,24 @@ namespace LinguaReadApi.Controllers
                     var context = contextProp.GetString()?.Trim() ?? "";
                     if (term.Length == 0 || context.Length == 0) continue;
 
-                    result.Add(new MicroContext(term, context));
+                    // usedForm is optional; default to the term when absent or empty.
+                    var usedForm = term;
+                    if (element.TryGetProperty("usedForm", out var usedFormProp)
+                        && usedFormProp.ValueKind == JsonValueKind.String)
+                    {
+                        var raw = usedFormProp.GetString()?.Trim() ?? "";
+                        if (raw.Length > 0) usedForm = raw;
+                    }
+
+                    // Validate: usedForm must be a substring of context (case-insensitive).
+                    // If the model lied or hallucinated, drop back to the term and let the
+                    // frontend's substring search degrade gracefully.
+                    if (context.IndexOf(usedForm, StringComparison.OrdinalIgnoreCase) < 0)
+                    {
+                        usedForm = term;
+                    }
+
+                    result.Add(new MicroContext(term, context, usedForm));
                 }
             }
             catch (JsonException)

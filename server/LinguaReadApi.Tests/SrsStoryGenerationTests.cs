@@ -118,6 +118,60 @@ public class SrsStoryGenerationTests
         Assert.Equal("El gato duerme.", result[0].Context);
     }
 
+    // --- usedForm Tests ---
+
+    [Fact]
+    public void ParseMicroContexts_UsedFormPresentAndInContext_KeepsUsedForm()
+    {
+        var raw = @"[{""term"": ""lembrar"", ""usedForm"": ""lembrei-me"", ""context"": ""Ontem lembrei-me da reunião importante.""}]";
+        var result = SrsStoryResponseParser.ParseMicroContexts(raw);
+
+        Assert.Single(result);
+        Assert.Equal("lembrar", result[0].Term);
+        Assert.Equal("lembrei-me", result[0].UsedForm);
+    }
+
+    [Fact]
+    public void ParseMicroContexts_UsedFormMissing_FallsBackToTerm()
+    {
+        var raw = @"[{""term"": ""gato"", ""context"": ""El gato duerme.""}]";
+        var result = SrsStoryResponseParser.ParseMicroContexts(raw);
+
+        Assert.Single(result);
+        Assert.Equal("gato", result[0].UsedForm);
+    }
+
+    [Fact]
+    public void ParseMicroContexts_UsedFormEmpty_FallsBackToTerm()
+    {
+        var raw = @"[{""term"": ""gato"", ""usedForm"": """", ""context"": ""El gato duerme.""}]";
+        var result = SrsStoryResponseParser.ParseMicroContexts(raw);
+
+        Assert.Single(result);
+        Assert.Equal("gato", result[0].UsedForm);
+    }
+
+    [Fact]
+    public void ParseMicroContexts_UsedFormNotInContext_FallsBackToTerm()
+    {
+        // Model hallucinated a usedForm that does not appear in the context — discard it
+        var raw = @"[{""term"": ""gato"", ""usedForm"": ""gatitos"", ""context"": ""El gato duerme en el sofá.""}]";
+        var result = SrsStoryResponseParser.ParseMicroContexts(raw);
+
+        Assert.Single(result);
+        Assert.Equal("gato", result[0].UsedForm);
+    }
+
+    [Fact]
+    public void ParseMicroContexts_UsedFormCaseInsensitiveSubstring_Accepted()
+    {
+        var raw = @"[{""term"": ""gato"", ""usedForm"": ""Gato"", ""context"": ""El gato duerme.""}]";
+        var result = SrsStoryResponseParser.ParseMicroContexts(raw);
+
+        Assert.Single(result);
+        Assert.Equal("Gato", result[0].UsedForm);
+    }
+
     // --- OpenRouter Reasoning Options Tests ---
 
     [Fact]

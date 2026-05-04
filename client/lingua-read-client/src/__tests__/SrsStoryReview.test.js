@@ -63,9 +63,9 @@ describe('SrsStoryReview (micro-contexts)', () => {
     textId: 99,
     languageCode: 'es',
     microContexts: [
-      { wordId: 10, srsCardReviewId: 101, term: 'gato', translation: 'cat', wordStatus: 3,
+      { wordId: 10, srsCardReviewId: 101, term: 'gato', usedForm: 'gato', translation: 'cat', wordStatus: 3,
         context: 'El gato duerme en el sofá. Está muy tranquilo.' },
-      { wordId: 11, srsCardReviewId: 102, term: 'rápido', translation: 'fast', wordStatus: 2,
+      { wordId: 11, srsCardReviewId: 102, term: 'rápido', usedForm: 'rápido', translation: 'fast', wordStatus: 2,
         context: 'El coche es muy rápido en la autopista.' }
     ]
   };
@@ -265,12 +265,63 @@ describe('SrsStoryReview (micro-contexts)', () => {
     expect(await screen.findByRole('button', generateBtnQuery)).toBeInTheDocument();
   });
 
+  it('highlights usedForm verbatim when it differs from the term (clitic case)', async () => {
+    generateSrsStory.mockResolvedValue({
+      textId: 99,
+      languageCode: 'pt',
+      microContexts: [
+        {
+          wordId: 10, srsCardReviewId: 101,
+          term: 'lembrar', usedForm: 'lembrei-me',
+          translation: 'to remember', wordStatus: 3,
+          context: 'Ontem lembrei-me da reunião importante.'
+        }
+      ]
+    });
+    renderComponent();
+    await selectSpanish();
+    fireEvent.click(await screen.findByRole('button', generateBtnQuery));
+
+    const cards = await screen.findAllByTestId('srs-microcontext-card');
+    expect(cards).toHaveLength(1);
+
+    // The card should highlight "lembrei-me" exactly (not "lembrar")
+    const highlighted = within(cards[0]).getAllByText('lembrei-me')
+      .filter(el => el.classList.contains('srs-microcontext-target'));
+    expect(highlighted).toHaveLength(1);
+
+    // Header should show both the dictionary term and the inflected form
+    expect(within(cards[0]).getByText('lembrar')).toBeInTheDocument();
+    // The "→ lembrei-me" hint appears in the header (separate from the highlighted body span)
+    expect(within(cards[0]).getByText(/→ lembrei-me/)).toBeInTheDocument();
+  });
+
+  it('falls back to highlighting the term when usedForm is missing', async () => {
+    generateSrsStory.mockResolvedValue({
+      textId: 99,
+      languageCode: 'es',
+      microContexts: [
+        // No usedForm field at all — frontend should highlight the term substring
+        { wordId: 10, srsCardReviewId: 101, term: 'gato', translation: 'cat', wordStatus: 3,
+          context: 'El gato duerme.' }
+      ]
+    });
+    renderComponent();
+    await selectSpanish();
+    fireEvent.click(await screen.findByRole('button', generateBtnQuery));
+
+    const cards = await screen.findAllByTestId('srs-microcontext-card');
+    const highlighted = within(cards[0]).getAllByText('gato')
+      .filter(el => el.classList.contains('srs-microcontext-target'));
+    expect(highlighted).toHaveLength(1);
+  });
+
   it('works with a single micro-context', async () => {
     generateSrsStory.mockResolvedValue({
       textId: 99,
       languageCode: 'es',
       microContexts: [
-        { wordId: 10, srsCardReviewId: 101, term: 'gato', translation: 'cat', wordStatus: 3,
+        { wordId: 10, srsCardReviewId: 101, term: 'gato', usedForm: 'gato', translation: 'cat', wordStatus: 3,
           context: 'El gato duerme.' }
       ]
     });

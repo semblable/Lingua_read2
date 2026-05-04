@@ -138,6 +138,40 @@ public class SrsControllerTests
     }
 
     [Fact]
+    public async Task GenerateStoryFromDueWords_PropagatesUsedFormAndFallsBackToTerm()
+    {
+        using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        int languageId = 1;
+        SeedData(context, userId, languageId);
+
+        // First entry supplies usedForm; second omits it (controller should fall back to term).
+        var mockService = new Mock<IStoryGenerationService>();
+        mockService.Setup(s => s.GenerateStoryAsync(It.IsAny<string>(), It.IsAny<int>()))
+                   .ReturnsAsync(@"[
+  {""term"": ""gato"", ""usedForm"": ""gatos"", ""context"": ""Los gatos duermen mucho.""},
+  {""term"": ""perro"", ""context"": ""El perro corre.""}
+]");
+
+        var mockFactory = new Mock<IStoryGenerationServiceFactory>();
+        mockFactory.Setup(f => f.GetServiceForUserAsync(userId)).ReturnsAsync(mockService.Object);
+
+        var controller = CreateController(context, userId, mockFactory.Object);
+
+        var request = new SrsStoryGenerateRequest { LanguageId = languageId };
+        var result = await controller.GenerateStoryFromDueWords(request);
+
+        var okResult = Assert.IsType<OkObjectResult>(result.Result);
+        var response = Assert.IsType<SrsStoryGenerateResponse>(okResult.Value);
+
+        Assert.Equal(2, response.MicroContexts.Count);
+        var gatoEntry = response.MicroContexts.Single(m => m.Term == "gato");
+        var perroEntry = response.MicroContexts.Single(m => m.Term == "perro");
+        Assert.Equal("gatos", gatoEntry.UsedForm);
+        Assert.Equal("perro", perroEntry.UsedForm);
+    }
+
+    [Fact]
     public async Task GenerateStoryFromDueWords_MalformedJson_ReturnsEmptyMicroContexts()
     {
         using var context = CreateContext();

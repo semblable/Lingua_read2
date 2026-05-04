@@ -1183,20 +1183,23 @@ namespace LinguaReadApi.Controllers
 
             var wordList = string.Join("\n", targetWords.Select(w => $"- {w.Term} ({w.Translation})"));
 
-            var defaultPrompt = $@"For each vocabulary word below, write a short, natural micro-context in {languageName} that uses the word in its EXACT provided form.
+            var defaultPrompt = $@"For each vocabulary word below, write a short, natural micro-context in {languageName} that uses the word in a form whose meaning matches its provided translation.
 
 Vocabulary:
 {wordList}
 
 Rules:
-1. Each word must appear in its EXACT given form. First analyze its gender, number, person, and tense; then invent characters, objects, and scenarios that natively fit those grammatical requirements. Do NOT force the form onto an incompatible noun, gender, or tense.
-2. 2–3 short sentences per word. A brief micro-dialogue is fine. The context must read naturally to a {level}-level learner.
-3. Each context is independent — do NOT carry characters or storyline between words.
-4. Return ONLY a JSON array, no markdown fences, no commentary, no trailing text.
+1. Grammatical & syntactic analysis: First analyze the word's gender, number, person, and tense. Determine if the word requires specific prepositions or reflexive/clitic pronouns to be grammatically natural.
+2. Form fidelity with clitic allowance: Use the word in the EXACT given form whenever it is grammatically natural. If the word is a verb that natively requires a clitic pronoun (e.g. ""-me"", ""-se"", ""-nos"", ""-lhe"") to make sense, you MUST attach it appropriately rather than producing broken grammar to keep the form isolated.
+3. Strict logic: Invent scenarios that natively fit the grammar. The context must make strict, real-world logical sense — do not invent illogical physical traits for objects (e.g. a painting does not have feet).
+4. 2–3 short sentences per word. A brief micro-dialogue is fine. The context must read naturally to a {level}-level learner.
+5. Each context is independent — do NOT carry characters or storylines between words.
+6. The ""usedForm"" field must be the EXACT inflected form you wrote inside the context (including any attached clitic pronoun, hyphens, accents, and casing). It MUST appear verbatim as a substring of ""context"".
+7. Return ONLY a JSON array, no markdown fences, no commentary, no trailing text. Before outputting, verify each ""usedForm"" appears verbatim in its ""context"".
 
 Format (one object per provided word, in the same order):
 [
-  {{""term"": ""<exact term as given>"", ""context"": ""<2–3 sentences>""}},
+  {{""term"": ""<exact term as given>"", ""usedForm"": ""<inflected form actually used in context>"", ""context"": ""<2–3 sentences>""}},
   ...
 ]";
 
@@ -1236,6 +1239,7 @@ Format (one object per provided word, in the same order):
                     Term = tw.Term,
                     Translation = tw.Translation,
                     Context = mc.Context,
+                    UsedForm = string.IsNullOrWhiteSpace(mc.UsedForm) ? tw.Term : mc.UsedForm,
                     WordStatus = tw.WordStatus
                 });
             }
@@ -1486,6 +1490,13 @@ Format (one object per provided word, in the same order):
         public string Term { get; set; } = string.Empty;
         public string Translation { get; set; } = string.Empty;
         public string Context { get; set; } = string.Empty;
+        /// <summary>
+        /// The actual inflected form the AI used inside the context (e.g. "lembrei-me" when
+        /// the dictionary term is "lembrar"). Guaranteed by the parser to be a substring of
+        /// <see cref="Context"/> (case-insensitive); falls back to <see cref="Term"/> when
+        /// the model didn't supply one or the supplied value didn't validate.
+        /// </summary>
+        public string UsedForm { get; set; } = string.Empty;
         public int WordStatus { get; set; }
     }
 }

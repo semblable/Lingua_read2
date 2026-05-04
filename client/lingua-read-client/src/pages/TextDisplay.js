@@ -18,7 +18,7 @@ import { getBookmarkedSentences, toggleBookmark } from '../utils/bookmarks';
 import { extractTranslatedTextFromPairedTags } from '../utils/translationTags';
 import { cancelSpeech, isSpeechSynthesisSupported, speakText } from '../utils/browserTts';
 import { parseSrtContent, findSrtLineIndex } from '../utils/srtParser';
-import { styles, splitTextIntoSentenceSegments, WORD_PATTERN, splitElision } from '../utils/readerText';
+import { styles, splitTextIntoSentenceSegments, WORD_PATTERN } from '../utils/readerText';
 import PrimaryControls from '../components/reader/PrimaryControls';
 import SecondaryControls from '../components/reader/SecondaryControls';
 import ReaderLessonActions from '../components/reader/ReaderLessonActions';
@@ -1075,8 +1075,6 @@ const TextDisplay = () => {
     const elements = [];
     let currentIndex = 0;
     let currentKeyIndex = 0;
-    const langCode = text?.languageCode;
-    const isKnownWord = (w) => Boolean(getWordData(w));
 
     while (currentIndex < content.length) {
       let phraseMatched = false;
@@ -1142,38 +1140,33 @@ const TextDisplay = () => {
           }
         }
 
-        // Optional elision split for fr/it/ca/oc (e.g. "l'eau" -> ["l'", "eau"]).
-        // Saved glued forms are preserved via isKnownWord.
-        const tokens = splitElision(currentWord, langCode, isKnownWord);
+        // Process the accumulated word
+        const wordData = getWordData(currentWord);
+        const wordStatus = wordData ? wordData.status : 0;
+        const wordTranslation = wordData ? wordData.translation : null;
 
-        for (const token of tokens) {
-          const wordData = getWordData(token);
-          const wordStatus = wordData ? wordData.status : 0;
-          const wordTranslation = wordData ? wordData.translation : null;
+        const wordSpan = (
+          <span
+            key={`word-${currentKeyIndex++}-${currentWord}`}
+            style={{ ...styles.highlightedWord, ...getWordStyle(wordStatus) }}
+            className={`clickable-word${languageWordsLoaded ? ` word-status-${wordStatus}` : ''}`}
+            onTouchStart={handleSelectableWordTouchStart}
+            onTouchEnd={handleSelectableWordTouchEnd}
+            onClick={(e) => handleSelectableWordClick(e, currentWord)}
+            onMouseEnter={() => setHoveredWordTerm(currentWord)}
+            onMouseLeave={() => setHoveredWordTerm(null)}
+          >
+            {currentWord}
+          </span>
+        );
 
-          const wordSpan = (
-            <span
-              key={`word-${currentKeyIndex++}-${token}`}
-              style={{ ...styles.highlightedWord, ...getWordStyle(wordStatus) }}
-              className={`clickable-word${languageWordsLoaded ? ` word-status-${wordStatus}` : ''}`}
-              onTouchStart={handleSelectableWordTouchStart}
-              onTouchEnd={handleSelectableWordTouchEnd}
-              onClick={(e) => handleSelectableWordClick(e, token)}
-              onMouseEnter={() => setHoveredWordTerm(token)}
-              onMouseLeave={() => setHoveredWordTerm(null)}
-            >
-              {token}
-            </span>
-          );
-
-          elements.push(
-            wordTranslation ? (
-              <OverlayTrigger key={`tooltip-${currentKeyIndex++}-${token}`} placement="top" overlay={<Tooltip id={`tooltip-${currentKeyIndex}-${token}`}>{wordTranslation}</Tooltip>}>
-                {wordSpan}
-              </OverlayTrigger>
-            ) : wordSpan
-          );
-        }
+        elements.push(
+          wordTranslation ? (
+            <OverlayTrigger key={`tooltip-${currentKeyIndex++}-${currentWord}`} placement="top" overlay={<Tooltip id={`tooltip-${currentKeyIndex}-${currentWord}`}>{wordTranslation}</Tooltip>}>
+              {wordSpan}
+            </OverlayTrigger>
+          ) : wordSpan
+        );
 
         currentIndex = wordEndIndex; // Move index past the processed word
       } else {
@@ -1186,7 +1179,7 @@ const TextDisplay = () => {
     return elements;
     // --- End Phase 2 Logic ---
 
-  }, [knownPhrases, getWordData, getWordStyle, languageWordsLoaded, handleSelectableWordClick, handleSelectableWordTouchEnd, handleSelectableWordTouchStart, setHoveredWordTerm, text?.languageCode]); // Removed unnecessary 'words' dependency
+  }, [knownPhrases, getWordData, getWordStyle, languageWordsLoaded, handleSelectableWordClick, handleSelectableWordTouchEnd, handleSelectableWordTouchStart, setHoveredWordTerm]); // Removed unnecessary 'words' dependency
 
 
   const getFontFamilyForList = useCallback(() => {

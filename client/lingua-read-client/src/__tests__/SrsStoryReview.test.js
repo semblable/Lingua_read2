@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent, waitFor, within, waitForElementToBeRemoved } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { BrowserRouter } from 'react-router-dom';
 import SrsStoryReview from '../pages/SrsStoryReview';
 import { getAllLanguages, getSrsStats, generateSrsStory, submitSrsReview, getWordsByLanguage, getSrsStories } from '../utils/api';
@@ -44,7 +44,7 @@ Object.defineProperty(window, 'localStorage', {
   value: mockLocalStorage
 });
 
-describe('SrsStoryReview', () => {
+describe('SrsStoryReview (micro-contexts)', () => {
   const mockLanguages = [
     { languageId: 1, name: 'Spanish' },
     { languageId: 2, name: 'French' }
@@ -59,15 +59,15 @@ describe('SrsStoryReview', () => {
     retentionRate: 85.5
   };
 
-  const mockStoryResult = {
-    story: 'El gato rápido corre.',
+  const mockResult = {
     textId: 99,
     languageCode: 'es',
-    targetWords: [
-      { wordId: 10, srsCardReviewId: 101, term: 'gato', translation: 'cat', wordStatus: 3 },
-      { wordId: 11, srsCardReviewId: 102, term: 'rápido', translation: 'fast', wordStatus: 2 }
-    ],
-    usedWords: ['gato', 'rápido']
+    microContexts: [
+      { wordId: 10, srsCardReviewId: 101, term: 'gato', translation: 'cat', wordStatus: 3,
+        context: 'El gato duerme en el sofá. Está muy tranquilo.' },
+      { wordId: 11, srsCardReviewId: 102, term: 'rápido', translation: 'fast', wordStatus: 2,
+        context: 'El coche es muy rápido en la autopista.' }
+    ]
   };
 
   beforeEach(() => {
@@ -75,7 +75,7 @@ describe('SrsStoryReview', () => {
     mockLocalStorage.clear();
     getAllLanguages.mockResolvedValue(mockLanguages);
     getSrsStats.mockResolvedValue(mockStats);
-    generateSrsStory.mockResolvedValue(mockStoryResult);
+    generateSrsStory.mockResolvedValue(mockResult);
     submitSrsReview.mockResolvedValue({});
     getWordsByLanguage.mockResolvedValue([]);
     getSrsStories.mockResolvedValue([]);
@@ -89,388 +89,208 @@ describe('SrsStoryReview', () => {
     </SettingsContext.Provider>
   );
 
+  const selectSpanish = async () => {
+    const select = await screen.findByLabelText(/Language/i);
+    await waitFor(() => {
+      expect(within(select).queryByText('Spanish')).toBeInTheDocument();
+    });
+    fireEvent.change(select, { target: { value: '1' } });
+    return select;
+  };
+
+  const generateBtnQuery = { name: /Generate Micro-Contexts/i };
+
   it('renders setup phase initially with language options', async () => {
     renderComponent();
 
-    // Stats should load eventually if language is pre-selected or manually selected
-    // But since localStorage is mocked empty, language is probably empty
-    expect(screen.getByText('Story Review')).toBeInTheDocument();
-    
-    // Wait for languages to be loaded and rendered in select
+    expect(screen.getByText('Micro-Context Review')).toBeInTheDocument();
+
     const select = await screen.findByLabelText(/Language/i);
     await within(select).findByText('Spanish');
-    
-    // Generate button should be disabled initially
-    const generateBtn = screen.getByRole('button', { name: /Generate Story/i });
+
+    const generateBtn = screen.getByRole('button', generateBtnQuery);
     expect(generateBtn).toBeDisabled();
   });
 
   it('enables generate button when language is selected and loads stats', async () => {
     renderComponent();
-    
-    const select = await screen.findByLabelText(/Language/i);
-    // Wait for options to be populated
-    await waitFor(() => {
-      expect(within(select).queryByText('Spanish')).toBeInTheDocument();
-    });
-    fireEvent.change(select, { target: { value: '1' } });
+    await selectSpanish();
 
-    // Should load stats on language change
     await waitFor(() => {
       expect(getSrsStats).toHaveBeenCalledWith('1');
     });
+    expect(await screen.findByText('15')).toBeInTheDocument();
 
-    // Check stats are displayed
-    expect(await screen.findByText('15')).toBeInTheDocument(); // dueCount
-    
-    // Generate button should now be enabled - wait for it
-    const generateBtn = screen.getByRole('button', { name: /Generate Story/i });
+    const generateBtn = screen.getByRole('button', generateBtnQuery);
     await waitFor(() => {
       expect(generateBtn).not.toBeDisabled();
     });
   });
 
-  it('progresses to story phase when generate is clicked', async () => {
+  it('progresses to review phase and renders one card per micro-context', async () => {
     renderComponent();
-    
-    // Select language
-    const select = await screen.findByLabelText(/Language/i);
-    // Wait for options to be populated
-    await waitFor(() => {
-      expect(within(select).queryByText('Spanish')).toBeInTheDocument();
-    });
-    fireEvent.change(select, { target: { value: '1' } });
-    
-    // Wait for button to be enabled before clicking
-    const generateBtn = await screen.findByRole('button', { name: /Generate Story/i });
-    await waitFor(() => {
-      expect(generateBtn).not.toBeDisabled();
-    });
+    await selectSpanish();
+
+    const generateBtn = await screen.findByRole('button', generateBtnQuery);
+    await waitFor(() => { expect(generateBtn).not.toBeDisabled(); });
     fireEvent.click(generateBtn);
 
-    // Should enter loading phase briefly (but JS execution is fast, it might skip to story)
-    // Wait for the API to resolve and story phase to render
     await waitFor(() => {
-      expect(generateSrsStory).toHaveBeenCalledWith(1, expect.any(Object));
+      expect(generateSrsStory).toHaveBeenCalledWith(1, expect.objectContaining({
+        maxWords: expect.any(Number),
+        status: expect.any(Array),
+      }));
     });
 
-    // Story text and words should appear
-    expect(await screen.findByText(/El/)).toBeInTheDocument();
-    
-    // Find 'gato' specifically in the story text to avoid ambiguity with the legend
-    const storyText = await screen.findByTestId('srs-story-text');
-    expect(within(storyText).getByText('gato')).toHaveClass('srs-story-target-word');
+    const cards = await screen.findAllByTestId('srs-microcontext-card');
+    expect(cards).toHaveLength(2);
+    // 'gato' appears in both the card header and the highlighted body — assert the highlighted one exists
+    const highlighted = within(cards[0]).getAllByText('gato').filter(el => el.classList.contains('srs-microcontext-target'));
+    expect(highlighted).toHaveLength(1);
+    expect(within(cards[0]).getByText(/duerme/)).toBeInTheDocument();
   });
 
-  it('allows grading a word and completes story when all words graded', async () => {
+  it('grades each card via inline buttons and finishes the session', async () => {
     renderComponent();
-    
-    // Setup and generate
-    const select = await screen.findByLabelText(/Language/i);
-    // Wait for options to be populated
-    await waitFor(() => {
-      expect(within(select).queryByText('Spanish')).toBeInTheDocument();
-    });
-    fireEvent.change(select, { target: { value: '1' } });
-    
-    const generateBtn = screen.getByRole('button', { name: /Generate Story/i });
-    await waitFor(() => {
-      expect(generateBtn).not.toBeDisabled();
-    });
-    fireEvent.click(generateBtn);
+    await selectSpanish();
 
-    // Wait for story to render
-    await screen.findByText(/El/);
-    const storyText = screen.getByTestId('srs-story-text');
-    
-    const gatoEl = await within(storyText).findByText('gato');
-    
-    // Click target word
-    fireEvent.click(gatoEl);
-    
-    // Popover should appear (we expect grade buttons inside it)
-    const goodButton = await screen.findByRole('button', { name: /Good/i });
-    fireEvent.click(goodButton);
+    fireEvent.click(await screen.findByRole('button', generateBtnQuery));
 
-    // Verify grading API was called
+    const cards = await screen.findAllByTestId('srs-microcontext-card');
+    expect(cards).toHaveLength(2);
+
+    // Grade first card "Good" (grade=2)
+    fireEvent.click(within(cards[0]).getByRole('button', { name: /^Good$/ }));
     await waitFor(() => {
       expect(submitSrsReview).toHaveBeenCalledWith(101, 2);
     });
 
-    // Wait for popover to close before clicking the next word.
-    // Using waitFor here (instead of waitForElementToBeRemoved) because the
-    // popover may already be gone by the time we check — submitSrsReview
-    // resolves synchronously and React flushes the state update during the
-    // preceding waitFor, so the "Good" button can disappear before this line.
+    // First card collapses to a reviewed strip
     await waitFor(() => {
-      expect(screen.queryByRole('button', { name: /Good/i })).not.toBeInTheDocument();
+      expect(screen.getAllByTestId('srs-microcontext-reviewed')).toHaveLength(1);
     });
 
-    // Now grade the second word to complete the story
-    const rapidoEl = within(storyText).getByText('rápido');
-    fireEvent.click(rapidoEl);
-    
-    const easyButton = await screen.findByRole('button', { name: /Easy/i });
-    fireEvent.click(easyButton);
+    // Second card still active — grade "Easy" (grade=3)
+    const remainingCards = screen.getAllByTestId('srs-microcontext-card');
+    expect(remainingCards).toHaveLength(1);
+    fireEvent.click(within(remainingCards[0]).getByRole('button', { name: /^Easy$/ }));
+    await waitFor(() => {
+      expect(submitSrsReview).toHaveBeenCalledWith(102, 3);
+    });
 
-    // All words graded — "Finish Review" button should appear
+    // All graded — Finish Review appears
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /Finish Review/i })).toBeInTheDocument();
     });
-
-    // Click Finish Review to complete
     fireEvent.click(screen.getByRole('button', { name: /Finish Review/i }));
 
-    expect(await screen.findByText('Story Complete!')).toBeInTheDocument();
+    expect(await screen.findByText('Session Complete!')).toBeInTheDocument();
     expect(screen.getByText(/You reviewed/)).toBeInTheDocument();
   });
 
-  // --- Error State Tests ---
-
-  it('shows error and returns to setup when story generation fails', async () => {
+  it('shows error and returns to setup when generation fails', async () => {
     generateSrsStory.mockRejectedValue(new Error('API timeout'));
     renderComponent();
+    await selectSpanish();
 
-    const select = await screen.findByLabelText(/Language/i);
-    await waitFor(() => {
-      expect(within(select).queryByText('Spanish')).toBeInTheDocument();
-    });
-    fireEvent.change(select, { target: { value: '1' } });
-
-    const generateBtn = screen.getByRole('button', { name: /Generate Story/i });
-    await waitFor(() => {
-      expect(generateBtn).not.toBeDisabled();
-    });
+    const generateBtn = screen.getByRole('button', generateBtnQuery);
+    await waitFor(() => { expect(generateBtn).not.toBeDisabled(); });
     fireEvent.click(generateBtn);
 
-    // Should show error alert and return to setup phase
-    expect(await screen.findByText(/Failed to generate story: API timeout/)).toBeInTheDocument();
-    // Setup phase should still be visible (generate button present)
-    expect(screen.getByRole('button', { name: /Generate Story/i })).toBeInTheDocument();
+    expect(await screen.findByText(/Failed to generate micro-contexts: API timeout/)).toBeInTheDocument();
+    expect(screen.getByRole('button', generateBtnQuery)).toBeInTheDocument();
   });
 
-  it('shows error on review failure without losing story phase', async () => {
+  it('shows error on review failure without leaving the review phase', async () => {
     submitSrsReview.mockRejectedValue(new Error('Review failed'));
     renderComponent();
+    await selectSpanish();
 
-    const select = await screen.findByLabelText(/Language/i);
-    await waitFor(() => {
-      expect(within(select).queryByText('Spanish')).toBeInTheDocument();
-    });
-    fireEvent.change(select, { target: { value: '1' } });
+    fireEvent.click(await screen.findByRole('button', generateBtnQuery));
 
-    const generateBtn = screen.getByRole('button', { name: /Generate Story/i });
-    await waitFor(() => {
-      expect(generateBtn).not.toBeDisabled();
-    });
-    fireEvent.click(generateBtn);
+    const cards = await screen.findAllByTestId('srs-microcontext-card');
+    fireEvent.click(within(cards[0]).getByRole('button', { name: /^Good$/ }));
 
-    // Wait for story
-    const storyText = await screen.findByTestId('srs-story-text');
-    const gatoEl = within(storyText).getByText('gato');
-    fireEvent.click(gatoEl);
-
-    const goodButton = await screen.findByRole('button', { name: /Good/i });
-    fireEvent.click(goodButton);
-
-    // Error should appear but story phase should remain
     expect(await screen.findByText(/Failed to submit review: Review failed/)).toBeInTheDocument();
-    // Story text should still be visible
-    expect(screen.getByTestId('srs-story-text')).toBeInTheDocument();
+    // Card stays in review state (not collapsed to reviewed strip)
+    expect(screen.queryByTestId('srs-microcontext-reviewed')).not.toBeInTheDocument();
   });
 
-  it('shows no due words message when story result is empty', async () => {
-    generateSrsStory.mockResolvedValue({ story: '', targetWords: [], usedWords: [] });
+  it('shows a friendly message when no micro-contexts come back', async () => {
+    generateSrsStory.mockResolvedValue({ microContexts: [], textId: 0, languageCode: 'es' });
     renderComponent();
+    await selectSpanish();
 
-    const select = await screen.findByLabelText(/Language/i);
-    await waitFor(() => {
-      expect(within(select).queryByText('Spanish')).toBeInTheDocument();
-    });
-    fireEvent.change(select, { target: { value: '1' } });
+    fireEvent.click(await screen.findByRole('button', generateBtnQuery));
 
-    const generateBtn = screen.getByRole('button', { name: /Generate Story/i });
-    await waitFor(() => {
-      expect(generateBtn).not.toBeDisabled();
-    });
-    fireEvent.click(generateBtn);
-
-    expect(await screen.findByText(/No due words found/)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Generate Story/i })).toBeInTheDocument();
+    expect(await screen.findByText(/No micro-contexts generated/)).toBeInTheDocument();
+    expect(screen.getByRole('button', generateBtnQuery)).toBeInTheDocument();
   });
 
-  // --- Style Selection Tests ---
-
-  it('includes style in API call when a style is selected', async () => {
+  it('does not send theme/style/tense/maxLength in the request payload', async () => {
     renderComponent();
+    await selectSpanish();
 
-    const select = await screen.findByLabelText(/Language/i);
-    await waitFor(() => {
-      expect(within(select).queryByText('Spanish')).toBeInTheDocument();
-    });
-    fireEvent.change(select, { target: { value: '1' } });
-
-    // Click on "Funny" style badge
-    const funnyBadge = screen.getByText('Funny');
-    fireEvent.click(funnyBadge);
-
-    const generateBtn = screen.getByRole('button', { name: /Generate Story/i });
-    await waitFor(() => {
-      expect(generateBtn).not.toBeDisabled();
-    });
-    fireEvent.click(generateBtn);
+    fireEvent.click(await screen.findByRole('button', generateBtnQuery));
 
     await waitFor(() => {
-      expect(generateSrsStory).toHaveBeenCalledWith(1, expect.objectContaining({
-        style: 'Funny'
-      }));
+      expect(generateSrsStory).toHaveBeenCalled();
     });
+    const [, payload] = generateSrsStory.mock.calls[0];
+    expect(payload).not.toHaveProperty('theme');
+    expect(payload).not.toHaveProperty('style');
+    expect(payload).not.toHaveProperty('tense');
+    expect(payload).not.toHaveProperty('maxLength');
   });
-
-  it('toggles style off when clicking same style again', async () => {
-    renderComponent();
-
-    await screen.findByLabelText(/Language/i);
-
-    const absurdBadge = screen.getByText('Absurd');
-    fireEvent.click(absurdBadge);
-    // Click again to deselect
-    fireEvent.click(absurdBadge);
-
-    // Select language and generate to verify no style is passed
-    const select = screen.getByLabelText(/Language/i);
-    await waitFor(() => {
-      expect(within(select).queryByText('Spanish')).toBeInTheDocument();
-    });
-    fireEvent.change(select, { target: { value: '1' } });
-
-    const generateBtn = screen.getByRole('button', { name: /Generate Story/i });
-    await waitFor(() => {
-      expect(generateBtn).not.toBeDisabled();
-    });
-    fireEvent.click(generateBtn);
-
-    await waitFor(() => {
-      expect(generateSrsStory).toHaveBeenCalledWith(1, expect.objectContaining({
-        style: undefined
-      }));
-    });
-  });
-
-  // --- Edge Case Tests ---
 
   it('transitions to complete phase when "Finish Early" is clicked', async () => {
     renderComponent();
+    await selectSpanish();
 
-    const select = await screen.findByLabelText(/Language/i);
-    await waitFor(() => {
-      expect(within(select).queryByText('Spanish')).toBeInTheDocument();
-    });
-    fireEvent.change(select, { target: { value: '1' } });
+    fireEvent.click(await screen.findByRole('button', generateBtnQuery));
+    await screen.findAllByTestId('srs-microcontext-card');
 
-    const generateBtn = screen.getByRole('button', { name: /Generate Story/i });
-    await waitFor(() => {
-      expect(generateBtn).not.toBeDisabled();
-    });
-    fireEvent.click(generateBtn);
-
-    await screen.findByTestId('srs-story-text');
-
-    const finishBtn = screen.getByRole('button', { name: /Finish Early/i });
-    fireEvent.click(finishBtn);
-
-    expect(await screen.findByText('Story Complete!')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Finish Early/i }));
+    expect(await screen.findByText('Session Complete!')).toBeInTheDocument();
   });
 
-  it('resets to setup phase when "New Story" is clicked', async () => {
+  it('resets to setup phase when "New Session" is clicked', async () => {
     renderComponent();
+    await selectSpanish();
 
-    const select = await screen.findByLabelText(/Language/i);
-    await waitFor(() => {
-      expect(within(select).queryByText('Spanish')).toBeInTheDocument();
-    });
-    fireEvent.change(select, { target: { value: '1' } });
+    fireEvent.click(await screen.findByRole('button', generateBtnQuery));
+    await screen.findAllByTestId('srs-microcontext-card');
 
-    const generateBtn = screen.getByRole('button', { name: /Generate Story/i });
-    await waitFor(() => {
-      expect(generateBtn).not.toBeDisabled();
-    });
-    fireEvent.click(generateBtn);
-
-    await screen.findByTestId('srs-story-text');
-
-    const newStoryBtn = screen.getByRole('button', { name: /New Story/i });
-    fireEvent.click(newStoryBtn);
-
-    // Should be back in setup phase
-    expect(await screen.findByRole('button', { name: /Generate Story/i })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /New Session/i }));
+    expect(await screen.findByRole('button', generateBtnQuery)).toBeInTheDocument();
   });
 
-  it('shows unused words in "Not in story" section', async () => {
+  it('works with a single micro-context', async () => {
     generateSrsStory.mockResolvedValue({
-      story: 'El gato corre.',
-      targetWords: [
-        { wordId: 10, srsCardReviewId: 101, term: 'gato', translation: 'cat', wordStatus: 3 },
-        { wordId: 11, srsCardReviewId: 102, term: 'perro', translation: 'dog', wordStatus: 2 }
-      ],
-      usedWords: ['gato'] // only gato was used, perro was not
+      textId: 99,
+      languageCode: 'es',
+      microContexts: [
+        { wordId: 10, srsCardReviewId: 101, term: 'gato', translation: 'cat', wordStatus: 3,
+          context: 'El gato duerme.' }
+      ]
     });
     renderComponent();
+    await selectSpanish();
 
-    const select = await screen.findByLabelText(/Language/i);
+    fireEvent.click(await screen.findByRole('button', generateBtnQuery));
+
+    const cards = await screen.findAllByTestId('srs-microcontext-card');
+    expect(cards).toHaveLength(1);
+
+    fireEvent.click(within(cards[0]).getByRole('button', { name: /^Good$/ }));
     await waitFor(() => {
-      expect(within(select).queryByText('Spanish')).toBeInTheDocument();
+      expect(submitSrsReview).toHaveBeenCalledWith(101, 2);
     });
-    fireEvent.change(select, { target: { value: '1' } });
 
-    const generateBtn = screen.getByRole('button', { name: /Generate Story/i });
-    await waitFor(() => {
-      expect(generateBtn).not.toBeDisabled();
-    });
-    fireEvent.click(generateBtn);
-
-    await screen.findByTestId('srs-story-text');
-
-    // Should show unused word
-    expect(screen.getByText(/Not in story:/)).toBeInTheDocument();
-    expect(screen.getByText(/perro/)).toBeInTheDocument();
-  });
-
-  it('works with a single target word', async () => {
-    generateSrsStory.mockResolvedValue({
-      story: 'El gato duerme.',
-      targetWords: [
-        { wordId: 10, srsCardReviewId: 101, term: 'gato', translation: 'cat', wordStatus: 3 }
-      ],
-      usedWords: ['gato']
-    });
-    renderComponent();
-
-    const select = await screen.findByLabelText(/Language/i);
-    await waitFor(() => {
-      expect(within(select).queryByText('Spanish')).toBeInTheDocument();
-    });
-    fireEvent.change(select, { target: { value: '1' } });
-
-    const generateBtn = screen.getByRole('button', { name: /Generate Story/i });
-    await waitFor(() => {
-      expect(generateBtn).not.toBeDisabled();
-    });
-    fireEvent.click(generateBtn);
-
-    const storyText = await screen.findByTestId('srs-story-text');
-    const gatoEl = within(storyText).getByText('gato');
-    fireEvent.click(gatoEl);
-
-    const goodButton = await screen.findByRole('button', { name: /Good/i });
-    fireEvent.click(goodButton);
-
-    // All words graded — click Finish Review
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /Finish Review/i })).toBeInTheDocument();
     });
     fireEvent.click(screen.getByRole('button', { name: /Finish Review/i }));
-
-    expect(await screen.findByText('Story Complete!')).toBeInTheDocument();
+    expect(await screen.findByText('Session Complete!')).toBeInTheDocument();
   });
 });

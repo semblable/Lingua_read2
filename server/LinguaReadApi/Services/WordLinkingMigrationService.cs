@@ -87,9 +87,12 @@ namespace LinguaReadApi.Services
                         if (reportedTotal == 0)
                         {
                             _logger.LogInformation(
-                                "WordLinkingMigrationService: all texts already at tokenizer version {V}; nothing to do.",
+                                "WordLinkingMigrationService: all texts already at tokenizer version {V}; skipping relink pass.",
                                 WordLinker.CurrentTokenizerVersion);
-                            return;
+                            // Fall through to cleanup — orphans can still
+                            // exist from a previous relink that pre-dated
+                            // the cleanup feature.
+                            break;
                         }
 
                         _logger.LogInformation(
@@ -140,14 +143,19 @@ namespace LinguaReadApi.Services
                     totalProcessed, reportedTotal, totalErrors);
             }
 
-            _logger.LogInformation(
-                "WordLinkingMigrationService: complete. Processed={Processed}, Errors={Errors}.",
-                totalProcessed, totalErrors);
+            if (totalProcessed > 0 || totalErrors > 0)
+            {
+                _logger.LogInformation(
+                    "WordLinkingMigrationService: relink pass complete. Processed={Processed}, Errors={Errors}.",
+                    totalProcessed, totalErrors);
+            }
 
-            // Only run orphan cleanup when this pass actually re-linked
-            // texts. On an idle restart (everything already at the
-            // current version) we skip the DB scan entirely.
-            if (totalProcessed > 0 && !stoppingToken.IsCancellationRequested)
+            // Cleanup runs unconditionally each startup. ExecuteDelete
+            // is a single SQL statement filtered by Status + NOT EXISTS
+            // subqueries against indexed FKs, so the no-op case is
+            // effectively free. This handles orphans left over from a
+            // relink that ran before the cleanup feature shipped.
+            if (!stoppingToken.IsCancellationRequested)
             {
                 await CleanupOrphans(stoppingToken);
             }
@@ -160,10 +168,19 @@ namespace LinguaReadApi.Services
                 using var scope = _serviceProvider.CreateScope();
                 var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
                 var deleted = await WordLinker.CleanupOrphanWordsAsync(context, stoppingToken);
-                _logger.LogInformation(
-                    "WordLinkingMigrationService: cleaned up {Deleted} orphan Word rows " +
-                    "(auto-created, never linked, never translated).",
-                    deleted);
+                if (deleted > 0)
+                {
+                    _logger.LogInformation(
+                        "WordLinkingMigrationService: cleaned up {Deleted} orphan Word rows " +
+                        "(auto-created, never linked, never translated).",
+                        deleted);
+                }
+                else
+                {
+                    // Once the DB is clean, idle restarts shouldn't keep
+                    // logging at info level. Drop to debug.
+                    _logger.LogDebug("WordLinkingMigrationService: no orphan Word rows to clean.");
+                }
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {

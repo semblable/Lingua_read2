@@ -76,7 +76,7 @@ namespace LinguaReadApi.Services.Tokenization
             }
 
             var existingWords = existingWordsList
-                .GroupBy(w => w.Term.ToLowerInvariant())
+                .GroupBy(w => w.Term)
                 .ToDictionary(g => g.Key, g => g.First());
 
             var newWords = new List<Word>();

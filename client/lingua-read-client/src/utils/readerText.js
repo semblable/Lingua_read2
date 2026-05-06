@@ -148,11 +148,242 @@ export const buildDisplayBlocks = (content, structuredContent = []) => {
   });
 };
 
-export const splitTextIntoSentenceSegments = (content, structuredContent = []) => {
+// =====================================================================
+// LANGUAGE-AWARE TOKENIZATION (shared spec, mirrored on backend)
+// =====================================================================
+//
+// Pipeline:
+//   1. parseCharacterSubstitutions(language.characterSubstitutions)
+//      Pipe-separated `old=new|...`. Used to normalize curly apostrophes
+//      to ASCII `'`, fancy quotes, ellipsis, etc. The first `=` separates
+//      old and new; later `=` chars belong to `new`.
+//   2. applyCharacterSubstitutions: replace each `old` with `new` in
+//      declaration order. Users must declare longer-old-first to avoid
+//      greediness issues (e.g. `...=…|..=‥`).
+//   3. buildCoreWordRegex(language.wordCharacters): regex character class
+//      defining the language's base alphabet. ASCII `'` and `-` are
+//      stripped before building, because they're handled exclusively by
+//      the universal connector rule below — this keeps glue semantics
+//      consistent across languages whose seeds vary on those chars.
+//   4. tokenizeContent walks the substituted text and accumulates runs
+//      of core word chars **plus glued connectors**:
+//        - Apostrophe `'` (after substitution): glued only when both
+//          previous and next char are core. Allows `l'eau`, `qu'il`,
+//          `dell'acqua`, `don't`. Stray `'word` or `word'` keep `'`
+//          as separator.
+//        - Hyphen `-`: glued only when both neighbours are core. Allows
+//          `beijá-lo`, `interrompo-a`, `well-known`. Standalone `--`
+//          and en-dashes split.
+//      Tokens preserve original casing for display; lookups normalize
+//      via JS `toLowerCase()` (BE uses locale-aware `ToLower`).
+//
+// CJK parserType (`mecab`/`jieba`) is out of scope: tokenization falls
+// back to the default spacedel algorithm.
+// =====================================================================
+
+const APOSTROPHE = "'";
+const HYPHEN = '-';
+
+export const parseCharacterSubstitutions = (str) => {
+  if (!str || typeof str !== 'string') return [];
+  return str
+    .split('|')
+    .map(pair => {
+      const trimmed = pair;
+      if (!trimmed.includes('=')) return null;
+      const eqIndex = trimmed.indexOf('=');
+      const oldStr = trimmed.slice(0, eqIndex);
+      const newStr = trimmed.slice(eqIndex + 1);
+      if (!oldStr) return null;
+      return { old: oldStr, replacement: newStr };
+    })
+    .filter(Boolean);
+};
+
+export const applyCharacterSubstitutions = (content, substitutions) => {
+  if (!content || !Array.isArray(substitutions) || substitutions.length === 0) return content;
+  let out = content;
+  for (const sub of substitutions) {
+    out = out.split(sub.old).join(sub.replacement);
+  }
+  return out;
+};
+
+const DEFAULT_WORD_CLASS = '\\p{L}';
+
+const wordRegexCache = new Map();
+
+// Build a per-character matcher from the language's `wordCharacters`
+// regex character-class fragment. The fragment may contain ranges
+// (`a-z`), Unicode escapes (`‌`), and Unicode property classes
+// (`\p{L}`). We use it as-is; ASCII `'` and `-` may or may not be
+// present depending on the language seed (e.g. Russian includes them,
+// Latin-script languages do not). The universal connector rule below
+// adds glued-apostrophe / glued-hyphen behaviour on top of this regex.
+export const buildCoreWordRegex = (wordCharacters) => {
+  const raw = (wordCharacters || '').trim();
+  const key = raw || '__default__';
+  const cached = wordRegexCache.get(key);
+  if (cached) return cached;
+
+  const cls = raw || DEFAULT_WORD_CLASS;
+
+  let regex;
+  try {
+    regex = new RegExp(`^[${cls}]$`, 'u');
+  } catch (err) {
+    // Invalid wordCharacters → fall back to Unicode letters.
+    regex = new RegExp(`^[${DEFAULT_WORD_CLASS}]$`, 'u');
+  }
+  wordRegexCache.set(key, regex);
+  return regex;
+};
+
+const isCoreWordChar = (regex, ch) => !!ch && regex.test(ch);
+const isConnector = (ch) => ch === APOSTROPHE || ch === HYPHEN;
+
+/**
+ * Tokenize content into an ordered array of `{ type, text, start, end }`
+ * segments. `start`/`end` are indices into the **substituted** text
+ * (returned alongside as `processed`). Word tokens preserve casing.
+ *
+ * @param {string} rawContent
+ * @param {object} languageConfig - { wordCharacters, characterSubstitutions, parserType }
+ * @returns {{ processed: string, tokens: Array<{type:'word'|'separator', text:string, start:number, end:number}> }}
+ */
+export const tokenizeContent = (rawContent, languageConfig = null) => {
+  if (!rawContent) return { processed: '', tokens: [] };
+
+  const subs = parseCharacterSubstitutions(languageConfig?.characterSubstitutions);
+  const processed = applyCharacterSubstitutions(rawContent, subs);
+  const coreRegex = buildCoreWordRegex(languageConfig?.wordCharacters);
+
+  const tokens = [];
+  let i = 0;
+  const len = processed.length;
+
+  while (i < len) {
+    const ch = processed[i];
+    if (isCoreWordChar(coreRegex, ch)) {
+      const start = i;
+      let word = ch;
+      i++;
+      while (i < len) {
+        const next = processed[i];
+        if (isCoreWordChar(coreRegex, next)) {
+          word += next;
+          i++;
+          continue;
+        }
+        if (
+          isConnector(next) &&
+          i + 1 < len &&
+          isCoreWordChar(coreRegex, processed[i + 1])
+        ) {
+          word += next;
+          i++;
+          continue;
+        }
+        break;
+      }
+      tokens.push({ type: 'word', text: word, start, end: i });
+    } else {
+      tokens.push({ type: 'separator', text: ch, start: i, end: i + 1 });
+      i++;
+    }
+  }
+
+  return { processed, tokens };
+};
+
+// =====================================================================
+// SENTENCE SPLITTING (Intl.Segmenter + sentenceSplitExceptions)
+// =====================================================================
+
+const SUPPORTED_INTL_SEGMENTER = (() => {
+  try {
+    return typeof Intl !== 'undefined' && typeof Intl.Segmenter === 'function';
+  } catch (err) {
+    return false;
+  }
+})();
+
+const FALLBACK_SENTENCE_REGEX = /[^.!?…]+(?:[.!?…]+(?:"|”|'|’)?|$)/g;
+
+const localeFromCode = (code) => {
+  if (!code || typeof code !== 'string') return undefined;
+  return code.trim() || undefined;
+};
+
+const segmentSentencesIntl = (text, locale) => {
+  try {
+    const segmenter = new Intl.Segmenter(locale, { granularity: 'sentence' });
+    const out = [];
+    for (const seg of segmenter.segment(text)) {
+      if (seg.segment) out.push(seg.segment);
+    }
+    return out;
+  } catch (err) {
+    return null;
+  }
+};
+
+const segmentSentencesRegex = (text) => {
+  return text.match(FALLBACK_SENTENCE_REGEX) || [text];
+};
+
+// Merge candidate sentences when a sentence ends with one of the
+// language's `sentenceSplitExceptions` (e.g., "Dr.", "M."). Case-sensitive,
+// matches the trailing punctuation as part of the exception string.
+const applyExceptionMerging = (sentences, exceptions) => {
+  if (!Array.isArray(exceptions) || exceptions.length === 0 || sentences.length < 2) {
+    return sentences;
+  }
+  const exceptionList = exceptions
+    .map(e => (typeof e === 'string' ? e : e?.exceptionString || ''))
+    .filter(Boolean);
+  if (exceptionList.length === 0) return sentences;
+
+  const merged = [];
+  let i = 0;
+  while (i < sentences.length) {
+    let current = sentences[i];
+    while (i + 1 < sentences.length) {
+      const stripped = current.trimEnd();
+      const matchesException = exceptionList.some(ex => stripped.endsWith(ex));
+      if (!matchesException) break;
+      // Glue with next, preserving intervening whitespace as a single space.
+      current = `${stripped} ${sentences[i + 1].trimStart()}`;
+      i++;
+    }
+    merged.push(current);
+    i++;
+  }
+  return merged;
+};
+
+const splitBlockIntoSentences = (blockText, languageConfig, languageCode) => {
+  if (!blockText) return [];
+  const locale = localeFromCode(languageCode);
+  const intlResult = SUPPORTED_INTL_SEGMENTER ? segmentSentencesIntl(blockText, locale) : null;
+  const candidates = (intlResult && intlResult.length > 0)
+    ? intlResult
+    : segmentSentencesRegex(blockText);
+  const merged = applyExceptionMerging(candidates, languageConfig?.sentenceSplitExceptions);
+  return merged
+    .map(sentence => sentence.replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
+};
+
+export const splitTextIntoSentenceSegments = (
+  content,
+  structuredContent = [],
+  languageConfig = null,
+  languageCode = null
+) => {
   if (!content && (!Array.isArray(structuredContent) || structuredContent.length === 0)) return [];
 
   const segments = [];
-  const sentenceRegex = /[^.!?…]+(?:[.!?…]+(?:"|”|'|’)?|$)/g;
   let pendingMediaBlocks = [];
 
   buildDisplayBlocks(content, structuredContent).forEach((block) => {
@@ -175,18 +406,15 @@ export const splitTextIntoSentenceSegments = (content, structuredContent = []) =
       return;
     }
 
-    const matches = block.text.match(sentenceRegex) || [block.text];
-    matches
-      .map(sentence => sentence.replace(/\s+/g, ' ').trim())
-      .filter(Boolean)
-      .forEach((sentence, sentenceIndex) => {
-        segments.push({
-          index: segments.length,
-          text: sentence,
-          type: 'sentence',
-          mediaBlocks: sentenceIndex === 0 ? pendingMediaBlocks : []
-        });
+    const sentences = splitBlockIntoSentences(block.text, languageConfig, languageCode);
+    sentences.forEach((sentence, sentenceIndex) => {
+      segments.push({
+        index: segments.length,
+        text: sentence,
+        type: 'sentence',
+        mediaBlocks: sentenceIndex === 0 ? pendingMediaBlocks : []
       });
+    });
 
     pendingMediaBlocks = [];
   });
@@ -199,7 +427,9 @@ export const splitTextIntoSentenceSegments = (content, structuredContent = []) =
   return segments;
 };
 
-// Word-character pattern used by the reader's tokenizer.
+// Word-character pattern used by the reader's tokenizer (legacy export).
+// Kept for backwards compatibility with the old per-character matcher.
+// New code should use `tokenizeContent(text, languageConfig)`.
 // Matches Unicode letters plus ASCII apostrophe ('), typographic right single quote (U+2019),
 // and modifier letter apostrophe (U+02BC) — common in copy-pasted ebook/news text.
 export const WORD_PATTERN = /\p{L}|['’ʼ]/u;

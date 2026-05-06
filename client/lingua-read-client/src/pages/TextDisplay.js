@@ -18,7 +18,7 @@ import { getBookmarkedSentences, toggleBookmark } from '../utils/bookmarks';
 import { extractTranslatedTextFromPairedTags } from '../utils/translationTags';
 import { cancelSpeech, isSpeechSynthesisSupported, speakText } from '../utils/browserTts';
 import { parseSrtContent, findSrtLineIndex } from '../utils/srtParser';
-import { styles, splitTextIntoSentenceSegments, WORD_PATTERN } from '../utils/readerText';
+import { styles, splitTextIntoSentenceSegments, tokenizeContent } from '../utils/readerText';
 import PrimaryControls from '../components/reader/PrimaryControls';
 import SecondaryControls from '../components/reader/SecondaryControls';
 import ReaderLessonActions from '../components/reader/ReaderLessonActions';
@@ -1069,20 +1069,29 @@ const TextDisplay = () => {
   const processTextContent = useCallback((content) => {
     if (!content) return [];
 
-    // Use memoized knownPhrases directly
-    // const knownPhrases = ... (Removed redundant calculation)
+    // Apply language-aware character substitutions, then walk the
+    // resulting text. Phrase matching runs at every position before
+    // tokenization. Words are accumulated using the language's
+    // wordCharacters + universal apostrophe/hyphen connector glue.
+    // See `client/.../utils/readerText.js` for the spec.
+    const { processed, tokens } = tokenizeContent(content, languageConfig);
+
+    // Index tokens by start position for quick lookup as we walk the
+    // processed string and check for phrase matches.
+    const tokensByStart = new Map();
+    for (const tok of tokens) tokensByStart.set(tok.start, tok);
 
     const elements = [];
     let currentIndex = 0;
     let currentKeyIndex = 0;
 
-    while (currentIndex < content.length) {
+    while (currentIndex < processed.length) {
       let phraseMatched = false;
 
-      // 2. Check for known phrase matches at the current position
+      // 1. Check for known phrase matches at the current position
       for (const phrase of knownPhrases) {
-        if (content.substring(currentIndex).startsWith(phrase.term)) {
-          const phraseData = phrase; // Already have the data
+        if (processed.substring(currentIndex).startsWith(phrase.term)) {
+          const phraseData = phrase;
           const phraseStatus = phraseData.status;
           const phraseTranslation = phraseData.translation;
           const phraseTerm = phraseData.term;
@@ -1112,35 +1121,18 @@ const TextDisplay = () => {
 
           currentIndex += phraseTerm.length;
           phraseMatched = true;
-          break; // Stop checking phrases once the longest match is found
+          break;
         }
       }
 
       if (phraseMatched) {
-        continue; // Move to the next position in the content
+        continue;
       }
 
-      // 3. If no phrase matched, process the next character(s)
-      const char = content[currentIndex];
-
-      // Check if it's the start of a potential word
-      if (WORD_PATTERN.test(char)) {
-        let currentWord = char;
-        let wordEndIndex = currentIndex + 1;
-        // Accumulate subsequent word characters (including hyphens connecting letters, e.g. "beijá-lo")
-        while (wordEndIndex < content.length) {
-          if (WORD_PATTERN.test(content[wordEndIndex])) {
-            currentWord += content[wordEndIndex];
-            wordEndIndex++;
-          } else if (content[wordEndIndex] === '-' && wordEndIndex + 1 < content.length && WORD_PATTERN.test(content[wordEndIndex + 1])) {
-            currentWord += content[wordEndIndex];
-            wordEndIndex++;
-          } else {
-            break;
-          }
-        }
-
-        // Process the accumulated word
+      // 2. Use the pre-tokenized run starting at this position.
+      const tok = tokensByStart.get(currentIndex);
+      if (tok && tok.type === 'word') {
+        const currentWord = tok.text;
         const wordData = getWordData(currentWord);
         const wordStatus = wordData ? wordData.status : 0;
         const wordTranslation = wordData ? wordData.translation : null;
@@ -1168,18 +1160,18 @@ const TextDisplay = () => {
           ) : wordSpan
         );
 
-        currentIndex = wordEndIndex; // Move index past the processed word
+        currentIndex = tok.end;
       } else {
-        // Process non-word character (punctuation, whitespace, etc.)
-        elements.push(<React.Fragment key={`sep-${currentKeyIndex++}`}>{char}</React.Fragment>);
+        // Non-word character (punctuation, whitespace, etc.)
+        const ch = processed[currentIndex];
+        elements.push(<React.Fragment key={`sep-${currentKeyIndex++}`}>{ch}</React.Fragment>);
         currentIndex++;
       }
     }
 
     return elements;
-    // --- End Phase 2 Logic ---
 
-  }, [knownPhrases, getWordData, getWordStyle, languageWordsLoaded, handleSelectableWordClick, handleSelectableWordTouchEnd, handleSelectableWordTouchStart, setHoveredWordTerm]); // Removed unnecessary 'words' dependency
+  }, [knownPhrases, getWordData, getWordStyle, languageWordsLoaded, handleSelectableWordClick, handleSelectableWordTouchEnd, handleSelectableWordTouchStart, setHoveredWordTerm, languageConfig]);
 
 
   const getFontFamilyForList = useCallback(() => {
@@ -1252,8 +1244,13 @@ const TextDisplay = () => {
       }));
     }
 
-    return splitTextIntoSentenceSegments(text?.content || '', text?.structuredContent || []);
-  }, [isAudioLesson, srtLines, text?.content, text?.structuredContent]);
+    return splitTextIntoSentenceSegments(
+      text?.content || '',
+      text?.structuredContent || [],
+      languageConfig,
+      text?.languageCode
+    );
+  }, [isAudioLesson, srtLines, text?.content, text?.structuredContent, languageConfig, text?.languageCode]);
 
   const currentSentenceSegment = sentenceSegments[currentSegmentIndex] || null;
 

@@ -4,6 +4,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using LinguaReadApi.Data;
 using LinguaReadApi.Models;
+using LinguaReadApi.Services.Tokenization;
 
 namespace LinguaReadApi.Services
 {
@@ -78,11 +79,16 @@ namespace LinguaReadApi.Services
 
         private static async Task LinkWordsToText(AppDbContext context, WordLinkingRequest request)
         {
-            var separators = new char[] { ' ', '\t', '\r', '\n', '.', ',', ';', ':', '!', '?', '\"', '\'', '(', ')', '[', ']', '{', '}', '-', '_', '/', '\\', '|', '@', '#', '$', '%', '^', '&', '*', '+', '=', '<', '>', '`', '~' };
-            var wordsInText = request.Content.Split(separators, StringSplitOptions.RemoveEmptyEntries)
-                                     .Select(w => w.Trim().ToLowerInvariant())
-                                     .Where(w => !string.IsNullOrWhiteSpace(w))
-                                     .ToList();
+            // Load language config so we can apply per-language character
+            // substitutions and word-character rules. Falls back to a
+            // null Language → default tokenizer behaviour.
+            var language = await context.Languages
+                .AsNoTracking()
+                .FirstOrDefaultAsync(l => l.LanguageId == request.LanguageId);
+
+            var wordsInText = Tokenizer.ExtractLookupKeys(request.Content, language)
+                                       .Where(w => !string.IsNullOrWhiteSpace(w))
+                                       .ToList();
 
             if (!wordsInText.Any()) return;
 

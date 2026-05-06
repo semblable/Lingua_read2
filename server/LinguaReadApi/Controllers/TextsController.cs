@@ -14,6 +14,7 @@ using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using LinguaReadApi.Services;
+using LinguaReadApi.Services.Tokenization;
 namespace LinguaReadApi.Controllers
 {
     [Route("api/[controller]")]
@@ -512,12 +513,15 @@ namespace LinguaReadApi.Controllers
 
             if (string.IsNullOrWhiteSpace(content)) return;
 
-            // 1. Basic word parsing: split on whitespace and punctuation
-            var separators = new char[] { ' ', '\t', '\r', '\n', '.', ',', ';', ':', '!', '?', '\"', '\'', '(', ')', '[', ']', '{', '}', '-', '_', '/', '\\', '|', '@', '#', '$', '%', '^', '&', '*', '+', '=', '<', '>', '`', '~' };
-            var wordsInText = content.Split(separators, StringSplitOptions.RemoveEmptyEntries)
-                                     .Select(w => w.Trim().ToLowerInvariant())
-                                     .Where(w => !string.IsNullOrWhiteSpace(w))
-                                     .ToList();
+            // 1. Language-aware tokenization (mirror of the frontend
+            //    reader; see Services/Tokenization/Tokenizer.cs).
+            var language = await context.Languages
+                .AsNoTracking()
+                .FirstOrDefaultAsync(l => l.LanguageId == languageId);
+
+            var wordsInText = Tokenizer.ExtractLookupKeys(content, language)
+                                       .Where(w => !string.IsNullOrWhiteSpace(w))
+                                       .ToList();
 
             if (!wordsInText.Any()) return;
 

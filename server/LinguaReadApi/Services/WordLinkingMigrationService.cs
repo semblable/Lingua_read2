@@ -143,6 +143,36 @@ namespace LinguaReadApi.Services
             _logger.LogInformation(
                 "WordLinkingMigrationService: complete. Processed={Processed}, Errors={Errors}.",
                 totalProcessed, totalErrors);
+
+            // Only run orphan cleanup when this pass actually re-linked
+            // texts. On an idle restart (everything already at the
+            // current version) we skip the DB scan entirely.
+            if (totalProcessed > 0 && !stoppingToken.IsCancellationRequested)
+            {
+                await CleanupOrphans(stoppingToken);
+            }
+        }
+
+        private async Task CleanupOrphans(CancellationToken stoppingToken)
+        {
+            try
+            {
+                using var scope = _serviceProvider.CreateScope();
+                var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                var deleted = await WordLinker.CleanupOrphanWordsAsync(context, stoppingToken);
+                _logger.LogInformation(
+                    "WordLinkingMigrationService: cleaned up {Deleted} orphan Word rows " +
+                    "(auto-created, never linked, never translated).",
+                    deleted);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // Cleanup is best-effort — orphans are harmless dead
+                // weight, so a failure here should not surface as a
+                // migration failure.
+                _logger.LogWarning(ex,
+                    "WordLinkingMigrationService: orphan cleanup failed (non-fatal).");
+            }
         }
     }
 }

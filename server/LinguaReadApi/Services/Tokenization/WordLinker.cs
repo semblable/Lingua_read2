@@ -155,6 +155,29 @@ namespace LinguaReadApi.Services.Tokenization
             await LinkAsync(context, textId, content, languageId, userId, cancellationToken);
         }
 
+        /// <summary>
+        /// Delete orphan Word rows: auto-created (Status = 0), no
+        /// TextWord references, and no WordTranslation row. These are
+        /// the surface-form fragments left behind after a tokenizer
+        /// change re-links texts to different boundaries (e.g. the bare
+        /// "l" / "eau" stranded once "l'eau" became a single token).
+        ///
+        /// Words the user has interacted with are preserved unconditionally:
+        /// any Status &gt; 0 (bumped past the linker default) or any
+        /// WordTranslation row keeps the Word alive even if it has no
+        /// current TextWord references.
+        /// </summary>
+        public static async Task<int> CleanupOrphanWordsAsync(
+            AppDbContext context,
+            CancellationToken cancellationToken = default)
+        {
+            return await context.Words
+                .Where(w => w.Status == 0)
+                .Where(w => !context.TextWords.Any(tw => tw.WordId == w.WordId))
+                .Where(w => !context.WordTranslations.Any(wt => wt.WordId == w.WordId))
+                .ExecuteDeleteAsync(cancellationToken);
+        }
+
         private static async Task StampVersion(AppDbContext context, int textId, CancellationToken ct)
         {
             // Use a targeted UPDATE so we don't have to load the Text

@@ -567,9 +567,10 @@ export const completeLesson = (bookId, textId, skipStats = false) => {
   }
 };
 
-export const finishBook = (bookId) => {
+export const finishBook = (bookId, rating = null) => {
   return fetchApi(`/books/${bookId}/finish`, {
-    method: 'PUT'
+    method: 'PUT',
+    body: JSON.stringify({ rating })
   });
 };
 

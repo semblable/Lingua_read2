@@ -158,6 +158,60 @@ describe('BookDetail Hardcover integration', () => {
     expect(link).toHaveAttribute('rel', expect.stringContaining('noopener'));
   });
 
+  test('finish book without rating calls API with null rating and shows Completed badge', async () => {
+    finishBook.mockResolvedValue({ message: 'No Content' });
+
+    renderBookDetail();
+
+    await screen.findByText('Local Book');
+    fireEvent.click(screen.getByRole('button', { name: /finish book/i }));
+
+    // Modal opens with title "Finish book"
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+    expect(screen.getByText(/Mark/i)).toBeInTheDocument();
+    expect(screen.getByText('No rating')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /finish without rating/i }));
+
+    await waitFor(() => expect(finishBook).toHaveBeenCalledWith('7', null));
+
+    // Completed badge is rendered after success
+    expect(await screen.findByText('Completed')).toBeInTheDocument();
+    // Finish Book button no longer offered
+    expect(screen.queryByRole('button', { name: /^finish book$/i })).not.toBeInTheDocument();
+  });
+
+  test('finish book with rating sends selected half-star rating', async () => {
+    finishBook.mockResolvedValue({ message: 'No Content' });
+
+    renderBookDetail();
+
+    await screen.findByText('Local Book');
+    fireEvent.click(screen.getByRole('button', { name: /finish book/i }));
+
+    // Pick 4.5 stars: click the left half of star 5
+    fireEvent.click(await screen.findByRole('button', { name: /rate 4\.5 of 5/i }));
+    expect(screen.getByText('4.5 / 5')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /finish with rating/i }));
+
+    await waitFor(() => expect(finishBook).toHaveBeenCalledWith('7', 4.5));
+    expect(await screen.findByText('Completed')).toBeInTheDocument();
+  });
+
+  test('cancel finish modal does not call API', async () => {
+    renderBookDetail();
+
+    await screen.findByText('Local Book');
+    fireEvent.click(screen.getByRole('button', { name: /finish book/i }));
+
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /^cancel$/i }));
+
+    expect(finishBook).not.toHaveBeenCalled();
+    expect(screen.queryByText('Completed')).not.toBeInTheDocument();
+  });
+
   test('syncs Hardcover progress and surfaces result', async () => {
     getBook.mockResolvedValue({
       ...defaultBook,

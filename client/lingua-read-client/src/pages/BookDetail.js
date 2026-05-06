@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react'; // Add useCallback, useMemo
-import { Container, Row, Col, Card, Button, Alert, Spinner, ListGroup, Badge, ProgressBar, Modal, Form } from 'react-bootstrap'; // Add Form
+import { Container, Card, Button, Alert, Spinner, ListGroup, Badge, ProgressBar, Modal, Form } from 'react-bootstrap'; // Add Form
 import { useParams, useNavigate, useLocation, Link } from 'react-router-dom';
 import {
   getBook,
@@ -34,8 +34,9 @@ const BookDetail = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const [finishingBook, setFinishingBook] = useState(false);
-  const [showStatsModal, setShowStatsModal] = useState(false);
-  const [stats, setStats] = useState(null);
+  const [showRatingModal, setShowRatingModal] = useState(false);
+  const [pendingRating, setPendingRating] = useState(null); // 0.5 .. 5.0 or null
+  const [finishError, setFinishError] = useState('');
 
   // State for Edit/Delete Modals and Data
   const [showEditBookModal, setShowEditBookModal] = useState(false);
@@ -90,24 +91,24 @@ const BookDetail = () => {
     );
   }, [book]);
 
-  const handleFinishBook = async () => {
-    if (window.confirm('Are you sure you want to mark this book as finished? This will mark all words in the book as known.')) {
-      setFinishingBook(true);
-      try {
-        const updatedStats = await finishBook(bookId);
-        setStats(updatedStats);
-        setShowStatsModal(true);
+  const handleOpenFinishModal = () => {
+    setPendingRating(null);
+    setFinishError('');
+    setShowRatingModal(true);
+  };
 
-        // Update book with finished status
-        setBook(prev => ({
-          ...prev,
-          isFinished: true
-        }));
-      } catch (err) {
-        alert(`Failed to mark book as finished: ${err.message}`);
-      } finally {
-        setFinishingBook(false);
-      }
+  const submitFinishBook = async (rating) => {
+    setFinishingBook(true);
+    setFinishError('');
+    try {
+      await finishBook(bookId, rating);
+      setBook(prev => ({ ...prev, isFinished: true }));
+      setShowRatingModal(false);
+      setPendingRating(null);
+    } catch (err) {
+      setFinishError(err.message || 'Failed to mark book as finished.');
+    } finally {
+      setFinishingBook(false);
     }
   };
 
@@ -399,7 +400,15 @@ const BookDetail = () => {
             </Card>
           )}
           <div>
-          <h1 className="mb-1">{book.title}</h1>
+          <h1 className="mb-1">
+            {book.title}
+            {book.isFinished && (
+              <Badge bg="success" className="ms-2 align-middle" style={{ fontSize: '0.5em' }}>
+                <i className="bi bi-check-circle-fill me-1"></i>
+                Completed
+              </Badge>
+            )}
+          </h1>
           <p className="text-muted mb-2">
             Language: {book.languageName} |
             Parts: {book.parts.length} |
@@ -437,6 +446,17 @@ const BookDetail = () => {
           >
             Back to Books
           </Button>
+          {/* Finish Book button — only shown when not finished */}
+          {!book.isFinished && (
+            <Button
+              variant="success"
+              onClick={handleOpenFinishModal}
+              disabled={finishingBook}
+            >
+              <i className="bi bi-check-circle me-1"></i>
+              Finish Book
+            </Button>
+          )}
           {/* Add Edit/Delete Book Buttons */}
           <Button variant="outline-warning" size="sm" onClick={handleOpenEditBookModal} className="ms-2">Edit Book</Button>
           <Button variant="outline-danger" size="sm" onClick={handleBookDelete} className="ms-2">Delete Book</Button>
@@ -607,54 +627,58 @@ const BookDetail = () => {
         </Alert>
       )}
 
-      <div className="d-flex justify-content-between mb-4">
-        {!book.isFinished && (
-          <Button
-            variant="success"
-            onClick={handleFinishBook}
-            disabled={finishingBook}
-          >
-            {finishingBook ? <Spinner size="sm" animation="border" /> : null}
-            {' '}
-            Mark Book as Finished
-          </Button>
-        )}
-      </div>
-
-      {/* Stats Modal */}
-      <Modal show={showStatsModal} onHide={() => setShowStatsModal(false)}>
-        <Modal.Header closeButton>
-          <Modal.Title>Book Completed!</Modal.Title>
+      {/* Finish Book / Rating Modal */}
+      <Modal
+        show={showRatingModal}
+        onHide={() => !finishingBook && setShowRatingModal(false)}
+        backdrop={finishingBook ? 'static' : true}
+      >
+        <Modal.Header closeButton={!finishingBook}>
+          <Modal.Title>Finish book</Modal.Title>
         </Modal.Header>
         <Modal.Body>
-          {stats && (
-            <div>
-              <p className="mb-3">You've completed the book "<strong>{book.title}</strong>"!</p>
-              <p className="mb-2">Progress:</p>
-              <ProgressBar now={100} label={`100%`} className="mb-3" />
-
-              <Row className="mb-3">
-                <Col xs={6}>
-                  <div className="d-flex flex-column align-items-center p-2 border rounded">
-                    <div className="h2 mb-0">{stats.totalWords}</div>
-                    <div>Total Words</div>
-                  </div>
-                </Col>
-                <Col xs={6}>
-                  <div className="d-flex flex-column align-items-center p-2 border rounded bg-success text-white">
-                    <div className="h2 mb-0">{stats.knownWords}</div>
-                    <div>Known Words</div>
-                  </div>
-                </Col>
-              </Row>
-
-              <p>All words in this book have been marked as known. Great job!</p>
-            </div>
+          <p>
+            Mark <strong>{book.title}</strong> as completed?
+          </p>
+          {book.hardcoverBookId && (
+            <p className="text-muted small mb-2">
+              Optionally rate it on Hardcover. Half-star ratings are supported.
+            </p>
+          )}
+          <StarRatingPicker
+            value={pendingRating}
+            onChange={setPendingRating}
+            disabled={finishingBook}
+          />
+          {finishError && (
+            <Alert variant="danger" className="mt-3 mb-0">
+              {finishError}
+            </Alert>
           )}
         </Modal.Body>
         <Modal.Footer>
-          <Button variant="primary" onClick={() => setShowStatsModal(false)}>
-            Close
+          <Button
+            variant="outline-secondary"
+            onClick={() => setShowRatingModal(false)}
+            disabled={finishingBook}
+          >
+            Cancel
+          </Button>
+          <Button
+            variant="outline-success"
+            onClick={() => submitFinishBook(null)}
+            disabled={finishingBook}
+          >
+            {finishingBook && pendingRating == null ? <Spinner size="sm" animation="border" className="me-2" /> : null}
+            Finish without rating
+          </Button>
+          <Button
+            variant="success"
+            onClick={() => submitFinishBook(pendingRating)}
+            disabled={finishingBook || pendingRating == null}
+          >
+            {finishingBook && pendingRating != null ? <Spinner size="sm" animation="border" className="me-2" /> : null}
+            Finish with rating
           </Button>
         </Modal.Footer>
       </Modal>
@@ -781,4 +805,86 @@ const BookDetail = () => {
   );
 };
 
-export default BookDetail; 
+// Star rating picker — 1-5 stars with half-star precision (0.5 increments).
+// Click a star or its left half to set the rating; clicking the currently
+// active value clears it back to "no rating".
+const StarRatingPicker = ({ value, onChange, disabled }) => {
+  const stars = [1, 2, 3, 4, 5];
+  const handleClick = (selected) => {
+    if (disabled) return;
+    onChange(value === selected ? null : selected);
+  };
+
+  const renderStar = (i) => {
+    const fullThreshold = i;
+    const halfThreshold = i - 0.5;
+    let icon = 'bi-star';
+    if (value != null && value >= fullThreshold) icon = 'bi-star-fill';
+    else if (value != null && value >= halfThreshold) icon = 'bi-star-half';
+
+    return (
+      <span
+        key={i}
+        role="presentation"
+        style={{
+          position: 'relative',
+          display: 'inline-block',
+          width: '1.6rem',
+          fontSize: '1.6rem',
+          cursor: disabled ? 'not-allowed' : 'pointer',
+          color: '#ffc107',
+          lineHeight: 1,
+        }}
+      >
+        <i className={`bi ${icon}`} aria-hidden="true"></i>
+        {/* Left half-star clickable region */}
+        <button
+          type="button"
+          aria-label={`Rate ${halfThreshold} of 5`}
+          disabled={disabled}
+          onClick={() => handleClick(halfThreshold)}
+          style={{
+            position: 'absolute',
+            left: 0,
+            top: 0,
+            width: '50%',
+            height: '100%',
+            background: 'transparent',
+            border: 'none',
+            padding: 0,
+            cursor: disabled ? 'not-allowed' : 'pointer',
+          }}
+        />
+        {/* Right full-star clickable region */}
+        <button
+          type="button"
+          aria-label={`Rate ${fullThreshold} of 5`}
+          disabled={disabled}
+          onClick={() => handleClick(fullThreshold)}
+          style={{
+            position: 'absolute',
+            left: '50%',
+            top: 0,
+            width: '50%',
+            height: '100%',
+            background: 'transparent',
+            border: 'none',
+            padding: 0,
+            cursor: disabled ? 'not-allowed' : 'pointer',
+          }}
+        />
+      </span>
+    );
+  };
+
+  return (
+    <div className="d-flex align-items-center gap-2">
+      <div>{stars.map(renderStar)}</div>
+      <span className="text-muted small">
+        {value == null ? 'No rating' : `${value} / 5`}
+      </span>
+    </div>
+  );
+};
+
+export default BookDetail;

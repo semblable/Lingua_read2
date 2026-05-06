@@ -91,29 +91,33 @@ public class CompleteLessonTests
         await controller.CompleteLesson(bookId, new CompleteLessonDto { TextId = secondTextId });
 
         context.ChangeTracker.Clear();
-        var result = await controller.FinishBook(bookId);
+        var result = await controller.FinishBook(bookId, new FinishBookRequest());
 
-        var stats = Assert.IsType<BookStatsDto>(result.Value);
-        Assert.True(stats.IsFinished);
+        Assert.IsType<NoContentResult>(result);
 
         context.ChangeTracker.Clear();
 
         var language = await context.Languages.SingleAsync();
+        // Finishing must not change language word counts beyond what completion already credited.
         Assert.Equal(4, language.WordsRead);
 
         var activities = await context.UserActivities.OrderBy(a => a.ActivityId).ToListAsync();
         Assert.Equal(2, activities.Count);
         Assert.All(activities, activity => Assert.Equal("TextCompleted", activity.ActivityType));
+        Assert.DoesNotContain(activities, a => a.ActivityType == "BookFinished");
         Assert.Equal(4, activities.Sum(a => a.WordCount));
 
         var langStats = await context.UserLanguageStatistics.SingleAsync();
         Assert.Equal(4, langStats.TotalWordsRead);
         Assert.Equal(2, langStats.TotalTextsCompleted);
         Assert.Equal(2, langStats.TotalTextCompletions);
+
+        var book = await context.Books.SingleAsync();
+        Assert.True(book.IsFinished);
     }
 
     [Fact]
-    public async Task FinishBook_CreditsOnlyUnfinishedLessonsAndMarksTextsFinished()
+    public async Task FinishBook_DoesNotCreditUnfinishedLessons_ButMarksThemFinished()
     {
         await using var context = CreateContext();
         var userId = Guid.NewGuid();
@@ -123,27 +127,26 @@ public class CompleteLessonTests
         await controller.CompleteLesson(bookId, new CompleteLessonDto { TextId = firstTextId });
 
         context.ChangeTracker.Clear();
-        var result = await controller.FinishBook(bookId);
+        var result = await controller.FinishBook(bookId, new FinishBookRequest());
 
-        var stats = Assert.IsType<BookStatsDto>(result.Value);
-        Assert.True(stats.IsFinished);
+        Assert.IsType<NoContentResult>(result);
 
         context.ChangeTracker.Clear();
 
         var language = await context.Languages.SingleAsync();
-        Assert.Equal(4, language.WordsRead);
+        // Only the one completed lesson contributed (3 words). Finishing must NOT add the unread part's words.
+        Assert.Equal(3, language.WordsRead);
 
         var activities = await context.UserActivities.OrderBy(a => a.ActivityId).ToListAsync();
-        Assert.Equal(2, activities.Count);
+        Assert.Single(activities);
         Assert.Equal("TextCompleted", activities[0].ActivityType);
         Assert.Equal(3, activities[0].WordCount);
-        Assert.Equal("BookFinished", activities[1].ActivityType);
-        Assert.Equal(1, activities[1].WordCount);
+        Assert.DoesNotContain(activities, a => a.ActivityType == "BookFinished");
 
         var langStats = await context.UserLanguageStatistics.SingleAsync();
-        Assert.Equal(4, langStats.TotalWordsRead);
-        Assert.Equal(2, langStats.TotalTextsCompleted);
-        Assert.Equal(2, langStats.TotalTextCompletions);
+        Assert.Equal(3, langStats.TotalWordsRead);
+        Assert.Equal(1, langStats.TotalTextsCompleted);
+        Assert.Equal(1, langStats.TotalTextCompletions);
 
         var texts = await context.Texts.OrderBy(t => t.TextId).ToListAsync();
         Assert.All(texts, text => Assert.True(text.IsFinished));
@@ -492,12 +495,45 @@ public class CompleteLessonTests
 
         var controller = CreateController(context, userId, hardcoverService);
 
-        var result = await controller.FinishBook(bookId);
+        var result = await controller.FinishBook(bookId, new FinishBookRequest());
 
-        Assert.IsType<BookStatsDto>(result.Value);
+        Assert.IsType<NoContentResult>(result);
         Assert.Equal(1, hardcoverService.SyncCalls);
         Assert.Equal(bookId, hardcoverService.LastBookId);
         Assert.True(hardcoverService.LastRequireSyncEnabled);
+        Assert.Null(hardcoverService.LastRating);
+    }
+
+    [Fact]
+    public async Task FinishBook_WithRating_ForwardsRatingToHardcoverSync()
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        SeedBookWithTwoParts(context, userId, out var bookId, out _);
+        var hardcoverService = new RecordingHardcoverService();
+
+        var controller = CreateController(context, userId, hardcoverService);
+
+        var result = await controller.FinishBook(bookId, new FinishBookRequest { Rating = 4.5m });
+
+        Assert.IsType<NoContentResult>(result);
+        Assert.Equal(4.5m, hardcoverService.LastRating);
+    }
+
+    [Fact]
+    public async Task FinishBook_WithOutOfRangeRating_ReturnsBadRequest()
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        SeedBookWithTwoParts(context, userId, out var bookId, out _);
+
+        var controller = CreateController(context, userId);
+
+        var tooLow = await controller.FinishBook(bookId, new FinishBookRequest { Rating = 0.0m });
+        var tooHigh = await controller.FinishBook(bookId, new FinishBookRequest { Rating = 5.5m });
+
+        Assert.IsType<BadRequestObjectResult>(tooLow);
+        Assert.IsType<BadRequestObjectResult>(tooHigh);
     }
 
     // --- Helpers ---
@@ -583,6 +619,7 @@ public class CompleteLessonTests
         public Guid LastUserId { get; private set; }
         public int LastBookId { get; private set; }
         public bool LastRequireSyncEnabled { get; private set; }
+        public decimal? LastRating { get; private set; }
         public bool ThrowOnSync { get; init; }
 
         public Task<HardcoverConnectionResult> GetStatusAsync(Guid userId, CancellationToken cancellationToken = default) =>
@@ -594,12 +631,13 @@ public class CompleteLessonTests
         public Task<HardcoverMetadataImportResult> ImportMetadataAsync(Guid userId, int bookId, CancellationToken cancellationToken = default) =>
             Task.FromResult(new HardcoverMetadataImportResult(false, [], [], "not used"));
 
-        public Task<HardcoverProgressSyncResult> SyncProgressAsync(Guid userId, int bookId, bool requireSyncEnabled = false, CancellationToken cancellationToken = default)
+        public Task<HardcoverProgressSyncResult> SyncProgressAsync(Guid userId, int bookId, bool requireSyncEnabled = false, decimal? rating = null, CancellationToken cancellationToken = default)
         {
             SyncCalls++;
             LastUserId = userId;
             LastBookId = bookId;
             LastRequireSyncEnabled = requireSyncEnabled;
+            LastRating = rating;
             if (ThrowOnSync)
             {
                 throw new InvalidOperationException("Hardcover unavailable");

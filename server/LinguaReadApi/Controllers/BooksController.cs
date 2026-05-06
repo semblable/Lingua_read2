@@ -1816,114 +1816,51 @@ namespace LinguaReadApi.Controllers
 
         // PUT: api/books/5/finish
         [HttpPut("{id}/finish")]
-        public async Task<ActionResult<BookStatsDto>> FinishBook(int id)
+        public async Task<IActionResult> FinishBook(int id, [FromBody] FinishBookRequest? request)
         {
             var userId = GetUserId();
             var now = DateTime.UtcNow;
-            
+
             var book = await _context.Books
                 .Where(b => b.BookId == id && b.UserId == userId)
-                .Include(b => b.Language)  // Include the language
                 .Include(b => b.Texts)
                 .FirstOrDefaultAsync();
-                
+
             if (book == null)
             {
                 return NotFound("Book not found");
             }
-            
-            if (book.Language == null)
+
+            // Validate / normalize rating: must be in [0.5, 5.0] in 0.5 increments.
+            decimal? rating = null;
+            if (request?.Rating.HasValue == true)
             {
-                return BadRequest("Book language not found");
-            }
-
-            var unfinishedTexts = book.Texts
-                .Where(t => !t.IsFinished)
-                .ToList();
-            int remainingWordCredit = WordCountUtility.CountWordsInTexts(unfinishedTexts);
-            int newlyFinishedTextCount = unfinishedTexts.Count;
-
-            if (remainingWordCredit > 0)
-            {
-                // Finishing a book credits only unread parts; completed lessons have already
-                // produced TextCompleted rows.
-                WordCountUtility.UpdateLanguageWordCount(book.Language, remainingWordCredit);
-                _context.Entry(book.Language).State = EntityState.Modified;
-
-                _context.UserActivities.Add(new UserActivity
+                var raw = request.Rating.Value;
+                if (raw < 0.5m || raw > 5.0m)
                 {
-                    UserId = userId,
-                    LanguageId = book.LanguageId,
-                    ActivityType = "BookFinished",
-                    WordCount = remainingWordCredit,
-                    Timestamp = now
-                });
-            }
-
-            if (remainingWordCredit > 0 || newlyFinishedTextCount > 0)
-            {
-                var stats = await _context.UserLanguageStatistics
-                    .FirstOrDefaultAsync(uls => uls.UserId == userId && uls.LanguageId == book.LanguageId);
-                if (stats == null)
-                {
-                    stats = new UserLanguageStatistics
-                    {
-                        UserId = userId,
-                        LanguageId = book.LanguageId,
-                        TotalWordsRead = remainingWordCredit,
-                        TotalTextsCompleted = newlyFinishedTextCount,
-                        TotalTextCompletions = newlyFinishedTextCount,
-                        LastUpdatedAt = now
-                    };
-                    _context.UserLanguageStatistics.Add(stats);
+                    return BadRequest("Rating must be between 0.5 and 5.0.");
                 }
-                else
-                {
-                    stats.TotalWordsRead += remainingWordCredit;
-                    stats.TotalTextsCompleted += newlyFinishedTextCount;
-                    stats.TotalTextCompletions += newlyFinishedTextCount;
-                    stats.LastUpdatedAt = now;
-                }
-            }
-            
-            // Get all unique words from all texts in the book
-            var textWords = await _context.TextWords
-                .Where(tw => tw.Text.BookId == id)
-                .Include(tw => tw.Word)
-                .ToListAsync();
-            
-            var uniqueWords = textWords.Select(tw => tw.Word).GroupBy(w => w.Term.ToLower()).Select(g => g.First()).ToList();
-            
-            // Mark all words as known
-            foreach (var word in uniqueWords)
-            {
-                word.Status = 5; // Mastered
+
+                // Snap to nearest 0.5
+                rating = Math.Round(raw * 2m, MidpointRounding.AwayFromZero) / 2m;
             }
 
-            foreach (var text in unfinishedTexts)
+            // Mark unfinished child texts as finished — child-text completion is part of
+            // "book is done" semantics, not a stat. We deliberately do NOT touch word
+            // statuses, language counters, or UserActivity.
+            foreach (var text in book.Texts.Where(t => !t.IsFinished))
             {
                 text.IsFinished = true;
                 text.LastCompletedAt = now;
             }
-            
-            // Update book stats
-            book.TotalWords = uniqueWords.Count;
-            book.KnownWords = uniqueWords.Count; // All words are now known
-            book.LearningWords = 0;
+
             book.LastReadAt = now;
             book.IsFinished = true;
-            
+
             await _context.SaveChangesAsync();
-            await TriggerHardcoverProgressSyncAsync(userId, id);
-            
-            return new BookStatsDto
-            {
-                TotalWords = book.TotalWords,
-                KnownWords = book.KnownWords,
-                LearningWords = book.LearningWords,
-                CompletionPercentage = 100,
-                IsFinished = true
-            };
+            await TriggerHardcoverProgressSyncAsync(userId, id, rating);
+
+            return NoContent();
         }
 
         // GET: api/books/5/next-lesson
@@ -2177,7 +2114,7 @@ namespace LinguaReadApi.Controllers
             return await _context.Books.AnyAsync(e => e.BookId == id && e.UserId == userId);
         }
 
-        private async Task TriggerHardcoverProgressSyncAsync(Guid userId, int bookId)
+        private async Task TriggerHardcoverProgressSyncAsync(Guid userId, int bookId, decimal? rating = null)
         {
             if (_hardcoverService == null)
             {
@@ -2186,7 +2123,7 @@ namespace LinguaReadApi.Controllers
 
             try
             {
-                await _hardcoverService.SyncProgressAsync(userId, bookId, requireSyncEnabled: true, HttpContext.RequestAborted);
+                await _hardcoverService.SyncProgressAsync(userId, bookId, requireSyncEnabled: true, rating, HttpContext.RequestAborted);
             }
             catch (Exception ex)
             {
@@ -2364,6 +2301,11 @@ namespace LinguaReadApi.Controllers
         public int LearningWords { get; set; }
         public double CompletionPercentage { get; set; }
         public bool IsFinished { get; set; }
+    }
+
+    public sealed class FinishBookRequest
+    {
+        public decimal? Rating { get; set; }
     }
 
     public class NextLessonDto

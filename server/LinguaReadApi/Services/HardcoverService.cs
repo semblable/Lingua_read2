@@ -14,7 +14,7 @@ public interface IHardcoverService
     Task<HardcoverConnectionResult> GetStatusAsync(Guid userId, CancellationToken cancellationToken = default);
     Task<HardcoverMatchResult> MatchBookAsync(Guid userId, int bookId, int? hardcoverBookId = null, CancellationToken cancellationToken = default);
     Task<HardcoverMetadataImportResult> ImportMetadataAsync(Guid userId, int bookId, CancellationToken cancellationToken = default);
-    Task<HardcoverProgressSyncResult> SyncProgressAsync(Guid userId, int bookId, bool requireSyncEnabled = false, CancellationToken cancellationToken = default);
+    Task<HardcoverProgressSyncResult> SyncProgressAsync(Guid userId, int bookId, bool requireSyncEnabled = false, decimal? rating = null, CancellationToken cancellationToken = default);
     Task<HardcoverSyncAllResult> SyncAllAsync(Guid userId, CancellationToken cancellationToken = default);
 }
 
@@ -176,7 +176,7 @@ public sealed class HardcoverService : IHardcoverService
         return new HardcoverMetadataImportResult(true, changed, new[] { candidate }, changed.Count == 0 ? "No missing metadata to import." : "Imported Hardcover metadata.");
     }
 
-    public async Task<HardcoverProgressSyncResult> SyncProgressAsync(Guid userId, int bookId, bool requireSyncEnabled = false, CancellationToken cancellationToken = default)
+    public async Task<HardcoverProgressSyncResult> SyncProgressAsync(Guid userId, int bookId, bool requireSyncEnabled = false, decimal? rating = null, CancellationToken cancellationToken = default)
     {
         var settings = await RequireSettingsWithTokenAsync(userId, cancellationToken);
         if (requireSyncEnabled && !settings.HardcoverSyncEnabled)
@@ -198,7 +198,7 @@ public sealed class HardcoverService : IHardcoverService
 
         var completion = CalculatePartCompletion(book);
         var statusId = ResolveHardcoverStatus(completion, book.IsFinished);
-        var userBook = await EnsureUserBookAsync(settings.HardcoverApiToken!, book, statusId, cancellationToken);
+        var userBook = await EnsureUserBookAsync(settings.HardcoverApiToken!, book, statusId, rating, cancellationToken);
 
         int? estimatedProgressPages = null;
         var pages = book.PageCount.GetValueOrDefault();
@@ -249,7 +249,7 @@ public sealed class HardcoverService : IHardcoverService
             try
             {
                 await ImportMetadataAsync(userId, id, cancellationToken);
-                results.Add(await SyncProgressAsync(userId, id, requireSyncEnabled: true, cancellationToken));
+                results.Add(await SyncProgressAsync(userId, id, requireSyncEnabled: true, rating: null, cancellationToken));
             }
             catch (Exception ex)
             {
@@ -537,21 +537,21 @@ public sealed class HardcoverService : IHardcoverService
         return completion > 0 ? CurrentlyReadingStatus : WantToReadStatus;
     }
 
-    private async Task<HardcoverUserBook> EnsureUserBookAsync(string token, Book book, int statusId, CancellationToken cancellationToken)
+    private async Task<HardcoverUserBook> EnsureUserBookAsync(string token, Book book, int statusId, decimal? rating, CancellationToken cancellationToken)
     {
         if (book.HardcoverUserBookId.HasValue)
         {
             var existingUserBook = !book.HardcoverUserBookReadId.HasValue && book.HardcoverBookId.HasValue
                 ? await FindUserBookAsync(token, book.HardcoverBookId.Value, cancellationToken)
                 : null;
-            await UpdateUserBookAsync(token, book.HardcoverUserBookId.Value, statusId, book.HardcoverEditionId, cancellationToken);
+            await UpdateUserBookAsync(token, book.HardcoverUserBookId.Value, statusId, book.HardcoverEditionId, rating, cancellationToken);
             return new HardcoverUserBook(book.HardcoverUserBookId.Value, statusId, existingUserBook?.UserBookReadId);
         }
 
         var existing = await FindUserBookAsync(token, book.HardcoverBookId!.Value, cancellationToken);
         if (existing != null)
         {
-            await UpdateUserBookAsync(token, existing.UserBookId, statusId, book.HardcoverEditionId, cancellationToken);
+            await UpdateUserBookAsync(token, existing.UserBookId, statusId, book.HardcoverEditionId, rating, cancellationToken);
             return existing with { StatusId = statusId };
         }
 
@@ -565,15 +565,21 @@ public sealed class HardcoverService : IHardcoverService
             }
             """;
 
+        var insertObject = new Dictionary<string, object?>
+        {
+            ["book_id"] = book.HardcoverBookId.Value,
+            ["edition_id"] = book.HardcoverEditionId,
+            ["status_id"] = statusId,
+            ["date_added"] = DateTime.UtcNow.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)
+        };
+        if (rating.HasValue)
+        {
+            insertObject["rating"] = rating.Value;
+        }
+
         var variables = new
         {
-            @object = new Dictionary<string, object?>
-            {
-                ["book_id"] = book.HardcoverBookId.Value,
-                ["edition_id"] = book.HardcoverEditionId,
-                ["status_id"] = statusId,
-                ["date_added"] = DateTime.UtcNow.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)
-            }
+            @object = insertObject
         };
         var data = await ExecuteGraphQlAsync(token, mutation, variables, cancellationToken);
         var result = data.GetProperty("insert_user_book");
@@ -622,7 +628,7 @@ public sealed class HardcoverService : IHardcoverService
             userBookReadId);
     }
 
-    private async Task UpdateUserBookAsync(string token, int userBookId, int statusId, int? editionId, CancellationToken cancellationToken)
+    private async Task UpdateUserBookAsync(string token, int userBookId, int statusId, int? editionId, decimal? rating, CancellationToken cancellationToken)
     {
         const string mutation = """
             mutation UpdateUserBook($id: Int!, $object: UserBookUpdateInput!) {
@@ -642,6 +648,10 @@ public sealed class HardcoverService : IHardcoverService
         if (editionId.HasValue)
         {
             update["edition_id"] = editionId.Value;
+        }
+        if (rating.HasValue)
+        {
+            update["rating"] = rating.Value;
         }
 
         var data = await ExecuteGraphQlAsync(token, mutation, new { id = userBookId, @object = update }, cancellationToken);

@@ -97,6 +97,7 @@ public class HardcoverControllerTests
     {
         public Guid LastUserId { get; private set; }
         public int LastBookId { get; private set; }
+        public decimal? LastRating { get; private set; }
         public int? LastHardcoverBookId { get; private set; }
 
         public HardcoverConnectionResult StatusResult { get; init; } = new(false, false, false, null, null, "not configured");
@@ -126,10 +127,11 @@ public class HardcoverControllerTests
             return Task.FromResult(ImportResult);
         }
 
-        public Task<HardcoverProgressSyncResult> SyncProgressAsync(Guid userId, int bookId, bool requireSyncEnabled = false, CancellationToken cancellationToken = default)
+        public Task<HardcoverProgressSyncResult> SyncProgressAsync(Guid userId, int bookId, bool requireSyncEnabled = false, decimal? rating = null, CancellationToken cancellationToken = default)
         {
             LastUserId = userId;
             LastBookId = bookId;
+            LastRating = rating;
             return Task.FromResult(ProgressResult);
         }
 

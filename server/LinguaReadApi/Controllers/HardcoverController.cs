@@ -49,7 +49,7 @@ public class HardcoverController : ControllerBase
     public async Task<ActionResult<HardcoverProgressSyncResult>> SyncProgress(int bookId, CancellationToken cancellationToken)
     {
         var userId = GetUserId();
-        var result = await _hardcoverService.SyncProgressAsync(userId, bookId, requireSyncEnabled: false, cancellationToken);
+        var result = await _hardcoverService.SyncProgressAsync(userId, bookId, requireSyncEnabled: false, rating: null, cancellationToken);
         return Ok(result);
     }
 

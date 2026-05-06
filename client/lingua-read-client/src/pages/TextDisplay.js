@@ -18,7 +18,7 @@ import { getBookmarkedSentences, toggleBookmark } from '../utils/bookmarks';
 import { extractTranslatedTextFromPairedTags } from '../utils/translationTags';
 import { cancelSpeech, isSpeechSynthesisSupported, speakText } from '../utils/browserTts';
 import { parseSrtContent, findSrtLineIndex } from '../utils/srtParser';
-import { styles, splitTextIntoSentenceSegments, tokenizeContent } from '../utils/readerText';
+import { styles, splitTextIntoSentenceSegments, prepareLanguageContext, consumeWordAt } from '../utils/readerText';
 import PrimaryControls from '../components/reader/PrimaryControls';
 import SecondaryControls from '../components/reader/SecondaryControls';
 import ReaderLessonActions from '../components/reader/ReaderLessonActions';
@@ -1073,13 +1073,10 @@ const TextDisplay = () => {
     // resulting text. Phrase matching runs at every position before
     // tokenization. Words are accumulated using the language's
     // wordCharacters + universal apostrophe/hyphen connector glue.
-    // See `client/.../utils/readerText.js` for the spec.
-    const { processed, tokens } = tokenizeContent(content, languageConfig);
-
-    // Index tokens by start position for quick lookup as we walk the
-    // processed string and check for phrase matches.
-    const tokensByStart = new Map();
-    for (const tok of tokens) tokensByStart.set(tok.start, tok);
+    // We re-consume words at each position rather than pre-tokenizing
+    // so that a phrase ending mid-word still tokenizes the remainder
+    // correctly. See `client/.../utils/readerText.js` for the spec.
+    const { processed, coreRegex } = prepareLanguageContext(content, languageConfig);
 
     const elements = [];
     let currentIndex = 0;
@@ -1129,10 +1126,10 @@ const TextDisplay = () => {
         continue;
       }
 
-      // 2. Use the pre-tokenized run starting at this position.
-      const tok = tokensByStart.get(currentIndex);
-      if (tok && tok.type === 'word') {
-        const currentWord = tok.text;
+      // 2. Try to consume a word at this position.
+      const consumed = consumeWordAt(processed, currentIndex, coreRegex);
+      if (consumed) {
+        const currentWord = consumed.text;
         const wordData = getWordData(currentWord);
         const wordStatus = wordData ? wordData.status : 0;
         const wordTranslation = wordData ? wordData.translation : null;
@@ -1160,7 +1157,7 @@ const TextDisplay = () => {
           ) : wordSpan
         );
 
-        currentIndex = tok.end;
+        currentIndex = consumed.end;
       } else {
         // Non-word character (punctuation, whitespace, etc.)
         const ch = processed[currentIndex];

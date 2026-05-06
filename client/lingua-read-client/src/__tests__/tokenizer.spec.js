@@ -194,6 +194,25 @@ describe('tokenizeContent — fallback / no language config', () => {
   });
 });
 
+describe('tokenizeContent — built-in apostrophe normalization', () => {
+  // A language with empty CharacterSubstitutions (e.g. a freshly-added
+  // custom language) still normalizes curly / modifier apostrophes so
+  // that elision/clitic glue continues to work.
+  const emptySubs = { code: 'fr', wordCharacters: 'a-zA-Zà-ÿ', characterSubstitutions: '' };
+
+  test('curly apostrophe glues without user subs', () => {
+    expect(wordTexts('l’eau coule', emptySubs)).toEqual(["l'eau", 'coule']);
+  });
+
+  test('modifier apostrophe (U+02BC) glues without user subs', () => {
+    expect(wordTexts('quʼil vienne', emptySubs)).toEqual(["qu'il", 'vienne']);
+  });
+
+  test('left single quote glues without user subs', () => {
+    expect(wordTexts('l‘eau', emptySubs)).toEqual(["l'eau"]);
+  });
+});
+
 describe('tokenizeContent — token start/end indices map into processed text', () => {
   test('indices reference substituted content', () => {
     const { processed, tokens } = tokenizeContent("l’eau", LANG.fr);

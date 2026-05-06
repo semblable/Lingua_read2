@@ -273,16 +273,7 @@ namespace LinguaReadApi.Controllers
             {
                 try
                 {
-                    // 1. Remove existing links
-                    var existingLinks = await _context.TextWords.Where(tw => tw.TextId == text.TextId).ToListAsync();
-                    if (existingLinks.Any())
-                    {
-                        _context.TextWords.RemoveRange(existingLinks);
-                        await _context.SaveChangesAsync();
-                    }
-
-                    // 2. Repopulate links using new logic
-                    await LinkWordsToTextInternal(text.TextId, text.Content, text.LanguageId, userId);
+                    await WordLinker.RelinkAsync(_context, text.TextId, text.Content, text.LanguageId, userId);
                     processedCount++;
                 }
                 catch (Exception ex)
@@ -498,100 +489,9 @@ namespace LinguaReadApi.Controllers
             return string.Join(" ", transcriptLines); // Join lines into a single transcript string
         }
 
-        private async Task LinkWordsToTextInternal(int textId, string content, int languageId, Guid userId)
+        private Task LinkWordsToTextInternal(int textId, string content, int languageId, Guid userId)
         {
-            await LinkWordsToTextInternal(textId, content, languageId, userId, _context);
-        }
-
-        /// <summary>
-        /// Chunked word-linking implementation that can work with any DbContext instance.
-        /// Processes words in batches to avoid massive SQL IN clauses.
-        /// </summary>
-        private static async Task LinkWordsToTextInternal(int textId, string content, int languageId, Guid userId, AppDbContext context)
-        {
-            const int WordBatchSize = 500;
-
-            if (string.IsNullOrWhiteSpace(content)) return;
-
-            // 1. Language-aware tokenization (mirror of the frontend
-            //    reader; see Services/Tokenization/Tokenizer.cs).
-            var language = await context.Languages
-                .AsNoTracking()
-                .FirstOrDefaultAsync(l => l.LanguageId == languageId);
-
-            var wordsInText = Tokenizer.ExtractLookupKeys(content, language)
-                                       .Where(w => !string.IsNullOrWhiteSpace(w))
-                                       .ToList();
-
-            if (!wordsInText.Any()) return;
-
-            var uniqueWords = wordsInText.Distinct().ToList();
-
-            // 2. Fetch existing words in batches to avoid massive WHERE IN clauses
-            var existingWordsList = new List<Word>();
-            foreach (var batch in uniqueWords.Chunk(WordBatchSize))
-            {
-                var batchList = batch.ToList();
-                var batchResults = await context.Words
-                    .AsNoTracking()
-                    .Where(w => w.UserId == userId && w.LanguageId == languageId && batchList.Contains(w.Term.ToLower()))
-                    .ToListAsync();
-                existingWordsList.AddRange(batchResults);
-            }
-
-            // Handle potential duplicates in DB safely
-            var existingWords = existingWordsList
-                .GroupBy(w => w.Term.ToLowerInvariant())
-                .ToDictionary(g => g.Key, g => g.First());
-
-            // 3. Create missing words in batches
-            var newWords = new List<Word>();
-            foreach (var wordTerm in uniqueWords)
-            {
-                if (!existingWords.ContainsKey(wordTerm))
-                {
-                    var newWord = new Word
-                    {
-                        UserId = userId,
-                        LanguageId = languageId,
-                        Term = wordTerm,
-                        Status = 0, // Default status
-                        CreatedAt = DateTime.UtcNow
-                    };
-                    newWords.Add(newWord);
-                    existingWords[wordTerm] = newWord;
-                }
-            }
-
-            // Save new words in batches
-            foreach (var batch in newWords.Chunk(WordBatchSize))
-            {
-                context.Words.AddRange(batch);
-                await context.SaveChangesAsync();
-                context.ChangeTracker.Clear();
-            }
-
-            // 4. Link only UNIQUE word occurrences via TextWord bulk insert (batched)
-            var textWordsToAdd = new List<TextWord>();
-            foreach (var wordTerm in uniqueWords)
-            {
-                if (existingWords.TryGetValue(wordTerm, out var word))
-                {
-                    textWordsToAdd.Add(new TextWord
-                    {
-                        TextId = textId,
-                        WordId = word.WordId,
-                        CreatedAt = DateTime.UtcNow
-                    });
-                }
-            }
-
-            foreach (var batch in textWordsToAdd.Chunk(WordBatchSize))
-            {
-                await context.TextWords.AddRangeAsync(batch);
-                await context.SaveChangesAsync();
-                context.ChangeTracker.Clear();
-            }
+            return WordLinker.LinkAsync(_context, textId, content, languageId, userId);
         }
 
 

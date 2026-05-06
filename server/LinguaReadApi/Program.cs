@@ -140,6 +140,9 @@ builder.Services.AddScoped<IDatabaseAdminService, DatabaseAdminService>(); // <-
 // Word linking background processing
 builder.Services.AddSingleton<WordLinkingChannel>();
 builder.Services.AddHostedService<WordLinkingBackgroundService>();
+// One-shot migration service: re-links any text below the current
+// tokenizer version on startup (idempotent across restarts).
+builder.Services.AddHostedService<WordLinkingMigrationService>();
 
 // Register Language Service (New)
 builder.Services.AddScoped<ILanguageService, LanguageService>();

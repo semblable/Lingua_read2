@@ -71,5 +71,13 @@ namespace LinguaReadApi.Models
         // Background word-linking status: null (legacy/done), "processing", "completed", "failed"
         [StringLength(20)]
         public string? WordLinkingStatus { get; set; }
+
+        // Version of the tokenizer that produced the current TextWord
+        // links. Bumped when the tokenization algorithm changes in a way
+        // that would alter the token sequence (e.g. apostrophe/hyphen
+        // glue, char substitutions). The migration BackgroundService
+        // re-links texts whose version is below the current one. Null
+        // means "legacy" (pre-versioning) and is treated as < any value.
+        public int? WordLinkingTokenizerVersion { get; set; }
     }
 }

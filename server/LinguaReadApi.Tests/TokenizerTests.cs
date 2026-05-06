@@ -199,4 +199,43 @@ public class TokenizerTests
         Assert.Equal("l'eau", word.Text);
         Assert.Equal("l'eau", result.Processed.Substring(word.Start, word.End - word.Start));
     }
+
+    // ---- Built-in apostrophe normalization (no user subs) -----------
+
+    [Fact]
+    public void BuiltInNormalization_CurlyApostropheGluesWithoutUserSubs()
+    {
+        // Custom language with empty CharacterSubstitutions still gets
+        // glue for elisions because the tokenizer applies built-in
+        // apostrophe normalizations first.
+        var fresh = new Language
+        {
+            Code = "fr",
+            Name = "fr",
+            WordCharacters = "a-zA-Zà-ÿ",
+            CharacterSubstitutions = "",
+            SplitSentences = ".!?",
+            ParserType = "spacedel"
+        };
+        var result = Tokenizer.Tokenize("l’eau coule", fresh);
+        var words = result.Tokens.Where(t => t.IsWord).Select(t => t.Text).ToArray();
+        Assert.Equal(new[] { "l'eau", "coule" }, words);
+    }
+
+    [Fact]
+    public void BuiltInNormalization_ModifierApostropheGluesWithoutUserSubs()
+    {
+        var fresh = new Language
+        {
+            Code = "fr",
+            Name = "fr",
+            WordCharacters = "a-zA-Zà-ÿ",
+            CharacterSubstitutions = null,
+            SplitSentences = ".!?",
+            ParserType = "spacedel"
+        };
+        var result = Tokenizer.Tokenize("quʼil vienne", fresh);
+        var words = result.Tokens.Where(t => t.IsWord).Select(t => t.Text).ToArray();
+        Assert.Equal(new[] { "qu'il", "vienne" }, words);
+    }
 }

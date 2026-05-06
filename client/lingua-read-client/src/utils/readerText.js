@@ -184,6 +184,18 @@ export const buildDisplayBlocks = (content, structuredContent = []) => {
 const APOSTROPHE = "'";
 const HYPHEN = '-';
 
+// Built-in normalizations applied BEFORE user-defined characterSubstitutions.
+// These guarantee that apostrophe/hyphen glue works in every language —
+// even custom ones with empty CharacterSubstitutions — by mapping common
+// curly / modifier apostrophe variants to ASCII. User subs can still
+// override these (e.g. mapping U+2019 to a different char) by listing
+// the same `old` in the language config.
+const BUILT_IN_SUBSTITUTIONS = [
+  { old: '’', replacement: APOSTROPHE }, // ’ right single quote
+  { old: '‘', replacement: APOSTROPHE }, // ‘ left single quote
+  { old: 'ʼ', replacement: APOSTROPHE }  // ʼ modifier letter apostrophe
+];
+
 export const parseCharacterSubstitutions = (str) => {
   if (!str || typeof str !== 'string') return [];
   return str
@@ -243,6 +255,56 @@ const isCoreWordChar = (regex, ch) => !!ch && regex.test(ch);
 const isConnector = (ch) => ch === APOSTROPHE || ch === HYPHEN;
 
 /**
+ * Apply built-in + user character substitutions and return the
+ * processed text plus the precomputed core-word regex. Used by
+ * `tokenizeContent` and by callers that walk content with their
+ * own outer loop (e.g. the reader's phrase-aware renderer).
+ */
+export const prepareLanguageContext = (rawContent, languageConfig) => {
+  const userSubs = parseCharacterSubstitutions(languageConfig?.characterSubstitutions);
+  const processed = applyCharacterSubstitutions(
+    applyCharacterSubstitutions(rawContent || '', BUILT_IN_SUBSTITUTIONS),
+    userSubs
+  );
+  const coreRegex = buildCoreWordRegex(languageConfig?.wordCharacters);
+  return { processed, coreRegex };
+};
+
+/**
+ * Try to consume a word starting at `index` in `processed`. Returns
+ * `{ text, end }` if a word was consumed, otherwise `null`. Honors
+ * the universal apostrophe / inter-letter hyphen connector rule.
+ */
+export const consumeWordAt = (processed, index, coreRegex) => {
+  if (!processed || index < 0 || index >= processed.length) return null;
+  if (!isCoreWordChar(coreRegex, processed[index])) return null;
+
+  let i = index + 1;
+  let word = processed[index];
+  const len = processed.length;
+
+  while (i < len) {
+    const next = processed[i];
+    if (isCoreWordChar(coreRegex, next)) {
+      word += next;
+      i++;
+      continue;
+    }
+    if (
+      isConnector(next) &&
+      i + 1 < len &&
+      isCoreWordChar(coreRegex, processed[i + 1])
+    ) {
+      word += next;
+      i++;
+      continue;
+    }
+    break;
+  }
+  return { text: word, end: i };
+};
+
+/**
  * Tokenize content into an ordered array of `{ type, text, start, end }`
  * segments. `start`/`end` are indices into the **substituted** text
  * (returned alongside as `processed`). Word tokens preserve casing.
@@ -254,41 +316,18 @@ const isConnector = (ch) => ch === APOSTROPHE || ch === HYPHEN;
 export const tokenizeContent = (rawContent, languageConfig = null) => {
   if (!rawContent) return { processed: '', tokens: [] };
 
-  const subs = parseCharacterSubstitutions(languageConfig?.characterSubstitutions);
-  const processed = applyCharacterSubstitutions(rawContent, subs);
-  const coreRegex = buildCoreWordRegex(languageConfig?.wordCharacters);
-
+  const { processed, coreRegex } = prepareLanguageContext(rawContent, languageConfig);
   const tokens = [];
   let i = 0;
   const len = processed.length;
 
   while (i < len) {
-    const ch = processed[i];
-    if (isCoreWordChar(coreRegex, ch)) {
-      const start = i;
-      let word = ch;
-      i++;
-      while (i < len) {
-        const next = processed[i];
-        if (isCoreWordChar(coreRegex, next)) {
-          word += next;
-          i++;
-          continue;
-        }
-        if (
-          isConnector(next) &&
-          i + 1 < len &&
-          isCoreWordChar(coreRegex, processed[i + 1])
-        ) {
-          word += next;
-          i++;
-          continue;
-        }
-        break;
-      }
-      tokens.push({ type: 'word', text: word, start, end: i });
+    const word = consumeWordAt(processed, i, coreRegex);
+    if (word) {
+      tokens.push({ type: 'word', text: word.text, start: i, end: word.end });
+      i = word.end;
     } else {
-      tokens.push({ type: 'separator', text: ch, start: i, end: i + 1 });
+      tokens.push({ type: 'separator', text: processed[i], start: i, end: i + 1 });
       i++;
     }
   }
@@ -308,7 +347,36 @@ const SUPPORTED_INTL_SEGMENTER = (() => {
   }
 })();
 
-const FALLBACK_SENTENCE_REGEX = /[^.!?…]+(?:[.!?…]+(?:"|”|'|’)?|$)/g;
+const DEFAULT_SENTENCE_TERMINATORS = '.!?…';
+
+const escapeForCharClass = (ch) =>
+  ch.replace(/[\\\]\^\-]/g, m => `\\${m}`);
+
+const fallbackRegexCache = new Map();
+
+const buildFallbackSentenceRegex = (splitSentences) => {
+  const raw = (splitSentences && splitSentences.length > 0)
+    ? splitSentences
+    : DEFAULT_SENTENCE_TERMINATORS;
+  // De-duplicate and always include `…` (single-glyph ellipsis) since
+  // it doesn't appear in the canonical `.!?` config but Intl.Segmenter
+  // treats it as a sentence ender.
+  const chars = new Set(raw.split(''));
+  chars.add('…');
+  const cacheKey = [...chars].sort().join('');
+  const cached = fallbackRegexCache.get(cacheKey);
+  if (cached) return cached;
+
+  const cls = [...chars].map(escapeForCharClass).join('');
+  let regex;
+  try {
+    regex = new RegExp(`[^${cls}]+(?:[${cls}]+(?:"|”|'|’)?|$)`, 'gu');
+  } catch (err) {
+    regex = new RegExp(`[^${escapeForCharClass(DEFAULT_SENTENCE_TERMINATORS).split('').join('')}]+(?:[.!?…]+(?:"|”|'|’)?|$)`, 'gu');
+  }
+  fallbackRegexCache.set(cacheKey, regex);
+  return regex;
+};
 
 const localeFromCode = (code) => {
   if (!code || typeof code !== 'string') return undefined;
@@ -328,8 +396,9 @@ const segmentSentencesIntl = (text, locale) => {
   }
 };
 
-const segmentSentencesRegex = (text) => {
-  return text.match(FALLBACK_SENTENCE_REGEX) || [text];
+const segmentSentencesRegex = (text, splitSentences) => {
+  const regex = buildFallbackSentenceRegex(splitSentences);
+  return text.match(regex) || [text];
 };
 
 // Merge candidate sentences when a sentence ends with one of the
@@ -368,7 +437,7 @@ const splitBlockIntoSentences = (blockText, languageConfig, languageCode) => {
   const intlResult = SUPPORTED_INTL_SEGMENTER ? segmentSentencesIntl(blockText, locale) : null;
   const candidates = (intlResult && intlResult.length > 0)
     ? intlResult
-    : segmentSentencesRegex(blockText);
+    : segmentSentencesRegex(blockText, languageConfig?.splitSentences);
   const merged = applyExceptionMerging(candidates, languageConfig?.sentenceSplitExceptions);
   return merged
     .map(sentence => sentence.replace(/\s+/g, ' ').trim())

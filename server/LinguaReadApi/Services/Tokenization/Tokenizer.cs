@@ -34,6 +34,18 @@ namespace LinguaReadApi.Services.Tokenization
         private const char Hyphen = '-';
         private const string DefaultWordClass = @"\p{L}";
 
+        // Built-in normalizations applied BEFORE user-defined
+        // CharacterSubstitutions. Guarantees that apostrophe glue works
+        // in every language — even custom ones with empty CharacterSubstitutions —
+        // by mapping common curly / modifier apostrophe variants to
+        // ASCII U+0027. User subs can still override.
+        private static readonly (string Old, string New)[] BuiltInSubstitutions =
+        {
+            ("’", "'"), // ’ right single quote
+            ("‘", "'"), // ‘ left single quote
+            ("ʼ", "'")  // ʼ modifier letter apostrophe
+        };
+
         private static readonly ConcurrentDictionary<string, Regex> _regexCache = new();
         private static readonly ConcurrentDictionary<string, TextInfo> _textInfoCache = new();
 
@@ -106,45 +118,47 @@ namespace LinguaReadApi.Services.Tokenization
                 return new TokenizationResult(string.Empty, Array.Empty<Token>());
             }
 
-            var subs = ParseCharacterSubstitutions(language?.CharacterSubstitutions);
-            var processed = ApplyCharacterSubstitutions(rawContent, subs);
+            var userSubs = ParseCharacterSubstitutions(language?.CharacterSubstitutions);
+            // Built-in apostrophe normalizations run first so glue
+            // works even when a custom language has empty
+            // CharacterSubstitutions; user subs can override.
+            var processed = ApplyCharacterSubstitutions(rawContent, BuiltInSubstitutions);
+            processed = ApplyCharacterSubstitutions(processed, userSubs);
             var coreRegex = BuildCoreWordRegex(language?.WordCharacters);
 
             var tokens = new List<Token>();
             var i = 0;
             var len = processed.Length;
 
+            ReadOnlySpan<char> span = processed.AsSpan();
+
             while (i < len)
             {
-                var ch = processed[i];
-                if (IsCoreWordChar(coreRegex, ch))
+                if (IsCoreWordChar(coreRegex, span, i))
                 {
                     var start = i;
-                    var sb = new System.Text.StringBuilder();
-                    sb.Append(ch);
                     i++;
                     while (i < len)
                     {
-                        var nx = processed[i];
-                        if (IsCoreWordChar(coreRegex, nx))
+                        if (IsCoreWordChar(coreRegex, span, i))
                         {
-                            sb.Append(nx);
                             i++;
                             continue;
                         }
-                        if (IsConnector(nx) && i + 1 < len && IsCoreWordChar(coreRegex, processed[i + 1]))
+                        if (IsConnector(processed[i])
+                            && i + 1 < len
+                            && IsCoreWordChar(coreRegex, span, i + 1))
                         {
-                            sb.Append(nx);
                             i++;
                             continue;
                         }
                         break;
                     }
-                    tokens.Add(new Token(sb.ToString(), start, i, IsWord: true));
+                    tokens.Add(new Token(processed.Substring(start, i - start), start, i, IsWord: true));
                 }
                 else
                 {
-                    tokens.Add(new Token(ch.ToString(), i, i + 1, IsWord: false));
+                    tokens.Add(new Token(processed.Substring(i, 1), i, i + 1, IsWord: false));
                     i++;
                 }
             }
@@ -177,11 +191,11 @@ namespace LinguaReadApi.Services.Tokenization
             return GetTextInfo(language?.Code).ToLower(text.Trim());
         }
 
-        private static bool IsCoreWordChar(Regex coreRegex, char ch)
+        private static bool IsCoreWordChar(Regex coreRegex, ReadOnlySpan<char> span, int index)
         {
-            // Regex.IsMatch on a single-char span avoids per-call string
-            // allocations for the hot tokenization loop.
-            return coreRegex.IsMatch(ch.ToString());
+            // Span-based IsMatch avoids per-character string allocations
+            // in the hot tokenization loop. Available on .NET 7+.
+            return coreRegex.IsMatch(span.Slice(index, 1));
         }
 
         private static bool IsConnector(char ch) => ch == Apostrophe || ch == Hyphen;

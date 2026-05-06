@@ -10,8 +10,6 @@ namespace LinguaReadApi.Services
 {
     public class WordLinkingBackgroundService : BackgroundService
     {
-        private const int WordBatchSize = 500;
-
         private readonly WordLinkingChannel _channel;
         private readonly IServiceProvider _serviceProvider;
         private readonly ILogger<WordLinkingBackgroundService> _logger;
@@ -77,86 +75,10 @@ namespace LinguaReadApi.Services
             }
         }
 
-        private static async Task LinkWordsToText(AppDbContext context, WordLinkingRequest request)
+        private static Task LinkWordsToText(AppDbContext context, WordLinkingRequest request)
         {
-            // Load language config so we can apply per-language character
-            // substitutions and word-character rules. Falls back to a
-            // null Language → default tokenizer behaviour.
-            var language = await context.Languages
-                .AsNoTracking()
-                .FirstOrDefaultAsync(l => l.LanguageId == request.LanguageId);
-
-            var wordsInText = Tokenizer.ExtractLookupKeys(request.Content, language)
-                                       .Where(w => !string.IsNullOrWhiteSpace(w))
-                                       .ToList();
-
-            if (!wordsInText.Any()) return;
-
-            var uniqueWords = wordsInText.Distinct().ToList();
-
-            // Fetch existing words in batches
-            var existingWordsList = new List<Word>();
-            foreach (var batch in uniqueWords.Chunk(WordBatchSize))
-            {
-                var batchList = batch.ToList();
-                var batchResults = await context.Words
-                    .AsNoTracking()
-                    .Where(w => w.UserId == request.UserId && w.LanguageId == request.LanguageId && batchList.Contains(w.Term.ToLower()))
-                    .ToListAsync();
-                existingWordsList.AddRange(batchResults);
-            }
-
-            var existingWords = existingWordsList
-                .GroupBy(w => w.Term.ToLowerInvariant())
-                .ToDictionary(g => g.Key, g => g.First());
-
-            // Create missing words in batches
-            var newWords = new List<Word>();
-            foreach (var wordTerm in uniqueWords)
-            {
-                if (!existingWords.ContainsKey(wordTerm))
-                {
-                    var newWord = new Word
-                    {
-                        UserId = request.UserId,
-                        LanguageId = request.LanguageId,
-                        Term = wordTerm,
-                        Status = 0,
-                        CreatedAt = DateTime.UtcNow
-                    };
-                    newWords.Add(newWord);
-                    existingWords[wordTerm] = newWord;
-                }
-            }
-
-            foreach (var batch in newWords.Chunk(WordBatchSize))
-            {
-                context.Words.AddRange(batch);
-                await context.SaveChangesAsync();
-                context.ChangeTracker.Clear();
-            }
-
-            // Create TextWord links in batches
-            var textWordsToAdd = new List<TextWord>();
-            foreach (var wordTerm in uniqueWords)
-            {
-                if (existingWords.TryGetValue(wordTerm, out var word))
-                {
-                    textWordsToAdd.Add(new TextWord
-                    {
-                        TextId = request.TextId,
-                        WordId = word.WordId,
-                        CreatedAt = DateTime.UtcNow
-                    });
-                }
-            }
-
-            foreach (var batch in textWordsToAdd.Chunk(WordBatchSize))
-            {
-                await context.TextWords.AddRangeAsync(batch);
-                await context.SaveChangesAsync();
-                context.ChangeTracker.Clear();
-            }
+            return WordLinker.LinkAsync(
+                context, request.TextId, request.Content, request.LanguageId, request.UserId);
         }
     }
 }

@@ -630,7 +630,7 @@ const BookDetail = () => {
       {/* Finish Book / Rating Modal */}
       <Modal
         show={showRatingModal}
-        onHide={() => !finishingBook && setShowRatingModal(false)}
+        onHide={() => { if (!finishingBook) { setShowRatingModal(false); setFinishError(''); } }}
         backdrop={finishingBook ? 'static' : true}
       >
         <Modal.Header closeButton={!finishingBook}>

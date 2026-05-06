@@ -65,6 +65,7 @@ namespace LinguaReadApi.Services
             int totalProcessed = 0;
             int totalErrors = 0;
             int reportedTotal = -1;
+            var failedIds = new HashSet<int>();
 
             while (!stoppingToken.IsCancellationRequested)
             {
@@ -99,8 +100,9 @@ namespace LinguaReadApi.Services
                     batch = await context.Texts
                         .AsNoTracking()
                         .Where(t =>
-                            t.WordLinkingTokenizerVersion == null ||
-                            t.WordLinkingTokenizerVersion < WordLinker.CurrentTokenizerVersion)
+                            !failedIds.Contains(t.TextId) &&
+                            (t.WordLinkingTokenizerVersion == null ||
+                            t.WordLinkingTokenizerVersion < WordLinker.CurrentTokenizerVersion))
                         .OrderBy(t => t.TextId)
                         .Take(BatchSize)
                         .Select(t => new ValueTuple<int, string, int, Guid>(
@@ -127,6 +129,7 @@ namespace LinguaReadApi.Services
                     catch (Exception ex) when (ex is not OperationCanceledException)
                     {
                         totalErrors++;
+                        failedIds.Add(textId);
                         _logger.LogError(ex,
                             "WordLinkingMigrationService: failed to re-link TextId={TextId}", textId);
                     }

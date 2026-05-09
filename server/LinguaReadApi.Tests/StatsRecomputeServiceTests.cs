@@ -179,6 +179,54 @@ public class StatsRecomputeServiceTests
         Assert.NotNull(t.StatsUpdatedAt);
     }
 
+    // --- Orchestration tests (ExecuteAsync / MigrationSignal) ---
+
+    [Fact]
+    public async Task ExecuteAsync_StartupSweep_BlocksUntilMigrationSignalFires()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var userId = Guid.NewGuid();
+        SeedBookAndStandaloneText(dbName, userId);
+
+        var signal = new MigrationSignal(); // not yet fired
+        var (provider, _) = CreateProvider(dbName);
+        var service = new StatsRecomputeService(provider, NullLogger<StatsRecomputeService>.Instance, signal);
+
+        await service.StartAsync(CancellationToken.None);
+
+        // Signal hasn't fired — sweep must not have run yet.
+        await using (var ctx = NewContext(dbName))
+        {
+            var t = await ctx.Texts.SingleAsync(x => x.TextId == 100);
+            Assert.Null(t.StatsUpdatedAt);
+        }
+
+        // Unblock the service and wait for the in-memory sweep to finish.
+        signal.SetComplete();
+        await Task.Delay(200);
+
+        await using (var ctx = NewContext(dbName))
+        {
+            var t = await ctx.Texts.SingleAsync(x => x.TextId == 100);
+            Assert.NotNull(t.StatsUpdatedAt);
+        }
+
+        await service.StopAsync(CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_CancelBeforeMigrationSignal_ReturnsWithoutHanging()
+    {
+        var signal = new MigrationSignal(); // never fired
+        var (provider, _) = CreateProvider(Guid.NewGuid().ToString());
+        var service = new StatsRecomputeService(provider, NullLogger<StatsRecomputeService>.Instance, signal);
+
+        await service.StartAsync(CancellationToken.None);
+
+        // StopAsync must return promptly even though the signal never fires.
+        await service.StopAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
     // --- Helpers ---
 
     private static (IServiceProvider provider, ServiceProvider services) CreateProvider(string dbName)

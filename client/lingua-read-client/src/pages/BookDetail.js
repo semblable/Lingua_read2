@@ -548,7 +548,7 @@ const BookDetail = () => {
                 <small className="text-muted">
                   Added: {formatDate(part.createdAt)}
                   {part.totalWords > 0 && part.unknownWordPercentage != null && (
-                    <span className="ms-2" title={`${part.unknownWords} of ${part.totalWords} unique words not yet known`}>
+                    <span className="ms-2" title={`${part.unknownWords} of ${part.totalWords} word tokens not yet known`}>
                       · {part.unknownWordPercentage.toFixed(1)}% new
                     </span>
                   )}

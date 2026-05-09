@@ -67,7 +67,7 @@ const LibraryTextCard = ({ text, isSelected, onSelect, onItemClick }) => {
           <small className="text-muted mt-auto">
             {formatDate(text.createdAt)}
             {text.totalWords > 0 && text.unknownWordPercentage != null && (
-              <span className="ms-2" title={`${text.unknownWords} of ${text.totalWords} unique words not yet known`}>
+              <span className="ms-2" title={`${text.unknownWords} of ${text.totalWords} word tokens not yet known`}>
                 · {text.unknownWordPercentage.toFixed(1)}% new
               </span>
             )}

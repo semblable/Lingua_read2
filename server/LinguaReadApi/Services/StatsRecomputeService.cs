@@ -19,29 +19,40 @@ namespace LinguaReadApi.Services
     /// </summary>
     public class StatsRecomputeService : BackgroundService
     {
-        private static readonly TimeSpan DailyInterval = TimeSpan.FromHours(24);
         private static readonly TimeOnly RunAtUtc = new TimeOnly(3, 0); // 03:00 UTC
 
         private readonly IServiceProvider _serviceProvider;
         private readonly ILogger<StatsRecomputeService> _logger;
+        private readonly MigrationSignal _migrationSignal;
 
         public StatsRecomputeService(
             IServiceProvider serviceProvider,
-            ILogger<StatsRecomputeService> logger)
+            ILogger<StatsRecomputeService> logger,
+            MigrationSignal migrationSignal)
         {
             _serviceProvider = serviceProvider;
             _logger = logger;
+            _migrationSignal = migrationSignal;
         }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
             _logger.LogInformation("StatsRecomputeService started; nightly sweep at {RunAt} UTC.", RunAtUtc);
 
-            // Always run a sweep on startup. Cheap (one grouped query +
-            // writes only for changed rows) and idempotent, but catches
-            // drift the daily timer would otherwise miss — e.g. when a
-            // tokenizer-version bump re-links texts and changes their
-            // OccurrenceCount values without touching StatsUpdatedAt.
+            // Wait for WordLinkingMigrationService to finish before sweeping
+            // so real OccurrenceCount values are in place. Without this,
+            // the sweep would read placeholder OccurrenceCount=1 rows for
+            // texts still pending re-link and persist wrong stats until the
+            // next nightly run.
+            try
+            {
+                await _migrationSignal.Completed.WaitAsync(stoppingToken);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+
             try
             {
                 _logger.LogInformation("StatsRecomputeService running startup sweep.");

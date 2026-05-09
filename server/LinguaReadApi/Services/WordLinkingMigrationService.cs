@@ -30,13 +30,16 @@ namespace LinguaReadApi.Services
 
         private readonly IServiceProvider _serviceProvider;
         private readonly ILogger<WordLinkingMigrationService> _logger;
+        private readonly MigrationSignal _migrationSignal;
 
         public WordLinkingMigrationService(
             IServiceProvider serviceProvider,
-            ILogger<WordLinkingMigrationService> logger)
+            ILogger<WordLinkingMigrationService> logger,
+            MigrationSignal migrationSignal)
         {
             _serviceProvider = serviceProvider;
             _logger = logger;
+            _migrationSignal = migrationSignal;
         }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -47,6 +50,7 @@ namespace LinguaReadApi.Services
             }
             catch (TaskCanceledException)
             {
+                _migrationSignal.SetComplete();
                 return;
             }
 
@@ -57,6 +61,12 @@ namespace LinguaReadApi.Services
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 _logger.LogError(ex, "WordLinkingMigrationService aborted unexpectedly.");
+            }
+            finally
+            {
+                // Always unblock StatsRecomputeService, even on failure or
+                // cancellation, so it never waits forever.
+                _migrationSignal.SetComplete();
             }
         }
 

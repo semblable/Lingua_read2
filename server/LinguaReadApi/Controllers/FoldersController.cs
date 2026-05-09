@@ -140,6 +140,7 @@ namespace LinguaReadApi.Controllers
                     TotalWords = b.TotalWords,
                     KnownWords = b.KnownWords,
                     LearningWords = b.LearningWords,
+                    StatsUpdatedAt = b.StatsUpdatedAt,
                     IsFinished = b.IsFinished,
                     SortOrder = b.SortOrder,
                     FolderId = b.FolderId,
@@ -163,7 +164,10 @@ namespace LinguaReadApi.Controllers
                     IsAudioLesson = t.IsAudioLesson,
                     IsFinished = t.IsFinished,
                     SortOrder = t.SortOrder,
-                    FolderId = t.FolderId
+                    FolderId = t.FolderId,
+                    TotalWords = t.TotalWords,
+                    KnownWords = t.KnownWords,
+                    StatsUpdatedAt = t.StatsUpdatedAt
                 })
                 .ToListAsync();
 
@@ -574,6 +578,10 @@ namespace LinguaReadApi.Controllers
         public int TotalWords { get; set; }
         public int KnownWords { get; set; }
         public int LearningWords { get; set; }
+        public DateTime? StatsUpdatedAt { get; set; }
+        public int UnknownWords => Math.Max(TotalWords - KnownWords, 0);
+        public double? UnknownWordPercentage =>
+            TotalWords > 0 ? Math.Round((double)(TotalWords - KnownWords) / TotalWords * 100, 1) : (double?)null;
         public bool IsFinished { get; set; }
         public int SortOrder { get; set; }
         public int? FolderId { get; set; }
@@ -593,6 +601,12 @@ namespace LinguaReadApi.Controllers
         public bool IsFinished { get; set; }
         public int SortOrder { get; set; }
         public int? FolderId { get; set; }
+        public int TotalWords { get; set; }
+        public int KnownWords { get; set; }
+        public DateTime? StatsUpdatedAt { get; set; }
+        public int UnknownWords => Math.Max(TotalWords - KnownWords, 0);
+        public double? UnknownWordPercentage =>
+            TotalWords > 0 ? Math.Round((double)(TotalWords - KnownWords) / TotalWords * 100, 1) : (double?)null;
     }
 
     public class CreateFolderDto

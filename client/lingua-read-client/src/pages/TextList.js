@@ -238,6 +238,13 @@ const TextList = () => {
                       Created: {text.createdAt ? new Date(text.createdAt).toLocaleDateString() : 'N/A'}
                     </small>
                   </div>
+                  {text.bookId == null && text.totalWords > 0 && text.unknownWordPercentage != null && (
+                    <div className="mt-1">
+                      <small className="text-muted">
+                        Unknown: {text.unknownWordPercentage.toFixed(1)}% ({text.unknownWords}/{text.totalWords})
+                      </small>
+                    </div>
+                  )}
                 </Card.Body>
                 <Card.Footer className="bg-white border-top-0 d-flex justify-content-between align-items-center">
                   <Button

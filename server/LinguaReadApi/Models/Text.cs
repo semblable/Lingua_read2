@@ -72,6 +72,13 @@ namespace LinguaReadApi.Models
         [StringLength(20)]
         public string? WordLinkingStatus { get; set; }
 
+        // Cached unique-word stats for this text. Populated by CompleteText
+        // and the nightly StatsRecomputeService; surfaced as a "% unknown"
+        // indicator on standalone texts in the library.
+        public int TotalWords { get; set; } = 0;
+        public int KnownWords { get; set; } = 0;
+        public DateTime? StatsUpdatedAt { get; set; }
+
         // Version of the tokenizer that produced the current TextWord
         // links. Bumped when the tokenization algorithm changes in a way
         // that would alter the token sequence (e.g. apostrophe/hyphen

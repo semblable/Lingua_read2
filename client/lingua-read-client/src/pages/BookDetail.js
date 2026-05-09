@@ -496,6 +496,11 @@ const BookDetail = () => {
                 {book.pageCount && <>| Pages: {book.pageCount}</>}
               </div>
             )}
+            {book.totalWords > 0 && book.unknownWordPercentage != null && (
+              <div className="text-muted small mt-1">
+                Unknown words: {book.unknownWordPercentage.toFixed(1)}% ({book.unknownWords} of {book.totalWords})
+              </div>
+            )}
           </div>
           <div className="d-flex flex-wrap gap-2">
             <Button

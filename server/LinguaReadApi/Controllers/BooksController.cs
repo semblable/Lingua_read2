@@ -72,6 +72,7 @@ namespace LinguaReadApi.Controllers
                     TotalWords = b.TotalWords,
                     KnownWords = b.KnownWords,
                     LearningWords = b.LearningWords,
+                    StatsUpdatedAt = b.StatsUpdatedAt,
                     IsFinished = b.IsFinished,
                     CoverImagePath = b.CoverImagePath,
                     HardcoverBookId = b.HardcoverBookId,
@@ -131,6 +132,10 @@ namespace LinguaReadApi.Controllers
                 HardcoverUserBookId = book.HardcoverUserBookId,
                 HardcoverMatchedAt = book.HardcoverMatchedAt,
                 HardcoverLastSyncedAt = book.HardcoverLastSyncedAt,
+                TotalWords = book.TotalWords,
+                KnownWords = book.KnownWords,
+                LearningWords = book.LearningWords,
+                StatsUpdatedAt = book.StatsUpdatedAt,
                 Parts = book.Texts.OrderBy(t => t.PartNumber).Select(t => new TextPartDto
                 {
                     TextId = t.TextId,
@@ -1765,6 +1770,7 @@ namespace LinguaReadApi.Controllers
                     book.TotalWords = bookTotal;
                     book.KnownWords = bookKnown;
                     book.LearningWords = bookLearning;
+                    book.StatsUpdatedAt = now;
 
                     book.LastReadAt = now;
                     book.LastReadTextId = text.TextId;
@@ -2201,6 +2207,10 @@ namespace LinguaReadApi.Controllers
         public int TotalWords { get; set; }
         public int KnownWords { get; set; }
         public int LearningWords { get; set; }
+        public DateTime? StatsUpdatedAt { get; set; }
+        public int UnknownWords => Math.Max(TotalWords - KnownWords, 0);
+        public double? UnknownWordPercentage =>
+            TotalWords > 0 ? Math.Round((double)(TotalWords - KnownWords) / TotalWords * 100, 1) : (double?)null;
         public bool IsFinished { get; set; }
         public int? HardcoverBookId { get; set; }
         public int? HardcoverEditionId { get; set; }
@@ -2236,6 +2246,13 @@ namespace LinguaReadApi.Controllers
         public int? HardcoverUserBookId { get; set; }
         public DateTime? HardcoverMatchedAt { get; set; }
         public DateTime? HardcoverLastSyncedAt { get; set; }
+        public int TotalWords { get; set; }
+        public int KnownWords { get; set; }
+        public int LearningWords { get; set; }
+        public DateTime? StatsUpdatedAt { get; set; }
+        public int UnknownWords => Math.Max(TotalWords - KnownWords, 0);
+        public double? UnknownWordPercentage =>
+            TotalWords > 0 ? Math.Round((double)(TotalWords - KnownWords) / TotalWords * 100, 1) : (double?)null;
         public List<TextPartDto> Parts { get; set; } = new List<TextPartDto>();
         public List<TagDto> Tags { get; set; } = new List<TagDto>();
         public List<AudiobookTrackDto> AudiobookTracks { get; set; } = new List<AudiobookTrackDto>(); // Added for Audiobook feature

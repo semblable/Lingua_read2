@@ -65,7 +65,10 @@ namespace LinguaReadApi.Controllers
                     BookTitle = t.Book != null ? t.Book.Title : null, // Include BookTitle
                     IsFinished = t.IsFinished,
                     FolderId = t.FolderId,
-                    SortOrder = t.SortOrder
+                    SortOrder = t.SortOrder,
+                    TotalWords = t.TotalWords,
+                    KnownWords = t.KnownWords,
+                    StatsUpdatedAt = t.StatsUpdatedAt
                 })
                 .ToListAsync();
 
@@ -114,6 +117,9 @@ namespace LinguaReadApi.Controllers
                      WordLinkingStatus = text.WordLinkingStatus,
                      StructuredContentRaw = text.StructuredContent,
                      CreatedAt = text.CreatedAt,
+                     TotalWords = text.TotalWords,
+                     KnownWords = text.KnownWords,
+                     StatsUpdatedAt = text.StatsUpdatedAt,
                      // Optimized: TextWords now contains unique links, so we can project directly
                      Words = text.TextWords
                          .Select(tw => new WordDto
@@ -1011,23 +1017,33 @@ namespace LinguaReadApi.Controllers
                 }
             }
 
-            // --- 3. Update Text Status (If applicable) ---
-            // Update IsFinished status
-                if (!text.IsFinished)
+            // --- 3. Update Text Status & Cached Stats ---
+            // Always persist refreshed unique-word stats (drives the
+            // "% unknown" indicator in the standalone-text library);
+            // also flip IsFinished/Tag if this is a first completion.
             {
                 var textToUpdate = new Text { TextId = textId, UserId = userId };
                 _context.Texts.Attach(textToUpdate);
 
-                // Update IsFinished status
-                textToUpdate.IsFinished = true;
-                _context.Entry(textToUpdate).Property(t => t.IsFinished).IsModified = true;
+                textToUpdate.TotalWords = totalWordsUnique;
+                textToUpdate.KnownWords = knownWordsUnique;
+                textToUpdate.StatsUpdatedAt = DateTime.UtcNow;
+                _context.Entry(textToUpdate).Property(t => t.TotalWords).IsModified = true;
+                _context.Entry(textToUpdate).Property(t => t.KnownWords).IsModified = true;
+                _context.Entry(textToUpdate).Property(t => t.StatsUpdatedAt).IsModified = true;
 
-                // Check for AutoMoveFinishedLessons setting
-                var userSettings = await _context.UserSettings.FindAsync(userId);
-                if (userSettings != null && userSettings.AutoMoveFinishedLessons)
+                if (!text.IsFinished)
                 {
-                    textToUpdate.Tag = "Finished";
-                    _context.Entry(textToUpdate).Property(t => t.Tag).IsModified = true;
+                    textToUpdate.IsFinished = true;
+                    _context.Entry(textToUpdate).Property(t => t.IsFinished).IsModified = true;
+
+                    // Check for AutoMoveFinishedLessons setting
+                    var userSettings = await _context.UserSettings.FindAsync(userId);
+                    if (userSettings != null && userSettings.AutoMoveFinishedLessons)
+                    {
+                        textToUpdate.Tag = "Finished";
+                        _context.Entry(textToUpdate).Property(t => t.Tag).IsModified = true;
+                    }
                 }
 
                 await _context.SaveChangesAsync();
@@ -1074,6 +1090,12 @@ namespace LinguaReadApi.Controllers
         public double? AudioProgress { get; set; }
         public int? FolderId { get; set; }
         public int SortOrder { get; set; }
+        public int TotalWords { get; set; }
+        public int KnownWords { get; set; }
+        public DateTime? StatsUpdatedAt { get; set; }
+        public int UnknownWords => Math.Max(TotalWords - KnownWords, 0);
+        public double? UnknownWordPercentage =>
+            TotalWords > 0 ? Math.Round((double)(TotalWords - KnownWords) / TotalWords * 100, 1) : (double?)null;
     }
 
     public class TextDetailDto
@@ -1094,6 +1116,12 @@ namespace LinguaReadApi.Controllers
         public string? WordLinkingStatus { get; set; }
         public List<ReaderContentBlock> StructuredContent { get; set; } = new List<ReaderContentBlock>();
         public List<WordDto> Words { get; set; } = new List<WordDto>();
+        public int TotalWords { get; set; }
+        public int KnownWords { get; set; }
+        public DateTime? StatsUpdatedAt { get; set; }
+        public int UnknownWords => Math.Max(TotalWords - KnownWords, 0);
+        public double? UnknownWordPercentage =>
+            TotalWords > 0 ? Math.Round((double)(TotalWords - KnownWords) / TotalWords * 100, 1) : (double?)null;
         [JsonIgnore]
         public string? StructuredContentRaw { get; set; }
     }

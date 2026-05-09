@@ -59,7 +59,12 @@ namespace LinguaReadApi.Models
         public int LearningWords { get; set; } = 0;
         public DateTime? LastReadAt { get; set; }
         public bool IsFinished { get; set; } = false;
-        
+
+        // Last time the cached word stats (TotalWords/KnownWords/LearningWords)
+        // were recomputed. Populated by lesson completion and the nightly
+        // StatsRecomputeService. Null = never computed (legacy or new books).
+        public DateTime? StatsUpdatedAt { get; set; }
+
         // Track which texts have been read
         [NotMapped] // Not stored directly in the database
         public List<int> ReadTextIds { get; set; } = new List<int>();

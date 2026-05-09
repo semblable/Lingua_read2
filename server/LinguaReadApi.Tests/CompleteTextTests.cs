@@ -66,6 +66,35 @@ public class CompleteTextTests
     }
 
     [Fact]
+    public async Task CompleteText_PersistsCachedWordStats_FromTextWordStatuses()
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        SeedStandaloneText(context, userId, textId: 1, content: "hola amigo mundo");
+
+        // Three TextWords, statuses 5, 1, 3 → unique total=3, known(>=4)=1.
+        context.Words.AddRange(
+            new Word { WordId = 10, UserId = userId, LanguageId = 1, Term = "hola", Status = 5 },
+            new Word { WordId = 11, UserId = userId, LanguageId = 1, Term = "amigo", Status = 1 },
+            new Word { WordId = 12, UserId = userId, LanguageId = 1, Term = "mundo", Status = 3 });
+        context.TextWords.AddRange(
+            new TextWord { TextWordId = 100, TextId = 1, WordId = 10 },
+            new TextWord { TextWordId = 101, TextId = 1, WordId = 11 },
+            new TextWord { TextWordId = 102, TextId = 1, WordId = 12 });
+        await context.SaveChangesAsync();
+        context.ChangeTracker.Clear();
+
+        var controller = CreateController(context, userId);
+        await controller.CompleteText(1);
+
+        context.ChangeTracker.Clear();
+        var text = await context.Texts.SingleAsync();
+        Assert.Equal(3, text.TotalWords);
+        Assert.Equal(1, text.KnownWords);
+        Assert.NotNull(text.StatsUpdatedAt);
+    }
+
+    [Fact]
     public async Task CompleteText_SkipStats_HonoursAutoMoveFinishedLessons()
     {
         await using var context = CreateContext();

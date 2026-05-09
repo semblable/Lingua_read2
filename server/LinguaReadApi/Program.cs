@@ -143,6 +143,9 @@ builder.Services.AddHostedService<WordLinkingBackgroundService>();
 // One-shot migration service: re-links any text below the current
 // tokenizer version on startup (idempotent across restarts).
 builder.Services.AddHostedService<WordLinkingMigrationService>();
+// Nightly recompute of cached word stats (TotalWords/KnownWords/...)
+// on Books and Texts. Drives the "% unknown" indicators in the UI.
+builder.Services.AddHostedService<StatsRecomputeService>();
 
 // Register Language Service (New)
 builder.Services.AddScoped<ILanguageService, LanguageService>();

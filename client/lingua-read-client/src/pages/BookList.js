@@ -160,6 +160,11 @@ const BookList = () => {
                       <Col>Learning: {book.learningWords}</Col>
                       <Col>Total: {book.totalWords}</Col>
                     </Row>
+                    {book.unknownWordPercentage != null && (
+                      <Row>
+                        <Col>Unknown: {book.unknownWordPercentage.toFixed(1)}%</Col>
+                      </Row>
+                    )}
                   </div>
                 )}
 

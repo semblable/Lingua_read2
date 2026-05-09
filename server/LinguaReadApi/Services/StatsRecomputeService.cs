@@ -7,12 +7,15 @@ using LinguaReadApi.Data;
 namespace LinguaReadApi.Services
 {
     /// <summary>
-    /// Nightly sweep that refreshes the cached unique-word stats
+    /// Nightly sweep that refreshes the cached running-word stats
     /// (TotalWords/KnownWords/LearningWords) on every Book and the
-    /// (TotalWords/KnownWords) pair on every Text. Stats are also
-    /// updated on the lesson-completion path; this job catches drift
-    /// from word-status changes that happen outside that flow (e.g.
-    /// marking a word known via the dictionary panel mid-text).
+    /// (TotalWords/KnownWords) pair on every Text. Counts are token
+    /// counts (sum of TextWord.OccurrenceCount), not unique-word
+    /// counts, so book-level numbers stay consistent with per-text
+    /// numbers (no long-tail dedup inflation). Stats are also updated
+    /// on the lesson-completion path; this job catches drift from
+    /// word-status changes that happen outside that flow (e.g. marking
+    /// a word known via the dictionary panel mid-text).
     /// </summary>
     public class StatsRecomputeService : BackgroundService
     {
@@ -103,7 +106,7 @@ namespace LinguaReadApi.Services
             var textRows = await ctx.TextWords
                 .AsNoTracking()
                 .GroupBy(tw => new { tw.TextId, tw.Word.Status })
-                .Select(g => new { g.Key.TextId, g.Key.Status, Count = g.Select(x => x.WordId).Distinct().Count() })
+                .Select(g => new { g.Key.TextId, g.Key.Status, Count = g.Sum(x => x.OccurrenceCount) })
                 .ToListAsync(ct);
 
             var textAgg = textRows
@@ -131,7 +134,7 @@ namespace LinguaReadApi.Services
                 .AsNoTracking()
                 .Where(tw => tw.Text.BookId != null)
                 .GroupBy(tw => new { BookId = tw.Text.BookId!.Value, tw.Word.Status })
-                .Select(g => new { g.Key.BookId, g.Key.Status, Count = g.Select(x => x.WordId).Distinct().Count() })
+                .Select(g => new { g.Key.BookId, g.Key.Status, Count = g.Sum(x => x.OccurrenceCount) })
                 .ToListAsync(ct);
 
             var bookAgg = bookRows

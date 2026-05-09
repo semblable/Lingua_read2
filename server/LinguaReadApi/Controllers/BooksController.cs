@@ -1754,21 +1754,22 @@ namespace LinguaReadApi.Controllers
                     int totalTexts = textCounts?.Total ?? 0;
                     int existingFinished = textCounts?.Finished ?? 0;
 
-                    // Snapshot distinct book-word statuses in one query; lesson completion should
-                    // not mutate word familiarity, only recompute the book's cached stats.
-                    var bookWordStatuses = await _context.TextWords
+                    // Sum running-token occurrences grouped by status across the book's
+                    // texts. Running counts (not unique-word distinct counts) keep the
+                    // book percentage consistent with per-text percentages — a long
+                    // tail of rare unknown words no longer inflates the book number.
+                    var bookStatusCounts = await _context.TextWords
                         .Where(tw => tw.Text.BookId == id)
-                        .Select(tw => new { tw.WordId, tw.Word.Status })
-                        .Distinct()
+                        .GroupBy(tw => tw.Word.Status)
+                        .Select(g => new { Status = g.Key, Count = g.Sum(x => x.OccurrenceCount) })
                         .ToListAsync();
 
                     int bookTotal = 0, bookKnown = 0, bookLearning = 0;
-                    foreach (var w in bookWordStatuses)
+                    foreach (var s in bookStatusCounts)
                     {
-                        int s = w.Status;
-                        bookTotal++;
-                        if (s >= 4) bookKnown++;
-                        else if (s >= 2) bookLearning++;
+                        bookTotal += s.Count;
+                        if (s.Status >= 4) bookKnown += s.Count;
+                        else if (s.Status >= 2) bookLearning += s.Count;
                     }
                     book.TotalWords = bookTotal;
                     book.KnownWords = bookKnown;

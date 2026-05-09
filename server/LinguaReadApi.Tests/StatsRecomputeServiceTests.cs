@@ -40,7 +40,7 @@ public class StatsRecomputeServiceTests
     }
 
     [Fact]
-    public async Task RecomputeAllAsync_PopulatesBookStats_AcrossDistinctWords()
+    public async Task RecomputeAllAsync_PopulatesBookStats_AsRunningTokenSums()
     {
         var dbName = Guid.NewGuid().ToString();
         var userId = Guid.NewGuid();
@@ -53,14 +53,64 @@ public class StatsRecomputeServiceTests
         await using var assertCtx = NewContext(dbName);
         var book = await assertCtx.Books.SingleAsync(b => b.BookId == 50);
 
-        // Book contains bookText1 (hola[2], playa[4]) + bookText2 (hola[2], sol[5]).
-        // Distinct words across the book: hola(2), playa(4), sol(5) → 3 unique.
-        // Known (Status >= 4): playa, sol → 2.
-        // Learning (Status 2-3): hola → 1.
-        Assert.Equal(3, book.TotalWords);
+        // Book contains bookText1 (hola×1[Status=2], playa×1[4]) +
+        // bookText2 (hola×1[2], sol×1[5]). Running totals SUM occurrences,
+        // so "hola" contributes 2 (not 1). Total=4, known(>=4)=2, learning(2-3)=2.
+        Assert.Equal(4, book.TotalWords);
         Assert.Equal(2, book.KnownWords);
-        Assert.Equal(1, book.LearningWords);
+        Assert.Equal(2, book.LearningWords);
         Assert.NotNull(book.StatsUpdatedAt);
+    }
+
+    [Fact]
+    public async Task RecomputeAllAsync_WeightsByOccurrenceCount_NotByDistinctWords()
+    {
+        // Repro of the user-reported "5% per chapter, 17% across the book"
+        // confusion: with unique-word counting, rare unknowns inflate the
+        // book ratio. With running-word counting (sum of OccurrenceCount),
+        // chapters and the book agree to within length-weighted rounding.
+        var dbName = Guid.NewGuid().ToString();
+        var userId = Guid.NewGuid();
+        await using (var seed = NewContext(dbName))
+        {
+            seed.Users.Add(new User { Id = userId, UserName = "tester", Email = "tester@example.com" });
+            seed.Languages.Add(new Language { LanguageId = 1, Name = "Spanish", Code = "ES" });
+            seed.Words.Add(new Word { WordId = 1, UserId = userId, LanguageId = 1, Term = "que", Status = 5 });
+            seed.Words.Add(new Word { WordId = 2, UserId = userId, LanguageId = 1, Term = "rare1", Status = 1 });
+            seed.Words.Add(new Word { WordId = 3, UserId = userId, LanguageId = 1, Term = "rare2", Status = 1 });
+
+            seed.Books.Add(new Book { BookId = 1, UserId = userId, LanguageId = 1, Title = "B" });
+            seed.Texts.Add(new Text { TextId = 10, UserId = userId, LanguageId = 1, BookId = 1, Title = "P1", Content = "" });
+            seed.Texts.Add(new Text { TextId = 11, UserId = userId, LanguageId = 1, BookId = 1, Title = "P2", Content = "" });
+
+            // P1 has "que" 95 times + "rare1" 5 times. P2 has "que" 95 times + "rare2" 5 times.
+            seed.TextWords.AddRange(
+                new TextWord { TextWordId = 100, TextId = 10, WordId = 1, OccurrenceCount = 95 },
+                new TextWord { TextWordId = 101, TextId = 10, WordId = 2, OccurrenceCount = 5 },
+                new TextWord { TextWordId = 110, TextId = 11, WordId = 1, OccurrenceCount = 95 },
+                new TextWord { TextWordId = 111, TextId = 11, WordId = 3, OccurrenceCount = 5 });
+            await seed.SaveChangesAsync();
+        }
+
+        var (provider, _) = CreateProvider(dbName);
+        var service = new StatsRecomputeService(provider, NullLogger<StatsRecomputeService>.Instance);
+        await service.RecomputeAllAsync(CancellationToken.None);
+
+        await using var ctx = NewContext(dbName);
+        var p1 = await ctx.Texts.SingleAsync(t => t.TextId == 10);
+        var p2 = await ctx.Texts.SingleAsync(t => t.TextId == 11);
+        var book = await ctx.Books.SingleAsync();
+
+        Assert.Equal(100, p1.TotalWords);
+        Assert.Equal(95, p1.KnownWords);
+        Assert.Equal(100, p2.TotalWords);
+        Assert.Equal(95, p2.KnownWords);
+
+        // Running-word book totals = sum of running tokens across texts.
+        // Old (unique-word) behavior would give Total=3, Known=1 → 66.7% unknown,
+        // wildly diverging from the per-text 5%. New behavior gives 200/190 = 5%.
+        Assert.Equal(200, book.TotalWords);
+        Assert.Equal(190, book.KnownWords);
     }
 
     [Fact]

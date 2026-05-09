@@ -235,27 +235,29 @@ public class CompleteLessonTests
     }
 
     [Fact]
-    public async Task CompleteLesson_DeduplicatesBookWordStats_AcrossRepeatedLinks()
+    public async Task CompleteLesson_AggregatesBookStats_FromTextWordOccurrenceCounts()
     {
         await using var context = CreateContext();
         var userId = Guid.NewGuid();
         SeedBookWithTwoParts(context, userId, out var bookId, out var firstTextId);
 
         var secondTextId = firstTextId + 1;
+        // "hola" occurs twice in the first part and once in the second.
+        // Book running-word totals must sum the OccurrenceCounts (=3),
+        // not collapse to the single distinct word.
         context.Words.Add(new Word { WordId = 40, UserId = userId, LanguageId = 1, Term = "hola", Status = 3 });
         context.TextWords.AddRange(
-            new TextWord { TextWordId = 400, TextId = firstTextId, WordId = 40 },
-            new TextWord { TextWordId = 401, TextId = firstTextId, WordId = 40 },
-            new TextWord { TextWordId = 402, TextId = secondTextId, WordId = 40 });
+            new TextWord { TextWordId = 400, TextId = firstTextId, WordId = 40, OccurrenceCount = 2 },
+            new TextWord { TextWordId = 402, TextId = secondTextId, WordId = 40, OccurrenceCount = 1 });
         await context.SaveChangesAsync();
 
         var controller = CreateController(context, userId);
         var result = await controller.CompleteLesson(bookId, new CompleteLessonDto { TextId = firstTextId });
 
         var stats = Assert.IsType<BookStatsDto>(result.Value);
-        Assert.Equal(1, stats.TotalWords);
+        Assert.Equal(3, stats.TotalWords);
         Assert.Equal(0, stats.KnownWords);
-        Assert.Equal(1, stats.LearningWords);
+        Assert.Equal(3, stats.LearningWords);
     }
 
     [Fact]

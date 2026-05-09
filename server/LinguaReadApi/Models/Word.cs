@@ -37,15 +37,22 @@ namespace LinguaReadApi.Models
     {
         [Key]
         public int TextWordId { get; set; }
-        
+
         [ForeignKey("Text")]
         public int TextId { get; set; }
-        
+
         [ForeignKey("Word")]
         public int WordId { get; set; }
-        
+
+        // Number of running tokens of this word inside the linked text.
+        // Drives running-word stats (TotalWords/KnownWords) on Text and
+        // Book. Defaults to 1 so legacy rows produced before this column
+        // existed still aggregate to a sensible (under-counted) value
+        // until the tokenizer-version bump re-links them.
+        public int OccurrenceCount { get; set; } = 1;
+
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
-        
+
         // Navigation properties
         public virtual Text Text { get; set; } = null!;
         public virtual Word Word { get; set; } = null!;

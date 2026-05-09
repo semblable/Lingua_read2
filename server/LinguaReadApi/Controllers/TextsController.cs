@@ -983,10 +983,12 @@ namespace LinguaReadApi.Controllers
             }
 
             // --- 1. Calculate Stats ---
-            // 'totalWordsUnique' is used for the popup percentage
-            var totalWordsUnique = text.TextWords.Count; 
-            var knownWordsUnique = text.TextWords.Count(tw => tw.Word.Status == 5); 
-            var learningWordsUnique = text.TextWords.Count(tw => tw.Word.Status > 0 && tw.Word.Status < 5); 
+            // Running-word counts (sum of TextWord occurrences) so the
+            // numbers stay consistent across text/book scope. Known
+            // = Status >= 4 to match the existing book-level convention.
+            var totalWordsRunning = text.TextWords.Sum(tw => tw.OccurrenceCount);
+            var knownWordsRunning = text.TextWords.Where(tw => tw.Word.Status >= 4).Sum(tw => tw.OccurrenceCount);
+            var learningWordsRunning = text.TextWords.Where(tw => tw.Word.Status >= 2 && tw.Word.Status < 4).Sum(tw => tw.OccurrenceCount);
 
             // 'totalActualWordCount' is used for daily activity tracking (total tokens read)
             var totalActualWordCount = LinguaReadApi.Utilities.WordCountUtility.CountTotalWords(text.Content);
@@ -1025,8 +1027,8 @@ namespace LinguaReadApi.Controllers
                 var textToUpdate = new Text { TextId = textId, UserId = userId };
                 _context.Texts.Attach(textToUpdate);
 
-                textToUpdate.TotalWords = totalWordsUnique;
-                textToUpdate.KnownWords = knownWordsUnique;
+                textToUpdate.TotalWords = totalWordsRunning;
+                textToUpdate.KnownWords = knownWordsRunning;
                 textToUpdate.StatsUpdatedAt = DateTime.UtcNow;
                 _context.Entry(textToUpdate).Property(t => t.TotalWords).IsModified = true;
                 _context.Entry(textToUpdate).Property(t => t.KnownWords).IsModified = true;
@@ -1052,10 +1054,10 @@ namespace LinguaReadApi.Controllers
             // --- 4. Return Stats ---
             var stats = new TextStatsDto
             {
-                TotalWords = totalWordsUnique,
-                KnownWords = knownWordsUnique,
-                LearningWords = learningWordsUnique,
-                CompletionPercentage = totalWordsUnique > 0 ? (double)knownWordsUnique / totalWordsUnique * 100 : 0
+                TotalWords = totalWordsRunning,
+                KnownWords = knownWordsRunning,
+                LearningWords = learningWordsRunning,
+                CompletionPercentage = totalWordsRunning > 0 ? (double)knownWordsRunning / totalWordsRunning * 100 : 0
             };
 
             // Use Ok() as we are returning stats. Use NoContent() if not returning anything.

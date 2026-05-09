@@ -23,7 +23,12 @@ namespace LinguaReadApi.Services.Tokenization
         /// migration service re-links any text whose stored version is
         /// less than this constant.
         /// </summary>
-        public const int CurrentTokenizerVersion = 1;
+        // Bump to 2: the linker now writes TextWord.OccurrenceCount
+        // (running-token count per word per text). Re-linking each
+        // legacy text replaces its placeholder OccurrenceCount=1 rows
+        // with real frequencies so book/text stats reflect actual
+        // running-word percentages instead of unique-word percentages.
+        public const int CurrentTokenizerVersion = 2;
 
         private const int WordBatchSize = 500;
 
@@ -61,6 +66,12 @@ namespace LinguaReadApi.Services.Tokenization
             }
 
             var uniqueWords = wordsInText.Distinct().ToList();
+
+            // Tally running-token counts per word so TextWord rows can
+            // store real frequencies; drives running-word % stats.
+            var occurrenceByTerm = wordsInText
+                .GroupBy(w => w)
+                .ToDictionary(g => g.Key, g => g.Count());
 
             var existingWordsList = new List<Word>();
             foreach (var batch in uniqueWords.Chunk(WordBatchSize))
@@ -113,6 +124,7 @@ namespace LinguaReadApi.Services.Tokenization
                     {
                         TextId = textId,
                         WordId = word.WordId,
+                        OccurrenceCount = occurrenceByTerm.TryGetValue(wordTerm, out var occ) ? occ : 1,
                         CreatedAt = DateTime.UtcNow
                     });
                 }

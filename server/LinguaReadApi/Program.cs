@@ -145,7 +145,10 @@ builder.Services.AddHostedService<WordLinkingBackgroundService>();
 builder.Services.AddHostedService<WordLinkingMigrationService>();
 // Nightly recompute of cached word stats (TotalWords/KnownWords/...)
 // on Books and Texts. Drives the "% unknown" indicators in the UI.
-builder.Services.AddHostedService<StatsRecomputeService>();
+// Registered as both a singleton (so an admin endpoint can trigger
+// it on demand) and a hosted service (so the daily timer ticks).
+builder.Services.AddSingleton<StatsRecomputeService>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<StatsRecomputeService>());
 
 // Register Language Service (New)
 builder.Services.AddScoped<ILanguageService, LanguageService>();

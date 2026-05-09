@@ -209,12 +209,21 @@ public class LessonLoadingOptimizationTests
 
     private static TextsController CreateTextsController(AppDbContext context, Guid userId)
     {
-        var scopeFactory = CreateScopeFactory(context);
+        var sp = CreateContextProvider(context);
+        var scopeFactory = sp.GetRequiredService<IServiceScopeFactory>();
         var service = new UserActivityService(context, NullLogger<UserActivityService>.Instance);
-        return new TextsController(context, NullLogger<TextsController>.Instance, service, scopeFactory, new WordLinkingChannel())
+        var stats = new StatsRecomputeService(sp, NullLogger<StatsRecomputeService>.Instance);
+        return new TextsController(context, NullLogger<TextsController>.Instance, service, scopeFactory, new WordLinkingChannel(), stats)
         {
             ControllerContext = BuildControllerContext(userId)
         };
+    }
+
+    private static IServiceProvider CreateContextProvider(AppDbContext context)
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(context);
+        return services.BuildServiceProvider();
     }
 
     private static WordsController CreateWordsController(AppDbContext context, Guid userId)

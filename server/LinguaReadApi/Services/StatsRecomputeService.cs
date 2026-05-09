@@ -37,20 +37,19 @@ namespace LinguaReadApi.Services
         {
             _logger.LogInformation("StatsRecomputeService started; nightly sweep at {RunAt} UTC.", RunAtUtc);
 
-            // Backfill on startup: any row with StatsUpdatedAt == null hasn't
-            // ever been computed (legacy or fresh-from-migration), so kick off
-            // an immediate pass before settling into the daily cadence.
+            // Always run a sweep on startup. Cheap (one grouped query +
+            // writes only for changed rows) and idempotent, but catches
+            // drift the daily timer would otherwise miss — e.g. when a
+            // tokenizer-version bump re-links texts and changes their
+            // OccurrenceCount values without touching StatsUpdatedAt.
             try
             {
-                if (await HasUncomputedRowsAsync(stoppingToken))
-                {
-                    _logger.LogInformation("Found rows with no StatsUpdatedAt; running startup backfill.");
-                    await RecomputeAllAsync(stoppingToken);
-                }
+                _logger.LogInformation("StatsRecomputeService running startup sweep.");
+                await RecomputeAllAsync(stoppingToken);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "StatsRecomputeService startup backfill failed.");
+                _logger.LogError(ex, "StatsRecomputeService startup sweep failed.");
             }
 
             while (!stoppingToken.IsCancellationRequested)
@@ -85,15 +84,6 @@ namespace LinguaReadApi.Services
             var next = nowUtc < todayRun ? todayRun : todayRun.AddDays(1);
             var delta = next - nowUtc;
             return delta < TimeSpan.FromMinutes(1) ? TimeSpan.FromMinutes(1) : delta;
-        }
-
-        private async Task<bool> HasUncomputedRowsAsync(CancellationToken ct)
-        {
-            using var scope = _serviceProvider.CreateScope();
-            var ctx = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-            var anyBook = await ctx.Books.AsNoTracking().AnyAsync(b => b.StatsUpdatedAt == null, ct);
-            if (anyBook) return true;
-            return await ctx.Texts.AsNoTracking().AnyAsync(t => t.StatsUpdatedAt == null, ct);
         }
 
         public async Task RecomputeAllAsync(CancellationToken ct)

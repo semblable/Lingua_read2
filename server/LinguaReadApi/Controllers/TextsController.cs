@@ -33,13 +33,16 @@ namespace LinguaReadApi.Controllers
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase
         };
 
-        public TextsController(AppDbContext context, ILogger<TextsController> logger, IUserActivityService userActivityService, IServiceScopeFactory scopeFactory, WordLinkingChannel wordLinkingChannel) // Inject services
+        private readonly StatsRecomputeService _statsRecompute;
+
+        public TextsController(AppDbContext context, ILogger<TextsController> logger, IUserActivityService userActivityService, IServiceScopeFactory scopeFactory, WordLinkingChannel wordLinkingChannel, StatsRecomputeService statsRecompute) // Inject services
         {
             _context = context;
             _logger = logger;
             _userActivityService = userActivityService; // Assign service
             _scopeFactory = scopeFactory;
             _wordLinkingChannel = wordLinkingChannel;
+            _statsRecompute = statsRecompute;
         }
 
         // GET: api/texts
@@ -289,11 +292,24 @@ namespace LinguaReadApi.Controllers
                 }
             }
 
-            return Ok(new { 
-                message = "Retroactive word linking complete", 
-                processedCount, 
-                errorCount 
+            return Ok(new {
+                message = "Retroactive word linking complete",
+                processedCount,
+                errorCount
             });
+        }
+
+        // POST: api/texts/admin/recompute-stats
+        // Trigger the same sweep StatsRecomputeService runs nightly.
+        // Safety valve for refreshing book/text "% unknown" stats after
+        // a tokenizer-version bump or other out-of-band data change,
+        // without waiting for 03:00 UTC.
+        [HttpPost("admin/recompute-stats")]
+        public async Task<IActionResult> RecomputeStats(CancellationToken ct)
+        {
+            _logger.LogInformation("Admin-triggered stats recompute requested.");
+            await _statsRecompute.RecomputeAllAsync(ct);
+            return Ok(new { message = "Stats recompute complete." });
         }
 
 

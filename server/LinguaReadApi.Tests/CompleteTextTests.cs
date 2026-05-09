@@ -116,9 +116,11 @@ public class CompleteTextTests
 
     private static TextsController CreateController(AppDbContext context, Guid userId)
     {
-        var scopeFactory = CreateScopeFactory(context);
+        var sp = BuildContextProvider(context);
+        var scopeFactory = sp.GetRequiredService<IServiceScopeFactory>();
         var service = new UserActivityService(context, NullLogger<UserActivityService>.Instance);
-        return new TextsController(context, NullLogger<TextsController>.Instance, service, scopeFactory, new WordLinkingChannel())
+        var stats = new StatsRecomputeService(sp, NullLogger<StatsRecomputeService>.Instance);
+        return new TextsController(context, NullLogger<TextsController>.Instance, service, scopeFactory, new WordLinkingChannel(), stats)
         {
             ControllerContext = new ControllerContext
             {
@@ -133,11 +135,11 @@ public class CompleteTextTests
         };
     }
 
-    private static IServiceScopeFactory CreateScopeFactory(AppDbContext context)
+    private static IServiceProvider BuildContextProvider(AppDbContext context)
     {
         var services = new ServiceCollection();
         services.AddSingleton(context);
-        return services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
+        return services.BuildServiceProvider();
     }
 
     private static AppDbContext CreateContext()

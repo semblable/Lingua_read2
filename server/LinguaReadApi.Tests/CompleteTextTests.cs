@@ -119,7 +119,7 @@ public class CompleteTextTests
         var sp = BuildContextProvider(context);
         var scopeFactory = sp.GetRequiredService<IServiceScopeFactory>();
         var service = new UserActivityService(context, NullLogger<UserActivityService>.Instance);
-        var stats = new StatsRecomputeService(sp, NullLogger<StatsRecomputeService>.Instance);
+        var stats = new StatsRecomputeService(sp, NullLogger<StatsRecomputeService>.Instance, new MigrationSignal());
         return new TextsController(context, NullLogger<TextsController>.Instance, service, scopeFactory, new WordLinkingChannel(), stats)
         {
             ControllerContext = new ControllerContext

@@ -18,7 +18,7 @@ public class StatsRecomputeServiceTests
         SeedBookAndStandaloneText(dbName, userId);
 
         var (provider, _) = CreateProvider(dbName);
-        var service = new StatsRecomputeService(provider, NullLogger<StatsRecomputeService>.Instance);
+        var service = new StatsRecomputeService(provider, NullLogger<StatsRecomputeService>.Instance, new MigrationSignal());
         await service.RecomputeAllAsync(CancellationToken.None);
 
         await using var assertCtx = NewContext(dbName);
@@ -47,7 +47,7 @@ public class StatsRecomputeServiceTests
         SeedBookAndStandaloneText(dbName, userId);
 
         var (provider, _) = CreateProvider(dbName);
-        var service = new StatsRecomputeService(provider, NullLogger<StatsRecomputeService>.Instance);
+        var service = new StatsRecomputeService(provider, NullLogger<StatsRecomputeService>.Instance, new MigrationSignal());
         await service.RecomputeAllAsync(CancellationToken.None);
 
         await using var assertCtx = NewContext(dbName);
@@ -93,7 +93,7 @@ public class StatsRecomputeServiceTests
         }
 
         var (provider, _) = CreateProvider(dbName);
-        var service = new StatsRecomputeService(provider, NullLogger<StatsRecomputeService>.Instance);
+        var service = new StatsRecomputeService(provider, NullLogger<StatsRecomputeService>.Instance, new MigrationSignal());
         await service.RecomputeAllAsync(CancellationToken.None);
 
         await using var ctx = NewContext(dbName);
@@ -121,7 +121,7 @@ public class StatsRecomputeServiceTests
         SeedBookAndStandaloneText(dbName, userId);
 
         var (provider, _) = CreateProvider(dbName);
-        var service = new StatsRecomputeService(provider, NullLogger<StatsRecomputeService>.Instance);
+        var service = new StatsRecomputeService(provider, NullLogger<StatsRecomputeService>.Instance, new MigrationSignal());
         await service.RecomputeAllAsync(CancellationToken.None);
 
         await using (var firstCtx = NewContext(dbName))
@@ -167,7 +167,7 @@ public class StatsRecomputeServiceTests
         }
 
         var (provider, _) = CreateProvider(dbName);
-        var service = new StatsRecomputeService(provider, NullLogger<StatsRecomputeService>.Instance);
+        var service = new StatsRecomputeService(provider, NullLogger<StatsRecomputeService>.Instance, new MigrationSignal());
         await service.RecomputeAllAsync(CancellationToken.None);
 
         await using var ctx = NewContext(dbName);

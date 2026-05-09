@@ -362,7 +362,7 @@ public class SentenceModeActivityTests
     {
         var services = new ServiceCollection();
         services.AddSingleton(context);
-        return new StatsRecomputeService(services.BuildServiceProvider(), NullLogger<StatsRecomputeService>.Instance);
+        return new StatsRecomputeService(services.BuildServiceProvider(), NullLogger<StatsRecomputeService>.Instance, new MigrationSignal());
     }
 
     private static void SeedUserLanguageAndText(AppDbContext context, Guid userId, int textId, string content)

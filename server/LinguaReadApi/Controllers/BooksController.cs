@@ -142,7 +142,10 @@ namespace LinguaReadApi.Controllers
                     Title = t.Title,
                     PartNumber = t.PartNumber ?? 0,
                     CreatedAt = t.CreatedAt,
-                    IsFinished = t.IsFinished
+                    IsFinished = t.IsFinished,
+                    TotalWords = t.TotalWords,
+                    KnownWords = t.KnownWords,
+                    StatsUpdatedAt = t.StatsUpdatedAt
                 }).ToList(),
                 Tags = book.BookTags.Select(bt => new TagDto // Map Tags to TagDto
                 {
@@ -2274,6 +2277,12 @@ namespace LinguaReadApi.Controllers
         public int PartNumber { get; set; }
         public DateTime CreatedAt { get; set; }
         public bool IsFinished { get; set; }
+        public int TotalWords { get; set; }
+        public int KnownWords { get; set; }
+        public DateTime? StatsUpdatedAt { get; set; }
+        public int UnknownWords => Math.Max(TotalWords - KnownWords, 0);
+        public double? UnknownWordPercentage =>
+            TotalWords > 0 ? Math.Round((double)(TotalWords - KnownWords) / TotalWords * 100, 1) : (double?)null;
     }
 
     public class CreateBookDto

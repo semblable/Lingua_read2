@@ -88,6 +88,11 @@ const LibraryBookCard = ({ book, isSelected, onSelect, onItemClick }) => {
 
           <div className="text-muted small mt-auto">
             {book.finishedPartCount}/{book.partCount} part{book.partCount !== 1 ? 's' : ''}
+            {book.totalWords > 0 && book.unknownWordPercentage != null && (
+              <span className="ms-2" title={`${book.unknownWords} of ${book.totalWords} unique words not yet known`}>
+                · {book.unknownWordPercentage.toFixed(1)}% new
+              </span>
+            )}
             {book.tags?.length > 0 && (
               <span className="ms-2">
                 {book.tags.map(tag => (

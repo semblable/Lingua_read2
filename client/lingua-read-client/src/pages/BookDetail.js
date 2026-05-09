@@ -545,7 +545,14 @@ const BookDetail = () => {
             >
               <div>
                 <h6 className="mb-0">{part.title}</h6>
-                <small className="text-muted">Added: {formatDate(part.createdAt)}</small>
+                <small className="text-muted">
+                  Added: {formatDate(part.createdAt)}
+                  {part.totalWords > 0 && part.unknownWordPercentage != null && (
+                    <span className="ms-2" title={`${part.unknownWords} of ${part.totalWords} unique words not yet known`}>
+                      · {part.unknownWordPercentage.toFixed(1)}% new
+                    </span>
+                  )}
+                </small>
               </div>
               <div>
                 <Badge bg="primary" pill className="me-2">

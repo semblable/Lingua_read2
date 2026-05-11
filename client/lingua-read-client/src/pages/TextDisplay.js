@@ -292,6 +292,22 @@ const TextDisplay = () => {
     return t.length > MAX_AI_CONTEXT_CHARS ? t.slice(0, MAX_AI_CONTEXT_CHARS) : t;
   };
 
+  const readSentenceContextFromNode = useCallback((node) => {
+    const container = textContentRef.current;
+    let currentNode = node;
+    while (currentNode && currentNode !== container) {
+      if (
+        currentNode.nodeType === Node.ELEMENT_NODE &&
+        currentNode.classList?.contains('sentence')
+      ) {
+        const text = normalizeReaderText(currentNode.textContent);
+        return text ? clampContext(text) : '';
+      }
+      currentNode = currentNode.parentNode;
+    }
+    return '';
+  }, []);
+
   /**
    * Context for AI selection translation: prefer one .sentence, then a block (paragraph / group),
    * then full reader column, then the selection itself (so large / multi-sentence highlights still use AI).
@@ -737,6 +753,7 @@ const TextDisplay = () => {
       return;
     }
     focusSentenceIndexFromNode(event.target);
+    const sentenceContext = readSentenceContextFromNode(event.target);
     if (!isPhrase && globalSettings.tooltipOnlyForSavedWords) {
       const existing = getWordData(word);
       if (existing && !existing.isNew) {
@@ -744,8 +761,8 @@ const TextDisplay = () => {
         return;
       }
     }
-    handleWordClick(word);
-  }, [clearPendingSelection, focusSentenceIndexFromNode, handleWordClick, hasActiveTextSelection, getWordData, globalSettings.tooltipOnlyForSavedWords]);
+    handleWordClick(word, { selectionContext: sentenceContext });
+  }, [clearPendingSelection, focusSentenceIndexFromNode, readSentenceContextFromNode, handleWordClick, hasActiveTextSelection, getWordData, globalSettings.tooltipOnlyForSavedWords]);
 
   const handleSelectableWordTouchStart = useCallback(() => {
     selectableWordTouchStartRef.current = Date.now();

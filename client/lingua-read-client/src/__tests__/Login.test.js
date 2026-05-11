@@ -6,7 +6,7 @@ import Login from '../pages/Login';
 import { useAuthStore } from '../utils/store';
 
 // Mock the store's login action
-const mockLogin = jest.fn();
+const mockLogin = vi.fn();
 
 beforeEach(() => {
   mockLogin.mockReset();

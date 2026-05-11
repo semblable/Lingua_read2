@@ -109,11 +109,11 @@ describe('useDragSelect', () => {
   beforeEach(() => {
     useLibraryStore.setState({ selectedItems: [], lastClickedItem: null });
     // Mock requestAnimationFrame
-    jest.spyOn(window, 'requestAnimationFrame').mockImplementation(cb => {
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation(cb => {
       cb();
       return 1;
     });
-    jest.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => {});
+    vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => {});
   });
 
   afterEach(() => {

@@ -1,12 +1,12 @@
 // Dynamically set API URL based on platform.
 //
 // - Web (behind Nginx): default to `/api`
-// - Native/mobile: set `REACT_APP_API_BASE_URL_MOBILE` (e.g. `http://<LAN-IP>:5000/api`)
-// - Optional override for web too: `REACT_APP_API_BASE_URL` (e.g. `https://yourdomain.com/api`)
-const WEB_API_BASE_URL = process.env.REACT_APP_API_BASE_URL || '/api';
+// - Native/mobile: set `VITE_API_BASE_URL_MOBILE` (e.g. `http://<LAN-IP>:5000/api`)
+// - Optional override for web too: `VITE_API_BASE_URL` (e.g. `https://yourdomain.com/api`)
+const WEB_API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
 const MOBILE_API_BASE_URL =
-  process.env.REACT_APP_API_BASE_URL_MOBILE ||
-  process.env.REACT_APP_API_BASE_URL ||
+  import.meta.env.VITE_API_BASE_URL_MOBILE ||
+  import.meta.env.VITE_API_BASE_URL ||
   'http://localhost:5000/api';
 
 

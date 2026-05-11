@@ -5,14 +5,14 @@ import PrimaryControls from '../components/reader/PrimaryControls';
 
 const baseProps = {
   displayMode: 'audio',
-  setDisplayMode: jest.fn(),
+  setDisplayMode: vi.fn(),
   isSentenceMode: false,
-  setSentenceModeEnabled: jest.fn(),
+  setSentenceModeEnabled: vi.fn(),
   completing: false,
   nextTextId: null,
-  navigate: jest.fn(),
-  handleCompleteLesson: jest.fn(),
-  handleCompleteLessonNoStats: jest.fn(),
+  navigate: vi.fn(),
+  handleCompleteLesson: vi.fn(),
+  handleCompleteLessonNoStats: vi.fn(),
 };
 
 describe('PrimaryControls — Finish (no stats) button', () => {

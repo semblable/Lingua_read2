@@ -14,15 +14,15 @@ import {
 import GoalRow from '../components/goals/GoalRow';
 import GoalsCard from '../components/goals/GoalsCard';
 
-jest.mock('../utils/api', () => ({
-  getGoals: jest.fn(),
-  getAllLanguages: jest.fn(() => Promise.resolve([])),
-  createGoal: jest.fn(),
-  updateGoal: jest.fn(),
-  archiveGoal: jest.fn(),
-  restoreGoal: jest.fn(),
-  deleteGoal: jest.fn(),
-  getGoalSuggestion: jest.fn(() => Promise.resolve({
+vi.mock('../utils/api', () => ({
+  getGoals: vi.fn(),
+  getAllLanguages: vi.fn(() => Promise.resolve([])),
+  createGoal: vi.fn(),
+  updateGoal: vi.fn(),
+  archiveGoal: vi.fn(),
+  restoreGoal: vi.fn(),
+  deleteGoal: vi.fn(),
+  getGoalSuggestion: vi.fn(() => Promise.resolve({
     suggestedTarget: 1000,
     currentMetric: 0,
     last7DaysTotal: 0,
@@ -30,7 +30,7 @@ jest.mock('../utils/api', () => ({
   })),
 }));
 
-const api = require('../utils/api');
+import * as api from '../utils/api';
 
 const baseGoal = {
   goalId: 1,

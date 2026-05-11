@@ -17,18 +17,18 @@ import {
   syncHardcoverProgress
 } from '../utils/api';
 
-jest.mock('../utils/api', () => ({
-  getBook: jest.fn(),
-  finishBook: jest.fn(),
-  updateBook: jest.fn(),
-  deleteBook: jest.fn(),
-  getText: jest.fn(),
-  updateText: jest.fn(),
-  deleteText: jest.fn(),
-  uploadAudiobookTracks: jest.fn(),
-  matchHardcoverBook: jest.fn(),
-  importHardcoverMetadata: jest.fn(),
-  syncHardcoverProgress: jest.fn()
+vi.mock('../utils/api', () => ({
+  getBook: vi.fn(),
+  finishBook: vi.fn(),
+  updateBook: vi.fn(),
+  deleteBook: vi.fn(),
+  getText: vi.fn(),
+  updateText: vi.fn(),
+  deleteText: vi.fn(),
+  uploadAudiobookTracks: vi.fn(),
+  matchHardcoverBook: vi.fn(),
+  importHardcoverMetadata: vi.fn(),
+  syncHardcoverProgress: vi.fn()
 }));
 
 const defaultBook = {

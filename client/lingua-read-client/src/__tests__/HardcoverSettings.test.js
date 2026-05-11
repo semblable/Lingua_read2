@@ -12,15 +12,15 @@ const baseSettings = {
 const renderSettings = (overrides = {}, props = {}) => {
   const defaultProps = {
     settings: { ...baseSettings, ...overrides },
-    handleChange: jest.fn(),
+    handleChange: vi.fn(),
     testingHardcover: false,
     hardcoverTestResult: null,
     syncingHardcover: false,
     hardcoverSyncMessage: null,
-    onTestConnection: jest.fn(),
-    onSaveToken: jest.fn(() => Promise.resolve()),
-    onClearToken: jest.fn(),
-    onSyncAll: jest.fn()
+    onTestConnection: vi.fn(),
+    onSaveToken: vi.fn(() => Promise.resolve()),
+    onClearToken: vi.fn(),
+    onSyncAll: vi.fn()
   };
 
   const mergedProps = { ...defaultProps, ...props };

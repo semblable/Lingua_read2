@@ -5,8 +5,8 @@ import { screen, waitFor } from '@testing-library/react';
 import SrsWordPopover from '../components/SrsWordPopover';
 import '@testing-library/jest-dom';
 
-jest.mock('react-bootstrap', () => {
-  const actual = jest.requireActual('react-bootstrap');
+vi.mock('react-bootstrap', async () => {
+  const actual = await vi.importActual('react-bootstrap');
   return {
     ...actual,
     Overlay: ({ show, children }) => (show ? children : null)
@@ -22,8 +22,8 @@ describe('SrsWordPopover', () => {
   };
 
   const mockTargetRef = document.createElement('div'); // Dummy target element
-  const mockOnGrade = jest.fn();
-  const mockOnHide = jest.fn();
+  const mockOnGrade = vi.fn();
+  const mockOnHide = vi.fn();
   let container;
   let root;
 
@@ -44,7 +44,7 @@ describe('SrsWordPopover', () => {
   };
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);

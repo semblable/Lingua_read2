@@ -434,7 +434,7 @@ const AudiobookPlayer = ({
     if (src && !src.startsWith('http') && !src.startsWith('blob:')) {
       src = src.startsWith('/') ? src : `/${src}`;
 
-      const envBaseUrl = process.env.REACT_APP_API_URL;
+      const envBaseUrl = import.meta.env.VITE_API_URL;
       if (envBaseUrl && envBaseUrl.startsWith('http')) {
         src = `${envBaseUrl}${src}`;
       }

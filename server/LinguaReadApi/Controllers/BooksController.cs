@@ -30,16 +30,39 @@ namespace LinguaReadApi.Controllers
         private readonly AppDbContext _context;
         private readonly ILogger<BooksController> _logger;
         private readonly IHardcoverService? _hardcoverService;
+        private readonly WordLinkingChannel? _wordLinkingChannel;
         private static readonly JsonSerializerOptions StructuredContentJsonOptions = new(JsonSerializerDefaults.Web)
         {
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase
         };
 
-        public BooksController(AppDbContext context, ILogger<BooksController> logger, IHardcoverService? hardcoverService = null)
+        public BooksController(AppDbContext context, ILogger<BooksController> logger, IHardcoverService? hardcoverService = null, WordLinkingChannel? wordLinkingChannel = null)
         {
             _context = context;
             _logger = logger;
             _hardcoverService = hardcoverService;
+            _wordLinkingChannel = wordLinkingChannel;
+        }
+
+        /// <summary>
+        /// Queue every text in <paramref name="texts"/> for background
+        /// word-linking. Matches the pattern TextsController uses for
+        /// audio lessons. Without this, new books wait until the next
+        /// app restart for WordLinkingMigrationService to catch them —
+        /// which is why imported books showed no "% new" indicator
+        /// until the service was restarted.
+        /// </summary>
+        private async Task QueueWordLinking(IEnumerable<Text> texts, Guid userId)
+        {
+            if (_wordLinkingChannel == null) return;
+            foreach (var text in texts)
+            {
+                if (string.IsNullOrWhiteSpace(text.Content)) continue;
+                text.WordLinkingStatus = "processing";
+                await _wordLinkingChannel.Writer.WriteAsync(
+                    new WordLinkingRequest(text.TextId, text.Content, text.LanguageId, userId));
+            }
+            await _context.SaveChangesAsync();
         }
 
         // GET: api/books
@@ -266,6 +289,7 @@ namespace LinguaReadApi.Controllers
                 }
 
                 // 7. Create initial text parts (Existing Logic)
+                var createdTexts = new List<Text>();
                 if (!string.IsNullOrEmpty(createBookDto.Content))
                 {
                     var textParts = SplitContent(createBookDto.Content, createBookDto.SplitMethod, createBookDto.MaxSegmentSize);
@@ -282,11 +306,18 @@ namespace LinguaReadApi.Controllers
                             CreatedAt = DateTime.UtcNow
                         };
                         _context.Texts.Add(text);
+                        createdTexts.Add(text);
                     }
                     await _context.SaveChangesAsync(); // Save Texts
                 }
 
                 await transaction.CommitAsync();
+
+                // Kick off background word-linking now that TextIds exist.
+                // WordLinkingBackgroundService pulses StatsRecomputeService
+                // ~15s after the last text finishes, so the % indicator
+                // appears without waiting for the nightly sweep or a restart.
+                await QueueWordLinking(createdTexts, userId);
             }
             catch (DbUpdateException ex)
             {
@@ -481,6 +512,7 @@ namespace LinguaReadApi.Controllers
 
             // --- Text Splitting and Creation ---
             int partCount = 0;
+            var createdTexts = new List<Text>();
             try
             {
                 if (epubBook != null)
@@ -520,6 +552,7 @@ namespace LinguaReadApi.Controllers
                             CreatedAt = DateTime.UtcNow
                         };
                         _context.Texts.Add(text);
+                        createdTexts.Add(text);
                     }
                 }
                 else
@@ -540,9 +573,16 @@ namespace LinguaReadApi.Controllers
                             CreatedAt = DateTime.UtcNow
                         };
                         _context.Texts.Add(text);
+                        createdTexts.Add(text);
                     }
                 }
                 await _context.SaveChangesAsync(); // Save Texts
+
+                // Kick off background word-linking now that TextIds exist.
+                // WordLinkingBackgroundService pulses StatsRecomputeService
+                // ~15s after the last text finishes, so the % indicator
+                // appears without waiting for the nightly sweep or a restart.
+                await QueueWordLinking(createdTexts, userId);
             }
             catch (Exception ex)
             {

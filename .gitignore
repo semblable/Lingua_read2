@@ -165,6 +165,9 @@ server/LinguaReadApi/wwwroot/
 # Scripts and Data Files
 # ===================================================================
 scripts/
+# Allow the frontend's small generator scripts (TS migration tooling).
+!client/lingua-read-client/scripts/
+!client/lingua-read-client/scripts/**
 
 # ===================================================================
 # End of .gitignore

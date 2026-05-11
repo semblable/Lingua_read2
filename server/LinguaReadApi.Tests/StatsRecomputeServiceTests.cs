@@ -216,6 +216,80 @@ public class StatsRecomputeServiceTests
         Assert.Equal(3, afterText.TotalWords);
     }
 
+    [Theory]
+    // Midday → wait until tonight at 03:00 UTC.
+    [InlineData(2026, 5, 10, 14, 0,  /* expectedHours */ 13.0)]
+    // Just before 03:00 → minutes until today's 03:00 run.
+    [InlineData(2026, 5, 10,  2, 30, /*  */               0.5)]
+    // Exactly at 03:00 → schedule the NEXT one 24 h out, not zero.
+    [InlineData(2026, 5, 10,  3,  0, /*  */              24.0)]
+    // Just after 03:00 → wait ~24 h.
+    [InlineData(2026, 5, 10,  3,  1, /*  */              23.0 + 59.0/60.0)]
+    public void TimeUntilNextRun_TargetsThreeAmUtc(int year, int month, int day, int hour, int minute, double expectedHours)
+    {
+        var now = new DateTime(year, month, day, hour, minute, 0, DateTimeKind.Utc);
+        var delta = StatsRecomputeService.TimeUntilNextRun(now);
+
+        // Always positive, never negative, never zero.
+        Assert.True(delta > TimeSpan.Zero);
+
+        // The next firing lands on 03:00 UTC on the next eligible day.
+        var fireAt = now + delta;
+        Assert.Equal(3, fireAt.Hour);
+        Assert.Equal(0, fireAt.Minute);
+        Assert.Equal(DateTimeKind.Utc, fireAt.Kind);
+
+        Assert.InRange(delta.TotalHours, expectedHours - 0.05, expectedHours + 0.05);
+    }
+
+    [Fact]
+    public async Task RecomputeAllAsync_PicksUpNewlyKnownWords_OnSubsequentRun()
+    {
+        // Simulates "user learns more words between sweeps": the nightly
+        // run at 03:00 UTC must see the new Status values and update the
+        // cached book/text stats accordingly.
+        var dbName = Guid.NewGuid().ToString();
+        var userId = Guid.NewGuid();
+        SeedBookAndStandaloneText(dbName, userId);
+
+        var (provider, _) = CreateProvider(dbName);
+        var service = NewService(provider);
+
+        // First sweep: baseline.
+        await service.RecomputeAllAsync(CancellationToken.None);
+        int knownBefore;
+        await using (var ctx = NewContext(dbName))
+        {
+            var book = await ctx.Books.SingleAsync(b => b.BookId == 50);
+            knownBefore = book.KnownWords;
+        }
+
+        // User grades two previously-learning words up to "known" (Status >= 4).
+        await using (var ctx = NewContext(dbName))
+        {
+            // hola(Status=2 → 5): contributes 2 known tokens across the two book texts.
+            // amigo(Status=1 → 4): contributes 1 known token in the standalone text.
+            var hola = await ctx.Words.SingleAsync(w => w.WordId == 1);
+            var amigo = await ctx.Words.SingleAsync(w => w.WordId == 2);
+            hola.Status = 5;
+            amigo.Status = 4;
+            await ctx.SaveChangesAsync();
+        }
+
+        // Second sweep: should re-aggregate against the new Status values.
+        await service.RecomputeAllAsync(CancellationToken.None);
+
+        await using var assertCtx = NewContext(dbName);
+        var bookAfter = await assertCtx.Books.SingleAsync(b => b.BookId == 50);
+        var standaloneAfter = await assertCtx.Texts.SingleAsync(t => t.TextId == 100);
+
+        // Book: hola occurs once in each of the two parts → 2 new known tokens.
+        Assert.Equal(knownBefore + 2, bookAfter.KnownWords);
+
+        // Standalone text: hola(1) + amigo(1) + mundo(1) all known now.
+        Assert.Equal(3, standaloneAfter.KnownWords);
+    }
+
     [Fact]
     public async Task RecomputeAllAsync_LeavesStatsAtZero_ForRowsWithoutTextWords()
     {

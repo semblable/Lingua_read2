@@ -139,7 +139,8 @@ namespace LinguaReadApi.Services
             }
         }
 
-        private static TimeSpan TimeUntilNextRun(DateTime nowUtc)
+        // Internal so tests can pin down the schedule math.
+        internal static TimeSpan TimeUntilNextRun(DateTime nowUtc)
         {
             var todayRun = new DateTime(nowUtc.Year, nowUtc.Month, nowUtc.Day,
                 RunAtUtc.Hour, RunAtUtc.Minute, 0, DateTimeKind.Utc);

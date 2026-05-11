@@ -25,6 +25,17 @@ namespace LinguaReadApi.Services
         private readonly ILogger<StatsRecomputeService> _logger;
         private readonly MigrationSignal _migrationSignal;
 
+        // Debounced-pulse machinery. A caller (e.g. the
+        // WordLinkingBackgroundService when a link completes) invokes
+        // RequestSweep(delay). Each call cancels any pending timer and
+        // schedules a new one — so a burst of N linker completions
+        // (e.g. an import of a 247-part book) produces exactly one
+        // sweep, fired ~delay after the LAST completion. Idempotent
+        // and lock-protected so concurrent callers stay safe.
+        private readonly object _pulseLock = new();
+        private CancellationTokenSource? _pendingPulseCts;
+        private CancellationToken _serviceStoppingToken;
+
         public StatsRecomputeService(
             IServiceProvider serviceProvider,
             ILogger<StatsRecomputeService> logger,
@@ -35,8 +46,48 @@ namespace LinguaReadApi.Services
             _migrationSignal = migrationSignal;
         }
 
+        /// <summary>
+        /// Ask for a debounced stats sweep. Each call cancels the
+        /// previously-scheduled pulse and re-arms the timer; the actual
+        /// recompute fires only after <paramref name="debounce"/> has
+        /// elapsed with no further calls. Safe to invoke from anywhere
+        /// (singleton lifetime); the sweep runs on a background task
+        /// so the caller is not blocked.
+        /// </summary>
+        public void RequestSweep(TimeSpan debounce)
+        {
+            CancellationTokenSource newCts;
+            CancellationToken stoppingToken;
+            lock (_pulseLock)
+            {
+                _pendingPulseCts?.Cancel();
+                _pendingPulseCts?.Dispose();
+                stoppingToken = _serviceStoppingToken;
+                newCts = stoppingToken.CanBeCanceled
+                    ? CancellationTokenSource.CreateLinkedTokenSource(stoppingToken)
+                    : new CancellationTokenSource();
+                _pendingPulseCts = newCts;
+            }
+
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await Task.Delay(debounce, newCts.Token);
+                    _logger.LogInformation("StatsRecomputeService running debounced sweep.");
+                    await RecomputeAllAsync(stoppingToken.CanBeCanceled ? stoppingToken : CancellationToken.None);
+                }
+                catch (OperationCanceledException) { /* superseded by a later pulse */ }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Debounced stats sweep failed.");
+                }
+            });
+        }
+
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
+            _serviceStoppingToken = stoppingToken;
             _logger.LogInformation("StatsRecomputeService started; nightly sweep at {RunAt} UTC.", RunAtUtc);
 
             // Wait for WordLinkingMigrationService to finish before sweeping

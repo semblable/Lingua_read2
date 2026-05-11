@@ -10,18 +10,27 @@ namespace LinguaReadApi.Services
 {
     public class WordLinkingBackgroundService : BackgroundService
     {
+        // Debounce window for the post-link stats sweep. Long enough
+        // that a multi-text import (e.g. 247 parts) coalesces into a
+        // single sweep at the end, short enough that a one-off import
+        // shows its % within a few seconds.
+        private static readonly TimeSpan PostLinkSweepDebounce = TimeSpan.FromSeconds(15);
+
         private readonly WordLinkingChannel _channel;
         private readonly IServiceProvider _serviceProvider;
         private readonly ILogger<WordLinkingBackgroundService> _logger;
+        private readonly StatsRecomputeService _statsRecompute;
 
         public WordLinkingBackgroundService(
             WordLinkingChannel channel,
             IServiceProvider serviceProvider,
-            ILogger<WordLinkingBackgroundService> logger)
+            ILogger<WordLinkingBackgroundService> logger,
+            StatsRecomputeService statsRecompute)
         {
             _channel = channel;
             _serviceProvider = serviceProvider;
             _logger = logger;
+            _statsRecompute = statsRecompute;
         }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -50,6 +59,11 @@ namespace LinguaReadApi.Services
                     }
 
                     _logger.LogInformation("Word linking completed for TextId={TextId}", request.TextId);
+
+                    // Re-arm the debounced stats sweep so the new
+                    // TextWord rows are picked up without waiting for
+                    // 03:00 UTC. Coalesces across bursty imports.
+                    _statsRecompute.RequestSweep(PostLinkSweepDebounce);
                 }
                 catch (Exception ex)
                 {

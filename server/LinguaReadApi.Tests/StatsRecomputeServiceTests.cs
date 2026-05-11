@@ -147,6 +147,76 @@ public class StatsRecomputeServiceTests
     }
 
     [Fact]
+    public async Task RequestSweep_RunsRecompute_AfterDebounceDelay()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var userId = Guid.NewGuid();
+        SeedBookAndStandaloneText(dbName, userId);
+
+        var (provider, _) = CreateProvider(dbName);
+        var service = NewService(provider);
+
+        // Pre-condition: standalone text has no cached stats yet.
+        await using (var pre = NewContext(dbName))
+        {
+            Assert.Null((await pre.Texts.SingleAsync(t => t.TextId == 100)).StatsUpdatedAt);
+        }
+
+        service.RequestSweep(TimeSpan.FromMilliseconds(50));
+
+        // Wait long enough for the debounce timer to elapse and
+        // the background recompute to finish.
+        var deadline = DateTime.UtcNow.AddSeconds(2);
+        Text? observed = null;
+        while (DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(50);
+            await using var probe = NewContext(dbName);
+            observed = await probe.Texts.AsNoTracking().SingleAsync(t => t.TextId == 100);
+            if (observed.StatsUpdatedAt != null) break;
+        }
+
+        Assert.NotNull(observed?.StatsUpdatedAt);
+        Assert.Equal(3, observed!.TotalWords);
+        Assert.Equal(1, observed.KnownWords);
+    }
+
+    [Fact]
+    public async Task RequestSweep_Coalesces_WhenCalledRepeatedlyWithinDelay()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var userId = Guid.NewGuid();
+        SeedBookAndStandaloneText(dbName, userId);
+
+        var (provider, _) = CreateProvider(dbName);
+        var service = NewService(provider);
+
+        // Re-arm the debounce 10 times in quick succession. Only the
+        // last call's timer should survive; the recompute should fire
+        // exactly once, ~150ms after the final RequestSweep call.
+        for (int i = 0; i < 10; i++)
+        {
+            service.RequestSweep(TimeSpan.FromMilliseconds(150));
+            await Task.Delay(20);
+        }
+
+        // Within the debounce window (150ms after the last call):
+        // sweep should NOT have run yet.
+        await using (var midProbe = NewContext(dbName))
+        {
+            var midText = await midProbe.Texts.AsNoTracking().SingleAsync(t => t.TextId == 100);
+            Assert.Null(midText.StatsUpdatedAt);
+        }
+
+        // After the window elapses, the single coalesced sweep runs.
+        await Task.Delay(400);
+        await using var afterProbe = NewContext(dbName);
+        var afterText = await afterProbe.Texts.AsNoTracking().SingleAsync(t => t.TextId == 100);
+        Assert.NotNull(afterText.StatsUpdatedAt);
+        Assert.Equal(3, afterText.TotalWords);
+    }
+
+    [Fact]
     public async Task RecomputeAllAsync_LeavesStatsAtZero_ForRowsWithoutTextWords()
     {
         var dbName = Guid.NewGuid().ToString();
@@ -228,6 +298,9 @@ public class StatsRecomputeServiceTests
     }
 
     // --- Helpers ---
+
+    private static StatsRecomputeService NewService(IServiceProvider provider)
+        => new StatsRecomputeService(provider, NullLogger<StatsRecomputeService>.Instance, new MigrationSignal());
 
     private static (IServiceProvider provider, ServiceProvider services) CreateProvider(string dbName)
     {

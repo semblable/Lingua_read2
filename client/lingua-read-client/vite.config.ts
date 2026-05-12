@@ -19,11 +19,15 @@ export default defineConfig({
     sourcemap: true,
   },
   // Treat .js files as JSX (CRA allowed this; Vite doesn't by default).
-  // Lets the gradual TS migration proceed without renaming every component
-  // to .jsx first. Phase C will rename .js -> .tsx as files are converted.
+  // Use the `tsx` loader (a permissive superset of jsx + ts) so that .ts and
+  // .tsx files added during the Phase C migration are also handled — setting
+  // `esbuild.include` REPLACES Vite's default ts/jsx/tsx include, so we have
+  // to list every extension we want processed.
+  // Phase C will rename .js -> .tsx as files are converted; this config keeps
+  // working throughout the migration.
   esbuild: {
-    loader: 'jsx',
-    include: /src\/.*\.jsx?$/,
+    loader: 'tsx',
+    include: /src\/.*\.[jt]sx?$/,
     exclude: [],
   },
   optimizeDeps: {

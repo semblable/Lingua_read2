@@ -1,5 +1,12 @@
+export type StorageWrapper = {
+  getItem: (key: string) => string | null;
+  setItem: (key: string, value: string) => boolean;
+  removeItem: (key: string) => boolean;
+  clear: () => boolean;
+};
+
 // A storage utility that works across platforms
-const storage = {
+const storage: StorageWrapper = {
   getItem: (key) => {
     try {
       return localStorage.getItem(key);
@@ -8,7 +15,7 @@ const storage = {
       return null;
     }
   },
-  
+
   setItem: (key, value) => {
     try {
       localStorage.setItem(key, value);
@@ -18,7 +25,7 @@ const storage = {
       return false;
     }
   },
-  
+
   removeItem: (key) => {
     try {
       localStorage.removeItem(key);
@@ -28,7 +35,7 @@ const storage = {
       return false;
     }
   },
-  
+
   clear: () => {
     try {
       localStorage.clear();
@@ -40,4 +47,4 @@ const storage = {
   }
 };
 
-export default storage; 
+export default storage;

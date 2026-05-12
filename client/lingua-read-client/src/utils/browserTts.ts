@@ -1,4 +1,4 @@
-const LANGUAGE_TAG_OVERRIDES = {
+const LANGUAGE_TAG_OVERRIDES: Record<string, string> = {
   AR: 'ar-SA',
   BG: 'bg-BG',
   CS: 'cs-CZ',
@@ -38,7 +38,7 @@ const DEFAULT_RATE = 1;
 const MIN_RATE = 0.5;
 const MAX_RATE = 1.5;
 
-function getSynth() {
+function getSynth(): SpeechSynthesis | null {
   if (typeof window === 'undefined' || typeof window.speechSynthesis === 'undefined') {
     return null;
   }
@@ -46,11 +46,11 @@ function getSynth() {
   return window.speechSynthesis;
 }
 
-export function isSpeechSynthesisSupported() {
+export function isSpeechSynthesisSupported(): boolean {
   return Boolean(getSynth() && typeof window.SpeechSynthesisUtterance !== 'undefined');
 }
 
-export function clampSpeechRate(rate) {
+export function clampSpeechRate(rate: number | string | null | undefined): number {
   const numericRate = Number(rate);
   if (!Number.isFinite(numericRate)) {
     return DEFAULT_RATE;
@@ -59,7 +59,7 @@ export function clampSpeechRate(rate) {
   return Math.min(MAX_RATE, Math.max(MIN_RATE, numericRate));
 }
 
-export function toSpeechLanguageTag(languageCode) {
+export function toSpeechLanguageTag(languageCode: string | null | undefined): string {
   if (!languageCode || typeof languageCode !== 'string') {
     return 'en-US';
   }
@@ -80,7 +80,10 @@ export function toSpeechLanguageTag(languageCode) {
   return LANGUAGE_TAG_OVERRIDES[normalized.toUpperCase()] || normalized.toLowerCase();
 }
 
-function pickVoice(voices, speechLang) {
+function pickVoice(
+  voices: SpeechSynthesisVoice[] | null | undefined,
+  speechLang: string
+): SpeechSynthesisVoice | null {
   if (!voices || voices.length === 0) {
     return null;
   }
@@ -98,15 +101,31 @@ function pickVoice(voices, speechLang) {
   );
 }
 
-export function cancelSpeech() {
+export function cancelSpeech(): void {
   const synth = getSynth();
   if (synth) {
     synth.cancel();
   }
 }
 
-export function speakText({ text, languageCode, rate, onStart, onEnd, onError }) {
-  return new Promise((resolve, reject) => {
+export type SpeakTextOptions = {
+  text?: string | null;
+  languageCode?: string | null;
+  rate?: number | string | null;
+  onStart?: () => void;
+  onEnd?: () => void;
+  onError?: (error: Error) => void;
+};
+
+export function speakText({
+  text,
+  languageCode,
+  rate,
+  onStart,
+  onEnd,
+  onError
+}: SpeakTextOptions): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
     const synth = getSynth();
     if (!synth || typeof window.SpeechSynthesisUtterance === 'undefined') {
       const supportError = new Error('Speech synthesis is not supported in this browser.');

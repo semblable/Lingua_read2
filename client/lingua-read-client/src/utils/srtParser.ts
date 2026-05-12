@@ -1,6 +1,13 @@
 // --- SRT Parsing Utilities ---
 
-export const parseSrtTime = (timeString) => {
+export type SrtEntry = {
+  id: number;
+  startTime: number;
+  endTime: number;
+  text: string;
+};
+
+export const parseSrtTime = (timeString: string | null | undefined): number => {
   if (!timeString) return 0;
   const parts = timeString.split(':');
   const secondsParts = parts[2]?.split(',');
@@ -13,12 +20,12 @@ export const parseSrtTime = (timeString) => {
   return hours * 3600 + minutes * 60 + seconds + milliseconds / 1000;
 };
 
-export const parseSrtContent = (srtContent) => {
+export const parseSrtContent = (srtContent: string | null | undefined): SrtEntry[] => {
   if (!srtContent) return [];
   const lines = srtContent.trim().split(/\r?\n/);
-  const entries = [];
-  let currentEntry = null;
-  let textBuffer = [];
+  const entries: SrtEntry[] = [];
+  let currentEntry: SrtEntry | null = null;
+  let textBuffer: string[] = [];
   for (const line of lines) {
     const trimmedLine = line.trim();
     if (currentEntry === null) {
@@ -59,6 +66,6 @@ export const parseSrtContent = (srtContent) => {
  * Find the SRT line index matching a given time.
  * Uses inclusive end boundary (<=) to avoid dead zones at segment transitions.
  */
-export const findSrtLineIndex = (srtLines, time) => {
-  return srtLines.findIndex(line => time >= line.startTime && time <= line.endTime);
+export const findSrtLineIndex = (srtLines: SrtEntry[], time: number): number => {
+  return srtLines.findIndex((line) => time >= line.startTime && time <= line.endTime);
 };

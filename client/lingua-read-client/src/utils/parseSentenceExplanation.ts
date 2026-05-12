@@ -3,25 +3,34 @@
  * Expected headers (from server prompt): Grammar, Nuance, Culture/Context, Natural phrasing
  */
 
-const SECTION_ORDER = [
+export type ExplanationSectionId = 'grammar' | 'nuance' | 'culture' | 'natural';
+
+export type ExplanationSection = {
+  id: ExplanationSectionId;
+  label: string;
+  body: string;
+};
+
+export type SentenceExplanation = {
+  sections: ExplanationSection[];
+  fallback: string | null;
+};
+
+const SECTION_ORDER: { id: ExplanationSectionId; label: string }[] = [
   { id: 'grammar', label: 'Grammar' },
   { id: 'nuance', label: 'Nuance' },
   { id: 'culture', label: 'Culture / context' },
   { id: 'natural', label: 'Natural phrasing' }
 ];
 
-const HEADER_PATTERNS = [
+const HEADER_PATTERNS: RegExp[] = [
   /^Grammar:\s*(.*)$/i,
   /^Nuance:\s*(.*)$/i,
   /^Culture\/Context:\s*(.*)$/i,
   /^Natural phrasing:\s*(.*)$/i
 ];
 
-/**
- * @param {string} raw
- * @returns {{ sections: Array<{ id: string, label: string, body: string }>, fallback: string | null }}
- */
-export function parseSentenceExplanation(raw) {
+export function parseSentenceExplanation(raw: unknown): SentenceExplanation {
   if (raw == null || typeof raw !== 'string') {
     return { sections: [], fallback: '' };
   }
@@ -32,9 +41,9 @@ export function parseSentenceExplanation(raw) {
   }
 
   const lines = normalized.split('\n');
-  const sections = [];
+  const sections: ExplanationSection[] = [];
   let currentIndex = -1;
-  const bodies = [[], [], [], []];
+  const bodies: string[][] = [[], [], [], []];
 
   for (const line of lines) {
     let matched = false;

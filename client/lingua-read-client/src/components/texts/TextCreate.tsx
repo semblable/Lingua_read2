@@ -3,26 +3,31 @@ import { Container, Form, Button, Card, Alert, Spinner } from 'react-bootstrap';
 import { useNavigate } from 'react-router-dom';
 import { createText, getLanguages } from '../../utils/api';
 
+// Shape of items returned by getLanguages() — older /translation/languages
+// endpoint that returns short id+name pairs.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type LanguageOption = { id: number | string; name: string;[key: string]: any };
+
 const TextCreate = () => {
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
-  const [languageId, setLanguageId] = useState('');
-  const [languages, setLanguages] = useState([]);
+  const [languageId, setLanguageId] = useState<string | number>('');
+  const [languages, setLanguages] = useState<LanguageOption[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [loadingLanguages, setLoadingLanguages] = useState(true);
-  
+
   const navigate = useNavigate();
 
   useEffect(() => {
     const fetchLanguages = async () => {
       try {
-        const data = await getLanguages();
+        const data = (await getLanguages()) as LanguageOption[];
         setLanguages(data);
         if (data.length > 0) {
           setLanguageId(data[0].id);
         }
-      } catch (err) {
+      } catch {
         setError('Failed to load languages. Please try again later.');
       } finally {
         setLoadingLanguages(false);
@@ -32,7 +37,7 @@ const TextCreate = () => {
     fetchLanguages();
   }, []);
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     if (!title.trim()) {
@@ -55,9 +60,10 @@ const TextCreate = () => {
     
     try {
       const newText = await createText(title, content, languageId);
-      navigate(`/texts/${newText.id}`);
+      navigate(`/texts/${newText.textId}`);
     } catch (err) {
-      setError(err.message || 'Failed to create text. Please try again.');
+      const message = err instanceof Error ? err.message : '';
+      setError(message || 'Failed to create text. Please try again.');
       setLoading(false);
     }
   };

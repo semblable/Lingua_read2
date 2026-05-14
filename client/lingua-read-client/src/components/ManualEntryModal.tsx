@@ -19,15 +19,13 @@ function ManualEntryModal({ show, onHide, onSubmitSuccess }) {
                 setIsFetchingLanguages(true);
                 setError('');
                 try {
-                    const response = await getAllLanguages(); // Use imported function
-                    // console.log('[ManualEntryModal] Raw languages response:', response); // DEBUG REMOVED
-                    const languagesData = response || []; // FIX: Use response directly as it's the array
-                    // console.log('[ManualEntryModal] Setting languages state with:', languagesData); // DEBUG REMOVED
+                    const response = await getAllLanguages();
+                    const languagesData = response || [];
                     setLanguages(languagesData);
-                    if (response.data && response.data.length > 0) {
-                        // Optionally pre-select the first language
-                        // setSelectedLanguage(response.data[0].languageId);
-                    }
+                    // Pre-selecting the first language was previously gated on a
+                    // wrapped axios-style `response.data` payload; the typed
+                    // getAllLanguages now returns the array directly, and the
+                    // pre-select line was already commented out. Left as a no-op.
                 } catch (err) {
                     console.error("Error fetching languages:", err); // Revert DEBUG
                     setError('Failed to load languages. Please try closing and reopening the modal.'); // Revert DEBUG

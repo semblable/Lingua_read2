@@ -2,8 +2,29 @@ import React, { useState, useEffect } from 'react';
 import { Form, Button, Row, Col, Card, InputGroup, Alert } from 'react-bootstrap';
 import { createLanguage, updateLanguage, deleteLanguage, resetLanguageContent } from '../../utils/api'; // <-- Import deleteLanguage
 
+// TODO(phase-d): tighten these `any[]` to real dictionary/exception shapes
+// once api-types reflects them concretely.
+type LanguageFormData = {
+    languageId?: number;
+    name: string;
+    code: string;
+    showRomanization: boolean;
+    rightToLeft: boolean;
+    parserType: string;
+    characterSubstitutions: string;
+    splitSentences: string;
+    wordCharacters: string;
+    isActiveForTranslation: boolean;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    dictionaries: any[];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    sentenceSplitExceptions: any[];
+    deepLTargetCode: string;
+    geminiTargetCode: string;
+};
+
 // Initial empty state for a new language
-const initialLanguageState = {
+const initialLanguageState: LanguageFormData = {
     name: '',
     code: '',
     showRomanization: false,
@@ -19,7 +40,16 @@ const initialLanguageState = {
     geminiTargetCode: ''
 };
 
-function LanguageForm({ language, onSave, onCancel, onDelete, onResetContent }) {
+type LanguageFormProps = {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    language: any;
+    onSave: () => void;
+    onCancel: () => void;
+    onDelete: (languageId: number) => void;
+    onResetContent?: (languageId: number) => void;
+};
+
+function LanguageForm({ language, onSave, onCancel, onDelete, onResetContent }: LanguageFormProps) {
     const [formData, setFormData] = useState(initialLanguageState);
     const [isSaving, setIsSaving] = useState(false);
     const [error, setError] = useState(null);

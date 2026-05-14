@@ -84,12 +84,13 @@ const TranslationPopup = ({
 
   // Effect to synchronize sentence block heights using ResizeObserver
   useEffect(() => {
-    const observer = new ResizeObserver(entries => {
+    const observer = new ResizeObserver((entries) => {
       // Use a Set to avoid redundant processing if both elements trigger the observer simultaneously
-      const elementsToSync = new Set();
-      for (let entry of entries) {
+      const elementsToSync = new Set<HTMLElement>();
+      for (const entry of entries) {
         // Find the corresponding pair element based on the ID structure
-        const id = entry.target.id;
+        const target = entry.target as HTMLElement;
+        const id = target.id;
         const parts = id.split('-');
         const type = parts[0]; // 'orig' or 'trans'
         const number = parts[parts.length - 1];
@@ -97,22 +98,22 @@ const TranslationPopup = ({
         const counterpartId = `${counterpartType}-block-${number}`;
         const counterpartEl = document.getElementById(counterpartId);
         if (counterpartEl) {
-           // Add both elements of the pair to the set for syncing
-           elementsToSync.add(entry.target);
-           elementsToSync.add(counterpartEl);
+          // Add both elements of the pair to the set for syncing
+          elementsToSync.add(target);
+          elementsToSync.add(counterpartEl);
         }
       }
       // Process sync requests, ensuring pairs are handled together
-      const processedPairs = new Set();
-      elementsToSync.forEach(el => {
-         const id = el.id;
-         const number = id.split('-').pop();
-         if (!processedPairs.has(number)) {
-            const originalEl = document.getElementById(`orig-block-${number}`);
-            const translatedEl = document.getElementById(`trans-block-${number}`);
-            syncPairHeight(originalEl, translatedEl);
-            processedPairs.add(number);
-         }
+      const processedPairs = new Set<string | undefined>();
+      elementsToSync.forEach((el) => {
+        const id = el.id;
+        const number = id.split('-').pop();
+        if (!processedPairs.has(number)) {
+          const originalEl = document.getElementById(`orig-block-${number}`);
+          const translatedEl = document.getElementById(`trans-block-${number}`);
+          syncPairHeight(originalEl, translatedEl);
+          processedPairs.add(number);
+        }
       });
     });
 

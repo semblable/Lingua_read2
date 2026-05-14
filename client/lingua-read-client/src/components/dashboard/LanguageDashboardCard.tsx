@@ -4,6 +4,12 @@ import { Link } from 'react-router-dom';
 import { ResponsiveContainer, AreaChart, Area, YAxis } from 'recharts';
 import CefrBadge from './CefrBadge';
 
+// react-bootstrap's `as` prop is typed against IntrinsicElements; the
+// react-router Link plus its `to` prop don't satisfy the intersection.
+// Cast to `any` — runtime behavior is unchanged.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const LinkAs: any = Link;
+
 const formatMinutes = (seconds) => {
   if (!seconds) return '0 min';
   const m = Math.round(seconds / 60);
@@ -136,7 +142,7 @@ const LanguageDashboardCard = ({ lang }) => {
         <div className="mt-auto d-flex gap-2 flex-wrap">
           {continueReadingTextId ? (
             <Button
-              as={Link}
+              as={LinkAs}
               to={`/texts/${continueReadingTextId}`}
               size="sm"
               variant="primary"
@@ -144,11 +150,11 @@ const LanguageDashboardCard = ({ lang }) => {
               Continue reading
             </Button>
           ) : (
-            <Button as={Link} to="/library" size="sm" variant="outline-primary">
+            <Button as={LinkAs} to="/library" size="sm" variant="outline-primary">
               Open library
             </Button>
           )}
-          <Button as={Link} to="/srs" size="sm" variant="outline-secondary">
+          <Button as={LinkAs} to="/srs" size="sm" variant="outline-secondary">
             Review SRS
           </Button>
         </div>

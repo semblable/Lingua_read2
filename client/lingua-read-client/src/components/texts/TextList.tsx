@@ -3,6 +3,13 @@ import { Container, Row, Col, Card, Button, Spinner, Alert, Tabs, Tab } from 're
 import { Link } from 'react-router-dom';
 import { useTextsStore } from '../../utils/store';
 import { getTexts, completeText } from '../../utils/api';
+import type { StoredText } from '../../utils/store';
+
+// react-bootstrap's `as` prop is typed against IntrinsicElements; the
+// react-router Link plus the forwarded `to` prop don't fit. Cast to `any`
+// so both pass the type checker. Runtime behaviour is unchanged.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const LinkAs: any = Link;
 
 const TextList = () => {
   const { texts, loading, error, setTexts, setLoading, setError } = useTextsStore();
@@ -12,9 +19,10 @@ const TextList = () => {
       setLoading(true);
       try {
         const data = await getTexts();
-        setTexts(data);
+        setTexts(data as StoredText[]);
       } catch (err) {
-        setError(err.message || 'Failed to load texts');
+        const message = err instanceof Error ? err.message : '';
+        setError(message || 'Failed to load texts');
       } finally {
         setLoading(false);
       }
@@ -25,14 +33,15 @@ const TextList = () => {
 
   const [activeTab, setActiveTab] = React.useState('active');
 
-  const handleMarkFinished = async (textId) => {
-    if (!window.confirm("Mark this text as finished?")) return;
+  const handleMarkFinished = async (textId: number | string) => {
+    if (!window.confirm('Mark this text as finished?')) return;
     try {
       await completeText(textId);
       const data = await getTexts();
-      setTexts(data);
+      setTexts(data as StoredText[]);
     } catch (err) {
-      alert("Failed. " + (err.message || ""));
+      const message = err instanceof Error ? err.message : '';
+      alert('Failed. ' + message);
     }
   };
 
@@ -54,7 +63,7 @@ const TextList = () => {
     <Container className="py-5">
       <div className="d-flex justify-content-between align-items-center mb-4">
         <h1>My Texts</h1>
-        <Button as={Link} to="/texts/create" variant="success">
+        <Button as={LinkAs} to="/texts/create" variant="success">
           Add New Text
         </Button>
       </div>
@@ -73,7 +82,7 @@ const TextList = () => {
               <Card.Body>
                 <h3>No active texts</h3>
                 <p className="mb-4">Add a new text or check your finished archive.</p>
-                <Button as={Link} to="/texts/create" variant="primary">
+                <Button as={LinkAs} to="/texts/create" variant="primary">
                   Add New Text
                 </Button>
               </Card.Body>
@@ -111,7 +120,12 @@ const TextList = () => {
   );
 };
 
-const TextListCard = ({ text, onMarkFinished }) => (
+type TextListCardProps = {
+  text: StoredText;
+  onMarkFinished?: (textId: number | string) => void;
+};
+
+const TextListCard = ({ text, onMarkFinished }: TextListCardProps) => (
   <Col md={4} className="mb-4">
     <Card className="h-100 text-card shadow-sm position-relative">
       {text.isFinished && (
@@ -134,8 +148,8 @@ const TextListCard = ({ text, onMarkFinished }) => (
                 role="progressbar"
                 style={{ width: `${Math.min(text.audioProgress * 100, 100)}%` }}
                 aria-valuenow={text.audioProgress * 100}
-                aria-valuemin="0"
-                aria-valuemax="100"
+                aria-valuemin={0}
+                aria-valuemax={100}
               ></div>
             </div>
             <small className="text-muted">{Math.round(text.audioProgress * 100)}% listened</small>
@@ -152,7 +166,7 @@ const TextListCard = ({ text, onMarkFinished }) => (
       </Card.Body>
       <Card.Footer className="bg-white border-top-0">
         <Button
-          as={Link}
+          as={LinkAs}
           to={`/texts/${text.textId || text.id}`}
           variant="outline-primary"
           className="w-100 mb-2"

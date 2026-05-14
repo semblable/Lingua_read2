@@ -28,7 +28,10 @@ const WordLookupPopover = ({
       const result = await translateSelectionWithContext(
         word, sentenceContext || '', sourceLanguageCode, targetLanguageCode
       );
-      setTranslation(result.translatedText || result.translation || '');
+      // Defensive fallback to `.translation` for legacy responses — cast
+      // because the typed shape only exposes `translatedText`.
+      const legacy = result as { translation?: string };
+      setTranslation(result.translatedText || legacy.translation || '');
     } catch (err) {
       console.error('Translation failed:', err);
       setTranslation('');

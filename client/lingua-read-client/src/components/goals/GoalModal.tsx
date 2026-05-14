@@ -20,11 +20,30 @@ const SCOPE_ALL = '__all__';
 const secsToHours = (s) => (s / 3600).toFixed(1).replace(/\.0$/, '');
 const hoursToSecs = (h) => Math.round(parseFloat(h || 0) * 3600);
 
-function GoalModal({ show, onHide, onSaved, editing, defaultLanguageId }) {
+type GoalModalProps = {
+  show: boolean;
+  onHide: () => void;
+  onSaved?: () => void | Promise<void>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  editing?: any;
+  defaultLanguageId?: number | string | null;
+};
+
+function GoalModal({
+  show,
+  onHide,
+  onSaved,
+  editing,
+  defaultLanguageId
+}: GoalModalProps) {
   const isEdit = !!editing;
 
   const [type, setType] = useState(GOAL_TYPE.WordsRead);
-  const [scope, setScope] = useState(defaultLanguageId ?? '');
+  // scope is the language-id selector value; '__all__' for all-languages,
+  // '' for unselected, otherwise the languageId as a string.
+  const [scope, setScope] = useState<string>(
+    defaultLanguageId != null ? String(defaultLanguageId) : ''
+  );
   const [recurrence, setRecurrence] = useState(GOAL_RECURRENCE.None);
   const [mode, setMode] = useState(GOAL_MODE.Delta);
   const [target, setTarget] = useState('');
@@ -151,7 +170,10 @@ function GoalModal({ show, onHide, onSaved, editing, defaultLanguageId }) {
       }
     }
     if (recurrence === GOAL_RECURRENCE.None && hasDeadline && deadline) {
-      const days = Math.max(1, Math.ceil((new Date(deadline + 'T00:00:00') - new Date()) / 86400000));
+      const days = Math.max(
+        1,
+        Math.ceil((new Date(deadline + 'T00:00:00').getTime() - new Date().getTime()) / 86400000)
+      );
       const perDay = Math.ceil(targetValue / days);
       const pace7 = totals?.last7DaysTotal || 0;
       const paceDay = Math.round(pace7 / 7);
@@ -210,7 +232,11 @@ function GoalModal({ show, onHide, onSaved, editing, defaultLanguageId }) {
           title: payload.title,
         });
       } else {
-        await createGoal(payload);
+        // payload's numeric goalType / mode / recurrence widen from the enum
+        // unions in api-types; the backend accepts any int in the valid range
+        // and the form constrains the values via UI, so cast at the boundary.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await createGoal(payload as any);
       }
       if (onSaved) onSaved();
       onHide();

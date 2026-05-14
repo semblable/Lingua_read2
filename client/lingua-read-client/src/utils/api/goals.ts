@@ -48,7 +48,7 @@ export const deleteGoal = (goalId: number | string): Promise<unknown> =>
   fetchApi(`/goals/${goalId}`, { method: 'DELETE' });
 
 export type GoalSuggestionArgs = {
-  type: string;
+  type: number | string;
   languageId?: number | string | null;
   recurrence?: number;
   mode?: number;
@@ -61,7 +61,7 @@ export const getGoalSuggestion = ({
   mode = 1
 }: GoalSuggestionArgs): Promise<GoalSuggestion> => {
   const params = new URLSearchParams({
-    type,
+    type: String(type),
     recurrence: String(recurrence),
     mode: String(mode),
     timezoneOffsetMinutes: String(tzOffset())

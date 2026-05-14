@@ -2,8 +2,15 @@ import React, { useState, useEffect } from 'react';
 import { Form, Button, Card, Row, Col } from 'react-bootstrap';
 import { getUserSettings, updateUserSettings } from '../utils/api';
 
+// NOTE(phase-d): This appears to be a legacy/dead component — pages/UserSettings
+// is the live settings page. State shape mixes string text-size (local) with
+// the full backend Settings object. Until it's removed or merged into the
+// canonical settings page, keep the local state permissive.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type LocalSettings = { [key: string]: any };
+
 const UserSettings = () => {
-  const [settings, setSettings] = useState({
+  const [settings, setSettings] = useState<LocalSettings>({
     textSize: 'medium',
     theme: 'dark',
     textFont: 'default',
@@ -18,7 +25,7 @@ const UserSettings = () => {
     const fetchSettings = async () => {
       try {
         setLoading(true);
-        const response = await getUserSettings();
+        const response = (await getUserSettings()) as LocalSettings | null;
 
         if (response) {
           setSettings(response);
@@ -40,11 +47,12 @@ const UserSettings = () => {
     fetchSettings();
   }, []);
 
-  const handleChange = (e) => {
-    const { name, value, type, checked } = e.target;
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    const target = e.target as HTMLInputElement;
+    const { name, value, type, checked } = target;
     const newValue = type === 'checkbox' ? checked : value;
 
-    setSettings(prev => ({
+    setSettings((prev) => ({
       ...prev,
       [name]: newValue
     }));
@@ -61,7 +69,7 @@ const UserSettings = () => {
     }
   };
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     try {
@@ -69,7 +77,8 @@ const UserSettings = () => {
       setError('');
       setMessage('');
 
-      await updateUserSettings(settings);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await updateUserSettings(settings as any);
       setMessage('Settings saved successfully');
     } catch (err) {
       console.error('Error saving settings:', err);

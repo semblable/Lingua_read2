@@ -9,8 +9,29 @@ import {
   paceLabel,
 } from './goalUtils';
 
+type GoalRowProps = {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  goal: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  onEdit?: (goal: any) => void;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  onArchive?: (goal: any) => void;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  onRestore?: (goal: any) => void;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  onDelete?: (goal: any) => void;
+  compact?: boolean;
+};
+
 // Compact goal row used in both the dashboard card and the /goals list.
-function GoalRow({ goal, onEdit, onArchive, onRestore, onDelete, compact = false }) {
+function GoalRow({
+  goal,
+  onEdit,
+  onArchive,
+  onRestore,
+  onDelete,
+  compact = false
+}: GoalRowProps) {
   const pct = Math.round((goal.percentComplete || 0) * 100);
   const pace = paceLabel(goal);
   const variant =

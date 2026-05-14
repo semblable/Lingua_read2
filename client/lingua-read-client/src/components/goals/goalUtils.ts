@@ -61,12 +61,12 @@ export const autoTitle = (g) => {
 
 export const goalTitle = (g) => g.title || autoTitle(g);
 
-export const daysUntil = (dateStr) => {
+export const daysUntil = (dateStr: string | null | undefined): number | null => {
   if (!dateStr) return null;
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const d = new Date(dateStr + 'T00:00:00');
-  return Math.round((d - today) / (1000 * 60 * 60 * 24));
+  return Math.round((d.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
 };
 
 export const stateLabel = (g) => {

@@ -76,8 +76,8 @@ function CreateAudioLesson() {
 
         setIsLoading(true);
         try {
-            const result = await createAudioLesson(title, languageId, audioFile, srtFile, tag);
-            setSuccessMessage(`Audio lesson "${result.title}" created successfully!`);
+            const result = (await createAudioLesson(title, languageId, audioFile, srtFile, tag)) as { title?: string } | null;
+            setSuccessMessage(`Audio lesson "${result?.title}" created successfully!`);
             setTitle('');
             setLanguageId(''); // Reset language selection
             setAudioFile(null);
@@ -141,7 +141,7 @@ function CreateAudioLesson() {
                                 placeholder="Enter a tag (e.g., Beginner, News)"
                                 value={tag}
                                 onChange={(e) => setTag(e.target.value)}
-                                maxLength="100"
+                                maxLength={100}
                                 disabled={isLoading}
                             />
                         </Form.Group>

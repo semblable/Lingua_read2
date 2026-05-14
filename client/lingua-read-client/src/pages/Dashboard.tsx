@@ -1,6 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { Container, Row, Col, Card, Spinner, Alert, Button } from 'react-bootstrap';
 import { Link } from 'react-router-dom';
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const LinkAs: any = Link;
 import { getDashboard } from '../utils/api';
 import LanguageDashboardCard from '../components/dashboard/LanguageDashboardCard';
 import GoalsCard from '../components/goals/GoalsCard';
@@ -123,13 +126,13 @@ const Dashboard = () => {
               Add a text or book in any language to start tracking your progress.
             </Card.Text>
             <div className="d-flex justify-content-center gap-2 flex-wrap">
-              <Button as={Link} to="/texts/create" variant="primary">
+              <Button as={LinkAs} to="/texts/create" variant="primary">
                 Add Text
               </Button>
-              <Button as={Link} to="/books/create" variant="outline-primary">
+              <Button as={LinkAs} to="/books/create" variant="outline-primary">
                 Add Book
               </Button>
-              <Button as={Link} to="/library" variant="outline-secondary">
+              <Button as={LinkAs} to="/library" variant="outline-secondary">
                 Open Library
               </Button>
             </div>

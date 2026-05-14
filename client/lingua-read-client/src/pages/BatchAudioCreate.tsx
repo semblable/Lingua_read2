@@ -7,7 +7,7 @@ import { SettingsContext } from '../contexts/SettingsContext'; // Import Setting
 const BatchAudioCreate = () => {
     const [languageId, setLanguageId] = useState('');
     const [tag, setTag] = useState('');
-    const [files, setFiles] = useState(null); // Holds FileList object
+    const [files, setFiles] = useState<FileList | null>(null); // Holds FileList object
     const [languages, setLanguages] = useState([]);
     const [isLoading, setIsLoading] = useState(false);
     const [loadingLanguages, setLoadingLanguages] = useState(true);
@@ -310,7 +310,7 @@ const BatchAudioCreate = () => {
                                 placeholder="Enter a tag (e.g., news, podcast)"
                                 value={tag}
                                 onChange={(e) => setTag(e.target.value)}
-                                maxLength="100"
+                                maxLength={100}
                                 disabled={isLoading}
                             />
                         </Form.Group>

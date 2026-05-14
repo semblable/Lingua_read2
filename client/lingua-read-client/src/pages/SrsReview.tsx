@@ -46,7 +46,17 @@ const SrsReview = () => {
   // Settings
   const { settings, updateSetting } = React.useContext(SettingsContext);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
-  const [localSettings, setLocalSettings] = useState({
+  // Form inputs return strings from onChange events; consumers parseInt at
+  // read sites. Widen the state shape so the setters compile.
+  type SrsLocalSettings = {
+    srsMaxNewCards: number | string;
+    srsMaxReviews: number | string;
+    srsReviewOrder: string;
+    srsLearningStepMinutes: string;
+    srsMaxIntervalDays: number | string;
+    srsLapseMinimumIntervalDays: number | string;
+  };
+  const [localSettings, setLocalSettings] = useState<SrsLocalSettings>({
     srsMaxNewCards: 20,
     srsMaxReviews: 200,
     srsReviewOrder: 'mix',
@@ -67,8 +77,8 @@ const SrsReview = () => {
   }, [settings]);
 
   const handleSaveSettings = async () => {
-    const maxNew = parseInt(localSettings.srsMaxNewCards, 10);
-    const maxReviews = parseInt(localSettings.srsMaxReviews, 10);
+    const maxNew = parseInt(String(localSettings.srsMaxNewCards), 10);
+    const maxReviews = parseInt(String(localSettings.srsMaxReviews), 10);
     if (isNaN(maxNew) || maxNew < 1) {
       setError('Max new cards must be a positive number.');
       return;
@@ -77,8 +87,8 @@ const SrsReview = () => {
       setError('Max reviews must be a positive number.');
       return;
     }
-    const maxInterval = parseInt(localSettings.srsMaxIntervalDays, 10);
-    const lapseMin = parseInt(localSettings.srsLapseMinimumIntervalDays, 10);
+    const maxInterval = parseInt(String(localSettings.srsMaxIntervalDays), 10);
+    const lapseMin = parseInt(String(localSettings.srsLapseMinimumIntervalDays), 10);
     if (isNaN(maxInterval) || maxInterval < 1) {
       setError('Max interval must be at least 1 day.');
       return;
@@ -348,14 +358,14 @@ const SrsReview = () => {
           const nextStep = stepIdx + 1;
           if (nextStep >= learningSteps.length) {
             const isRelearning = card.hasEverGraduated;
-            const lapseMin = parseInt(localSettings.srsLapseMinimumIntervalDays, 10) || 1;
+            const lapseMin = parseInt(String(localSettings.srsLapseMinimumIntervalDays), 10) || 1;
             return isRelearning ? `${lapseMin}d` : '1d';
           }
           return `${learningSteps[nextStep]}m`;
         }
         case 3: { // Easy: graduate immediately (from any step)
           const isRelearning = card.hasEverGraduated;
-          const lapseMin = parseInt(localSettings.srsLapseMinimumIntervalDays, 10) || 1;
+          const lapseMin = parseInt(String(localSettings.srsLapseMinimumIntervalDays), 10) || 1;
           return isRelearning ? `${lapseMin * 2}d` : '4d';
         }
         default: return '';

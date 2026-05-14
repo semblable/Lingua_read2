@@ -215,7 +215,10 @@ const TermsPage = () => {
                         }
 
                         if (term) {
-                            const termData = { term, translation: translation || '' };
+                            const termData: { term: string; translation: string; status?: number } = {
+                                term,
+                                translation: translation || ''
+                            };
                             if (status !== null) termData.status = status;
                             termsToImport.push(termData);
                         } else if (!parseError) {
@@ -237,8 +240,8 @@ const TermsPage = () => {
                 }
 
                 try {
-                    const response = await addTermsBatch(selectedLanguage, termsToImport);
-                    setImportSuccess(response.message || `${termsToImport.length} terms processed successfully.`);
+                    const response = (await addTermsBatch(selectedLanguage, termsToImport)) as { message?: string } | null;
+                    setImportSuccess(response?.message || `${termsToImport.length} terms processed successfully.`);
                     fetchTerms(); // Refresh the list - will fetch page 1 automatically if we wanted, or stay on current page
                 } catch (err) {
                     setImportError(`Failed to import terms: ${err.message}`);
@@ -477,7 +480,7 @@ const TermsPage = () => {
                                     ))
                                 ) : (
                                     <tr>
-                                        <td colSpan="5" className="text-center">No terms found for the selected criteria.</td>
+                                        <td colSpan={5} className="text-center">No terms found for the selected criteria.</td>
                                     </tr>
                                 )}
                             </tbody>

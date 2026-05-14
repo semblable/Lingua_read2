@@ -1,6 +1,9 @@
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { Container, Row, Col, Button, Spinner, Alert, Breadcrumb, Form, Badge, Dropdown } from 'react-bootstrap';
 import { Link, useParams, useNavigate } from 'react-router-dom';
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const LinkAs: any = Link;
 import {
   DndContext,
   closestCenter,
@@ -80,9 +83,13 @@ const Library = () => {
     setError(null);
     try {
       const data = await getLibraryContents(currentFolderId);
-      setContents(data);
+      // The API returns optional fields; cast to the store payload shape and
+      // let setContents normalize the missing fields.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      setContents(data as any);
     } catch (err) {
-      setError(err.message || 'Failed to load library');
+      const message = err instanceof Error ? err.message : '';
+      setError(message || 'Failed to load library');
     } finally {
       setLoading(false);
     }
@@ -117,7 +124,7 @@ const Library = () => {
 
   // Get unique languages from current items
   const uniqueLanguages = useMemo(() => {
-    const langs = new Set();
+    const langs = new Set<string>();
     books.forEach(b => b.languageName && langs.add(b.languageName));
     texts.forEach(t => t.languageName && langs.add(t.languageName));
     return [...langs].sort();
@@ -125,8 +132,9 @@ const Library = () => {
 
   // Get unique tags from current items
   const uniqueTags = useMemo(() => {
-    const tags = new Set();
-    books.forEach(b => b.tags?.forEach(t => tags.add(t)));
+    const tags = new Set<string>();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    books.forEach(b => b.tags?.forEach((t: any) => tags.add(t)));
     texts.forEach(t => t.tag && tags.add(t.tag));
     return [...tags].sort();
   }, [books, texts]);
@@ -345,7 +353,7 @@ const Library = () => {
 
     const items = reorderedIds.map((id, idx) => {
       const [type, idStr] = id.split('-');
-      return { id: parseInt(idStr), type, sortOrder: idx };
+      return { id: parseInt(idStr), type, position: idx, sortOrder: idx };
     });
 
     try {
@@ -430,10 +438,10 @@ const Library = () => {
               <i className="bi bi-plus-lg me-1"></i>Add Content
             </Dropdown.Toggle>
             <Dropdown.Menu>
-              <Dropdown.Item as={Link} to="/books/create">Add Book</Dropdown.Item>
-              <Dropdown.Item as={Link} to="/texts/create">Add Text</Dropdown.Item>
-              <Dropdown.Item as={Link} to="/texts/create-audio">Add Audio Lesson</Dropdown.Item>
-              <Dropdown.Item as={Link} to="/texts/create-batch-audio">Batch Audio</Dropdown.Item>
+              <Dropdown.Item as={LinkAs} to="/books/create">Add Book</Dropdown.Item>
+              <Dropdown.Item as={LinkAs} to="/texts/create">Add Text</Dropdown.Item>
+              <Dropdown.Item as={LinkAs} to="/texts/create-audio">Add Audio Lesson</Dropdown.Item>
+              <Dropdown.Item as={LinkAs} to="/texts/create-batch-audio">Batch Audio</Dropdown.Item>
             </Dropdown.Menu>
           </Dropdown>
         </div>
@@ -600,10 +608,10 @@ const Library = () => {
                 <Button variant="outline-primary" onClick={() => setShowCreateFolder(true)}>
                   <i className="bi bi-folder-plus me-1"></i>Create Folder
                 </Button>
-                <Button as={Link} to="/books/create" variant="primary">
+                <Button as={LinkAs} to="/books/create" variant="primary">
                   <i className="bi bi-plus-lg me-1"></i>Add Book
                 </Button>
-                <Button as={Link} to="/texts/create" variant="outline-success">
+                <Button as={LinkAs} to="/texts/create" variant="outline-success">
                   <i className="bi bi-plus-lg me-1"></i>Add Text
                 </Button>
               </>

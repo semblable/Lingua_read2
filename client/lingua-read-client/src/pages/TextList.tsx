@@ -1,8 +1,14 @@
-import React, { useEffect, useState, useMemo, useCallback } from 'react'; // Added useCallback
-import { Container, Row, Col, Card, Button, Spinner, Alert, Form, ButtonGroup, Badge } from 'react-bootstrap'; // Added Badge
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
+import { Container, Row, Col, Card, Button, Spinner, Alert, Form, ButtonGroup, Badge } from 'react-bootstrap';
 import { Link } from 'react-router-dom';
 import { useTextsStore } from '../utils/store';
-import { getTexts, deleteText } from '../utils/api'; // Import deleteText
+import { getTexts, deleteText } from '../utils/api';
+
+// react-bootstrap's `as` prop is typed against IntrinsicElements; the
+// react-router Link plus its `to` prop don't satisfy the intersection.
+// Cast to any so the type check passes — runtime behavior is unchanged.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const LinkAs: any = Link;
 // Assuming Bootstrap Icons are linked globally or via a library like react-bootstrap-icons
 // For simplicity, using class names directly: <i className="bi bi-headphones"></i> <i className="bi bi-trash"></i>
 
@@ -182,10 +188,10 @@ const TextList = () => {
           </Form.Select>
         </div>
         <div className="d-flex gap-2 mt-2 mt-md-0"> {/* Wrap buttons in a div for grouping */}
-          <Button as={Link} to="/texts/create-batch-audio" variant="info">
+          <Button as={LinkAs} to="/texts/create-batch-audio" variant="info">
             Batch Add Audio
           </Button>
-          <Button as={Link} to="/texts/create" variant="success">
+          <Button as={LinkAs} to="/texts/create" variant="success">
             Add New Text
           </Button>
         </div>
@@ -198,7 +204,7 @@ const TextList = () => {
           <Card.Body>
             <h3>{texts.length === 0 ? "You don't have any texts yet" : "No texts match the current filters"}</h3>
             <p className="mb-4">Add your first text to start learning vocabulary</p>
-            <Button as={Link} to="/texts/create" variant="primary">
+            <Button as={LinkAs} to="/texts/create" variant="primary">
               Add Your First Text
             </Button>
             {(languageFilter || tagFilter || typeFilter !== 'all' || statusFilter !== 'all') && ( // Update condition
@@ -248,7 +254,7 @@ const TextList = () => {
                 </Card.Body>
                 <Card.Footer className="bg-white border-top-0 d-flex justify-content-between align-items-center">
                   <Button
-                    as={Link}
+                    as={LinkAs}
                     to={`/texts/${text.textId}`}
                     variant="outline-primary"
                     size="sm" // Make button smaller

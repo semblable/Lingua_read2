@@ -147,12 +147,20 @@ const SrsStoryReview = () => {
     setLookupRef(wordRefs.current[refKey]);
   };
 
-  const handleSaveWord = async (term, translation, status) => {
+  const handleSaveWord = async (term: string, translation: string, status: number) => {
     if (!storyTextId) return;
-    const result = await createWord(storyTextId, term, status, translation, lookupWord?.sentenceContext || '');
+    // createWord returns Promise<unknown>; the actual payload is the new
+    // word DTO plus a translation block. Cast at the boundary.
+    const result = (await createWord(
+      storyTextId,
+      term,
+      status,
+      translation,
+      lookupWord?.sentenceContext || ''
+    )) as { translation?: { translation?: string } } & Record<string, unknown>;
     setExistingWordsMap(prev => ({
       ...prev,
-      [term.toLowerCase()]: { ...result, term, translation: result.translation?.translation || translation, status }
+      [term.toLowerCase()]: { ...result, term, translation: result?.translation?.translation || translation, status }
     }));
   };
 

@@ -90,10 +90,10 @@ const BookCreate = () => {
         newBook = await createBook(
           title,
           description,
-          parseInt(languageId, 10),
+          parseInt(String(languageId), 10),
           content,
           splitMethod,
-          parseInt(maxSegmentSize, 10),
+          parseInt(String(maxSegmentSize), 10),
           tagsArray // Pass tags array
         );
       } else { // activeTab === 'upload'

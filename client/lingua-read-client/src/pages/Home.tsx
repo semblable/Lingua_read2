@@ -3,6 +3,9 @@ import { Container, Row, Col, Card, Button, ListGroup, Spinner, Alert } from 're
 import { Link } from 'react-router-dom';
 import { getRecentTexts } from '../utils/api';
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const LinkAs: any = Link;
+
 const Home = () => {
   const [recentTexts, setRecentTexts] = useState([]);
   const [loadingRecent, setLoadingRecent] = useState(false);
@@ -42,7 +45,7 @@ const Home = () => {
           <ListGroup.Item
             key={text.textId}
             action
-            as={Link}
+            as={LinkAs}
             to={`/texts/${text.textId}`}
             className="d-flex justify-content-between align-items-start"
           >
@@ -90,7 +93,7 @@ const Home = () => {
               <Card.Text>
                 Browse your books, texts, and folders.
               </Card.Text>
-              <Button as={Link} to="/library" variant="primary" className="mt-auto">Go to Library</Button> {/* mt-auto pushes button down */}
+              <Button as={LinkAs} to="/library" variant="primary" className="mt-auto">Go to Library</Button> {/* mt-auto pushes button down */}
             </Card.Body>
           </Card>
         </Col>
@@ -102,9 +105,9 @@ const Home = () => {
                 Import a new book, create a text, or upload an audio lesson.
               </Card.Text>
               <div className="mt-auto"> {/* Group buttons and push down */}
-                <Button as={Link} to="/books/create" variant="success" className="me-2 mb-2">Add Book</Button>
-                <Button as={Link} to="/texts/create" variant="secondary" className="me-2 mb-2">Add Text</Button> {/* Added Add Text button */}
-                <Button as={Link} to="/texts/create-audio" variant="info" className="mb-2">Add Audio Lesson</Button>
+                <Button as={LinkAs} to="/books/create" variant="success" className="me-2 mb-2">Add Book</Button>
+                <Button as={LinkAs} to="/texts/create" variant="secondary" className="me-2 mb-2">Add Text</Button> {/* Added Add Text button */}
+                <Button as={LinkAs} to="/texts/create-audio" variant="info" className="mb-2">Add Audio Lesson</Button>
               </div>
             </Card.Body>
           </Card>

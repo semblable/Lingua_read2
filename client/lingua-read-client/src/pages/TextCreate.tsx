@@ -186,7 +186,7 @@ const TextCreate = () => {
               placeholder="Enter a tag (e.g., news, fiction, chapter 1)"
               value={tag}
               onChange={(e) => setTag(e.target.value)}
-              maxLength="100" // Match backend constraint
+              maxLength={100} // Match backend constraint
             />
           </Form.Group>
           

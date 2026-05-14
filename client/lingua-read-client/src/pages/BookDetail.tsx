@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react'; // Add useCallback, useMemo
 import { Container, Card, Button, Alert, Spinner, ListGroup, Badge, ProgressBar, Modal, Form } from 'react-bootstrap'; // Add Form
 import { useParams, useNavigate, useLocation, Link } from 'react-router-dom';
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const LinkAs: any = Link;
 import {
   getBook,
   finishBook,
@@ -124,13 +127,16 @@ const BookDetail = () => {
     setModalLoading(true);
     setModalError('');
     try {
-      // Fetch full text details needed for editing
-      const textData = await getText(textId);
+      // Fetch full text details needed for editing. TextDetailDto in
+      // swagger doesn't list `tag`, but the backend does return it — cast
+      // to access. Phase D will reconcile.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const textData = (await getText(textId)) as any;
       setEditingText({
         textId: textData.textId,
         title: textData.title,
         content: textData.content,
-        tag: textData.tag || '' // Ensure tag is defined, default to empty string
+        tag: textData.tag || ''
       });
       setShowEditTextModal(true);
     } catch (err) {
@@ -267,7 +273,7 @@ const BookDetail = () => {
     } finally {
       setUploadingAudio(false);
       // Clear the file input visually (important for UX)
-      const fileInput = document.getElementById('audiobook-upload-input');
+      const fileInput = document.getElementById('audiobook-upload-input') as HTMLInputElement | null;
       if (fileInput) {
         fileInput.value = '';
       }
@@ -540,7 +546,7 @@ const BookDetail = () => {
               key={part.textId}
               className="d-flex justify-content-between align-items-center"
               action
-              as={Link}
+              as={LinkAs}
               to={`/texts/${part.textId}`}
             >
               <div>
@@ -796,7 +802,7 @@ const BookDetail = () => {
                   type="text"
                   value={editingText.tag}
                   onChange={(e) => setEditingText(prev => ({ ...prev, tag: e.target.value }))}
-                  maxLength="100"
+                  maxLength={100}
                   disabled={modalLoading}
                 />
               </Form.Group>

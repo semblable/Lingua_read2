@@ -116,8 +116,9 @@ const UserSettings = () => {
   const [loadingStorage, setLoadingStorage] = useState(false);
   const [storageError, setStorageError] = useState('');
 
-  // Section refs for scroll
-  const sectionRefs = useRef({});
+  // Section refs for scroll. Keys are section ids ('appearance', 'reading', …);
+  // values are the section's outer <div>.
+  const sectionRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   const { updateSetting } = useContext(SettingsContext);
 
@@ -172,7 +173,7 @@ const UserSettings = () => {
           customStoryPrompt: data.customStoryPrompt ?? '',
           customSummarizationPrompt: data.customSummarizationPrompt ?? ''
         });
-      } catch (err) {
+      } catch (e: unknown) { const err = e as Error;
         setError('Failed to load settings. Please try again later.');
       } finally {
         setLoading(false);
@@ -183,7 +184,7 @@ const UserSettings = () => {
       try {
         const data = await getAllLanguages();
         setLanguages(data || []);
-      } catch (err) {
+      } catch (e: unknown) { const err = e as Error;
         console.error('Failed to load languages:', err);
       } finally {
         setLoadingLanguages(false);
@@ -195,7 +196,7 @@ const UserSettings = () => {
       try {
         const data = await getAudioStorageSize();
         setAudioStorage(data);
-      } catch (err) {
+      } catch (e: unknown) { const err = e as Error;
         console.error('Failed to load audio storage size:', err);
         setStorageError('Failed to load storage information');
       } finally {
@@ -270,15 +271,20 @@ const UserSettings = () => {
         'customStoryPrompt', 'customSummarizationPrompt'
       ];
       settingsToSync.forEach(key => {
-        updateSetting(key, persistedSettings[key]);
-        localStorage.setItem(key, persistedSettings[key] != null ? persistedSettings[key].toString() : '');
+        // settingsToSync is a string[] of dynamic keys; cast at the call
+        // boundary so updateSetting's keyof Settings constraint is satisfied.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        updateSetting(key as any, (persistedSettings as any)[key]);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const val = (persistedSettings as any)[key];
+        localStorage.setItem(key, val != null ? val.toString() : '');
       });
       localStorage.setItem('cachedSettings', JSON.stringify(persistedSettings));
 
       setSuccess(true);
       setHasChanges(false);
       setTimeout(() => setSuccess(false), 3000);
-    } catch (err) {
+    } catch (e: unknown) { const err = e as Error;
       setError(err.message || 'Failed to update settings. Please try again.');
     } finally {
       setSaving(false);
@@ -289,9 +295,9 @@ const UserSettings = () => {
     setIsSendingReport(true);
     setReportMessage({ type: '', text: '' });
     try {
-      const result = await sendDiscordReport(reportPeriod, reportPeriod === 'days' ? reportDays : null);
-      setReportMessage({ type: 'success', text: result.message || 'Report sent.' });
-    } catch (err) {
+      const result = (await sendDiscordReport(reportPeriod, reportPeriod === 'days' ? reportDays : null)) as { message?: string } | null;
+      setReportMessage({ type: 'success', text: result?.message || 'Report sent.' });
+    } catch (e: unknown) { const err = e as Error;
       setReportMessage({ type: 'danger', text: err.message || 'Failed to send report.' });
     } finally {
       setIsSendingReport(false);
@@ -308,10 +314,10 @@ const UserSettings = () => {
     setIsBackingUp(true);
     setBackupMessage({ type: '', text: '' });
     try {
-      const result = await backupDatabase();
-      setBackupMessage({ type: 'success', text: result.message || 'Backup download started.' });
+      const result = (await backupDatabase()) as { message?: string } | null;
+      setBackupMessage({ type: 'success', text: result?.message || 'Backup download started.' });
       setTimeout(() => setBackupMessage({ type: '', text: '' }), 5000);
-    } catch (err) {
+    } catch (e: unknown) { const err = e as Error;
       setBackupMessage({ type: 'danger', text: `Backup failed: ${err.message}` });
     } finally {
       setIsBackingUp(false);
@@ -345,11 +351,11 @@ const UserSettings = () => {
     setIsRestoring(true);
     setRestoreMessage({ type: '', text: '' });
     try {
-      const result = await restoreDatabase(restoreFile);
-      setRestoreMessage({ type: 'success', text: result.message || 'Database restored successfully. Please refresh or restart the application.' });
+      const result = (await restoreDatabase(restoreFile)) as { message?: string } | null;
+      setRestoreMessage({ type: 'success', text: result?.message || 'Database restored successfully. Please refresh or restart the application.' });
       setRestoreFile(null);
       if (fileInputRef.current) fileInputRef.current.value = '';
-    } catch (err) {
+    } catch (e: unknown) { const err = e as Error;
       setRestoreMessage({ type: 'danger', text: `Restore failed: ${err.message}` });
     } finally {
       setIsRestoring(false);
@@ -370,10 +376,10 @@ const UserSettings = () => {
     setIsResettingStats(true);
     setResetStatsMessage({ type: '', text: '' });
     try {
-      const result = await resetUserStatistics();
-      setResetStatsMessage({ type: 'success', text: result.message || 'Statistics reset successfully.' });
+      const result = (await resetUserStatistics()) as { message?: string } | null;
+      setResetStatsMessage({ type: 'success', text: result?.message || 'Statistics reset successfully.' });
       setTimeout(() => setResetStatsMessage({ type: '', text: '' }), 5000);
-    } catch (err) {
+    } catch (e: unknown) { const err = e as Error;
       setResetStatsMessage({ type: 'danger', text: `Reset failed: ${err.message}` });
     } finally {
       setIsResettingStats(false);
@@ -387,7 +393,7 @@ const UserSettings = () => {
       await api.updateUserSettings(settings);
       const result = await api.testOpenRouterConnection();
       setOpenRouterTestResult(result);
-    } catch (err) {
+    } catch (e: unknown) { const err = e as Error;
       setOpenRouterTestResult({ success: false, message: err.message });
     } finally {
       setTestingOpenRouter(false);
@@ -401,7 +407,7 @@ const UserSettings = () => {
     try {
       const result = await getHardcoverStatus();
       setHardcoverTestResult(result);
-    } catch (err) {
+    } catch (e: unknown) { const err = e as Error;
       setHardcoverTestResult({ connected: false, message: err.message || 'Failed to test Hardcover connection.' });
     } finally {
       setTestingHardcover(false);
@@ -425,7 +431,7 @@ const UserSettings = () => {
       setHardcoverSyncMessage({ type: 'success', text: 'Hardcover token saved.' });
       const status = await getHardcoverStatus();
       setHardcoverTestResult(status);
-    } catch (err) {
+    } catch (e: unknown) { const err = e as Error;
       setHardcoverSyncMessage({ type: 'danger', text: err.message || 'Failed to save Hardcover token.' });
     }
   }, [settings.hardcoverSyncEnabled]);
@@ -443,7 +449,7 @@ const UserSettings = () => {
       }));
       setHasChanges(false);
       setHardcoverSyncMessage({ type: 'success', text: 'Hardcover token cleared.' });
-    } catch (err) {
+    } catch (e: unknown) { const err = e as Error;
       setHardcoverSyncMessage({ type: 'danger', text: err.message || 'Failed to clear Hardcover token.' });
     }
   }, []);
@@ -452,14 +458,14 @@ const UserSettings = () => {
     setSyncingHardcover(true);
     setHardcoverSyncMessage({ type: '', text: '' });
     try {
-      const result = await syncAllHardcover();
-      setHardcoverSyncMessage({ type: 'success', text: result.message || 'Hardcover sync completed.' });
+      const result = (await syncAllHardcover()) as { message?: string } | null;
+      setHardcoverSyncMessage({ type: 'success', text: result?.message || 'Hardcover sync completed.' });
       const refreshed = await getUserSettings();
       setSettings(prev => ({
         ...prev,
         hardcoverLastSyncAt: refreshed.hardcoverLastSyncAt ?? prev.hardcoverLastSyncAt
       }));
-    } catch (err) {
+    } catch (e: unknown) { const err = e as Error;
       setHardcoverSyncMessage({ type: 'danger', text: err.message || 'Hardcover sync failed.' });
     } finally {
       setSyncingHardcover(false);

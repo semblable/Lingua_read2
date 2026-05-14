@@ -90,8 +90,8 @@ const AuthenticatedApp = () => {
   // Apply line spacing from settings
   useEffect(() => {
     if (settingsContext && settingsContext.settings && settingsContext.settings.lineSpacing) {
-      document.body.style.setProperty('--reading-line-height', settingsContext.settings.lineSpacing);
-      localStorage.setItem('lineSpacing', settingsContext.settings.lineSpacing);
+      document.body.style.setProperty('--reading-line-height', String(settingsContext.settings.lineSpacing));
+      localStorage.setItem('lineSpacing', String(settingsContext.settings.lineSpacing));
     } else {
       const savedLineSpacing = localStorage.getItem('lineSpacing') || '1.5';
       document.body.style.setProperty('--reading-line-height', savedLineSpacing);
@@ -108,7 +108,7 @@ const AuthenticatedApp = () => {
   useEffect(() => {
     if (settingsContext && settingsContext.settings && settingsContext.settings.paragraphSpacing) {
       document.body.style.setProperty('--reader-paragraph-spacing', settingsContext.settings.paragraphSpacing + 'em');
-      localStorage.setItem('paragraphSpacing', settingsContext.settings.paragraphSpacing);
+      localStorage.setItem('paragraphSpacing', String(settingsContext.settings.paragraphSpacing));
     } else {
       const saved = localStorage.getItem('paragraphSpacing') || '1.0';
       document.body.style.setProperty('--reader-paragraph-spacing', saved + 'em');

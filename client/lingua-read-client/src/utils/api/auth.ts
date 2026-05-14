@@ -4,10 +4,17 @@
 
 import { API_URL } from './client';
 
+export type AuthUser = {
+  username?: string;
+  [key: string]: unknown;
+};
+
+// Shape returned by GET /auth/status. Swagger marks the response body as
+// opaque (no schema) — these fields are inferred from store.js call sites.
 export type AuthStatus = {
   authenticated: boolean;
-  setupRequired?: boolean;
-  setupComplete?: boolean;
+  needsSetup?: boolean;
+  user?: AuthUser | null;
 };
 
 export const authStatus = async (): Promise<AuthStatus> => {

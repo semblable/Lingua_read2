@@ -13,23 +13,60 @@ import {
   normalizeStatistics,
   supportsPreviousPeriod
 } from '../utils/statistics';
+import type {
+  KnownWordsActivity,
+  ListeningActivity,
+  ReadingActivity,
+  StatisticsSummary
+} from '../utils/statistics';
 
 const emptyReadingActivity = normalizeReadingActivity();
 const emptyListeningActivity = normalizeListeningActivity();
 const emptyKnownWordsActivity = normalizeKnownWordsActivity();
 
-export const useStatisticsData = ({ period, languageId }) => {
-  const [stats, setStats] = useState(null);
-  const [readingActivity, setReadingActivity] = useState(emptyReadingActivity);
-  const [listeningActivity, setListeningActivity] = useState(emptyListeningActivity);
-  const [knownWordsActivity, setKnownWordsActivity] = useState(emptyKnownWordsActivity);
-  const [previousReadingActivity, setPreviousReadingActivity] = useState(emptyReadingActivity);
-  const [previousListeningActivity, setPreviousListeningActivity] = useState(emptyListeningActivity);
-  const [previousKnownWordsActivity, setPreviousKnownWordsActivity] = useState(emptyKnownWordsActivity);
+export type StatisticsNetworkStatus = 'connecting' | 'connected' | 'error';
+
+export type UseStatisticsDataArgs = {
+  period: string;
+  languageId: number | string | 'all';
+};
+
+export type UseStatisticsDataResult = {
+  stats: StatisticsSummary | null;
+  readingActivity: ReadingActivity;
+  listeningActivity: ListeningActivity;
+  knownWordsActivity: KnownWordsActivity;
+  previousReadingActivity: ReadingActivity;
+  previousListeningActivity: ListeningActivity;
+  previousKnownWordsActivity: KnownWordsActivity;
+  loading: boolean;
+  loadingActivity: boolean;
+  error: string;
+  networkStatus: StatisticsNetworkStatus;
+  refetchAll: () => void;
+  refetchActivity: () => Promise<void>;
+};
+
+export const useStatisticsData = ({
+  period,
+  languageId
+}: UseStatisticsDataArgs): UseStatisticsDataResult => {
+  const [stats, setStats] = useState<StatisticsSummary | null>(null);
+  const [readingActivity, setReadingActivity] = useState<ReadingActivity>(emptyReadingActivity);
+  const [listeningActivity, setListeningActivity] =
+    useState<ListeningActivity>(emptyListeningActivity);
+  const [knownWordsActivity, setKnownWordsActivity] =
+    useState<KnownWordsActivity>(emptyKnownWordsActivity);
+  const [previousReadingActivity, setPreviousReadingActivity] =
+    useState<ReadingActivity>(emptyReadingActivity);
+  const [previousListeningActivity, setPreviousListeningActivity] =
+    useState<ListeningActivity>(emptyListeningActivity);
+  const [previousKnownWordsActivity, setPreviousKnownWordsActivity] =
+    useState<KnownWordsActivity>(emptyKnownWordsActivity);
   const [loadingStats, setLoadingStats] = useState(true);
   const [loadingActivity, setLoadingActivity] = useState(true);
   const [error, setError] = useState('');
-  const [networkStatus, setNetworkStatus] = useState('connecting');
+  const [networkStatus, setNetworkStatus] = useState<StatisticsNetworkStatus>('connecting');
   const requestIdRef = useRef(0);
 
   const checkConnectivity = useCallback(async () => {
@@ -49,12 +86,15 @@ export const useStatisticsData = ({ period, languageId }) => {
     try {
       const data = await getUserStatistics();
       if (!data) {
-        throw new Error('No statistics data available. The server might be offline or experiencing issues.');
+        throw new Error(
+          'No statistics data available. The server might be offline or experiencing issues.'
+        );
       }
       setStats(normalizeStatistics(data));
     } catch (err) {
       console.error('Failed to load statistics:', err);
-      setError(err.message || 'Failed to load statistics. Please try again later.');
+      const message = err instanceof Error ? err.message : String(err);
+      setError(message || 'Failed to load statistics. Please try again later.');
       setStats(normalizeStatistics());
     } finally {
       setLoadingStats(false);
@@ -71,7 +111,7 @@ export const useStatisticsData = ({ period, languageId }) => {
     try {
       const timezoneOffsetMinutes = -new Date().getTimezoneOffset();
       const selectedLanguageId = languageId === 'all' ? null : languageId;
-      const requests = [
+      const requests: Promise<unknown>[] = [
         getReadingActivity(period, timezoneOffsetMinutes, selectedLanguageId),
         getListeningActivity(period, timezoneOffsetMinutes, selectedLanguageId),
         getKnownWordsActivity(period, timezoneOffsetMinutes, selectedLanguageId)
@@ -86,30 +126,24 @@ export const useStatisticsData = ({ period, languageId }) => {
 
       if (requestIdRef.current !== requestId) return;
 
-      const [
-        readingData,
-        listeningData,
-        knownWordsData,
-        prevReadingData,
-        prevListeningData,
-        prevKnownWordsData
-      ] = results;
+      const [readingData, listeningData, knownWordsData, prevReadingData, prevListeningData, prevKnownWordsData] =
+        results as Array<{ error?: string } | undefined>;
 
-      if (readingData?.error) {
+      if (readingData && 'error' in readingData && readingData.error) {
         console.error('Failed to load reading activity:', readingData.error);
         setReadingActivity(emptyReadingActivity);
       } else {
         setReadingActivity(normalizeReadingActivity(readingData));
       }
 
-      if (listeningData?.error) {
+      if (listeningData && 'error' in listeningData && listeningData.error) {
         console.error('Failed to load listening activity:', listeningData.error);
         setListeningActivity(emptyListeningActivity);
       } else {
         setListeningActivity(normalizeListeningActivity(listeningData));
       }
 
-      if (knownWordsData?.error) {
+      if (knownWordsData && 'error' in knownWordsData && knownWordsData.error) {
         console.error('Failed to load known-words activity:', knownWordsData.error);
         setKnownWordsActivity(emptyKnownWordsActivity);
       } else {
@@ -117,21 +151,21 @@ export const useStatisticsData = ({ period, languageId }) => {
       }
 
       if (includePrevious) {
-        if (prevReadingData?.error) {
+        if (prevReadingData && 'error' in prevReadingData && prevReadingData.error) {
           console.error('Failed to load previous reading activity:', prevReadingData.error);
           setPreviousReadingActivity(emptyReadingActivity);
         } else {
           setPreviousReadingActivity(normalizeReadingActivity(prevReadingData));
         }
 
-        if (prevListeningData?.error) {
+        if (prevListeningData && 'error' in prevListeningData && prevListeningData.error) {
           console.error('Failed to load previous listening activity:', prevListeningData.error);
           setPreviousListeningActivity(emptyListeningActivity);
         } else {
           setPreviousListeningActivity(normalizeListeningActivity(prevListeningData));
         }
 
-        if (prevKnownWordsData?.error) {
+        if (prevKnownWordsData && 'error' in prevKnownWordsData && prevKnownWordsData.error) {
           console.error('Failed to load previous known-words activity:', prevKnownWordsData.error);
           setPreviousKnownWordsActivity(emptyKnownWordsActivity);
         } else {
@@ -201,4 +235,3 @@ export const useStatisticsData = ({ period, languageId }) => {
 };
 
 export default useStatisticsData;
-

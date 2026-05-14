@@ -1,67 +1,101 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, RefObject } from 'react';
 import { useLibraryStore } from '../utils/store';
+import type { SelectableType, SelectedItem } from '../utils/store';
 
-function rectsIntersect(a, b) {
+type Rect = {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+  width: number;
+  height: number;
+  x: number;
+  y: number;
+};
+
+function rectsIntersect(a: Rect, b: DOMRect | Rect): boolean {
   return a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
 }
 
-export function useDragSelect({ containerRef, enabled = true }) {
-  const [selectionRect, setSelectionRect] = useState(null);
+export type UseDragSelectArgs = {
+  containerRef: RefObject<HTMLElement | null>;
+  enabled?: boolean;
+};
+
+export type UseDragSelectResult = {
+  selectionRect: Rect | null;
+  isDragSelecting: boolean;
+};
+
+export function useDragSelect({
+  containerRef,
+  enabled = true
+}: UseDragSelectArgs): UseDragSelectResult {
+  const [selectionRect, setSelectionRect] = useState<Rect | null>(null);
   const [isDragSelecting, setIsDragSelecting] = useState(false);
 
-  const startPointRef = useRef(null);
+  const startPointRef = useRef<{ x: number; y: number } | null>(null);
   const isSelectingRef = useRef(false);
-  const preExistingSelectionRef = useRef([]);
-  const rafIdRef = useRef(null);
+  const preExistingSelectionRef = useRef<SelectedItem[]>([]);
+  const rafIdRef = useRef<number | null>(null);
   const enabledRef = useRef(enabled);
   enabledRef.current = enabled;
 
   const setSelectedItems = useLibraryStore((s) => s.setSelectedItems);
   const clearSelection = useLibraryStore((s) => s.clearSelection);
 
-  const computeSelection = useCallback((rect) => {
-    const container = containerRef.current;
-    if (!container) return;
+  const computeSelection = useCallback(
+    (rect: Rect) => {
+      const container = containerRef.current;
+      if (!container) return;
 
-    const elements = container.querySelectorAll('[data-selectable-id]');
-    const selected = [];
+      const elements = container.querySelectorAll<HTMLElement>('[data-selectable-id]');
+      const selected: SelectedItem[] = [];
 
-    elements.forEach((el) => {
-      const elRect = el.getBoundingClientRect();
-      if (rectsIntersect(rect, elRect)) {
-        const id = parseInt(el.dataset.selectableId, 10);
-        const type = el.dataset.selectableType;
-        if (id && type) {
-          selected.push({ id, type });
-        }
-      }
-    });
-
-    // Merge with pre-existing selection (Ctrl+drag)
-    const pre = preExistingSelectionRef.current;
-    if (pre.length > 0) {
-      const merged = [...pre];
-      selected.forEach((item) => {
-        if (!merged.find((m) => m.id === item.id && m.type === item.type)) {
-          merged.push(item);
+      elements.forEach((el) => {
+        const elRect = el.getBoundingClientRect();
+        if (rectsIntersect(rect, elRect)) {
+          const idRaw = el.dataset.selectableId;
+          const type = el.dataset.selectableType as SelectableType | undefined;
+          const id = idRaw ? parseInt(idRaw, 10) : NaN;
+          if (id && type) {
+            selected.push({ id, type });
+          }
         }
       });
-      setSelectedItems(merged);
-    } else {
-      setSelectedItems(selected);
-    }
-  }, [containerRef, setSelectedItems]);
+
+      // Merge with pre-existing selection (Ctrl+drag)
+      const pre = preExistingSelectionRef.current;
+      if (pre.length > 0) {
+        const merged: SelectedItem[] = [...pre];
+        selected.forEach((item) => {
+          if (!merged.find((m) => m.id === item.id && m.type === item.type)) {
+            merged.push(item);
+          }
+        });
+        setSelectedItems(merged);
+      } else {
+        setSelectedItems(selected);
+      }
+    },
+    [containerRef, setSelectedItems]
+  );
 
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
-    const handleMouseDown = (e) => {
+    const handleMouseDown = (e: MouseEvent) => {
       if (!enabledRef.current) return;
       if (e.button !== 0) return;
 
       // Only start on empty space
-      if (e.target.closest('.card, button, a, .form-check, .dropdown, .alert, .breadcrumb, input, select')) {
+      const target = e.target as HTMLElement | null;
+      if (
+        target?.closest(
+          '.card, button, a, .form-check, .dropdown, .alert, .breadcrumb, input, select'
+        )
+      ) {
         return;
       }
 
@@ -77,7 +111,7 @@ export function useDragSelect({ containerRef, enabled = true }) {
         clearSelection();
       }
 
-      const handleMouseMove = (e) => {
+      const handleMouseMove = (e: MouseEvent) => {
         const start = startPointRef.current;
         if (!start) return;
 
@@ -93,7 +127,7 @@ export function useDragSelect({ containerRef, enabled = true }) {
           container.classList.add('is-drag-selecting');
         }
 
-        const rect = {
+        const rect: Rect = {
           left: Math.min(start.x, e.clientX),
           top: Math.min(start.y, e.clientY),
           right: Math.max(start.x, e.clientX),
@@ -101,7 +135,7 @@ export function useDragSelect({ containerRef, enabled = true }) {
           width: Math.abs(dx),
           height: Math.abs(dy),
           x: Math.min(start.x, e.clientX),
-          y: Math.min(start.y, e.clientY),
+          y: Math.min(start.y, e.clientY)
         };
 
         setSelectionRect(rect);

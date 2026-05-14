@@ -1,6 +1,23 @@
 import React from 'react';
 
-const TranscriptLine = React.memo(({ index, style, data }) => {
+// react-window itemRenderer signature: { index, style, data }
+type TranscriptLineProps = {
+  index: number;
+  style: React.CSSProperties;
+  data: {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    lines: any[];
+    currentLineId: number | string | null;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    processLineContent: (text: string) => any;
+    handleLineClick: (startTime: number) => void;
+    getFontStyling: (lineSpacing: number) => React.CSSProperties;
+    currentLineSpacing: number;
+    hasSelection?: () => boolean;
+  };
+};
+
+const TranscriptLine = React.memo(({ index, style, data }: TranscriptLineProps) => {
   const {
     lines, currentLineId, processLineContent, handleLineClick, getFontStyling, currentLineSpacing, hasSelection
   } = data;

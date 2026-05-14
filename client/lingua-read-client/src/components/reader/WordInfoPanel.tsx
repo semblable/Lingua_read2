@@ -1,6 +1,54 @@
 import React from 'react';
 import { Button, Alert, Form, Spinner } from 'react-bootstrap';
 
+// The 25-prop interface drilled down from pages/TextDisplay. Grouped by
+// concern in comments. Phase E3 will consider extracting these into a
+// composite type or a ReaderContext; for now the explicit shape is the
+// contract.
+export type WordInfoPanelProps = {
+  // Word display / status
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  displayedWord: any;
+  saveSuccess: boolean;
+
+  // Translation state
+  translation: string;
+  setTranslation: (value: string) => void;
+  handleTranslationKeyDown: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
+  isTranslating: boolean;
+  wordTranslationError: string | null;
+
+  // Word-status actions
+  handleSaveWord: (status: number) => void | Promise<void>;
+  processingWord: boolean;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  selectedWord: any;
+
+  // Reading-language config + embed
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  languageConfig: any;
+  setEmbeddedUrl: (url: string | null) => void;
+
+  // Speech / TTS
+  sentenceTtsEnabled: boolean;
+  canUseSentenceTts: boolean;
+  isSpeakingWord: boolean;
+  onSpeakWord: () => void;
+
+  // SRS / sentence actions
+  handleMineSentence: () => void;
+  onReadingCredit?: (wordId: number | string) => void;
+  onRetranslateWithContext?: () => void;
+  canRetranslate?: boolean;
+  onAddTranslationWithContext?: () => void;
+  canAddTranslation?: boolean;
+  onDeleteWord?: () => void;
+
+  // Bookmarks
+  isSentenceBookmarked: boolean;
+  onToggleBookmark: () => void;
+};
+
 const WordInfoPanel = React.memo(({
   displayedWord,
   saveSuccess,
@@ -27,14 +75,14 @@ const WordInfoPanel = React.memo(({
   onDeleteWord,
   isSentenceBookmarked,
   onToggleBookmark
-}) => {
+}: WordInfoPanelProps) => {
   if (!displayedWord) return <p>Click/hover on a word.</p>;
   return (
     <div>
       <div className="mb-2">
         <h5 className="fw-bold mb-0">{displayedWord.term}</h5>
       </div>
-      {saveSuccess && <Alert variant="success" size="sm">Saved!</Alert>}
+      {saveSuccess && <Alert variant="success" className="py-1 px-2 small">Saved!</Alert>}
       <p className="mb-1 small">Status: {displayedWord.status > 0 ? ['New', 'Learning', 'Familiar', 'Advanced', 'Known'][displayedWord.status - 1] : 'Untracked'}</p>
       <Form.Control
         as="textarea"
@@ -47,7 +95,7 @@ const WordInfoPanel = React.memo(({
         size="sm"
       />
       {isTranslating && <Spinner size="sm" />}
-      {wordTranslationError && <Alert variant="danger" size="sm">{wordTranslationError}</Alert>}
+      {wordTranslationError && <Alert variant="danger" className="py-1 px-2 small">{wordTranslationError}</Alert>}
       <div className="d-flex flex-wrap gap-1 mt-2 word-status-row">
         {[1, 2, 3, 4, 5].map(s => (
           <Button

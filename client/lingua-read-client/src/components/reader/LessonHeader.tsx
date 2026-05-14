@@ -1,6 +1,16 @@
 import React from 'react';
 import { Card, Button, Alert } from 'react-bootstrap';
-import AudiobookPlayer from '../AudiobookPlayer';
+import AudiobookPlayerImpl from '../AudiobookPlayer';
+
+// AudiobookPlayer is still .js (Phase C6 will convert). TS infers a strict
+// prop signature from the destructure, but we pass different subsets per
+// usage (lesson vs book). Cast to permissive shape until C6.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const AudiobookPlayer = AudiobookPlayerImpl as React.ComponentType<any>;
+
+// TODO(phase-d): tighten props once pages/TextDisplay is typed in C8.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type LessonHeaderProps = Record<string, any>;
 
 const LessonHeader = React.memo(({
   isMobile,
@@ -20,7 +30,7 @@ const LessonHeader = React.memo(({
   segmentPlaybackRequest,
   showDesktopLessonControls,
   setShowDesktopLessonControls
-}) => {
+}: LessonHeaderProps) => {
   if (isMobile) return null;
 
   return (

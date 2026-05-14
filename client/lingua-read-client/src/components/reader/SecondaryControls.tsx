@@ -1,6 +1,10 @@
 import React from 'react';
 import { Button, ButtonGroup, OverlayTrigger, Tooltip, Spinner } from 'react-bootstrap';
 
+// TODO(phase-d): tighten props once pages/TextDisplay is typed in C8.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type SecondaryControlsProps = Record<string, any>;
+
 const SecondaryControls = React.memo(({
   isMobile,
   globalSettings,
@@ -24,7 +28,7 @@ const SecondaryControls = React.memo(({
   translatingUnknown,
   handleMarkAllUnknownAsKnown,
   isMarkingAll
-}) => (
+}: SecondaryControlsProps) => (
   <>
     <ButtonGroup size="sm" className="me-1" aria-label="Reading density">
         <OverlayTrigger placement="top" overlay={<Tooltip>Compact density</Tooltip>}>

@@ -1,6 +1,10 @@
 import React from 'react';
 import { Button, Spinner } from 'react-bootstrap';
 
+// TODO(phase-d): tighten props once pages/TextDisplay is typed in C8.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type ReaderLessonActionsProps = Record<string, any>;
+
 const ReaderLessonActions = React.memo(({
   text,
   isAudioLesson,
@@ -9,7 +13,7 @@ const ReaderLessonActions = React.memo(({
   completing,
   navigate,
   handleCompleteLesson
-}) => {
+}: ReaderLessonActionsProps) => {
   if (!text) return null;
   const showComplete = !isAudioLesson || text.bookId;
   const showBookNav = !!text.bookId;

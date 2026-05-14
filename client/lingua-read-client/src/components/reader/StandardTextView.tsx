@@ -2,6 +2,10 @@ import React from 'react';
 import { Button, Spinner, Badge } from 'react-bootstrap';
 import { buildDisplayBlocks, getTitleLineVariant } from '../../utils/readerText';
 
+// TODO(phase-d): tighten these props once pages/TextDisplay is typed in C8.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type StandardTextViewProps = Record<string, any>;
+
 const StandardTextView = React.memo(({
   text,
   globalSettings,
@@ -23,7 +27,7 @@ const StandardTextView = React.memo(({
   handleCompleteLesson,
   completing,
   nextTextId
-}) => {
+}: StandardTextViewProps) => {
   if (!text?.content) return null;
   const displayBlocks = buildDisplayBlocks(text.content, text.structuredContent);
   let currentSentenceIndex = 0;
@@ -117,8 +121,12 @@ const StandardTextView = React.memo(({
           fontSize: `${globalSettings.textSize}px`,
           lineHeight: isMobile ? mobileReadingConfig.lineSpacing : 'var(--reading-line-height)',
           fontFamily: getFontFamilyForList(),
-          '--mobile-reading-block-padding': mobileReadingConfig.blockPadding,
-          '--mobile-reading-line-height': mobileReadingConfig.lineSpacing
+          // Custom properties don't appear in React.CSSProperties; cast at the
+          // boundary so the `--mobile-reading-*` vars propagate to children.
+          ...({
+            '--mobile-reading-block-padding': mobileReadingConfig.blockPadding,
+            '--mobile-reading-line-height': mobileReadingConfig.lineSpacing
+          } as React.CSSProperties)
         }}
         onMouseUp={handleWordSelection}
         onTouchEnd={handleWordSelection}

@@ -3,6 +3,10 @@ import { Button, Card, Badge } from 'react-bootstrap';
 import { parseSentenceExplanation } from '../../utils/parseSentenceExplanation';
 import { getTitleLineVariant } from '../../utils/readerText';
 
+// TODO(phase-d): tighten these props once pages/TextDisplay is typed in C8.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type SentenceModeViewProps = Record<string, any>;
+
 const SentenceModeView = React.memo(({
   currentSegment,
   segmentCount,
@@ -34,7 +38,7 @@ const SentenceModeView = React.memo(({
   isExplanationVisible,
   currentSegmentTranslation,
   currentSegmentExplanation
-}) => {
+}: SentenceModeViewProps) => {
   const explanationParsed = useMemo(
     () => parseSentenceExplanation(currentSegmentExplanation), [currentSegmentExplanation]
   );

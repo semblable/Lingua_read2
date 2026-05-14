@@ -2,6 +2,10 @@ import React, { useRef } from 'react';
 import { FixedSizeList as List } from 'react-window';
 import TranscriptLine from './TranscriptLine';
 
+// TODO(phase-d): tighten props once pages/TextDisplay is typed in C8.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type AudioTranscriptViewProps = Record<string, any>;
+
 const AudioTranscriptView = React.memo(({
   isMobile,
   srtLines,
@@ -16,7 +20,7 @@ const AudioTranscriptView = React.memo(({
   readingContainerRef,
   itemData,
   listRef
-}) => {
+}: AudioTranscriptViewProps) => {
   const suppressLineClickUntilRef = useRef(0);
   const touchMovedRef = useRef(false);
   if (!srtLines || srtLines.length === 0) return <p className="p-3">Loading transcript...</p>;

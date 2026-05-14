@@ -1,6 +1,10 @@
 import React from 'react';
 import { Button, Collapse } from 'react-bootstrap';
 
+// TODO(phase-d): tighten props once pages/TextDisplay is typed in C8.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type MobileLessonHeaderProps = Record<string, any>;
+
 const MobileLessonHeader = React.memo(({
   isMobile,
   showMobileHeader,
@@ -14,7 +18,7 @@ const MobileLessonHeader = React.memo(({
   isAudioLesson,
   isAudioPlaying,
   toggleAudioPlayback
-}) => {
+}: MobileLessonHeaderProps) => {
   if (!isMobile) return null;
 
   const handleToggleHeader = () => {

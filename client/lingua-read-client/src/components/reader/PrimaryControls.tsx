@@ -1,6 +1,10 @@
 import React from 'react';
 import { Button, Spinner } from 'react-bootstrap';
 
+// TODO(phase-d): tighten props once pages/TextDisplay is typed in C8.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type PrimaryControlsProps = Record<string, any>;
+
 const PrimaryControls = React.memo(({
   isAudioLesson,
   displayMode,
@@ -12,7 +16,7 @@ const PrimaryControls = React.memo(({
   handleCompleteLessonNoStats,
   completing,
   navigate
-}) => (
+}: PrimaryControlsProps) => (
   <>
     {isAudioLesson && (
       <Button

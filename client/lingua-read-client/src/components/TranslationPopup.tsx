@@ -24,15 +24,25 @@ const parsePairedTranslation = (taggedText) => {
 
 // sentenceColors array is no longer needed as we'll use CSS variables from themes.
 
+type TranslationPopupProps = {
+  show: boolean;
+  handleClose: () => void;
+  originalText?: string;
+  translatedText?: string;
+  isTranslating?: boolean;
+  sourceLanguage?: string;
+  targetLanguage?: string;
+};
+
 const TranslationPopup = ({
   show,
-  handleClose, 
-  originalText, 
-  translatedText, 
+  handleClose,
+  originalText,
+  translatedText,
   isTranslating,
   sourceLanguage,
   targetLanguage
-}) => {
+}: TranslationPopupProps) => {
   const originalScrollRef = useRef(null);
   const translatedScrollRef = useRef(null);
   const isSyncingScroll = useRef(false); // Flag to prevent scroll loops

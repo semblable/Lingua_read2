@@ -11,7 +11,12 @@ import {
 } from '../utils/api';
 import TranslationPopup from '../components/TranslationPopup';
 import SummaryPopup from '../components/SummaryPopup';
-import AudiobookPlayer from '../components/AudiobookPlayer';
+import AudiobookPlayerImpl from '../components/AudiobookPlayer';
+// AudiobookPlayer is now .tsx but accepts heterogeneous prop subsets per
+// usage (lesson vs book). Cast to a permissive shape until Phase E2
+// extracts the sub-modules.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const AudiobookPlayer = AudiobookPlayerImpl as React.ComponentType<any>;
 import './TextDisplay.css';
 import { SettingsContext } from '../contexts/SettingsContext';
 import { getBookmarkedSentences, toggleBookmark } from '../utils/bookmarks';
@@ -475,7 +480,10 @@ const TextDisplay = () => {
       .catch(err => console.error('[Save Settings] Failed to save sentence TTS rate via API:', err));
   }, [sentenceTtsRate, updateSetting]);
 
-  const fetchAllLanguageWords = useCallback(async (languageId, shouldApply = () => true) => {
+  const fetchAllLanguageWords = useCallback(async (
+    languageId: number | string | null | undefined,
+    shouldApply: () => boolean = () => true
+  ) => {
     if (!languageId) return; // Guard against missing languageId
     try {
       // Corrected URL construction: Removed redundant '/api' prefix
@@ -537,7 +545,10 @@ const TextDisplay = () => {
     return { ...baseStyle, ...(statusStyles[wordStatus] || statusStyles[0]) };
   }, [languageWordsLoaded, globalSettings?.highlightKnownWords]); // Use globalSettings from context
 
-  const triggerAutoTranslation = useCallback(async (termToTranslate, options = {}) => {
+  const triggerAutoTranslation = useCallback(async (
+    termToTranslate: string,
+    options: { sentenceContext?: string; force?: boolean } = {}
+  ) => {
     const { sentenceContext = '', force = false } = options;
     if (!termToTranslate || !text?.languageCode) return;
     if (!force && !globalSettings.autoTranslateWords) return;
@@ -595,7 +606,10 @@ const TextDisplay = () => {
     }
   }, [globalSettings.autoTranslateWords, text?.languageCode, translationTargetLanguageCode, setTranslation, setDisplayedWord, setIsTranslating, setWordTranslationError]);
 
-  const appendAutoTranslation = useCallback(async (termToTranslate, options = {}) => {
+  const appendAutoTranslation = useCallback(async (
+    termToTranslate: string,
+    options: { sentenceContext?: string } = {}
+  ) => {
     const { sentenceContext = '' } = options;
     if (!termToTranslate || !text?.languageCode || !sentenceContext) return;
 
@@ -657,7 +671,11 @@ const TextDisplay = () => {
     }
   }, [text?.languageCode, translationTargetLanguageCode, setTranslation, setDisplayedWord, setIsTranslating, setWordTranslationError]);
 
-  const handleWordClick = useCallback((word, options = {}) => {
+  const handleWordClick = useCallback((
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    word: any,
+    options: { skipAutoTranslate?: boolean; preserveLastHandledSelection?: boolean; selectionContext?: string } = {}
+  ) => {
     const { skipAutoTranslate = false, preserveLastHandledSelection = false, selectionContext = '' } = options;
     clearPendingSelection();
     if (!preserveLastHandledSelection) {
@@ -1246,7 +1264,13 @@ const TextDisplay = () => {
     }
   }, [readingDensity]);
 
-  const sentenceSegments = useMemo(() => {
+  // sentenceSegments is heterogeneous: SRT-derived segments carry startTime/
+  // endTime/srtLineId; sentence-split segments carry mediaBlocks. The render
+  // code branches on `startTime != null`. Use a permissive union shape.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  type Segment = any;
+
+  const sentenceSegments = useMemo<Segment[]>(() => {
     if (isAudioLesson && srtLines.length > 0) {
       return srtLines.map((line, index) => ({
         index,
@@ -1475,7 +1499,8 @@ const TextDisplay = () => {
         });
 
         if (!cancelled) {
-          setCreditedSegmentIndices(response?.creditedSegmentIndices || []);
+          const typed = response as { creditedSegmentIndices?: number[] } | null;
+          setCreditedSegmentIndices(typed?.creditedSegmentIndices || []);
         }
       } catch (sentenceReadErr) {
         console.error('Failed to log sentence progress:', sentenceReadErr);
@@ -1589,7 +1614,7 @@ const TextDisplay = () => {
     textLoadRequestVersionRef.current = requestVersion;
     let cancelled = false;
     let wordLinkingPollInterval = null;
-    const isCurrentRequest = () => !cancelled && textLoadRequestVersionRef.current === requestVersion;
+    const isCurrentRequest = (): boolean => !cancelled && textLoadRequestVersionRef.current === requestVersion;
     const clearWordLinkingPoll = () => {
       if (wordLinkingPollInterval) {
         clearInterval(wordLinkingPollInterval);
@@ -1611,9 +1636,9 @@ const TextDisplay = () => {
     const checkWordLinkingStatus = async () => {
       if (!isCurrentRequest()) return;
       try {
-        const statusData = await getWordLinkingStatus(textId);
+        const statusData = (await getWordLinkingStatus(textId)) as unknown as { wordLinkingStatus?: string } | null;
         if (!isCurrentRequest()) return;
-        if (statusData.wordLinkingStatus !== 'processing') {
+        if (statusData?.wordLinkingStatus !== 'processing') {
           clearWordLinkingPoll();
           await refreshWordsAfterLinking();
         }
@@ -1773,7 +1798,11 @@ const TextDisplay = () => {
               setNextTextId(currentPartIndex >= 0 && currentPartIndex < bookData.parts.length - 1 ? bookData.parts[currentPartIndex + 1].textId : null);
             }
           } else {
-            console.error('Failed to get book data:', results[2].reason);
+            // results[2] is a PromiseSettledResult; narrow before reading reason.
+            console.error(
+              'Failed to get book data:',
+              results[2].status === 'rejected' ? results[2].reason : 'unknown'
+            );
           }
         } else {
           setPreviousTextId(null);
@@ -1955,7 +1984,8 @@ const TextDisplay = () => {
               createWord(text.textId, hoveredWordTerm, key, translationToUse, sentenceToMine)
                 .then(newWordData => {
                   // Update newWordData with the translation we fetched (if backend didn't return it)
-                  const wordWithTranslation = { ...newWordData, translation: translationToUse || newWordData.translation };
+                  const typed = newWordData as { translation?: string } | null;
+                  const wordWithTranslation = { ...(typed || {}), translation: translationToUse || typed?.translation };
                   setWords(prevWords => [...prevWords, wordWithTranslation]);
                   // Still trigger auto-translate if enabled and we didn't get a translation
                   if (globalSettings.autoTranslateWords && !translationToUse) triggerAutoTranslation(hoveredWordTerm);
@@ -1995,12 +2025,12 @@ const TextDisplay = () => {
         setWords(updatedWords);
         setDisplayedWord(prev => (prev?.term === selectedWord ? { ...prev, status: numericStatus, translation } : prev));
       } else {
-        const newWordData = await createWord(text.textId, selectedWord, numericStatus, translation, currentSentenceSegment?.text);
+        const newWordData = (await createWord(text.textId, selectedWord, numericStatus, translation, currentSentenceSegment?.text)) as Record<string, unknown> | null;
         setWords(prevWords => [...prevWords, newWordData]);
-        setDisplayedWord({ ...newWordData, isNew: false });
+        setDisplayedWord({ ...(newWordData || {}), isNew: false });
       }
       setSaveSuccess(true); setTimeout(() => setSaveSuccess(false), 2000);
-    } catch (error) { console.error('Error saving word:', error); alert(`Failed to save word: ${error.message}`); }
+    } catch (error) { console.error('Error saving word:', error); alert(`Failed to save word: ${error instanceof Error ? error.message : ''}`); }
     finally { setProcessingWord(false); }
   }, [selectedWord, displayedWord, processingWord, isTranslating, translation, text?.textId, currentSentenceSegment?.text, words, getWordData, setWords, setDisplayedWord, setSaveSuccess, setProcessingWord]); // createWord/updateWord are module imports (stable); omit to satisfy exhaustive-deps
 
@@ -2433,7 +2463,7 @@ const TextDisplay = () => {
             >
               <div
                 className={`reader-main-surface-inner reader-main-surface-inner-${readingUiMode}`}
-                style={{ '--reader-content-max-width': `${globalSettings.readerContentWidth || 740}px` }}
+                style={{ '--reader-content-max-width': `${globalSettings.readerContentWidth || 740}px` } as React.CSSProperties}
               >
                 {isSentenceMode ? (
                   <SentenceModeView
@@ -2541,9 +2571,9 @@ const TextDisplay = () => {
                   handleMineSentence={handleMineSentence}
                   onReadingCredit={async (wordId) => {
                     try {
-                      const res = await applySrsReadingCredit(wordId);
-                      if (res.applied) alert('SRS reading credit applied!');
-                      else alert(res.message || 'Credit not applied.');
+                      const res = (await applySrsReadingCredit(wordId)) as { applied?: boolean; message?: string } | null;
+                      if (res?.applied) alert('SRS reading credit applied!');
+                      else alert(res?.message || 'Credit not applied.');
                     } catch (err) {
                       console.error('Reading credit failed:', err);
                     }
@@ -2629,9 +2659,9 @@ const TextDisplay = () => {
                 handleMineSentence={handleMineSentence}
                 onReadingCredit={async (wordId) => {
                   try {
-                    const res = await applySrsReadingCredit(wordId);
-                    if (res.applied) alert('SRS reading credit applied!');
-                    else alert(res.message || 'Credit not applied.');
+                    const res = (await applySrsReadingCredit(wordId)) as { applied?: boolean; message?: string } | null;
+                    if (res?.applied) alert('SRS reading credit applied!');
+                    else alert(res?.message || 'Credit not applied.');
                   } catch (err) {
                     console.error('Reading credit failed:', err);
                   }

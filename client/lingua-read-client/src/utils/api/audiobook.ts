@@ -5,14 +5,21 @@
 import { fetchApi } from './client';
 import type { ResponseOf, RequestBodyOf } from '../fetchApi';
 
-export type AudiobookProgress = ResponseOf<
-  '/api/activity/audiobookprogress/{bookId}',
-  'get'
->;
-export type AudioLessonProgress = ResponseOf<
-  '/api/activity/audiolessonprogress/{textId}',
-  'get'
->;
+// The Swagger spec for these endpoints lacks a body schema (controllers
+// return `Ok(object)` without [ProducesResponseType]). Define the shapes
+// here based on actual backend behavior so AudiobookPlayer consumers
+// don't get `void` from ResponseOf.
+export type AudiobookProgress = {
+  currentAudiobookTrackId?: number | null;
+  currentAudiobookPosition?: number | null;
+  updatedAt?: string | null;
+} | null;
+
+export type AudioLessonProgress = {
+  currentPosition?: number | null;
+  updatedAt?: string | null;
+} | null;
+
 export type SentenceProgress = ResponseOf<
   '/api/activity/sentenceprogress/{textId}',
   'get'

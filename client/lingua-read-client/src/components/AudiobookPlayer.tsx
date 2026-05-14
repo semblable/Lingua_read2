@@ -452,7 +452,7 @@ const AudiobookPlayer = ({
     console.warn(context, errorLike);
   }, []);
 
-  const requestAudioPlay = useCallback((context, options = {}) => {
+  const requestAudioPlay = useCallback((context: string, options: { forceIntent?: boolean } = {}) => {
     const audio = audioRef.current;
     if (!audio) return;
 
@@ -1063,15 +1063,15 @@ const AudiobookPlayer = ({
     setPlaybackRate(prev => {
       const newRate = parseFloat((prev + diff).toFixed(2));
       const clamped = Math.max(0.5, Math.min(newRate, 2.0));
-      localStorage.setItem('audioPlaybackRate', clamped);
+      localStorage.setItem('audioPlaybackRate', String(clamped));
       return clamped;
     });
   };
 
-  const handleVolumeChange = (e) => {
+  const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newVolume = parseFloat(e.target.value);
     setVolume(newVolume);
-    localStorage.setItem('audioVolume', newVolume);
+    localStorage.setItem('audioVolume', String(newVolume));
   };
 
   // Keyboard Shortcuts
@@ -1112,7 +1112,7 @@ const AudiobookPlayer = ({
         <div className="text-muted small p-2">No audio available</div>
       ) : (
         <>
-          {error && <Alert variant="danger" size="sm" className="p-1 mb-1">{error}</Alert>}
+          {error && <Alert variant="danger" className="p-1 mb-1 small">{error}</Alert>}
 
           {isBookMode && playlist.length > 1 && (
             <div className="audiobook-player__track-info mb-1" title={currentTrackDisplayName}>

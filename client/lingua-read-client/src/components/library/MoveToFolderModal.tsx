@@ -53,7 +53,7 @@ const MoveToFolderModal = ({ show, onHide, folders, onMove, itemCount }: MoveToF
       <React.Fragment key={folder.folderId}>
         <ListGroup.Item
           action
-          onClick={() => setSelectedFolderId(folder.folderId)}
+          onClick={() => setSelectedFolderId(folder.folderId ?? null)}
           style={{ paddingLeft: `${1 + depth * 1.5}rem`, ...(isSelected ? selectedStyle : {}) }}
           className="d-flex align-items-center"
         >

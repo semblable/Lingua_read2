@@ -52,9 +52,9 @@ const Library = () => {
   const [showCreateFolder, setShowCreateFolder] = useState(false);
   const [showMoveModal, setShowMoveModal] = useState(false);
   const [showRenameModal, setShowRenameModal] = useState(false);
-  const [renameFolder, setRenameFolder] = useState(null);
+  const [renameFolder, setRenameFolder] = useState<LibraryFolder | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeId, setActiveId] = useState(null);
+  const [activeId, setActiveId] = useState<string | null>(null);
 
   // Persistent language filter
   const [languageFilter, setLanguageFilter] = useState(() => {
@@ -67,7 +67,7 @@ const Library = () => {
   }, [languageFilter]);
 
   // Drag-select
-  const containerRef = useRef(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
   const { selectionRect, isDragSelecting } = useDragSelect({
     containerRef,
     enabled: !activeId
@@ -99,7 +99,7 @@ const Library = () => {
   const fetchAllFolders = useCallback(async () => {
     try {
       const data = await getFolders();
-      setAllFolders(data);
+      setAllFolders(data as LibraryFolder[]);
     } catch (err) {
       // non-critical
     }
@@ -145,7 +145,7 @@ const Library = () => {
     let result = folders;
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
-      result = result.filter(f => f.name.toLowerCase().includes(q));
+      result = result.filter(f => (f.name ?? '').toLowerCase().includes(q));
     }
     return result;
   }, [folders, searchQuery]);
@@ -156,7 +156,7 @@ const Library = () => {
     if (tagFilter) result = result.filter(b => b.tags?.includes(tagFilter));
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
-      result = result.filter(b => b.title.toLowerCase().includes(q));
+      result = result.filter(b => (b.title ?? '').toLowerCase().includes(q));
     }
     return result;
   }, [books, searchQuery, languageFilter, tagFilter]);
@@ -167,7 +167,7 @@ const Library = () => {
     if (tagFilter) result = result.filter(t => t.tag === tagFilter);
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
-      result = result.filter(t => t.title.toLowerCase().includes(q));
+      result = result.filter(t => (t.title ?? '').toLowerCase().includes(q));
     }
     return result;
   }, [texts, searchQuery, languageFilter, tagFilter]);
@@ -271,9 +271,9 @@ const Library = () => {
 
   // Flat list of all visible items for shift-click range selection
   const flatItems = useMemo(() => [
-    ...filteredFolders.map(f => ({ id: f.folderId, type: 'folder' })),
-    ...filteredBooks.map(b => ({ id: b.bookId, type: 'book' })),
-    ...filteredTexts.map(t => ({ id: t.textId, type: 'text' })),
+    ...filteredFolders.map(f => ({ id: f.folderId!, type: 'folder' as SelectableType })),
+    ...filteredBooks.map(b => ({ id: b.bookId!, type: 'book' as SelectableType })),
+    ...filteredTexts.map(t => ({ id: t.textId!, type: 'text' as SelectableType })),
   ], [filteredFolders, filteredBooks, filteredTexts]);
 
   // Ctrl+click / Shift+click handler for cards
@@ -528,7 +528,7 @@ const Library = () => {
                         onRename={(f) => { setRenameFolder(f); setShowRenameModal(true); }}
                         onDelete={handleDeleteFolder}
                         onChangeColor={handleChangeColor}
-                        isOver={activeId && activeId !== `folder-${folder.folderId}`}
+                        isOver={!!(activeId && activeId !== `folder-${folder.folderId}`)}
                         isSelected={!!selectedItems.find(i => i.id === folder.folderId && i.type === 'folder')}
                         onSelect={toggleSelectItem}
                         onItemClick={handleItemClick}

@@ -3,20 +3,22 @@ import { Container, Row, Col, Table, Form, Button, Spinner, Alert, DropdownButto
 import { getAllLanguages, getPaginatedWordsByLanguage, exportWordsCsv, addTermsBatch, deleteWord } from '../utils/api'; // Changed to use paginated API
 import { saveAs } from 'file-saver';
 import Papa from 'papaparse';
+import type { Language } from '../utils/api/languages';
+import type { Word } from '../utils/api/words';
 
 const TermsPage = () => {
-    const [languages, setLanguages] = useState([]);
+    const [languages, setLanguages] = useState<Language[]>([]);
     const [selectedLanguage, setSelectedLanguage] = useState(() => {
         return localStorage.getItem('lastSelectedLanguage') || '';
     });
-    const [terms, setTerms] = useState([]);
-    const [statusFilter, setStatusFilter] = useState([]);
+    const [terms, setTerms] = useState<Word[]>([]);
+    const [statusFilter, setStatusFilter] = useState<number[]>([]);
     const [sortBy, setSortBy] = useState('created_desc');
     const [loading, setLoading] = useState(false);
-    const [error, setError] = useState(null);
+    const [error, setError] = useState<string | null>(null);
     const [searchTerm, setSearchTerm] = useState('');
     const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
-    const [deletingWordId, setDeletingWordId] = useState(null);
+    const [deletingWordId, setDeletingWordId] = useState<number | null>(null);
 
     // Pagination State
     const [currentPage, setCurrentPage] = useState(1);
@@ -25,9 +27,9 @@ const TermsPage = () => {
     const pageSize = 20; // Fixed page size for now
 
     const [importLoading, setImportLoading] = useState(false);
-    const [importError, setImportError] = useState(null);
-    const [importSuccess, setImportSuccess] = useState(null);
-    const fileInputRef = useRef(null);
+    const [importError, setImportError] = useState<string | null>(null);
+    const [importSuccess, setImportSuccess] = useState<string | null>(null);
+    const fileInputRef = useRef<HTMLInputElement | null>(null);
 
     // Fetch languages on component mount
     useEffect(() => {
@@ -84,8 +86,8 @@ const TermsPage = () => {
             setTotalItems(data.totalCount || 0);
             setTotalPages(data.totalPages || 0);
 
-        } catch (err) {
-            setError(`Failed to fetch terms: ${err.message}`);
+        } catch (err: unknown) {
+            setError(`Failed to fetch terms: ${(err as Error)?.message}`);
             console.error(err);
             setTerms([]);
             setTotalItems(0);
@@ -466,8 +468,8 @@ const TermsPage = () => {
                                         <tr key={term.wordId}>
                                             <td>{term.term}</td>
                                             <td>{term.translation}</td>
-                                            <td className="text-center">{getStatusBadge(term.status)}</td>
-                                            <td>{new Date(term.createdAt).toLocaleString()}</td>
+                                            <td className="text-center">{getStatusBadge(term.status ?? 0)}</td>
+                                            <td>{term.createdAt ? new Date(term.createdAt).toLocaleString() : ''}</td>
                                             <td className="text-center">
                                                 <Button
                                                     variant="outline-danger"

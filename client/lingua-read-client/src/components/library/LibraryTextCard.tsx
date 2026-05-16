@@ -39,7 +39,7 @@ const LibraryTextCard = ({ text, isSelected, onSelect, onItemClick }: LibraryTex
         onClick={(e) => {
           if ((e.ctrlKey || e.metaKey || e.shiftKey) && onItemClick) {
             e.preventDefault();
-            onItemClick(text.textId, 'text', e);
+            onItemClick(text.textId!, 'text', e); // textId is always server-provided on rendered cards
           }
         }}
       >
@@ -64,7 +64,7 @@ const LibraryTextCard = ({ text, isSelected, onSelect, onItemClick }: LibraryTex
                 className="form-check-input"
                 type="checkbox"
                 checked={isSelected}
-                onChange={() => onSelect(text.textId, 'text')}
+                onChange={() => onSelect(text.textId!, 'text')}
               />
             </div>
           </div>

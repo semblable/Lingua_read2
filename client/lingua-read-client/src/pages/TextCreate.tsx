@@ -3,13 +3,14 @@ import { Container, Form, Button, Card, Alert, Spinner, Tab, Tabs, Row, Col } fr
 import { useNavigate } from 'react-router-dom';
 import { createText, getAllLanguages, generateStory } from '../utils/api';
 import { SettingsContext } from '../contexts/SettingsContext'; // Import SettingsContext
+import type { Language } from '../utils/api/languages';
 
 const TextCreate = () => {
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [languageId, setLanguageId] = useState('');
   const [tag, setTag] = useState(''); // Add state for tag
-  const [languages, setLanguages] = useState([]);
+  const [languages, setLanguages] = useState<Language[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [loadingLanguages, setLoadingLanguages] = useState(true);
@@ -36,9 +37,9 @@ const TextCreate = () => {
 
         if (data.length > 0) {
           const found = data.find(l => l.languageId === defaultLangId);
-          if (found) {
+          if (found && found.languageId != null) {
             setLanguageId(found.languageId.toString());
-          } else {
+          } else if (data[0].languageId != null) {
             // Fallback to first language if default not found or not set
             setLanguageId(data[0].languageId.toString());
           }
@@ -105,13 +106,13 @@ const TextCreate = () => {
     
     try {
       // Find the selected language name from the ID
-      const selectedLanguage = languages.find(lang => lang.languageId.toString() === languageId);
-      if (!selectedLanguage) {
+      const selectedLanguage = languages.find(lang => lang.languageId?.toString() === languageId);
+      if (!selectedLanguage || !selectedLanguage.name) {
         throw new Error('Selected language not found');
       }
-      
+
       const result = await generateStory(
-        storyPrompt, 
+        storyPrompt,
         selectedLanguage.name,
         storyLevel,
         maxLength
@@ -194,7 +195,7 @@ const TextCreate = () => {
           
           <Tabs
             activeKey={activeTab}
-            onSelect={(k) => setActiveTab(k)}
+            onSelect={(k) => setActiveTab(k ?? 'manual')}
             className="mb-3"
           >
             <Tab eventKey="manual" title="Enter Text Manually">

@@ -3,15 +3,16 @@ import React, { useState, useEffect, useContext } from 'react'; // Added useCont
 import { Container, Form, Button, Alert, Spinner, Row, Col } from 'react-bootstrap';
 import { getAllLanguages, createAudioLesson } from '../utils/api'; // Changed getLanguages to getAllLanguages
 import { SettingsContext } from '../contexts/SettingsContext'; // Import SettingsContext
+import type { Language } from '../utils/api/languages';
 // import './CreateAudioLesson.css'; // Remove CSS file import
 
 function CreateAudioLesson() {
     const [title, setTitle] = useState('');
     const [languageId, setLanguageId] = useState('');
-    const [audioFile, setAudioFile] = useState(null);
-    const [srtFile, setSrtFile] = useState(null);
+    const [audioFile, setAudioFile] = useState<File | null>(null);
+    const [srtFile, setSrtFile] = useState<File | null>(null);
     const [tag, setTag] = useState('');
-    const [languages, setLanguages] = useState([]);
+    const [languages, setLanguages] = useState<Language[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState('');
     const [successMessage, setSuccessMessage] = useState('');
@@ -30,7 +31,7 @@ function CreateAudioLesson() {
 
                 if (data.length > 0) {
                     const found = data.find(l => l.languageId === defaultLangId);
-                    if (found) {
+                    if (found && found.languageId != null) {
                         setLanguageId(found.languageId.toString());
                     } else {
                         // Don't default if no user setting, let user select

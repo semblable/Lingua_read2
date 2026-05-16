@@ -2,12 +2,13 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Container, Row, Col, Button, ListGroup, Card, Spinner, Alert } from 'react-bootstrap';
 import LanguageForm from './LanguageForm';
 import { getAllLanguages, deleteLanguage } from '../../utils/api';
+import type { Language } from '../../utils/api/languages';
 
 function LanguagesPage() {
-    const [languages, setLanguages] = useState([]);
+    const [languages, setLanguages] = useState<Language[]>([]);
     const [isLoading, setIsLoading] = useState(true); // Start loading initially
-    const [error, setError] = useState(null);
-    const [selectedLanguage, setSelectedLanguage] = useState(null); // To hold the language being edited/viewed
+    const [error, setError] = useState<string | null>(null);
+    const [selectedLanguage, setSelectedLanguage] = useState<Language | null>(null); // To hold the language being edited/viewed
 
     // Function to fetch languages
     const fetchLanguages = useCallback(async () => {
@@ -16,8 +17,8 @@ function LanguagesPage() {
         try {
             const data = await getAllLanguages();
             setLanguages(data || []); // Ensure languages is always an array
-        } catch (err) {
-            setError(err.message || 'Failed to fetch languages.');
+        } catch (err: unknown) {
+            setError((err as Error)?.message || 'Failed to fetch languages.');
             setLanguages([]); // Clear languages on error
         } finally {
             setIsLoading(false);
@@ -44,8 +45,8 @@ function LanguagesPage() {
         try {
             await deleteLanguage(languageId);
             handleSave();
-        } catch (err) {
-            setError(err.message || 'Failed to delete language.');
+        } catch (err: unknown) {
+            setError((err as Error)?.message || 'Failed to delete language.');
         }
     };
 
@@ -82,7 +83,7 @@ function LanguagesPage() {
                                     )}
                                 </ListGroup>
                             )}
-                            <Button variant="primary" className="mt-3" onClick={() => setSelectedLanguage({ /* Create an empty object for 'new' state */ })}>Add New Language</Button>
+                            <Button variant="primary" className="mt-3" onClick={() => setSelectedLanguage({} as Language)}>Add New Language</Button>
                         </Col>
                         <Col md={8}>
                             <> {/* Start React Fragment */}

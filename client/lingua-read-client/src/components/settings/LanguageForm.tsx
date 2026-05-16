@@ -54,7 +54,7 @@ type LanguageFormProps = {
 function LanguageForm({ language, onSave, onCancel, onDelete, onResetContent }: LanguageFormProps) {
     const [formData, setFormData] = useState(initialLanguageState);
     const [isSaving, setIsSaving] = useState(false);
-    const [error, setError] = useState(null);
+    const [error, setError] = useState<string | null>(null);
 
     // Effect to load the passed language data into the form when it changes
     useEffect(() => {

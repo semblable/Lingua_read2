@@ -2,12 +2,15 @@ import React, { useState, useEffect } from 'react';
 import { Container, Row, Col, Card, Button, ListGroup, Spinner, Alert } from 'react-bootstrap';
 import { Link } from 'react-router-dom';
 import { getRecentTexts } from '../utils/api';
+import type { RecentTexts } from '../utils/api/texts';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const LinkAs: any = Link;
 
+type RecentText = RecentTexts[number];
+
 const Home = () => {
-  const [recentTexts, setRecentTexts] = useState([]);
+  const [recentTexts, setRecentTexts] = useState<RecentText[]>([]);
   const [loadingRecent, setLoadingRecent] = useState(false);
   const [errorRecent, setErrorRecent] = useState('');
 

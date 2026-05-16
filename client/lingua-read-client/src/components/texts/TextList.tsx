@@ -73,7 +73,7 @@ const TextList = () => {
       <Tabs
         id="text-tabs"
         activeKey={activeTab}
-        onSelect={(k) => setActiveTab(k)}
+        onSelect={(k) => setActiveTab(k ?? 'active')}
         className="mb-4"
       >
         <Tab eventKey="active" title={`Active (${activeTexts.length})`}>

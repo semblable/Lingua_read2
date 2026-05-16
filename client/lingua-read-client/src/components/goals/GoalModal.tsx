@@ -20,7 +20,8 @@ const SCOPE_ALL = '__all__';
 const secsToHours = (s: number): string => (s / 3600).toFixed(1).replace(/\.0$/, '');
 const hoursToSecs = (h: string | number): number => Math.round(parseFloat(String(h || 0)) * 3600);
 
-import type { Goal } from '../../utils/api/goals';
+import type { Goal, GoalSuggestion } from '../../utils/api/goals';
+import type { Language } from '../../utils/api/languages';
 
 type GoalModalProps = {
   show: boolean;
@@ -53,8 +54,8 @@ function GoalModal({
   const [title, setTitle] = useState('');
   const [showAdvanced, setShowAdvanced] = useState(false);
 
-  const [languages, setLanguages] = useState([]);
-  const [suggestion, setSuggestion] = useState(null);
+  const [languages, setLanguages] = useState<Language[]>([]);
+  const [suggestion, setSuggestion] = useState<GoalSuggestion | null>(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -78,14 +79,14 @@ function GoalModal({
   useEffect(() => {
     if (!show) return;
     if (isEdit && editing) {
-      setType(editing.goalType);
+      setType(editing.goalType ?? GOAL_TYPE.WordsRead);
       setScope(editing.languageId == null ? SCOPE_ALL : String(editing.languageId));
-      setRecurrence(editing.recurrence);
-      setMode(editing.mode);
+      setRecurrence(editing.recurrence ?? GOAL_RECURRENCE.None);
+      setMode(editing.mode ?? GOAL_MODE.Delta);
       setTarget(
         editing.goalType === GOAL_TYPE.ListeningSeconds
-          ? secsToHours(editing.targetValue)
-          : String(editing.targetValue)
+          ? secsToHours(editing.targetValue ?? 0)
+          : String(editing.targetValue ?? 0)
       );
       setHasDeadline(!!editing.deadline);
       setDeadline(editing.deadline || '');
@@ -123,9 +124,9 @@ function GoalModal({
         // Only auto-fill target if the user hasn't typed anything.
         if (!target) {
           if (type === GOAL_TYPE.ListeningSeconds) {
-            setTarget(secsToHours(data.suggestedTarget));
+            setTarget(secsToHours(data.suggestedTarget ?? 0));
           } else {
-            setTarget(String(data.suggestedTarget));
+            setTarget(String(data.suggestedTarget ?? 0));
           }
         }
       } catch (e) {
@@ -153,8 +154,9 @@ function GoalModal({
     if (!targetValue || targetValue <= 0) return null;
     const totals = suggestion;
     if (mode === GOAL_MODE.Milestone && type === GOAL_TYPE.WordsKnown && totals) {
-      const remaining = Math.max(0, targetValue - totals.currentMetric);
-      return `You're at ${formatMetric(type, totals.currentMetric)} known. ${formatMetric(type, remaining)} to go.`;
+      const currentMetric = totals.currentMetric ?? 0;
+      const remaining = Math.max(0, targetValue - currentMetric);
+      return `You're at ${formatMetric(type, currentMetric)} known. ${formatMetric(type, remaining)} to go.`;
     }
     if (recurrence === GOAL_RECURRENCE.Weekly && totals) {
       const last = totals.last7DaysTotal || 0;
@@ -226,7 +228,7 @@ function GoalModal({
     try {
       if (isEdit) {
         // PUT only allows target/deadline/title changes server-side.
-        await updateGoal(editing.goalId, {
+        await updateGoal(editing!.goalId!, {
           targetValue,
           deadline: hasDeadline ? deadline : null,
           clearDeadline: !hasDeadline,
@@ -241,9 +243,9 @@ function GoalModal({
       }
       if (onSaved) onSaved();
       onHide();
-    } catch (err) {
+    } catch (err: unknown) {
       console.error('save goal failed', err);
-      setError(err?.message || 'Failed to save goal.');
+      setError((err as Error)?.message || 'Failed to save goal.');
     } finally {
       setSaving(false);
     }

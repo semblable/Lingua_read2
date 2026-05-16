@@ -7,6 +7,24 @@ import {
 } from '../utils/api';
 import * as api from '../utils/api';
 import { SettingsContext } from '../contexts/SettingsContext';
+import type { Language } from '../utils/api/languages';
+
+type AudioStorageInfo = {
+  totalSizeBytes?: number;
+  totalSizeMB?: number;
+  totalSizeGB?: number;
+  totalFiles?: number;
+};
+
+type HardcoverStatus = {
+  configured?: boolean;
+  connected?: boolean;
+  syncEnabled?: boolean;
+  hardcoverUserId?: number | null;
+  username?: string | null;
+  message?: string | null;
+  success?: boolean;
+};
 import AppearanceSettings from '../components/settings/AppearanceSettings';
 import ReadingSettings from '../components/settings/ReadingSettings';
 import NavigationSettings from '../components/settings/NavigationSettings';
@@ -79,7 +97,7 @@ const UserSettings = () => {
     customSummarizationPrompt: ''
   });
 
-  const [languages, setLanguages] = useState([]);
+  const [languages, setLanguages] = useState<Language[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -93,8 +111,8 @@ const UserSettings = () => {
   const [backupMessage, setBackupMessage] = useState({ type: '', text: '' });
   const [isRestoring, setIsRestoring] = useState(false);
   const [restoreMessage, setRestoreMessage] = useState({ type: '', text: '' });
-  const [restoreFile, setRestoreFile] = useState(null);
-  const fileInputRef = useRef(null);
+  const [restoreFile, setRestoreFile] = useState<File | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [isResettingStats, setIsResettingStats] = useState(false);
   const [resetStatsMessage, setResetStatsMessage] = useState({ type: '', text: '' });
 
@@ -106,16 +124,16 @@ const UserSettings = () => {
 
   // Hardcover state
   const [testingHardcover, setTestingHardcover] = useState(false);
-  const [hardcoverTestResult, setHardcoverTestResult] = useState(null);
+  const [hardcoverTestResult, setHardcoverTestResult] = useState<HardcoverStatus | null>(null);
   const [syncingHardcover, setSyncingHardcover] = useState(false);
   const [hardcoverSyncMessage, setHardcoverSyncMessage] = useState({ type: '', text: '' });
 
   // OpenRouter test state
   const [testingOpenRouter, setTestingOpenRouter] = useState(false);
-  const [openRouterTestResult, setOpenRouterTestResult] = useState(null);
+  const [openRouterTestResult, setOpenRouterTestResult] = useState<{ success?: boolean; message?: string } | null>(null);
 
   // Audio storage state
-  const [audioStorage, setAudioStorage] = useState(null);
+  const [audioStorage, setAudioStorage] = useState<AudioStorageInfo | null>(null);
   const [loadingStorage, setLoadingStorage] = useState(false);
   const [storageError, setStorageError] = useState('');
 
@@ -398,7 +416,7 @@ const UserSettings = () => {
     try {
       await api.updateUserSettings(settings);
       const result = await api.testOpenRouterConnection();
-      setOpenRouterTestResult(result);
+      setOpenRouterTestResult(result as { success?: boolean; message?: string });
     } catch (e: unknown) { const err = e as Error;
       setOpenRouterTestResult({ success: false, message: err.message });
     } finally {
@@ -540,7 +558,7 @@ const UserSettings = () => {
               <ReadingSettings
                 settings={settings}
                 handleChange={handleChange}
-                languages={languages}
+                languages={languages as Array<{ languageId: number; name: string; code?: string | null }>}
                 loadingLanguages={loadingLanguages}
               />
             </div>

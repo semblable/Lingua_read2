@@ -62,8 +62,17 @@ const formatMinutes = (seconds: number | null | undefined): string => {
   return rest ? `${h}h ${rest}m` : `${h}h`;
 };
 
+type DashboardLang = ReturnType<typeof normaliseLang>;
+type DashboardData = {
+  totalKnownWords: number;
+  totalWordsReadWeek: number;
+  totalListeningSecondsWeek: number;
+  totalLanguages: number;
+  languages: DashboardLang[];
+};
+
 const Dashboard = () => {
-  const [data, setData] = useState(null);
+  const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -117,7 +126,15 @@ const Dashboard = () => {
     );
   }
 
-  const languages = data?.languages || [];
+  if (!data) {
+    return (
+      <Container className="py-5 text-center">
+        <Spinner animation="border" />
+      </Container>
+    );
+  }
+
+  const languages = data.languages || [];
 
   if (languages.length === 0) {
     return (

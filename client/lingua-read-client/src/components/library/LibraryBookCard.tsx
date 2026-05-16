@@ -45,14 +45,14 @@ const LibraryBookCard = ({ book, isSelected, onSelect, onItemClick }: LibraryBoo
         onClick={(e) => {
           if ((e.ctrlKey || e.metaKey || e.shiftKey) && onItemClick) {
             e.preventDefault();
-            onItemClick(book.bookId, 'book', e);
+            onItemClick(book.bookId!, 'book', e); // bookId is always server-provided on rendered cards
           }
         }}
       >
         {book.coverImagePath && (
           <Card.Img
             variant="top"
-            src={normalizeCoverUrl(book.coverImagePath)}
+            src={normalizeCoverUrl(book.coverImagePath) ?? undefined}
             alt={`${book.title} cover`}
             style={{ objectFit: 'cover', maxHeight: '180px' }}
           />
@@ -78,7 +78,7 @@ const LibraryBookCard = ({ book, isSelected, onSelect, onItemClick }: LibraryBoo
                 className="form-check-input"
                 type="checkbox"
                 checked={isSelected}
-                onChange={() => onSelect(book.bookId, 'book')}
+                onChange={() => onSelect(book.bookId!, 'book')}
               />
             </div>
           </div>

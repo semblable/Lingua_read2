@@ -105,7 +105,7 @@ const WordInfoPanel = React.memo(({
         <h5 className="fw-bold mb-0">{displayedWord.term}</h5>
       </div>
       {saveSuccess && <Alert variant="success" className="py-1 px-2 small">Saved!</Alert>}
-      <p className="mb-1 small">Status: {displayedWord.status > 0 ? ['New', 'Learning', 'Familiar', 'Advanced', 'Known'][displayedWord.status - 1] : 'Untracked'}</p>
+      <p className="mb-1 small">Status: {(displayedWord.status ?? 0) > 0 ? ['New', 'Learning', 'Familiar', 'Advanced', 'Known'][(displayedWord.status ?? 1) - 1] : 'Untracked'}</p>
       <Form.Control
         as="textarea"
         rows={2}
@@ -191,12 +191,12 @@ const WordInfoPanel = React.memo(({
             🔖
           </Button>
         )}
-        {displayedWord?.wordId && !displayedWord?.isNew && displayedWord?.status >= 3 && displayedWord?.status <= 4 && (
+        {displayedWord?.wordId && !displayedWord?.isNew && (displayedWord?.status ?? 0) >= 3 && (displayedWord?.status ?? 0) <= 4 && onReadingCredit && (
           <Button
             variant="outline-info"
             size="sm"
             className="py-0 px-2"
-            onClick={() => onReadingCredit(displayedWord.wordId)}
+            onClick={() => onReadingCredit(displayedWord.wordId!)}
             title="Boost SRS interval (reading credit)"
           >
             SRS ✓
@@ -222,12 +222,13 @@ const WordInfoPanel = React.memo(({
           <div className="d-flex flex-wrap gap-1">
             {languageConfig.dictionaries
               .filter(dict => dict.isActive && dict.purpose === 'terms')
-              .sort((a, b) => a.sortOrder - b.sortOrder)
+              .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
               .map(dict => {
+                const urlTemplate = dict.urlTemplate ?? '';
                 const handleDictClick = () => {
                   if (!selectedWord) return;
                   const term = encodeURIComponent(selectedWord);
-                  const url = dict.urlTemplate.replace('###', term);
+                  const url = urlTemplate.replace('###', term);
                   if (dict.displayType === 'popup') {
                     window.open(url, '_blank', 'noopener,noreferrer');
                     setEmbeddedUrl(null);
@@ -237,7 +238,7 @@ const WordInfoPanel = React.memo(({
                 };
                 let buttonText = `Dict ${dict.sortOrder}`;
                 try {
-                  const urlObj = new URL(dict.urlTemplate);
+                  const urlObj = new URL(urlTemplate);
                   buttonText = urlObj.hostname.replace(/^www\./, '').split('.')[0];
                   buttonText = buttonText.charAt(0).toUpperCase() + buttonText.slice(1);
                 } catch (e) {

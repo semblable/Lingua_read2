@@ -170,7 +170,7 @@ const StandardTextView = React.memo(({
             return (
               <figure key={block.key} className={`reader-image-block reader-image-block-${modeClass}`}>
                 <img
-                  src={block.imageUrl}
+                  src={block.imageUrl ?? undefined}
                   alt={block.altText || block.caption || 'Illustration'}
                   className="reader-inline-image"
                 />

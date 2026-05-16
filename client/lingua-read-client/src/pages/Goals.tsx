@@ -35,14 +35,17 @@ function Goals() {
   useEffect(() => { load(activeTab); }, [activeTab, load]);
 
   const onArchive = async (g: Goal) => {
+    if (g.goalId == null) return;
     await archiveGoal(g.goalId);
     load(activeTab);
   };
   const onRestore = async (g: Goal) => {
+    if (g.goalId == null) return;
     await restoreGoal(g.goalId);
     load(activeTab);
   };
   const onDelete = async (g: Goal) => {
+    if (g.goalId == null) return;
     if (!window.confirm('Delete this goal permanently?')) return;
     await deleteGoal(g.goalId);
     load(activeTab);
@@ -68,10 +71,10 @@ function Goals() {
       <GoalRow
         key={g.goalId}
         goal={g}
-        onEdit={activeTab === 'active' ? onEdit : null}
-        onArchive={activeTab !== 'archived' ? onArchive : null}
-        onRestore={activeTab === 'archived' ? onRestore : null}
-        onDelete={activeTab === 'archived' ? onDelete : null}
+        onEdit={activeTab === 'active' ? onEdit : undefined}
+        onArchive={activeTab !== 'archived' ? onArchive : undefined}
+        onRestore={activeTab === 'archived' ? onRestore : undefined}
+        onDelete={activeTab === 'archived' ? onDelete : undefined}
       />
     ));
   };
@@ -87,7 +90,7 @@ function Goals() {
 
       <Card className="shadow-sm">
         <Card.Body>
-          <Tabs activeKey={activeTab} onSelect={(k) => setActiveTab(k)} className="mb-3">
+          <Tabs activeKey={activeTab} onSelect={(k) => setActiveTab(k ?? 'active')} className="mb-3">
             <Tab eventKey="active" title="Active" />
             <Tab eventKey="completed" title="Completed" />
             <Tab eventKey="archived" title="Archived" />

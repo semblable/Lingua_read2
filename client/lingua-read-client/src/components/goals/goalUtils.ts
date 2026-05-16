@@ -51,7 +51,7 @@ export const autoTitle = (g: Goal): string => {
   const verb = g.goalType === GOAL_TYPE.WordsRead ? 'Read'
     : g.goalType === GOAL_TYPE.ListeningSeconds ? 'Listen'
     : g.mode === GOAL_MODE.Milestone ? 'Reach' : 'Learn';
-  const target = formatMetric(g.goalType, g.targetValue);
+  const target = formatMetric(g.goalType ?? 0, g.targetValue);
   const scope = formatScope(g);
   if (g.recurrence === GOAL_RECURRENCE.Weekly) return `${verb} ${target}/week — ${scope}`;
   if (g.recurrence === GOAL_RECURRENCE.Monthly) return `${verb} ${target}/month — ${scope}`;
@@ -84,7 +84,7 @@ export const stateLabel = (g: Goal): string => {
       if (g.currentPeriodEnd) {
         const d = daysUntil(g.currentPeriodEnd);
         if (d === 0) return 'Due today';
-        if (d > 0) return `${d}d left this ${g.recurrence === GOAL_RECURRENCE.Monthly ? 'month' : 'week'}`;
+        if (d != null && d > 0) return `${d}d left this ${g.recurrence === GOAL_RECURRENCE.Monthly ? 'month' : 'week'}`;
       }
       return 'In progress';
     }
@@ -92,7 +92,7 @@ export const stateLabel = (g: Goal): string => {
       if (g.deadline) {
         const d = daysUntil(g.deadline);
         if (d === 0) return 'Due today';
-        if (d > 0) return `${d}d left`;
+        if (d != null && d > 0) return `${d}d left`;
       }
       return 'Active';
     }

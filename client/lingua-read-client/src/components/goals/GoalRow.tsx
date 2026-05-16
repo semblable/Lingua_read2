@@ -36,9 +36,11 @@ function GoalRow({
     pace?.tone === 'warning' ? 'warning' :
     pace?.tone === 'danger' ? 'danger' : 'primary';
 
+  const goalType = goal.goalType ?? 0;
+  const progress = goal.progress ?? 0;
   return (
     <div className="goal-row d-flex align-items-center gap-3 py-2 border-bottom">
-      <div style={{ fontSize: '1.4rem' }} aria-hidden="true">{TYPE_ICONS[goal.goalType]}</div>
+      <div style={{ fontSize: '1.4rem' }} aria-hidden="true">{TYPE_ICONS[goalType]}</div>
       <div className="flex-grow-1 min-w-0">
         <div className="d-flex align-items-center justify-content-between gap-2">
           <div className="text-truncate fw-semibold">{goalTitle(goal)}</div>
@@ -52,9 +54,9 @@ function GoalRow({
         />
         <div className="d-flex justify-content-between align-items-center mt-1">
           <small className="text-muted">
-            {formatMetric(goal.goalType, Math.max(0, goal.progress))} / {formatMetric(goal.goalType, goal.targetValue)}
-            {goal.progress < 0 && (
-              <span className="text-danger ms-2">({formatMetric(goal.goalType, goal.progress)})</span>
+            {formatMetric(goalType, Math.max(0, progress))} / {formatMetric(goalType, goal.targetValue)}
+            {progress < 0 && (
+              <span className="text-danger ms-2">({formatMetric(goalType, progress)})</span>
             )}
             <span className="ms-2">· {formatScope(goal)}</span>
           </small>

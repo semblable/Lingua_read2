@@ -3,6 +3,7 @@ import { Container, Form, Button, Card, Alert, Spinner, Row, Col, Tabs, Tab, Pro
 import { useNavigate } from 'react-router-dom';
 import { createBook, uploadBook, getAllLanguages, uploadAudiobookTracks } from '../utils/api';
 import { SettingsContext } from '../contexts/SettingsContext'; // Import SettingsContext
+import type { Language } from '../utils/api/languages';
 
 const BookCreate = () => {
   const [title, setTitle] = useState('');
@@ -10,15 +11,15 @@ const BookCreate = () => {
   const [content, setContent] = useState('');
   const [languageId, setLanguageId] = useState('');
   const [tags, setTags] = useState(''); // Renamed from tag, expect comma-separated string
-  const [file, setFile] = useState(null); // State for uploaded file
+  const [file, setFile] = useState<File | null>(null); // State for uploaded file
   const [activeTab, setActiveTab] = useState('manual'); // State for active tab
   const [splitMethod, setSplitMethod] = useState('paragraph');
   const [maxSegmentSize, setMaxSegmentSize] = useState(3000);
-  const [languages, setLanguages] = useState([]);
+  const [languages, setLanguages] = useState<Language[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [loadingLanguages, setLoadingLanguages] = useState(true);
-  const [audioFiles, setAudioFiles] = useState([]); // State for audio files
+  const [audioFiles, setAudioFiles] = useState<File[]>([]); // State for audio files
   const [audioUploadError, setAudioUploadError] = useState(''); // Separate error for audio upload
   const navigate = useNavigate();
   const { settings: userSettings } = useContext(SettingsContext); // Get settings from context
@@ -36,9 +37,9 @@ const BookCreate = () => {
 
         if (data.length > 0) {
           const found = data.find(l => l.languageId === defaultLangId);
-          if (found) {
+          if (found && found.languageId != null) {
             setLanguageId(found.languageId.toString());
-          } else {
+          } else if (data[0].languageId != null) {
             // Fallback to first language if default not found or not set
             setLanguageId(data[0].languageId.toString());
           }
@@ -98,7 +99,7 @@ const BookCreate = () => {
         );
       } else { // activeTab === 'upload'
         const formData = new FormData();
-        formData.append('File', file);
+        formData.append('File', file!); // validated non-null above
         formData.append('LanguageId', languageId);
         formData.append('SplitMethod', splitMethod);
         formData.append('MaxSegmentSize', maxSegmentSize.toString());
@@ -216,7 +217,7 @@ const BookCreate = () => {
                       <option value="">No languages available</option>
                     ) : (
                       languages.map((language) => (
-                        <option key={language.languageId} value={language.languageId.toString()}>
+                        <option key={language.languageId} value={language.languageId?.toString()}>
                           {language.name}
                         </option>
                       ))
@@ -291,7 +292,7 @@ const BookCreate = () => {
             {/* Tabs for Manual Input / Upload */}
             <Tabs
               activeKey={activeTab}
-              onSelect={(k) => setActiveTab(k)}
+              onSelect={(k) => setActiveTab(k ?? 'manual')}
               className="mb-3"
               id="book-create-tabs"
             >

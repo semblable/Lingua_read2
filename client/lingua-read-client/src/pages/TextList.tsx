@@ -2,6 +2,7 @@ import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { Container, Row, Col, Card, Button, Spinner, Alert, Form, ButtonGroup, Badge } from 'react-bootstrap';
 import { Link } from 'react-router-dom';
 import { useTextsStore } from '../utils/store';
+import type { StoredText } from '../utils/store';
 import { getTexts, deleteText } from '../utils/api';
 
 // react-bootstrap's `as` prop is typed against IntrinsicElements; the
@@ -35,7 +36,7 @@ const TextList = () => {
     setLoading(true);
     try {
       const data = await getTexts();
-      setTexts(data || []); // Ensure texts is always an array
+      setTexts((data ?? []) as StoredText[]);
     } catch (err) {
       setError(err.message || 'Failed to load texts');
       setTexts([]); // Set to empty array on error
@@ -265,7 +266,7 @@ const TextList = () => {
                   <Button
                     variant="outline-danger"
                     size="sm"
-                    onClick={() => handleDeleteText(text.textId, text.title)} // Add delete handler
+                    onClick={() => handleDeleteText(text.textId!, text.title ?? '')} // textId always set on server-loaded texts
                     title="Delete Text"
                   >
                     <i className="bi bi-trash"></i> {/* Delete Icon */}

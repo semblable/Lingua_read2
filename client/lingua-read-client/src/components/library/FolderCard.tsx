@@ -60,9 +60,9 @@ const FolderCard = ({ folder, onClick, onRename, onDelete, onChangeColor, isOver
         onClick={(e) => {
           if ((e.ctrlKey || e.metaKey || e.shiftKey) && onItemClick) {
             e.preventDefault();
-            onItemClick(folder.folderId, 'folder', e);
+            onItemClick(folder.folderId!, 'folder', e); // folderId always set on rendered folders
           } else {
-            onClick(folder.folderId);
+            onClick(folder.folderId!);
           }
         }}
         style={{ borderLeft: `4px solid ${folderColor}` }}
@@ -91,7 +91,7 @@ const FolderCard = ({ folder, onClick, onRename, onDelete, onChangeColor, isOver
               className="form-check-input"
               type="checkbox"
               checked={isSelected}
-              onChange={() => onSelect(folder.folderId, 'folder')}
+              onChange={() => onSelect(folder.folderId!, 'folder')}
             />
           </div>
           <Dropdown
@@ -115,7 +115,7 @@ const FolderCard = ({ folder, onClick, onRename, onDelete, onChangeColor, isOver
                 {Object.entries(FOLDER_COLORS).map(([name, color]) => (
                   <span
                     key={name}
-                    onClick={(e) => { e.stopPropagation(); setShowDropdown(false); onChangeColor(folder.folderId, name); }}
+                    onClick={(e) => { e.stopPropagation(); setShowDropdown(false); onChangeColor(folder.folderId!, name); }}
                     style={{
                       width: 20, height: 20, borderRadius: '50%', backgroundColor: color,
                       display: 'inline-block', cursor: 'pointer',
@@ -125,7 +125,7 @@ const FolderCard = ({ folder, onClick, onRename, onDelete, onChangeColor, isOver
                   ></span>
                 ))}
                 <span
-                  onClick={(e) => { e.stopPropagation(); setShowDropdown(false); onChangeColor(folder.folderId, ''); }}
+                  onClick={(e) => { e.stopPropagation(); setShowDropdown(false); onChangeColor(folder.folderId!, ''); }}
                   style={{
                     width: 20, height: 20, borderRadius: '50%', backgroundColor: '#ccc',
                     display: 'inline-block', cursor: 'pointer'

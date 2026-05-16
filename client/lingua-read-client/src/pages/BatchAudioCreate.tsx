@@ -3,17 +3,23 @@ import { Container, Form, Button, Card, Alert, Spinner, ListGroup, ProgressBar }
 import { useNavigate } from 'react-router-dom';
 import { getAllLanguages, createAudioLessonsBatch } from '../utils/api';
 import { SettingsContext } from '../contexts/SettingsContext'; // Import SettingsContext
+import type { Language } from '../utils/api/languages';
+
+type BatchAudioResults = {
+    createdCount?: number;
+    skippedFiles?: string[];
+};
 
 const BatchAudioCreate = () => {
     const [languageId, setLanguageId] = useState('');
     const [tag, setTag] = useState('');
     const [files, setFiles] = useState<FileList | null>(null); // Holds FileList object
-    const [languages, setLanguages] = useState([]);
+    const [languages, setLanguages] = useState<Language[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [loadingLanguages, setLoadingLanguages] = useState(true);
     const [error, setError] = useState('');
     const [uploadProgress, setUploadProgress] = useState(0); // Basic progress state (can be enhanced)
-    const [results, setResults] = useState(null);
+    const [results, setResults] = useState<BatchAudioResults | null>(null);
     const navigate = useNavigate();
     const { settings: userSettings } = useContext(SettingsContext); // Get settings from context
 
@@ -30,9 +36,9 @@ const BatchAudioCreate = () => {
 
                 if (data.length > 0) {
                     const found = data.find(l => l.languageId === defaultLangId);
-                    if (found) {
+                    if (found && found.languageId != null) {
                         setLanguageId(found.languageId.toString());
-                    } else {
+                    } else if (data[0].languageId != null) {
                         // Fallback to first language if default not found or not set
                         setLanguageId(data[0].languageId.toString());
                     }
@@ -160,7 +166,7 @@ const BatchAudioCreate = () => {
         const findFuzzyMatch = (targetNormalized: string, candidateMap: Map<string, any[]>): any[] | null => {
             // Try exact match first
             if (candidateMap.has(targetNormalized)) {
-                return candidateMap.get(targetNormalized);
+                return candidateMap.get(targetNormalized) ?? null;
             }
 
             // Try prefix matching for truncated names (min 10 chars to avoid false positives)
@@ -263,7 +269,7 @@ const BatchAudioCreate = () => {
             });
 
             setUploadProgress(100);
-            setResults(resultData); // Store results { createdCount, skippedFiles }
+            setResults(resultData as BatchAudioResults); // Store results { createdCount, skippedFiles }
             setFiles(null); // Clear file input
             setTag(''); // Clear tag input
             // Reset file input visually (requires direct DOM manipulation or key change)
@@ -367,7 +373,7 @@ const BatchAudioCreate = () => {
                     </Form>
 
                     {results && (
-                        <Alert variant={results.createdCount > 0 ? "success" : "warning"} className="mt-4">
+                        <Alert variant={(results.createdCount ?? 0) > 0 ? "success" : "warning"} className="mt-4">
                             <Alert.Heading>Batch Process Complete</Alert.Heading>
                             <p>Successfully created <strong>{results.createdCount}</strong> audio lessons.</p>
                             {results.skippedFiles && results.skippedFiles.length > 0 && (

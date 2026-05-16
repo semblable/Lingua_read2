@@ -68,7 +68,7 @@ const MobileLessonHeader = React.memo(({
       </div>
       <div className={`lesson-topbar navbar-custom-bg ${showMobileHeader ? 'lesson-topbar-open' : 'lesson-topbar-closed'}`}>
         <div className="lesson-topbar-content">
-          <div className="lesson-topbar-title">{text.title}</div>
+          <div className="lesson-topbar-title">{text?.title}</div>
           <div className="lesson-topbar-actions">
             <Button
               variant={showMoreControls ? 'light' : 'outline-light'}

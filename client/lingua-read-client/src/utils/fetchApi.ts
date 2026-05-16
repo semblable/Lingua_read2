@@ -17,13 +17,7 @@
 
 import type { paths } from './api-types';
 
-// API_URL is exported from api.js (still .js in Phase B). The .ts wrapper
-// imports the runtime value with a small type assertion since api.js has
-// no types yet — Phase C1 will resolve the cast.
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore — api.js is plain JS until Phase C1
-import { API_URL as RAW_API_URL } from './api';
-const API_URL: string = RAW_API_URL;
+import { API_URL } from './api';
 
 // ---------- Type plumbing ----------
 

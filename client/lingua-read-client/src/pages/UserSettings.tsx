@@ -28,7 +28,10 @@ const SECTIONS = [
 
 const UserSettings = () => {
   const browserTimezoneOffsetMinutes = -new Date().getTimezoneOffset();
-  const [settings, setSettings] = useState({
+  // Local settings state — wider than the strict `Settings` type because this
+  // page initializes only the subset it persists; child components cast as-needed.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [settings, setSettings] = useState<any>({
     theme: 'dark',
     textSize: 16,
     textFont: 'default',
@@ -209,9 +212,12 @@ const UserSettings = () => {
     fetchStorageSize();
   }, [browserTimezoneOffsetMinutes]);
 
-  const handleChange = (e) => {
-    const { name, value, type, checked } = e.target;
-    let processedValue = value;
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
+    const target = e.target as HTMLInputElement;
+    const { name, value, type } = target;
+    const checked = target.checked;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let processedValue: any = value;
     if (type === 'checkbox') {
       processedValue = checked;
     } else if (
@@ -224,11 +230,11 @@ const UserSettings = () => {
       processedValue = name === 'lineSpacing' ? parseFloat(value) : parseInt(value, 10);
       if (isNaN(processedValue)) processedValue = 0;
     }
-    setSettings(prev => ({ ...prev, [name]: processedValue }));
+    setSettings((prev: any) => ({ ...prev, [name]: processedValue }));
     setHasChanges(true);
   };
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setSaving(true);
     setError('');
@@ -306,7 +312,7 @@ const UserSettings = () => {
 
   const handleSetBrowserTimezone = () => {
     const offsetMinutes = -new Date().getTimezoneOffset();
-    setSettings(prev => ({ ...prev, discordTimezoneOffsetMinutes: offsetMinutes }));
+    setSettings((prev: any) => ({ ...prev, discordTimezoneOffsetMinutes: offsetMinutes }));
     setHasChanges(true);
   };
 
@@ -324,7 +330,7 @@ const UserSettings = () => {
     }
   };
 
-  const handleRestoreFileChange = (e) => {
+  const handleRestoreFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       setRestoreFile(e.target.files[0]);
       setRestoreMessage({ type: '', text: '' });
@@ -414,7 +420,7 @@ const UserSettings = () => {
     }
   }, []);
 
-  const handleSaveHardcoverToken = useCallback(async (token) => {
+  const handleSaveHardcoverToken = useCallback(async (token: string) => {
     if (!token.trim()) return;
     setHardcoverSyncMessage({ type: '', text: '' });
     try {
@@ -422,7 +428,7 @@ const UserSettings = () => {
         hardcoverApiToken: token.trim(),
         hardcoverSyncEnabled: settings.hardcoverSyncEnabled
       });
-      setSettings(prev => ({
+      setSettings((prev: any) => ({
         ...prev,
         hasHardcoverApiToken: saved.hasHardcoverApiToken ?? true,
         hardcoverSyncEnabled: saved.hardcoverSyncEnabled ?? prev.hardcoverSyncEnabled,
@@ -441,7 +447,7 @@ const UserSettings = () => {
     setHardcoverTestResult(null);
     try {
       await updateUserSettings({ clearHardcoverApiToken: true });
-      setSettings(prev => ({
+      setSettings((prev: any) => ({
         ...prev,
         hasHardcoverApiToken: false,
         hardcoverSyncEnabled: false,
@@ -461,7 +467,7 @@ const UserSettings = () => {
       const result = (await syncAllHardcover()) as { message?: string } | null;
       setHardcoverSyncMessage({ type: 'success', text: result?.message || 'Hardcover sync completed.' });
       const refreshed = await getUserSettings();
-      setSettings(prev => ({
+      setSettings((prev: any) => ({
         ...prev,
         hardcoverLastSyncAt: refreshed.hardcoverLastSyncAt ?? prev.hardcoverLastSyncAt
       }));
@@ -472,7 +478,7 @@ const UserSettings = () => {
     }
   }, []);
 
-  const scrollToSection = (sectionId) => {
+  const scrollToSection = (sectionId: string) => {
     setActiveSection(sectionId);
     const el = sectionRefs.current[sectionId];
     if (el) {

@@ -4,8 +4,16 @@ import { Link } from 'react-router-dom';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { formatDate } from '../../utils/helpers';
+import type { LibraryText, SelectableType } from '../../utils/store';
 
-const LibraryTextCard = ({ text, isSelected, onSelect, onItemClick }) => {
+interface LibraryTextCardProps {
+  text: LibraryText;
+  isSelected: boolean;
+  onSelect: (id: number, type: SelectableType) => void;
+  onItemClick?: (id: number, type: SelectableType, e: React.MouseEvent) => void;
+}
+
+const LibraryTextCard = ({ text, isSelected, onSelect, onItemClick }: LibraryTextCardProps) => {
   const {
     attributes,
     listeners,

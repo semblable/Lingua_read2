@@ -106,8 +106,8 @@ const TextDisplay = () => {
   const [isWordPanelOpen, setIsWordPanelOpen] = useState(false);
   const [isAudioPlaying, setIsAudioPlaying] = useState(false);
   const [currentSegmentIndex, setCurrentSegmentIndex] = useState(0);
-  const [segmentTranslations, setSegmentTranslations] = useState({});
-  const [segmentExplanations, setSegmentExplanations] = useState({});
+  const [segmentTranslations, setSegmentTranslations] = useState<Record<number, string>>({});
+  const [segmentExplanations, setSegmentExplanations] = useState<Record<number, string>>({});
   const [isTranslatingSegment, setIsTranslatingSegment] = useState(false);
   const [isExplainingSegment, setIsExplainingSegment] = useState(false);
   const [visibleTranslationIndex, setVisibleTranslationIndex] = useState(null);
@@ -178,7 +178,7 @@ const TextDisplay = () => {
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const mediaQuery = window.matchMedia('(max-width: 768px)');
-    const handleMediaChange = (event) => {
+    const handleMediaChange = (event: MediaQueryListEvent) => {
       setIsMobile(event.matches);
       if (!event.matches) {
         setShowMobileHeader(false);
@@ -238,9 +238,10 @@ const TextDisplay = () => {
   const readingDensity = globalSettings.readingDensity || 'balanced';
   const showWordInfoPanel = globalSettings.showWordInfoPanel ?? true;
 
-  const setAudioPlaybackIntent = useCallback((shouldPlay) => {
+  const setAudioPlaybackIntent = useCallback((shouldPlay: boolean) => {
     if (audioRef.current) {
-      audioRef.current.__lrAllowPlayback = shouldPlay;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (audioRef.current as any).__lrAllowPlayback = shouldPlay;
     }
   }, []);
 
@@ -255,7 +256,7 @@ const TextDisplay = () => {
 
     if (audio.paused) {
       setAudioPlaybackIntent(true);
-      audio.play().catch(err => console.error('Mobile audio toggle failed to play:', err));
+      audio.play().catch((err: unknown) => console.error('Mobile audio toggle failed to play:', err));
     } else {
       setAudioPlaybackIntent(false);
       audio.pause();
@@ -269,15 +270,15 @@ const TextDisplay = () => {
     audio.pause();
   }, [setAudioPlaybackIntent]);
 
-  const focusSentenceIndexFromNode = useCallback((node) => {
+  const focusSentenceIndexFromNode = useCallback((node: Node | null) => {
     const container = textContentRef.current;
-    let currentNode = node;
+    let currentNode: Node | null = node;
     while (currentNode && currentNode !== container) {
       if (
         currentNode.nodeType === Node.ELEMENT_NODE &&
-        currentNode.classList?.contains('sentence')
+        (currentNode as HTMLElement).classList?.contains('sentence')
       ) {
-        const sentenceIndex = Number(currentNode.getAttribute('data-sentence-index'));
+        const sentenceIndex = Number((currentNode as HTMLElement).getAttribute('data-sentence-index'));
         if (Number.isInteger(sentenceIndex) && sentenceIndex >= 0) {
           setCurrentSegmentIndex(sentenceIndex);
         }
@@ -290,20 +291,20 @@ const TextDisplay = () => {
   /** Max chars sent as sentenceContext to avoid huge payloads; backend may also limit. */
   const MAX_AI_CONTEXT_CHARS = 100000;
 
-  const normalizeReaderText = (s) => (s || '').replace(/\s+/g, ' ').trim();
+  const normalizeReaderText = (s: string | null | undefined): string => (s || '').replace(/\s+/g, ' ').trim();
 
-  const clampContext = (t) => {
+  const clampContext = (t: string | null | undefined): string => {
     if (!t) return '';
     return t.length > MAX_AI_CONTEXT_CHARS ? t.slice(0, MAX_AI_CONTEXT_CHARS) : t;
   };
 
-  const readSentenceContextFromNode = useCallback((node) => {
+  const readSentenceContextFromNode = useCallback((node: Node | null) => {
     const container = textContentRef.current;
-    let currentNode = node;
+    let currentNode: Node | null = node;
     while (currentNode && currentNode !== container) {
       if (
         currentNode.nodeType === Node.ELEMENT_NODE &&
-        currentNode.classList?.contains('sentence')
+        (currentNode as HTMLElement).classList?.contains('sentence')
       ) {
         const text = normalizeReaderText(currentNode.textContent);
         return text ? clampContext(text) : '';
@@ -317,19 +318,19 @@ const TextDisplay = () => {
    * Context for AI selection translation: prefer one .sentence, then a block (paragraph / group),
    * then full reader column, then the selection itself (so large / multi-sentence highlights still use AI).
    */
-  const buildAiSelectionContext = useCallback((range, container, selectedText) => {
+  const buildAiSelectionContext = useCallback((range: Range | null, container: HTMLElement | null, selectedText: string) => {
     if (!range || !container) {
       return clampContext(normalizeReaderText(selectedText));
     }
 
-    let node = range.commonAncestorContainer;
+    let node: Node | null = range.commonAncestorContainer;
     if (node?.nodeType === Node.TEXT_NODE) {
       node = node.parentNode;
     }
 
-    let walk = node;
+    let walk: Node | null = node;
     while (walk && walk !== container) {
-      if (walk.nodeType === Node.ELEMENT_NODE && walk.classList?.contains('sentence')) {
+      if (walk.nodeType === Node.ELEMENT_NODE && (walk as HTMLElement).classList?.contains('sentence')) {
         const t = normalizeReaderText(walk.textContent);
         if (t) return clampContext(t);
       }
@@ -350,9 +351,9 @@ const TextDisplay = () => {
     ];
     walk = node;
     while (walk && walk !== container) {
-      if (walk.nodeType === Node.ELEMENT_NODE && walk.classList) {
+      if (walk.nodeType === Node.ELEMENT_NODE && (walk as HTMLElement).classList) {
         for (const cls of blockClassHints) {
-          if (walk.classList.contains(cls)) {
+          if ((walk as HTMLElement).classList.contains(cls)) {
             const t = normalizeReaderText(walk.textContent);
             if (t) return clampContext(t);
           }
@@ -367,7 +368,7 @@ const TextDisplay = () => {
     return clampContext(normalizeReaderText(selectedText));
   }, []);
 
-  const handleAudioPlaybackStateChange = useCallback((nextIsPlaying) => {
+  const handleAudioPlaybackStateChange = useCallback((nextIsPlaying: boolean) => {
     if (nextIsPlaying) {
       cancelSpeech();
       setIsSpeakingSentence(false);
@@ -379,19 +380,19 @@ const TextDisplay = () => {
 
   // --- Helper Functions & Memoized Values (Define BEFORE useEffects that use them) ---
 
-  const handleLineSpacingChange = (newSpacing) => {
-    const numericSpacing = parseFloat(newSpacing);
+  const handleLineSpacingChange = (newSpacing: number | string) => {
+    const numericSpacing = parseFloat(String(newSpacing));
     if (!isNaN(numericSpacing)) {
       updateSetting('lineSpacing', numericSpacing); // Update context
       localStorage.setItem('lineSpacing', numericSpacing.toString()); // Persist to localStorage
       document.body.style.setProperty('--reading-line-height', numericSpacing.toString()); // Apply immediately
       updateUserSettings({ lineSpacing: numericSpacing })
-        .catch(err => console.error('[Save Settings] Failed to save line spacing via API:', err));
+        .catch((err: unknown) => console.error('[Save Settings] Failed to save line spacing via API:', err));
     }
   };
 
-  const handleParagraphSpacingChange = (newSpacing) => {
-    const numeric = parseFloat(newSpacing);
+  const handleParagraphSpacingChange = (newSpacing: number | string) => {
+    const numeric = parseFloat(String(newSpacing));
     if (!isNaN(numeric)) {
       updateSetting('paragraphSpacing', numeric);
       localStorage.setItem('paragraphSpacing', numeric.toString());
@@ -399,70 +400,72 @@ const TextDisplay = () => {
     }
   };
 
-  const setReadingDensity = useCallback((nextValue) => {
+  const setReadingDensity = useCallback((nextValue: string) => {
     updateSetting('readingDensity', nextValue);
     localStorage.setItem('readingDensity', nextValue);
     updateUserSettings({ readingDensity: nextValue })
-      .catch(err => console.error('[Save Settings] Failed to save reading density via API:', err));
+      .catch((err: unknown) => console.error('[Save Settings] Failed to save reading density via API:', err));
   }, [updateSetting]);
 
-  const setReaderContentWidth = useCallback((nextValue) => {
+  const setReaderContentWidth = useCallback((nextValue: number) => {
     const clamped = Math.max(520, Math.min(980, nextValue));
     updateSetting('readerContentWidth', clamped);
     localStorage.setItem('readerContentWidth', clamped.toString());
     updateUserSettings({ readerContentWidth: clamped })
-      .catch(err => console.error('[Save Settings] Failed to save reader content width via API:', err));
+      .catch((err: unknown) => console.error('[Save Settings] Failed to save reader content width via API:', err));
   }, [updateSetting]);
 
-  const setShowWordInfoPanel = useCallback((nextValue) => {
+  const setShowWordInfoPanel = useCallback((nextValue: boolean) => {
     updateSetting('showWordInfoPanel', nextValue);
     localStorage.setItem('showWordInfoPanel', nextValue.toString());
     updateUserSettings({ showWordInfoPanel: nextValue })
-      .catch(err => console.error('[Save Settings] Failed to save word info panel visibility via API:', err));
+      .catch((err: unknown) => console.error('[Save Settings] Failed to save word info panel visibility via API:', err));
   }, [updateSetting]);
 
-  const setShowDesktopLessonControls = useCallback((nextValue) => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const setShowDesktopLessonControls = useCallback((nextValue: any) => {
     const val = typeof nextValue === 'function' ? nextValue(globalSettings.showDesktopLessonControls ?? true) : nextValue;
     updateSetting('showDesktopLessonControls', val);
     localStorage.setItem('showDesktopLessonControls', val.toString());
     updateUserSettings({ showDesktopLessonControls: val })
-      .catch(err => console.error('[Save Settings] Failed to save desktop lesson controls visibility via API:', err));
+      .catch((err: unknown) => console.error('[Save Settings] Failed to save desktop lesson controls visibility via API:', err));
   }, [updateSetting, globalSettings.showDesktopLessonControls]);
 
-  const setReaderParagraphIndent = useCallback((nextValue) => {
+  const setReaderParagraphIndent = useCallback((nextValue: boolean) => {
     updateSetting('readerParagraphIndent', nextValue);
     localStorage.setItem('readerParagraphIndent', nextValue.toString());
     updateUserSettings({ readerParagraphIndent: nextValue })
-      .catch(err => console.error('[Save Settings] Failed to save paragraph indent via API:', err));
+      .catch((err: unknown) => console.error('[Save Settings] Failed to save paragraph indent via API:', err));
   }, [updateSetting]);
 
-  const setReaderTextAlignment = useCallback((nextValue) => {
+  const setReaderTextAlignment = useCallback((nextValue: string) => {
     updateSetting('readerTextAlignment', nextValue);
     localStorage.setItem('readerTextAlignment', nextValue);
     updateUserSettings({ readerTextAlignment: nextValue })
-      .catch(err => console.error('[Save Settings] Failed to save text alignment via API:', err));
+      .catch((err: unknown) => console.error('[Save Settings] Failed to save text alignment via API:', err));
   }, [updateSetting]);
 
-  const setSentenceModeEnabled = useCallback((nextValue) => {
+  const setSentenceModeEnabled = useCallback((nextValue: boolean) => {
     updateSetting('sentenceMode', nextValue);
     updateUserSettings({ sentenceMode: nextValue })
-      .catch(err => console.error('[Save Settings] Failed to save sentence mode via API:', err));
+      .catch((err: unknown) => console.error('[Save Settings] Failed to save sentence mode via API:', err));
   }, [updateSetting]);
 
-  const setSentenceAudioRepeats = useCallback((updater) => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const setSentenceAudioRepeats = useCallback((updater: any) => {
     const nextValue = typeof updater === 'function'
       ? updater(sentenceAudioRepeats)
       : updater;
     const clamped = Math.max(1, Math.min(10, nextValue));
     updateSetting('sentenceAudioRepeats', clamped);
     updateUserSettings({ sentenceAudioRepeats: clamped })
-      .catch(err => console.error('[Save Settings] Failed to save sentence audio repeats via API:', err));
+      .catch((err: unknown) => console.error('[Save Settings] Failed to save sentence audio repeats via API:', err));
   }, [sentenceAudioRepeats, updateSetting]);
 
-  const setSentenceTtsEnabled = useCallback((nextValue) => {
+  const setSentenceTtsEnabled = useCallback((nextValue: boolean) => {
     updateSetting('sentenceTtsEnabled', nextValue);
     updateUserSettings({ sentenceTtsEnabled: nextValue })
-      .catch(err => console.error('[Save Settings] Failed to save sentence TTS enabled via API:', err));
+      .catch((err: unknown) => console.error('[Save Settings] Failed to save sentence TTS enabled via API:', err));
     if (!nextValue) {
       cancelSpeech();
       setIsSpeakingSentence(false);
@@ -470,14 +473,15 @@ const TextDisplay = () => {
     }
   }, [updateSetting]);
 
-  const setSentenceTtsRate = useCallback((updater) => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const setSentenceTtsRate = useCallback((updater: any) => {
     const nextValue = typeof updater === 'function'
       ? updater(sentenceTtsRate)
       : updater;
     const clamped = Math.max(0.5, Math.min(1.5, Number(nextValue.toFixed(1))));
     updateSetting('sentenceTtsRate', clamped);
     updateUserSettings({ sentenceTtsRate: clamped })
-      .catch(err => console.error('[Save Settings] Failed to save sentence TTS rate via API:', err));
+      .catch((err: unknown) => console.error('[Save Settings] Failed to save sentence TTS rate via API:', err));
   }, [sentenceTtsRate, updateSetting]);
 
   const fetchAllLanguageWords = useCallback(async (
@@ -523,26 +527,26 @@ const TextDisplay = () => {
   }, [words]);
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const getWordData = useCallback((word) => {
+  const getWordData = useCallback((word: string | null | undefined) => {
     if (!word) return null;
     return wordMap.get(word.toLowerCase()) || null;
   }, [wordMap]);
 
-  const getWordStyle = useCallback((wordStatus) => {
+  const getWordStyle = useCallback((wordStatus: number | null | undefined) => {
     const baseStyle = { cursor: 'pointer', padding: '2px 0', margin: '0 2px', borderRadius: '3px', transition: 'all 0.2s' };
     // Suppress highlights until full language words have loaded to avoid flash of "new" status
     if (!languageWordsLoaded) return { ...baseStyle, backgroundColor: 'transparent', color: 'inherit' };
     // Use globalSettings from context
     if (!globalSettings?.highlightKnownWords && wordStatus === 5) return { ...baseStyle, backgroundColor: 'transparent', color: 'inherit' };
     if (wordStatus === 5) return { ...baseStyle, backgroundColor: 'transparent', color: 'inherit' };
-    const statusStyles = {
+    const statusStyles: Record<number, { backgroundColor: string; color: string }> = {
       0: { backgroundColor: 'var(--status-0-color, #e0e0e0)', color: '#000' },
       1: { backgroundColor: 'var(--status-1-color, #ff6666)', color: '#000' },
       2: { backgroundColor: 'var(--status-2-color, #ff9933)', color: '#000' },
       3: { backgroundColor: 'var(--status-3-color, #ffdd66)', color: '#000' },
       4: { backgroundColor: 'var(--status-4-color, #99dd66)', color: '#000' },
     };
-    return { ...baseStyle, ...(statusStyles[wordStatus] || statusStyles[0]) };
+    return { ...baseStyle, ...(statusStyles[wordStatus ?? 0] || statusStyles[0]) };
   }, [languageWordsLoaded, globalSettings?.highlightKnownWords]); // Use globalSettings from context
 
   const triggerAutoTranslation = useCallback(async (
@@ -562,7 +566,7 @@ const TextDisplay = () => {
       setIsTranslating(false);
       setWordTranslationError('');
       setTranslation(cached);
-      setDisplayedWord(prev => (prev && prev.term === termToTranslate ? { ...prev, translation: cached } : prev));
+      setDisplayedWord((prev: any) => (prev && prev.term === termToTranslate ? { ...prev, translation: cached } : prev));
       return;
     }
 
@@ -584,19 +588,21 @@ const TextDisplay = () => {
           cache.delete(oldestKey);
         }
         setTranslation(result.translatedText);
-        setDisplayedWord(prev => (prev && prev.term === termToTranslate ? { ...prev, translation: result.translatedText } : prev));
+        setDisplayedWord((prev: any) => (prev && prev.term === termToTranslate ? { ...prev, translation: result.translatedText } : prev));
       } else {
         setWordTranslationError('Translation not found.');
       }
-    } catch (err) {
-      if (err.name === 'AbortError' || controller.signal.aborted) {
+    } catch (err: unknown) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const e = err as any;
+      if (e?.name === 'AbortError' || controller.signal.aborted) {
         return;
       }
       console.error('Auto-translation failed:', err);
-      if (err.status === 429) {
+      if (e?.status === 429) {
         setWordTranslationError('Provider rate limit reached — try again in a few seconds.');
       } else {
-        setWordTranslationError(`Translation failed: ${err.message}`);
+        setWordTranslationError(`Translation failed: ${e?.message}`);
       }
     } finally {
       if (translationAbortRef.current === controller) {
@@ -650,18 +656,20 @@ const TextDisplay = () => {
           return existing;
         }
         const combined = `${existing}, ${newTranslation}`;
-        setDisplayedWord(prevWord => (prevWord && prevWord.term === termToTranslate ? { ...prevWord, translation: combined } : prevWord));
+        setDisplayedWord((prevWord: any) => (prevWord && prevWord.term === termToTranslate ? { ...prevWord, translation: combined } : prevWord));
         return combined;
       });
-    } catch (err) {
-      if (err.name === 'AbortError' || controller.signal.aborted) {
+    } catch (err: unknown) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const e = err as any;
+      if (e?.name === 'AbortError' || controller.signal.aborted) {
         return;
       }
       console.error('Append translation failed:', err);
-      if (err.status === 429) {
+      if (e?.status === 429) {
         setWordTranslationError('Provider rate limit reached — try again in a few seconds.');
       } else {
-        setWordTranslationError(`Translation failed: ${err.message}`);
+        setWordTranslationError(`Translation failed: ${e?.message}`);
       }
     } finally {
       if (translationAbortRef.current === controller) {
@@ -743,7 +751,7 @@ const TextDisplay = () => {
     return { selection, range, container, selectedText };
   }, []);
 
-  const handleSelectedText = useCallback((selectedText, sentenceContext = '') => {
+  const handleSelectedText = useCallback((selectedText: string, sentenceContext: string = '') => {
     if (!selectedText) {
       lastHandledSelectionRef.current = '';
       setSelectedWordAiContext('');
@@ -765,13 +773,13 @@ const TextDisplay = () => {
     }, 0);
   }, [handleWordClick, triggerAutoTranslation]);
 
-  const handleSelectableWordClick = useCallback((event, word, isPhrase = false) => {
+  const handleSelectableWordClick = useCallback((event: React.MouseEvent, word: string, isPhrase: boolean = false) => {
     event.stopPropagation();
     if (Date.now() < suppressWordClickUntilRef.current || hasActiveTextSelection()) {
       return;
     }
-    focusSentenceIndexFromNode(event.target);
-    const sentenceContext = readSentenceContextFromNode(event.target);
+    focusSentenceIndexFromNode(event.target as Node);
+    const sentenceContext = readSentenceContextFromNode(event.target as Node);
     if (!isPhrase && globalSettings.tooltipOnlyForSavedWords) {
       const existing = getWordData(word);
       if (existing && !existing.isNew) {
@@ -825,10 +833,10 @@ const TextDisplay = () => {
     let endOffset = range.endOffset;
 
     // Helper function to find the nearest ancestor word span
-    const findWordSpan = (node) => {
+    const findWordSpan = (node: Node | null): HTMLElement | null => {
       while (node && node !== container) {
-        if (node.nodeType === Node.ELEMENT_NODE && node.classList.contains('clickable-word')) {
-          return node;
+        if (node.nodeType === Node.ELEMENT_NODE && (node as HTMLElement).classList.contains('clickable-word')) {
+          return node as HTMLElement;
         }
         node = node.parentNode;
       }
@@ -836,20 +844,20 @@ const TextDisplay = () => {
     };
 
     // Helper function to find the word span containing or immediately preceding/following a text node offset
-    const findWordSpanNearText = (node, offset, lookForward) => {
+    const findWordSpanNearText = (node: Node, offset: number, lookForward: boolean): HTMLElement | null => {
       if (node.nodeType === Node.ELEMENT_NODE) {
         // If the node itself is a word span
-        if (node.classList.contains('clickable-word')) return node;
+        if ((node as HTMLElement).classList.contains('clickable-word')) return node as HTMLElement;
         // If offset points to a child node, check that child
         const childNode = node.childNodes[offset];
         if (childNode) return findWordSpan(childNode);
       }
 
       // If it's a text node or offset is within a text node
-      let current = node;
+      let current: Node | null = node;
       while (current && current !== container) {
-        if (current.nodeType === Node.ELEMENT_NODE && current.classList.contains('clickable-word')) {
-          return current; // Found ancestor word span
+        if (current.nodeType === Node.ELEMENT_NODE && (current as HTMLElement).classList.contains('clickable-word')) {
+          return current as HTMLElement; // Found ancestor word span
         }
         // Move to sibling or parent
         const sibling = lookForward ? current.nextSibling : current.previousSibling;
@@ -915,7 +923,7 @@ const TextDisplay = () => {
 
   }, [focusSentenceIndexFromNode, getSelectionDetails, buildAiSelectionContext, handleSelectedText, isMobile, clearMobileSelectionRetry, clearMobileSelectionStability]); // textContentRef is a stable ref
 
-  const scheduleWordSelection = useCallback((delayMs) => {
+  const scheduleWordSelection = useCallback((delayMs: number) => {
     clearPendingSelection();
     selectionDebounceRef.current = setTimeout(() => {
       selectionDebounceRef.current = null;
@@ -1052,7 +1060,7 @@ const TextDisplay = () => {
       mobileTouchMovedRef.current = true;
     };
 
-    const handleTouchRelease = (event) => {
+    const handleTouchRelease = (event: TouchEvent) => {
       const container = textContentRef.current;
       if (container && event.target instanceof Node && container.contains(event.target)) {
         return;
@@ -1101,7 +1109,7 @@ const TextDisplay = () => {
   // --- End New Word-Granularity Selection Logic ---
 
 
-  const processTextContent = useCallback((content) => {
+  const processTextContent = useCallback((content: string | null | undefined): React.ReactNode[] => {
     if (!content) return [];
 
     // Apply language-aware character substitutions, then walk the
@@ -1223,13 +1231,13 @@ const TextDisplay = () => {
   }, [globalSettings.textFont]); // Use globalSettings from context
 
   // Use globalSettings from context
-  const getFontStyling = useCallback((currentLineSpacing) => ({ // Added currentLineSpacing parameter
+  const getFontStyling = useCallback((currentLineSpacing: number | string): React.CSSProperties => ({ // Added currentLineSpacing parameter
     fontSize: `${globalSettings.textSize}px`,
     fontFamily: getFontFamilyForList(), // Assuming getFontFamilyForList is stable or memoized
     lineHeight: currentLineSpacing // Use the passed-in value directly
   }), [globalSettings.textSize, getFontFamilyForList]); // getFontFamilyForList already depends on textFont
 
-  const handleLineClick = useCallback((startTime) => {
+  const handleLineClick = useCallback((startTime: number) => {
     if (audioRef.current) {
       audioRef.current.currentTime = startTime;
       audioCurrentTimeRef.current = startTime;
@@ -1392,11 +1400,11 @@ const TextDisplay = () => {
         [currentSentenceSegment.index]: translatedText
       }));
       setVisibleTranslationIndex(currentSentenceSegment.index);
-    } catch (translationErr) {
+    } catch (translationErr: unknown) {
       console.error('Sentence translation failed:', translationErr);
       setSegmentTranslations(prev => ({
         ...prev,
-        [currentSentenceSegment.index]: `Translation failed: ${translationErr.message}`
+        [currentSentenceSegment.index]: `Translation failed: ${(translationErr as Error)?.message}`
       }));
       setVisibleTranslationIndex(currentSentenceSegment.index);
     } finally {
@@ -1577,11 +1585,11 @@ const TextDisplay = () => {
   ]);
 
   // --- Bookmark Helper Functions ---
-  const isBookmarked = useCallback((sentenceIndex) => {
+  const isBookmarked = useCallback((sentenceIndex: number) => {
     return bookmarkedIndices.includes(sentenceIndex);
   }, [bookmarkedIndices]);
 
-  const handleSentenceContextMenu = useCallback((event, sentenceIndex) => {
+  const handleSentenceContextMenu = useCallback((event: React.MouseEvent, sentenceIndex: number) => {
     event.preventDefault(); // Prevent default browser menu
     if (isMobile || hasActiveTextSelection()) return;
     if (!text?.textId || typeof sentenceIndex !== 'number') return;
@@ -1613,7 +1621,7 @@ const TextDisplay = () => {
     const requestVersion = textLoadRequestVersionRef.current + 1;
     textLoadRequestVersionRef.current = requestVersion;
     let cancelled = false;
-    let wordLinkingPollInterval = null;
+    let wordLinkingPollInterval: ReturnType<typeof setInterval> | null = null;
     const isCurrentRequest = (): boolean => !cancelled && textLoadRequestVersionRef.current === requestVersion;
     const clearWordLinkingPoll = () => {
       if (wordLinkingPollInterval) {
@@ -1793,7 +1801,8 @@ const TextDisplay = () => {
             const bookData = results[2].value;
             setBook(bookData);
             if (bookData?.parts) {
-              const currentPartIndex = bookData.parts.findIndex(part => part.textId === parseInt(textId));
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              const currentPartIndex = bookData.parts.findIndex((part: any) => part.textId === parseInt(textId));
               setPreviousTextId(currentPartIndex > 0 ? bookData.parts[currentPartIndex - 1].textId : null);
               setNextTextId(currentPartIndex >= 0 && currentPartIndex < bookData.parts.length - 1 ? bookData.parts[currentPartIndex + 1].textId : null);
             }
@@ -1870,7 +1879,7 @@ const TextDisplay = () => {
 
   // Audio Time Update Handler - updates ref and checks for line changes
   // Audio Time Update Handler - NOW STABLE (using refs)
-  const handleAudioTimeUpdate = useCallback((newTime) => {
+  const handleAudioTimeUpdate = useCallback((newTime: number) => {
     // Read latest state from ref
     const { isAudioLesson, srtLines, displayMode, currentSrtLineId, isSentenceMode, currentSegmentIndex, isMobile, listRef: currentListRef } = handleAudioTimeUpdateStateRef.current;
 
@@ -1939,8 +1948,9 @@ const TextDisplay = () => {
   // --- Keyboard Shortcuts ---
 
   useEffect(() => { // 1-5 keys
-    const handleKeyDown = async (event) => {
-      if (event.target.tagName === 'INPUT' || event.target.tagName === 'TEXTAREA' || event.ctrlKey || event.altKey || event.metaKey) return;
+    const handleKeyDown = async (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement;
+      if (target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA' || event.ctrlKey || event.altKey || event.metaKey) return;
       if (hoveredWordTerm && !processingWord && !isTranslating) {
         const key = parseInt(event.key, 10);
         if (key >= 1 && key <= 5) {
@@ -1961,12 +1971,14 @@ const TextDisplay = () => {
 
             updateWord(wordData.wordId, key, translationToUse)
               .then(() => {
-                setWords(prevWords => prevWords.map(w => w.wordId === wordData.wordId ? { ...w, status: key, translation: translationToUse } : w));
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                setWords((prevWords: any[]) => prevWords.map((w: any) => w.wordId === wordData.wordId ? { ...w, status: key, translation: translationToUse } : w));
                 if (selectedWord === hoveredWordTerm && displayedWord?.term === hoveredWordTerm) {
-                  setDisplayedWord(prev => ({ ...prev, status: key, translation: translationToUse }));
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  setDisplayedWord((prev: any) => ({ ...prev, status: key, translation: translationToUse }));
                 }
               })
-              .catch(err => console.error(`[Keyboard Shortcut] Failed update for ${hoveredWordTerm}:`, err));
+              .catch((err: unknown) => console.error(`[Keyboard Shortcut] Failed update for ${hoveredWordTerm}:`, err));
           } else {
             // Unknown word - fetch translation first, then create
             (async () => {
@@ -2008,7 +2020,7 @@ const TextDisplay = () => {
 
   // --- Event Handlers ---
 
-  const handleSaveWord = useCallback(async (status) => {
+  const handleSaveWord = useCallback(async (status: number | string) => {
     // Ensure selectedWord is used here, as displayedWord might be slightly different if selection changed rapidly
     const termToSave = selectedWord || displayedWord?.term;
     if (!termToSave || processingWord || isTranslating) {
@@ -2016,17 +2028,18 @@ const TextDisplay = () => {
     }
     setSaveSuccess(false); setProcessingWord(true);
     try {
-      const numericStatus = parseInt(status, 10);
+      const numericStatus = parseInt(String(status), 10);
       if (isNaN(numericStatus) || numericStatus < 1 || numericStatus > 5) throw new Error(`Invalid status: ${status}.`);
       const existingWord = getWordData(selectedWord);
       if (existingWord) {
         await updateWord(existingWord.wordId, numericStatus, translation);
-        const updatedWords = words.map(w => w.wordId === existingWord.wordId ? { ...w, status: numericStatus, translation } : w);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const updatedWords = words.map((w: any) => w.wordId === existingWord.wordId ? { ...w, status: numericStatus, translation } : w);
         setWords(updatedWords);
-        setDisplayedWord(prev => (prev?.term === selectedWord ? { ...prev, status: numericStatus, translation } : prev));
+        setDisplayedWord((prev: any) => (prev?.term === selectedWord ? { ...prev, status: numericStatus, translation } : prev));
       } else {
         const newWordData = (await createWord(text.textId, selectedWord, numericStatus, translation, currentSentenceSegment?.text)) as Record<string, unknown> | null;
-        setWords(prevWords => [...prevWords, newWordData]);
+        setWords((prevWords: any[]) => [...prevWords, newWordData]);
         setDisplayedWord({ ...(newWordData || {}), isNew: false });
       }
       setSaveSuccess(true); setTimeout(() => setSaveSuccess(false), 2000);
@@ -2047,16 +2060,17 @@ const TextDisplay = () => {
     setSaveSuccess(false);
     try {
       await deleteWord(wordToDelete.wordId);
-      setWords(prevWords => prevWords.filter(w => w.wordId !== wordToDelete.wordId));
-      setDisplayedWord(prev => (
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      setWords((prevWords: any[]) => prevWords.filter((w: any) => w.wordId !== wordToDelete.wordId));
+      setDisplayedWord((prev: any) => (
         prev?.wordId === wordToDelete.wordId
           ? { term: wordToDelete.term, status: 0, translation: '', isNew: true }
           : prev
       ));
       setTranslation('');
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('Error deleting word:', error);
-      alert(`Failed to delete word: ${error.message}`);
+      alert(`Failed to delete word: ${(error as Error)?.message}`);
     } finally {
       setProcessingWord(false);
     }
@@ -2065,7 +2079,7 @@ const TextDisplay = () => {
   const wordInfoRetranslateContext = selectedWordAiContext || currentSentenceSegment?.text || '';
 
   // Handler for saving translation via Enter key (Moved after handleSaveWord)
-  const handleTranslationKeyDown = useCallback((event) => {
+  const handleTranslationKeyDown = useCallback((event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault(); // Prevent newline in textarea
       if (displayedWord) {
@@ -2164,36 +2178,38 @@ const TextDisplay = () => {
       const wordsRegex = /\p{L}+(['-]\p{L}+)*/gu;
       const textWords = text.content.match(wordsRegex) || [];
       // Also extract parts of hyphenated words so they get individual translations
-      const allWords = [];
-      textWords.forEach(w => {
+      const allWords: string[] = [];
+      textWords.forEach((w: string) => {
         allWords.push(w);
         if (w.includes('-')) {
-          w.split('-').forEach(part => { if (part) allWords.push(part); });
+          w.split('-').forEach((part: string) => { if (part) allWords.push(part); });
         }
       });
-      const uniqueWordsInText = [...new Set(allWords.map(w => w.toLowerCase()))];
+      const uniqueWordsInText = [...new Set(allWords.map((w: string) => w.toLowerCase()))];
       const wordsMap = wordMap; // Reuse the memoized map
-      const unknownWords = uniqueWordsInText.filter(word => !wordsMap.has(word) || (wordsMap.get(word)?.status <= 2 && !wordsMap.get(word)?.translation));
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const unknownWords = uniqueWordsInText.filter((word: string) => !wordsMap.has(word) || ((wordsMap.get(word) as any)?.status <= 2 && !(wordsMap.get(word) as any)?.translation));
       if (unknownWords.length === 0) { if (!silent) alert("No words found needing translation."); setTranslatingUnknown(false); return; } // Exit early
-      const translations = await batchTranslateWords(unknownWords, translationTargetLanguageCode, text.languageCode);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const translations = (await batchTranslateWords(unknownWords, translationTargetLanguageCode, text.languageCode)) as Record<string, string>;
       // Bail out if user navigated away during the API call
       if (silent && autoTranslateTextIdRef.current !== callingTextId) { setTranslatingUnknown(false); return; }
-      const originalCaseMap = new Map();
-      allWords.forEach(w => { const lower = w.toLowerCase(); if (!originalCaseMap.has(lower)) { originalCaseMap.set(lower, w); } });
-      const termsToAdd = unknownWords.map(word => ({
+      const originalCaseMap = new Map<string, string>();
+      allWords.forEach((w: string) => { const lower = w.toLowerCase(); if (!originalCaseMap.has(lower)) { originalCaseMap.set(lower, w); } });
+      const termsToAdd = unknownWords.map((word: string) => ({
         term: originalCaseMap.get(word) || word,
-        translation: translations[word.toLowerCase()] || ''
-      })).filter(t => t.translation);
+        translation: translations?.[word.toLowerCase()] || ''
+      })).filter((t: { translation: string }) => t.translation);
 
       if (termsToAdd.length === 0) { if (!silent) alert("No translations received."); setTranslatingUnknown(false); return; } // Exit early
 
       // Two-step workflow: first fetch translations, then save terms+translations
       try {
         await addTermsBatch(text.languageId, termsToAdd);
-      } catch (saveError) {
+      } catch (saveError: unknown) {
         console.error("Error saving translated terms:", saveError);
-        setTranslateUnknownError(`Failed to save terms: ${saveError.message}`);
-        if (!silent) alert(`Error saving terms: ${saveError.message}`);
+        setTranslateUnknownError(`Failed to save terms: ${(saveError as Error)?.message}`);
+        if (!silent) alert(`Error saving terms: ${(saveError as Error)?.message}`);
         setTranslatingUnknown(false);
         return;
       }
@@ -2201,7 +2217,7 @@ const TextDisplay = () => {
       if (silent && autoTranslateTextIdRef.current !== callingTextId) { setTranslatingUnknown(false); return; }
       await fetchAllLanguageWords(text.languageId);
       if (!silent) alert(`Successfully translated and updated ${termsToAdd.length} words.`);
-    } catch (err) { console.error("Error translating unknown words:", err); setTranslateUnknownError(`Failed: ${err.message}`); if (!silent) alert(`Error: ${err.message}`); }
+    } catch (err: unknown) { console.error("Error translating unknown words:", err); setTranslateUnknownError(`Failed: ${(err as Error)?.message}`); if (!silent) alert(`Error: ${(err as Error)?.message}`); }
     finally { setTranslatingUnknown(false); }
   };
   handleTranslateUnknownWordsRef.current = handleTranslateUnknownWords;
@@ -2213,24 +2229,25 @@ const TextDisplay = () => {
       const wordsRegex = /\p{L}+(['-]\p{L}+)*/gu;
       const textWords = text.content.match(wordsRegex) || [];
       // Also extract parts of hyphenated words
-      const allWords = [];
-      textWords.forEach(w => {
+      const allWords: string[] = [];
+      textWords.forEach((w: string) => {
         allWords.push(w);
         if (w.includes('-')) {
-          w.split('-').forEach(part => { if (part) allWords.push(part); });
+          w.split('-').forEach((part: string) => { if (part) allWords.push(part); });
         }
       });
-      const uniqueWordsInText = [...new Set(allWords.map(w => w.toLowerCase()))];
-      const wordsMap = new Map(words.map(w => [w.term.toLowerCase(), w]));
-      const unknownWords = uniqueWordsInText.filter(word => !wordsMap.has(word));
+      const uniqueWordsInText = [...new Set(allWords.map((w: string) => w.toLowerCase()))];
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const wordsMap = new Map(words.map((w: any) => [w.term.toLowerCase(), w]));
+      const unknownWords = uniqueWordsInText.filter((word: string) => !wordsMap.has(word));
       if (unknownWords.length === 0) { alert("No untracked words found."); setIsMarkingAll(false); return; } // Exit early
-      const originalCaseMap = new Map();
-      allWords.forEach(w => { const lower = w.toLowerCase(); if (!originalCaseMap.has(lower)) { originalCaseMap.set(lower, w); } });
-      const termsToMark = unknownWords.map(word => ({ term: originalCaseMap.get(word) || word, translation: null }));
+      const originalCaseMap = new Map<string, string>();
+      allWords.forEach((w: string) => { const lower = w.toLowerCase(); if (!originalCaseMap.has(lower)) { originalCaseMap.set(lower, w); } });
+      const termsToMark = unknownWords.map((word: string) => ({ term: originalCaseMap.get(word) || word, translation: null as string | null }));
       await addTermsBatch(text.languageId, termsToMark);
       await fetchAllLanguageWords(text.languageId);
       alert(`Attempted to mark ${unknownWords.length} words as Known.`);
-    } catch (err) { console.error("Error marking all unknown as known:", err); setError(`Failed: ${err.message}`); alert(`Error: ${err.message}`); }
+    } catch (err: unknown) { console.error("Error marking all unknown as known:", err); setError(`Failed: ${(err as Error)?.message}`); alert(`Error: ${(err as Error)?.message}`); }
     finally { setIsMarkingAll(false); }
   };
 
@@ -2262,25 +2279,29 @@ const TextDisplay = () => {
     try {
       await completeLesson(text?.bookId, text.textId, true);
       navigate('/texts');
-    } catch (error) { alert(`Failed to complete lesson: ${error.message}`); }
+    } catch (error: unknown) { alert(`Failed to complete lesson: ${(error as Error)?.message}`); }
     finally { setCompleting(false); }
   };
 
   // --- New Sentence Rendering Logic ---
   // Takes processed elements for a block (e.g., paragraph) and a starting index,
   // returns rendered sentence elements and the next sentence index.
-  const renderProcessedContentAsSentences = useCallback((processedElements, startingSentenceIndex) => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const renderProcessedContentAsSentences = useCallback((processedElements: any[], startingSentenceIndex: number) => {
     if (!processedElements || processedElements.length === 0) {
       return { sentenceElements: null, nextSentenceIndex: startingSentenceIndex };
     }
 
-    const sentenceElements = [];
-    let currentSentenceElements = [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const sentenceElements: any[] = [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let currentSentenceElements: any[] = [];
     let sentenceIndex = startingSentenceIndex;
     const sentenceEndRegex = /^[.!?…]$/;
     const whitespaceRegex = /^\s+$/;
 
-    processedElements.forEach((element, idx) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    processedElements.forEach((element: any, idx: number) => {
       currentSentenceElements.push(element);
 
       let isEndOfSentence = false;
@@ -2295,7 +2316,8 @@ const TextDisplay = () => {
       }
 
       if (isEndOfSentence || idx === processedElements.length - 1) {
-        if (currentSentenceElements.some(el => el.type !== React.Fragment || !whitespaceRegex.test(String(el.props.children)))) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        if (currentSentenceElements.some((el: any) => el.type !== React.Fragment || !whitespaceRegex.test(String(el.props.children)))) {
           const currentSentenceIndex = sentenceIndex++;
           sentenceElements.push(
             <span
@@ -2303,8 +2325,8 @@ const TextDisplay = () => {
               className="sentence"
               data-sentence-index={currentSentenceIndex}
               onContextMenu={(e) => handleSentenceContextMenu(e, currentSentenceIndex)}
-              onClickCapture={(e) => focusSentenceIndexFromNode(e.target)}
-              onTouchEndCapture={(e) => focusSentenceIndexFromNode(e.target)}
+              onClickCapture={(e) => focusSentenceIndexFromNode(e.target as Node)}
+              onTouchEndCapture={(e) => focusSentenceIndexFromNode(e.target as Node)}
               style={{ display: 'inline' }} // Keep inline display
             >
               {isBookmarked(currentSentenceIndex) && (

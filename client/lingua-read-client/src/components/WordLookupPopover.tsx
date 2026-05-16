@@ -2,8 +2,26 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Overlay, Popover, Button, Badge, Spinner } from 'react-bootstrap';
 import { translateSelectionWithContext } from '../utils/api';
 
-const STATUS_LABELS = { 1: 'New', 2: 'Learning', 3: 'Familiar', 4: 'Advanced', 5: 'Known' };
-const STATUS_VARIANTS = { 1: 'danger', 2: 'warning', 3: 'info', 4: 'primary', 5: 'success' };
+type WordStatus = 1 | 2 | 3 | 4 | 5;
+const STATUS_LABELS: Record<WordStatus, string> = { 1: 'New', 2: 'Learning', 3: 'Familiar', 4: 'Advanced', 5: 'Known' };
+const STATUS_VARIANTS: Record<WordStatus, string> = { 1: 'danger', 2: 'warning', 3: 'info', 4: 'primary', 5: 'success' };
+
+interface ExistingWord {
+  translation?: string;
+  status?: number;
+}
+
+interface WordLookupPopoverProps {
+  word: string | null;
+  targetRef: React.RefObject<HTMLElement> | HTMLElement | null;
+  show: boolean;
+  onHide: () => void;
+  onSave?: (word: string, translation: string, status: number) => Promise<void> | void;
+  sourceLanguageCode?: string;
+  targetLanguageCode?: string;
+  sentenceContext?: string;
+  existingWord?: ExistingWord | null;
+}
 
 const WordLookupPopover = ({
   word,
@@ -15,7 +33,7 @@ const WordLookupPopover = ({
   targetLanguageCode,
   sentenceContext,
   existingWord,
-}) => {
+}: WordLookupPopoverProps) => {
   const [translation, setTranslation] = useState('');
   const [loading, setLoading] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -74,8 +92,8 @@ const WordLookupPopover = ({
         <Popover.Header className="d-flex justify-content-between align-items-center py-2">
           <span className="fw-bold">{word}</span>
           {alreadySaved && (
-            <Badge bg={STATUS_VARIANTS[existingWord.status]} className="ms-2" style={{ fontSize: '0.65rem' }}>
-              {STATUS_LABELS[existingWord.status]}
+            <Badge bg={STATUS_VARIANTS[existingWord!.status as WordStatus]} className="ms-2" style={{ fontSize: '0.65rem' }}>
+              {STATUS_LABELS[existingWord!.status as WordStatus]}
             </Badge>
           )}
         </Popover.Header>

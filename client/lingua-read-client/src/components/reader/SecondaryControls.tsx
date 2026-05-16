@@ -1,9 +1,32 @@
 import React from 'react';
 import { Button, ButtonGroup, OverlayTrigger, Tooltip, Spinner } from 'react-bootstrap';
+import type { Settings, SettingKey } from '../../contexts/SettingsContext';
 
-// TODO(phase-d): tighten props once pages/TextDisplay is typed in C8.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type SecondaryControlsProps = Record<string, any>;
+interface SecondaryControlsProps {
+  isMobile: boolean;
+  globalSettings: Settings;
+  setReadingDensity: (density: string) => void;
+  setReaderContentWidth: (width: number) => void;
+  setShowWordInfoPanel: (show: boolean) => void;
+  setReaderParagraphIndent: (indent: boolean) => void;
+  setReaderTextAlignment: (alignment: string) => void;
+  updateSetting: <K extends SettingKey>(key: K, value: Settings[K]) => void;
+  updateUserSettings: (partial: Partial<Settings>) => Promise<unknown>;
+  leftPanelWidth: number;
+  setLeftPanelWidth: (width: number) => void;
+  handleLineSpacingChange: (value: number) => void;
+  handleParagraphSpacingChange: (value: number) => void;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  text: any;
+  loading: boolean;
+  handleFullTextTranslation: () => void;
+  handleOpenSummaryPopup: () => void;
+  isSummarizing: boolean;
+  handleTranslateUnknownWords: () => void;
+  translatingUnknown: boolean;
+  handleMarkAllUnknownAsKnown: () => void;
+  isMarkingAll: boolean;
+}
 
 const SecondaryControls = React.memo(({
   isMobile,
@@ -63,7 +86,7 @@ const SecondaryControls = React.memo(({
           const newSize = Math.max(12, globalSettings.textSize - 2);
           updateSetting('textSize', newSize);
           updateUserSettings({ textSize: newSize })
-            .catch(err => console.error('[Save Settings] Failed to save text size via API:', err));
+            .catch((err: unknown) => console.error('[Save Settings] Failed to save text size via API:', err));
         }}
         title="Decrease text size"
       >
@@ -75,7 +98,7 @@ const SecondaryControls = React.memo(({
           const newSize = Math.min(32, globalSettings.textSize + 2);
           updateSetting('textSize', newSize);
           updateUserSettings({ textSize: newSize })
-            .catch(err => console.error('[Save Settings] Failed to save text size via API:', err));
+            .catch((err: unknown) => console.error('[Save Settings] Failed to save text size via API:', err));
         }}
         title="Increase text size"
       >
@@ -90,7 +113,7 @@ const SecondaryControls = React.memo(({
           setLeftPanelWidth(newWidth);
           updateSetting('leftPanelWidth', newWidth);
           updateUserSettings({ leftPanelWidth: newWidth })
-            .catch(err => console.error('[Save Settings] Failed to save panel width via API:', err));
+            .catch((err: unknown) => console.error('[Save Settings] Failed to save panel width via API:', err));
         }}
         title="Increase reading area (Wider)"
       >
@@ -103,7 +126,7 @@ const SecondaryControls = React.memo(({
           setLeftPanelWidth(newWidth);
           updateSetting('leftPanelWidth', newWidth);
           updateUserSettings({ leftPanelWidth: newWidth })
-            .catch(err => console.error('[Save Settings] Failed to save panel width via API:', err));
+            .catch((err: unknown) => console.error('[Save Settings] Failed to save panel width via API:', err));
         }}
         title="Decrease reading area (Narrower)"
       >
@@ -176,7 +199,7 @@ const SecondaryControls = React.memo(({
       <ButtonGroup size="sm" className="me-1">
         <OverlayTrigger placement="top" overlay={<Tooltip>Line Spacing: Default (1.5)</Tooltip>}>
           <Button
-            variant={parseFloat(globalSettings.lineSpacing) === 1.5 ? 'primary' : 'outline-secondary'}
+            variant={parseFloat(String(globalSettings.lineSpacing)) === 1.5 ? 'primary' : 'outline-secondary'}
             onClick={() => handleLineSpacingChange(1.5)}
             aria-label="Set line spacing to default"
           >
@@ -185,7 +208,7 @@ const SecondaryControls = React.memo(({
         </OverlayTrigger>
         <OverlayTrigger placement="top" overlay={<Tooltip>Line Spacing: Relaxed (1.75)</Tooltip>}>
           <Button
-            variant={parseFloat(globalSettings.lineSpacing) === 1.75 ? 'primary' : 'outline-secondary'}
+            variant={parseFloat(String(globalSettings.lineSpacing)) === 1.75 ? 'primary' : 'outline-secondary'}
             onClick={() => handleLineSpacingChange(1.75)}
             aria-label="Set line spacing to relaxed"
           >
@@ -194,7 +217,7 @@ const SecondaryControls = React.memo(({
         </OverlayTrigger>
         <OverlayTrigger placement="top" overlay={<Tooltip>Line Spacing: Spacious (2.0)</Tooltip>}>
           <Button
-            variant={parseFloat(globalSettings.lineSpacing) === 2.0 ? 'primary' : 'outline-secondary'}
+            variant={parseFloat(String(globalSettings.lineSpacing)) === 2.0 ? 'primary' : 'outline-secondary'}
             onClick={() => handleLineSpacingChange(2.0)}
             aria-label="Set line spacing to spacious"
           >
@@ -207,7 +230,7 @@ const SecondaryControls = React.memo(({
       <ButtonGroup size="sm" className="me-1">
         <OverlayTrigger placement="top" overlay={<Tooltip>Paragraph Spacing: Tight</Tooltip>}>
           <Button
-            variant={parseFloat(globalSettings.paragraphSpacing) === 0.6 ? 'primary' : 'outline-secondary'}
+            variant={parseFloat(String(globalSettings.paragraphSpacing)) === 0.6 ? 'primary' : 'outline-secondary'}
             onClick={() => handleParagraphSpacingChange(0.6)}
             aria-label="Set tight paragraph spacing"
           >
@@ -216,7 +239,7 @@ const SecondaryControls = React.memo(({
         </OverlayTrigger>
         <OverlayTrigger placement="top" overlay={<Tooltip>Paragraph Spacing: Normal</Tooltip>}>
           <Button
-            variant={parseFloat(globalSettings.paragraphSpacing) === 1.0 ? 'primary' : 'outline-secondary'}
+            variant={parseFloat(String(globalSettings.paragraphSpacing)) === 1.0 ? 'primary' : 'outline-secondary'}
             onClick={() => handleParagraphSpacingChange(1.0)}
             aria-label="Set normal paragraph spacing"
           >
@@ -225,7 +248,7 @@ const SecondaryControls = React.memo(({
         </OverlayTrigger>
         <OverlayTrigger placement="top" overlay={<Tooltip>Paragraph Spacing: Relaxed</Tooltip>}>
           <Button
-            variant={parseFloat(globalSettings.paragraphSpacing) === 1.6 ? 'primary' : 'outline-secondary'}
+            variant={parseFloat(String(globalSettings.paragraphSpacing)) === 1.6 ? 'primary' : 'outline-secondary'}
             onClick={() => handleParagraphSpacingChange(1.6)}
             aria-label="Set relaxed paragraph spacing"
           >

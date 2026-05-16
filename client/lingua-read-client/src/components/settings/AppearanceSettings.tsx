@@ -1,7 +1,17 @@
 import React from 'react';
 import { Form, Row, Col } from 'react-bootstrap';
+import type { Settings } from '../../contexts/SettingsContext';
 
-const AppearanceSettings = ({ settings, handleChange }) => {
+export type SettingsChangeHandler = (
+  event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
+) => void;
+
+interface AppearanceSettingsProps {
+  settings: Settings;
+  handleChange: SettingsChangeHandler;
+}
+
+const AppearanceSettings = ({ settings, handleChange }: AppearanceSettingsProps) => {
   return (
     <>
       <div className="settings-control-group">

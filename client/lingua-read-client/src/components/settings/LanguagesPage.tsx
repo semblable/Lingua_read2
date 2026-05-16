@@ -40,7 +40,7 @@ function LanguagesPage() {
         setSelectedLanguage(null);
     };
 
-    const handleDelete = async (languageId) => {
+    const handleDelete = async (languageId: number) => {
         try {
             await deleteLanguage(languageId);
             handleSave();

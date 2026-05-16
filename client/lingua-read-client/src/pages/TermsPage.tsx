@@ -101,7 +101,7 @@ const TermsPage = () => {
     }, [fetchTerms]);
 
     // Handle language selection change
-    const handleLanguageChange = (e) => {
+    const handleLanguageChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
         const langId = e.target.value;
         setSelectedLanguage(langId);
         setCurrentPage(1); // Reset to page 1
@@ -109,7 +109,7 @@ const TermsPage = () => {
     };
 
     // Handle status filter change
-    const handleStatusFilterChange = (e) => {
+    const handleStatusFilterChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const { value, checked } = e.target;
         const statusValue = parseInt(value, 10);
         setStatusFilter(prev => {
@@ -122,7 +122,7 @@ const TermsPage = () => {
     };
 
     // Handle sorting change
-    const handleSort = (column) => {
+    const handleSort = (column: string) => {
         const isAsc = sortBy === `${column}_asc`;
         setSortBy(isAsc ? `${column}_desc` : `${column}_asc`);
         setCurrentPage(1); // Reset to page 1 optional, but usually good practice on sort change
@@ -137,15 +137,16 @@ const TermsPage = () => {
             const filtersToApply = applyFilters ? statusFilter : [];
             const { blob, filename } = await exportWordsCsv(selectedLanguage, filtersToApply);
             saveAs(blob, filename);
-        } catch (err) {
-            setError(`Failed to export CSV: ${err.message}`);
+        } catch (err: unknown) {
+            setError(`Failed to export CSV: ${(err as Error)?.message}`);
             console.error(err);
         } finally {
             setLoading(false);
         }
     };
 
-    const handleDeleteTerm = async (term) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const handleDeleteTerm = async (term: any) => {
         if (!term?.wordId) return;
         if (!window.confirm(`Delete term "${term.term}"? This will also remove its SRS data and cannot be undone.`)) return;
 
@@ -158,8 +159,8 @@ const TermsPage = () => {
             } else {
                 await fetchTerms();
             }
-        } catch (err) {
-            setError(`Failed to delete term: ${err.message}`);
+        } catch (err: unknown) {
+            setError(`Failed to delete term: ${(err as Error)?.message}`);
             console.error(err);
         } finally {
             setDeletingWordId(null);
@@ -173,21 +174,22 @@ const TermsPage = () => {
         fileInputRef.current?.click();
     };
 
-    const handleFileChange = (event) => {
-        const file = event.target.files[0];
+    const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
         if (!file || !selectedLanguage) return;
 
         setImportLoading(true);
         setImportError(null);
         setImportSuccess(null);
 
-        Papa.parse(file, {
+        Papa.parse<Record<string, string>>(file, {
             header: true,
             skipEmptyLines: true,
             complete: async (results) => {
-                const termsToImport = [];
-                let parseError = null;
-                const headers = results.meta.fields.map(h => h.toLowerCase());
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const termsToImport: any[] = [];
+                let parseError: string | null = null;
+                const headers = (results.meta.fields ?? []).map((h: string) => h.toLowerCase());
                 const hasTerm = headers.includes('term');
                 const hasTranslation = headers.includes('translation');
                 const hasStatus = headers.includes('status');
@@ -243,8 +245,8 @@ const TermsPage = () => {
                     const response = (await addTermsBatch(selectedLanguage, termsToImport)) as { message?: string } | null;
                     setImportSuccess(response?.message || `${termsToImport.length} terms processed successfully.`);
                     fetchTerms(); // Refresh the list - will fetch page 1 automatically if we wanted, or stay on current page
-                } catch (err) {
-                    setImportError(`Failed to import terms: ${err.message}`);
+                } catch (err: unknown) {
+                    setImportError(`Failed to import terms: ${(err as Error)?.message}`);
                     console.error(err);
                 } finally {
                     setImportLoading(false);
@@ -255,10 +257,10 @@ const TermsPage = () => {
                 setImportLoading(false);
             }
         });
-        event.target.value = null;
+        event.target.value = '';
     };
 
-    const renderSortIndicator = (column) => {
+    const renderSortIndicator = (column: string) => {
         if (sortBy.startsWith(column)) {
             return sortBy.endsWith('_asc') ? ' ▲' : ' ▼';
         }
@@ -266,15 +268,15 @@ const TermsPage = () => {
     };
 
     // Helper for status badge
-    const getStatusBadge = (status) => {
-        const variants = {
+    const getStatusBadge = (status: number) => {
+        const variants: Record<number, string> = {
             1: 'danger',   // New (Red)
             2: 'warning',  // Learning (Orange-ish)
             3: 'info',     // Familiar (Blue)
             4: 'primary',  // Advanced (Blue/Green)
             5: 'success'   // Known (Green)
         };
-        const labels = {
+        const labels: Record<number, string> = {
             1: 'New', 2: 'Learning', 3: 'Familiar', 4: 'Advanced', 5: 'Known'
         };
         return <Badge bg={variants[status] || 'secondary'}>{labels[status] || status}</Badge>;

@@ -1,7 +1,13 @@
 import React from 'react';
 import { Button, Form } from 'react-bootstrap';
+import type { LanguageStatsRow } from '../../utils/statistics';
 
-export const ACTIVITY_PERIODS = [
+interface PeriodOption {
+  value: string;
+  label: string;
+}
+
+export const ACTIVITY_PERIODS: PeriodOption[] = [
   { value: 'last_day', label: 'Today' },
   { value: 'last_week', label: 'Last 7 Days' },
   { value: 'last_month', label: 'Last 30 Days' },
@@ -10,6 +16,15 @@ export const ACTIVITY_PERIODS = [
   { value: 'all', label: 'All Time' }
 ];
 
+interface StatsFiltersProps {
+  activityPeriod: string;
+  selectedLanguage: string | number;
+  languages: LanguageStatsRow[];
+  onPeriodChange: (value: string) => void;
+  onLanguageChange: (value: string) => void;
+  onLogActivity: () => void;
+}
+
 const StatsFilters = ({
   activityPeriod,
   selectedLanguage,
@@ -17,7 +32,7 @@ const StatsFilters = ({
   onPeriodChange,
   onLanguageChange,
   onLogActivity
-}) => (
+}: StatsFiltersProps) => (
   <div className="stats-filter-bar">
     <Form.Select
       className="stats-filter-select fw-medium"
@@ -25,7 +40,7 @@ const StatsFilters = ({
       onChange={(event) => onPeriodChange(event.target.value)}
       aria-label="Select activity period"
     >
-      {ACTIVITY_PERIODS.map((period) => (
+      {ACTIVITY_PERIODS.map((period: PeriodOption) => (
         <option key={period.value} value={period.value}>
           {period.label}
         </option>
@@ -40,7 +55,7 @@ const StatsFilters = ({
       aria-label="Select language"
     >
       <option value="all">All Languages</option>
-      {languages.map((language) => (
+      {languages.map((language: LanguageStatsRow) => (
         <option key={language.languageId} value={language.languageId}>
           {language.languageName}
         </option>

@@ -8,18 +8,14 @@ import {
   stateLabel,
   paceLabel,
 } from './goalUtils';
+import type { Goal } from '../../utils/api/goals';
 
 type GoalRowProps = {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  goal: any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  onEdit?: (goal: any) => void;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  onArchive?: (goal: any) => void;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  onRestore?: (goal: any) => void;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  onDelete?: (goal: any) => void;
+  goal: Goal;
+  onEdit?: (goal: Goal) => void;
+  onArchive?: (goal: Goal) => void;
+  onRestore?: (goal: Goal) => void;
+  onDelete?: (goal: Goal) => void;
   compact?: boolean;
 };
 

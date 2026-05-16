@@ -4,13 +4,22 @@ import { Link } from 'react-router-dom';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 
-const normalizeCoverUrl = (value) => {
+import type { LibraryBook, SelectableType } from '../../utils/store';
+
+const normalizeCoverUrl = (value: string | null | undefined): string | null => {
   if (!value) return null;
   if (/^(https?:)?\/\//i.test(value) || value.startsWith('/')) return value;
   return `/${value.replace(/^\/+/, '')}`;
 };
 
-const LibraryBookCard = ({ book, isSelected, onSelect, onItemClick }) => {
+interface LibraryBookCardProps {
+  book: LibraryBook;
+  isSelected: boolean;
+  onSelect: (id: number, type: SelectableType) => void;
+  onItemClick?: (id: number, type: SelectableType, e: React.MouseEvent) => void;
+}
+
+const LibraryBookCard = ({ book, isSelected, onSelect, onItemClick }: LibraryBookCardProps) => {
   const {
     attributes,
     listeners,
@@ -95,7 +104,7 @@ const LibraryBookCard = ({ book, isSelected, onSelect, onItemClick }) => {
             )}
             {book.tags?.length > 0 && (
               <span className="ms-2">
-                {book.tags.map(tag => (
+                {book.tags.map((tag: string) => (
                   <Badge key={tag} bg="secondary" className="me-1" style={{ fontSize: '0.65rem' }}>{tag}</Badge>
                 ))}
               </span>

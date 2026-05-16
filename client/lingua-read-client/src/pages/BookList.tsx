@@ -4,7 +4,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { getBooks } from '../utils/api';
 import { formatDate } from '../utils/helpers';
 
-const normalizeCoverUrl = (value) => {
+const normalizeCoverUrl = (value: string | null | undefined): string | null => {
   if (!value) return null;
   if (/^(https?:)?\/\//i.test(value) || value.startsWith('/')) {
     return value;

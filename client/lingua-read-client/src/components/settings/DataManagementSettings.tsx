@@ -1,6 +1,32 @@
 import React from 'react';
 import { Button, Form, Alert, Spinner, Row, Col } from 'react-bootstrap';
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type AudioStorageInfo = any;
+
+interface MessageBanner {
+  type?: string;
+  text?: string;
+}
+
+interface DataManagementSettingsProps {
+  audioStorage: AudioStorageInfo | null;
+  loadingStorage: boolean;
+  storageError?: string | null;
+  isBackingUp: boolean;
+  backupMessage: MessageBanner;
+  onBackupClick: () => void;
+  restoreFile: File | null;
+  isRestoring: boolean;
+  restoreMessage: MessageBanner;
+  onRestoreFileChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  onRestoreClick: () => void;
+  fileInputRef: React.RefObject<HTMLInputElement>;
+  isResettingStats: boolean;
+  resetStatsMessage: MessageBanner;
+  onResetStatistics: () => void;
+}
+
 const DataManagementSettings = ({
   audioStorage,
   loadingStorage,
@@ -17,7 +43,7 @@ const DataManagementSettings = ({
   isResettingStats,
   resetStatsMessage,
   onResetStatistics
-}) => {
+}: DataManagementSettingsProps) => {
   return (
     <>
       <p className="text-muted small mb-3">Use these options with caution.</p>

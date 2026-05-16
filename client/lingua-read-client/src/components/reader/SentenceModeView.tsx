@@ -3,9 +3,41 @@ import { Button, Card, Badge } from 'react-bootstrap';
 import { parseSentenceExplanation } from '../../utils/parseSentenceExplanation';
 import { getTitleLineVariant } from '../../utils/readerText';
 
-// TODO(phase-d): tighten these props once pages/TextDisplay is typed in C8.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type SentenceModeViewProps = Record<string, any>;
+// Sentence segments are heterogeneous (SRT-derived vs split-derived) — typed
+// loosely until Phase E1 extracts the reader-state hook with a tagged union.
+interface SentenceModeViewProps {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  currentSegment: any;
+  segmentCount: number;
+  currentSegmentIndex: number;
+  creditedSegmentCount: number;
+  fontStyle: React.CSSProperties;
+  processTextContent: (text: string) => React.ReactNode;
+  handleWordSelection: () => void;
+  textContentRef: React.RefObject<HTMLDivElement>;
+  canGoPrev: boolean;
+  canGoNext: boolean;
+  onPrev: () => void;
+  onNext: () => void;
+  onReplayAudio: () => void;
+  canUseSentenceTts: boolean;
+  isSpeakingSentence: boolean;
+  sentenceTtsEnabled: boolean;
+  setSentenceTtsEnabled: (value: boolean | ((prev: boolean) => boolean)) => void;
+  sentenceTtsRate: number;
+  setSentenceTtsRate: (value: number | ((prev: number) => number)) => void;
+  isAudioLesson: boolean;
+  sentenceAudioRepeats: number;
+  setSentenceAudioRepeats: (value: number | ((prev: number) => number)) => void;
+  onShowTranslation: () => void;
+  onShowExplanation: () => void;
+  isTranslatingSegment: boolean;
+  isExplainingSegment: boolean;
+  isTranslationVisible: boolean;
+  isExplanationVisible: boolean;
+  currentSegmentTranslation: string;
+  currentSegmentExplanation: string;
+}
 
 const SentenceModeView = React.memo(({
   currentSegment,
@@ -46,7 +78,7 @@ const SentenceModeView = React.memo(({
   const renderSentenceModeTitle = () => {
     const titleLines = currentSegment.text.split('\n');
 
-    return titleLines.map((line, lineIndex) => {
+    return titleLines.map((line: string, lineIndex: number) => {
     if (!line.trim()) {
       return <div key={`title-segment-spacer-${lineIndex}`} className="reader-title-line-spacer" aria-hidden="true" />;
     }
@@ -170,7 +202,8 @@ const SentenceModeView = React.memo(({
           >
             {Array.isArray(currentSegment.mediaBlocks) && currentSegment.mediaBlocks.length > 0 && (
               <div className="sentence-mode-media-stack">
-                {currentSegment.mediaBlocks.map((mediaBlock, mediaIndex) => (
+                {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                {currentSegment.mediaBlocks.map((mediaBlock: any, mediaIndex: number) => (
                   <figure key={`sentence-media-${currentSegment.index}-${mediaIndex}`} className="reader-image-block sentence-mode-image-block">
                     <img
                       src={mediaBlock.imageUrl}

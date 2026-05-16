@@ -8,16 +8,17 @@ import {
 } from '../utils/api';
 import GoalRow from '../components/goals/GoalRow';
 import GoalModal from '../components/goals/GoalModal';
+import type { Goal } from '../utils/api/goals';
 
 function Goals() {
   const [activeTab, setActiveTab] = useState('active');
-  const [goals, setGoals] = useState([]);
+  const [goals, setGoals] = useState<Goal[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [showModal, setShowModal] = useState(false);
-  const [editing, setEditing] = useState(null);
+  const [editing, setEditing] = useState<Goal | null>(null);
 
-  const load = useCallback(async (status) => {
+  const load = useCallback(async (status: string) => {
     setLoading(true);
     setError('');
     try {
@@ -33,20 +34,20 @@ function Goals() {
 
   useEffect(() => { load(activeTab); }, [activeTab, load]);
 
-  const onArchive = async (g) => {
+  const onArchive = async (g: Goal) => {
     await archiveGoal(g.goalId);
     load(activeTab);
   };
-  const onRestore = async (g) => {
+  const onRestore = async (g: Goal) => {
     await restoreGoal(g.goalId);
     load(activeTab);
   };
-  const onDelete = async (g) => {
+  const onDelete = async (g: Goal) => {
     if (!window.confirm('Delete this goal permanently?')) return;
     await deleteGoal(g.goalId);
     load(activeTab);
   };
-  const onEdit = (g) => {
+  const onEdit = (g: Goal) => {
     setEditing(g);
     setShowModal(true);
   };

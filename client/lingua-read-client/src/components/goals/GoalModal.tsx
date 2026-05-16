@@ -17,15 +17,16 @@ import {
 const SCOPE_ALL = '__all__';
 
 // Convert seconds <-> hours-with-half-step for the listening-time input.
-const secsToHours = (s) => (s / 3600).toFixed(1).replace(/\.0$/, '');
-const hoursToSecs = (h) => Math.round(parseFloat(h || 0) * 3600);
+const secsToHours = (s: number): string => (s / 3600).toFixed(1).replace(/\.0$/, '');
+const hoursToSecs = (h: string | number): number => Math.round(parseFloat(String(h || 0)) * 3600);
+
+import type { Goal } from '../../utils/api/goals';
 
 type GoalModalProps = {
   show: boolean;
   onHide: () => void;
   onSaved?: () => void | Promise<void>;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  editing?: any;
+  editing?: Goal | null;
   defaultLanguageId?: number | string | null;
 };
 
@@ -38,14 +39,14 @@ function GoalModal({
 }: GoalModalProps) {
   const isEdit = !!editing;
 
-  const [type, setType] = useState(GOAL_TYPE.WordsRead);
+  const [type, setType] = useState<number>(GOAL_TYPE.WordsRead);
   // scope is the language-id selector value; '__all__' for all-languages,
   // '' for unselected, otherwise the languageId as a string.
   const [scope, setScope] = useState<string>(
     defaultLanguageId != null ? String(defaultLanguageId) : ''
   );
-  const [recurrence, setRecurrence] = useState(GOAL_RECURRENCE.None);
-  const [mode, setMode] = useState(GOAL_MODE.Delta);
+  const [recurrence, setRecurrence] = useState<number>(GOAL_RECURRENCE.None);
+  const [mode, setMode] = useState<number>(GOAL_MODE.Delta);
   const [target, setTarget] = useState('');
   const [hasDeadline, setHasDeadline] = useState(false);
   const [deadline, setDeadline] = useState('');
@@ -192,7 +193,7 @@ function GoalModal({
     return null;
   })();
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError('');
 

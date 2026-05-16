@@ -1,7 +1,22 @@
 import React from 'react';
 import { Form } from 'react-bootstrap';
+import type { Settings } from '../../contexts/SettingsContext';
+import type { SettingsChangeHandler } from './AppearanceSettings';
 
-const ReadingSettings = ({ settings, handleChange, languages, loadingLanguages }) => {
+interface LanguageOption {
+  languageId: number;
+  name: string;
+  code?: string | null;
+}
+
+interface ReadingSettingsProps {
+  settings: Settings;
+  handleChange: SettingsChangeHandler;
+  languages: LanguageOption[];
+  loadingLanguages: boolean;
+}
+
+const ReadingSettings = ({ settings, handleChange, languages, loadingLanguages }: ReadingSettingsProps) => {
   return (
     <>
       <div className="settings-control-group">
@@ -79,7 +94,7 @@ const ReadingSettings = ({ settings, handleChange, languages, loadingLanguages }
             disabled={loadingLanguages}
           >
             <option value={0}>No default (ask each time)</option>
-            {languages.map(language => (
+            {languages.map((language: LanguageOption) => (
               <option key={language.languageId} value={language.languageId}>
                 {language.name}
               </option>
@@ -97,9 +112,9 @@ const ReadingSettings = ({ settings, handleChange, languages, loadingLanguages }
           >
             <option value="EN">English</option>
             {languages
-              .filter(language => language.code && language.code.toLowerCase() !== 'en')
-              .map(language => (
-                <option key={`target-${language.languageId}`} value={language.code.toUpperCase()}>
+              .filter((language: LanguageOption) => language.code && language.code.toLowerCase() !== 'en')
+              .map((language: LanguageOption) => (
+                <option key={`target-${language.languageId}`} value={(language.code as string).toUpperCase()}>
                   {language.name}
                 </option>
               ))}

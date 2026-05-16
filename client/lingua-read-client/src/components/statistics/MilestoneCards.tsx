@@ -1,8 +1,9 @@
 import React from 'react';
 import { Card, Col, ProgressBar, Row } from 'react-bootstrap';
 import CefrBadge from '../dashboard/CefrBadge';
+import type { LanguageStatsRow } from '../../utils/statistics';
 
-const renderCard = (language) => {
+const renderCard = (language: LanguageStatsRow) => {
   const remaining = language.knownWordsToNextLevel || 0;
   const progress = Math.max(0, Math.min(100, language.bandProgressPercent || 0));
 
@@ -33,11 +34,16 @@ const renderCard = (language) => {
   );
 };
 
-const MilestoneCards = ({ languages, selectedLanguage }) => {
+interface MilestoneCardsProps {
+  languages: LanguageStatsRow[];
+  selectedLanguage?: string | number | 'all';
+}
+
+const MilestoneCards = ({ languages, selectedLanguage }: MilestoneCardsProps) => {
   if (!Array.isArray(languages) || languages.length === 0) return null;
 
   if (selectedLanguage && selectedLanguage !== 'all') {
-    const language = languages.find((l) => String(l.languageId) === String(selectedLanguage));
+    const language = languages.find((l: LanguageStatsRow) => String(l.languageId) === String(selectedLanguage));
     if (!language || !language.nextCefrLevel) return null;
     return (
       <Row className="mb-4 g-3">
@@ -47,8 +53,8 @@ const MilestoneCards = ({ languages, selectedLanguage }) => {
   }
 
   const candidates = languages
-    .filter((l) => l.nextCefrLevel)
-    .sort((a, b) => (b.bandProgressPercent || 0) - (a.bandProgressPercent || 0))
+    .filter((l: LanguageStatsRow) => l.nextCefrLevel)
+    .sort((a: LanguageStatsRow, b: LanguageStatsRow) => (b.bandProgressPercent || 0) - (a.bandProgressPercent || 0))
     .slice(0, 3);
 
   if (candidates.length === 0) return null;

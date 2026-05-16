@@ -1,6 +1,17 @@
 import React from 'react';
 
-const SelectionRectangle = ({ rect }) => {
+interface SelectionRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+interface SelectionRectangleProps {
+  rect: SelectionRect | null;
+}
+
+const SelectionRectangle = ({ rect }: SelectionRectangleProps) => {
   if (!rect) return null;
 
   return (

@@ -46,15 +46,15 @@ function CreateAudioLesson() {
         // Re-run if userSettings context changes
     }, [userSettings?.defaultLanguageId]);
 
-    const handleAudioFileChange = (event) => {
-        setAudioFile(event.target.files[0]);
+    const handleAudioFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+        setAudioFile(event.target.files?.[0] ?? null);
     };
 
-    const handleSrtFileChange = (event) => {
-        setSrtFile(event.target.files[0]);
+    const handleSrtFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+        setSrtFile(event.target.files?.[0] ?? null);
     };
 
-    const handleSubmit = async (event) => {
+    const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
         event.preventDefault();
         setError('');
         setSuccessMessage('');
@@ -84,10 +84,12 @@ function CreateAudioLesson() {
             setSrtFile(null);
             setTag('');
             // Reset file inputs by resetting the form
-            event.target.reset();
+            (event.target as HTMLFormElement).reset();
 
-        } catch (err) {
-            setError(`Failed to create audio lesson: ${err.response?.data?.message || err.message || 'Unknown error'}`);
+        } catch (err: unknown) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const e = err as any;
+            setError(`Failed to create audio lesson: ${e?.response?.data?.message || e?.message || 'Unknown error'}`);
             console.error(err);
         } finally {
             setIsLoading(false);

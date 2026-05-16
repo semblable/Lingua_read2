@@ -6,8 +6,9 @@ import { SettingsContext } from '../contexts/SettingsContext';
 import WordLookupPopover from '../components/WordLookupPopover';
 import './SrsStoryReview.css';
 
-const STATUS_LABELS = { 1: 'New', 2: 'Learning', 3: 'Familiar', 4: 'Advanced', 5: 'Known' };
-const STATUS_VARIANTS = { 1: 'danger', 2: 'warning', 3: 'info', 4: 'primary', 5: 'success' };
+type WordStatus = 1 | 2 | 3 | 4 | 5;
+const STATUS_LABELS: Record<WordStatus, string> = { 1: 'New', 2: 'Learning', 3: 'Familiar', 4: 'Advanced', 5: 'Known' };
+const STATUS_VARIANTS: Record<WordStatus, string> = { 1: 'danger', 2: 'warning', 3: 'info', 4: 'primary', 5: 'success' };
 const GRADE_BUTTONS = [
   { grade: 0, label: 'Again', variant: 'outline-danger' },
   { grade: 1, label: 'Hard', variant: 'outline-warning' },
@@ -33,7 +34,7 @@ const SrsStoryReview = () => {
   // Session state
   const [phase, setPhase] = useState('setup'); // setup | loading | review | complete
   const [microContexts, setMicroContexts] = useState([]);
-  const [reviewedWords, setReviewedWords] = useState(new Map()); // wordId -> grade
+  const [reviewedWords, setReviewedWords] = useState<Map<number, number>>(new Map()); // wordId -> grade
   const [revealedWords, setRevealedWords] = useState(new Set()); // wordIds whose translation is unhidden
   const [error, setError] = useState('');
   const [stats, setStats] = useState(null);
@@ -43,14 +44,15 @@ const SrsStoryReview = () => {
   // Story metadata for word saving
   const [storyTextId, setStoryTextId] = useState(null);
   const [languageCode, setLanguageCode] = useState('');
-  const [existingWordsMap, setExistingWordsMap] = useState({});
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [existingWordsMap, setExistingWordsMap] = useState<Record<string, any>>({});
 
   // Lookup popover state (non-target words)
   const [lookupWord, setLookupWord] = useState(null);
   const [lookupRef, setLookupRef] = useState(null);
 
   // Word refs for popover positioning
-  const wordRefs = useRef({});
+  const wordRefs = useRef<Record<string, HTMLElement | null>>({});
 
   useEffect(() => {
     (async () => {
@@ -74,13 +76,13 @@ const SrsStoryReview = () => {
 
   useEffect(() => { loadStats(); }, [loadStats]);
 
-  const handleLanguageChange = (e) => {
+  const handleLanguageChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const langId = e.target.value;
     setSelectedLanguage(langId);
     localStorage.setItem('srsSelectedLanguage', langId);
   };
 
-  const handleStatusFilterChange = (e) => {
+  const handleStatusFilterChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = parseInt(e.target.value);
     setStatusFilter(prev =>
       prev.includes(val) ? prev.filter(s => s !== val) : [...prev, val]
@@ -115,32 +117,35 @@ const SrsStoryReview = () => {
       // Load existing vocabulary for this language (for non-target lookups)
       try {
         const words = await getWordsByLanguage(parseInt(selectedLanguage));
-        const map = {};
-        words.forEach(w => { if (w.term) map[w.term.toLowerCase()] = w; });
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const map: Record<string, any> = {};
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        words.forEach((w: any) => { if (w.term) map[w.term.toLowerCase()] = w; });
         setExistingWordsMap(map);
       } catch (e) {
         console.error('Failed to load vocabulary:', e);
       }
-    } catch (err) {
-      setError(`Failed to generate micro-contexts: ${err.message}`);
+    } catch (err: unknown) {
+      setError(`Failed to generate micro-contexts: ${(err as Error)?.message}`);
       setPhase('setup');
     }
   };
 
-  const handleGrade = async (mc, grade) => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const handleGrade = async (mc: any, grade: number) => {
     if (reviewedWords.has(mc.wordId)) return;
     setGradingWordId(mc.wordId);
     try {
       await submitSrsReview(mc.srsCardReviewId, grade);
       setReviewedWords(prev => new Map(prev).set(mc.wordId, grade));
-    } catch (err) {
-      setError(`Failed to submit review: ${err.message}`);
+    } catch (err: unknown) {
+      setError(`Failed to submit review: ${(err as Error)?.message}`);
     } finally {
       setGradingWordId(null);
     }
   };
 
-  const handleLookupClick = (tokenText, refKey, sentenceContext) => {
+  const handleLookupClick = (tokenText: string, refKey: string, sentenceContext: string) => {
     const clean = tokenText.replace(/[.,!?;:"""''()[\]{}\-—–…«»]/g, '').toLowerCase();
     if (!clean) return;
     setLookupWord({ text: clean, sentenceContext });
@@ -158,7 +163,7 @@ const SrsStoryReview = () => {
       translation,
       lookupWord?.sentenceContext || ''
     )) as { translation?: { translation?: string } } & Record<string, unknown>;
-    setExistingWordsMap(prev => ({
+    setExistingWordsMap((prev: Record<string, unknown>) => ({
       ...prev,
       [term.toLowerCase()]: { ...result, term, translation: result?.translation?.translation || translation, status }
     }));
@@ -168,9 +173,10 @@ const SrsStoryReview = () => {
   // before/after pieces around the highlighted target span. Non-target tokens stay
   // clickable for WordLookupPopover; the target-form span is rendered separately
   // by renderContextBody().
-  const renderLookupTokens = (text, mc, idx, sliceKey) => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const renderLookupTokens = (text: string, mc: any, idx: number, sliceKey: string) => {
     const tokens = text.split(/(\s+|[.,!?;:"""''()[\]{}\-—–…«»])/);
-    return tokens.map((token, tIdx) => {
+    return tokens.map((token: string, tIdx: number) => {
       const cleanToken = token.replace(/[.,!?;:"""''()[\]{}\-—–…«»]/g, '').toLowerCase();
       if (!cleanToken) return <span key={`${sliceKey}-${tIdx}`}>{token}</span>;
 
@@ -208,7 +214,8 @@ const SrsStoryReview = () => {
   // contiguous span (case-insensitive substring match against the context). Falls back
   // to the raw `term` when usedForm is missing. The text on either side flows through
   // the lookup-token renderer so non-target words remain clickable.
-  const renderContextBody = (mc, idx) => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const renderContextBody = (mc: any, idx: number) => {
     const needle = (mc.usedForm || mc.term || '').trim();
     const ctx = mc.context;
 
@@ -278,7 +285,7 @@ const SrsStoryReview = () => {
             <Form.Group className="mb-3">
               <Form.Label>Word Status Filter</Form.Label>
               <div>
-                {[1, 2, 3, 4, 5].map(s => (
+                {([1, 2, 3, 4, 5] as WordStatus[]).map(s => (
                   <Form.Check
                     key={s}
                     inline
@@ -439,8 +446,8 @@ const SrsStoryReview = () => {
                       <small className="text-muted ms-2" data-testid="srs-microcontext-translation">— {mc.translation}</small>
                     )}
                   </h6>
-                  <Badge bg={STATUS_VARIANTS[mc.wordStatus] || 'secondary'} pill>
-                    {STATUS_LABELS[mc.wordStatus] || '?'}
+                  <Badge bg={STATUS_VARIANTS[mc.wordStatus as WordStatus] || 'secondary'} pill>
+                    {STATUS_LABELS[mc.wordStatus as WordStatus] || '?'}
                   </Badge>
                 </div>
                 <div className="srs-microcontext-body" style={{ fontSize: '1.1rem', lineHeight: '1.8' }}>

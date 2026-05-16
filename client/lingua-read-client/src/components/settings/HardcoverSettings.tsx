@@ -1,5 +1,23 @@
 import React, { useState } from 'react';
 import { Form, Button, Alert, Spinner } from 'react-bootstrap';
+import type { Settings } from '../../contexts/SettingsContext';
+import type { SettingsChangeHandler } from './AppearanceSettings';
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type HardcoverTestResult = any;
+
+interface HardcoverSettingsProps {
+  settings: Settings;
+  handleChange: SettingsChangeHandler;
+  testingHardcover: boolean;
+  hardcoverTestResult: HardcoverTestResult | null;
+  syncingHardcover: boolean;
+  hardcoverSyncMessage: { type?: string; text?: string };
+  onTestConnection: () => void;
+  onSaveToken: (token: string) => Promise<void> | void;
+  onClearToken: () => void;
+  onSyncAll: () => void;
+}
 
 const HardcoverSettings = ({
   settings,
@@ -12,7 +30,7 @@ const HardcoverSettings = ({
   onSaveToken,
   onClearToken,
   onSyncAll
-}) => {
+}: HardcoverSettingsProps) => {
   const [token, setToken] = useState('');
 
   const saveToken = async () => {

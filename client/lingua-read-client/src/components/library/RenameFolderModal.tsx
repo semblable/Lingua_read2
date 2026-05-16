@@ -1,31 +1,39 @@
 import React, { useState, useEffect } from 'react';
 import { Modal, Form, Button, Alert } from 'react-bootstrap';
 import { FOLDER_COLORS } from './FolderCard';
+import type { LibraryFolder } from '../../utils/store';
 
-const RenameFolderModal = ({ show, onHide, folder, onSubmit }) => {
+interface RenameFolderModalProps {
+  show: boolean;
+  onHide: () => void;
+  folder: LibraryFolder | null;
+  onSubmit: (folderId: number, payload: { name: string; color: string }) => Promise<void> | void;
+}
+
+const RenameFolderModal = ({ show, onHide, folder, onSubmit }: RenameFolderModalProps) => {
   const [name, setName] = useState('');
   const [color, setColor] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (folder) {
-      setName(folder.name);
+      setName(folder.name ?? '');
       setColor(folder.color || '');
     }
     setError(null);
   }, [folder]);
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!name.trim() || !folder) return;
     setSubmitting(true);
     setError(null);
     try {
-      await onSubmit(folder.folderId, { name: name.trim(), color: color || '' });
+      await onSubmit(folder.folderId as number, { name: name.trim(), color: color || '' });
       onHide();
-    } catch (err) {
-      setError(err.message || 'Failed to rename folder');
+    } catch (err: unknown) {
+      setError((err as Error)?.message || 'Failed to rename folder');
     } finally {
       setSubmitting(false);
     }

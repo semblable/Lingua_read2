@@ -13,12 +13,19 @@ import {
   YAxis
 } from 'recharts';
 import { toCumulative } from '../../utils/statistics';
+import type {
+  KnownWordsActivity,
+  ListeningActivity,
+  ReadingActivity,
+  DisplayStats,
+  LanguageStatsRow
+} from '../../utils/statistics';
 
-const EmptyChart = ({ children }) => (
+const EmptyChart = ({ children }: { children: React.ReactNode }) => (
   <div className="stats-empty-chart text-muted">{children}</div>
 );
 
-const ChartCard = ({ title, summary, children }) => (
+const ChartCard = ({ title, summary, children }: { title: React.ReactNode; summary?: React.ReactNode; children: React.ReactNode }) => (
   <Card className="stats-card h-100 shadow-sm">
     <Card.Body>
       <Card.Title className="stats-eyebrow mb-2">{title}</Card.Title>
@@ -28,11 +35,19 @@ const ChartCard = ({ title, summary, children }) => (
   </Card>
 );
 
-const buildComparisonSeries = (current, previous, currentKey, previousKey) => {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type AnyActivityRow = Record<string, any>;
+
+const buildComparisonSeries = (
+  current: AnyActivityRow[],
+  previous: AnyActivityRow[],
+  currentKey: string,
+  previousKey: string
+): AnyActivityRow[] => {
   const cur = Array.isArray(current) ? current : [];
   const prev = Array.isArray(previous) ? previous : [];
   const length = Math.max(cur.length, prev.length);
-  const series = [];
+  const series: AnyActivityRow[] = [];
   for (let i = 0; i < length; i += 1) {
     const c = cur[i];
     const p = prev[i];
@@ -45,6 +60,19 @@ const buildComparisonSeries = (current, previous, currentKey, previousKey) => {
   return series;
 };
 
+interface ActivityChartsProps {
+  displayStats: DisplayStats | null;
+  readingActivity: ReadingActivity;
+  listeningActivity: ListeningActivity;
+  knownWordsActivity: KnownWordsActivity;
+  previousReadingActivity?: ReadingActivity | null;
+  previousListeningActivity?: ListeningActivity | null;
+  previousKnownWordsActivity?: KnownWordsActivity | null;
+  languages: LanguageStatsRow[];
+  loadingActivity: boolean;
+  showComparison: boolean;
+}
+
 const ActivityCharts = ({
   displayStats,
   readingActivity,
@@ -56,7 +84,7 @@ const ActivityCharts = ({
   languages,
   loadingActivity,
   showComparison
-}) => {
+}: ActivityChartsProps) => {
   const [chartMode, setChartMode] = useState('daily');
   const isCumulative = chartMode === 'cumulative';
 
@@ -89,7 +117,8 @@ const ActivityCharts = ({
   const hasListeningComparison = showComparison && prevListeningByDate.length > 0;
   const hasKnownWordsComparison = showComparison && prevKnownWordsByDate.length > 0;
 
-  const cumulate = (series, key) => (isCumulative ? toCumulative(series, key) : series);
+  const cumulate = (series: AnyActivityRow[], key: string): AnyActivityRow[] =>
+    (isCumulative ? toCumulative(series, key) : series);
 
   const readingSeries = useMemo(() => {
     const cur = cumulate(readingByDate, 'wordsRead');
@@ -115,7 +144,7 @@ const ActivityCharts = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasKnownWordsComparison, knownWordsByDate, prevKnownWordsByDate, isCumulative]);
 
-  const languageVocabulary = languages.map((language) => ({
+  const languageVocabulary = languages.map((language: LanguageStatsRow) => ({
     name: language.languageName,
     known: language.knownWords,
     learning: language.learningWords

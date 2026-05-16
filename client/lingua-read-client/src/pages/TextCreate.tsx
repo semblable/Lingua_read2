@@ -54,7 +54,8 @@ const TextCreate = () => {
     // Re-run if userSettings context changes (e.g., after initial load)
   }, [userSettings?.defaultLanguageId]);
 
-  const handleSubmit = async (e) => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const handleSubmit = async (e: any) => {
     e.preventDefault();
     
     if (!title.trim()) {
@@ -85,7 +86,8 @@ const TextCreate = () => {
     }
   };
 
-  const handleGenerateStory = async (e) => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const handleGenerateStory = async (e: any) => {
     e.preventDefault();
     
     if (!storyPrompt.trim()) {

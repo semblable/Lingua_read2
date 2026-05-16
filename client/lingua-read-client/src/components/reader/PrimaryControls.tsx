@@ -1,9 +1,24 @@
 import React from 'react';
 import { Button, Spinner } from 'react-bootstrap';
+import type { NavigateFunction } from 'react-router-dom';
 
-// TODO(phase-d): tighten props once pages/TextDisplay is typed in C8.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type PrimaryControlsProps = Record<string, any>;
+type DisplayMode = 'text' | 'audio';
+
+interface PrimaryControlsProps {
+  isAudioLesson: boolean;
+  // TextDisplay holds this as `string` rather than the narrow union — keep
+  // permissive here, narrow internally.
+  displayMode: string;
+  setDisplayMode: (updater: (prev: string) => string) => void;
+  isSentenceMode: boolean;
+  setSentenceModeEnabled: (enabled: boolean) => void;
+  text: { bookId?: number | null } | null | undefined;
+  handleCompleteLesson: () => void;
+  handleCompleteLessonNoStats: () => void;
+  completing: boolean;
+  nextTextId?: number | null;
+  navigate: NavigateFunction;
+}
 
 const PrimaryControls = React.memo(({
   isAudioLesson,
@@ -22,7 +37,7 @@ const PrimaryControls = React.memo(({
       <Button
         variant="outline-info"
         size="sm"
-        onClick={() => setDisplayMode(p => p === 'audio' ? 'text' : 'audio')}
+        onClick={() => setDisplayMode((p: string) => p === 'audio' ? 'text' : 'audio')}
         title={displayMode === 'audio' ? 'Text View' : 'Audio View'}
         className="me-1"
       >

@@ -36,7 +36,7 @@ const Goals = lazy(() => import('./pages/Goals'));
 const Loading = () => <div className="d-flex justify-content-center align-items-center vh-100">Loading...</div>;
 
 // Protected Route Component
-const ProtectedRoute = ({ isAuthenticated, isLoading }) => {
+const ProtectedRoute = ({ isAuthenticated, isLoading }: { isAuthenticated: boolean; isLoading: boolean }) => {
   if (isLoading) {
     return <Loading />;
   }
@@ -52,7 +52,7 @@ const AuthenticatedApp = () => {
   useEffect(() => {
     const savedTheme = localStorage.getItem('theme') || 'dark';
 
-    const applyTheme = (theme) => {
+    const applyTheme = (theme: string) => {
       document.body.classList.remove('light-theme', 'dark-theme', 'classic-dark-theme');
 
       if (theme === 'dark') {
@@ -74,7 +74,7 @@ const AuthenticatedApp = () => {
     applyTheme(savedTheme);
 
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-    const handleSystemThemeChange = (e) => {
+    const handleSystemThemeChange = (_e: MediaQueryListEvent) => {
       if (localStorage.getItem('theme') === 'system') {
         applyTheme('system');
       }

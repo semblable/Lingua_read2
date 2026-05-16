@@ -1,5 +1,19 @@
 import React from 'react';
 import { Button, Alert, Form, Spinner } from 'react-bootstrap';
+import type { LanguageConfig } from '../../utils/readerText';
+
+// A "displayed/selected word" is the TextDisplay-side accumulation of fields
+// from API word records plus local UI flags. Shape varies; the union below
+// names the most-accessed fields without locking out extras.
+export type DisplayedWord = {
+  wordId?: number | string;
+  term?: string;
+  translation?: string;
+  status?: number;
+  isNew?: boolean;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  [key: string]: any;
+};
 
 // The 25-prop interface drilled down from pages/TextDisplay. Grouped by
 // concern in comments. Phase E3 will consider extracting these into a
@@ -7,8 +21,7 @@ import { Button, Alert, Form, Spinner } from 'react-bootstrap';
 // contract.
 export type WordInfoPanelProps = {
   // Word display / status
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  displayedWord: any;
+  displayedWord: DisplayedWord | null;
   saveSuccess: boolean;
 
   // Translation state
@@ -21,12 +34,21 @@ export type WordInfoPanelProps = {
   // Word-status actions
   handleSaveWord: (status: number) => void | Promise<void>;
   processingWord: boolean;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  selectedWord: any;
+  // The currently-selected term string (TextDisplay state).
+  selectedWord: string;
 
-  // Reading-language config + embed
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  languageConfig: any;
+  // Reading-language config + embed. LanguageConfig from readerText only covers
+  // tokenization; the API LanguageDto also carries `dictionaries`. Augment here.
+  languageConfig: LanguageConfig & {
+    dictionaries?: Array<{
+      dictionaryId?: number;
+      isActive?: boolean;
+      purpose?: string;
+      displayType?: string;
+      urlTemplate?: string;
+      sortOrder?: number;
+    }>;
+  };
   setEmbeddedUrl: (url: string | null) => void;
 
   // Speech / TTS

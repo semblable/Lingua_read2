@@ -10,7 +10,7 @@ import CefrBadge from './CefrBadge';
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const LinkAs: any = Link;
 
-const formatMinutes = (seconds) => {
+const formatMinutes = (seconds: number | null | undefined): string => {
   if (!seconds) return '0 min';
   const m = Math.round(seconds / 60);
   if (m < 60) return `${m} min`;
@@ -19,7 +19,33 @@ const formatMinutes = (seconds) => {
   return rest ? `${h}h ${rest}m` : `${h}h`;
 };
 
-const LanguageDashboardCard = ({ lang }) => {
+interface SparkDataPoint {
+  date: string;
+  count: number;
+}
+
+interface LanguageDashboardCardData {
+  languageId: number;
+  languageName: string;
+  knownWords: number;
+  totalWords: number;
+  cefrLevel?: string | null;
+  nextCefrLevel?: string | null;
+  knownWordsToNextLevel: number;
+  bandProgressPercent?: number;
+  isCefrApproximate?: boolean;
+  todayWordsRead: number;
+  todayListeningSeconds?: number;
+  currentReadingStreakDays: number;
+  last14DaysWords?: SparkDataPoint[];
+  continueReadingTextId?: number | null;
+}
+
+interface LanguageDashboardCardProps {
+  lang: LanguageDashboardCardData;
+}
+
+const LanguageDashboardCard = ({ lang }: LanguageDashboardCardProps) => {
   const {
     languageId,
     languageName,
@@ -39,11 +65,11 @@ const LanguageDashboardCard = ({ lang }) => {
 
   const bandProgress = Math.max(0, Math.min(100, bandProgressPercent || 0));
 
-  const sparkData = (last14DaysWords || []).map((d) => ({
+  const sparkData: SparkDataPoint[] = (last14DaysWords || []).map((d: SparkDataPoint) => ({
     date: d.date,
     count: d.count,
   }));
-  const hasActivity = sparkData.some((d) => d.count > 0);
+  const hasActivity = sparkData.some((d: SparkDataPoint) => d.count > 0);
 
   return (
     <Card className="h-100 shadow-sm">

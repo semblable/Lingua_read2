@@ -15,8 +15,9 @@ const GRADE_LABELS = [
   { grade: 3, label: 'Easy', variant: 'info', key: '4' },
 ];
 
-const STATUS_LABELS = { 1: 'New', 2: 'Learning', 3: 'Familiar', 4: 'Advanced', 5: 'Known' };
-const STATUS_VARIANTS = { 1: 'danger', 2: 'warning', 3: 'info', 4: 'primary', 5: 'success' };
+type WordStatus = 1 | 2 | 3 | 4 | 5;
+const STATUS_LABELS: Record<WordStatus, string> = { 1: 'New', 2: 'Learning', 3: 'Familiar', 4: 'Advanced', 5: 'Known' };
+const STATUS_VARIANTS: Record<WordStatus, string> = { 1: 'danger', 2: 'warning', 3: 'info', 4: 'primary', 5: 'success' };
 
 const SrsReview = () => {
   const navigate = useNavigate();
@@ -208,8 +209,9 @@ const SrsReview = () => {
   const primaryPhrase = useMemo(() => {
     if (!currentCard?.phrases?.length || !currentCard?.term) return null;
     const lowerTerm = currentCard.term.toLowerCase();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return currentCard.phrases.find(
-      (phrase) => typeof phrase?.sentence === 'string' && phrase.sentence.toLowerCase().includes(lowerTerm)
+      (phrase: any) => typeof phrase?.sentence === 'string' && phrase.sentence.toLowerCase().includes(lowerTerm)
     ) || null;
   }, [currentCard]);
 
@@ -217,12 +219,13 @@ const SrsReview = () => {
     if (!currentCard?.phrases?.length) return [];
     if (!primaryPhrase) return currentCard.phrases.slice(0, 2);
     return currentCard.phrases
-      .filter((phrase) => phrase.srsPhraseId !== primaryPhrase.srsPhraseId)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .filter((phrase: any) => phrase.srsPhraseId !== primaryPhrase.srsPhraseId)
       .slice(0, 2);
   }, [currentCard, primaryPhrase]);
 
   // Handle grading
-  const handleGrade = useCallback(async (grade) => {
+  const handleGrade = useCallback(async (grade: number) => {
     if (!currentCard || submitting) return;
     setSubmitting(true);
     setUndoVisible(false); // Hide any existing undo before submitting new
@@ -241,8 +244,8 @@ const SrsReview = () => {
         setCurrentIndex(prev => prev + 1);
         setIsFlipped(false);
       }
-    } catch (err) {
-      setError(`Failed to submit review: ${err.message}`);
+    } catch (err: unknown) {
+      setError(`Failed to submit review: ${(err as Error)?.message}`);
     } finally {
       setSubmitting(false);
     }
@@ -284,8 +287,9 @@ const SrsReview = () => {
   useEffect(() => {
     if (!sessionStarted || sessionComplete) return;
 
-    const handleKeyDown = (e) => {
-      if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (target?.tagName === 'INPUT' || target?.tagName === 'SELECT') return;
 
       if (e.code === 'Space' || e.code === 'Enter') {
         e.preventDefault();
@@ -307,7 +311,7 @@ const SrsReview = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [sessionStarted, sessionComplete, isFlipped, handleGrade]);
 
-  const handleLanguageChange = (e) => {
+  const handleLanguageChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const langId = e.target.value;
     setSelectedLanguage(langId);
     localStorage.setItem('srsSelectedLanguage', langId);
@@ -316,7 +320,7 @@ const SrsReview = () => {
     setCards([]);
   };
 
-  const handleStatusFilterChange = (e) => {
+  const handleStatusFilterChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { value, checked } = e.target;
     const statusValue = parseInt(value, 10);
     setStatusFilter(prev =>
@@ -325,11 +329,11 @@ const SrsReview = () => {
   };
 
   // Highlight target word in sentence
-  const renderSentenceWithHighlight = (sentence, term) => {
+  const renderSentenceWithHighlight = (sentence: string | null | undefined, term: string | null | undefined): React.ReactNode => {
     if (!sentence || !term) return sentence;
     const regex = new RegExp(`(${term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
     const parts = sentence.split(regex);
-    return parts.map((part, i) =>
+    return parts.map((part: string, i: number) =>
       i % 2 === 1
         ? <span key={i} className="srs-term-highlight">{part}</span>
         : part
@@ -342,7 +346,8 @@ const SrsReview = () => {
     return raw.split(',').map(s => parseInt(s.trim(), 10)).filter(n => n > 0);
   }, [localSettings.srsLearningStepMinutes]);
 
-  const getIntervalLabel = (grade, card) => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const getIntervalLabel = (grade: number, card: any): string => {
     if (!card) return '';
     const ef = card.easeFactor;
 
@@ -395,9 +400,10 @@ const SrsReview = () => {
   };
 
   // Remove card from session and handle index/completion
-  const removeCardFromSession = (cardId) => {
+  const removeCardFromSession = (cardId: number) => {
     setCards(prev => {
-      const updated = prev.filter(c => c.srsCardReviewId !== cardId);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const updated = prev.filter((c: any) => c.srsCardReviewId !== cardId);
       if (updated.length === 0 || currentIndex >= updated.length) {
         setSessionComplete(true);
         loadStats();
@@ -407,46 +413,50 @@ const SrsReview = () => {
   };
 
   // Suspend card handler
-  const handleSuspend = async (cardId) => {
+  const handleSuspend = async (cardId: number) => {
     try {
       await suspendSrsCard(cardId);
       removeCardFromSession(cardId);
-    } catch (err) {
-      setError(`Failed to suspend: ${err.message}`);
+    } catch (err: unknown) {
+      setError(`Failed to suspend: ${(err as Error)?.message}`);
     }
   };
 
   // Bury card handler
-  const handleBury = async (cardId) => {
+  const handleBury = async (cardId: number) => {
     try {
       await burySrsCard(cardId);
       removeCardFromSession(cardId);
-    } catch (err) {
-      setError(`Failed to bury: ${err.message}`);
+    } catch (err: unknown) {
+      setError(`Failed to bury: ${(err as Error)?.message}`);
     }
   };
 
   // Flag card handler
-  const handleFlag = async (cardId, flagValue) => {
+  const handleFlag = async (cardId: number, flagValue: number | string | null) => {
     try {
       await updateSrsCard(cardId, { flag: flagValue });
-      setCards(prev => prev.map(c => c.srsCardReviewId === cardId ? { ...c, flag: flagValue } : c));
-    } catch (err) {
-      setError(`Failed to flag: ${err.message}`);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      setCards(prev => prev.map((c: any) => c.srsCardReviewId === cardId ? { ...c, flag: flagValue } : c));
+    } catch (err: unknown) {
+      setError(`Failed to flag: ${(err as Error)?.message}`);
     }
   };
 
   // Build heatmap grid helper
   const renderHeatmap = () => {
     if (!heatmap || heatmap.length === 0) return null;
-    const heatmapMap = {};
-    heatmap.forEach(h => { heatmapMap[h.date] = h.reviewCount; });
+    const heatmapMap: Record<string, number> = {};
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    heatmap.forEach((h: any) => { heatmapMap[h.date] = h.reviewCount; });
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const maxCount = Math.max(...heatmap.map(h => h.reviewCount), 1);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const maxCount = Math.max(...heatmap.map((h: any) => h.reviewCount), 1);
 
+    interface HeatmapDay { date: string; count: number; dayOfWeek: number; }
     // Build 365 days of data ending today
-    const days = [];
+    const days: HeatmapDay[] = [];
     for (let i = 364; i >= 0; i--) {
       const d = new Date(today);
       d.setDate(d.getDate() - i);
@@ -455,9 +465,9 @@ const SrsReview = () => {
     }
 
     // Group into weeks (columns)
-    const weeks = [];
-    let currentWeek = new Array(7).fill(null);
-    days.forEach((day, idx) => {
+    const weeks: (HeatmapDay | null)[][] = [];
+    let currentWeek: (HeatmapDay | null)[] = new Array(7).fill(null);
+    days.forEach((day: HeatmapDay, idx: number) => {
       currentWeek[day.dayOfWeek] = day;
       if (day.dayOfWeek === 6 || idx === days.length - 1) {
         weeks.push(currentWeek);
@@ -465,7 +475,7 @@ const SrsReview = () => {
       }
     });
 
-    const getColor = (count) => {
+    const getColor = (count: number) => {
       if (count === 0) return '#ebedf0';
       const intensity = Math.min(count / maxCount, 1);
       if (intensity < 0.25) return '#9be9a8';
@@ -478,7 +488,7 @@ const SrsReview = () => {
       <div style={{ display: 'flex', gap: '2px', overflowX: 'auto' }}>
         {weeks.map((week, wi) => (
           <div key={wi} style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-            {week.map((day, di) => (
+            {week.map((day: HeatmapDay | null, di: number) => (
               <div
                 key={di}
                 className="srs-heatmap-cell"
@@ -587,10 +597,11 @@ const SrsReview = () => {
               <Card className="shadow-sm h-100">
                 <Card.Body className="py-2">
                   <small className="text-muted fw-bold mb-2 d-block text-center">Retention by Status (30d)</small>
-                  {analytics.retentionByStatus.map(r => (
+                  {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                  {analytics.retentionByStatus.map((r: any) => (
                     <div key={r.status} className="d-flex align-items-center mb-1">
-                      <Badge bg={STATUS_VARIANTS[r.status]} className="me-2" style={{ width: '70px', fontSize: '0.7rem' }}>
-                        {STATUS_LABELS[r.status]}
+                      <Badge bg={STATUS_VARIANTS[r.status as WordStatus]} className="me-2" style={{ width: '70px', fontSize: '0.7rem' }}>
+                        {STATUS_LABELS[r.status as WordStatus]}
                       </Badge>
                       <ProgressBar
                         now={r.retentionRate}
@@ -616,7 +627,8 @@ const SrsReview = () => {
                     { grade: 2, label: 'Good', variant: 'success' },
                     { grade: 3, label: 'Easy', variant: 'info' },
                   ].map(({ grade, label, variant }) => {
-                    const item = analytics.gradeDistribution.find(g => g.grade === grade);
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    const item = analytics.gradeDistribution.find((g: any) => g.grade === grade);
                     const count = item?.count || 0;
                     const total = analytics.totalReviewsLast30Days || 1;
                     const pct = Math.round((count / total) * 100);
@@ -643,7 +655,8 @@ const SrsReview = () => {
             <Card.Body className="py-2">
               <small className="text-muted fw-bold mb-2 d-block">Leeches — cards with 3+ lapses (30d)</small>
               <div className="d-flex flex-wrap gap-2">
-                {analytics.leechCards.map(lc => (
+                {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                {analytics.leechCards.map((lc: any) => (
                   <Badge
                     key={lc.srsCardReviewId}
                     bg="warning"
@@ -690,7 +703,8 @@ const SrsReview = () => {
               <Form.Label>Language</Form.Label>
               <Form.Select value={selectedLanguage} onChange={handleLanguageChange}>
                 <option value="">-- Select Language --</option>
-                {languages.map(lang => (
+                {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                {languages.map((lang: any) => (
                   <option key={lang.languageId} value={lang.languageId}>{lang.name}</option>
                 ))}
               </Form.Select>
@@ -699,7 +713,7 @@ const SrsReview = () => {
             <Form.Group className="mb-3">
               <Form.Label>Word Status Filter</Form.Label>
               <div>
-                {[1, 2, 3, 4, 5].map(s => (
+                {([1, 2, 3, 4, 5] as WordStatus[]).map(s => (
                   <Form.Check
                     key={s}
                     inline
@@ -919,8 +933,8 @@ const SrsReview = () => {
             {/* Card Header */}
             <div className="d-flex justify-content-between align-items-center mb-2">
               <div className="d-flex align-items-center gap-1">
-                <Badge bg={STATUS_VARIANTS[currentCard.wordStatus]}>
-                  {STATUS_LABELS[currentCard.wordStatus]}
+                <Badge bg={STATUS_VARIANTS[currentCard.wordStatus as WordStatus]}>
+                  {STATUS_LABELS[currentCard.wordStatus as WordStatus]}
                 </Badge>
                 {currentCard.isLearning && (
                   <Badge bg="warning" text="dark">📖 Learning</Badge>
@@ -997,7 +1011,8 @@ const SrsReview = () => {
                   {otherPhrases.length > 0 && (
                     <div className="mt-2 text-start">
                       <small className="text-muted d-block mb-1">Other mined sentences:</small>
-                      {otherPhrases.map((phrase) => (
+                      {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                      {otherPhrases.map((phrase: any) => (
                         <small key={phrase.srsPhraseId} className="srs-other-phrases d-block mb-1">
                           "{phrase.sentence}"
                         </small>

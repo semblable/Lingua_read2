@@ -2,8 +2,11 @@ import React, { useState } from 'react';
 import { Card, Dropdown } from 'react-bootstrap';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
+import type { LibraryFolder, SelectableType } from '../../utils/store';
 
-const FOLDER_COLORS = {
+export type FolderColor = 'blue' | 'green' | 'orange' | 'red' | 'purple' | 'teal' | 'pink' | 'yellow';
+
+const FOLDER_COLORS: Record<FolderColor, string> = {
   blue: '#4A90D9',
   green: '#5CB85C',
   orange: '#F0AD4E',
@@ -14,7 +17,19 @@ const FOLDER_COLORS = {
   yellow: '#F1C40F'
 };
 
-const FolderCard = ({ folder, onClick, onRename, onDelete, onChangeColor, isOver, isSelected, onSelect, onItemClick }) => {
+interface FolderCardProps {
+  folder: LibraryFolder;
+  onClick: (folderId: number) => void;
+  onRename: (folder: LibraryFolder) => void;
+  onDelete: (folder: LibraryFolder) => void;
+  onChangeColor: (folderId: number, color: string) => void;
+  isOver?: boolean;
+  isSelected?: boolean;
+  onSelect: (id: number, type: SelectableType) => void;
+  onItemClick?: (id: number, type: SelectableType, e: React.MouseEvent) => void;
+}
+
+const FolderCard = ({ folder, onClick, onRename, onDelete, onChangeColor, isOver, isSelected, onSelect, onItemClick }: FolderCardProps) => {
   const [showDropdown, setShowDropdown] = useState(false);
 
   const {
@@ -36,7 +51,7 @@ const FolderCard = ({ folder, onClick, onRename, onDelete, onChangeColor, isOver
     cursor: 'pointer'
   };
 
-  const folderColor = folder.color ? (FOLDER_COLORS[folder.color] || folder.color) : '#6c757d';
+  const folderColor = folder.color ? (FOLDER_COLORS[folder.color as FolderColor] || folder.color) : '#6c757d';
 
   return (
     <div ref={setNodeRef} style={style} {...attributes} data-selectable-id={folder.folderId} data-selectable-type="folder">

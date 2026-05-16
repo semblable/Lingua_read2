@@ -37,15 +37,24 @@ export const createBook = (
   });
 };
 
+// Swagger has no body schema for /books/upload (multipart endpoint), so we
+// declare the actual server shape here.
+export type UploadBookResult = {
+  bookId: number;
+  title?: string;
+  totalTexts?: number;
+  message?: string;
+};
+
 export const uploadBook = async (
   formData: FormData,
   onProgress: UploadProgressCallback | null = null
-): Promise<unknown> => {
+): Promise<UploadBookResult> => {
   const endpoint = '/books/upload';
   console.log('[API] Uploading book file...');
 
   try {
-    return await uploadWithProgress(endpoint, formData, onProgress);
+    return (await uploadWithProgress(endpoint, formData, onProgress)) as UploadBookResult;
   } catch (error) {
     console.error('[API Error] Failed to upload book:', error);
     throw error;

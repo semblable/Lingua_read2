@@ -1,5 +1,20 @@
 import React from 'react';
 import { Form, Button, Alert, Row, Col, Card } from 'react-bootstrap';
+import type { Settings } from '../../contexts/SettingsContext';
+import type { SettingsChangeHandler } from './AppearanceSettings';
+
+interface DiscordSettingsProps {
+  settings: Settings;
+  handleChange: SettingsChangeHandler;
+  onSetBrowserTimezone: () => void;
+  reportPeriod: string;
+  setReportPeriod: (period: string) => void;
+  reportDays: number;
+  setReportDays: (days: number) => void;
+  isSendingReport: boolean;
+  reportMessage: { type?: string; text?: string };
+  onSendReportNow: () => void;
+}
 
 const DiscordSettings = ({
   settings,
@@ -12,7 +27,7 @@ const DiscordSettings = ({
   isSendingReport,
   reportMessage,
   onSendReportNow
-}) => {
+}: DiscordSettingsProps) => {
   return (
     <>
       <div className="settings-control-group">

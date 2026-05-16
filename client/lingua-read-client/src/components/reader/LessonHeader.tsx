@@ -8,9 +8,36 @@ import AudiobookPlayerImpl from '../AudiobookPlayer';
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const AudiobookPlayer = AudiobookPlayerImpl as React.ComponentType<any>;
 
-// TODO(phase-d): tighten props once pages/TextDisplay is typed in C8.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type LessonHeaderProps = Record<string, any>;
+// LessonHeader takes a wide TextDisplay prop slice. Most fields are passed
+// through to AudiobookPlayer or rendered as `ReactNode` (the *Controls / *Actions
+// composite nodes). The heterogeneous `text`/`book`/`words`/`audioRef`/handler
+// props are kept loose here; Phase E1 will tighten via the extracted reader-state hook.
+interface LessonHeaderProps {
+  isMobile: boolean;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  text: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  words: any[];
+  isAudioLesson: boolean;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  book: any;
+  primaryControls: React.ReactNode;
+  secondaryControls: React.ReactNode;
+  readerLessonActions: React.ReactNode;
+  translateUnknownError?: string | null;
+  audioSrc?: string | null;
+  textId?: number | string | null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  audioRef?: React.MutableRefObject<any>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  onTimeUpdate?: (...args: any[]) => void;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  onPlaybackStateChange?: (...args: any[]) => void;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  segmentPlaybackRequest?: any;
+  showDesktopLessonControls: boolean;
+  setShowDesktopLessonControls: (updater: (prev: boolean) => boolean) => void;
+}
 
 const LessonHeader = React.memo(({
   isMobile,

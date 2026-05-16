@@ -1,7 +1,14 @@
 import React from 'react';
 import { Form } from 'react-bootstrap';
+import type { Settings } from '../../contexts/SettingsContext';
+import type { SettingsChangeHandler } from './AppearanceSettings';
 
-const NavigationSettings = ({ settings, handleChange }) => {
+interface NavigationSettingsProps {
+  settings: Settings;
+  handleChange: SettingsChangeHandler;
+}
+
+const NavigationSettings = ({ settings, handleChange }: NavigationSettingsProps) => {
   return (
     <div className="settings-control-group">
       <Form.Group className="mb-3" controlId="autoAdvanceToNextLesson">

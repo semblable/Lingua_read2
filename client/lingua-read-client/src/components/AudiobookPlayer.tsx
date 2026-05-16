@@ -4,7 +4,15 @@ import { getAudiobookProgress, updateAudiobookProgress, getAudioLessonProgress, 
 import { formatTime } from '../utils/helpers';
 import './AudiobookPlayer.css';
 
-const createSegmentPlaybackState = () => ({
+interface SegmentPlaybackState {
+  active: boolean;
+  requestId: string | number | null;
+  startTime: number;
+  endTime: number;
+  remainingRepeats: number;
+}
+
+const createSegmentPlaybackState = (): SegmentPlaybackState => ({
   active: false,
   requestId: null,
   startTime: 0,
@@ -12,7 +20,7 @@ const createSegmentPlaybackState = () => ({
   remainingRepeats: 0
 });
 
-const normalizeMediaSrc = (src) => {
+const normalizeMediaSrc = (src: string | null | undefined): string => {
   if (!src) return '';
   if (src.startsWith('blob:')) return src;
 
@@ -23,7 +31,8 @@ const normalizeMediaSrc = (src) => {
   }
 };
 
-const isAbortLikeError = (errorLike) => {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const isAbortLikeError = (errorLike: any): boolean => {
   const name = errorLike?.name || '';
   const message = errorLike?.message || '';
   const code = errorLike?.code;
@@ -31,22 +40,26 @@ const isAbortLikeError = (errorLike) => {
   return name === 'AbortError' || code === 1 || /abort(ed)?/i.test(message);
 };
 
-const isLifecycleNetworkError = (errorLike) => {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const isLifecycleNetworkError = (errorLike: any): boolean => {
   const name = errorLike?.name || '';
   const message = errorLike?.message || '';
 
   return name === 'TypeError' && /networkerror|failed to fetch/i.test(message);
 };
 
-const setAudioPlaybackIntent = (audio, shouldPlay) => {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const setAudioPlaybackIntent = (audio: any, shouldPlay: boolean) => {
   if (!audio) return;
   audio.__lrAllowPlayback = shouldPlay;
 };
 
-const getAudioPlaybackIntent = (audio) => Boolean(audio?.__lrAllowPlayback);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const getAudioPlaybackIntent = (audio: any): boolean => Boolean(audio?.__lrAllowPlayback);
 const LISTENING_ACTIVITY_FLUSH_SECONDS = 10;
 
-const getTrackDisplayName = (track) => {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const getTrackDisplayName = (track: any): string => {
   if (!track) return '';
   if (track.title) return track.title;
 
@@ -54,6 +67,24 @@ const getTrackDisplayName = (track) => {
   const fileName = path.split(/[\\/]/).pop() || '';
   return fileName.replace(/\.[^/.]+$/, '') || 'Untitled track';
 };
+
+// Most props are typed loosely because the caller (TextDisplay or LessonHeader)
+// passes different subsets per usage. Phase E2 will split the player into
+// modules with proper contracts.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type AnyAudio = any;
+
+interface AudiobookPlayerProps {
+  type?: 'book' | 'lesson';
+  book?: AnyAudio;
+  audioSrc?: string | null;
+  textId?: number | string | null;
+  languageId?: number | string | null;
+  audioRef?: React.MutableRefObject<HTMLAudioElement | null>;
+  onTimeUpdate?: AnyAudio;
+  onPlaybackStateChange?: AnyAudio;
+  segmentPlaybackRequest?: AnyAudio;
+}
 
 const AudiobookPlayer = ({
   type = 'book',
@@ -65,7 +96,7 @@ const AudiobookPlayer = ({
   onTimeUpdate,
   onPlaybackStateChange,
   segmentPlaybackRequest
-}) => {
+}: AudiobookPlayerProps) => {
   // --- ONE: Refs and Stable Callbacks ---
   const internalAudioRef = useRef(null);
   const audioRef = externalAudioRef || internalAudioRef;
@@ -223,7 +254,7 @@ const AudiobookPlayer = ({
   }, [isBookMode, sourceTracks]);
 
   // --- FOUR: Initial Progress Loading ---
-  const applyInitialSeekIfReady = useCallback((audio) => {
+  const applyInitialSeekIfReady = useCallback((audio: HTMLAudioElement | null) => {
     if (!audio || initialSeekRef.current == null) return false;
 
     if (
@@ -243,7 +274,7 @@ const AudiobookPlayer = ({
     return true;
   }, [contentKey]);
 
-  const queueInitialSeek = useCallback((position) => {
+  const queueInitialSeek = useCallback((position: number) => {
     if (!Number.isFinite(position) || position <= 0) return false;
 
     if (
@@ -428,7 +459,7 @@ const AudiobookPlayer = ({
     setIsLoading(false);
   }, [contentKey, isBookMode, resetSegmentPlayback, sourceTracks.length]);
 
-  const buildTrackSrc = useCallback((track) => {
+  const buildTrackSrc = useCallback((track: AnyAudio): string => {
     let src = track?.isLesson ? track.url : track?.filePath;
 
     if (src && !src.startsWith('http') && !src.startsWith('blob:')) {
@@ -443,7 +474,7 @@ const AudiobookPlayer = ({
     return src || '';
   }, []);
 
-  const logPlaybackInterruption = useCallback((context, errorLike) => {
+  const logPlaybackInterruption = useCallback((context: string, errorLike: AnyAudio) => {
     if (isAbortLikeError(errorLike)) {
       console.debug(`[AudioPlayer] Ignoring interrupted playback during ${context}.`, errorLike);
       return;
@@ -465,7 +496,7 @@ const AudiobookPlayer = ({
       return;
     }
 
-    audio.play().catch(e => logPlaybackInterruption(context, e));
+    audio.play().catch((e: unknown) => logPlaybackInterruption(context, e));
   }, [audioRef, logPlaybackInterruption]);
 
   useEffect(() => {
@@ -583,7 +614,7 @@ const AudiobookPlayer = ({
     }
   }, [audioRef, requestAudioPlay, resetSegmentPlayback]);
 
-  const syncPlaybackState = useCallback((nextIsPlaying) => {
+  const syncPlaybackState = useCallback((nextIsPlaying: boolean) => {
     setIsPlaying(nextIsPlaying);
     if (onPlaybackStateChangeRef.current) {
       onPlaybackStateChangeRef.current(nextIsPlaying);
@@ -600,8 +631,8 @@ const AudiobookPlayer = ({
     }
   }, [isBookMode, currentTrackIndex, playlist.length, syncPlaybackState]);
 
-  const handleError = useCallback((e) => {
-    const audio = e?.target;
+  const handleError = useCallback((e: Event) => {
+    const audio = e?.target as HTMLAudioElement | null;
     const mediaErr = audio?.error;
     const currentSrc = normalizeMediaSrc(audio?.currentSrc ?? audio?.src);
     const expectedNextSrc = sourceSwapRef.current.nextSrc;
@@ -948,17 +979,19 @@ const AudiobookPlayer = ({
           let newTrackIndex = currentTrackIndex;
 
           if (isBookMode) {
-            // Verify the remote track matches expected content
-            if (remoteProgress.currentAudiobookTrackId) {
+            // Verify the remote track matches expected content. The audiobook
+            // progress endpoint returns `{ currentAudiobookTrackId, currentAudiobookPosition }`
+            // while the lesson endpoint returns `{ currentPosition }` — narrow with `in`.
+            if ('currentAudiobookTrackId' in remoteProgress && remoteProgress.currentAudiobookTrackId) {
               const idx = sourceTracks.findIndex(t => t.trackId === remoteProgress.currentAudiobookTrackId);
               if (idx !== -1) {
                 newTrackIndex = idx;
-                newPosition = remoteProgress.currentAudiobookPosition;
+                newPosition = remoteProgress.currentAudiobookPosition ?? null;
               }
               // If track not found, don't sync (might be different audiobook)
             }
-          } else {
-            newPosition = remoteProgress.currentPosition;
+          } else if ('currentPosition' in remoteProgress) {
+            newPosition = remoteProgress.currentPosition ?? null;
           }
 
           // Only sync if we have a valid position (not null/undefined and > 0)
@@ -1024,7 +1057,7 @@ const AudiobookPlayer = ({
     }
   }, [audioRef, contentKey, requestAudioPlay]); // Safe dependency
 
-  const seek = useCallback((time) => {
+  const seek = useCallback((time: number) => {
     const audio = audioRef.current;
     if (!audio) return;
 
@@ -1059,7 +1092,7 @@ const AudiobookPlayer = ({
     }
   }, [currentTrackIndex]);
 
-  const changeRate = (diff) => {
+  const changeRate = (diff: number) => {
     setPlaybackRate(prev => {
       const newRate = parseFloat((prev + diff).toFixed(2));
       const clamped = Math.max(0.5, Math.min(newRate, 2.0));
@@ -1076,8 +1109,9 @@ const AudiobookPlayer = ({
 
   // Keyboard Shortcuts
   useEffect(() => {
-    const handleKeyDown = (e) => {
-      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA' || target?.isContentEditable) return;
       if (e.key === ' ' || e.key === '`') {
         e.preventDefault();
         togglePlayPause();

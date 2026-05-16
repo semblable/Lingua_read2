@@ -1,17 +1,41 @@
 import React from 'react';
 import { Overlay, Popover, Button, Badge } from 'react-bootstrap';
 
-const GRADE_LABELS = [
+export type WordStatus = 1 | 2 | 3 | 4 | 5;
+
+interface GradeLabel {
+  grade: number;
+  label: string;
+  variant: string;
+}
+
+const GRADE_LABELS: GradeLabel[] = [
   { grade: 0, label: 'Again', variant: 'danger' },
   { grade: 1, label: 'Hard', variant: 'warning' },
   { grade: 2, label: 'Good', variant: 'success' },
   { grade: 3, label: 'Easy', variant: 'info' },
 ];
 
-const STATUS_LABELS = { 1: 'New', 2: 'Learning', 3: 'Familiar', 4: 'Advanced', 5: 'Known' };
-const STATUS_VARIANTS = { 1: 'danger', 2: 'warning', 3: 'info', 4: 'primary', 5: 'success' };
+const STATUS_LABELS: Record<WordStatus, string> = { 1: 'New', 2: 'Learning', 3: 'Familiar', 4: 'Advanced', 5: 'Known' };
+const STATUS_VARIANTS: Record<WordStatus, string> = { 1: 'danger', 2: 'warning', 3: 'info', 4: 'primary', 5: 'success' };
 
-const SrsWordPopover = ({ word, targetRef, show, onHide, onGrade, disabled }) => {
+interface SrsWord {
+  wordId: number | string;
+  term: string;
+  translation?: string;
+  wordStatus: number;
+}
+
+interface SrsWordPopoverProps {
+  word: SrsWord | null;
+  targetRef: React.RefObject<HTMLElement> | HTMLElement | null;
+  show: boolean;
+  onHide: () => void;
+  onGrade: (word: SrsWord, grade: number) => void;
+  disabled?: boolean;
+}
+
+const SrsWordPopover = ({ word, targetRef, show, onHide, onGrade, disabled }: SrsWordPopoverProps) => {
   if (!word || !targetRef) return null;
 
   return (
@@ -25,8 +49,8 @@ const SrsWordPopover = ({ word, targetRef, show, onHide, onGrade, disabled }) =>
       <Popover id={`srs-popover-${word.wordId}`} className="srs-story-popover">
         <Popover.Header className="d-flex justify-content-between align-items-center py-2">
           <span className="fw-bold">{word.term}</span>
-          <Badge bg={STATUS_VARIANTS[word.wordStatus]} className="ms-2" style={{ fontSize: '0.65rem' }}>
-            {STATUS_LABELS[word.wordStatus]}
+          <Badge bg={STATUS_VARIANTS[word.wordStatus as WordStatus]} className="ms-2" style={{ fontSize: '0.65rem' }}>
+            {STATUS_LABELS[word.wordStatus as WordStatus]}
           </Badge>
         </Popover.Header>
         <Popover.Body className="py-2 px-3">

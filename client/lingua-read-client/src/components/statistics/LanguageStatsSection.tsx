@@ -2,13 +2,21 @@ import React from 'react';
 import { Alert, Badge, Card, Col, ProgressBar, Row } from 'react-bootstrap';
 import CefrBadge from '../dashboard/CefrBadge';
 import { formatDuration } from '../../utils/statistics';
+import type { LanguageStatsRow } from '../../utils/statistics';
 
-const LanguageStatsSection = ({ languages, loadingActivity, selectedLanguageId, onSelectLanguage }) => {
+interface LanguageStatsSectionProps {
+  languages: LanguageStatsRow[];
+  loadingActivity: boolean;
+  selectedLanguageId?: string | number | 'all';
+  onSelectLanguage?: (value: string) => void;
+}
+
+const LanguageStatsSection = ({ languages, loadingActivity, selectedLanguageId, onSelectLanguage }: LanguageStatsSectionProps) => {
   if (languages.length === 0) {
     return <Alert variant="info">No language-specific data available yet.</Alert>;
   }
 
-  const handleSelect = (languageId) => {
+  const handleSelect = (languageId: number | string) => {
     if (typeof onSelectLanguage !== 'function') return;
     if (String(selectedLanguageId) === String(languageId)) {
       onSelectLanguage('all');
@@ -27,7 +35,7 @@ const LanguageStatsSection = ({ languages, loadingActivity, selectedLanguageId, 
       </div>
 
       <Row className="g-3">
-        {languages.map((language) => {
+        {languages.map((language: LanguageStatsRow) => {
           const knownPercent = language.totalWordsEncountered > 0
             ? Math.round((language.knownWords / language.totalWordsEncountered) * 100)
             : 0;
@@ -42,7 +50,7 @@ const LanguageStatsSection = ({ languages, loadingActivity, selectedLanguageId, 
                 role: 'button',
                 tabIndex: 0,
                 onClick: () => handleSelect(language.languageId),
-                onKeyDown: (e) => {
+                onKeyDown: (e: React.KeyboardEvent<HTMLDivElement>) => {
                   if (e.key === 'Enter' || e.key === ' ') {
                     e.preventDefault();
                     handleSelect(language.languageId);

@@ -2,13 +2,20 @@ import React, { useState } from 'react';
 import { Modal, Form, Button, Alert } from 'react-bootstrap';
 import { FOLDER_COLORS } from './FolderCard';
 
-const CreateFolderModal = ({ show, onHide, onSubmit, parentFolderId = null }) => {
+interface CreateFolderModalProps {
+  show: boolean;
+  onHide: () => void;
+  onSubmit: (name: string, parentFolderId: number | null, color: string | null) => Promise<void> | void;
+  parentFolderId?: number | null;
+}
+
+const CreateFolderModal = ({ show, onHide, onSubmit, parentFolderId = null }: CreateFolderModalProps) => {
   const [name, setName] = useState('');
   const [color, setColor] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState(null);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!name.trim()) return;
     setSubmitting(true);
@@ -18,8 +25,8 @@ const CreateFolderModal = ({ show, onHide, onSubmit, parentFolderId = null }) =>
       setName('');
       setColor('');
       onHide();
-    } catch (err) {
-      setError(err.message || 'Failed to create folder');
+    } catch (err: unknown) {
+      setError((err as Error)?.message || 'Failed to create folder');
     } finally {
       setSubmitting(false);
     }

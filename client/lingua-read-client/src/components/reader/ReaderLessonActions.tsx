@@ -1,9 +1,16 @@
 import React from 'react';
 import { Button, Spinner } from 'react-bootstrap';
+import type { NavigateFunction } from 'react-router-dom';
 
-// TODO(phase-d): tighten props once pages/TextDisplay is typed in C8.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type ReaderLessonActionsProps = Record<string, any>;
+interface ReaderLessonActionsProps {
+  text: { bookId?: number | null } | null | undefined;
+  isAudioLesson: boolean;
+  previousTextId?: number | null;
+  nextTextId?: number | null;
+  completing: boolean;
+  navigate: NavigateFunction;
+  handleCompleteLesson: () => void;
+}
 
 const ReaderLessonActions = React.memo(({
   text,

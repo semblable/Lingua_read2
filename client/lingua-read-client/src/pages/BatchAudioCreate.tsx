@@ -48,13 +48,13 @@ const BatchAudioCreate = () => {
         // Re-run if userSettings context changes
     }, [userSettings?.defaultLanguageId]);
 
-    const handleFileChange = (event) => {
+    const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
         setFiles(event.target.files); // Store the FileList
         setResults(null); // Clear previous results when files change
         setError('');
     };
 
-    const handleSubmit = async (event) => {
+    const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
         event.preventDefault();
         setError('');
         setResults(null);
@@ -77,7 +77,7 @@ const BatchAudioCreate = () => {
         const srtFiles = fileList.filter(f => f.name.toLowerCase().endsWith('.srt'));
 
         // Function to normalize base names: trim whitespace/punctuation, convert to lowercase
-        const normalizeBaseName = (name) => {
+        const normalizeBaseName = (name: string | null | undefined): string => {
             if (!name) return '';
             // Normalize unicode and strip extension if present
             let base = name.normalize('NFKC').replace(/\.(mp3|srt)$/i, '');
@@ -91,7 +91,13 @@ const BatchAudioCreate = () => {
         };
 
         // Function to extract base name and lang from SRT with flexible suffix patterns
-        const extractSrtInfo = (srtFileName) => {
+        interface SrtInfo {
+            baseName?: string;
+            lang?: string;
+            originalFullName: string;
+            error?: string;
+        }
+        const extractSrtInfo = (srtFileName: string): SrtInfo => {
             const patterns = [
                 /^(.+?)__([a-z]{2,3})(?:[-_]?([a-z]{2}))?\.srt$/i, // base__fr or base__fr-CA
                 /^(.+?)_([a-z]{2,3})(?:[-_]?([a-z]{2}))?\.srt$/i,  // base_fr or base_fr_CA
@@ -118,7 +124,7 @@ const BatchAudioCreate = () => {
         const srtsByNormalizedBase = new Map();
         const problematicFiles = new Map(); // Store problems: fileName -> Set<reason>
 
-        const addProblem = (fileName, reason) => {
+        const addProblem = (fileName: string, reason: string) => {
             if (!problematicFiles.has(fileName)) problematicFiles.set(fileName, new Set());
             problematicFiles.get(fileName).add(reason);
         };
@@ -150,7 +156,8 @@ const BatchAudioCreate = () => {
         const ambiguousMatches = new Set(); // Store normalized names with >1 MP3 or >1 SRT
 
         // Helper function to find fuzzy matches for truncated filenames
-        const findFuzzyMatch = (targetNormalized, candidateMap) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const findFuzzyMatch = (targetNormalized: string, candidateMap: Map<string, any[]>): any[] | null => {
             // Try exact match first
             if (candidateMap.has(targetNormalized)) {
                 return candidateMap.get(targetNormalized);
@@ -178,12 +185,14 @@ const BatchAudioCreate = () => {
             let isAmbiguous = false;
             if (mp3List.length > 1) {
                 ambiguousMatches.add(normalizedName);
-                mp3List.forEach(f => addProblem(f.name, `Ambiguous Match (multiple MP3s normalize to '${normalizedName}')`));
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                mp3List.forEach((f: any) => addProblem(f.name, `Ambiguous Match (multiple MP3s normalize to '${normalizedName}')`));
                 isAmbiguous = true;
             }
             if (matchingSrtList && matchingSrtList.length > 1) {
                 ambiguousMatches.add(normalizedName);
-                matchingSrtList.forEach(s => addProblem(s.originalFullName, `Ambiguous Match (multiple SRTs normalize to '${normalizedName}')`));
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                matchingSrtList.forEach((s: any) => addProblem(s.originalFullName, `Ambiguous Match (multiple SRTs normalize to '${normalizedName}')`));
                 isAmbiguous = true;
             }
 
@@ -203,7 +212,8 @@ const BatchAudioCreate = () => {
 
         // 4. Identify Unpaired SRTs (that weren't ambiguous or invalid format)
         srtsByNormalizedBase.forEach((srtList, normalizedName) => {
-            srtList.forEach(srtInfo => {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            srtList.forEach((srtInfo: any) => {
                 // Check if this SRT was successfully paired OR if it was already flagged (e.g., ambiguous, invalid format)
                 if (!pairedSrts.has(srtInfo.originalFullName) && !problematicFiles.has(srtInfo.originalFullName)) {
                     // Try fuzzy matching before marking as missing
@@ -225,8 +235,8 @@ const BatchAudioCreate = () => {
 
 
         if (problematicFiles.size > 0) {
-            const errorMessages = [];
-            problematicFiles.forEach((reasons, fileName) => {
+            const errorMessages: string[] = [];
+            problematicFiles.forEach((reasons: Set<string>, fileName: string) => {
                 errorMessages.push(`${fileName} (${Array.from(reasons).join(', ')})`);
             });
             errorMessages.sort();
@@ -257,11 +267,11 @@ const BatchAudioCreate = () => {
             setFiles(null); // Clear file input
             setTag(''); // Clear tag input
             // Reset file input visually (requires direct DOM manipulation or key change)
-            event.target.reset();
+            (event.target as HTMLFormElement).reset();
 
 
-        } catch (err) {
-            setError(`Batch upload failed: ${err.message}`);
+        } catch (err: unknown) {
+            setError(`Batch upload failed: ${(err as Error)?.message}`);
             console.error(err);
             // Do not reset progress on error, so user sees where it failed
             // setUploadProgress(0);

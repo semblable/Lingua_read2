@@ -1,9 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { Form, Button, Row, Col, Card, InputGroup, Alert } from 'react-bootstrap';
 import { createLanguage, updateLanguage, deleteLanguage, resetLanguageContent } from '../../utils/api'; // <-- Import deleteLanguage
+import type { Language } from '../../utils/api/languages';
+import type { components } from '../../utils/api-types';
 
-// TODO(phase-d): tighten these `any[]` to real dictionary/exception shapes
-// once api-types reflects them concretely.
+// Form rows are partial of the full DTO because new entries don't yet have a
+// `languageId` (assigned by the backend at save time).
+type LanguageDictionary = Partial<components['schemas']['LanguageDictionary']>;
+type LanguageSentenceSplitException = Partial<components['schemas']['LanguageSentenceSplitException']>;
+
 type LanguageFormData = {
     languageId?: number;
     name: string;
@@ -15,10 +20,8 @@ type LanguageFormData = {
     splitSentences: string;
     wordCharacters: string;
     isActiveForTranslation: boolean;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    dictionaries: any[];
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    sentenceSplitExceptions: any[];
+    dictionaries: LanguageDictionary[];
+    sentenceSplitExceptions: LanguageSentenceSplitException[];
     deepLTargetCode: string;
     geminiTargetCode: string;
 };
@@ -41,8 +44,7 @@ const initialLanguageState: LanguageFormData = {
 };
 
 type LanguageFormProps = {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    language: any;
+    language: Language | null;
     onSave: () => void;
     onCancel: () => void;
     onDelete: (languageId: number) => void;
@@ -76,8 +78,10 @@ function LanguageForm({ language, onSave, onCancel, onDelete, onResetContent }: 
         setError(null); // Clear errors when language changes
     }, [language]);
 
-    const handleChange = (e) => {
-        const { name, value, type, checked } = e.target;
+    const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
+        const target = e.target as HTMLInputElement;
+        const { name, value, type } = target;
+        const checked = target.checked;
         setFormData(prev => ({
             ...prev,
             [name]: type === 'checkbox' ? checked : value
@@ -96,21 +100,22 @@ function LanguageForm({ language, onSave, onCancel, onDelete, onResetContent }: 
         }));
     };
 
-    const handleRemoveDictionary = (indexToRemove) => {
+    const handleRemoveDictionary = (indexToRemove: number) => {
         setFormData(prev => ({
             ...prev,
-            dictionaries: prev.dictionaries.filter((_, index) => index !== indexToRemove)
+            dictionaries: prev.dictionaries.filter((_: LanguageDictionary, index: number) => index !== indexToRemove)
         }));
     };
 
-    const handleChangeDictionary = (index, field, value, type = 'text') => {
-         const newValue = type === 'checkbox' ? !formData.dictionaries[index][field] : value;
+    const handleChangeDictionary = (index: number, field: string, value: string | boolean, type: string = 'text') => {
+         // eslint-disable-next-line @typescript-eslint/no-explicit-any
+         const newValue = type === 'checkbox' ? !(formData.dictionaries[index] as any)[field] : value;
          // Special handling for sortOrder to ensure it's a number
-         const finalValue = field === 'sortOrder' ? parseInt(newValue, 10) || 0 : newValue;
+         const finalValue = field === 'sortOrder' ? parseInt(String(newValue), 10) || 0 : newValue;
 
         setFormData(prev => ({
             ...prev,
-            dictionaries: prev.dictionaries.map((dict, i) =>
+            dictionaries: prev.dictionaries.map((dict: LanguageDictionary, i: number) =>
                 i === index ? { ...dict, [field]: finalValue } : dict
             )
         }));
@@ -128,31 +133,34 @@ function LanguageForm({ language, onSave, onCancel, onDelete, onResetContent }: 
         }));
     };
 
-    const handleRemoveException = (indexToRemove) => {
+    const handleRemoveException = (indexToRemove: number) => {
         setFormData(prev => ({
             ...prev,
-            sentenceSplitExceptions: prev.sentenceSplitExceptions.filter((_, index) => index !== indexToRemove)
+            sentenceSplitExceptions: prev.sentenceSplitExceptions.filter((_: LanguageSentenceSplitException, index: number) => index !== indexToRemove)
         }));
     };
 
-     const handleChangeException = (index, value) => {
+     const handleChangeException = (index: number, value: string) => {
         setFormData(prev => ({
             ...prev,
-            sentenceSplitExceptions: prev.sentenceSplitExceptions.map((ex, i) =>
+            sentenceSplitExceptions: prev.sentenceSplitExceptions.map((ex: LanguageSentenceSplitException, i: number) =>
                 i === index ? { ...ex, exceptionString: value } : ex
             )
         }));
     };
 
-    const handleSubmit = async (e) => {
+    const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
         e.preventDefault();
         setIsSaving(true);
         setError(null);
         console.log("Submitting form data:", formData);
 
         try {
-            // Prepare payload - ensure collections are included
-            const payload = { ...formData };
+            // Prepare payload - ensure collections are included. Cast to the
+            // API DTO shape: the backend fills in nested `languageId` fields on
+            // dictionaries / exceptions at save time.
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const payload: any = { ...formData };
 
             if (formData.languageId) {
                 // Update existing language
@@ -163,8 +171,8 @@ function LanguageForm({ language, onSave, onCancel, onDelete, onResetContent }: 
                 await createLanguage(payload);
             }
             onSave(); // Notify parent component (e.g., to refetch list and clear selection)
-        } catch (err) {
-            setError(err.message || 'Failed to save language.');
+        } catch (err: unknown) {
+            setError((err as Error)?.message || 'Failed to save language.');
         } finally {
             setIsSaving(false);
         }
@@ -183,8 +191,8 @@ function LanguageForm({ language, onSave, onCancel, onDelete, onResetContent }: 
         try {
             await resetLanguageContent(formData.languageId);
             if (onResetContent) onResetContent(formData.languageId);
-        } catch (err) {
-            setError(err.message || 'Failed to reset language content.');
+        } catch (err: unknown) {
+            setError((err as Error)?.message || 'Failed to reset language content.');
         } finally {
             setIsSaving(false);
         }
@@ -197,8 +205,8 @@ function LanguageForm({ language, onSave, onCancel, onDelete, onResetContent }: 
             try {
                 await deleteLanguage(formData.languageId);
                 onDelete(formData.languageId); // Notify parent component
-            } catch (err) {
-                setError(err.message || 'Failed to delete language.');
+            } catch (err: unknown) {
+                setError((err as Error)?.message || 'Failed to delete language.');
             } finally {
                 setIsSaving(false);
             }

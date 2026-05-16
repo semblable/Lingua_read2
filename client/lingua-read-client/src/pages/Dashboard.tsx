@@ -11,14 +11,16 @@ import GoalsCard from '../components/goals/GoalsCard';
 // Normalise keys from the API. The backend emits PascalCase camel-cased by
 // System.Text.Json defaults (camelCase), but older endpoints in the codebase
 // have historically been inconsistent, so tolerate both just in case.
-const pick = (obj, ...keys) => {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const pick = (obj: any, ...keys: string[]): any => {
   for (const k of keys) {
     if (obj[k] !== undefined) return obj[k];
   }
   return undefined;
 };
 
-const normaliseLang = (l) => ({
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const normaliseLang = (l: any) => ({
   languageId: pick(l, 'languageId', 'LanguageId'),
   languageCode: pick(l, 'languageCode', 'LanguageCode') || '',
   languageName: pick(l, 'languageName', 'LanguageName') || 'Unknown',
@@ -41,7 +43,8 @@ const normaliseLang = (l) => ({
   currentReadingStreakDays:
     pick(l, 'currentReadingStreakDays', 'CurrentReadingStreakDays') || 0,
   last14DaysWords:
-    (pick(l, 'last14DaysWords', 'Last14DaysWords') || []).map((d) => ({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (pick(l, 'last14DaysWords', 'Last14DaysWords') || []).map((d: any) => ({
       date: pick(d, 'date', 'Date'),
       count: pick(d, 'count', 'Count') || 0,
     })),
@@ -50,7 +53,7 @@ const normaliseLang = (l) => ({
   lastActivityAt: pick(l, 'lastActivityAt', 'LastActivityAt') || null,
 });
 
-const formatMinutes = (seconds) => {
+const formatMinutes = (seconds: number | null | undefined): string => {
   if (!seconds) return '0 min';
   const m = Math.round(seconds / 60);
   if (m < 60) return `${m} min`;
@@ -196,7 +199,8 @@ const Dashboard = () => {
       <GoalsCard defaultLanguageId={languages[0]?.languageId} />
 
       <Row className="g-3">
-        {languages.map((lang) => (
+        {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+        {languages.map((lang: any) => (
           <Col key={lang.languageId} md={6} xl={4}>
             <LanguageDashboardCard lang={lang} />
           </Col>

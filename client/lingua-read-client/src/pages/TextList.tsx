@@ -95,7 +95,7 @@ const TextList = () => {
     return { filteredAndSortedTexts: sorted, uniqueTags: tags, uniqueLanguages: languages };
   }, [texts, sortKey, sortOrder, tagFilter, typeFilter, languageFilter, statusFilter]); // Add filters to dependencies
 
-  const handleSort = (key) => {
+  const handleSort = (key: string) => {
     if (key === sortKey) {
       // Toggle order if same key is clicked
       setSortOrder(prevOrder => prevOrder === 'asc' ? 'desc' : 'asc');
@@ -106,7 +106,7 @@ const TextList = () => {
     }
   };
 
-  const handleDeleteText = async (textId, textTitle) => {
+  const handleDeleteText = async (textId: number | string, textTitle: string) => {
     if (window.confirm(`Are you sure you want to delete the text "${textTitle}"? This cannot be undone.`)) {
       // Note: We don't use the main loading state here to avoid hiding the whole list
       // Ideally, you might want a per-card loading indicator

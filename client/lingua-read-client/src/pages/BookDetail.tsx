@@ -20,7 +20,7 @@ import {
 import { formatDate, /*calculateReadingTime*/ } from '../utils/helpers'; // Removed unused calculateReadingTime
 // Removed AudiobookPlayer import
 
-const normalizeCoverUrl = (value) => {
+const normalizeCoverUrl = (value: string | null | undefined): string | null => {
   if (!value) return null;
   if (/^(https?:)?\/\//i.test(value) || value.startsWith('/')) {
     return value;
@@ -100,16 +100,17 @@ const BookDetail = () => {
     setShowRatingModal(true);
   };
 
-  const submitFinishBook = async (rating) => {
+  const submitFinishBook = async (rating: number | null) => {
     setFinishingBook(true);
     setFinishError('');
     try {
       await finishBook(bookId, rating);
-      setBook(prev => ({ ...prev, isFinished: true }));
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      setBook((prev: any) => ({ ...prev, isFinished: true }));
       setShowRatingModal(false);
       setPendingRating(null);
-    } catch (err) {
-      setFinishError(err.message || 'Failed to mark book as finished.');
+    } catch (err: unknown) {
+      setFinishError((err as Error)?.message || 'Failed to mark book as finished.');
     } finally {
       setFinishingBook(false);
     }
@@ -123,7 +124,7 @@ const BookDetail = () => {
     setShowEditBookModal(true);
   };
 
-  const handleOpenEditTextModal = async (textId) => {
+  const handleOpenEditTextModal = async (textId: number | string) => {
     setModalLoading(true);
     setModalError('');
     try {
@@ -139,8 +140,8 @@ const BookDetail = () => {
         tag: textData.tag || ''
       });
       setShowEditTextModal(true);
-    } catch (err) {
-      setModalError(`Failed to load text details: ${err.message}`);
+    } catch (err: unknown) {
+      setModalError(`Failed to load text details: ${(err as Error)?.message}`);
     } finally {
       setModalLoading(false);
     }
@@ -166,8 +167,8 @@ const BookDetail = () => {
       // Refresh book data after update
       await fetchBook();
       handleCloseModals();
-    } catch (err) {
-      setModalError(`Failed to update book: ${err.message}`);
+    } catch (err: unknown) {
+      setModalError(`Failed to update book: ${(err as Error)?.message}`);
     } finally {
       setModalLoading(false);
     }
@@ -189,8 +190,8 @@ const BookDetail = () => {
       // Refresh book data to show updated text title/info in the list
       await fetchBook();
       handleCloseModals();
-    } catch (err) {
-      setModalError(`Failed to update text: ${err.message}`);
+    } catch (err: unknown) {
+      setModalError(`Failed to update text: ${(err as Error)?.message}`);
     } finally {
       setModalLoading(false);
     }
@@ -203,15 +204,15 @@ const BookDetail = () => {
       try {
         await deleteBook(bookId);
         navigate('/books'); // Navigate back to book list after deletion
-      } catch (err) {
-        setError(`Failed to delete book: ${err.message}. Ensure all parts are deleted first if necessary.`);
+      } catch (err: unknown) {
+        setError(`Failed to delete book: ${(err as Error)?.message}. Ensure all parts are deleted first if necessary.`);
         setLoading(false);
       }
       // No finally setLoading(false) because we navigate away on success
     }
   };
 
-  const handleTextDelete = async (textId, textTitle) => {
+  const handleTextDelete = async (textId: number | string, textTitle: string) => {
     if (window.confirm(`Are you sure you want to delete the text part "${textTitle}"? This cannot be undone.`)) {
       setLoading(true); // Use main loading indicator for simplicity
       setError('');
@@ -219,8 +220,8 @@ const BookDetail = () => {
         await deleteText(textId);
         // Refresh book data to remove the text from the list
         await fetchBook();
-      } catch (err) {
-        setError(`Failed to delete text part: ${err.message}`);
+      } catch (err: unknown) {
+        setError(`Failed to delete text part: ${(err as Error)?.message}`);
       } finally {
         setLoading(false);
       }
@@ -230,8 +231,8 @@ const BookDetail = () => {
   // --- End Edit/Delete Handlers ---
 
   // --- Audiobook Upload Handlers ---
-  const handleFileChange = (event) => {
-    setSelectedFiles(Array.from(event.target.files)); // Convert FileList to Array
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    setSelectedFiles(Array.from(event.target.files || [])); // Convert FileList to Array
     setUploadError(''); // Clear previous errors on new selection
     setUploadSuccess('');
   };
@@ -331,14 +332,15 @@ const BookDetail = () => {
         text: result.message || 'Hardcover progress sync completed.'
       });
       await fetchBook();
-    } catch (err) {
-      setHardcoverMessage({ type: 'danger', text: err.message || 'Hardcover progress sync failed.' });
+    } catch (err: unknown) {
+      setHardcoverMessage({ type: 'danger', text: (err as Error)?.message || 'Hardcover progress sync failed.' });
     } finally {
       setHardcoverLoading(false);
     }
   };
 
-  const handleApplyHardcoverCandidate = async (candidate) => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const handleApplyHardcoverCandidate = async (candidate: any) => {
     setHardcoverLoading(true);
     setHardcoverMessage(null);
     try {
@@ -749,7 +751,7 @@ const BookDetail = () => {
               <Form.Control
                 type="text"
                 value={editingBook?.title || ''}
-                onChange={(e) => setEditingBook(prev => ({ ...prev, title: e.target.value }))}
+                onChange={(e) => setEditingBook((prev: any) => ({ ...prev, title: e.target.value }))}
                 required
                 disabled={modalLoading}
               />
@@ -780,7 +782,7 @@ const BookDetail = () => {
                 <Form.Control
                   type="text"
                   value={editingText.title}
-                  onChange={(e) => setEditingText(prev => ({ ...prev, title: e.target.value }))}
+                  onChange={(e) => setEditingText((prev: any) => ({ ...prev, title: e.target.value }))}
                   required
                   disabled={modalLoading}
                 />
@@ -791,7 +793,7 @@ const BookDetail = () => {
                   as="textarea"
                   rows={10}
                   value={editingText.content}
-                  onChange={(e) => setEditingText(prev => ({ ...prev, content: e.target.value }))}
+                  onChange={(e) => setEditingText((prev: any) => ({ ...prev, content: e.target.value }))}
                   required
                   disabled={modalLoading}
                 />
@@ -801,7 +803,7 @@ const BookDetail = () => {
                 <Form.Control
                   type="text"
                   value={editingText.tag}
-                  onChange={(e) => setEditingText(prev => ({ ...prev, tag: e.target.value }))}
+                  onChange={(e) => setEditingText((prev: any) => ({ ...prev, tag: e.target.value }))}
                   maxLength={100}
                   disabled={modalLoading}
                 />
@@ -826,14 +828,14 @@ const BookDetail = () => {
 // Star rating picker — 1-5 stars with half-star precision (0.5 increments).
 // Click a star or its left half to set the rating; clicking the currently
 // active value clears it back to "no rating".
-const StarRatingPicker = ({ value, onChange, disabled }) => {
+const StarRatingPicker = ({ value, onChange, disabled }: { value: number | null; onChange: (v: number | null) => void; disabled?: boolean }) => {
   const stars = [1, 2, 3, 4, 5];
-  const handleClick = (selected) => {
+  const handleClick = (selected: number) => {
     if (disabled) return;
     onChange(value === selected ? null : selected);
   };
 
-  const renderStar = (i) => {
+  const renderStar = (i: number) => {
     const fullThreshold = i;
     const halfThreshold = i - 0.5;
     let icon = 'bi-star';

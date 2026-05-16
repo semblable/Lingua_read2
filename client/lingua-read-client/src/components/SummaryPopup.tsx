@@ -1,6 +1,31 @@
 import React, { useMemo, useEffect } from 'react';
 import { Alert, Button, Form, Modal, Spinner } from 'react-bootstrap';
 
+interface LanguageEntry {
+  code?: string | null;
+  name?: string | null;
+}
+
+interface LanguageOption {
+  code: string;
+  name: string;
+}
+
+interface SummaryPopupProps {
+  show: boolean;
+  handleClose: () => void;
+  title: string;
+  sourceLanguage?: string;
+  targetLanguage: string;
+  setTargetLanguage: (code: string) => void;
+  languages?: LanguageEntry[];
+  isLoadingLanguages?: boolean;
+  summaryText?: string;
+  isSummarizing?: boolean;
+  error?: string | null;
+  onSummarize: () => void;
+}
+
 const SummaryPopup = ({
   show,
   handleClose,
@@ -14,12 +39,12 @@ const SummaryPopup = ({
   isSummarizing,
   error,
   onSummarize
-}) => {
-  const languageOptions = useMemo(() => {
-    const options = [{ code: 'EN', name: 'English' }];
+}: SummaryPopupProps) => {
+  const languageOptions = useMemo<LanguageOption[]>(() => {
+    const options: LanguageOption[] = [{ code: 'EN', name: 'English' }];
     const seen = new Set(['EN']);
 
-    (languages || []).forEach(language => {
+    (languages || []).forEach((language: LanguageEntry) => {
       const code = language.code?.toUpperCase();
       if (!code || seen.has(code)) return;
       seen.add(code);

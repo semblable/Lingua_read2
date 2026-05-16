@@ -1,10 +1,31 @@
 import React, { useRef } from 'react';
 import { FixedSizeList as List } from 'react-window';
 import TranscriptLine from './TranscriptLine';
+import type { Settings } from '../../contexts/SettingsContext';
 
-// TODO(phase-d): tighten props once pages/TextDisplay is typed in C8.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type AudioTranscriptViewProps = Record<string, any>;
+interface SrtLine {
+  id: number | string;
+  startTime: number;
+  text: string;
+}
+
+interface AudioTranscriptViewProps {
+  isMobile: boolean;
+  srtLines: SrtLine[];
+  currentSrtLineId: number | string | null;
+  getFontStyling: (lineSpacing: number) => React.CSSProperties;
+  handleLineClick: (startTime: number) => void;
+  handleWordSelection: () => void;
+  processTextContent: (text: string) => React.ReactNode;
+  globalSettings: Settings;
+  mobileReadingConfig: { lineSpacing: number };
+  textContentRef: React.RefObject<HTMLDivElement>;
+  readingContainerRef: React.RefObject<HTMLDivElement>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  itemData: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  listRef: React.RefObject<any>;
+}
 
 const AudioTranscriptView = React.memo(({
   isMobile,
@@ -59,7 +80,7 @@ const AudioTranscriptView = React.memo(({
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
       >
-        {srtLines.map((line) => (
+        {srtLines.map((line: SrtLine) => (
           <p
             key={line.id}
             id={`srt-line-${line.id}`}

@@ -15,7 +15,7 @@
     "resolveJsonModule": true,
     "forceConsistentCasingInFileNames": true,
     "strict": false,
-    "noImplicitAny": false,
+    "noImplicitAny": true,
     "useDefineForClassFields": true,
     "types": ["vite/client", "node"]
   },

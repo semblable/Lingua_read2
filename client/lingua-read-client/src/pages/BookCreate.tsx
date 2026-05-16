@@ -54,7 +54,7 @@ const BookCreate = () => {
     // Re-run if userSettings context changes (e.g., after initial load)
   }, [userSettings?.defaultLanguageId]);
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
 
     if (!title.trim()) {
@@ -159,7 +159,7 @@ const BookCreate = () => {
     );
   }
 
-  const handleFileChange = (e) => {
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       setFile(e.target.files[0]);
       // Optionally set title from filename if title is empty
@@ -171,7 +171,7 @@ const BookCreate = () => {
     }
   };
 
-  const handleAudioFileChange = (e) => {
+  const handleAudioFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
       setAudioFiles(Array.from(e.target.files)); // Store as array
       setAudioUploadError(''); // Clear audio error on new selection

@@ -4,10 +4,11 @@ import { Link } from 'react-router-dom';
 import { getGoals } from '../../utils/api';
 import GoalRow from './GoalRow';
 import GoalModal from './GoalModal';
+import type { Goal } from '../../utils/api/goals';
 
 // Sort: overdue first, then nearest deadline / period-end, then highest %.
-const sortForDisplay = (goals) => {
-  const score = (g) => {
+const sortForDisplay = (goals: Goal[]): Goal[] => {
+  const score = (g: Goal): number => {
     if (g.state === 'overdue') return 0;
     if (g.deadline) return 1 + (new Date(g.deadline + 'T00:00:00').getTime() / 1e12);
     if (g.currentPeriodEnd) return 2 + (new Date(g.currentPeriodEnd + 'T00:00:00').getTime() / 1e12);
@@ -16,8 +17,12 @@ const sortForDisplay = (goals) => {
   return [...goals].sort((a, b) => score(a) - score(b));
 };
 
-function GoalsCard({ defaultLanguageId }) {
-  const [goals, setGoals] = useState([]);
+interface GoalsCardProps {
+  defaultLanguageId?: number | string | null;
+}
+
+function GoalsCard({ defaultLanguageId }: GoalsCardProps) {
+  const [goals, setGoals] = useState<Goal[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [showModal, setShowModal] = useState(false);

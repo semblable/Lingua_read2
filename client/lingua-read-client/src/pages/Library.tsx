@@ -17,6 +17,7 @@ import {
   rectSortingStrategy
 } from '@dnd-kit/sortable';
 import { useLibraryStore } from '../utils/store';
+import type { LibraryFolder, SelectableType } from '../utils/store';
 import {
   getLibraryContents,
   getFolders,
@@ -181,38 +182,38 @@ const Library = () => {
   const totalItems = filteredFolders.length + filteredBooks.length + filteredTexts.length;
 
   // Handlers
-  const handleCreateFolder = async (name, parentId, color) => {
+  const handleCreateFolder = async (name: string, parentId: number | null, color: string | null) => {
     await createFolder(name, parentId, color);
     await fetchContents();
     await fetchAllFolders();
     // errors propagate to modal for display
   };
 
-  const handleRenameFolder = async (folderId, data) => {
+  const handleRenameFolder = async (folderId: number, data: { name: string; color: string }) => {
     await updateFolder(folderId, data);
     await fetchContents();
     await fetchAllFolders();
     // errors propagate to modal for display
   };
 
-  const handleDeleteFolder = async (folder) => {
+  const handleDeleteFolder = async (folder: LibraryFolder) => {
     if (!window.confirm(`Delete folder "${folder.name}"? Items inside will be moved to the parent folder.`)) return;
     try {
-      await deleteFolderApi(folder.folderId);
+      await deleteFolderApi(folder.folderId as number);
       await fetchContents();
       await fetchAllFolders();
-    } catch (err) {
-      setError(`Failed to delete folder: ${err.message}`);
+    } catch (err: unknown) {
+      setError(`Failed to delete folder: ${(err as Error)?.message}`);
     }
   };
 
-  const handleChangeColor = async (folderId, color) => {
+  const handleChangeColor = async (folderId: number, color: string) => {
     await updateFolder(folderId, { color });
     await fetchContents();
     await fetchAllFolders();
   };
 
-  const handleMoveSelected = async (targetFolderId) => {
+  const handleMoveSelected = async (targetFolderId: number | null) => {
     const textIds = selectedItems.filter(i => i.type === 'text').map(i => i.id);
     const bookIds = selectedItems.filter(i => i.type === 'book').map(i => i.id);
     const folderIds = selectedItems.filter(i => i.type === 'folder').map(i => i.id);
@@ -226,8 +227,8 @@ const Library = () => {
       clearSelection();
       await fetchContents();
       await fetchAllFolders();
-    } catch (err) {
-      setError(`Failed to move items: ${err.message}`);
+    } catch (err: unknown) {
+      setError(`Failed to move items: ${(err as Error)?.message}`);
     }
   };
 
@@ -255,12 +256,12 @@ const Library = () => {
       clearSelection();
       await fetchContents();
       await fetchAllFolders();
-    } catch (err) {
-      setError(`Failed to delete items: ${err.message}`);
+    } catch (err: unknown) {
+      setError(`Failed to delete items: ${(err as Error)?.message}`);
     }
   };
 
-  const handleNavigateFolder = (id) => {
+  const handleNavigateFolder = (id: number | null | undefined) => {
     if (id) {
       navigate(`/library/${id}`);
     } else {
@@ -276,7 +277,7 @@ const Library = () => {
   ], [filteredFolders, filteredBooks, filteredTexts]);
 
   // Ctrl+click / Shift+click handler for cards
-  const handleItemClick = useCallback((id, type, event) => {
+  const handleItemClick = useCallback((id: number, type: SelectableType, event: React.MouseEvent) => {
     if (event.shiftKey && lastClickedItem) {
       // Range selection
       const lastIdx = flatItems.findIndex(i => i.id === lastClickedItem.id && i.type === lastClickedItem.type);
@@ -308,11 +309,13 @@ const Library = () => {
   }, [lastClickedItem, flatItems, selectedItems, setSelectedItems, toggleSelectItem, setLastClickedItem]);
 
   // Drag and drop handlers
-  const handleDragStart = (event) => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const handleDragStart = (event: any) => {
     setActiveId(event.active.id);
   };
 
-  const handleDragEnd = async (event) => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const handleDragEnd = async (event: any) => {
     setActiveId(null);
     const { active, over } = event;
     if (!over || active.id === over.id) return;

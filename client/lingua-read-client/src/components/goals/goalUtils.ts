@@ -1,34 +1,36 @@
+import type { Goal } from '../../utils/api/goals';
+
 // Goal-related shared helpers — keep in sync with server enums.
 export const GOAL_TYPE = {
   WordsRead: 1,
   ListeningSeconds: 2,
   WordsKnown: 3,
-};
+} as const;
 
 export const GOAL_MODE = {
   Delta: 1,
   Milestone: 2,
-};
+} as const;
 
 export const GOAL_RECURRENCE = {
   None: 0,
   Weekly: 1,
   Monthly: 2,
-};
+} as const;
 
-export const TYPE_LABELS = {
+export const TYPE_LABELS: Record<number, string> = {
   [GOAL_TYPE.WordsRead]: 'Words read',
   [GOAL_TYPE.ListeningSeconds]: 'Listening time',
   [GOAL_TYPE.WordsKnown]: 'Words known',
 };
 
-export const TYPE_ICONS = {
+export const TYPE_ICONS: Record<number, string> = {
   [GOAL_TYPE.WordsRead]: '📖',
   [GOAL_TYPE.ListeningSeconds]: '🎧',
   [GOAL_TYPE.WordsKnown]: '🧠',
 };
 
-export const formatMetric = (type, value) => {
+export const formatMetric = (type: number, value: number | null | undefined): string => {
   if (value == null) return '0';
   if (type === GOAL_TYPE.ListeningSeconds) {
     const m = Math.round(value / 60);
@@ -40,12 +42,12 @@ export const formatMetric = (type, value) => {
   return value.toLocaleString();
 };
 
-export const formatScope = (g) => {
+export const formatScope = (g: Goal): string => {
   if (g.languageId == null) return 'All languages';
   return g.languageName || `Language ${g.languageId}`;
 };
 
-export const autoTitle = (g) => {
+export const autoTitle = (g: Goal): string => {
   const verb = g.goalType === GOAL_TYPE.WordsRead ? 'Read'
     : g.goalType === GOAL_TYPE.ListeningSeconds ? 'Listen'
     : g.mode === GOAL_MODE.Milestone ? 'Reach' : 'Learn';
@@ -59,7 +61,7 @@ export const autoTitle = (g) => {
   return `${verb} ${target} in ${scope}`;
 };
 
-export const goalTitle = (g) => g.title || autoTitle(g);
+export const goalTitle = (g: Goal): string => g.title || autoTitle(g);
 
 export const daysUntil = (dateStr: string | null | undefined): number | null => {
   if (!dateStr) return null;
@@ -69,7 +71,7 @@ export const daysUntil = (dateStr: string | null | undefined): number | null => 
   return Math.round((d.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
 };
 
-export const stateLabel = (g) => {
+export const stateLabel = (g: Goal): string => {
   switch (g.state) {
     case 'completed': return 'Completed';
     case 'overdue': {
@@ -97,7 +99,7 @@ export const stateLabel = (g) => {
   }
 };
 
-export const paceLabel = (g) => {
+export const paceLabel = (g: Goal): { text: string; tone: string } | null => {
   if (!g.pace) return null;
   switch (g.pace) {
     case 'on_track': return { text: 'On track', tone: 'success' };

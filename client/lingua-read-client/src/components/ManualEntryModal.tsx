@@ -2,8 +2,19 @@ import React, { useState, useEffect } from 'react';
 import { Modal, Button, Form, Alert, Spinner } from 'react-bootstrap';
 import { getAllLanguages, logManualActivity } from '../utils/api'; // Use named imports
 
-function ManualEntryModal({ show, onHide, onSubmitSuccess }) {
-    const [languages, setLanguages] = useState([]);
+interface LanguageOption {
+    languageId: number;
+    name: string;
+}
+
+interface ManualEntryModalProps {
+    show: boolean;
+    onHide: () => void;
+    onSubmitSuccess: () => void;
+}
+
+function ManualEntryModal({ show, onHide, onSubmitSuccess }: ManualEntryModalProps) {
+    const [languages, setLanguages] = useState<LanguageOption[]>([]);
     const [selectedLanguage, setSelectedLanguage] = useState('');
     const [wordsRead, setWordsRead] = useState('');
     const [minutesListened, setMinutesListened] = useState('');
@@ -20,7 +31,7 @@ function ManualEntryModal({ show, onHide, onSubmitSuccess }) {
                 setError('');
                 try {
                     const response = await getAllLanguages();
-                    const languagesData = response || [];
+                    const languagesData = (response || []) as LanguageOption[];
                     setLanguages(languagesData);
                     // Pre-selecting the first language was previously gated on a
                     // wrapped axios-style `response.data` payload; the typed
@@ -37,7 +48,7 @@ function ManualEntryModal({ show, onHide, onSubmitSuccess }) {
         }
     }, [show, languages.length]); // Depend on show and languages.length
 
-    const handleInputChange = (setter) => (event) => {
+    const handleInputChange = (setter: (v: string) => void) => (event: React.ChangeEvent<HTMLInputElement>) => {
         // Allow digits and a single optional leading minus (for corrections)
         const value = event.target.value
             .replace(/[^0-9-]/g, '')
@@ -53,7 +64,7 @@ function ManualEntryModal({ show, onHide, onSubmitSuccess }) {
         setIsLoading(false);
     }
 
-    const handleSubmit = async (event) => {
+    const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
         event.preventDefault();
         setError('');
 
@@ -95,9 +106,11 @@ function ManualEntryModal({ show, onHide, onSubmitSuccess }) {
             onSubmitSuccess(); // Notify parent component (Statistics page)
             resetForm(); // Reset form on success
             onHide(); // Close modal on success
-        } catch (err) {
+        } catch (err: unknown) {
             console.error("Error logging manual activity:", err);
-            setError(err.response?.data?.message || 'An error occurred while saving the activity.');
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const e = err as any;
+            setError(e?.response?.data?.message || e?.message || 'An error occurred while saving the activity.');
         } finally {
             setIsLoading(false);
         }
@@ -133,7 +146,7 @@ function ManualEntryModal({ show, onHide, onSubmitSuccess }) {
                                 disabled={languages.length === 0}
                             >
                                 <option value="" disabled>-- Select Language --</option>
-                                {languages.map((lang) => (
+                                {languages.map((lang: LanguageOption) => (
                                     <option key={lang.languageId} value={lang.languageId}>
                                         {lang.name}
                                     </option>

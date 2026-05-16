@@ -2,12 +2,21 @@ import React from 'react';
 import { Card, Col, Row, Table } from 'react-bootstrap';
 import { formatDate } from '../../utils/helpers';
 import { formatDuration } from '../../utils/statistics';
+import type { ListeningActivity, ReadingActivity } from '../../utils/statistics';
 
-const ActivityTables = ({ readingActivity, listeningActivity }) => {
+interface ActivityTablesProps {
+  readingActivity: ReadingActivity;
+  listeningActivity: ListeningActivity;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type AnyRow = any;
+
+const ActivityTables = ({ readingActivity, listeningActivity }: ActivityTablesProps) => {
   const recentReading = (readingActivity.activityByDate || []).slice(-10).reverse();
   const listeningByLanguage = (listeningActivity.listeningByLanguage || [])
-    .filter((item) => item.totalSeconds > 0)
-    .sort((a, b) => b.totalSeconds - a.totalSeconds);
+    .filter((item: AnyRow) => item.totalSeconds > 0)
+    .sort((a: AnyRow, b: AnyRow) => b.totalSeconds - a.totalSeconds);
 
   return (
     <Row className="mt-4 g-4">
@@ -25,7 +34,7 @@ const ActivityTables = ({ readingActivity, listeningActivity }) => {
                     </tr>
                   </thead>
                   <tbody>
-                    {recentReading.map((item) => (
+                    {recentReading.map((item: AnyRow) => (
                       <tr key={item.date}>
                         <td className="text-muted">{formatDate(item.date)}</td>
                         <td className="text-end fw-bold">{item.wordsRead.toLocaleString()}</td>
@@ -55,7 +64,7 @@ const ActivityTables = ({ readingActivity, listeningActivity }) => {
                     </tr>
                   </thead>
                   <tbody>
-                    {listeningByLanguage.map((item) => (
+                    {listeningByLanguage.map((item: AnyRow) => (
                       <tr key={item.languageId || item.languageName}>
                         <td className="text-muted">{item.languageName}</td>
                         <td className="text-end fw-bold">{formatDuration(item.totalSeconds)}</td>

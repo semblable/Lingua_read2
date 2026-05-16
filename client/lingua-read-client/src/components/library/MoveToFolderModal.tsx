@@ -1,14 +1,24 @@
 import React, { useState } from 'react';
 import { Modal, ListGroup, Button, Spinner } from 'react-bootstrap';
-import { FOLDER_COLORS } from './FolderCard';
+import { FOLDER_COLORS, type FolderColor } from './FolderCard';
+import type { LibraryFolder } from '../../utils/store';
 
-const MoveToFolderModal = ({ show, onHide, folders, onMove, itemCount }) => {
-  const [selectedFolderId, setSelectedFolderId] = useState(null); // null = root
+interface MoveToFolderModalProps {
+  show: boolean;
+  onHide: () => void;
+  folders: LibraryFolder[];
+  onMove: (folderId: number | null) => Promise<void> | void;
+  itemCount: number;
+}
+
+const MoveToFolderModal = ({ show, onHide, folders, onMove, itemCount }: MoveToFolderModalProps) => {
+  const [selectedFolderId, setSelectedFolderId] = useState<number | null>(null); // null = root
   const [submitting, setSubmitting] = useState(false);
 
   // Build folder tree from flat list
-  const rootFolders = folders.filter(f => !f.parentFolderId);
-  const getChildren = (parentId) => folders.filter(f => f.parentFolderId === parentId);
+  const rootFolders = folders.filter((f: LibraryFolder) => !f.parentFolderId);
+  const getChildren = (parentId: number | undefined): LibraryFolder[] =>
+    folders.filter((f: LibraryFolder) => f.parentFolderId === parentId);
 
   const handleMove = async () => {
     setSubmitting(true);
@@ -26,18 +36,18 @@ const MoveToFolderModal = ({ show, onHide, folders, onMove, itemCount }) => {
     setSelectedFolderId(null);
   };
 
-  const getFolderColor = (folder) => {
+  const getFolderColor = (folder: LibraryFolder): string => {
     if (!folder.color) return '#6c757d';
-    return FOLDER_COLORS[folder.color] || folder.color;
+    return FOLDER_COLORS[folder.color as FolderColor] || folder.color;
   };
 
-  const selectedStyle = {
+  const selectedStyle: React.CSSProperties = {
     outline: '2px solid #0d6efd',
     outlineOffset: '-2px',
     fontWeight: 600
   };
 
-  const renderFolder = (folder, depth = 0) => {
+  const renderFolder = (folder: LibraryFolder, depth: number = 0): React.ReactNode => {
     const isSelected = selectedFolderId === folder.folderId;
     return (
       <React.Fragment key={folder.folderId}>
@@ -54,7 +64,7 @@ const MoveToFolderModal = ({ show, onHide, folders, onMove, itemCount }) => {
             {isSelected && <i className="bi bi-check-circle-fill text-primary"></i>}
           </span>
         </ListGroup.Item>
-        {getChildren(folder.folderId).map(child => renderFolder(child, depth + 1))}
+        {getChildren(folder.folderId).map((child: LibraryFolder) => renderFolder(child, depth + 1))}
       </React.Fragment>
     );
   };
@@ -81,7 +91,7 @@ const MoveToFolderModal = ({ show, onHide, folders, onMove, itemCount }) => {
               </ListGroup.Item>
             );
           })()}
-          {rootFolders.map(folder => renderFolder(folder))}
+          {rootFolders.map((folder: LibraryFolder) => renderFolder(folder))}
         </ListGroup>
         {folders.length === 0 && (
           <p className="text-muted text-center py-3">

@@ -1,5 +1,18 @@
 import React from 'react';
 import { Form, Button, Alert } from 'react-bootstrap';
+import type { Settings } from '../../contexts/SettingsContext';
+import type { SettingsChangeHandler } from './AppearanceSettings';
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type OpenRouterTestResult = any;
+
+interface AiProviderSettingsProps {
+  settings: Settings;
+  handleChange: SettingsChangeHandler;
+  testingOpenRouter: boolean;
+  openRouterTestResult: OpenRouterTestResult | null;
+  onTestConnection: () => void;
+}
 
 const AiProviderSettings = ({
   settings,
@@ -7,7 +20,7 @@ const AiProviderSettings = ({
   testingOpenRouter,
   openRouterTestResult,
   onTestConnection
-}) => {
+}: AiProviderSettingsProps) => {
   return (
     <>
       <div className="settings-control-group">
@@ -171,7 +184,7 @@ const AiProviderSettings = ({
                     type="text"
                     name={task.modelName}
                     placeholder="(use default model above)"
-                    value={settings[task.modelName] || ''}
+                    value={(settings as unknown as Record<string, string>)[task.modelName] || ''}
                     onChange={handleChange}
                   />
                 </Form.Group>
@@ -182,7 +195,7 @@ const AiProviderSettings = ({
                     rows={3}
                     name={task.promptName}
                     placeholder="(leave empty to use built-in default)"
-                    value={settings[task.promptName] || ''}
+                    value={(settings as unknown as Record<string, string>)[task.promptName] || ''}
                     onChange={handleChange}
                     style={{ fontFamily: 'monospace', fontSize: '0.85em' }}
                   />

@@ -1,9 +1,20 @@
 import React from 'react';
 import { Button, Collapse } from 'react-bootstrap';
 
-// TODO(phase-d): tighten props once pages/TextDisplay is typed in C8.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type MobileLessonHeaderProps = Record<string, any>;
+interface MobileLessonHeaderProps {
+  isMobile: boolean;
+  showMobileHeader: boolean;
+  setShowMobileHeader: (value: boolean | ((prev: boolean) => boolean)) => void;
+  showMoreControls: boolean;
+  setShowMoreControls: (value: boolean | ((prev: boolean) => boolean)) => void;
+  text: { title?: string } | null | undefined;
+  primaryControls: React.ReactNode;
+  secondaryControls: React.ReactNode;
+  readerLessonActions: React.ReactNode;
+  isAudioLesson: boolean;
+  isAudioPlaying: boolean;
+  toggleAudioPlayback: () => void;
+}
 
 const MobileLessonHeader = React.memo(({
   isMobile,

@@ -8,6 +8,26 @@ import {
   previousPeriodLabel,
   supportsPreviousPeriod
 } from '../../utils/statistics';
+import type {
+  ListeningActivity,
+  ReadingActivity,
+  DisplayStats
+} from '../../utils/statistics';
+
+interface DeltaShape {
+  direction: 'up' | 'down' | 'flat';
+  pct: number;
+}
+
+interface StatsSummaryCardsProps {
+  displayStats: DisplayStats;
+  readingActivity: ReadingActivity;
+  listeningActivity: ListeningActivity;
+  previousReadingActivity?: ReadingActivity | null;
+  previousListeningActivity?: ListeningActivity | null;
+  activityPeriod: string;
+  totalLanguages: number;
+}
 
 const StatsSummaryCards = ({
   displayStats,
@@ -17,7 +37,7 @@ const StatsSummaryCards = ({
   previousListeningActivity,
   activityPeriod,
   totalLanguages
-}) => {
+}: StatsSummaryCardsProps) => {
   const completionPercentage = displayStats.totalWords > 0
     ? Math.round((displayStats.knownWords / displayStats.totalWords) * 100)
     : 0;
@@ -42,7 +62,7 @@ const StatsSummaryCards = ({
       )
     : null;
 
-  const withLabel = (delta) => (delta ? { ...delta, label: deltaLabel } : null);
+  const withLabel = (delta: DeltaShape | null) => (delta ? { ...delta, label: deltaLabel } : null);
 
   return (
     <>

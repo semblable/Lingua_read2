@@ -1,10 +1,44 @@
 import React from 'react';
 import { Button, Spinner, Badge } from 'react-bootstrap';
 import { buildDisplayBlocks, getTitleLineVariant } from '../../utils/readerText';
+import type { DisplayBlock } from '../../utils/readerText';
+import type { Settings } from '../../contexts/SettingsContext';
 
-// TODO(phase-d): tighten these props once pages/TextDisplay is typed in C8.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type StandardTextViewProps = Record<string, any>;
+interface ProcessedSentenceResult {
+  sentenceElements: React.ReactNode[];
+  nextSentenceIndex: number;
+}
+
+interface StandardTextViewProps {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  text: any;
+  globalSettings: Settings;
+  readingUiMode: string;
+  mobileReadingConfig: {
+    lineSpacing: number;
+    blockPadding: string | number;
+    chunkSize: number;
+  };
+  getFontFamilyForList: () => string;
+  handleWordSelection: () => void;
+  processTextContent: (text: string) => React.ReactNode;
+  renderProcessedContentAsSentences: (
+    processed: React.ReactNode,
+    startIndex: number
+  ) => ProcessedSentenceResult;
+  isMobile: boolean;
+  textContentRef: React.RefObject<HTMLDivElement>;
+  canUseSentenceTts: boolean;
+  isSpeakingSentence: boolean;
+  sentenceTtsEnabled: boolean;
+  setSentenceTtsEnabled: (value: boolean | ((prev: boolean) => boolean)) => void;
+  sentenceTtsRate: number;
+  setSentenceTtsRate: (value: number | ((prev: number) => number)) => void;
+  onSpeakSentence: () => void;
+  handleCompleteLesson: () => void;
+  completing: boolean;
+  nextTextId?: number | null;
+}
 
 const StandardTextView = React.memo(({
   text,
@@ -31,12 +65,12 @@ const StandardTextView = React.memo(({
   if (!text?.content) return null;
   const displayBlocks = buildDisplayBlocks(text.content, text.structuredContent);
   let currentSentenceIndex = 0;
-  const groupSentences = (sentenceElements, groupSize) => {
+  const groupSentences = (sentenceElements: React.ReactNode[], groupSize: number): React.ReactNode[][] => {
     if (!Array.isArray(sentenceElements) || sentenceElements.length === 0) return [];
-    const groups = [];
-    let currentGroup = [];
+    const groups: React.ReactNode[][] = [];
+    let currentGroup: React.ReactNode[] = [];
     let sentenceCount = 0;
-    sentenceElements.forEach((sentence) => {
+    sentenceElements.forEach((sentence: React.ReactNode) => {
       currentGroup.push(sentence);
       sentenceCount += 1;
       if (sentenceCount >= groupSize) {
@@ -49,13 +83,13 @@ const StandardTextView = React.memo(({
     return groups;
   };
   const modeClass = readingUiMode === 'modern' ? 'modern' : 'classic';
-  const renderLineAsSentences = (lineText) => {
+  const renderLineAsSentences = (lineText: string): React.ReactNode[] => {
     const processedLineElements = processTextContent(lineText);
     const { sentenceElements, nextSentenceIndex } = renderProcessedContentAsSentences(processedLineElements, currentSentenceIndex);
     currentSentenceIndex = nextSentenceIndex;
     return sentenceElements;
   };
-  const renderTitleLine = (line, lineIndex, blockKey, lines) => {
+  const renderTitleLine = (line: string, lineIndex: number, blockKey: string, lines: string[]): React.ReactNode => {
     if (!line) {
       return <div key={`${blockKey}-spacer-${lineIndex}`} className="reader-title-line-spacer" aria-hidden="true" />;
     }
@@ -96,7 +130,7 @@ const StandardTextView = React.memo(({
           <Button
             variant="outline-secondary"
             size="sm"
-            onClick={() => setSentenceTtsRate((prev) => prev - 0.1)}
+            onClick={() => setSentenceTtsRate((prev: number) => prev - 0.1)}
             disabled={!canUseSentenceTts || !sentenceTtsEnabled || sentenceTtsRate <= 0.5}
             aria-label="Decrease sentence speech rate"
           >
@@ -106,7 +140,7 @@ const StandardTextView = React.memo(({
           <Button
             variant="outline-secondary"
             size="sm"
-            onClick={() => setSentenceTtsRate((prev) => prev + 0.1)}
+            onClick={() => setSentenceTtsRate((prev: number) => prev + 0.1)}
             disabled={!canUseSentenceTts || !sentenceTtsEnabled || sentenceTtsRate >= 1.5}
             aria-label="Increase sentence speech rate"
           >
@@ -131,7 +165,7 @@ const StandardTextView = React.memo(({
         onMouseUp={handleWordSelection}
         onTouchEnd={handleWordSelection}
       >
-        {displayBlocks.map((block) => {
+        {displayBlocks.map((block: DisplayBlock) => {
           if (block.type === 'image') {
             return (
               <figure key={block.key} className={`reader-image-block reader-image-block-${modeClass}`}>
@@ -153,12 +187,12 @@ const StandardTextView = React.memo(({
                 key={`${block.key}-title`}
                 className={`reader-title-block reader-title-block-${modeClass}`}
               >
-                {block.lines.map((line, lineIndex) => renderTitleLine(line, lineIndex, block.key, block.lines))}
+                {(block.lines ?? []).map((line: string, lineIndex: number) => renderTitleLine(line, lineIndex, block.key, block.lines ?? []))}
               </div>
             );
           }
 
-          const processedParaElements = processTextContent(block.text);
+          const processedParaElements = processTextContent(block.text ?? '');
           const { sentenceElements, nextSentenceIndex } = renderProcessedContentAsSentences(processedParaElements, currentSentenceIndex);
           currentSentenceIndex = nextSentenceIndex;
 
@@ -166,9 +200,9 @@ const StandardTextView = React.memo(({
             const grouped = groupSentences(sentenceElements || [], mobileReadingConfig.chunkSize);
             return (
               <div key={block.key} className={`reading-block-group reading-block-group-${modeClass}`}>
-                {grouped.map((group, groupIndex) => (
+                {grouped.map((group: React.ReactNode[], groupIndex: number) => (
                   <p key={`${block.key}-group-${groupIndex}`} className={`reading-block reading-block-${modeClass}`}>
-                    {group.map((sentence, sentenceIndex) => (
+                    {group.map((sentence: React.ReactNode, sentenceIndex: number) => (
                       <React.Fragment key={`${block.key}-group-${groupIndex}-sentence-${sentenceIndex}`}>
                         {sentence}
                         {sentenceIndex < group.length - 1 ? ' ' : null}

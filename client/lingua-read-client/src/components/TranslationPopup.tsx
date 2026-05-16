@@ -2,11 +2,17 @@ import React, { useMemo, useRef, useCallback, useEffect } from 'react'; // Added
 import { Modal, Button, Spinner, Row, Col } from 'react-bootstrap';
 
 // Parser for the <o s="N">...</o><t s="N">...</t> format
-const parsePairedTranslation = (taggedText) => {
+interface SentencePair {
+  number: number;
+  original: string;
+  translated: string;
+}
+
+const parsePairedTranslation = (taggedText: string | undefined | null): SentencePair[] => {
   if (!taggedText) return [];
   // Regex to capture pairs of <o> and <t> tags with the same sentence number
   const regex = /<o s="(\d+?)">(.*?)<\/o>\s*<t s="\1">(.*?)<\/t>/gs;
-  const pairs = [];
+  const pairs: SentencePair[] = [];
   let match;
   while ((match = regex.exec(taggedText)) !== null) {
     pairs.push({
@@ -43,8 +49,8 @@ const TranslationPopup = ({
   sourceLanguage,
   targetLanguage
 }: TranslationPopupProps) => {
-  const originalScrollRef = useRef(null);
-  const translatedScrollRef = useRef(null);
+  const originalScrollRef = useRef<HTMLDivElement | null>(null);
+  const translatedScrollRef = useRef<HTMLDivElement | null>(null);
   const isSyncingScroll = useRef(false); // Flag to prevent scroll loops
 
   // Memoize sentence processing to avoid re-calculation on every render
@@ -71,7 +77,7 @@ const TranslationPopup = ({
   }, [translatedText, originalText]);
 
   // Scroll synchronization handler
-  const handleScroll = useCallback((source) => {
+  const handleScroll = useCallback((source: 'original' | 'translated') => {
     if (isSyncingScroll.current) return; // Exit if already syncing
 
     isSyncingScroll.current = true; // Set flag
@@ -127,7 +133,7 @@ const TranslationPopup = ({
       });
     });
 
-    const syncPairHeight = (originalEl, translatedEl) => {
+    const syncPairHeight = (originalEl: HTMLElement | null, translatedEl: HTMLElement | null) => {
       if (originalEl && translatedEl) {
         // Temporarily reset minHeight to measure natural height accurately
         originalEl.style.minHeight = '0px';

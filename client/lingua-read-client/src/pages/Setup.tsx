@@ -9,7 +9,7 @@ const Setup = () => {
   const [loading, setLoading] = useState(false);
   const setup = useAuthStore((s) => s.setup);
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError('');
 

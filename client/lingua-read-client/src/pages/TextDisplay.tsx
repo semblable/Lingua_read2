@@ -20,6 +20,7 @@ const AudiobookPlayer = AudiobookPlayerImpl as React.ComponentType<any>;
 import './TextDisplay.css';
 import { SettingsContext } from '../contexts/SettingsContext';
 import { useReaderBookmarks } from '../hooks/useReaderBookmarks';
+import { useReaderKeyboard, type WordStatus } from '../hooks/useReaderKeyboard';
 import { extractTranslatedTextFromPairedTags } from '../utils/translationTags';
 import { cancelSpeech, isSpeechSynthesisSupported, speakText } from '../utils/browserTts';
 import { parseSrtContent, findSrtLineIndex } from '../utils/srtParser';
@@ -1947,74 +1948,59 @@ const TextDisplay = () => {
   // Resizable Panel
   // Removed useEffect for drag-to-resize functionality
 
-  // --- Keyboard Shortcuts ---
-
-  useEffect(() => { // 1-5 keys
-    const handleKeyDown = async (event: KeyboardEvent) => {
-      const target = event.target as HTMLElement;
-      if (target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA' || event.ctrlKey || event.altKey || event.metaKey) return;
-      if (hoveredWordTerm && !processingWord && !isTranslating) {
-        const key = parseInt(event.key, 10);
-        if (key >= 1 && key <= 5) {
-          event.preventDefault();
-          const wordData = getWordData(hoveredWordTerm);
-          if (wordData) {
-            // If translation is missing, fetch it first
-            let translationToUse = wordData.translation || '';
-            if (!translationToUse && text?.languageCode) {
-              try {
-                const result = await translateText(hoveredWordTerm, text.languageCode, translationTargetLanguageCode);
-                translationToUse = result?.translatedText || '';
-              } catch (err) {
-                console.error(`[Keyboard Shortcut] Failed to fetch translation for ${hoveredWordTerm}:`, err);
-                // Continue with empty translation rather than failing
-              }
-            }
-
-            updateWord(wordData.wordId, key, translationToUse)
-              .then(() => {
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                setWords((prevWords: any[]) => prevWords.map((w: any) => w.wordId === wordData.wordId ? { ...w, status: key, translation: translationToUse } : w));
-                if (selectedWord === hoveredWordTerm && displayedWord?.term === hoveredWordTerm) {
-                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                  setDisplayedWord((prev: any) => ({ ...prev, status: key, translation: translationToUse }));
-                }
-              })
-              .catch((err: unknown) => console.error(`[Keyboard Shortcut] Failed update for ${hoveredWordTerm}:`, err));
-          } else {
-            // Unknown word - fetch translation first, then create
-            (async () => {
-              let translationToUse = '';
-              if (text?.languageCode) {
-                try {
-                  const result = await translateText(hoveredWordTerm, text.languageCode, translationTargetLanguageCode);
-                  translationToUse = result?.translatedText || '';
-                } catch (err) {
-                  console.error(`[Keyboard Shortcut] Failed to fetch translation for ${hoveredWordTerm}:`, err);
-                  // Continue with empty translation rather than failing
-                }
-              }
-              const sentenceToMine = currentSentenceSegment?.text;
-              if (text?.textId == null) return;
-              createWord(text.textId, hoveredWordTerm, key, translationToUse, sentenceToMine)
-                .then(newWordData => {
-                  // Update newWordData with the translation we fetched (if backend didn't return it)
-                  const typed = newWordData as { translation?: string } | null;
-                  const wordWithTranslation = { ...(typed || {}), translation: translationToUse || typed?.translation };
-                  setWords(prevWords => [...prevWords, wordWithTranslation]);
-                  // Still trigger auto-translate if enabled and we didn't get a translation
-                  if (globalSettings.autoTranslateWords && !translationToUse) triggerAutoTranslation(hoveredWordTerm);
-                })
-                .catch(err => console.error(`[Keyboard Shortcut] Failed to create word ${hoveredWordTerm}:`, err));
-            })();
+  const handleSetWordStatusFromKeyboard = useCallback(
+    async (term: string, status: WordStatus) => {
+      const wordData = getWordData(term);
+      if (wordData) {
+        let translationToUse = wordData.translation || '';
+        if (!translationToUse && text?.languageCode) {
+          try {
+            const result = await translateText(term, text.languageCode, translationTargetLanguageCode);
+            translationToUse = result?.translatedText || '';
+          } catch (err) {
+            console.error(`[Keyboard Shortcut] Failed to fetch translation for ${term}:`, err);
           }
         }
+        updateWord(wordData.wordId, status, translationToUse)
+          .then(() => {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            setWords((prevWords: any[]) => prevWords.map((w: any) => w.wordId === wordData.wordId ? { ...w, status, translation: translationToUse } : w));
+            if (selectedWord === term && displayedWord?.term === term) {
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              setDisplayedWord((prev: any) => ({ ...prev, status, translation: translationToUse }));
+            }
+          })
+          .catch((err: unknown) => console.error(`[Keyboard Shortcut] Failed update for ${term}:`, err));
+      } else {
+        let translationToUse = '';
+        if (text?.languageCode) {
+          try {
+            const result = await translateText(term, text.languageCode, translationTargetLanguageCode);
+            translationToUse = result?.translatedText || '';
+          } catch (err) {
+            console.error(`[Keyboard Shortcut] Failed to fetch translation for ${term}:`, err);
+          }
+        }
+        const sentenceToMine = currentSentenceSegment?.text;
+        if (text?.textId == null) return;
+        createWord(text.textId, term, status, translationToUse, sentenceToMine)
+          .then(newWordData => {
+            const typed = newWordData as { translation?: string } | null;
+            const wordWithTranslation = { ...(typed || {}), translation: translationToUse || typed?.translation };
+            setWords(prevWords => [...prevWords, wordWithTranslation]);
+            if (globalSettings.autoTranslateWords && !translationToUse) triggerAutoTranslation(term);
+          })
+          .catch(err => console.error(`[Keyboard Shortcut] Failed to create word ${term}:`, err));
       }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [hoveredWordTerm, processingWord, isTranslating, getWordData, setWords, selectedWord, displayedWord, text?.textId, text?.languageCode, currentSentenceSegment?.text, globalSettings.autoTranslateWords, triggerAutoTranslation, translationTargetLanguageCode]); // Use globalSettings
-  // --- End Keyboard Shortcuts ---
+    },
+    [getWordData, text?.languageCode, text?.textId, translationTargetLanguageCode, setWords, selectedWord, displayedWord?.term, currentSentenceSegment?.text, globalSettings.autoTranslateWords, triggerAutoTranslation]
+  );
+
+  useReaderKeyboard({
+    enabled: !processingWord && !isTranslating,
+    hoveredWordTerm,
+    onSetWordStatus: handleSetWordStatusFromKeyboard
+  });
 
   // Removed redundant text selection listener useEffect hook
   // Selection is now handled by onMouseUp on the text container div

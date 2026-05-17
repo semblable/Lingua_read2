@@ -42,6 +42,7 @@ export type UseReaderAudioSyncArgs = {
   isSentenceMode: boolean;
   isMobile: boolean;
   displayMode: string;
+  srtLines: SrtEntry[];
   currentSegmentIndex: number;
   setCurrentSegmentIndex: React.Dispatch<React.SetStateAction<number>>;
   listRef: React.MutableRefObject<ListLikeRef>;
@@ -50,10 +51,6 @@ export type UseReaderAudioSyncArgs = {
 export type UseReaderAudioSyncResult = {
   audioRef: React.RefObject<HTMLAudioElement>;
   audioCurrentTimeRef: React.MutableRefObject<number>;
-  audioSrc: string | null;
-  setAudioSrc: React.Dispatch<React.SetStateAction<string | null>>;
-  srtLines: SrtEntry[];
-  setSrtLines: React.Dispatch<React.SetStateAction<SrtEntry[]>>;
   currentSrtLineId: number | null;
   setCurrentSrtLineId: React.Dispatch<React.SetStateAction<number | null>>;
   isAudioPlaying: boolean;
@@ -94,6 +91,7 @@ export const useReaderAudioSync = ({
   isSentenceMode,
   isMobile,
   displayMode,
+  srtLines,
   currentSegmentIndex,
   setCurrentSegmentIndex,
   listRef
@@ -102,8 +100,6 @@ export const useReaderAudioSync = ({
   const audioCurrentTimeRef = useRef(0);
   const autoScrollRafRef = useRef<number | null>(null);
 
-  const [audioSrc, setAudioSrc] = useState<string | null>(null);
-  const [srtLines, setSrtLines] = useState<SrtEntry[]>([]);
   const [currentSrtLineId, setCurrentSrtLineId] = useState<number | null>(null);
   const [isAudioPlaying, setIsAudioPlaying] = useState(false);
   const [isSpeakingSentence, setIsSpeakingSentence] = useState(false);
@@ -314,10 +310,6 @@ export const useReaderAudioSync = ({
   return {
     audioRef,
     audioCurrentTimeRef,
-    audioSrc,
-    setAudioSrc,
-    srtLines,
-    setSrtLines,
     currentSrtLineId,
     setCurrentSrtLineId,
     isAudioPlaying,

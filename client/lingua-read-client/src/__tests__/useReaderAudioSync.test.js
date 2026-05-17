@@ -26,6 +26,7 @@ const renderAudioSyncHook = (overrides = {}) => {
         isSentenceMode: false,
         isMobile: false,
         displayMode: 'audio',
+        srtLines: [],
         currentSegmentIndex: 0,
         ...overrides
       }
@@ -44,10 +45,6 @@ describe('useReaderAudioSync', () => {
       expect.objectContaining({
         audioRef: expect.any(Object),
         audioCurrentTimeRef: expect.any(Object),
-        audioSrc: null,
-        setAudioSrc: expect.any(Function),
-        srtLines: [],
-        setSrtLines: expect.any(Function),
         currentSrtLineId: null,
         setCurrentSrtLineId: expect.any(Function),
         isAudioPlaying: false,
@@ -144,6 +141,7 @@ describe('useReaderAudioSync', () => {
       isSentenceMode: false,
       isMobile: false,
       displayMode: 'audio',
+      srtLines: [],
       currentSegmentIndex: 0
     });
     expect(cancelSpeech).toHaveBeenCalled();
@@ -162,6 +160,7 @@ describe('useReaderAudioSync', () => {
       isSentenceMode: false,
       isMobile: false,
       displayMode: 'audio',
+      srtLines: [],
       currentSegmentIndex: 1
     });
     expect(cancelSpeech).toHaveBeenCalled();

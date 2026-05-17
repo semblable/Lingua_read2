@@ -23,6 +23,7 @@ import { useReaderBookmarks } from '../hooks/useReaderBookmarks';
 import { useReaderKeyboard, type WordStatus } from '../hooks/useReaderKeyboard';
 import { useWordTranslation } from '../hooks/useWordTranslation';
 import { useReaderAudioSync } from '../hooks/useReaderAudioSync';
+import { useReaderState, type FetchAllLanguageWordsFn } from '../hooks/useReaderState';
 import { extractTranslatedTextFromPairedTags } from '../utils/translationTags';
 import { cancelSpeech, isSpeechSynthesisSupported, speakText } from '../utils/browserTts';
 import { parseSrtContent, findSrtLineIndex } from '../utils/srtParser';
@@ -63,12 +64,6 @@ const TextDisplay = () => {
   const autoTranslateTextIdRef = useRef<number | string | null>(null);
 
   // --- State Declarations ---
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [text, setText] = useState<ReaderText | null>(null);
-  const [book, setBook] = useState<ReaderBook | null>(null);
-  const [words, setWords] = useState<Word[]>([]);
-  const [languageWordsLoaded, setLanguageWordsLoaded] = useState(false);
   const [selectedWord, setSelectedWord] = useState('');
   const [hoveredWordTerm, setHoveredWordTerm] = useState<string | null>(null);
   const [processingWord, setProcessingWord] = useState(false);
@@ -82,8 +77,6 @@ const TextDisplay = () => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [stats, setStats] = useState<Record<string, any> | null>(null);
   const [showStatsModal, setShowStatsModal] = useState(false);
-  const [previousTextId, setPreviousTextId] = useState<number | null>(null);
-  const [nextTextId, setNextTextId] = useState<number | null>(null);
   const [showTranslationPopup, setShowTranslationPopup] = useState(false);
   const [fullTextTranslation, setFullTextTranslation] = useState('');
   const [isFullTextTranslating, setIsFullTextTranslating] = useState(false);
@@ -104,10 +97,6 @@ const TextDisplay = () => {
   // If TextDisplay needs its own independent textSize, keep a local state for it.
   // Let's use globalSettings directly for textSize for now.
   // Removed isDragging state
-  const [isAudioLesson, setIsAudioLesson] = useState(false);
-  const [displayMode, setDisplayMode] = useState('audio');
-  const [languageConfig, setLanguageConfig] = useState<LanguageConfig | null>(null); // State for language settings (Phase 3)
-  const [embeddedUrl, setEmbeddedUrl] = useState<string | null>(null); // State for embedded dictionary iframe URL (Phase 3)
   const [showMoreControls, setShowMoreControls] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [showMobileHeader, setShowMobileHeader] = useState(false);
@@ -121,7 +110,6 @@ const TextDisplay = () => {
   const [visibleTranslationIndex, setVisibleTranslationIndex] = useState<number | null>(null);
   const [visibleExplanationIndex, setVisibleExplanationIndex] = useState<number | null>(null);
   const [creditedSegmentIndices, setCreditedSegmentIndices] = useState<number[]>([]);
-  const [sentenceProgressLoaded, setSentenceProgressLoaded] = useState(false);
   const selectionDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mobileSelectionRetryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mobileSelectionPendingRef = useRef(false);
@@ -135,18 +123,9 @@ const TextDisplay = () => {
   const lastHandledSelectionRef = useRef('');
   const suppressWordClickUntilRef = useRef(0);
   const selectableWordTouchStartRef = useRef(0);
-  const textLoadRequestVersionRef = useRef(0);
   const currentTextIdForSummaryRef = useRef<number | null>(null);
+  const fetchAllLanguageWordsRef = useRef<FetchAllLanguageWordsFn | null>(null);
 
-  useEffect(() => {
-    currentTextIdForSummaryRef.current = text?.textId ?? null;
-    setShowSummaryPopup(false);
-    setSummaryText('');
-    setSummaryError('');
-  }, [text?.textId]);
-
-  // --- Effects ---
-  // --- End Effects ---
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const mediaQuery = window.matchMedia('(max-width: 768px)');
@@ -204,9 +183,6 @@ const TextDisplay = () => {
   const sentenceTtsEnabled = globalSettings.sentenceTtsEnabled ?? false;
   const sentenceTtsRate = globalSettings.sentenceTtsRate ?? 1;
   const canUseSentenceTts = isSpeechSynthesisSupported();
-  const readingUiMode = isAudioLesson
-    ? 'classic'
-    : (globalSettings.readingUiMode === 'modern' ? 'modern' : 'classic');
   const readingDensity = globalSettings.readingDensity || 'balanced';
   const showWordInfoPanel = globalSettings.showWordInfoPanel ?? true;
 
@@ -220,6 +196,64 @@ const TextDisplay = () => {
     toggleBookmarkForIndex,
     handleSentenceContextMenu
   } = useReaderBookmarks({ textId, isMobile, hasActiveTextSelection });
+
+  const handleSentenceProgressApplied = useCallback(
+    (initialSegmentIndex: number, credited: number[]) => {
+      setCurrentSegmentIndex(initialSegmentIndex);
+      setCreditedSegmentIndices(credited);
+    },
+    []
+  );
+
+  const {
+    loading,
+    setLoading,
+    error,
+    setError,
+    text,
+    setText,
+    book,
+    setBook,
+    words,
+    setWords,
+    languageWordsLoaded,
+    setLanguageWordsLoaded,
+    languageConfig,
+    setLanguageConfig,
+    embeddedUrl,
+    setEmbeddedUrl,
+    previousTextId,
+    nextTextId,
+    isAudioLesson,
+    setIsAudioLesson,
+    displayMode,
+    setDisplayMode,
+    audioSrc,
+    setAudioSrc,
+    srtLines,
+    setSrtLines,
+    sentenceProgressLoaded,
+    setSentenceProgressLoaded
+  } = useReaderState({
+    textId,
+    fetchAllLanguageWordsRef,
+    leftPanelWidthFromSettings: globalSettings.leftPanelWidth || 85,
+    setLeftPanelWidth,
+    onSentenceProgressApplied: handleSentenceProgressApplied,
+    autoTranslateTriggeredRef,
+    autoTranslateTextIdRef
+  });
+
+  const readingUiMode = isAudioLesson
+    ? 'classic'
+    : (globalSettings.readingUiMode === 'modern' ? 'modern' : 'classic');
+
+  useEffect(() => {
+    currentTextIdForSummaryRef.current = text?.textId ?? null;
+    setShowSummaryPopup(false);
+    setSummaryText('');
+    setSummaryError('');
+  }, [text?.textId]);
 
   const applyTranslationToDisplayedWord = useCallback(
     (term: string, translationText: string) => {
@@ -250,10 +284,6 @@ const TextDisplay = () => {
   const {
     audioRef,
     audioCurrentTimeRef,
-    audioSrc,
-    setAudioSrc,
-    srtLines,
-    setSrtLines,
     currentSrtLineId,
     setCurrentSrtLineId,
     isAudioPlaying,
@@ -277,10 +307,33 @@ const TextDisplay = () => {
     isSentenceMode,
     isMobile,
     displayMode,
+    srtLines,
     currentSegmentIndex,
     setCurrentSegmentIndex,
     listRef
   });
+
+  const previousLoadedTextIdRef = useRef<string | undefined>(textId);
+  useEffect(() => {
+    if (previousLoadedTextIdRef.current === textId) return;
+    previousLoadedTextIdRef.current = textId;
+    setCurrentSegmentIndex(0);
+    setSegmentTranslations({});
+    setSegmentExplanations({});
+    setVisibleTranslationIndex(null);
+    setVisibleExplanationIndex(null);
+    setCreditedSegmentIndices([]);
+    setSegmentPlaybackRequest(null);
+    lastAutoSegmentPlaybackKeyRef.current = '';
+    skipInitialAudioLessonSegmentPlaybackRef.current = true;
+    pendingSentenceCreditRef.current = new Set();
+  }, [
+    textId,
+    setSegmentPlaybackRequest,
+    lastAutoSegmentPlaybackKeyRef,
+    skipInitialAudioLessonSegmentPlaybackRef,
+    pendingSentenceCreditRef
+  ]);
 
   const focusSentenceIndexFromNode = useCallback((node: Node | null) => {
     const container = textContentRef.current;
@@ -493,7 +546,6 @@ const TextDisplay = () => {
   ) => {
     if (!languageId) return; // Guard against missing languageId
     try {
-      // Corrected URL construction: Removed redundant '/api' prefix
       const response = await fetch(`${API_URL}/words/language/${languageId}?skipSort=true`, {
         credentials: 'include',
         headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' }
@@ -501,16 +553,14 @@ const TextDisplay = () => {
       if (!response.ok) throw new Error('Failed to fetch language words');
       const allLanguageWords = await response.json();
       if (!shouldApply()) return;
-      // Replace the entire words state with the newly fetched data
       setWords(allLanguageWords);
       setLanguageWordsLoaded(true);
     } catch (error) {
       console.error('Error fetching language words:', error);
       if (shouldApply()) setLanguageWordsLoaded(true);
     }
-  }, [setWords]); // Dependency: setWords
-
-  const prevFetchAllLanguageWordsRef = useRef(fetchAllLanguageWords);
+  }, [setWords, setLanguageWordsLoaded]);
+  fetchAllLanguageWordsRef.current = fetchAllLanguageWords as FetchAllLanguageWordsFn;
 
   // --- Optimized Data Structures ---
   // 1. Create a Map for O(1) word lookups
@@ -1427,236 +1477,7 @@ const TextDisplay = () => {
 
   // --- Effect Hooks ---
 
-  // Removed separate fetchUserSettings effect, handled by SettingsContext
-
-  // Fetch Text Data, Restore Audio Time & Playback Rate
-  useEffect(() => {
-    const requestVersion = textLoadRequestVersionRef.current + 1;
-    textLoadRequestVersionRef.current = requestVersion;
-    let cancelled = false;
-    let wordLinkingPollInterval: ReturnType<typeof setInterval> | null = null;
-    const isCurrentRequest = (): boolean => !cancelled && textLoadRequestVersionRef.current === requestVersion;
-    const clearWordLinkingPoll = () => {
-      if (wordLinkingPollInterval) {
-        clearInterval(wordLinkingPollInterval);
-        wordLinkingPollInterval = null;
-      }
-    };
-    const refreshWordsAfterLinking = async () => {
-      if (!textId) return;
-      try {
-        const refreshed = await getText(textId);
-        if (isCurrentRequest()) {
-          setWords(refreshed.words || []);
-        }
-      } catch (refreshErr) {
-        if (isCurrentRequest()) {
-          console.error('Failed to refresh words after linking completed:', refreshErr);
-        }
-      }
-    };
-    const checkWordLinkingStatus = async () => {
-      if (!isCurrentRequest() || !textId) return;
-      try {
-        const statusData = (await getWordLinkingStatus(textId)) as unknown as { wordLinkingStatus?: string } | null;
-        if (!isCurrentRequest()) return;
-        if (statusData?.wordLinkingStatus !== 'processing') {
-          clearWordLinkingPoll();
-          await refreshWordsAfterLinking();
-        }
-      } catch (pollErr) {
-        if (isCurrentRequest()) {
-          console.error('Failed to poll word linking status:', pollErr);
-        }
-        clearWordLinkingPoll();
-      }
-    };
-    const startWordLinkingPoll = () => {
-      clearWordLinkingPoll();
-      wordLinkingPollInterval = setInterval(checkWordLinkingStatus, 5000);
-    };
-
-    // --- Debug: Check what triggered this effect ---
-    if (prevFetchAllLanguageWordsRef.current !== fetchAllLanguageWords) {
-      prevFetchAllLanguageWordsRef.current = fetchAllLanguageWords;
-    } else {
-    }
-
-    // --- Set initial panel width from global settings ---
-    // This ensures panel width resets if global settings change while component is mounted
-    setLeftPanelWidth(globalSettings.leftPanelWidth || 85);
-    // --- End Set initial panel width ---
-
-    const fetchText = async () => {
-      if (!textId) return;
-      // Check if we are checking the same text to avoid full re-mount of children (AudiobookPlayer)
-      const isSameText = text && String(text.textId) === String(textId);
-
-      if (!isSameText) {
-        setLoading(true);
-        setLanguageWordsLoaded(false);
-        autoTranslateTriggeredRef.current = false;
-        autoTranslateTextIdRef.current = null;
-        setError('');
-        setBook(null);
-        setPreviousTextId(null);
-        setNextTextId(null);
-        setCurrentSegmentIndex(0);
-        setSegmentTranslations({});
-        setSegmentExplanations({});
-        setVisibleTranslationIndex(null);
-        setVisibleExplanationIndex(null);
-        setCreditedSegmentIndices([]);
-        setSentenceProgressLoaded(false);
-        setSegmentPlaybackRequest(null);
-        lastAutoSegmentPlaybackKeyRef.current = '';
-        skipInitialAudioLessonSegmentPlaybackRef.current = true;
-        pendingSentenceCreditRef.current = new Set();
-      } else {
-      }
-
-      try {
-        const data = await getText(textId);
-        if (!isCurrentRequest()) return;
-        setText(data);
-        setWords(data.words || []);
-        if (data.isAudioLesson && data.audioFilePath && data.hasSrtContent) {
-          if (!isAudioLesson) setIsAudioLesson(true);
-
-          const newAudioSrc = `/${data.audioFilePath}`;
-          if (audioSrc !== newAudioSrc) {
-            setAudioSrc(newAudioSrc);
-          }
-
-          // Lazy-load SRT content separately to avoid large payloads
-          getTextSrt(textId).then(srtText => {
-            if (isCurrentRequest() && srtText) setSrtLines(parseSrtContent(srtText));
-          }).catch(err => {
-            if (isCurrentRequest()) console.error('Failed to load SRT:', err);
-          });
-
-          if (displayMode !== 'audio') setDisplayMode('audio');
-
-          // Poll for word linking completion if still processing
-          if (data.wordLinkingStatus === 'processing') {
-            startWordLinkingPoll();
-          }
-
-        } else {
-          if (isAudioLesson) setIsAudioLesson(false);
-          if (audioSrc !== null) setAudioSrc(null);
-          setSrtLines([]);
-          if (displayMode !== 'text') setDisplayMode('text');
-        }
-        // Show text immediately with text-specific words while background data loads
-        setLoading(false);
-
-        // --- Parallel fetch of all independent data ---
-        const promises = [];
-
-        // 0: Language words
-        promises.push(
-          data.languageId
-            ? fetchAllLanguageWords(data.languageId, isCurrentRequest)
-            : Promise.resolve(null)
-        );
-
-        // 1: Language config
-        promises.push(
-          data.languageId
-            ? getLanguage(data.languageId)
-            : Promise.resolve(null)
-        );
-
-        // 2: Book data (updateLastRead then getBook, chained but parallel with others)
-        promises.push(
-          data.bookId && data.textId != null
-            ? updateLastRead(data.bookId, data.textId).then(() => getBook(data.bookId!))
-            : Promise.resolve(null)
-        );
-
-        // 3: Sentence progress
-        promises.push(
-          data?.textId
-            ? getSentenceProgress(data.textId)
-            : Promise.resolve(null)
-        );
-
-        const results = await Promise.allSettled(promises);
-        if (!isCurrentRequest()) return;
-
-        // Process result 0: fetchAllLanguageWords (already sets state internally)
-        if (results[0].status === 'rejected') {
-          console.error('Failed to fetch language words:', results[0].reason);
-        }
-        // Ensure highlights are enabled even if no languageId (fetchAllLanguageWords wasn't called)
-        if (!data.languageId) setLanguageWordsLoaded(true);
-
-        // Process result 1: language config
-        if (results[1].status === 'fulfilled' && results[1].value) {
-          setLanguageConfig(results[1].value as LanguageConfig);
-        } else {
-          if (results[1].status === 'rejected') {
-            console.error('Failed to fetch language configuration:', results[1].reason);
-            setError(prev => `${prev} (Warning: Failed to load language config)`);
-          }
-          setLanguageConfig(null);
-        }
-
-        // Process result 2: book
-        if (data.bookId) {
-          if (results[2].status === 'fulfilled' && results[2].value) {
-            const bookData = results[2].value as ReaderBook;
-            setBook(bookData);
-            if (bookData?.parts) {
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              const currentPartIndex = bookData.parts.findIndex((part: any) => part.textId === parseInt(textId ?? '', 10));
-              setPreviousTextId(currentPartIndex > 0 ? (bookData.parts[currentPartIndex - 1].textId ?? null) : null);
-              setNextTextId(currentPartIndex >= 0 && currentPartIndex < bookData.parts.length - 1 ? (bookData.parts[currentPartIndex + 1].textId ?? null) : null);
-            }
-          } else {
-            // results[2] is a PromiseSettledResult; narrow before reading reason.
-            console.error(
-              'Failed to get book data:',
-              results[2].status === 'rejected' ? results[2].reason : 'unknown'
-            );
-          }
-        } else {
-          setPreviousTextId(null);
-          setNextTextId(null);
-        }
-
-        // Process result 3: sentence progress
-        if (results[3].status === 'fulfilled' && results[3].value) {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const sentenceProgress = results[3].value as { lastSegmentIndex?: number; creditedSegmentIndices?: number[] };
-          const initialIndex = Math.max(0, sentenceProgress?.lastSegmentIndex || 0);
-          setCurrentSegmentIndex(initialIndex);
-          setCreditedSegmentIndices(sentenceProgress?.creditedSegmentIndices || []);
-        } else {
-          if (results[3].status === 'rejected') {
-            console.error('Failed to fetch sentence progress:', results[3].reason);
-          }
-          setCreditedSegmentIndices([]);
-          setCurrentSegmentIndex(0);
-        }
-        setSentenceProgressLoaded(true);
-      } catch (err: unknown) {
-        if (isCurrentRequest()) setError((err as Error)?.message || 'Failed to load text');
-      }
-      finally {
-        if (isCurrentRequest()) setLoading(false);
-      }
-    };
-    fetchText();
-
-    return () => {
-      cancelled = true;
-      clearWordLinkingPoll();
-    };
-
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [textId, fetchAllLanguageWords]); // 'text' and 'isAudioLesson' are intentionally omitted to prevent loops; cleanup captures correct 'text' via closure.
+  // Text fetch is now owned by useReaderState.
 
   // Ref to hold the latest handleTranslateUnknownWords (assigned after function definition below)
   const handleTranslateUnknownWordsRef = useRef<((opts?: { silent?: boolean }) => Promise<void>) | null>(null);

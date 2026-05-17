@@ -1,14 +1,9 @@
 import React from 'react';
 import { Card, Button, Alert } from 'react-bootstrap';
-import AudiobookPlayerImpl from '../AudiobookPlayer';
+import AudiobookPlayer from '../AudiobookPlayer';
 import type { ReaderText, ReaderBook } from '../../hooks/useReaderState';
 import type { SegmentPlaybackRequest } from '../../hooks/useReaderAudioSync';
 import type { Word } from '../../utils/api/words';
-
-// AudiobookPlayer accepts heterogeneous prop subsets per usage (lesson vs
-// book). Cast to a permissive shape; Phase E2 will split it.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const AudiobookPlayer = AudiobookPlayerImpl as React.ComponentType<any>;
 
 interface LessonHeaderProps {
   isMobile: boolean;

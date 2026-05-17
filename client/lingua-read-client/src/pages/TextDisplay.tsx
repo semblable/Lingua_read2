@@ -11,12 +11,7 @@ import {
 } from '../utils/api';
 import TranslationPopup from '../components/TranslationPopup';
 import SummaryPopup from '../components/SummaryPopup';
-import AudiobookPlayerImpl from '../components/AudiobookPlayer';
-// AudiobookPlayer is now .tsx but accepts heterogeneous prop subsets per
-// usage (lesson vs book). Cast to a permissive shape until Phase E2
-// extracts the sub-modules.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const AudiobookPlayer = AudiobookPlayerImpl as React.ComponentType<any>;
+import AudiobookPlayer from '../components/AudiobookPlayer';
 import './TextDisplay.css';
 import { SettingsContext } from '../contexts/SettingsContext';
 import { useReaderBookmarks } from '../hooks/useReaderBookmarks';

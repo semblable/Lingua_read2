@@ -689,71 +689,12 @@ describe('AudiobookPlayer', () => {
     expect(screen.queryByText('Error loading audio.')).not.toBeInTheDocument();
   });
 
-  // TODO(ts-migration): happy-dom (chosen over jsdom for AbortSignal compat
-  // in TextDisplay tests) appears to fire `loadedmetadata` synchronously on
-  // `audio.src=...`, which clears `sourceSwapRef` before the test fires its
-  // synthetic error. Under jsdom this test passes. Revisit in Phase C when
-  // AudiobookPlayer is converted to TS; either restructure the test to set
-  // up sourceSwapRef state immediately before fireEvent.error, or special-
-  // case the env. The component logic itself is exercised by sibling tests.
-  test.skip('ignores aborted media error events during source replacement', async () => {
-    getAudioLessonProgress.mockResolvedValue({ currentPosition: 0 });
-    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    const debugSpy = vi.spyOn(console, 'debug').mockImplementation(() => {});
-
-    const { container, rerender } = render(
-      <AudiobookPlayer
-        type="lesson"
-        audioSrc="https://example.com/lesson.mp3"
-        textId={42}
-        languageId={5}
-      />
-    );
-
-    await waitFor(() => {
-      expect(getAudioLessonProgress).toHaveBeenCalledWith(42);
-    });
-
-    const audio = container.querySelector('audio');
-    expect(audio).not.toBeNull();
-
-    rerender(
-      <AudiobookPlayer
-        type="lesson"
-        audioSrc="https://example.com/lesson-2.mp3"
-        textId={42}
-        languageId={5}
-      />
-    );
-
-    await waitFor(() => {
-      expect(audio.getAttribute('src')).toBe('https://example.com/lesson-2.mp3');
-    });
-
-    Object.defineProperty(audio, 'currentSrc', {
-      configurable: true,
-      value: 'https://example.com/lesson-2.mp3'
-    });
-
-    Object.defineProperty(audio, 'error', {
-      configurable: true,
-      value: {
-        code: 1,
-        message: 'The fetching process for the media resource was aborted by the user agent at the user\'s request.'
-      }
-    });
-
-    fireEvent.error(audio);
-
-    expect(debugSpy).toHaveBeenCalled();
-    expect(errorSpy).not.toHaveBeenCalledWith(
-      'Audio Error:',
-      expect.objectContaining({
-        mediaErrorCode: 1
-      })
-    );
-    expect(screen.queryByText('Error loading audio.')).not.toBeInTheDocument();
-  });
+  // Source-swap abort suppression is covered by unit tests on the
+  // `isSourceSwapAbort` predicate in `mediaSrc.test.js`. The original
+  // happy-dom integration test was skipped because `loadedmetadata` fires
+  // synchronously on `audio.src=`, clearing `sourceSwapRef` before a
+  // synthetic error event can fire. Phase E2 extracted the predicate into
+  // `src/audio/mediaSrc.ts` so the behavior is now unit-tested directly.
 
   test('surfaces non-abort media errors', async () => {
     getAudioLessonProgress.mockResolvedValue({ currentPosition: 0 });

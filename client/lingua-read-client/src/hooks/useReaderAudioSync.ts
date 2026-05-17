@@ -3,13 +3,11 @@ import { cancelSpeech } from '../utils/browserTts';
 import { findSrtLineIndex } from '../utils/srtParser';
 import type { SrtEntry } from '../utils/srtParser';
 
-export type SegmentPlaybackRequest = {
-  requestId: string;
-  startTime: number;
-  endTime: number;
-  repeatCount: number;
-  forcePlay: boolean;
-};
+// SegmentPlaybackRequest lives with the segment-playback state machine in
+// src/audio/segmentPlayback.ts. Re-exported here so existing consumers
+// (LessonHeader, TextDisplay, etc.) don't need to update their imports.
+import type { SegmentPlaybackRequest } from '../audio/segmentPlayback';
+export type { SegmentPlaybackRequest };
 
 export type ReaderMediaBlock = {
   imageUrl?: string;

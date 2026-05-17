@@ -21,6 +21,7 @@ import './TextDisplay.css';
 import { SettingsContext } from '../contexts/SettingsContext';
 import { useReaderBookmarks } from '../hooks/useReaderBookmarks';
 import { useReaderKeyboard, type WordStatus } from '../hooks/useReaderKeyboard';
+import { useWordTranslation } from '../hooks/useWordTranslation';
 import { extractTranslatedTextFromPairedTags } from '../utils/translationTags';
 import { cancelSpeech, isSpeechSynthesisSupported, speakText } from '../utils/browserTts';
 import { parseSrtContent, findSrtLineIndex } from '../utils/srtParser';
@@ -72,13 +73,10 @@ const TextDisplay = () => {
   const [languageWordsLoaded, setLanguageWordsLoaded] = useState(false);
   const [selectedWord, setSelectedWord] = useState('');
   const [hoveredWordTerm, setHoveredWordTerm] = useState<string | null>(null);
-  const [translation, setTranslation] = useState('');
-  const [isTranslating, setIsTranslating] = useState(false);
   const [processingWord, setProcessingWord] = useState(false);
   const [displayedWord, setDisplayedWord] = useState<DisplayedWord | null>(null);
   const [selectedWordAiContext, setSelectedWordAiContext] = useState('');
   const [saveSuccess, setSaveSuccess] = useState(false);
-  const [wordTranslationError, setWordTranslationError] = useState('');
   const [translatingUnknown, setTranslatingUnknown] = useState(false);
   const [translateUnknownError, setTranslateUnknownError] = useState('');
   const [isMarkingAll, setIsMarkingAll] = useState(false);
@@ -148,8 +146,6 @@ const TextDisplay = () => {
   const lastHandledSelectionRef = useRef('');
   const suppressWordClickUntilRef = useRef(0);
   const selectableWordTouchStartRef = useRef(0);
-  const translationAbortRef = useRef<AbortController | null>(null);
-  const translationCacheRef = useRef(new Map<string, unknown>());
   const pendingSentenceCreditRef = useRef(new Set<number>());
   const audioDrivenSentenceSyncRef = useRef(false);
   const lastAutoSegmentPlaybackKeyRef = useRef('');
@@ -273,6 +269,32 @@ const TextDisplay = () => {
     toggleBookmarkForIndex,
     handleSentenceContextMenu
   } = useReaderBookmarks({ textId, isMobile, hasActiveTextSelection });
+
+  const applyTranslationToDisplayedWord = useCallback(
+    (term: string, translationText: string) => {
+      setDisplayedWord(prev =>
+        prev && prev.term === term ? { ...prev, translation: translationText } : prev
+      );
+    },
+    []
+  );
+
+  const {
+    translation,
+    setTranslation,
+    isTranslating,
+    setIsTranslating,
+    wordTranslationError,
+    setWordTranslationError,
+    triggerAutoTranslation,
+    appendAutoTranslation,
+    cancelInflight: cancelInflightTranslation
+  } = useWordTranslation({
+    text,
+    globalSettings,
+    targetLanguageCode: translationTargetLanguageCode,
+    applyTranslationToDisplayedWord
+  });
 
   const toggleAudioPlayback = useCallback(() => {
     const audio = audioRef.current;
@@ -573,136 +595,6 @@ const TextDisplay = () => {
     return { ...baseStyle, ...(statusStyles[wordStatus ?? 0] || statusStyles[0]) };
   }, [languageWordsLoaded, globalSettings?.highlightKnownWords]); // Use globalSettings from context
 
-  const triggerAutoTranslation = useCallback(async (
-    termToTranslate: string,
-    options: { sentenceContext?: string; force?: boolean } = {}
-  ) => {
-    const { sentenceContext = '', force = false } = options;
-    if (!termToTranslate || !text?.languageCode) return;
-    if (!force && !globalSettings.autoTranslateWords) return;
-
-    const cacheKey = `${text.languageCode}|${translationTargetLanguageCode}|${sentenceContext ? 'sel' : 'word'}|${sentenceContext}|${termToTranslate}`;
-    const cached = translationCacheRef.current.get(cacheKey);
-    if (!force && cached) {
-      // Refresh LRU position
-      translationCacheRef.current.delete(cacheKey);
-      translationCacheRef.current.set(cacheKey, cached);
-      setIsTranslating(false);
-      setWordTranslationError('');
-      setTranslation(cached as string);
-      setDisplayedWord(prev => (prev && prev.term === termToTranslate ? { ...prev, translation: cached } : prev));
-      return;
-    }
-
-    translationAbortRef.current?.abort();
-    const controller = new AbortController();
-    translationAbortRef.current = controller;
-
-    setIsTranslating(true);
-    setWordTranslationError('');
-    try {
-      const result = sentenceContext
-        ? await translateSelectionWithContext(termToTranslate, sentenceContext, text.languageCode, translationTargetLanguageCode, { signal: controller.signal })
-        : await translateText(termToTranslate, text.languageCode, translationTargetLanguageCode, { signal: controller.signal });
-      if (result?.translatedText) {
-        const cache = translationCacheRef.current;
-        cache.set(cacheKey, result.translatedText);
-        if (cache.size > 100) {
-          const oldestKey = cache.keys().next().value;
-          if (oldestKey !== undefined) cache.delete(oldestKey);
-        }
-        setTranslation(result.translatedText);
-        setDisplayedWord((prev: any) => (prev && prev.term === termToTranslate ? { ...prev, translation: result.translatedText } : prev));
-      } else {
-        setWordTranslationError('Translation not found.');
-      }
-    } catch (err: unknown) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const e = err as any;
-      if (e?.name === 'AbortError' || controller.signal.aborted) {
-        return;
-      }
-      console.error('Auto-translation failed:', err);
-      if (e?.status === 429) {
-        setWordTranslationError('Provider rate limit reached — try again in a few seconds.');
-      } else {
-        setWordTranslationError(`Translation failed: ${e?.message}`);
-      }
-    } finally {
-      if (translationAbortRef.current === controller) {
-        translationAbortRef.current = null;
-        setIsTranslating(false);
-      }
-    }
-  }, [globalSettings.autoTranslateWords, text?.languageCode, translationTargetLanguageCode, setTranslation, setDisplayedWord, setIsTranslating, setWordTranslationError]);
-
-  const appendAutoTranslation = useCallback(async (
-    termToTranslate: string,
-    options: { sentenceContext?: string } = {}
-  ) => {
-    const { sentenceContext = '' } = options;
-    if (!termToTranslate || !text?.languageCode || !sentenceContext) return;
-
-    translationAbortRef.current?.abort();
-    const controller = new AbortController();
-    translationAbortRef.current = controller;
-
-    setIsTranslating(true);
-    setWordTranslationError('');
-    try {
-      const result = await translateSelectionWithContext(
-        termToTranslate,
-        sentenceContext,
-        text.languageCode,
-        translationTargetLanguageCode,
-        { signal: controller.signal }
-      );
-      const newTranslation = result?.translatedText?.trim();
-      if (!newTranslation) {
-        setWordTranslationError('Translation not found.');
-        return;
-      }
-
-      const cacheKey = `${text.languageCode}|${translationTargetLanguageCode}|sel|${sentenceContext}|${termToTranslate}`;
-      const cache = translationCacheRef.current;
-      cache.set(cacheKey, newTranslation);
-      if (cache.size > 100) {
-        const oldestKey = cache.keys().next().value;
-        if (oldestKey !== undefined) cache.delete(oldestKey);
-      }
-
-      setTranslation(prev => {
-        const existing = (prev || '').trim();
-        if (!existing) return newTranslation;
-        const haystack = existing.toLowerCase();
-        const needle = newTranslation.toLowerCase();
-        if (haystack === needle || haystack.split(/\s*,\s*/).includes(needle)) {
-          return existing;
-        }
-        const combined = `${existing}, ${newTranslation}`;
-        setDisplayedWord((prevWord: any) => (prevWord && prevWord.term === termToTranslate ? { ...prevWord, translation: combined } : prevWord));
-        return combined;
-      });
-    } catch (err: unknown) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const e = err as any;
-      if (e?.name === 'AbortError' || controller.signal.aborted) {
-        return;
-      }
-      console.error('Append translation failed:', err);
-      if (e?.status === 429) {
-        setWordTranslationError('Provider rate limit reached — try again in a few seconds.');
-      } else {
-        setWordTranslationError(`Translation failed: ${e?.message}`);
-      }
-    } finally {
-      if (translationAbortRef.current === controller) {
-        translationAbortRef.current = null;
-        setIsTranslating(false);
-      }
-    }
-  }, [text?.languageCode, translationTargetLanguageCode, setTranslation, setDisplayedWord, setIsTranslating, setWordTranslationError]);
-
   const handleWordClick = useCallback((
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     word: any,
@@ -993,9 +885,9 @@ const TextDisplay = () => {
     return () => {
       clearPendingSelection();
       clearMobileSelectionPending();
-      translationAbortRef.current?.abort();
+      cancelInflightTranslation();
     };
-  }, [clearPendingSelection, clearMobileSelectionPending]);
+  }, [clearPendingSelection, clearMobileSelectionPending, cancelInflightTranslation]);
 
   useEffect(() => {
     if (!isMobile) return undefined;

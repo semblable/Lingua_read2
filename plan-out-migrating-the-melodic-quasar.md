@@ -16,8 +16,8 @@ Migrate [client/lingua-read-client](client/lingua-read-client/) from CRA + plain
 | **D2a** | useState/useRef typing sweep + non-giant fallout (203 errors) | ✅ Done |
 | **D2b** | Top-5 giants + flip `strictNullChecks: true` (494 errors) | ✅ Done |
 | **D3** | Flip `strict: true` + `noImplicitThis` + `noFallthroughCasesInSwitch` (19 errors) | ✅ Done |
-| **E1** | Extract hooks from TextDisplay.tsx (2,735 LOC) | ⏳ Next |
-| **E2** | Split AudiobookPlayer.tsx (1,239 LOC) into modules | ⏳ Pending |
+| **E1** | Extract hooks from TextDisplay.tsx (2,735 → 2,299 LOC) | ✅ Done |
+| **E2** | Split AudiobookPlayer.tsx (1,239 LOC) into modules | ⏳ Next |
 | **E3** | Tidy WordInfoPanel.tsx 25-prop interface (optional) | ⏳ Pending |
 
 **Current tsconfig state:** `strict: true`, `noImplicitThis: true`, `noFallthroughCasesInSwitch: true`, `allowJs: true`, `checkJs: false`. All 105 source files under `src/` are `.ts`/`.tsx`; the 19 files in `src/__tests__/` are intentionally `.js`.
@@ -182,26 +182,34 @@ The pre-D3 prediction held: the D1b-era `catch (err: unknown) { (err as Error)?.
 
 ---
 
-## ⏳ Phase E — Component splits and ergonomics (3 PRs)
+## ✅ Phase E1 — Extract hooks from TextDisplay.tsx
 
-Now that types reveal contracts and dependency shapes, the refactors that were too risky pre-conversion become safe. Each sub-PR is independently shippable.
+Per [plan-out-synthetic-taco.md](C:\Users\kamil\.claude\plans\f-dev-envitonment-lingua-read2-plan-out-synthetic-taco.md) — extracted 5 hooks in sub-commits E1a–E1f. TextDisplay.tsx dropped from 2,787 → 2,299 LOC (~17.5% reduction).
 
-### E1 — Extract hooks from TextDisplay.tsx (1 PR)
+| Sub-commit | Hook | LOC extracted |
+|---|---|---|
+| **E1a** | `useReaderBookmarks` — bookmarkedIndices state + load effect + 4 callbacks | ~30 |
+| **E1b** | `useReaderKeyboard` — 1-5 status keys, pure side-effect hook with bound callback | ~70 |
+| **E1c** | `useWordTranslation` — translation/cache/abort state + triggerAutoTranslation + appendAutoTranslation | ~140 |
+| **E1d** | `useReaderAudioSync` — audio refs + sync state + handleAudioTimeUpdate + 6 playback callbacks, defines `ReaderSegment` + `SegmentPlaybackRequest` types | ~190 |
+| **E1e** | `useReaderState` — data shell (text/book/words/languageConfig/etc.) + main fetch effect + audioSrc/srtLines ownership | ~310 |
+| **E1f** | Reader subcomponent any-tightening + drop duplicate ReaderText/ReaderBook types in TextDisplay | — |
 
-**Target:** shrink [pages/TextDisplay.tsx](client/lingua-read-client/src/pages/TextDisplay.tsx) (currently 2,735 LOC, 78 state vars after C8) to **< 800 LOC** of render + orchestration. Resolve the ~25 `any` annotations clustered in TextDisplay's heterogeneous state setters that D1b deliberately left.
+Each hook landed with `Use<Name>Args` / `Use<Name>Result` named types matching the existing `useDragSelect`/`useStatisticsData` style. 40 new smoke tests added (`renderHook` + mocked deps + return-shape assertions + behavioral coverage for each hook).
 
-**Extract to:**
-- `src/hooks/useReaderState.ts` — central reader state: current text, displayed word, selected word, mode toggles, segment indices, bookmarks, mobile/desktop layout flags.
-- `src/hooks/useWordTranslation.ts` — translation API calls + local state (translation cache, isTranslating, errors, abort controllers).
-- `src/hooks/useReaderKeyboard.ts` — 1-5 status keys, space-bar reveal, navigation shortcuts.
-- `src/hooks/useReaderAudioSync.ts` — audio time ↔ SRT line ↔ sentence-segment sync.
-- `src/hooks/useReaderBookmarks.ts` — bookmark state + persistence via [utils/bookmarks.ts](client/lingua-read-client/src/utils/bookmarks.ts).
+**Deviations from target:**
+- **LOC**: 2,299 (target was <800). Render-time helpers (`processTextContent`, `renderProcessedContentAsSentences`, `getFontStyling`, `getFontFamilyForList`), the JSX (~350 LOC), and selection/segment-mode callbacks (heavily entangled with display logic) stay in the page. Realistic floor with the current JSX shape is ~1,500-2,000 LOC; further reduction needs JSX restructuring beyond E1's scope.
+- **`any` in TextDisplay**: 21 (target was single digits). Remaining concentrate in: `DisplayedWord` type (boundary escape hatch — same pattern as store.ts D1a deferral), keyboard handler's `setWords/setDisplayedWord` updates, and BookData parts array indexing. Reader subcomponents dropped from ~10 to **3**.
 
-**Defines the canonical contracts** that the C5 reader subcomponents have been waiting for. Once `useReaderState` defines `Segment` as a proper tagged union (SRT-derived vs sentence-split with `mediaBlocks`), the loose `any` typings in `SentenceModeView`, `StandardTextView`, `AudioTranscriptView` tighten naturally.
+**Real behavior preserved:** all 238 baseline tests still pass; 40 new hook smoke tests added → 278 pass + 1 skip. `vite build` `index.js` = **277.76 KB** (identical to D3 baseline).
 
-**Risk:** TextDisplay's state interdependencies are intricate. Approach: extract one hook at a time inside a single PR, verifying tests after each. Don't change behavior — pure mechanical refactor with types as the safety net.
+**Flat composition** (per user preference): TextDisplay calls all 5 hooks directly in sequence (`useReaderBookmarks` → `useReaderState` → `useWordTranslation` → `useReaderAudioSync` + textId-change reset effect). `useReaderState` owns `audioSrc`/`srtLines` to break the circular dependency with `useReaderAudioSync` (which consumes them).
 
-**Acceptance:** TextDisplay.tsx < 800 LOC · all hooks have their own minimal unit-test seed (smoke tests at least) · `any` count in TextDisplay drops to single digits · tests still 238 pass + 1 skip.
+**Refs cross-shared via hook return:** `audioDrivenSentenceSyncRef`, `lastAutoSegmentPlaybackKeyRef`, `skipInitialAudioLessonSegmentPlaybackRef`, `pendingSentenceCreditRef` — exposed by `useReaderAudioSync` and consumed by TextDisplay's surviving SRS-credit effect + textId-change reset.
+
+---
+
+## ⏳ Phase E — Remaining sub-PRs
 
 ### E2 — Split AudiobookPlayer.tsx (1 PR)
 

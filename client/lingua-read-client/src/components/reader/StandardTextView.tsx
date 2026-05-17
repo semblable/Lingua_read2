@@ -3,6 +3,7 @@ import { Button, Spinner, Badge } from 'react-bootstrap';
 import { buildDisplayBlocks, getTitleLineVariant } from '../../utils/readerText';
 import type { DisplayBlock } from '../../utils/readerText';
 import type { Settings } from '../../contexts/SettingsContext';
+import type { ReaderText } from '../../hooks/useReaderState';
 
 interface ProcessedSentenceResult {
   sentenceElements: React.ReactNode[] | null;
@@ -10,8 +11,7 @@ interface ProcessedSentenceResult {
 }
 
 interface StandardTextViewProps {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  text: any;
+  text: ReaderText | null;
   globalSettings: Settings;
   readingUiMode: string;
   mobileReadingConfig: {
@@ -63,7 +63,7 @@ const StandardTextView = React.memo(({
   nextTextId
 }: StandardTextViewProps) => {
   if (!text?.content) return null;
-  const displayBlocks = buildDisplayBlocks(text.content, text.structuredContent);
+  const displayBlocks = buildDisplayBlocks(text.content, text.structuredContent ?? undefined);
   let currentSentenceIndex = 0;
   const groupSentences = (sentenceElements: React.ReactNode[], groupSize: number): React.ReactNode[][] => {
     if (!Array.isArray(sentenceElements) || sentenceElements.length === 0) return [];

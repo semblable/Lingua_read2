@@ -9,7 +9,7 @@ export type LanguageConfig = {
 export type CharSubstitution = { old: string; replacement: string };
 
 export type StructuredBlock = {
-  type?: 'image' | 'title' | 'paragraph' | string;
+  type?: 'image' | 'title' | 'paragraph' | string | null;
   text?: string | null;
   imageUrl?: string | null;
   altText?: string | null;

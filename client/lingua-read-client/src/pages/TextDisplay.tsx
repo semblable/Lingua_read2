@@ -37,19 +37,9 @@ import WordInfoPanel from '../components/reader/WordInfoPanel';
 import AudioTranscriptView from '../components/reader/AudioTranscriptView';
 import StandardTextView from '../components/reader/StandardTextView';
 import SentenceModeView from '../components/reader/SentenceModeView';
-import type { Text as TextDto } from '../utils/api/texts';
-import type { Book as BookDto } from '../utils/api/books';
 import type { Word } from '../utils/api/words';
 import type { Language } from '../utils/api/languages';
-import type { LanguageConfig } from '../utils/readerText';
-import type { SrtEntry } from '../utils/srtParser';
 
-// Page state often overlays extra fields the OpenAPI spec omits. Keep the
-// types loose enough for the augmented runtime shape used by the reader.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type ReaderText = TextDto & Record<string, any>;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type ReaderBook = BookDto & Record<string, any>;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type DisplayedWord = Record<string, any>;
 

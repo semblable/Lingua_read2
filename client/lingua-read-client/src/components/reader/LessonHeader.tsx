@@ -1,40 +1,31 @@
 import React from 'react';
 import { Card, Button, Alert } from 'react-bootstrap';
 import AudiobookPlayerImpl from '../AudiobookPlayer';
+import type { ReaderText, ReaderBook } from '../../hooks/useReaderState';
+import type { SegmentPlaybackRequest } from '../../hooks/useReaderAudioSync';
+import type { Word } from '../../utils/api/words';
 
-// AudiobookPlayer is still .js (Phase C6 will convert). TS infers a strict
-// prop signature from the destructure, but we pass different subsets per
-// usage (lesson vs book). Cast to permissive shape until C6.
+// AudiobookPlayer accepts heterogeneous prop subsets per usage (lesson vs
+// book). Cast to a permissive shape; Phase E2 will split it.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const AudiobookPlayer = AudiobookPlayerImpl as React.ComponentType<any>;
 
-// LessonHeader takes a wide TextDisplay prop slice. Most fields are passed
-// through to AudiobookPlayer or rendered as `ReactNode` (the *Controls / *Actions
-// composite nodes). The heterogeneous `text`/`book`/`words`/`audioRef`/handler
-// props are kept loose here; Phase E1 will tighten via the extracted reader-state hook.
 interface LessonHeaderProps {
   isMobile: boolean;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  text: any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  words: any[];
+  text: ReaderText | null;
+  words: Word[];
   isAudioLesson: boolean;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  book: any;
+  book: ReaderBook | null;
   primaryControls: React.ReactNode;
   secondaryControls: React.ReactNode;
   readerLessonActions: React.ReactNode;
   translateUnknownError?: string | null;
   audioSrc?: string | null;
   textId?: number | string | null;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  audioRef?: React.MutableRefObject<any>;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  onTimeUpdate?: (...args: any[]) => void;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  onPlaybackStateChange?: (...args: any[]) => void;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  segmentPlaybackRequest?: any;
+  audioRef?: React.RefObject<HTMLAudioElement>;
+  onTimeUpdate?: (newTime: number) => void;
+  onPlaybackStateChange?: (nextIsPlaying: boolean) => void;
+  segmentPlaybackRequest?: SegmentPlaybackRequest | null;
   showDesktopLessonControls: boolean;
   setShowDesktopLessonControls: (updater: (prev: boolean) => boolean) => void;
 }
@@ -58,7 +49,7 @@ const LessonHeader = React.memo(({
   showDesktopLessonControls,
   setShowDesktopLessonControls
 }: LessonHeaderProps) => {
-  if (isMobile) return null;
+  if (isMobile || !text) return null;
 
   return (
     <Card className="shadow-sm mb-2 border-0 rounded-0 lesson-header">
@@ -66,7 +57,7 @@ const LessonHeader = React.memo(({
         <div className="d-flex align-items-center gap-2 flex-wrap">
           {/* Title - compact */}
           <div className="lesson-title-compact me-2">
-            <h5 className="mb-0 text-truncate" style={{ maxWidth: '250px' }} title={text.title}>{text.title}</h5>
+            <h5 className="mb-0 text-truncate" style={{ maxWidth: '250px' }} title={text.title ?? undefined}>{text.title}</h5>
             <small className="text-muted lesson-meta">Lang: {text.languageName || 'N/A'} | {words.length} words</small>
           </div>
 
@@ -84,7 +75,7 @@ const LessonHeader = React.memo(({
               segmentPlaybackRequest={segmentPlaybackRequest}
             />
           )}
-          {!isAudioLesson && book?.audiobookTracks?.length > 0 && (
+          {!isAudioLesson && (book?.audiobookTracks?.length ?? 0) > 0 && (
             <AudiobookPlayer type="book" book={book} />
           )}
 

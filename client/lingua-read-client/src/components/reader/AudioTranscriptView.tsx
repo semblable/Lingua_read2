@@ -2,16 +2,20 @@ import React, { useRef } from 'react';
 import { FixedSizeList as List } from 'react-window';
 import TranscriptLine from './TranscriptLine';
 import type { Settings } from '../../contexts/SettingsContext';
+import type { SrtEntry } from '../../utils/srtParser';
 
-interface SrtLine {
-  id: number | string;
-  startTime: number;
-  text: string;
-}
+type TranscriptItemData = {
+  lines: SrtEntry[];
+  currentLineId: number | string | null;
+  processLineContent: (text: string) => React.ReactNode;
+  handleLineClick: (startTime: number) => void;
+  getFontStyling: (lineSpacing: number) => React.CSSProperties;
+  currentLineSpacing: number;
+};
 
 interface AudioTranscriptViewProps {
   isMobile: boolean;
-  srtLines: SrtLine[];
+  srtLines: SrtEntry[];
   currentSrtLineId: number | string | null;
   getFontStyling: (lineSpacing: number) => React.CSSProperties;
   handleLineClick: (startTime: number) => void;
@@ -21,10 +25,8 @@ interface AudioTranscriptViewProps {
   mobileReadingConfig: { lineSpacing: number };
   textContentRef: React.RefObject<HTMLDivElement>;
   readingContainerRef: React.RefObject<HTMLDivElement>;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  itemData: any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  listRef: React.RefObject<any>;
+  itemData: TranscriptItemData;
+  listRef: React.RefObject<List>;
 }
 
 const AudioTranscriptView = React.memo(({
@@ -80,7 +82,7 @@ const AudioTranscriptView = React.memo(({
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
       >
-        {srtLines.map((line: SrtLine) => (
+        {srtLines.map((line: SrtEntry) => (
           <p
             key={line.id}
             id={`srt-line-${line.id}`}

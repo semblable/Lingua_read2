@@ -1,15 +1,13 @@
 import React from 'react';
+import type { SrtEntry } from '../../utils/srtParser';
 
-// react-window itemRenderer signature: { index, style, data }
 type TranscriptLineProps = {
   index: number;
   style: React.CSSProperties;
   data: {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    lines: any[];
+    lines: SrtEntry[];
     currentLineId: number | string | null;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    processLineContent: (text: string) => any;
+    processLineContent: (text: string) => React.ReactNode;
     handleLineClick: (startTime: number) => void;
     getFontStyling: (lineSpacing: number) => React.CSSProperties;
     currentLineSpacing: number;

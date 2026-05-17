@@ -2,12 +2,10 @@ import React, { useMemo } from 'react';
 import { Button, Card, Badge } from 'react-bootstrap';
 import { parseSentenceExplanation } from '../../utils/parseSentenceExplanation';
 import { getTitleLineVariant } from '../../utils/readerText';
+import type { ReaderSegment } from '../../hooks/useReaderAudioSync';
 
-// Sentence segments are heterogeneous (SRT-derived vs split-derived) — typed
-// loosely until Phase E1 extracts the reader-state hook with a tagged union.
 interface SentenceModeViewProps {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  currentSegment: any;
+  currentSegment: ReaderSegment;
   segmentCount: number;
   currentSegmentIndex: number;
   creditedSegmentCount: number;
@@ -202,8 +200,7 @@ const SentenceModeView = React.memo(({
           >
             {Array.isArray(currentSegment.mediaBlocks) && currentSegment.mediaBlocks.length > 0 && (
               <div className="sentence-mode-media-stack">
-                {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                {currentSegment.mediaBlocks.map((mediaBlock: any, mediaIndex: number) => (
+                {currentSegment.mediaBlocks.map((mediaBlock, mediaIndex: number) => (
                   <figure key={`sentence-media-${currentSegment.index}-${mediaIndex}`} className="reader-image-block sentence-mode-image-block">
                     <img
                       src={mediaBlock.imageUrl}

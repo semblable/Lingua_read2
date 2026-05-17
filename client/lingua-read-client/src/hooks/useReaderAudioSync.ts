@@ -11,26 +11,25 @@ export type SegmentPlaybackRequest = {
   forcePlay: boolean;
 };
 
-export type SrtSegment = {
-  kind: 'srt';
-  index: number;
-  text: string;
-  startTime: number;
-  endTime: number;
-  srtLineId: number;
-  type: 'audio';
+export type ReaderMediaBlock = {
+  imageUrl?: string;
+  altText?: string;
+  caption?: string;
 };
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type SplitSegment = Record<string, any> & {
-  kind?: 'split';
+// Sentence segments come from two heterogeneous sources: SRT-derived (carries
+// startTime/endTime/srtLineId) and split-text-derived (may carry mediaBlocks
+// + type='title' etc). One permissive shape captures both runtime variants;
+// render code branches on startTime != null to distinguish.
+export type ReaderSegment = {
   index: number;
   text: string;
-  startTime?: null;
-  endTime?: null;
+  type?: string;
+  startTime?: number | null;
+  endTime?: number | null;
+  srtLineId?: number;
+  mediaBlocks?: ReaderMediaBlock[];
 };
-
-export type ReaderSegment = SrtSegment | SplitSegment;
 
 // react-window's FixedSizeList ref shape we actually use.
 type ListLikeRef = {

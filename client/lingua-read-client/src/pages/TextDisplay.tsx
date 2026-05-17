@@ -22,6 +22,7 @@ import { SettingsContext } from '../contexts/SettingsContext';
 import { useReaderBookmarks } from '../hooks/useReaderBookmarks';
 import { useReaderKeyboard, type WordStatus } from '../hooks/useReaderKeyboard';
 import { useWordTranslation } from '../hooks/useWordTranslation';
+import { useReaderAudioSync } from '../hooks/useReaderAudioSync';
 import { extractTranslatedTextFromPairedTags } from '../utils/translationTags';
 import { cancelSpeech, isSpeechSynthesisSupported, speakText } from '../utils/browserTts';
 import { parseSrtContent, findSrtLineIndex } from '../utils/srtParser';
@@ -56,13 +57,10 @@ const TextDisplay = () => {
   const navigate = useNavigate();
   const textContentRef = useRef<HTMLDivElement | null>(null);
   const readingContainerRef = useRef<HTMLDivElement | null>(null);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const listRef = useRef<any>(null); // react-window FixedSizeList ref
-  const autoScrollRafRef = useRef<number | null>(null);
   const autoTranslateTriggeredRef = useRef(false);
   const autoTranslateTextIdRef = useRef<number | string | null>(null);
-  // Removed resizeDividerRef
 
   // --- State Declarations ---
   const [loading, setLoading] = useState(true);
@@ -107,10 +105,6 @@ const TextDisplay = () => {
   // Let's use globalSettings directly for textSize for now.
   // Removed isDragging state
   const [isAudioLesson, setIsAudioLesson] = useState(false);
-  const [audioSrc, setAudioSrc] = useState<string | null>(null);
-  const [srtLines, setSrtLines] = useState<SrtEntry[]>([]);
-  const [currentSrtLineId, setCurrentSrtLineId] = useState<number | null>(null);
-  const audioCurrentTimeRef = useRef(0); // Use ref instead of state to prevent re-renders
   const [displayMode, setDisplayMode] = useState('audio');
   const [languageConfig, setLanguageConfig] = useState<LanguageConfig | null>(null); // State for language settings (Phase 3)
   const [embeddedUrl, setEmbeddedUrl] = useState<string | null>(null); // State for embedded dictionary iframe URL (Phase 3)
@@ -119,7 +113,6 @@ const TextDisplay = () => {
   const [showMobileHeader, setShowMobileHeader] = useState(false);
   const showDesktopLessonControls = globalSettings.showDesktopLessonControls ?? true;
   const [isWordPanelOpen, setIsWordPanelOpen] = useState(false);
-  const [isAudioPlaying, setIsAudioPlaying] = useState(false);
   const [currentSegmentIndex, setCurrentSegmentIndex] = useState(0);
   const [segmentTranslations, setSegmentTranslations] = useState<Record<number, string>>({});
   const [segmentExplanations, setSegmentExplanations] = useState<Record<number, string>>({});
@@ -129,10 +122,6 @@ const TextDisplay = () => {
   const [visibleExplanationIndex, setVisibleExplanationIndex] = useState<number | null>(null);
   const [creditedSegmentIndices, setCreditedSegmentIndices] = useState<number[]>([]);
   const [sentenceProgressLoaded, setSentenceProgressLoaded] = useState(false);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [segmentPlaybackRequest, setSegmentPlaybackRequest] = useState<any | null>(null);
-  const [isSpeakingSentence, setIsSpeakingSentence] = useState(false);
-  const [isSpeakingWord, setIsSpeakingWord] = useState(false);
   const selectionDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mobileSelectionRetryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mobileSelectionPendingRef = useRef(false);
@@ -146,39 +135,8 @@ const TextDisplay = () => {
   const lastHandledSelectionRef = useRef('');
   const suppressWordClickUntilRef = useRef(0);
   const selectableWordTouchStartRef = useRef(0);
-  const pendingSentenceCreditRef = useRef(new Set<number>());
-  const audioDrivenSentenceSyncRef = useRef(false);
-  const lastAutoSegmentPlaybackKeyRef = useRef('');
-  const skipInitialAudioLessonSegmentPlaybackRef = useRef(true);
   const textLoadRequestVersionRef = useRef(0);
   const currentTextIdForSummaryRef = useRef<number | null>(null);
-  // --- End State Declarations ---
-
-  // Create refs for values used in handleAudioTimeUpdate to keep the callback stable
-  const handleAudioTimeUpdateStateRef = useRef({
-    isAudioLesson: false,
-    srtLines: [] as SrtEntry[],
-    displayMode: 'audio',
-    currentSrtLineId: null as number | null,
-    isSentenceMode: false,
-    currentSegmentIndex: 0,
-    isMobile: false,
-    listRef: listRef // Reference the listRef from scope
-  });
-
-  // Sync refs with state
-  useEffect(() => {
-    handleAudioTimeUpdateStateRef.current = {
-      isAudioLesson,
-      srtLines,
-      displayMode,
-      currentSrtLineId,
-      isSentenceMode: globalSettings.sentenceMode,
-      currentSegmentIndex,
-      isMobile,
-      listRef: listRef // Store the ref object
-    };
-  }, [isAudioLesson, srtLines, displayMode, currentSrtLineId, globalSettings.sentenceMode, currentSegmentIndex, isMobile]);
 
   useEffect(() => {
     currentTextIdForSummaryRef.current = text?.textId ?? null;
@@ -252,13 +210,6 @@ const TextDisplay = () => {
   const readingDensity = globalSettings.readingDensity || 'balanced';
   const showWordInfoPanel = globalSettings.showWordInfoPanel ?? true;
 
-  const setAudioPlaybackIntent = useCallback((shouldPlay: boolean) => {
-    if (audioRef.current) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (audioRef.current as any).__lrAllowPlayback = shouldPlay;
-    }
-  }, []);
-
   const hasActiveTextSelection = useCallback(() => {
     const selection = window.getSelection();
     return Boolean(selection && !selection.isCollapsed && selection.toString().trim());
@@ -296,25 +247,40 @@ const TextDisplay = () => {
     applyTranslationToDisplayedWord
   });
 
-  const toggleAudioPlayback = useCallback(() => {
-    const audio = audioRef.current;
-    if (!audio) return;
-
-    if (audio.paused) {
-      setAudioPlaybackIntent(true);
-      audio.play().catch((err: unknown) => console.error('Mobile audio toggle failed to play:', err));
-    } else {
-      setAudioPlaybackIntent(false);
-      audio.pause();
-    }
-  }, [setAudioPlaybackIntent]);
-
-  const pauseAudioPlayback = useCallback(() => {
-    const audio = audioRef.current;
-    if (!audio || audio.paused) return;
-    setAudioPlaybackIntent(false);
-    audio.pause();
-  }, [setAudioPlaybackIntent]);
+  const {
+    audioRef,
+    audioCurrentTimeRef,
+    audioSrc,
+    setAudioSrc,
+    srtLines,
+    setSrtLines,
+    currentSrtLineId,
+    setCurrentSrtLineId,
+    isAudioPlaying,
+    isSpeakingSentence,
+    setIsSpeakingSentence,
+    isSpeakingWord,
+    setIsSpeakingWord,
+    segmentPlaybackRequest,
+    setSegmentPlaybackRequest,
+    audioDrivenSentenceSyncRef,
+    lastAutoSegmentPlaybackKeyRef,
+    skipInitialAudioLessonSegmentPlaybackRef,
+    pendingSentenceCreditRef,
+    toggleAudioPlayback,
+    pauseAudioPlayback,
+    handleAudioPlaybackStateChange,
+    handleLineClick,
+    handleAudioTimeUpdate
+  } = useReaderAudioSync({
+    isAudioLesson,
+    isSentenceMode,
+    isMobile,
+    displayMode,
+    currentSegmentIndex,
+    setCurrentSegmentIndex,
+    listRef
+  });
 
   const focusSentenceIndexFromNode = useCallback((node: Node | null) => {
     const container = textContentRef.current;
@@ -412,15 +378,6 @@ const TextDisplay = () => {
     if (full) return clampContext(full);
 
     return clampContext(normalizeReaderText(selectedText));
-  }, []);
-
-  const handleAudioPlaybackStateChange = useCallback((nextIsPlaying: boolean) => {
-    if (nextIsPlaying) {
-      cancelSpeech();
-      setIsSpeakingSentence(false);
-      setIsSpeakingWord(false);
-    }
-    setIsAudioPlaying(nextIsPlaying);
   }, []);
 
 
@@ -1155,29 +1112,6 @@ const TextDisplay = () => {
     lineHeight: currentLineSpacing // Use the passed-in value directly
   }), [globalSettings.textSize, getFontFamilyForList]); // getFontFamilyForList already depends on textFont
 
-  const handleLineClick = useCallback((startTime: number) => {
-    if (audioRef.current) {
-      audioRef.current.currentTime = startTime;
-      audioCurrentTimeRef.current = startTime;
-
-      if (isAudioLesson && displayMode === 'audio' && srtLines.length > 0) {
-        const currentLineIndex = srtLines.findIndex(line => startTime >= line.startTime && startTime < line.endTime);
-        const currentLine = currentLineIndex !== -1 ? srtLines[currentLineIndex] : null;
-        setCurrentSrtLineId(currentLine?.id ?? null);
-
-        if (isSentenceMode && currentLineIndex !== -1 && currentLineIndex !== currentSegmentIndex) {
-          audioDrivenSentenceSyncRef.current = true;
-          setCurrentSegmentIndex(currentLineIndex);
-        }
-      }
-
-      setTimeout(() => {
-        if (audioRef.current) { console.log(`[handleLineClick] audioRef current time after seek attempt: ${audioRef.current.currentTime}`); }
-      }, 0);
-    } else {
-    }
-  }, [currentSegmentIndex, displayMode, isAudioLesson, isSentenceMode, srtLines]);
-
   const mobileReadingConfig = useMemo(() => {
     switch (readingDensity) {
       case 'compact':
@@ -1377,26 +1311,6 @@ const TextDisplay = () => {
       setCurrentSegmentIndex(sentenceSegments.length - 1);
     }
   }, [currentSegmentIndex, sentenceSegments]);
-
-  useEffect(() => {
-    if (!isSentenceMode) {
-      cancelSpeech();
-      setIsSpeakingSentence(false);
-      setIsSpeakingWord(false);
-      lastAutoSegmentPlaybackKeyRef.current = '';
-      setSegmentPlaybackRequest(null);
-    }
-  }, [isSentenceMode]);
-
-  useEffect(() => () => {
-    cancelSpeech();
-  }, []);
-
-  useEffect(() => {
-    cancelSpeech();
-    setIsSpeakingSentence(false);
-    setIsSpeakingWord(false);
-  }, [currentSegmentIndex]);
 
   useEffect(() => {
     if (!isSentenceMode || !sentenceProgressLoaded || !text?.textId || !currentSentenceSegment) {
@@ -1771,74 +1685,6 @@ const TextDisplay = () => {
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [languageWordsLoaded, text, globalSettings.autoTranslateOnOpen]);
-
-  // Audio Time Update Handler - updates ref and checks for line changes
-  // Audio Time Update Handler - NOW STABLE (using refs)
-  const handleAudioTimeUpdate = useCallback((newTime: number) => {
-    // Read latest state from ref
-    const { isAudioLesson, srtLines, displayMode, currentSrtLineId, isSentenceMode, currentSegmentIndex, isMobile, listRef: currentListRef } = handleAudioTimeUpdateStateRef.current;
-
-    audioCurrentTimeRef.current = newTime;
-
-    // Only check for line changes if we're in audio mode with SRT lines
-    if (!isAudioLesson || srtLines.length === 0 || displayMode !== 'audio') {
-      if (currentSrtLineId !== null) setCurrentSrtLineId(null);
-      return;
-    }
-
-    const currentLineIndex = findSrtLineIndex(srtLines, newTime);
-    const currentLine = currentLineIndex !== -1 ? srtLines[currentLineIndex] : null;
-
-    if (isSentenceMode && currentLineIndex !== -1 && currentLineIndex !== currentSegmentIndex) {
-      audioDrivenSentenceSyncRef.current = true;
-      setCurrentSegmentIndex(currentLineIndex);
-    }
-
-    // Only trigger re-render if the line ID actually changed
-    if (currentLine && currentLine.id !== currentSrtLineId) {
-      setCurrentSrtLineId(currentLine.id);
-
-      // Handle scrolling
-      if (autoScrollRafRef.current) {
-        cancelAnimationFrame(autoScrollRafRef.current);
-      }
-      autoScrollRafRef.current = requestAnimationFrame(() => {
-        if (!isMobile && currentListRef?.current && currentLineIndex !== -1) {
-          currentListRef.current.scrollToItem(currentLineIndex, 'center');
-          return;
-        }
-        if (isMobile) {
-          const lineElement = document.getElementById(`srt-line-${currentLine.id}`);
-          if (!lineElement) return;
-          const rect = lineElement.getBoundingClientRect();
-          const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
-
-          // Tighten bounds to keep line in the upper-middle of the screen
-          // Good reading position is usually around 30-40% from top
-          const upperBound = viewportHeight * 0.3;
-          const lowerBound = viewportHeight * 0.6;
-
-          if (rect.top < upperBound || rect.bottom > lowerBound) {
-            lineElement.scrollIntoView({ block: 'center', behavior: 'smooth' });
-          }
-        }
-      });
-    } else if (!currentLine && currentSrtLineId !== null) {
-      setCurrentSrtLineId(null);
-    }
-  }, []); // Empty dependency array = STABLE CALLBACK IDENTITY
-
-  // Cleanup for auto-scroll animation frame
-  useEffect(() => {
-    return () => {
-      if (autoScrollRafRef.current) {
-        cancelAnimationFrame(autoScrollRafRef.current);
-      }
-    };
-  }, []);
-
-  // Resizable Panel
-  // Removed useEffect for drag-to-resize functionality
 
   const handleSetWordStatusFromKeyboard = useCallback(
     async (term: string, status: WordStatus) => {

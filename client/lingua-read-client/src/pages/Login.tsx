@@ -14,8 +14,8 @@ const Login = () => {
     setLoading(true);
     try {
       await login(password);
-    } catch (err) {
-      setError(err.message || 'Login failed.');
+    } catch (err: unknown) {
+      setError((err as Error)?.message || 'Login failed.');
     } finally {
       setLoading(false);
     }

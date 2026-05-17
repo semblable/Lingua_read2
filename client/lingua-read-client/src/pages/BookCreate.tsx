@@ -140,8 +140,9 @@ const BookCreate = () => {
         audioUploadFailed ? { state: { audioUploadWarning: 'Failed to upload audio tracks. You can retry here.' } } : undefined
       );
 
-    } catch (err) {
-      const errorMsg = err.response?.data?.message || err.message || `Failed to ${activeTab === 'manual' ? 'create' : 'upload'} book. Please try again.`;
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { message?: string } }; message?: string };
+      const errorMsg = e.response?.data?.message || e.message || `Failed to ${activeTab === 'manual' ? 'create' : 'upload'} book. Please try again.`;
       setError(errorMsg);
       // Don't proceed to audio upload if book creation failed
     } finally {

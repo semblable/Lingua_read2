@@ -603,7 +603,7 @@ const TextDisplay = () => {
         cache.set(cacheKey, result.translatedText);
         if (cache.size > 100) {
           const oldestKey = cache.keys().next().value;
-          cache.delete(oldestKey);
+          if (oldestKey !== undefined) cache.delete(oldestKey);
         }
         setTranslation(result.translatedText);
         setDisplayedWord((prev: any) => (prev && prev.term === termToTranslate ? { ...prev, translation: result.translatedText } : prev));
@@ -662,7 +662,7 @@ const TextDisplay = () => {
       cache.set(cacheKey, newTranslation);
       if (cache.size > 100) {
         const oldestKey = cache.keys().next().value;
-        cache.delete(oldestKey);
+        if (oldestKey !== undefined) cache.delete(oldestKey);
       }
 
       setTranslation(prev => {
@@ -1455,11 +1455,11 @@ const TextDisplay = () => {
         [currentSentenceSegment.index]: explanationText
       }));
       setVisibleExplanationIndex(currentSentenceSegment.index);
-    } catch (explanationErr) {
+    } catch (explanationErr: unknown) {
       console.error('Sentence explanation failed:', explanationErr);
       setSegmentExplanations(prev => ({
         ...prev,
-        [currentSentenceSegment.index]: `Explanation failed: ${explanationErr.message}`
+        [currentSentenceSegment.index]: `Explanation failed: ${(explanationErr as Error)?.message}`
       }));
       setVisibleExplanationIndex(currentSentenceSegment.index);
     } finally {
@@ -2124,7 +2124,7 @@ const TextDisplay = () => {
     try {
       const response = await translateFullText(text.content, text.languageCode || 'auto', translationTargetLanguageCode);
       setFullTextTranslation(response?.translatedText || 'Translation failed.');
-    } catch (error) { setFullTextTranslation(`Translation failed: ${error.message}`); }
+    } catch (error: unknown) { setFullTextTranslation(`Translation failed: ${(error as Error)?.message}`); }
     finally { setIsFullTextTranslating(false); }
   };
 
@@ -2170,9 +2170,9 @@ const TextDisplay = () => {
       );
       if (currentTextIdForSummaryRef.current !== requestTextId) return;
       setSummaryText(response?.summaryText || 'Summary failed.');
-    } catch (summaryErr) {
+    } catch (summaryErr: unknown) {
       if (currentTextIdForSummaryRef.current !== requestTextId) return;
-      setSummaryError(`Summary failed: ${summaryErr.message}`);
+      setSummaryError(`Summary failed: ${(summaryErr as Error)?.message}`);
     } finally {
       setIsSummarizing(false);
     }
@@ -2315,14 +2315,15 @@ const TextDisplay = () => {
   // --- New Sentence Rendering Logic ---
   // Takes processed elements for a block (e.g., paragraph) and a starting index,
   // returns rendered sentence elements and the next sentence index.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const renderProcessedContentAsSentences = useCallback((processedElements: any[], startingSentenceIndex: number) => {
-    if (!processedElements || processedElements.length === 0) {
+  const renderProcessedContentAsSentences = useCallback((
+    processedElements: React.ReactNode,
+    startingSentenceIndex: number
+  ): { sentenceElements: React.ReactNode[] | null; nextSentenceIndex: number } => {
+    if (!Array.isArray(processedElements) || processedElements.length === 0) {
       return { sentenceElements: null, nextSentenceIndex: startingSentenceIndex };
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const sentenceElements: any[] = [];
+    const sentenceElements: React.ReactNode[] = [];
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let currentSentenceElements: any[] = [];
     let sentenceIndex = startingSentenceIndex;

@@ -25,8 +25,8 @@ const Setup = () => {
     setLoading(true);
     try {
       await setup(password);
-    } catch (err) {
-      setError(err.message || 'Setup failed.');
+    } catch (err: unknown) {
+      setError((err as Error)?.message || 'Setup failed.');
     } finally {
       setLoading(false);
     }

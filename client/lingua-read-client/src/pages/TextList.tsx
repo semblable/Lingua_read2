@@ -37,8 +37,8 @@ const TextList = () => {
     try {
       const data = await getTexts();
       setTexts((data ?? []) as StoredText[]);
-    } catch (err) {
-      setError(err.message || 'Failed to load texts');
+    } catch (err: unknown) {
+      setError((err as Error)?.message || 'Failed to load texts');
       setTexts([]); // Set to empty array on error
     } finally {
       setLoading(false);
@@ -115,9 +115,9 @@ const TextList = () => {
         await deleteText(textId);
         // Refetch texts to update the list after deletion
         await fetchTexts();
-      } catch (err) {
+      } catch (err: unknown) {
         // Display error specific to this action, maybe using a toast notification library
-        setError(`Failed to delete text: ${err.message}`);
+        setError(`Failed to delete text: ${(err as Error)?.message}`);
         // Clear error after some time or let user dismiss it
         setTimeout(() => setError(''), 5000);
       }

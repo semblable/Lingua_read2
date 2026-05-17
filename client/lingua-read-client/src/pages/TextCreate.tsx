@@ -81,8 +81,8 @@ const TextCreate = () => {
       // Pass the tag (or null if empty) to the createText function
       const newText = await createText(title, content, parseInt(languageId, 10), tag || null);
       navigate(`/texts/${newText.textId}`);
-    } catch (err) {
-      setError(err.message || 'Failed to create text. Please try again.');
+    } catch (err: unknown) {
+      setError((err as Error)?.message || 'Failed to create text. Please try again.');
       setLoading(false);
     }
   };
@@ -127,8 +127,8 @@ const TextCreate = () => {
       } else {
         throw new Error('Failed to generate story');
       }
-    } catch (err) {
-      setError(err.message || 'Failed to generate story. Please try again.');
+    } catch (err: unknown) {
+      setError((err as Error)?.message || 'Failed to generate story. Please try again.');
     } finally {
       setGeneratingStory(false);
     }

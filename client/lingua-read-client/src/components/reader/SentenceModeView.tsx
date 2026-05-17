@@ -23,7 +23,7 @@ interface SentenceModeViewProps {
   canUseSentenceTts: boolean;
   isSpeakingSentence: boolean;
   sentenceTtsEnabled: boolean;
-  setSentenceTtsEnabled: (value: boolean | ((prev: boolean) => boolean)) => void;
+  setSentenceTtsEnabled: (value: boolean) => void;
   sentenceTtsRate: number;
   setSentenceTtsRate: (value: number | ((prev: number) => number)) => void;
   isAudioLesson: boolean;

@@ -15,14 +15,14 @@ Migrate [client/lingua-read-client](client/lingua-read-client/) from CRA + plain
 | **D1b** | Flip `noImplicitAny: true` + sweep 527 fallout sites | ✅ Done |
 | **D2a** | useState/useRef typing sweep + non-giant fallout (203 errors) | ✅ Done |
 | **D2b** | Top-5 giants + flip `strictNullChecks: true` (494 errors) | ✅ Done |
-| **D3** | Remaining strict flags + final cleanup | ⏳ Next |
-| **E1** | Extract hooks from TextDisplay.tsx (2,735 LOC) | ⏳ Pending |
+| **D3** | Flip `strict: true` + `noImplicitThis` + `noFallthroughCasesInSwitch` (19 errors) | ✅ Done |
+| **E1** | Extract hooks from TextDisplay.tsx (2,735 LOC) | ⏳ Next |
 | **E2** | Split AudiobookPlayer.tsx (1,239 LOC) into modules | ⏳ Pending |
 | **E3** | Tidy WordInfoPanel.tsx 25-prop interface (optional) | ⏳ Pending |
 
-**Current tsconfig state:** `strict: false`, `noImplicitAny: true`, `strictNullChecks: true`, `allowJs: true`, `checkJs: false`. All 105 source files under `src/` are `.ts`/`.tsx`; the 19 files in `src/__tests__/` are intentionally `.js`.
+**Current tsconfig state:** `strict: true`, `noImplicitThis: true`, `noFallthroughCasesInSwitch: true`, `allowJs: true`, `checkJs: false`. All 105 source files under `src/` are `.ts`/`.tsx`; the 19 files in `src/__tests__/` are intentionally `.js`.
 
-**Verification baseline (post-D2):** `npx tsc --noEmit` clean · `npx vitest run` = 238 pass + 1 skip · `npx vite build` ≈ 5s · `index.js` ≈ 277 KB.
+**Verification baseline (post-D3):** `npx tsc --noEmit` clean under full `strict: true` · `npx vitest run` = 238 pass + 1 skip · `npx vite build` ≈ 5s · `index.js` ≈ 277.76 KB.
 
 ---
 
@@ -132,9 +132,9 @@ The two D2 risk patterns flagged in the bubbly-riddle plan didn't manifest as re
 
 ---
 
-## ⏳ Phase D3 — Remaining strict flags + cleanup
+## ✅ Phase D3 — Full `strict: true` + remaining strict flags
 
-### tsconfig change
+### tsconfig change (applied)
 
 ```jsonc
 {
@@ -148,29 +148,37 @@ The two D2 risk patterns flagged in the bubbly-riddle plan didn't manifest as re
 }
 ```
 
-Keep `allowJs: true` and `checkJs: false` — the 19 test files in `src/__tests__/` are still `.js` and we don't want to type them. (Phase D is about source files, not tests.)
+Kept `allowJs: true` / `checkJs: false` — the 19 test files in `src/__tests__/` stay `.js`.
 
-### Likely fallout
+### Fallout — much smaller than predicted: 19 errors total
 
-- **`useUnknownInCatchVariables: true`** — every `catch (err)` needs `err instanceof Error` narrowing or `err: unknown` typing. **Most catch sites in the codebase already use `catch (err: unknown) { (err as Error)?.message }` from D1b** — those are fine. The strict-flag flip just forces explicit `unknown` where catch params are untyped.
-- **`strictFunctionTypes`** — usually quiet; may surface in event-handler typings where a wider Event type was assigned to a narrower one.
-- **`strictPropertyInitialization`** — N/A for this codebase (function components, no class fields).
-- **`noFallthroughCasesInSwitch`** — flagged switches need explicit `break` / `return` / `// falls through` comment.
+The pre-D3 prediction held: the D1b-era `catch (err: unknown) { (err as Error)?.message }` pattern had already converted most catch sites, so `useUnknownInCatchVariables` lit up only the 13 stragglers that still used a bare `catch (err)`. Beyond that, only TextDisplay had `strictFunctionTypes` and a couple of `strictNullChecks` straggler fallouts. **Zero** `noImplicitThis` errors, **zero** `noFallthroughCasesInSwitch` errors, **zero** `strictPropertyInitialization` errors (function components — no class fields anywhere).
 
-### Optional flags — propose but **don't** enable in D3
+| Rule | Sites | Files |
+|---|---|---|
+| `useUnknownInCatchVariables` (TS18046) | 13 | BookCreate, Login, Setup, SrsReview (×2), TextCreate (×2), TextList (×2), TextDisplay (×3) |
+| `strictFunctionTypes` (TS2322 — setter/callback narrowing) | 3 | TextDisplay → SentenceModeView/StandardTextView prop signatures |
+| `strictNullChecks` straggler (TS2345 — `Map.keys().next().value` is `T \| undefined`) | 2 | TextDisplay |
+| **Total** | **18** | **8 files** |
 
-These create churn for limited safety value and overlap with ESLint:
-- `noUnusedLocals: true`
-- `noUnusedParameters: true`
+### Resolutions
 
-[eslint.config.mjs](client/lingua-read-client/eslint.config.mjs) already covers these via `@typescript-eslint`. Skip unless we find a concrete bug they'd catch.
+- **Catch handlers (13 sites):** mechanical conversion to `catch (err: unknown) { (err as Error)?.message }`. One special case in [BookCreate.tsx:144](client/lingua-read-client/src/pages/BookCreate.tsx:144) needed an inline `{ response?: { data?: { message?: string } }; message?: string }` cast since the handler reads `err.response.data.message` (axios-shaped error envelope).
+- **Setter prop narrowing (2 sites at [TextDisplay.tsx:2537,2583](client/lingua-read-client/src/pages/TextDisplay.tsx:2537)):** `setSentenceTtsEnabled` is the `useCallback`-wrapped `(nextValue: boolean) => void` — narrower than `React.Dispatch<SetStateAction<boolean>>`. Both children (`SentenceModeView`, `StandardTextView`) only ever call it with a plain boolean (`!sentenceTtsEnabled`), so I narrowed the prop type in both subcomponents from `(value: boolean | ((prev: boolean) => boolean)) => void` to `(value: boolean) => void` to match actual usage. The wider type was inherited from a `useState` shape that no longer applies.
+- **`renderProcessedContentAsSentences` signature ([TextDisplay.tsx:2319](client/lingua-read-client/src/pages/TextDisplay.tsx:2319)):** the source signature was `(processedElements: any[], ...) => { sentenceElements: null \| any[], ... }` but the child's prop declared `(processed: ReactNode, ...) => ProcessedSentenceResult` (where `ProcessedSentenceResult.sentenceElements` is `React.ReactNode[] \| null`). Under `strictFunctionTypes` parameter checking became contravariant, so `any[]` is no longer a supertype of `ReactNode`. Tightened the source to take `React.ReactNode` (with an `Array.isArray` guard) and return `{ sentenceElements: React.ReactNode[] \| null; nextSentenceIndex: number }` — exact match with the child's declared shape. Side benefit: removed 2 `eslint-disable no-explicit-any` annotations.
+- **`Map.keys().next().value` (2 sites at [TextDisplay.tsx:606,665](client/lingua-read-client/src/pages/TextDisplay.tsx:606)):** the iterator value is now `string | undefined`. Even though `cache.size > 100` guarantees a key exists, the typing doesn't know that — added explicit `if (oldestKey !== undefined) cache.delete(oldestKey)` guards.
 
-### Acceptance
+### Outcome
 
-- `npx tsc --noEmit` clean under `strict: true`.
-- Tests pass.
-- Build size unchanged (±5%).
-- Zero `// @ts-ignore` / `// @ts-expect-error` in `src/` (verified by Grep).
+- `npx tsc --noEmit` → 0 errors with full `strict: true` + `noImplicitThis` + `noFallthroughCasesInSwitch`.
+- `npx vitest run` → 238 pass + 1 skip (unchanged).
+- `npx vite build` → `index.js` = 277.76 KB (vs D2b 277.72 KB, +0.04 KB ≈ 0.01%), build time 4.98s.
+- `eslint-disable no-explicit-any` count: **121** (was 123 — net **-2** from properly typing `renderProcessedContentAsSentences`).
+- Zero `// @ts-ignore` / `// @ts-expect-error` in `src/`.
+
+### Optional flags — left off (per pre-D3 plan)
+
+- `noUnusedLocals: true` / `noUnusedParameters: true` — covered by ESLint (`@typescript-eslint/no-unused-vars`); enabling in tsc would create duplicate-report churn without catching anything ESLint misses. Skip.
 
 ---
 

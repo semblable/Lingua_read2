@@ -121,8 +121,8 @@ const SrsReview = () => {
       updateSetting('srsLapseMinimumIntervalDays', lapseMin);
       setShowSettingsModal(false);
       loadStats(); // refresh visual stats
-    } catch (err) {
-      setError(`Failed to save settings: ${err.message}`);
+    } catch (err: unknown) {
+      setError(`Failed to save settings: ${(err as Error)?.message}`);
     }
   };
 
@@ -274,8 +274,8 @@ const SrsReview = () => {
       }
       setIsFlipped(true); // Show back of the card they just undid
       loadStats(); // Refresh limits
-    } catch (err) {
-      setError(`Failed to undo: ${err.message}`);
+    } catch (err: unknown) {
+      setError(`Failed to undo: ${(err as Error)?.message}`);
     } finally {
       setSubmitting(false);
     }

@@ -16,6 +16,7 @@
     "forceConsistentCasingInFileNames": true,
     "strict": false,
     "noImplicitAny": true,
+    "strictNullChecks": true,
     "useDefineForClassFields": true,
     "types": ["vite/client", "node"]
   },

@@ -1,6 +1,15 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react'; // Add useCallback, useMemo
 import { Container, Card, Button, Alert, Spinner, ListGroup, Badge, ProgressBar, Modal, Form } from 'react-bootstrap'; // Add Form
 import { useParams, useNavigate, useLocation, Link } from 'react-router-dom';
+import type { Book } from '../utils/api/books';
+import type { HardcoverCandidate } from '../utils/api/hardcover';
+
+// `isFinished` is on the BookDto/list shape, not BookDetailDto, but the
+// finish-book mutation overlays it locally — keep it optional for both.
+type BookWithStatus = Book & { isFinished?: boolean };
+type EditingBookDraft = { bookId?: number; title?: string | null };
+type EditingTextDraft = { textId?: number; title?: string | null; content?: string | null; tag?: string };
+type HardcoverMessage = { type: string; text: string };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const LinkAs: any = Link;
@@ -31,26 +40,26 @@ const normalizeCoverUrl = (value: string | null | undefined): string | null => {
 
 const BookDetail = () => {
   const { bookId } = useParams();
-  const [book, setBook] = useState(null);
+  const [book, setBook] = useState<BookWithStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const navigate = useNavigate();
   const location = useLocation();
   const [finishingBook, setFinishingBook] = useState(false);
   const [showRatingModal, setShowRatingModal] = useState(false);
-  const [pendingRating, setPendingRating] = useState(null); // 0.5 .. 5.0 or null
+  const [pendingRating, setPendingRating] = useState<number | null>(null); // 0.5 .. 5.0 or null
   const [finishError, setFinishError] = useState('');
 
   // State for Edit/Delete Modals and Data
   const [showEditBookModal, setShowEditBookModal] = useState(false);
   const [showEditTextModal, setShowEditTextModal] = useState(false);
-  const [editingBook, setEditingBook] = useState(null); // Holds { bookId, title }
-  const [editingText, setEditingText] = useState(null); // Holds { textId, title, content, tag }
+  const [editingBook, setEditingBook] = useState<EditingBookDraft | null>(null);
+  const [editingText, setEditingText] = useState<EditingTextDraft | null>(null);
   const [modalLoading, setModalLoading] = useState(false);
   const [modalError, setModalError] = useState('');
 
   // State for Audiobook Upload
-  const [selectedFiles, setSelectedFiles] = useState([]);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [uploadingAudio, setUploadingAudio] = useState(false);
   const [uploadError, setUploadError] = useState('');
   const [uploadSuccess, setUploadSuccess] = useState('');
@@ -58,19 +67,20 @@ const BookDetail = () => {
 
   // Hardcover state
   const [hardcoverLoading, setHardcoverLoading] = useState(false);
-  const [hardcoverMessage, setHardcoverMessage] = useState(null);
-  const [hardcoverCandidates, setHardcoverCandidates] = useState([]);
+  const [hardcoverMessage, setHardcoverMessage] = useState<HardcoverMessage | null>(null);
+  const [hardcoverCandidates, setHardcoverCandidates] = useState<HardcoverCandidate[]>([]);
   const [showHardcoverCandidates, setShowHardcoverCandidates] = useState(false);
 
 
   const fetchBook = useCallback(async () => { // Wrap in useCallback
+    if (!bookId) return;
     setLoading(true);
     try {
       const data = await getBook(bookId);
       setBook(data);
       setError('');
-    } catch (err) {
-      setError(err.message || 'Failed to load book details');
+    } catch (err: unknown) {
+      setError((err as Error)?.message || 'Failed to load book details');
     } finally {
       setLoading(false);
     }
@@ -94,6 +104,9 @@ const BookDetail = () => {
     );
   }, [book]);
 
+  // Strict bookId narrowed for API call sites that require non-null
+  const bookIdStr = bookId ?? '';
+
   const handleOpenFinishModal = () => {
     setPendingRating(null);
     setFinishError('');
@@ -104,9 +117,9 @@ const BookDetail = () => {
     setFinishingBook(true);
     setFinishError('');
     try {
-      await finishBook(bookId, rating);
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      setBook((prev: any) => ({ ...prev, isFinished: true }));
+      await finishBook(bookIdStr, rating);
+      // Guard the null branch — spreading a null prev would produce `{ isFinished: true }` and lose all book fields.
+      setBook(prev => prev ? { ...prev, isFinished: true } : prev);
       setShowRatingModal(false);
       setPendingRating(null);
     } catch (err: unknown) {
@@ -119,6 +132,7 @@ const BookDetail = () => {
   // --- Edit/Delete Handlers ---
 
   const handleOpenEditBookModal = () => {
+    if (!book) return;
     setEditingBook({ bookId: book.bookId, title: book.title });
     setModalError('');
     setShowEditBookModal(true);
@@ -156,7 +170,7 @@ const BookDetail = () => {
   };
 
   const handleBookUpdate = async () => {
-    if (!editingBook || !editingBook.title) {
+    if (!editingBook || !editingBook.title || editingBook.bookId == null) {
       setModalError('Book title cannot be empty.');
       return;
     }
@@ -175,7 +189,7 @@ const BookDetail = () => {
   };
 
   const handleTextUpdate = async () => {
-    if (!editingText || !editingText.title || !editingText.content) {
+    if (!editingText || !editingText.title || !editingText.content || editingText.textId == null) {
       setModalError('Text title and content cannot be empty.');
       return;
     }
@@ -198,11 +212,12 @@ const BookDetail = () => {
   };
 
   const handleBookDelete = async () => {
+    if (!book) return;
     if (window.confirm(`Are you sure you want to delete the book "${book.title}"? This cannot be undone.`)) {
       setLoading(true); // Use main loading indicator
       setError('');
       try {
-        await deleteBook(bookId);
+        await deleteBook(bookIdStr);
         navigate('/books'); // Navigate back to book list after deletion
       } catch (err: unknown) {
         setError(`Failed to delete book: ${(err as Error)?.message}. Ensure all parts are deleted first if necessary.`);
@@ -259,7 +274,7 @@ const BookDetail = () => {
       const formData = new FormData();
       sortedFiles.forEach(f => formData.append('Files', f));
 
-      await uploadAudiobookTracks(bookId, formData, (progress) => {
+      await uploadAudiobookTracks(bookIdStr, formData, (progress) => {
         setUploadProgress(progress);
       });
 
@@ -269,8 +284,8 @@ const BookDetail = () => {
       setSelectedFiles([]);
       // Refresh book data to show the new tracks
       await fetchBook();
-    } catch (err) {
-      setUploadError(err.message || 'Failed to process audiobook upload.');
+    } catch (err: unknown) {
+      setUploadError((err as Error)?.message || 'Failed to process audiobook upload.');
     } finally {
       setUploadingAudio(false);
       // Clear the file input visually (important for UX)
@@ -286,7 +301,7 @@ const BookDetail = () => {
     setHardcoverLoading(true);
     setHardcoverMessage(null);
     try {
-      const result = await matchHardcoverBook(bookId);
+      const result = await matchHardcoverBook(bookIdStr);
       if (result.applied) {
         setHardcoverMessage({ type: 'success', text: result.message || 'Matched Hardcover book.' });
         await fetchBook();
@@ -295,8 +310,8 @@ const BookDetail = () => {
         setShowHardcoverCandidates(true);
         setHardcoverMessage({ type: 'warning', text: result.message || 'Review Hardcover candidates.' });
       }
-    } catch (err) {
-      setHardcoverMessage({ type: 'danger', text: err.message || 'Hardcover match failed.' });
+    } catch (err: unknown) {
+      setHardcoverMessage({ type: 'danger', text: (err as Error)?.message || 'Hardcover match failed.' });
     } finally {
       setHardcoverLoading(false);
     }
@@ -306,7 +321,7 @@ const BookDetail = () => {
     setHardcoverLoading(true);
     setHardcoverMessage(null);
     try {
-      const result = await importHardcoverMetadata(bookId);
+      const result = await importHardcoverMetadata(bookIdStr);
       if (result.success) {
         setHardcoverMessage({ type: 'success', text: result.message || 'Imported Hardcover metadata.' });
         await fetchBook();
@@ -315,8 +330,8 @@ const BookDetail = () => {
         setShowHardcoverCandidates(true);
         setHardcoverMessage({ type: 'warning', text: result.message || 'Review Hardcover candidates.' });
       }
-    } catch (err) {
-      setHardcoverMessage({ type: 'danger', text: err.message || 'Hardcover metadata import failed.' });
+    } catch (err: unknown) {
+      setHardcoverMessage({ type: 'danger', text: (err as Error)?.message || 'Hardcover metadata import failed.' });
     } finally {
       setHardcoverLoading(false);
     }
@@ -326,7 +341,7 @@ const BookDetail = () => {
     setHardcoverLoading(true);
     setHardcoverMessage(null);
     try {
-      const result = await syncHardcoverProgress(bookId);
+      const result = await syncHardcoverProgress(bookIdStr);
       setHardcoverMessage({
         type: result.success ? 'success' : 'warning',
         text: result.message || 'Hardcover progress sync completed.'
@@ -339,20 +354,19 @@ const BookDetail = () => {
     }
   };
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const handleApplyHardcoverCandidate = async (candidate: any) => {
+  const handleApplyHardcoverCandidate = async (candidate: HardcoverCandidate) => {
     setHardcoverLoading(true);
     setHardcoverMessage(null);
     try {
-      const result = await matchHardcoverBook(bookId, candidate.bookId);
+      const result = await matchHardcoverBook(bookIdStr, candidate.bookId ?? null);
       setShowHardcoverCandidates(false);
       setHardcoverMessage({
         type: result.applied ? 'success' : 'warning',
         text: result.message || 'Hardcover candidate applied.'
       });
       await fetchBook();
-    } catch (err) {
-      setHardcoverMessage({ type: 'danger', text: err.message || 'Failed to apply Hardcover candidate.' });
+    } catch (err: unknown) {
+      setHardcoverMessage({ type: 'danger', text: (err as Error)?.message || 'Failed to apply Hardcover candidate.' });
     } finally {
       setHardcoverLoading(false);
     }
@@ -404,7 +418,7 @@ const BookDetail = () => {
         <div className="d-flex gap-4 flex-wrap align-items-start">
           {book.coverImagePath && (
             <Card className="shadow-sm" style={{ width: 'min(220px, 100%)', flexShrink: 0 }}>
-              <Card.Img src={normalizeCoverUrl(book.coverImagePath)} alt={`${book.title} cover`} />
+              <Card.Img src={normalizeCoverUrl(book.coverImagePath) ?? undefined} alt={`${book.title} cover`} />
             </Card>
           )}
           <div>
@@ -419,8 +433,8 @@ const BookDetail = () => {
           </h1>
           <p className="text-muted mb-2">
             Language: {book.languageName} |
-            Parts: {book.parts.length} |
-            Added: {formatDate(book.createdAt)}
+            Parts: {book.parts?.length ?? 0} |
+            Added: {formatDate(book.createdAt ?? '')}
           </p>
           {book.description && (
             <p className="lead">{book.description}</p>
@@ -504,7 +518,7 @@ const BookDetail = () => {
                 {book.pageCount && <>| Pages: {book.pageCount}</>}
               </div>
             )}
-            {book.totalWords > 0 && book.unknownWordPercentage != null && (
+            {(book.totalWords ?? 0) > 0 && book.unknownWordPercentage != null && (
               <div className="text-muted small mt-1">
                 Unknown words: {book.unknownWordPercentage.toFixed(1)}% ({book.unknownWords} of {book.totalWords})
               </div>
@@ -554,8 +568,8 @@ const BookDetail = () => {
               <div>
                 <h6 className="mb-0">{part.title}</h6>
                 <small className="text-muted">
-                  Added: {formatDate(part.createdAt)}
-                  {part.totalWords > 0 && part.unknownWordPercentage != null && (
+                  Added: {formatDate(part.createdAt ?? '')}
+                  {(part.totalWords ?? 0) > 0 && part.unknownWordPercentage != null && (
                     <span className="ms-2" title={`${part.unknownWords} of ${part.totalWords} word tokens not yet known`}>
                       · {part.unknownWordPercentage.toFixed(1)}% new
                     </span>
@@ -574,7 +588,7 @@ const BookDetail = () => {
                   onClick={(e) => {
                     e.preventDefault(); // Prevent navigation
                     e.stopPropagation(); // Prevent ListGroup item click
-                    handleOpenEditTextModal(part.textId);
+                    if (part.textId != null) handleOpenEditTextModal(part.textId);
                   }}
                 >
                   Edit
@@ -585,7 +599,7 @@ const BookDetail = () => {
                   onClick={(e) => {
                     e.preventDefault(); // Prevent navigation
                     e.stopPropagation(); // Prevent ListGroup item click
-                    handleTextDelete(part.textId, part.title);
+                    if (part.textId != null) handleTextDelete(part.textId, part.title ?? '');
                   }}
                 >
                   Delete
@@ -641,7 +655,7 @@ const BookDetail = () => {
 
       {/* Removed Audiobook Player integration */}
 
-      {book.parts.length === 0 && (
+      {(book.parts?.length ?? 0) === 0 && (
         <Alert variant="info">
           This book doesn't have any parts yet.
         </Alert>
@@ -781,8 +795,8 @@ const BookDetail = () => {
                 <Form.Label>Title</Form.Label>
                 <Form.Control
                   type="text"
-                  value={editingText.title}
-                  onChange={(e) => setEditingText((prev: any) => ({ ...prev, title: e.target.value }))}
+                  value={editingText.title ?? ''}
+                  onChange={(e) => setEditingText(prev => prev ? { ...prev, title: e.target.value } : prev)}
                   required
                   disabled={modalLoading}
                 />
@@ -792,8 +806,8 @@ const BookDetail = () => {
                 <Form.Control
                   as="textarea"
                   rows={10}
-                  value={editingText.content}
-                  onChange={(e) => setEditingText((prev: any) => ({ ...prev, content: e.target.value }))}
+                  value={editingText.content ?? ''}
+                  onChange={(e) => setEditingText(prev => prev ? { ...prev, content: e.target.value } : prev)}
                   required
                   disabled={modalLoading}
                 />

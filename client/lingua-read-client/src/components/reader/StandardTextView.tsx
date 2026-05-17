@@ -5,7 +5,7 @@ import type { DisplayBlock } from '../../utils/readerText';
 import type { Settings } from '../../contexts/SettingsContext';
 
 interface ProcessedSentenceResult {
-  sentenceElements: React.ReactNode[];
+  sentenceElements: React.ReactNode[] | null;
   nextSentenceIndex: number;
 }
 
@@ -87,7 +87,7 @@ const StandardTextView = React.memo(({
     const processedLineElements = processTextContent(lineText);
     const { sentenceElements, nextSentenceIndex } = renderProcessedContentAsSentences(processedLineElements, currentSentenceIndex);
     currentSentenceIndex = nextSentenceIndex;
-    return sentenceElements;
+    return sentenceElements ?? [];
   };
   const renderTitleLine = (line: string, lineIndex: number, blockKey: string, lines: string[]): React.ReactNode => {
     if (!line) {

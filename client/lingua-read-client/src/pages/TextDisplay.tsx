@@ -33,32 +33,48 @@ import WordInfoPanel from '../components/reader/WordInfoPanel';
 import AudioTranscriptView from '../components/reader/AudioTranscriptView';
 import StandardTextView from '../components/reader/StandardTextView';
 import SentenceModeView from '../components/reader/SentenceModeView';
+import type { Text as TextDto } from '../utils/api/texts';
+import type { Book as BookDto } from '../utils/api/books';
+import type { Word } from '../utils/api/words';
+import type { Language } from '../utils/api/languages';
+import type { LanguageConfig } from '../utils/readerText';
+import type { SrtEntry } from '../utils/srtParser';
+
+// Page state often overlays extra fields the OpenAPI spec omits. Keep the
+// types loose enough for the augmented runtime shape used by the reader.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type ReaderText = TextDto & Record<string, any>;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type ReaderBook = BookDto & Record<string, any>;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type DisplayedWord = Record<string, any>;
 
 const TextDisplay = () => {
   const { textId } = useParams();
   const navigate = useNavigate();
-  const textContentRef = useRef(null);
-  const readingContainerRef = useRef(null);
-  const audioRef = useRef(null);
-  const listRef = useRef(null);
-  const autoScrollRafRef = useRef(null);
+  const textContentRef = useRef<HTMLDivElement | null>(null);
+  const readingContainerRef = useRef<HTMLDivElement | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const listRef = useRef<any>(null); // react-window FixedSizeList ref
+  const autoScrollRafRef = useRef<number | null>(null);
   const autoTranslateTriggeredRef = useRef(false);
-  const autoTranslateTextIdRef = useRef(null);
+  const autoTranslateTextIdRef = useRef<number | string | null>(null);
   // Removed resizeDividerRef
 
   // --- State Declarations ---
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [text, setText] = useState(null);
-  const [book, setBook] = useState(null);
-  const [words, setWords] = useState([]);
+  const [text, setText] = useState<ReaderText | null>(null);
+  const [book, setBook] = useState<ReaderBook | null>(null);
+  const [words, setWords] = useState<Word[]>([]);
   const [languageWordsLoaded, setLanguageWordsLoaded] = useState(false);
   const [selectedWord, setSelectedWord] = useState('');
-  const [hoveredWordTerm, setHoveredWordTerm] = useState(null);
+  const [hoveredWordTerm, setHoveredWordTerm] = useState<string | null>(null);
   const [translation, setTranslation] = useState('');
   const [isTranslating, setIsTranslating] = useState(false);
   const [processingWord, setProcessingWord] = useState(false);
-  const [displayedWord, setDisplayedWord] = useState(null);
+  const [displayedWord, setDisplayedWord] = useState<DisplayedWord | null>(null);
   const [selectedWordAiContext, setSelectedWordAiContext] = useState('');
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [wordTranslationError, setWordTranslationError] = useState('');
@@ -66,10 +82,11 @@ const TextDisplay = () => {
   const [translateUnknownError, setTranslateUnknownError] = useState('');
   const [isMarkingAll, setIsMarkingAll] = useState(false);
   const [completing, setCompleting] = useState(false);
-  const [stats, setStats] = useState(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [stats, setStats] = useState<Record<string, any> | null>(null);
   const [showStatsModal, setShowStatsModal] = useState(false);
-  const [previousTextId, setPreviousTextId] = useState(null);
-  const [nextTextId, setNextTextId] = useState(null);
+  const [previousTextId, setPreviousTextId] = useState<number | null>(null);
+  const [nextTextId, setNextTextId] = useState<number | null>(null);
   const [showTranslationPopup, setShowTranslationPopup] = useState(false);
   const [fullTextTranslation, setFullTextTranslation] = useState('');
   const [isFullTextTranslating, setIsFullTextTranslating] = useState(false);
@@ -81,7 +98,7 @@ const TextDisplay = () => {
   const [summaryError, setSummaryError] = useState('');
   const [isSummarizing, setIsSummarizing] = useState(false);
   const [summaryTargetLanguage, setSummaryTargetLanguage] = useState(translationTargetLanguageCode);
-  const [summaryLanguages, setSummaryLanguages] = useState([]);
+  const [summaryLanguages, setSummaryLanguages] = useState<Language[]>([]);
   const [isLoadingSummaryLanguages, setIsLoadingSummaryLanguages] = useState(false);
   // Local state only for panel width, as it's specific to this component's layout control
   const [leftPanelWidth, setLeftPanelWidth] = useState(globalSettings.leftPanelWidth || 85);
@@ -91,14 +108,14 @@ const TextDisplay = () => {
   // Let's use globalSettings directly for textSize for now.
   // Removed isDragging state
   const [isAudioLesson, setIsAudioLesson] = useState(false);
-  const [audioSrc, setAudioSrc] = useState(null);
-  const [srtLines, setSrtLines] = useState([]);
-  const [currentSrtLineId, setCurrentSrtLineId] = useState(null);
+  const [audioSrc, setAudioSrc] = useState<string | null>(null);
+  const [srtLines, setSrtLines] = useState<SrtEntry[]>([]);
+  const [currentSrtLineId, setCurrentSrtLineId] = useState<number | null>(null);
   const audioCurrentTimeRef = useRef(0); // Use ref instead of state to prevent re-renders
   const [displayMode, setDisplayMode] = useState('audio');
-  const [languageConfig, setLanguageConfig] = useState(null); // State for language settings (Phase 3)
-  const [embeddedUrl, setEmbeddedUrl] = useState(null); // State for embedded dictionary iframe URL (Phase 3)
-  const [bookmarkedIndices, setBookmarkedIndices] = useState([]); // State for bookmarked sentence indices
+  const [languageConfig, setLanguageConfig] = useState<LanguageConfig | null>(null); // State for language settings (Phase 3)
+  const [embeddedUrl, setEmbeddedUrl] = useState<string | null>(null); // State for embedded dictionary iframe URL (Phase 3)
+  const [bookmarkedIndices, setBookmarkedIndices] = useState<number[]>([]); // State for bookmarked sentence indices
   const [showMoreControls, setShowMoreControls] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [showMobileHeader, setShowMobileHeader] = useState(false);
@@ -110,15 +127,16 @@ const TextDisplay = () => {
   const [segmentExplanations, setSegmentExplanations] = useState<Record<number, string>>({});
   const [isTranslatingSegment, setIsTranslatingSegment] = useState(false);
   const [isExplainingSegment, setIsExplainingSegment] = useState(false);
-  const [visibleTranslationIndex, setVisibleTranslationIndex] = useState(null);
-  const [visibleExplanationIndex, setVisibleExplanationIndex] = useState(null);
-  const [creditedSegmentIndices, setCreditedSegmentIndices] = useState([]);
+  const [visibleTranslationIndex, setVisibleTranslationIndex] = useState<number | null>(null);
+  const [visibleExplanationIndex, setVisibleExplanationIndex] = useState<number | null>(null);
+  const [creditedSegmentIndices, setCreditedSegmentIndices] = useState<number[]>([]);
   const [sentenceProgressLoaded, setSentenceProgressLoaded] = useState(false);
-  const [segmentPlaybackRequest, setSegmentPlaybackRequest] = useState(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [segmentPlaybackRequest, setSegmentPlaybackRequest] = useState<any | null>(null);
   const [isSpeakingSentence, setIsSpeakingSentence] = useState(false);
   const [isSpeakingWord, setIsSpeakingWord] = useState(false);
-  const selectionDebounceRef = useRef(null);
-  const mobileSelectionRetryRef = useRef(null);
+  const selectionDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mobileSelectionRetryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mobileSelectionPendingRef = useRef(false);
   const mobileSelectionObservedRef = useRef(false);
   const mobileSelectionWasActiveAtTouchStartRef = useRef(false);
@@ -126,26 +144,26 @@ const TextDisplay = () => {
   const mobileTouchMovedRef = useRef(false);
   const mobileSelectionInitialTextRef = useRef('');
   const mobileSelectionGrewRef = useRef(false);
-  const mobileSelectionStabilityRef = useRef(null);
+  const mobileSelectionStabilityRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastHandledSelectionRef = useRef('');
   const suppressWordClickUntilRef = useRef(0);
   const selectableWordTouchStartRef = useRef(0);
-  const translationAbortRef = useRef(null);
-  const translationCacheRef = useRef(new Map());
-  const pendingSentenceCreditRef = useRef(new Set());
+  const translationAbortRef = useRef<AbortController | null>(null);
+  const translationCacheRef = useRef(new Map<string, unknown>());
+  const pendingSentenceCreditRef = useRef(new Set<number>());
   const audioDrivenSentenceSyncRef = useRef(false);
   const lastAutoSegmentPlaybackKeyRef = useRef('');
   const skipInitialAudioLessonSegmentPlaybackRef = useRef(true);
   const textLoadRequestVersionRef = useRef(0);
-  const currentTextIdForSummaryRef = useRef(null);
+  const currentTextIdForSummaryRef = useRef<number | null>(null);
   // --- End State Declarations ---
 
   // Create refs for values used in handleAudioTimeUpdate to keep the callback stable
   const handleAudioTimeUpdateStateRef = useRef({
     isAudioLesson: false,
-    srtLines: [],
+    srtLines: [] as SrtEntry[],
     displayMode: 'audio',
-    currentSrtLineId: null,
+    currentSrtLineId: null as number | null,
     isSentenceMode: false,
     currentSegmentIndex: 0,
     isMobile: false,
@@ -523,7 +541,7 @@ const TextDisplay = () => {
   const knownPhrases = useMemo(() => {
     return words
       .filter(w => w.term && w.term.includes(' '))
-      .sort((a, b) => b.term.length - a.term.length);
+      .sort((a, b) => (b.term?.length ?? 0) - (a.term?.length ?? 0));
   }, [words]);
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -565,8 +583,8 @@ const TextDisplay = () => {
       translationCacheRef.current.set(cacheKey, cached);
       setIsTranslating(false);
       setWordTranslationError('');
-      setTranslation(cached);
-      setDisplayedWord((prev: any) => (prev && prev.term === termToTranslate ? { ...prev, translation: cached } : prev));
+      setTranslation(cached as string);
+      setDisplayedWord(prev => (prev && prev.term === termToTranslate ? { ...prev, translation: cached } : prev));
       return;
     }
 
@@ -856,28 +874,29 @@ const TextDisplay = () => {
       // If it's a text node or offset is within a text node
       let current: Node | null = node;
       while (current && current !== container) {
-        if (current.nodeType === Node.ELEMENT_NODE && (current as HTMLElement).classList.contains('clickable-word')) {
-          return current as HTMLElement; // Found ancestor word span
+        const node: Node = current;
+        if (node.nodeType === Node.ELEMENT_NODE && (node as HTMLElement).classList.contains('clickable-word')) {
+          return node as HTMLElement; // Found ancestor word span
         }
         // Move to sibling or parent
-        const sibling = lookForward ? current.nextSibling : current.previousSibling;
+        const sibling: ChildNode | null = lookForward ? node.nextSibling : node.previousSibling;
         if (sibling) {
           current = sibling;
           // If moving to a sibling element, check its children (especially if looking backward)
-          if (current.nodeType === Node.ELEMENT_NODE) {
-            let innerNode = lookForward ? current.firstChild : current.lastChild;
+          if (sibling.nodeType === Node.ELEMENT_NODE) {
+            let innerNode: ChildNode | null = lookForward ? sibling.firstChild : sibling.lastChild;
             while (innerNode) {
               const word = findWordSpan(innerNode);
               if (word) return word;
               innerNode = lookForward ? innerNode.nextSibling : innerNode.previousSibling;
             }
           } else { // Text node sibling
-            const word = findWordSpan(current);
+            const word = findWordSpan(sibling);
             if (word) return word;
           }
 
         } else {
-          current = current.parentNode; // Move up if no more siblings
+          current = node.parentNode; // Move up if no more siblings
         }
       }
       return null; // No word span found in traversal
@@ -1130,11 +1149,12 @@ const TextDisplay = () => {
 
       // 1. Check for known phrase matches at the current position
       for (const phrase of knownPhrases) {
-        if (processed.substring(currentIndex).startsWith(phrase.term)) {
+        const phraseTerm = phrase.term;
+        if (!phraseTerm) continue;
+        if (processed.substring(currentIndex).startsWith(phraseTerm)) {
           const phraseData = phrase;
           const phraseStatus = phraseData.status;
           const phraseTranslation = phraseData.translation;
-          const phraseTerm = phraseData.term;
 
           const phraseSpan = (
             <span
@@ -1292,7 +1312,8 @@ const TextDisplay = () => {
 
     return splitTextIntoSentenceSegments(
       text?.content || '',
-      text?.structuredContent || [],
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (text?.structuredContent as any) || [],
       languageConfig,
       text?.languageCode
     );
@@ -1497,6 +1518,7 @@ const TextDisplay = () => {
 
       pendingSentenceCreditRef.current.add(segmentIndex);
       try {
+        if (text?.textId == null) return;
         const response = await logSentenceReadActivity({
           textId: text.textId,
           currentSegmentIndex: segmentIndex,
@@ -1630,6 +1652,7 @@ const TextDisplay = () => {
       }
     };
     const refreshWordsAfterLinking = async () => {
+      if (!textId) return;
       try {
         const refreshed = await getText(textId);
         if (isCurrentRequest()) {
@@ -1642,7 +1665,7 @@ const TextDisplay = () => {
       }
     };
     const checkWordLinkingStatus = async () => {
-      if (!isCurrentRequest()) return;
+      if (!isCurrentRequest() || !textId) return;
       try {
         const statusData = (await getWordLinkingStatus(textId)) as unknown as { wordLinkingStatus?: string } | null;
         if (!isCurrentRequest()) return;
@@ -1674,6 +1697,7 @@ const TextDisplay = () => {
     // --- End Set initial panel width ---
 
     const fetchText = async () => {
+      if (!textId) return;
       // Check if we are checking the same text to avoid full re-mount of children (AudiobookPlayer)
       const isSameText = text && String(text.textId) === String(textId);
 
@@ -1762,8 +1786,8 @@ const TextDisplay = () => {
 
         // 2: Book data (updateLastRead then getBook, chained but parallel with others)
         promises.push(
-          data.bookId
-            ? updateLastRead(data.bookId, data.textId).then(() => getBook(data.bookId))
+          data.bookId && data.textId != null
+            ? updateLastRead(data.bookId, data.textId).then(() => getBook(data.bookId!))
             : Promise.resolve(null)
         );
 
@@ -1786,7 +1810,7 @@ const TextDisplay = () => {
 
         // Process result 1: language config
         if (results[1].status === 'fulfilled' && results[1].value) {
-          setLanguageConfig(results[1].value);
+          setLanguageConfig(results[1].value as LanguageConfig);
         } else {
           if (results[1].status === 'rejected') {
             console.error('Failed to fetch language configuration:', results[1].reason);
@@ -1798,13 +1822,13 @@ const TextDisplay = () => {
         // Process result 2: book
         if (data.bookId) {
           if (results[2].status === 'fulfilled' && results[2].value) {
-            const bookData = results[2].value;
+            const bookData = results[2].value as ReaderBook;
             setBook(bookData);
             if (bookData?.parts) {
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              const currentPartIndex = bookData.parts.findIndex((part: any) => part.textId === parseInt(textId));
-              setPreviousTextId(currentPartIndex > 0 ? bookData.parts[currentPartIndex - 1].textId : null);
-              setNextTextId(currentPartIndex >= 0 && currentPartIndex < bookData.parts.length - 1 ? bookData.parts[currentPartIndex + 1].textId : null);
+              const currentPartIndex = bookData.parts.findIndex((part: any) => part.textId === parseInt(textId ?? '', 10));
+              setPreviousTextId(currentPartIndex > 0 ? (bookData.parts[currentPartIndex - 1].textId ?? null) : null);
+              setNextTextId(currentPartIndex >= 0 && currentPartIndex < bookData.parts.length - 1 ? (bookData.parts[currentPartIndex + 1].textId ?? null) : null);
             }
           } else {
             // results[2] is a PromiseSettledResult; narrow before reading reason.
@@ -1820,7 +1844,8 @@ const TextDisplay = () => {
 
         // Process result 3: sentence progress
         if (results[3].status === 'fulfilled' && results[3].value) {
-          const sentenceProgress = results[3].value;
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const sentenceProgress = results[3].value as { lastSegmentIndex?: number; creditedSegmentIndices?: number[] };
           const initialIndex = Math.max(0, sentenceProgress?.lastSegmentIndex || 0);
           setCurrentSegmentIndex(initialIndex);
           setCreditedSegmentIndices(sentenceProgress?.creditedSegmentIndices || []);
@@ -1832,8 +1857,8 @@ const TextDisplay = () => {
           setCurrentSegmentIndex(0);
         }
         setSentenceProgressLoaded(true);
-      } catch (err) {
-        if (isCurrentRequest()) setError(err.message || 'Failed to load text');
+      } catch (err: unknown) {
+        if (isCurrentRequest()) setError((err as Error)?.message || 'Failed to load text');
       }
       finally {
         if (isCurrentRequest()) setLoading(false);
@@ -1850,7 +1875,7 @@ const TextDisplay = () => {
   }, [textId, fetchAllLanguageWords]); // 'text' and 'isAudioLesson' are intentionally omitted to prevent loops; cleanup captures correct 'text' via closure.
 
   // Ref to hold the latest handleTranslateUnknownWords (assigned after function definition below)
-  const handleTranslateUnknownWordsRef = useRef(null);
+  const handleTranslateUnknownWordsRef = useRef<((opts?: { silent?: boolean }) => Promise<void>) | null>(null);
 
   // Auto-translate all unknown words on open (if setting enabled)
   useEffect(() => {
@@ -1864,12 +1889,12 @@ const TextDisplay = () => {
       handleTranslateUnknownWordsRef.current
     ) {
       // Skip if a previous text's auto-translate is still in-flight
-      if (autoTranslateTextIdRef.current && autoTranslateTextIdRef.current !== text.textId) {
+      if (autoTranslateTextIdRef.current && autoTranslateTextIdRef.current !== text?.textId) {
         return;
       }
       autoTranslateTriggeredRef.current = true;
-      autoTranslateTextIdRef.current = text.textId;
-      handleTranslateUnknownWordsRef.current({ silent: true }).then(() => {
+      autoTranslateTextIdRef.current = text?.textId ?? null;
+      handleTranslateUnknownWordsRef.current?.({ silent: true }).then(() => {
         if (!cancelled) autoTranslateTextIdRef.current = null;
       });
     }
@@ -1993,6 +2018,7 @@ const TextDisplay = () => {
                 }
               }
               const sentenceToMine = currentSentenceSegment?.text;
+              if (text?.textId == null) return;
               createWord(text.textId, hoveredWordTerm, key, translationToUse, sentenceToMine)
                 .then(newWordData => {
                   // Update newWordData with the translation we fetched (if backend didn't return it)
@@ -2038,6 +2064,7 @@ const TextDisplay = () => {
         setWords(updatedWords);
         setDisplayedWord((prev: any) => (prev?.term === selectedWord ? { ...prev, status: numericStatus, translation } : prev));
       } else {
+        if (text?.textId == null) return;
         const newWordData = (await createWord(text.textId, selectedWord, numericStatus, translation, currentSentenceSegment?.text)) as Record<string, unknown> | null;
         setWords((prevWords: any[]) => [...prevWords, newWordData]);
         setDisplayedWord({ ...(newWordData || {}), isNew: false });
@@ -2161,12 +2188,13 @@ const TextDisplay = () => {
     }
 
     try {
+      if (text?.textId == null) return;
       // Create a temporary state indicator if you want, or just wait.
       await mineSentence(wordId, sentenceToMine, text.textId, text.title);
       alert("Sentence added to flashcards successfully!");
-    } catch (err) {
+    } catch (err: unknown) {
       console.error("Failed to mine sentence:", err);
-      alert(`Failed to mine sentence: ${err.message}`);
+      alert(`Failed to mine sentence: ${(err as Error)?.message}`);
     }
   }, [displayedWord, currentSentenceSegment, text]);
 
@@ -2243,7 +2271,7 @@ const TextDisplay = () => {
       if (unknownWords.length === 0) { alert("No untracked words found."); setIsMarkingAll(false); return; } // Exit early
       const originalCaseMap = new Map<string, string>();
       allWords.forEach((w: string) => { const lower = w.toLowerCase(); if (!originalCaseMap.has(lower)) { originalCaseMap.set(lower, w); } });
-      const termsToMark = unknownWords.map((word: string) => ({ term: originalCaseMap.get(word) || word, translation: null as string | null }));
+      const termsToMark = unknownWords.map((word: string) => ({ term: originalCaseMap.get(word) || word, translation: '' }));
       await addTermsBatch(text.languageId, termsToMark);
       await fetchAllLanguageWords(text.languageId);
       alert(`Attempted to mark ${unknownWords.length} words as Known.`);
@@ -2257,19 +2285,20 @@ const TextDisplay = () => {
     try {
       // Call the correct API endpoint using the imported completeLesson function
       // Pass bookId if available, otherwise null/undefined (handled by completeLesson in api.js)
-      const textStats = await completeLesson(text?.bookId, text.textId);
+      const textStats = await completeLesson(text?.bookId ?? null, text.textId);
       // If standalone text, always go back to texts page after completion
       if (!text?.bookId) {
         navigate('/texts');
       } else if (globalSettings.autoAdvanceToNextLesson && nextTextId) {
         navigate(`/texts/${nextTextId}`);
       } else if (globalSettings.showProgressStats) {
-        setStats(textStats); // Use the stats returned from completeText
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        setStats(textStats as Record<string, any> | null); // Use the stats returned from completeText
         setShowStatsModal(true);
       } else {
         navigate(`/books/${text.bookId}`);
       }
-    } catch (error) { alert(`Failed to complete lesson: ${error.message}`); }
+    } catch (error: unknown) { alert(`Failed to complete lesson: ${(error as Error)?.message}`); }
     finally { setCompleting(false); }
   };
 
@@ -2277,7 +2306,7 @@ const TextDisplay = () => {
     if (!text?.textId) return;
     setCompleting(true);
     try {
-      await completeLesson(text?.bookId, text.textId, true);
+      await completeLesson(text?.bookId ?? null, text.textId, true);
       navigate('/texts');
     } catch (error: unknown) { alert(`Failed to complete lesson: ${(error as Error)?.message}`); }
     finally { setCompleting(false); }
@@ -2420,7 +2449,7 @@ const TextDisplay = () => {
         setShowMobileHeader={setShowMobileHeader}
         showMoreControls={showMoreControls}
         setShowMoreControls={setShowMoreControls}
-        text={text}
+        text={text ? { title: text.title ?? undefined } : text}
         primaryControls={primaryControls}
         secondaryControls={secondaryControls}
         readerLessonActions={readerLessonActions}

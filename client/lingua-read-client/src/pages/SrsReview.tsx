@@ -3,7 +3,13 @@ import { Container, Card, Button, Spinner, Alert, Form, Row, Col, Badge, Progres
 import { useNavigate } from 'react-router-dom';
 import { SettingsContext } from '../contexts/SettingsContext';
 import { getAllLanguages, getSrsDueCards, submitSrsReview, getSrsStats, updateUserSettings, undoSrsReview, getSrsForecast, suspendSrsCard, burySrsCard, updateSrsCard, getSrsHeatmap, getSrsAnalytics } from '../utils/api';
+import type { Language } from '../utils/api/languages';
+import type { SrsDueCards, SrsStats, SrsForecast, SrsHeatmap, SrsAnalytics } from '../utils/api/srs';
 import './SrsReview.css';
+
+type DueCard = SrsDueCards[number];
+type ForecastEntry = SrsForecast[number];
+type HeatmapEntry = SrsHeatmap[number];
 
 const FLAG_COLORS = ['', '🟥', '🟧', '🟨', '🟩'];
 const FLAG_LABELS = ['None', 'Red', 'Orange', 'Yellow', 'Green'];
@@ -23,12 +29,12 @@ const SrsReview = () => {
   const navigate = useNavigate();
 
   // Setup state
-  const [languages, setLanguages] = useState([]);
+  const [languages, setLanguages] = useState<Language[]>([]);
   const [selectedLanguage, setSelectedLanguage] = useState(() =>
     localStorage.getItem('srsSelectedLanguage') || ''
   );
   // Include Known (5): stats count all due SRS cards; excluding 5 hid due "Known" words from sessions.
-  const [statusFilter, setStatusFilter] = useState([1, 2, 3, 4, 5]);
+  const [statusFilter, setStatusFilter] = useState<number[]>([1, 2, 3, 4, 5]);
   const [onlyOneTarget, setOnlyOneTarget] = useState(false);
 
   // Load languages
@@ -121,7 +127,7 @@ const SrsReview = () => {
   };
 
   // Session state
-  const [cards, setCards] = useState([]);
+  const [cards, setCards] = useState<DueCard[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isFlipped, setIsFlipped] = useState(false);
   const [sessionStarted, setSessionStarted] = useState(false);
@@ -130,15 +136,15 @@ const SrsReview = () => {
 
   // Loading/error
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
+  const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   // Stats
-  const [stats, setStats] = useState(null);
+  const [stats, setStats] = useState<SrsStats | null>(null);
   const [statsLoading, setStatsLoading] = useState(false);
-  const [forecast, setForecast] = useState([]);
-  const [heatmap, setHeatmap] = useState([]);
-  const [analytics, setAnalytics] = useState(null);
+  const [forecast, setForecast] = useState<ForecastEntry[]>([]);
+  const [heatmap, setHeatmap] = useState<HeatmapEntry[]>([]);
+  const [analytics, setAnalytics] = useState<SrsAnalytics | null>(null);
 
   // Undo state
   const [undoVisible, setUndoVisible] = useState(false);
@@ -192,8 +198,8 @@ const SrsReview = () => {
         setCards(data);
         setSessionStarted(true);
       }
-    } catch (err) {
-      setError(`Failed to load cards: ${err.message}`);
+    } catch (err: unknown) {
+      setError(`Failed to load cards: ${(err as Error)?.message}`);
     } finally {
       setLoading(false);
     }
@@ -231,6 +237,7 @@ const SrsReview = () => {
     setUndoVisible(false); // Hide any existing undo before submitting new
 
     try {
+      if (currentCard.srsCardReviewId == null) return;
       await submitSrsReview(currentCard.srsCardReviewId, grade);
       setReviewedCount(prev => prev + 1);
 
@@ -525,7 +532,7 @@ const SrsReview = () => {
               <Row className="text-center g-2 mb-3">
                 <Col>
                   <div className="srs-stat-value text-danger">{stats.reviewableCount ?? stats.dueCount}</div>
-                  <div className="srs-stat-label">Due{stats.reviewableCount != null && stats.reviewableCount < stats.dueCount ? <small className="text-muted"> ({stats.dueCount} total)</small> : ''}</div>
+                  <div className="srs-stat-label">Due{stats.reviewableCount != null && stats.reviewableCount < (stats.dueCount ?? 0) ? <small className="text-muted"> ({stats.dueCount} total)</small> : ''}</div>
                 </Col>
                 <Col><div className="srs-stat-value text-info">{stats.newCards}</div><div className="srs-stat-label">New</div></Col>
                 <Col><div className="srs-stat-value text-warning">{stats.learningCards}</div><div className="srs-stat-label">Learning</div></Col>
@@ -536,7 +543,7 @@ const SrsReview = () => {
                 <Row className="text-center g-2">
                   <Col>
                     <ProgressBar
-                      now={stats.maxNewCards > 0 ? (stats.studiedNewCardsToday / stats.maxNewCards) * 100 : 0}
+                      now={(stats.maxNewCards ?? 0) > 0 ? ((stats.studiedNewCardsToday ?? 0) / (stats.maxNewCards ?? 1)) * 100 : 0}
                       variant="info"
                       style={{ height: '4px' }}
                       className="mb-1"
@@ -545,7 +552,7 @@ const SrsReview = () => {
                   </Col>
                   <Col>
                     <ProgressBar
-                      now={stats.maxReviews > 0 ? (stats.studiedReviewsToday / stats.maxReviews) * 100 : 0}
+                      now={(stats.maxReviews ?? 0) > 0 ? ((stats.studiedReviewsToday ?? 0) / (stats.maxReviews ?? 1)) * 100 : 0}
                       variant="primary"
                       style={{ height: '4px' }}
                       className="mb-1"
@@ -564,13 +571,14 @@ const SrsReview = () => {
               <small className="text-muted fw-bold mb-2 d-block text-center">Upcoming Reviews (14 Days)</small>
               <div className="d-flex align-items-end justify-content-between" style={{ height: '80px' }}>
                 {forecast.map((day, idx) => {
-                  const maxCount = Math.max(...forecast.map(f => f.count), 1);
-                  const heightPct = (day.count / maxCount) * 100;
-                  const dateObj = new Date(day.date);
-                  const dayStr = idx === 0 ? 'Today' : dateObj.toLocaleDateString(undefined, { weekday: 'short' });
+                  const dayCount = day.count ?? 0;
+                  const maxCount = Math.max(...forecast.map(f => f.count ?? 0), 1);
+                  const heightPct = (dayCount / maxCount) * 100;
+                  const dateObj = day.date ? new Date(day.date) : null;
+                  const dayStr = idx === 0 ? 'Today' : dateObj?.toLocaleDateString(undefined, { weekday: 'short' }) ?? '';
                   return (
-                    <div key={idx} className="d-flex flex-column align-items-center" style={{ flex: 1 }} title={`${day.date}: ${day.count} cards`}>
-                      <div className="bg-primary rounded-top" style={{ width: '60%', height: `${Math.max(heightPct, 5)}%`, opacity: day.count > 0 ? 0.8 : 0.2, minHeight: '4px' }}></div>
+                    <div key={idx} className="d-flex flex-column align-items-center" style={{ flex: 1 }} title={`${day.date}: ${dayCount} cards`}>
+                      <div className="bg-primary rounded-top" style={{ width: '60%', height: `${Math.max(heightPct, 5)}%`, opacity: dayCount > 0 ? 0.8 : 0.2, minHeight: '4px' }}></div>
                       <small style={{ fontSize: '0.65rem', marginTop: '4px' }} className="text-muted text-truncate w-100 text-center">{dayStr}</small>
                     </div>
                   );
@@ -597,21 +605,20 @@ const SrsReview = () => {
               <Card className="shadow-sm h-100">
                 <Card.Body className="py-2">
                   <small className="text-muted fw-bold mb-2 d-block text-center">Retention by Status (30d)</small>
-                  {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                  {analytics.retentionByStatus.map((r: any) => (
+                  {analytics.retentionByStatus?.map((r) => (
                     <div key={r.status} className="d-flex align-items-center mb-1">
                       <Badge bg={STATUS_VARIANTS[r.status as WordStatus]} className="me-2" style={{ width: '70px', fontSize: '0.7rem' }}>
                         {STATUS_LABELS[r.status as WordStatus]}
                       </Badge>
                       <ProgressBar
                         now={r.retentionRate}
-                        variant={r.retentionRate >= 80 ? 'success' : r.retentionRate >= 60 ? 'warning' : 'danger'}
+                        variant={(r.retentionRate ?? 0) >= 80 ? 'success' : (r.retentionRate ?? 0) >= 60 ? 'warning' : 'danger'}
                         style={{ height: '8px', flex: 1 }}
                       />
                       <small className="ms-2 text-muted" style={{ width: '40px', textAlign: 'right' }}>{r.retentionRate}%</small>
                     </div>
                   ))}
-                  {analytics.retentionByStatus.length === 0 && (
+                  {(analytics.retentionByStatus?.length ?? 0) === 0 && (
                     <small className="text-muted d-block text-center">No review data yet</small>
                   )}
                 </Card.Body>
@@ -627,8 +634,7 @@ const SrsReview = () => {
                     { grade: 2, label: 'Good', variant: 'success' },
                     { grade: 3, label: 'Easy', variant: 'info' },
                   ].map(({ grade, label, variant }) => {
-                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                    const item = analytics.gradeDistribution.find((g: any) => g.grade === grade);
+                    const item = analytics.gradeDistribution?.find((g) => g.grade === grade);
                     const count = item?.count || 0;
                     const total = analytics.totalReviewsLast30Days || 1;
                     const pct = Math.round((count / total) * 100);
@@ -650,20 +656,19 @@ const SrsReview = () => {
         )}
 
         {/* Leech Cards */}
-        {analytics && analytics.leechCards.length > 0 && !statsLoading && (
+        {analytics && (analytics.leechCards?.length ?? 0) > 0 && !statsLoading && (
           <Card className="mb-3 shadow-sm border-warning">
             <Card.Body className="py-2">
               <small className="text-muted fw-bold mb-2 d-block">Leeches — cards with 3+ lapses (30d)</small>
               <div className="d-flex flex-wrap gap-2">
-                {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                {analytics.leechCards.map((lc: any) => (
+                {analytics.leechCards?.map((lc) => (
                   <Badge
                     key={lc.srsCardReviewId}
                     bg="warning"
                     text="dark"
                     className="d-flex align-items-center gap-1"
                     style={{ fontSize: '0.75rem', padding: '0.3rem 0.6rem' }}
-                    title={`${lc.translation} — ${lc.lapseCount} lapses, ease ${lc.easeFactor.toFixed(2)}`}
+                    title={`${lc.translation} — ${lc.lapseCount} lapses, ease ${(lc.easeFactor ?? 0).toFixed(2)}`}
                   >
                     {lc.term} <span className="opacity-75">({lc.lapseCount}x)</span>
                     <span
@@ -673,8 +678,8 @@ const SrsReview = () => {
                       style={{ cursor: 'pointer', fontSize: '0.7rem' }}
                       onClick={async (e) => {
                         e.stopPropagation();
-                        try { await burySrsCard(lc.srsCardReviewId); loadStats(); }
-                        catch (err) { setError(`Failed to bury: ${err.message}`); }
+                        try { if (lc.srsCardReviewId != null) { await burySrsCard(lc.srsCardReviewId); loadStats(); } }
+                        catch (err: unknown) { setError(`Failed to bury: ${(err as Error)?.message}`); }
                       }}
                     >⏸</span>
                     <span
@@ -684,8 +689,8 @@ const SrsReview = () => {
                       style={{ cursor: 'pointer', fontSize: '0.7rem' }}
                       onClick={async (e) => {
                         e.stopPropagation();
-                        try { await suspendSrsCard(lc.srsCardReviewId); loadStats(); }
-                        catch (err) { setError(`Failed to suspend: ${err.message}`); }
+                        try { if (lc.srsCardReviewId != null) { await suspendSrsCard(lc.srsCardReviewId); loadStats(); } }
+                        catch (err: unknown) { setError(`Failed to suspend: ${(err as Error)?.message}`); }
                       }}
                     >⛔</span>
                   </Badge>
@@ -863,15 +868,15 @@ const SrsReview = () => {
                 <Row className="text-center mb-3 g-3">
                   <Col>
                     <div className="srs-stat-value text-danger">{stats.reviewableCount ?? stats.dueCount}</div>
-                    <div className="srs-stat-label">Still Due{stats.reviewableCount != null && stats.reviewableCount < stats.dueCount ? <small className="text-muted"> ({stats.dueCount} total)</small> : ''}</div>
+                    <div className="srs-stat-label">Still Due{stats.reviewableCount != null && stats.reviewableCount < (stats.dueCount ?? 0) ? <small className="text-muted"> ({stats.dueCount} total)</small> : ''}</div>
                   </Col>
                   <Col><div className="srs-stat-value">{stats.reviewedToday}</div><div className="srs-stat-label">Today</div></Col>
                   <Col><div className="srs-stat-value text-success">{stats.matureCards}</div><div className="srs-stat-label">Mature</div></Col>
                 </Row>
-                {stats.dueCount > 0 && (stats.reviewableCount ?? stats.dueCount) === 0 && (
+                {(stats.dueCount ?? 0) > 0 && (stats.reviewableCount ?? stats.dueCount ?? 0) === 0 && (
                   <Alert variant="info" className="mb-4 text-start py-2 small">
-                    {stats.studiedNewCardsToday >= stats.maxNewCards && <div>New card limit reached ({stats.maxNewCards}/day)</div>}
-                    {stats.studiedReviewsToday >= stats.maxReviews && <div>Review limit reached ({stats.maxReviews}/day)</div>}
+                    {(stats.studiedNewCardsToday ?? 0) >= (stats.maxNewCards ?? 0) && <div>New card limit reached ({stats.maxNewCards}/day)</div>}
+                    {(stats.studiedReviewsToday ?? 0) >= (stats.maxReviews ?? 0) && <div>Review limit reached ({stats.maxReviews}/day)</div>}
                     <div className="text-muted mt-1">Adjust limits in settings to review more.</div>
                   </Alert>
                 )}
@@ -939,8 +944,8 @@ const SrsReview = () => {
                 {currentCard.isLearning && (
                   <Badge bg="warning" text="dark">📖 Learning</Badge>
                 )}
-                {currentCard.flag > 0 && (
-                  <span title={`Flag: ${FLAG_LABELS[currentCard.flag]}`}>{FLAG_COLORS[currentCard.flag]}</span>
+                {(currentCard.flag ?? 0) > 0 && (
+                  <span title={`Flag: ${FLAG_LABELS[currentCard.flag!]}`}>{FLAG_COLORS[currentCard.flag!]}</span>
                 )}
               </div>
               <div className="d-flex align-items-center gap-1">
@@ -952,21 +957,21 @@ const SrsReview = () => {
                   <ul className="dropdown-menu dropdown-menu-end">
                     {FLAG_LABELS.map((label, idx) => (
                       <li key={idx}>
-                        <button className="dropdown-item" onClick={() => handleFlag(currentCard.srsCardReviewId, idx)}>
+                        <button className="dropdown-item" onClick={() => currentCard.srsCardReviewId != null && handleFlag(currentCard.srsCardReviewId, idx)}>
                           {idx === 0 ? '🏳️' : FLAG_COLORS[idx]} {label}
                         </button>
                       </li>
                     ))}
                   </ul>
                 </div>
-                <Button variant="outline-secondary" size="sm" className="py-0 px-1" onClick={() => handleSuspend(currentCard.srsCardReviewId)} title="Suspend card">
+                <Button variant="outline-secondary" size="sm" className="py-0 px-1" onClick={() => currentCard.srsCardReviewId != null && handleSuspend(currentCard.srsCardReviewId)} title="Suspend card">
                   ⏸
                 </Button>
-                <Button variant="outline-secondary" size="sm" className="py-0 px-1" onClick={() => handleBury(currentCard.srsCardReviewId)} title="Bury until tomorrow">
+                <Button variant="outline-secondary" size="sm" className="py-0 px-1" onClick={() => currentCard.srsCardReviewId != null && handleBury(currentCard.srsCardReviewId)} title="Bury until tomorrow">
                   ⬇
                 </Button>
                 <small className="text-muted ms-1">
-                  {currentCard.unknownWordsInPhrase > 0 &&
+                  {(currentCard.unknownWordsInPhrase ?? 0) > 0 &&
                     <Badge bg={currentCard.unknownWordsInPhrase === 1 ? 'success' : 'warning'} className="me-1">
                       {currentCard.unknownWordsInPhrase === 1 ? '1T' : `${currentCard.unknownWordsInPhrase}T`}
                     </Badge>

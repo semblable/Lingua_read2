@@ -4,7 +4,12 @@ import { useNavigate } from 'react-router-dom';
 import { getAllLanguages, generateSrsStory, submitSrsReview, getSrsStats, createWord, getWordsByLanguage, getSrsStories } from '../utils/api';
 import { SettingsContext } from '../contexts/SettingsContext';
 import WordLookupPopover from '../components/WordLookupPopover';
+import type { Language } from '../utils/api/languages';
+import type { SrsStats, SrsStories, SrsStoryGenerationResult } from '../utils/api/srs';
 import './SrsStoryReview.css';
+
+type MicroContext = NonNullable<SrsStoryGenerationResult['microContexts']>[number];
+type PastStory = SrsStories[number];
 
 type WordStatus = 1 | 2 | 3 | 4 | 5;
 const STATUS_LABELS: Record<WordStatus, string> = { 1: 'New', 2: 'Learning', 3: 'Familiar', 4: 'Advanced', 5: 'Known' };
@@ -21,11 +26,11 @@ const SrsStoryReview = () => {
   const { settings } = useContext(SettingsContext);
 
   // Setup state
-  const [languages, setLanguages] = useState([]);
+  const [languages, setLanguages] = useState<Language[]>([]);
   const [selectedLanguage, setSelectedLanguage] = useState(() =>
     localStorage.getItem('srsSelectedLanguage') || ''
   );
-  const [statusFilter, setStatusFilter] = useState([1, 2, 3, 4, 5]);
+  const [statusFilter, setStatusFilter] = useState<number[]>([1, 2, 3, 4, 5]);
   const [cardType, setCardType] = useState('all');
   const [maxWords, setMaxWords] = useState(() =>
     Math.min(30, Math.max(3, settings.srsMaxNewCards || 15))
@@ -33,23 +38,23 @@ const SrsStoryReview = () => {
 
   // Session state
   const [phase, setPhase] = useState('setup'); // setup | loading | review | complete
-  const [microContexts, setMicroContexts] = useState([]);
+  const [microContexts, setMicroContexts] = useState<MicroContext[]>([]);
   const [reviewedWords, setReviewedWords] = useState<Map<number, number>>(new Map()); // wordId -> grade
-  const [revealedWords, setRevealedWords] = useState(new Set()); // wordIds whose translation is unhidden
+  const [revealedWords, setRevealedWords] = useState<Set<number>>(new Set()); // wordIds whose translation is unhidden
   const [error, setError] = useState('');
-  const [stats, setStats] = useState(null);
-  const [pastStories, setPastStories] = useState([]);
-  const [gradingWordId, setGradingWordId] = useState(null);
+  const [stats, setStats] = useState<SrsStats | null>(null);
+  const [pastStories, setPastStories] = useState<PastStory[]>([]);
+  const [gradingWordId, setGradingWordId] = useState<number | null>(null);
 
   // Story metadata for word saving
-  const [storyTextId, setStoryTextId] = useState(null);
+  const [storyTextId, setStoryTextId] = useState<number | null>(null);
   const [languageCode, setLanguageCode] = useState('');
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [existingWordsMap, setExistingWordsMap] = useState<Record<string, any>>({});
 
   // Lookup popover state (non-target words)
-  const [lookupWord, setLookupWord] = useState(null);
-  const [lookupRef, setLookupRef] = useState(null);
+  const [lookupWord, setLookupWord] = useState<{ text: string; sentenceContext: string } | null>(null);
+  const [lookupRef, setLookupRef] = useState<HTMLElement | null>(null);
 
   // Word refs for popover positioning
   const wordRefs = useRef<Record<string, HTMLElement | null>>({});
@@ -110,7 +115,7 @@ const SrsStoryReview = () => {
       setMicroContexts(result.microContexts);
       setReviewedWords(new Map());
       setRevealedWords(new Set());
-      setStoryTextId(result.textId);
+      setStoryTextId(result.textId ?? null);
       setLanguageCode(result.languageCode || '');
       setPhase('review');
 
@@ -366,7 +371,7 @@ const SrsStoryReview = () => {
                 <div key={s.textId} className="border-bottom py-1" style={{ fontSize: '0.85rem' }}>
                   <div className="d-flex justify-content-between">
                     <span className="text-truncate" style={{ maxWidth: '70%' }}>{s.title}</span>
-                    <small className="text-muted">{new Date(s.createdAt).toLocaleDateString()}</small>
+                    <small className="text-muted">{s.createdAt ? new Date(s.createdAt).toLocaleDateString() : ''}</small>
                   </div>
                   <small className="text-muted">{s.contentPreview}</small>
                 </div>
@@ -408,9 +413,10 @@ const SrsStoryReview = () => {
         </div>
 
         {microContexts.map((mc, idx) => {
-          const reviewedGrade = reviewedWords.get(mc.wordId);
+          const wordId = mc.wordId ?? -1;
+          const reviewedGrade = reviewedWords.get(wordId);
           const isReviewed = reviewedGrade !== undefined;
-          const isGrading = gradingWordId === mc.wordId;
+          const isGrading = gradingWordId === wordId;
 
           if (isReviewed) {
             const gradeLabel = GRADE_BUTTONS.find(g => g.grade === reviewedGrade)?.label ?? '';
@@ -432,14 +438,14 @@ const SrsStoryReview = () => {
             );
           }
 
-          const isRevealed = revealedWords.has(mc.wordId);
+          const isRevealed = revealedWords.has(wordId);
           return (
             <Card key={mc.wordId} className="srs-microcontext-card mb-3 shadow-sm" data-testid="srs-microcontext-card">
               <Card.Body>
                 <div className="d-flex justify-content-between align-items-baseline mb-2">
                   <h6 className="mb-0">
                     <span className="srs-microcontext-term">{mc.term}</span>
-                    {mc.usedForm && mc.usedForm.toLowerCase() !== mc.term.toLowerCase() && (
+                    {mc.usedForm && mc.term && mc.usedForm.toLowerCase() !== mc.term.toLowerCase() && (
                       <small className="srs-microcontext-usedform ms-2">→ {mc.usedForm}</small>
                     )}
                     {isRevealed && mc.translation && (
@@ -473,7 +479,7 @@ const SrsStoryReview = () => {
                     variant="outline-primary"
                     size="sm"
                     className="w-100 mt-3"
-                    onClick={() => setRevealedWords(prev => new Set(prev).add(mc.wordId))}
+                    onClick={() => setRevealedWords(prev => new Set(prev).add(wordId))}
                     data-testid="srs-microcontext-reveal"
                   >
                     Show translation
@@ -498,7 +504,7 @@ const SrsStoryReview = () => {
         </div>
 
         <WordLookupPopover
-          word={lookupWord?.text}
+          word={lookupWord?.text ?? null}
           targetRef={lookupRef}
           show={!!lookupWord}
           onHide={() => { setLookupWord(null); setLookupRef(null); }}

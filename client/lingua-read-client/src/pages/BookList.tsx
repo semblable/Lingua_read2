@@ -3,6 +3,11 @@ import { Container, Row, Col, Card, Button, Alert, Spinner, ProgressBar, Form } 
 import { Link, useNavigate } from 'react-router-dom';
 import { getBooks } from '../utils/api';
 import { formatDate } from '../utils/helpers';
+import type { BooksList } from '../utils/api/books';
+
+// BooksList element augmented with `parts` — the list endpoint can include
+// part summaries the OpenAPI spec omits.
+type BookListItem = BooksList[number] & { parts?: Array<{ textId?: number }> };
 
 const normalizeCoverUrl = (value: string | null | undefined): string | null => {
   if (!value) return null;
@@ -14,7 +19,7 @@ const normalizeCoverUrl = (value: string | null | undefined): string | null => {
 };
 
 const BookList = () => {
-  const [books, setBooks] = useState([]);
+  const [books, setBooks] = useState<BookListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -36,8 +41,8 @@ const BookList = () => {
         const data = await getBooks();
         setBooks(data);
         setError('');
-      } catch (err) {
-        setError(err.message || 'Failed to load books');
+      } catch (err: unknown) {
+        setError((err as Error)?.message || 'Failed to load books');
       } finally {
         setLoading(false);
       }
@@ -93,7 +98,7 @@ const BookList = () => {
           >
             <option value="">All Languages</option>
             {uniqueLanguages.map(lang => (
-              <option key={lang} value={lang}>{lang}</option>
+              <option key={lang ?? ''} value={lang ?? ''}>{lang}</option>
             ))}
           </Form.Select>
 
@@ -129,7 +134,7 @@ const BookList = () => {
               {book.coverImagePath && (
                 <Card.Img
                   variant="top"
-                  src={normalizeCoverUrl(book.coverImagePath)}
+                  src={normalizeCoverUrl(book.coverImagePath) ?? undefined}
                   alt={`${book.title} cover`}
                   style={{ objectFit: 'cover', maxHeight: '280px' }}
                 />
@@ -153,7 +158,7 @@ const BookList = () => {
                   />
                 </div>
 
-                {book.totalWords > 0 && (
+                {(book.totalWords ?? 0) > 0 && (
                   <div className="text-muted small mb-3">
                     <Row>
                       <Col>Known: {book.knownWords}</Col>
@@ -169,7 +174,7 @@ const BookList = () => {
                 )}
 
                 <div className="text-muted small mt-auto">
-                  Parts: {book.partCount} | Added: {formatDate(book.createdAt)}
+                  Parts: {book.partCount} | Added: {formatDate(book.createdAt ?? '')}
                   {book.lastReadAt && (
                     <> | Last read: {formatDate(book.lastReadAt)}</>
                   )}
@@ -189,7 +194,7 @@ const BookList = () => {
                   >
                     Continue Reading
                   </Link>
-                ) : book.partCount > 0 ? (
+                ) : (book.partCount ?? 0) > 0 ? (
                   <Button
                     className="btn-primary flex-grow-1"
                     onClick={() => navigate(`/texts/${book.parts?.[0]?.textId || ''}`)}

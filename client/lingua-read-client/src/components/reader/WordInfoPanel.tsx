@@ -39,16 +39,19 @@ export type WordInfoPanelProps = {
 
   // Reading-language config + embed. LanguageConfig from readerText only covers
   // tokenization; the API LanguageDto also carries `dictionaries`. Augment here.
-  languageConfig: LanguageConfig & {
-    dictionaries?: Array<{
-      dictionaryId?: number;
-      isActive?: boolean;
-      purpose?: string;
-      displayType?: string;
-      urlTemplate?: string;
-      sortOrder?: number;
-    }>;
-  };
+  languageConfig:
+    | (NonNullable<LanguageConfig> & {
+        dictionaries?: Array<{
+          dictionaryId?: number;
+          isActive?: boolean;
+          purpose?: string;
+          displayType?: string;
+          urlTemplate?: string;
+          sortOrder?: number;
+        }>;
+      })
+    | null
+    | undefined;
   setEmbeddedUrl: (url: string | null) => void;
 
   // Speech / TTS

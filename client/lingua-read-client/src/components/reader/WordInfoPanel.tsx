@@ -15,91 +15,86 @@ export type DisplayedWord = {
   [key: string]: any;
 };
 
-// The 25-prop interface drilled down from pages/TextDisplay. Grouped by
-// concern in comments. Phase E3 will consider extracting these into a
-// composite type or a ReaderContext; for now the explicit shape is the
-// contract.
-export type WordInfoPanelProps = {
-  // Word display / status
-  displayedWord: DisplayedWord | null;
-  saveSuccess: boolean;
+// LanguageConfig from readerText only covers tokenization; the API LanguageDto
+// also carries `dictionaries` used by the embedded-dictionary buttons.
+export type WordInfoLanguageConfig =
+  | (NonNullable<LanguageConfig> & {
+      dictionaries?: Array<{
+        dictionaryId?: number;
+        isActive?: boolean;
+        purpose?: string;
+        displayType?: string;
+        urlTemplate?: string;
+        sortOrder?: number;
+      }>;
+    })
+  | null
+  | undefined;
 
-  // Translation state
-  translation: string;
-  setTranslation: (value: string) => void;
-  handleTranslationKeyDown: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
+// --- Composite prop groups (Phase E3) ------------------------------------
+// The pre-E3 25-prop interface was split into 5 logical groups in comments
+// but flat in the type. E3 hoists those comments into named composite types,
+// so callers can build each group once and pass a handful of objects rather
+// than 25 individual props. Inner property names are scoped (e.g. `value`
+// instead of `translation`) since the group name disambiguates.
+
+export type WordInfoTranslationState = {
+  value: string;
+  setValue: (value: string) => void;
+  onKeyDown: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
   isTranslating: boolean;
-  wordTranslationError: string | null;
+  error: string | null;
+};
 
-  // Word-status actions
-  handleSaveWord: (status: number) => void | Promise<void>;
-  processingWord: boolean;
-  // The currently-selected term string (TextDisplay state).
-  selectedWord: string;
-
-  // Reading-language config + embed. LanguageConfig from readerText only covers
-  // tokenization; the API LanguageDto also carries `dictionaries`. Augment here.
-  languageConfig:
-    | (NonNullable<LanguageConfig> & {
-        dictionaries?: Array<{
-          dictionaryId?: number;
-          isActive?: boolean;
-          purpose?: string;
-          displayType?: string;
-          urlTemplate?: string;
-          sortOrder?: number;
-        }>;
-      })
-    | null
-    | undefined;
-  setEmbeddedUrl: (url: string | null) => void;
-
-  // Speech / TTS
+export type WordInfoSpeechState = {
   sentenceTtsEnabled: boolean;
   canUseSentenceTts: boolean;
   isSpeakingWord: boolean;
   onSpeakWord: () => void;
+};
 
-  // SRS / sentence actions
-  handleMineSentence: () => void;
+export type WordInfoActions = {
+  onSaveWord: (status: number) => void | Promise<void>;
+  onMineSentence: () => void;
+  processingWord: boolean;
   onReadingCredit?: (wordId: number | string) => void;
   onRetranslateWithContext?: () => void;
   canRetranslate?: boolean;
   onAddTranslationWithContext?: () => void;
   canAddTranslation?: boolean;
   onDeleteWord?: () => void;
+};
 
-  // Bookmarks
+export type WordInfoBookmarkState = {
   isSentenceBookmarked: boolean;
   onToggleBookmark: () => void;
 };
 
+export type WordInfoLanguageState = {
+  languageConfig: WordInfoLanguageConfig;
+  setEmbeddedUrl: (url: string | null) => void;
+};
+
+export type WordInfoPanelProps = {
+  displayedWord: DisplayedWord | null;
+  selectedWord: string;
+  saveSuccess: boolean;
+  translation: WordInfoTranslationState;
+  speech: WordInfoSpeechState;
+  actions: WordInfoActions;
+  bookmark: WordInfoBookmarkState;
+  language: WordInfoLanguageState;
+};
+
 const WordInfoPanel = React.memo(({
   displayedWord,
+  selectedWord,
   saveSuccess,
   translation,
-  setTranslation,
-  handleTranslationKeyDown,
-  isTranslating,
-  wordTranslationError,
-  handleSaveWord,
-  processingWord,
-  selectedWord,
-  languageConfig,
-  setEmbeddedUrl,
-  sentenceTtsEnabled,
-  canUseSentenceTts,
-  isSpeakingWord,
-  onSpeakWord,
-  handleMineSentence,
-  onReadingCredit,
-  onRetranslateWithContext,
-  canRetranslate,
-  onAddTranslationWithContext,
-  canAddTranslation,
-  onDeleteWord,
-  isSentenceBookmarked,
-  onToggleBookmark
+  speech,
+  actions,
+  bookmark,
+  language
 }: WordInfoPanelProps) => {
   if (!displayedWord) return <p>Click/hover on a word.</p>;
   return (
@@ -112,15 +107,15 @@ const WordInfoPanel = React.memo(({
       <Form.Control
         as="textarea"
         rows={2}
-        value={translation}
-        onChange={(e) => setTranslation(e.target.value)}
-        onKeyDown={handleTranslationKeyDown}
+        value={translation.value}
+        onChange={(e) => translation.setValue(e.target.value)}
+        onKeyDown={translation.onKeyDown}
         placeholder="Translation/Notes (Enter to save)"
-        disabled={isTranslating}
+        disabled={translation.isTranslating}
         size="sm"
       />
-      {isTranslating && <Spinner size="sm" />}
-      {wordTranslationError && <Alert variant="danger" className="py-1 px-2 small">{wordTranslationError}</Alert>}
+      {translation.isTranslating && <Spinner size="sm" />}
+      {translation.error && <Alert variant="danger" className="py-1 px-2 small">{translation.error}</Alert>}
       <div className="d-flex flex-wrap gap-1 mt-2 word-status-row">
         {[1, 2, 3, 4, 5].map(s => (
           <Button
@@ -128,90 +123,90 @@ const WordInfoPanel = React.memo(({
             variant="outline-secondary"
             size="sm"
             className="py-0 px-2 word-status-btn"
-            onClick={() => handleSaveWord(s)}
-            disabled={processingWord || isTranslating || !selectedWord}
+            onClick={() => actions.onSaveWord(s)}
+            disabled={actions.processingWord || translation.isTranslating || !selectedWord}
           >
             {s}
           </Button>
         ))}
       </div>
       <div className="d-flex flex-wrap gap-1 mt-2">
-        {onRetranslateWithContext && (
+        {actions.onRetranslateWithContext && (
           <Button
             variant="outline-primary"
             size="sm"
             className="py-0 px-2"
-            onClick={onRetranslateWithContext}
-            disabled={!canRetranslate || isTranslating || processingWord}
+            onClick={actions.onRetranslateWithContext}
+            disabled={!actions.canRetranslate || translation.isTranslating || actions.processingWord}
             title="Re-translate this word with AI using the current sentence as context"
           >
-            {isTranslating ? 'Translating...' : 'AI Translate'}
+            {translation.isTranslating ? 'Translating...' : 'AI Translate'}
           </Button>
         )}
-        {onAddTranslationWithContext && (
+        {actions.onAddTranslationWithContext && (
           <Button
             variant="outline-primary"
             size="sm"
             className="py-0 px-2"
-            onClick={onAddTranslationWithContext}
-            disabled={!canAddTranslation || isTranslating || processingWord}
+            onClick={actions.onAddTranslationWithContext}
+            disabled={!actions.canAddTranslation || translation.isTranslating || actions.processingWord}
             title="Add an AI translation alongside the existing one"
             aria-label="Add AI translation"
           >
             + AI
           </Button>
         )}
-        {sentenceTtsEnabled && (
+        {speech.sentenceTtsEnabled && (
           <Button
             variant="outline-primary"
             size="sm"
             className="py-0 px-2"
-            onClick={onSpeakWord}
-            disabled={!canUseSentenceTts || !displayedWord?.term}
-            title={canUseSentenceTts ? 'Read this word aloud' : 'Speech synthesis is not supported in this browser'}
+            onClick={speech.onSpeakWord}
+            disabled={!speech.canUseSentenceTts || !displayedWord?.term}
+            title={speech.canUseSentenceTts ? 'Read this word aloud' : 'Speech synthesis is not supported in this browser'}
           >
-            {isSpeakingWord ? 'Speaking...' : 'Speak'}
+            {speech.isSpeakingWord ? 'Speaking...' : 'Speak'}
           </Button>
         )}
         <Button
           variant="outline-success"
           size="sm"
           className="py-0 px-2"
-          onClick={handleMineSentence}
+          onClick={actions.onMineSentence}
           disabled={!displayedWord?.wordId || displayedWord?.isNew}
           title="Mine the current sentence for SRS review"
         >
           Mine
         </Button>
-        {onToggleBookmark && (
+        {bookmark.onToggleBookmark && (
           <Button
-            variant={isSentenceBookmarked ? 'warning' : 'outline-warning'}
+            variant={bookmark.isSentenceBookmarked ? 'warning' : 'outline-warning'}
             size="sm"
             className="py-0 px-2"
-            onClick={onToggleBookmark}
-            title={isSentenceBookmarked ? 'Remove bookmark from this sentence' : 'Bookmark this sentence'}
+            onClick={bookmark.onToggleBookmark}
+            title={bookmark.isSentenceBookmarked ? 'Remove bookmark from this sentence' : 'Bookmark this sentence'}
           >
             🔖
           </Button>
         )}
-        {displayedWord?.wordId && !displayedWord?.isNew && (displayedWord?.status ?? 0) >= 3 && (displayedWord?.status ?? 0) <= 4 && onReadingCredit && (
+        {displayedWord?.wordId && !displayedWord?.isNew && (displayedWord?.status ?? 0) >= 3 && (displayedWord?.status ?? 0) <= 4 && actions.onReadingCredit && (
           <Button
             variant="outline-info"
             size="sm"
             className="py-0 px-2"
-            onClick={() => onReadingCredit(displayedWord.wordId!)}
+            onClick={() => actions.onReadingCredit!(displayedWord.wordId!)}
             title="Boost SRS interval (reading credit)"
           >
             SRS ✓
           </Button>
         )}
-        {onDeleteWord && displayedWord?.wordId && (
+        {actions.onDeleteWord && displayedWord?.wordId && (
           <Button
             variant="outline-danger"
             size="sm"
             className="py-0 px-2"
-            onClick={onDeleteWord}
-            disabled={processingWord || isTranslating}
+            onClick={actions.onDeleteWord}
+            disabled={actions.processingWord || translation.isTranslating}
             title="Delete this term"
           >
             Delete
@@ -219,11 +214,11 @@ const WordInfoPanel = React.memo(({
         )}
       </div>
 
-      {languageConfig?.dictionaries && selectedWord && (
+      {language.languageConfig?.dictionaries && selectedWord && (
         <div className="mt-3 pt-2 border-top">
           <h6 className="mb-2 small text-muted">Dictionaries</h6>
           <div className="d-flex flex-wrap gap-1">
-            {languageConfig.dictionaries
+            {language.languageConfig.dictionaries
               .filter(dict => dict.isActive && dict.purpose === 'terms')
               .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
               .map(dict => {
@@ -234,9 +229,9 @@ const WordInfoPanel = React.memo(({
                   const url = urlTemplate.replace('###', term);
                   if (dict.displayType === 'popup') {
                     window.open(url, '_blank', 'noopener,noreferrer');
-                    setEmbeddedUrl(null);
+                    language.setEmbeddedUrl(null);
                   } else if (dict.displayType === 'embedded') {
-                    setEmbeddedUrl(url);
+                    language.setEmbeddedUrl(url);
                   }
                 };
                 let buttonText = `Dict ${dict.sortOrder}`;
@@ -244,7 +239,7 @@ const WordInfoPanel = React.memo(({
                   const urlObj = new URL(urlTemplate);
                   buttonText = urlObj.hostname.replace(/^www\./, '').split('.')[0];
                   buttonText = buttonText.charAt(0).toUpperCase() + buttonText.slice(1);
-                } catch (e) {
+                } catch {
                   // Ignore invalid URL for naming
                 }
 

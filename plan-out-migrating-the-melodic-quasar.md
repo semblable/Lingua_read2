@@ -18,7 +18,7 @@ Migrate [client/lingua-read-client](client/lingua-read-client/) from CRA + plain
 | **D3** | Flip `strict: true` + `noImplicitThis` + `noFallthroughCasesInSwitch` (19 errors) | ✅ Done |
 | **E1** | Extract hooks from TextDisplay.tsx (2,735 → 2,299 LOC) | ✅ Done |
 | **E2** | Split AudiobookPlayer.tsx (1,239 → 178 LOC) into audio modules + hook | ✅ Done |
-| **E3** | Tidy WordInfoPanel.tsx 25-prop interface (optional) | ⏳ Pending |
+| **E3** | Tidy WordInfoPanel.tsx 25-prop interface → 8 props via composite types | ✅ Done |
 
 **Current tsconfig state:** `strict: true`, `noImplicitThis: true`, `noFallthroughCasesInSwitch: true`, `allowJs: true`, `checkJs: false`. All 108 source files under `src/` are `.ts`/`.tsx`; the 22 files in `src/__tests__/` are intentionally `.js`.
 
@@ -249,16 +249,44 @@ Per [plan-out-recursive-puddle.md](C:\Users\kamil\.claude\plans\f-dev-envitonmen
 
 ---
 
-## ⏳ Phase E — Remaining sub-PRs
+## ✅ Phase E3 — Tidy WordInfoPanel props
 
-### E3 — Tidy WordInfoPanel props (1 PR, optional)
+Per the E3 sketch in the migration plan — picked the composite-types approach (over ReaderContext) since it preserves the existing data-flow shape and doesn't couple WordInfoPanel to TextDisplay's context layer.
 
-[WordInfoPanel.tsx](client/lingua-read-client/src/components/reader/WordInfoPanel.tsx) has 25 props in 5 logical groups (D1a typed each one). Pick whichever is lighter:
+**Pre-E3:** flat 25-prop interface with 5 commented groups · two near-identical callsites in [TextDisplay.tsx](client/lingua-read-client/src/pages/TextDisplay.tsx) (desktop right-panel + mobile bottom-sheet) each spanning ~46 LOC of repeated wiring, including 3 inline arrow callbacks.
 
-- **Composite types:** `TranslationState`, `SrsActions`, `SpeechState`, `UIFlags`, `Config` — caller passes a few grouped objects, fewer prop lines per call.
-- **ReaderContext:** provided by `useReaderState` (E1), `WordInfoPanel` reads via `useContext` — eliminates most prop drilling entirely. Cleaner long-term but couples to E1's landing.
+**Post-E3:** 8 props total in [WordInfoPanel.tsx](client/lingua-read-client/src/components/reader/WordInfoPanel.tsx), each callsite collapses to a single `<WordInfoPanel {...wordInfoProps} />` line, and `wordInfoProps` is built once before the JSX return.
 
-**Skip if** the C5/D1a-typed 25-prop interface ages fine without it (no review-loop complaints, no new props piling on). Keep this as an optional follow-up, not a blocker for "Phase E done."
+### Composite type design
+
+| Group | Members |
+|---|---|
+| Top-level scalars | `displayedWord`, `selectedWord`, `saveSuccess` |
+| `translation: WordInfoTranslationState` | `value`, `setValue`, `onKeyDown`, `isTranslating`, `error` |
+| `speech: WordInfoSpeechState` | `sentenceTtsEnabled`, `canUseSentenceTts`, `isSpeakingWord`, `onSpeakWord` |
+| `actions: WordInfoActions` | `onSaveWord`, `onMineSentence`, `processingWord`, `onReadingCredit?`, `onRetranslateWithContext?`, `canRetranslate?`, `onAddTranslationWithContext?`, `canAddTranslation?`, `onDeleteWord?` |
+| `bookmark: WordInfoBookmarkState` | `isSentenceBookmarked`, `onToggleBookmark` |
+| `language: WordInfoLanguageState` | `languageConfig` (the augmented `LanguageConfig & { dictionaries? }` type lifted to `WordInfoLanguageConfig`), `setEmbeddedUrl` |
+
+Inner property names are scoped — `translation.value` rather than `translation.translation`, `actions.onSaveWord` rather than `handleSaveWord` — since the group name disambiguates.
+
+### Callsite cleanup
+
+The 3 inline arrow callbacks at the two `<WordInfoPanel>` sites were hoisted to `useCallback` at TextDisplay (around line 1615):
+- `handleReadingCredit(wordId)` — wraps `applySrsReadingCredit` + alert UX
+- `handleRetranslateWithContext()` — wraps `triggerAutoTranslation` with sentence context
+- `handleAddTranslationWithContext()` — wraps `appendAutoTranslation` with sentence context
+
+Then `wordInfoProps` is assembled once just before the main JSX return (around line 1980) and spread at both callsites. The single source of truth means future prop additions touch one location instead of two.
+
+### Outcome
+
+- `npx tsc --noEmit` → 0 errors with full `strict: true`.
+- `npx vitest run` → **336 pass + 0 skip** (unchanged from post-E2; no test rewrites needed).
+- `npx vite build` → `index.js` = 277.76 KB (identical to baseline), TextDisplay chunk 119.04 KB (was 119.46 KB in E2, –0.42 KB), build time 5.20s.
+- TextDisplay.tsx: 2,299 → 2,272 LOC (–27 net: callsites shrunk by ~89, useCallbacks + wordInfoProps added ~62).
+- WordInfoPanel.tsx: 265 → 259 LOC (–6).
+- Visible prop count: 25 → **8** (3 scalars + 5 composite groups).
 
 ---
 

@@ -1612,6 +1612,33 @@ const TextDisplay = () => {
 
   const wordInfoRetranslateContext = selectedWordAiContext || currentSentenceSegment?.text || '';
 
+  // WordInfoPanel handlers — hoisted from inline JSX arrows during Phase E3
+  // so the panel's composite props remain referentially stable per render.
+  const handleReadingCredit = useCallback(async (wordId: number | string) => {
+    try {
+      const res = (await applySrsReadingCredit(wordId)) as { applied?: boolean; message?: string } | null;
+      if (res?.applied) alert('SRS reading credit applied!');
+      else alert(res?.message || 'Credit not applied.');
+    } catch (err) {
+      console.error('Reading credit failed:', err);
+    }
+  }, []);
+
+  const handleRetranslateWithContext = useCallback(() => {
+    if (!displayedWord?.term) return;
+    triggerAutoTranslation(displayedWord.term, {
+      sentenceContext: wordInfoRetranslateContext,
+      force: true,
+    });
+  }, [displayedWord?.term, triggerAutoTranslation, wordInfoRetranslateContext]);
+
+  const handleAddTranslationWithContext = useCallback(() => {
+    if (!displayedWord?.term) return;
+    appendAutoTranslation(displayedWord.term, {
+      sentenceContext: wordInfoRetranslateContext,
+    });
+  }, [displayedWord?.term, appendAutoTranslation, wordInfoRetranslateContext]);
+
   // Handler for saving translation via Enter key (Moved after handleSaveWord)
   const handleTranslationKeyDown = useCallback((event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === 'Enter' && !event.shiftKey) {
@@ -1949,6 +1976,47 @@ const TextDisplay = () => {
 
   // --- Main Return JSX ---
   const effectiveLeftPanelWidth = !isMobile && showWordInfoPanel ? leftPanelWidth : 100;
+
+  // Composite props built once and reused at both WordInfoPanel callsites
+  // (desktop right-panel + mobile bottom-sheet). Phase E3 grouped the
+  // pre-existing 25-prop interface into 5 named composites.
+  const wordInfoProps = {
+    displayedWord,
+    selectedWord,
+    saveSuccess,
+    translation: {
+      value: translation,
+      setValue: setTranslation,
+      onKeyDown: handleTranslationKeyDown,
+      isTranslating,
+      error: wordTranslationError,
+    },
+    speech: {
+      sentenceTtsEnabled,
+      canUseSentenceTts,
+      isSpeakingWord,
+      onSpeakWord: speakDisplayedWord,
+    },
+    actions: {
+      onSaveWord: handleSaveWord,
+      onMineSentence: handleMineSentence,
+      processingWord,
+      onReadingCredit: handleReadingCredit,
+      onRetranslateWithContext: handleRetranslateWithContext,
+      canRetranslate: !!displayedWord?.term && !!wordInfoRetranslateContext,
+      onAddTranslationWithContext: handleAddTranslationWithContext,
+      canAddTranslation: !!displayedWord?.term && !!wordInfoRetranslateContext,
+      onDeleteWord: handleDeleteWord,
+    },
+    bookmark: {
+      isSentenceBookmarked: isBookmarked(currentSegmentIndex),
+      onToggleBookmark: handleToggleBookmarkForCurrentSentence,
+    },
+    language: {
+      languageConfig,
+      setEmbeddedUrl,
+    },
+  };
   return (
     <div className={`text-display-wrapper lesson-page px-0 mx-0 w-100 reader-ui-${readingUiMode}`}>
       <MobileLessonHeader
@@ -2110,52 +2178,7 @@ const TextDisplay = () => {
             <Card className="border-0 h-100"><Card.Body className="p-2 d-flex flex-column">
               <h5 className="mb-2 flex-shrink-0">Word Info</h5>
               <div className="flex-grow-1" style={{ overflowY: 'auto', paddingBottom: 'var(--space-xs)' }}>
-                <WordInfoPanel
-                  displayedWord={displayedWord}
-                  saveSuccess={saveSuccess}
-                  translation={translation}
-                  setTranslation={setTranslation}
-                  handleTranslationKeyDown={handleTranslationKeyDown}
-                  isTranslating={isTranslating}
-                  wordTranslationError={wordTranslationError}
-                  handleSaveWord={handleSaveWord}
-                  processingWord={processingWord}
-                  selectedWord={selectedWord}
-                  languageConfig={languageConfig}
-                  setEmbeddedUrl={setEmbeddedUrl}
-                  sentenceTtsEnabled={sentenceTtsEnabled}
-                  canUseSentenceTts={canUseSentenceTts}
-                  isSpeakingWord={isSpeakingWord}
-                  onSpeakWord={speakDisplayedWord}
-                  handleMineSentence={handleMineSentence}
-                  onReadingCredit={async (wordId) => {
-                    try {
-                      const res = (await applySrsReadingCredit(wordId)) as { applied?: boolean; message?: string } | null;
-                      if (res?.applied) alert('SRS reading credit applied!');
-                      else alert(res?.message || 'Credit not applied.');
-                    } catch (err) {
-                      console.error('Reading credit failed:', err);
-                    }
-                  }}
-                  onRetranslateWithContext={() => {
-                    if (!displayedWord?.term) return;
-                    triggerAutoTranslation(displayedWord.term, {
-                      sentenceContext: wordInfoRetranslateContext,
-                      force: true,
-                    });
-                  }}
-                  canRetranslate={!!displayedWord?.term && !!wordInfoRetranslateContext}
-                  onAddTranslationWithContext={() => {
-                    if (!displayedWord?.term) return;
-                    appendAutoTranslation(displayedWord.term, {
-                      sentenceContext: wordInfoRetranslateContext,
-                    });
-                  }}
-                  canAddTranslation={!!displayedWord?.term && !!wordInfoRetranslateContext}
-                  onDeleteWord={handleDeleteWord}
-                  isSentenceBookmarked={isBookmarked(currentSegmentIndex)}
-                  onToggleBookmark={handleToggleBookmarkForCurrentSentence}
-                />
+                <WordInfoPanel {...wordInfoProps} />
               </div>
 
               {/* --- Phase 3: Embedded Dictionary Iframe --- */}
@@ -2198,52 +2221,7 @@ const TextDisplay = () => {
             <div className="word-info-sheet-handle" />
             <div className="word-info-sheet-content">
               <h5 className="mb-2">Word Info</h5>
-              <WordInfoPanel
-                displayedWord={displayedWord}
-                saveSuccess={saveSuccess}
-                translation={translation}
-                setTranslation={setTranslation}
-                handleTranslationKeyDown={handleTranslationKeyDown}
-                isTranslating={isTranslating}
-                wordTranslationError={wordTranslationError}
-                handleSaveWord={handleSaveWord}
-                processingWord={processingWord}
-                selectedWord={selectedWord}
-                languageConfig={languageConfig}
-                setEmbeddedUrl={setEmbeddedUrl}
-                sentenceTtsEnabled={sentenceTtsEnabled}
-                canUseSentenceTts={canUseSentenceTts}
-                isSpeakingWord={isSpeakingWord}
-                onSpeakWord={speakDisplayedWord}
-                handleMineSentence={handleMineSentence}
-                onReadingCredit={async (wordId) => {
-                  try {
-                    const res = (await applySrsReadingCredit(wordId)) as { applied?: boolean; message?: string } | null;
-                    if (res?.applied) alert('SRS reading credit applied!');
-                    else alert(res?.message || 'Credit not applied.');
-                  } catch (err) {
-                    console.error('Reading credit failed:', err);
-                  }
-                }}
-                onRetranslateWithContext={() => {
-                  if (!displayedWord?.term) return;
-                  triggerAutoTranslation(displayedWord.term, {
-                    sentenceContext: wordInfoRetranslateContext,
-                    force: true,
-                  });
-                }}
-                canRetranslate={!!displayedWord?.term && !!wordInfoRetranslateContext}
-                onAddTranslationWithContext={() => {
-                  if (!displayedWord?.term) return;
-                  appendAutoTranslation(displayedWord.term, {
-                    sentenceContext: wordInfoRetranslateContext,
-                  });
-                }}
-                canAddTranslation={!!displayedWord?.term && !!wordInfoRetranslateContext}
-                onDeleteWord={handleDeleteWord}
-                isSentenceBookmarked={isBookmarked(currentSegmentIndex)}
-                onToggleBookmark={handleToggleBookmarkForCurrentSentence}
-              />
+              <WordInfoPanel {...wordInfoProps} />
             </div>
           </div>
         </div>

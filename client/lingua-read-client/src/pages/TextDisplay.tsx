@@ -19,7 +19,7 @@ import AudiobookPlayerImpl from '../components/AudiobookPlayer';
 const AudiobookPlayer = AudiobookPlayerImpl as React.ComponentType<any>;
 import './TextDisplay.css';
 import { SettingsContext } from '../contexts/SettingsContext';
-import { getBookmarkedSentences, toggleBookmark } from '../utils/bookmarks';
+import { useReaderBookmarks } from '../hooks/useReaderBookmarks';
 import { extractTranslatedTextFromPairedTags } from '../utils/translationTags';
 import { cancelSpeech, isSpeechSynthesisSupported, speakText } from '../utils/browserTts';
 import { parseSrtContent, findSrtLineIndex } from '../utils/srtParser';
@@ -115,7 +115,6 @@ const TextDisplay = () => {
   const [displayMode, setDisplayMode] = useState('audio');
   const [languageConfig, setLanguageConfig] = useState<LanguageConfig | null>(null); // State for language settings (Phase 3)
   const [embeddedUrl, setEmbeddedUrl] = useState<string | null>(null); // State for embedded dictionary iframe URL (Phase 3)
-  const [bookmarkedIndices, setBookmarkedIndices] = useState<number[]>([]); // State for bookmarked sentence indices
   const [showMoreControls, setShowMoreControls] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [showMobileHeader, setShowMobileHeader] = useState(false);
@@ -267,6 +266,12 @@ const TextDisplay = () => {
     const selection = window.getSelection();
     return Boolean(selection && !selection.isCollapsed && selection.toString().trim());
   }, []);
+
+  const {
+    isBookmarked,
+    toggleBookmarkForIndex,
+    handleSentenceContextMenu
+  } = useReaderBookmarks({ textId, isMobile, hasActiveTextSelection });
 
   const toggleAudioPlayback = useCallback(() => {
     const audio = audioRef.current;
@@ -1606,30 +1611,9 @@ const TextDisplay = () => {
     mobileReadingConfig.lineSpacing // CRITICAL: itemData must update when lineSpacing changes
   ]);
 
-  // --- Bookmark Helper Functions ---
-  const isBookmarked = useCallback((sentenceIndex: number) => {
-    return bookmarkedIndices.includes(sentenceIndex);
-  }, [bookmarkedIndices]);
-
-  const handleSentenceContextMenu = useCallback((event: React.MouseEvent, sentenceIndex: number) => {
-    event.preventDefault(); // Prevent default browser menu
-    if (isMobile || hasActiveTextSelection()) return;
-    if (!text?.textId || typeof sentenceIndex !== 'number') return;
-
-    toggleBookmark(text.textId, sentenceIndex); // Call the utility
-
-    // Re-fetch bookmarks from storage and update state to trigger UI refresh
-    const updatedBookmarks = getBookmarkedSentences(text.textId);
-    setBookmarkedIndices(updatedBookmarks);
-  }, [hasActiveTextSelection, isMobile, text?.textId, setBookmarkedIndices]); // Dependencies: textId and the state setter
-
   const handleToggleBookmarkForCurrentSentence = useCallback(() => {
-    if (!text?.textId || typeof currentSegmentIndex !== 'number') return;
-    toggleBookmark(text.textId, currentSegmentIndex);
-    setBookmarkedIndices(getBookmarkedSentences(text.textId));
-  }, [text?.textId, currentSegmentIndex, setBookmarkedIndices]);
-
-  // --- End Bookmark Helper Functions ---
+    toggleBookmarkForIndex(currentSegmentIndex);
+  }, [toggleBookmarkForIndex, currentSegmentIndex]);
 
   // --- End Helper Functions & Memoized Values ---
 
@@ -1710,7 +1694,6 @@ const TextDisplay = () => {
         setBook(null);
         setPreviousTextId(null);
         setNextTextId(null);
-        setBookmarkedIndices([]); // Reset bookmarks for new text
         setCurrentSegmentIndex(0);
         setSegmentTranslations({});
         setSegmentExplanations({});
@@ -1760,12 +1743,6 @@ const TextDisplay = () => {
         }
         // Show text immediately with text-specific words while background data loads
         setLoading(false);
-
-        // Load bookmarks synchronously (localStorage, no network)
-        if (data?.textId) {
-          const loadedBookmarks = getBookmarkedSentences(data.textId);
-          setBookmarkedIndices(loadedBookmarks);
-        }
 
         // --- Parallel fetch of all independent data ---
         const promises = [];

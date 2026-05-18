@@ -467,8 +467,7 @@ const TextDisplay = () => {
       .catch((err: unknown) => console.error('[Save Settings] Failed to save word info panel visibility via API:', err));
   }, [updateSetting]);
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const setShowDesktopLessonControls = useCallback((nextValue: any) => {
+  const setShowDesktopLessonControls = useCallback((nextValue: boolean | ((prev: boolean) => boolean)) => {
     const val = typeof nextValue === 'function' ? nextValue(globalSettings.showDesktopLessonControls ?? true) : nextValue;
     updateSetting('showDesktopLessonControls', val);
     localStorage.setItem('showDesktopLessonControls', val.toString());
@@ -496,8 +495,7 @@ const TextDisplay = () => {
       .catch((err: unknown) => console.error('[Save Settings] Failed to save sentence mode via API:', err));
   }, [updateSetting]);
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const setSentenceAudioRepeats = useCallback((updater: any) => {
+  const setSentenceAudioRepeats = useCallback((updater: number | ((prev: number) => number)) => {
     const nextValue = typeof updater === 'function'
       ? updater(sentenceAudioRepeats)
       : updater;
@@ -518,8 +516,7 @@ const TextDisplay = () => {
     }
   }, [updateSetting]);
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const setSentenceTtsRate = useCallback((updater: any) => {
+  const setSentenceTtsRate = useCallback((updater: number | ((prev: number) => number)) => {
     const nextValue = typeof updater === 'function'
       ? updater(sentenceTtsRate)
       : updater;
@@ -553,8 +550,8 @@ const TextDisplay = () => {
 
   // --- Optimized Data Structures ---
   // 1. Create a Map for O(1) word lookups
-  const wordMap = useMemo(() => {
-    const map = new Map();
+  const wordMap = useMemo<Map<string, Word>>(() => {
+    const map = new Map<string, Word>();
     words.forEach(w => {
       if (w.term) map.set(w.term.toLowerCase(), w);
     });
@@ -592,8 +589,7 @@ const TextDisplay = () => {
   }, [languageWordsLoaded, globalSettings?.highlightKnownWords]); // Use globalSettings from context
 
   const handleWordClick = useCallback((
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    word: any,
+    word: string,
     options: { skipAutoTranslate?: boolean; preserveLastHandledSelection?: boolean; selectionContext?: string } = {}
   ) => {
     const { skipAutoTranslate = false, preserveLastHandledSelection = false, selectionContext = '' } = options;
@@ -616,7 +612,11 @@ const TextDisplay = () => {
     }
     const existingWord = getWordData(word);
     if (existingWord) {
-      setDisplayedWord(existingWord);
+      setDisplayedWord({
+        ...existingWord,
+        term: existingWord.term ?? undefined,
+        translation: existingWord.translation ?? undefined
+      });
       setTranslation(existingWord.translation || '');
       if (!existingWord.translation && !skipAutoTranslate) triggerAutoTranslation(word);
     } else {
@@ -1183,8 +1183,7 @@ const TextDisplay = () => {
 
     return splitTextIntoSentenceSegments(
       text?.content || '',
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (text?.structuredContent as any) || [],
+      (text?.structuredContent as unknown as Parameters<typeof splitTextIntoSentenceSegments>[1]) || [],
       languageConfig,
       text?.languageCode
     );
@@ -1509,10 +1508,9 @@ const TextDisplay = () => {
             console.error(`[Keyboard Shortcut] Failed to fetch translation for ${term}:`, err);
           }
         }
-        updateWord(wordData.wordId, status, translationToUse)
+        updateWord(wordData.wordId!, status, translationToUse)
           .then(() => {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            setWords((prevWords: any[]) => prevWords.map((w: any) => w.wordId === wordData.wordId ? { ...w, status, translation: translationToUse } : w));
+            setWords(prevWords => prevWords.map(w => w.wordId === wordData.wordId ? { ...w, status, translation: translationToUse } : w));
             if (selectedWord === term && displayedWord?.term === term) {
               setDisplayedWord((prev) => ({ ...(prev || {}), status, translation: translationToUse }));
             }
@@ -1568,9 +1566,8 @@ const TextDisplay = () => {
       if (isNaN(numericStatus) || numericStatus < 1 || numericStatus > 5) throw new Error(`Invalid status: ${status}.`);
       const existingWord = getWordData(selectedWord);
       if (existingWord) {
-        await updateWord(existingWord.wordId, numericStatus, translation);
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const updatedWords = words.map((w: any) => w.wordId === existingWord.wordId ? { ...w, status: numericStatus, translation } : w);
+        await updateWord(existingWord.wordId!, numericStatus, translation);
+        const updatedWords = words.map(w => w.wordId === existingWord.wordId ? { ...w, status: numericStatus, translation } : w);
         setWords(updatedWords);
         setDisplayedWord((prev) => (prev?.term === selectedWord ? { ...prev, status: numericStatus, translation } : prev));
       } else {
@@ -1597,8 +1594,7 @@ const TextDisplay = () => {
     setSaveSuccess(false);
     try {
       await deleteWord(wordToDelete.wordId);
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      setWords((prevWords: any[]) => prevWords.filter((w: any) => w.wordId !== wordToDelete.wordId));
+      setWords(prevWords => prevWords.filter(w => w.wordId !== wordToDelete.wordId));
       setDisplayedWord((prev) => (
         prev?.wordId === wordToDelete.wordId
           ? { term: wordToDelete.term, status: 0, translation: '', isNew: true }
@@ -1752,10 +1748,11 @@ const TextDisplay = () => {
       });
       const uniqueWordsInText = [...new Set(allWords.map((w: string) => w.toLowerCase()))];
       const wordsMap = wordMap; // Reuse the memoized map
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const unknownWords = uniqueWordsInText.filter((word: string) => !wordsMap.has(word) || ((wordsMap.get(word) as any)?.status <= 2 && !(wordsMap.get(word) as any)?.translation));
+      const unknownWords = uniqueWordsInText.filter((word: string) => {
+        const w = wordsMap.get(word);
+        return !w || ((w.status ?? 0) <= 2 && !w.translation);
+      });
       if (unknownWords.length === 0) { if (!silent) alert("No words found needing translation."); setTranslatingUnknown(false); return; } // Exit early
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const translations = (await batchTranslateWords(unknownWords, translationTargetLanguageCode, text.languageCode)) as Record<string, string>;
       // Bail out if user navigated away during the API call
       if (silent && autoTranslateTextIdRef.current !== callingTextId) { setTranslatingUnknown(false); return; }
@@ -1802,8 +1799,7 @@ const TextDisplay = () => {
         }
       });
       const uniqueWordsInText = [...new Set(allWords.map((w: string) => w.toLowerCase()))];
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const wordsMap = new Map(words.map((w: any) => [w.term.toLowerCase(), w]));
+      const wordsMap = new Map(words.map(w => [w.term?.toLowerCase() ?? '', w]));
       const unknownWords = uniqueWordsInText.filter((word: string) => !wordsMap.has(word));
       if (unknownWords.length === 0) { alert("No untracked words found."); setIsMarkingAll(false); return; } // Exit early
       const originalCaseMap = new Map<string, string>();
@@ -1860,30 +1856,38 @@ const TextDisplay = () => {
     }
 
     const sentenceElements: React.ReactNode[] = [];
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let currentSentenceElements: any[] = [];
+    let currentSentenceElements: React.ReactNode[] = [];
     let sentenceIndex = startingSentenceIndex;
     const sentenceEndRegex = /^[.!?…]$/;
     const whitespaceRegex = /^\s+$/;
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    processedElements.forEach((element: any, idx: number) => {
+    const fragmentChildrenString = (el: React.ReactNode): string | null => {
+      if (!React.isValidElement(el) || el.type !== React.Fragment) return null;
+      const { children } = el.props as { children?: React.ReactNode };
+      return children == null ? null : String(children);
+    };
+
+    processedElements.forEach((element, idx) => {
       currentSentenceElements.push(element);
 
       let isEndOfSentence = false;
-      if (element.type === React.Fragment && element.props.children) {
-        const content = String(element.props.children).trim();
+      const fragmentText = fragmentChildrenString(element);
+      if (fragmentText !== null) {
+        const content = fragmentText.trim();
         if (sentenceEndRegex.test(content)) {
           const nextElement = processedElements[idx + 1];
-          if (!nextElement || (nextElement.type === React.Fragment && whitespaceRegex.test(String(nextElement.props.children)))) {
+          const nextFragmentText = fragmentChildrenString(nextElement);
+          if (!nextElement || (nextFragmentText !== null && whitespaceRegex.test(nextFragmentText))) {
             isEndOfSentence = true;
           }
         }
       }
 
       if (isEndOfSentence || idx === processedElements.length - 1) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        if (currentSentenceElements.some((el: any) => el.type !== React.Fragment || !whitespaceRegex.test(String(el.props.children)))) {
+        if (currentSentenceElements.some(el => {
+          const text = fragmentChildrenString(el);
+          return text === null || !whitespaceRegex.test(text);
+        })) {
           const currentSentenceIndex = sentenceIndex++;
           sentenceElements.push(
             <span

@@ -237,9 +237,8 @@ function GoalModal({
       } else {
         // payload's numeric goalType / mode / recurrence widen from the enum
         // unions in api-types; the backend accepts any int in the valid range
-        // and the form constrains the values via UI, so cast at the boundary.
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        await createGoal(payload as any);
+        // and the form constrains the values via UI, so bridge through unknown.
+        await createGoal(payload as unknown as Parameters<typeof createGoal>[0]);
       }
       if (onSaved) onSaved();
       onHide();

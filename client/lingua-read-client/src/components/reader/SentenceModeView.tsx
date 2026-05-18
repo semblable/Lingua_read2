@@ -2,10 +2,10 @@ import React, { useMemo } from 'react';
 import { Button, Card, Badge } from 'react-bootstrap';
 import { parseSentenceExplanation } from '../../utils/parseSentenceExplanation';
 import { getTitleLineVariant } from '../../utils/readerText';
-import type { ReaderSegment } from '../../hooks/useReaderAudioSync';
+import type { SentenceSegment } from '../../hooks/useReaderAudioSync';
 
 interface SentenceModeViewProps {
-  currentSegment: ReaderSegment;
+  currentSegment: SentenceSegment | null;
   segmentCount: number;
   currentSegmentIndex: number;
   creditedSegmentCount: number;
@@ -72,6 +72,11 @@ const SentenceModeView = React.memo(({
   const explanationParsed = useMemo(
     () => parseSentenceExplanation(currentSegmentExplanation), [currentSegmentExplanation]
   );
+
+  if (!currentSegment) {
+    return <p className="p-3">No sentence available.</p>;
+  }
+
   const isTitleSegment = currentSegment.type === 'title';
   const renderSentenceModeTitle = () => {
     const titleLines = currentSegment.text.split('\n');
@@ -93,10 +98,6 @@ const SentenceModeView = React.memo(({
     );
     });
   };
-
-  if (!currentSegment) {
-    return <p className="p-3">No sentence available.</p>;
-  }
 
   return (
     <div className="sentence-mode-view">
@@ -198,12 +199,12 @@ const SentenceModeView = React.memo(({
             onMouseUp={handleWordSelection}
             onTouchEnd={handleWordSelection}
           >
-            {Array.isArray(currentSegment.mediaBlocks) && currentSegment.mediaBlocks.length > 0 && (
+            {'mediaBlocks' in currentSegment && Array.isArray(currentSegment.mediaBlocks) && currentSegment.mediaBlocks.length > 0 && (
               <div className="sentence-mode-media-stack">
                 {currentSegment.mediaBlocks.map((mediaBlock, mediaIndex: number) => (
                   <figure key={`sentence-media-${currentSegment.index}-${mediaIndex}`} className="reader-image-block sentence-mode-image-block">
                     <img
-                      src={mediaBlock.imageUrl}
+                      src={mediaBlock.imageUrl ?? undefined}
                       alt={mediaBlock.altText || mediaBlock.caption || 'Illustration'}
                       className="reader-inline-image"
                     />

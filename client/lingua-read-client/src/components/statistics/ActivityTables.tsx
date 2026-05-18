@@ -9,14 +9,11 @@ interface ActivityTablesProps {
   listeningActivity: ListeningActivity;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type AnyRow = any;
-
 const ActivityTables = ({ readingActivity, listeningActivity }: ActivityTablesProps) => {
   const recentReading = (readingActivity.activityByDate || []).slice(-10).reverse();
   const listeningByLanguage = (listeningActivity.listeningByLanguage || [])
-    .filter((item: AnyRow) => item.totalSeconds > 0)
-    .sort((a: AnyRow, b: AnyRow) => b.totalSeconds - a.totalSeconds);
+    .filter((item) => item.totalSeconds > 0)
+    .sort((a, b) => b.totalSeconds - a.totalSeconds);
 
   return (
     <Row className="mt-4 g-4">
@@ -34,7 +31,7 @@ const ActivityTables = ({ readingActivity, listeningActivity }: ActivityTablesPr
                     </tr>
                   </thead>
                   <tbody>
-                    {recentReading.map((item: AnyRow) => (
+                    {recentReading.map((item) => (
                       <tr key={item.date}>
                         <td className="text-muted">{formatDate(item.date)}</td>
                         <td className="text-end fw-bold">{item.wordsRead.toLocaleString()}</td>
@@ -64,7 +61,7 @@ const ActivityTables = ({ readingActivity, listeningActivity }: ActivityTablesPr
                     </tr>
                   </thead>
                   <tbody>
-                    {listeningByLanguage.map((item: AnyRow) => (
+                    {listeningByLanguage.map((item) => (
                       <tr key={item.languageId || item.languageName}>
                         <td className="text-muted">{item.languageName}</td>
                         <td className="text-end fw-bold">{formatDuration(item.totalSeconds)}</td>

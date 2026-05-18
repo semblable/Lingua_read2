@@ -2,9 +2,9 @@ import React, { useState } from 'react';
 import { Form, Button, Alert, Spinner } from 'react-bootstrap';
 import type { Settings } from '../../contexts/SettingsContext';
 import type { SettingsChangeHandler } from './AppearanceSettings';
+import type { ResponseOf } from '../../utils/fetchApi';
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type HardcoverTestResult = any;
+type HardcoverTestResult = ResponseOf<'/api/Hardcover/status', 'get'>;
 
 interface HardcoverSettingsProps {
   settings: Settings;

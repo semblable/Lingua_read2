@@ -43,6 +43,20 @@ export type ReaderSegment = {
   mediaBlocks: DisplayBlock[];
 };
 
+// SRT-derived sentence segment. Constructed in TextDisplay when an audio
+// lesson supplies SRT lines; carries timing + the SRT line id so the audio
+// element can seek/replay the segment. Discriminator: type === 'audio'.
+export type SrtSentenceSegment = {
+  index: number;
+  text: string;
+  type: 'audio';
+  startTime: number;
+  endTime: number;
+  srtLineId: number;
+};
+
+export type SentenceSegment = ReaderSegment | SrtSentenceSegment;
+
 export type TitleLineVariant =
   | 'spacer'
   | 'chapter-marker'

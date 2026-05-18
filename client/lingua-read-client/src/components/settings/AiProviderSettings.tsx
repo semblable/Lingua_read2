@@ -2,9 +2,9 @@ import React from 'react';
 import { Form, Button, Alert } from 'react-bootstrap';
 import type { Settings } from '../../contexts/SettingsContext';
 import type { SettingsChangeHandler } from './AppearanceSettings';
+import type { ResponseOf } from '../../utils/fetchApi';
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type OpenRouterTestResult = any;
+type OpenRouterTestResult = ResponseOf<'/api/UserSettings/test-openrouter', 'post'>;
 
 interface AiProviderSettingsProps {
   settings: Settings;

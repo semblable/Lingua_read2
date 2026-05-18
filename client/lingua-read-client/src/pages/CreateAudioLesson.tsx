@@ -88,9 +88,11 @@ function CreateAudioLesson() {
             (event.target as HTMLFormElement).reset();
 
         } catch (err: unknown) {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const e = err as any;
-            setError(`Failed to create audio lesson: ${e?.response?.data?.message || e?.message || 'Unknown error'}`);
+            const message =
+                (err as { response?: { data?: { message?: string } } })?.response?.data?.message ??
+                (err as { message?: string })?.message ??
+                'Unknown error';
+            setError(`Failed to create audio lesson: ${message}`);
             console.error(err);
         } finally {
             setIsLoading(false);

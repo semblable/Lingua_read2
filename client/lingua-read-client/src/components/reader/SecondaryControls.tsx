@@ -16,8 +16,10 @@ interface SecondaryControlsProps {
   setLeftPanelWidth: (width: number) => void;
   handleLineSpacingChange: (value: number) => void;
   handleParagraphSpacingChange: (value: number) => void;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  text: any;
+  // SecondaryControls only consumes `text` as a truthiness guard for the
+  // toolbar buttons. The caller passes ReaderTextLike | null; using unknown
+  // here keeps the prop boundary loose without bringing in a shared shape.
+  text: unknown;
   loading: boolean;
   handleFullTextTranslation: () => void;
   handleOpenSummaryPopup: () => void;

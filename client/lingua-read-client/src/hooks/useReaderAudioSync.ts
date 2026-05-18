@@ -9,25 +9,10 @@ import type { SrtEntry } from '../utils/srtParser';
 import type { SegmentPlaybackRequest } from '../audio/segmentPlayback';
 export type { SegmentPlaybackRequest };
 
-export type ReaderMediaBlock = {
-  imageUrl?: string;
-  altText?: string;
-  caption?: string;
-};
-
-// Sentence segments come from two heterogeneous sources: SRT-derived (carries
-// startTime/endTime/srtLineId) and split-text-derived (may carry mediaBlocks
-// + type='title' etc). One permissive shape captures both runtime variants;
-// render code branches on startTime != null to distinguish.
-export type ReaderSegment = {
-  index: number;
-  text: string;
-  type?: string;
-  startTime?: number | null;
-  endTime?: number | null;
-  srtLineId?: number;
-  mediaBlocks?: ReaderMediaBlock[];
-};
+// ReaderSegment + SrtSentenceSegment + SentenceSegment are co-located with the
+// strict ReaderSegment producer (splitTextIntoSentenceSegments) in readerText.
+// Re-exported here so consumers (SentenceModeView, etc.) keep working.
+export type { ReaderSegment, SrtSentenceSegment, SentenceSegment } from '../utils/readerText';
 
 // react-window's FixedSizeList ref shape we actually use. Typed against the
 // library's FixedSizeList directly so consumers can pass a real list ref.
@@ -175,8 +160,10 @@ export const useReaderAudioSync = ({
 
   const setAudioPlaybackIntent = useCallback((shouldPlay: boolean) => {
     if (audioRef.current) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (audioRef.current as any).__lrAllowPlayback = shouldPlay;
+      // __lrAllowPlayback is a runtime intent flag the AudiobookPlayer reads
+      // to distinguish user-driven playback from autoplay attempts. Typed
+      // locally rather than globally to keep the augmentation contained.
+      (audioRef.current as HTMLAudioElement & { __lrAllowPlayback?: boolean }).__lrAllowPlayback = shouldPlay;
     }
   }, []);
 

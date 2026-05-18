@@ -13,12 +13,13 @@ import type { LinkProps } from 'react-router-dom';
 
 type LinkBaseProps = Pick<LinkProps, 'to' | 'replace' | 'state'>;
 
-// A single helper type alias documents what we're working around: the inner
-// JSX needs `as={Link}` plus `to=`, and react-bootstrap's typing for these
-// host components doesn't accept that shape via the polymorphic generic when
-// invoked through JSX.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type LooseAs = any;
+// react-bootstrap's polymorphic `as` generic doesn't flow through JSX, so each
+// wrapper casts the host component through this helper to declare the merged
+// "host props ∪ Link nav props" surface that the wrapper exposes. Refs target
+// the underlying anchor element rendered by react-router-dom <Link>.
+type AsLinkComponent<P> = React.ForwardRefExoticComponent<
+  Omit<P, 'as' | 'href'> & LinkBaseProps & { as: typeof Link } & React.RefAttributes<HTMLAnchorElement>
+>;
 
 // --- Button -----------------------------------------------------------------
 
@@ -26,9 +27,9 @@ export type LinkButtonProps = Omit<ButtonProps, 'as' | 'href'> & LinkBaseProps;
 
 const LinkButton = forwardRef<HTMLAnchorElement, LinkButtonProps>(
   ({ to, replace, state, ...rest }, ref) => {
-    const AnyButton = Button as LooseAs;
+    const ButtonAsLink = Button as unknown as AsLinkComponent<ButtonProps>;
     return (
-      <AnyButton {...rest} ref={ref} as={Link} to={to} replace={replace} state={state} />
+      <ButtonAsLink {...rest} ref={ref} as={Link} to={to} replace={replace} state={state} />
     );
   }
 );
@@ -43,9 +44,9 @@ export type LinkDropdownItemProps = Omit<DropdownItemBaseProps, 'as' | 'href'> &
 
 export const LinkDropdownItem = forwardRef<HTMLAnchorElement, LinkDropdownItemProps>(
   ({ to, replace, state, ...rest }, ref) => {
-    const AnyDropdownItem = Dropdown.Item as LooseAs;
+    const DropdownItemAsLink = Dropdown.Item as unknown as AsLinkComponent<DropdownItemBaseProps>;
     return (
-      <AnyDropdownItem {...rest} ref={ref} as={Link} to={to} replace={replace} state={state} />
+      <DropdownItemAsLink {...rest} ref={ref} as={Link} to={to} replace={replace} state={state} />
     );
   }
 );
@@ -58,9 +59,9 @@ export type LinkListGroupItemProps = Omit<ListGroupItemBaseProps, 'as' | 'href'>
 
 export const LinkListGroupItem = forwardRef<HTMLAnchorElement, LinkListGroupItemProps>(
   ({ to, replace, state, ...rest }, ref) => {
-    const AnyListGroupItem = ListGroup.Item as LooseAs;
+    const ListGroupItemAsLink = ListGroup.Item as unknown as AsLinkComponent<ListGroupItemBaseProps>;
     return (
-      <AnyListGroupItem {...rest} ref={ref} as={Link} to={to} replace={replace} state={state} />
+      <ListGroupItemAsLink {...rest} ref={ref} as={Link} to={to} replace={replace} state={state} />
     );
   }
 );

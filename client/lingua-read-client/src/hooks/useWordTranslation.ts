@@ -3,8 +3,9 @@ import { translateText, translateSelectionWithContext } from '../utils/api';
 import type { Settings } from '../contexts/SettingsContext';
 import type { Text as TextDto } from '../utils/api/texts';
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type ReaderTextLike = TextDto & Record<string, any>;
+// Reader pages augment TextDto with locally-attached fields; consumers must
+// narrow extras before reading them.
+export type ReaderTextLike = TextDto & Record<string, unknown>;
 
 export type UseWordTranslationArgs = {
   text: ReaderTextLike | null;

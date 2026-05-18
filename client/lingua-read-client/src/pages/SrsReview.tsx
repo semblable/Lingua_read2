@@ -216,9 +216,8 @@ const SrsReview = () => {
   const primaryPhrase = useMemo(() => {
     if (!currentCard?.phrases?.length || !currentCard?.term) return null;
     const lowerTerm = currentCard.term.toLowerCase();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return currentCard.phrases.find(
-      (phrase: any) => typeof phrase?.sentence === 'string' && phrase.sentence.toLowerCase().includes(lowerTerm)
+      (phrase) => typeof phrase?.sentence === 'string' && phrase.sentence.toLowerCase().includes(lowerTerm)
     ) || null;
   }, [currentCard]);
 
@@ -226,8 +225,7 @@ const SrsReview = () => {
     if (!currentCard?.phrases?.length) return [];
     if (!primaryPhrase) return currentCard.phrases.slice(0, 2);
     return currentCard.phrases
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      .filter((phrase: any) => phrase.srsPhraseId !== primaryPhrase.srsPhraseId)
+      .filter((phrase) => phrase.srsPhraseId !== primaryPhrase.srsPhraseId)
       .slice(0, 2);
   }, [currentCard, primaryPhrase]);
 
@@ -354,10 +352,9 @@ const SrsReview = () => {
     return raw.split(',').map(s => parseInt(s.trim(), 10)).filter(n => n > 0);
   }, [localSettings.srsLearningStepMinutes]);
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const getIntervalLabel = (grade: number, card: any): string => {
+  const getIntervalLabel = (grade: number, card: DueCard | null): string => {
     if (!card) return '';
-    const ef = card.easeFactor;
+    const ef = card.easeFactor ?? 2.5;
 
     // If card is currently in learning phase
     if (card.isLearning) {
@@ -395,12 +392,12 @@ const SrsReview = () => {
       case 2:
         if (card.repetitions === 0) interval = 1;
         else if (card.repetitions === 1) interval = 6;
-        else interval = Math.round(card.interval * ef);
+        else interval = Math.round((card.interval ?? 0) * ef);
         return `${interval}d`;
       case 3:
         if (card.repetitions === 0) interval = 1;
         else if (card.repetitions === 1) interval = 6;
-        else interval = Math.round(card.interval * ef);
+        else interval = Math.round((card.interval ?? 0) * ef);
         interval = Math.round(interval * 1.3);
         return `${interval}d`;
       default: return '';
@@ -410,8 +407,7 @@ const SrsReview = () => {
   // Remove card from session and handle index/completion
   const removeCardFromSession = (cardId: number) => {
     setCards(prev => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const updated = prev.filter((c: any) => c.srsCardReviewId !== cardId);
+      const updated = prev.filter((c) => c.srsCardReviewId !== cardId);
       if (updated.length === 0 || currentIndex >= updated.length) {
         setSessionComplete(true);
         loadStats();
@@ -441,11 +437,10 @@ const SrsReview = () => {
   };
 
   // Flag card handler
-  const handleFlag = async (cardId: number, flagValue: number | string | null) => {
+  const handleFlag = async (cardId: number, flagValue: number) => {
     try {
       await updateSrsCard(cardId, { flag: flagValue });
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      setCards(prev => prev.map((c: any) => c.srsCardReviewId === cardId ? { ...c, flag: flagValue } : c));
+      setCards(prev => prev.map((c) => c.srsCardReviewId === cardId ? { ...c, flag: flagValue } : c));
     } catch (err: unknown) {
       setError(`Failed to flag: ${(err as Error)?.message}`);
     }
@@ -455,12 +450,10 @@ const SrsReview = () => {
   const renderHeatmap = () => {
     if (!heatmap || heatmap.length === 0) return null;
     const heatmapMap: Record<string, number> = {};
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    heatmap.forEach((h: any) => { heatmapMap[h.date] = h.reviewCount; });
+    heatmap.forEach((h) => { if (h.date) heatmapMap[h.date] = h.reviewCount ?? 0; });
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const maxCount = Math.max(...heatmap.map((h: any) => h.reviewCount), 1);
+    const maxCount = Math.max(...heatmap.map((h) => h.reviewCount ?? 0), 1);
 
     interface HeatmapDay { date: string; count: number; dayOfWeek: number; }
     // Build 365 days of data ending today
@@ -709,8 +702,7 @@ const SrsReview = () => {
               <Form.Label>Language</Form.Label>
               <Form.Select value={selectedLanguage} onChange={handleLanguageChange}>
                 <option value="">-- Select Language --</option>
-                {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                {languages.map((lang: any) => (
+                {languages.map((lang) => (
                   <option key={lang.languageId} value={lang.languageId}>{lang.name}</option>
                 ))}
               </Form.Select>
@@ -1017,8 +1009,7 @@ const SrsReview = () => {
                   {otherPhrases.length > 0 && (
                     <div className="mt-2 text-start">
                       <small className="text-muted d-block mb-1">Other mined sentences:</small>
-                      {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                      {otherPhrases.map((phrase: any) => (
+                      {otherPhrases.map((phrase) => (
                         <small key={phrase.srsPhraseId} className="srs-other-phrases d-block mb-1">
                           "{phrase.sentence}"
                         </small>

@@ -7,7 +7,7 @@ import {
   type WordStatus
 } from '../types/wordStatus';
 
-interface ExistingWord {
+export interface ExistingWord {
   translation?: string;
   status?: number;
 }

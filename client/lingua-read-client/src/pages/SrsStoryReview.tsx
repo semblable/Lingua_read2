@@ -3,7 +3,7 @@ import { Container, Card, Button, Spinner, Alert, Form, Row, Col, Badge, Progres
 import { useNavigate } from 'react-router-dom';
 import { getAllLanguages, generateSrsStory, submitSrsReview, getSrsStats, createWord, getWordsByLanguage, getSrsStories } from '../utils/api';
 import { SettingsContext } from '../contexts/SettingsContext';
-import WordLookupPopover from '../components/WordLookupPopover';
+import WordLookupPopover, { type ExistingWord } from '../components/WordLookupPopover';
 import type { Language } from '../utils/api/languages';
 import type { SrsStats, SrsStories, SrsStoryGenerationResult } from '../utils/api/srs';
 import {
@@ -51,8 +51,7 @@ const SrsStoryReview = () => {
   // Story metadata for word saving
   const [storyTextId, setStoryTextId] = useState<number | null>(null);
   const [languageCode, setLanguageCode] = useState('');
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [existingWordsMap, setExistingWordsMap] = useState<Record<string, any>>({});
+  const [existingWordsMap, setExistingWordsMap] = useState<Record<string, ExistingWord>>({});
 
   // Lookup popover state (non-target words)
   const [lookupWord, setLookupWord] = useState<{ text: string; sentenceContext: string } | null>(null);
@@ -124,10 +123,12 @@ const SrsStoryReview = () => {
       // Load existing vocabulary for this language (for non-target lookups)
       try {
         const words = await getWordsByLanguage(parseInt(selectedLanguage));
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const map: Record<string, any> = {};
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        words.forEach((w: any) => { if (w.term) map[w.term.toLowerCase()] = w; });
+        const map: Record<string, ExistingWord> = {};
+        words.forEach((w) => {
+          if (w.term) {
+            map[w.term.toLowerCase()] = { translation: w.translation ?? undefined, status: w.status };
+          }
+        });
         setExistingWordsMap(map);
       } catch (e) {
         console.error('Failed to load vocabulary:', e);
@@ -138,13 +139,13 @@ const SrsStoryReview = () => {
     }
   };
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const handleGrade = async (mc: any, grade: number) => {
+  const handleGrade = async (mc: MicroContext, grade: number) => {
+    if (mc.wordId == null || mc.srsCardReviewId == null) return;
     if (reviewedWords.has(mc.wordId)) return;
     setGradingWordId(mc.wordId);
     try {
       await submitSrsReview(mc.srsCardReviewId, grade);
-      setReviewedWords(prev => new Map(prev).set(mc.wordId, grade));
+      setReviewedWords(prev => new Map(prev).set(mc.wordId!, grade));
     } catch (err: unknown) {
       setError(`Failed to submit review: ${(err as Error)?.message}`);
     } finally {
@@ -170,9 +171,9 @@ const SrsStoryReview = () => {
       translation,
       lookupWord?.sentenceContext || ''
     )) as { translation?: { translation?: string } } & Record<string, unknown>;
-    setExistingWordsMap((prev: Record<string, unknown>) => ({
+    setExistingWordsMap(prev => ({
       ...prev,
-      [term.toLowerCase()]: { ...result, term, translation: result?.translation?.translation || translation, status }
+      [term.toLowerCase()]: { translation: result?.translation?.translation || translation, status }
     }));
   };
 
@@ -180,8 +181,7 @@ const SrsStoryReview = () => {
   // before/after pieces around the highlighted target span. Non-target tokens stay
   // clickable for WordLookupPopover; the target-form span is rendered separately
   // by renderContextBody().
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const renderLookupTokens = (text: string, mc: any, idx: number, sliceKey: string) => {
+  const renderLookupTokens = (text: string, mc: MicroContext, idx: number, sliceKey: string) => {
     const tokens = text.split(/(\s+|[.,!?;:"""''()[\]{}\-—–…«»])/);
     return tokens.map((token: string, tIdx: number) => {
       const cleanToken = token.replace(/[.,!?;:"""''()[\]{}\-—–…«»]/g, '').toLowerCase();
@@ -189,14 +189,14 @@ const SrsStoryReview = () => {
 
       const refKey = `mc-${idx}-${sliceKey}-${tIdx}`;
       const existing = existingWordsMap[cleanToken];
-      const translation = existing?.translation?.translation || existing?.translation;
+      const translation = existing?.translation;
 
       const wordSpan = (
         <span
           key={`${sliceKey}-${tIdx}`}
           ref={el => { wordRefs.current[refKey] = el; }}
           className={`srs-story-lookup-word${existing ? ' srs-story-lookup-known' : ''}`}
-          onClick={() => handleLookupClick(token, refKey, mc.context)}
+          onClick={() => handleLookupClick(token, refKey, mc.context ?? '')}
           role="button"
           tabIndex={0}
         >
@@ -221,10 +221,9 @@ const SrsStoryReview = () => {
   // contiguous span (case-insensitive substring match against the context). Falls back
   // to the raw `term` when usedForm is missing. The text on either side flows through
   // the lookup-token renderer so non-target words remain clickable.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const renderContextBody = (mc: any, idx: number) => {
+  const renderContextBody = (mc: MicroContext, idx: number) => {
     const needle = (mc.usedForm || mc.term || '').trim();
-    const ctx = mc.context;
+    const ctx = mc.context ?? '';
 
     const matchIdx = needle
       ? ctx.toLowerCase().indexOf(needle.toLowerCase())

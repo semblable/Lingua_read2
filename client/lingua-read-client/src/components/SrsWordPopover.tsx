@@ -1,7 +1,12 @@
 import React from 'react';
 import { Overlay, Popover, Button, Badge } from 'react-bootstrap';
+import {
+  WORD_STATUS_LABELS as STATUS_LABELS,
+  WORD_STATUS_VARIANTS as STATUS_VARIANTS,
+  type WordStatus
+} from '../types/wordStatus';
 
-export type WordStatus = 1 | 2 | 3 | 4 | 5;
+export type { WordStatus };
 
 interface GradeLabel {
   grade: number;
@@ -15,9 +20,6 @@ const GRADE_LABELS: GradeLabel[] = [
   { grade: 2, label: 'Good', variant: 'success' },
   { grade: 3, label: 'Easy', variant: 'info' },
 ];
-
-const STATUS_LABELS: Record<WordStatus, string> = { 1: 'New', 2: 'Learning', 3: 'Familiar', 4: 'Advanced', 5: 'Known' };
-const STATUS_VARIANTS: Record<WordStatus, string> = { 1: 'danger', 2: 'warning', 3: 'info', 4: 'primary', 5: 'success' };
 
 interface SrsWord {
   wordId: number | string;

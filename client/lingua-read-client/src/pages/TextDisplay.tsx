@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback, useRef, useMemo, useContext } from 'react';
 import { Container, Card, Spinner, Alert, Button, Modal, Row, Col, Badge, ProgressBar, OverlayTrigger, Tooltip } from 'react-bootstrap';
 import { useParams, useNavigate } from 'react-router-dom';
+import type { FixedSizeList } from 'react-window';
 import {
   getText, getTextSrt, getWordLinkingStatus, createWord, updateWord, deleteWord, updateLastRead, completeLesson, getBook,
   translateText, translateSentence, translateFullText, translateSelectionWithContext, updateUserSettings,
@@ -34,17 +35,14 @@ import StandardTextView from '../components/reader/StandardTextView';
 import SentenceModeView from '../components/reader/SentenceModeView';
 import type { Word } from '../utils/api/words';
 import type { Language } from '../utils/api/languages';
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type DisplayedWord = Record<string, any>;
+import type { DisplayedWord } from '../types/displayedWord';
 
 const TextDisplay = () => {
   const { textId } = useParams();
   const navigate = useNavigate();
   const textContentRef = useRef<HTMLDivElement | null>(null);
   const readingContainerRef = useRef<HTMLDivElement | null>(null);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const listRef = useRef<any>(null); // react-window FixedSizeList ref
+  const listRef = useRef<FixedSizeList | null>(null);
   const autoTranslateTriggeredRef = useRef(false);
   const autoTranslateTextIdRef = useRef<number | string | null>(null);
 
@@ -59,8 +57,14 @@ const TextDisplay = () => {
   const [translateUnknownError, setTranslateUnknownError] = useState('');
   const [isMarkingAll, setIsMarkingAll] = useState(false);
   const [completing, setCompleting] = useState(false);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [stats, setStats] = useState<Record<string, any> | null>(null);
+  // Stats returned from completeLesson; only a subset is shown in the modal.
+  type LessonCompletionStats = {
+    completionPercentage?: number;
+    knownWords?: number;
+    learningWords?: number;
+    totalWords?: number;
+  };
+  const [stats, setStats] = useState<LessonCompletionStats | null>(null);
   const [showStatsModal, setShowStatsModal] = useState(false);
   const [showTranslationPopup, setShowTranslationPopup] = useState(false);
   const [fullTextTranslation, setFullTextTranslation] = useState('');
@@ -1510,8 +1514,7 @@ const TextDisplay = () => {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             setWords((prevWords: any[]) => prevWords.map((w: any) => w.wordId === wordData.wordId ? { ...w, status, translation: translationToUse } : w));
             if (selectedWord === term && displayedWord?.term === term) {
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              setDisplayedWord((prev: any) => ({ ...prev, status, translation: translationToUse }));
+              setDisplayedWord((prev) => ({ ...(prev || {}), status, translation: translationToUse }));
             }
           })
           .catch((err: unknown) => console.error(`[Keyboard Shortcut] Failed update for ${term}:`, err));
@@ -1569,7 +1572,7 @@ const TextDisplay = () => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const updatedWords = words.map((w: any) => w.wordId === existingWord.wordId ? { ...w, status: numericStatus, translation } : w);
         setWords(updatedWords);
-        setDisplayedWord((prev: any) => (prev?.term === selectedWord ? { ...prev, status: numericStatus, translation } : prev));
+        setDisplayedWord((prev) => (prev?.term === selectedWord ? { ...prev, status: numericStatus, translation } : prev));
       } else {
         if (text?.textId == null) return;
         const newWordData = (await createWord(text.textId, selectedWord, numericStatus, translation, currentSentenceSegment?.text)) as Record<string, unknown> | null;
@@ -1596,7 +1599,7 @@ const TextDisplay = () => {
       await deleteWord(wordToDelete.wordId);
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       setWords((prevWords: any[]) => prevWords.filter((w: any) => w.wordId !== wordToDelete.wordId));
-      setDisplayedWord((prev: any) => (
+      setDisplayedWord((prev) => (
         prev?.wordId === wordToDelete.wordId
           ? { term: wordToDelete.term, status: 0, translation: '', isNew: true }
           : prev
@@ -1645,7 +1648,7 @@ const TextDisplay = () => {
       event.preventDefault(); // Prevent newline in textarea
       if (displayedWord) {
         // Determine the status to save (current status, or 1 if untracked)
-        const statusToSave = displayedWord.status > 0 ? displayedWord.status : 1;
+        const statusToSave = (displayedWord.status ?? 0) > 0 ? displayedWord.status! : 1;
         handleSaveWord(statusToSave); // handleSaveWord is now defined before this
       } else {
       }
@@ -1826,8 +1829,7 @@ const TextDisplay = () => {
       } else if (globalSettings.autoAdvanceToNextLesson && nextTextId) {
         navigate(`/texts/${nextTextId}`);
       } else if (globalSettings.showProgressStats) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        setStats(textStats as Record<string, any> | null); // Use the stats returned from completeText
+        setStats(textStats as LessonCompletionStats | null); // completeLesson returns Promise<unknown>; cast to the narrow stats shape consumed below.
         setShowStatsModal(true);
       } else {
         navigate(`/books/${text.bookId}`);

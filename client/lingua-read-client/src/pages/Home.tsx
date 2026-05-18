@@ -1,11 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Container, Row, Col, Card, Button, ListGroup, Spinner, Alert } from 'react-bootstrap';
-import { Link } from 'react-router-dom';
+import { Container, Row, Col, Card, ListGroup, Spinner, Alert } from 'react-bootstrap';
+import LinkButton, { LinkListGroupItem } from '../components/shared/LinkButton';
 import { getRecentTexts } from '../utils/api';
 import type { RecentTexts } from '../utils/api/texts';
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const LinkAs: any = Link;
 
 type RecentText = RecentTexts[number];
 
@@ -45,10 +42,9 @@ const Home = () => {
     return (
       <ListGroup variant="flush">
         {recentTexts.map((text) => (
-          <ListGroup.Item
+          <LinkListGroupItem
             key={text.textId}
             action
-            as={LinkAs}
             to={`/texts/${text.textId}`}
             className="d-flex justify-content-between align-items-start"
           >
@@ -62,7 +58,7 @@ const Home = () => {
             {/* <Badge bg="light" text="dark">
               {new Date(text.lastAccessedAt).toLocaleDateString()}
             </Badge> */}
-          </ListGroup.Item>
+          </LinkListGroupItem>
         ))}
       </ListGroup>
     );
@@ -96,7 +92,7 @@ const Home = () => {
               <Card.Text>
                 Browse your books, texts, and folders.
               </Card.Text>
-              <Button as={LinkAs} to="/library" variant="primary" className="mt-auto">Go to Library</Button> {/* mt-auto pushes button down */}
+              <LinkButton to="/library" variant="primary" className="mt-auto">Go to Library</LinkButton> {/* mt-auto pushes button down */}
             </Card.Body>
           </Card>
         </Col>
@@ -108,9 +104,9 @@ const Home = () => {
                 Import a new book, create a text, or upload an audio lesson.
               </Card.Text>
               <div className="mt-auto"> {/* Group buttons and push down */}
-                <Button as={LinkAs} to="/books/create" variant="success" className="me-2 mb-2">Add Book</Button>
-                <Button as={LinkAs} to="/texts/create" variant="secondary" className="me-2 mb-2">Add Text</Button> {/* Added Add Text button */}
-                <Button as={LinkAs} to="/texts/create-audio" variant="info" className="mb-2">Add Audio Lesson</Button>
+                <LinkButton to="/books/create" variant="success" className="me-2 mb-2">Add Book</LinkButton>
+                <LinkButton to="/texts/create" variant="secondary" className="me-2 mb-2">Add Text</LinkButton> {/* Added Add Text button */}
+                <LinkButton to="/texts/create-audio" variant="info" className="mb-2">Add Audio Lesson</LinkButton>
               </div>
             </Card.Body>
           </Card>

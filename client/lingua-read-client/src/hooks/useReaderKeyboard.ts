@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
+import type { WordStatus } from '../types/wordStatus';
 
-export type WordStatus = 1 | 2 | 3 | 4 | 5;
+export type { WordStatus };
 
 export type UseReaderKeyboardArgs = {
   enabled: boolean;

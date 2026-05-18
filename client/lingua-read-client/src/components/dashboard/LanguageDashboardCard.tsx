@@ -1,14 +1,8 @@
 import React from 'react';
-import { Card, ProgressBar, Button } from 'react-bootstrap';
-import { Link } from 'react-router-dom';
+import { Card, ProgressBar } from 'react-bootstrap';
 import { ResponsiveContainer, AreaChart, Area, YAxis } from 'recharts';
 import CefrBadge from './CefrBadge';
-
-// react-bootstrap's `as` prop is typed against IntrinsicElements; the
-// react-router Link plus its `to` prop don't satisfy the intersection.
-// Cast to `any` — runtime behavior is unchanged.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const LinkAs: any = Link;
+import LinkButton from '../shared/LinkButton';
 
 const formatMinutes = (seconds: number | null | undefined): string => {
   if (!seconds) return '0 min';
@@ -167,22 +161,21 @@ const LanguageDashboardCard = ({ lang }: LanguageDashboardCardProps) => {
 
         <div className="mt-auto d-flex gap-2 flex-wrap">
           {continueReadingTextId ? (
-            <Button
-              as={LinkAs}
+            <LinkButton
               to={`/texts/${continueReadingTextId}`}
               size="sm"
               variant="primary"
             >
               Continue reading
-            </Button>
+            </LinkButton>
           ) : (
-            <Button as={LinkAs} to="/library" size="sm" variant="outline-primary">
+            <LinkButton to="/library" size="sm" variant="outline-primary">
               Open library
-            </Button>
+            </LinkButton>
           )}
-          <Button as={LinkAs} to="/srs" size="sm" variant="outline-secondary">
+          <LinkButton to="/srs" size="sm" variant="outline-secondary">
             Review SRS
-          </Button>
+          </LinkButton>
         </div>
       </Card.Body>
     </Card>

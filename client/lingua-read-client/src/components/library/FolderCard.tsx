@@ -82,7 +82,7 @@ const FolderCard = ({ folder, onClick, onRename, onDelete, onChangeColor, isOver
           ></i>
           <div className="flex-grow-1 min-width-0">
             <div className="fw-semibold text-truncate">{folder.name}</div>
-            {folder.itemCount > 0 && (
+            {(folder.itemCount ?? 0) > 0 && (
               <small className="text-muted">{folder.itemCount} item{folder.itemCount !== 1 ? 's' : ''}</small>
             )}
           </div>

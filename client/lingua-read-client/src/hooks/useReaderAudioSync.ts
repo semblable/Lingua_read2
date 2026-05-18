@@ -29,10 +29,10 @@ export type ReaderSegment = {
   mediaBlocks?: ReaderMediaBlock[];
 };
 
-// react-window's FixedSizeList ref shape we actually use.
-type ListLikeRef = {
-  scrollToItem: (index: number, align?: string) => void;
-} | null;
+// react-window's FixedSizeList ref shape we actually use. Typed against the
+// library's FixedSizeList directly so consumers can pass a real list ref.
+import type { FixedSizeList } from 'react-window';
+type ListLikeRef = FixedSizeList | null;
 
 export type UseReaderAudioSyncArgs = {
   isAudioLesson: boolean;

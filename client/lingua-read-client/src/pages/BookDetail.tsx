@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react'; // Add useCallback, useMemo
 import { Container, Card, Button, Alert, Spinner, ListGroup, Badge, ProgressBar, Modal, Form } from 'react-bootstrap'; // Add Form
-import { useParams, useNavigate, useLocation, Link } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import { LinkListGroupItem } from '../components/shared/LinkButton';
 import type { Book } from '../utils/api/books';
 import type { HardcoverCandidate } from '../utils/api/hardcover';
 
@@ -10,9 +11,6 @@ type BookWithStatus = Book & { isFinished?: boolean };
 type EditingBookDraft = { bookId?: number; title?: string | null };
 type EditingTextDraft = { textId?: number; title?: string | null; content?: string | null; tag?: string };
 type HardcoverMessage = { type: string; text: string };
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const LinkAs: any = Link;
 import {
   getBook,
   finishBook,
@@ -558,11 +556,10 @@ const BookDetail = () => {
         <Card.Header as="h5">Book Sections</Card.Header>
         <ListGroup variant="flush">
           {sortedParts.map((part, index) => (
-            <ListGroup.Item
+            <LinkListGroupItem
               key={part.textId}
               className="d-flex justify-content-between align-items-center"
               action
-              as={LinkAs}
               to={`/texts/${part.textId}`}
             >
               <div>
@@ -605,7 +602,7 @@ const BookDetail = () => {
                   Delete
                 </Button>
               </div>
-            </ListGroup.Item>
+            </LinkListGroupItem>
           ))}
         </ListGroup>
       </Card>

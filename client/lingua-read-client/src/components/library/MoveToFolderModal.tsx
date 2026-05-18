@@ -60,7 +60,7 @@ const MoveToFolderModal = ({ show, onHide, folders, onMove, itemCount }: MoveToF
           <i className="bi bi-folder-fill me-2" style={{ color: getFolderColor(folder) }}></i>
           {folder.name}
           <span className="ms-auto d-flex align-items-center gap-2">
-            {folder.itemCount > 0 && <small className="text-muted">{folder.itemCount}</small>}
+            {(folder.itemCount ?? 0) > 0 && <small className="text-muted">{folder.itemCount}</small>}
             {isSelected && <i className="bi bi-check-circle-fill text-primary"></i>}
           </span>
         </ListGroup.Item>

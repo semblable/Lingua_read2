@@ -5,6 +5,11 @@ import { SettingsContext } from '../contexts/SettingsContext';
 import { getAllLanguages, getSrsDueCards, submitSrsReview, getSrsStats, updateUserSettings, undoSrsReview, getSrsForecast, suspendSrsCard, burySrsCard, updateSrsCard, getSrsHeatmap, getSrsAnalytics } from '../utils/api';
 import type { Language } from '../utils/api/languages';
 import type { SrsDueCards, SrsStats, SrsForecast, SrsHeatmap, SrsAnalytics } from '../utils/api/srs';
+import {
+  WORD_STATUS_LABELS as STATUS_LABELS,
+  WORD_STATUS_VARIANTS as STATUS_VARIANTS,
+  type WordStatus
+} from '../types/wordStatus';
 import './SrsReview.css';
 
 type DueCard = SrsDueCards[number];
@@ -20,10 +25,6 @@ const GRADE_LABELS = [
   { grade: 2, label: 'Good', variant: 'success', key: '3' },
   { grade: 3, label: 'Easy', variant: 'info', key: '4' },
 ];
-
-type WordStatus = 1 | 2 | 3 | 4 | 5;
-const STATUS_LABELS: Record<WordStatus, string> = { 1: 'New', 2: 'Learning', 3: 'Familiar', 4: 'Advanced', 5: 'Known' };
-const STATUS_VARIANTS: Record<WordStatus, string> = { 1: 'danger', 2: 'warning', 3: 'info', 4: 'primary', 5: 'success' };
 
 const SrsReview = () => {
   const navigate = useNavigate();

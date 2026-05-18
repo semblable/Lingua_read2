@@ -73,14 +73,31 @@ export const useAuthStore = create<AuthState>()((set) => ({
 
 // --- Texts Store ---
 
-// Permissive Text shape — call sites read various fields; Phase D / C4 will
-// tighten this against api-types.d.ts once components are typed.
+// Shape consumed by TextList pages — fields are optional because legacy API
+// responses are inconsistent on casing/presence (textId vs textID, language vs
+// languageName, etc.). Backed structurally by api-types.d.ts TextDto but kept
+// permissive so server shape drift doesn't break the type contract.
 export type StoredText = {
   textId?: number;
   textID?: number;
+  id?: number;
   title?: string;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  [key: string]: any;
+  content?: string;
+  tag?: string;
+  bookId?: number | null;
+  languageId?: number;
+  languageName?: string;
+  language?: { name?: string } | null;
+  isAudioLesson?: boolean;
+  isFinished?: boolean;
+  audioProgress?: number;
+  wordCount?: number;
+  totalWords?: number;
+  knownWords?: number;
+  learningWords?: number;
+  unknownWords?: number;
+  unknownWordPercentage?: number | null;
+  createdAt?: string;
 };
 
 export type TextsState = {
@@ -107,15 +124,21 @@ export const useTextsStore = create<TextsState>()((set) => ({
 
 export type CurrentWord = {
   wordId: number;
+  term?: string;
+  translation?: string;
   status?: number;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  [key: string]: any;
+  isNew?: boolean;
 };
 
 export type CurrentText = {
+  textId?: number;
+  title?: string;
+  content?: string;
+  languageId?: number;
+  languageCode?: string;
+  bookId?: number | null;
+  partNumber?: number;
   words?: CurrentWord[];
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  [key: string]: any;
 };
 
 export type CurrentTextState = {
@@ -153,12 +176,42 @@ export const useCurrentTextStore = create<CurrentTextState>()((set) => ({
 export type SelectableType = 'text' | 'book' | 'folder' | string;
 export type SelectedItem = { id: number; type: SelectableType };
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type LibraryFolder = { folderId?: number; name?: string; [key: string]: any };
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type LibraryBook = { bookId?: number; title?: string; [key: string]: any };
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type LibraryText = { textId?: number; title?: string; [key: string]: any };
+export type LibraryFolder = {
+  folderId?: number;
+  name?: string;
+  color?: string;
+  itemCount?: number;
+  parentFolderId?: number | null;
+};
+
+export type LibraryBook = {
+  bookId?: number;
+  title?: string;
+  coverImagePath?: string | null;
+  isFinished?: boolean;
+  languageName?: string;
+  partCount?: number;
+  finishedPartCount?: number;
+  completionPercentage?: number;
+  totalWords?: number;
+  unknownWords?: number;
+  unknownWordPercentage?: number | null;
+  tags?: string[];
+  lastReadTextId?: number | null;
+};
+
+export type LibraryText = {
+  textId?: number;
+  title?: string;
+  isAudioLesson?: boolean;
+  isFinished?: boolean;
+  languageName?: string;
+  tag?: string;
+  createdAt?: string;
+  totalWords?: number;
+  unknownWords?: number;
+  unknownWordPercentage?: number | null;
+};
 export type Breadcrumb = { folderId: number | null; name: string };
 
 export type LibraryContentsPayload = {
@@ -229,8 +282,13 @@ export const useLibraryStore = create<LibraryState>()((set) => ({
 
 // --- Word Modal Store ---
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type ModalWord = { term?: string; wordId?: number; [key: string]: any };
+export type ModalWord = {
+  term?: string;
+  wordId?: number;
+  translation?: string;
+  status?: number;
+  nextReviewDate?: string | null;
+};
 
 export type WordModalState = {
   isOpen: boolean;

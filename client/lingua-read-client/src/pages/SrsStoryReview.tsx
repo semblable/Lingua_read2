@@ -6,14 +6,16 @@ import { SettingsContext } from '../contexts/SettingsContext';
 import WordLookupPopover from '../components/WordLookupPopover';
 import type { Language } from '../utils/api/languages';
 import type { SrsStats, SrsStories, SrsStoryGenerationResult } from '../utils/api/srs';
+import {
+  WORD_STATUS_LABELS as STATUS_LABELS,
+  WORD_STATUS_VARIANTS as STATUS_VARIANTS,
+  type WordStatus
+} from '../types/wordStatus';
 import './SrsStoryReview.css';
 
 type MicroContext = NonNullable<SrsStoryGenerationResult['microContexts']>[number];
 type PastStory = SrsStories[number];
 
-type WordStatus = 1 | 2 | 3 | 4 | 5;
-const STATUS_LABELS: Record<WordStatus, string> = { 1: 'New', 2: 'Learning', 3: 'Familiar', 4: 'Advanced', 5: 'Known' };
-const STATUS_VARIANTS: Record<WordStatus, string> = { 1: 'danger', 2: 'warning', 3: 'info', 4: 'primary', 5: 'success' };
 const GRADE_BUTTONS = [
   { grade: 0, label: 'Again', variant: 'outline-danger' },
   { grade: 1, label: 'Hard', variant: 'outline-warning' },

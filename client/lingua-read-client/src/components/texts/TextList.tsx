@@ -1,15 +1,9 @@
 import React, { useEffect } from 'react';
 import { Container, Row, Col, Card, Button, Spinner, Alert, Tabs, Tab } from 'react-bootstrap';
-import { Link } from 'react-router-dom';
+import LinkButton from '../shared/LinkButton';
 import { useTextsStore } from '../../utils/store';
 import { getTexts, completeText } from '../../utils/api';
 import type { StoredText } from '../../utils/store';
-
-// react-bootstrap's `as` prop is typed against IntrinsicElements; the
-// react-router Link plus the forwarded `to` prop don't fit. Cast to `any`
-// so both pass the type checker. Runtime behaviour is unchanged.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const LinkAs: any = Link;
 
 const TextList = () => {
   const { texts, loading, error, setTexts, setLoading, setError } = useTextsStore();
@@ -63,9 +57,9 @@ const TextList = () => {
     <Container className="py-5">
       <div className="d-flex justify-content-between align-items-center mb-4">
         <h1>My Texts</h1>
-        <Button as={LinkAs} to="/texts/create" variant="success">
+        <LinkButton to="/texts/create" variant="success">
           Add New Text
-        </Button>
+        </LinkButton>
       </div>
 
       {error && <Alert variant="danger">{error}</Alert>}
@@ -82,9 +76,9 @@ const TextList = () => {
               <Card.Body>
                 <h3>No active texts</h3>
                 <p className="mb-4">Add a new text or check your finished archive.</p>
-                <Button as={LinkAs} to="/texts/create" variant="primary">
+                <LinkButton to="/texts/create" variant="primary">
                   Add New Text
-                </Button>
+                </LinkButton>
               </Card.Body>
             </Card>
           ) : (
@@ -140,19 +134,19 @@ const TextListCard = ({ text, onMarkFinished }: TextListCardProps) => (
           {text.content ? text.content.substring(0, 100) + '...' : (text.tag ? `Tag: ${text.tag}` : '')}
         </Card.Text>
 
-        {text.isAudioLesson && text.audioProgress > 0 && (
+        {text.isAudioLesson && (text.audioProgress ?? 0) > 0 && (
           <div className="mb-2">
             <div className="progress" style={{ height: '5px' }}>
               <div
                 className="progress-bar bg-info"
                 role="progressbar"
-                style={{ width: `${Math.min(text.audioProgress * 100, 100)}%` }}
-                aria-valuenow={text.audioProgress * 100}
+                style={{ width: `${Math.min((text.audioProgress ?? 0) * 100, 100)}%` }}
+                aria-valuenow={(text.audioProgress ?? 0) * 100}
                 aria-valuemin={0}
                 aria-valuemax={100}
               ></div>
             </div>
-            <small className="text-muted">{Math.round(text.audioProgress * 100)}% listened</small>
+            <small className="text-muted">{Math.round((text.audioProgress ?? 0) * 100)}% listened</small>
           </div>
         )}
 
@@ -165,20 +159,19 @@ const TextListCard = ({ text, onMarkFinished }: TextListCardProps) => (
         </div>
       </Card.Body>
       <Card.Footer className="bg-white border-top-0">
-        <Button
-          as={LinkAs}
+        <LinkButton
           to={`/texts/${text.textId || text.id}`}
           variant="outline-primary"
           className="w-100 mb-2"
         >
           {text.isFinished ? 'Review' : 'Continue Reading'}
-        </Button>
+        </LinkButton>
         {!text.isFinished && onMarkFinished && (
           <Button
             variant="outline-success"
             size="sm"
             className="w-100"
-            onClick={() => onMarkFinished(text.textId || text.id)}
+            onClick={() => onMarkFinished((text.textId ?? text.id)!)}
           >
             Mark as Finished
           </Button>

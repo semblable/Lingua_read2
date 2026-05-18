@@ -1,15 +1,9 @@
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { Container, Row, Col, Card, Button, Spinner, Alert, Form, ButtonGroup, Badge } from 'react-bootstrap';
-import { Link } from 'react-router-dom';
+import LinkButton from '../components/shared/LinkButton';
 import { useTextsStore } from '../utils/store';
 import type { StoredText } from '../utils/store';
 import { getTexts, deleteText } from '../utils/api';
-
-// react-bootstrap's `as` prop is typed against IntrinsicElements; the
-// react-router Link plus its `to` prop don't satisfy the intersection.
-// Cast to any so the type check passes — runtime behavior is unchanged.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const LinkAs: any = Link;
 // Assuming Bootstrap Icons are linked globally or via a library like react-bootstrap-icons
 // For simplicity, using class names directly: <i className="bi bi-headphones"></i> <i className="bi bi-trash"></i>
 
@@ -70,8 +64,10 @@ const TextList = () => {
       return tagMatch && typeMatch && languageMatch && statusMatch;
     });
 
-    // Sort filtered texts
-    const sorted = [...filtered].sort((a, b) => {
+    // Sort filtered texts. sortKey is user-controlled (one of a few text fields),
+    // so index into the row generically; the type-safe alternative would be a switch.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const sorted = [...filtered].sort((a: any, b: any) => {
       let valA = a[sortKey];
       let valB = b[sortKey];
 
@@ -189,12 +185,12 @@ const TextList = () => {
           </Form.Select>
         </div>
         <div className="d-flex gap-2 mt-2 mt-md-0"> {/* Wrap buttons in a div for grouping */}
-          <Button as={LinkAs} to="/texts/create-batch-audio" variant="info">
+          <LinkButton to="/texts/create-batch-audio" variant="info">
             Batch Add Audio
-          </Button>
-          <Button as={LinkAs} to="/texts/create" variant="success">
+          </LinkButton>
+          <LinkButton to="/texts/create" variant="success">
             Add New Text
-          </Button>
+          </LinkButton>
         </div>
       </div>
 
@@ -205,9 +201,9 @@ const TextList = () => {
           <Card.Body>
             <h3>{texts.length === 0 ? "You don't have any texts yet" : "No texts match the current filters"}</h3>
             <p className="mb-4">Add your first text to start learning vocabulary</p>
-            <Button as={LinkAs} to="/texts/create" variant="primary">
+            <LinkButton to="/texts/create" variant="primary">
               Add Your First Text
-            </Button>
+            </LinkButton>
             {(languageFilter || tagFilter || typeFilter !== 'all' || statusFilter !== 'all') && ( // Update condition
               <Button
                 variant="outline-secondary"
@@ -245,7 +241,7 @@ const TextList = () => {
                       Created: {text.createdAt ? new Date(text.createdAt).toLocaleDateString() : 'N/A'}
                     </small>
                   </div>
-                  {text.bookId == null && text.totalWords > 0 && text.unknownWordPercentage != null && (
+                  {text.bookId == null && (text.totalWords ?? 0) > 0 && text.unknownWordPercentage != null && (
                     <div className="mt-1">
                       <small className="text-muted">
                         Unknown: {text.unknownWordPercentage.toFixed(1)}% ({text.unknownWords}/{text.totalWords})
@@ -254,15 +250,14 @@ const TextList = () => {
                   )}
                 </Card.Body>
                 <Card.Footer className="bg-white border-top-0 d-flex justify-content-between align-items-center">
-                  <Button
-                    as={LinkAs}
+                  <LinkButton
                     to={`/texts/${text.textId}`}
                     variant="outline-primary"
                     size="sm" // Make button smaller
                     className="flex-grow-1 me-2" // Adjust spacing
                   >
                     Continue Reading
-                  </Button>
+                  </LinkButton>
                   <Button
                     variant="outline-danger"
                     size="sm"

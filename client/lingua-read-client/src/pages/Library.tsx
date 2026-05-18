@@ -1,9 +1,7 @@
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { Container, Row, Col, Button, Spinner, Alert, Breadcrumb, Form, Badge, Dropdown } from 'react-bootstrap';
-import { Link, useParams, useNavigate } from 'react-router-dom';
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const LinkAs: any = Link;
+import { useParams, useNavigate } from 'react-router-dom';
+import LinkButton, { LinkDropdownItem } from '../components/shared/LinkButton';
 import {
   DndContext,
   closestCenter,
@@ -441,10 +439,10 @@ const Library = () => {
               <i className="bi bi-plus-lg me-1"></i>Add Content
             </Dropdown.Toggle>
             <Dropdown.Menu>
-              <Dropdown.Item as={LinkAs} to="/books/create">Add Book</Dropdown.Item>
-              <Dropdown.Item as={LinkAs} to="/texts/create">Add Text</Dropdown.Item>
-              <Dropdown.Item as={LinkAs} to="/texts/create-audio">Add Audio Lesson</Dropdown.Item>
-              <Dropdown.Item as={LinkAs} to="/texts/create-batch-audio">Batch Audio</Dropdown.Item>
+              <LinkDropdownItem to="/books/create">Add Book</LinkDropdownItem>
+              <LinkDropdownItem to="/texts/create">Add Text</LinkDropdownItem>
+              <LinkDropdownItem to="/texts/create-audio">Add Audio Lesson</LinkDropdownItem>
+              <LinkDropdownItem to="/texts/create-batch-audio">Batch Audio</LinkDropdownItem>
             </Dropdown.Menu>
           </Dropdown>
         </div>
@@ -611,12 +609,12 @@ const Library = () => {
                 <Button variant="outline-primary" onClick={() => setShowCreateFolder(true)}>
                   <i className="bi bi-folder-plus me-1"></i>Create Folder
                 </Button>
-                <Button as={LinkAs} to="/books/create" variant="primary">
+                <LinkButton to="/books/create" variant="primary">
                   <i className="bi bi-plus-lg me-1"></i>Add Book
-                </Button>
-                <Button as={LinkAs} to="/texts/create" variant="outline-success">
+                </LinkButton>
+                <LinkButton to="/texts/create" variant="outline-success">
                   <i className="bi bi-plus-lg me-1"></i>Add Text
-                </Button>
+                </LinkButton>
               </>
             )}
             {searchQuery && (

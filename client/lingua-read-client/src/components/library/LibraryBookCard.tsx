@@ -84,7 +84,7 @@ const LibraryBookCard = ({ book, isSelected, onSelect, onItemClick }: LibraryBoo
           </div>
           <small className="text-muted mb-2">{book.languageName}</small>
 
-          {book.partCount > 0 && (
+          {(book.partCount ?? 0) > 0 && (
             <div className="mb-2">
               <ProgressBar
                 now={book.completionPercentage}
@@ -97,12 +97,12 @@ const LibraryBookCard = ({ book, isSelected, onSelect, onItemClick }: LibraryBoo
 
           <div className="text-muted small mt-auto">
             {book.finishedPartCount}/{book.partCount} part{book.partCount !== 1 ? 's' : ''}
-            {book.totalWords > 0 && book.unknownWordPercentage != null && (
+            {(book.totalWords ?? 0) > 0 && book.unknownWordPercentage != null && (
               <span className="ms-2" title={`${book.unknownWords} of ${book.totalWords} word tokens not yet known`}>
                 · {book.unknownWordPercentage.toFixed(1)}% new
               </span>
             )}
-            {book.tags?.length > 0 && (
+            {book.tags && book.tags.length > 0 && (
               <span className="ms-2">
                 {book.tags.map((tag: string) => (
                   <Badge key={tag} bg="secondary" className="me-1" style={{ fontSize: '0.65rem' }}>{tag}</Badge>

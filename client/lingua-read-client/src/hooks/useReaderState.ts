@@ -17,10 +17,8 @@ import type { Word } from '../utils/api/words';
 
 // Page state often overlays extra fields the OpenAPI spec omits. Keep the
 // types loose enough for the augmented runtime shape used by the reader.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type ReaderText = TextDto & Record<string, any>;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type ReaderBook = BookDto & Record<string, any>;
+export type ReaderText = TextDto & Record<string, unknown>;
+export type ReaderBook = BookDto & Record<string, unknown>;
 
 export type FetchAllLanguageWordsFn = (
   languageId: number,
@@ -265,8 +263,7 @@ export const useReaderState = ({
             const bookData = results[2].value as ReaderBook;
             setBook(bookData);
             if (bookData?.parts) {
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              const currentPartIndex = bookData.parts.findIndex((part: any) => part.textId === parseInt(textId ?? '', 10));
+              const currentPartIndex = bookData.parts.findIndex((part: { textId?: number | null }) => part.textId === parseInt(textId ?? '', 10));
               setPreviousTextId(currentPartIndex > 0 ? (bookData.parts[currentPartIndex - 1].textId ?? null) : null);
               setNextTextId(currentPartIndex >= 0 && currentPartIndex < bookData.parts.length - 1 ? (bookData.parts[currentPartIndex + 1].textId ?? null) : null);
             }

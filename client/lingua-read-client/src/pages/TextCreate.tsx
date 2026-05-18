@@ -55,8 +55,8 @@ const TextCreate = () => {
     // Re-run if userSettings context changes (e.g., after initial load)
   }, [userSettings?.defaultLanguageId]);
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const handleSubmit = async (e: any) => {
+  // Also invoked via Button onClick below, so accept the SyntheticEvent base.
+  const handleSubmit = async (e: React.SyntheticEvent) => {
     e.preventDefault();
     
     if (!title.trim()) {
@@ -87,8 +87,7 @@ const TextCreate = () => {
     }
   };
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const handleGenerateStory = async (e: any) => {
+  const handleGenerateStory = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     
     if (!storyPrompt.trim()) {

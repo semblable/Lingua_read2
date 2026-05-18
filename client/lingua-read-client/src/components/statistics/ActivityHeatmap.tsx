@@ -1,7 +1,12 @@
 import React, { useMemo, useState } from 'react';
 import { ButtonGroup, Card, ToggleButton } from 'react-bootstrap';
 import { formatDuration, periodDayCount } from '../../utils/statistics';
-import type { ListeningActivity, ReadingActivity } from '../../utils/statistics';
+import type {
+  ListeningActivity,
+  ListeningActivityPoint,
+  ReadingActivity,
+  ReadingActivityPoint
+} from '../../utils/statistics';
 
 interface DayCell {
   dateKey: string;
@@ -120,13 +125,11 @@ const ActivityHeatmap = ({ readingActivity, listeningActivity, period }: Activit
   const valueByDate = useMemo(() => {
     const map = new Map();
     if (mode === 'reading') {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (readingActivity?.activityByDate || []).forEach((entry: any) => {
+      (readingActivity?.activityByDate || []).forEach((entry: ReadingActivityPoint) => {
         if (entry?.date) map.set(entry.date, entry.wordsRead || 0);
       });
     } else {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (listeningActivity?.listeningByDate || []).forEach((entry: any) => {
+      (listeningActivity?.listeningByDate || []).forEach((entry: ListeningActivityPoint) => {
         if (entry?.date) map.set(entry.date, entry.minutesListened || 0);
       });
     }

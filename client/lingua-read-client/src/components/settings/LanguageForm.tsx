@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Form, Button, Row, Col, Card, InputGroup, Alert } from 'react-bootstrap';
 import { createLanguage, updateLanguage, deleteLanguage, resetLanguageContent } from '../../utils/api'; // <-- Import deleteLanguage
-import type { Language } from '../../utils/api/languages';
+import type { Language, LanguageInput } from '../../utils/api/languages';
 import type { components } from '../../utils/api-types';
 
 // Form rows are partial of the full DTO because new entries don't yet have a
@@ -108,8 +108,7 @@ function LanguageForm({ language, onSave, onCancel, onDelete, onResetContent }: 
     };
 
     const handleChangeDictionary = (index: number, field: string, value: string | boolean, type: string = 'text') => {
-         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-         const newValue = type === 'checkbox' ? !(formData.dictionaries[index] as any)[field] : value;
+         const newValue = type === 'checkbox' ? !(formData.dictionaries[index] as Record<string, unknown>)[field] : value;
          // Special handling for sortOrder to ensure it's a number
          const finalValue = field === 'sortOrder' ? parseInt(String(newValue), 10) || 0 : newValue;
 
@@ -156,19 +155,20 @@ function LanguageForm({ language, onSave, onCancel, onDelete, onResetContent }: 
         console.log("Submitting form data:", formData);
 
         try {
-            // Prepare payload - ensure collections are included. Cast to the
-            // API DTO shape: the backend fills in nested `languageId` fields on
-            // dictionaries / exceptions at save time.
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const payload: any = { ...formData };
+            // Prepare payload - ensure collections are included. Cast through
+            // `unknown` to the API DTO shape: the backend fills in nested
+            // `languageId` fields on dictionaries / exceptions at save time,
+            // and the OpenAPI input schema differs slightly from the form's
+            // local typed shape.
+            const payload: LanguageFormData = { ...formData };
 
             if (formData.languageId) {
                 // Update existing language
-                await updateLanguage(formData.languageId, payload);
+                await updateLanguage(formData.languageId, payload as unknown as LanguageInput);
             } else {
                 // Create new language - remove languageId if present (should be 0 or undefined)
                 delete payload.languageId;
-                await createLanguage(payload);
+                await createLanguage(payload as unknown as LanguageInput);
             }
             onSave(); // Notify parent component (e.g., to refetch list and clear selection)
         } catch (err: unknown) {

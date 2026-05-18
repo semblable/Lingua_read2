@@ -1,13 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import { Form, Button, Card, Row, Col } from 'react-bootstrap';
 import { getUserSettings, updateUserSettings } from '../utils/api';
+import type { UpdateUserSettingsInput } from '../utils/api/settings';
 
 // NOTE(phase-d): This appears to be a legacy/dead component — pages/UserSettings
 // is the live settings page. State shape mixes string text-size (local) with
-// the full backend Settings object. Until it's removed or merged into the
-// canonical settings page, keep the local state permissive.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type LocalSettings = { [key: string]: any };
+// the full backend Settings object. Form uses `textSize: 'small'|'medium'|'large'`
+// (string) and a `highlighting` pseudo-key not on the backend Settings shape,
+// so the two are genuinely incompatible; bridge to the API via `unknown`.
+type LocalSettings = {
+  textSize?: string;
+  theme?: string;
+  textFont?: string;
+  highlighting?: string;
+  highlightKnownWords?: boolean;
+};
 
 const UserSettings = () => {
   const [settings, setSettings] = useState<LocalSettings>({
@@ -25,7 +32,7 @@ const UserSettings = () => {
     const fetchSettings = async () => {
       try {
         setLoading(true);
-        const response = (await getUserSettings()) as LocalSettings | null;
+        const response = (await getUserSettings()) as unknown as LocalSettings | null;
 
         if (response) {
           setSettings(response);
@@ -77,8 +84,7 @@ const UserSettings = () => {
       setError('');
       setMessage('');
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await updateUserSettings(settings as any);
+      await updateUserSettings(settings as unknown as UpdateUserSettingsInput);
       setMessage('Settings saved successfully');
     } catch (err) {
       console.error('Error saving settings:', err);

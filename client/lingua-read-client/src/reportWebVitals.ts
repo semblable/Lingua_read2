@@ -1,11 +1,10 @@
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type PerfMetric = any;
-type PerfEntryCallback = (metric: PerfMetric) => void;
+import type { Metric } from 'web-vitals';
+
+type PerfEntryCallback = (metric: Metric) => void;
 
 const reportWebVitals = (onPerfEntry?: PerfEntryCallback): void => {
   if (onPerfEntry && onPerfEntry instanceof Function) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (import('web-vitals') as any).then(({ getCLS, getFID, getFCP, getLCP, getTTFB }: any) => {
+    import('web-vitals').then(({ getCLS, getFID, getFCP, getLCP, getTTFB }) => {
       getCLS(onPerfEntry);
       getFID(onPerfEntry);
       getFCP(onPerfEntry);
@@ -16,4 +15,3 @@ const reportWebVitals = (onPerfEntry?: PerfEntryCallback): void => {
 };
 
 export default reportWebVitals;
- 

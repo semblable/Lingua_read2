@@ -147,8 +147,7 @@ const TermsPage = () => {
         }
     };
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const handleDeleteTerm = async (term: any) => {
+    const handleDeleteTerm = async (term: Word) => {
         if (!term?.wordId) return;
         if (!window.confirm(`Delete term "${term.term}"? This will also remove its SRS data and cannot be undone.`)) return;
 
@@ -188,8 +187,7 @@ const TermsPage = () => {
             header: true,
             skipEmptyLines: true,
             complete: async (results) => {
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                const termsToImport: any[] = [];
+                const termsToImport: Array<{ term: string; translation: string; status?: number }> = [];
                 let parseError: string | null = null;
                 const headers = (results.meta.fields ?? []).map((h: string) => h.toLowerCase());
                 const hasTerm = headers.includes('term');

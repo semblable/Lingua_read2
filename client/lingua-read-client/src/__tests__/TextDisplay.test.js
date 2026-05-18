@@ -31,50 +31,52 @@ import {
   logSentenceReadActivity
 } from '../utils/api';
 
-jest.mock('../utils/api', () => ({
-  getText: jest.fn(),
-  getTextSrt: jest.fn(),
-  getWordLinkingStatus: jest.fn(),
-  createWord: jest.fn(),
-  updateWord: jest.fn(),
-  deleteWord: jest.fn(),
-  updateLastRead: jest.fn(),
-  completeLesson: jest.fn(),
-  getBook: jest.fn(),
-  translateText: jest.fn(),
-  translateSelectionWithContext: jest.fn(),
-  translateSentence: jest.fn(),
-  explainSentence: jest.fn(),
-  translateFullText: jest.fn(),
-  updateUserSettings: jest.fn(),
-  batchTranslateWords: jest.fn(),
-  addTermsBatch: jest.fn(),
-  getLanguage: jest.fn(),
-  getAllLanguages: jest.fn(),
-  summarizeText: jest.fn(),
-  getSentenceProgress: jest.fn(),
-  logSentenceReadActivity: jest.fn(),
+vi.mock('../utils/api', () => ({
+  getText: vi.fn(),
+  getTextSrt: vi.fn(),
+  getWordLinkingStatus: vi.fn(),
+  createWord: vi.fn(),
+  updateWord: vi.fn(),
+  deleteWord: vi.fn(),
+  updateLastRead: vi.fn(),
+  completeLesson: vi.fn(),
+  getBook: vi.fn(),
+  translateText: vi.fn(),
+  translateSelectionWithContext: vi.fn(),
+  translateSentence: vi.fn(),
+  explainSentence: vi.fn(),
+  translateFullText: vi.fn(),
+  updateUserSettings: vi.fn(),
+  batchTranslateWords: vi.fn(),
+  addTermsBatch: vi.fn(),
+  getLanguage: vi.fn(),
+  getAllLanguages: vi.fn(),
+  summarizeText: vi.fn(),
+  getSentenceProgress: vi.fn(),
+  logSentenceReadActivity: vi.fn(),
   API_URL: 'http://test.local'
 }));
 
-jest.mock('../utils/bookmarks', () => ({
-  getBookmarkedSentences: jest.fn(() => []),
-  toggleBookmark: jest.fn()
+vi.mock('../utils/bookmarks', () => ({
+  getBookmarkedSentences: vi.fn(() => []),
+  toggleBookmark: vi.fn()
 }));
 
-const mockAudiobookPlayer = jest.fn();
+const mockAudiobookPlayer = vi.fn();
 
-jest.mock('../components/AudiobookPlayer', () => (props) => {
-  mockAudiobookPlayer(props);
-  return <div>Audio Player</div>;
-});
+vi.mock('../components/AudiobookPlayer', () => ({
+  default: (props) => {
+    mockAudiobookPlayer(props);
+    return <div>Audio Player</div>;
+  }
+}));
 
-jest.mock('../components/TranslationPopup', () => () => null);
+vi.mock('../components/TranslationPopup', () => ({ default: () => null }));
 
-jest.mock('../utils/browserTts', () => ({
-  speakText: jest.fn(() => Promise.resolve()),
-  cancelSpeech: jest.fn(),
-  isSpeechSynthesisSupported: jest.fn(() => true)
+vi.mock('../utils/browserTts', () => ({
+  speakText: vi.fn(() => Promise.resolve()),
+  cancelSpeech: vi.fn(),
+  isSpeechSynthesisSupported: vi.fn(() => true)
 }));
 
 const createSettingsValue = (settingOverrides = {}) => ({
@@ -98,8 +100,8 @@ const createSettingsValue = (settingOverrides = {}) => ({
   },
   loadingSettings: false,
   errorSettings: null,
-  updateSetting: jest.fn(),
-  refetchSettings: jest.fn()
+  updateSetting: vi.fn(),
+  refetchSettings: vi.fn()
 });
 
 const renderTextDisplay = (settingOverrides = {}) => render(
@@ -129,14 +131,14 @@ describe('TextDisplay', () => {
     window.matchMedia = window.matchMedia || function matchMedia() {
       return {
         matches: false,
-        addEventListener: jest.fn(),
-        removeEventListener: jest.fn()
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn()
       };
     };
   });
 
   beforeEach(() => {
-    jest.useFakeTimers();
+    vi.useFakeTimers();
     mockAudiobookPlayer.mockClear();
     getText.mockReset();
     getText.mockResolvedValue({
@@ -202,8 +204,8 @@ describe('TextDisplay', () => {
   });
 
   afterEach(() => {
-    jest.runOnlyPendingTimers();
-    jest.useRealTimers();
+    vi.runOnlyPendingTimers();
+    vi.useRealTimers();
     window.matchMedia = originalMatchMedia;
     window.getSelection = originalGetSelection;
   });
@@ -259,7 +261,7 @@ describe('TextDisplay', () => {
   });
 
   test('deleting a tracked word from Word Info removes it locally', async () => {
-    const confirmSpy = jest.spyOn(window, 'confirm').mockReturnValue(true);
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
     deleteWord.mockResolvedValue({});
     getText.mockResolvedValueOnce({
       textId: 1,
@@ -313,8 +315,8 @@ describe('TextDisplay', () => {
       rangeCount: 1,
       anchorNode: textContent,
       focusNode: textContent,
-      removeAllRanges: jest.fn(),
-      addRange: jest.fn(),
+      removeAllRanges: vi.fn(),
+      addRange: vi.fn(),
       toString: () => 'Hello world Another',
       getRangeAt: () => ({
         commonAncestorContainer: textContent,
@@ -324,11 +326,11 @@ describe('TextDisplay', () => {
         endOffset: 999
       })
     };
-    window.getSelection = jest.fn(() => mockSelection);
+    window.getSelection = vi.fn(() => mockSelection);
 
     act(() => {
       fireEvent.mouseUp(textContent);
-      jest.advanceTimersByTime(200);
+      vi.advanceTimersByTime(200);
     });
 
     await waitFor(() => {
@@ -358,10 +360,10 @@ describe('TextDisplay', () => {
   });
 
   test('mobile touchend translates the full selected text on release', async () => {
-    window.matchMedia = jest.fn().mockImplementation(() => ({
+    window.matchMedia = vi.fn().mockImplementation(() => ({
       matches: true,
-      addEventListener: jest.fn(),
-      removeEventListener: jest.fn()
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn()
     }));
 
     renderTextDisplay({ autoTranslateWords: true });
@@ -381,19 +383,19 @@ describe('TextDisplay', () => {
         commonAncestorContainer: textContent
       })
     };
-    window.getSelection = jest.fn(() => mockSelection);
+    window.getSelection = vi.fn(() => mockSelection);
 
     // selectionchange while dragging — should NOT trigger translation by itself.
     act(() => {
       document.dispatchEvent(new Event('selectionchange'));
-      jest.advanceTimersByTime(1000);
+      vi.advanceTimersByTime(1000);
     });
     expect(translateSelectionWithContext).not.toHaveBeenCalled();
 
     // Release fires touchend on the text container → translation kicks in.
     act(() => {
       fireEvent.touchEnd(textContent);
-      jest.advanceTimersByTime(1000);
+      vi.advanceTimersByTime(1000);
     });
 
     await waitFor(() => {
@@ -408,10 +410,10 @@ describe('TextDisplay', () => {
   });
 
   test('mobile document touchend finalizes native selection handles', async () => {
-    window.matchMedia = jest.fn().mockImplementation(() => ({
+    window.matchMedia = vi.fn().mockImplementation(() => ({
       matches: true,
-      addEventListener: jest.fn(),
-      removeEventListener: jest.fn()
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn()
     }));
 
     renderTextDisplay({ autoTranslateWords: true });
@@ -431,17 +433,17 @@ describe('TextDisplay', () => {
         commonAncestorContainer: textContent
       })
     };
-    window.getSelection = jest.fn(() => mockSelection);
+    window.getSelection = vi.fn(() => mockSelection);
 
     act(() => {
       document.dispatchEvent(new Event('selectionchange'));
-      jest.advanceTimersByTime(1000);
+      vi.advanceTimersByTime(1000);
     });
     expect(translateSelectionWithContext).not.toHaveBeenCalled();
 
     act(() => {
       fireEvent.touchEnd(document);
-      jest.advanceTimersByTime(1000);
+      vi.advanceTimersByTime(1000);
     });
 
     await waitFor(() => {
@@ -457,10 +459,10 @@ describe('TextDisplay', () => {
   });
 
   test('mobile initial long-press selection does not finalize on first selected word', async () => {
-    window.matchMedia = jest.fn().mockImplementation(() => ({
+    window.matchMedia = vi.fn().mockImplementation(() => ({
       matches: true,
-      addEventListener: jest.fn(),
-      removeEventListener: jest.fn()
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn()
     }));
 
     renderTextDisplay({ autoTranslateWords: true });
@@ -488,7 +490,7 @@ describe('TextDisplay', () => {
       })
     };
     let currentSelection = noSelection;
-    window.getSelection = jest.fn(() => currentSelection);
+    window.getSelection = vi.fn(() => currentSelection);
 
     act(() => {
       fireEvent.touchStart(textContent);
@@ -498,7 +500,7 @@ describe('TextDisplay', () => {
     act(() => {
       document.dispatchEvent(new Event('selectionchange'));
       fireEvent.touchEnd(textContent);
-      jest.advanceTimersByTime(1000);
+      vi.advanceTimersByTime(1000);
     });
 
     expect(translateSelectionWithContext).not.toHaveBeenCalled();
@@ -506,10 +508,10 @@ describe('TextDisplay', () => {
   });
 
   test('mobile drag selection finalizes when released', async () => {
-    window.matchMedia = jest.fn().mockImplementation(() => ({
+    window.matchMedia = vi.fn().mockImplementation(() => ({
       matches: true,
-      addEventListener: jest.fn(),
-      removeEventListener: jest.fn()
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn()
     }));
 
     renderTextDisplay({ autoTranslateWords: true });
@@ -537,7 +539,7 @@ describe('TextDisplay', () => {
       })
     };
     let currentSelection = noSelection;
-    window.getSelection = jest.fn(() => currentSelection);
+    window.getSelection = vi.fn(() => currentSelection);
 
     act(() => {
       fireEvent.touchStart(textContent);
@@ -548,7 +550,7 @@ describe('TextDisplay', () => {
       document.dispatchEvent(new Event('selectionchange'));
       fireEvent.touchMove(textContent);
       fireEvent.touchEnd(textContent);
-      jest.advanceTimersByTime(1000);
+      vi.advanceTimersByTime(1000);
     });
 
     await waitFor(() => {
@@ -564,10 +566,10 @@ describe('TextDisplay', () => {
   });
 
   test('mobile drag selection finalizes via stability timer when touchend is suppressed', async () => {
-    window.matchMedia = jest.fn().mockImplementation(() => ({
+    window.matchMedia = vi.fn().mockImplementation(() => ({
       matches: true,
-      addEventListener: jest.fn(),
-      removeEventListener: jest.fn()
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn()
     }));
 
     renderTextDisplay({ autoTranslateWords: true });
@@ -605,7 +607,7 @@ describe('TextDisplay', () => {
       })
     };
     let currentSelection = noSelection;
-    window.getSelection = jest.fn(() => currentSelection);
+    window.getSelection = vi.fn(() => currentSelection);
 
     act(() => {
       fireEvent.touchStart(textContent);
@@ -614,21 +616,21 @@ describe('TextDisplay', () => {
     currentSelection = initialSelection;
     act(() => {
       document.dispatchEvent(new Event('selectionchange'));
-      jest.advanceTimersByTime(50);
+      vi.advanceTimersByTime(50);
     });
     expect(translateSelectionWithContext).not.toHaveBeenCalled();
 
     currentSelection = grownSelection;
     act(() => {
       document.dispatchEvent(new Event('selectionchange'));
-      jest.advanceTimersByTime(50);
+      vi.advanceTimersByTime(50);
     });
     expect(translateSelectionWithContext).not.toHaveBeenCalled();
 
     // No touchend fires (iOS-style suppression). The stability timer should
     // finalize the selection on its own after the user stops adjusting.
     act(() => {
-      jest.advanceTimersByTime(700);
+      vi.advanceTimersByTime(700);
     });
 
     await waitFor(() => {
@@ -644,10 +646,10 @@ describe('TextDisplay', () => {
   });
 
   test('mobile repeated touchend for same selection does not loop the Word Info sheet', async () => {
-    window.matchMedia = jest.fn().mockImplementation(() => ({
+    window.matchMedia = vi.fn().mockImplementation(() => ({
       matches: true,
-      addEventListener: jest.fn(),
-      removeEventListener: jest.fn()
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn()
     }));
 
     renderTextDisplay({ autoTranslateWords: true });
@@ -667,12 +669,12 @@ describe('TextDisplay', () => {
         commonAncestorContainer: textContent
       })
     };
-    window.getSelection = jest.fn(() => mockSelection);
+    window.getSelection = vi.fn(() => mockSelection);
 
     // First release — should open the panel and translate.
     act(() => {
       fireEvent.touchEnd(textContent);
-      jest.advanceTimersByTime(1000);
+      vi.advanceTimersByTime(1000);
     });
 
     await waitFor(() => {
@@ -685,7 +687,7 @@ describe('TextDisplay', () => {
     act(() => {
       fireEvent.touchEnd(textContent);
       fireEvent.touchEnd(textContent);
-      jest.advanceTimersByTime(2000);
+      vi.advanceTimersByTime(2000);
     });
 
     expect(screen.getByText('Word Info')).toBeInTheDocument();
@@ -693,10 +695,10 @@ describe('TextDisplay', () => {
   });
 
   test('mobile selectionchange triggers translation when selection appears after touchend', async () => {
-    window.matchMedia = jest.fn().mockImplementation(() => ({
+    window.matchMedia = vi.fn().mockImplementation(() => ({
       matches: true,
-      addEventListener: jest.fn(),
-      removeEventListener: jest.fn()
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn()
     }));
 
     renderTextDisplay({ autoTranslateWords: true });
@@ -724,18 +726,18 @@ describe('TextDisplay', () => {
       })
     };
     let currentSelection = noSelection;
-    window.getSelection = jest.fn(() => currentSelection);
+    window.getSelection = vi.fn(() => currentSelection);
 
     act(() => {
       fireEvent.touchEnd(textContent);
-      jest.advanceTimersByTime(220);
+      vi.advanceTimersByTime(220);
     });
     expect(translateSelectionWithContext).not.toHaveBeenCalled();
 
     currentSelection = withSelection;
     act(() => {
       document.dispatchEvent(new Event('selectionchange'));
-      jest.advanceTimersByTime(120);
+      vi.advanceTimersByTime(120);
     });
 
     await waitFor(() => {
@@ -750,10 +752,10 @@ describe('TextDisplay', () => {
   });
 
   test('mobile collapsed selectionchange does not cancel delayed selection finalization', async () => {
-    window.matchMedia = jest.fn().mockImplementation(() => ({
+    window.matchMedia = vi.fn().mockImplementation(() => ({
       matches: true,
-      addEventListener: jest.fn(),
-      removeEventListener: jest.fn()
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn()
     }));
 
     renderTextDisplay({ autoTranslateWords: true });
@@ -781,19 +783,19 @@ describe('TextDisplay', () => {
       })
     };
     let currentSelection = noSelection;
-    window.getSelection = jest.fn(() => currentSelection);
+    window.getSelection = vi.fn(() => currentSelection);
 
     act(() => {
       fireEvent.touchEnd(textContent);
       document.dispatchEvent(new Event('selectionchange'));
-      jest.advanceTimersByTime(220);
+      vi.advanceTimersByTime(220);
     });
     expect(translateSelectionWithContext).not.toHaveBeenCalled();
 
     currentSelection = withSelection;
     act(() => {
       document.dispatchEvent(new Event('selectionchange'));
-      jest.advanceTimersByTime(120);
+      vi.advanceTimersByTime(120);
     });
 
     await waitFor(() => {
@@ -808,10 +810,10 @@ describe('TextDisplay', () => {
   });
 
   test('mobile no-selection touch does not leave selectionchange pending', async () => {
-    window.matchMedia = jest.fn().mockImplementation(() => ({
+    window.matchMedia = vi.fn().mockImplementation(() => ({
       matches: true,
-      addEventListener: jest.fn(),
-      removeEventListener: jest.fn()
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn()
     }));
 
     renderTextDisplay({ autoTranslateWords: true });
@@ -839,28 +841,28 @@ describe('TextDisplay', () => {
       })
     };
     let currentSelection = noSelection;
-    window.getSelection = jest.fn(() => currentSelection);
+    window.getSelection = vi.fn(() => currentSelection);
 
     act(() => {
       fireEvent.touchEnd(textContent);
-      jest.advanceTimersByTime(800);
+      vi.advanceTimersByTime(800);
     });
     expect(translateSelectionWithContext).not.toHaveBeenCalled();
 
     currentSelection = withSelection;
     act(() => {
       document.dispatchEvent(new Event('selectionchange'));
-      jest.advanceTimersByTime(120);
+      vi.advanceTimersByTime(120);
     });
 
     expect(translateSelectionWithContext).not.toHaveBeenCalled();
   });
 
   test('mobile: mouseup with no selection does not toggle the lesson header', async () => {
-    window.matchMedia = jest.fn().mockImplementation(() => ({
+    window.matchMedia = vi.fn().mockImplementation(() => ({
       matches: true,
-      addEventListener: jest.fn(),
-      removeEventListener: jest.fn()
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn()
     }));
 
     renderTextDisplay();
@@ -877,7 +879,7 @@ describe('TextDisplay', () => {
     // Simulate the path that previously toggled the mobile header: mouseup /
     // touchend on the reading surface with no live selection. Before the fix,
     // processWordSelection() would flip the header. After the fix, it must not.
-    window.getSelection = jest.fn(() => ({
+    window.getSelection = vi.fn(() => ({
       isCollapsed: true,
       rangeCount: 0,
       toString: () => ''
@@ -885,7 +887,7 @@ describe('TextDisplay', () => {
 
     act(() => {
       fireEvent.mouseUp(textContent);
-      jest.advanceTimersByTime(1000);
+      vi.advanceTimersByTime(1000);
     });
 
     // FAB still says "Lesson" — header did not flip to "Hide".
@@ -968,10 +970,10 @@ describe('TextDisplay', () => {
   });
 
   test('mobile context menu does not toggle bookmarks while selecting', async () => {
-    window.matchMedia = jest.fn().mockImplementation(() => ({
+    window.matchMedia = vi.fn().mockImplementation(() => ({
       matches: true,
-      addEventListener: jest.fn(),
-      removeEventListener: jest.fn()
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn()
     }));
 
     renderTextDisplay();
@@ -981,7 +983,7 @@ describe('TextDisplay', () => {
     const sentence = word.closest('.sentence');
     expect(sentence).not.toBeNull();
 
-    window.getSelection = jest.fn(() => ({
+    window.getSelection = vi.fn(() => ({
       isCollapsed: false,
       toString: () => 'Hello'
     }));
@@ -1147,7 +1149,7 @@ describe('TextDisplay', () => {
 
   test('switching audio lessons does not auto-play a segment during initial restore', async () => {
     let now = 1000;
-    jest.spyOn(Date, 'now').mockImplementation(() => {
+    vi.spyOn(Date, 'now').mockImplementation(() => {
       now += 1000;
       return now;
     });
@@ -1320,8 +1322,8 @@ describe('TextDisplay', () => {
       rangeCount: 1,
       anchorNode: transcriptContainer,
       focusNode: transcriptContainer,
-      removeAllRanges: jest.fn(),
-      addRange: jest.fn(),
+      removeAllRanges: vi.fn(),
+      addRange: vi.fn(),
       toString: () => 'Hola mundo',
       getRangeAt: () => ({
         commonAncestorContainer: transcriptContainer,
@@ -1331,11 +1333,11 @@ describe('TextDisplay', () => {
         endOffset: 999
       })
     };
-    window.getSelection = jest.fn(() => mockSelection);
+    window.getSelection = vi.fn(() => mockSelection);
 
     act(() => {
       fireEvent.mouseUp(transcriptContainer);
-      jest.advanceTimersByTime(200);
+      vi.advanceTimersByTime(200);
     });
 
     await waitFor(() => {
@@ -1404,7 +1406,7 @@ describe('TextDisplay', () => {
       bookId: null
     });
     getLanguage.mockResolvedValueOnce({ languageId: 5, name: 'Spanish', code: 'ES' });
-    global.fetch = jest.fn(() =>
+    global.fetch = vi.fn(() =>
       Promise.resolve({ ok: true, json: () => Promise.resolve([]) })
     );
 
@@ -1474,7 +1476,7 @@ describe('TextDisplay', () => {
       words: [],
       bookId: null
     });
-    global.fetch = jest.fn(() => new Promise(() => {})); // fetchAllLanguageWords hangs
+    global.fetch = vi.fn(() => new Promise(() => {})); // fetchAllLanguageWords hangs
 
     renderTextDisplay();
 
@@ -1490,7 +1492,7 @@ describe('TextDisplay', () => {
   test('parallel loading: handles getLanguage failure gracefully', async () => {
     // Intentional failure path — silence the console.error the component emits
     // so it doesn't pollute CI logs, and assert it was actually called.
-    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
     getText.mockResolvedValueOnce({
       textId: 1,
@@ -1504,7 +1506,7 @@ describe('TextDisplay', () => {
       bookId: null
     });
     getLanguage.mockRejectedValueOnce(new Error('Network error'));
-    global.fetch = jest.fn(() =>
+    global.fetch = vi.fn(() =>
       Promise.resolve({ ok: true, json: () => Promise.resolve([]) })
     );
 
@@ -1582,7 +1584,7 @@ describe('TextDisplay', () => {
 
   test('parallel loading: handles getBook failure gracefully', async () => {
     // Intentional failure path — silence the console.error and assert on it.
-    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
     getText.mockResolvedValueOnce({
       textId: 2,

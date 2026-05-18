@@ -131,7 +131,7 @@ describe('statistics components', () => {
   });
 
   test('LanguageStatsSection cards trigger drill-down when clicked', () => {
-    const onSelect = jest.fn();
+    const onSelect = vi.fn();
     render(
       <LanguageStatsSection
         languages={[{

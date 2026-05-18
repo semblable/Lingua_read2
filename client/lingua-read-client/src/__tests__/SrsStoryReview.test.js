@@ -7,15 +7,15 @@ import { SettingsContext } from '../contexts/SettingsContext';
 import '@testing-library/jest-dom';
 
 // Mock the API calls
-jest.mock('../utils/api', () => ({
-  getAllLanguages: jest.fn(),
-  getSrsStats: jest.fn(),
-  generateSrsStory: jest.fn(),
-  submitSrsReview: jest.fn(),
-  createWord: jest.fn(),
-  getWordsByLanguage: jest.fn(),
-  getSrsStories: jest.fn(),
-  translateSelectionWithContext: jest.fn(),
+vi.mock('../utils/api', () => ({
+  getAllLanguages: vi.fn(),
+  getSrsStats: vi.fn(),
+  generateSrsStory: vi.fn(),
+  submitSrsReview: vi.fn(),
+  createWord: vi.fn(),
+  getWordsByLanguage: vi.fn(),
+  getSrsStories: vi.fn(),
+  translateSelectionWithContext: vi.fn(),
 }));
 
 const mockSettings = {
@@ -27,14 +27,14 @@ const mockSettings = {
 const mockLocalStorage = (() => {
   let store = {};
   return {
-    getItem: jest.fn((key) => store[key] || null),
-    setItem: jest.fn((key, value) => {
+    getItem: vi.fn((key) => store[key] || null),
+    setItem: vi.fn((key, value) => {
       store[key] = value.toString();
     }),
-    removeItem: jest.fn((key) => {
+    removeItem: vi.fn((key) => {
       delete store[key];
     }),
-    clear: jest.fn(() => {
+    clear: vi.fn(() => {
       store = {};
     })
   };
@@ -71,7 +71,7 @@ describe('SrsStoryReview (micro-contexts)', () => {
   };
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     mockLocalStorage.clear();
     getAllLanguages.mockResolvedValue(mockLanguages);
     getSrsStats.mockResolvedValue(mockStats);

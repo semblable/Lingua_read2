@@ -5,7 +5,7 @@ import { MemoryRouter } from 'react-router-dom';
 import Setup from '../pages/Setup';
 import { useAuthStore } from '../utils/store';
 
-const mockSetup = jest.fn();
+const mockSetup = vi.fn();
 
 beforeEach(() => {
   mockSetup.mockReset();

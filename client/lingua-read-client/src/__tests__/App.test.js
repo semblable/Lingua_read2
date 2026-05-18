@@ -6,13 +6,13 @@ import App from '../App';
 import { useAuthStore } from '../utils/store';
 import { authStatus, getUserSettings, getRecentTexts } from '../utils/api';
 
-jest.mock('../utils/api', () => ({
-  authStatus: jest.fn(),
-  authLogin: jest.fn(),
-  authLogout: jest.fn(),
-  authSetup: jest.fn(),
-  getUserSettings: jest.fn(),
-  getRecentTexts: jest.fn()
+vi.mock('../utils/api', () => ({
+  authStatus: vi.fn(),
+  authLogin: vi.fn(),
+  authLogout: vi.fn(),
+  authSetup: vi.fn(),
+  getUserSettings: vi.fn(),
+  getRecentTexts: vi.fn()
 }));
 
 describe('App', () => {

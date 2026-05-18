@@ -385,9 +385,20 @@ app.Use(async (context, next) =>
 
 app.MapControllers();
 
-// Configure Kestrel to use port 5000
-app.Urls.Clear();
-app.Urls.Add("http://0.0.0.0:5000");
+// Configure Kestrel to use port 5000.
+// Wrapped in try/catch so design-time tooling that runs the assembly without
+// a live server (e.g. Swashbuckle.AspNetCore.Cli's `dotnet swagger tofile`,
+// used to generate TypeScript types for the frontend) doesn't crash on the
+// missing IServerAddressesFeature. Production behavior is unchanged.
+try
+{
+    app.Urls.Clear();
+    app.Urls.Add("http://0.0.0.0:5000");
+}
+catch (InvalidOperationException)
+{
+    // No IServerAddressesFeature available — running under design-time tooling.
+}
 
 app.Run();
 

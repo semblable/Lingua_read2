@@ -9,8 +9,9 @@ import { getTexts, deleteText } from '../utils/api';
 
 const TextList = () => {
   const { texts, loading, error, setTexts, setLoading, setError } = useTextsStore();
-  const [sortKey, setSortKey] = useState('createdAt'); // Default sort by creation date
-  const [sortOrder, setSortOrder] = useState('desc'); // Default descending (newest first)
+  // sortKey is constrained to the two UI-exposed columns; sortOrder is a 2-way switch.
+  const [sortKey, setSortKey] = useState<'title' | 'createdAt'>('createdAt');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
 
   // Persistent language filter
   const [languageFilter, setLanguageFilter] = useState(() => {
@@ -64,35 +65,30 @@ const TextList = () => {
       return tagMatch && typeMatch && languageMatch && statusMatch;
     });
 
-    // Sort filtered texts. sortKey is user-controlled (one of a few text fields),
-    // so index into the row generically; the type-safe alternative would be a switch.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const sorted = [...filtered].sort((a: any, b: any) => {
-      let valA = a[sortKey];
-      let valB = b[sortKey];
+    // Sort filtered texts. sortKey is constrained to 'title' | 'createdAt' so
+    // a[sortKey] resolves to string | undefined at compile time.
+    const sorted = [...filtered].sort((a, b) => {
+      const rawA = a[sortKey];
+      const rawB = b[sortKey];
 
-      // Handle date sorting
       if (sortKey === 'createdAt') {
-        valA = valA ? new Date(valA) : new Date(0);
-        valB = valB ? new Date(valB) : new Date(0);
+        const dateA = rawA ? new Date(rawA).getTime() : 0;
+        const dateB = rawB ? new Date(rawB).getTime() : 0;
+        if (dateA < dateB) return sortOrder === 'asc' ? -1 : 1;
+        if (dateA > dateB) return sortOrder === 'asc' ? 1 : -1;
+        return 0;
       }
 
-      // Handle string sorting with natural sort order
-      if (typeof valA === 'string' && typeof valB === 'string') {
-        const comparison = valA.localeCompare(valB, undefined, { numeric: true, sensitivity: 'base' });
-        return sortOrder === 'asc' ? comparison : -comparison;
-      }
-
-      // Default comparison for non-strings (e.g. dates)
-      if (valA < valB) return sortOrder === 'asc' ? -1 : 1;
-      if (valA > valB) return sortOrder === 'asc' ? 1 : -1;
-      return 0;
+      const strA = rawA ?? '';
+      const strB = rawB ?? '';
+      const comparison = strA.localeCompare(strB, undefined, { numeric: true, sensitivity: 'base' });
+      return sortOrder === 'asc' ? comparison : -comparison;
     });
 
     return { filteredAndSortedTexts: sorted, uniqueTags: tags, uniqueLanguages: languages };
   }, [texts, sortKey, sortOrder, tagFilter, typeFilter, languageFilter, statusFilter]); // Add filters to dependencies
 
-  const handleSort = (key: string) => {
+  const handleSort = (key: 'title' | 'createdAt') => {
     if (key === sortKey) {
       // Toggle order if same key is clicked
       setSortOrder(prevOrder => prevOrder === 'asc' ? 'desc' : 'asc');

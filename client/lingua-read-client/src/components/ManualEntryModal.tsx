@@ -108,9 +108,11 @@ function ManualEntryModal({ show, onHide, onSubmitSuccess }: ManualEntryModalPro
             onHide(); // Close modal on success
         } catch (err: unknown) {
             console.error("Error logging manual activity:", err);
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const e = err as any;
-            setError(e?.response?.data?.message || e?.message || 'An error occurred while saving the activity.');
+            const message =
+                (err as { response?: { data?: { message?: string } } })?.response?.data?.message ??
+                (err as { message?: string })?.message ??
+                'An error occurred while saving the activity.';
+            setError(message);
         } finally {
             setIsLoading(false);
         }

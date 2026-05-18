@@ -1,8 +1,8 @@
 import React from 'react';
 import { Button, Form, Alert, Spinner, Row, Col } from 'react-bootstrap';
+import type { ResponseOf } from '../../utils/fetchApi';
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type AudioStorageInfo = any;
+type AudioStorageInfo = ResponseOf<'/api/UserSettings/audio-storage-size', 'get'>;
 
 interface MessageBanner {
   type?: string;
@@ -57,12 +57,12 @@ const DataManagementSettings = ({
           <Row>
             <Col md={6}>
               <strong>Total Size:</strong>{' '}
-              {audioStorage.totalSizeGB > 0.1
-                ? `${audioStorage.totalSizeGB} GB`
-                : `${audioStorage.totalSizeMB} MB`}
+              {(audioStorage.totalSizeGB ?? 0) > 0.1
+                ? `${audioStorage.totalSizeGB ?? 0} GB`
+                : `${audioStorage.totalSizeMB ?? 0} MB`}
             </Col>
             <Col md={6}>
-              <strong>Total Files:</strong> {audioStorage.totalFiles}
+              <strong>Total Files:</strong> {audioStorage.totalFiles ?? 0}
             </Col>
             <Col xs={12}>
               <small className="text-muted mt-1 d-block">Maximum upload size per book: 5 GB</small>

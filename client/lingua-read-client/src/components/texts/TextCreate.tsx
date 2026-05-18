@@ -4,9 +4,9 @@ import { useNavigate } from 'react-router-dom';
 import { createText, getLanguages } from '../../utils/api';
 
 // Shape of items returned by getLanguages() — older /translation/languages
-// endpoint that returns short id+name pairs.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type LanguageOption = { id: number | string; name: string;[key: string]: any };
+// endpoint that returns short id+name pairs. Extra fields on the response are
+// ignored by this form, so the shape stays closed.
+type LanguageOption = { id: number | string; name: string };
 
 const TextCreate = () => {
   const [title, setTitle] = useState('');

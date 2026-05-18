@@ -140,11 +140,11 @@ const BookDetail = () => {
     setModalLoading(true);
     setModalError('');
     try {
-      // Fetch full text details needed for editing. TextDetailDto in
-      // swagger doesn't list `tag`, but the backend does return it — cast
-      // to access. Phase D will reconcile.
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const textData = (await getText(textId)) as any;
+      // Fetch full text details needed for editing. TextDetailDto in swagger
+      // doesn't list `tag`, but the backend does return it — narrow with an
+      // explicit shape (not `any`) and pull the field. Backend swagger fix is
+      // tracked separately.
+      const textData = (await getText(textId)) as Awaited<ReturnType<typeof getText>> & { tag?: string | null };
       setEditingText({
         textId: textData.textId,
         title: textData.title,

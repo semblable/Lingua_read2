@@ -24,6 +24,7 @@ import { extractTranslatedTextFromPairedTags } from '../utils/translationTags';
 import { cancelSpeech, isSpeechSynthesisSupported, speakText } from '../utils/browserTts';
 import { parseSrtContent, findSrtLineIndex } from '../utils/srtParser';
 import { styles, splitTextIntoSentenceSegments, prepareLanguageContext, consumeWordAt } from '../utils/readerText';
+import type { SentenceSegment } from '../utils/readerText';
 import PrimaryControls from '../components/reader/PrimaryControls';
 import SecondaryControls from '../components/reader/SecondaryControls';
 import ReaderLessonActions from '../components/reader/ReaderLessonActions';
@@ -1163,13 +1164,11 @@ const TextDisplay = () => {
     }
   }, [readingDensity]);
 
-  // sentenceSegments is heterogeneous: SRT-derived segments carry startTime/
-  // endTime/srtLineId; sentence-split segments carry mediaBlocks. The render
-  // code branches on `startTime != null`. Use a permissive union shape.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  type Segment = any;
-
-  const sentenceSegments = useMemo<Segment[]>(() => {
+  // sentenceSegments is a discriminated union: SRT-derived segments
+  // (type: 'audio') carry startTime/endTime/srtLineId; sentence-split segments
+  // (type: 'sentence' | 'title') carry mediaBlocks. Render code narrows on
+  // `seg.type === 'audio'`.
+  const sentenceSegments = useMemo<SentenceSegment[]>(() => {
     if (isAudioLesson && srtLines.length > 0) {
       return srtLines.map((line, index) => ({
         index,
@@ -1249,7 +1248,7 @@ const TextDisplay = () => {
       return;
     }
 
-    if (currentSentenceSegment.startTime == null || currentSentenceSegment.endTime == null) {
+    if (currentSentenceSegment.type !== 'audio') {
       speakCurrentSentence();
       return;
     }
@@ -1393,7 +1392,7 @@ const TextDisplay = () => {
     setVisibleTranslationIndex(null);
     setVisibleExplanationIndex(null);
 
-    if (isAudioLesson && currentSentenceSegment.startTime != null && currentSentenceSegment.endTime != null) {
+    if (isAudioLesson && currentSentenceSegment.type === 'audio') {
       setCurrentSrtLineId(currentSentenceSegment.srtLineId || null);
       if (!isAudioDrivenSync && skipInitialAudioLessonSegmentPlaybackRef.current) {
         skipInitialAudioLessonSegmentPlaybackRef.current = false;
@@ -1597,7 +1596,7 @@ const TextDisplay = () => {
       setWords(prevWords => prevWords.filter(w => w.wordId !== wordToDelete.wordId));
       setDisplayedWord((prev) => (
         prev?.wordId === wordToDelete.wordId
-          ? { term: wordToDelete.term, status: 0, translation: '', isNew: true }
+          ? { term: wordToDelete.term ?? undefined, status: 0, translation: '', isNew: true }
           : prev
       ));
       setTranslation('');

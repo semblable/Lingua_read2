@@ -35,8 +35,17 @@ const ChartCard = ({ title, summary, children }: { title: React.ReactNode; summa
   </Card>
 );
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type AnyActivityRow = Record<string, any>;
+// Row shape used across reading/listening/known-words activity series. The
+// input variants carry one of wordsRead/minutesListened/knownWords; the
+// comparison output adds dynamic previous-* keys (hence the index signature).
+type AnyActivityRow = {
+  date?: string;
+  label?: string;
+  wordsRead?: number | null;
+  minutesListened?: number | null;
+  knownWords?: number | null;
+  [key: string]: string | number | null | undefined;
+};
 
 const buildComparisonSeries = (
   current: AnyActivityRow[],

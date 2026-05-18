@@ -8,46 +8,43 @@ import GoalsCard from '../components/goals/GoalsCard';
 // Normalise keys from the API. The backend emits PascalCase camel-cased by
 // System.Text.Json defaults (camelCase), but older endpoints in the codebase
 // have historically been inconsistent, so tolerate both just in case.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const pick = (obj: any, ...keys: string[]): any => {
+const pick = <T = unknown>(obj: Record<string, unknown>, ...keys: string[]): T | undefined => {
   for (const k of keys) {
-    if (obj[k] !== undefined) return obj[k];
+    if (obj[k] !== undefined) return obj[k] as T;
   }
   return undefined;
 };
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const normaliseLang = (l: any) => ({
-  languageId: pick(l, 'languageId', 'LanguageId'),
-  languageCode: pick(l, 'languageCode', 'LanguageCode') || '',
-  languageName: pick(l, 'languageName', 'LanguageName') || 'Unknown',
-  knownWords: pick(l, 'knownWords', 'KnownWords') || 0,
-  totalWords: pick(l, 'totalWords', 'TotalWords') || 0,
-  cefrLevel: pick(l, 'cefrLevel', 'CefrLevel') || null,
-  nextCefrLevel: pick(l, 'nextCefrLevel', 'NextCefrLevel') || null,
+const normaliseLang = (l: Record<string, unknown>) => ({
+  languageId: pick<number>(l, 'languageId', 'LanguageId') ?? 0,
+  languageCode: pick<string>(l, 'languageCode', 'LanguageCode') || '',
+  languageName: pick<string>(l, 'languageName', 'LanguageName') || 'Unknown',
+  knownWords: pick<number>(l, 'knownWords', 'KnownWords') || 0,
+  totalWords: pick<number>(l, 'totalWords', 'TotalWords') || 0,
+  cefrLevel: pick<string>(l, 'cefrLevel', 'CefrLevel') || null,
+  nextCefrLevel: pick<string>(l, 'nextCefrLevel', 'NextCefrLevel') || null,
   knownWordsToNextLevel:
-    pick(l, 'knownWordsToNextLevel', 'KnownWordsToNextLevel') || 0,
+    pick<number>(l, 'knownWordsToNextLevel', 'KnownWordsToNextLevel') || 0,
   bandProgressPercent:
-    pick(l, 'bandProgressPercent', 'BandProgressPercent') || 0,
+    pick<number>(l, 'bandProgressPercent', 'BandProgressPercent') || 0,
   isCefrApproximate:
-    pick(l, 'isCefrApproximate', 'IsCefrApproximate') || false,
-  todayWordsRead: pick(l, 'todayWordsRead', 'TodayWordsRead') || 0,
+    pick<boolean>(l, 'isCefrApproximate', 'IsCefrApproximate') || false,
+  todayWordsRead: pick<number>(l, 'todayWordsRead', 'TodayWordsRead') || 0,
   todayListeningSeconds:
-    pick(l, 'todayListeningSeconds', 'TodayListeningSeconds') || 0,
-  weekWordsRead: pick(l, 'weekWordsRead', 'WeekWordsRead') || 0,
+    pick<number>(l, 'todayListeningSeconds', 'TodayListeningSeconds') || 0,
+  weekWordsRead: pick<number>(l, 'weekWordsRead', 'WeekWordsRead') || 0,
   weekListeningSeconds:
-    pick(l, 'weekListeningSeconds', 'WeekListeningSeconds') || 0,
+    pick<number>(l, 'weekListeningSeconds', 'WeekListeningSeconds') || 0,
   currentReadingStreakDays:
-    pick(l, 'currentReadingStreakDays', 'CurrentReadingStreakDays') || 0,
+    pick<number>(l, 'currentReadingStreakDays', 'CurrentReadingStreakDays') || 0,
   last14DaysWords:
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (pick(l, 'last14DaysWords', 'Last14DaysWords') || []).map((d: any) => ({
-      date: pick(d, 'date', 'Date'),
-      count: pick(d, 'count', 'Count') || 0,
+    (pick<Array<Record<string, unknown>>>(l, 'last14DaysWords', 'Last14DaysWords') ?? []).map((d) => ({
+      date: pick<string>(d, 'date', 'Date') ?? '',
+      count: pick<number>(d, 'count', 'Count') || 0,
     })),
   continueReadingTextId:
-    pick(l, 'continueReadingTextId', 'ContinueReadingTextId') || null,
-  lastActivityAt: pick(l, 'lastActivityAt', 'LastActivityAt') || null,
+    pick<number>(l, 'continueReadingTextId', 'ContinueReadingTextId') || null,
+  lastActivityAt: pick<string>(l, 'lastActivityAt', 'LastActivityAt') || null,
 });
 
 const formatMinutes = (seconds: number | null | undefined): string => {
@@ -80,18 +77,18 @@ const Dashboard = () => {
       setError('');
       try {
         const tz = -new Date().getTimezoneOffset();
-        const raw = await getDashboard(tz);
+        const raw = (await getDashboard(tz)) as Record<string, unknown>;
         if (cancelled) return;
         const languages = (
-          pick(raw, 'languages', 'Languages') || []
+          pick<Array<Record<string, unknown>>>(raw, 'languages', 'Languages') ?? []
         ).map(normaliseLang);
         setData({
-          totalKnownWords: pick(raw, 'totalKnownWords', 'TotalKnownWords') || 0,
+          totalKnownWords: pick<number>(raw, 'totalKnownWords', 'TotalKnownWords') || 0,
           totalWordsReadWeek:
-            pick(raw, 'totalWordsReadWeek', 'TotalWordsReadWeek') || 0,
+            pick<number>(raw, 'totalWordsReadWeek', 'TotalWordsReadWeek') || 0,
           totalListeningSecondsWeek:
-            pick(raw, 'totalListeningSecondsWeek', 'TotalListeningSecondsWeek') || 0,
-          totalLanguages: pick(raw, 'totalLanguages', 'TotalLanguages') || languages.length,
+            pick<number>(raw, 'totalListeningSecondsWeek', 'TotalListeningSecondsWeek') || 0,
+          totalLanguages: pick<number>(raw, 'totalLanguages', 'TotalLanguages') || languages.length,
           languages,
         });
       } catch (e) {
@@ -213,8 +210,7 @@ const Dashboard = () => {
       <GoalsCard defaultLanguageId={languages[0]?.languageId} />
 
       <Row className="g-3">
-        {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-        {languages.map((lang: any) => (
+        {languages.map((lang) => (
           <Col key={lang.languageId} md={6} xl={4}>
             <LanguageDashboardCard lang={lang} />
           </Col>

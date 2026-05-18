@@ -7,7 +7,10 @@ import {
 } from '../utils/api';
 import * as api from '../utils/api';
 import { SettingsContext } from '../contexts/SettingsContext';
+import type { Settings, SettingKey } from '../contexts/SettingsContext';
 import type { Language } from '../utils/api/languages';
+
+type PageSettings = Partial<Settings>;
 
 type AudioStorageInfo = {
   totalSizeBytes?: number;
@@ -46,10 +49,9 @@ const SECTIONS = [
 
 const UserSettings = () => {
   const browserTimezoneOffsetMinutes = -new Date().getTimezoneOffset();
-  // Local settings state — wider than the strict `Settings` type because this
-  // page initializes only the subset it persists; child components cast as-needed.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [settings, setSettings] = useState<any>({
+  // Local settings state holds the subset this page initializes/persists;
+  // missing keys are filled in by the API response on first load.
+  const [settings, setSettings] = useState<PageSettings>({
     theme: 'dark',
     textSize: 16,
     textFont: 'default',
@@ -234,8 +236,7 @@ const UserSettings = () => {
     const target = e.target as HTMLInputElement;
     const { name, value, type } = target;
     const checked = target.checked;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let processedValue: any = value;
+    let processedValue: string | number | boolean = value;
     if (type === 'checkbox') {
       processedValue = checked;
     } else if (
@@ -245,10 +246,10 @@ const UserSettings = () => {
       name === 'defaultLanguageId' || name === 'discordWeeklyReportHourLocal' ||
       name === 'discordTimezoneOffsetMinutes'
     ) {
-      processedValue = name === 'lineSpacing' ? parseFloat(value) : parseInt(value, 10);
-      if (isNaN(processedValue)) processedValue = 0;
+      const parsed = name === 'lineSpacing' ? parseFloat(value) : parseInt(value, 10);
+      processedValue = isNaN(parsed) ? 0 : parsed;
     }
-    setSettings((prev: any) => ({ ...prev, [name]: processedValue }));
+    setSettings((prev) => ({ ...prev, [name]: processedValue }));
     setHasChanges(true);
   };
 
@@ -263,7 +264,7 @@ const UserSettings = () => {
       const persistedSettings = { ...settings, ...savedSettings };
 
       // Apply theme
-      localStorage.setItem('theme', persistedSettings.theme);
+      localStorage.setItem('theme', persistedSettings.theme ?? 'dark');
       document.body.classList.remove('light-theme', 'dark-theme', 'classic-dark-theme');
       if (persistedSettings.theme === 'dark') {
         document.body.classList.add('dark-theme');
@@ -277,7 +278,7 @@ const UserSettings = () => {
       }
 
       // Update context and localStorage for all settings
-      const settingsToSync = [
+      const settingsToSync: SettingKey[] = [
         'theme', 'textSize', 'textFont', 'readingUiMode', 'readerContentWidth',
         'readingDensity', 'showWordInfoPanel', 'readerParagraphIndent', 'readerTextAlignment',
         'leftPanelWidth', 'autoTranslateWords', 'autoTranslateOnOpen', 'pauseOnWordClick', 'highlightKnownWords',
@@ -294,15 +295,13 @@ const UserSettings = () => {
         'customTranslationPrompt', 'customExplanationPrompt',
         'customStoryPrompt', 'customSummarizationPrompt'
       ];
-      settingsToSync.forEach(key => {
-        // settingsToSync is a string[] of dynamic keys; cast at the call
-        // boundary so updateSetting's keyof Settings constraint is satisfied.
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        updateSetting(key as any, (persistedSettings as any)[key]);
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const val = (persistedSettings as any)[key];
-        localStorage.setItem(key, val != null ? val.toString() : '');
-      });
+      const syncSetting = <K extends SettingKey>(key: K) => {
+        const val = persistedSettings[key];
+        if (val === undefined || val === null) return;
+        updateSetting(key, val as Settings[K]);
+        localStorage.setItem(key, String(val));
+      };
+      settingsToSync.forEach(syncSetting);
       localStorage.setItem('cachedSettings', JSON.stringify(persistedSettings));
 
       setSuccess(true);
@@ -546,7 +545,7 @@ const UserSettings = () => {
                 <span className="settings-section-header-icon">{'\uD83C\uDFA8'}</span>
                 <span>Appearance</span>
               </div>
-              <AppearanceSettings settings={settings} handleChange={handleChange} />
+              <AppearanceSettings settings={settings as Settings} handleChange={handleChange} />
             </div>
 
             {/* Reading */}
@@ -556,7 +555,7 @@ const UserSettings = () => {
                 <span>Reading</span>
               </div>
               <ReadingSettings
-                settings={settings}
+                settings={settings as Settings}
                 handleChange={handleChange}
                 languages={languages as Array<{ languageId: number; name: string; code?: string | null }>}
                 loadingLanguages={loadingLanguages}
@@ -569,7 +568,7 @@ const UserSettings = () => {
                 <span className="settings-section-header-icon">{'\u2699\uFE0F'}</span>
                 <span>Navigation</span>
               </div>
-              <NavigationSettings settings={settings} handleChange={handleChange} />
+              <NavigationSettings settings={settings as Settings} handleChange={handleChange} />
             </div>
 
             {/* AI Provider */}
@@ -579,7 +578,7 @@ const UserSettings = () => {
                 <span>AI Provider</span>
               </div>
               <AiProviderSettings
-                settings={settings}
+                settings={settings as Settings}
                 handleChange={handleChange}
                 testingOpenRouter={testingOpenRouter}
                 openRouterTestResult={openRouterTestResult}
@@ -594,7 +593,7 @@ const UserSettings = () => {
                 <span>Discord Reports</span>
               </div>
               <DiscordSettings
-                settings={settings}
+                settings={settings as Settings}
                 handleChange={handleChange}
                 onSetBrowserTimezone={handleSetBrowserTimezone}
                 reportPeriod={reportPeriod}
@@ -614,7 +613,7 @@ const UserSettings = () => {
                 <span>Hardcover</span>
               </div>
               <HardcoverSettings
-                settings={settings}
+                settings={settings as Settings}
                 handleChange={handleChange}
                 testingHardcover={testingHardcover}
                 hardcoverTestResult={hardcoverTestResult}

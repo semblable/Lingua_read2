@@ -126,13 +126,14 @@ const BatchAudioCreate = () => {
             return { error: 'Invalid Format (expected base + lang suffix like __fr, _fr, -fr, .fr)', originalFullName: srtFileName };
         };
 
-        const mp3sByNormalizedBase = new Map();
-        const srtsByNormalizedBase = new Map();
-        const problematicFiles = new Map(); // Store problems: fileName -> Set<reason>
+        type SrtFileEntry = SrtInfo & { file: File };
+        const mp3sByNormalizedBase = new Map<string, File[]>();
+        const srtsByNormalizedBase = new Map<string, SrtFileEntry[]>();
+        const problematicFiles = new Map<string, Set<string>>(); // Store problems: fileName -> Set<reason>
 
         const addProblem = (fileName: string, reason: string) => {
             if (!problematicFiles.has(fileName)) problematicFiles.set(fileName, new Set());
-            problematicFiles.get(fileName).add(reason);
+            problematicFiles.get(fileName)!.add(reason);
         };
 
         // 1. Process and Normalize MP3s
@@ -140,7 +141,7 @@ const BatchAudioCreate = () => {
             const rawBaseName = mp3File.name.replace(/\.mp3$/i, '').trim(); // Trim whitespace
             const normalized = normalizeBaseName(rawBaseName);
             if (!mp3sByNormalizedBase.has(normalized)) mp3sByNormalizedBase.set(normalized, []);
-            mp3sByNormalizedBase.get(normalized).push(mp3File);
+            mp3sByNormalizedBase.get(normalized)!.push(mp3File);
         });
 
         // 2. Process, Validate Format, and Normalize SRTs
@@ -152,7 +153,7 @@ const BatchAudioCreate = () => {
                 const normalized = normalizeBaseName(info.baseName);
                 if (!srtsByNormalizedBase.has(normalized)) srtsByNormalizedBase.set(normalized, []);
                 // Store the original file along with extracted info
-                srtsByNormalizedBase.get(normalized).push({ ...info, file: srtFile });
+                srtsByNormalizedBase.get(normalized)!.push({ ...info, file: srtFile });
             }
         });
 
@@ -162,8 +163,7 @@ const BatchAudioCreate = () => {
         const ambiguousMatches = new Set(); // Store normalized names with >1 MP3 or >1 SRT
 
         // Helper function to find fuzzy matches for truncated filenames
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const findFuzzyMatch = (targetNormalized: string, candidateMap: Map<string, any[]>): any[] | null => {
+        const findFuzzyMatch = <T,>(targetNormalized: string, candidateMap: Map<string, T[]>): T[] | null => {
             // Try exact match first
             if (candidateMap.has(targetNormalized)) {
                 return candidateMap.get(targetNormalized) ?? null;
@@ -191,14 +191,12 @@ const BatchAudioCreate = () => {
             let isAmbiguous = false;
             if (mp3List.length > 1) {
                 ambiguousMatches.add(normalizedName);
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                mp3List.forEach((f: any) => addProblem(f.name, `Ambiguous Match (multiple MP3s normalize to '${normalizedName}')`));
+                mp3List.forEach((f) => addProblem(f.name, `Ambiguous Match (multiple MP3s normalize to '${normalizedName}')`));
                 isAmbiguous = true;
             }
             if (matchingSrtList && matchingSrtList.length > 1) {
                 ambiguousMatches.add(normalizedName);
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                matchingSrtList.forEach((s: any) => addProblem(s.originalFullName, `Ambiguous Match (multiple SRTs normalize to '${normalizedName}')`));
+                matchingSrtList.forEach((s) => addProblem(s.originalFullName, `Ambiguous Match (multiple SRTs normalize to '${normalizedName}')`));
                 isAmbiguous = true;
             }
 
@@ -218,8 +216,7 @@ const BatchAudioCreate = () => {
 
         // 4. Identify Unpaired SRTs (that weren't ambiguous or invalid format)
         srtsByNormalizedBase.forEach((srtList, normalizedName) => {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            srtList.forEach((srtInfo: any) => {
+            srtList.forEach((srtInfo) => {
                 // Check if this SRT was successfully paired OR if it was already flagged (e.g., ambiguous, invalid format)
                 if (!pairedSrts.has(srtInfo.originalFullName) && !problematicFiles.has(srtInfo.originalFullName)) {
                     // Try fuzzy matching before marking as missing

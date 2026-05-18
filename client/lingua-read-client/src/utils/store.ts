@@ -178,41 +178,41 @@ export type SelectedItem = { id: number; type: SelectableType };
 
 export type LibraryFolder = {
   folderId?: number;
-  name?: string;
-  color?: string;
+  name?: string | null;
+  color?: string | null;
   itemCount?: number;
   parentFolderId?: number | null;
 };
 
 export type LibraryBook = {
   bookId?: number;
-  title?: string;
+  title?: string | null;
   coverImagePath?: string | null;
   isFinished?: boolean;
-  languageName?: string;
+  languageName?: string | null;
   partCount?: number;
   finishedPartCount?: number;
   completionPercentage?: number;
   totalWords?: number;
   unknownWords?: number;
   unknownWordPercentage?: number | null;
-  tags?: string[];
+  tags?: string[] | null;
   lastReadTextId?: number | null;
 };
 
 export type LibraryText = {
   textId?: number;
-  title?: string;
+  title?: string | null;
   isAudioLesson?: boolean;
   isFinished?: boolean;
-  languageName?: string;
-  tag?: string;
+  languageName?: string | null;
+  tag?: string | null;
   createdAt?: string;
   totalWords?: number;
   unknownWords?: number;
   unknownWordPercentage?: number | null;
 };
-export type Breadcrumb = { folderId: number | null; name: string };
+export type Breadcrumb = { folderId?: number | null; name?: string | null };
 
 export type LibraryContentsPayload = {
   currentFolder: LibraryFolder | null;

@@ -8,7 +8,9 @@ import {
   PointerSensor,
   useSensor,
   useSensors,
-  DragOverlay
+  DragOverlay,
+  type DragStartEvent,
+  type DragEndEvent
 } from '@dnd-kit/core';
 import {
   SortableContext,
@@ -82,10 +84,13 @@ const Library = () => {
     setError(null);
     try {
       const data = await getLibraryContents(currentFolderId);
-      // The API returns optional fields; cast to the store payload shape and
-      // let setContents normalize the missing fields.
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      setContents(data as any);
+      setContents({
+        currentFolder: data.currentFolder ?? null,
+        breadcrumbs: data.breadcrumbs ?? [],
+        folders: data.folders ?? [],
+        books: data.books ?? [],
+        texts: data.texts ?? [],
+      });
     } catch (err) {
       const message = err instanceof Error ? err.message : '';
       setError(message || 'Failed to load library');
@@ -132,8 +137,7 @@ const Library = () => {
   // Get unique tags from current items
   const uniqueTags = useMemo(() => {
     const tags = new Set<string>();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    books.forEach(b => b.tags?.forEach((t: any) => tags.add(t)));
+    books.forEach(b => b.tags?.forEach((t) => tags.add(t)));
     texts.forEach(t => t.tag && tags.add(t.tag));
     return [...tags].sort();
   }, [books, texts]);
@@ -307,13 +311,11 @@ const Library = () => {
   }, [lastClickedItem, flatItems, selectedItems, setSelectedItems, toggleSelectItem, setLastClickedItem]);
 
   // Drag and drop handlers
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const handleDragStart = (event: any) => {
-    setActiveId(event.active.id);
+  const handleDragStart = (event: DragStartEvent) => {
+    setActiveId(String(event.active.id));
   };
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const handleDragEnd = async (event: any) => {
+  const handleDragEnd = async (event: DragEndEvent) => {
     setActiveId(null);
     const { active, over } = event;
     if (!over || active.id === over.id) return;
@@ -343,8 +345,8 @@ const Library = () => {
     }
 
     // Otherwise, reorder items within the same folder
-    const oldIndex = sortableIds.indexOf(active.id);
-    const newIndex = sortableIds.indexOf(over.id);
+    const oldIndex = sortableIds.indexOf(String(active.id));
+    const newIndex = sortableIds.indexOf(String(over.id));
     if (oldIndex === -1 || newIndex === -1) return;
 
     // Build reorder payload

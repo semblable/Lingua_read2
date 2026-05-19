@@ -152,7 +152,6 @@ function LanguageForm({ language, onSave, onCancel, onDelete, onResetContent }: 
         e.preventDefault();
         setIsSaving(true);
         setError(null);
-        console.log("Submitting form data:", formData);
 
         try {
             // Prepare payload - ensure collections are included. Cast through

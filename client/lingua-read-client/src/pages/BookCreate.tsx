@@ -116,7 +116,6 @@ const BookCreate = () => {
       // --- Start: Audiobook Upload Logic ---
       let audioUploadFailed = false;
       if (audioFiles.length > 0 && newBook?.bookId) {
-        console.log(`Book created/uploaded (ID: ${newBook.bookId}), now uploading ${audioFiles.length} audio tracks...`);
         setAudioUploadError('');
         setLoadingText(`Uploading ${audioFiles.length} audio track${audioFiles.length > 1 ? 's' : ''}...`);
         setUploadProgress(0);
@@ -127,7 +126,6 @@ const BookCreate = () => {
           await uploadAudiobookTracks(newBook.bookId, audioFormData, (progress) => {
             setUploadProgress(progress);
           });
-          console.log(`All ${audioFiles.length} audio tracks uploaded successfully.`);
         } catch (audioErr) {
           console.error('Failed to upload audio tracks:', audioErr);
           audioUploadFailed = true;

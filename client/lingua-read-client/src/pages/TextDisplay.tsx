@@ -566,7 +566,6 @@ const TextDisplay = () => {
       .sort((a, b) => (b.term?.length ?? 0) - (a.term?.length ?? 0));
   }, [words]);
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   const getWordData = useCallback((word: string | null | undefined) => {
     if (!word) return null;
     return wordMap.get(word.toLowerCase()) || null;
@@ -1491,7 +1490,6 @@ const TextDisplay = () => {
       });
     }
     return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [languageWordsLoaded, text, globalSettings.autoTranslateOnOpen]);
 
   const handleSetWordStatusFromKeyboard = useCallback(

@@ -126,31 +126,25 @@ const ActivityCharts = ({
   const hasListeningComparison = showComparison && prevListeningByDate.length > 0;
   const hasKnownWordsComparison = showComparison && prevKnownWordsByDate.length > 0;
 
-  const cumulate = (series: AnyActivityRow[], key: string): AnyActivityRow[] =>
-    (isCumulative ? toCumulative(series, key) : series);
-
   const readingSeries = useMemo(() => {
-    const cur = cumulate(readingByDate, 'wordsRead');
+    const cur = isCumulative ? toCumulative(readingByDate, 'wordsRead') : readingByDate;
     if (!hasReadingComparison) return cur;
-    const prev = cumulate(prevReadingByDate, 'wordsRead');
+    const prev = isCumulative ? toCumulative(prevReadingByDate, 'wordsRead') : prevReadingByDate;
     return buildComparisonSeries(cur, prev, 'wordsRead', 'previousWordsRead');
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasReadingComparison, readingByDate, prevReadingByDate, isCumulative]);
 
   const listeningSeries = useMemo(() => {
-    const cur = cumulate(listeningByDate, 'minutesListened');
+    const cur = isCumulative ? toCumulative(listeningByDate, 'minutesListened') : listeningByDate;
     if (!hasListeningComparison) return cur;
-    const prev = cumulate(prevListeningByDate, 'minutesListened');
+    const prev = isCumulative ? toCumulative(prevListeningByDate, 'minutesListened') : prevListeningByDate;
     return buildComparisonSeries(cur, prev, 'minutesListened', 'previousMinutesListened');
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasListeningComparison, listeningByDate, prevListeningByDate, isCumulative]);
 
   const knownWordsSeries = useMemo(() => {
-    const cur = cumulate(knownWordsByDate, 'knownWords');
+    const cur = isCumulative ? toCumulative(knownWordsByDate, 'knownWords') : knownWordsByDate;
     if (!hasKnownWordsComparison) return cur;
-    const prev = cumulate(prevKnownWordsByDate, 'knownWords');
+    const prev = isCumulative ? toCumulative(prevKnownWordsByDate, 'knownWords') : prevKnownWordsByDate;
     return buildComparisonSeries(cur, prev, 'knownWords', 'previousKnownWords');
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasKnownWordsComparison, knownWordsByDate, prevKnownWordsByDate, isCumulative]);
 
   const languageVocabulary = languages.map((language: LanguageStatsRow) => ({

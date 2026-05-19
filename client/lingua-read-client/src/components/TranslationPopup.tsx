@@ -23,7 +23,6 @@ const parsePairedTranslation = (taggedText: string | undefined | null): Sentence
   }
   // Sort by number just in case the LLM doesn't return them in order
   pairs.sort((a, b) => a.number - b.number);
-  console.log('[TranslationPopup] Parsed pairs:', pairs); // Debug log
   return pairs;
 };
 
@@ -167,7 +166,6 @@ const TranslationPopup = ({
 
     // Cleanup function to disconnect the observer
     return () => {
-      console.log('[TranslationPopup] Disconnecting ResizeObserver.');
       observer.disconnect();
     };
   }, [sentencePairs, isTranslating]); // Rerun when pairs change or translation finishes

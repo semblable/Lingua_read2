@@ -386,7 +386,6 @@ export const useAudiobookPlayer = ({
       nextSrc
     };
 
-    console.log(`[AudioPlayer] Loading Track: ${src}`);
     setError('');
     audio.src = src;
     audio.load();
@@ -444,10 +443,8 @@ export const useAudiobookPlayer = ({
 
   const handleEnded = useCallback(() => {
     if (isBookMode && currentTrackIndex < playlist.length - 1) {
-      console.log('[AudioPlayer] Track ended, advancing...');
       setCurrentTrackIndex(prev => prev + 1);
     } else {
-      console.log('[AudioPlayer] Finished.');
       syncPlaybackState(false);
     }
   }, [isBookMode, currentTrackIndex, playlist.length, syncPlaybackState]);
@@ -580,7 +577,6 @@ export const useAudiobookPlayer = ({
       tracker.ensureCheckpoint(Date.now());
       wasPlayingRef.current = true;
     } else if (wasPlayingRef.current) {
-      console.log('[AudioPlayer] Paused - Saving progress.');
       flushListeningActivity(true);
       tracker.clearCheckpoint();
       saveProgress(true);
@@ -593,7 +589,6 @@ export const useAudiobookPlayer = ({
       // Refs read on cleanup so the LATEST callbacks fire — copying `.current`
       // into a local would defeat the purpose. Matches pre-split source-line
       // 832-839 of the legacy hook.
-      console.log('[AudioPlayer] Unmounting - Saving progress.');
       flushListeningActivityRef.current?.(true);
       listeningTrackerRef.current.clearCheckpoint();
       saveProgressRef.current?.(true);
@@ -639,7 +634,6 @@ export const useAudiobookPlayer = ({
     if (!d) return;
 
     const newTime = Math.max(0, Math.min(time, d));
-    console.log(`[AudioPlayer] Seeking to ${newTime}s (Requested: ${time}s, Duration: ${d}s)`);
     if (segmentPlaybackRef.current.active) {
       resetSegmentPlayback();
     }
@@ -653,14 +647,12 @@ export const useAudiobookPlayer = ({
 
   const goToNextTrack = useCallback(() => {
     if (currentTrackIndex < playlist.length - 1) {
-      console.log('[AudioPlayer] Manually advancing to next track.');
       setCurrentTrackIndex(prev => prev + 1);
     }
   }, [currentTrackIndex, playlist.length]);
 
   const goToPrevTrack = useCallback(() => {
     if (currentTrackIndex > 0) {
-      console.log('[AudioPlayer] Manually going to previous track.');
       setCurrentTrackIndex(prev => prev - 1);
     }
   }, [currentTrackIndex]);

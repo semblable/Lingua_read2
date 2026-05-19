@@ -16,10 +16,6 @@ export const createWord = async (
   sentence: string | null = null
 ): Promise<unknown> => {
   try {
-    console.log(
-      `[API] Creating word: "${term}" with status: ${status}, sentence: "${sentence || 'N/A'}"`
-    );
-
     const payload = {
       textId: parseInt(String(textId), 10),
       term: term.trim(),

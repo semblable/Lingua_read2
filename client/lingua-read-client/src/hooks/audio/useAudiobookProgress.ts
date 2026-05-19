@@ -94,7 +94,6 @@ export const useAudiobookProgress = ({
       return false;
     }
 
-    console.log(`[AudioPlayer] Seeking to ${initialSeekRef.current}`);
     audio.currentTime = initialSeekRef.current;
     setCurrentTime(initialSeekRef.current);
     restoredContentKeyRef.current = contentKey;
@@ -145,7 +144,6 @@ export const useAudiobookProgress = ({
             if (idx !== -1) {
               savedTrackIndex = idx;
               savedPosition = progress.currentAudiobookPosition || 0;
-              console.log(`[AudioPlayer] Restoring Book progress: Track ${idx}, Pos ${savedPosition}`);
             }
           }
           if (progress?.updatedAt) {
@@ -159,7 +157,6 @@ export const useAudiobookProgress = ({
           const progress = await getAudioLessonProgress(textId);
           if (progress && progress.currentPosition != null && progress.currentPosition > 0) {
             savedPosition = progress.currentPosition;
-            console.log(`[AudioPlayer] Restoring Lesson progress: Pos ${savedPosition}`);
           }
           if (progress?.updatedAt) {
             const parsed = new Date(progress.updatedAt).getTime();
@@ -192,7 +189,6 @@ export const useAudiobookProgress = ({
                 }
 
                 if (!isBookMode || (Number.isInteger(localTrackIndex) && localTrackIndex >= 0 && localTrackIndex < sourceTracks.length)) {
-                  console.log(`[AudioPlayer] Restoring from localStorage: ${localPosition}`);
                   savedPosition = localPosition;
                   savedTrackIndex = localTrackIndex;
                 }
@@ -218,7 +214,6 @@ export const useAudiobookProgress = ({
             if (localRaw) {
               const localData = JSON.parse(localRaw);
               if (localData.position > 0) {
-                console.log(`[AudioPlayer] Server unreachable, restoring from localStorage: ${localData.position}`);
                 if (isBookMode && localData.trackIndex != null) {
                   setCurrentTrackIndex(localData.trackIndex);
                 }
@@ -304,7 +299,6 @@ export const useAudiobookProgress = ({
   useEffect(() => {
     if (isPlaying && isInitialized && !justStartedPlayingRef.current) {
       justStartedPlayingRef.current = true;
-      console.log('[AudioPlayer] Play started - saving position for cross-device sync');
       playbackStartedContentKeyRef.current = contentKey;
       saveProgress(true);
       lastServerUpdateRef.current = Date.now();
@@ -342,8 +336,6 @@ export const useAudiobookProgress = ({
             return;
           }
 
-          console.log('[AudioPlayer] Cross-device sync: detected newer remote position');
-
           let newPosition: number | null = null;
           let newTrackIndex = currentTrackIndex;
 
@@ -366,7 +358,6 @@ export const useAudiobookProgress = ({
 
             const audio = audioRef.current;
             if (audio && Math.abs(audio.currentTime - newPosition) > 2) {
-              console.log(`[AudioPlayer] Cross-device sync: seeking to ${newPosition}s`);
               audio.currentTime = newPosition;
               setCurrentTime(newPosition);
             }

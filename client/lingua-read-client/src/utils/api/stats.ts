@@ -43,7 +43,6 @@ export const getReadingActivity = async (
     if (offset && offset > 0) {
       params.append('offset', String(offset));
     }
-    console.log(`[API] Getting reading activity with params: ${params.toString()}`);
     const data = await fetchApi<ReadingActivityResponse>(
       `/users/reading-activity?${params.toString()}`
     );
@@ -73,7 +72,6 @@ export const getListeningActivity = async (
     if (offset && offset > 0) {
       params.append('offset', String(offset));
     }
-    console.log(`[API] Fetching listening activity with params: ${params.toString()}`);
     const data = await fetchApi<ListeningActivityResponse>(
       `/users/listening-activity?${params.toString()}`
     );
@@ -114,7 +112,6 @@ export const getKnownWordsActivity = async (
 };
 
 export const resetUserStatistics = (): Promise<unknown> => {
-  console.log('[API] Resetting user statistics.');
   return fetchApi('/users/reset-statistics', {
     method: 'POST'
   });

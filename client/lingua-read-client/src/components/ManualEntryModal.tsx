@@ -26,7 +26,6 @@ function ManualEntryModal({ show, onHide, onSubmitSuccess }: ManualEntryModalPro
     useEffect(() => {
         if (show && languages.length === 0) {
             const fetchLanguages = async () => {
-                // console.log('[ManualEntryModal] Fetching languages...'); // DEBUG REMOVED
                 setIsFetchingLanguages(true);
                 setError('');
                 try {

@@ -61,12 +61,19 @@ const knownWordsResponse = {
   knownWordsByLanguage: [{ languageId: 1, languageName: 'French', totalKnown: 400 }]
 };
 
+// Casting to Awaited<ReturnType<...>> avoids restating the swagger-derived
+// shape in every fixture — we only need the fields the hook actually reads.
+type ReadingResult = Awaited<ReturnType<typeof getReadingActivity>>;
+type ListeningResult = Awaited<ReturnType<typeof getListeningActivity>>;
+type KnownWordsResult = Awaited<ReturnType<typeof getKnownWordsActivity>>;
+type StatsResult = Awaited<ReturnType<typeof getUserStatistics>>;
+
 const setHappyPath = () => {
   mockedTestApiConnection.mockResolvedValue(true);
-  mockedGetUserStatistics.mockResolvedValue(statsResponse);
-  mockedGetReadingActivity.mockResolvedValue(readingResponse);
-  mockedGetListeningActivity.mockResolvedValue(listeningResponse);
-  mockedGetKnownWordsActivity.mockResolvedValue(knownWordsResponse);
+  mockedGetUserStatistics.mockResolvedValue(statsResponse as unknown as StatsResult);
+  mockedGetReadingActivity.mockResolvedValue(readingResponse as unknown as ReadingResult);
+  mockedGetListeningActivity.mockResolvedValue(listeningResponse as unknown as ListeningResult);
+  mockedGetKnownWordsActivity.mockResolvedValue(knownWordsResponse as unknown as KnownWordsResult);
 };
 
 describe('useStatisticsData', () => {
@@ -122,7 +129,8 @@ describe('useStatisticsData', () => {
 
   test('surfaces an error message when getUserStatistics returns null', async () => {
     const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    mockedGetUserStatistics.mockResolvedValue(null);
+    // Hook handles a null payload at runtime even though the API type forbids it.
+    mockedGetUserStatistics.mockResolvedValue(null as unknown as StatsResult);
     const { result } = renderHook(() => useStatisticsData({ period: 'last_week', languageId: 'all' }));
     await waitFor(() => expect(result.current.loading).toBe(false));
     expect(result.current.error).toMatch(/No statistics data available/);

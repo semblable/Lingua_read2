@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { Container, Row, Col, Card, Button, Spinner, Alert, Form, ButtonGroup, Badge } from 'react-bootstrap';
-import LinkButton from '../components/shared/LinkButton';
+import { LinkContainer } from 'react-router-bootstrap';
 import { useTextsStore } from '../utils/store';
 import type { StoredText } from '../utils/store';
 import { getTexts, deleteText } from '../utils/api';
@@ -181,12 +181,12 @@ const TextList = () => {
           </Form.Select>
         </div>
         <div className="d-flex gap-2 mt-2 mt-md-0"> {/* Wrap buttons in a div for grouping */}
-          <LinkButton to="/texts/create-batch-audio" variant="info">
-            Batch Add Audio
-          </LinkButton>
-          <LinkButton to="/texts/create" variant="success">
-            Add New Text
-          </LinkButton>
+          <LinkContainer to="/texts/create-batch-audio">
+            <Button variant="info">Batch Add Audio</Button>
+          </LinkContainer>
+          <LinkContainer to="/texts/create">
+            <Button variant="success">Add New Text</Button>
+          </LinkContainer>
         </div>
       </div>
 
@@ -197,9 +197,9 @@ const TextList = () => {
           <Card.Body>
             <h3>{texts.length === 0 ? "You don't have any texts yet" : "No texts match the current filters"}</h3>
             <p className="mb-4">Add your first text to start learning vocabulary</p>
-            <LinkButton to="/texts/create" variant="primary">
-              Add Your First Text
-            </LinkButton>
+            <LinkContainer to="/texts/create">
+              <Button variant="primary">Add Your First Text</Button>
+            </LinkContainer>
             {(languageFilter || tagFilter || typeFilter !== 'all' || statusFilter !== 'all') && ( // Update condition
               <Button
                 variant="outline-secondary"
@@ -246,14 +246,15 @@ const TextList = () => {
                   )}
                 </Card.Body>
                 <Card.Footer className="bg-white border-top-0 d-flex justify-content-between align-items-center">
-                  <LinkButton
-                    to={`/texts/${text.textId}`}
-                    variant="outline-primary"
-                    size="sm" // Make button smaller
-                    className="flex-grow-1 me-2" // Adjust spacing
-                  >
-                    Continue Reading
-                  </LinkButton>
+                  <LinkContainer to={`/texts/${text.textId}`}>
+                    <Button
+                      variant="outline-primary"
+                      size="sm"
+                      className="flex-grow-1 me-2"
+                    >
+                      Continue Reading
+                    </Button>
+                  </LinkContainer>
                   <Button
                     variant="outline-danger"
                     size="sm"

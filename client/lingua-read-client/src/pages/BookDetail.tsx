@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react'; // Add useCallback, useMemo
 import { Container, Card, Button, Alert, Spinner, ListGroup, Badge, ProgressBar, Modal, Form } from 'react-bootstrap'; // Add Form
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { LinkListGroupItem } from '../components/shared/LinkButton';
+import { LinkContainer } from 'react-router-bootstrap';
 import type { Book } from '../utils/api/books';
 import type { HardcoverCandidate } from '../utils/api/hardcover';
 
@@ -140,11 +140,7 @@ const BookDetail = () => {
     setModalLoading(true);
     setModalError('');
     try {
-      // Fetch full text details needed for editing. TextDetailDto in swagger
-      // doesn't list `tag`, but the backend does return it — narrow with an
-      // explicit shape (not `any`) and pull the field. Backend swagger fix is
-      // tracked separately.
-      const textData = (await getText(textId)) as Awaited<ReturnType<typeof getText>> & { tag?: string | null };
+      const textData = await getText(textId);
       setEditingText({
         textId: textData.textId,
         title: textData.title,
@@ -556,12 +552,11 @@ const BookDetail = () => {
         <Card.Header as="h5">Book Sections</Card.Header>
         <ListGroup variant="flush">
           {sortedParts.map((part, index) => (
-            <LinkListGroupItem
-              key={part.textId}
-              className="d-flex justify-content-between align-items-center"
-              action
-              to={`/texts/${part.textId}`}
-            >
+            <LinkContainer key={part.textId} to={`/texts/${part.textId}`}>
+              <ListGroup.Item
+                action
+                className="d-flex justify-content-between align-items-center"
+              >
               <div>
                 <h6 className="mb-0">{part.title}</h6>
                 <small className="text-muted">
@@ -602,7 +597,8 @@ const BookDetail = () => {
                   Delete
                 </Button>
               </div>
-            </LinkListGroupItem>
+              </ListGroup.Item>
+            </LinkContainer>
           ))}
         </ListGroup>
       </Card>

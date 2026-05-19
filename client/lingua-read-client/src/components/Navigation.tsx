@@ -1,6 +1,7 @@
 import React from 'react';
-import { Navbar, Nav, Container, /*Button,*/ NavDropdown } from 'react-bootstrap'; // Removed unused Button
-import { Link, useNavigate } from 'react-router-dom';
+import { Navbar, Nav, Container, NavDropdown } from 'react-bootstrap';
+import { useNavigate } from 'react-router-dom';
+import { LinkContainer } from 'react-router-bootstrap';
 import { useAuthStore } from '../utils/store';
 
 
@@ -14,49 +15,44 @@ const Navigation = () => {
   };
 
   return (
-    <Navbar expand="lg" className="navbar-custom-bg"> {/* Use custom class */}
-      <Container fluid className="content-in-fluid"> {/* Use fluid container with padding class */}
-        <Navbar.Brand as={Link} to="/">LinguaRead</Navbar.Brand>
+    <Navbar expand="lg" className="navbar-custom-bg">
+      <Container fluid className="content-in-fluid">
+        <LinkContainer to="/"><Navbar.Brand>LinguaRead</Navbar.Brand></LinkContainer>
         <Navbar.Toggle aria-controls="basic-navbar-nav" />
         <Navbar.Collapse id="basic-navbar-nav">
           <Nav className="me-auto">
-            <Nav.Link as={Link} to="/">Home</Nav.Link>
-            {/* Navigation items are now always shown since login is automatic */}
-            {/* We might still want to hide them briefly during initial loading in App.js, */}
-            {/* but the logic here assumes token will be set quickly */}
+            <LinkContainer to="/"><Nav.Link>Home</Nav.Link></LinkContainer>
             {isAuthenticated && (
               <>
-                <Nav.Link as={Link} to="/library">Library</Nav.Link>
+                <LinkContainer to="/library"><Nav.Link>Library</Nav.Link></LinkContainer>
 
                 <NavDropdown title="Add" id="add-content-dropdown">
-                  <NavDropdown.Item as={Link} to="/books/create">Add Book</NavDropdown.Item>
-                  <NavDropdown.Item as={Link} to="/texts/create">Add Text</NavDropdown.Item>
-                  <NavDropdown.Item as={Link} to="/texts/create-audio">Add Audio Lesson</NavDropdown.Item>
-                  <NavDropdown.Item as={Link} to="/texts/create-batch-audio">Batch Audio</NavDropdown.Item>
+                  <LinkContainer to="/books/create"><NavDropdown.Item>Add Book</NavDropdown.Item></LinkContainer>
+                  <LinkContainer to="/texts/create"><NavDropdown.Item>Add Text</NavDropdown.Item></LinkContainer>
+                  <LinkContainer to="/texts/create-audio"><NavDropdown.Item>Add Audio Lesson</NavDropdown.Item></LinkContainer>
+                  <LinkContainer to="/texts/create-batch-audio"><NavDropdown.Item>Batch Audio</NavDropdown.Item></LinkContainer>
                 </NavDropdown>
 
-                <Nav.Link as={Link} to="/dashboard">Dashboard</Nav.Link>
-                <Nav.Link as={Link} to="/statistics">Statistics</Nav.Link>
-                <Nav.Link as={Link} to="/terms">Terms</Nav.Link>
+                <LinkContainer to="/dashboard"><Nav.Link>Dashboard</Nav.Link></LinkContainer>
+                <LinkContainer to="/statistics"><Nav.Link>Statistics</Nav.Link></LinkContainer>
+                <LinkContainer to="/terms"><Nav.Link>Terms</Nav.Link></LinkContainer>
                 <NavDropdown title="SRS" id="srs-dropdown">
-                  <NavDropdown.Item as={Link} to="/srs">Card Review</NavDropdown.Item>
-                  <NavDropdown.Item as={Link} to="/srs/story">Story Review</NavDropdown.Item>
+                  <LinkContainer to="/srs"><NavDropdown.Item>Card Review</NavDropdown.Item></LinkContainer>
+                  <LinkContainer to="/srs/story"><NavDropdown.Item>Story Review</NavDropdown.Item></LinkContainer>
                 </NavDropdown>
               </>
             )}
           </Nav>
 
           <Nav>
-            {/* Account dropdown is always shown if logged in (which should be always after load) */}
             {isAuthenticated && (
               <NavDropdown title="Account" id="account-dropdown" align="end">
-                <NavDropdown.Item as={Link} to="/settings">User Settings</NavDropdown.Item>
-                <NavDropdown.Item as={Link} to="/settings/languages">Languages</NavDropdown.Item>
+                <LinkContainer to="/settings"><NavDropdown.Item>User Settings</NavDropdown.Item></LinkContainer>
+                <LinkContainer to="/settings/languages"><NavDropdown.Item>Languages</NavDropdown.Item></LinkContainer>
                 <NavDropdown.Divider />
                 <NavDropdown.Item onClick={handleLogout}>Logout</NavDropdown.Item>
               </NavDropdown>
             )}
-            {/* Removed the Login/Register links section */}
           </Nav>
         </Navbar.Collapse>
       </Container>

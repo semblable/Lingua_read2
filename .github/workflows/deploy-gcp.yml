@@ -63,7 +63,7 @@ jobs:
         working-directory: client/lingua-read-client
 
       - name: Test client
-        run: npm test -- --watchAll=false
+        run: npm test -- --run
         working-directory: client/lingua-read-client
         env:
           CI: true

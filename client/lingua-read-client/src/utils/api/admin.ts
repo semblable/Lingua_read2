@@ -2,7 +2,6 @@ import { API_URL, fetchApiDownload, ApiError, handleUnauthorized } from './clien
 
 // Backup Database — triggers a download in the browser
 export const backupDatabase = async (): Promise<{ message: string }> => {
-  console.log('[API] Requesting database backup download');
   const { blob, filename } = await fetchApiDownload('/datamanagement/backup', {
     method: 'GET'
   });
@@ -16,7 +15,6 @@ export const backupDatabase = async (): Promise<{ message: string }> => {
   a.click();
   window.URL.revokeObjectURL(url);
   a.remove();
-  console.log(`[API] Backup download triggered as ${filename}`);
   return { message: `Backup download started as ${filename}` };
 };
 
@@ -27,7 +25,6 @@ export const restoreDatabase = async (
   backupFile: File
 ): Promise<{ message: string }> => {
   const endpoint = '/datamanagement/restore';
-  console.log(`[API] Uploading database backup file: ${backupFile.name}`);
 
   if (!backupFile) {
     throw new Error('Backup file is required for restore.');
@@ -51,10 +48,7 @@ export const restoreDatabase = async (
     };
 
     const fullUrl = API_URL + endpoint;
-    console.log('[API Debug] Full URL for restore:', fullUrl.toString());
-
     const response = await fetch(fullUrl.toString(), requestConfig);
-    console.log('[API Debug] Restore response status:', response.status);
 
     if (response.status === 401) {
       handleUnauthorized();
@@ -70,7 +64,6 @@ export const restoreDatabase = async (
       throw new ApiError(errorMessage, response.status);
     }
 
-    console.log('[API Debug] Restore response data:', responseData);
     return responseData;
   } catch (error) {
     console.error('[API Error] Failed to restore database:', error);

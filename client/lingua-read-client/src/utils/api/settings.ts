@@ -42,7 +42,6 @@ export const sendDiscordReport = async (
 };
 
 export const testOpenRouterConnection = async (): Promise<unknown> => {
-  console.log('[API] Testing OpenRouter connection');
   return await fetchApi('/usersettings/test-openrouter', {
     method: 'POST'
   });
@@ -50,7 +49,6 @@ export const testOpenRouterConnection = async (): Promise<unknown> => {
 
 export const getAudioStorageSize = async (): Promise<AudioStorageSize> => {
   try {
-    console.log('[API] Getting audio storage size');
     return await fetchApi<AudioStorageSize>('/usersettings/audio-storage-size');
   } catch (error) {
     console.error('Failed to get audio storage size:', error);

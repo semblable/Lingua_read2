@@ -79,7 +79,6 @@ export const translateSentence = async (
   { signal }: AbortSignalOptions = {}
 ): Promise<SentenceTranslationResponse> => {
   try {
-    console.log('Initiating sentence translation request');
     return await fetchApi<SentenceTranslationResponse>('/sentencetranslation', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json; charset=utf-8' },
@@ -135,7 +134,6 @@ export const translateFullText = async (
   targetLanguageCode: string
 ): Promise<FullTextTranslationResponse> => {
   try {
-    console.log('Initiating full text translation request');
     return await fetchApi<FullTextTranslationResponse>('/sentencetranslation/full-text', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json; charset=utf-8' },
@@ -157,9 +155,6 @@ export const batchTranslateWords = async (
   sourceLanguageCode: string | null = null
 ): Promise<BatchTranslationResponse> => {
   try {
-    console.log(
-      `[API] Sending batch translation request for ${words.length} words from ${sourceLanguageCode || 'auto'} to ${targetLanguageCode}`
-    );
     return await fetchApi<BatchTranslationResponse>('/translation/batch', {
       method: 'POST',
       body: JSON.stringify({ words, targetLanguageCode, sourceLanguageCode })

@@ -46,7 +46,6 @@ export const updateAudiobookProgress = async (
     currentAudiobookTrackId: progressData.currentAudiobookTrackId,
     currentAudiobookPosition: progressData.currentAudiobookPosition
   };
-  console.log('[API] Updating audiobook progress via UserActivityController:', payload);
   return await fetchApi('/activity/audiobookprogress', {
     ...options,
     method: 'PUT',
@@ -57,7 +56,6 @@ export const updateAudiobookProgress = async (
 export const getAudiobookProgress = async (
   bookId: number | string
 ): Promise<AudiobookProgress> => {
-  console.log(`[API] Getting audiobook progress for book ${bookId} via UserActivityController`);
   return await fetchApi<AudiobookProgress>(`/activity/audiobookprogress/${bookId}`);
 };
 
@@ -74,7 +72,6 @@ export const updateAudioLessonProgress = async (
     textId: parseInt(String(textId), 10),
     currentPosition: progressData.currentPosition
   };
-  console.log('[API] Updating audio lesson progress via UserActivityController:', payload);
   return await fetchApi('/activity/audiolessonprogress', {
     ...options,
     method: 'PUT',
@@ -85,7 +82,6 @@ export const updateAudioLessonProgress = async (
 export const getAudioLessonProgress = async (
   textId: number | string
 ): Promise<AudioLessonProgress> => {
-  console.log(`[API] Getting audio lesson progress for text ${textId} via UserActivityController`);
   return await fetchApi<AudioLessonProgress>(`/activity/audiolessonprogress/${textId}`);
 };
 
@@ -94,7 +90,6 @@ export const logListeningActivity = async (
   durationSeconds: number,
   options: ProgressFetchOptions = {}
 ): Promise<unknown> => {
-  console.log(`[API] Logging listening activity: Lang ${languageId}, Duration ${durationSeconds}s`);
   const payload = { languageId, durationSeconds };
   return await fetchApi('/activity/logListening', {
     ...options,
@@ -106,7 +101,6 @@ export const logListeningActivity = async (
 export const logManualActivity = async (
   payload: LogManualActivityInput
 ): Promise<unknown> => {
-  console.log('[API] Logging manual activity:', payload);
   return await fetchApi('/activity/logManual', {
     method: 'POST',
     body: JSON.stringify(payload)

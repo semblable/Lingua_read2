@@ -271,7 +271,6 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({ children }) 
   // the component making the change (so it can debounce/show save state).
   const updateSetting = useCallback(
     <K extends SettingKey>(key: K, value: Settings[K]) => {
-      console.log(`[SettingsContext] Updating setting locally - ${key}: ${value}`);
       setSettings((prevSettings) => ({
         ...prevSettings,
         [key]: value

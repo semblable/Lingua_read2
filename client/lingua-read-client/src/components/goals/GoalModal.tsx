@@ -137,6 +137,8 @@ function GoalModal({
       }
     })();
     return () => { cancelled = true; };
+    // `target` is intentionally peeked, not subscribed — adding it as a dep
+    // would re-fire after auto-fill and overwrite anything the user typed.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [show, isEdit, type, scope, recurrence, mode]);
 

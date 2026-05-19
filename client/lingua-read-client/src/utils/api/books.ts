@@ -51,7 +51,6 @@ export const uploadBook = async (
   onProgress: UploadProgressCallback | null = null
 ): Promise<UploadBookResult> => {
   const endpoint = '/books/upload';
-  console.log('[API] Uploading book file...');
 
   try {
     return (await uploadWithProgress(endpoint, formData, onProgress)) as UploadBookResult;
@@ -79,7 +78,6 @@ export const uploadAudiobookTracks = async (
   onProgress: UploadProgressCallback | null = null
 ): Promise<unknown> => {
   const endpoint = `/books/${bookId}/audiobook`;
-  console.log(`[API] Uploading audiobook tracks for book ${bookId}...`);
 
   try {
     return await uploadWithProgress(endpoint, formData, onProgress);
@@ -96,7 +94,6 @@ export const createAudioLessonsBatch = async (
   onProgress: UploadProgressCallback | null = null
 ): Promise<unknown> => {
   const endpoint = '/texts/audio/batch';
-  console.log(`[API] Creating batch audio lessons for language ${languageId} with tag: ${tag || 'none'}`);
 
   try {
     const formData = new FormData();

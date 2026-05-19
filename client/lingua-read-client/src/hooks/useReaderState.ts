@@ -145,9 +145,7 @@ export const useReaderState = ({
     const checkWordLinkingStatus = async () => {
       if (!isCurrentRequest() || !textId) return;
       try {
-        const statusData = (await getWordLinkingStatus(textId)) as unknown as {
-          wordLinkingStatus?: string;
-        } | null;
+        const statusData = await getWordLinkingStatus(textId);
         if (!isCurrentRequest()) return;
         if (statusData?.wordLinkingStatus !== 'processing') {
           clearWordLinkingPoll();
@@ -307,6 +305,8 @@ export const useReaderState = ({
       cancelled = true;
       clearWordLinkingPoll();
     };
+    // Re-fetch only when textId changes. The effect closes over many stable
+    // setters/refs that should not be in deps (would re-fetch on every render).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [textId]);
 

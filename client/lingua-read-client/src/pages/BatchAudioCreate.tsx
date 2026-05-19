@@ -228,8 +228,6 @@ const BatchAudioCreate = () => {
                         // An MP3 existed, but it was part of an ambiguous match
                         addProblem(srtInfo.originalFullName, 'Unpaired (Related MP3 was ambiguous)');
                     } else {
-                        // Should not happen if logic is correct: MP3 exists, is unique, SRT exists, is unique, but not paired?
-                        console.warn(`[Debug Unpaired SRT] Unclear Reason: SRT ${srtInfo.originalFullName} not paired with MP3s for "${normalizedName}". MP3 list:`, fuzzyMp3Match); // DEBUG LOG
                         addProblem(srtInfo.originalFullName, 'Unpaired (Reason unclear)');
                     }
                 }
@@ -247,15 +245,7 @@ const BatchAudioCreate = () => {
             return;
         }
 
-        // Optional: Add a check if the number of pairs doesn't match the expected count
-        if (pairedMp3s.size !== mp3Files.length || pairedSrts.size !== srtFiles.length) {
-            console.warn("[Debug Validation] Potential pairing issue: Final paired counts don't match initial file counts.", { pairedMp3s: pairedMp3s.size, pairedSrts: pairedSrts.size, mp3Files: mp3Files.length, srtFiles: srtFiles.length }); // DEBUG LOG
-            // Decide if this should be a hard error or just a warning
-            // setError("Could not reliably pair all files. Please check names.");
-            // return;
-        }
-
-        // --- End: Fuzzy Pairing Validation using Normalization (with Debugging) ---
+        // --- End: Fuzzy Pairing Validation using Normalization ---
 
 
         setIsLoading(true);

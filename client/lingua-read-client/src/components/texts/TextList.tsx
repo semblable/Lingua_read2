@@ -85,7 +85,7 @@ const TextList = () => {
             <Row>
               {activeTexts.map((text) => (
                 <TextListCard
-                  key={text.textId || text.id}
+                  key={text.textId}
                   text={text}
                   onMarkFinished={handleMarkFinished}
                 />
@@ -104,7 +104,7 @@ const TextList = () => {
           ) : (
             <Row>
               {finishedTexts.map((text) => (
-                <TextListCard key={text.textId || text.id} text={text} />
+                <TextListCard key={text.textId} text={text} />
               ))}
             </Row>
           )}
@@ -128,7 +128,7 @@ const TextListCard = ({ text, onMarkFinished }: TextListCardProps) => (
       <Card.Body>
         <Card.Title>{text.title}</Card.Title>
         <Card.Subtitle className="mb-2 text-muted">
-          {text.languageName || text.language?.name}
+          {text.languageName}
         </Card.Subtitle>
         <Card.Text>
           {text.content ? text.content.substring(0, 100) + '...' : (text.tag ? `Tag: ${text.tag}` : '')}
@@ -159,7 +159,7 @@ const TextListCard = ({ text, onMarkFinished }: TextListCardProps) => (
         </div>
       </Card.Body>
       <Card.Footer className="bg-white border-top-0">
-        <LinkContainer to={`/texts/${text.textId || text.id}`}>
+        <LinkContainer to={`/texts/${text.textId}`}>
           <Button variant="outline-primary" className="w-100 mb-2">
             {text.isFinished ? 'Review' : 'Continue Reading'}
           </Button>
@@ -169,7 +169,7 @@ const TextListCard = ({ text, onMarkFinished }: TextListCardProps) => (
             variant="outline-success"
             size="sm"
             className="w-100"
-            onClick={() => onMarkFinished((text.textId ?? text.id)!)}
+            onClick={() => onMarkFinished(text.textId!)}
           >
             Mark as Finished
           </Button>

@@ -73,21 +73,17 @@ export const useAuthStore = create<AuthState>()((set) => ({
 
 // --- Texts Store ---
 
-// Shape consumed by TextList pages — fields are optional because legacy API
-// responses are inconsistent on casing/presence (textId vs textID, language vs
-// languageName, etc.). Backed structurally by api-types.d.ts TextDto but kept
-// permissive so server shape drift doesn't break the type contract.
+// Shape consumed by TextList pages. Fields are optional because endpoints
+// like TextDto, TextListDto, and RecentTextDto each carry different subsets.
+// Backed structurally by api-types.d.ts so server shape drift surfaces here.
 export type StoredText = {
   textId?: number;
-  textID?: number;
-  id?: number;
   title?: string;
   content?: string;
   tag?: string;
   bookId?: number | null;
   languageId?: number;
   languageName?: string;
-  language?: { name?: string } | null;
   isAudioLesson?: boolean;
   isFinished?: boolean;
   audioProgress?: number;
@@ -173,7 +169,7 @@ export const useCurrentTextStore = create<CurrentTextState>()((set) => ({
 
 // --- Library Store ---
 
-export type SelectableType = 'text' | 'book' | 'folder' | string;
+export type SelectableType = 'text' | 'book' | 'folder';
 export type SelectedItem = { id: number; type: SelectableType };
 
 export type LibraryFolder = {

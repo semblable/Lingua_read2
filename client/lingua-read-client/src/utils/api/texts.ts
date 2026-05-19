@@ -5,7 +5,12 @@ import type { ResponseOf } from '../fetchApi';
 export type Text = ResponseOf<'/api/Texts/{id}', 'get'>;
 export type TextsList = ResponseOf<'/api/Texts', 'get'>;
 export type RecentTexts = ResponseOf<'/api/Texts/recent', 'get'>;
-export type WordLinkingStatus = ResponseOf<'/api/Texts/{id}/word-linking-status', 'get'>;
+
+// Swagger spec for word-linking-status endpoint has no response body schema
+// ({ content?: never }), so ResponseOf<> resolves to void. The endpoint
+// actually returns { wordLinkingStatus?: string } at runtime. Same shape as
+// the audiobook progress endpoints — see audiobook.ts.
+export type WordLinkingStatus = { wordLinkingStatus?: string } | null;
 
 export const getTexts = (): Promise<TextsList> => {
   return fetchApi<TextsList>('/texts');
@@ -102,7 +107,6 @@ export const deleteText = (textId: number | string): Promise<unknown> => {
 
 // Marks a text as completed and logs activity
 export const completeText = (textId: number | string): Promise<unknown> => {
-  console.log(`[API] Marking text ${textId} as complete.`);
   return fetchApi(`/texts/${textId}/complete`, {
     method: 'PUT'
   });

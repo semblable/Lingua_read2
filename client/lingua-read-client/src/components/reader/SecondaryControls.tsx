@@ -307,4 +307,6 @@ const SecondaryControls = React.memo(({
   </>
 ));
 
+SecondaryControls.displayName = 'SecondaryControls';
+
 export default SecondaryControls;

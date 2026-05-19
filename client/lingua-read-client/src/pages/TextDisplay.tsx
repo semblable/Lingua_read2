@@ -1643,7 +1643,6 @@ const TextDisplay = () => {
         // Determine the status to save (current status, or 1 if untracked)
         const statusToSave = (displayedWord.status ?? 0) > 0 ? displayedWord.status! : 1;
         handleSaveWord(statusToSave); // handleSaveWord is now defined before this
-      } else {
       }
     }
   }, [displayedWord, handleSaveWord]); // handleSaveWord dependency is now safe

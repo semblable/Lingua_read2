@@ -104,4 +104,6 @@ const LessonHeader = React.memo(({
   );
 });
 
+LessonHeader.displayName = 'LessonHeader';
+
 export default LessonHeader;

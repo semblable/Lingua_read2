@@ -63,4 +63,6 @@ const ReaderLessonActions = React.memo(({
   );
 });
 
+ReaderLessonActions.displayName = 'ReaderLessonActions';
+
 export default ReaderLessonActions;

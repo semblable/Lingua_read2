@@ -135,4 +135,6 @@ const AudioTranscriptView = React.memo(({
   );
 });
 
+AudioTranscriptView.displayName = 'AudioTranscriptView';
+
 export default AudioTranscriptView;

@@ -235,4 +235,6 @@ const StandardTextView = React.memo(({
   );
 });
 
+StandardTextView.displayName = 'StandardTextView';
+
 export default StandardTextView;

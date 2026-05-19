@@ -107,4 +107,6 @@ const MobileLessonHeader = React.memo(({
   );
 });
 
+MobileLessonHeader.displayName = 'MobileLessonHeader';
+
 export default MobileLessonHeader;

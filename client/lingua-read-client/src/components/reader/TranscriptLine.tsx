@@ -45,4 +45,6 @@ const TranscriptLine = React.memo(({ index, style, data }: TranscriptLineProps) 
   );
 });
 
+TranscriptLine.displayName = 'TranscriptLine';
+
 export default TranscriptLine;

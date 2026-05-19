@@ -85,4 +85,6 @@ const PrimaryControls = React.memo(({
   </>
 ));
 
+PrimaryControls.displayName = 'PrimaryControls';
+
 export default PrimaryControls;

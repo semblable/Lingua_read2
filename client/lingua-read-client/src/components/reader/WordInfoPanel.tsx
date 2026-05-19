@@ -246,4 +246,6 @@ const WordInfoPanel = React.memo(({
   );
 });
 
+WordInfoPanel.displayName = 'WordInfoPanel';
+
 export default WordInfoPanel;

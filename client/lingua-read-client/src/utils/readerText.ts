@@ -439,7 +439,7 @@ const SUPPORTED_INTL_SEGMENTER = ((): boolean => {
 
 const DEFAULT_SENTENCE_TERMINATORS = '.!?…';
 
-const escapeForCharClass = (ch: string): string => ch.replace(/[\\\]\^\-]/g, (m) => `\\${m}`);
+const escapeForCharClass = (ch: string): string => ch.replace(/[\\\]^-]/g, (m) => `\\${m}`);
 
 const fallbackRegexCache = new Map<string, RegExp>();
 

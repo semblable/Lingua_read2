@@ -244,4 +244,6 @@ const SentenceModeView = React.memo(({
   );
 });
 
+SentenceModeView.displayName = 'SentenceModeView';
+
 export default SentenceModeView;

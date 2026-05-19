@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Container, Row, Col, Card, ListGroup, Spinner, Alert } from 'react-bootstrap';
-import LinkButton, { LinkListGroupItem } from '../components/shared/LinkButton';
+import { Container, Row, Col, Card, ListGroup, Spinner, Alert, Button } from 'react-bootstrap';
+import { LinkContainer } from 'react-router-bootstrap';
 import { getRecentTexts } from '../utils/api';
 import type { RecentTexts } from '../utils/api/texts';
 
@@ -42,23 +42,19 @@ const Home = () => {
     return (
       <ListGroup variant="flush">
         {recentTexts.map((text) => (
-          <LinkListGroupItem
-            key={text.textId}
-            action
-            to={`/texts/${text.textId}`}
-            className="d-flex justify-content-between align-items-start"
-          >
-            <div className="ms-2 me-auto">
-              <div className="fw-bold">
-                {text.bookTitle ? `${text.bookTitle} - Part ${text.partNumber || '?'}` : text.title}
+          <LinkContainer key={text.textId} to={`/texts/${text.textId}`}>
+            <ListGroup.Item
+              action
+              className="d-flex justify-content-between align-items-start"
+            >
+              <div className="ms-2 me-auto">
+                <div className="fw-bold">
+                  {text.bookTitle ? `${text.bookTitle} - Part ${text.partNumber || '?'}` : text.title}
+                </div>
+                <small className="text-muted">{text.languageName}{text.isAudioLesson ? ' (Audio)' : ''}</small>
               </div>
-              <small className="text-muted">{text.languageName}{text.isAudioLesson ? ' (Audio)' : ''}</small>
-            </div>
-            {/* Optional: Add last accessed time */}
-            {/* <Badge bg="light" text="dark">
-              {new Date(text.lastAccessedAt).toLocaleDateString()}
-            </Badge> */}
-          </LinkListGroupItem>
+            </ListGroup.Item>
+          </LinkContainer>
         ))}
       </ListGroup>
     );
@@ -92,7 +88,9 @@ const Home = () => {
               <Card.Text>
                 Browse your books, texts, and folders.
               </Card.Text>
-              <LinkButton to="/library" variant="primary" className="mt-auto">Go to Library</LinkButton> {/* mt-auto pushes button down */}
+              <LinkContainer to="/library">
+                <Button variant="primary" className="mt-auto">Go to Library</Button>
+              </LinkContainer>
             </Card.Body>
           </Card>
         </Col>
@@ -103,10 +101,16 @@ const Home = () => {
               <Card.Text>
                 Import a new book, create a text, or upload an audio lesson.
               </Card.Text>
-              <div className="mt-auto"> {/* Group buttons and push down */}
-                <LinkButton to="/books/create" variant="success" className="me-2 mb-2">Add Book</LinkButton>
-                <LinkButton to="/texts/create" variant="secondary" className="me-2 mb-2">Add Text</LinkButton> {/* Added Add Text button */}
-                <LinkButton to="/texts/create-audio" variant="info" className="mb-2">Add Audio Lesson</LinkButton>
+              <div className="mt-auto">
+                <LinkContainer to="/books/create">
+                  <Button variant="success" className="me-2 mb-2">Add Book</Button>
+                </LinkContainer>
+                <LinkContainer to="/texts/create">
+                  <Button variant="secondary" className="me-2 mb-2">Add Text</Button>
+                </LinkContainer>
+                <LinkContainer to="/texts/create-audio">
+                  <Button variant="info" className="mb-2">Add Audio Lesson</Button>
+                </LinkContainer>
               </div>
             </Card.Body>
           </Card>

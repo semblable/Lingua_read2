@@ -1,39 +1,23 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  getAudiobookProgress,
-  updateAudiobookProgress,
-  getAudioLessonProgress,
-  updateAudioLessonProgress,
-  logListeningActivity
-} from '../utils/api';
-import {
   createEmptySourceSwap,
   getAudioPlaybackIntent,
   getTrackDisplayName,
   isAbortLikeError,
-  isLifecycleNetworkError,
-  isSourceSwapAbort,
   normalizeMediaSrc,
+  isSourceSwapAbort,
   setAudioPlaybackIntent
 } from '../audio/mediaSrc';
 import {
-  applySegmentRequest,
-  cancelSegmentPlayback,
-  createSegmentPlaybackState,
-  evaluateSegmentBoundary,
   isStaleSegmentRequest,
-  type SegmentPlaybackRequest,
-  type SegmentPlaybackState
+  type SegmentPlaybackRequest
 } from '../audio/segmentPlayback';
-import {
-  createListeningActivityTracker,
-  type ListeningActivityTracker
-} from '../audio/listeningActivity';
+import { useAudiobookListeningActivity } from './audio/useAudiobookListeningActivity';
+import { useAudiobookProgress, type LatestPlaybackStateSnapshot } from './audio/useAudiobookProgress';
+import { useAudiobookSegmentPlayback } from './audio/useAudiobookSegmentPlayback';
 
 // --- Public types ----------------------------------------------------------
 
-// The track shape spans two runtime sources: AudiobookTrackDto from the API
-// and a synthetic lesson-audio item. Loose-but-typed so both fit.
 export type AudiobookTrackLike = {
   trackId?: number | string;
   title?: string | null;
@@ -44,18 +28,12 @@ export type AudiobookTrackLike = {
   duration?: number | null;
 };
 
-// Minimal shape AudiobookPlayer actually reads off the book. BookDetailDto
-// from the API matches this structurally (bookId + languageId +
-// audiobookTracks). Caller doesn't need to pass the full DTO.
 export type AudiobookBookLike = {
   bookId?: number | string | null;
   languageId?: number | string | null;
   audiobookTracks?: AudiobookTrackLike[] | null;
 };
 
-// Either ref shape works — useReaderAudioSync exposes RefObject<HTMLAudioElement>
-// while useRef returns MutableRefObject<HTMLAudioElement | null>. Reading
-// `.current` from either gives `HTMLAudioElement | null`.
 export type AudioElementRef =
   | React.RefObject<HTMLAudioElement>
   | React.MutableRefObject<HTMLAudioElement | null>;
@@ -97,6 +75,18 @@ export type UseAudiobookPlayerResult = {
 };
 
 // --- Hook -------------------------------------------------------------------
+//
+// HOOK ORDER MATTERS. The three sub-hooks are called in a fixed order:
+//   1. useAudiobookListeningActivity (G3) — self-contained, owns tracker refs
+//   2. useAudiobookProgress (G1)         — owns content-key tracking refs
+//   3. useAudiobookSegmentPlayback (G2)  — needs G1.userPositionIntentContentKeyRef
+// Reordering would break ref ownership and effect-ordering invariants — e.g.
+// G1's progress-load effect must run before G4's audio-event-listener effect
+// so initialSeekRef is populated by the time `loadedmetadata` fires.
+//
+// All state setters and the audio element live in this orchestrator. The
+// sub-hooks own no React state — only refs and effects. This keeps render-
+// batch shape identical to the pre-split implementation.
 
 export const useAudiobookPlayer = ({
   type = 'book',
@@ -109,17 +99,16 @@ export const useAudiobookPlayer = ({
   onPlaybackStateChange,
   segmentPlaybackRequest
 }: UseAudiobookPlayerArgs): UseAudiobookPlayerResult => {
-  // --- ONE: Refs and stable callbacks --------------------------------------
+  // --- Orchestrator refs ---
   const internalAudioRef = useRef<HTMLAudioElement | null>(null);
   const audioRef: AudioElementRef = externalAudioRef ?? internalAudioRef;
   const onTimeUpdateRef = useRef(onTimeUpdate);
   const onPlaybackStateChangeRef = useRef(onPlaybackStateChange);
   const progressBarRef = useRef<HTMLDivElement | null>(null);
-  const segmentPlaybackRef = useRef<SegmentPlaybackState>(createSegmentPlaybackState());
   const sourceSwapRef = useRef(createEmptySourceSwap());
   const lifecycleSaveRef = useRef(false);
   const latestAudioElementRef = useRef<HTMLAudioElement | null>(null);
-  const latestPlaybackStateRef = useRef({
+  const latestPlaybackStateRef = useRef<LatestPlaybackStateSnapshot>({
     isBookMode: type === 'book',
     bookId: book?.bookId ?? null,
     textId: textId ?? null,
@@ -128,14 +117,7 @@ export const useAudiobookPlayer = ({
     isInitialized: false,
     isPlaying: false
   });
-  const saveProgressRef = useRef<((force?: boolean) => Promise<void>) | null>(null);
-  const restoredContentKeyRef = useRef('');
-  const playbackStartedContentKeyRef = useRef('');
-  const userPositionIntentContentKeyRef = useRef('');
-  const listeningTrackerRef = useRef<ListeningActivityTracker>(
-    createListeningActivityTracker()
-  );
-  const flushListeningActivityRef = useRef<((force?: boolean) => void) | null>(null);
+  const wasPlayingRef = useRef(false);
 
   useEffect(() => {
     onTimeUpdateRef.current = onTimeUpdate;
@@ -151,7 +133,7 @@ export const useAudiobookPlayer = ({
     }
   });
 
-  // --- TWO: State management -----------------------------------------------
+  // --- Derivations ---
   const isBookMode = type === 'book';
   const effectiveLanguageId = languageId ?? book?.languageId ?? null;
   const contentKey = useMemo(() => {
@@ -167,6 +149,7 @@ export const useAudiobookPlayer = ({
     return null;
   }, [isBookMode, book?.bookId, textId]);
 
+  // --- State ---
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -187,8 +170,6 @@ export const useAudiobookPlayer = ({
   const [playlist, setPlaylist] = useState<AudiobookTrackLike[]>([]);
   const [currentTrackIndex, setCurrentTrackIndex] = useState(0);
   const [isInitialized, setIsInitialized] = useState(false);
-  const initialSeekRef = useRef<number | null>(null);
-  const lastServerUpdateRef = useRef<number | null>(null);
 
   useEffect(() => {
     latestPlaybackStateRef.current = {
@@ -202,11 +183,18 @@ export const useAudiobookPlayer = ({
     };
   }, [book?.bookId, currentTrackIndex, isBookMode, isInitialized, isPlaying, playlist, textId]);
 
-  useEffect(() => {
-    listeningTrackerRef.current.setLanguageId(effectiveLanguageId);
-  }, [effectiveLanguageId]);
+  // --- G3: Listening activity ---
+  const {
+    listeningTrackerRef,
+    flushListeningActivity,
+    flushListeningActivityRef
+  } = useAudiobookListeningActivity({
+    effectiveLanguageId,
+    isPlayingRef,
+    lifecycleSaveRef
+  });
 
-  // --- THREE: Data derivation ----------------------------------------------
+  // --- Source tracks + playlist sync ---
   const sourceTracks = useMemo<AudiobookTrackLike[]>(() => {
     if (isBookMode && book?.audiobookTracks) {
       return [...book.audiobookTracks].sort((a, b) => {
@@ -249,224 +237,12 @@ export const useAudiobookPlayer = ({
     });
   }, [isBookMode, sourceTracks]);
 
-  // --- FOUR: Initial progress loading --------------------------------------
-  const applyInitialSeekIfReady = useCallback((audio: HTMLAudioElement | null) => {
-    if (!audio || initialSeekRef.current == null) return false;
-
-    if (
-      restoredContentKeyRef.current === contentKey ||
-      userPositionIntentContentKeyRef.current === contentKey ||
-      playbackStartedContentKeyRef.current === contentKey
-    ) {
-      initialSeekRef.current = null;
-      return false;
-    }
-
-    console.log(`[AudioPlayer] Seeking to ${initialSeekRef.current}`);
-    audio.currentTime = initialSeekRef.current;
-    setCurrentTime(initialSeekRef.current);
-    restoredContentKeyRef.current = contentKey;
-    initialSeekRef.current = null;
-    return true;
-  }, [contentKey]);
-
-  const queueInitialSeek = useCallback((position: number) => {
-    if (!Number.isFinite(position) || position <= 0) return false;
-
-    if (
-      restoredContentKeyRef.current === contentKey ||
-      userPositionIntentContentKeyRef.current === contentKey ||
-      playbackStartedContentKeyRef.current === contentKey
-    ) {
-      return false;
-    }
-
-    initialSeekRef.current = position;
-    setCurrentTime(position);
-
-    const audio = audioRef.current;
-    if ((audio?.readyState ?? 0) >= 1) {
-      return applyInitialSeekIfReady(audio);
-    }
-
-    return true;
-  }, [applyInitialSeekIfReady, audioRef, contentKey]);
-
-  useEffect(() => {
-    let mounted = true;
-    const loadProgress = async () => {
-      if (sourceTracks.length === 0) {
-        setIsLoading(false);
-        return;
-      }
-
-      try {
-        let savedTrackIndex = 0;
-        let savedPosition = 0;
-        let serverUpdateTime: number | null = null;
-
-        if (isBookMode && book?.bookId) {
-          setIsLoading(true);
-          const progress = await getAudiobookProgress(book.bookId);
-          if (progress?.currentAudiobookTrackId) {
-            const idx = sourceTracks.findIndex(t => t.trackId === progress.currentAudiobookTrackId);
-            if (idx !== -1) {
-              savedTrackIndex = idx;
-              savedPosition = progress.currentAudiobookPosition || 0;
-              console.log(`[AudioPlayer] Restoring Book progress: Track ${idx}, Pos ${savedPosition}`);
-            }
-          }
-          if (progress?.updatedAt) {
-            const parsed = new Date(progress.updatedAt).getTime();
-            if (Number.isFinite(parsed)) {
-              serverUpdateTime = parsed;
-              lastServerUpdateRef.current = parsed;
-            }
-          }
-        } else if (!isBookMode && textId) {
-          const progress = await getAudioLessonProgress(textId);
-          if (progress && progress.currentPosition != null && progress.currentPosition > 0) {
-            savedPosition = progress.currentPosition;
-            console.log(`[AudioPlayer] Restoring Lesson progress: Pos ${savedPosition}`);
-          }
-          if (progress?.updatedAt) {
-            const parsed = new Date(progress.updatedAt).getTime();
-            if (Number.isFinite(parsed)) {
-              serverUpdateTime = parsed;
-              lastServerUpdateRef.current = parsed;
-            }
-          }
-        }
-
-        if (positionStorageKey) {
-          try {
-            const localRaw = localStorage.getItem(positionStorageKey);
-            if (localRaw) {
-              const localData = JSON.parse(localRaw);
-              const localPosition = Number(localData.position) || 0;
-              const localTimestamp = Number(localData.timestamp) || 0;
-              const localIsFresher = serverUpdateTime != null && localTimestamp > serverUpdateTime + 2000;
-              const shouldUseLocal = savedPosition <= 0 || localIsFresher;
-
-              if (localPosition > 0 && shouldUseLocal) {
-                let localTrackIndex = savedTrackIndex;
-
-                if (isBookMode) {
-                  if (localData.trackId != null) {
-                    localTrackIndex = sourceTracks.findIndex(t => t.trackId === localData.trackId);
-                  } else if (localData.trackIndex != null) {
-                    localTrackIndex = Number(localData.trackIndex);
-                  }
-                }
-
-                if (!isBookMode || (Number.isInteger(localTrackIndex) && localTrackIndex >= 0 && localTrackIndex < sourceTracks.length)) {
-                  console.log(`[AudioPlayer] Restoring from localStorage: ${localPosition}`);
-                  savedPosition = localPosition;
-                  savedTrackIndex = localTrackIndex;
-                }
-              }
-            }
-          } catch { /* corrupted or unavailable */ }
-        }
-
-        if (mounted) {
-          setCurrentTrackIndex(savedTrackIndex);
-          if (savedPosition > 0) {
-            queueInitialSeek(savedPosition);
-          }
-          if (isBookMode) {
-            setIsInitialized(true);
-          }
-        }
-      } catch (e) {
-        console.error('Failed to load progress:', e);
-        if (mounted && positionStorageKey) {
-          try {
-            const localRaw = localStorage.getItem(positionStorageKey);
-            if (localRaw) {
-              const localData = JSON.parse(localRaw);
-              if (localData.position > 0) {
-                console.log(`[AudioPlayer] Server unreachable, restoring from localStorage: ${localData.position}`);
-                if (isBookMode && localData.trackIndex != null) {
-                  setCurrentTrackIndex(localData.trackIndex);
-                }
-                queueInitialSeek(localData.position);
-              }
-            }
-          } catch { /* corrupted or unavailable */ }
-        }
-        if (mounted && isBookMode) setIsInitialized(true);
-      } finally {
-        if (mounted && isBookMode) setIsLoading(false);
-      }
-    };
-
-    loadProgress();
-
-    return () => {
-      mounted = false;
-    };
-  }, [book?.bookId, isBookMode, positionStorageKey, queueInitialSeek, sourceTracks, textId]);
-
-  // --- FIVE: Active track management ---------------------------------------
-  const currentTrack = playlist[currentTrackIndex];
-  const currentTrackDisplayName = getTrackDisplayName(currentTrack);
-
-  const resetSegmentPlayback = useCallback(() => {
-    segmentPlaybackRef.current = cancelSegmentPlayback();
-  }, []);
-
-  useEffect(() => {
-    initialSeekRef.current = null;
-    restoredContentKeyRef.current = '';
-    playbackStartedContentKeyRef.current = '';
-    userPositionIntentContentKeyRef.current = '';
-    lastServerUpdateRef.current = null;
-    justStartedPlayingRef.current = false;
-    wasPlayingRef.current = false;
-    resetSegmentPlayback();
-    setCurrentTrackIndex(0);
-    setCurrentTime(0);
-    setDuration(0);
-    setError('');
-
-    if (sourceTracks.length === 0) {
-      setIsInitialized(false);
-      setIsLoading(false);
-      return;
-    }
-
-    if (isBookMode) {
-      setIsInitialized(false);
-      setIsLoading(true);
-      return;
-    }
-
-    setIsInitialized(true);
-    setIsLoading(false);
-  }, [contentKey, isBookMode, resetSegmentPlayback, sourceTracks.length]);
-
-  const buildTrackSrc = useCallback((track: AudiobookTrackLike | undefined): string => {
-    let src: string | null | undefined = track?.isLesson ? track.url : track?.filePath;
-
-    if (src && !src.startsWith('http') && !src.startsWith('blob:')) {
-      src = src.startsWith('/') ? src : `/${src}`;
-
-      const envBaseUrl = import.meta.env.VITE_API_URL;
-      if (envBaseUrl && envBaseUrl.startsWith('http')) {
-        src = `${envBaseUrl}${src}`;
-      }
-    }
-
-    return src || '';
-  }, []);
-
+  // --- Stable callbacks needed by G2 + audio event handlers ---
   const logPlaybackInterruption = useCallback((context: string, errorLike: unknown) => {
     if (isAbortLikeError(errorLike)) {
       console.debug(`[AudioPlayer] Ignoring interrupted playback during ${context}.`, errorLike);
       return;
     }
-
     console.warn(context, errorLike);
   }, []);
 
@@ -486,6 +262,108 @@ export const useAudiobookPlayer = ({
     audio.play().catch((e: unknown) => logPlaybackInterruption(context, e));
   }, [audioRef, logPlaybackInterruption]);
 
+  // --- G1: Progress persistence + cross-device sync ---
+  const {
+    saveProgress,
+    saveProgressRef,
+    queueInitialSeek,
+    applyInitialSeekIfReady,
+    restoredContentKeyRef,
+    playbackStartedContentKeyRef,
+    userPositionIntentContentKeyRef,
+    initialSeekRef,
+    lastServerUpdateRef,
+    justStartedPlayingRef
+  } = useAudiobookProgress({
+    isBookMode,
+    book,
+    textId,
+    contentKey,
+    positionStorageKey,
+    sourceTracks,
+    audioRef,
+    latestAudioElementRef,
+    latestPlaybackStateRef,
+    lifecycleSaveRef,
+    isPlaying,
+    isInitialized,
+    currentTrackIndex,
+    flushListeningActivityRef,
+    listeningTrackerRef,
+    setCurrentTrackIndex,
+    setCurrentTime,
+    setIsInitialized,
+    setIsLoading
+  });
+
+  // --- G2: Segment playback ---
+  const {
+    segmentPlaybackRef,
+    resetSegmentPlayback,
+    handleSegmentBoundary
+  } = useAudiobookSegmentPlayback({
+    audioRef,
+    contentKey,
+    segmentPlaybackRequest,
+    requestAudioPlay,
+    userPositionIntentContentKeyRef,
+    setCurrentTime
+  });
+
+  // --- Reset on contentKey change ---
+  // Note: G2 owns its own contentKey-tied segment reset, so this effect does
+  // not call resetSegmentPlayback (which would otherwise undo the segment
+  // applied by G2's apply effect, since G2's hook is called before this
+  // effect is registered).
+  useEffect(() => {
+    initialSeekRef.current = null;
+    restoredContentKeyRef.current = '';
+    playbackStartedContentKeyRef.current = '';
+    userPositionIntentContentKeyRef.current = '';
+    lastServerUpdateRef.current = null;
+    justStartedPlayingRef.current = false;
+    wasPlayingRef.current = false;
+    setCurrentTrackIndex(0);
+    setCurrentTime(0);
+    setDuration(0);
+    setError('');
+
+    if (sourceTracks.length === 0) {
+      setIsInitialized(false);
+      setIsLoading(false);
+      return;
+    }
+
+    if (isBookMode) {
+      setIsInitialized(false);
+      setIsLoading(true);
+      return;
+    }
+
+    setIsInitialized(true);
+    setIsLoading(false);
+  }, [contentKey, isBookMode, sourceTracks.length, initialSeekRef, restoredContentKeyRef, playbackStartedContentKeyRef, userPositionIntentContentKeyRef, lastServerUpdateRef, justStartedPlayingRef]);
+
+  // --- Current track derivations ---
+  const currentTrack = playlist[currentTrackIndex];
+  const currentTrackDisplayName = getTrackDisplayName(currentTrack);
+
+  const buildTrackSrc = useCallback((track: AudiobookTrackLike | undefined): string => {
+    let src: string | null | undefined = track?.isLesson ? track.url : track?.filePath;
+
+    if (src && !src.startsWith('http') && !src.startsWith('blob:')) {
+      src = src.startsWith('/') ? src : `/${src}`;
+
+      const envBaseUrl = import.meta.env.VITE_API_URL;
+      if (envBaseUrl && envBaseUrl.startsWith('http')) {
+        src = `${envBaseUrl}${src}`;
+      }
+    }
+
+    return src || '';
+  }, []);
+
+  // --- Source-swap effect ---
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio || !isInitialized || !currentTrack) return;
@@ -500,9 +378,6 @@ export const useAudiobookPlayer = ({
       return;
     }
 
-    // Don't reset an in-flight segment request that was just configured by
-    // the segment effect — only reset if there is no pending segment or the
-    // request ID changed (i.e. the segment is genuinely stale after a src swap).
     if (isStaleSegmentRequest(segmentPlaybackRef.current, segmentPlaybackRequest)) {
       resetSegmentPlayback();
     }
@@ -520,32 +395,9 @@ export const useAudiobookPlayer = ({
     if (isPlayingRef.current) {
       requestAudioPlay('Auto-play on track change failed');
     }
-  }, [currentTrack, isInitialized, audioRef, buildTrackSrc, requestAudioPlay, resetSegmentPlayback, segmentPlaybackRequest]);
+  }, [currentTrack, isInitialized, audioRef, buildTrackSrc, requestAudioPlay, resetSegmentPlayback, segmentPlaybackRequest, segmentPlaybackRef]);
 
-  useEffect(() => {
-    const audio = audioRef.current;
-    if (!audio) return;
-
-    if (!segmentPlaybackRequest?.requestId) {
-      if (segmentPlaybackRef.current.active) {
-        resetSegmentPlayback();
-        audio.pause();
-      }
-      return;
-    }
-
-    if (segmentPlaybackRef.current.requestId === segmentPlaybackRequest.requestId) return;
-
-    const nextState = applySegmentRequest(segmentPlaybackRequest);
-    segmentPlaybackRef.current = nextState;
-
-    userPositionIntentContentKeyRef.current = contentKey;
-    audio.currentTime = nextState.startTime;
-    setCurrentTime(nextState.startTime);
-    requestAudioPlay('Segment playback failed', { forceIntent: Boolean(segmentPlaybackRequest.forcePlay) });
-  }, [audioRef, contentKey, requestAudioPlay, resetSegmentPlayback, segmentPlaybackRequest]);
-
-  // --- SIX: Event listeners & logic ----------------------------------------
+  // --- Audio event handlers ---
   const handleLoadedMetadata = useCallback(() => {
     const audio = audioRef.current;
     if (!audio) return;
@@ -561,16 +413,14 @@ export const useAudiobookPlayer = ({
     const time = audio.currentTime;
     setCurrentTime(time);
 
-    const boundary = evaluateSegmentBoundary(segmentPlaybackRef.current, time);
+    const boundary = handleSegmentBoundary(time);
     if (boundary.action === 'replay') {
-      segmentPlaybackRef.current = boundary.nextState;
       audio.currentTime = boundary.seekTo;
       setCurrentTime(boundary.seekTo);
       requestAudioPlay('Segment replay failed');
       return;
     }
     if (boundary.action === 'stop') {
-      segmentPlaybackRef.current = boundary.nextState;
       audio.pause();
       audio.currentTime = boundary.seekTo;
       setCurrentTime(boundary.seekTo);
@@ -583,7 +433,7 @@ export const useAudiobookPlayer = ({
     if (onTimeUpdateRef.current) {
       onTimeUpdateRef.current(time);
     }
-  }, [audioRef, requestAudioPlay]);
+  }, [audioRef, handleSegmentBoundary, requestAudioPlay]);
 
   const syncPlaybackState = useCallback((nextIsPlaying: boolean) => {
     setIsPlaying(nextIsPlaying);
@@ -636,9 +486,6 @@ export const useAudiobookPlayer = ({
 
     const onWaiting = () => {
       setIsBuffering(true);
-      // Stop accruing listening seconds while audio is stalled — capture the
-      // elapsed run up to now into pending, then clear the checkpoint so the
-      // periodic interval doesn't restart accrual mid-buffer.
       tracker.markStalling();
       flushListeningActivityRef.current?.(false);
       tracker.clearCheckpoint();
@@ -661,8 +508,6 @@ export const useAudiobookPlayer = ({
       syncPlaybackState(true);
     };
     const onPause = () => {
-      // Manual pauses should cancel bounded segment playback so resume/play
-      // does not remain tied to an old sentence boundary.
       if (segmentPlaybackRef.current.active) {
         resetSegmentPlayback();
       }
@@ -694,7 +539,7 @@ export const useAudiobookPlayer = ({
       audio.removeEventListener('pause', onPause);
       audio.removeEventListener('playing', onPlaying);
     };
-  }, [audioRef, contentKey, handleLoadedMetadata, handleTimeUpdate, handleEnded, handleError, resetSegmentPlayback, syncPlaybackState]);
+  }, [audioRef, contentKey, handleLoadedMetadata, handleTimeUpdate, handleEnded, handleError, resetSegmentPlayback, syncPlaybackState, flushListeningActivityRef, listeningTrackerRef, playbackStartedContentKeyRef, segmentPlaybackRef]);
 
   useEffect(() => {
     if (audioRef.current) {
@@ -716,89 +561,7 @@ export const useAudiobookPlayer = ({
     }
   }, []);
 
-  // --- SEVEN: Progress saving ----------------------------------------------
-  const saveProgress = useCallback(async (force = false) => {
-    const audio = audioRef.current || latestAudioElementRef.current;
-    const {
-      isBookMode: isBookModeSnapshot,
-      bookId,
-      textId: textIdSnapshot,
-      currentTrackIndex: currentTrackIndexSnapshot,
-      playlist: playlistSnapshot,
-      isInitialized: isInitializedSnapshot,
-      isPlaying: isPlayingSnapshot
-    } = latestPlaybackStateRef.current;
-
-    if (!audio || !isInitializedSnapshot) return;
-    if (!force && audio.paused && !isPlayingSnapshot) return;
-
-    const currentPos = audio.currentTime;
-    const track = playlistSnapshot[currentTrackIndexSnapshot];
-    if (!track) return;
-
-    if (positionStorageKey && currentPos > 0) {
-      try {
-        localStorage.setItem(positionStorageKey, JSON.stringify({
-          position: currentPos,
-          trackId: track.trackId,
-          trackIndex: currentTrackIndexSnapshot,
-          timestamp: Date.now()
-        }));
-      } catch { /* quota exceeded or unavailable */ }
-    }
-
-    try {
-      const isPageLifecycleSave = lifecycleSaveRef.current || document.hidden;
-      if (isBookModeSnapshot && bookId != null) {
-        await updateAudiobookProgress(bookId, {
-          currentAudiobookTrackId: (track.trackId as number | null) ?? null,
-          currentAudiobookPosition: currentPos
-        }, {
-          keepalive: isPageLifecycleSave
-        });
-      } else if (textIdSnapshot != null) {
-        await updateAudioLessonProgress(textIdSnapshot, {
-          currentPosition: currentPos
-        }, {
-          keepalive: isPageLifecycleSave
-        });
-      }
-    } catch (e) {
-      if ((lifecycleSaveRef.current || document.hidden) && isLifecycleNetworkError(e)) {
-        console.debug('[AudioPlayer] Ignoring page-lifecycle progress save interruption.', e);
-        return;
-      }
-      console.error('Save progress failed', e);
-    }
-  }, [audioRef, positionStorageKey]);
-
-  useEffect(() => {
-    saveProgressRef.current = saveProgress;
-  }, [saveProgress]);
-
-  const flushListeningActivity = useCallback((force = false) => {
-    const tracker = listeningTrackerRef.current;
-    const payload = tracker.prepareFlush(Date.now(), force, isPlayingRef.current);
-    if (!payload) return;
-
-    const isLifecycleFlush = lifecycleSaveRef.current || (typeof document !== 'undefined' && document.hidden);
-    const logPromise = isLifecycleFlush
-      ? logListeningActivity(payload.languageId, payload.durationSeconds, { keepalive: true })
-      : logListeningActivity(payload.languageId, payload.durationSeconds);
-    Promise.resolve(logPromise).catch((e: unknown) => {
-      if (isLifecycleFlush && isLifecycleNetworkError(e)) {
-        console.debug('[AudioPlayer] Ignoring page-lifecycle listening flush interruption.', e);
-        return;
-      }
-      tracker.restorePending(payload.durationSeconds);
-      console.error('Log listening activity failed', e);
-    });
-  }, []);
-
-  useEffect(() => {
-    flushListeningActivityRef.current = flushListeningActivity;
-  }, [flushListeningActivity]);
-
+  // --- Periodic save + pause→save + lifecycle flushes ---
   useEffect(() => {
     const interval = setInterval(() => {
       if (isPlaying) {
@@ -811,13 +574,9 @@ export const useAudiobookPlayer = ({
     };
   }, [isPlaying, saveProgress, flushListeningActivity]);
 
-  const wasPlayingRef = useRef(false);
-
   useEffect(() => {
     const tracker = listeningTrackerRef.current;
     if (isPlaying) {
-      // Only arm the checkpoint if one isn't already in flight — the `playing`
-      // audio event may have already set it. Overwriting would discard accrual.
       tracker.ensureCheckpoint(Date.now());
       wasPlayingRef.current = true;
     } else if (wasPlayingRef.current) {
@@ -827,16 +586,19 @@ export const useAudiobookPlayer = ({
       saveProgress(true);
       wasPlayingRef.current = false;
     }
-  }, [isPlaying, saveProgress, flushListeningActivity]);
+  }, [isPlaying, saveProgress, flushListeningActivity, listeningTrackerRef]);
 
   useEffect(() => {
     return () => {
+      // Refs read on cleanup so the LATEST callbacks fire — copying `.current`
+      // into a local would defeat the purpose. Matches pre-split source-line
+      // 832-839 of the legacy hook.
       console.log('[AudioPlayer] Unmounting - Saving progress.');
       flushListeningActivityRef.current?.(true);
       listeningTrackerRef.current.clearCheckpoint();
       saveProgressRef.current?.(true);
     };
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const handleUnload = () => {
@@ -852,105 +614,9 @@ export const useAudiobookPlayer = ({
       window.removeEventListener('pagehide', handleUnload);
       window.removeEventListener('beforeunload', handleUnload);
     };
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // --- Cross-device sync ----------------------------------------------------
-  const justStartedPlayingRef = useRef(false);
-
-  useEffect(() => {
-    if (isPlaying && isInitialized && !justStartedPlayingRef.current) {
-      justStartedPlayingRef.current = true;
-      console.log('[AudioPlayer] Play started - saving position for cross-device sync');
-      playbackStartedContentKeyRef.current = contentKey;
-      saveProgress(true);
-      lastServerUpdateRef.current = Date.now();
-    } else if (!isPlaying) {
-      justStartedPlayingRef.current = false;
-    }
-  }, [contentKey, isPlaying, isInitialized, saveProgress]);
-
-  useEffect(() => {
-    if (isPlaying || !isInitialized) return;
-
-    const checkRemoteProgress = async () => {
-      if (document.hidden) return;
-
-      try {
-        let remoteProgress: Awaited<ReturnType<typeof getAudiobookProgress>> |
-                            Awaited<ReturnType<typeof getAudioLessonProgress>> |
-                            null = null;
-
-        if (isBookMode && book?.bookId) {
-          remoteProgress = await getAudiobookProgress(book.bookId);
-        } else if (!isBookMode && textId) {
-          remoteProgress = await getAudioLessonProgress(textId);
-        }
-
-        if (!remoteProgress?.updatedAt) return;
-
-        const remoteUpdateTime = new Date(remoteProgress.updatedAt).getTime();
-        const localUpdateTime = lastServerUpdateRef.current || 0;
-
-        if (remoteUpdateTime > localUpdateTime + 2000) {
-          if (!isBookMode && playbackStartedContentKeyRef.current === contentKey) {
-            lastServerUpdateRef.current = remoteUpdateTime;
-            return;
-          }
-
-          console.log('[AudioPlayer] Cross-device sync: detected newer remote position');
-
-          let newPosition: number | null = null;
-          let newTrackIndex = currentTrackIndex;
-
-          if (isBookMode) {
-            if ('currentAudiobookTrackId' in remoteProgress && remoteProgress.currentAudiobookTrackId) {
-              const idx = sourceTracks.findIndex(t => t.trackId === remoteProgress!.currentAudiobookTrackId);
-              if (idx !== -1) {
-                newTrackIndex = idx;
-                newPosition = remoteProgress.currentAudiobookPosition ?? null;
-              }
-            }
-          } else if ('currentPosition' in remoteProgress) {
-            newPosition = remoteProgress.currentPosition ?? null;
-          }
-
-          if (newPosition != null && newPosition > 0) {
-            if (newTrackIndex !== currentTrackIndex) {
-              setCurrentTrackIndex(newTrackIndex);
-            }
-
-            const audio = audioRef.current;
-            if (audio && Math.abs(audio.currentTime - newPosition) > 2) {
-              console.log(`[AudioPlayer] Cross-device sync: seeking to ${newPosition}s`);
-              audio.currentTime = newPosition;
-              setCurrentTime(newPosition);
-            }
-          }
-
-          lastServerUpdateRef.current = remoteUpdateTime;
-        }
-      } catch (e) {
-        console.error('[AudioPlayer] Cross-device sync check failed:', e);
-      }
-    };
-
-    const pollInterval = setInterval(checkRemoteProgress, 5000);
-    checkRemoteProgress();
-
-    const handleVisibilityChange = () => {
-      if (!document.hidden) {
-        checkRemoteProgress();
-      }
-    };
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-
-    return () => {
-      clearInterval(pollInterval);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, [audioRef, book?.bookId, contentKey, currentTrackIndex, isBookMode, isInitialized, isPlaying, sourceTracks, textId]);
-
-  // --- EIGHT: Render-side controls -----------------------------------------
+  // --- Transport controls ---
   const togglePlayPause = useCallback(() => {
     const audio = audioRef.current;
     if (!audio) return;
@@ -963,7 +629,7 @@ export const useAudiobookPlayer = ({
       setAudioPlaybackIntent(audio, false);
       audio.pause();
     }
-  }, [audioRef, contentKey, requestAudioPlay]);
+  }, [audioRef, contentKey, requestAudioPlay, userPositionIntentContentKeyRef, playbackStartedContentKeyRef]);
 
   const seek = useCallback((time: number) => {
     const audio = audioRef.current;
@@ -983,7 +649,7 @@ export const useAudiobookPlayer = ({
     if (onTimeUpdateRef.current) {
       onTimeUpdateRef.current(newTime);
     }
-  }, [audioRef, contentKey, duration, resetSegmentPlayback]);
+  }, [audioRef, contentKey, duration, resetSegmentPlayback, segmentPlaybackRef, userPositionIntentContentKeyRef]);
 
   const goToNextTrack = useCallback(() => {
     if (currentTrackIndex < playlist.length - 1) {

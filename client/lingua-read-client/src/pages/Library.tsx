@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { Container, Row, Col, Button, Spinner, Alert, Breadcrumb, Form, Badge, Dropdown } from 'react-bootstrap';
 import { useParams, useNavigate } from 'react-router-dom';
-import LinkButton, { LinkDropdownItem } from '../components/shared/LinkButton';
+import { LinkContainer } from 'react-router-bootstrap';
 import {
   DndContext,
   closestCenter,
@@ -441,10 +441,10 @@ const Library = () => {
               <i className="bi bi-plus-lg me-1"></i>Add Content
             </Dropdown.Toggle>
             <Dropdown.Menu>
-              <LinkDropdownItem to="/books/create">Add Book</LinkDropdownItem>
-              <LinkDropdownItem to="/texts/create">Add Text</LinkDropdownItem>
-              <LinkDropdownItem to="/texts/create-audio">Add Audio Lesson</LinkDropdownItem>
-              <LinkDropdownItem to="/texts/create-batch-audio">Batch Audio</LinkDropdownItem>
+              <LinkContainer to="/books/create"><Dropdown.Item>Add Book</Dropdown.Item></LinkContainer>
+              <LinkContainer to="/texts/create"><Dropdown.Item>Add Text</Dropdown.Item></LinkContainer>
+              <LinkContainer to="/texts/create-audio"><Dropdown.Item>Add Audio Lesson</Dropdown.Item></LinkContainer>
+              <LinkContainer to="/texts/create-batch-audio"><Dropdown.Item>Batch Audio</Dropdown.Item></LinkContainer>
             </Dropdown.Menu>
           </Dropdown>
         </div>
@@ -611,12 +611,12 @@ const Library = () => {
                 <Button variant="outline-primary" onClick={() => setShowCreateFolder(true)}>
                   <i className="bi bi-folder-plus me-1"></i>Create Folder
                 </Button>
-                <LinkButton to="/books/create" variant="primary">
-                  <i className="bi bi-plus-lg me-1"></i>Add Book
-                </LinkButton>
-                <LinkButton to="/texts/create" variant="outline-success">
-                  <i className="bi bi-plus-lg me-1"></i>Add Text
-                </LinkButton>
+                <LinkContainer to="/books/create">
+                  <Button variant="primary"><i className="bi bi-plus-lg me-1"></i>Add Book</Button>
+                </LinkContainer>
+                <LinkContainer to="/texts/create">
+                  <Button variant="outline-success"><i className="bi bi-plus-lg me-1"></i>Add Text</Button>
+                </LinkContainer>
               </>
             )}
             {searchQuery && (

@@ -6,17 +6,20 @@ export const GOAL_TYPE = {
   ListeningSeconds: 2,
   WordsKnown: 3,
 } as const;
+export type GoalTypeValue = typeof GOAL_TYPE[keyof typeof GOAL_TYPE];
 
 export const GOAL_MODE = {
   Delta: 1,
   Milestone: 2,
 } as const;
+export type GoalModeValue = typeof GOAL_MODE[keyof typeof GOAL_MODE];
 
 export const GOAL_RECURRENCE = {
   None: 0,
   Weekly: 1,
   Monthly: 2,
 } as const;
+export type GoalRecurrenceValue = typeof GOAL_RECURRENCE[keyof typeof GOAL_RECURRENCE];
 
 export const TYPE_LABELS: Record<number, string> = {
   [GOAL_TYPE.WordsRead]: 'Words read',

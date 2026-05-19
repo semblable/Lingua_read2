@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import { Container, Row, Col, Card, Button, Spinner, Alert, Tabs, Tab } from 'react-bootstrap';
-import LinkButton from '../shared/LinkButton';
+import { LinkContainer } from 'react-router-bootstrap';
 import { useTextsStore } from '../../utils/store';
 import { getTexts, completeText } from '../../utils/api';
 import type { StoredText } from '../../utils/store';
@@ -57,9 +57,9 @@ const TextList = () => {
     <Container className="py-5">
       <div className="d-flex justify-content-between align-items-center mb-4">
         <h1>My Texts</h1>
-        <LinkButton to="/texts/create" variant="success">
-          Add New Text
-        </LinkButton>
+        <LinkContainer to="/texts/create">
+          <Button variant="success">Add New Text</Button>
+        </LinkContainer>
       </div>
 
       {error && <Alert variant="danger">{error}</Alert>}
@@ -76,9 +76,9 @@ const TextList = () => {
               <Card.Body>
                 <h3>No active texts</h3>
                 <p className="mb-4">Add a new text or check your finished archive.</p>
-                <LinkButton to="/texts/create" variant="primary">
-                  Add New Text
-                </LinkButton>
+                <LinkContainer to="/texts/create">
+                  <Button variant="primary">Add New Text</Button>
+                </LinkContainer>
               </Card.Body>
             </Card>
           ) : (
@@ -159,13 +159,11 @@ const TextListCard = ({ text, onMarkFinished }: TextListCardProps) => (
         </div>
       </Card.Body>
       <Card.Footer className="bg-white border-top-0">
-        <LinkButton
-          to={`/texts/${text.textId || text.id}`}
-          variant="outline-primary"
-          className="w-100 mb-2"
-        >
-          {text.isFinished ? 'Review' : 'Continue Reading'}
-        </LinkButton>
+        <LinkContainer to={`/texts/${text.textId || text.id}`}>
+          <Button variant="outline-primary" className="w-100 mb-2">
+            {text.isFinished ? 'Review' : 'Continue Reading'}
+          </Button>
+        </LinkContainer>
         {!text.isFinished && onMarkFinished && (
           <Button
             variant="outline-success"

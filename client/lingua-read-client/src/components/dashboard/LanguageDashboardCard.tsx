@@ -1,8 +1,8 @@
 import React from 'react';
-import { Card, ProgressBar } from 'react-bootstrap';
+import { Card, ProgressBar, Button } from 'react-bootstrap';
 import { ResponsiveContainer, AreaChart, Area, YAxis } from 'recharts';
+import { LinkContainer } from 'react-router-bootstrap';
 import CefrBadge from './CefrBadge';
-import LinkButton from '../shared/LinkButton';
 
 const formatMinutes = (seconds: number | null | undefined): string => {
   if (!seconds) return '0 min';
@@ -161,21 +161,17 @@ const LanguageDashboardCard = ({ lang }: LanguageDashboardCardProps) => {
 
         <div className="mt-auto d-flex gap-2 flex-wrap">
           {continueReadingTextId ? (
-            <LinkButton
-              to={`/texts/${continueReadingTextId}`}
-              size="sm"
-              variant="primary"
-            >
-              Continue reading
-            </LinkButton>
+            <LinkContainer to={`/texts/${continueReadingTextId}`}>
+              <Button size="sm" variant="primary">Continue reading</Button>
+            </LinkContainer>
           ) : (
-            <LinkButton to="/library" size="sm" variant="outline-primary">
-              Open library
-            </LinkButton>
+            <LinkContainer to="/library">
+              <Button size="sm" variant="outline-primary">Open library</Button>
+            </LinkContainer>
           )}
-          <LinkButton to="/srs" size="sm" variant="outline-secondary">
-            Review SRS
-          </LinkButton>
+          <LinkContainer to="/srs">
+            <Button size="sm" variant="outline-secondary">Review SRS</Button>
+          </LinkContainer>
         </div>
       </Card.Body>
     </Card>

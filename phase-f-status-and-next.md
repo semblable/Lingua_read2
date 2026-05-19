@@ -73,43 +73,64 @@ The migration plan ended with `strict: true` clean, ~~95~~ 0 `eslint-disable no-
 
 ## Outstanding debt
 
-**Zero `eslint-disable no-explicit-any` annotations remain in `src/`.** The original 95 are all resolved across F1–F.13.
+**Zero `eslint-disable no-explicit-any` annotations remain in `src/`.** The original 95 are all resolved across F1–F.13. Phase F.14 + Phase G (below) clear the four follow-up items previously noted here.
 
-A few items merit a follow-up note:
+### Phase F.14 — backend `tag` + GoalModal enum tightening + react-router-bootstrap adoption (2026-05-18)
 
-- **`BookDetail.tsx`** still casts the `getText` result to access `tag` (`as Awaited<ReturnType<typeof getText>> & { tag?: string | null }`). The backend returns `tag`, but `TextDetailDto` in Swagger doesn't list it. Fixing the C# DTO to include `[OpenApiProperty] public string? Tag { get; set; }` (or whatever the actual annotation is) lets the cast go away.
-- **`GoalModal.tsx`** bridges through `unknown as Parameters<typeof createGoal>[0]` because the form's numeric `goalType` / `mode` / `recurrence` widen from the api-types enum unions. Backend accepts any int in range; tightening the form-state types to match the generated enum unions would remove the bridge.
-- **`LinkButton.tsx`** still uses a typed-`unknown` cast for the react-bootstrap polymorphic `as`. A react-bootstrap upgrade with better As-prop typing (or moving to `react-router-bootstrap`) could simplify further, but the current cast is precise enough that it isn't `any`.
-- **`useAudiobookPlayer.ts`** (1,059 LOC, untested split) remains a Phase G candidate — unrelated to disable count.
+| Sub | What landed | Net |
+|---|---|---|
+| **F.14a** | `TextDetailDto` (C#) gains `public string? Tag { get; set; }`; `GetText` LINQ projection adds `Tag = text.Tag`. `api-types.d.ts` regenerated from updated Swagger (now includes `tag?: string \| null`). [BookDetail.tsx](client/lingua-read-client/src/pages/BookDetail.tsx) drops the `Awaited<ReturnType<typeof getText>> & { tag?: string \| null }` widening cast + the stale "swagger fix is tracked separately" comment. Latent bug fixed: pre-F.14, the controller projection didn't include `Tag`, so the book-detail edit modal's `tag` field was always populated as `''` regardless of the saved tag. | Casts: -1 |
+| **F.14b** | [goalUtils.ts](client/lingua-read-client/src/components/goals/goalUtils.ts) exports `GoalTypeValue` / `GoalModeValue` / `GoalRecurrenceValue` literal-union aliases (`typeof X[keyof typeof X]`) co-located with the `as const` declarations. [GoalModal.tsx](client/lingua-read-client/src/components/goals/GoalModal.tsx) tightens `useState<number>` → `useState<GoalTypeValue\|GoalModeValue\|GoalRecurrenceValue>`; the `as unknown as Parameters<typeof createGoal>[0]` bridge + 3-line comment removed. Strict typing surfaced a latent bug at line 361 (duplicate `type === GOAL_TYPE.ListeningSeconds ? '(hours)' : type === GOAL_TYPE.ListeningSeconds ? '(seconds)' : '(words)'` — second branch unreachable); collapsed to `'(hours)' : '(words)'`. | Casts: -1, latent bug fixes: +1 |
+| **F.14c** | `react-router-bootstrap@^0.26.3` installed; ambient module declaration at `src/types/react-router-bootstrap.d.ts` preserves strict typing (no `any`). [LinkButton.tsx](client/lingua-read-client/src/components/shared/LinkButton.tsx) **deleted** (was 68 LOC with 3 `AsLinkComponent<P>` casts). All 7 consumer files migrated to `<LinkContainer to="...">` wrapping the host component: Dashboard, Library, Home, BookDetail, components/texts/TextList, pages/TextList, dashboard/LanguageDashboardCard. Navigation.tsx also migrated — replaces 7 bare `<X as={Link} to="...">` patterns with `<LinkContainer to="..."><X>` composition. | Casts: -3, files removed: -1 |
 
-### Items still tracked for future
+### Phase G — useAudiobookPlayer 4-hook split (2026-05-18)
 
-- `useAudiobookPlayer.ts` is 1,059 LOC bundling 4 orthogonal concerns (progress sync, segment playback, listening activity, audio element wiring). Not split. See **Phase G** below.
-- `react-bootstrap` × `react-router-dom` typing clash is contained in `LinkButton.tsx`'s `LooseAs = any` cast. A library upgrade (e.g. react-bootstrap v3 or a `react-router-bootstrap` adoption) could remove it, but is out of scope.
+| Sub | What landed | Notes |
+|---|---|---|
+| **G3** | Extracted [useAudiobookListeningActivity.ts](client/lingua-read-client/src/hooks/audio/useAudiobookListeningActivity.ts) (63 LOC). Owns `listeningTrackerRef`, `flushListeningActivityRef`; `flushListeningActivity` callback; `setLanguageId` effect + sync-flush-to-ref effect. | First extraction — most self-contained. |
+| **G2** | Extracted [useAudiobookSegmentPlayback.ts](client/lingua-read-client/src/hooks/audio/useAudiobookSegmentPlayback.ts) (91 LOC). Owns `segmentPlaybackRef`; contentKey-tied reset effect (registered before apply so it fires first on initial mount, preserving pre-split source-order semantics); apply-on-request effect; `handleSegmentBoundary(time)` helper that the orchestrator's `handleTimeUpdate` consults each tick. | Second extraction. |
+| **G1** | Extracted [useAudiobookProgress.ts](client/lingua-read-client/src/hooks/audio/useAudiobookProgress.ts) (409 LOC). Owns 7 tracking refs (`saveProgressRef`, `restoredContentKeyRef`, `playbackStartedContentKeyRef`, `userPositionIntentContentKeyRef`, `initialSeekRef`, `lastServerUpdateRef`, `justStartedPlayingRef`); `saveProgress`/`queueInitialSeek`/`applyInitialSeekIfReady` callbacks; initial-progress-load effect, sync-saveProgress-to-ref, cross-device-sync-on-play, cross-device-sync-polling (with visibilitychange listener). | Third extraction. |
+| **G4** | [useAudiobookPlayer.ts](client/lingua-read-client/src/hooks/useAudiobookPlayer.ts) slimmed 1,059 → 722 LOC. Owns all 11 useState (state setters never migrate out — preserves render-batch shape), structural refs (audio element, playback snapshot, lifecycle flag), `requestAudioPlay`, `buildTrackSrc`, audio-event-listener effect, src-swap effect, transport controls (`togglePlayPause`/`seek`/`goToNextTrack`/`goToPrevTrack`/`changeRate`/`handleVolumeChange`), keyboard shortcuts. Composes G3 → G1 → G2 in fixed call order (documented in the file as a hook-order invariant). | Net source LOC: 1,059 → 1,285 (split across 4 files, +21% from per-file imports + arg type defs + ordering-invariant comments). |
 
----
+#### Hook-order invariant (G4 composes in this fixed order)
 
-## Phase G — proposed, not executed
+1. **G3** — listening activity. Self-contained.
+2. **G1** — progress + content-key tracking. Owns `userPositionIntentContentKeyRef` which G2 mutates.
+3. **G2** — segment playback. Reads orchestrator's `requestAudioPlay` (defined between G1 and G2 in source order).
+4. **G4 effects** — audio event listeners, lifecycle flushes, transport controls.
 
-The plan covers a 4-step split of [hooks/useAudiobookPlayer.ts](client/lingua-read-client/src/hooks/useAudiobookPlayer.ts) (1,059 LOC → ~4 hooks, each independently testable):
+Reordering breaks effect-execution order: e.g., G1's progress-load effect must run before G4's audio-event-listener effect so `initialSeekRef` is populated by the time `loadedmetadata` fires. Also: G2's contentKey-tied segment reset is internal to G2 (not pulled into G4's reset-on-contentKey effect) so it fires *before* G2's segment-apply effect — mirroring the pre-split source order where the legacy hook's line-419 reset preceded line-525 segment-apply.
 
-| Step | Extract | Approx. LOC | What it owns |
-|---|---|---|---|
-| **G1** | `useAudiobookProgress` | ~200 | Progress load on mount, periodic save, cross-device sync detect+restore. Exposes `playbackStartedContentKeyRef`, `lastServerUpdateRef`. |
-| **G2** | `useAudiobookSegmentPlayback` | ~150 | Consumes `audio/segmentPlayback.ts` pure module + applies requests to the live audio element. |
-| **G3** | `useAudiobookListeningActivity` | ~120 | Wraps `audio/listeningActivity.ts` tracker into a hook with visibility/pagehide/periodic flush effects. |
-| **G4** | Slim `useAudiobookPlayer` to orchestrator | ~400–500 | Residual audio element wiring + composition of G1–G3. |
+#### Test coverage
 
-**Why deferred:** the F3 smoke tests cover return shape and a few derivations, but don't exercise cross-device sync, listening-activity flush, or segment-request handling — exactly the concerns Phase G would relocate. Without that coverage, regressions could land silently. The 26 surviving `AudiobookPlayer.test.js` integration tests are the safety net, but they exercise the rendered component shell, not the hook directly.
+| File | Tests | Coverage |
+|---|---|---|
+| [useAudiobookListeningActivity.test.js](client/lingua-read-client/src/__tests__/useAudiobookListeningActivity.test.js) | 3 | result shape, language-id propagation, flush invokes API |
+| [useAudiobookSegmentPlayback.test.js](client/lingua-read-client/src/__tests__/useAudiobookSegmentPlayback.test.js) | 3 | continue when inactive, apply seeks+plays, stop at endTime + ref-reset |
+| [useAudiobookProgress.test.js](client/lingua-read-client/src/__tests__/useAudiobookProgress.test.js) | 3 | result shape, initial lesson-progress fetch, `saveProgress(true)` writes localStorage + calls update API |
 
-**When to revisit:** before any planned change to audiobook playback behavior. Splitting it then makes the change easier to review and test in isolation; doing it preemptively is pure refactor.
+All 26 [AudiobookPlayer.test.js](client/lingua-read-client/src/__tests__/AudiobookPlayer.test.js) integration tests pass **without modification** — the split is behavior-preserving. Vitest baseline: 346 → 355 (+9 from G1/G2/G3 unit tests).
+
+### Verification baseline (post-F.14 + Phase G)
+
+- `npx tsc --noEmit` → **0 errors** under full `strict: true`.
+- `npx vitest run` → **355 pass / 0 skip** (346 pre-G baseline + 9 new unit tests).
+- All 26 `AudiobookPlayer.test.js` integration tests + all 10 `useAudiobookPlayer.test.js` smoke tests pass unmodified.
+- `eslint-disable no-explicit-any` count: **0** (unchanged).
+- `@ts-ignore` / `@ts-expect-error`: **0** (unchanged).
+- `as unknown as` in `src/`: **-5 from this batch** (LinkButton×3 + GoalModal×1 + BookDetail×1 all removed). 9 pre-existing documented bridges remain in `useReaderState`, `UserSettings`, `AiProviderSettings`, `LanguageForm`, `TextDisplay`, `client.ts` — all acknowledged in earlier Phase F sub-phases as precise type-bridges, not `any`-escapes.
+- `react-hooks/exhaustive-deps` warnings on `useAudiobookPlayer.ts`: **1 → 3** (+2 from the Phase G split — destructured refs are no longer recognized as `useRef` returns by the lint plugin's analysis; the cleanup pattern is intentional and matches pre-split source-line 832-839 of the legacy hook).
+- `npx vite build` succeeds. Bundle chunking differs cosmetically (Vite re-named the main chunk), but no new code paths.
+
+Phase F + Phase G are complete. No outstanding items.
 
 ---
 
 ## Recommended next steps
 
-1. **Merge `typescript` → `main`** ✅ — F1–F.13 are all independently revertable. Manual golden-path smoke (login, library DnD, reader word save / keyboard 1–5 / delete, audiobook seek + cross-tab sync, SRS card+story, settings, BatchAudioCreate fuzzy-match) passed against the F.10 state on 2026-05-18. F.11/F.12/F.13 are type-only — bundle bytes unchanged at 278.28 KB — but two hot paths warrant a re-smoke before merge:
-   - **Audio-lesson sentence mode** (F.11 touches `replayCurrentSegmentAudio` discriminator + audio-driven sync effect).
-   - **Settings / Hardcover / Stats screens** (F.13 retyped `AiProviderSettings`, `DataManagementSettings`, `HardcoverSettings`, and the audio-storage readout now guards `?? 0` against missing fields).
-2. **Phase G** — `useAudiobookPlayer.ts` 4-hook split (still deferred). Best done when audiobook playback behavior is on the roadmap.
-3. **Optional backend cleanups** — see "Outstanding debt" above: add `tag` to `TextDetailDto` swagger, tighten goal-form enum types to match the api-types enum unions, consider a `react-router-bootstrap` adoption for `LinkButton`.
+1. **Merge `typescript` → `main`** — F1–F.14 + Phase G are all independently revertable. F.14 + Phase G hot paths to re-smoke before merge:
+   - **Book-detail edit modal** (F.14a fixes latent `tag = ''` bug — verify a tagged text loads its tag into the edit form).
+   - **Goal creation** (F.14b — create one goal per type × cadence × mode combination).
+   - **All navigation surfaces** (F.14c — click every Navbar link, every Dashboard / Library / Home / TextList / BookDetail navigation button; verify URL changes and react-bootstrap active styling renders).
+   - **Audiobook playback** (Phase G — book mode track advance + cross-tab sync, sentence mode segment playback with `repeatCount=2`, page-lifecycle save with `keepalive: true`).
+2. **No outstanding TypeScript-strictness items.** Phase F's "Outstanding debt" follow-ups are all resolved.

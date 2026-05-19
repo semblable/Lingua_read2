@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Container, Row, Col, Card, Spinner, Alert } from 'react-bootstrap';
-import LinkButton from '../components/shared/LinkButton';
+import { Container, Row, Col, Card, Spinner, Alert, Button } from 'react-bootstrap';
+import { LinkContainer } from 'react-router-bootstrap';
 import { getDashboard } from '../utils/api';
 import LanguageDashboardCard from '../components/dashboard/LanguageDashboardCard';
 import GoalsCard from '../components/goals/GoalsCard';
@@ -140,15 +140,15 @@ const Dashboard = () => {
               Add a text or book in any language to start tracking your progress.
             </Card.Text>
             <div className="d-flex justify-content-center gap-2 flex-wrap">
-              <LinkButton to="/texts/create" variant="primary">
-                Add Text
-              </LinkButton>
-              <LinkButton to="/books/create" variant="outline-primary">
-                Add Book
-              </LinkButton>
-              <LinkButton to="/library" variant="outline-secondary">
-                Open Library
-              </LinkButton>
+              <LinkContainer to="/texts/create">
+                <Button variant="primary">Add Text</Button>
+              </LinkContainer>
+              <LinkContainer to="/books/create">
+                <Button variant="outline-primary">Add Book</Button>
+              </LinkContainer>
+              <LinkContainer to="/library">
+                <Button variant="outline-secondary">Open Library</Button>
+              </LinkContainer>
             </div>
           </Card.Body>
         </Card>

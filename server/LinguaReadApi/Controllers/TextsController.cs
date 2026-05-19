@@ -115,6 +115,7 @@ namespace LinguaReadApi.Controllers
                      BookTitle = text.Book != null ? text.Book.Title : null,
                      IsAudioLesson = text.IsAudioLesson,
                      AudioFilePath = text.AudioFilePath,
+                     Tag = text.Tag,
                      SrtContent = null, // Loaded lazily via /api/texts/{id}/srt
                      HasSrtContent = text.SrtContent != null,
                      WordLinkingStatus = text.WordLinkingStatus,
@@ -1129,6 +1130,7 @@ namespace LinguaReadApi.Controllers
         public DateTime CreatedAt { get; set; }
         public bool IsAudioLesson { get; set; }
         public string? AudioFilePath { get; set; }
+        public string? Tag { get; set; }
         public string? SrtContent { get; set; }
         public bool HasSrtContent { get; set; }
         public string? WordLinkingStatus { get; set; }

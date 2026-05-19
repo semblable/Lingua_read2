@@ -5506,6 +5506,7 @@ export interface components {
             createdAt?: string;
             isAudioLesson?: boolean;
             audioFilePath?: string | null;
+            tag?: string | null;
             srtContent?: string | null;
             hasSrtContent?: boolean;
             wordLinkingStatus?: string | null;

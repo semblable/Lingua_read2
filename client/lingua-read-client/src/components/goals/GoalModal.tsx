@@ -13,6 +13,7 @@ import {
   TYPE_LABELS,
   formatMetric,
 } from './goalUtils';
+import type { GoalTypeValue, GoalModeValue, GoalRecurrenceValue } from './goalUtils';
 
 const SCOPE_ALL = '__all__';
 
@@ -40,14 +41,14 @@ function GoalModal({
 }: GoalModalProps) {
   const isEdit = !!editing;
 
-  const [type, setType] = useState<number>(GOAL_TYPE.WordsRead);
+  const [type, setType] = useState<GoalTypeValue>(GOAL_TYPE.WordsRead);
   // scope is the language-id selector value; '__all__' for all-languages,
   // '' for unselected, otherwise the languageId as a string.
   const [scope, setScope] = useState<string>(
     defaultLanguageId != null ? String(defaultLanguageId) : ''
   );
-  const [recurrence, setRecurrence] = useState<number>(GOAL_RECURRENCE.None);
-  const [mode, setMode] = useState<number>(GOAL_MODE.Delta);
+  const [recurrence, setRecurrence] = useState<GoalRecurrenceValue>(GOAL_RECURRENCE.None);
+  const [mode, setMode] = useState<GoalModeValue>(GOAL_MODE.Delta);
   const [target, setTarget] = useState('');
   const [hasDeadline, setHasDeadline] = useState(false);
   const [deadline, setDeadline] = useState('');
@@ -235,10 +236,7 @@ function GoalModal({
           title: payload.title,
         });
       } else {
-        // payload's numeric goalType / mode / recurrence widen from the enum
-        // unions in api-types; the backend accepts any int in the valid range
-        // and the form constrains the values via UI, so bridge through unknown.
-        await createGoal(payload as unknown as Parameters<typeof createGoal>[0]);
+        await createGoal(payload);
       }
       if (onSaved) onSaved();
       onHide();
@@ -360,7 +358,7 @@ function GoalModal({
 
           <Form.Group className="mb-3">
             <Form.Label>
-              Target {type === GOAL_TYPE.ListeningSeconds ? '(hours)' : type === GOAL_TYPE.ListeningSeconds ? '(seconds)' : '(words)'}
+              Target {type === GOAL_TYPE.ListeningSeconds ? '(hours)' : '(words)'}
             </Form.Label>
             <Form.Control
               type="number"

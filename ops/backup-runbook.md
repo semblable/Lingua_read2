@@ -1,7 +1,7 @@
 ## Lingua-Read backups (DB + media)
 
 This repo’s Docker stack persists:
-- **Postgres data**: `db_data` volume
+- **Postgres data**: `db_data_pg18` volume
 - **Audio lessons**: `api_audio_lessons` volume
 - **Audiobooks**: `api_audiobooks` volume
 
@@ -58,7 +58,7 @@ cat backups/db-<timestamp>.backup | docker compose exec -T db pg_restore \
 
 If you need to recreate the DB from scratch, it’s often simplest to:
 - stop the stack
-- delete `db_data` volume
+- delete `db_data_pg18` volume
 - start stack again (fresh DB)
 - then restore into the fresh DB
 
@@ -123,6 +123,6 @@ cat /var/log/docker-prune.log   # check output after first run
 ### Warning: never automate volume pruning
 
 `docker volume prune` or `docker system prune --volumes` will **destroy data
-volumes** belonging to stopped containers (e.g. `db_data` if the DB crashed).
+volumes** belonging to stopped containers (e.g. `db_data_pg18` if the DB crashed).
 Only run volume cleanup manually after confirming backups are current.
 

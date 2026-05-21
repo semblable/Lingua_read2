@@ -1,13 +1,13 @@
 services:
   db:
-    image: postgres:16
+    image: postgres:18
     restart: always
     environment:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
-      - db_data:/var/lib/postgresql/data
+      - db_data_pg18:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\" -h localhost"]
       interval: 5s
@@ -100,7 +100,10 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
 
 volumes:
+  # Retired PostgreSQL 16 cluster — kept for rollback; prune once PG18 is confirmed stable.
   db_data:
+  # PostgreSQL 18 data — mounted at /var/lib/postgresql to match the postgres:18 image VOLUME.
+  db_data_pg18:
   api_audio_lessons:
   api_audiobooks:
   api_epub_assets:

@@ -184,7 +184,6 @@ jobs:
           host: ${{ secrets.GCP_DEPLOY_HOST }}
           username: ${{ secrets.GCP_DEPLOY_USER }}
           key: ${{ secrets.GCP_DEPLOY_SSH_KEY }}
-          script_stop: true
           script: |
             set -euo pipefail
             cd "${{ secrets.GCP_DEPLOY_PATH }}"

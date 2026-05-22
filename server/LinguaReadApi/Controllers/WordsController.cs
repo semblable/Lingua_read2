@@ -420,6 +420,9 @@ namespace LinguaReadApi.Controllers
                 return NotFound();
             }
 
+            // Capture the previous status before overwriting so we can detect an un-ignore transition.
+            var previousStatus = word.Status;
+
             // Update word status
             word.Status = updateWordDto.Status;
 
@@ -440,7 +443,7 @@ namespace LinguaReadApi.Controllers
                 {
                     _context.SrsCardReviews.Add(new SrsCardReview { WordId = word.WordId, UserId = userId });
                 }
-                else
+                else if (previousStatus == 6)
                 {
                     existingCard.IsSuspended = false; // un-ignoring restores reviews
                 }

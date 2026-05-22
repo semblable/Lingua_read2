@@ -110,4 +110,30 @@ public class WordsControllerTests
         var card = await context.SrsCardReviews.SingleAsync(c => c.WordId == wordId);
         Assert.False(card.IsSuspended);
     }
+
+    [Fact]
+    public async Task UpdateWord_ReSavingNonIgnoredWord_PreservesManualSuspension()
+    {
+        using var context = CreateContext();
+        var (userId, wordId) = SeedWord(context, status: 3);
+        // A card the user manually suspended via the SRS interface.
+        context.SrsCardReviews.Add(new SrsCardReview
+        {
+            WordId = wordId,
+            UserId = userId,
+            NextReviewAt = DateTime.UtcNow,
+            CreatedAt = DateTime.UtcNow,
+            IsSuspended = true
+        });
+        context.SaveChanges();
+
+        var controller = CreateController(context, userId);
+        // Re-saving the word at a non-ignored status must not touch the card —
+        // only a genuine un-ignore (6 -> 1-4) transition restores reviews.
+        var result = await controller.UpdateWord(wordId, new UpdateWordDto { Status = 3 });
+
+        Assert.IsType<NoContentResult>(result);
+        var card = await context.SrsCardReviews.SingleAsync(c => c.WordId == wordId);
+        Assert.True(card.IsSuspended);
+    }
 }

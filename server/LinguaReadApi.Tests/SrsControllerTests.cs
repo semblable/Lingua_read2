@@ -196,4 +196,27 @@ public class SrsControllerTests
 
         Assert.Empty(response.MicroContexts);
     }
+
+    [Fact]
+    public async Task MineSentence_ForIgnoredWord_DoesNotCreateSrsCard()
+    {
+        using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        context.Languages.Add(new Language { LanguageId = 1, Name = "Spanish", Code = "ES" });
+        // An ignored word (Status 6) with no SRS card.
+        context.Words.Add(new Word { WordId = 1, UserId = userId, LanguageId = 1, Term = "gato", Status = 6 });
+        context.SaveChanges();
+
+        var controller = CreateController(context, userId);
+        var result = await controller.MineSentence(new SrsMineDto
+        {
+            WordId = 1,
+            Sentence = "El gato duerme."
+        });
+
+        Assert.IsType<OkObjectResult>(result);
+        // The mined phrase is still saved, but an ignored word must never enter the review queue.
+        Assert.Single(context.SrsPhrases.Where(p => p.WordId == 1));
+        Assert.Empty(context.SrsCardReviews.Where(c => c.WordId == 1));
+    }
 }

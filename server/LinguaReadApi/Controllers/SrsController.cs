@@ -342,20 +342,24 @@ namespace LinguaReadApi.Controllers
             };
             _context.SrsPhrases.Add(phrase);
 
-            // Auto-create SRS card if not already tracking this word
-            var existingCard = await _context.SrsCardReviews
-                .FirstOrDefaultAsync(scr => scr.WordId == dto.WordId && scr.UserId == userId);
-
-            if (existingCard == null)
+            // Auto-create SRS card if not already tracking this word.
+            // Ignored words (Status 6) must never surface in review — skip card creation.
+            if (word.Status != 6)
             {
-                var card = new SrsCardReview
+                var existingCard = await _context.SrsCardReviews
+                    .FirstOrDefaultAsync(scr => scr.WordId == dto.WordId && scr.UserId == userId);
+
+                if (existingCard == null)
                 {
-                    WordId = dto.WordId,
-                    UserId = userId,
-                    NextReviewAt = DateTime.UtcNow,
-                    CreatedAt = DateTime.UtcNow
-                };
-                _context.SrsCardReviews.Add(card);
+                    var card = new SrsCardReview
+                    {
+                        WordId = dto.WordId,
+                        UserId = userId,
+                        NextReviewAt = DateTime.UtcNow,
+                        CreatedAt = DateTime.UtcNow
+                    };
+                    _context.SrsCardReviews.Add(card);
+                }
             }
 
             await _context.SaveChangesAsync();

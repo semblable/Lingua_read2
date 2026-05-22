@@ -56,9 +56,9 @@ namespace LinguaReadApi.Controllers
         {
             var userId = GetUserId();
             
-            // Get total word count for user across all languages
+            // Get total word count for user across all languages (status 6 = Ignored excluded)
             var totalWords = await _context.Words
-                .CountAsync(w => w.UserId == userId);
+                .CountAsync(w => w.UserId == userId && w.Status != 6);
                 
             // Get known word count (status 4 or 5)
             var knownWords = await _context.Words
@@ -77,7 +77,7 @@ namespace LinguaReadApi.Controllers
                 .GroupBy(w => w.LanguageId)
                 .Select(g => new { 
                     LanguageId = g.Key, 
-                    TotalCount = g.Count(),
+                    TotalCount = g.Count(w => w.Status != 6),
                     KnownCount = g.Count(w => w.Status >= 4 && w.Status <= 5)
                 })
                 .ToDictionaryAsync(g => g.LanguageId, g => g);
@@ -574,7 +574,7 @@ namespace LinguaReadApi.Controllers
                     .Select(g => new
                     {
                         LanguageId = g.Key,
-                        TotalCount = g.Count(),
+                        TotalCount = g.Count(w => w.Status != 6),
                         KnownCount = g.Count(w => w.Status >= 4 && w.Status <= 5)
                     })
                     .ToDictionaryAsync(g => g.LanguageId, g => g);

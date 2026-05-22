@@ -27,6 +27,46 @@ describe('useReaderKeyboard', () => {
     expect(onSetWordStatus).toHaveBeenCalledWith('hola', 3);
   });
 
+  test('invokes onSetWordStatus with status 6 for the "i" key (ignore)', () => {
+    const onSetWordStatus = vi.fn();
+    renderHook(() =>
+      useReaderKeyboard({ enabled: true, hoveredWordTerm: 'hola', onSetWordStatus })
+    );
+
+    fireKey('i');
+    expect(onSetWordStatus).toHaveBeenCalledWith('hola', 6);
+  });
+
+  test('invokes onSetWordStatus with status 6 for the uppercase "I" key', () => {
+    const onSetWordStatus = vi.fn();
+    renderHook(() =>
+      useReaderKeyboard({ enabled: true, hoveredWordTerm: 'hola', onSetWordStatus })
+    );
+
+    fireKey('I');
+    expect(onSetWordStatus).toHaveBeenCalledWith('hola', 6);
+  });
+
+  test('does not invoke "i" (ignore) when disabled', () => {
+    const onSetWordStatus = vi.fn();
+    renderHook(() =>
+      useReaderKeyboard({ enabled: false, hoveredWordTerm: 'hola', onSetWordStatus })
+    );
+
+    fireKey('i');
+    expect(onSetWordStatus).not.toHaveBeenCalled();
+  });
+
+  test('does not invoke "i" (ignore) when no word is hovered', () => {
+    const onSetWordStatus = vi.fn();
+    renderHook(() =>
+      useReaderKeyboard({ enabled: true, hoveredWordTerm: null, onSetWordStatus })
+    );
+
+    fireKey('i');
+    expect(onSetWordStatus).not.toHaveBeenCalled();
+  });
+
   test('does nothing when no word is hovered', () => {
     const onSetWordStatus = vi.fn();
     renderHook(() =>

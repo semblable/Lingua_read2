@@ -578,6 +578,8 @@ const TextDisplay = () => {
     // Use globalSettings from context
     if (!globalSettings?.highlightKnownWords && wordStatus === 5) return { ...baseStyle, backgroundColor: 'transparent', color: 'inherit' };
     if (wordStatus === 5) return { ...baseStyle, backgroundColor: 'transparent', color: 'inherit' };
+    // Ignored words render as plain text, like Known
+    if (wordStatus === 6) return { ...baseStyle, backgroundColor: 'transparent', color: 'inherit' };
     const statusStyles: Record<number, { backgroundColor: string; color: string }> = {
       0: { backgroundColor: 'var(--status-0-color, #e0e0e0)', color: '#000' },
       1: { backgroundColor: 'var(--status-1-color, #ff6666)', color: '#000' },
@@ -1560,7 +1562,7 @@ const TextDisplay = () => {
     setSaveSuccess(false); setProcessingWord(true);
     try {
       const numericStatus = parseInt(String(status), 10);
-      if (isNaN(numericStatus) || numericStatus < 1 || numericStatus > 5) throw new Error(`Invalid status: ${status}.`);
+      if (isNaN(numericStatus) || numericStatus < 1 || numericStatus > 6) throw new Error(`Invalid status: ${status}.`);
       const existingWord = getWordData(selectedWord);
       if (existingWord) {
         await updateWord(existingWord.wordId!, numericStatus, translation);

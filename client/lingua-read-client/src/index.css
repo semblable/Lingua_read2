@@ -699,6 +699,12 @@ a:focus {
   /* Will inherit from body or .dark-theme */
 }
 
+.word-status-6 {
+  background-color: transparent !important;
+  color: inherit !important;
+  /* Ignored words render as plain text, like Known */
+}
+
 .text-content {
   font-size: 1.125rem;
   /* Slightly smaller than before, but with better base rem */

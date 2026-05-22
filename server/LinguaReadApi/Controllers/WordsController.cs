@@ -109,7 +109,8 @@ namespace LinguaReadApi.Controllers
                             CreatedAt = DateTime.UtcNow
                         });
                     }
-                    if (createWordDto.Status < 5)
+                    // status 5 (Known) and 6 (Ignored) get no SRS card
+                    if (createWordDto.Status >= 1 && createWordDto.Status < 5)
                     {
                         var existingCard = await _context.SrsCardReviews
                             .FirstOrDefaultAsync(scr => scr.WordId == existingWord.WordId && scr.UserId == userId);
@@ -176,7 +177,8 @@ namespace LinguaReadApi.Controllers
                     CreatedAt = DateTime.UtcNow
                 });
 
-                if (createWordDto.Status < 5)
+                // status 5 (Known) and 6 (Ignored) get no SRS card
+                if (createWordDto.Status >= 1 && createWordDto.Status < 5)
                 {
                     _context.SrsCardReviews.Add(new SrsCardReview { WordId = word.WordId, UserId = userId });
                 }
@@ -421,13 +423,26 @@ namespace LinguaReadApi.Controllers
             // Update word status
             word.Status = updateWordDto.Status;
 
-            if (word.Status < 5)
+            if (word.Status == 6)
             {
+                // Ignored words must never surface in SRS; suspend any existing card.
+                var cards = await _context.SrsCardReviews
+                    .Where(scr => scr.WordId == word.WordId && scr.UserId == userId)
+                    .ToListAsync();
+                foreach (var c in cards) c.IsSuspended = true;
+            }
+            else if (word.Status >= 1 && word.Status < 5)
+            {
+                // status 5 (Known) and 6 (Ignored) get no SRS card
                 var existingCard = await _context.SrsCardReviews
                     .FirstOrDefaultAsync(scr => scr.WordId == word.WordId && scr.UserId == userId);
                 if (existingCard == null)
                 {
                     _context.SrsCardReviews.Add(new SrsCardReview { WordId = word.WordId, UserId = userId });
+                }
+                else
+                {
+                    existingCard.IsSuspended = false; // un-ignoring restores reviews
                 }
             }
 
@@ -780,7 +795,7 @@ SET ""Translation"" = EXCLUDED.""Translation"",
         public string Term { get; set; } = string.Empty;
 
         [Required]
-        [Range(1, 5)]
+        [Range(1, 6)]
         public int Status { get; set; }
 
         // Translation is optional (can be empty or null)
@@ -792,7 +807,7 @@ SET ""Translation"" = EXCLUDED.""Translation"",
     public class UpdateWordDto
     {
         [Required]
-        [Range(1, 5)]
+        [Range(1, 6)]
         public int Status { get; set; }
 
         // Translation is optional (can be empty or null)

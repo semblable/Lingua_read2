@@ -27,6 +27,11 @@ export const useReaderKeyboard = ({
         return;
       }
       if (!enabled || !hoveredWordTerm) return;
+      if (event.key === 'i' || event.key === 'I') {
+        event.preventDefault();
+        void onSetWordStatus(hoveredWordTerm, 6);
+        return;
+      }
       const key = parseInt(event.key, 10);
       if (!Number.isInteger(key) || key < 1 || key > 5) return;
       event.preventDefault();

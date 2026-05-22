@@ -114,6 +114,58 @@ public class StatsRecomputeServiceTests
     }
 
     [Fact]
+    public async Task RecomputeAllAsync_ExcludesIgnoredWords_FromTextAndBookStats()
+    {
+        // Ignored words (Status = 6) are invisible to stats: they count toward
+        // neither KnownWords nor TotalWords at the text or book level.
+        var dbName = Guid.NewGuid().ToString();
+        var userId = Guid.NewGuid();
+        await using (var seed = NewContext(dbName))
+        {
+            seed.Users.Add(new User { Id = userId, UserName = "tester", Email = "tester@example.com" });
+            seed.Languages.Add(new Language { LanguageId = 1, Name = "Spanish", Code = "ES" });
+
+            // conocido(Status=5) is Known and counts; ignorado(Status=6) must not.
+            seed.Words.Add(new Word { WordId = 1, UserId = userId, LanguageId = 1, Term = "conocido", Status = 5 });
+            seed.Words.Add(new Word { WordId = 2, UserId = userId, LanguageId = 1, Term = "ignorado", Status = 6 });
+
+            seed.Books.Add(new Book { BookId = 1, UserId = userId, LanguageId = 1, Title = "B" });
+            seed.Texts.Add(new Text { TextId = 10, UserId = userId, LanguageId = 1, Title = "Standalone", Content = "" });
+            seed.Texts.Add(new Text { TextId = 11, UserId = userId, LanguageId = 1, BookId = 1, Title = "Part", Content = "" });
+
+            // Each text has 3 known tokens + 4 ignored tokens.
+            seed.TextWords.AddRange(
+                new TextWord { TextWordId = 100, TextId = 10, WordId = 1, OccurrenceCount = 3 },
+                new TextWord { TextWordId = 101, TextId = 10, WordId = 2, OccurrenceCount = 4 },
+                new TextWord { TextWordId = 110, TextId = 11, WordId = 1, OccurrenceCount = 3 },
+                new TextWord { TextWordId = 111, TextId = 11, WordId = 2, OccurrenceCount = 4 });
+            await seed.SaveChangesAsync();
+        }
+
+        var (provider, _) = CreateProvider(dbName);
+        var service = new StatsRecomputeService(provider, NullLogger<StatsRecomputeService>.Instance, new MigrationSignal());
+        await service.RecomputeAllAsync(CancellationToken.None);
+
+        await using var ctx = NewContext(dbName);
+        var standalone = await ctx.Texts.SingleAsync(t => t.TextId == 10);
+        var bookText = await ctx.Texts.SingleAsync(t => t.TextId == 11);
+        var book = await ctx.Books.SingleAsync();
+
+        // Only the 3 known tokens count; the 4 ignored tokens are excluded
+        // from BOTH Total and Known.
+        Assert.Equal(3, standalone.TotalWords);
+        Assert.Equal(3, standalone.KnownWords);
+        Assert.Equal(3, bookText.TotalWords);
+        Assert.Equal(3, bookText.KnownWords);
+
+        // The book contains only the book text (Text 11): 3 known tokens,
+        // 4 ignored tokens excluded, 0 learning.
+        Assert.Equal(3, book.TotalWords);
+        Assert.Equal(3, book.KnownWords);
+        Assert.Equal(0, book.LearningWords);
+    }
+
+    [Fact]
     public async Task RecomputeAllAsync_IsIdempotent_WhenCountsUnchanged()
     {
         var dbName = Guid.NewGuid().ToString();

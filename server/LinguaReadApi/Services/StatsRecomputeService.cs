@@ -166,7 +166,7 @@ namespace LinguaReadApi.Services
                 .GroupBy(r => r.TextId)
                 .ToDictionary(
                     g => g.Key,
-                    g => new { Total = g.Sum(r => r.Count), Known = g.Where(r => r.Status >= 4).Sum(r => r.Count) });
+                    g => new { Total = g.Where(r => r.Status != 6).Sum(r => r.Count), Known = g.Where(r => r.Status >= 4 && r.Status <= 5).Sum(r => r.Count) });
 
             var allTexts = await ctx.Texts.ToListAsync(ct);
             int textChanged = 0;
@@ -196,8 +196,8 @@ namespace LinguaReadApi.Services
                     g => g.Key,
                     g => new
                     {
-                        Total = g.Sum(r => r.Count),
-                        Known = g.Where(r => r.Status >= 4).Sum(r => r.Count),
+                        Total = g.Where(r => r.Status != 6).Sum(r => r.Count),
+                        Known = g.Where(r => r.Status >= 4 && r.Status <= 5).Sum(r => r.Count),
                         Learning = g.Where(r => r.Status == 2 || r.Status == 3).Sum(r => r.Count),
                     });
 

@@ -1807,6 +1807,7 @@ namespace LinguaReadApi.Controllers
                     int bookTotal = 0, bookKnown = 0, bookLearning = 0;
                     foreach (var s in bookStatusCounts)
                     {
+                        if (s.Status == 6) continue; // Ignored words are excluded from all book stats
                         bookTotal += s.Count;
                         if (s.Status >= 4) bookKnown += s.Count;
                         else if (s.Status >= 2) bookLearning += s.Count;

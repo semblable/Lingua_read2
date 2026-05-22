@@ -131,4 +131,25 @@ describe('TermsPage', () => {
       await screen.findByText(/Failed to fetch terms: boom/)
     ).toBeInTheDocument();
   });
+
+  test('filters by the Ignored status (6) when its checkbox is selected', async () => {
+    renderPage();
+    const select = await screen.findByLabelText(/Language/i);
+    fireEvent.change(select, { target: { value: '1' } });
+    await screen.findByText('gato');
+
+    const ignoredCheckbox = screen.getByLabelText('Ignored');
+    fireEvent.click(ignoredCheckbox);
+
+    await waitFor(() =>
+      expect(getPaginatedWordsByLanguage).toHaveBeenLastCalledWith(
+        '1',
+        1,
+        20,
+        [6],
+        'created_desc',
+        ''
+      )
+    );
+  });
 });

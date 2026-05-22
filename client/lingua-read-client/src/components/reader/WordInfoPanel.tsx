@@ -93,7 +93,7 @@ const WordInfoPanel = React.memo(({
         <h5 className="fw-bold mb-0">{displayedWord.term}</h5>
       </div>
       {saveSuccess && <Alert variant="success" className="py-1 px-2 small">Saved!</Alert>}
-      <p className="mb-1 small">Status: {(displayedWord.status ?? 0) > 0 ? ['New', 'Learning', 'Familiar', 'Advanced', 'Known'][(displayedWord.status ?? 1) - 1] : 'Untracked'}</p>
+      <p className="mb-1 small">Status: {(displayedWord.status ?? 0) > 0 ? ['New', 'Learning', 'Familiar', 'Advanced', 'Known', 'Ignored'][(displayedWord.status ?? 1) - 1] : 'Untracked'}</p>
       <Form.Control
         as="textarea"
         rows={2}
@@ -119,6 +119,16 @@ const WordInfoPanel = React.memo(({
             {s}
           </Button>
         ))}
+        <Button
+          variant="outline-secondary"
+          size="sm"
+          className="py-0 px-2 word-status-btn"
+          onClick={() => actions.onSaveWord(6)}
+          disabled={actions.processingWord || translation.isTranslating || !selectedWord}
+          title="Ignore this word — excluded from stats and reviews"
+        >
+          Ignore
+        </Button>
       </div>
       <div className="d-flex flex-wrap gap-1 mt-2">
         {actions.onRetranslateWithContext && (

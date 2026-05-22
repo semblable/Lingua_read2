@@ -317,7 +317,7 @@ namespace LinguaReadApi.Controllers
                     // Words don't have a status-change timestamp; approximate using created date as a proxy.
                     {
                         var q = _context.Words.AsNoTracking()
-                            .Where(w => w.UserId == userId && w.Status >= 4 && w.CreatedAt >= sinceUtc);
+                            .Where(w => w.UserId == userId && w.Status >= 4 && w.Status <= 5 && w.CreatedAt >= sinceUtc);
                         if (languageId.HasValue) q = q.Where(w => w.LanguageId == languageId.Value);
                         return await q.LongCountAsync();
                     }

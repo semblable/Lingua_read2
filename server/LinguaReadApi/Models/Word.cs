@@ -15,8 +15,8 @@ namespace LinguaReadApi.Models
         public string Term { get; set; } = string.Empty;
         
         [Required]
-        [Range(1, 5)]
-        public int Status { get; set; } = 1; // 1: New/Learning, 5: Mastered
+        [Range(1, 6)]
+        public int Status { get; set; } = 1; // 1: New, 2-3: Learning, 4: Advanced, 5: Known, 6: Ignored
         
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
         

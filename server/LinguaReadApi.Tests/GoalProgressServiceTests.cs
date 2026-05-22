@@ -218,6 +218,34 @@ public class GoalProgressServiceTests
     }
 
     [Fact]
+    public async Task Milestone_WordsKnown_ExcludesIgnoredWords()
+    {
+        // Ignored words (Status = 6) must not count toward a WordsKnown goal,
+        // even though 6 > 4 — the "known" range is 4-5.
+        await using var ctx = NewContext();
+        var userId = Guid.NewGuid();
+        Seed(ctx, userId, 1);
+
+        ctx.Words.Add(new Word { UserId = userId, LanguageId = 1, Term = "advanced", Status = 4, Translation = new WordTranslation { Translation = "x" } });
+        ctx.Words.Add(new Word { UserId = userId, LanguageId = 1, Term = "known", Status = 5, Translation = new WordTranslation { Translation = "x" } });
+        ctx.Words.Add(new Word { UserId = userId, LanguageId = 1, Term = "ignored", Status = 6, Translation = new WordTranslation { Translation = "x" } });
+        await ctx.SaveChangesAsync();
+
+        var goal = new UserGoal
+        {
+            UserId = userId, LanguageId = 1,
+            GoalType = GoalType.WordsKnown, Mode = GoalMode.Milestone,
+            TargetValue = 10, BaselineValue = 0,
+            CreatedAt = DateTime.UtcNow.AddDays(-1)
+        };
+        var svc = new GoalProgressService(ctx);
+        var dtos = await svc.ComputeAsync(userId, new[] { goal }, 0, DateTime.UtcNow);
+
+        // Only the Status 4 and 5 words count; the Status 6 word is excluded.
+        Assert.Equal(2, dtos[0].Progress);
+    }
+
+    [Fact]
     public async Task Milestone_StampsCompletedAt_WhenTargetReached()
     {
         await using var ctx = NewContext();

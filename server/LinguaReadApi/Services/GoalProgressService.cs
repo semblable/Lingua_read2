@@ -111,7 +111,7 @@ namespace LinguaReadApi.Services
                 case GoalType.WordsKnown:
                 {
                     var q = _db.Words.AsNoTracking()
-                        .Where(w => w.UserId == userId && w.Status >= 4);
+                        .Where(w => w.UserId == userId && w.Status >= 4 && w.Status <= 5);
                     if (languageId.HasValue) q = q.Where(w => w.LanguageId == languageId.Value);
                     return await q.LongCountAsync();
                 }

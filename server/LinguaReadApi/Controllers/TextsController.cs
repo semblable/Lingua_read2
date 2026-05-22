@@ -1002,9 +1002,9 @@ namespace LinguaReadApi.Controllers
             // --- 1. Calculate Stats ---
             // Running-word counts (sum of TextWord occurrences) so the
             // numbers stay consistent across text/book scope. Known
-            // = Status >= 4 to match the existing book-level convention.
-            var totalWordsRunning = text.TextWords.Sum(tw => tw.OccurrenceCount);
-            var knownWordsRunning = text.TextWords.Where(tw => tw.Word.Status >= 4).Sum(tw => tw.OccurrenceCount);
+            // = Status 4-5; status 6 (Ignored) is excluded from all counts.
+            var totalWordsRunning = text.TextWords.Where(tw => tw.Word.Status != 6).Sum(tw => tw.OccurrenceCount);
+            var knownWordsRunning = text.TextWords.Where(tw => tw.Word.Status >= 4 && tw.Word.Status <= 5).Sum(tw => tw.OccurrenceCount);
             var learningWordsRunning = text.TextWords.Where(tw => tw.Word.Status >= 2 && tw.Word.Status < 4).Sum(tw => tw.OccurrenceCount);
 
             // 'totalActualWordCount' is used for daily activity tracking (total tokens read)

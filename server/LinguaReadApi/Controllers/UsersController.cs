@@ -62,7 +62,7 @@ namespace LinguaReadApi.Controllers
                 
             // Get known word count (status 4 or 5)
             var knownWords = await _context.Words
-                .CountAsync(w => w.UserId == userId && w.Status >= 4);
+                .CountAsync(w => w.UserId == userId && w.Status >= 4 && w.Status <= 5);
 
             // Get user's books
             var books = await _context.Books
@@ -78,7 +78,7 @@ namespace LinguaReadApi.Controllers
                 .Select(g => new { 
                     LanguageId = g.Key, 
                     TotalCount = g.Count(),
-                    KnownCount = g.Count(w => w.Status >= 4)
+                    KnownCount = g.Count(w => w.Status >= 4 && w.Status <= 5)
                 })
                 .ToDictionaryAsync(g => g.LanguageId, g => g);
 
@@ -495,10 +495,10 @@ namespace LinguaReadApi.Controllers
                     endDate = DateTime.MaxValue;
                 }
 
-                // Status >= 4 is treated as "known". CreatedAt is used as a proxy for the
-                // date the word entered the user's vocabulary (no per-status-change history).
+                // Status 4-5 is treated as "known" (6 = Ignored is excluded). CreatedAt is used
+                // as a proxy for the date the word entered the user's vocabulary (no history).
                 var query = _context.Words
-                    .Where(w => w.UserId == userId && w.Status >= 4 && w.CreatedAt >= startDate);
+                    .Where(w => w.UserId == userId && w.Status >= 4 && w.Status <= 5 && w.CreatedAt >= startDate);
 
                 if (effectiveOffset > 0)
                 {
@@ -575,7 +575,7 @@ namespace LinguaReadApi.Controllers
                     {
                         LanguageId = g.Key,
                         TotalCount = g.Count(),
-                        KnownCount = g.Count(w => w.Status >= 4)
+                        KnownCount = g.Count(w => w.Status >= 4 && w.Status <= 5)
                     })
                     .ToDictionaryAsync(g => g.LanguageId, g => g);
 

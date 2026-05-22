@@ -63,6 +63,20 @@ describe('WordInfoPanel', () => {
     expect(onSaveWord).toHaveBeenCalledWith(3);
   });
 
+  test('renders an Ignore button that invokes onSaveWord with status 6', () => {
+    const onSaveWord = vi.fn();
+    render(
+      <WordInfoPanel
+        {...baseProps({
+          actions: { onSaveWord, onMineSentence: vi.fn(), processingWord: false }
+        })}
+      />
+    );
+    const ignoreBtn = screen.getByRole('button', { name: /^Ignore$/ });
+    fireEvent.click(ignoreBtn);
+    expect(onSaveWord).toHaveBeenCalledWith(6);
+  });
+
   test('typing into the translation textarea calls setValue', () => {
     const setValue = vi.fn();
     render(

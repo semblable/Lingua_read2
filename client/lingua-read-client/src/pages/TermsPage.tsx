@@ -274,10 +274,11 @@ const TermsPage = () => {
             2: 'warning',  // Learning (Orange-ish)
             3: 'info',     // Familiar (Blue)
             4: 'primary',  // Advanced (Blue/Green)
-            5: 'success'   // Known (Green)
+            5: 'success',  // Known (Green)
+            6: 'secondary' // Ignored (Grey)
         };
         const labels: Record<number, string> = {
-            1: 'New', 2: 'Learning', 3: 'Familiar', 4: 'Advanced', 5: 'Known'
+            1: 'New', 2: 'Learning', 3: 'Familiar', 4: 'Advanced', 5: 'Known', 6: 'Ignored'
         };
         return <Badge bg={variants[status] || 'secondary'}>{labels[status] || status}</Badge>;
     };
@@ -364,13 +365,13 @@ const TermsPage = () => {
                     <Form.Group>
                         <Form.Label>Status Filter</Form.Label>
                         <div>
-                            {[1, 2, 3, 4, 5].map(status => (
+                            {[1, 2, 3, 4, 5, 6].map(status => (
                                 <Form.Check
                                     key={status}
                                     inline
                                     type="checkbox"
                                     id={`status-${status}`}
-                                    label={`${status}`}
+                                    label={status === 6 ? 'Ignored' : `${status}`}
                                     value={status}
                                     checked={statusFilter.includes(status)}
                                     onChange={handleStatusFilterChange}

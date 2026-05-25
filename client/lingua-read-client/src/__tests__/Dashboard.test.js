@@ -34,11 +34,19 @@ describe('Dashboard', () => {
     expect(container.querySelector('.spinner-border')).toBeInTheDocument();
   });
 
-  test('renders the empty state when no languages are returned', async () => {
+  test('renders the OnboardingHome takeover when no languages are returned', async () => {
     getDashboard.mockResolvedValue({ languages: [] });
     renderDashboard();
-    expect(await screen.findByText(/Your polyglot dashboard is empty/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Add Text/i })).toBeInTheDocument();
+    // Dashboard now delegates the empty branch to <OnboardingHome />, which
+    // shows the LinguaRead welcome and three primary CTAs.
+    expect(await screen.findByTestId('onboarding-home')).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: /Welcome to LinguaRead/i })
+    ).toBeInTheDocument();
+    // CTAs are LinkContainer+Button = <a role="button">
+    expect(
+      screen.getByRole('button', { name: /Add a text/i })
+    ).toHaveAttribute('href', '/texts/create');
   });
 
   test('renders the dashboard with totals when data is present', async () => {

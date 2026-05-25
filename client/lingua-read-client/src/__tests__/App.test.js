@@ -13,7 +13,15 @@ vi.mock('../utils/api', () => ({
   authLogout: vi.fn(),
   authSetup: vi.fn(),
   getUserSettings: vi.fn(),
-  getRecentTexts: vi.fn()
+  getRecentTexts: vi.fn(),
+  // Home now orchestrates a parallel dashboard load + GoalsCard +
+  // ResumeAtLevelSection + ContinueLearningCard, so each of those API calls
+  // needs a safe default to keep the test from hitting `undefined()`.
+  getDashboard: vi.fn(() => Promise.resolve({ languages: [] })),
+  getSrsStats: vi.fn(() => Promise.resolve({ dueCount: 0 })),
+  getGoals: vi.fn(() => Promise.resolve([])),
+  getTexts: vi.fn(() => Promise.resolve([])),
+  getText: vi.fn(() => Promise.resolve({})),
 }));
 
 // vi.hoisted gives a stable mock reference that both the module mock factory
@@ -53,9 +61,14 @@ describe('App', () => {
 
     expect(screen.getByText(/loading/i)).toBeInTheDocument();
 
-    await waitFor(() => expect(screen.getByText(/LinguaRead/i)).toBeInTheDocument());
+    // The navbar brand is the first authenticated-shell element to render.
+    await waitFor(() =>
+      expect(screen.getByRole('link', { name: /LinguaRead/i })).toBeInTheDocument()
+    );
     await waitFor(() => expect(getRecentTexts).toHaveBeenCalled());
-    await screen.findByText(/No recently read texts found/i);
+    // With no dashboard languages AND no recent texts, the new Home falls
+    // through to the OnboardingHome takeover.
+    await screen.findByTestId('onboarding-home');
   });
 
   test('registers the PWA service worker on mount (Feature 3)', async () => {

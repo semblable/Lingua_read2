@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { Container, Row, Col, Card, Spinner, Alert, Button } from 'react-bootstrap';
-import { LinkContainer } from 'react-router-bootstrap';
+import { Container, Row, Col, Card, Spinner, Alert } from 'react-bootstrap';
 import { getDashboard } from '../utils/api';
 import LanguageDashboardCard from '../components/dashboard/LanguageDashboardCard';
 import GoalsCard from '../components/goals/GoalsCard';
 import ResumeAtLevelSection from '../components/dashboard/ResumeAtLevelSection';
+import OnboardingHome from '../components/home/OnboardingHome';
 
 // Normalise keys from the API. The backend emits PascalCase camel-cased by
 // System.Text.Json defaults (camelCase), but older endpoints in the codebase
@@ -132,29 +132,7 @@ const Dashboard = () => {
   const languages = data.languages || [];
 
   if (languages.length === 0) {
-    return (
-      <Container className="py-5">
-        <Card className="shadow-sm">
-          <Card.Body className="text-center py-5">
-            <Card.Title>Your polyglot dashboard is empty</Card.Title>
-            <Card.Text className="text-muted">
-              Add a text or book in any language to start tracking your progress.
-            </Card.Text>
-            <div className="d-flex justify-content-center gap-2 flex-wrap">
-              <LinkContainer to="/texts/create">
-                <Button variant="primary">Add Text</Button>
-              </LinkContainer>
-              <LinkContainer to="/books/create">
-                <Button variant="outline-primary">Add Book</Button>
-              </LinkContainer>
-              <LinkContainer to="/library">
-                <Button variant="outline-secondary">Open Library</Button>
-              </LinkContainer>
-            </div>
-          </Card.Body>
-        </Card>
-      </Container>
-    );
+    return <OnboardingHome />;
   }
 
   return (

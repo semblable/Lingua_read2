@@ -259,6 +259,42 @@ describe('AudiobookPlayer', () => {
     });
   });
 
+  test('book mode loads audio.src before getAudiobookProgress resolves so the mobile FAB Play works immediately', async () => {
+    // Regression test for the floating Play/Pause FAB on mobile audiobooks.
+    // The FAB shares this player's audioRef and calls audio.play() directly,
+    // so audio.src must be set as soon as the player mounts — not after the
+    // progress API roundtrip. Without this guarantee, fast taps on the FAB
+    // hit a source-less audio element and silently no-op.
+    const deferredProgress = createDeferred();
+    getAudiobookProgress.mockReturnValue(deferredProgress.promise);
+
+    const book = {
+      bookId: 10,
+      languageId: 3,
+      audiobookTracks: [
+        { trackId: 'track-1', filePath: 'audio/track-1.mp3' },
+        { trackId: 'track-2', filePath: 'audio/track-2.mp3' }
+      ]
+    };
+
+    const { container } = render(<AudiobookPlayer type="book" book={book} />);
+
+    await waitFor(() => {
+      expect(getAudiobookProgress).toHaveBeenCalledWith(10);
+      // audio.src is set + audio.load() is called BEFORE progress resolves.
+      expect(window.HTMLMediaElement.prototype.load).toHaveBeenCalledTimes(1);
+    });
+
+    const audio = container.querySelector('audio');
+    expect(audio).not.toBeNull();
+    expect(audio.src).toMatch(/track-1\.mp3$/);
+
+    deferredProgress.resolve(null);
+    await waitFor(() => {
+      expect(screen.getByTitle(/Play/)).toBeInTheDocument();
+    });
+  });
+
   test('logs partial listening duration when paused before periodic interval', async () => {
     const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(1000);
     const { audio } = await renderReadyLessonPlayer();

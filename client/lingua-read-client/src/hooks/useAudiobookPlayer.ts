@@ -364,9 +364,16 @@ export const useAudiobookPlayer = ({
   }, []);
 
   // --- Source-swap effect ---
+  // Sets audio.src as soon as we have a currentTrack. Intentionally NOT gated
+  // on `isInitialized`: for book mode, isInitialized waits for loadProgress to
+  // resolve, which would leave the audio element source-less for the duration
+  // of the API roundtrip. That breaks the mobile floating Play/Pause FAB,
+  // which shares this audioRef and fires `audio.play()` directly — a no-op
+  // when no source is set. If loadProgress later resolves to a different
+  // savedTrackIndex, currentTrack changes and this effect re-runs to swap.
   useEffect(() => {
     const audio = audioRef.current;
-    if (!audio || !isInitialized || !currentTrack) return;
+    if (!audio || !currentTrack) return;
 
     const src = buildTrackSrc(currentTrack);
     const currentSrc = normalizeMediaSrc(audio.currentSrc || audio.src);
@@ -394,7 +401,7 @@ export const useAudiobookPlayer = ({
     if (isPlayingRef.current) {
       requestAudioPlay('Auto-play on track change failed');
     }
-  }, [currentTrack, isInitialized, audioRef, buildTrackSrc, requestAudioPlay, resetSegmentPlayback, segmentPlaybackRequest, segmentPlaybackRef]);
+  }, [currentTrack, audioRef, buildTrackSrc, requestAudioPlay, resetSegmentPlayback, segmentPlaybackRequest, segmentPlaybackRef]);
 
   // --- Audio event handlers ---
   const handleLoadedMetadata = useCallback(() => {

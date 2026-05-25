@@ -360,13 +360,18 @@ describe('SrsReview', () => {
       expect(screen.queryByTestId('cloze-review-card')).not.toBeInTheDocument();
     });
 
-    it('in mixed mode, the same card always renders the same type within a session', async () => {
+    it('in mixed mode, the card type is not derivable from cardId parity', async () => {
       // Mixed mode uses a per-session random seed XOR'd with the card id and
-      // hashed. Pin Math.random so the seed is fixed for this test: with
-      // seed=0, cardId 100 hashes to cloze and 101 to translation. The
-      // important property is *deterministic per (id, session)*, not
-      // predictable across sessions (which is what the old `id % 2` was).
-      const restoreRandom = vi.spyOn(Math, 'random').mockReturnValue(0);
+      // hashed (high bit). The crucial property is that a single observation
+      // must NOT let the user predict the other cards via parity — i.e. two
+      // adjacent IDs (one even, one odd) must be able to land on the same
+      // type. The old `id % 2` and the buggy low-bit hash both split adjacent
+      // IDs across cloze/translation deterministically.
+      //
+      // Pin Math.random to 0.99 — under the high-bit hash this yields the
+      // outcome (card 100 → cloze, card 101 → cloze), which is impossible
+      // under any parity-derived rule on adjacent IDs.
+      const restoreRandom = vi.spyOn(Math, 'random').mockReturnValue(0.99);
       try {
         const first  = { ...mockCards[0], srsCardReviewId: 100, clozeSentence: 'El ___ duerme.' };
         const second = { ...mockCards[1], srsCardReviewId: 101, clozeSentence: 'El ___ corre.' };
@@ -375,7 +380,7 @@ describe('SrsReview', () => {
         renderWithCardType('mixed');
         await selectSpanish();
         fireEvent.click(await screen.findByRole('button', { name: /Start Review/i }));
-        // First card → cloze under seed=0.
+        // First card (even id 100) → cloze under seed≈0.99*2^32.
         expect(await screen.findByTestId('cloze-review-card')).toBeInTheDocument();
 
         // Grade through to the second card.
@@ -383,8 +388,9 @@ describe('SrsReview', () => {
         fireEvent.keyDown(screen.getByTestId('cloze-input'), { key: 'Enter' });
         fireEvent.click(await screen.findByRole('button', { name: /^Good/ }));
 
-        // Second card → translation under seed=0.
-        expect(await screen.findByTestId('translation-review-card')).toBeInTheDocument();
+        // Second card (odd id 101) → also cloze. A parity-derived rule would
+        // be forced to split these; the high-bit hash can map them the same.
+        expect(await screen.findByTestId('cloze-review-card')).toBeInTheDocument();
       } finally {
         restoreRandom.mockRestore();
       }

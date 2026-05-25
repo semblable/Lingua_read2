@@ -3,6 +3,8 @@
 // is re-exported from src/utils/api/index.ts so call sites keep using
 // `import { ... } from '../utils/api'` unchanged.
 
+import { clearOfflineState } from '../offline/cleanup';
+
 // Dynamically set API URL based on platform.
 //
 // - Web (behind Nginx): default to `/api`
@@ -17,9 +19,20 @@ const MOBILE_API_BASE_URL =
 const isWeb = typeof window !== 'undefined' && typeof document !== 'undefined';
 export const API_URL = isWeb ? WEB_API_BASE_URL : MOBILE_API_BASE_URL;
 
-// Redirect to login on 401
+// Redirect to login on 401.
+//
+// Also wipes per-user offline state (Cache Storage + IndexedDB sync queue)
+// before the redirect. Without this, a session-expiry 401 → redirect → next
+// user logs in would leave the previous user's cached pages and queued
+// mutations exposed to the new session — the explicit-logout cleanup in
+// useAuthStore.logout doesn't cover this path because the full page reload
+// resets the zustand state. The wipe is fire-and-forget: the navigation is
+// imminent and there's nothing to wait for; pending IDB / Cache work is
+// best-effort and not load-bearing for correctness (the new /login page
+// itself doesn't read from these stores).
 export const handleUnauthorized = (): void => {
   if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
+    void clearOfflineState();
     window.location.href = '/login';
   }
 };

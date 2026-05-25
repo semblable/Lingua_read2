@@ -317,6 +317,55 @@ describe('DownloadForOfflineButton', () => {
     expect(cachesMock._store.has('/b.mp3')).toBe(false);
   });
 
+  test('Cancel rollback does not delete entries that existed before this download', async () => {
+    // The lr-audio cache is shared across BookDetail and TextDisplay
+    // DownloadForOfflineButton instances. If an earlier successful download
+    // had already cached /shared.mp3 and the user starts a NEW download that
+    // includes /shared.mp3 then cancels, the rollback must not delete the
+    // pre-existing entry — that belonged to a different (still-valid) cached
+    // resource.
+    cachesMock._store.set('/shared.mp3', new Response(new Blob(['old'])));
+
+    let secondController;
+    globalThis.fetch = vi.fn(async (url, init) => {
+      if (init?.method === 'HEAD') {
+        return new Response(null, { status: 200, headers: { 'Content-Length': '10' } });
+      }
+      if (url === '/shared.mp3') {
+        // Completes immediately; cache.put will OVERWRITE the pre-existing
+        // entry. The rollback must still leave the URL in the cache because
+        // it existed prior to this download session.
+        return streamedResponse([new Uint8Array(10)], 10);
+      }
+      const stream = new ReadableStream({ start(c) { secondController = c; } });
+      return new Response(stream, {
+        status: 200,
+        headers: { 'Content-Length': '10', 'Content-Type': 'audio/mpeg' },
+      });
+    });
+
+    render(<DownloadForOfflineButton cacheName="lr-test" urls={['/shared.mp3', '/new.mp3']} />);
+    fireEvent.click(await screen.findByTestId('download-offline-button'));
+
+    await screen.findByTestId('download-offline-progress');
+
+    fireEvent.click(screen.getByTestId('download-offline-abort'));
+    if (secondController) {
+      try { secondController.enqueue(new Uint8Array(5)); } catch { /* may already be cancelled */ }
+    }
+
+    await waitFor(() => {
+      expect(screen.getByTestId('download-offline-button')).toHaveAttribute(
+        'data-download-state', 'idle'
+      );
+    });
+    // The pre-existing /shared.mp3 entry must survive — it was owned by an
+    // unrelated successful download.
+    expect(cachesMock._store.has('/shared.mp3')).toBe(true);
+    // /new.mp3 was new to this session; never fully arrived; not in cache.
+    expect(cachesMock._store.has('/new.mp3')).toBe(false);
+  });
+
   test('explicit sizeWarningBytes override changes the prompt threshold', async () => {
     globalThis.fetch = vi.fn(async (_url, init) => {
       if (init?.method === 'HEAD') return new Response(null, { status: 200, headers: { 'Content-Length': String(10 * 1024 * 1024) } });

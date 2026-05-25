@@ -33,10 +33,15 @@ const GRADE_LABELS = [
  * per (id, seed), so the card type is stable across re-renders within a
  * session, but a fresh seed each session means users can't game the
  * deterministic id-parity pattern the old `cardId % 2` produced.
+ *
+ * We branch on the high bit, not the low one: 2654435761 is odd, so
+ * `(x * 2654435761) & 1 === x & 1` and the multiplication does nothing to
+ * the low bit. Knuth's multiplicative hash puts its entropy in the upper
+ * bits — `h >>> 31` gives a well-mixed bit that doesn't track input parity.
  */
 const shouldRenderClozeForMixedMode = (cardId: number, sessionSeed: number): boolean => {
   const h = Math.imul((cardId ^ sessionSeed) >>> 0, 2654435761) >>> 0;
-  return (h & 1) === 0;
+  return (h >>> 31) === 0;
 };
 
 const SrsReview = () => {

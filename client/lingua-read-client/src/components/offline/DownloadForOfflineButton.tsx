@@ -103,6 +103,12 @@ const DownloadForOfflineButton: React.FC<DownloadForOfflineButtonProps> = ({
     // aborted or fails partway through. Without this, a 5-URL book cancelled
     // after URL #2 would leave URLs #1 and #2 in the cache, and the mount-
     // time check would mistakenly report the book as "Available offline".
+    //
+    // Only track URLs that were NOT already in the cache before this run.
+    // cache.put() overwrites, and the same cacheName is shared across all
+    // DownloadForOfflineButton instances (lr-audio for BookDetail + TextDisplay)
+    // — rolling back an entry that an earlier successful download owned would
+    // silently un-cache that other lesson's asset.
     const cachedThisSession: string[] = [];
     let cache: Cache | undefined;
 
@@ -174,8 +180,9 @@ const DownloadForOfflineButton: React.FC<DownloadForOfflineButtonProps> = ({
           statusText: response.statusText,
           headers,
         });
+        const preExisting = await cache.match(url);
         await cache.put(url, cacheable);
-        cachedThisSession.push(url);
+        if (!preExisting) cachedThisSession.push(url);
       }
       setState('cached');
     } catch (err) {

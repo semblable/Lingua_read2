@@ -173,15 +173,22 @@ export async function drain(handlers: SyncHandlers): Promise<SyncResult> {
 
   // Multi-tab coordination via Web Locks. With { ifAvailable: true }, a
   // concurrent caller (other tab or same tab) gets a null lock and we skip
-  // rather than racing on the same pending-ops store.
+  // rather than racing on the same pending-ops store. Wrapped in try/catch
+  // so an InvalidStateError from a detached document (or any other edge-case
+  // rejection from the Locks API itself) falls back to SKIPPED instead of
+  // surfacing as an unhandled rejection up the drain caller chain.
   const locks = typeof navigator !== 'undefined' ? navigator.locks : undefined;
   if (locks && typeof locks.request === 'function') {
-    const result = await locks.request(
-      DRAIN_LOCK,
-      { ifAvailable: true },
-      async (lock) => (lock ? drainOnce(handlers) : SKIPPED)
-    );
-    return result ?? SKIPPED;
+    try {
+      const result = await locks.request(
+        DRAIN_LOCK,
+        { ifAvailable: true },
+        async (lock) => (lock ? drainOnce(handlers) : SKIPPED)
+      );
+      return result ?? SKIPPED;
+    } catch {
+      return SKIPPED;
+    }
   }
 
   // Fallback for environments without Web Locks (older browsers, test env):
@@ -197,9 +204,9 @@ export async function drain(handlers: SyncHandlers): Promise<SyncResult> {
 }
 
 /**
- * Wipe every queued op. Used on logout so a subsequent user on the same
- * browser doesn't inherit pending mutations (cross-user leak — see H3).
- * Unlike `_resetForTests`, this is a documented production API.
+ * Wipe every queued op. Called from logout and handleUnauthorized (401
+ * redirect) so a subsequent user on the same browser doesn't inherit pending
+ * mutations (cross-user leak). Also used as a reset-between-tests primitive.
  */
 export async function clearAll(): Promise<void> {
   const db = await openDb();
@@ -210,11 +217,6 @@ export async function clearAll(): Promise<void> {
     req.onerror = () => reject(req.error ?? new Error('Failed to clear offline queue'));
   });
 }
-
-// Test-only alias for clearAll. Kept as a named export so existing test
-// imports continue to read clearly ("reset between tests") rather than as
-// production cleanup.
-export const _resetForTests = clearAll;
 
 // Test-only: force the next openDb() to reopen, so a `delete database()` in tests
 // gets picked up.

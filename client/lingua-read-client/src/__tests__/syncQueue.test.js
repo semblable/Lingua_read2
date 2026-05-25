@@ -6,7 +6,6 @@ import {
   listPending,
   drain,
   clearAll,
-  _resetForTests,
   _closeDbForTests,
 } from '../utils/offline/syncQueue';
 import { ApiError } from '../utils/api/client';
@@ -47,7 +46,7 @@ describe('syncQueue', () => {
     // Reset the IndexedDB state between tests.
     setOnline(true);
     try {
-      await _resetForTests();
+      await clearAll();
     } catch {
       _closeDbForTests();
     }
@@ -281,6 +280,40 @@ describe('syncQueue', () => {
       expect(await pending()).toBe(1);
     } finally {
       restore();
+    }
+  });
+
+  test('drain returns SKIPPED if the Web Locks API itself rejects', async () => {
+    // Defensive: an InvalidStateError on a detached document (or any other
+    // surprise rejection from locks.request) must not propagate as an
+    // unhandled rejection — drain has historically returned the SKIPPED
+    // tuple on re-entrancy, and the Web Locks path should preserve that.
+    await enqueue({ type: 'srsReview', payload: { cardId: 902, grade: 2 } });
+
+    const request = vi.fn(async () => { throw new DOMException('detached', 'InvalidStateError'); });
+    const descriptor = Object.getOwnPropertyDescriptor(window.navigator, 'locks');
+    Object.defineProperty(window.navigator, 'locks', {
+      configurable: true,
+      get: () => ({ request }),
+    });
+
+    try {
+      const handlers = {
+        srsReview: vi.fn(),
+        wordStatusUpdate: vi.fn(),
+        wordCreate: vi.fn(),
+      };
+      const result = await drain(handlers);
+      expect(result).toEqual({ attempted: 0, succeeded: 0, failed: 0 });
+      expect(handlers.srsReview).not.toHaveBeenCalled();
+      // Op stays queued for the next attempt.
+      expect(await pending()).toBe(1);
+    } finally {
+      if (descriptor) {
+        Object.defineProperty(window.navigator, 'locks', descriptor);
+      } else {
+        delete window.navigator.locks;
+      }
     }
   });
 });

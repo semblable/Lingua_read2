@@ -3,7 +3,7 @@ import React from 'react';
 import '@testing-library/jest-dom';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import OfflineIndicator from '../components/offline/OfflineIndicator';
-import { enqueue, _resetForTests } from '../utils/offline/syncQueue';
+import { enqueue, clearAll } from '../utils/offline/syncQueue';
 
 const setOnline = (value) => {
   Object.defineProperty(window.navigator, 'onLine', {
@@ -23,7 +23,7 @@ describe('OfflineIndicator', () => {
     setOnline(true);
     vi.clearAllMocks();
     try {
-      await _resetForTests();
+      await clearAll();
     } catch {
       // Ignore.
     }

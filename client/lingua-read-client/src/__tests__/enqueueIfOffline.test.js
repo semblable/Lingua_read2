@@ -1,7 +1,7 @@
 import 'fake-indexeddb/auto';
 import '@testing-library/jest-dom';
 import { enqueueIfOffline, isOfflineQueued } from '../utils/offline/enqueueIfOffline';
-import { pending, _resetForTests } from '../utils/offline/syncQueue';
+import { pending, clearAll } from '../utils/offline/syncQueue';
 import { ApiError } from '../utils/api/client';
 
 const setOnline = (value) => {
@@ -14,7 +14,7 @@ const setOnline = (value) => {
 describe('enqueueIfOffline', () => {
   beforeEach(async () => {
     setOnline(true);
-    try { await _resetForTests(); } catch { /* ignore */ }
+    try { await clearAll(); } catch { /* ignore */ }
   });
 
   test('runs the call and returns its result when online and successful', async () => {

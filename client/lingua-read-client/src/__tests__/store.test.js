@@ -1,11 +1,16 @@
 import { useAuthStore } from '../utils/store';
 import { authStatus, authLogin, authLogout, authSetup } from '../utils/api';
+import { clearOfflineState } from '../utils/offline/cleanup';
 
 vi.mock('../utils/api', () => ({
   authStatus: vi.fn(),
   authLogin: vi.fn(),
   authLogout: vi.fn(),
   authSetup: vi.fn()
+}));
+
+vi.mock('../utils/offline/cleanup', () => ({
+  clearOfflineState: vi.fn(async () => {})
 }));
 
 const initialState = {
@@ -136,6 +141,25 @@ describe('useAuthStore', () => {
     const state = useAuthStore.getState();
     expect(state.isAuthenticated).toBe(false);
     expect(state.user).toBeNull();
+  });
+
+  test('logout wipes offline caches and queue (cross-user leak fix)', async () => {
+    useAuthStore.setState({ isAuthenticated: true, user: { id: 'u1' } });
+    authLogout.mockResolvedValue({ ok: true });
+
+    await useAuthStore.getState().logout();
+
+    expect(clearOfflineState).toHaveBeenCalledTimes(1);
+  });
+
+  test('logout still wipes offline state when the server-side logout fails', async () => {
+    useAuthStore.setState({ isAuthenticated: true, user: { id: 'u1' } });
+    authLogout.mockRejectedValue(new Error('Network error'));
+
+    await useAuthStore.getState().logout();
+
+    expect(clearOfflineState).toHaveBeenCalledTimes(1);
+    expect(useAuthStore.getState().isAuthenticated).toBe(false);
   });
 
   // --- setup ---

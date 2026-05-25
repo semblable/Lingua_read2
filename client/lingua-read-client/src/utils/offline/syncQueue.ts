@@ -10,7 +10,7 @@ const STORE = 'pending-ops';
 export type PendingOp =
   | { type: 'srsReview'; payload: { cardId: number; grade: number } }
   | { type: 'wordStatusUpdate'; payload: { wordId: number; status: number } }
-  | { type: 'wordCreate'; payload: { term: string; languageId: number; translation?: string; status?: number } };
+  | { type: 'wordCreate'; payload: { textId: number; term: string; translation?: string; status?: number } };
 
 export type StoredPendingOp = PendingOp & {
   id: number;
@@ -94,6 +94,29 @@ async function deleteOp(id: number): Promise<void> {
 
 let draining = false;
 
+// Classify a handler error so drain() can decide whether to retry, drop, or halt.
+// - 'auth-stop': 401. fetchApi already redirects the user to /login. We leave
+//   the op in the queue (it'll replay after re-auth) and STOP the loop so we
+//   don't generate N more pointless 401s.
+// - 'terminal': any other 4xx. The server is rejecting the op permanently;
+//   retrying forever just keeps the queue stuck (this is what bit us before).
+//   Drop the op.
+// - 'retryable': network failures, 5xx, or unknown errors. Leave in queue.
+//
+// We duck-type on `error.status` so syncQueue stays handler-agnostic — the
+// handlers throw `ApiError` from api/client.ts, which carries a numeric status.
+type ErrorKind = 'auth-stop' | 'terminal' | 'retryable';
+function classifyError(err: unknown): ErrorKind {
+  if (typeof err === 'object' && err !== null && 'status' in err) {
+    const status = (err as { status?: unknown }).status;
+    if (typeof status === 'number') {
+      if (status === 401) return 'auth-stop';
+      if (status >= 400 && status < 500) return 'terminal';
+    }
+  }
+  return 'retryable';
+}
+
 export async function drain(handlers: SyncHandlers): Promise<SyncResult> {
   // Guard 1: do not attempt while offline — we'd just re-enqueue everything.
   if (typeof navigator !== 'undefined' && navigator.onLine === false) {
@@ -109,8 +132,10 @@ export async function drain(handlers: SyncHandlers): Promise<SyncResult> {
     const ops = await listPending();
     let succeeded = 0;
     let failed = 0;
+    let attempted = 0;
 
     for (const op of ops) {
+      attempted++;
       try {
         if (op.type === 'srsReview') {
           await handlers.srsReview(op);
@@ -121,21 +146,38 @@ export async function drain(handlers: SyncHandlers): Promise<SyncResult> {
         }
         await deleteOp(op.id);
         succeeded++;
-      } catch {
-        // Leave failed op in the queue; later drain will retry.
+      } catch (err) {
+        const kind = classifyError(err);
+        if (kind === 'auth-stop') {
+          // 401: stop draining. handleUnauthorized in api/client.ts already
+          // started the redirect to /login; remaining ops wait for re-auth.
+          failed++;
+          break;
+        }
+        if (kind === 'terminal') {
+          // Permanent server-side rejection. Drop the op so the queue can
+          // eventually drain instead of looping on the same bad payload.
+          try { await deleteOp(op.id); } catch { /* swallow */ }
+          failed++;
+          continue;
+        }
+        // Retryable: leave in queue for the next drain.
         failed++;
       }
     }
 
-    return { attempted: ops.length, succeeded, failed };
+    return { attempted, succeeded, failed };
   } finally {
     draining = false;
   }
 }
 
-// Test-only: wipe everything. Production code never calls this — it would
-// silently drop user mutations.
-export async function _resetForTests(): Promise<void> {
+/**
+ * Wipe every queued op. Used on logout so a subsequent user on the same
+ * browser doesn't inherit pending mutations (cross-user leak — see H3).
+ * Unlike `_resetForTests`, this is a documented production API.
+ */
+export async function clearAll(): Promise<void> {
   const db = await openDb();
   await new Promise<void>((resolve, reject) => {
     const store = txStore(db, 'readwrite');
@@ -144,6 +186,11 @@ export async function _resetForTests(): Promise<void> {
     req.onerror = () => reject(req.error ?? new Error('Failed to clear offline queue'));
   });
 }
+
+// Test-only alias for clearAll. Kept as a named export so existing test
+// imports continue to read clearly ("reset between tests") rather than as
+// production cleanup.
+export const _resetForTests = clearAll;
 
 // Test-only: force the next openDb() to reopen, so a `delete database()` in tests
 // gets picked up.

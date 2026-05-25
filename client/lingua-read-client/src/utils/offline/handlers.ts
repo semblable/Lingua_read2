@@ -23,7 +23,7 @@ export const productionSyncHandlers: SyncHandlers = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json; charset=utf-8' },
       body: JSON.stringify({
-        textId: 0,
+        textId: payload.textId,
         term: payload.term,
         status: payload.status ?? 1,
         translation: payload.translation ?? '',

@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { authStatus, authLogin, authLogout, authSetup } from './api';
 import type { AuthUser } from './api/auth';
+import { clearOfflineState } from './offline/cleanup';
 
 // --- Auth Store ---
 
@@ -54,6 +55,10 @@ export const useAuthStore = create<AuthState>()((set) => ({
     } catch {
       /* ignore */
     }
+    // Wipe SW caches + offline queue so the next user on this browser
+    // can't read User A's cached texts/audio or replay their queued
+    // mutations under a new auth context.
+    await clearOfflineState();
     set({ isAuthenticated: false, user: null });
   },
   setup: async (password) => {

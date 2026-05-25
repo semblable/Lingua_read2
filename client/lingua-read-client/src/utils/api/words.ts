@@ -26,16 +26,16 @@ export const createWord = async (
     };
 
     // Offline replay: createWord is one of the three mutations the offline
-    // queue knows how to replay. languageId is not passed here, but the
-    // payload carries textId and the server can recover languageId from that;
-    // for queueing we record a -1 sentinel (callers receiving the synthetic
-    // success won't have a usable wordId either way until the drain succeeds).
+    // queue knows how to replay. We persist textId in the queued payload so
+    // the server can recover languageId at replay time — sending textId=0
+    // (the previous default) would fail validation on the server and trap
+    // the op in the queue forever.
     return await enqueueIfOffline(
       {
         type: 'wordCreate',
         payload: {
+          textId: payload.textId,
           term: payload.term,
-          languageId: -1,
           translation: payload.translation,
           status: payload.status,
         },

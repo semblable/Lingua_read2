@@ -2034,7 +2034,7 @@ const TextDisplay = () => {
         primaryControls={primaryControls}
         secondaryControls={secondaryControls}
         readerLessonActions={readerLessonActions}
-        isAudioLesson={isAudioLesson}
+        hasAudio={isAudioLesson || (book?.audiobookTracks?.length ?? 0) > 0}
         isAudioPlaying={isAudioPlaying}
         toggleAudioPlayback={toggleAudioPlayback}
       />
@@ -2087,13 +2087,18 @@ const TextDisplay = () => {
         </div>
       )}
 
-      {/* Mobile Audiobook Player - book-mode playback for audiobooks on mobile */}
+      {/* Mobile Audiobook Player - book-mode playback for audiobooks on mobile.
+          Shares audioRef + onPlaybackStateChange so the floating Play/Pause FAB
+          in MobileLessonHeader controls audiobook playback the same way it does
+          for audio lessons. */}
       {isMobile && !isAudioLesson && (book?.audiobookTracks?.length ?? 0) > 0 && (
         <div className="audio-player-container p-2 border-bottom theme-aware-audio-player-container lesson-audio-bar">
           <AudiobookPlayer
             key="book-audio-player-mobile"
             type="book"
             book={book}
+            audioRef={audioRef}
+            onPlaybackStateChange={handleAudioPlaybackStateChange}
           />
         </div>
       )}

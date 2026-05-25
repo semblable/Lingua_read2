@@ -13,7 +13,7 @@ const baseProps = (overrides = {}) => ({
   primaryControls: <div data-testid="primary-controls">primary</div>,
   secondaryControls: <div data-testid="secondary-controls">secondary</div>,
   readerLessonActions: <div data-testid="reader-actions">reader-actions</div>,
-  isAudioLesson: false,
+  hasAudio: false,
   isAudioPlaying: false,
   toggleAudioPlayback: vi.fn(),
   ...overrides
@@ -39,11 +39,11 @@ describe('MobileLessonHeader', () => {
     expect(typeof setShowMobileHeader.mock.calls[0][0]).toBe('function');
   });
 
-  test('shows a Play button when isAudioLesson is true and toggles via toggleAudioPlayback', () => {
+  test('shows a Play button when hasAudio is true and toggles via toggleAudioPlayback', () => {
     const toggleAudioPlayback = vi.fn();
     render(
       <MobileLessonHeader
-        {...baseProps({ isAudioLesson: true, toggleAudioPlayback })}
+        {...baseProps({ hasAudio: true, toggleAudioPlayback })}
       />
     );
     const playBtn = screen.getByRole('button', { name: /Play audio/i });
@@ -54,10 +54,16 @@ describe('MobileLessonHeader', () => {
   test('shows a Pause button when audio is currently playing', () => {
     render(
       <MobileLessonHeader
-        {...baseProps({ isAudioLesson: true, isAudioPlaying: true })}
+        {...baseProps({ hasAudio: true, isAudioPlaying: true })}
       />
     );
     expect(screen.getByRole('button', { name: /Pause audio/i })).toBeInTheDocument();
+  });
+
+  test('no Play button when hasAudio is false (plain text)', () => {
+    render(<MobileLessonHeader {...baseProps({ hasAudio: false })} />);
+    expect(screen.queryByRole('button', { name: /Play audio/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Pause audio/i })).not.toBeInTheDocument();
   });
 
   test('Close button calls setShowMobileHeader(false) and setShowMoreControls(false)', () => {

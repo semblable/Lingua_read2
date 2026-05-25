@@ -11,7 +11,8 @@ interface MobileLessonHeaderProps {
   primaryControls: React.ReactNode;
   secondaryControls: React.ReactNode;
   readerLessonActions: React.ReactNode;
-  isAudioLesson: boolean;
+  /** True for audio lessons OR audiobooks — anything where audio playback is wired up. */
+  hasAudio: boolean;
   isAudioPlaying: boolean;
   toggleAudioPlayback: () => void;
 }
@@ -26,7 +27,7 @@ const MobileLessonHeader = React.memo(({
   primaryControls,
   secondaryControls,
   readerLessonActions,
-  isAudioLesson,
+  hasAudio,
   isAudioPlaying,
   toggleAudioPlayback
 }: MobileLessonHeaderProps) => {
@@ -55,7 +56,7 @@ const MobileLessonHeader = React.memo(({
         >
           {showMobileHeader ? 'Hide' : 'Lesson'}
         </Button>
-        {isAudioLesson && (
+        {hasAudio && (
           <Button
             variant={isAudioPlaying ? 'warning' : 'outline-primary'}
             size="sm"

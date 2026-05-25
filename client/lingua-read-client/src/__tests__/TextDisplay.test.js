@@ -1675,7 +1675,7 @@ describe('TextDisplay', () => {
         .map(([props]) => props)
         .filter(predicate);
 
-    test('mobile + audiobook with tracks renders book-mode player', async () => {
+    test('mobile + audiobook with tracks renders book-mode player wired to the shared audioRef and FAB', async () => {
       useMobileViewport();
       getText.mockResolvedValueOnce({
         textId: 2,
@@ -1703,12 +1703,21 @@ describe('TextDisplay', () => {
       renderTextDisplay();
 
       await waitFor(() => expect(getBook).toHaveBeenCalledWith(10));
+      // The mobile book-mode player must receive the shared audioRef and the
+      // playback-state callback so the floating FAB Play/Pause can control it.
       await waitFor(() => {
         const bookCalls = findAudiobookCalls(
-          (props) => props.type === 'book' && props.book?.bookId === 10
+          (props) =>
+            props.type === 'book' &&
+            props.book?.bookId === 10 &&
+            props.audioRef != null &&
+            typeof props.onPlaybackStateChange === 'function'
         );
         expect(bookCalls.length).toBeGreaterThan(0);
       });
+
+      // FAB Play button is rendered (because hasAudio is true via audiobookTracks).
+      expect(screen.getByRole('button', { name: /Play audio/i })).toBeInTheDocument();
     });
 
     test('mobile + audio lesson renders lesson-mode player (and not book-mode)', async () => {
@@ -1793,10 +1802,15 @@ describe('TextDisplay', () => {
         ).toBeGreaterThan(0);
       });
 
-      // On desktop, every book-mode render must come from LessonHeader, which
-      // does not pass an `audioRef`. The mobile branch in TextDisplay also
-      // doesn't pass audioRef, so we distinguish by checking that no rendered
-      // node has the mobile container's data-testid in the DOM.
+      // On desktop, every book-mode render comes from LessonHeader, which
+      // does NOT pass an `audioRef` or `onPlaybackStateChange`. Only the mobile
+      // TextDisplay branch passes those. So a desktop render means no
+      // book-mode call has an audioRef, and the sticky mobile container
+      // (`.lesson-audio-bar`) is absent from the DOM.
+      const bookCallsWithAudioRef = findAudiobookCalls(
+        (props) => props.type === 'book' && props.audioRef != null
+      );
+      expect(bookCallsWithAudioRef.length).toBe(0);
       expect(document.querySelector('.lesson-audio-bar')).toBeNull();
     });
   });

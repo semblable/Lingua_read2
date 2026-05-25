@@ -1121,6 +1121,49 @@ describe('TextDisplay', () => {
     expect(screen.queryByText(/TTS Off/i)).not.toBeInTheDocument();
   });
 
+  test('audio lessons render the offline-download button under the header (Feature 3+)', async () => {
+    getText.mockResolvedValueOnce({
+      textId: 1,
+      title: 'Audio Lesson',
+      content: 'Hola mundo.',
+      languageId: null,
+      languageCode: 'ES',
+      languageName: 'Spanish',
+      isAudioLesson: true,
+      audioFilePath: 'audio_lessons/1.mp3',
+      hasSrtContent: true,
+      words: [],
+      bookId: null
+    });
+    getTextSrt.mockResolvedValueOnce('1\n00:00:00,000 --> 00:00:02,000\nHola mundo.\n');
+
+    renderTextDisplay();
+
+    await waitFor(() => expect(getText).toHaveBeenCalled());
+    await screen.findByText('Audio Lesson');
+    expect(await screen.findByTestId('textdisplay-offline-download')).toBeInTheDocument();
+  });
+
+  test('non-audio lessons do NOT render the offline-download button', async () => {
+    getText.mockResolvedValueOnce({
+      textId: 5,
+      title: 'Plain text',
+      content: 'Hola mundo.',
+      languageId: null,
+      languageCode: 'ES',
+      languageName: 'Spanish',
+      isAudioLesson: false,
+      words: [],
+      bookId: null
+    });
+
+    renderTextDisplay();
+
+    await waitFor(() => expect(getText).toHaveBeenCalled());
+    await screen.findByText('Plain text');
+    expect(screen.queryByTestId('textdisplay-offline-download')).not.toBeInTheDocument();
+  });
+
   test('audio lessons force classic UI even when modern mode is enabled', async () => {
     getText.mockResolvedValueOnce({
       textId: 1,

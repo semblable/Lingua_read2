@@ -112,4 +112,53 @@ describe('Library', () => {
     renderLibrary('/library/folder/42');
     await waitFor(() => expect(getLibraryContents).toHaveBeenCalledWith(42));
   });
+
+  describe('comprehensibility filter', () => {
+    const mixedContents = {
+      currentFolder: null,
+      breadcrumbs: [],
+      folders: [],
+      books: [
+        // 95% known — sweet-spot
+        { bookId: 200, title: 'Sweet-Spot Book', languageName: 'Spanish', tags: [],
+          totalWords: 100, unknownWordPercentage: 5 },
+        // 30% known — too-hard
+        { bookId: 201, title: 'Too-Hard Book', languageName: 'Russian', tags: [],
+          totalWords: 100, unknownWordPercentage: 70 },
+      ],
+      texts: [
+        // 95% known — sweet-spot
+        { textId: 300, title: 'Sweet-Spot Text', languageName: 'Spanish', tag: null,
+          totalWords: 100, unknownWordPercentage: 5 },
+        // 85% known — challenging
+        { textId: 301, title: 'Challenging Text', languageName: 'French', tag: null,
+          totalWords: 100, unknownWordPercentage: 15 },
+      ],
+    };
+
+    test('sweet-spot filter shows only sweet-spot books and texts', async () => {
+      getLibraryContents.mockResolvedValue(mixedContents);
+      renderLibrary();
+      await screen.findByText('Sweet-Spot Book');
+
+      const filter = screen.getByTestId('comprehensibility-filter');
+      fireEvent.change(filter, { target: { value: 'sweet-spot' } });
+
+      await waitFor(() => {
+        expect(screen.queryByText('Too-Hard Book')).not.toBeInTheDocument();
+      });
+      expect(screen.queryByText('Challenging Text')).not.toBeInTheDocument();
+      expect(screen.getByText('Sweet-Spot Book')).toBeInTheDocument();
+      expect(screen.getByText('Sweet-Spot Text')).toBeInTheDocument();
+    });
+
+    test('honors comp= URL search param on first render', async () => {
+      getLibraryContents.mockResolvedValue(mixedContents);
+      renderLibrary('/library?comp=challenging');
+      await screen.findByText('Challenging Text');
+      expect(screen.queryByText('Sweet-Spot Book')).not.toBeInTheDocument();
+      expect(screen.queryByText('Sweet-Spot Text')).not.toBeInTheDocument();
+      expect(screen.queryByText('Too-Hard Book')).not.toBeInTheDocument();
+    });
+  });
 });

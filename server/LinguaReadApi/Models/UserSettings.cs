@@ -142,6 +142,12 @@ namespace LinguaReadApi.Models
         // SRS Streak Tracking
         public int SrsCurrentStreak { get; set; } = 0;
         public int SrsLongestStreak { get; set; } = 0;
+
+        // SRS Card Type — "translation" (default; show term, recall translation),
+        // "cloze" (show mined sentence with target word masked, recall the word),
+        // or "mixed" (per-card alternation between the two styles).
+        [StringLength(20)]
+        public string SrsCardType { get; set; } = "translation";
         
         // Creation timestamps
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;

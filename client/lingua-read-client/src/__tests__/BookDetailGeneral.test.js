@@ -159,4 +159,42 @@ describe('BookDetail (general flows)', () => {
 
     await waitFor(() => expect(uploadAudiobookTracks).toHaveBeenCalled());
   });
+
+  describe('audiobook offline download (Feature 3+)', () => {
+    test('renders no download button when the book has no audiobook tracks', async () => {
+      renderBookDetail();
+      await screen.findByText('Sample Book');
+      expect(screen.queryByTestId('bookdetail-offline-download')).not.toBeInTheDocument();
+    });
+
+    test('renders the download button when the book has audiobook tracks', async () => {
+      getBook.mockResolvedValueOnce({
+        ...baseBook,
+        audiobookTracks: [
+          { id: 1, bookId: 7, trackNumber: 1, filePath: '/audiobooks/7/01.mp3', title: '01', duration: 600 },
+          { id: 2, bookId: 7, trackNumber: 2, filePath: '/audiobooks/7/02.mp3', title: '02', duration: 600 },
+        ],
+      });
+      renderBookDetail();
+      await screen.findByText('Sample Book');
+      const wrapper = await screen.findByTestId('bookdetail-offline-download');
+      expect(wrapper).toBeInTheDocument();
+      expect(wrapper).toHaveTextContent(/Save all 2 tracks for offline/);
+    });
+
+    test('strips tracks without a filePath from the URL list', async () => {
+      getBook.mockResolvedValueOnce({
+        ...baseBook,
+        audiobookTracks: [
+          { id: 1, bookId: 7, trackNumber: 1, filePath: '/audiobooks/7/01.mp3', title: '01', duration: 600 },
+          { id: 2, bookId: 7, trackNumber: 2, filePath: null, title: 'broken', duration: 0 },
+        ],
+      });
+      renderBookDetail();
+      await screen.findByText('Sample Book');
+      const wrapper = await screen.findByTestId('bookdetail-offline-download');
+      // Two tracks present in DB but only one usable URL.
+      expect(wrapper).toHaveTextContent(/Save all 1 track for offline/);
+    });
+  });
 });

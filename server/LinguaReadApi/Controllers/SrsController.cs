@@ -51,6 +51,12 @@ namespace LinguaReadApi.Controllers
                 ? "mix"
                 : settings!.SrsReviewOrder;
 
+            // Card style: translation (default), cloze (mask term in mined sentence), or mixed.
+            // Cloze/mixed populate the new ClozeSentence DTO field; translation leaves it null
+            // so existing clients keep working unchanged.
+            string cardType = NormalizeCardType(settings?.SrsCardType);
+            bool emitClozeSentence = cardType is "cloze" or "mixed";
+
             int studiedNew = (settings?.SrsDailyStudyDate?.Date == today) ? settings.SrsDailyNewCardsStudied : 0;
             int studiedReviews = (settings?.SrsDailyStudyDate?.Date == today) ? settings.SrsDailyReviewsStudied : 0;
             
@@ -130,10 +136,11 @@ namespace LinguaReadApi.Controllers
             {
                 var cardPhrases = phrasesByWordId.GetValueOrDefault(card.WordId, new List<SrsPhrase>());
                 int unknownWordsInBestPhrase = 0;
+                SrsPhrase? bestPhrase = null;
 
                 if (cardPhrases.Any())
                 {
-                    var bestPhrase = cardPhrases.OrderByDescending(p => p.CreatedAt).First();
+                    bestPhrase = cardPhrases.OrderByDescending(p => p.CreatedAt).First();
                     unknownWordsInBestPhrase = await CountUnknownWordsInSentence(
                         bestPhrase.Sentence, userId, card.Word.LanguageId, card.WordId);
 
@@ -142,6 +149,12 @@ namespace LinguaReadApi.Controllers
                 else if (onlyOneTarget)
                 {
                     continue; // No phrases for 1T
+                }
+
+                string? clozeSentence = null;
+                if (emitClozeSentence && bestPhrase != null)
+                {
+                    clozeSentence = BuildClozeSentence(bestPhrase.Sentence, card.Word.Term);
                 }
 
                 var dto = new SrsDueCardDto
@@ -169,7 +182,8 @@ namespace LinguaReadApi.Controllers
                         TextTitle = p.TextTitle,
                         CreatedAt = p.CreatedAt
                     }).ToList(),
-                    UnknownWordsInPhrase = unknownWordsInBestPhrase
+                    UnknownWordsInPhrase = unknownWordsInBestPhrase,
+                    ClozeSentence = clozeSentence
                 };
 
                 if (card.IsLearning) validLearningCards.Add(dto);
@@ -1287,6 +1301,31 @@ Format (one object per provided word, in the same order):
 
         /// <summary>Daily review cap: same as <see cref="EffectiveSrsMaxNew"/>.</summary>
         private static int EffectiveSrsMaxReviews(int? stored) => stored is > 0 ? stored.Value : 200;
+
+        /// <summary>Defensive normalizer for UserSettings.SrsCardType. Falls back to "translation".</summary>
+        internal static string NormalizeCardType(string? value)
+        {
+            var normalized = (value ?? "translation").Trim().ToLowerInvariant();
+            return normalized is "translation" or "cloze" or "mixed" ? normalized : "translation";
+        }
+
+        /// <summary>
+        /// Replace the first case-insensitive occurrence of <paramref name="term"/> in
+        /// <paramref name="sentence"/> with "___" (3 underscores). Returns null if the
+        /// term isn't found or either argument is empty — callers should fall back to
+        /// translation mode in that case.
+        /// </summary>
+        internal static string? BuildClozeSentence(string? sentence, string? term)
+        {
+            if (string.IsNullOrEmpty(sentence) || string.IsNullOrEmpty(term)) return null;
+            const string Mask = "___";
+            int idx = sentence.IndexOf(term, StringComparison.OrdinalIgnoreCase);
+            if (idx < 0) return null;
+            return string.Concat(
+                sentence.AsSpan(0, idx),
+                Mask,
+                sentence.AsSpan(idx + term.Length));
+        }
     }
 
     // --- DTOs ---
@@ -1309,6 +1348,12 @@ Format (one object per provided word, in the same order):
         public string? Tags { get; set; }
         public List<SrsPhraseDto> Phrases { get; set; } = new();
         public int UnknownWordsInPhrase { get; set; }
+
+        // Null when the user's SrsCardType setting is "translation" (default), or when
+        // the card has no mined phrase, or when the term doesn't appear in the chosen
+        // phrase. Otherwise: the mined sentence with the first case-insensitive
+        // occurrence of Term replaced by "___".
+        public string? ClozeSentence { get; set; }
     }
 
     public class SrsPhraseDto

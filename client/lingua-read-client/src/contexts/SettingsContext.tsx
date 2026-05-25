@@ -61,6 +61,7 @@ export type Settings = {
   srsMaxIntervalDays: number;
   srsLapseMinimumIntervalDays: number;
   srsLearningStepMinutes: string;
+  srsCardType: string;
 };
 
 export type SettingKey = keyof Settings;
@@ -131,7 +132,8 @@ const defaultSettings: Settings = {
   srsReviewOrder: 'mix',
   srsMaxIntervalDays: 36500,
   srsLapseMinimumIntervalDays: 1,
-  srsLearningStepMinutes: '1,10'
+  srsLearningStepMinutes: '1,10',
+  srsCardType: 'translation'
 };
 
 // Create the context
@@ -234,7 +236,8 @@ const mergeSettings = (data: Partial<Settings> | null | undefined): Settings => 
     srsMaxIntervalDays: d.srsMaxIntervalDays ?? defaultSettings.srsMaxIntervalDays,
     srsLapseMinimumIntervalDays:
       d.srsLapseMinimumIntervalDays ?? defaultSettings.srsLapseMinimumIntervalDays,
-    srsLearningStepMinutes: d.srsLearningStepMinutes || defaultSettings.srsLearningStepMinutes
+    srsLearningStepMinutes: d.srsLearningStepMinutes || defaultSettings.srsLearningStepMinutes,
+    srsCardType: d.srsCardType || defaultSettings.srsCardType
   };
 };
 

@@ -157,7 +157,8 @@ namespace LinguaReadApi.Controllers
                 SrsReviewOrder = settings.SrsReviewOrder ?? "mix",
                 SrsLearningStepMinutes = settings.SrsLearningStepMinutes ?? "1,10",
                 SrsMaxIntervalDays = settings.SrsMaxIntervalDays,
-                SrsLapseMinimumIntervalDays = settings.SrsLapseMinimumIntervalDays
+                SrsLapseMinimumIntervalDays = settings.SrsLapseMinimumIntervalDays,
+                SrsCardType = NormalizeSrsCardType(settings.SrsCardType)
             };
         }
 
@@ -374,6 +375,14 @@ namespace LinguaReadApi.Controllers
             }
             settings.SrsMaxIntervalDays = updateDto.SrsMaxIntervalDays ?? settings.SrsMaxIntervalDays;
             settings.SrsLapseMinimumIntervalDays = updateDto.SrsLapseMinimumIntervalDays ?? settings.SrsLapseMinimumIntervalDays;
+            if (!string.IsNullOrWhiteSpace(updateDto.SrsCardType))
+            {
+                var normalizedCardType = updateDto.SrsCardType.Trim().ToLowerInvariant();
+                if (normalizedCardType is "translation" or "cloze" or "mixed")
+                {
+                    settings.SrsCardType = normalizedCardType;
+                }
+            }
             settings.UpdatedAt = DateTime.UtcNow;
 
             await _context.SaveChangesAsync();
@@ -434,8 +443,18 @@ namespace LinguaReadApi.Controllers
                 SrsReviewOrder = settings.SrsReviewOrder ?? "mix",
                 SrsLearningStepMinutes = settings.SrsLearningStepMinutes ?? "1,10",
                 SrsMaxIntervalDays = settings.SrsMaxIntervalDays,
-                SrsLapseMinimumIntervalDays = settings.SrsLapseMinimumIntervalDays
+                SrsLapseMinimumIntervalDays = settings.SrsLapseMinimumIntervalDays,
+                SrsCardType = NormalizeSrsCardType(settings.SrsCardType)
             };
+        }
+
+        // Defensive normalizer: legacy rows or hand-edits could land outside the
+        // ("translation"|"cloze"|"mixed") set. Default to translation so the
+        // existing card UI keeps working.
+        private static string NormalizeSrsCardType(string? value)
+        {
+            var normalized = (value ?? "translation").Trim().ToLowerInvariant();
+            return normalized is "translation" or "cloze" or "mixed" ? normalized : "translation";
         }
 
         // PUT: api/usersettings/audiobook-progress
@@ -836,6 +855,7 @@ namespace LinguaReadApi.Controllers
         public string? SrsLearningStepMinutes { get; set; } = "1,10";
         public int SrsMaxIntervalDays { get; set; } = 36500;
         public int SrsLapseMinimumIntervalDays { get; set; } = 1;
+        public string SrsCardType { get; set; } = "translation";
     }
 
     public class UpdateUserSettingsDto
@@ -965,6 +985,9 @@ namespace LinguaReadApi.Controllers
 
         [Range(1, 365)]
         public int? SrsLapseMinimumIntervalDays { get; set; }
+
+        [StringLength(20)]
+        public string? SrsCardType { get; set; }
     }
 
     public class UpdateAudiobookProgressDto

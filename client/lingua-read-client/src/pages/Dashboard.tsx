@@ -4,6 +4,7 @@ import { LinkContainer } from 'react-router-bootstrap';
 import { getDashboard } from '../utils/api';
 import LanguageDashboardCard from '../components/dashboard/LanguageDashboardCard';
 import GoalsCard from '../components/goals/GoalsCard';
+import ResumeAtLevelSection from '../components/dashboard/ResumeAtLevelSection';
 
 // Normalise keys from the API. The backend emits PascalCase camel-cased by
 // System.Text.Json defaults (camelCase), but older endpoints in the codebase
@@ -208,6 +209,8 @@ const Dashboard = () => {
       </Row>
 
       <GoalsCard defaultLanguageId={languages[0]?.languageId} />
+
+      <ResumeAtLevelSection />
 
       <Row className="g-3">
         {languages.map((lang) => (

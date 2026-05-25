@@ -13,6 +13,7 @@ import {
 import TranslationPopup from '../components/TranslationPopup';
 import SummaryPopup from '../components/SummaryPopup';
 import AudiobookPlayer from '../components/AudiobookPlayer';
+import DownloadForOfflineButton from '../components/offline/DownloadForOfflineButton';
 import './TextDisplay.css';
 import { SettingsContext } from '../contexts/SettingsContext';
 import { useReaderBookmarks } from '../hooks/useReaderBookmarks';
@@ -2056,6 +2057,18 @@ const TextDisplay = () => {
         showDesktopLessonControls={showDesktopLessonControls}
         setShowDesktopLessonControls={setShowDesktopLessonControls}
       />
+
+      {/* Download-for-offline (audio lessons only). Surfaces under the header
+          so users can pre-cache audio + text before going offline. */}
+      {isAudioLesson && audioSrc && (
+        <div className="px-3 py-1 d-flex justify-content-end" data-testid="textdisplay-offline-download">
+          <DownloadForOfflineButton
+            cacheName="lr-audio"
+            urls={[audioSrc]}
+            label="Save audio for offline"
+          />
+        </div>
+      )}
 
       {/* Mobile Audio Player - Show for audio lessons on mobile only */}
       {isMobile && isAudioLesson && audioSrc && (

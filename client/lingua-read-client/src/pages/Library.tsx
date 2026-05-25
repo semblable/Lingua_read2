@@ -1,7 +1,11 @@
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { Container, Row, Col, Button, Spinner, Alert, Breadcrumb, Form, Badge, Dropdown } from 'react-bootstrap';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { LinkContainer } from 'react-router-bootstrap';
+import ComprehensibilityFilter, {
+  type ComprehensibilityFilterValue,
+} from '../components/shared/ComprehensibilityFilter';
+import { comprehensionBand, comprehensionPercent } from '../utils/comprehensibility';
 import {
   DndContext,
   closestCenter,
@@ -65,6 +69,18 @@ const Library = () => {
   useEffect(() => {
     localStorage.setItem('libraryLanguageFilter', languageFilter);
   }, [languageFilter]);
+
+  // Comprehension band filter — persisted to URL ?comp=…
+  const [searchParams, setSearchParams] = useSearchParams();
+  const comprehensionFilter = (searchParams.get('comp') ?? 'all') as ComprehensibilityFilterValue;
+  const setComprehensionFilter = (next: ComprehensibilityFilterValue) => {
+    setSearchParams((prev) => {
+      const params = new URLSearchParams(prev);
+      if (next === 'all') params.delete('comp');
+      else params.set('comp', next);
+      return params;
+    });
+  };
 
   // Drag-select
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -152,6 +168,15 @@ const Library = () => {
     return result;
   }, [folders, searchQuery]);
 
+  const matchesComprehensionBand = useCallback((input: {
+    totalWords?: number | null;
+    unknownWords?: number | null;
+    unknownWordPercentage?: number | null;
+  }) => {
+    if (comprehensionFilter === 'all') return true;
+    return comprehensionBand(comprehensionPercent(input)) === comprehensionFilter;
+  }, [comprehensionFilter]);
+
   const filteredBooks = useMemo(() => {
     let result = books;
     if (languageFilter) result = result.filter(b => b.languageName === languageFilter);
@@ -160,8 +185,9 @@ const Library = () => {
       const q = searchQuery.toLowerCase();
       result = result.filter(b => (b.title ?? '').toLowerCase().includes(q));
     }
+    result = result.filter(matchesComprehensionBand);
     return result;
-  }, [books, searchQuery, languageFilter, tagFilter]);
+  }, [books, searchQuery, languageFilter, tagFilter, matchesComprehensionBand]);
 
   const filteredTexts = useMemo(() => {
     let result = texts;
@@ -171,8 +197,9 @@ const Library = () => {
       const q = searchQuery.toLowerCase();
       result = result.filter(t => (t.title ?? '').toLowerCase().includes(q));
     }
+    result = result.filter(matchesComprehensionBand);
     return result;
-  }, [texts, searchQuery, languageFilter, tagFilter]);
+  }, [texts, searchQuery, languageFilter, tagFilter, matchesComprehensionBand]);
 
   // Build sortable IDs for dnd-kit
   const sortableIds = useMemo(() => [
@@ -432,6 +459,11 @@ const Library = () => {
               ))}
             </Form.Select>
           )}
+          {/* Comprehension band filter */}
+          <ComprehensibilityFilter
+            value={comprehensionFilter}
+            onChange={setComprehensionFilter}
+          />
           {/* Actions */}
           <Button size="sm" variant="outline-primary" onClick={() => setShowCreateFolder(true)}>
             <i className="bi bi-folder-plus me-1"></i>New Folder

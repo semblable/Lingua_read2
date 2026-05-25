@@ -10,6 +10,7 @@ import {
   WORD_STATUS_VARIANTS as STATUS_VARIANTS,
   type WordStatus
 } from '../types/wordStatus';
+import ClozeReviewCard from '../components/srs/ClozeReviewCard';
 import './SrsReview.css';
 
 type DueCard = SrsDueCards[number];
@@ -63,6 +64,7 @@ const SrsReview = () => {
     srsLearningStepMinutes: string;
     srsMaxIntervalDays: number | string;
     srsLapseMinimumIntervalDays: number | string;
+    srsCardType: string;
   };
   const [localSettings, setLocalSettings] = useState<SrsLocalSettings>({
     srsMaxNewCards: 20,
@@ -70,7 +72,8 @@ const SrsReview = () => {
     srsReviewOrder: 'mix',
     srsLearningStepMinutes: '1,10',
     srsMaxIntervalDays: 36500,
-    srsLapseMinimumIntervalDays: 1
+    srsLapseMinimumIntervalDays: 1,
+    srsCardType: 'translation'
   });
 
   useEffect(() => {
@@ -80,7 +83,8 @@ const SrsReview = () => {
       srsReviewOrder: settings?.srsReviewOrder ?? 'mix',
       srsLearningStepMinutes: settings?.srsLearningStepMinutes ?? '1,10',
       srsMaxIntervalDays: settings?.srsMaxIntervalDays ?? 36500,
-      srsLapseMinimumIntervalDays: settings?.srsLapseMinimumIntervalDays ?? 1
+      srsLapseMinimumIntervalDays: settings?.srsLapseMinimumIntervalDays ?? 1,
+      srsCardType: settings?.srsCardType ?? 'translation'
     });
   }, [settings]);
 
@@ -112,7 +116,8 @@ const SrsReview = () => {
         srsReviewOrder: localSettings.srsReviewOrder,
         srsLearningStepMinutes: localSettings.srsLearningStepMinutes,
         srsMaxIntervalDays: maxInterval,
-        srsLapseMinimumIntervalDays: lapseMin
+        srsLapseMinimumIntervalDays: lapseMin,
+        srsCardType: localSettings.srsCardType
       });
       updateSetting('srsMaxNewCards', maxNew);
       updateSetting('srsMaxReviews', maxReviews);
@@ -120,6 +125,7 @@ const SrsReview = () => {
       updateSetting('srsLearningStepMinutes', localSettings.srsLearningStepMinutes);
       updateSetting('srsMaxIntervalDays', maxInterval);
       updateSetting('srsLapseMinimumIntervalDays', lapseMin);
+      updateSetting('srsCardType', localSettings.srsCardType);
       setShowSettingsModal(false);
       loadStats(); // refresh visual stats
     } catch (err: unknown) {
@@ -834,6 +840,39 @@ const SrsReview = () => {
               />
               <Form.Text className="text-muted">After failing a card, its interval won't go below this value after re-learning. Default: 1.</Form.Text>
             </Form.Group>
+            <Form.Group className="mb-3" data-testid="srs-card-type-group">
+              <Form.Label>Card Style</Form.Label>
+              <Form.Check
+                type="radio"
+                name="srsCardType"
+                id="srs-card-type-translation"
+                label="Translation — show the word, recall its meaning (recognition)"
+                value="translation"
+                checked={localSettings.srsCardType === 'translation'}
+                onChange={() => setLocalSettings(p => ({ ...p, srsCardType: 'translation' }))}
+              />
+              <Form.Check
+                type="radio"
+                name="srsCardType"
+                id="srs-card-type-cloze"
+                label="Cloze — hide the word in its sentence, type or recall it (active recall)"
+                value="cloze"
+                checked={localSettings.srsCardType === 'cloze'}
+                onChange={() => setLocalSettings(p => ({ ...p, srsCardType: 'cloze' }))}
+              />
+              <Form.Check
+                type="radio"
+                name="srsCardType"
+                id="srs-card-type-mixed"
+                label="Mixed — alternate between translation and cloze per card"
+                value="mixed"
+                checked={localSettings.srsCardType === 'mixed'}
+                onChange={() => setLocalSettings(p => ({ ...p, srsCardType: 'mixed' }))}
+              />
+              <Form.Text className="text-muted">
+                Cloze cards require a mined sentence. Cards without one fall back to the translation style.
+              </Form.Text>
+            </Form.Group>
           </Modal.Body>
           <Modal.Footer>
             <Button variant="secondary" onClick={() => setShowSettingsModal(false)}>Cancel</Button>
@@ -974,51 +1013,85 @@ const SrsReview = () => {
               </div>
             </div>
 
-            {/* Front: Sentence */}
-            <div
-              className="flex-grow-1 d-flex flex-column justify-content-center align-items-center text-center"
-              style={{ cursor: !isFlipped ? 'pointer' : 'default', minHeight: '200px' }}
-              onClick={() => !isFlipped && setIsFlipped(true)}
-            >
-              {primaryPhrase ? (
-                <div>
-                  <p className="srs-sentence mb-2">
-                    {renderSentenceWithHighlight(primaryPhrase.sentence, currentCard.term)}
-                  </p>
-                </div>
-              ) : (
-                <p className="mb-2" style={{ fontSize: '1.5rem' }}>
-                  <span className="srs-term-highlight">{currentCard.term}</span>
-                </p>
-              )}
+            {/* Front: Sentence (translation or cloze) */}
+            {(() => {
+              // Decide per-card whether to render a cloze view. "translation" (default)
+              // never renders cloze; "cloze" always wants it; "mixed" alternates per card
+              // ID. Cards lacking a server-supplied clozeSentence (e.g. term not present
+              // in any mined phrase) fall back to the translation view.
+              const cardTypeSetting = settings?.srsCardType ?? 'translation';
+              const wantCloze =
+                cardTypeSetting === 'cloze' ||
+                (cardTypeSetting === 'mixed' && (currentCard.srsCardReviewId ?? 0) % 2 === 0);
+              const renderCloze = wantCloze && !!currentCard.clozeSentence;
 
-              {!isFlipped && (
-                <div className="mt-3 srs-reveal-hint">
-                  Click or press <kbd>Space</kbd> to reveal
-                </div>
-              )}
+              if (renderCloze) {
+                return (
+                  <div
+                    className="flex-grow-1 d-flex flex-column justify-content-center align-items-center"
+                    style={{ minHeight: '200px' }}
+                  >
+                    <ClozeReviewCard
+                      cardId={currentCard.srsCardReviewId ?? 0}
+                      clozeSentence={currentCard.clozeSentence!}
+                      term={currentCard.term ?? ''}
+                      translation={currentCard.translation ?? ''}
+                      isFlipped={isFlipped}
+                      onReveal={() => setIsFlipped(true)}
+                      otherPhrases={otherPhrases}
+                    />
+                  </div>
+                );
+              }
 
-              {/* Back: Translation & Details */}
-              {isFlipped && (
-                <div className="srs-answer-area mt-3 pt-3 border-top w-100">
-                  <h4 className="mb-1">{currentCard.term}</h4>
-                  <p className="srs-translation mb-2">
-                    {currentCard.translation || <em className="text-muted">No translation</em>}
-                  </p>
+              return (
+                <div
+                  className="flex-grow-1 d-flex flex-column justify-content-center align-items-center text-center"
+                  style={{ cursor: !isFlipped ? 'pointer' : 'default', minHeight: '200px' }}
+                  onClick={() => !isFlipped && setIsFlipped(true)}
+                  data-testid="translation-review-card"
+                >
+                  {primaryPhrase ? (
+                    <div>
+                      <p className="srs-sentence mb-2">
+                        {renderSentenceWithHighlight(primaryPhrase.sentence, currentCard.term)}
+                      </p>
+                    </div>
+                  ) : (
+                    <p className="mb-2" style={{ fontSize: '1.5rem' }}>
+                      <span className="srs-term-highlight">{currentCard.term}</span>
+                    </p>
+                  )}
 
-                  {otherPhrases.length > 0 && (
-                    <div className="mt-2 text-start">
-                      <small className="text-muted d-block mb-1">Other mined sentences:</small>
-                      {otherPhrases.map((phrase) => (
-                        <small key={phrase.srsPhraseId} className="srs-other-phrases d-block mb-1">
-                          "{phrase.sentence}"
-                        </small>
-                      ))}
+                  {!isFlipped && (
+                    <div className="mt-3 srs-reveal-hint">
+                      Click or press <kbd>Space</kbd> to reveal
+                    </div>
+                  )}
+
+                  {/* Back: Translation & Details */}
+                  {isFlipped && (
+                    <div className="srs-answer-area mt-3 pt-3 border-top w-100">
+                      <h4 className="mb-1">{currentCard.term}</h4>
+                      <p className="srs-translation mb-2">
+                        {currentCard.translation || <em className="text-muted">No translation</em>}
+                      </p>
+
+                      {otherPhrases.length > 0 && (
+                        <div className="mt-2 text-start">
+                          <small className="text-muted d-block mb-1">Other mined sentences:</small>
+                          {otherPhrases.map((phrase) => (
+                            <small key={phrase.srsPhraseId} className="srs-other-phrases d-block mb-1">
+                              "{phrase.sentence}"
+                            </small>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
-              )}
-            </div>
+              );
+            })()}
 
             {/* Grade Buttons */}
             {isFlipped && (

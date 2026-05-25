@@ -26,6 +26,21 @@ import {
 } from '../utils/api'; // Import new API functions + uploadAudiobookTracks
 import { formatDate, /*calculateReadingTime*/ } from '../utils/helpers'; // Removed unused calculateReadingTime
 // Removed AudiobookPlayer import
+import DownloadForOfflineButton from '../components/offline/DownloadForOfflineButton';
+
+// Normalize an audiobook track's stored path into a fetch-ready URL. Mirrors
+// the logic in useAudiobookPlayer.buildTrackSrc so the bytes we cache here
+// match the URL the <audio> element will request later.
+const normalizeTrackUrl = (filePath: string | null | undefined): string | null => {
+  if (!filePath) return null;
+  if (filePath.startsWith('http') || filePath.startsWith('blob:')) return filePath;
+  const prefixed = filePath.startsWith('/') ? filePath : `/${filePath}`;
+  const envBaseUrl = import.meta.env.VITE_API_URL;
+  if (envBaseUrl && envBaseUrl.startsWith('http')) {
+    return `${envBaseUrl}${prefixed}`;
+  }
+  return prefixed;
+};
 
 const normalizeCoverUrl = (value: string | null | undefined): string | null => {
   if (!value) return null;
@@ -643,6 +658,29 @@ const BookDetail = () => {
               </div>
             )}
           </Form>
+
+          {/* Download-for-offline (audiobook). Caches every track URL into
+              the lr-audio bucket so the audiobook plays without network. */}
+          {(() => {
+            const tracks = book.audiobookTracks ?? [];
+            const urls = tracks
+              .map((t) => normalizeTrackUrl(t.filePath))
+              .filter((u): u is string => !!u);
+            if (urls.length === 0) return null;
+            return (
+              <div className="mt-3 d-flex align-items-center gap-2 flex-wrap"
+                   data-testid="bookdetail-offline-download">
+                <small className="text-muted">
+                  Save all {urls.length} track{urls.length === 1 ? '' : 's'} for offline:
+                </small>
+                <DownloadForOfflineButton
+                  cacheName="lr-audio"
+                  urls={urls}
+                  label={`Download audiobook (${urls.length} tracks)`}
+                />
+              </div>
+            );
+          })()}
         </Card.Body>
       </Card>
 

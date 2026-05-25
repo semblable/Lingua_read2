@@ -259,6 +259,76 @@ public class UserSettingsControllerTests
         Assert.Null(row.CustomSummarizationPrompt);
     }
 
+    // --- SrsCardType (Feature 1) ---
+
+    [Fact]
+    public async Task GetUserSettings_DefaultSrsCardType_IsTranslation()
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        context.Users.Add(new User { Id = userId, UserName = "u", Email = "u@test.com" });
+        await context.SaveChangesAsync();
+
+        var controller = CreateController(context, userId);
+        var result = await controller.GetUserSettings();
+
+        var dto = Assert.IsType<UserSettingsDto>(result.Value);
+        Assert.Equal("translation", dto.SrsCardType);
+    }
+
+    [Theory]
+    [InlineData("translation")]
+    [InlineData("cloze")]
+    [InlineData("mixed")]
+    public async Task UpdateUserSettings_AcceptsValidSrsCardType(string value)
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        context.Users.Add(new User { Id = userId, UserName = "u", Email = "u@test.com" });
+        await context.SaveChangesAsync();
+
+        var controller = CreateController(context, userId);
+        var result = await controller.UpdateUserSettings(new UpdateUserSettingsDto { SrsCardType = value });
+
+        var dto = Assert.IsType<UserSettingsDto>(result.Value);
+        Assert.Equal(value, dto.SrsCardType);
+
+        var row = await context.UserSettings.AsNoTracking().SingleAsync();
+        Assert.Equal(value, row.SrsCardType);
+    }
+
+    [Fact]
+    public async Task UpdateUserSettings_RejectsUnknownSrsCardType_KeepingPriorValue()
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        context.Users.Add(new User { Id = userId, UserName = "u", Email = "u@test.com" });
+        await context.SaveChangesAsync();
+
+        var controller = CreateController(context, userId);
+        await controller.UpdateUserSettings(new UpdateUserSettingsDto { SrsCardType = "cloze" });
+        await controller.UpdateUserSettings(new UpdateUserSettingsDto { SrsCardType = "nonsense" });
+
+        var row = await context.UserSettings.AsNoTracking().SingleAsync();
+        // "nonsense" is rejected, prior valid "cloze" stays in place.
+        Assert.Equal("cloze", row.SrsCardType);
+    }
+
+    [Fact]
+    public async Task UpdateUserSettings_NormalizesCaseAndWhitespaceForSrsCardType()
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        context.Users.Add(new User { Id = userId, UserName = "u", Email = "u@test.com" });
+        await context.SaveChangesAsync();
+
+        var controller = CreateController(context, userId);
+        await controller.UpdateUserSettings(new UpdateUserSettingsDto { SrsCardType = "  CLOZE  " });
+
+        var row = await context.UserSettings.AsNoTracking().SingleAsync();
+        Assert.Equal("cloze", row.SrsCardType);
+    }
+
     private static UserSettingsController CreateController(AppDbContext context, Guid userId)
     {
         var discord = new DiscordReportService(

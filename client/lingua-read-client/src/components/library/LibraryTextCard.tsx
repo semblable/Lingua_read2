@@ -5,6 +5,7 @@ import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { formatDate } from '../../utils/helpers';
 import type { LibraryText, SelectableType } from '../../utils/store';
+import ComprehensibilityBadge from '../shared/ComprehensibilityBadge';
 
 interface LibraryTextCardProps {
   text: LibraryText;
@@ -74,12 +75,14 @@ const LibraryTextCard = ({ text, isSelected, onSelect, onItemClick }: LibraryTex
           </div>
           <small className="text-muted mt-auto">
             {formatDate(text.createdAt ?? '')}
-            {(text.totalWords ?? 0) > 0 && text.unknownWordPercentage != null && (
-              <span className="ms-2" title={`${text.unknownWords} of ${text.totalWords} word tokens not yet known`}>
-                · {text.unknownWordPercentage.toFixed(1)}% new
-              </span>
-            )}
           </small>
+          <div className="mt-1">
+            <ComprehensibilityBadge
+              totalWords={text.totalWords}
+              unknownWords={text.unknownWords}
+              unknownWordPercentage={text.unknownWordPercentage}
+            />
+          </div>
         </Card.Body>
         <Card.Footer className="p-2 bg-transparent border-top-0">
           <Link to={`/texts/${text.textId}`} className="btn btn-outline-primary btn-sm w-100">

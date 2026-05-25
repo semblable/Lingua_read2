@@ -7,6 +7,9 @@ import { SettingsProvider, SettingsContext } from './contexts/SettingsContext';
 
 // Components (always needed)
 import Navigation from './components/Navigation';
+import OfflineIndicator from './components/offline/OfflineIndicator';
+import { productionSyncHandlers } from './utils/offline/handlers';
+import { registerServiceWorker } from './utils/offline/registerServiceWorker';
 
 // Pages needed on initial render (eager)
 import Home from './pages/Home';
@@ -124,6 +127,9 @@ const AuthenticatedApp = () => {
   return (
     <div className="App">
       <Navigation />
+      <div className="position-fixed top-0 end-0 m-2" style={{ zIndex: 1080 }}>
+        <OfflineIndicator handlers={productionSyncHandlers} />
+      </div>
       <div className="container-fluid p-0 m-0">
         <Suspense fallback={<Loading />}>
           <Routes>
@@ -170,6 +176,12 @@ function App() {
   useEffect(() => {
     checkAuth();
   }, [checkAuth]);
+
+  // Register the PWA service worker once on mount. Safe in tests — the
+  // wrapper silently skips when the virtual module isn't available.
+  useEffect(() => {
+    void registerServiceWorker();
+  }, []);
 
   // Apply theme early (even before auth) so login/setup pages respect saved theme
   useEffect(() => {

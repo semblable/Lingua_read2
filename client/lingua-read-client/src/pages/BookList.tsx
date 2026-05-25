@@ -1,9 +1,14 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Container, Row, Col, Card, Button, Alert, Spinner, ProgressBar, Form } from 'react-bootstrap';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { getBooks } from '../utils/api';
 import { formatDate } from '../utils/helpers';
 import type { BooksList } from '../utils/api/books';
+import ComprehensibilityBadge from '../components/shared/ComprehensibilityBadge';
+import ComprehensibilityFilter, {
+  type ComprehensibilityFilterValue,
+} from '../components/shared/ComprehensibilityFilter';
+import { comprehensionBand, comprehensionPercent } from '../utils/comprehensibility';
 
 // BooksList element augmented with `parts` — the list endpoint can include
 // part summaries the OpenAPI spec omits.
@@ -35,6 +40,18 @@ const BookList = () => {
     localStorage.setItem('bookListLanguageFilter', languageFilter);
   }, [languageFilter]);
 
+  // Comprehension band filter — persisted to URL ?comp=…
+  const [searchParams, setSearchParams] = useSearchParams();
+  const comprehensionFilter = (searchParams.get('comp') ?? 'all') as ComprehensibilityFilterValue;
+  const setComprehensionFilter = (next: ComprehensibilityFilterValue) => {
+    setSearchParams((prev) => {
+      const params = new URLSearchParams(prev);
+      if (next === 'all') params.delete('comp');
+      else params.set('comp', next);
+      return params;
+    });
+  };
+
   useEffect(() => {
     const fetchBooks = async () => {
       try {
@@ -60,7 +77,14 @@ const BookList = () => {
 
     // Filtered books
     const filtered = books.filter(book => {
-      return !languageFilter || book.languageName === languageFilter;
+      const languageMatch = !languageFilter || book.languageName === languageFilter;
+      const comprehensionMatch = comprehensionFilter === 'all' ||
+        comprehensionBand(comprehensionPercent({
+          totalWords: book.totalWords,
+          knownWords: book.knownWords,
+          unknownWordPercentage: book.unknownWordPercentage,
+        })) === comprehensionFilter;
+      return languageMatch && comprehensionMatch;
     }).sort((a, b) => {
       // Natural sort by title
       const titleA = a.title || '';
@@ -70,7 +94,7 @@ const BookList = () => {
 
     return { filteredBooks: filtered, uniqueLanguages: languages };
 
-  }, [books, languageFilter]);
+  }, [books, languageFilter, comprehensionFilter]);
 
 
   if (loading) {
@@ -101,6 +125,11 @@ const BookList = () => {
               <option key={lang ?? ''} value={lang ?? ''}>{lang}</option>
             ))}
           </Form.Select>
+
+          <ComprehensibilityFilter
+            value={comprehensionFilter}
+            onChange={setComprehensionFilter}
+          />
 
           <Button
             onClick={() => navigate('/books/create')}
@@ -165,11 +194,13 @@ const BookList = () => {
                       <Col>Learning: {book.learningWords}</Col>
                       <Col>Total: {book.totalWords}</Col>
                     </Row>
-                    {book.unknownWordPercentage != null && (
-                      <Row>
-                        <Col>Unknown: {book.unknownWordPercentage.toFixed(1)}%</Col>
-                      </Row>
-                    )}
+                    <div className="mt-2">
+                      <ComprehensibilityBadge
+                        totalWords={book.totalWords}
+                        knownWords={book.knownWords}
+                        unknownWordPercentage={book.unknownWordPercentage}
+                      />
+                    </div>
                   </div>
                 )}
 

@@ -99,4 +99,77 @@ describe('TextList', () => {
     renderPage();
     expect(await screen.findByText('network')).toBeInTheDocument();
   });
+
+  describe('comprehensibility filter', () => {
+    const textsWithComprehension = [
+      // 30% known — too-hard
+      {
+        textId: 10, title: 'Brutal Russian Text', languageName: 'Russian',
+        bookId: null, totalWords: 100, knownWords: 30, unknownWordPercentage: 70,
+        createdAt: '2026-01-01T00:00:00Z',
+      },
+      // 85% known — challenging
+      {
+        textId: 11, title: 'Decent French Article', languageName: 'French',
+        bookId: null, totalWords: 100, knownWords: 85, unknownWordPercentage: 15,
+        createdAt: '2026-01-02T00:00:00Z',
+      },
+      // 95% known — sweet-spot
+      {
+        textId: 12, title: 'Perfect Spanish Story', languageName: 'Spanish',
+        bookId: null, totalWords: 100, knownWords: 95, unknownWordPercentage: 5,
+        createdAt: '2026-01-03T00:00:00Z',
+      },
+    ];
+
+    test('renders all comprehensibility badges with correct percentages', async () => {
+      getTexts.mockResolvedValue(textsWithComprehension);
+      renderPage();
+      await screen.findByText('Brutal Russian Text');
+      const badges = screen.getAllByTestId('comprehensibility-badge');
+      expect(badges).toHaveLength(3);
+      const bands = badges.map((b) => b.getAttribute('data-band'));
+      expect(bands).toContain('too-hard');
+      expect(bands).toContain('challenging');
+      expect(bands).toContain('sweet-spot');
+    });
+
+    test('sweet-spot filter hides too-hard and challenging texts', async () => {
+      getTexts.mockResolvedValue(textsWithComprehension);
+      renderPage();
+      await screen.findByText('Brutal Russian Text');
+
+      const filter = screen.getByTestId('comprehensibility-filter');
+      fireEvent.change(filter, { target: { value: 'sweet-spot' } });
+
+      await waitFor(() => {
+        expect(screen.queryByText('Brutal Russian Text')).not.toBeInTheDocument();
+      });
+      expect(screen.queryByText('Decent French Article')).not.toBeInTheDocument();
+      expect(screen.getByText('Perfect Spanish Story')).toBeInTheDocument();
+    });
+
+    test('default filter ("all") shows every text', async () => {
+      getTexts.mockResolvedValue(textsWithComprehension);
+      renderPage();
+      await screen.findByText('Brutal Russian Text');
+      expect(screen.getByText('Decent French Article')).toBeInTheDocument();
+      expect(screen.getByText('Perfect Spanish Story')).toBeInTheDocument();
+    });
+
+    test('filter value is read from the URL search params on first render', async () => {
+      getTexts.mockResolvedValue(textsWithComprehension);
+      render(
+        <MemoryRouter
+          initialEntries={['/texts?comp=too-hard']}
+          future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
+        >
+          <TextList />
+        </MemoryRouter>
+      );
+      await screen.findByText('Brutal Russian Text');
+      expect(screen.queryByText('Decent French Article')).not.toBeInTheDocument();
+      expect(screen.queryByText('Perfect Spanish Story')).not.toBeInTheDocument();
+    });
+  });
 });

@@ -1,5 +1,6 @@
 import { fetchApi } from './client';
 import type { ResponseOf } from '../fetchApi';
+import { enqueueIfOffline } from '../offline/enqueueIfOffline';
 
 export type SrsDueCards = ResponseOf<'/api/Srs/due', 'get'>;
 export type SrsStats = ResponseOf<'/api/Srs/stats', 'get'>;
@@ -33,10 +34,18 @@ export const submitSrsReview = async (
   srsCardReviewId: number | string,
   grade: number | string
 ): Promise<unknown> => {
-  return await fetchApi('/srs/review', {
-    method: 'POST',
-    body: JSON.stringify({ srsCardReviewId, grade })
-  });
+  const cardId = parseInt(String(srsCardReviewId), 10);
+  const gradeNum = parseInt(String(grade), 10);
+  // Wrapped for offline replay: a network failure enqueues the grade for
+  // later submission, lets the UI advance to the next card, and the queue
+  // drains on reconnect. Application errors (4xx/5xx) still throw.
+  return await enqueueIfOffline(
+    { type: 'srsReview', payload: { cardId, grade: gradeNum } },
+    () => fetchApi('/srs/review', {
+      method: 'POST',
+      body: JSON.stringify({ srsCardReviewId, grade })
+    })
+  );
 };
 
 export const mineSentence = async (

@@ -1,9 +1,15 @@
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { Container, Row, Col, Card, Button, Spinner, Alert, Form, ButtonGroup, Badge } from 'react-bootstrap';
 import { LinkContainer } from 'react-router-bootstrap';
+import { useSearchParams } from 'react-router-dom';
 import { useTextsStore } from '../utils/store';
 import type { StoredText } from '../utils/store';
 import { getTexts, deleteText } from '../utils/api';
+import ComprehensibilityBadge from '../components/shared/ComprehensibilityBadge';
+import ComprehensibilityFilter, {
+  type ComprehensibilityFilterValue,
+} from '../components/shared/ComprehensibilityFilter';
+import { comprehensionBand, comprehensionPercent } from '../utils/comprehensibility';
 // Assuming Bootstrap Icons are linked globally or via a library like react-bootstrap-icons
 // For simplicity, using class names directly: <i className="bi bi-headphones"></i> <i className="bi bi-trash"></i>
 
@@ -21,6 +27,18 @@ const TextList = () => {
   const [tagFilter, setTagFilter] = useState(''); // State for tag filter
   const [typeFilter, setTypeFilter] = useState('all'); // State for type filter ('all', 'audio', 'normal')
   const [statusFilter, setStatusFilter] = useState('all'); // State for status filter ('all', 'finished', 'inprogress')
+
+  // Comprehension band filter — persisted to URL ?comp=sweet-spot|too-hard|... so it survives navigation
+  const [searchParams, setSearchParams] = useSearchParams();
+  const comprehensionFilter = (searchParams.get('comp') ?? 'all') as ComprehensibilityFilterValue;
+  const setComprehensionFilter = (next: ComprehensibilityFilterValue) => {
+    setSearchParams((prev) => {
+      const params = new URLSearchParams(prev);
+      if (next === 'all') params.delete('comp');
+      else params.set('comp', next);
+      return params;
+    });
+  };
 
   // Update localStorage when filter changes
   useEffect(() => {
@@ -62,7 +80,14 @@ const TextList = () => {
       const statusMatch = statusFilter === 'all' ||
         (statusFilter === 'finished' && text.isFinished) ||
         (statusFilter === 'inprogress' && !text.isFinished);
-      return tagMatch && typeMatch && languageMatch && statusMatch;
+      const comprehensionMatch = comprehensionFilter === 'all' ||
+        comprehensionBand(comprehensionPercent({
+          totalWords: text.totalWords,
+          knownWords: text.knownWords,
+          unknownWords: text.unknownWords,
+          unknownWordPercentage: text.unknownWordPercentage,
+        })) === comprehensionFilter;
+      return tagMatch && typeMatch && languageMatch && statusMatch && comprehensionMatch;
     });
 
     // Sort filtered texts. sortKey is constrained to 'title' | 'createdAt' so
@@ -86,7 +111,7 @@ const TextList = () => {
     });
 
     return { filteredAndSortedTexts: sorted, uniqueTags: tags, uniqueLanguages: languages };
-  }, [texts, sortKey, sortOrder, tagFilter, typeFilter, languageFilter, statusFilter]); // Add filters to dependencies
+  }, [texts, sortKey, sortOrder, tagFilter, typeFilter, languageFilter, statusFilter, comprehensionFilter]);
 
   const handleSort = (key: 'title' | 'createdAt') => {
     if (key === sortKey) {
@@ -179,6 +204,10 @@ const TextList = () => {
             <option value="normal">Normal Texts</option>
             <option value="audio">Audio Lessons</option>
           </Form.Select>
+          <ComprehensibilityFilter
+            value={comprehensionFilter}
+            onChange={setComprehensionFilter}
+          />
         </div>
         <div className="d-flex gap-2 mt-2 mt-md-0"> {/* Wrap buttons in a div for grouping */}
           <LinkContainer to="/texts/create-batch-audio">
@@ -200,7 +229,7 @@ const TextList = () => {
             <LinkContainer to="/texts/create">
               <Button variant="primary">Add Your First Text</Button>
             </LinkContainer>
-            {(languageFilter || tagFilter || typeFilter !== 'all' || statusFilter !== 'all') && ( // Update condition
+            {(languageFilter || tagFilter || typeFilter !== 'all' || statusFilter !== 'all' || comprehensionFilter !== 'all') && (
               <Button
                 variant="outline-secondary"
                 className="ms-2"
@@ -208,7 +237,8 @@ const TextList = () => {
                   setLanguageFilter('');
                   setTagFilter('');
                   setTypeFilter('all');
-                  setStatusFilter('all'); // Clear status filter
+                  setStatusFilter('all');
+                  setComprehensionFilter('all');
                 }}
               >
                 Clear Filters
@@ -237,11 +267,14 @@ const TextList = () => {
                       Created: {text.createdAt ? new Date(text.createdAt).toLocaleDateString() : 'N/A'}
                     </small>
                   </div>
-                  {text.bookId == null && (text.totalWords ?? 0) > 0 && text.unknownWordPercentage != null && (
-                    <div className="mt-1">
-                      <small className="text-muted">
-                        Unknown: {text.unknownWordPercentage.toFixed(1)}% ({text.unknownWords}/{text.totalWords})
-                      </small>
+                  {text.bookId == null && (
+                    <div className="mt-2">
+                      <ComprehensibilityBadge
+                        totalWords={text.totalWords}
+                        knownWords={text.knownWords}
+                        unknownWords={text.unknownWords}
+                        unknownWordPercentage={text.unknownWordPercentage}
+                      />
                     </div>
                   )}
                 </Card.Body>

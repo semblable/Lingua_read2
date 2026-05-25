@@ -5298,6 +5298,7 @@ export interface components {
             phrases?: components["schemas"]["SrsPhraseDto"][] | null;
             /** Format: int32 */
             unknownWordsInPhrase?: number;
+            clozeSentence?: string | null;
         };
         SrsForecastDto: {
             date?: string | null;
@@ -5734,6 +5735,7 @@ export interface components {
             srsMaxIntervalDays?: number | null;
             /** Format: int32 */
             srsLapseMinimumIntervalDays?: number | null;
+            srsCardType?: string | null;
         };
         UpdateWordDto: {
             /** Format: int32 */
@@ -5856,6 +5858,7 @@ export interface components {
             srsCurrentStreak?: number;
             /** Format: int32 */
             srsLongestStreak?: number;
+            srsCardType?: string | null;
             /** Format: date-time */
             createdAt?: string;
             /** Format: date-time */
@@ -5936,6 +5939,7 @@ export interface components {
             srsMaxIntervalDays?: number;
             /** Format: int32 */
             srsLapseMinimumIntervalDays?: number;
+            srsCardType?: string | null;
         };
         UserStatisticsDto: {
             /** Format: int32 */

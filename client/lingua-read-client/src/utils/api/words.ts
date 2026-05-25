@@ -1,5 +1,6 @@
 import { fetchApi, fetchApiDownload } from './client';
 import type { ResponseOf } from '../fetchApi';
+import { enqueueIfOffline } from '../offline/enqueueIfOffline';
 
 export type Word = ResponseOf<'/api/Words/{id}', 'get'>;
 export type WordsByLanguage = ResponseOf<'/api/Words/language/{languageId}', 'get'>;
@@ -24,13 +25,29 @@ export const createWord = async (
       sentence
     };
 
-    return await fetchApi('/words', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json; charset=utf-8'
+    // Offline replay: createWord is one of the three mutations the offline
+    // queue knows how to replay. languageId is not passed here, but the
+    // payload carries textId and the server can recover languageId from that;
+    // for queueing we record a -1 sentinel (callers receiving the synthetic
+    // success won't have a usable wordId either way until the drain succeeds).
+    return await enqueueIfOffline(
+      {
+        type: 'wordCreate',
+        payload: {
+          term: payload.term,
+          languageId: -1,
+          translation: payload.translation,
+          status: payload.status,
+        },
       },
-      body: JSON.stringify(payload)
-    });
+      () => fetchApi('/words', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json; charset=utf-8'
+        },
+        body: JSON.stringify(payload)
+      })
+    );
   } catch (error) {
     console.error('Error in createWord:', error);
     throw error;
@@ -51,10 +68,18 @@ export const updateWord = async (
       translation: translation ?? ''
     };
 
-    return await fetchApi(`/words/${wordId}`, {
-      method: 'PUT',
-      body: JSON.stringify(payload)
-    });
+    // Offline replay: queue only the status change (translation edits are
+    // rarer and tend to need the network for AI suggestions anyway).
+    return await enqueueIfOffline(
+      {
+        type: 'wordStatusUpdate',
+        payload: { wordId: parseInt(String(wordId), 10), status: parseInt(String(status), 10) },
+      },
+      () => fetchApi(`/words/${wordId}`, {
+        method: 'PUT',
+        body: JSON.stringify(payload)
+      })
+    );
   } catch (error) {
     console.error('Error in updateWord:', error);
     throw error;

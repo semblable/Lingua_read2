@@ -307,4 +307,110 @@ describe('SrsReview', () => {
       );
     });
   });
+
+  describe('card type setting (Feature 1)', () => {
+    const renderWithCardType = (cardType) =>
+      render(
+        <SettingsContext.Provider
+          value={{
+            settings: { ...mockSettings, srsCardType: cardType },
+            updateSetting: vi.fn(),
+            loadingSettings: false,
+          }}
+        >
+          <BrowserRouter>
+            <SrsReview />
+          </BrowserRouter>
+        </SettingsContext.Provider>
+      );
+
+    const clozeCard = {
+      ...mockCards[0],
+      clozeSentence: 'El ___ duerme.',
+    };
+
+    it('renders the translation card when srsCardType is "translation" (default behavior preserved)', async () => {
+      renderComponent();
+      await selectSpanish();
+      fireEvent.click(await screen.findByRole('button', { name: /Start Review/i }));
+      await screen.findByText(/duerme/);
+      expect(screen.getByTestId('translation-review-card')).toBeInTheDocument();
+      expect(screen.queryByTestId('cloze-review-card')).not.toBeInTheDocument();
+    });
+
+    it('renders the cloze card when srsCardType is "cloze" and the card has a clozeSentence', async () => {
+      getSrsDueCards.mockResolvedValue([clozeCard]);
+      renderWithCardType('cloze');
+      await selectSpanish();
+      fireEvent.click(await screen.findByRole('button', { name: /Start Review/i }));
+
+      expect(await screen.findByTestId('cloze-review-card')).toBeInTheDocument();
+      expect(screen.getByTestId('cloze-sentence')).toHaveTextContent('El ___ duerme.');
+      expect(screen.queryByTestId('translation-review-card')).not.toBeInTheDocument();
+    });
+
+    it('falls back to the translation card when srsCardType is "cloze" but the card lacks a clozeSentence', async () => {
+      const cardWithoutCloze = { ...mockCards[0], clozeSentence: null };
+      getSrsDueCards.mockResolvedValue([cardWithoutCloze]);
+      renderWithCardType('cloze');
+      await selectSpanish();
+      fireEvent.click(await screen.findByRole('button', { name: /Start Review/i }));
+
+      expect(await screen.findByTestId('translation-review-card')).toBeInTheDocument();
+      expect(screen.queryByTestId('cloze-review-card')).not.toBeInTheDocument();
+    });
+
+    it('alternates between translation and cloze in mixed mode', async () => {
+      // srsCardReviewId % 2 === 0 → cloze, otherwise translation
+      const evenCloze = { ...mockCards[0], srsCardReviewId: 100, clozeSentence: 'El ___ duerme.' };
+      const oddCloze = { ...mockCards[1], srsCardReviewId: 101, clozeSentence: 'El ___ corre.' };
+      getSrsDueCards.mockResolvedValue([evenCloze, oddCloze]);
+
+      renderWithCardType('mixed');
+      await selectSpanish();
+      fireEvent.click(await screen.findByRole('button', { name: /Start Review/i }));
+      // First card (id 100, even) → cloze
+      expect(await screen.findByTestId('cloze-review-card')).toBeInTheDocument();
+
+      // Reveal and grade to advance to the second card (id 101, odd) → translation
+      fireEvent.change(screen.getByTestId('cloze-input'), { target: { value: 'gato' } });
+      fireEvent.keyDown(screen.getByTestId('cloze-input'), { key: 'Enter' });
+      fireEvent.click(await screen.findByRole('button', { name: /^Good/ }));
+
+      expect(await screen.findByTestId('translation-review-card')).toBeInTheDocument();
+    });
+
+    it('settings modal exposes the card-style radio group and persists the choice', async () => {
+      const updateSetting = vi.fn();
+      render(
+        <SettingsContext.Provider
+          value={{ settings: mockSettings, updateSetting, loadingSettings: false }}
+        >
+          <BrowserRouter>
+            <SrsReview />
+          </BrowserRouter>
+        </SettingsContext.Provider>
+      );
+      await selectSpanish();
+      // Open settings modal
+      fireEvent.click(await screen.findByRole('button', { name: /Options/i }));
+
+      const group = await screen.findByTestId('srs-card-type-group');
+      expect(group).toBeInTheDocument();
+
+      // Switch to cloze
+      const clozeRadio = document.getElementById('srs-card-type-cloze');
+      fireEvent.click(clozeRadio);
+
+      // Save
+      fireEvent.click(screen.getByRole('button', { name: /Save Changes/i }));
+
+      await waitFor(() => {
+        expect(updateUserSettings).toHaveBeenCalledWith(
+          expect.objectContaining({ srsCardType: 'cloze' })
+        );
+      });
+      expect(updateSetting).toHaveBeenCalledWith('srsCardType', 'cloze');
+    });
+  });
 });

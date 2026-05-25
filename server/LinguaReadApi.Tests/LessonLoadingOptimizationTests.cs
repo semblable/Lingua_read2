@@ -293,4 +293,92 @@ public class LessonLoadingOptimizationTests
         );
         context.SaveChanges();
     }
+
+    // --- ETag / Last-Modified support (Feature 3) ---
+
+    [Fact]
+    public async Task GetText_SetsETagAndLastModifiedHeaders()
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        SeedUserAndLanguage(context, userId);
+        context.Texts.Add(new Text
+        {
+            TextId = 1, UserId = userId, LanguageId = 1, Title = "T", Content = "hello",
+            StatsUpdatedAt = new DateTime(2026, 5, 1, 10, 30, 0, DateTimeKind.Utc),
+            CreatedAt = new DateTime(2026, 4, 1, 10, 0, 0, DateTimeKind.Utc),
+        });
+        await context.SaveChangesAsync();
+        context.ChangeTracker.Clear();
+
+        var controller = CreateTextsController(context, userId);
+        var result = await controller.GetText(1);
+
+        Assert.NotNull(result.Value);
+        var etag = controller.Response.Headers.ETag.ToString();
+        Assert.False(string.IsNullOrWhiteSpace(etag));
+        Assert.StartsWith("\"text-1-", etag);
+        var lastModified = controller.Response.Headers.LastModified.ToString();
+        Assert.False(string.IsNullOrWhiteSpace(lastModified));
+        // RFC 1123 ("Fri, 01 May 2026 10:30:00 GMT")
+        Assert.Contains("2026", lastModified);
+        Assert.EndsWith("GMT", lastModified);
+    }
+
+    [Fact]
+    public async Task GetText_WithMatchingIfNoneMatch_Returns304()
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        SeedUserAndLanguage(context, userId);
+        context.Texts.Add(new Text
+        {
+            TextId = 2, UserId = userId, LanguageId = 1, Title = "T", Content = "hello",
+            StatsUpdatedAt = new DateTime(2026, 5, 1, 10, 30, 0, DateTimeKind.Utc),
+            CreatedAt = new DateTime(2026, 4, 1, 10, 0, 0, DateTimeKind.Utc),
+        });
+        await context.SaveChangesAsync();
+        context.ChangeTracker.Clear();
+
+        // First request: capture the ETag the server returns.
+        var first = CreateTextsController(context, userId);
+        await first.GetText(2);
+        var etag = first.Response.Headers.ETag.ToString();
+        Assert.False(string.IsNullOrEmpty(etag));
+
+        // Second request: echo the ETag in If-None-Match → server should 304.
+        var second = CreateTextsController(context, userId);
+        second.Request.Headers.IfNoneMatch = etag;
+        var result = await second.GetText(2);
+
+        var status = Assert.IsType<StatusCodeResult>(result.Result);
+        Assert.Equal(304, status.StatusCode);
+        // Cache headers should still be present on the 304 response.
+        Assert.Equal(etag, second.Response.Headers.ETag.ToString());
+        Assert.False(string.IsNullOrEmpty(second.Response.Headers.LastModified.ToString()));
+    }
+
+    [Fact]
+    public async Task GetText_WithStaleIfNoneMatch_ReturnsBody()
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        SeedUserAndLanguage(context, userId);
+        context.Texts.Add(new Text
+        {
+            TextId = 3, UserId = userId, LanguageId = 1, Title = "T", Content = "hello",
+            StatsUpdatedAt = new DateTime(2026, 5, 1, 10, 30, 0, DateTimeKind.Utc),
+            CreatedAt = new DateTime(2026, 4, 1, 10, 0, 0, DateTimeKind.Utc),
+        });
+        await context.SaveChangesAsync();
+        context.ChangeTracker.Clear();
+
+        var controller = CreateTextsController(context, userId);
+        controller.Request.Headers.IfNoneMatch = "\"text-3-9999999999\""; // never matches
+        var result = await controller.GetText(3);
+
+        // Full body, not 304.
+        Assert.NotNull(result.Value);
+        Assert.Equal(3, result.Value!.TextId);
+    }
 }

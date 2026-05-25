@@ -141,6 +141,30 @@ namespace LinguaReadApi.Controllers
                 return NotFound();
             }
 
+            // ETag + Last-Modified support so the PWA service worker cache can
+            // revalidate cheaply (HEAD response with no body) when the text
+            // content hasn't changed since the last successful fetch.
+            // We compose the ETag from TextId + StatsUpdatedAt + CreatedAt — any
+            // server-side change to the text body bumps StatsUpdatedAt.
+            var lastModified = (textDto.StatsUpdatedAt ?? textDto.CreatedAt).ToUniversalTime();
+            // Trim sub-second precision so the value round-trips cleanly through HTTP date format.
+            var lastModifiedHttp = new DateTimeOffset(
+                lastModified.Year, lastModified.Month, lastModified.Day,
+                lastModified.Hour, lastModified.Minute, lastModified.Second,
+                TimeSpan.Zero);
+            var etag = $"\"text-{textDto.TextId}-{lastModifiedHttp.ToUnixTimeSeconds()}\"";
+
+            var ifNoneMatch = Request.Headers.IfNoneMatch.ToString();
+            if (!string.IsNullOrEmpty(ifNoneMatch) && ifNoneMatch.Contains(etag))
+            {
+                Response.Headers.ETag = etag;
+                Response.Headers.LastModified = lastModifiedHttp.ToString("R");
+                return StatusCode(304);
+            }
+
+            Response.Headers.ETag = etag;
+            Response.Headers.LastModified = lastModifiedHttp.ToString("R");
+
             if (!string.IsNullOrWhiteSpace(textDto.StructuredContentRaw))
             {
                 try

@@ -1660,4 +1660,144 @@ describe('TextDisplay', () => {
 
     consoleErrorSpy.mockRestore();
   });
+
+  describe('mobile audio player rendering', () => {
+    const useMobileViewport = () => {
+      window.matchMedia = vi.fn().mockImplementation(() => ({
+        matches: true,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn()
+      }));
+    };
+
+    const findAudiobookCalls = (predicate) =>
+      mockAudiobookPlayer.mock.calls
+        .map(([props]) => props)
+        .filter(predicate);
+
+    test('mobile + audiobook with tracks renders book-mode player', async () => {
+      useMobileViewport();
+      getText.mockResolvedValueOnce({
+        textId: 2,
+        title: 'Chapter 1',
+        content: 'Content here.',
+        languageId: null,
+        languageCode: 'ES',
+        languageName: 'Spanish',
+        isAudioLesson: false,
+        words: [],
+        bookId: 10
+      });
+      updateLastRead.mockResolvedValueOnce({});
+      getBook.mockResolvedValueOnce({
+        bookId: 10,
+        title: 'My Book',
+        languageId: 3,
+        parts: [{ textId: 2, title: 'Chapter 1' }],
+        audiobookTracks: [
+          { trackId: 'track-1', filePath: 'audio/track-1.mp3' },
+          { trackId: 'track-2', filePath: 'audio/track-2.mp3' }
+        ]
+      });
+
+      renderTextDisplay();
+
+      await waitFor(() => expect(getBook).toHaveBeenCalledWith(10));
+      await waitFor(() => {
+        const bookCalls = findAudiobookCalls(
+          (props) => props.type === 'book' && props.book?.bookId === 10
+        );
+        expect(bookCalls.length).toBeGreaterThan(0);
+      });
+    });
+
+    test('mobile + audio lesson renders lesson-mode player (and not book-mode)', async () => {
+      useMobileViewport();
+      getText.mockResolvedValueOnce({
+        textId: 1,
+        title: 'Audio Lesson',
+        content: 'Hola mundo.',
+        languageId: null,
+        languageCode: 'ES',
+        languageName: 'Spanish',
+        isAudioLesson: true,
+        audioFilePath: 'audio_lessons/1.mp3',
+        hasSrtContent: true,
+        words: [],
+        bookId: null
+      });
+      getTextSrt.mockResolvedValueOnce('1\n00:00:00,000 --> 00:00:02,000\nHola mundo.\n');
+
+      renderTextDisplay();
+
+      await waitFor(() => expect(getText).toHaveBeenCalled());
+      await waitFor(() => {
+        const lessonCalls = findAudiobookCalls((props) => props.type === 'lesson');
+        expect(lessonCalls.length).toBeGreaterThan(0);
+      });
+
+      // The book-mode mobile branch must NOT fire for a pure audio lesson.
+      const bookCalls = findAudiobookCalls((props) => props.type === 'book');
+      expect(bookCalls.length).toBe(0);
+    });
+
+    test('mobile + plain text renders no audio player at all', async () => {
+      useMobileViewport();
+      // Default getText mock already returns a plain text (isAudioLesson:false, bookId:null).
+      renderTextDisplay();
+
+      await waitFor(() => expect(getText).toHaveBeenCalled());
+      expect(await screen.findByText('Sample Text')).toBeInTheDocument();
+
+      expect(mockAudiobookPlayer).not.toHaveBeenCalled();
+    });
+
+    test('desktop + audiobook does not trigger the mobile book-mode branch', async () => {
+      // LessonHeader still renders its own desktop player; that path is covered
+      // by LessonHeader.test.js. Here we only assert the new mobile branch in
+      // TextDisplay doesn't double-render on desktop.
+      window.matchMedia = vi.fn().mockImplementation(() => ({
+        matches: false,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn()
+      }));
+      getText.mockResolvedValueOnce({
+        textId: 2,
+        title: 'Chapter 1',
+        content: 'Content here.',
+        languageId: null,
+        languageCode: 'ES',
+        languageName: 'Spanish',
+        isAudioLesson: false,
+        words: [],
+        bookId: 10
+      });
+      updateLastRead.mockResolvedValueOnce({});
+      getBook.mockResolvedValueOnce({
+        bookId: 10,
+        title: 'My Book',
+        languageId: 3,
+        parts: [{ textId: 2, title: 'Chapter 1' }],
+        audiobookTracks: [
+          { trackId: 'track-1', filePath: 'audio/track-1.mp3' }
+        ]
+      });
+
+      renderTextDisplay();
+
+      await waitFor(() => expect(getBook).toHaveBeenCalledWith(10));
+      // Wait for at least one render to settle.
+      await waitFor(() => {
+        expect(
+          findAudiobookCalls((props) => props.type === 'book').length
+        ).toBeGreaterThan(0);
+      });
+
+      // On desktop, every book-mode render must come from LessonHeader, which
+      // does not pass an `audioRef`. The mobile branch in TextDisplay also
+      // doesn't pass audioRef, so we distinguish by checking that no rendered
+      // node has the mobile container's data-testid in the DOM.
+      expect(document.querySelector('.lesson-audio-bar')).toBeNull();
+    });
+  });
 });

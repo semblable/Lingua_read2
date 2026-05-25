@@ -2087,6 +2087,17 @@ const TextDisplay = () => {
         </div>
       )}
 
+      {/* Mobile Audiobook Player - book-mode playback for audiobooks on mobile */}
+      {isMobile && !isAudioLesson && (book?.audiobookTracks?.length ?? 0) > 0 && (
+        <div className="audio-player-container p-2 border-bottom theme-aware-audio-player-container lesson-audio-bar">
+          <AudiobookPlayer
+            key="book-audio-player-mobile"
+            type="book"
+            book={book}
+          />
+        </div>
+      )}
+
       {/* Main Content Area */}
       <div className={`resizable-container resizable-container-${readingUiMode}`}>
         {/* Left Panel (Reading Area) */}

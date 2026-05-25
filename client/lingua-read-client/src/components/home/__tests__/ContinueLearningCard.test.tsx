@@ -103,6 +103,37 @@ describe('ContinueLearningCard', () => {
     );
   });
 
+  test('resets the enriching spinner when text transitions to null mid-fetch', async () => {
+    // Hold the promise open so the fetch is still in flight when the parent
+    // toggles `text` back to null. Without resetting `enriching` in that
+    // branch, the empty-state card would render with a stuck spinner.
+    let resolveGetText: (value: Text) => void = () => {};
+    mockedGetText.mockReturnValue(
+      new Promise<Text>((resolve) => {
+        resolveGetText = resolve;
+      })
+    );
+
+    const { rerender, container } = renderInRouter(
+      <ContinueLearningCard text={makeRecent()} />
+    );
+
+    // Mid-fetch: swap to null. The empty card should render, with no spinner.
+    rerender(
+      <MemoryRouter>
+        <ContinueLearningCard text={null} />
+      </MemoryRouter>
+    );
+
+    await waitFor(() =>
+      expect(screen.getByTestId('continue-card-empty')).toBeInTheDocument()
+    );
+    expect(container.querySelector('.spinner-border')).toBeNull();
+
+    // Let the orphaned fetch resolve so vitest doesn't warn about pending work.
+    resolveGetText(makeFullText());
+  });
+
   test('survives a getText failure by still rendering the title and Resume link', async () => {
     const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     mockedGetText.mockRejectedValue(new Error('boom'));

@@ -189,4 +189,69 @@ describe('Home (integration)', () => {
     expect(screen.getByText('All caught up')).toBeInTheDocument();
     consoleErrorSpy.mockRestore();
   });
+
+  test('builds the goal-summary fallback without a leading space when title and language are missing', async () => {
+    mockedGetDashboard.mockResolvedValue({
+      totalKnownWords: 1,
+      totalWordsReadWeek: 0,
+      totalListeningSecondsWeek: 0,
+      totalLanguages: 1,
+      languages: [
+        {
+          languageId: 1,
+          languageName: 'Spanish',
+          knownWords: 1,
+          totalWords: 10,
+          cefrLevel: 'A1',
+          nextCefrLevel: 'A2',
+          knownWordsToNextLevel: 9,
+          bandProgressPercent: 10,
+          isCefrApproximate: false,
+          todayWordsRead: 0,
+          todayListeningSeconds: 0,
+          currentReadingStreakDays: 0,
+          last14DaysWords: [],
+          continueReadingTextId: null,
+          lastActivityAt: '2026-05-25',
+        },
+      ],
+    } as unknown as Awaited<ReturnType<typeof getDashboard>>);
+    // Overdue goal with no title and no language to drive the bare-fallback path.
+    mockedGetGoals.mockResolvedValue([
+      {
+        goalId: 1,
+        title: null,
+        languageName: null,
+        state: 'overdue',
+        remainingToTarget: 0,
+      },
+    ] as unknown as Awaited<ReturnType<typeof getGoals>>);
+
+    renderHome();
+
+    // Subtitle is built from SRS · goal · streak; the goal slice must not
+    // contain `" goal"` with a leading space inside the quotes.
+    await waitFor(() =>
+      expect(screen.getByText(/Goal "goal" is overdue/)).toBeInTheDocument()
+    );
+    expect(screen.queryByText(/Goal " goal" is overdue/)).not.toBeInTheDocument();
+  });
+
+  test('shows the fatal-error alert (not onboarding) when every fetch rejects', async () => {
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    mockedGetDashboard.mockRejectedValue(new Error('dashboard offline'));
+    mockedGetRecentTexts.mockRejectedValue(new Error('recent offline'));
+    mockedGetSrsStats.mockRejectedValue(new Error('srs offline'));
+    mockedGetGoals.mockRejectedValue(new Error('goals offline'));
+
+    renderHome();
+
+    // With no data at all the page would otherwise fall through to onboarding,
+    // which is misleading. The user should see the actual failure.
+    await waitFor(() =>
+      expect(screen.getByText(/couldn't load your home page/i)).toBeInTheDocument()
+    );
+    expect(screen.queryByTestId('onboarding-home')).not.toBeInTheDocument();
+    consoleErrorSpy.mockRestore();
+  });
 });

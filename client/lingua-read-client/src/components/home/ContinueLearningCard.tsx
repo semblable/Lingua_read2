@@ -78,6 +78,10 @@ const ContinueLearningCard: React.FC<ContinueLearningCardProps> = ({ text, loadi
     let cancelled = false;
     if (textId == null) {
       setFullText(null);
+      // Reset enriching too — otherwise, if the prop transitions from a
+      // valid textId to null while a fetch is in flight, the cancelled
+      // fetch never reaches its `finally` and the spinner gets stuck on.
+      setEnriching(false);
       return;
     }
     setEnriching(true);

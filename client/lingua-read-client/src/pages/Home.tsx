@@ -112,8 +112,11 @@ const buildTopGoalSummary = (goals: Goal[]): string | null => {
   const top = sorted[0];
   if (!top) return null;
   const remaining = top.remainingToTarget;
-  const lang = top.languageName ? ` ${top.languageName}` : '';
-  const title = (top.title && top.title.trim()) || `${lang.trim()} goal`;
+  // Fall back to "<Language> goal" when the goal has no title; if even the
+  // language is missing, just "goal" (no leading space inside the quotes).
+  const langName = top.languageName?.trim() || '';
+  const explicitTitle = top.title?.trim();
+  const title = explicitTitle || (langName ? `${langName} goal` : 'goal');
   if (top.state === 'overdue') return `Goal "${title}" is overdue`;
   if (remaining != null && Number(remaining) > 0) {
     return `${Number(remaining).toLocaleString()} to go on "${title}"`;
@@ -216,18 +219,27 @@ const Home: React.FC = () => {
   const firstText = recent.length > 0 ? recent[0] : null;
   const firstLanguageId = languages[0]?.languageId;
 
+  // If every backend call failed there's no signal to drive any widget, so
+  // surface the error directly. (Doing this before the isEmpty check matters:
+  // with no data, languages + recent are both empty and would otherwise route
+  // the user to onboarding — hiding the failure behind a "welcome" screen.)
+  if (hasFatalError) {
+    return (
+      <Container className="py-4">
+        <Alert variant="danger" className="mb-0">
+          We couldn't load your home page. Please refresh — if this keeps happening, check that the
+          server is reachable.
+        </Alert>
+      </Container>
+    );
+  }
+
   if (isEmpty) {
     return <OnboardingHome username={user?.username} />;
   }
 
   return (
     <Container className="py-4">
-      {hasFatalError && (
-        <Alert variant="danger" className="mb-4">
-          We couldn't load your home page. Please refresh — if this keeps happening, check that the
-          server is reachable.
-        </Alert>
-      )}
 
       {/* 1. Hero greeting */}
       <HomeHero

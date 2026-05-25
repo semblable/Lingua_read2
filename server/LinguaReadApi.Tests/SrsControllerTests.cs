@@ -401,6 +401,50 @@ public class SrsControllerTests
     }
 
     [Fact]
+    public async Task GetDueCards_DoesNotCrash_WhenVocabHasDuplicateTermRows()
+    {
+        // Regression for the production 500 caused by ToDictionary throwing on
+        // duplicate keys (ArgumentException "An item with the same key has
+        // already been added. Key: consola-me"). The user's vocab had two
+        // Word rows with the same term — possibly a race during createWord, or
+        // dirty data from an import. The SRS due endpoint must not 500 on this.
+        using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        if (!context.Languages.Any(l => l.LanguageId == 1))
+            context.Languages.Add(new Language { LanguageId = 1, Name = "Portuguese", Code = "PT" });
+
+        context.Words.Add(new Word { WordId = 1, UserId = userId, LanguageId = 1, Term = "consola-me", Status = 1 });
+        context.Words.Add(new Word { WordId = 2, UserId = userId, LanguageId = 1, Term = "consola-me", Status = 5 });
+        context.SrsCardReviews.Add(new SrsCardReview
+        {
+            WordId = 1, UserId = userId,
+            NextReviewAt = DateTime.UtcNow.AddHours(-1),
+            CreatedAt = DateTime.UtcNow.AddDays(-1)
+        });
+        context.SrsPhrases.Add(new SrsPhrase
+        {
+            WordId = 1, UserId = userId,
+            Sentence = "Consola-me se puder.",
+            TextTitle = "Test source",
+            CreatedAt = DateTime.UtcNow
+        });
+        context.UserSettings.Add(new UserSettings
+        {
+            UserId = userId, SrsCardType = "translation",
+            SrsMaxNewCards = 20, SrsMaxReviews = 200, SrsReviewOrder = "mix",
+            SrsLearningStepMinutes = "1,10"
+        });
+        context.SaveChanges();
+
+        var controller = CreateController(context, userId);
+        var result = await controller.GetDueCards();
+
+        var cards = result.Value ?? Assert.IsType<List<SrsDueCardDto>>(((OkObjectResult)result.Result!).Value);
+        var card = Assert.Single(cards);
+        Assert.Equal("consola-me", card.Term);
+    }
+
+    [Fact]
     public async Task GetDueCards_WithClozeSetting_FallsBackWhenTermAbsentFromPhrase()
     {
         using var context = CreateContext();

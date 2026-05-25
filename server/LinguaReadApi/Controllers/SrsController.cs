@@ -912,32 +912,41 @@ namespace LinguaReadApi.Controllers
                 .Select(w => new { w.Term, w.Status, w.WordId })
                 .ToListAsync();
 
-            var knownLookup = knownWords.ToDictionary(w => w.Term.ToLowerInvariant());
+            // Use ToLookup, not ToDictionary: a user's vocab may contain duplicate
+            // rows for the same term (data corruption, or a race between concurrent
+            // createWord calls). ToDictionary throws on the first duplicate key,
+            // which previously crashed the entire GET /api/srs/due response with a
+            // 500.
+            var knownLookup = knownWords.ToLookup(w => w.Term.ToLowerInvariant());
 
             int unknownCount = 0;
             foreach (var word in sentenceWords)
             {
-                if (knownLookup.TryGetValue(word, out var known))
-                {
-                    // If it's the target word, always count it as unknown
-                    if (known.WordId == targetWordId)
-                    {
-                        unknownCount++;
-                    }
-                    else if (known.Status < 5)
-                    {
-                        unknownCount++;
-                    }
-                    // Status 5 = known, don't count
-                }
-                else
+                var matches = knownLookup[word];
+                if (!matches.Any())
                 {
                     // Word not in database at all — treat as unknown only if it looks like a real word
                     if (word.Length > 1)
                     {
                         unknownCount++;
                     }
+                    continue;
                 }
+                // If any of the duplicates IS the target word, always count as unknown.
+                if (matches.Any(m => m.WordId == targetWordId))
+                {
+                    unknownCount++;
+                    continue;
+                }
+                // Otherwise pick the highest-status duplicate — the most "known"
+                // interpretation, which keeps the count optimistic in the face of
+                // dirty vocab data.
+                var best = matches.OrderByDescending(m => m.Status).First();
+                if (best.Status < 5)
+                {
+                    unknownCount++;
+                }
+                // Status 5 = known, don't count
             }
 
             return unknownCount;
@@ -1243,7 +1252,11 @@ Format (one object per provided word, in the same order):
             var parsed = SrsStoryResponseParser.ParseMicroContexts(rawResponse);
 
             // Match each parsed entry back to a target card by exact term (case-insensitive).
-            var targetByTerm = targetWords.ToDictionary(t => t.Term.ToLowerInvariant(), t => t);
+            // GroupBy + First defends against duplicate-term rows in the user's vocab
+            // (same crash class as the one CountUnknownWordsInSentence hit on /api/srs/due).
+            var targetByTerm = targetWords
+                .GroupBy(t => t.Term.ToLowerInvariant())
+                .ToDictionary(g => g.Key, g => g.First());
             var seenWordIds = new HashSet<int>();
             var microContexts = new List<SrsMicroContextDto>();
             foreach (var mc in parsed)

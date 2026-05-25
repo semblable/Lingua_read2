@@ -382,6 +382,17 @@ namespace LinguaReadApi.Controllers
                 {
                     settings.SrsCardType = normalizedCardType;
                 }
+                else
+                {
+                    // Reject explicitly instead of silently keeping the old value —
+                    // a client sending an unknown SrsCardType would otherwise see a
+                    // 200 OK with no change and have no way to know its request was
+                    // dropped.
+                    return BadRequest(new
+                    {
+                        message = $"srsCardType must be one of: translation, cloze, mixed (got '{updateDto.SrsCardType}')."
+                    });
+                }
             }
             settings.UpdatedAt = DateTime.UtcNow;
 

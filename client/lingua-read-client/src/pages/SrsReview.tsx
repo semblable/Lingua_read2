@@ -27,8 +27,25 @@ const GRADE_LABELS = [
   { grade: 3, label: 'Easy', variant: 'info', key: '4' },
 ];
 
+/**
+ * Decide whether a given card should render as a cloze in "mixed" mode.
+ * Knuth multiplicative hash of (cardId XOR sessionSeed) — deterministic
+ * per (id, seed), so the card type is stable across re-renders within a
+ * session, but a fresh seed each session means users can't game the
+ * deterministic id-parity pattern the old `cardId % 2` produced.
+ */
+const shouldRenderClozeForMixedMode = (cardId: number, sessionSeed: number): boolean => {
+  const h = Math.imul((cardId ^ sessionSeed) >>> 0, 2654435761) >>> 0;
+  return (h & 1) === 0;
+};
+
 const SrsReview = () => {
   const navigate = useNavigate();
+
+  // Random seed for "mixed" SRS card type — see shouldRenderClozeForMixedMode.
+  // Stable for the lifetime of this mounted component (one review session),
+  // so card types don't flip mid-card on re-render.
+  const mixedModeSessionSeed = useMemo(() => Math.floor(Math.random() * 0x100000000), []);
 
   // Setup state
   const [languages, setLanguages] = useState<Language[]>([]);
@@ -1016,13 +1033,19 @@ const SrsReview = () => {
             {/* Front: Sentence (translation or cloze) */}
             {(() => {
               // Decide per-card whether to render a cloze view. "translation" (default)
-              // never renders cloze; "cloze" always wants it; "mixed" alternates per card
-              // ID. Cards lacking a server-supplied clozeSentence (e.g. term not present
-              // in any mined phrase) fall back to the translation view.
+              // never renders cloze; "cloze" always wants it; "mixed" uses a per-session
+              // seeded hash so the cloze/translation choice is unpredictable across
+              // sessions but stable within one. Cards lacking a server-supplied
+              // clozeSentence (e.g. term not present in any mined phrase) fall back to
+              // the translation view.
               const cardTypeSetting = settings?.srsCardType ?? 'translation';
               const wantCloze =
                 cardTypeSetting === 'cloze' ||
-                (cardTypeSetting === 'mixed' && (currentCard.srsCardReviewId ?? 0) % 2 === 0);
+                (cardTypeSetting === 'mixed' &&
+                  shouldRenderClozeForMixedMode(
+                    currentCard.srsCardReviewId ?? 0,
+                    mixedModeSessionSeed
+                  ));
               const renderCloze = wantCloze && !!currentCard.clozeSentence;
 
               if (renderCloze) {

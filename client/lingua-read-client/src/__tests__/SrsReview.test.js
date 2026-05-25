@@ -360,24 +360,34 @@ describe('SrsReview', () => {
       expect(screen.queryByTestId('cloze-review-card')).not.toBeInTheDocument();
     });
 
-    it('alternates between translation and cloze in mixed mode', async () => {
-      // srsCardReviewId % 2 === 0 → cloze, otherwise translation
-      const evenCloze = { ...mockCards[0], srsCardReviewId: 100, clozeSentence: 'El ___ duerme.' };
-      const oddCloze = { ...mockCards[1], srsCardReviewId: 101, clozeSentence: 'El ___ corre.' };
-      getSrsDueCards.mockResolvedValue([evenCloze, oddCloze]);
+    it('in mixed mode, the same card always renders the same type within a session', async () => {
+      // Mixed mode uses a per-session random seed XOR'd with the card id and
+      // hashed. Pin Math.random so the seed is fixed for this test: with
+      // seed=0, cardId 100 hashes to cloze and 101 to translation. The
+      // important property is *deterministic per (id, session)*, not
+      // predictable across sessions (which is what the old `id % 2` was).
+      const restoreRandom = vi.spyOn(Math, 'random').mockReturnValue(0);
+      try {
+        const first  = { ...mockCards[0], srsCardReviewId: 100, clozeSentence: 'El ___ duerme.' };
+        const second = { ...mockCards[1], srsCardReviewId: 101, clozeSentence: 'El ___ corre.' };
+        getSrsDueCards.mockResolvedValue([first, second]);
 
-      renderWithCardType('mixed');
-      await selectSpanish();
-      fireEvent.click(await screen.findByRole('button', { name: /Start Review/i }));
-      // First card (id 100, even) → cloze
-      expect(await screen.findByTestId('cloze-review-card')).toBeInTheDocument();
+        renderWithCardType('mixed');
+        await selectSpanish();
+        fireEvent.click(await screen.findByRole('button', { name: /Start Review/i }));
+        // First card → cloze under seed=0.
+        expect(await screen.findByTestId('cloze-review-card')).toBeInTheDocument();
 
-      // Reveal and grade to advance to the second card (id 101, odd) → translation
-      fireEvent.change(screen.getByTestId('cloze-input'), { target: { value: 'gato' } });
-      fireEvent.keyDown(screen.getByTestId('cloze-input'), { key: 'Enter' });
-      fireEvent.click(await screen.findByRole('button', { name: /^Good/ }));
+        // Grade through to the second card.
+        fireEvent.change(screen.getByTestId('cloze-input'), { target: { value: 'gato' } });
+        fireEvent.keyDown(screen.getByTestId('cloze-input'), { key: 'Enter' });
+        fireEvent.click(await screen.findByRole('button', { name: /^Good/ }));
 
-      expect(await screen.findByTestId('translation-review-card')).toBeInTheDocument();
+        // Second card → translation under seed=0.
+        expect(await screen.findByTestId('translation-review-card')).toBeInTheDocument();
+      } finally {
+        restoreRandom.mockRestore();
+      }
     });
 
     it('settings modal exposes the card-style radio group and persists the choice', async () => {

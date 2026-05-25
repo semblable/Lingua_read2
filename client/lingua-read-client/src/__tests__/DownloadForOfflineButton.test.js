@@ -14,6 +14,7 @@ const makeCacheMock = () => {
     open: vi.fn(async () => ({
       match: vi.fn(async (url) => store.get(url) ?? undefined),
       put: vi.fn(async (url, response) => { store.set(url, response); }),
+      delete: vi.fn(async (url) => store.delete(url)),
     })),
     _store: store,
   };
@@ -267,6 +268,53 @@ describe('DownloadForOfflineButton', () => {
     await waitFor(() => {
       expect(container.firstChild).toBeNull();
     });
+  });
+
+  test('Cancel during a multi-URL download rolls back already-cached entries', async () => {
+    // Regression: a 5-track book cancelled after track 2 used to leave the
+    // first two tracks in the cache, so the next mount mistakenly reported
+    // the whole book as "Available offline". With the fix, any partial set
+    // is rolled back on abort.
+    let secondController;
+    globalThis.fetch = vi.fn(async (url, init) => {
+      if (init?.method === 'HEAD') {
+        return new Response(null, { status: 200, headers: { 'Content-Length': '10' } });
+      }
+      if (url === '/a.mp3') {
+        // Completes immediately so the loop moves on to /b.mp3.
+        return streamedResponse([new Uint8Array(10)], 10);
+      }
+      // /b.mp3 stays open until we either push or cancel.
+      const stream = new ReadableStream({ start(c) { secondController = c; } });
+      return new Response(stream, {
+        status: 200,
+        headers: { 'Content-Length': '10', 'Content-Type': 'audio/mpeg' },
+      });
+    });
+
+    render(<DownloadForOfflineButton cacheName="lr-test" urls={['/a.mp3', '/b.mp3']} />);
+    fireEvent.click(await screen.findByTestId('download-offline-button'));
+
+    // Wait for /a.mp3 to be cached AND the loop to have moved to /b.mp3.
+    await waitFor(() => {
+      expect(cachesMock._store.has('/a.mp3')).toBe(true);
+    });
+    await screen.findByTestId('download-offline-progress');
+
+    // Cancel mid-stream on /b.mp3.
+    fireEvent.click(screen.getByTestId('download-offline-abort'));
+    if (secondController) {
+      try { secondController.enqueue(new Uint8Array(5)); } catch { /* may already be cancelled */ }
+    }
+
+    await waitFor(() => {
+      expect(screen.getByTestId('download-offline-button')).toHaveAttribute(
+        'data-download-state', 'idle'
+      );
+    });
+    // /a.mp3 must have been rolled back — partial cache would be misleading.
+    expect(cachesMock._store.has('/a.mp3')).toBe(false);
+    expect(cachesMock._store.has('/b.mp3')).toBe(false);
   });
 
   test('explicit sizeWarningBytes override changes the prompt threshold', async () => {

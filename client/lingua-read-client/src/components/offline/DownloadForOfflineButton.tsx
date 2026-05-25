@@ -99,8 +99,15 @@ const DownloadForOfflineButton: React.FC<DownloadForOfflineButtonProps> = ({
     setSizes({ total: new Map(totals), received: new Map(urls.map((u) => [u, 0])) });
     setErrorMessage(null);
 
+    // Track per-session puts so we can roll them back if the download is
+    // aborted or fails partway through. Without this, a 5-URL book cancelled
+    // after URL #2 would leave URLs #1 and #2 in the cache, and the mount-
+    // time check would mistakenly report the book as "Available offline".
+    const cachedThisSession: string[] = [];
+    let cache: Cache | undefined;
+
     try {
-      const cache = await caches.open(cacheName);
+      cache = await caches.open(cacheName);
       for (const url of urls) {
         if (signal.aborted) throw new DOMException('Cancelled', 'AbortError');
         const response = await fetch(url, { credentials: 'include', signal });
@@ -168,9 +175,18 @@ const DownloadForOfflineButton: React.FC<DownloadForOfflineButtonProps> = ({
           headers,
         });
         await cache.put(url, cacheable);
+        cachedThisSession.push(url);
       }
       setState('cached');
     } catch (err) {
+      // Roll back any entries we put in the cache during this aborted/failed
+      // run so the next mount doesn't see a partial set as "Available offline".
+      if (cache && cachedThisSession.length > 0) {
+        const c = cache;
+        await Promise.all(
+          cachedThisSession.map((u) => c.delete(u).catch(() => undefined))
+        );
+      }
       if (err instanceof DOMException && err.name === 'AbortError') {
         setState('idle');
         setSizes({ total: new Map(), received: new Map() });

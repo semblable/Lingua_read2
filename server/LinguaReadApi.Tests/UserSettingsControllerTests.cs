@@ -298,7 +298,7 @@ public class UserSettingsControllerTests
     }
 
     [Fact]
-    public async Task UpdateUserSettings_RejectsUnknownSrsCardType_KeepingPriorValue()
+    public async Task UpdateUserSettings_RejectsUnknownSrsCardType_WithBadRequest_KeepingPriorValue()
     {
         await using var context = CreateContext();
         var userId = Guid.NewGuid();
@@ -307,10 +307,15 @@ public class UserSettingsControllerTests
 
         var controller = CreateController(context, userId);
         await controller.UpdateUserSettings(new UpdateUserSettingsDto { SrsCardType = "cloze" });
-        await controller.UpdateUserSettings(new UpdateUserSettingsDto { SrsCardType = "nonsense" });
+
+        var rejected = await controller.UpdateUserSettings(
+            new UpdateUserSettingsDto { SrsCardType = "nonsense" });
+
+        // 400 instead of a silent 200-with-no-change so clients can detect
+        // and surface the bad value rather than thinking the update applied.
+        Assert.IsType<BadRequestObjectResult>(rejected.Result);
 
         var row = await context.UserSettings.AsNoTracking().SingleAsync();
-        // "nonsense" is rejected, prior valid "cloze" stays in place.
         Assert.Equal("cloze", row.SrsCardType);
     }
 

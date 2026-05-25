@@ -94,6 +94,13 @@ async function deleteOp(id: number): Promise<void> {
 
 let draining = false;
 
+// Web Locks key for cross-tab coordination. With { ifAvailable: true }, a
+// second tab racing to drain will get null back from request() and skip,
+// preventing the duplicate-mutation race two open tabs would otherwise
+// cause on reconnect.
+const DRAIN_LOCK = 'lr-offline-drain';
+const SKIPPED: SyncResult = { attempted: 0, succeeded: 0, failed: 0 };
+
 // Classify a handler error so drain() can decide whether to retry, drop, or halt.
 // - 'auth-stop': 401. fetchApi already redirects the user to /login. We leave
 //   the op in the queue (it'll replay after re-auth) and STOP the loop so we
@@ -117,56 +124,73 @@ function classifyError(err: unknown): ErrorKind {
   return 'retryable';
 }
 
-export async function drain(handlers: SyncHandlers): Promise<SyncResult> {
-  // Guard 1: do not attempt while offline — we'd just re-enqueue everything.
-  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-    return { attempted: 0, succeeded: 0, failed: 0 };
-  }
-  // Guard 2: re-entrancy — concurrent drains would race on the same store.
-  if (draining) {
-    return { attempted: 0, succeeded: 0, failed: 0 };
-  }
-  draining = true;
+async function drainOnce(handlers: SyncHandlers): Promise<SyncResult> {
+  const ops = await listPending();
+  let succeeded = 0;
+  let failed = 0;
+  let attempted = 0;
 
-  try {
-    const ops = await listPending();
-    let succeeded = 0;
-    let failed = 0;
-    let attempted = 0;
-
-    for (const op of ops) {
-      attempted++;
-      try {
-        if (op.type === 'srsReview') {
-          await handlers.srsReview(op);
-        } else if (op.type === 'wordStatusUpdate') {
-          await handlers.wordStatusUpdate(op);
-        } else if (op.type === 'wordCreate') {
-          await handlers.wordCreate(op);
-        }
-        await deleteOp(op.id);
-        succeeded++;
-      } catch (err) {
-        const kind = classifyError(err);
-        if (kind === 'auth-stop') {
-          // 401: stop draining. handleUnauthorized in api/client.ts already
-          // started the redirect to /login; remaining ops wait for re-auth.
-          failed++;
-          break;
-        }
-        if (kind === 'terminal') {
-          // Permanent server-side rejection. Drop the op so the queue can
-          // eventually drain instead of looping on the same bad payload.
-          try { await deleteOp(op.id); } catch { /* swallow */ }
-          failed++;
-          continue;
-        }
-        // Retryable: leave in queue for the next drain.
-        failed++;
+  for (const op of ops) {
+    attempted++;
+    try {
+      if (op.type === 'srsReview') {
+        await handlers.srsReview(op);
+      } else if (op.type === 'wordStatusUpdate') {
+        await handlers.wordStatusUpdate(op);
+      } else if (op.type === 'wordCreate') {
+        await handlers.wordCreate(op);
       }
+      await deleteOp(op.id);
+      succeeded++;
+    } catch (err) {
+      const kind = classifyError(err);
+      if (kind === 'auth-stop') {
+        // 401: stop draining. handleUnauthorized in api/client.ts already
+        // started the redirect to /login; remaining ops wait for re-auth.
+        failed++;
+        break;
+      }
+      if (kind === 'terminal') {
+        // Permanent server-side rejection. Drop the op so the queue can
+        // eventually drain instead of looping on the same bad payload.
+        try { await deleteOp(op.id); } catch { /* swallow */ }
+        failed++;
+        continue;
+      }
+      // Retryable: leave in queue for the next drain.
+      failed++;
     }
+  }
 
-    return { attempted, succeeded, failed };
+  return { attempted, succeeded, failed };
+}
+
+export async function drain(handlers: SyncHandlers): Promise<SyncResult> {
+  // Guard: do not attempt while offline — we'd just re-enqueue everything.
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    return SKIPPED;
+  }
+
+  // Multi-tab coordination via Web Locks. With { ifAvailable: true }, a
+  // concurrent caller (other tab or same tab) gets a null lock and we skip
+  // rather than racing on the same pending-ops store.
+  const locks = typeof navigator !== 'undefined' ? navigator.locks : undefined;
+  if (locks && typeof locks.request === 'function') {
+    const result = await locks.request(
+      DRAIN_LOCK,
+      { ifAvailable: true },
+      async (lock) => (lock ? drainOnce(handlers) : SKIPPED)
+    );
+    return result ?? SKIPPED;
+  }
+
+  // Fallback for environments without Web Locks (older browsers, test env):
+  // module-scoped re-entrancy guard. Safe within a single tab; cross-tab
+  // races are only possible on these legacy targets.
+  if (draining) return SKIPPED;
+  draining = true;
+  try {
+    return await drainOnce(handlers);
   } finally {
     draining = false;
   }

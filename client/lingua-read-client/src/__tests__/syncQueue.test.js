@@ -18,6 +18,30 @@ const setOnline = (value) => {
   });
 };
 
+// Install a fake navigator.locks for the duration of the current test. The
+// returned `restore` puts the property back to its original (usually undefined
+// in happy-dom). `granted: true` simulates getting the lock; `false` simulates
+// another tab holding it (ifAvailable returns null).
+const installFakeLocks = ({ granted }) => {
+  const request = vi.fn(async (_name, _options, callback) =>
+    callback(granted ? { name: _name } : null)
+  );
+  const descriptor = Object.getOwnPropertyDescriptor(window.navigator, 'locks');
+  Object.defineProperty(window.navigator, 'locks', {
+    configurable: true,
+    get: () => ({ request }),
+  });
+  const restore = () => {
+    if (descriptor) {
+      Object.defineProperty(window.navigator, 'locks', descriptor);
+    } else {
+      // happy-dom default: no locks property. Remove ours.
+      delete window.navigator.locks;
+    }
+  };
+  return { request, restore };
+};
+
 describe('syncQueue', () => {
   beforeEach(async () => {
     // Reset the IndexedDB state between tests.
@@ -209,5 +233,54 @@ describe('syncQueue', () => {
 
     await clearAll();
     expect(await pending()).toBe(0);
+  });
+
+  test('drain uses navigator.locks when available', async () => {
+    await enqueue({ type: 'srsReview', payload: { cardId: 900, grade: 2 } });
+    const { request, restore } = installFakeLocks({ granted: true });
+
+    try {
+      const handlers = {
+        srsReview: vi.fn(),
+        wordStatusUpdate: vi.fn(),
+        wordCreate: vi.fn(),
+      };
+      const result = await drain(handlers);
+
+      expect(request).toHaveBeenCalledWith(
+        'lr-offline-drain',
+        expect.objectContaining({ ifAvailable: true }),
+        expect.any(Function)
+      );
+      expect(result).toEqual({ attempted: 1, succeeded: 1, failed: 0 });
+      expect(handlers.srsReview).toHaveBeenCalledTimes(1);
+      expect(await pending()).toBe(0);
+    } finally {
+      restore();
+    }
+  });
+
+  test('drain skips when another tab holds the Web Lock', async () => {
+    // Regression for the multi-tab race: two tabs reconnecting would each
+    // call drain() and double-submit the same op. With ifAvailable:true,
+    // the losing tab gets null back and aborts cleanly.
+    await enqueue({ type: 'srsReview', payload: { cardId: 901, grade: 2 } });
+    const { restore } = installFakeLocks({ granted: false });
+
+    try {
+      const handlers = {
+        srsReview: vi.fn(),
+        wordStatusUpdate: vi.fn(),
+        wordCreate: vi.fn(),
+      };
+      const result = await drain(handlers);
+
+      expect(result).toEqual({ attempted: 0, succeeded: 0, failed: 0 });
+      expect(handlers.srsReview).not.toHaveBeenCalled();
+      // Op stays queued — the holding tab is responsible for processing it.
+      expect(await pending()).toBe(1);
+    } finally {
+      restore();
+    }
   });
 });

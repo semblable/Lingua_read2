@@ -289,6 +289,51 @@ public class SrsControllerTests
     }
 
     [Fact]
+    public void BuildClozeSentence_DoesNotMaskSubstringWithinLargerWord()
+    {
+        // Term "es" must not mask the "es" inside "estas" — that would garble
+        // the cloze. With no whole-word match, we return null so the cloze view
+        // falls back to translation mode.
+        Assert.Null(SrsController.BuildClozeSentence("Tú estas en casa.", "es"));
+    }
+
+    [Fact]
+    public void BuildClozeSentence_MasksStandaloneWordEvenWhenSubstringAppearsElsewhere()
+    {
+        // "es" is a real word at position 0, AND a substring of "estas" later.
+        // We must mask only the standalone occurrence.
+        var masked = SrsController.BuildClozeSentence("Es lo que estas pensando.", "es");
+        Assert.Equal("___ lo que estas pensando.", masked);
+    }
+
+    [Fact]
+    public void BuildClozeSentence_ReturnsNull_ForCjkSubstringWithinLargerWord()
+    {
+        // Term 猫 (cat) appearing as a substring of 野猫 (wild cat) must NOT
+        // mask — \b never falls between two CJK ideographs because both are
+        // word characters under the Unicode \w definition.
+        Assert.Null(SrsController.BuildClozeSentence("野猫が逃げた", "猫"));
+    }
+
+    [Fact]
+    public void BuildClozeSentence_MasksCjkTermSeparatedByPunctuation()
+    {
+        // CJK punctuation is non-\w, so a CJK term flanked by it still has
+        // valid word boundaries. The cloze should mask normally here.
+        var masked = SrsController.BuildClozeSentence("猫。逃げた", "猫");
+        Assert.Equal("___。逃げた", masked);
+    }
+
+    [Fact]
+    public void BuildClozeSentence_EscapesRegexMetacharactersInTerm()
+    {
+        // A term that happens to contain regex metacharacters (e.g. dot in an
+        // abbreviation, parens) must be treated as a literal, not as a pattern.
+        var masked = SrsController.BuildClozeSentence("He said e.g. that is fine.", "e.g.");
+        Assert.Equal("He said ___ that is fine.", masked);
+    }
+
+    [Fact]
     public void NormalizeCardType_AcceptsTranslationClozeAndMixed()
     {
         Assert.Equal("translation", SrsController.NormalizeCardType("translation"));

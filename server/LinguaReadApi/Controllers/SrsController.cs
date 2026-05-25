@@ -1310,21 +1310,36 @@ Format (one object per provided word, in the same order):
         }
 
         /// <summary>
-        /// Replace the first case-insensitive occurrence of <paramref name="term"/> in
-        /// <paramref name="sentence"/> with "___" (3 underscores). Returns null if the
-        /// term isn't found or either argument is empty — callers should fall back to
-        /// translation mode in that case.
+        /// Replace the first whole-word, case-insensitive occurrence of
+        /// <paramref name="term"/> in <paramref name="sentence"/> with "___" (3
+        /// underscores). Returns null if no whole-word match exists or either
+        /// argument is empty — callers should fall back to translation mode.
+        ///
+        /// We assert "no word character on either side" via lookbehind/lookahead
+        /// rather than the simpler <c>\b...\b</c> so that terms which themselves
+        /// start or end with non-word characters (e.g. abbreviations like "e.g.",
+        /// French elisions like "l'") still match cleanly. <c>\w</c> follows the
+        /// Unicode definition, so:
+        /// <list type="bullet">
+        /// <item>Latin: term "es" won't mask the "es" inside "estas".</item>
+        /// <item>CJK: every ideograph is <c>\w</c>, so 猫 inside 野猫 also fails
+        /// to match. The cloze view drops to translation mode for those cards
+        /// rather than producing a garbled mask.</item>
+        /// </list>
         /// </summary>
         internal static string? BuildClozeSentence(string? sentence, string? term)
         {
             if (string.IsNullOrEmpty(sentence) || string.IsNullOrEmpty(term)) return null;
             const string Mask = "___";
-            int idx = sentence.IndexOf(term, StringComparison.OrdinalIgnoreCase);
-            if (idx < 0) return null;
+            var match = Regex.Match(
+                sentence,
+                $@"(?<!\w){Regex.Escape(term)}(?!\w)",
+                RegexOptions.IgnoreCase);
+            if (!match.Success) return null;
             return string.Concat(
-                sentence.AsSpan(0, idx),
+                sentence.AsSpan(0, match.Index),
                 Mask,
-                sentence.AsSpan(idx + term.Length));
+                sentence.AsSpan(match.Index + match.Length));
         }
     }
 

@@ -144,11 +144,16 @@ describe('Home (integration)', () => {
     // Languages strip mirrors the one language back.
     expect(screen.getByTestId('lang-card-1')).toHaveTextContent('Spanish');
 
-    // Quick-add footer is present (Bootstrap Button via LinkContainer = role="button").
+    // Quick-add card now lives in the today row (3-col layout), not the footer.
+    expect(screen.getByTestId('quick-add-card')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Add book/i })).toHaveAttribute(
       'href',
       '/books/create'
     );
+
+    // NextActionCard sits at the top with the SRS-heavy (12 > 10) CTA.
+    const nextAction = screen.getByTestId('next-action-card');
+    expect(nextAction).toHaveAttribute('data-action-kind', 'srs-heavy');
   });
 
   test('falls back gracefully when individual fetches reject', async () => {

@@ -1,4 +1,6 @@
 import React from 'react';
+import { Badge } from 'react-bootstrap';
+import { Link } from 'react-router-dom';
 
 interface HomeHeroProps {
   username?: string;
@@ -14,23 +16,44 @@ const greetingForHour = (hour: number): string => {
   return 'Working late';
 };
 
-const buildSubtitle = (
+interface Chip {
+  label: string;
+  to: string;
+  bg: string;
+  testId: string;
+}
+
+const buildChips = (
   srsDue: number,
   topGoalSummary: string | null | undefined,
   streakDays: number,
-): string => {
-  const parts: string[] = [];
+): Chip[] => {
+  const chips: Chip[] = [];
+  if (streakDays > 0) {
+    chips.push({
+      label: `${streakDays}-day streak`,
+      to: '/statistics',
+      bg: 'success',
+      testId: 'hero-chip-streak',
+    });
+  }
   if (srsDue > 0) {
-    parts.push(`${srsDue} SRS card${srsDue === 1 ? '' : 's'} due`);
+    chips.push({
+      label: `${srsDue} SRS card${srsDue === 1 ? '' : 's'} due`,
+      to: '/srs',
+      bg: srsDue > 10 ? 'danger' : 'warning',
+      testId: 'hero-chip-srs',
+    });
   }
   if (topGoalSummary) {
-    parts.push(topGoalSummary);
+    chips.push({
+      label: topGoalSummary,
+      to: '/goals',
+      bg: 'primary',
+      testId: 'hero-chip-goal',
+    });
   }
-  if (streakDays > 0) {
-    parts.push(`${streakDays}-day streak`);
-  }
-  if (parts.length === 0) return 'Pick up where you left off.';
-  return parts.join(' · ');
+  return chips;
 };
 
 const HomeHero: React.FC<HomeHeroProps> = ({
@@ -41,16 +64,35 @@ const HomeHero: React.FC<HomeHeroProps> = ({
 }) => {
   const greeting = greetingForHour(new Date().getHours());
   const name = (username && username.trim()) || null;
-  const subtitle = buildSubtitle(srsDue, topGoalSummary, streakDays);
+  const chips = buildChips(srsDue, topGoalSummary, streakDays);
 
   return (
     <div className="mb-4">
-      <h1 className="mb-1 fw-bold" style={{ fontSize: 'clamp(1.6rem, 4vw, 2.25rem)' }}>
+      <h1 className="mb-2 fw-bold" style={{ fontSize: 'clamp(1.6rem, 4vw, 2.25rem)' }}>
         {name ? `${greeting}, ${name}.` : `${greeting}.`}
       </h1>
-      <div className="text-muted" style={{ fontSize: '1rem' }}>
-        {subtitle}
-      </div>
+      {chips.length === 0 ? (
+        <div className="text-muted" style={{ fontSize: '1rem' }}>
+          Pick up where you left off.
+        </div>
+      ) : (
+        <div className="d-flex flex-wrap gap-2" data-testid="hero-chips">
+          {chips.map((chip) => (
+            <Badge
+              key={chip.testId}
+              as={Link}
+              to={chip.to}
+              bg={chip.bg}
+              pill
+              data-testid={chip.testId}
+              className="text-decoration-none"
+              style={{ fontSize: '0.85rem', padding: '0.45rem 0.75rem' }}
+            >
+              {chip.label}
+            </Badge>
+          ))}
+        </div>
+      )}
     </div>
   );
 };

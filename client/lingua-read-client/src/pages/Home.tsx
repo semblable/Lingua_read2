@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Alert, Button, Card, Col, Container, Row } from 'react-bootstrap';
-import { LinkContainer } from 'react-router-bootstrap';
+import { Alert, Col, Container, Row } from 'react-bootstrap';
 import {
   getDashboard,
   getGoals,
@@ -13,9 +12,10 @@ import type { SrsStats } from '../utils/api/srs';
 import { useAuthStore } from '../utils/store';
 import HomeHero from '../components/home/HomeHero';
 import QuickStatsRow from '../components/home/QuickStatsRow';
-import ContinueLearningCard from '../components/home/ContinueLearningCard';
+import ContinueLearningSection from '../components/home/ContinueLearningSection';
 import SrsDueWidget from '../components/home/SrsDueWidget';
-import StreakChip from '../components/home/StreakChip';
+import NextActionCard from '../components/home/NextActionCard';
+import QuickAddCard from '../components/home/QuickAddCard';
 import LanguagesStrip from '../components/home/LanguagesStrip';
 import OnboardingHome from '../components/home/OnboardingHome';
 import GoalsCard from '../components/goals/GoalsCard';
@@ -219,6 +219,17 @@ const Home: React.FC = () => {
   const firstText = recent.length > 0 ? recent[0] : null;
   const firstLanguageId = languages[0]?.languageId;
 
+  // Drive the "Next up" stalled-book check: prefer the recent text's own
+  // lastAccessedAt (always tied to the specific text), fall back to the
+  // matching language's lastActivityAt when the field isn't present.
+  const recentTextLastActivity = useMemo<string | null>(() => {
+    if (!firstText) return null;
+    const directAccess = (firstText as { lastAccessedAt?: string }).lastAccessedAt;
+    if (directAccess) return directAccess;
+    const lang = languages.find((l) => l.languageName === firstText.languageName);
+    return lang?.lastActivityAt ?? null;
+  }, [firstText, languages]);
+
   // If every backend call failed there's no signal to drive any widget, so
   // surface the error directly. (Doing this before the isEmpty check matters:
   // with no data, languages + recent are both empty and would otherwise route
@@ -241,7 +252,7 @@ const Home: React.FC = () => {
   return (
     <Container className="py-4">
 
-      {/* 1. Hero greeting */}
+      {/* 1. Hero greeting + clickable chips */}
       <HomeHero
         username={user?.username}
         srsDue={srsDueCount}
@@ -249,59 +260,43 @@ const Home: React.FC = () => {
         streakDays={streakDays}
       />
 
-      {/* 2. Quick stats row */}
+      {/* 2. Next up — single recommended action */}
+      <NextActionCard
+        srsDue={srsDueCount}
+        recentText={firstText}
+        lastActivityAt={recentTextLastActivity}
+        loading={loading && !srsStats && !recentTexts}
+      />
+
+      {/* 3. Continue learning — promoted to its own row with secondary list */}
+      <ContinueLearningSection texts={recent} loading={loading && !recentTexts} />
+
+      {/* 4. Today row: SRS + quick-add */}
+      <Row className="g-3 mb-4">
+        <Col xs={12} md={6}>
+          <SrsDueWidget count={srsDueCount} loading={loading && !srsStats} />
+        </Col>
+        <Col xs={12} md={6}>
+          <QuickAddCard />
+        </Col>
+      </Row>
+
+      {/* 5. Languages — core navigation, moved above reference data */}
+      <LanguagesStrip languages={languages} maxVisible={3} />
+
+      {/* 6. Resume at your level (self-hides when empty) */}
+      <ResumeAtLevelSection />
+
+      {/* 7. Goals */}
+      <GoalsCard defaultLanguageId={firstLanguageId} />
+
+      {/* 8. At a glance — lifetime / 7d reference numbers */}
       <QuickStatsRow
         totalKnownWords={dashboard?.totalKnownWords}
         totalWordsReadWeek={dashboard?.totalWordsReadWeek}
         totalListeningSecondsWeek={dashboard?.totalListeningSecondsWeek}
         loading={loading && !dashboard}
       />
-
-      {/* 3. Today panel: continue + SRS + streak */}
-      <Row className="g-3 mb-4">
-        <Col xs={12} lg={8}>
-          <ContinueLearningCard text={firstText} loading={loading && !recentTexts} />
-        </Col>
-        <Col xs={12} lg={4}>
-          <SrsDueWidget count={srsDueCount} loading={loading && !srsStats} />
-          <StreakChip days={streakDays} />
-        </Col>
-      </Row>
-
-      {/* 4. Resume at your level (self-hides when empty) */}
-      <ResumeAtLevelSection />
-
-      {/* 5. Goals */}
-      <GoalsCard defaultLanguageId={firstLanguageId} />
-
-      {/* 6. Top-3 languages strip */}
-      <LanguagesStrip languages={languages} maxVisible={3} />
-
-      {/* 7. Quick-add footer */}
-      <Card className="shadow-sm mb-2">
-        <Card.Body>
-          <div className="d-flex justify-content-between align-items-center flex-wrap gap-2">
-            <div>
-              <div className="fw-semibold mb-1">Add new content</div>
-              <div className="text-muted small">Import a book, paste a text, or upload audio.</div>
-            </div>
-            <div className="d-flex gap-2 flex-wrap">
-              <LinkContainer to="/books/create">
-                <Button variant="success" size="sm">Add book</Button>
-              </LinkContainer>
-              <LinkContainer to="/texts/create">
-                <Button variant="primary" size="sm">Add text</Button>
-              </LinkContainer>
-              <LinkContainer to="/texts/create-audio">
-                <Button variant="info" size="sm">Add audio</Button>
-              </LinkContainer>
-              <LinkContainer to="/dashboard">
-                <Button variant="outline-secondary" size="sm">Open dashboard →</Button>
-              </LinkContainer>
-            </div>
-          </div>
-        </Card.Body>
-      </Card>
     </Container>
   );
 };

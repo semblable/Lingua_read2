@@ -5697,6 +5697,7 @@ export interface components {
             defaultLanguageId?: number | null;
             translationTargetLanguageCode?: string | null;
             autoAdvanceToNextLesson?: boolean | null;
+            autoAdvanceAudiobookTracks?: boolean | null;
             autoMoveFinishedLessons?: boolean | null;
             showProgressStats?: boolean | null;
             showDesktopLessonControls?: boolean | null;
@@ -5803,6 +5804,7 @@ export interface components {
             defaultLanguageId?: number;
             translationTargetLanguageCode?: string | null;
             autoAdvanceToNextLesson?: boolean;
+            autoAdvanceAudiobookTracks?: boolean;
             showProgressStats?: boolean;
             autoMoveFinishedLessons?: boolean;
             showDesktopLessonControls?: boolean;
@@ -5896,6 +5898,7 @@ export interface components {
             defaultLanguageId?: number;
             translationTargetLanguageCode?: string | null;
             autoAdvanceToNextLesson?: boolean;
+            autoAdvanceAudiobookTracks?: boolean;
             autoMoveFinishedLessons?: boolean;
             showProgressStats?: boolean;
             showDesktopLessonControls?: boolean;

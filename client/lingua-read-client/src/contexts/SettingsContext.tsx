@@ -27,6 +27,7 @@ export type Settings = {
   defaultLanguageId: number;
   translationTargetLanguageCode: string;
   autoAdvanceToNextLesson: boolean;
+  autoAdvanceAudiobookTracks: boolean;
   autoMoveFinishedLessons: boolean;
   showProgressStats: boolean;
   showDesktopLessonControls: boolean;
@@ -99,6 +100,7 @@ const defaultSettings: Settings = {
   defaultLanguageId: 0,
   translationTargetLanguageCode: 'EN',
   autoAdvanceToNextLesson: false,
+  autoAdvanceAudiobookTracks: true,
   autoMoveFinishedLessons: false,
   showProgressStats: true,
   showDesktopLessonControls: true,
@@ -187,6 +189,8 @@ const mergeSettings = (data: Partial<Settings> | null | undefined): Settings => 
     translationTargetLanguageCode:
       d.translationTargetLanguageCode || defaultSettings.translationTargetLanguageCode,
     autoAdvanceToNextLesson: d.autoAdvanceToNextLesson ?? defaultSettings.autoAdvanceToNextLesson,
+    autoAdvanceAudiobookTracks:
+      d.autoAdvanceAudiobookTracks ?? defaultSettings.autoAdvanceAudiobookTracks,
     autoMoveFinishedLessons: d.autoMoveFinishedLessons ?? defaultSettings.autoMoveFinishedLessons,
     showProgressStats: d.showProgressStats ?? defaultSettings.showProgressStats,
     showDesktopLessonControls:

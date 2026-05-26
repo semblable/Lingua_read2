@@ -75,6 +75,7 @@ namespace LinguaReadApi.Controllers
                     DefaultLanguageId = 0,
                     TranslationTargetLanguageCode = "EN",
                     AutoAdvanceToNextLesson = false,
+                    AutoAdvanceAudiobookTracks = true,
                     AutoMoveFinishedLessons = false, // Added property
                     ShowProgressStats = true,
                     CreatedAt = DateTime.UtcNow,
@@ -123,6 +124,7 @@ namespace LinguaReadApi.Controllers
                 DefaultLanguageId = settings.DefaultLanguageId,
                 TranslationTargetLanguageCode = settings.TranslationTargetLanguageCode,
                 AutoAdvanceToNextLesson = settings.AutoAdvanceToNextLesson,
+                AutoAdvanceAudiobookTracks = settings.AutoAdvanceAudiobookTracks,
                 AutoMoveFinishedLessons = settings.AutoMoveFinishedLessons, // Added
                 ShowProgressStats = settings.ShowProgressStats,
                 ShowDesktopLessonControls = settings.ShowDesktopLessonControls,
@@ -240,6 +242,7 @@ namespace LinguaReadApi.Controllers
                 settings.TranslationTargetLanguageCode = updateDto.TranslationTargetLanguageCode.Trim().ToUpperInvariant();
             }
             settings.AutoAdvanceToNextLesson = updateDto.AutoAdvanceToNextLesson ?? settings.AutoAdvanceToNextLesson;
+            settings.AutoAdvanceAudiobookTracks = updateDto.AutoAdvanceAudiobookTracks ?? settings.AutoAdvanceAudiobookTracks;
             settings.AutoMoveFinishedLessons = updateDto.AutoMoveFinishedLessons ?? settings.AutoMoveFinishedLessons; // Update property
             settings.ShowProgressStats = updateDto.ShowProgressStats ?? settings.ShowProgressStats;
             settings.ShowDesktopLessonControls = updateDto.ShowDesktopLessonControls ?? settings.ShowDesktopLessonControls;
@@ -422,6 +425,7 @@ namespace LinguaReadApi.Controllers
                 DefaultLanguageId = settings.DefaultLanguageId,
                 TranslationTargetLanguageCode = settings.TranslationTargetLanguageCode,
                 AutoAdvanceToNextLesson = settings.AutoAdvanceToNextLesson,
+                AutoAdvanceAudiobookTracks = settings.AutoAdvanceAudiobookTracks,
                 AutoMoveFinishedLessons = settings.AutoMoveFinishedLessons, // Update property
                 ShowProgressStats = settings.ShowProgressStats,
                 ShowDesktopLessonControls = settings.ShowDesktopLessonControls,
@@ -826,6 +830,7 @@ namespace LinguaReadApi.Controllers
         public int DefaultLanguageId { get; set; } = 0;
         public string TranslationTargetLanguageCode { get; set; } = "EN";
         public bool AutoAdvanceToNextLesson { get; set; } = false;
+        public bool AutoAdvanceAudiobookTracks { get; set; } = true;
         public bool AutoMoveFinishedLessons { get; set; } = false; // Added property
         public bool ShowProgressStats { get; set; } = true;
         public bool ShowDesktopLessonControls { get; set; } = true;
@@ -907,6 +912,7 @@ namespace LinguaReadApi.Controllers
         [StringLength(20)]
         public string? TranslationTargetLanguageCode { get; set; }
         public bool? AutoAdvanceToNextLesson { get; set; }
+        public bool? AutoAdvanceAudiobookTracks { get; set; }
         public bool? AutoMoveFinishedLessons { get; set; } // Added property
         public bool? ShowProgressStats { get; set; }
         public bool? ShowDesktopLessonControls { get; set; }

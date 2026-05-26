@@ -16,6 +16,7 @@ import AudiobookPlayer from '../components/AudiobookPlayer';
 import DownloadForOfflineButton from '../components/offline/DownloadForOfflineButton';
 import './TextDisplay.css';
 import { SettingsContext } from '../contexts/SettingsContext';
+import { getLastBookmarkedSentence } from '../utils/bookmarks';
 import { useReaderBookmarks } from '../hooks/useReaderBookmarks';
 import { useReaderKeyboard, type WordStatus } from '../hooks/useReaderKeyboard';
 import { useWordTranslation } from '../hooks/useWordTranslation';
@@ -245,6 +246,26 @@ const TextDisplay = () => {
     setSummaryText('');
     setSummaryError('');
   }, [text?.textId]);
+
+  // Scroll to the most recently bookmarked sentence once per text load.
+  // The ref guard prevents re-scrolling on re-renders (translations, word state
+  // updates) within the same load — only the first ready frame fires a scroll.
+  const scrolledForTextIdRef = useRef<string | number | null>(null);
+  useEffect(() => {
+    if (loading || !text || !textId) return;
+    if (scrolledForTextIdRef.current === textId) return;
+    const container = textContentRef.current;
+    if (!container) return;
+    scrolledForTextIdRef.current = textId;
+    const idx = getLastBookmarkedSentence(textId);
+    if (idx == null) return;
+    requestAnimationFrame(() => {
+      const el = container.querySelector(
+        `[data-sentence-index="${idx}"]`
+      ) as HTMLElement | null;
+      el?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    });
+  }, [loading, text, textId]);
 
   const applyTranslationToDisplayedWord = useCallback(
     (term: string, translationText: string) => {

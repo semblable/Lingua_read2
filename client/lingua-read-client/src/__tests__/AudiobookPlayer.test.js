@@ -2,6 +2,7 @@ import React, { act } from 'react';
 import '@testing-library/jest-dom';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import AudiobookPlayer from '../components/AudiobookPlayer';
+import { SettingsContext } from '../contexts/SettingsContext';
 import {
   getAudiobookProgress,
   updateAudiobookProgress,
@@ -9,6 +10,22 @@ import {
   updateAudioLessonProgress,
   logListeningActivity
 } from '../utils/api';
+
+const renderWithSettings = (ui, settingOverrides = {}) => {
+  const value = {
+    settings: {
+      autoAdvanceAudiobookTracks: true,
+      ...settingOverrides
+    },
+    loadingSettings: false,
+    errorSettings: null,
+    updateSetting: vi.fn(),
+    refetchSettings: vi.fn()
+  };
+  return render(
+    <SettingsContext.Provider value={value}>{ui}</SettingsContext.Provider>
+  );
+};
 
 vi.mock('../utils/api', () => ({
   getAudiobookProgress: vi.fn(),
@@ -1040,6 +1057,134 @@ describe('AudiobookPlayer', () => {
 
     // Should signal playback stopped, not advance
     expect(onPlaybackStateChange).toHaveBeenCalledWith(false);
+  });
+
+  test('auto-advance setting OFF stops at end of track in book mode', async () => {
+    getAudiobookProgress.mockResolvedValue({
+      currentAudiobookTrackId: 'track-1',
+      currentAudiobookPosition: 0
+    });
+
+    const onPlaybackStateChange = vi.fn();
+    const book = {
+      bookId: 10,
+      languageId: 3,
+      audiobookTracks: [
+        { trackId: 'track-1', filePath: 'audio/track-1.mp3' },
+        { trackId: 'track-2', filePath: 'audio/track-2.mp3' }
+      ]
+    };
+
+    const { container } = renderWithSettings(
+      <AudiobookPlayer
+        type="book"
+        book={book}
+        onPlaybackStateChange={onPlaybackStateChange}
+      />,
+      { autoAdvanceAudiobookTracks: false }
+    );
+
+    await waitFor(() => expect(getAudiobookProgress).toHaveBeenCalledWith(10));
+    await waitFor(() => expect(screen.getByTitle(/Play/)).toBeInTheDocument());
+
+    const audio = container.querySelector('audio');
+    const srcBefore = audio.getAttribute('src');
+
+    act(() => {
+      fireEvent.ended(audio);
+    });
+
+    // No advance — src must stay on track-1 — and playback flips to stopped.
+    expect(audio.getAttribute('src')).toBe(srcBefore);
+    expect(srcBefore).toContain('track-1');
+    expect(onPlaybackStateChange).toHaveBeenCalledWith(false);
+  });
+
+  test('auto-advance still occurs when pause fires before ended (mobile race)', async () => {
+    // Reproduces the mobile bug: some browsers fire `pause` before `ended` at
+    // natural end-of-track. If the source-swap effect only auto-plays when
+    // isPlayingRef is true, the pause flip skips auto-play.
+    getAudiobookProgress.mockResolvedValue({
+      currentAudiobookTrackId: 'track-1',
+      currentAudiobookPosition: 0
+    });
+
+    const book = {
+      bookId: 10,
+      languageId: 3,
+      audiobookTracks: [
+        { trackId: 'track-1', filePath: 'audio/track-1.mp3' },
+        { trackId: 'track-2', filePath: 'audio/track-2.mp3' }
+      ]
+    };
+
+    const { container } = renderWithSettings(
+      <AudiobookPlayer type="book" book={book} />
+    );
+
+    await waitFor(() => expect(getAudiobookProgress).toHaveBeenCalledWith(10));
+    await waitFor(() => expect(screen.getByTitle(/Play/)).toBeInTheDocument());
+
+    const audio = container.querySelector('audio');
+    window.HTMLMediaElement.prototype.play.mockClear();
+
+    // Simulate the mobile pause-then-ended ordering.
+    act(() => {
+      fireEvent.pause(audio);
+      fireEvent.ended(audio);
+    });
+
+    // Source should still swap to track-2 and play() be invoked.
+    await waitFor(() => {
+      expect(audio.getAttribute('src')).toContain('track-2');
+    });
+    await waitFor(() => {
+      expect(window.HTMLMediaElement.prototype.play).toHaveBeenCalled();
+    });
+  });
+
+  test('auto-advance forces playback intent on the next track', async () => {
+    // Even if a `pause` handler clears the __lrAllowPlayback intent flag, the
+    // forced-intent path on the source-swap effect must restore it so the next
+    // track actually starts playing on mobile.
+    getAudiobookProgress.mockResolvedValue({
+      currentAudiobookTrackId: 'track-1',
+      currentAudiobookPosition: 0
+    });
+
+    const book = {
+      bookId: 10,
+      languageId: 3,
+      audiobookTracks: [
+        { trackId: 'track-1', filePath: 'audio/track-1.mp3' },
+        { trackId: 'track-2', filePath: 'audio/track-2.mp3' }
+      ]
+    };
+
+    const { container } = renderWithSettings(
+      <AudiobookPlayer type="book" book={book} />
+    );
+
+    await waitFor(() => expect(getAudiobookProgress).toHaveBeenCalledWith(10));
+    await waitFor(() => expect(screen.getByTitle(/Play/)).toBeInTheDocument());
+
+    const audio = container.querySelector('audio');
+    // Simulate the autoplay-blocked state: intent flag clear.
+    audio.__lrAllowPlayback = false;
+    window.HTMLMediaElement.prototype.play.mockClear();
+
+    act(() => {
+      fireEvent.ended(audio);
+    });
+
+    await waitFor(() => {
+      expect(audio.getAttribute('src')).toContain('track-2');
+    });
+    // forceIntent must have flipped __lrAllowPlayback back on so play() ran.
+    await waitFor(() => {
+      expect(window.HTMLMediaElement.prototype.play).toHaveBeenCalled();
+    });
+    expect(audio.__lrAllowPlayback).toBe(true);
   });
 
 });

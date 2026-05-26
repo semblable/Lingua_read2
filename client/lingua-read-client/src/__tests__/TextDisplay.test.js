@@ -4,7 +4,11 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, createMemoryRouter, RouterProvider } from 'react-router-dom';
 import TextDisplay from '../pages/TextDisplay';
 import { SettingsContext } from '../contexts/SettingsContext';
-import { getBookmarkedSentences, toggleBookmark } from '../utils/bookmarks';
+import {
+  getBookmarkedSentences,
+  getLastBookmarkedSentence,
+  toggleBookmark
+} from '../utils/bookmarks';
 import { speakText, cancelSpeech, isSpeechSynthesisSupported } from '../utils/browserTts';
 import {
   getText,
@@ -59,6 +63,7 @@ vi.mock('../utils/api', () => ({
 
 vi.mock('../utils/bookmarks', () => ({
   getBookmarkedSentences: vi.fn(() => []),
+  getLastBookmarkedSentence: vi.fn(() => null),
   toggleBookmark: vi.fn()
 }));
 
@@ -153,6 +158,7 @@ describe('TextDisplay', () => {
       bookId: null
     });
     getBookmarkedSentences.mockReturnValue([]);
+    getLastBookmarkedSentence.mockReturnValue(null);
     createWord.mockReset();
     updateWord.mockReset();
     deleteWord.mockReset();
@@ -1659,6 +1665,133 @@ describe('TextDisplay', () => {
     });
 
     consoleErrorSpy.mockRestore();
+  });
+
+  describe('scroll to bookmark on text load', () => {
+    const longText = 'Sentence one. Sentence two. Sentence three. Sentence four. Sentence five.';
+
+    test('scrolls to the last bookmarked sentence on text load', async () => {
+      getText.mockResolvedValueOnce({
+        textId: 1,
+        title: 'Bookmark Test',
+        content: longText,
+        languageId: null,
+        languageCode: 'ES',
+        languageName: 'Spanish',
+        isAudioLesson: false,
+        words: [],
+        bookId: null
+      });
+      getLastBookmarkedSentence.mockReturnValue(2);
+      const scrollSpy = vi
+        .spyOn(window.HTMLElement.prototype, 'scrollIntoView')
+        .mockImplementation(() => {});
+
+      renderTextDisplay();
+
+      await waitFor(() => expect(getText).toHaveBeenCalled());
+      await screen.findByText('Bookmark Test');
+
+      await waitFor(() => {
+        expect(scrollSpy).toHaveBeenCalled();
+      });
+
+      // The scrolled element must be the sentence at index 2.
+      const scrolledNodes = scrollSpy.mock.instances.filter(
+        (node) =>
+          node instanceof window.HTMLElement &&
+          node.getAttribute('data-sentence-index') === '2'
+      );
+      expect(scrolledNodes.length).toBeGreaterThan(0);
+      expect(scrollSpy).toHaveBeenCalledWith({
+        block: 'center',
+        behavior: 'smooth'
+      });
+
+      scrollSpy.mockRestore();
+    });
+
+    test('does not scroll when no bookmark is stored', async () => {
+      getText.mockResolvedValueOnce({
+        textId: 1,
+        title: 'No Bookmark',
+        content: longText,
+        languageId: null,
+        languageCode: 'ES',
+        languageName: 'Spanish',
+        isAudioLesson: false,
+        words: [],
+        bookId: null
+      });
+      getLastBookmarkedSentence.mockReturnValue(null);
+      const scrollSpy = vi
+        .spyOn(window.HTMLElement.prototype, 'scrollIntoView')
+        .mockImplementation(() => {});
+
+      renderTextDisplay();
+
+      await waitFor(() => expect(getText).toHaveBeenCalled());
+      await screen.findByText('No Bookmark');
+
+      // Give the effect a frame to run if it were going to.
+      await act(async () => {
+        await new Promise((resolve) => requestAnimationFrame(() => resolve()));
+      });
+
+      expect(scrollSpy).not.toHaveBeenCalled();
+      scrollSpy.mockRestore();
+    });
+
+    test('does not re-scroll on subsequent re-renders of the same textId', async () => {
+      getText.mockResolvedValue({
+        textId: 1,
+        title: 'Bookmark Once',
+        content: longText,
+        languageId: null,
+        languageCode: 'ES',
+        languageName: 'Spanish',
+        isAudioLesson: false,
+        words: [],
+        bookId: null
+      });
+      getLastBookmarkedSentence.mockReturnValue(1);
+      const scrollSpy = vi
+        .spyOn(window.HTMLElement.prototype, 'scrollIntoView')
+        .mockImplementation(() => {});
+
+      const { rerender } = renderTextDisplay();
+
+      await waitFor(() => expect(getText).toHaveBeenCalled());
+      await screen.findByText('Bookmark Once');
+      await waitFor(() => expect(scrollSpy).toHaveBeenCalled());
+
+      const callCountAfterFirstLoad = scrollSpy.mock.calls.length;
+
+      // Force a re-render of the same TextDisplay component tree without
+      // changing textId. The guard ref should prevent any additional scrolls.
+      rerender(
+        <SettingsContext.Provider value={createSettingsValue({})}>
+          <MemoryRouter
+            initialEntries={['/texts/1']}
+            future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
+          >
+            <Routes>
+              <Route path="/texts/:textId" element={<TextDisplay />} />
+            </Routes>
+          </MemoryRouter>
+        </SettingsContext.Provider>
+      );
+
+      await act(async () => {
+        await new Promise((resolve) => requestAnimationFrame(() => resolve()));
+      });
+
+      // Within the same textId mount, no additional scroll calls beyond the
+      // initial one for the bookmarked sentence.
+      expect(scrollSpy.mock.calls.length).toBe(callCountAfterFirstLoad);
+
+      scrollSpy.mockRestore();
+    });
   });
 
   describe('mobile audio player rendering', () => {

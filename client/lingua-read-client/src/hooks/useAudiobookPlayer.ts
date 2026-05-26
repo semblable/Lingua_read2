@@ -48,6 +48,7 @@ export type UseAudiobookPlayerArgs = {
   onTimeUpdate?: (newTime: number) => void;
   onPlaybackStateChange?: (isPlaying: boolean) => void;
   segmentPlaybackRequest?: SegmentPlaybackRequest | null;
+  autoAdvanceTracks?: boolean;
 };
 
 export type UseAudiobookPlayerResult = {
@@ -97,7 +98,8 @@ export const useAudiobookPlayer = ({
   audioRef: externalAudioRef,
   onTimeUpdate,
   onPlaybackStateChange,
-  segmentPlaybackRequest
+  segmentPlaybackRequest,
+  autoAdvanceTracks
 }: UseAudiobookPlayerArgs): UseAudiobookPlayerResult => {
   // --- Orchestrator refs ---
   const internalAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -118,6 +120,12 @@ export const useAudiobookPlayer = ({
     isPlaying: false
   });
   const wasPlayingRef = useRef(false);
+  const autoAdvanceRef = useRef(autoAdvanceTracks ?? true);
+  const pendingAutoAdvanceRef = useRef(false);
+
+  useEffect(() => {
+    autoAdvanceRef.current = autoAdvanceTracks ?? true;
+  }, [autoAdvanceTracks]);
 
   useEffect(() => {
     onTimeUpdateRef.current = onTimeUpdate;
@@ -323,6 +331,7 @@ export const useAudiobookPlayer = ({
     lastServerUpdateRef.current = null;
     justStartedPlayingRef.current = false;
     wasPlayingRef.current = false;
+    pendingAutoAdvanceRef.current = false;
     setCurrentTrackIndex(0);
     setCurrentTime(0);
     setDuration(0);
@@ -375,6 +384,11 @@ export const useAudiobookPlayer = ({
     const audio = audioRef.current;
     if (!audio || !currentTrack) return;
 
+    // Consume the auto-advance intent at the top so it can't leak past an
+    // early-return path (e.g. two playlist tracks pointing at the same file).
+    const hadPendingAutoAdvance = pendingAutoAdvanceRef.current;
+    pendingAutoAdvanceRef.current = false;
+
     const src = buildTrackSrc(currentTrack);
     const currentSrc = normalizeMediaSrc(audio.currentSrc || audio.src);
     const nextSrc = normalizeMediaSrc(src);
@@ -398,8 +412,8 @@ export const useAudiobookPlayer = ({
     audio.load();
     setIsBuffering(true);
 
-    if (isPlayingRef.current) {
-      requestAudioPlay('Auto-play on track change failed');
+    if (isPlayingRef.current || hadPendingAutoAdvance) {
+      requestAudioPlay('Auto-play on track change failed', { forceIntent: true });
     }
   }, [currentTrack, audioRef, buildTrackSrc, requestAudioPlay, resetSegmentPlayback, segmentPlaybackRequest, segmentPlaybackRef]);
 
@@ -449,12 +463,24 @@ export const useAudiobookPlayer = ({
   }, []);
 
   const handleEnded = useCallback(() => {
-    if (isBookMode && currentTrackIndex < playlist.length - 1) {
+    const hasNext = isBookMode && currentTrackIndex < playlist.length - 1;
+    const shouldAdvance = hasNext && autoAdvanceRef.current;
+    if (shouldAdvance) {
+      // Some mobile browsers fire `pause` before `ended` at natural end-of-track,
+      // which flips isPlayingRef to false and would skip auto-play in the
+      // source-swap effect. Mark the intent here so the swap effect resumes
+      // playback regardless of pause/ended ordering, and force the playback
+      // intent flag in case the `pause` handler tripped autoplay restrictions.
+      const audio = audioRef.current;
+      if (audio) setAudioPlaybackIntent(audio, true);
+      pendingAutoAdvanceRef.current = true;
+      syncPlaybackState(true);
       setCurrentTrackIndex(prev => prev + 1);
     } else {
+      pendingAutoAdvanceRef.current = false;
       syncPlaybackState(false);
     }
-  }, [isBookMode, currentTrackIndex, playlist.length, syncPlaybackState]);
+  }, [isBookMode, currentTrackIndex, playlist.length, audioRef, syncPlaybackState]);
 
   const handleError = useCallback((e: Event) => {
     const audio = e?.target as HTMLAudioElement | null;

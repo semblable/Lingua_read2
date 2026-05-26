@@ -1,14 +1,18 @@
+import { useContext } from 'react';
 import { Button, Spinner, Alert, ProgressBar } from 'react-bootstrap';
 import { formatTime } from '../utils/helpers';
 import {
   useAudiobookPlayer,
   type UseAudiobookPlayerArgs
 } from '../hooks/useAudiobookPlayer';
+import { SettingsContext } from '../contexts/SettingsContext';
 import './AudiobookPlayer.css';
 
 export type AudiobookPlayerProps = UseAudiobookPlayerArgs;
 
 const AudiobookPlayer = (props: AudiobookPlayerProps) => {
+  const { settings } = useContext(SettingsContext);
+  const autoAdvanceTracks = props.autoAdvanceTracks ?? settings.autoAdvanceAudiobookTracks;
   const {
     audioRef,
     progressBarRef,
@@ -30,7 +34,7 @@ const AudiobookPlayer = (props: AudiobookPlayerProps) => {
     goToPrevTrack,
     changeRate,
     handleVolumeChange
-  } = useAudiobookPlayer(props);
+  } = useAudiobookPlayer({ ...props, autoAdvanceTracks });
 
   return (
     <div className="audiobook-player p-1 rounded-2 audiobook-player-custom-bg" style={{ maxWidth: '550px', width: '100%' }}>

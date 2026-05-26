@@ -50,6 +50,16 @@ const ReadingSettings = ({ settings, handleChange, languages, loadingLanguages }
           />
         </Form.Group>
 
+        <Form.Group className="mb-3" controlId="autoAdvanceAudiobookTracks">
+          <Form.Check
+            type="switch"
+            name="autoAdvanceAudiobookTracks"
+            label="Automatically play the next audiobook track when the current one ends"
+            checked={settings.autoAdvanceAudiobookTracks}
+            onChange={handleChange}
+          />
+        </Form.Group>
+
         <Form.Group className="mb-3" controlId="highlightKnownWords">
           <Form.Check
             type="switch"

@@ -346,6 +346,9 @@ public class LessonLoadingOptimizationTests
         var etag = first.Response.Headers.ETag.ToString();
         Assert.False(string.IsNullOrEmpty(etag));
 
+        // Give the background task a moment to complete to avoid DbContext concurrency conflicts
+        await Task.Delay(250);
+
         // Second request: echo the ETag in If-None-Match → server should 304.
         var second = CreateTextsController(context, userId);
         second.Request.Headers.IfNoneMatch = etag;

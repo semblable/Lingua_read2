@@ -96,7 +96,7 @@ public class BookImportQueuesLinkingTests
 
     private static BooksController CreateController(AppDbContext context, Guid userId, WordLinkingChannel? channel)
     {
-        return new BooksController(context, NullLogger<BooksController>.Instance, hardcoverService: null, wordLinkingChannel: channel)
+        return new BooksController(context, NullLogger<BooksController>.Instance, new ChapterDetectionService(), hardcoverService: null, wordLinkingChannel: channel)
         {
             ControllerContext = new ControllerContext
             {

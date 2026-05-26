@@ -1,30 +1,35 @@
-import React, { useState, useEffect, useContext } from 'react'; // Added useContext
+import React, { useState, useEffect, useContext } from 'react';
 import { Container, Form, Button, Card, Alert, Spinner, Row, Col, Tabs, Tab, ProgressBar } from 'react-bootstrap';
 import { useNavigate } from 'react-router-dom';
-import { createBook, uploadBook, getAllLanguages, uploadAudiobookTracks } from '../utils/api';
-import { SettingsContext } from '../contexts/SettingsContext'; // Import SettingsContext
+import { createBook, uploadBook, getAllLanguages, uploadAudiobookTracks, previewBookSplit, previewManualSplit } from '../utils/api';
+import { SettingsContext } from '../contexts/SettingsContext';
 import type { Language } from '../utils/api/languages';
+import SplitPreview from '../components/library/SplitPreview';
 
 const BookCreate = () => {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [content, setContent] = useState('');
   const [languageId, setLanguageId] = useState('');
-  const [tags, setTags] = useState(''); // Renamed from tag, expect comma-separated string
-  const [file, setFile] = useState<File | null>(null); // State for uploaded file
-  const [activeTab, setActiveTab] = useState('manual'); // State for active tab
-  const [splitMethod, setSplitMethod] = useState('paragraph');
+  const [tags, setTags] = useState(''); // comma-separated string
+  const [file, setFile] = useState<File | null>(null);
+  const [activeTab, setActiveTab] = useState('manual');
+  const [splitMethod, setSplitMethod] = useState('chapter'); // Default to Chapter Splitting
   const [maxSegmentSize, setMaxSegmentSize] = useState(3000);
+  const [subSplitOversized, setSubSplitOversized] = useState(true); // Default sub-split to true for better readability
   const [languages, setLanguages] = useState<Language[]>([]);
   const [loading, setLoading] = useState(false);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [showPreviewModal, setShowPreviewModal] = useState(false);
+  const [previewData, setPreviewData] = useState<any>(null);
   const [error, setError] = useState('');
   const [loadingLanguages, setLoadingLanguages] = useState(true);
-  const [audioFiles, setAudioFiles] = useState<File[]>([]); // State for audio files
-  const [audioUploadError, setAudioUploadError] = useState(''); // Separate error for audio upload
+  const [audioFiles, setAudioFiles] = useState<File[]>([]);
+  const [audioUploadError, setAudioUploadError] = useState('');
   const navigate = useNavigate();
-  const { settings: userSettings } = useContext(SettingsContext); // Get settings from context
-  const [loadingText, setLoadingText] = useState(''); // New state for feedback
-  const [uploadProgress, setUploadProgress] = useState(0); // Progress state 0-100
+  const { settings: userSettings } = useContext(SettingsContext);
+  const [loadingText, setLoadingText] = useState('');
+  const [uploadProgress, setUploadProgress] = useState(0);
 
   useEffect(() => {
     const fetchLanguages = async () => {
@@ -32,7 +37,6 @@ const BookCreate = () => {
         const data = await getAllLanguages();
         setLanguages(data);
 
-        // Use default language from context if available and valid
         const defaultLangId = userSettings?.defaultLanguageId;
 
         if (data.length > 0) {
@@ -40,7 +44,6 @@ const BookCreate = () => {
           if (found && found.languageId != null) {
             setLanguageId(found.languageId.toString());
           } else if (data[0].languageId != null) {
-            // Fallback to first language if default not found or not set
             setLanguageId(data[0].languageId.toString());
           }
         }
@@ -52,18 +55,77 @@ const BookCreate = () => {
     };
 
     fetchLanguages();
-    // Re-run if userSettings context changes (e.g., after initial load)
   }, [userSettings?.defaultLanguageId]);
 
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-
-    if (!title.trim()) {
+  const handlePreviewSplit = async () => {
+    if (!title.trim() && activeTab === 'manual') {
       setError('Please enter a title');
       return;
     }
 
-    // Content/File validation depends on the active tab
+    if (activeTab === 'manual' && !content.trim()) {
+      setError('Please enter book content');
+      return;
+    }
+    if (activeTab === 'upload' && !file) {
+      setError('Please select a file to upload');
+      return;
+    }
+
+    if (!languageId) {
+      setError('Please select a language');
+      return;
+    }
+
+    setPreviewLoading(true);
+    setError('');
+
+    try {
+      let preview;
+      if (activeTab === 'manual') {
+        preview = await previewManualSplit(
+          title,
+          content,
+          splitMethod,
+          maxSegmentSize,
+          subSplitOversized
+        );
+      } else {
+        const formData = new FormData();
+        formData.append('File', file!);
+        formData.append('LanguageId', languageId);
+        formData.append('SplitMethod', splitMethod);
+        formData.append('MaxSegmentSize', maxSegmentSize.toString());
+        formData.append('SubSplitOversized', subSplitOversized.toString());
+        if (title) formData.append('TitleOverride', title);
+        
+        preview = await previewBookSplit(formData);
+      }
+      setPreviewData(preview);
+      setShowPreviewModal(true);
+    } catch (err: any) {
+      setError(err.message || 'Failed to generate split preview. Please try again.');
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
+
+  const handleConfirmSplit = async (chapterTitles: string[]) => {
+    setShowPreviewModal(false);
+    await executeSubmit(chapterTitles);
+  };
+
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    await executeSubmit();
+  };
+
+  const executeSubmit = async (chapterTitles: string[] = []) => {
+    if (!title.trim() && activeTab === 'manual') {
+      setError('Please enter a title');
+      return;
+    }
+
     if (activeTab === 'manual' && !content.trim()) {
       setError('Please enter book content');
       return;
@@ -82,7 +144,6 @@ const BookCreate = () => {
     setLoadingText(activeTab === 'manual' ? 'Creating book...' : 'Uploading book...');
     setError('');
 
-    // Prepare tags array
     const tagsArray = tags.split(',').map(tag => tag.trim()).filter(tag => tag);
 
     try {
@@ -95,25 +156,26 @@ const BookCreate = () => {
           content,
           splitMethod,
           parseInt(String(maxSegmentSize), 10),
-          tagsArray // Pass tags array
+          tagsArray,
+          subSplitOversized,
+          chapterTitles
         );
-      } else { // activeTab === 'upload'
+      } else {
         const formData = new FormData();
-        formData.append('File', file!); // validated non-null above
+        formData.append('File', file!);
         formData.append('LanguageId', languageId);
         formData.append('SplitMethod', splitMethod);
         formData.append('MaxSegmentSize', maxSegmentSize.toString());
-        // Append tags individually if backend expects multiple entries, or join if it expects a single string/array
+        formData.append('SubSplitOversized', subSplitOversized.toString());
         tagsArray.forEach(tag => formData.append('Tags', tag));
-        // Optional: Add TitleOverride if needed, otherwise backend uses filename
-        // formData.append('TitleOverride', title);
+        if (title) formData.append('TitleOverride', title);
+        chapterTitles.forEach(t => formData.append('ChapterTitles', t));
 
         newBook = await uploadBook(formData, (progress) => {
           setUploadProgress(progress);
         });
       }
 
-      // --- Start: Audiobook Upload Logic ---
       let audioUploadFailed = false;
       if (audioFiles.length > 0 && newBook?.bookId) {
         setAudioUploadError('');
@@ -131,7 +193,6 @@ const BookCreate = () => {
           audioUploadFailed = true;
         }
       }
-      // --- End: Audiobook Upload Logic ---
 
       navigate(
         `/books/${newBook.bookId}`,
@@ -142,7 +203,6 @@ const BookCreate = () => {
       const e = err as { response?: { data?: { message?: string } }; message?: string };
       const errorMsg = e.response?.data?.message || e.message || `Failed to ${activeTab === 'manual' ? 'create' : 'upload'} book. Please try again.`;
       setError(errorMsg);
-      // Don't proceed to audio upload if book creation failed
     } finally {
       setLoading(false);
       setLoadingText('');
@@ -162,9 +222,8 @@ const BookCreate = () => {
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       setFile(e.target.files[0]);
-      // Optionally set title from filename if title is empty
       if (!title.trim()) {
-        setTitle(e.target.files[0].name.replace(/\.[^/.]+$/, "")); // Remove extension
+        setTitle(e.target.files[0].name.replace(/\.[^/.]+$/, ""));
       }
     } else {
       setFile(null);
@@ -173,8 +232,8 @@ const BookCreate = () => {
 
   const handleAudioFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
-      setAudioFiles(Array.from(e.target.files)); // Store as array
-      setAudioUploadError(''); // Clear audio error on new selection
+      setAudioFiles(Array.from(e.target.files));
+      setAudioUploadError('');
     } else {
       setAudioFiles([]);
     }
@@ -188,7 +247,6 @@ const BookCreate = () => {
 
           {error && <Alert variant="danger">{error}</Alert>}
 
-          {/* Use a single form, handle submit based on active tab */}
           <Form onSubmit={handleSubmit}>
             <Row>
               <Col md={6}>
@@ -199,7 +257,7 @@ const BookCreate = () => {
                     placeholder="Enter a title for your book"
                     value={title}
                     onChange={(e) => setTitle(e.target.value)}
-                    required
+                    required={activeTab === 'manual'} // file upload uses filename if left blank
                   />
                 </Form.Group>
               </Col>
@@ -237,7 +295,6 @@ const BookCreate = () => {
               />
             </Form.Group>
 
-            {/* Tags Input */}
             <Form.Group className="mb-3" controlId="tags">
               <Form.Label>Tags (Optional)</Form.Label>
               <Form.Control
@@ -251,8 +308,8 @@ const BookCreate = () => {
               </Form.Text>
             </Form.Group>
 
-            <Row className="mb-3">
-              <Col md={6}>
+            <Row className="mb-3 align-items-center">
+              <Col md={splitMethod === 'chapter' ? 4 : 6}>
                 <Form.Group controlId="splitMethod">
                   <Form.Label>Split Method</Form.Label>
                   <Form.Select
@@ -260,35 +317,52 @@ const BookCreate = () => {
                     onChange={(e) => setSplitMethod(e.target.value)}
                     required
                   >
+                    <option value="chapter">By Chapters (Auto-detect)</option>
                     <option value="paragraph">By Paragraphs</option>
                     <option value="sentence">By Sentences</option>
                     <option value="length">By Character Length</option>
                   </Form.Select>
                   <Form.Text className="text-muted">
-                    Choose how to split the book content. Applies to both manual input and file uploads.
+                    Choose how to split the book content. Chapter splitting is highly recommended.
                   </Form.Text>
                 </Form.Group>
               </Col>
 
-              <Col md={6}>
+              {splitMethod === 'chapter' && (
+                <Col md={4}>
+                  <Form.Group controlId="subSplitOversized" className="pt-3">
+                    <Form.Check
+                      type="checkbox"
+                      id="checkbox-subsplit"
+                      label="Sub-split large chapters"
+                      checked={subSplitOversized}
+                      onChange={(e) => setSubSplitOversized(e.target.checked)}
+                    />
+                    <Form.Text className="text-muted block">
+                      Splits oversized chapters into readable chunks.
+                    </Form.Text>
+                  </Form.Group>
+                </Col>
+              )}
+
+              <Col md={splitMethod === 'chapter' ? 4 : 6}>
                 <Form.Group controlId="maxSegmentSize">
-                  <Form.Label>Maximum Size Per Section</Form.Label>
+                  <Form.Label>{splitMethod === 'chapter' ? 'Maximum Chapter Segment Size' : 'Maximum Size Per Section'}</Form.Label>
                   <Form.Control
                     type="number"
                     min="500"
                     max="50000"
                     value={maxSegmentSize}
-                    onChange={(e) => setMaxSegmentSize(parseInt(e.target.value, 10) || 500)} // Ensure it's a number
+                    onChange={(e) => setMaxSegmentSize(parseInt(e.target.value, 10) || 500)}
                     required
                   />
                   <Form.Text className="text-muted">
-                    Max characters per section (500-50,000). Applies to both methods.
+                    Max characters per segment (500-50,000).
                   </Form.Text>
                 </Form.Group>
               </Col>
             </Row>
 
-            {/* Tabs for Manual Input / Upload */}
             <Tabs
               activeKey={activeTab}
               onSelect={(k) => setActiveTab(k ?? 'manual')}
@@ -304,7 +378,7 @@ const BookCreate = () => {
                     placeholder="Paste or type your book content here"
                     value={content}
                     onChange={(e) => setContent(e.target.value)}
-                    required={activeTab === 'manual'} // Required only if this tab is active
+                    required={activeTab === 'manual'}
                   />
                   <Form.Text className="text-muted">
                     Paste the full text of your book. It will be split based on the method above.
@@ -318,7 +392,7 @@ const BookCreate = () => {
                     type="file"
                     accept=".txt,.epub"
                     onChange={handleFileChange}
-                    required={activeTab === 'upload'} // Required only if this tab is active
+                    required={activeTab === 'upload'}
                   />
                   <Form.Text className="text-muted">
                     Upload a .txt or .epub file. Content will be extracted and split.
@@ -327,7 +401,6 @@ const BookCreate = () => {
               </Tab>
             </Tabs>
 
-            {/* Audiobook Upload Input */}
             <Form.Group controlId="audiobookFiles" className="mb-4 mt-3">
               <Form.Label>Upload Audiobook Tracks (Optional)</Form.Label>
               <Form.Control
@@ -338,13 +411,17 @@ const BookCreate = () => {
                 disabled={loading}
               />
               <Form.Text className="text-muted">
-                Select one or more audio files (MP3, M4B, M4A, OGG, FLAC, WAV) if you want to add an audiobook component now. You can also add them later.
+                Select one or more audio files (MP3, M4B, M4A, OGG, FLAC, WAV) if you want to add an audiobook component now.
               </Form.Text>
               {audioUploadError && <Alert variant="warning" className="mt-2">{audioUploadError}</Alert>}
             </Form.Group>
+
             <div className="d-grid gap-2">
-              {/* Submit button outside tabs */}
-              <Button variant="primary" type="submit" disabled={loading || languages.length === 0 || (activeTab === 'upload' && !file)}>
+              <Button
+                variant="primary"
+                type="submit"
+                disabled={loading || previewLoading || languages.length === 0 || (activeTab === 'upload' && !file)}
+              >
                 {loading ? (
                   <>
                     <Spinner animation="border" size="sm" className="me-2" />
@@ -352,13 +429,25 @@ const BookCreate = () => {
                   </>
                 ) : `Create Book ${activeTab === 'upload' ? 'from File' : 'from Text'}`}
               </Button>
-              {/* Progress Bar for Uploads */}
+
+              <Button
+                variant="outline-primary"
+                onClick={handlePreviewSplit}
+                disabled={loading || previewLoading || languages.length === 0 || (activeTab === 'upload' && !file)}
+              >
+                {previewLoading ? (
+                  <>
+                    <Spinner animation="border" size="sm" className="me-2" />
+                    Analyzing Book...
+                  </>
+                ) : 'Preview Chapters & Customize'}
+              </Button>
+
               {loading && activeTab === 'upload' && (
                 <div className="mt-2">
                   <ProgressBar now={uploadProgress} label={`${uploadProgress}%`} animated />
                 </div>
               )}
-              {/* Progress Bar for Audio Uploads (Manual Tab too if audio selected) */}
               {loading && audioFiles.length > 0 && uploadProgress > 0 && (
                 <div className="mt-2">
                   <ProgressBar now={uploadProgress} label={`${uploadProgress}%`} variant="info" animated />
@@ -367,7 +456,7 @@ const BookCreate = () => {
               <Button
                 variant="outline-secondary"
                 onClick={() => navigate('/books')}
-                disabled={loading}
+                disabled={loading || previewLoading}
               >
                 Cancel
               </Button>
@@ -375,8 +464,16 @@ const BookCreate = () => {
           </Form>
         </Card.Body>
       </Card>
+
+      <SplitPreview
+        show={showPreviewModal}
+        onHide={() => setShowPreviewModal(false)}
+        previewData={previewData}
+        onConfirm={handleConfirmSplit}
+        submitting={loading}
+      />
     </Container>
   );
 };
 
-export default BookCreate; 
+export default BookCreate;

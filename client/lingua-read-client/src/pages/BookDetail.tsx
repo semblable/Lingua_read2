@@ -22,11 +22,14 @@ import {
   uploadAudiobookTracks,
   matchHardcoverBook,
   importHardcoverMetadata,
-  syncHardcoverProgress
+  syncHardcoverProgress,
+  previewReSplitBook,
+  reSplitBook
 } from '../utils/api'; // Import new API functions + uploadAudiobookTracks
 import { formatDate, /*calculateReadingTime*/ } from '../utils/helpers'; // Removed unused calculateReadingTime
 // Removed AudiobookPlayer import
 import DownloadForOfflineButton from '../components/offline/DownloadForOfflineButton';
+import SplitPreview from '../components/library/SplitPreview';
 
 // Normalize an audiobook track's stored path into a fetch-ready URL. Mirrors
 // the logic in useAudiobookPlayer.buildTrackSrc so the bytes we cache here
@@ -83,6 +86,17 @@ const BookDetail = () => {
   const [hardcoverMessage, setHardcoverMessage] = useState<HardcoverMessage | null>(null);
   const [hardcoverCandidates, setHardcoverCandidates] = useState<HardcoverCandidate[]>([]);
   const [showHardcoverCandidates, setShowHardcoverCandidates] = useState(false);
+
+  // Re-split state
+  const [showReSplitModal, setShowReSplitModal] = useState(false);
+  const [reSplitMethod, setReSplitMethod] = useState('chapter');
+  const [reSplitMaxSegmentSize, setReSplitMaxSegmentSize] = useState(3000);
+  const [reSplitSubSplitOversized, setReSplitSubSplitOversized] = useState(true);
+  const [reSplitLoading, setReSplitLoading] = useState(false);
+  const [reSplitPreviewLoading, setReSplitPreviewLoading] = useState(false);
+  const [showReSplitPreviewModal, setShowReSplitPreviewModal] = useState(false);
+  const [reSplitPreviewData, setReSplitPreviewData] = useState<any>(null);
+  const [reSplitError, setReSplitError] = useState('');
 
 
   const fetchBook = useCallback(async () => { // Wrap in useCallback
@@ -381,6 +395,51 @@ const BookDetail = () => {
     }
   };
 
+  const handleOpenReSplitModal = () => {
+    setReSplitError('');
+    setShowReSplitModal(true);
+  };
+
+  const handlePreviewReSplit = async () => {
+    if (!bookId) return;
+    setReSplitPreviewLoading(true);
+    setReSplitError('');
+    try {
+      const preview = await previewReSplitBook(bookId, {
+        splitMethod: reSplitMethod,
+        maxSegmentSize: reSplitMaxSegmentSize,
+        subSplitOversized: reSplitSubSplitOversized
+      });
+      setReSplitPreviewData(preview);
+      setShowReSplitPreviewModal(true);
+    } catch (err: any) {
+      setReSplitError(err.message || 'Failed to generate re-split preview');
+    } finally {
+      setReSplitPreviewLoading(false);
+    }
+  };
+
+  const handleExecuteReSplit = async (chapterTitles: string[] = []) => {
+    if (!bookId) return;
+    setReSplitLoading(true);
+    setReSplitError('');
+    try {
+      await reSplitBook(bookId, {
+        splitMethod: reSplitMethod,
+        maxSegmentSize: reSplitMaxSegmentSize,
+        subSplitOversized: reSplitSubSplitOversized,
+        chapterTitles
+      });
+      setShowReSplitPreviewModal(false);
+      setShowReSplitModal(false);
+      await fetchBook();
+    } catch (err: any) {
+      setReSplitError(err.message || 'Failed to re-split book');
+    } finally {
+      setReSplitLoading(false);
+    }
+  };
+
   if (loading) {
     return (
       <Container className="py-5 text-center">
@@ -491,6 +550,7 @@ const BookDetail = () => {
           {/* Add Edit/Delete Book Buttons */}
           <Button variant="outline-warning" size="sm" onClick={handleOpenEditBookModal} className="ms-2">Edit Book</Button>
           <Button variant="outline-danger" size="sm" onClick={handleBookDelete} className="ms-2">Delete Book</Button>
+          <Button variant="outline-info" size="sm" onClick={handleOpenReSplitModal} className="ms-2">Re-split Book</Button>
         </div>
       </div>
 
@@ -865,6 +925,127 @@ const BookDetail = () => {
           </Button>
         </Modal.Footer>
       </Modal>
+
+      {/* Re-split Book Modal */}
+      <Modal 
+        show={showReSplitModal} 
+        onHide={() => { if (!reSplitLoading && !reSplitPreviewLoading) setShowReSplitModal(false); }} 
+        className="split-preview-modal" 
+        centered
+      >
+        <Modal.Header closeButton={!reSplitLoading && !reSplitPreviewLoading} className="split-preview-header">
+          <Modal.Title className="split-preview-title">⚙️ Re-split Book Options</Modal.Title>
+        </Modal.Header>
+        <Modal.Body className="split-preview-body">
+          <div className="preview-summary-card mb-4" style={{ borderLeft: '4px solid #f0883e', background: 'rgba(240, 136, 62, 0.05)' }}>
+            <div className="small-label" style={{ color: '#f0883e', fontWeight: 'bold' }}>⚠️ Destructive Action Warning</div>
+            <p className="mb-0 text-muted" style={{ fontSize: '0.9rem', color: '#f3f3f6' }}>
+              Re-splitting a book is a <strong>destructive operation</strong>. It will recreate the book's text parts from the raw content stored in the database. This will <strong>reset your reading progress</strong> for this book, and any existing sentence progress, audio sync, or bookmarks will be permanently deleted.
+            </p>
+          </div>
+
+          {reSplitError && <Alert variant="danger">{reSplitError}</Alert>}
+
+          <Form>
+            <Form.Group className="mb-3" controlId="reSplitMethodSelect">
+              <Form.Label>Split Method</Form.Label>
+              <Form.Select
+                value={reSplitMethod}
+                onChange={(e) => setReSplitMethod(e.target.value)}
+                disabled={reSplitLoading || reSplitPreviewLoading}
+                style={{ background: 'rgba(0, 0, 0, 0.2)', border: '1px solid rgba(255, 255, 255, 0.08)', color: '#fff' }}
+              >
+                <option value="chapter" style={{ background: '#1e1e24' }}>By Chapters (Auto-detect)</option>
+                <option value="paragraph" style={{ background: '#1e1e24' }}>By Paragraphs</option>
+                <option value="sentence" style={{ background: '#1e1e24' }}>By Sentences</option>
+                <option value="length" style={{ background: '#1e1e24' }}>By Character Length</option>
+              </Form.Select>
+              <Form.Text className="text-muted">
+                Choose how to split the book content. Chapter splitting is highly recommended.
+              </Form.Text>
+            </Form.Group>
+
+            {reSplitMethod === 'chapter' && (
+              <Form.Group className="mb-3" controlId="reSplitSubSplitOversizedCheckbox">
+                <Form.Check
+                  type="checkbox"
+                  id="re-split-checkbox-subsplit"
+                  label="Sub-split large chapters"
+                  checked={reSplitSubSplitOversized}
+                  onChange={(e) => setReSplitSubSplitOversized(e.target.checked)}
+                  disabled={reSplitLoading || reSplitPreviewLoading}
+                />
+                <Form.Text className="text-muted block">
+                  Splits oversized chapters into readable chunks.
+                </Form.Text>
+              </Form.Group>
+            )}
+
+            <Form.Group className="mb-3" controlId="reSplitMaxSegmentSizeInput">
+              <Form.Label>
+                {reSplitMethod === 'chapter' ? 'Maximum Chapter Segment Size' : 'Maximum Size Per Section'}
+              </Form.Label>
+              <Form.Control
+                type="number"
+                min="500"
+                max="50000"
+                value={reSplitMaxSegmentSize}
+                onChange={(e) => setReSplitMaxSegmentSize(parseInt(e.target.value, 10) || 500)}
+                disabled={reSplitLoading || reSplitPreviewLoading}
+                style={{ background: 'rgba(0, 0, 0, 0.2)', border: '1px solid rgba(255, 255, 255, 0.08)', color: '#fff' }}
+              />
+              <Form.Text className="text-muted">
+                Max characters per segment (500-50,000).
+              </Form.Text>
+            </Form.Group>
+          </Form>
+        </Modal.Body>
+        <Modal.Footer className="split-preview-footer">
+          <Button
+            variant="outline-secondary"
+            onClick={() => setShowReSplitModal(false)}
+            disabled={reSplitLoading || reSplitPreviewLoading}
+          >
+            Cancel
+          </Button>
+          <Button
+            variant="outline-primary"
+            onClick={handlePreviewReSplit}
+            disabled={reSplitLoading || reSplitPreviewLoading}
+          >
+            {reSplitPreviewLoading ? (
+              <>
+                <Spinner size="sm" animation="border" className="me-2" />
+                Analyzing Book...
+              </>
+            ) : (
+              'Preview Chapters'
+            )}
+          </Button>
+          <Button
+            variant="danger"
+            onClick={() => handleExecuteReSplit([])}
+            disabled={reSplitLoading || reSplitPreviewLoading}
+          >
+            {reSplitLoading ? (
+              <>
+                <Spinner size="sm" animation="border" className="me-2" />
+                Re-splitting...
+              </>
+            ) : (
+              'Quick Re-split'
+            )}
+          </Button>
+        </Modal.Footer>
+      </Modal>
+
+      <SplitPreview
+        show={showReSplitPreviewModal}
+        onHide={() => setShowReSplitPreviewModal(false)}
+        previewData={reSplitPreviewData}
+        onConfirm={handleExecuteReSplit}
+        submitting={reSplitLoading}
+      />
 
     </Container>
   );

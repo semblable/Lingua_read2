@@ -542,7 +542,7 @@ public class CompleteLessonTests
 
     private static BooksController CreateController(AppDbContext context, Guid userId, IHardcoverService? hardcoverService = null)
     {
-        return new BooksController(context, NullLogger<BooksController>.Instance, hardcoverService)
+        return new BooksController(context, NullLogger<BooksController>.Instance, new ChapterDetectionService(), hardcoverService)
         {
             ControllerContext = new ControllerContext
             {

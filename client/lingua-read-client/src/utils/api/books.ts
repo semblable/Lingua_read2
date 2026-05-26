@@ -21,7 +21,9 @@ export const createBook = (
   content: string,
   splitMethod: string = 'paragraph',
   maxSegmentSize: number = 3000,
-  tags: string[] = []
+  tags: string[] = [],
+  subSplitOversized: boolean = false,
+  chapterTitles: string[] = []
 ): Promise<Book> => {
   return fetchApi<Book>('/books', {
     method: 'POST',
@@ -32,7 +34,9 @@ export const createBook = (
       content,
       splitMethod,
       maxSegmentSize,
-      tags
+      tags,
+      subSplitOversized,
+      chapterTitles
     })
   });
 };
@@ -165,4 +169,77 @@ export const getNextLesson = (
   currentTextId: number | string
 ): Promise<NextLesson> => {
   return fetchApi<NextLesson>(`/books/${bookId}/next-lesson?currentTextId=${currentTextId}`);
+};
+
+export interface ChapterPreview {
+  index: number;
+  title: string;
+  snippet: string;
+  characterCount: number;
+  estimatedWordCount: number;
+}
+
+export interface SplitPreview {
+  chapters: ChapterPreview[];
+  totalCharacters: number;
+  detectionMethod: string;
+}
+
+export interface ReSplitRequest {
+  splitMethod: string;
+  maxSegmentSize: number;
+  subSplitOversized: boolean;
+  chapterTitles?: string[];
+}
+
+export const previewBookSplit = async (
+  formData: FormData,
+  onProgress: UploadProgressCallback | null = null
+): Promise<SplitPreview> => {
+  const endpoint = '/books/preview-split';
+  try {
+    return (await uploadWithProgress(endpoint, formData, onProgress)) as SplitPreview;
+  } catch (error) {
+    console.error('[API Error] Failed to get book split preview:', error);
+    throw error;
+  }
+};
+
+export const previewManualSplit = (
+  title: string,
+  content: string,
+  splitMethod: string,
+  maxSegmentSize: number,
+  subSplitOversized: boolean
+): Promise<SplitPreview> => {
+  return fetchApi<SplitPreview>('/books/preview-split-manual', {
+    method: 'POST',
+    body: JSON.stringify({
+      title,
+      content,
+      splitMethod,
+      maxSegmentSize,
+      subSplitOversized
+    })
+  });
+};
+
+export const previewReSplitBook = (
+  bookId: number | string,
+  request: ReSplitRequest
+): Promise<SplitPreview> => {
+  return fetchApi<SplitPreview>(`/books/${bookId}/preview-re-split`, {
+    method: 'POST',
+    body: JSON.stringify(request)
+  });
+};
+
+export const reSplitBook = (
+  bookId: number | string,
+  request: ReSplitRequest
+): Promise<void> => {
+  return fetchApi<void>(`/books/${bookId}/re-split`, {
+    method: 'POST',
+    body: JSON.stringify(request)
+  });
 };

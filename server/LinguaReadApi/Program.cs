@@ -157,6 +157,7 @@ builder.Services.AddScoped<ILanguageService, LanguageService>();
 builder.Services.AddScoped<IUserActivityService, UserActivityService>(); // Register UserActivityService
 builder.Services.AddScoped<IGoalProgressService, GoalProgressService>();
 builder.Services.AddScoped<IHardcoverService, HardcoverService>();
+builder.Services.AddScoped<ChapterDetectionService>();
 
 // Configure JWT Authentication
 builder.Services.AddAuthentication(options =>

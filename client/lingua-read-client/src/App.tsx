@@ -1,4 +1,4 @@
-import React, { useCallback, useContext, useEffect, useRef, useState, Suspense, lazy } from 'react';
+import React, { useContext, useEffect, Suspense, lazy } from 'react';
 import { Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import { useAuthStore } from './utils/store';
 import 'bootstrap/dist/css/bootstrap.min.css';
@@ -8,9 +8,8 @@ import { SettingsProvider, SettingsContext } from './contexts/SettingsContext';
 // Components (always needed)
 import Navigation from './components/Navigation';
 import OfflineIndicator from './components/offline/OfflineIndicator';
-import AppUpdatePrompt from './components/offline/AppUpdatePrompt';
 import { productionSyncHandlers } from './utils/offline/handlers';
-import { registerServiceWorker, type UpdateSW } from './utils/offline/registerServiceWorker';
+import { registerServiceWorker } from './utils/offline/registerServiceWorker';
 
 // Pages needed on initial render (eager)
 import Home from './pages/Home';
@@ -173,10 +172,6 @@ const AuthenticatedApp = () => {
 // Top-level component: gates auth, wraps authenticated content with SettingsProvider
 function App() {
   const { isAuthenticated, isLoading, needsSetup, checkAuth } = useAuthStore();
-  const [needsRefresh, setNeedsRefresh] = useState(false);
-  // Hold onto the updateSW trigger returned by vite-plugin-pwa so the
-  // "Reload to update" button can activate the waiting service worker.
-  const updateSWRef = useRef<UpdateSW | null>(null);
 
   useEffect(() => {
     checkAuth();
@@ -185,37 +180,11 @@ function App() {
   // Register the PWA service worker once on mount. Safe in tests — the
   // wrapper silently skips when the virtual module isn't available.
   //
-  // The `onNeedRefresh` callback fires when a new SW has been downloaded
-  // and is sitting in the "waiting" state. We surface a prompt; without it
-  // the new bundle would never activate (we ship with registerType: 'prompt')
-  // and users would stay pinned to the cached old build indefinitely.
+  // With `registerType: 'autoUpdate'` the plugin automatically calls
+  // skipWaiting + clients.claim and reloads the page when a new service
+  // worker has been downloaded — no manual prompt needed.
   useEffect(() => {
-    let cancelled = false;
-    void registerServiceWorker({
-      onNeedRefresh: () => {
-        if (!cancelled) setNeedsRefresh(true);
-      },
-    }).then((updateSW) => {
-      if (!cancelled) updateSWRef.current = updateSW;
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const handleReload = useCallback(() => {
-    // updateSW(true) → skipWaiting on the new SW AND reload the page.
-    // If registration didn't yield an updater (dev mode, tests), fall back
-    // to a plain reload so the user can still escape the stale bundle.
-    if (updateSWRef.current) {
-      void updateSWRef.current(true);
-    } else {
-      window.location.reload();
-    }
-  }, []);
-
-  const handleDismissUpdate = useCallback(() => {
-    setNeedsRefresh(false);
+    void registerServiceWorker();
   }, []);
 
   // Apply theme early (even before auth) so login/setup pages respect saved theme
@@ -227,44 +196,21 @@ function App() {
     else document.body.classList.add('dark-theme');
   }, []);
 
-  // The update prompt lives at the App root so it shows across Loading, Setup,
-  // Login, AND AuthenticatedApp — a cached login screen is just as broken as
-  // a cached home screen and needs the same escape hatch.
-  const updatePrompt = needsRefresh ? (
-    <AppUpdatePrompt onReload={handleReload} onDismiss={handleDismissUpdate} />
-  ) : null;
-
   if (isLoading) {
-    return (
-      <>
-        <Loading />
-        {updatePrompt}
-      </>
-    );
+    return <Loading />;
   }
 
   if (needsSetup) {
-    return (
-      <>
-        <Setup />
-        {updatePrompt}
-      </>
-    );
+    return <Setup />;
   }
 
   if (!isAuthenticated) {
-    return (
-      <>
-        <Login />
-        {updatePrompt}
-      </>
-    );
+    return <Login />;
   }
 
   return (
     <SettingsProvider>
       <AuthenticatedApp />
-      {updatePrompt}
     </SettingsProvider>
   );
 }

@@ -7,7 +7,6 @@
 export type UpdateSW = (reloadPage?: boolean) => Promise<void>;
 
 export async function registerServiceWorker(options: {
-  onNeedRefresh?: () => void;
   onOfflineReady?: () => void;
 } = {}): Promise<UpdateSW | null> {
   // Skip in non-browser environments (e.g. SSR, Vitest happy-dom without SW support).
@@ -16,13 +15,11 @@ export async function registerServiceWorker(options: {
   try {
     // Resolved at build time by vite-plugin-pwa.
     const { registerSW } = await import(/* @vite-ignore */ 'virtual:pwa-register');
-    // `registerSW` returns the update trigger. We MUST surface it so the
-    // caller can wire a "Reload to update" affordance — without that, the
-    // ship config (`registerType: 'prompt'`) leaves the new SW stuck in
-    // "waiting" forever and users keep running the cached old bundle.
+    // With `registerType: 'autoUpdate'` the plugin automatically calls
+    // skipWaiting + clients.claim and reloads the page when a new SW is
+    // downloaded — no manual "Reload to update" prompt is needed.
     const updateSW = registerSW({
       immediate: true,
-      onNeedRefresh: options.onNeedRefresh,
       onOfflineReady: options.onOfflineReady,
     });
     return updateSW as UpdateSW;

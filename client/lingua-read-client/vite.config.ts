@@ -11,7 +11,7 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      registerType: 'prompt',
+      registerType: 'autoUpdate',
       // The service worker stays out of the dev server by default; flip this
       // (or `npm run dev -- --mode pwa-dev`) when debugging caching behavior.
       devOptions: { enabled: false },

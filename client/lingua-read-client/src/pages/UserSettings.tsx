@@ -97,7 +97,8 @@ const UserSettings = () => {
     customTranslationPrompt: '',
     customExplanationPrompt: '',
     customStoryPrompt: '',
-    customSummarizationPrompt: ''
+    customSummarizationPrompt: '',
+    minimalHome: false
   });
 
   const [languages, setLanguages] = useState<Language[]>([]);
@@ -197,7 +198,7 @@ const UserSettings = () => {
           customExplanationPrompt: data.customExplanationPrompt ?? '',
           customStoryPrompt: data.customStoryPrompt ?? '',
           customSummarizationPrompt: data.customSummarizationPrompt ?? '',
-          minimalHome: data.minimalHome ?? false
+          minimalHome: localStorage.getItem('minimalHome') === 'true'
         });
       } catch (e: unknown) { const err = e as Error;
         setError('Failed to load settings. Please try again later.');

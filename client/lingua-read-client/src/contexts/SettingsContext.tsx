@@ -165,86 +165,90 @@ const getInitialSettings = (): Settings => {
 
 // Server response is permissive; coerce each field to the typed shape using
 // the default as the fallback when the server omits a key or sends null/undefined.
-const mergeSettings = (data: Partial<Settings> | null | undefined): Settings => {
+const mergeSettings = (
+  data: Partial<Settings> | null | undefined,
+  currentSettings?: Settings
+): Settings => {
   const d = (data || {}) as Partial<Settings>;
+  const base = currentSettings || defaultSettings;
   return {
-    theme: d.theme || defaultSettings.theme,
-    textSize: d.textSize || defaultSettings.textSize,
-    textFont: d.textFont || defaultSettings.textFont,
-    readingUiMode: d.readingUiMode || defaultSettings.readingUiMode,
-    readerContentWidth: d.readerContentWidth || defaultSettings.readerContentWidth,
-    readingDensity: d.readingDensity || defaultSettings.readingDensity,
-    showWordInfoPanel: d.showWordInfoPanel ?? defaultSettings.showWordInfoPanel,
-    readerParagraphIndent: d.readerParagraphIndent ?? defaultSettings.readerParagraphIndent,
-    readerTextAlignment: d.readerTextAlignment || defaultSettings.readerTextAlignment,
-    leftPanelWidth: d.leftPanelWidth || defaultSettings.leftPanelWidth,
-    autoTranslateWords: d.autoTranslateWords ?? defaultSettings.autoTranslateWords,
-    autoTranslateOnOpen: d.autoTranslateOnOpen ?? defaultSettings.autoTranslateOnOpen,
-    pauseOnWordClick: d.pauseOnWordClick ?? defaultSettings.pauseOnWordClick,
-    highlightKnownWords: d.highlightKnownWords ?? defaultSettings.highlightKnownWords,
-    tooltipOnlyForSavedWords: d.tooltipOnlyForSavedWords ?? defaultSettings.tooltipOnlyForSavedWords,
-    sentenceMode: d.sentenceMode ?? defaultSettings.sentenceMode,
-    sentenceAudioRepeats: d.sentenceAudioRepeats ?? defaultSettings.sentenceAudioRepeats,
-    sentenceTtsEnabled: d.sentenceTtsEnabled ?? defaultSettings.sentenceTtsEnabled,
-    sentenceTtsRate: d.sentenceTtsRate ?? defaultSettings.sentenceTtsRate,
-    defaultLanguageId: d.defaultLanguageId || defaultSettings.defaultLanguageId,
+    theme: d.theme || base.theme,
+    textSize: d.textSize || base.textSize,
+    textFont: d.textFont || base.textFont,
+    readingUiMode: d.readingUiMode || base.readingUiMode,
+    readerContentWidth: d.readerContentWidth || base.readerContentWidth,
+    readingDensity: d.readingDensity || base.readingDensity,
+    showWordInfoPanel: d.showWordInfoPanel ?? base.showWordInfoPanel,
+    readerParagraphIndent: d.readerParagraphIndent ?? base.readerParagraphIndent,
+    readerTextAlignment: d.readerTextAlignment || base.readerTextAlignment,
+    leftPanelWidth: d.leftPanelWidth || base.leftPanelWidth,
+    autoTranslateWords: d.autoTranslateWords ?? base.autoTranslateWords,
+    autoTranslateOnOpen: d.autoTranslateOnOpen ?? base.autoTranslateOnOpen,
+    pauseOnWordClick: d.pauseOnWordClick ?? base.pauseOnWordClick,
+    highlightKnownWords: d.highlightKnownWords ?? base.highlightKnownWords,
+    tooltipOnlyForSavedWords: d.tooltipOnlyForSavedWords ?? base.tooltipOnlyForSavedWords,
+    sentenceMode: d.sentenceMode ?? base.sentenceMode,
+    sentenceAudioRepeats: d.sentenceAudioRepeats ?? base.sentenceAudioRepeats,
+    sentenceTtsEnabled: d.sentenceTtsEnabled ?? base.sentenceTtsEnabled,
+    sentenceTtsRate: d.sentenceTtsRate ?? base.sentenceTtsRate,
+    defaultLanguageId: d.defaultLanguageId || base.defaultLanguageId,
     translationTargetLanguageCode:
-      d.translationTargetLanguageCode || defaultSettings.translationTargetLanguageCode,
-    autoAdvanceToNextLesson: d.autoAdvanceToNextLesson ?? defaultSettings.autoAdvanceToNextLesson,
+      d.translationTargetLanguageCode || base.translationTargetLanguageCode,
+    autoAdvanceToNextLesson: d.autoAdvanceToNextLesson ?? base.autoAdvanceToNextLesson,
     autoAdvanceAudiobookTracks:
-      d.autoAdvanceAudiobookTracks ?? defaultSettings.autoAdvanceAudiobookTracks,
-    autoMoveFinishedLessons: d.autoMoveFinishedLessons ?? defaultSettings.autoMoveFinishedLessons,
-    showProgressStats: d.showProgressStats ?? defaultSettings.showProgressStats,
+      d.autoAdvanceAudiobookTracks ?? base.autoAdvanceAudiobookTracks,
+    autoMoveFinishedLessons: d.autoMoveFinishedLessons ?? base.autoMoveFinishedLessons,
+    showProgressStats: d.showProgressStats ?? base.showProgressStats,
     showDesktopLessonControls:
-      d.showDesktopLessonControls ?? defaultSettings.showDesktopLessonControls,
-    lineSpacing: d.lineSpacing || defaultSettings.lineSpacing,
-    paragraphSpacing: d.paragraphSpacing || defaultSettings.paragraphSpacing,
+      d.showDesktopLessonControls ?? base.showDesktopLessonControls,
+    lineSpacing: d.lineSpacing || base.lineSpacing,
+    paragraphSpacing: d.paragraphSpacing || base.paragraphSpacing,
     discordWeeklyReportEnabled:
-      d.discordWeeklyReportEnabled ?? defaultSettings.discordWeeklyReportEnabled,
-    discordWebhookUrl: d.discordWebhookUrl || defaultSettings.discordWebhookUrl,
+      d.discordWeeklyReportEnabled ?? base.discordWeeklyReportEnabled,
+    discordWebhookUrl: d.discordWebhookUrl || base.discordWebhookUrl,
     discordWeeklyReportDayOfWeek:
-      d.discordWeeklyReportDayOfWeek || defaultSettings.discordWeeklyReportDayOfWeek,
+      d.discordWeeklyReportDayOfWeek || base.discordWeeklyReportDayOfWeek,
     discordWeeklyReportHourLocal:
-      d.discordWeeklyReportHourLocal ?? defaultSettings.discordWeeklyReportHourLocal,
+      d.discordWeeklyReportHourLocal ?? base.discordWeeklyReportHourLocal,
     discordTimezoneOffsetMinutes:
-      d.discordTimezoneOffsetMinutes ?? defaultSettings.discordTimezoneOffsetMinutes,
-    hardcoverSyncEnabled: d.hardcoverSyncEnabled ?? defaultSettings.hardcoverSyncEnabled,
-    hasHardcoverApiToken: d.hasHardcoverApiToken ?? defaultSettings.hasHardcoverApiToken,
-    hardcoverLastSyncAt: d.hardcoverLastSyncAt ?? defaultSettings.hardcoverLastSyncAt,
-    useOpenRouter: d.useOpenRouter ?? defaultSettings.useOpenRouter,
-    openRouterApiKey: d.openRouterApiKey || defaultSettings.openRouterApiKey,
-    openRouterModel: d.openRouterModel || defaultSettings.openRouterModel,
+      d.discordTimezoneOffsetMinutes ?? base.discordTimezoneOffsetMinutes,
+    hardcoverSyncEnabled: d.hardcoverSyncEnabled ?? base.hardcoverSyncEnabled,
+    hasHardcoverApiToken: d.hasHardcoverApiToken ?? base.hasHardcoverApiToken,
+    hardcoverLastSyncAt: d.hardcoverLastSyncAt ?? base.hardcoverLastSyncAt,
+    useOpenRouter: d.useOpenRouter ?? base.useOpenRouter,
+    openRouterApiKey: d.openRouterApiKey || base.openRouterApiKey,
+    openRouterModel: d.openRouterModel || base.openRouterModel,
     openRouterReasoningEnabled:
-      d.openRouterReasoningEnabled ?? defaultSettings.openRouterReasoningEnabled,
+      d.openRouterReasoningEnabled ?? base.openRouterReasoningEnabled,
     openRouterReasoningEffort:
-      d.openRouterReasoningEffort || defaultSettings.openRouterReasoningEffort,
+      d.openRouterReasoningEffort || base.openRouterReasoningEffort,
     openRouterStoryReasoningEnabled:
-      d.openRouterStoryReasoningEnabled ?? defaultSettings.openRouterStoryReasoningEnabled,
+      d.openRouterStoryReasoningEnabled ?? base.openRouterStoryReasoningEnabled,
     openRouterStoryReasoningEffort:
-      d.openRouterStoryReasoningEffort || defaultSettings.openRouterStoryReasoningEffort,
+      d.openRouterStoryReasoningEffort || base.openRouterStoryReasoningEffort,
     openRouterTranslationModel:
-      d.openRouterTranslationModel ?? defaultSettings.openRouterTranslationModel,
+      d.openRouterTranslationModel ?? base.openRouterTranslationModel,
     openRouterExplanationModel:
-      d.openRouterExplanationModel ?? defaultSettings.openRouterExplanationModel,
-    openRouterStoryModel: d.openRouterStoryModel ?? defaultSettings.openRouterStoryModel,
+      d.openRouterExplanationModel ?? base.openRouterExplanationModel,
+    openRouterStoryModel: d.openRouterStoryModel ?? base.openRouterStoryModel,
     openRouterSummarizationModel:
-      d.openRouterSummarizationModel ?? defaultSettings.openRouterSummarizationModel,
+      d.openRouterSummarizationModel ?? base.openRouterSummarizationModel,
     customTranslationPrompt:
-      d.customTranslationPrompt ?? defaultSettings.customTranslationPrompt,
+      d.customTranslationPrompt ?? base.customTranslationPrompt,
     customExplanationPrompt:
-      d.customExplanationPrompt ?? defaultSettings.customExplanationPrompt,
-    customStoryPrompt: d.customStoryPrompt ?? defaultSettings.customStoryPrompt,
+      d.customExplanationPrompt ?? base.customExplanationPrompt,
+    customStoryPrompt: d.customStoryPrompt ?? base.customStoryPrompt,
     customSummarizationPrompt:
-      d.customSummarizationPrompt ?? defaultSettings.customSummarizationPrompt,
-    srsMaxNewCards: d.srsMaxNewCards ?? defaultSettings.srsMaxNewCards,
-    srsMaxReviews: d.srsMaxReviews ?? defaultSettings.srsMaxReviews,
-    srsReviewOrder: d.srsReviewOrder || defaultSettings.srsReviewOrder,
-    srsMaxIntervalDays: d.srsMaxIntervalDays ?? defaultSettings.srsMaxIntervalDays,
+      d.customSummarizationPrompt ?? base.customSummarizationPrompt,
+    srsMaxNewCards: d.srsMaxNewCards ?? base.srsMaxNewCards,
+    srsMaxReviews: d.srsMaxReviews ?? base.srsMaxReviews,
+    srsReviewOrder: d.srsReviewOrder || base.srsReviewOrder,
+    srsMaxIntervalDays: d.srsMaxIntervalDays ?? base.srsMaxIntervalDays,
     srsLapseMinimumIntervalDays:
-      d.srsLapseMinimumIntervalDays ?? defaultSettings.srsLapseMinimumIntervalDays,
-    srsLearningStepMinutes: d.srsLearningStepMinutes || defaultSettings.srsLearningStepMinutes,
-    srsCardType: d.srsCardType || defaultSettings.srsCardType,
-    minimalHome: d.minimalHome ?? defaultSettings.minimalHome
+      d.srsLapseMinimumIntervalDays ?? base.srsLapseMinimumIntervalDays,
+    srsLearningStepMinutes: d.srsLearningStepMinutes || base.srsLearningStepMinutes,
+    srsCardType: d.srsCardType || base.srsCardType,
+    minimalHome: d.minimalHome ?? base.minimalHome
   };
 };
 
@@ -261,9 +265,11 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({ children }) 
     setErrorSettings(null);
     try {
       const data = (await getUserSettings()) as Partial<Settings> | null | undefined;
-      const merged = mergeSettings(data);
-      setSettings(merged);
-      localStorage.setItem('cachedSettings', JSON.stringify(merged));
+      setSettings((prev) => {
+        const merged = mergeSettings(data, prev);
+        localStorage.setItem('cachedSettings', JSON.stringify(merged));
+        return merged;
+      });
     } catch (err) {
       console.error('[SettingsContext] Failed to load settings:', err);
       setErrorSettings('Failed to load settings. Using defaults.');

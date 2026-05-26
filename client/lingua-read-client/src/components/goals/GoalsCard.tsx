@@ -19,29 +19,65 @@ const sortForDisplay = (goals: Goal[]): Goal[] => {
 
 interface GoalsCardProps {
   defaultLanguageId?: number | string | null;
+  // When the parent already fetched goals (e.g., Home, which needs them for the
+  // hero chip) it can pass them in to avoid a second round trip. The parent is
+  // then responsible for refreshing them via `onChanged` after a save/delete.
+  // When the prop is omitted entirely (e.g., Dashboard), GoalsCard falls back
+  // to fetching internally — preserving the original standalone behaviour.
+  goals?: Goal[] | null;
+  loading?: boolean;
+  error?: string | null;
+  onChanged?: () => void;
 }
 
-function GoalsCard({ defaultLanguageId }: GoalsCardProps) {
-  const [goals, setGoals] = useState<Goal[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+function GoalsCard({
+  defaultLanguageId,
+  goals: externalGoals,
+  loading: externalLoading,
+  error: externalError,
+  onChanged,
+}: GoalsCardProps) {
+  // `goals === undefined` means the parent didn't opt in; we own the fetch.
+  // Anything else (including null or []) means the parent is in control.
+  const isExternal = externalGoals !== undefined;
+
+  const [internalGoals, setInternalGoals] = useState<Goal[]>([]);
+  const [internalLoading, setInternalLoading] = useState(!isExternal);
+  const [internalError, setInternalError] = useState('');
   const [showModal, setShowModal] = useState(false);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError('');
+  const loadInternal = useCallback(async () => {
+    setInternalLoading(true);
+    setInternalError('');
     try {
       const data = await getGoals('active');
-      setGoals(Array.isArray(data) ? data : []);
+      setInternalGoals(Array.isArray(data) ? data : []);
     } catch (e) {
       console.error('Failed to load goals', e);
-      setError('Couldn\'t load your goals.');
+      setInternalError("Couldn't load your goals.");
     } finally {
-      setLoading(false);
+      setInternalLoading(false);
     }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    if (!isExternal) loadInternal();
+  }, [isExternal, loadInternal]);
+
+  // After a goal is created/edited/deleted in the modal, refresh whatever
+  // source the data came from so the displayed list (and any parent-owned
+  // derived state like the home hero chip) reflect the change.
+  const refresh = useCallback(async () => {
+    if (isExternal) {
+      onChanged?.();
+    } else {
+      await loadInternal();
+    }
+  }, [isExternal, onChanged, loadInternal]);
+
+  const goals = isExternal ? externalGoals ?? [] : internalGoals;
+  const loading = isExternal ? !!externalLoading : internalLoading;
+  const error = isExternal ? externalError ?? '' : internalError;
 
   const visible = sortForDisplay(goals).slice(0, 3);
   const remaining = goals.length - visible.length;
@@ -87,7 +123,7 @@ function GoalsCard({ defaultLanguageId }: GoalsCardProps) {
       <GoalModal
         show={showModal}
         onHide={() => setShowModal(false)}
-        onSaved={load}
+        onSaved={refresh}
         defaultLanguageId={defaultLanguageId}
       />
     </>

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, Col, Container, Row } from 'react-bootstrap';
 import {
   getDashboard,
@@ -198,6 +198,18 @@ const Home: React.FC = () => {
     };
   }, []);
 
+  // GoalsCard hands this back when the user saves or deletes a goal in the
+  // modal. We refetch and update local state so the hero chip (which derives
+  // from `goals`) stays in sync with what the card just displayed.
+  const refreshGoals = useCallback(async () => {
+    try {
+      const data = (await getGoals('active')) as unknown as Goal[];
+      setGoals(Array.isArray(data) ? data : []);
+    } catch (e) {
+      console.error('Home: refreshGoals failed', e);
+    }
+  }, []);
+
   const languages = useMemo(() => dashboard?.languages ?? [], [dashboard]);
   const recent = recentTexts ?? [];
   const isEmpty =
@@ -217,7 +229,22 @@ const Home: React.FC = () => {
   const srsDueCount = (srsStats as { dueCount?: number } | null)?.dueCount ?? 0;
 
   const firstText = recent.length > 0 ? recent[0] : null;
-  const firstLanguageId = languages[0]?.languageId;
+  // Default the goal-creation modal to the user's most-active language so it
+  // matches what LanguagesStrip puts first (which is sorted by activity). The
+  // dashboard endpoint returns languages in insertion order, so picking
+  // `languages[0]` here would otherwise diverge from what the user sees.
+  const mostActiveLanguageId = useMemo(() => {
+    if (!languages.length) return undefined;
+    const sorted = [...languages].sort((a, b) => {
+      const aTime = a.lastActivityAt ? new Date(a.lastActivityAt).getTime() : 0;
+      const bTime = b.lastActivityAt ? new Date(b.lastActivityAt).getTime() : 0;
+      if (!Number.isNaN(aTime) && !Number.isNaN(bTime) && bTime !== aTime) {
+        return bTime - aTime;
+      }
+      return (b.knownWords || 0) - (a.knownWords || 0);
+    });
+    return sorted[0]?.languageId;
+  }, [languages]);
 
   // Drive the "Next up" stalled-book check: prefer the recent text's own
   // lastAccessedAt (always tied to the specific text), fall back to the
@@ -287,8 +314,14 @@ const Home: React.FC = () => {
       {/* 6. Resume at your level (self-hides when empty) */}
       <ResumeAtLevelSection />
 
-      {/* 7. Goals */}
-      <GoalsCard defaultLanguageId={firstLanguageId} />
+      {/* 7. Goals — pass our already-fetched goals so the card doesn't make a
+          second /goals request. onChanged lets the modal trigger a refresh. */}
+      <GoalsCard
+        defaultLanguageId={mostActiveLanguageId}
+        goals={goals}
+        loading={loading && !goals}
+        onChanged={refreshGoals}
+      />
 
       {/* 8. At a glance — lifetime / 7d reference numbers */}
       <QuickStatsRow

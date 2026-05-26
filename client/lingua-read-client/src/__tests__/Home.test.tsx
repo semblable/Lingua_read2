@@ -20,6 +20,14 @@ vi.mock('../components/dashboard/LanguageDashboardCard', () => ({
   ),
 }));
 
+// Stub GoalsCard so we can assert which `defaultLanguageId` Home passes in —
+// it should be the user's most-active language, not the dashboard's first.
+vi.mock('../components/goals/GoalsCard', () => ({
+  default: ({ defaultLanguageId }: { defaultLanguageId?: number | null }) => (
+    <div data-testid="goals-card" data-default-lang={defaultLanguageId ?? ''} />
+  ),
+}));
+
 import {
   getDashboard,
   getGoals,
@@ -240,6 +248,60 @@ describe('Home (integration)', () => {
       expect(screen.getByText(/Goal "goal" is overdue/)).toBeInTheDocument()
     );
     expect(screen.queryByText(/Goal " goal" is overdue/)).not.toBeInTheDocument();
+  });
+
+  test('defaults the goal-creation language to the most recently active one', async () => {
+    // Dashboard returns insertion order: Spanish first, French second. But the
+    // user's been hammering French recently. The Goals modal default must follow
+    // the user's perception (LanguagesStrip already sorts by activity), so French
+    // should win even though it isn't first in the response.
+    mockedGetDashboard.mockResolvedValue({
+      totalKnownWords: 100,
+      totalWordsReadWeek: 0,
+      totalListeningSecondsWeek: 0,
+      totalLanguages: 2,
+      languages: [
+        {
+          languageId: 1,
+          languageName: 'Spanish',
+          knownWords: 50,
+          totalWords: 100,
+          cefrLevel: 'A1',
+          nextCefrLevel: 'A2',
+          knownWordsToNextLevel: 50,
+          bandProgressPercent: 50,
+          isCefrApproximate: false,
+          todayWordsRead: 0,
+          todayListeningSeconds: 0,
+          currentReadingStreakDays: 0,
+          last14DaysWords: [],
+          continueReadingTextId: null,
+          lastActivityAt: '2026-01-01T00:00:00Z',
+        },
+        {
+          languageId: 2,
+          languageName: 'French',
+          knownWords: 50,
+          totalWords: 100,
+          cefrLevel: 'A1',
+          nextCefrLevel: 'A2',
+          knownWordsToNextLevel: 50,
+          bandProgressPercent: 50,
+          isCefrApproximate: false,
+          todayWordsRead: 200,
+          todayListeningSeconds: 0,
+          currentReadingStreakDays: 4,
+          last14DaysWords: [],
+          continueReadingTextId: null,
+          lastActivityAt: '2026-05-25T00:00:00Z',
+        },
+      ],
+    } as unknown as Awaited<ReturnType<typeof getDashboard>>);
+
+    renderHome();
+
+    await waitFor(() => expect(screen.getByTestId('goals-card')).toBeInTheDocument());
+    expect(screen.getByTestId('goals-card')).toHaveAttribute('data-default-lang', '2');
   });
 
   test('shows the fatal-error alert (not onboarding) when every fetch rejects', async () => {

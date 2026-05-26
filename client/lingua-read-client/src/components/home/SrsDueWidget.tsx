@@ -21,7 +21,7 @@ const SrsDueWidget: React.FC<SrsDueWidgetProps> = ({ count = 0, loading }) => {
       : undefined;
 
   return (
-    <Card className="shadow-sm mb-3" data-testid="srs-due-widget" style={borderStyle}>
+    <Card className="shadow-sm h-100" data-testid="srs-due-widget" style={borderStyle}>
       <Card.Body>
         <div className="text-muted small text-uppercase fw-bold mb-1">SRS reviews</div>
         {loading ? (

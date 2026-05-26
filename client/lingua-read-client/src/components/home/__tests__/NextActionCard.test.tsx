@@ -50,6 +50,45 @@ describe('pickAction (pure)', () => {
     expect(action.kind).toBe('continue');
   });
 
+  test('stalled subtitle rounds days to the nearest whole day (not floor)', () => {
+    // 3.6 days ago — used to floor to 3 days, which then collided with the
+    // threshold (> 3 days) and confused users ("3 days" displayed even though
+    // the action only fires past 3 days). Round to 4 to match user intuition.
+    const threePointSixDaysAgo = new Date(
+      2026,
+      4,
+      26,
+      12,
+      0,
+      0,
+    ).getTime() - 3.6 * 24 * 60 * 60 * 1000;
+    const action = pickAction(
+      0,
+      makeText({ textId: 7, title: 'Stalled book' }),
+      new Date(threePointSixDaysAgo).toISOString(),
+    );
+    expect(action.kind).toBe('stalled');
+    expect(action.subtitle).toMatch(/4 days/);
+  });
+
+  test('stalled does not fire when rounding pulls below the threshold', () => {
+    // 3.4 days ago rounds to 3, which is NOT > 3. Should fall through.
+    const threePointFourDaysAgo = new Date(
+      2026,
+      4,
+      26,
+      12,
+      0,
+      0,
+    ).getTime() - 3.4 * 24 * 60 * 60 * 1000;
+    const action = pickAction(
+      0,
+      makeText({ textId: 7 }),
+      new Date(threePointFourDaysAgo).toISOString(),
+    );
+    expect(action.kind).toBe('continue');
+  });
+
   test('srs-some fires when 1-10 cards are due and no stalled book', () => {
     const action = pickAction(5, makeText(), null);
     expect(action.kind).toBe('srs-some');

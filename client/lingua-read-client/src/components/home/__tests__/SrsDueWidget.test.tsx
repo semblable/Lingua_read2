@@ -50,4 +50,14 @@ describe('SrsDueWidget', () => {
     const { container } = renderInRouter(<SrsDueWidget loading />);
     expect(container.querySelector('.spinner-border')).toBeTruthy();
   });
+
+  test('uses h-100 so it matches the height of its row-mate (QuickAddCard)', () => {
+    // The widget shares a row with QuickAddCard (h-100). Without h-100 of its
+    // own, it would render at content height while QuickAddCard stretched to
+    // the row, leaving an unbalanced gap below the SRS card.
+    const { container } = renderInRouter(<SrsDueWidget count={3} />);
+    const card = container.querySelector('[data-testid=srs-due-widget]');
+    expect(card?.className).toMatch(/\bh-100\b/);
+    expect(card?.className).not.toMatch(/\bmb-3\b/);
+  });
 });

@@ -148,4 +148,32 @@ describe('GoalsCard', () => {
       expect(screen.getByRole('button', { name: /Create goal/i })).toBeInTheDocument();
     });
   });
+
+  test('skips its own fetch when the parent passes goals in', async () => {
+    // The Home page fetches goals once for the hero chip and then hands the
+    // same array to GoalsCard. Without this short-circuit the page would fire
+    // two identical /goals requests on every load.
+    const external = [{ ...baseGoal, goalId: 9, title: 'External goal' }];
+    render(
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+        <GoalsCard goals={external} />
+      </MemoryRouter>
+    );
+    await waitFor(() => {
+      expect(screen.getByText('External goal')).toBeInTheDocument();
+    });
+    expect(api.getGoals).not.toHaveBeenCalled();
+  });
+
+  test('uses the parent loading flag when goals are externally controlled', () => {
+    render(
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+        <GoalsCard goals={null} loading />
+      </MemoryRouter>
+    );
+    // Spinner visible, no internal fetch, no empty-state copy.
+    expect(document.querySelector('.spinner-border')).toBeTruthy();
+    expect(screen.queryByText(/No active goals yet/)).toBeNull();
+    expect(api.getGoals).not.toHaveBeenCalled();
+  });
 });

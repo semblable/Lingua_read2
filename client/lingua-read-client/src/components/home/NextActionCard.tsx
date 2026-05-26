@@ -59,18 +59,22 @@ export const pickAction = (
     };
   }
 
-  const stalledDays = daysSince(lastActivityAt);
+  // Round to the nearest whole day for both the threshold check and the
+  // subtitle. With floor, a 3.9-day gap displayed as "3 days" felt off
+  // ("but it's been almost 4 days") — and the threshold (> 3) firing on
+  // 3.1 days then showing "3 days" was actively confusing.
+  const stalledDaysRaw = daysSince(lastActivityAt);
+  const stalledDays = stalledDaysRaw != null ? Math.round(stalledDaysRaw) : null;
   if (
     recentText &&
     recentText.textId != null &&
     stalledDays != null &&
     stalledDays > STALLED_THRESHOLD_DAYS
   ) {
-    const days = Math.floor(stalledDays);
     return {
       kind: 'stalled',
       title: `Pick up "${formatRecentTitle(recentText)}"`,
-      subtitle: `You haven't opened it in ${days} day${days === 1 ? '' : 's'}.`,
+      subtitle: `You haven't opened it in ${stalledDays} day${stalledDays === 1 ? '' : 's'}.`,
       ctaLabel: 'Resume',
       ctaTo: `/texts/${recentText.textId}`,
       variant: 'primary',

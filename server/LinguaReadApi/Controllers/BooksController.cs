@@ -295,16 +295,28 @@ namespace LinguaReadApi.Controllers
                 if (!string.IsNullOrEmpty(createBookDto.Content))
                 {
                     var chapters = SplitBookContent(createBookDto.Content, null, null, createBookDto.SplitMethod, createBookDto.MaxSegmentSize, createBookDto.SubSplitOversized);
+                    
+                    if (createBookDto.ChapterGroupings != null && createBookDto.ChapterGroupings.Any())
+                    {
+                        chapters = ApplyChapterGroupings(chapters, createBookDto.ChapterGroupings, createBookDto.ChapterTitles);
+                    }
+                    else
+                    {
+                        for (int i = 0; i < chapters.Count; i++)
+                        {
+                            if (createBookDto.ChapterTitles != null && i < createBookDto.ChapterTitles.Count && !string.IsNullOrWhiteSpace(createBookDto.ChapterTitles[i]))
+                            {
+                                chapters[i].Title = createBookDto.ChapterTitles[i];
+                            }
+                        }
+                    }
+
                     for (int i = 0; i < chapters.Count; i++)
                     {
                         var chap = chapters[i];
-                        var title = (createBookDto.ChapterTitles != null && i < createBookDto.ChapterTitles.Count && !string.IsNullOrWhiteSpace(createBookDto.ChapterTitles[i]))
-                            ? createBookDto.ChapterTitles[i]
-                            : chap.Title;
-
                         var text = new Text
                         {
-                            Title = title,
+                            Title = chap.Title,
                             Content = chap.Content,
                             StructuredContent = null,
                             LanguageId = book.LanguageId,
@@ -521,6 +533,17 @@ namespace LinguaReadApi.Controllers
             // --- Text Splitting and Creation ---
             int partCount = 0;
             var createdTexts = new List<Text>();
+            
+            List<List<int>>? groupings = null;
+            if (!string.IsNullOrEmpty(uploadDto.ChapterGroupingsJson))
+            {
+                try
+                {
+                    groupings = JsonSerializer.Deserialize<List<List<int>>>(uploadDto.ChapterGroupingsJson);
+                }
+                catch (Exception) { /* ignore */ }
+            }
+
             try
             {
                 if (epubBook != null)
@@ -556,18 +579,29 @@ namespace LinguaReadApi.Controllers
                     book.CoverImagePath = coverImagePath;
 
                     var chapters = SplitBookContent(string.Empty, filteredBlocks, epubBook, uploadDto.SplitMethod, uploadDto.MaxSegmentSize, uploadDto.SubSplitOversized);
+                    
+                    if (groupings != null && groupings.Any())
+                    {
+                        chapters = ApplyChapterGroupings(chapters, groupings, uploadDto.ChapterTitles);
+                    }
+                    else
+                    {
+                        for (int i = 0; i < chapters.Count; i++)
+                        {
+                            if (uploadDto.ChapterTitles != null && i < uploadDto.ChapterTitles.Count && !string.IsNullOrWhiteSpace(uploadDto.ChapterTitles[i]))
+                            {
+                                chapters[i].Title = uploadDto.ChapterTitles[i];
+                            }
+                        }
+                    }
                     partCount = chapters.Count;
 
                     for (int i = 0; i < chapters.Count; i++)
                     {
                         var chap = chapters[i];
-                        var title = (uploadDto.ChapterTitles != null && i < uploadDto.ChapterTitles.Count && !string.IsNullOrWhiteSpace(uploadDto.ChapterTitles[i]))
-                            ? uploadDto.ChapterTitles[i]
-                            : chap.Title;
-
                         var text = new Text
                         {
-                            Title = title,
+                            Title = chap.Title,
                             Content = chap.Content,
                             StructuredContent = chap.Blocks != null ? JsonSerializer.Serialize(chap.Blocks, StructuredContentJsonOptions) : null,
                             LanguageId = book.LanguageId,
@@ -583,17 +617,29 @@ namespace LinguaReadApi.Controllers
                 else
                 {
                     var chapters = SplitBookContent(bookContent, null, null, uploadDto.SplitMethod, uploadDto.MaxSegmentSize, uploadDto.SubSplitOversized);
+                    
+                    if (groupings != null && groupings.Any())
+                    {
+                        chapters = ApplyChapterGroupings(chapters, groupings, uploadDto.ChapterTitles);
+                    }
+                    else
+                    {
+                        for (int i = 0; i < chapters.Count; i++)
+                        {
+                            if (uploadDto.ChapterTitles != null && i < uploadDto.ChapterTitles.Count && !string.IsNullOrWhiteSpace(uploadDto.ChapterTitles[i]))
+                            {
+                                chapters[i].Title = uploadDto.ChapterTitles[i];
+                            }
+                        }
+                    }
                     partCount = chapters.Count;
+                    
                     for (int i = 0; i < chapters.Count; i++)
                     {
                         var chap = chapters[i];
-                        var title = (uploadDto.ChapterTitles != null && i < uploadDto.ChapterTitles.Count && !string.IsNullOrWhiteSpace(uploadDto.ChapterTitles[i]))
-                            ? uploadDto.ChapterTitles[i]
-                            : chap.Title;
-
                         var text = new Text
                         {
-                            Title = title,
+                            Title = chap.Title,
                             Content = chap.Content,
                             StructuredContent = null,
                             LanguageId = book.LanguageId,
@@ -738,21 +784,58 @@ namespace LinguaReadApi.Controllers
             }
 
             var (content, epubBlocks) = ReconstructBookContent(book);
-            var preview = GetSplitPreview(content, epubBlocks, null, request.SplitMethod, request.MaxSegmentSize, request.SubSplitOversized);
-            
-            // If user supplied custom chapter titles, apply them in the preview
-            if (request.ChapterTitles != null && request.ChapterTitles.Any())
+            var chapters = SplitBookContent(content, epubBlocks, null, request.SplitMethod, request.MaxSegmentSize, request.SubSplitOversized);
+
+            if (request.ChapterGroupings != null && request.ChapterGroupings.Any())
             {
-                for (int i = 0; i < preview.Chapters.Count && i < request.ChapterTitles.Count; i++)
+                chapters = ApplyChapterGroupings(chapters, request.ChapterGroupings, request.ChapterTitles);
+            }
+            else
+            {
+                for (int i = 0; i < chapters.Count; i++)
                 {
-                    if (!string.IsNullOrWhiteSpace(request.ChapterTitles[i]))
+                    if (request.ChapterTitles != null && i < request.ChapterTitles.Count && !string.IsNullOrWhiteSpace(request.ChapterTitles[i]))
                     {
-                        preview.Chapters[i].Title = request.ChapterTitles[i];
+                        chapters[i].Title = request.ChapterTitles[i];
                     }
                 }
             }
 
-            return Ok(preview);
+            string detectionMethod = "fallback-" + request.SplitMethod.ToLower();
+            if (string.Equals(request.SplitMethod, "chapter", StringComparison.OrdinalIgnoreCase))
+            {
+                if (epubBlocks != null && epubBlocks.Any())
+                {
+                    detectionMethod = "epub-heading";
+                }
+                else if (!string.IsNullOrWhiteSpace(content))
+                {
+                    var headingChapters = _chapterDetectionService.DetectChaptersFromTextHeadings(content);
+                    if (headingChapters.Any(c => c.Title != "Start"))
+                    {
+                        detectionMethod = "text-heading";
+                    }
+                    else
+                    {
+                        detectionMethod = "section-break";
+                    }
+                }
+            }
+
+            var previewDto = new SplitPreviewDto
+            {
+                DetectionMethod = detectionMethod,
+                TotalCharacters = chapters.Sum(c => c.CharacterCount),
+                Chapters = chapters.Select((c, idx) => new ChapterPreviewDto
+                {
+                    Index = idx + 1,
+                    Title = c.Title,
+                    CharacterCount = c.CharacterCount,
+                    Snippet = c.Content.Length > 200 ? c.Content.Substring(0, 200) + "..." : c.Content
+                }).ToList()
+            };
+
+            return Ok(previewDto);
         }
 
         // POST: api/books/5/re-split
@@ -773,20 +856,26 @@ namespace LinguaReadApi.Controllers
             // 1. Reconstruct content
             var (content, epubBlocks) = ReconstructBookContent(book);
 
-            // 2. Perform the split (simulated first to get the chapters list)
-            var preview = GetSplitPreview(content, epubBlocks, null, request.SplitMethod, request.MaxSegmentSize, request.SubSplitOversized);
-            
-            // Use custom titles if provided
-            var titles = new List<string>();
-            for (int i = 0; i < preview.Chapters.Count; i++)
+            // 2. Perform the split using reusable helper
+            var chapters = SplitBookContent(content, epubBlocks, null, request.SplitMethod, request.MaxSegmentSize, request.SubSplitOversized);
+
+            // 3. Apply custom titles / merges via groupings
+            if (request.ChapterGroupings != null && request.ChapterGroupings.Any())
             {
-                var customTitle = (request.ChapterTitles != null && i < request.ChapterTitles.Count && !string.IsNullOrWhiteSpace(request.ChapterTitles[i]))
-                    ? request.ChapterTitles[i]
-                    : preview.Chapters[i].Title;
-                titles.Add(customTitle);
+                chapters = ApplyChapterGroupings(chapters, request.ChapterGroupings, request.ChapterTitles);
+            }
+            else
+            {
+                for (int i = 0; i < chapters.Count; i++)
+                {
+                    if (request.ChapterTitles != null && i < request.ChapterTitles.Count && !string.IsNullOrWhiteSpace(request.ChapterTitles[i]))
+                    {
+                        chapters[i].Title = request.ChapterTitles[i];
+                    }
+                }
             }
 
-            // 3. Clear existing texts (cascades automatically delete TextWords, UserSentenceProgress, etc.)
+            // 4. Clear existing texts (cascades automatically delete TextWords, UserSentenceProgress, etc.)
             var oldTexts = book.Texts.ToList();
             _context.Texts.RemoveRange(oldTexts);
             
@@ -795,143 +884,24 @@ namespace LinguaReadApi.Controllers
             book.LastReadPartId = null;
             await _context.SaveChangesAsync();
 
-            // 4. Create new texts based on preview results
+            // 5. Create new texts based on splitting / grouping results
             var createdTexts = new List<Text>();
-            
-            if (epubBlocks != null && epubBlocks.Any())
+            for (int i = 0; i < chapters.Count; i++)
             {
-                // Reconstruct blocks per-chapter using chapter splitting
-                var chapters = new List<DetectedChapter>();
-                if (string.Equals(request.SplitMethod, "chapter", StringComparison.OrdinalIgnoreCase))
+                var chap = chapters[i];
+                var text = new Text
                 {
-                    chapters = _chapterDetectionService.DetectChaptersFromEpubHeadings(epubBlocks);
-                }
-
-                if (!chapters.Any())
-                {
-                    var parts = SplitStructuredContent(epubBlocks, request.SplitMethod, request.MaxSegmentSize);
-                    for (int i = 0; i < parts.Count; i++)
-                    {
-                        chapters.Add(new DetectedChapter
-                        {
-                            Title = titles.ElementAtOrDefault(i) ?? $"Part {i + 1}",
-                            Content = parts[i].PlainText,
-                            Blocks = parts[i].Blocks
-                        });
-                    }
-                }
-                else if (request.SubSplitOversized)
-                {
-                    var subSplitChapters = new List<DetectedChapter>();
-                    foreach (var chap in chapters)
-                    {
-                        if (chap.CharacterCount > request.MaxSegmentSize && chap.Blocks != null)
-                        {
-                            var parts = SplitStructuredContent(chap.Blocks, "paragraph", request.MaxSegmentSize);
-                            for (int i = 0; i < parts.Count; i++)
-                            {
-                                subSplitChapters.Add(new DetectedChapter
-                                {
-                                    Title = $"{chap.Title} - Part {i + 1}",
-                                    Content = parts[i].PlainText,
-                                    Blocks = parts[i].Blocks
-                                });
-                            }
-                        }
-                        else
-                        {
-                            subSplitChapters.Add(chap);
-                        }
-                    }
-                    chapters = subSplitChapters;
-                }
-
-                // Create text parts
-                for (int i = 0; i < chapters.Count; i++)
-                {
-                    var chap = chapters[i];
-                    var text = new Text
-                    {
-                        Title = titles.ElementAtOrDefault(i) ?? chap.Title,
-                        Content = chap.Content,
-                        StructuredContent = chap.Blocks != null ? JsonSerializer.Serialize(chap.Blocks, StructuredContentJsonOptions) : null,
-                        LanguageId = book.LanguageId,
-                        UserId = userId,
-                        BookId = book.BookId,
-                        PartNumber = i + 1,
-                        CreatedAt = DateTime.UtcNow
-                    };
-                    _context.Texts.Add(text);
-                    createdTexts.Add(text);
-                }
-            }
-            else
-            {
-                var chapters = new List<DetectedChapter>();
-                if (string.Equals(request.SplitMethod, "chapter", StringComparison.OrdinalIgnoreCase))
-                {
-                    chapters = _chapterDetectionService.DetectChaptersFromTextHeadings(content);
-                    if (!chapters.Any(c => c.Title != "Start"))
-                    {
-                        chapters = _chapterDetectionService.DetectChaptersFromSectionBreaks(content);
-                    }
-                }
-
-                if (!chapters.Any())
-                {
-                    var textParts = SplitContent(content, request.SplitMethod, request.MaxSegmentSize);
-                    for (int i = 0; i < textParts.Count; i++)
-                    {
-                        chapters.Add(new DetectedChapter
-                        {
-                            Title = titles.ElementAtOrDefault(i) ?? $"Part {i + 1}",
-                            Content = textParts[i]
-                        });
-                    }
-                }
-                else if (request.SubSplitOversized)
-                {
-                    var subSplitChapters = new List<DetectedChapter>();
-                    foreach (var chap in chapters)
-                    {
-                        if (chap.CharacterCount > request.MaxSegmentSize)
-                        {
-                            var textParts = SplitContent(chap.Content, "paragraph", request.MaxSegmentSize);
-                            for (int i = 0; i < textParts.Count; i++)
-                            {
-                                subSplitChapters.Add(new DetectedChapter
-                                {
-                                    Title = $"{chap.Title} - Part {i + 1}",
-                                    Content = textParts[i]
-                                });
-                            }
-                        }
-                        else
-                        {
-                            subSplitChapters.Add(chap);
-                        }
-                    }
-                    chapters = subSplitChapters;
-                }
-
-                // Create text parts
-                for (int i = 0; i < chapters.Count; i++)
-                {
-                    var chap = chapters[i];
-                    var text = new Text
-                    {
-                        Title = titles.ElementAtOrDefault(i) ?? chap.Title,
-                        Content = chap.Content,
-                        StructuredContent = null,
-                        LanguageId = book.LanguageId,
-                        UserId = userId,
-                        BookId = book.BookId,
-                        PartNumber = i + 1,
-                        CreatedAt = DateTime.UtcNow
-                    };
-                    _context.Texts.Add(text);
-                    createdTexts.Add(text);
-                }
+                    Title = chap.Title,
+                    Content = chap.Content,
+                    StructuredContent = chap.Blocks != null ? JsonSerializer.Serialize(chap.Blocks, StructuredContentJsonOptions) : null,
+                    LanguageId = book.LanguageId,
+                    UserId = userId,
+                    BookId = book.BookId,
+                    PartNumber = i + 1,
+                    CreatedAt = DateTime.UtcNow
+                };
+                _context.Texts.Add(text);
+                createdTexts.Add(text);
             }
 
             await _context.SaveChangesAsync();
@@ -2566,6 +2536,55 @@ namespace LinguaReadApi.Controllers
             public Dictionary<string, string> SavedImages { get; } = new(StringComparer.OrdinalIgnoreCase);
         }
 
+        private List<DetectedChapter> ApplyChapterGroupings(
+            List<DetectedChapter> chapters,
+            List<List<int>>? groupings,
+            List<string>? titles)
+        {
+            if (groupings == null || !groupings.Any()) return chapters;
+
+            var mergedChapters = new List<DetectedChapter>();
+            for (int g = 0; g < groupings.Count; g++)
+            {
+                var groupIndices = groupings[g];
+                var groupChapters = new List<DetectedChapter>();
+                var filePaths = new List<string>();
+
+                foreach (var idx in groupIndices)
+                {
+                    // Convert 1-based index from UI to 0-based list index
+                    int listIdx = idx - 1;
+                    if (listIdx >= 0 && listIdx < chapters.Count)
+                    {
+                        var chap = chapters[listIdx];
+                        groupChapters.Add(chap);
+                        if (chap.FilePaths != null)
+                        {
+                            filePaths.AddRange(chap.FilePaths);
+                        }
+                    }
+                }
+
+                if (groupChapters.Any())
+                {
+                    var merged = new DetectedChapter
+                    {
+                        Title = (titles != null && g < titles.Count && !string.IsNullOrWhiteSpace(titles[g]))
+                            ? titles[g]
+                            : groupChapters.First().Title,
+                        Content = string.Join("\n\n", groupChapters.Select(c => c.Content).Where(t => !string.IsNullOrWhiteSpace(t))),
+                        Blocks = groupChapters.Any(c => c.Blocks != null)
+                            ? groupChapters.SelectMany(c => c.Blocks ?? new List<ReaderContentBlock>()).ToList()
+                            : null,
+                        FilePaths = filePaths.Any() ? filePaths.Distinct().ToList() : null
+                    };
+                    mergedChapters.Add(merged);
+                }
+            }
+
+            return mergedChapters;
+        }
+
         private List<DetectedChapter> SplitBookContent(
             string content,
             List<ReaderContentBlock>? epubBlocks,
@@ -2757,48 +2776,18 @@ namespace LinguaReadApi.Controllers
         {
             if (allBlocks == null || !allBlocks.Any() || epubBook?.Navigation == null) return;
 
-            var navItems = FlattenNavItems(epubBook.Navigation);
-            var fileToChapterIndex = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-
-            for (int i = 0; i < chapters.Count; i++)
-            {
-                var nav = navItems.FirstOrDefault(n => string.Equals(n.Title, chapters[i].Title, StringComparison.OrdinalIgnoreCase));
-                if (nav?.HtmlContentFile?.FilePath != null)
-                {
-                    fileToChapterIndex[nav.HtmlContentFile.FilePath] = i;
-                }
-            }
-
-            if (chapters.Count > 0 && !fileToChapterIndex.Values.Contains(0))
-            {
-                var firstFile = epubBook.ReadingOrder.FirstOrDefault()?.FilePath;
-                if (firstFile != null)
-                {
-                    fileToChapterIndex[firstFile] = 0;
-                }
-            }
-
-            int currentChapterIdx = 0;
-            foreach (var block in allBlocks)
-            {
-                if (block.Meta != null && block.Meta.TryGetValue("sourceFile", out var sourceFile))
-                {
-                    if (fileToChapterIndex.TryGetValue(sourceFile, out var newIdx))
-                    {
-                        currentChapterIdx = newIdx;
-                    }
-                }
-
-                if (currentChapterIdx >= 0 && currentChapterIdx < chapters.Count)
-                {
-                    chapters[currentChapterIdx].Blocks ??= new List<ReaderContentBlock>();
-                    chapters[currentChapterIdx].Blocks!.Add(block);
-                }
-            }
-
             foreach (var chap in chapters)
             {
-                if (chap.Blocks != null && chap.Blocks.Any())
+                if (chap.FilePaths == null || !chap.FilePaths.Any()) continue;
+                var filePathsSet = new HashSet<string>(chap.FilePaths, StringComparer.OrdinalIgnoreCase);
+
+                chap.Blocks = allBlocks
+                    .Where(b => b.Meta != null && 
+                                b.Meta.TryGetValue("sourceFile", out var sourceFile) && 
+                                filePathsSet.Contains(sourceFile))
+                    .ToList();
+
+                if (chap.Blocks.Any())
                 {
                     chap.Content = BuildPlainTextFromBlocks(chap.Blocks);
                 }
@@ -2984,6 +2973,7 @@ namespace LinguaReadApi.Controllers
         public bool SubSplitOversized { get; set; } = false;
         public List<string> Tags { get; set; } = new List<string>(); // Added Tags
         public List<string>? ChapterTitles { get; set; }
+        public List<List<int>>? ChapterGroupings { get; set; }
     }
 
     public class UpdateLastReadDto
@@ -3053,6 +3043,7 @@ namespace LinguaReadApi.Controllers
         public int MaxSegmentSize { get; set; } = 3000; // Default
         public bool SubSplitOversized { get; set; } = false;
         public List<string>? ChapterTitles { get; set; }
+        public string? ChapterGroupingsJson { get; set; }
     }
 
     // DTO for Audiobook Upload
@@ -3090,5 +3081,6 @@ namespace LinguaReadApi.Controllers
         public bool SubSplitOversized { get; set; } = false;
         
         public List<string>? ChapterTitles { get; set; }
+        public List<List<int>>? ChapterGroupings { get; set; }
     }
 }

@@ -110,9 +110,9 @@ const BookCreate = () => {
     }
   };
 
-  const handleConfirmSplit = async (chapterTitles: string[]) => {
+  const handleConfirmSplit = async (chapterTitles: string[], groupings: number[][]) => {
     setShowPreviewModal(false);
-    await executeSubmit(chapterTitles);
+    await executeSubmit(chapterTitles, groupings);
   };
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -120,7 +120,7 @@ const BookCreate = () => {
     await executeSubmit();
   };
 
-  const executeSubmit = async (chapterTitles: string[] = []) => {
+  const executeSubmit = async (chapterTitles: string[] = [], chapterGroupings: number[][] = []) => {
     if (!title.trim() && activeTab === 'manual') {
       setError('Please enter a title');
       return;
@@ -158,7 +158,8 @@ const BookCreate = () => {
           parseInt(String(maxSegmentSize), 10),
           tagsArray,
           subSplitOversized,
-          chapterTitles
+          chapterTitles,
+          chapterGroupings
         );
       } else {
         const formData = new FormData();
@@ -170,6 +171,9 @@ const BookCreate = () => {
         tagsArray.forEach(tag => formData.append('Tags', tag));
         if (title) formData.append('TitleOverride', title);
         chapterTitles.forEach(t => formData.append('ChapterTitles', t));
+        if (chapterGroupings && chapterGroupings.length > 0) {
+          formData.append('ChapterGroupingsJson', JSON.stringify(chapterGroupings));
+        }
 
         newBook = await uploadBook(formData, (progress) => {
           setUploadProgress(progress);

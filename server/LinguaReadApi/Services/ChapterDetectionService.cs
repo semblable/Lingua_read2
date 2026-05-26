@@ -12,6 +12,7 @@ namespace LinguaReadApi.Services
         public string Title { get; set; } = string.Empty;
         public string Content { get; set; } = string.Empty;
         public List<ReaderContentBlock>? Blocks { get; set; }
+        public List<string>? FilePaths { get; set; }
         public int CharacterCount => Content.Length;
     }
 
@@ -146,7 +147,8 @@ namespace LinguaReadApi.Services
                         {
                             Title = currentChapterTitle,
                             Content = string.Empty, // Will be filled when parsing/extracting blocks
-                            Blocks = new List<ReaderContentBlock>() // To hold blocks later
+                            Blocks = new List<ReaderContentBlock>(), // To hold blocks later
+                            FilePaths = currentChapterFiles.Select(f => f.FilePath).ToList()
                         });
                         currentChapterFiles.Clear();
                     }
@@ -163,7 +165,8 @@ namespace LinguaReadApi.Services
                 {
                     Title = currentChapterTitle,
                     Content = string.Empty,
-                    Blocks = new List<ReaderContentBlock>()
+                    Blocks = new List<ReaderContentBlock>(),
+                    FilePaths = currentChapterFiles.Select(f => f.FilePath).ToList()
                 });
             }
 

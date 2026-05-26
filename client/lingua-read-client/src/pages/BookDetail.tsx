@@ -419,7 +419,7 @@ const BookDetail = () => {
     }
   };
 
-  const handleExecuteReSplit = async (chapterTitles: string[] = []) => {
+  const handleExecuteReSplit = async (chapterTitles: string[] = [], chapterGroupings: number[][] = []) => {
     if (!bookId) return;
     setReSplitLoading(true);
     setReSplitError('');
@@ -428,7 +428,8 @@ const BookDetail = () => {
         splitMethod: reSplitMethod,
         maxSegmentSize: reSplitMaxSegmentSize,
         subSplitOversized: reSplitSubSplitOversized,
-        chapterTitles
+        chapterTitles,
+        chapterGroupings
       });
       setShowReSplitPreviewModal(false);
       setShowReSplitModal(false);

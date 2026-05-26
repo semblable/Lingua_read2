@@ -7,7 +7,7 @@ interface SplitPreviewProps {
   show: boolean;
   onHide: () => void;
   previewData: SplitPreviewType | null;
-  onConfirm: (editedTitles: string[]) => void | Promise<void>;
+  onConfirm: (editedTitles: string[], groupings: number[][]) => void | Promise<void>;
   submitting: boolean;
 }
 
@@ -17,7 +17,11 @@ const SplitPreview = ({ show, onHide, previewData, onConfirm, submitting }: Spli
 
   useEffect(() => {
     if (previewData) {
-      setChapters(JSON.parse(JSON.stringify(previewData.chapters)));
+      const initialChapters = previewData.chapters.map((c: any) => ({
+        ...c,
+        originalIndices: c.originalIndices || [c.index]
+      }));
+      setChapters(initialChapters);
     }
   }, [previewData]);
 
@@ -36,12 +40,13 @@ const SplitPreview = ({ show, onHide, previewData, onConfirm, submitting }: Spli
     const next = chapters[arrayIndex + 1];
 
     // Merge next into current
-    const mergedChapter: ChapterPreview = {
+    const mergedChapter: ChapterPreview & { originalIndices?: number[] } = {
       ...current,
       title: `${current.title} + ${next.title}`,
       snippet: `${current.snippet}\n\n[Merged Content]\n\n${next.snippet}`,
       characterCount: current.characterCount + next.characterCount,
       estimatedWordCount: current.estimatedWordCount + next.estimatedWordCount,
+      originalIndices: [...((current as any).originalIndices || [current.index]), ...((next as any).originalIndices || [next.index])]
     };
 
     // Remove the next one and replace the current one
@@ -80,7 +85,10 @@ const SplitPreview = ({ show, onHide, previewData, onConfirm, submitting }: Spli
   };
 
   const handleConfirm = () => {
-    onConfirm(chapters.map(c => c.title));
+    onConfirm(
+      chapters.map(c => c.title),
+      chapters.map(c => (c as any).originalIndices || [c.index])
+    );
   };
 
   return (

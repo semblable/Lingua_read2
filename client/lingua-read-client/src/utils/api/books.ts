@@ -23,7 +23,8 @@ export const createBook = (
   maxSegmentSize: number = 3000,
   tags: string[] = [],
   subSplitOversized: boolean = false,
-  chapterTitles: string[] = []
+  chapterTitles: string[] = [],
+  chapterGroupings: number[][] = []
 ): Promise<Book> => {
   return fetchApi<Book>('/books', {
     method: 'POST',
@@ -36,7 +37,8 @@ export const createBook = (
       maxSegmentSize,
       tags,
       subSplitOversized,
-      chapterTitles
+      chapterTitles,
+      chapterGroupings
     })
   });
 };
@@ -190,6 +192,7 @@ export interface ReSplitRequest {
   maxSegmentSize: number;
   subSplitOversized: boolean;
   chapterTitles?: string[];
+  chapterGroupings?: number[][];
 }
 
 export const previewBookSplit = async (

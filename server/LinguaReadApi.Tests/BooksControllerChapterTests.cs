@@ -166,6 +166,62 @@ namespace LinguaReadApi.Tests
             Assert.Equal("Paragraph three.", sortedTexts[2].Content);
         }
 
+        [Fact]
+        public async Task ReSplitBook_WithChapterGroupings_MergesChaptersCorrectly()
+        {
+            await using var context = CreateContext();
+            var userId = Guid.NewGuid();
+            SeedUserAndLanguage(context, userId);
+
+            // Seed a book with existing parts
+            var book = new Book 
+            { 
+                BookId = 30, 
+                UserId = userId, 
+                LanguageId = 1, 
+                Title = "My Novel"
+            };
+            context.Books.Add(book);
+            context.Texts.AddRange(
+                new Text { TextId = 300, BookId = 30, UserId = userId, LanguageId = 1, Title = "Old 1", Content = "Paragraph one.\n\nParagraph two.", PartNumber = 1 },
+                new Text { TextId = 301, BookId = 30, UserId = userId, LanguageId = 1, Title = "Old 2", Content = "Paragraph three.", PartNumber = 2 }
+            );
+            await context.SaveChangesAsync();
+
+            var controller = CreateController(context, userId);
+            
+            // We split by paragraph with MaxSegmentSize = 20, which would normally create 3 parts.
+            // We pass ChapterGroupings: [[1, 2], [3]], which merges Part 1 and Part 2 together.
+            var request = new ReSplitRequestDto
+            {
+                SplitMethod = "paragraph",
+                MaxSegmentSize = 20,
+                SubSplitOversized = false,
+                ChapterGroupings = new List<List<int>>
+                {
+                    new List<int> { 1, 2 },
+                    new List<int> { 3 }
+                },
+                ChapterTitles = new List<string> { "Merged Part 1 & 2", "Part 3" }
+            };
+
+            var result = await controller.ReSplitBook(30, request);
+            Assert.IsType<NoContentResult>(result);
+
+            // Verify database state
+            context.ChangeTracker.Clear();
+            var reloadedBook = await context.Books.Include(b => b.Texts).FirstAsync(b => b.BookId == 30);
+            
+            // We should have 2 texts now (since Part 1 and 2 were merged)
+            Assert.Equal(2, reloadedBook.Texts.Count);
+            
+            var sortedTexts = reloadedBook.Texts.OrderBy(t => t.PartNumber).ToList();
+            Assert.Equal("Merged Part 1 & 2", sortedTexts[0].Title);
+            Assert.Equal("Paragraph one.\n\nParagraph two.", sortedTexts[0].Content);
+            Assert.Equal("Part 3", sortedTexts[1].Title);
+            Assert.Equal("Paragraph three.", sortedTexts[1].Content);
+        }
+
         // --- Helpers ---
 
         private static BooksController CreateController(AppDbContext context, Guid userId)

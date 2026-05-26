@@ -714,6 +714,10 @@ namespace LinguaReadApi.Controllers
             List<ReaderContentBlock>? epubBlocks = null;
             EpubBook? epubBook = null;
 
+            // Per-request scratch dir so concurrent previews don't overwrite each other's
+            // extracted images and leftover files don't accumulate under wwwroot.
+            string? absoluteTempDir = null;
+
             try
             {
                 using var stream = uploadDto.File.OpenReadStream();
@@ -721,11 +725,11 @@ namespace LinguaReadApi.Controllers
                 {
                     epubBook = await EpubReader.ReadBookAsync(stream);
                     var artifactKeys = BuildEpubArtifactKeys(uploadDto.TitleOverride ?? epubBook.Title, Path.GetFileNameWithoutExtension(uploadDto.File.FileName));
-                    
-                    var absoluteTempDir = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "temp_assets");
+
+                    absoluteTempDir = Path.Combine(Path.GetTempPath(), "lingua-preview", Guid.NewGuid().ToString("N"));
                     Directory.CreateDirectory(absoluteTempDir);
-                    var extractionContext = new EpubExtractionContext(epubBook, absoluteTempDir, "temp_assets");
-                    
+                    var extractionContext = new EpubExtractionContext(epubBook, absoluteTempDir, "preview_assets");
+
                     var extractedBlocks = new List<ReaderContentBlock>();
                     foreach (EpubLocalTextContentFile textFile in epubBook.ReadingOrder)
                     {
@@ -744,15 +748,23 @@ namespace LinguaReadApi.Controllers
                     using var reader = new StreamReader(stream, Encoding.UTF8, true);
                     content = await reader.ReadToEndAsync();
                 }
+
+                var preview = GetSplitPreview(content, epubBlocks, epubBook, uploadDto.SplitMethod, uploadDto.MaxSegmentSize, uploadDto.SubSplitOversized);
+                return Ok(preview);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error processing preview file '{FileName}'", uploadDto.File.FileName);
                 return StatusCode(StatusCodes.Status500InternalServerError, "Error processing file.");
             }
-
-            var preview = GetSplitPreview(content, epubBlocks, epubBook, uploadDto.SplitMethod, uploadDto.MaxSegmentSize, uploadDto.SubSplitOversized);
-            return Ok(preview);
+            finally
+            {
+                if (absoluteTempDir != null && Directory.Exists(absoluteTempDir))
+                {
+                    try { Directory.Delete(absoluteTempDir, recursive: true); }
+                    catch (Exception ex) { _logger.LogWarning(ex, "Failed to clean up preview temp dir '{Dir}'", absoluteTempDir); }
+                }
+            }
         }
 
         // POST: api/books/preview-split-manual
@@ -806,7 +818,11 @@ namespace LinguaReadApi.Controllers
             {
                 if (epubBlocks != null && epubBlocks.Any())
                 {
-                    detectionMethod = "epub-heading";
+                    var headingChapters = _chapterDetectionService.DetectChaptersFromEpubHeadings(epubBlocks);
+                    if (headingChapters.Any(c => c.Title != "Start"))
+                    {
+                        detectionMethod = "epub-heading";
+                    }
                 }
                 else if (!string.IsNullOrWhiteSpace(content))
                 {
@@ -906,9 +922,7 @@ namespace LinguaReadApi.Controllers
 
             await _context.SaveChangesAsync();
 
-            // 5. Update book metadata
-            book.LastReadTextId = null;
-            book.LastReadPartId = null;
+            // 6. Reset stats (LastRead* already cleared in step 4)
             book.TotalWords = 0;
             book.KnownWords = 0;
             book.LearningWords = 0;
@@ -916,7 +930,7 @@ namespace LinguaReadApi.Controllers
             book.StatsUpdatedAt = null;
             await _context.SaveChangesAsync();
 
-            // 6. Queue word-linking to recalculate word connections and statistics in background
+            // 7. Queue word-linking to recalculate word connections and statistics in background
             await QueueWordLinking(createdTexts, userId);
 
             return NoContent();
@@ -2723,8 +2737,10 @@ namespace LinguaReadApi.Controllers
                     }
                     else if (epubBlocks != null && epubBlocks.Any())
                     {
+                        // DetectChaptersFromEpubHeadings always returns at least one chapter (titled "Start")
+                        // when blocks exist, so we have to check for a real heading match.
                         var headingChapters = _chapterDetectionService.DetectChaptersFromEpubHeadings(epubBlocks);
-                        if (headingChapters.Any())
+                        if (headingChapters.Any(c => c.Title != "Start"))
                         {
                             detectionMethod = "epub-heading";
                         }
@@ -2733,7 +2749,7 @@ namespace LinguaReadApi.Controllers
                 else if (epubBlocks != null && epubBlocks.Any())
                 {
                     var headingChapters = _chapterDetectionService.DetectChaptersFromEpubHeadings(epubBlocks);
-                    if (headingChapters.Any())
+                    if (headingChapters.Any(c => c.Title != "Start"))
                     {
                         detectionMethod = "epub-heading";
                     }

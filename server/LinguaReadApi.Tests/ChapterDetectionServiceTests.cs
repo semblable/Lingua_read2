@@ -132,15 +132,15 @@ namespace LinguaReadApi.Tests
             Assert.Equal(3, chapters.Count);
 
             Assert.Equal("Start", chapters[0].Title);
-            Assert.Single(chapters[0].Blocks);
-            Assert.Equal("Introduction text", chapters[0].Blocks[0].Text);
+            Assert.Single(chapters[0].Blocks!);
+            Assert.Equal("Introduction text", chapters[0].Blocks![0].Text);
 
             Assert.Equal("Chapter I: Discovery", chapters[1].Title);
-            Assert.Equal(2, chapters[1].Blocks.Count);
+            Assert.Equal(2, chapters[1].Blocks!.Count);
             Assert.Contains("Found some code.", chapters[1].Content);
 
             Assert.Equal("Chapter II: Execution", chapters[2].Title);
-            Assert.Single(chapters[2].Blocks);
+            Assert.Single(chapters[2].Blocks!);
             Assert.Contains("Running in production.", chapters[2].Content);
         }
     }

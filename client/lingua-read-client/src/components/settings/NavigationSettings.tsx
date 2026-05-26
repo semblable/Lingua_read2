@@ -11,6 +11,19 @@ interface NavigationSettingsProps {
 const NavigationSettings = ({ settings, handleChange }: NavigationSettingsProps) => {
   return (
     <div className="settings-control-group">
+      <Form.Group className="mb-3" controlId="minimalHome">
+        <Form.Check
+          type="switch"
+          name="minimalHome"
+          label="Use minimal home page (fast-loading, recent texts only)"
+          checked={settings.minimalHome || false}
+          onChange={handleChange}
+        />
+        <Form.Text className="text-muted" style={{ fontSize: '0.8rem' }}>
+          Replaces the full home page with a lightweight version that only shows your recent texts.
+        </Form.Text>
+      </Form.Group>
+
       <Form.Group className="mb-3" controlId="autoAdvanceToNextLesson">
         <Form.Check
           type="switch"

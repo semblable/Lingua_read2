@@ -196,7 +196,8 @@ const UserSettings = () => {
           customTranslationPrompt: data.customTranslationPrompt ?? '',
           customExplanationPrompt: data.customExplanationPrompt ?? '',
           customStoryPrompt: data.customStoryPrompt ?? '',
-          customSummarizationPrompt: data.customSummarizationPrompt ?? ''
+          customSummarizationPrompt: data.customSummarizationPrompt ?? '',
+          minimalHome: data.minimalHome ?? false
         });
       } catch (e: unknown) { const err = e as Error;
         setError('Failed to load settings. Please try again later.');
@@ -295,7 +296,8 @@ const UserSettings = () => {
         'openRouterTranslationModel', 'openRouterExplanationModel',
         'openRouterStoryModel', 'openRouterSummarizationModel',
         'customTranslationPrompt', 'customExplanationPrompt',
-        'customStoryPrompt', 'customSummarizationPrompt'
+        'customStoryPrompt', 'customSummarizationPrompt',
+        'minimalHome'
       ];
       const syncSetting = <K extends SettingKey>(key: K) => {
         const val = persistedSettings[key];

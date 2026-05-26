@@ -34,6 +34,7 @@ const SrsStoryReview = lazy(() => import('./pages/SrsStoryReview'));
 const Library = lazy(() => import('./pages/Library'));
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const Goals = lazy(() => import('./pages/Goals'));
+const HomeLite = lazy(() => import('./pages/HomeLite'));
 
 // Simple loading component
 const Loading = () => <div className="d-flex justify-content-center align-items-center vh-100">Loading...</div>;
@@ -133,7 +134,7 @@ const AuthenticatedApp = () => {
       <div className="container-fluid p-0 m-0">
         <Suspense fallback={<Loading />}>
           <Routes>
-            <Route path="/" element={<Home />} />
+            <Route path="/" element={settingsContext.settings.minimalHome ? <HomeLite /> : <Home />} />
             <Route path="/login" element={<Navigate to="/" />} />
 
             <Route element={<ProtectedRoute isAuthenticated={isAuthenticated} isLoading={isLoading} />}>

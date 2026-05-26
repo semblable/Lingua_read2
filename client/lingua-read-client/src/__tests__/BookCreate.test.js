@@ -89,8 +89,11 @@ describe('BookCreate', () => {
         '',
         1,
         'The quick brown fox',
-        'paragraph',
+        'chapter',
         3000,
+        [],
+        true,
+        [],
         []
       );
     });

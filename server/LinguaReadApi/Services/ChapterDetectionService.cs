@@ -218,10 +218,10 @@ namespace LinguaReadApi.Services
                                           && text.Length < 20 
                                           && romanRegex.IsMatch(text);
 
-                // If filtering page numbers, ignore purely numeric Title blocks
+                // If filtering page numbers, completely ignore purely numeric Title blocks (strip them)
                 if (isHeading && filterNumericTitles && int.TryParse(text, out _))
                 {
-                    isHeading = false;
+                    continue;
                 }
 
                 if ((isHeading || isParagraphHeading) && 

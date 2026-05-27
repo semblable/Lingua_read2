@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Security.Claims;
 using System.Threading.Tasks;
+using VersOne.Epub;
 using LinguaReadApi.Controllers;
 using LinguaReadApi.Data;
 using LinguaReadApi.Models;
@@ -260,6 +261,81 @@ namespace LinguaReadApi.Tests
             }
             context.SaveChanges();
             context.ChangeTracker.Clear();
+        }
+
+        [Fact]
+        public void ExtractStructuredBlocksFromHtml_InlineAndClassPageBreaks_TagsCorrectly()
+        {
+            // 1. Instantiate EpubLocalTextContentFile
+            var textFile = CreateMockTextContentFile(
+                @"<html>
+                    <body>
+                        <p>First paragraph.</p>
+                        <p class=""page-break"">Second paragraph starts a chapter.</p>
+                        <div style=""page-break-before: always"">
+                            <p>Third paragraph also starts a chapter.</p>
+                        </div>
+                    </body>
+                    </html>",
+                "oebps/chapter1.html"
+            );
+
+            // 2. Get nested context type
+            var contextType = typeof(BooksController).GetNestedType("EpubExtractionContext", System.Reflection.BindingFlags.NonPublic);
+            Assert.NotNull(contextType);
+            
+            // 3. Create context instance using constructor
+            var context = Activator.CreateInstance(contextType!, new object[] { null!, "", "" });
+
+            // 4. Set the private field _pageBreakClasses using Reflection
+            var pbClassesField = contextType!.GetField("_pageBreakClasses", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            Assert.NotNull(pbClassesField);
+            pbClassesField!.SetValue(context, new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "page-break" });
+
+            // 5. Invoke private static ExtractStructuredBlocksFromHtml
+            var method = typeof(BooksController).GetMethod("ExtractStructuredBlocksFromHtml",
+                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+            Assert.NotNull(method);
+            
+            var blocksObj = method!.Invoke(null, new object[] { textFile, new HashSet<string>(), context! });
+            var blocks = Assert.IsAssignableFrom<IEnumerable<ReaderContentBlock>>(blocksObj).ToList();
+
+            // 6. Assertions
+            // Expecting 3 blocks: 
+            // - Paragraph: "First paragraph."
+            // - Paragraph: "Second paragraph starts a chapter." with chapterBreak: "true"
+            // - Paragraph: "Third paragraph also starts a chapter." with chapterBreak: "true"
+            Assert.Equal(3, blocks.Count);
+
+            Assert.Equal("First paragraph.", blocks[0].Text);
+            Assert.Null(blocks[0].Meta);
+
+            Assert.Equal("Second paragraph starts a chapter.", blocks[1].Text);
+            Assert.NotNull(blocks[1].Meta);
+            Assert.Equal("true", blocks[1].Meta!["chapterBreak"]);
+
+            Assert.Equal("Third paragraph also starts a chapter.", blocks[2].Text);
+            Assert.NotNull(blocks[2].Meta);
+            Assert.Equal("true", blocks[2].Meta!["chapterBreak"]);
+        }
+
+        private static EpubLocalTextContentFile CreateMockTextContentFile(string content, string filePath)
+        {
+            var file = (EpubLocalTextContentFile)System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject(typeof(EpubLocalTextContentFile));
+            
+            var type = typeof(EpubLocalTextContentFile);
+            
+            var contentField = type.GetField("<Content>k__BackingField", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)
+                ?? type.GetField("content", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            contentField?.SetValue(file, content);
+
+            var filePathField = type.GetField("<FilePath>k__BackingField", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)
+                ?? type.GetField("filePath", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)
+                ?? type.BaseType?.GetField("<FilePath>k__BackingField", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)
+                ?? type.BaseType?.GetField("filePath", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            filePathField?.SetValue(file, filePath);
+
+            return file;
         }
     }
 }

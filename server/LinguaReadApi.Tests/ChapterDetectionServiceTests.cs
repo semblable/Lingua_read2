@@ -194,5 +194,65 @@ namespace LinguaReadApi.Tests
             Assert.Equal("시작", chapters[1].Title);
             Assert.Contains("한국어 내용.", chapters[1].Content);
         }
+
+        [Fact]
+        public void BuildPageBreakClasses_ScansCssDeclarationsCorrectly()
+        {
+            var css = new List<string>
+            {
+                ".break-class { page-break-before: always; }",
+                ".no-break { color: red; }",
+                "h2.another-break, div.some-other { break-before: page; }",
+                ".yet-another { break-before: always; }"
+            };
+
+            var classes = ChapterDetectionService.BuildPageBreakClasses(css);
+
+            Assert.Equal(4, classes.Count);
+            Assert.Contains("break-class", classes);
+            Assert.Contains("another-break", classes);
+            Assert.Contains("some-other", classes);
+            Assert.Contains("yet-another", classes);
+            Assert.DoesNotContain("no-break", classes);
+        }
+
+        [Fact]
+        public void DetectChaptersFromPageBreaks_SplitsOnTaggedMetadata()
+        {
+            var blocks = new List<ReaderContentBlock>
+            {
+                new ReaderContentBlock { Type = "paragraph", Text = "Introduction info." },
+                new ReaderContentBlock 
+                { 
+                    Type = "paragraph", 
+                    Text = "First paragraph in chapter break.",
+                    Meta = new Dictionary<string, string> { { "chapterBreak", "true" } }
+                },
+                new ReaderContentBlock { Type = "paragraph", Text = "Chapter 1 content." },
+                new ReaderContentBlock 
+                { 
+                    Type = "title", 
+                    Text = "Custom Title Name",
+                    Meta = new Dictionary<string, string> { { "chapterBreak", "true" } }
+                },
+                new ReaderContentBlock { Type = "paragraph", Text = "Chapter 2 content." }
+            };
+
+            var chapters = _service.DetectChaptersFromPageBreaks(blocks);
+
+            // Expecting 3 chapters: "Start", "Chapter 1", and "Custom Title Name"
+            Assert.Equal(3, chapters.Count);
+
+            Assert.Equal("Start", chapters[0].Title);
+            Assert.Contains("Introduction info.", chapters[0].Content);
+
+            Assert.Equal("Chapter 1", chapters[1].Title);
+            Assert.Contains("First paragraph in chapter break.", chapters[1].Content);
+            Assert.Contains("Chapter 1 content.", chapters[1].Content);
+
+            Assert.Equal("Custom Title Name", chapters[2].Title);
+            Assert.Contains("Chapter 2 content.", chapters[2].Content);
+        }
     }
 }
+

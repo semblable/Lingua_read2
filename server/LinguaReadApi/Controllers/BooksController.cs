@@ -823,6 +823,14 @@ namespace LinguaReadApi.Controllers
                     {
                         detectionMethod = "epub-heading";
                     }
+                    else
+                    {
+                        var pbChapters = _chapterDetectionService.DetectChaptersFromPageBreaks(epubBlocks);
+                        if (pbChapters.Any())
+                        {
+                            detectionMethod = "epub-page-break";
+                        }
+                    }
                 }
                 else if (!string.IsNullOrWhiteSpace(content))
                 {
@@ -1207,6 +1215,8 @@ namespace LinguaReadApi.Controllers
             var tokenMatches = Regex.Matches(normalizedHtml, @"<img\b[^>]*>|</?[^>]+>|[^<]+", RegexOptions.IgnoreCase);
             bool inHeading = false;
             bool inCaption = false;
+            bool pendingChapterBreak = false;
+            var pageBreakClasses = extractionContext.PageBreakClasses;
 
             foreach (Match match in tokenMatches)
             {
@@ -1289,6 +1299,11 @@ namespace LinguaReadApi.Controllers
                     Regex.IsMatch(token, @"^</(p|div|section|article|aside|header|footer|nav|figure|blockquote|pre|li|tr)\s*>$", RegexOptions.IgnoreCase) ||
                     Regex.IsMatch(token, @"^<hr\b", RegexOptions.IgnoreCase))
                 {
+                    // Detect page-break on opening block-level tags
+                    if (token[1] != '/' && HasPageBreak(token, pageBreakClasses))
+                    {
+                        pendingChapterBreak = true;
+                    }
                     FlushBufferedText(blocks, textBuffer, inHeading ? ReaderContentBlockTypes.Title : ReaderContentBlockTypes.Paragraph);
                     continue;
                 }
@@ -1307,7 +1322,111 @@ namespace LinguaReadApi.Controllers
             }
 
             FlushBufferedText(blocks, textBuffer, inHeading ? ReaderContentBlockTypes.Title : ReaderContentBlockTypes.Paragraph);
+
+            // Apply any pending chapter-break markers to blocks
+            // The pendingChapterBreak flag is applied to the *first* block after each page-break tag.
+            // We do a post-processing pass because FlushBufferedText may produce the block
+            // several tokens after the page-break opening tag was seen.
+            if (pageBreakClasses.Count > 0 || pendingChapterBreak)
+            {
+                ApplyPendingChapterBreaks(blocks, normalizedHtml, pageBreakClasses);
+            }
+
             return blocks;
+        }
+
+        /// <summary>
+        /// Checks whether an HTML opening tag has a page-break-before style,
+        /// either inline or via a CSS class that was resolved from the EPUB stylesheets.
+        /// </summary>
+        private static bool HasPageBreak(string tag, HashSet<string> pageBreakClasses)
+        {
+            // Check inline style for page-break-before: always or break-before: page/always
+            var style = ExtractHtmlAttribute(tag, "style");
+            if (!string.IsNullOrWhiteSpace(style) &&
+                Regex.IsMatch(style, @"(?:page-break-before\s*:\s*always|break-before\s*:\s*(?:page|always))", RegexOptions.IgnoreCase))
+            {
+                return true;
+            }
+
+            // Check CSS class names against known page-break classes
+            if (pageBreakClasses.Count > 0)
+            {
+                var classAttr = ExtractHtmlAttribute(tag, "class");
+                if (!string.IsNullOrWhiteSpace(classAttr))
+                {
+                    var classNames = classAttr.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+                    foreach (var cls in classNames)
+                    {
+                        if (pageBreakClasses.Contains(cls))
+                        {
+                            return true;
+                        }
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Post-processing pass: re-scans the raw HTML for block-level elements with
+        /// page-break styles and marks the corresponding content blocks with chapterBreak metadata.
+        /// </summary>
+        private static void ApplyPendingChapterBreaks(
+            List<ReaderContentBlock> blocks,
+            string normalizedHtml,
+            HashSet<string> pageBreakClasses)
+        {
+            // Collect text content of elements that follow a page-break tag
+            var breakPositions = new HashSet<int>();
+            var tagMatches = Regex.Matches(normalizedHtml,
+                @"<(p|div|section|article|aside|header|footer|h[1-6])\b[^>]*>",
+                RegexOptions.IgnoreCase);
+
+            foreach (Match m in tagMatches)
+            {
+                if (HasPageBreak(m.Value, pageBreakClasses))
+                {
+                    breakPositions.Add(m.Index);
+                }
+            }
+
+            if (breakPositions.Count == 0) return;
+
+            // Walk through blocks and mark the first block whose text appears
+            // after a page-break tag position in the source HTML
+            int htmlSearchStart = 0;
+            foreach (var block in blocks)
+            {
+                if (string.IsNullOrWhiteSpace(block.Text)) continue;
+
+                // Find where this block's text starts in the HTML
+                var snippet = block.Text.Length > 40 ? block.Text.Substring(0, 40) : block.Text;
+                // Normalize for comparison (HTML may have different whitespace)
+                var cleanSnippet = Regex.Replace(snippet, @"\s+", " ").Trim();
+                if (cleanSnippet.Length < 3) continue;
+
+                // Search for the snippet in the HTML after our current position
+                var searchText = Regex.Replace(normalizedHtml.Substring(htmlSearchStart), @"<[^>]+>", " ");
+                searchText = Regex.Replace(searchText, @"\s+", " ");
+                var idx = searchText.IndexOf(cleanSnippet, StringComparison.OrdinalIgnoreCase);
+                if (idx >= 0)
+                {
+                    var absolutePos = htmlSearchStart + idx;
+                    // Check if any break position is between our last search position and this block
+                    foreach (var bp in breakPositions)
+                    {
+                        if (bp >= htmlSearchStart && bp < htmlSearchStart + idx + cleanSnippet.Length)
+                        {
+                            block.Meta ??= new Dictionary<string, string>();
+                            block.Meta["chapterBreak"] = "true";
+                            break;
+                        }
+                    }
+                    htmlSearchStart = absolutePos;
+                }
+            }
         }
 
         private static ReaderContentBlock? TryCreateImageBlock(string imageTag, EpubLocalTextContentFile textFile, EpubExtractionContext extractionContext)
@@ -2548,6 +2667,32 @@ namespace LinguaReadApi.Controllers
             public string RelativeAssetRoot { get; }
             public int NextImageIndex { get; set; } = 1;
             public Dictionary<string, string> SavedImages { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+            private HashSet<string>? _pageBreakClasses;
+            /// <summary>
+            /// CSS class names whose rules include page-break-before:always or break-before:page.
+            /// Lazily built from all CSS content files in the EPUB.
+            /// </summary>
+            public HashSet<string> PageBreakClasses
+            {
+                get
+                {
+                    if (_pageBreakClasses == null)
+                    {
+                        var cssTexts = new List<string>();
+                        try
+                        {
+                            foreach (var file in Book.Content.Css.Local)
+                            {
+                                cssTexts.Add(file.Content);
+                            }
+                        }
+                        catch { /* EPUB may not have CSS */ }
+                        _pageBreakClasses = ChapterDetectionService.BuildPageBreakClasses(cssTexts);
+                    }
+                    return _pageBreakClasses;
+                }
+            }
         }
 
         private List<DetectedChapter> ApplyChapterGroupings(
@@ -2621,11 +2766,29 @@ namespace LinguaReadApi.Controllers
                     else if (epubBlocks != null && epubBlocks.Any())
                     {
                         chapters = _chapterDetectionService.DetectChaptersFromEpubHeadings(epubBlocks);
+                        // Fallback to page-break detection if heading detection only found "Start"
+                        if (!chapters.Any(c => c.Title != "Start"))
+                        {
+                            var pbChapters = _chapterDetectionService.DetectChaptersFromPageBreaks(epubBlocks);
+                            if (pbChapters.Any())
+                            {
+                                chapters = pbChapters;
+                            }
+                        }
                     }
                 }
                 else if (epubBlocks != null && epubBlocks.Any())
                 {
                     chapters = _chapterDetectionService.DetectChaptersFromEpubHeadings(epubBlocks);
+                    // Fallback to page-break detection if heading detection only found "Start"
+                    if (!chapters.Any(c => c.Title != "Start"))
+                    {
+                        var pbChapters = _chapterDetectionService.DetectChaptersFromPageBreaks(epubBlocks);
+                        if (pbChapters.Any())
+                        {
+                            chapters = pbChapters;
+                        }
+                    }
                 }
                 else if (!string.IsNullOrWhiteSpace(content))
                 {
@@ -2744,6 +2907,14 @@ namespace LinguaReadApi.Controllers
                         {
                             detectionMethod = "epub-heading";
                         }
+                        else
+                        {
+                            var pbChapters = _chapterDetectionService.DetectChaptersFromPageBreaks(epubBlocks);
+                            if (pbChapters.Any())
+                            {
+                                detectionMethod = "epub-page-break";
+                            }
+                        }
                     }
                 }
                 else if (epubBlocks != null && epubBlocks.Any())
@@ -2752,6 +2923,14 @@ namespace LinguaReadApi.Controllers
                     if (headingChapters.Any(c => c.Title != "Start"))
                     {
                         detectionMethod = "epub-heading";
+                    }
+                    else
+                    {
+                        var pbChapters = _chapterDetectionService.DetectChaptersFromPageBreaks(epubBlocks);
+                        if (pbChapters.Any())
+                        {
+                            detectionMethod = "epub-page-break";
+                        }
                     }
                 }
                 else if (!string.IsNullOrWhiteSpace(content))

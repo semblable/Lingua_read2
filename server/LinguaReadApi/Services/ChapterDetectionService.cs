@@ -230,6 +230,113 @@ namespace LinguaReadApi.Services
             return chapters;
         }
 
+        // EPUB Page-Break Detection — splits on blocks tagged with chapterBreak metadata
+        public List<DetectedChapter> DetectChaptersFromPageBreaks(List<ReaderContentBlock> blocks)
+        {
+            var chapters = new List<DetectedChapter>();
+            if (blocks == null || !blocks.Any()) return chapters;
+
+            var currentChapterTitle = "Start";
+            var currentChapterBlocks = new List<ReaderContentBlock>();
+
+            foreach (var block in blocks)
+            {
+                bool isBreak = block.Meta != null &&
+                    block.Meta.TryGetValue("chapterBreak", out var breakVal) &&
+                    string.Equals(breakVal, "true", StringComparison.OrdinalIgnoreCase);
+
+                if (isBreak)
+                {
+                    // Flush previous chapter if we have content
+                    if (currentChapterBlocks.Any())
+                    {
+                        chapters.Add(new DetectedChapter
+                        {
+                            Title = currentChapterTitle,
+                            Content = string.Join("\n\n", currentChapterBlocks.Select(b => b.Text).Where(t => !string.IsNullOrWhiteSpace(t))),
+                            Blocks = currentChapterBlocks.ToList()
+                        });
+                        currentChapterBlocks.Clear();
+                    }
+
+                    // If this break block is also a title, use its text as the chapter title
+                    if (string.Equals(block.Type, "title", StringComparison.OrdinalIgnoreCase) &&
+                        !string.IsNullOrWhiteSpace(block.Text))
+                    {
+                        currentChapterTitle = block.Text.Trim();
+                    }
+                    else
+                    {
+                        // Try to find a title from the first title-block after the break
+                        int chapterNum = (chapters.Count > 0 && chapters[0].Title == "Start") ? chapters.Count : chapters.Count + 1;
+                        currentChapterTitle = $"Chapter {chapterNum}";
+                        // Add this block as content of the new chapter
+                        currentChapterBlocks.Add(block);
+                    }
+                }
+                else if (string.Equals(block.Type, "title", StringComparison.OrdinalIgnoreCase) &&
+                         !string.IsNullOrWhiteSpace(block.Text) &&
+                         !currentChapterBlocks.Any() &&
+                         currentChapterTitle.StartsWith("Chapter "))
+                {
+                    // First title block after a page-break — use it as the chapter title
+                    currentChapterTitle = block.Text.Trim();
+                }
+                else
+                {
+                    currentChapterBlocks.Add(block);
+                }
+            }
+
+            // Flush last chapter
+            if (currentChapterBlocks.Any() || chapters.Count == 0)
+            {
+                chapters.Add(new DetectedChapter
+                {
+                    Title = currentChapterTitle,
+                    Content = string.Join("\n\n", currentChapterBlocks.Select(b => b.Text).Where(t => !string.IsNullOrWhiteSpace(t))),
+                    Blocks = currentChapterBlocks.ToList()
+                });
+            }
+
+            // Only return page-break chapters if we actually found breaks (more than 1 chapter)
+            return chapters.Count > 1 ? chapters : new List<DetectedChapter>();
+        }
+
+        /// <summary>
+        /// Scans raw CSS text for selectors whose declarations include
+        /// page-break-before:always, break-before:page, or break-before:always.
+        /// Returns class names (without the dot) that trigger a chapter break.
+        /// </summary>
+        public static HashSet<string> BuildPageBreakClasses(IEnumerable<string> cssTexts)
+        {
+            var classes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (cssTexts == null) return classes;
+
+            // Match CSS rule blocks: selectors { ... page-break-before: always ... }
+            var ruleRegex = new Regex(
+                @"([^{}]+)\{[^}]*(?:page-break-before\s*:\s*always|break-before\s*:\s*(?:page|always))[^}]*\}",
+                RegexOptions.IgnoreCase | RegexOptions.Singleline);
+
+            var classInSelectorRegex = new Regex(@"\.([a-zA-Z_][\w-]*)", RegexOptions.Compiled);
+
+            foreach (var css in cssTexts)
+            {
+                if (string.IsNullOrWhiteSpace(css)) continue;
+
+                foreach (Match ruleMatch in ruleRegex.Matches(css))
+                {
+                    var selectorPart = ruleMatch.Groups[1].Value;
+                    foreach (Match classMatch in classInSelectorRegex.Matches(selectorPart))
+                    {
+                        classes.Add(classMatch.Groups[1].Value);
+                    }
+                }
+            }
+
+            return classes;
+        }
+
         private bool IsChapterHeading(string line, out string? capturedTitle)
         {
             capturedTitle = null;

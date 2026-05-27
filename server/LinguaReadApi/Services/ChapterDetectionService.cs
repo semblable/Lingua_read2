@@ -189,16 +189,17 @@ namespace LinguaReadApi.Services
             if (blocks == null || !blocks.Any()) return chapters;
 
             // 1. Pre-analyze titles to see if they are actually page numbers
-            var titleBlocks = blocks.Where(b => string.Equals(b.Type, "title", StringComparison.OrdinalIgnoreCase) 
+            var titleBlocks = blocks.Where(b => b != null 
+                                                && string.Equals(b.Type, "title", StringComparison.OrdinalIgnoreCase) 
                                                 && !string.IsNullOrWhiteSpace(b.Text) 
                                                 && (b.Text?.Trim() ?? string.Empty).Length < 120).ToList();
             
             bool filterNumericTitles = false;
             if (titleBlocks.Count > 10)
             {
-                var numericTitles = titleBlocks.Where(b => int.TryParse(b.Text?.Trim() ?? string.Empty, out _)).ToList();
+                var numericTitles = titleBlocks.Where(b => b != null && int.TryParse(b.Text?.Trim() ?? string.Empty, out _)).ToList();
                 // If more than 50% of headings are purely numeric, or there's a page number higher than 50
-                if (numericTitles.Count > 0 && (numericTitles.Count > titleBlocks.Count * 0.5 || numericTitles.Any(b => int.Parse(b.Text?.Trim() ?? "0") > 50)))
+                if (numericTitles.Count > 0 && (numericTitles.Count > titleBlocks.Count * 0.5 || numericTitles.Any(b => b != null && int.Parse(b.Text?.Trim() ?? "0") > 50)))
                 {
                     filterNumericTitles = true;
                 }
@@ -210,6 +211,7 @@ namespace LinguaReadApi.Services
 
             foreach (var block in blocks)
             {
+                if (block == null) continue;
                 var text = block.Text?.Trim() ?? string.Empty;
                 bool isHeading = string.Equals(block.Type, "title", StringComparison.OrdinalIgnoreCase);
                 

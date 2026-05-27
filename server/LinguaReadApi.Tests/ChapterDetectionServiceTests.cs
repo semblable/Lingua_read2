@@ -390,16 +390,17 @@ namespace LinguaReadApi.Tests
         [Fact]
         public void DetectChaptersFromEpubHeadings_HandlesNullBlockText()
         {
-            var blocks = new List<ReaderContentBlock>
+            var blocks = new List<ReaderContentBlock?>
             {
                 new ReaderContentBlock { Type = "title", Text = "Chapter 1" },
                 new ReaderContentBlock { Type = "paragraph", Text = "Some text" },
+                null, // Test null safeguard
                 new ReaderContentBlock { Type = "image", Text = null, ImageUrl = "http://example.com/img.png" },
                 new ReaderContentBlock { Type = "paragraph", Text = "More text" }
             };
 
             // This should run without throwing a NullReferenceException!
-            var chapters = _service.DetectChaptersFromEpubHeadings(blocks);
+            var chapters = _service.DetectChaptersFromEpubHeadings(blocks!);
 
             Assert.Single(chapters);
             Assert.Equal("Chapter 1", chapters[0].Title);

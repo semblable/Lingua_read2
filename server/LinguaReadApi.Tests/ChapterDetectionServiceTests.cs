@@ -299,6 +299,42 @@ namespace LinguaReadApi.Tests
         }
 
         [Fact]
+        public void DetectChaptersFromEpubHeadings_DoesNotStripNormalNumbers()
+        {
+            var blocks = new List<ReaderContentBlock>
+            {
+                // We must trigger the filter numeric titles threshold
+                new ReaderContentBlock { Type = "title", Text = "1" },
+                new ReaderContentBlock { Type = "title", Text = "2" },
+                new ReaderContentBlock { Type = "title", Text = "3" },
+                new ReaderContentBlock { Type = "title", Text = "4" },
+                new ReaderContentBlock { Type = "title", Text = "5" },
+                new ReaderContentBlock { Type = "title", Text = "6" },
+                new ReaderContentBlock { Type = "title", Text = "7" },
+                new ReaderContentBlock { Type = "title", Text = "8" },
+                new ReaderContentBlock { Type = "title", Text = "9" },
+                new ReaderContentBlock { Type = "title", Text = "10" },
+                new ReaderContentBlock { Type = "title", Text = "101" }, // Trigger (> 50)
+                
+                // Normal numbers inside paragraph blocks
+                new ReaderContentBlock { Type = "paragraph", Text = "In 1905, D. Carlos had 3 dogs and spent 25000 Reis." },
+                new ReaderContentBlock { Type = "paragraph", Text = "15" }, // Standalone number but inside paragraph, NOT title!
+                
+                new ReaderContentBlock { Type = "title", Text = "Chapter I" },
+                new ReaderContentBlock { Type = "paragraph", Text = "Actual story starts." }
+            };
+
+            var chapters = _service.DetectChaptersFromEpubHeadings(blocks);
+
+            // Expecting 2 chapters: "Start" and "Chapter I"
+            Assert.Equal(2, chapters.Count);
+            
+            // Verify that the normal numbers inside paragraphs are preserved!
+            Assert.Contains("In 1905, D. Carlos had 3 dogs and spent 25000 Reis.", chapters[0].Content);
+            Assert.Contains("15", chapters[0].Content);
+        }
+
+        [Fact]
         public void DetectChaptersFromEpubHeadings_DetectsParagraphLevelRomanNumerals()
         {
             var blocks = new List<ReaderContentBlock>

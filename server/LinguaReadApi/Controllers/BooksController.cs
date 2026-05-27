@@ -207,131 +207,142 @@ namespace LinguaReadApi.Controllers
                 return BadRequest("Invalid language ID");
             }
 
-            // 1. Create Book entity (don't save yet)
-            var book = new Book
-            {
-                Title = createBookDto.Title,
-                Description = createBookDto.Description,
-                LanguageId = createBookDto.LanguageId,
-                UserId = userId,
-                CreatedAt = DateTime.UtcNow
-            };
-
-            // 2. Process Tags
+            // 1. Declare variables to be assigned and used outside the transaction block
+            Book book = null!;
             var tagsToAssociate = new List<Tag>();
-            var newTagsToCreate = new List<Tag>();
-            if (createBookDto.Tags != null && createBookDto.Tags.Any())
-            {
-                var distinctNormalizedTags = createBookDto.Tags
-                    .Select(t => t.Trim().ToLowerInvariant()) // Normalize: trim, lowercase
-                    .Where(t => !string.IsNullOrEmpty(t))    // Filter out empty tags
-                    .Distinct()                              // Ensure uniqueness
-                    .ToList();
+            var createdTexts = new List<Text>();
 
-                if (distinctNormalizedTags.Any())
-                {
-                    var existingTags = await _context.Tags
-                        .Where(t => distinctNormalizedTags.Contains(t.Name.ToLower()))
-                        .ToListAsync();
-
-                    tagsToAssociate.AddRange(existingTags);
-
-                    var existingTagNames = existingTags.Select(t => t.Name.ToLowerInvariant()).ToList();
-                    var tagsToCreateNames = distinctNormalizedTags.Except(existingTagNames).ToList();
-
-                    foreach (var tagName in tagsToCreateNames)
-                    {
-                        // Check length constraint before creating
-                        if (tagName.Length <= 50) // Match StringLength(50) in Tag model
-                        {
-                            var newTag = new Tag { Name = tagName }; // Store original casing or decide on a standard
-                            newTagsToCreate.Add(newTag);
-                            tagsToAssociate.Add(newTag); // Add to the list for association
-                        }
-                        else
-                        {
-                            // Optionally handle tags that are too long (e.g., log, skip, return error)
-                            // For now, we'll just skip them to avoid database errors
-                            _logger.LogWarning("Skipping tag '{TagName}' because it exceeds the maximum length of 50 characters.", tagName);
-                        }
-                    }
-                }
-            }
-
-            // 3. Add Book and New Tags to Context
-            await using var transaction = await _context.Database.BeginTransactionAsync();
+            var strategy = _context.Database.CreateExecutionStrategy();
             try
             {
-                _context.Books.Add(book);
-                if (newTagsToCreate.Any())
+                await strategy.ExecuteAsync(async () =>
                 {
-                    _context.Tags.AddRange(newTagsToCreate);
-                }
+                    _context.ChangeTracker.Clear();
+                    await using var transaction = await _context.Database.BeginTransactionAsync();
 
-                // 4. Save Book and New Tags (Gets BookId and TagIds)
-                await _context.SaveChangesAsync();
+                    // 1. Create Book entity (don't save yet)
+                    book = new Book
+                    {
+                        Title = createBookDto.Title,
+                        Description = createBookDto.Description,
+                        LanguageId = createBookDto.LanguageId,
+                        UserId = userId,
+                        CreatedAt = DateTime.UtcNow
+                    };
 
-                // 5. Create BookTag Associations
-                if (tagsToAssociate.Any())
-                {
-                    foreach (var tag in tagsToAssociate)
+                    // 2. Process Tags
+                    tagsToAssociate.Clear();
+                    var newTagsToCreate = new List<Tag>();
+                    if (createBookDto.Tags != null && createBookDto.Tags.Any())
                     {
-                        // Ensure the tag has an ID (it should after the previous SaveChanges)
-                        if (tag.TagId > 0)
-                        {
-                             _context.BookTags.Add(new BookTag { BookId = book.BookId, TagId = tag.TagId });
-                        }
-                        else
-                        {
-                            _logger.LogWarning("Could not associate tag '{TagName}' as it might have been skipped or failed to save.", tag.Name);
-                        }
-                    }
-                    // 6. Save Associations
-                    await _context.SaveChangesAsync();
-                }
+                        var distinctNormalizedTags = createBookDto.Tags
+                            .Select(t => t.Trim().ToLowerInvariant()) // Normalize: trim, lowercase
+                            .Where(t => !string.IsNullOrEmpty(t))    // Filter out empty tags
+                            .Distinct()                              // Ensure uniqueness
+                            .ToList();
 
-                // 7. Create initial text parts
-                var createdTexts = new List<Text>();
-                if (!string.IsNullOrEmpty(createBookDto.Content))
-                {
-                    var chapters = SplitBookContent(createBookDto.Content, null, null, createBookDto.SplitMethod, createBookDto.MaxSegmentSize, createBookDto.SubSplitOversized);
-                    
-                    if (createBookDto.ChapterGroupings != null && createBookDto.ChapterGroupings.Any())
-                    {
-                        chapters = ApplyChapterGroupings(chapters, createBookDto.ChapterGroupings, createBookDto.ChapterTitles);
-                    }
-                    else
-                    {
-                        for (int i = 0; i < chapters.Count; i++)
+                        if (distinctNormalizedTags.Any())
                         {
-                            if (createBookDto.ChapterTitles != null && i < createBookDto.ChapterTitles.Count && !string.IsNullOrWhiteSpace(createBookDto.ChapterTitles[i]))
+                            var existingTags = await _context.Tags
+                                .Where(t => distinctNormalizedTags.Contains(t.Name.ToLower()))
+                                .ToListAsync();
+
+                            tagsToAssociate.AddRange(existingTags);
+
+                            var existingTagNames = existingTags.Select(t => t.Name.ToLowerInvariant()).ToList();
+                            var tagsToCreateNames = distinctNormalizedTags.Except(existingTagNames).ToList();
+
+                            foreach (var tagName in tagsToCreateNames)
                             {
-                                chapters[i].Title = createBookDto.ChapterTitles[i];
+                                // Check length constraint before creating
+                                if (tagName.Length <= 50) // Match StringLength(50) in Tag model
+                                {
+                                    var newTag = new Tag { Name = tagName }; // Store original casing or decide on a standard
+                                    newTagsToCreate.Add(newTag);
+                                    tagsToAssociate.Add(newTag); // Add to the list for association
+                                }
+                                else
+                                {
+                                    // Optionally handle tags that are too long (e.g., log, skip, return error)
+                                    // For now, we'll just skip them to avoid database errors
+                                    _logger.LogWarning("Skipping tag '{TagName}' because it exceeds the maximum length of 50 characters.", tagName);
+                                }
                             }
                         }
                     }
 
-                    for (int i = 0; i < chapters.Count; i++)
+                    // 3. Add Book and New Tags to Context
+                    _context.Books.Add(book);
+                    if (newTagsToCreate.Any())
                     {
-                        var chap = chapters[i];
-                        var text = new Text
-                        {
-                            Title = chap.Title,
-                            Content = chap.Content,
-                            StructuredContent = null,
-                            LanguageId = book.LanguageId,
-                            UserId = userId,
-                            BookId = book.BookId,
-                            PartNumber = i + 1,
-                            CreatedAt = DateTime.UtcNow
-                        };
-                        _context.Texts.Add(text);
-                        createdTexts.Add(text);
+                        _context.Tags.AddRange(newTagsToCreate);
                     }
-                    await _context.SaveChangesAsync(); // Save Texts
-                }
 
-                await transaction.CommitAsync();
+                    // 4. Save Book and New Tags (Gets BookId and TagIds)
+                    await _context.SaveChangesAsync();
+
+                    // 5. Create BookTag Associations
+                    if (tagsToAssociate.Any())
+                    {
+                        foreach (var tag in tagsToAssociate)
+                        {
+                            // Ensure the tag has an ID (it should after the previous SaveChanges)
+                            if (tag.TagId > 0)
+                            {
+                                 _context.BookTags.Add(new BookTag { BookId = book.BookId, TagId = tag.TagId });
+                            }
+                            else
+                            {
+                                _logger.LogWarning("Could not associate tag '{TagName}' as it might have been skipped or failed to save.", tag.Name);
+                            }
+                        }
+                        // 6. Save Associations
+                        await _context.SaveChangesAsync();
+                    }
+
+                    // 7. Create initial text parts
+                    createdTexts.Clear();
+                    if (!string.IsNullOrEmpty(createBookDto.Content))
+                    {
+                        var chapters = SplitBookContent(createBookDto.Content, null, null, createBookDto.SplitMethod, createBookDto.MaxSegmentSize, createBookDto.SubSplitOversized);
+                        
+                        if (createBookDto.ChapterGroupings != null && createBookDto.ChapterGroupings.Any())
+                        {
+                            chapters = ApplyChapterGroupings(chapters, createBookDto.ChapterGroupings, createBookDto.ChapterTitles);
+                        }
+                        else
+                        {
+                            for (int i = 0; i < chapters.Count; i++)
+                            {
+                                if (createBookDto.ChapterTitles != null && i < createBookDto.ChapterTitles.Count && !string.IsNullOrWhiteSpace(createBookDto.ChapterTitles[i]))
+                                {
+                                    chapters[i].Title = createBookDto.ChapterTitles[i];
+                                }
+                            }
+                        }
+
+                        for (int i = 0; i < chapters.Count; i++)
+                        {
+                            var chap = chapters[i];
+                            var text = new Text
+                            {
+                                Title = chap.Title,
+                                Content = chap.Content,
+                                StructuredContent = null,
+                                LanguageId = book.LanguageId,
+                                UserId = userId,
+                                BookId = book.BookId,
+                                PartNumber = i + 1,
+                                CreatedAt = DateTime.UtcNow
+                            };
+                            _context.Texts.Add(text);
+                            createdTexts.Add(text);
+                        }
+                        await _context.SaveChangesAsync(); // Save Texts
+                    }
+
+                    await transaction.CommitAsync();
+                });
 
                 // Kick off background word-linking now that TextIds exist.
                 // WordLinkingBackgroundService pulses StatsRecomputeService
@@ -867,18 +878,20 @@ namespace LinguaReadApi.Controllers
         public async Task<IActionResult> ReSplitBook(int id, [FromBody] ReSplitRequestDto request)
         {
             var userId = GetUserId();
-            var book = await _context.Books
+            
+            // 1. Reconstruct content (Use AsNoTracking to get a clean in-memory reconstruction without tracking issues)
+            var bookForReconstruct = await _context.Books
                 .Where(b => b.BookId == id && b.UserId == userId)
                 .Include(b => b.Texts)
+                .AsNoTracking()
                 .FirstOrDefaultAsync();
 
-            if (book == null)
+            if (bookForReconstruct == null)
             {
                 return NotFound();
             }
 
-            // 1. Reconstruct content
-            var (content, epubBlocks) = ReconstructBookContent(book);
+            var (content, epubBlocks) = ReconstructBookContent(bookForReconstruct);
 
             // 2. Perform the split using reusable helper
             var chapters = SplitBookContent(content, epubBlocks, null, request.SplitMethod, request.MaxSegmentSize, request.SubSplitOversized);
@@ -906,50 +919,68 @@ namespace LinguaReadApi.Controllers
             }
 
             // Execute destructive split inside a single transaction to guarantee database atomicity
-            await using var transaction = await _context.Database.BeginTransactionAsync();
+            var createdTexts = new List<Text>();
+            var strategy = _context.Database.CreateExecutionStrategy();
             try
             {
-                // 4. Clear existing texts (cascades automatically delete TextWords, UserSentenceProgress, etc.)
-                var oldTexts = book.Texts.ToList();
-                _context.Texts.RemoveRange(oldTexts);
-                
-                // Explicitly set LastReadTextId/LastReadPartId to null to avoid constraint violation before saving
-                book.LastReadTextId = null;
-                book.LastReadPartId = null;
-                book.Texts.Clear(); // Clear in-memory navigation collection to avoid EF tracking issues
-                await _context.SaveChangesAsync();
-
-                // 5. Create new texts based on splitting / grouping results
-                var createdTexts = new List<Text>();
-                for (int i = 0; i < chapters.Count; i++)
+                await strategy.ExecuteAsync(async () =>
                 {
-                    var chap = chapters[i];
-                    var text = new Text
+                    _context.ChangeTracker.Clear();
+                    await using var transaction = await _context.Database.BeginTransactionAsync();
+
+                    // Re-query the book inside the transaction to get a clean, tracked instance
+                    var book = await _context.Books
+                        .Where(b => b.BookId == id && b.UserId == userId)
+                        .Include(b => b.Texts)
+                        .FirstOrDefaultAsync();
+
+                    if (book == null)
                     {
-                        Title = chap.Title,
-                        Content = chap.Content,
-                        StructuredContent = chap.Blocks != null ? JsonSerializer.Serialize(chap.Blocks, StructuredContentJsonOptions) : null,
-                        LanguageId = book.LanguageId,
-                        UserId = userId,
-                        BookId = book.BookId,
-                        PartNumber = i + 1,
-                        CreatedAt = DateTime.UtcNow
-                    };
-                    _context.Texts.Add(text);
-                    createdTexts.Add(text);
-                }
+                        throw new InvalidOperationException("Book was deleted during re-splitting.");
+                    }
 
-                await _context.SaveChangesAsync();
+                    // 4. Clear existing texts (cascades automatically delete TextWords, UserSentenceProgress, etc.)
+                    var oldTexts = book.Texts.ToList();
+                    _context.Texts.RemoveRange(oldTexts);
+                    
+                    // Explicitly set LastReadTextId/LastReadPartId to null to avoid constraint violation before saving
+                    book.LastReadTextId = null;
+                    book.LastReadPartId = null;
+                    book.Texts.Clear(); // Clear in-memory navigation collection to avoid EF tracking issues
+                    await _context.SaveChangesAsync();
 
-                // 6. Reset stats (LastRead* already cleared in step 4)
-                book.TotalWords = 0;
-                book.KnownWords = 0;
-                book.LearningWords = 0;
-                book.IsFinished = false;
-                book.StatsUpdatedAt = null;
-                await _context.SaveChangesAsync();
+                    // 5. Create new texts based on splitting / grouping results
+                    createdTexts.Clear();
+                    for (int i = 0; i < chapters.Count; i++)
+                    {
+                        var chap = chapters[i];
+                        var text = new Text
+                        {
+                            Title = chap.Title,
+                            Content = chap.Content,
+                            StructuredContent = chap.Blocks != null ? JsonSerializer.Serialize(chap.Blocks, StructuredContentJsonOptions) : null,
+                            LanguageId = book.LanguageId,
+                            UserId = userId,
+                            BookId = book.BookId,
+                            PartNumber = i + 1,
+                            CreatedAt = DateTime.UtcNow
+                        };
+                        _context.Texts.Add(text);
+                        createdTexts.Add(text);
+                    }
 
-                await transaction.CommitAsync();
+                    await _context.SaveChangesAsync();
+
+                    // 6. Reset stats (LastRead* already cleared in step 4)
+                    book.TotalWords = 0;
+                    book.KnownWords = 0;
+                    book.LearningWords = 0;
+                    book.IsFinished = false;
+                    book.StatsUpdatedAt = null;
+                    await _context.SaveChangesAsync();
+
+                    await transaction.CommitAsync();
+                });
 
                 // 7. Queue word-linking to recalculate word connections and statistics in background
                 await QueueWordLinking(createdTexts, userId);
@@ -958,7 +989,6 @@ namespace LinguaReadApi.Controllers
             }
             catch (Exception ex)
             {
-                await transaction.RollbackAsync();
                 _logger.LogError(ex, "Failed to re-split book {BookId}", id);
                 return StatusCode(StatusCodes.Status500InternalServerError, "Failed to re-split the book due to a database error.");
             }

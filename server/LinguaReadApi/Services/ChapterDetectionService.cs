@@ -191,14 +191,14 @@ namespace LinguaReadApi.Services
             // 1. Pre-analyze titles to see if they are actually page numbers
             var titleBlocks = blocks.Where(b => string.Equals(b.Type, "title", StringComparison.OrdinalIgnoreCase) 
                                                 && !string.IsNullOrWhiteSpace(b.Text) 
-                                                && b.Text.Trim().Length < 120).ToList();
+                                                && (b.Text?.Trim() ?? string.Empty).Length < 120).ToList();
             
             bool filterNumericTitles = false;
             if (titleBlocks.Count > 10)
             {
-                var numericTitles = titleBlocks.Where(b => int.TryParse(b.Text.Trim(), out _)).ToList();
+                var numericTitles = titleBlocks.Where(b => int.TryParse(b.Text?.Trim() ?? string.Empty, out _)).ToList();
                 // If more than 50% of headings are purely numeric, or there's a page number higher than 50
-                if (numericTitles.Count > 0 && (numericTitles.Count > titleBlocks.Count * 0.5 || numericTitles.Any(b => int.Parse(b.Text.Trim()) > 50)))
+                if (numericTitles.Count > 0 && (numericTitles.Count > titleBlocks.Count * 0.5 || numericTitles.Any(b => int.Parse(b.Text?.Trim() ?? "0") > 50)))
                 {
                     filterNumericTitles = true;
                 }
@@ -210,7 +210,7 @@ namespace LinguaReadApi.Services
 
             foreach (var block in blocks)
             {
-                var text = block.Text.Trim();
+                var text = block.Text?.Trim() ?? string.Empty;
                 bool isHeading = string.Equals(block.Type, "title", StringComparison.OrdinalIgnoreCase);
                 
                 // Match paragraph block that is a standalone Roman Numeral (e.g. "I", "II", "XVII")
@@ -226,7 +226,7 @@ namespace LinguaReadApi.Services
 
                 if ((isHeading || isParagraphHeading) && 
                     !string.IsNullOrWhiteSpace(block.Text) && 
-                    block.Text.Trim().Length < 120)
+                    text.Length < 120)
                 {
                     // Flush previous chapter
                     if (currentChapterBlocks.Any())
@@ -419,7 +419,8 @@ namespace LinguaReadApi.Services
         /// </summary>
         public List<DetectedChapter> ConsolidateFrontMatter(List<DetectedChapter> chapters)
         {
-            if (chapters == null || chapters.Count < 3) return chapters;
+            if (chapters == null) return new List<DetectedChapter>();
+            if (chapters.Count < 3) return chapters;
 
             var consolidated = new List<DetectedChapter>();
             var frontMatterBlocks = new List<ReaderContentBlock>();
@@ -431,21 +432,26 @@ namespace LinguaReadApi.Services
             int i = 0;
             while (i < chapters.Count)
             {
-                var titleLower = chapters[i].Title.ToLowerInvariant();
-                bool isFrontMatter = frontMatterKeywords.Any(k => titleLower.Contains(k)) || chapters[i].CharacterCount < 400;
+                var chapter = chapters[i];
+                var titleLower = chapter.Title.ToLowerInvariant();
+                
+                // Do not consolidate if the chapter looks like a regular, numbered book chapter
+                bool isRegularChapter = IsRegularChapterTitle(chapter.Title);
+                
+                bool isFrontMatter = !isRegularChapter && (frontMatterKeywords.Any(k => titleLower.Contains(k)) || chapter.CharacterCount < 400);
 
                 // Stop consolidation before the last/only chapters
                 if (isFrontMatter && i < chapters.Count - 1)
                 {
-                    frontMatterContent.Add($"=== {chapters[i].Title} ===");
-                    frontMatterContent.Add(chapters[i].Content);
-                    if (chapters[i].Blocks != null)
+                    frontMatterContent.Add($"=== {chapter.Title} ===");
+                    frontMatterContent.Add(chapter.Content);
+                    if (chapter.Blocks != null)
                     {
-                        frontMatterBlocks.AddRange(chapters[i].Blocks);
+                        frontMatterBlocks.AddRange(chapter.Blocks);
                     }
-                    if (chapters[i].FilePaths != null)
+                    if (chapter.FilePaths != null)
                     {
-                        filePaths.AddRange(chapters[i].FilePaths!);
+                        filePaths.AddRange(chapter.FilePaths);
                     }
                     i++;
                 }
@@ -473,6 +479,26 @@ namespace LinguaReadApi.Services
             }
 
             return consolidated;
+        }
+
+        private bool IsRegularChapterTitle(string title)
+        {
+            if (string.IsNullOrWhiteSpace(title)) return false;
+
+            // Check regular chapter pattern regexes (indexes 0 to 4 in ChapterRegexes are regular chapters)
+            for (int j = 0; j < 5; j++)
+            {
+                if (ChapterRegexes[j].IsMatch(title)) return true;
+            }
+
+            // Check NumberedHeadingRegex
+            if (NumberedHeadingRegex.IsMatch(title)) return true;
+
+            // Check purely numeric or standalone Roman numerals
+            var pureNumericOrRoman = new Regex(@"^\s*(?:[0-9]+|[IVXLCDMivxlcdm]+)\s*$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+            if (pureNumericOrRoman.IsMatch(title)) return true;
+
+            return false;
         }
     }
 }

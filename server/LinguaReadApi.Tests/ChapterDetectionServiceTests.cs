@@ -386,6 +386,52 @@ namespace LinguaReadApi.Tests
             Assert.Equal("Chapter 1: The Beginning", consolidated[1].Title);
             Assert.Equal("Chapter 2: The Middle", consolidated[2].Title);
         }
+
+        [Fact]
+        public void DetectChaptersFromEpubHeadings_HandlesNullBlockText()
+        {
+            var blocks = new List<ReaderContentBlock>
+            {
+                new ReaderContentBlock { Type = "title", Text = "Chapter 1" },
+                new ReaderContentBlock { Type = "paragraph", Text = "Some text" },
+                new ReaderContentBlock { Type = "image", Text = null, ImageUrl = "http://example.com/img.png" },
+                new ReaderContentBlock { Type = "paragraph", Text = "More text" }
+            };
+
+            // This should run without throwing a NullReferenceException!
+            var chapters = _service.DetectChaptersFromEpubHeadings(blocks);
+
+            Assert.Single(chapters);
+            Assert.Equal("Chapter 1", chapters[0].Title);
+            Assert.Contains("Some text", chapters[0].Content);
+            Assert.Contains("More text", chapters[0].Content);
+            Assert.Equal(3, chapters[0].Blocks!.Count); // Expecting paragraph, image, and paragraph
+        }
+
+        [Fact]
+        public void ConsolidateFrontMatter_DoesNotConsolidateRegularChapters()
+        {
+            var chapters = new List<DetectedChapter>
+            {
+                new DetectedChapter { Title = "Capa", Content = "Book cover text", Blocks = new List<ReaderContentBlock>{ new ReaderContentBlock{ Text = "Book cover text" } } },
+                new DetectedChapter { Title = "Chapter 1", Content = "Short chapter content", Blocks = new List<ReaderContentBlock>{ new ReaderContentBlock{ Text = "Short chapter content" } } },
+                new DetectedChapter { Title = "Chapter 2", Content = "Another short chapter", Blocks = new List<ReaderContentBlock>{ new ReaderContentBlock{ Text = "Another short chapter" } } },
+                new DetectedChapter { Title = "Chapter 3", Content = new string('A', 500), Blocks = new List<ReaderContentBlock>{ new ReaderContentBlock{ Text = "This is the real story." } } }
+            };
+
+            var consolidated = _service.ConsolidateFrontMatter(chapters);
+
+            // "Capa" should be merged into "Front Matter".
+            // "Chapter 1" and "Chapter 2" must NOT be merged despite being under 400 characters!
+            // So we should have 4 chapters: "Front Matter", "Chapter 1", "Chapter 2", and "Chapter 3".
+            Assert.Equal(4, consolidated.Count);
+            
+            Assert.Equal("Front Matter", consolidated[0].Title);
+            Assert.Contains("Book cover text", consolidated[0].Content);
+            Assert.Equal("Chapter 1", consolidated[1].Title);
+            Assert.Equal("Chapter 2", consolidated[2].Title);
+            Assert.Equal("Chapter 3", consolidated[3].Title);
+        }
     }
 }
 

@@ -2713,9 +2713,10 @@ namespace LinguaReadApi.Controllers
                 if (epubBook != null)
                 {
                     chapters = _chapterDetectionService.DetectChaptersFromEpubToc(epubBook);
-                    if (chapters.Any())
+                    if (chapters.Count > 1)
                     {
                         FillEpubChaptersContent(chapters, epubBook, epubBlocks);
+                        chapters = _chapterDetectionService.ConsolidateFrontMatter(chapters);
                     }
                     else if (epubBlocks != null && epubBlocks.Any())
                     {
@@ -2729,6 +2730,7 @@ namespace LinguaReadApi.Controllers
                                 chapters = pbChapters;
                             }
                         }
+                        chapters = _chapterDetectionService.ConsolidateFrontMatter(chapters);
                     }
                 }
                 else if (epubBlocks != null && epubBlocks.Any())
@@ -2743,6 +2745,7 @@ namespace LinguaReadApi.Controllers
                             chapters = pbChapters;
                         }
                     }
+                    chapters = _chapterDetectionService.ConsolidateFrontMatter(chapters);
                 }
                 else if (!string.IsNullOrWhiteSpace(content))
                 {
@@ -2848,7 +2851,7 @@ namespace LinguaReadApi.Controllers
                 if (epubBook != null)
                 {
                     var tocChapters = _chapterDetectionService.DetectChaptersFromEpubToc(epubBook);
-                    if (tocChapters.Any())
+                    if (tocChapters.Count > 1)
                     {
                         detectionMethod = "epub-toc";
                     }

@@ -34,7 +34,9 @@ namespace LinguaReadApi.Services
             // Japanese structural keywords
             new Regex(@"^\s*(?:プロローグ|エピローグ|序章|終章|序幕|後書き|前書き|あとがき|まえがき)\s*$", RegexOptions.Compiled),
             // Standalone structural headings (multilingual) — no number required
-            new Regex(@"^\s*(?:Prologue|Epilogue|Foreword|Afterword|Preface|Introduction|Conclusion|Appendix|Interlude|Intermission|Postscript|Preamble|Prolog|Epilog|Vorwort|Nachwort|Einleitung|Einführung|Anhang|Schluss|Zwischenspiel|Prologue|Épilogue|Préface|Avant-propos|Postface|Conclusion|Annexe|Prólogo|Epílogo|Prefacio|Introducción|Conclusión|Apéndice|Interludio|Prologo|Prefazione|Introduzione|Conclusione|Appendice|Interludio|Prólogo|Epílogo|Prefácio|Introdução|Conclusão|Apêndice|Interlúdio|Пролог|Эпилог|Предисловие|Послесловие|Введение|Заключение|Приложение|Voorwoord|Nawoord|Inleiding|Conclusie|Bijlage|Wstęp|Zakończenie|Dodatek)(?:\s*[:\-–—\.]\s*(.+))?\s*$", RegexOptions.Compiled | RegexOptions.IgnoreCase)
+            new Regex(@"^\s*(?:Prologue|Epilogue|Foreword|Afterword|Preface|Introduction|Conclusion|Appendix|Interlude|Intermission|Postscript|Preamble|Prolog|Epilog|Vorwort|Nachwort|Einleitung|Einführung|Anhang|Schluss|Zwischenspiel|Prologue|Épilogue|Préface|Avant-propos|Postface|Conclusion|Annexe|Prólogo|Epílogo|Prefacio|Introducción|Conclusión|Apéndice|Interludio|Prologo|Prefazione|Introduzione|Conclusione|Appendice|Interludio|Prólogo|Epílogo|Prefácio|Introdução|Conclusão|Apéndice|Interlúdio|Пролог|Эпилог|Предисловие|Послесловие|Введение|Заключение|Приложение|Voorwoord|Nawoord|Inleiding|Conclusie|Bijlage|Wstęp|Zakończenie|Dodatek)(?:\s*[:\-–—\.]\s*(.+))?\s*$", RegexOptions.Compiled | RegexOptions.IgnoreCase),
+            // Standalone Roman numerals (e.g. "I", "II", "III", "XVII")
+            new Regex(@"^\s*[IVXLCDMivxlcdm]+\s*$", RegexOptions.Compiled | RegexOptions.IgnoreCase)
         };
 
         private static readonly Regex NumberedHeadingRegex = new Regex(@"^\s*(?:[0-9]+|[IVXLCDMivxlcdm]+)\s*[\.\-–—:]\s+(.+)$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
@@ -186,13 +188,43 @@ namespace LinguaReadApi.Services
             var chapters = new List<DetectedChapter>();
             if (blocks == null || !blocks.Any()) return chapters;
 
+            // 1. Pre-analyze titles to see if they are actually page numbers
+            var titleBlocks = blocks.Where(b => string.Equals(b.Type, "title", StringComparison.OrdinalIgnoreCase) 
+                                                && !string.IsNullOrWhiteSpace(b.Text) 
+                                                && b.Text.Trim().Length < 120).ToList();
+            
+            bool filterNumericTitles = false;
+            if (titleBlocks.Count > 10)
+            {
+                var numericTitles = titleBlocks.Where(b => int.TryParse(b.Text.Trim(), out _)).ToList();
+                // If more than 50% of headings are purely numeric, or there's a page number higher than 50
+                if (numericTitles.Count > 0 && (numericTitles.Count > titleBlocks.Count * 0.5 || numericTitles.Any(b => int.Parse(b.Text.Trim()) > 50)))
+                {
+                    filterNumericTitles = true;
+                }
+            }
+
+            var romanRegex = new Regex(@"^\s*[IVXLCDMivxlcdm]+\s*$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
             var currentChapterTitle = "Start";
             var currentChapterBlocks = new List<ReaderContentBlock>();
 
             foreach (var block in blocks)
             {
-                // If it's a heading block (Title type)
-                if (string.Equals(block.Type, "title", StringComparison.OrdinalIgnoreCase) && 
+                var text = block.Text.Trim();
+                bool isHeading = string.Equals(block.Type, "title", StringComparison.OrdinalIgnoreCase);
+                
+                // Match paragraph block that is a standalone Roman Numeral (e.g. "I", "II", "XVII")
+                bool isParagraphHeading = string.Equals(block.Type, "paragraph", StringComparison.OrdinalIgnoreCase) 
+                                          && text.Length < 20 
+                                          && romanRegex.IsMatch(text);
+
+                // If filtering page numbers, ignore purely numeric Title blocks
+                if (isHeading && filterNumericTitles && int.TryParse(text, out _))
+                {
+                    isHeading = false;
+                }
+
+                if ((isHeading || isParagraphHeading) && 
                     !string.IsNullOrWhiteSpace(block.Text) && 
                     block.Text.Trim().Length < 120)
                 {
@@ -208,7 +240,7 @@ namespace LinguaReadApi.Services
                         currentChapterBlocks.Clear();
                     }
 
-                    currentChapterTitle = block.Text.Trim();
+                    currentChapterTitle = text;
                 }
                 else
                 {
@@ -379,6 +411,68 @@ namespace LinguaReadApi.Services
             }
 
             return result;
+        }
+
+        /// <summary>
+        /// Consolidates small metadata and cover/copyright pages at the beginning of the book
+        /// into a single "Front Matter" chapter to prevent micro-lesson clutter in the dashboard.
+        /// </summary>
+        public List<DetectedChapter> ConsolidateFrontMatter(List<DetectedChapter> chapters)
+        {
+            if (chapters == null || chapters.Count < 3) return chapters;
+
+            var consolidated = new List<DetectedChapter>();
+            var frontMatterBlocks = new List<ReaderContentBlock>();
+            var frontMatterContent = new List<string>();
+            var filePaths = new List<string>();
+            
+            var frontMatterKeywords = new[] { "capa", "rosto", "créditos", "sumário", "dedicatória", "epígrafe", "cover", "titlepage", "copyright", "toc", "dedication" };
+
+            int i = 0;
+            while (i < chapters.Count)
+            {
+                var titleLower = chapters[i].Title.ToLowerInvariant();
+                bool isFrontMatter = frontMatterKeywords.Any(k => titleLower.Contains(k)) || chapters[i].CharacterCount < 400;
+
+                // Stop consolidation before the last/only chapters
+                if (isFrontMatter && i < chapters.Count - 1)
+                {
+                    frontMatterContent.Add($"=== {chapters[i].Title} ===");
+                    frontMatterContent.Add(chapters[i].Content);
+                    if (chapters[i].Blocks != null)
+                    {
+                        frontMatterBlocks.AddRange(chapters[i].Blocks);
+                    }
+                    if (chapters[i].FilePaths != null)
+                    {
+                        filePaths.AddRange(chapters[i].FilePaths!);
+                    }
+                    i++;
+                }
+                else
+                {
+                    break;
+                }
+            }
+
+            if (frontMatterContent.Any())
+            {
+                consolidated.Add(new DetectedChapter
+                {
+                    Title = "Front Matter",
+                    Content = string.Join("\n\n", frontMatterContent),
+                    Blocks = frontMatterBlocks.Any() ? frontMatterBlocks : null,
+                    FilePaths = filePaths.Any() ? filePaths.Distinct().ToList() : null
+                });
+            }
+
+            while (i < chapters.Count)
+            {
+                consolidated.Add(chapters[i]);
+                i++;
+            }
+
+            return consolidated;
         }
     }
 }

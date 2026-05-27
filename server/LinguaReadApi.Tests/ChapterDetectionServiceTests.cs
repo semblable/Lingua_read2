@@ -253,6 +253,103 @@ namespace LinguaReadApi.Tests
             Assert.Equal("Custom Title Name", chapters[2].Title);
             Assert.Contains("Chapter 2 content.", chapters[2].Content);
         }
+
+        [Fact]
+        public void DetectChaptersFromEpubHeadings_FiltersOutNumericPageNumbers()
+        {
+            var blocks = new List<ReaderContentBlock>
+            {
+                new ReaderContentBlock { Type = "title", Text = "1" },
+                new ReaderContentBlock { Type = "paragraph", Text = "Page 1 content." },
+                new ReaderContentBlock { Type = "title", Text = "2" },
+                new ReaderContentBlock { Type = "paragraph", Text = "Page 2 content." },
+                new ReaderContentBlock { Type = "title", Text = "15" },
+                new ReaderContentBlock { Type = "paragraph", Text = "Page 15 content." },
+                new ReaderContentBlock { Type = "title", Text = "20" },
+                new ReaderContentBlock { Type = "paragraph", Text = "Page 20 content." },
+                new ReaderContentBlock { Type = "title", Text = "30" },
+                new ReaderContentBlock { Type = "paragraph", Text = "Page 30 content." },
+                new ReaderContentBlock { Type = "title", Text = "40" },
+                new ReaderContentBlock { Type = "paragraph", Text = "Page 40 content." },
+                new ReaderContentBlock { Type = "title", Text = "51" }, // Over 50 trigger
+                new ReaderContentBlock { Type = "paragraph", Text = "Page 51 content." },
+                new ReaderContentBlock { Type = "title", Text = "60" },
+                new ReaderContentBlock { Type = "paragraph", Text = "Page 60 content." },
+                new ReaderContentBlock { Type = "title", Text = "70" },
+                new ReaderContentBlock { Type = "paragraph", Text = "Page 70 content." },
+                new ReaderContentBlock { Type = "title", Text = "80" },
+                new ReaderContentBlock { Type = "paragraph", Text = "Page 80 content." },
+                new ReaderContentBlock { Type = "title", Text = "90" },
+                new ReaderContentBlock { Type = "paragraph", Text = "Page 90 content." },
+                new ReaderContentBlock { Type = "title", Text = "100" },
+                new ReaderContentBlock { Type = "paragraph", Text = "Page 100 content." },
+                new ReaderContentBlock { Type = "title", Text = "Chapter I: Main Story" }, // A real header
+                new ReaderContentBlock { Type = "paragraph", Text = "Actual story starts." }
+            };
+
+            var chapters = _service.DetectChaptersFromEpubHeadings(blocks);
+
+            // Since it filtered out the numeric page numbers (they triggered the page-number detection),
+            // it should only split on "Chapter I: Main Story", yielding 2 chapters: "Start" and "Chapter I: Main Story".
+            Assert.Equal(2, chapters.Count);
+            Assert.Equal("Start", chapters[0].Title);
+            Assert.Contains("Page 51 content.", chapters[0].Content);
+            Assert.Equal("Chapter I: Main Story", chapters[1].Title);
+            Assert.Contains("Actual story starts.", chapters[1].Content);
+        }
+
+        [Fact]
+        public void DetectChaptersFromEpubHeadings_DetectsParagraphLevelRomanNumerals()
+        {
+            var blocks = new List<ReaderContentBlock>
+            {
+                new ReaderContentBlock { Type = "paragraph", Text = "Intro" },
+                new ReaderContentBlock { Type = "paragraph", Text = "I" }, // Standalone Roman numeral
+                new ReaderContentBlock { Type = "paragraph", Text = "Chapter 1 content." },
+                new ReaderContentBlock { Type = "paragraph", Text = "II" }, // Standalone Roman numeral
+                new ReaderContentBlock { Type = "paragraph", Text = "Chapter 2 content." }
+            };
+
+            var chapters = _service.DetectChaptersFromEpubHeadings(blocks);
+
+            Assert.Equal(3, chapters.Count);
+            Assert.Equal("Start", chapters[0].Title);
+            Assert.Contains("Intro", chapters[0].Content);
+
+            Assert.Equal("I", chapters[1].Title);
+            Assert.Contains("Chapter 1 content.", chapters[1].Content);
+
+            Assert.Equal("II", chapters[2].Title);
+            Assert.Contains("Chapter 2 content.", chapters[2].Content);
+        }
+
+        [Fact]
+        public void ConsolidateFrontMatter_ConsolidatesCorrectly()
+        {
+            var chapters = new List<DetectedChapter>
+            {
+                new DetectedChapter { Title = "Capa", Content = "Book cover text", Blocks = new List<ReaderContentBlock>{ new ReaderContentBlock{ Text = "Book cover text" } } },
+                new DetectedChapter { Title = "Folha de Rosto", Content = "Title Page Info", Blocks = new List<ReaderContentBlock>{ new ReaderContentBlock{ Text = "Title Page Info" } } },
+                new DetectedChapter { Title = "Créditos", Content = "Copyright 2026", Blocks = new List<ReaderContentBlock>{ new ReaderContentBlock{ Text = "Copyright 2026" } } },
+                new DetectedChapter { Title = "Chapter 1: The Beginning", Content = new string('A', 500), Blocks = new List<ReaderContentBlock>{ new ReaderContentBlock{ Text = "This is the real story." } } },
+                new DetectedChapter { Title = "Chapter 2: The Middle", Content = new string('B', 500), Blocks = new List<ReaderContentBlock>{ new ReaderContentBlock{ Text = "More story content." } } }
+            };
+
+            var consolidated = _service.ConsolidateFrontMatter(chapters);
+
+            // Capa, Folha de Rosto, and Créditos should be merged into "Front Matter"
+            Assert.Equal(3, consolidated.Count);
+            
+            Assert.Equal("Front Matter", consolidated[0].Title);
+            Assert.Contains("=== Capa ===", consolidated[0].Content);
+            Assert.Contains("=== Folha de Rosto ===", consolidated[0].Content);
+            Assert.Contains("=== Créditos ===", consolidated[0].Content);
+            Assert.Contains("Copyright 2026", consolidated[0].Content);
+            Assert.Equal(3, consolidated[0].Blocks!.Count);
+
+            Assert.Equal("Chapter 1: The Beginning", consolidated[1].Title);
+            Assert.Equal("Chapter 2: The Middle", consolidated[2].Title);
+        }
     }
 }
 

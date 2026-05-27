@@ -1240,10 +1240,16 @@ namespace LinguaReadApi.Controllers
 
                 if (Regex.IsMatch(token, @"^<img\b", RegexOptions.IgnoreCase))
                 {
-                    FlushBufferedText(blocks, textBuffer, inHeading ? ReaderContentBlockTypes.Title : ReaderContentBlockTypes.Paragraph);
+                    FlushBufferedText(blocks, textBuffer, inHeading ? ReaderContentBlockTypes.Title : ReaderContentBlockTypes.Paragraph, ref pendingChapterBreak);
                     var imageBlock = TryCreateImageBlock(token, textFile, extractionContext);
                     if (imageBlock != null)
                     {
+                        if (pendingChapterBreak)
+                        {
+                            imageBlock.Meta ??= new Dictionary<string, string>();
+                            imageBlock.Meta["chapterBreak"] = "true";
+                            pendingChapterBreak = false;
+                        }
                         blocks.Add(imageBlock);
                     }
                     continue;
@@ -1251,21 +1257,25 @@ namespace LinguaReadApi.Controllers
 
                 if (Regex.IsMatch(token, @"^<h[1-6]\b", RegexOptions.IgnoreCase))
                 {
-                    FlushBufferedText(blocks, textBuffer, ReaderContentBlockTypes.Paragraph);
+                    FlushBufferedText(blocks, textBuffer, ReaderContentBlockTypes.Paragraph, ref pendingChapterBreak);
+                    if (HasPageBreak(token, pageBreakClasses))
+                    {
+                        pendingChapterBreak = true;
+                    }
                     inHeading = true;
                     continue;
                 }
 
                 if (Regex.IsMatch(token, @"^</h[1-6]\s*>$", RegexOptions.IgnoreCase))
                 {
-                    FlushBufferedText(blocks, textBuffer, ReaderContentBlockTypes.Title);
+                    FlushBufferedText(blocks, textBuffer, ReaderContentBlockTypes.Title, ref pendingChapterBreak);
                     inHeading = false;
                     continue;
                 }
 
                 if (Regex.IsMatch(token, @"^<figcaption\b", RegexOptions.IgnoreCase))
                 {
-                    FlushBufferedText(blocks, textBuffer, inHeading ? ReaderContentBlockTypes.Title : ReaderContentBlockTypes.Paragraph);
+                    FlushBufferedText(blocks, textBuffer, inHeading ? ReaderContentBlockTypes.Title : ReaderContentBlockTypes.Paragraph, ref pendingChapterBreak);
                     inCaption = true;
                     continue;
                 }
@@ -1283,12 +1293,18 @@ namespace LinguaReadApi.Controllers
                         }
                         else
                         {
-                            blocks.Add(new ReaderContentBlock
+                            var captionBlock = new ReaderContentBlock
                             {
                                 Type = ReaderContentBlockTypes.Paragraph,
                                 Text = caption,
                                 Meta = new Dictionary<string, string> { ["variant"] = "caption" }
-                            });
+                            };
+                            if (pendingChapterBreak)
+                            {
+                                captionBlock.Meta["chapterBreak"] = "true";
+                                pendingChapterBreak = false;
+                            }
+                            blocks.Add(captionBlock);
                         }
                     }
                     inCaption = false;
@@ -1299,12 +1315,11 @@ namespace LinguaReadApi.Controllers
                     Regex.IsMatch(token, @"^</(p|div|section|article|aside|header|footer|nav|figure|blockquote|pre|li|tr)\s*>$", RegexOptions.IgnoreCase) ||
                     Regex.IsMatch(token, @"^<hr\b", RegexOptions.IgnoreCase))
                 {
-                    // Detect page-break on opening block-level tags
+                    FlushBufferedText(blocks, textBuffer, inHeading ? ReaderContentBlockTypes.Title : ReaderContentBlockTypes.Paragraph, ref pendingChapterBreak);
                     if (token[1] != '/' && HasPageBreak(token, pageBreakClasses))
                     {
                         pendingChapterBreak = true;
                     }
-                    FlushBufferedText(blocks, textBuffer, inHeading ? ReaderContentBlockTypes.Title : ReaderContentBlockTypes.Paragraph);
                     continue;
                 }
 
@@ -1321,16 +1336,7 @@ namespace LinguaReadApi.Controllers
                 }
             }
 
-            FlushBufferedText(blocks, textBuffer, inHeading ? ReaderContentBlockTypes.Title : ReaderContentBlockTypes.Paragraph);
-
-            // Apply any pending chapter-break markers to blocks
-            // The pendingChapterBreak flag is applied to the *first* block after each page-break tag.
-            // We do a post-processing pass because FlushBufferedText may produce the block
-            // several tokens after the page-break opening tag was seen.
-            if (pageBreakClasses.Count > 0 || pendingChapterBreak)
-            {
-                ApplyPendingChapterBreaks(blocks, normalizedHtml, pageBreakClasses);
-            }
+            FlushBufferedText(blocks, textBuffer, inHeading ? ReaderContentBlockTypes.Title : ReaderContentBlockTypes.Paragraph, ref pendingChapterBreak);
 
             return blocks;
         }
@@ -1369,65 +1375,7 @@ namespace LinguaReadApi.Controllers
             return false;
         }
 
-        /// <summary>
-        /// Post-processing pass: re-scans the raw HTML for block-level elements with
-        /// page-break styles and marks the corresponding content blocks with chapterBreak metadata.
-        /// </summary>
-        private static void ApplyPendingChapterBreaks(
-            List<ReaderContentBlock> blocks,
-            string normalizedHtml,
-            HashSet<string> pageBreakClasses)
-        {
-            // Collect text content of elements that follow a page-break tag
-            var breakPositions = new HashSet<int>();
-            var tagMatches = Regex.Matches(normalizedHtml,
-                @"<(p|div|section|article|aside|header|footer|h[1-6])\b[^>]*>",
-                RegexOptions.IgnoreCase);
 
-            foreach (Match m in tagMatches)
-            {
-                if (HasPageBreak(m.Value, pageBreakClasses))
-                {
-                    breakPositions.Add(m.Index);
-                }
-            }
-
-            if (breakPositions.Count == 0) return;
-
-            // Walk through blocks and mark the first block whose text appears
-            // after a page-break tag position in the source HTML
-            int htmlSearchStart = 0;
-            foreach (var block in blocks)
-            {
-                if (string.IsNullOrWhiteSpace(block.Text)) continue;
-
-                // Find where this block's text starts in the HTML
-                var snippet = block.Text.Length > 40 ? block.Text.Substring(0, 40) : block.Text;
-                // Normalize for comparison (HTML may have different whitespace)
-                var cleanSnippet = Regex.Replace(snippet, @"\s+", " ").Trim();
-                if (cleanSnippet.Length < 3) continue;
-
-                // Search for the snippet in the HTML after our current position
-                var searchText = Regex.Replace(normalizedHtml.Substring(htmlSearchStart), @"<[^>]+>", " ");
-                searchText = Regex.Replace(searchText, @"\s+", " ");
-                var idx = searchText.IndexOf(cleanSnippet, StringComparison.OrdinalIgnoreCase);
-                if (idx >= 0)
-                {
-                    var absolutePos = htmlSearchStart + idx;
-                    // Check if any break position is between our last search position and this block
-                    foreach (var bp in breakPositions)
-                    {
-                        if (bp >= htmlSearchStart && bp < htmlSearchStart + idx + cleanSnippet.Length)
-                        {
-                            block.Meta ??= new Dictionary<string, string>();
-                            block.Meta["chapterBreak"] = "true";
-                            break;
-                        }
-                    }
-                    htmlSearchStart = absolutePos;
-                }
-            }
-        }
 
         private static ReaderContentBlock? TryCreateImageBlock(string imageTag, EpubLocalTextContentFile textFile, EpubExtractionContext extractionContext)
         {
@@ -1737,7 +1685,7 @@ namespace LinguaReadApi.Controllers
             return blocks.Select(CloneBlock).ToList();
         }
 
-        private static void FlushBufferedText(List<ReaderContentBlock> blocks, StringBuilder textBuffer, string blockType)
+        private static void FlushBufferedText(List<ReaderContentBlock> blocks, StringBuilder textBuffer, string blockType, ref bool pendingChapterBreak)
         {
             var normalizedText = NormalizeTextFragment(textBuffer.ToString());
             textBuffer.Clear();
@@ -1747,11 +1695,17 @@ namespace LinguaReadApi.Controllers
                 return;
             }
 
-            blocks.Add(new ReaderContentBlock
+            var block = new ReaderContentBlock
             {
                 Type = blockType,
                 Text = normalizedText
-            });
+            };
+            if (pendingChapterBreak)
+            {
+                block.Meta = new Dictionary<string, string> { { "chapterBreak", "true" } };
+                pendingChapterBreak = false;
+            }
+            blocks.Add(block);
         }
 
         private static string NormalizeTextFragment(string? value)

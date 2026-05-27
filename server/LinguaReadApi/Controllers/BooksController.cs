@@ -899,49 +899,69 @@ namespace LinguaReadApi.Controllers
                 }
             }
 
-            // 4. Clear existing texts (cascades automatically delete TextWords, UserSentenceProgress, etc.)
-            var oldTexts = book.Texts.ToList();
-            _context.Texts.RemoveRange(oldTexts);
-            
-            // Explicitly set LastReadTextId/LastReadPartId to null to avoid constraint violation before saving
-            book.LastReadTextId = null;
-            book.LastReadPartId = null;
-            await _context.SaveChangesAsync();
-
-            // 5. Create new texts based on splitting / grouping results
-            var createdTexts = new List<Text>();
-            for (int i = 0; i < chapters.Count; i++)
+            // Safety Check: If splitting produces absolutely zero chapters, abort to prevent destructive data loss.
+            if (!chapters.Any())
             {
-                var chap = chapters[i];
-                var text = new Text
-                {
-                    Title = chap.Title,
-                    Content = chap.Content,
-                    StructuredContent = chap.Blocks != null ? JsonSerializer.Serialize(chap.Blocks, StructuredContentJsonOptions) : null,
-                    LanguageId = book.LanguageId,
-                    UserId = userId,
-                    BookId = book.BookId,
-                    PartNumber = i + 1,
-                    CreatedAt = DateTime.UtcNow
-                };
-                _context.Texts.Add(text);
-                createdTexts.Add(text);
+                return BadRequest("No text content could be extracted or split from this book.");
             }
 
-            await _context.SaveChangesAsync();
+            // Execute destructive split inside a single transaction to guarantee database atomicity
+            await using var transaction = await _context.Database.BeginTransactionAsync();
+            try
+            {
+                // 4. Clear existing texts (cascades automatically delete TextWords, UserSentenceProgress, etc.)
+                var oldTexts = book.Texts.ToList();
+                _context.Texts.RemoveRange(oldTexts);
+                
+                // Explicitly set LastReadTextId/LastReadPartId to null to avoid constraint violation before saving
+                book.LastReadTextId = null;
+                book.LastReadPartId = null;
+                book.Texts.Clear(); // Clear in-memory navigation collection to avoid EF tracking issues
+                await _context.SaveChangesAsync();
 
-            // 6. Reset stats (LastRead* already cleared in step 4)
-            book.TotalWords = 0;
-            book.KnownWords = 0;
-            book.LearningWords = 0;
-            book.IsFinished = false;
-            book.StatsUpdatedAt = null;
-            await _context.SaveChangesAsync();
+                // 5. Create new texts based on splitting / grouping results
+                var createdTexts = new List<Text>();
+                for (int i = 0; i < chapters.Count; i++)
+                {
+                    var chap = chapters[i];
+                    var text = new Text
+                    {
+                        Title = chap.Title,
+                        Content = chap.Content,
+                        StructuredContent = chap.Blocks != null ? JsonSerializer.Serialize(chap.Blocks, StructuredContentJsonOptions) : null,
+                        LanguageId = book.LanguageId,
+                        UserId = userId,
+                        BookId = book.BookId,
+                        PartNumber = i + 1,
+                        CreatedAt = DateTime.UtcNow
+                    };
+                    _context.Texts.Add(text);
+                    createdTexts.Add(text);
+                }
 
-            // 7. Queue word-linking to recalculate word connections and statistics in background
-            await QueueWordLinking(createdTexts, userId);
+                await _context.SaveChangesAsync();
 
-            return NoContent();
+                // 6. Reset stats (LastRead* already cleared in step 4)
+                book.TotalWords = 0;
+                book.KnownWords = 0;
+                book.LearningWords = 0;
+                book.IsFinished = false;
+                book.StatsUpdatedAt = null;
+                await _context.SaveChangesAsync();
+
+                await transaction.CommitAsync();
+
+                // 7. Queue word-linking to recalculate word connections and statistics in background
+                await QueueWordLinking(createdTexts, userId);
+
+                return NoContent();
+            }
+            catch (Exception ex)
+            {
+                await transaction.RollbackAsync();
+                _logger.LogError(ex, "Failed to re-split book {BookId}", id);
+                return StatusCode(StatusCodes.Status500InternalServerError, "Failed to re-split the book due to a database error.");
+            }
         }
 
         // Explicit OPTIONS handler for CORS preflight debugging
@@ -2744,6 +2764,14 @@ namespace LinguaReadApi.Controllers
                         {
                             chapters = pbChapters;
                         }
+                        else
+                        {
+                            var sfChapters = _chapterDetectionService.DetectChaptersFromEpubSourceFiles(epubBlocks);
+                            if (sfChapters.Any())
+                            {
+                                chapters = sfChapters;
+                            }
+                        }
                     }
                     chapters = _chapterDetectionService.ConsolidateFrontMatter(chapters);
                 }
@@ -2755,6 +2783,9 @@ namespace LinguaReadApi.Controllers
                         chapters = _chapterDetectionService.DetectChaptersFromSectionBreaks(content);
                     }
                 }
+
+                // Consolidate empty/textless chapters (e.g. those consisting only of image blocks)
+                chapters = _chapterDetectionService.ConsolidateEmptyChapters(chapters);
             }
 
             // Fallback if no chapters detected or if not splitting by chapter
@@ -2982,11 +3013,22 @@ namespace LinguaReadApi.Controllers
                             {
                                 epubBlocks.AddRange(blocks);
                             }
+                            else if (!string.IsNullOrEmpty(t.Content))
+                            {
+                                epubBlocks.Add(new ReaderContentBlock { Type = "paragraph", Text = t.Content });
+                            }
                         }
                         catch (Exception)
                         {
-                            // ignore / skip
+                            if (!string.IsNullOrEmpty(t.Content))
+                            {
+                                epubBlocks.Add(new ReaderContentBlock { Type = "paragraph", Text = t.Content });
+                            }
                         }
+                    }
+                    else if (!string.IsNullOrEmpty(t.Content))
+                    {
+                        epubBlocks.Add(new ReaderContentBlock { Type = "paragraph", Text = t.Content });
                     }
                 }
                 var content = BuildPlainTextFromBlocks(epubBlocks);

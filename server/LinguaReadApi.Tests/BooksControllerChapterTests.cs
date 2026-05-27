@@ -319,6 +319,83 @@ namespace LinguaReadApi.Tests
             Assert.Equal("true", blocks[2].Meta!["chapterBreak"]);
         }
 
+        [Fact]
+        public async Task ReSplitBook_UsesEpubSourceFileFallback_WhenHeadingsAndPageBreaksAreAbsent()
+        {
+            await using var context = CreateContext();
+            var userId = Guid.NewGuid();
+            SeedUserAndLanguage(context, userId);
+
+            // Seed a book with existing parts having structured content blocks but no headings/page-breaks, only different sourceFiles
+            var book = new Book 
+            { 
+                BookId = 40, 
+                UserId = userId, 
+                LanguageId = 1, 
+                Title = "No Headings Book"
+            };
+            context.Books.Add(book);
+
+            var blocksPart1 = new List<ReaderContentBlock>
+            {
+                new ReaderContentBlock { Type = "paragraph", Text = "Paragraph one in file A.", Meta = new Dictionary<string, string> { { "sourceFile", "docA.html" } } }
+            };
+            var blocksPart2 = new List<ReaderContentBlock>
+            {
+                new ReaderContentBlock { Type = "paragraph", Text = "Paragraph two in file B.", Meta = new Dictionary<string, string> { { "sourceFile", "docB.html" } } }
+            };
+
+            context.Texts.AddRange(
+                new Text 
+                { 
+                    TextId = 400, 
+                    BookId = 40, 
+                    UserId = userId, 
+                    LanguageId = 1, 
+                    Title = "Part 1", 
+                    Content = "Paragraph one in file A.", 
+                    StructuredContent = System.Text.Json.JsonSerializer.Serialize(blocksPart1), 
+                    PartNumber = 1 
+                },
+                new Text 
+                { 
+                    TextId = 401, 
+                    BookId = 40, 
+                    UserId = userId, 
+                    LanguageId = 1, 
+                    Title = "Part 2", 
+                    Content = "Paragraph two in file B.", 
+                    StructuredContent = System.Text.Json.JsonSerializer.Serialize(blocksPart2), 
+                    PartNumber = 2 
+                }
+            );
+            await context.SaveChangesAsync();
+
+            var controller = CreateController(context, userId);
+            
+            var request = new ReSplitRequestDto
+            {
+                SplitMethod = "chapter",
+                MaxSegmentSize = 3000,
+                SubSplitOversized = false
+            };
+
+            var result = await controller.ReSplitBook(40, request);
+            Assert.IsType<NoContentResult>(result);
+
+            // Verify database state: we should still have 2 texts split by sourceFile!
+            context.ChangeTracker.Clear();
+            var reloadedBook = await context.Books.Include(b => b.Texts).FirstAsync(b => b.BookId == 40);
+            Assert.Equal(2, reloadedBook.Texts.Count);
+
+            var sortedTexts = reloadedBook.Texts.OrderBy(t => t.PartNumber).ToList();
+            Assert.Equal("Start", sortedTexts[0].Title);
+            Assert.Equal("Paragraph one in file A.", sortedTexts[0].Content);
+
+            Assert.Equal("Chapter 1", sortedTexts[1].Title);
+            Assert.Equal("Paragraph two in file B.", sortedTexts[1].Content);
+        }
+
         private static EpubLocalTextContentFile CreateMockTextContentFile(string content, string filePath)
         {
             var file = (EpubLocalTextContentFile)System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject(typeof(EpubLocalTextContentFile));

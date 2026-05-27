@@ -433,6 +433,85 @@ namespace LinguaReadApi.Tests
             Assert.Equal("Chapter 2", consolidated[2].Title);
             Assert.Equal("Chapter 3", consolidated[3].Title);
         }
+
+        [Fact]
+        public void ConsolidateEmptyChapters_MergesTextlessChaptersIntoNextChapter()
+        {
+            var chapters = new List<DetectedChapter>
+            {
+                new DetectedChapter 
+                { 
+                    Title = "Start", 
+                    Content = "   \n\r", 
+                    Blocks = new List<ReaderContentBlock> { new ReaderContentBlock { Type = "image", ImageUrl = "cover.jpg" } } 
+                },
+                new DetectedChapter 
+                { 
+                    Title = "Chapter 1", 
+                    Content = "This is actual story content.", 
+                    Blocks = new List<ReaderContentBlock> { new ReaderContentBlock { Type = "paragraph", Text = "This is actual story content." } } 
+                }
+            };
+
+            var result = _service.ConsolidateEmptyChapters(chapters);
+
+            // Should merge "Start" (empty) into "Chapter 1"
+            Assert.Single(result);
+            Assert.Equal("Chapter 1", result[0].Title);
+            Assert.Equal("This is actual story content.", result[0].Content);
+            Assert.Equal(2, result[0].Blocks!.Count);
+            Assert.Equal("image", result[0].Blocks![0].Type);
+            Assert.Equal("paragraph", result[0].Blocks![1].Type);
+        }
+
+        [Fact]
+        public void ConsolidateEmptyChapters_MergesTrailingEmptyChaptersIntoPreviousChapter()
+        {
+            var chapters = new List<DetectedChapter>
+            {
+                new DetectedChapter 
+                { 
+                    Title = "Chapter 1", 
+                    Content = "This is actual story content.", 
+                    Blocks = new List<ReaderContentBlock> { new ReaderContentBlock { Type = "paragraph", Text = "This is actual story content." } } 
+                },
+                new DetectedChapter 
+                { 
+                    Title = "Trailing", 
+                    Content = "", 
+                    Blocks = new List<ReaderContentBlock> { new ReaderContentBlock { Type = "image", ImageUrl = "end.jpg" } } 
+                }
+            };
+
+            var result = _service.ConsolidateEmptyChapters(chapters);
+
+            // Should merge "Trailing" into "Chapter 1"
+            Assert.Single(result);
+            Assert.Equal("Chapter 1", result[0].Title);
+            Assert.Equal(2, result[0].Blocks!.Count);
+            Assert.Equal("paragraph", result[0].Blocks![0].Type);
+            Assert.Equal("image", result[0].Blocks![1].Type);
+        }
+
+        [Fact]
+        public void DetectChaptersFromEpubSourceFiles_PartitionsCorrectly()
+        {
+            var blocks = new List<ReaderContentBlock>
+            {
+                new ReaderContentBlock { Type = "paragraph", Text = "Intro paragraph", Meta = new Dictionary<string, string> { { "sourceFile", "part1.html" } } },
+                new ReaderContentBlock { Type = "title", Text = "Chapter I", Meta = new Dictionary<string, string> { { "sourceFile", "part2.html" } } },
+                new ReaderContentBlock { Type = "paragraph", Text = "First real chapter paragraph", Meta = new Dictionary<string, string> { { "sourceFile", "part2.html" } } }
+            };
+
+            var chapters = _service.DetectChaptersFromEpubSourceFiles(blocks);
+
+            Assert.Equal(2, chapters.Count);
+            Assert.Equal("Start", chapters[0].Title);
+            Assert.Contains("Intro paragraph", chapters[0].Content);
+            
+            Assert.Equal("Chapter I", chapters[1].Title);
+            Assert.Contains("First real chapter paragraph", chapters[1].Content);
+        }
     }
 }
 

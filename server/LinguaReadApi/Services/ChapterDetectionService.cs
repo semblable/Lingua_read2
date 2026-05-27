@@ -502,5 +502,151 @@ namespace LinguaReadApi.Services
 
             return false;
         }
+
+        /// <summary>
+        /// Merges any chapter that has no readable alphanumeric text (e.g. only contains images or whitespace)
+        /// into the next chapter (prepend), or if it is the last chapter, the previous chapter (append).
+        /// </summary>
+        public List<DetectedChapter> ConsolidateEmptyChapters(List<DetectedChapter> chapters)
+        {
+            if (chapters == null || chapters.Count <= 1) return chapters ?? new List<DetectedChapter>();
+
+            var result = new List<DetectedChapter>();
+
+            for (int i = 0; i < chapters.Count; i++)
+            {
+                var chap = chapters[i];
+                bool hasText = !string.IsNullOrWhiteSpace(chap.Content) && chap.Content.Any(char.IsLetterOrDigit);
+
+                if (!hasText)
+                {
+                    // Empty chapter! Merge it.
+                    if (i + 1 < chapters.Count)
+                    {
+                        var nextChap = chapters[i + 1];
+
+                        nextChap.Content = string.IsNullOrWhiteSpace(chap.Content)
+                            ? nextChap.Content
+                            : chap.Content + "\n\n" + nextChap.Content;
+
+                        if (chap.Blocks != null && chap.Blocks.Any())
+                        {
+                            nextChap.Blocks ??= new List<ReaderContentBlock>();
+                            nextChap.Blocks.InsertRange(0, chap.Blocks);
+                        }
+
+                        if (chap.FilePaths != null && chap.FilePaths.Any())
+                        {
+                            nextChap.FilePaths ??= new List<string>();
+                            nextChap.FilePaths.InsertRange(0, chap.FilePaths);
+                            nextChap.FilePaths = nextChap.FilePaths.Distinct().ToList();
+                        }
+
+                        if (nextChap.Title == "Start" && chap.Title != "Start")
+                        {
+                            nextChap.Title = chap.Title;
+                        }
+                    }
+                    else if (result.Any())
+                    {
+                        var prevChap = result.Last();
+
+                        prevChap.Content = string.IsNullOrWhiteSpace(chap.Content)
+                            ? prevChap.Content
+                            : prevChap.Content + "\n\n" + chap.Content;
+
+                        if (chap.Blocks != null && chap.Blocks.Any())
+                        {
+                            prevChap.Blocks ??= new List<ReaderContentBlock>();
+                            prevChap.Blocks.AddRange(chap.Blocks);
+                        }
+
+                        if (chap.FilePaths != null && chap.FilePaths.Any())
+                        {
+                            prevChap.FilePaths ??= new List<string>();
+                            prevChap.FilePaths.AddRange(chap.FilePaths);
+                            prevChap.FilePaths = prevChap.FilePaths.Distinct().ToList();
+                        }
+                    }
+                    else
+                    {
+                        // No next chapter and no previous chapter (only chapter in book). Keep it.
+                        result.Add(chap);
+                    }
+                }
+                else
+                {
+                    result.Add(chap);
+                }
+            }
+
+            return result;
+        }
+
+        /// <summary>
+        /// Detects chapters from EPUB blocks by grouping them based on changes in their source file metadata.
+        /// Useful as a robust fallback for EPUBs when standard heading or TOC split has failed or is unavailable.
+        /// </summary>
+        public List<DetectedChapter> DetectChaptersFromEpubSourceFiles(List<ReaderContentBlock> blocks)
+        {
+            var chapters = new List<DetectedChapter>();
+            if (blocks == null || !blocks.Any()) return chapters;
+
+            var currentChapterTitle = "Start";
+            var currentChapterBlocks = new List<ReaderContentBlock>();
+            string? currentSourceFile = null;
+            int chapterCounter = 1;
+
+            foreach (var block in blocks)
+            {
+                if (block == null) continue;
+
+                string? sourceFile = null;
+                block.Meta?.TryGetValue("sourceFile", out sourceFile);
+
+                if (sourceFile != null && currentSourceFile != null && !string.Equals(sourceFile, currentSourceFile, StringComparison.OrdinalIgnoreCase))
+                {
+                    if (currentChapterBlocks.Any())
+                    {
+                        chapters.Add(new DetectedChapter
+                        {
+                            Title = currentChapterTitle,
+                            Content = string.Join("\n\n", currentChapterBlocks.Select(b => b.Text).Where(t => !string.IsNullOrWhiteSpace(t))),
+                            Blocks = currentChapterBlocks.ToList()
+                        });
+                        currentChapterBlocks.Clear();
+                    }
+
+                    currentChapterTitle = $"Chapter {chapterCounter++}";
+                }
+
+                if (sourceFile != null)
+                {
+                    currentSourceFile = sourceFile;
+                }
+
+                // If this is a title block and we are at the start of a source file, use its text as the title
+                if (string.Equals(block.Type, "title", StringComparison.OrdinalIgnoreCase) &&
+                    !string.IsNullOrWhiteSpace(block.Text) &&
+                    !currentChapterBlocks.Any(b => string.Equals(b.Type, "paragraph", StringComparison.OrdinalIgnoreCase)))
+                {
+                    currentChapterTitle = block.Text.Trim();
+                }
+
+                currentChapterBlocks.Add(block);
+            }
+
+            if (currentChapterBlocks.Any() || chapters.Count == 0)
+            {
+                chapters.Add(new DetectedChapter
+                {
+                    Title = currentChapterTitle,
+                    Content = string.Join("\n\n", currentChapterBlocks.Select(b => b.Text).Where(t => !string.IsNullOrWhiteSpace(t))),
+                    Blocks = currentChapterBlocks.ToList()
+                });
+            }
+
+            return chapters.Count > 1 ? chapters : new List<DetectedChapter>();
+        }
     }
 }

@@ -15,9 +15,9 @@
   gap: 12px;
   padding: 14px 18px;
   text-decoration: none;
-  color: inherit;
-  background: var(--bs-body-bg, #fff);
-  border: 1px solid var(--bs-border-color, rgba(0,0,0,.08));
+  background-color: #ffffff;
+  color: #333333;
+  border: 1px solid rgba(0,0,0,.08);
   border-radius: 0;
   transition: background 0.15s ease, transform 0.1s ease;
 }
@@ -33,12 +33,38 @@
 }
 
 .homelite-item:hover {
-  background: var(--bs-tertiary-bg, rgba(0,0,0,.03));
+  background-color: #f8f9fa;
+  color: #333333;
+  text-decoration: none;
   transform: translateX(2px);
 }
 
 .homelite-item:active {
   transform: translateX(0);
+}
+
+/* Dark theme overrides */
+.dark-theme .homelite-item {
+  background-color: var(--ui-background-dark);
+  color: var(--font-color-dark);
+  border-color: var(--border-color-dark);
+}
+
+.dark-theme .homelite-item:hover {
+  background-color: #3d566e;
+  color: var(--font-color-dark);
+}
+
+/* Classic dark theme overrides */
+.classic-dark-theme .homelite-item {
+  background-color: var(--classic-dark-surface-bg);
+  color: var(--classic-dark-text);
+  border-color: var(--classic-dark-surface-border-color);
+}
+
+.classic-dark-theme .homelite-item:hover {
+  background-color: #4b5362;
+  color: var(--classic-dark-text);
 }
 
 .homelite-item-main {
@@ -98,12 +124,38 @@
   padding: 6px 14px;
   border-radius: 20px;
   text-decoration: none;
-  color: var(--bs-body-color, inherit);
-  background: var(--bs-tertiary-bg, rgba(0,0,0,.04));
-  transition: background 0.15s ease;
+  background-color: #f1f3f5;
+  color: #495057;
+  border: 1px solid rgba(0,0,0,.05);
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
 }
 
 .homelite-nav-link:hover {
-  background: var(--bs-secondary-bg, rgba(0,0,0,.08));
-  color: var(--bs-body-color, inherit);
+  background-color: #e9ecef;
+  color: var(--link-color, #1ABC9C);
+  text-decoration: none;
+}
+
+/* Dark theme overrides */
+.dark-theme .homelite-nav-link {
+  background-color: var(--ui-background-dark);
+  color: var(--font-color-dark);
+  border-color: var(--border-color-dark);
+}
+
+.dark-theme .homelite-nav-link:hover {
+  background-color: #3d566e;
+  color: var(--link-hover-color-dark, #2EEECB);
+}
+
+/* Classic dark theme overrides */
+.classic-dark-theme .homelite-nav-link {
+  background-color: var(--classic-dark-surface-bg);
+  color: var(--classic-dark-text);
+  border-color: var(--classic-dark-surface-border-color);
+}
+
+.classic-dark-theme .homelite-nav-link:hover {
+  background-color: #4b5362;
+  color: var(--classic-dark-link-hover-color, #2EEECB);
 }

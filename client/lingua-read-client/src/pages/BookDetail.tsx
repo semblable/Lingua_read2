@@ -123,12 +123,10 @@ const BookDetail = () => {
     }
   }, [location.state]);
 
-  // Sort parts naturally (e.g. Part 1, Part 2, ... Part 10)
+  // Sort parts by their part number (the order they were imported in)
   const sortedParts = useMemo(() => {
     if (!book || !book.parts) return [];
-    return [...book.parts].sort((a, b) =>
-      (a.title || '').localeCompare(b.title || '', undefined, { numeric: true, sensitivity: 'base' })
-    );
+    return [...book.parts].sort((a, b) => (a.partNumber ?? 0) - (b.partNumber ?? 0));
   }, [book]);
 
   // Strict bookId narrowed for API call sites that require non-null

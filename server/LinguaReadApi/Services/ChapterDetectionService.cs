@@ -21,13 +21,20 @@ namespace LinguaReadApi.Services
         // Compilation of multilingual chapter pattern regexes
         private static readonly Regex[] ChapterRegexes = new[]
         {
-            // English / French / German / Spanish
-            new Regex(@"^\s*(?:Chapter|Part|Section|Book|Kapitel|Teil|Abschnitt|Buch|Chapitre|Partie|Livre|Capítulo|Parte|Sección|Libro)\s+(?:[0-9a-zA-Z\-\.\s]+|[IVXLCDMivxlcdm]+)(?:\s*[:\-–—\.]\s*(.+))?$", RegexOptions.Compiled | RegexOptions.IgnoreCase),
+            // English / French / German / Spanish / Italian / Portuguese / Dutch / Polish
+            new Regex(@"^\s*(?:Chapter|Part|Section|Book|Act|Volume|Kapitel|Teil|Abschnitt|Buch|Akt|Chapitre|Partie|Livre|Acte|Capítulo|Parte|Sección|Libro|Acto|Capitolo|Sezione|Libro|Atto|Capítulo|Parte|Seção|Livro|Ato|Hoofdstuk|Deel|Boek|Rozdział|Część|Księga)\s+(?:[0-9a-zA-Z\-\.\s]+|[IVXLCDMivxlcdm]+)(?:\s*[:\-–—\.]\s*(.+))?$", RegexOptions.Compiled | RegexOptions.IgnoreCase),
+            // English written-out numbers: "Chapter One", "Chapter Twenty"
+            new Regex(@"^\s*(?:Chapter|Part|Section|Book)\s+(?:One|Two|Three|Four|Five|Six|Seven|Eight|Nine|Ten|Eleven|Twelve|Thirteen|Fourteen|Fifteen|Sixteen|Seventeen|Eighteen|Nineteen|Twenty|Thirty|Forty|Fifty|Sixty|Seventy|Eighty|Ninety|Hundred)(?:\s*[\-–—]\s*(?:One|Two|Three|Four|Five|Six|Seven|Eight|Nine))?(?:\s*[:\-–—\.]\s*(.+))?$", RegexOptions.Compiled | RegexOptions.IgnoreCase),
             // Russian
-            new Regex(@"^\s*(?:Глава|Часть|Раздел|Книга)\s+(?:[0-9a-zA-Z\-\.\sа-яА-ЯёЁ]+|[IVXLCDMivxlcdm]+)(?:\s*[:\-–—\.]\s*(.+))?$", RegexOptions.Compiled | RegexOptions.IgnoreCase),
+            new Regex(@"^\s*(?:Глава|Часть|Раздел|Книга|Том|Акт)\s+(?:[0-9a-zA-Z\-\.\sа-яА-ЯёЁ]+|[IVXLCDMivxlcdm]+)(?:\s*[:\-–—\.]\s*(.+))?$", RegexOptions.Compiled | RegexOptions.IgnoreCase),
             // Chinese / Japanese / Korean
-            new Regex(@"^\s*(?:第\s*[一二三四五六七八九十百千0-9]+\s*[章节卷部回])(?:\s*[:\-–—\.\s]\s*(.+))?$", RegexOptions.Compiled),
-            new Regex(@"^\s*(?:プロローグ|エピローグ|序章|終章|序幕|後書き|前書き)\s*$", RegexOptions.Compiled)
+            new Regex(@"^\s*(?:第\s*[一二三四五六七八九十百千0-9]+\s*[章节卷部回篇幕])(?:\s*[:\-–—\.\s]\s*(.+))?$", RegexOptions.Compiled),
+            // Korean: 제1장, 제2장, etc.
+            new Regex(@"^\s*제\s*[0-9]+\s*[장절편부권막](?:\s*[:\-–—\.\s]\s*(.+))?$", RegexOptions.Compiled),
+            // Japanese structural keywords
+            new Regex(@"^\s*(?:プロローグ|エピローグ|序章|終章|序幕|後書き|前書き|あとがき|まえがき)\s*$", RegexOptions.Compiled),
+            // Standalone structural headings (multilingual) — no number required
+            new Regex(@"^\s*(?:Prologue|Epilogue|Foreword|Afterword|Preface|Introduction|Conclusion|Appendix|Interlude|Intermission|Postscript|Preamble|Prolog|Epilog|Vorwort|Nachwort|Einleitung|Einführung|Anhang|Schluss|Zwischenspiel|Prologue|Épilogue|Préface|Avant-propos|Postface|Conclusion|Annexe|Prólogo|Epílogo|Prefacio|Introducción|Conclusión|Apéndice|Interludio|Prologo|Prefazione|Introduzione|Conclusione|Appendice|Interludio|Prólogo|Epílogo|Prefácio|Introdução|Conclusão|Apêndice|Interlúdio|Пролог|Эпилог|Предисловие|Послесловие|Введение|Заключение|Приложение|Voorwoord|Nawoord|Inleiding|Conclusie|Bijlage|Wstęp|Zakończenie|Dodatek)(?:\s*[:\-–—\.]\s*(.+))?\s*$", RegexOptions.Compiled | RegexOptions.IgnoreCase)
         };
 
         private static readonly Regex NumberedHeadingRegex = new Regex(@"^\s*(?:[0-9]+|[IVXLCDMivxlcdm]+)\s*[\.\-–—:]\s+(.+)$", RegexOptions.Compiled | RegexOptions.IgnoreCase);

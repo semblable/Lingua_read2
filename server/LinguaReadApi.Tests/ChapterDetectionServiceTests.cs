@@ -143,5 +143,56 @@ namespace LinguaReadApi.Tests
             Assert.Single(chapters[2].Blocks!);
             Assert.Contains("Running in production.", chapters[2].Content);
         }
+
+        [Fact]
+        public void DetectChaptersFromTextHeadings_StandaloneKeywords_PartitionsCorrectly()
+        {
+            var content = "Prologue\nSome backstory.\n\nChapter 1: The Start\nMain content.\n\nEpilogue\nFinal thoughts.";
+
+            var chapters = _service.DetectChaptersFromTextHeadings(content);
+
+            Assert.Equal(3, chapters.Count);
+
+            Assert.Equal("Prologue", chapters[0].Title);
+            Assert.Contains("Some backstory.", chapters[0].Content);
+
+            Assert.Equal("The Start", chapters[1].Title);
+            Assert.Contains("Main content.", chapters[1].Content);
+
+            Assert.Equal("Epilogue", chapters[2].Title);
+            Assert.Contains("Final thoughts.", chapters[2].Content);
+        }
+
+        [Fact]
+        public void DetectChaptersFromTextHeadings_WrittenOutNumbers_PartitionsCorrectly()
+        {
+            var content = "Chapter One: Awakening\nContent of chapter one.\n\nChapter Two: Discovery\nContent of chapter two.";
+
+            var chapters = _service.DetectChaptersFromTextHeadings(content);
+
+            Assert.Equal(2, chapters.Count);
+
+            Assert.Equal("Awakening", chapters[0].Title);
+            Assert.Contains("Content of chapter one.", chapters[0].Content);
+
+            Assert.Equal("Discovery", chapters[1].Title);
+            Assert.Contains("Content of chapter two.", chapters[1].Content);
+        }
+
+        [Fact]
+        public void DetectChaptersFromTextHeadings_ItalianAndKorean_PartitionsCorrectly()
+        {
+            var content = "Capitolo 1: Il Viaggio\nContenuto italiano.\n\n제1장 시작\n한국어 내용.";
+
+            var chapters = _service.DetectChaptersFromTextHeadings(content);
+
+            Assert.Equal(2, chapters.Count);
+
+            Assert.Equal("Il Viaggio", chapters[0].Title);
+            Assert.Contains("Contenuto italiano.", chapters[0].Content);
+
+            Assert.Equal("시작", chapters[1].Title);
+            Assert.Contains("한국어 내용.", chapters[1].Content);
+        }
     }
 }

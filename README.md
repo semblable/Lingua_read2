@@ -4,6 +4,8 @@
 
 LinguaRead is a web application for contextual language learning, inspired by Learning With Texts (LWT). It enhances vocabulary and reading comprehension by allowing users to read texts where words are dynamically highlighted based on familiarity levels (New to Known). Features include easy tooltip/click translations and content integration via modern APIs, delivering an interactive learning environment focused on reading immersion.
 
+> 📚 **Documentation:** [Installation](#installation-docker) · [Features Guide](FEATURES.md) · [Configuration & Settings Guide](SETTINGS.md)
+
 ## Important Notice
 
 This is an early version of the application and is still under active development. As such:
@@ -77,119 +79,156 @@ Language settings influence:
 
 ---
 
-## Setup and Running
+## Installation (Docker)
 
-*(Instructions below provide basic setup. Ensure database connection and API keys are configured.)*
+LinguaRead runs entirely in Docker. A single command builds and launches the React frontend, the .NET backend, and the PostgreSQL database — there is **no need to install Node.js, the .NET SDK, or PostgreSQL** on your machine.
 
-### Prerequisites
+The steps below are written for **Windows** (PowerShell), but work the same on macOS and Linux.
 
-*   Node.js and npm/yarn
-*   .NET SDK (e.g., .NET 8 or later)
-*   PostgreSQL Server
+> 📖 For a full reference of every configuration option, see the **[Configuration & Settings Guide](SETTINGS.md)**.
+> ✨ For a concise tour of what the app can do, see the **[Features Guide](FEATURES.md)**.
 
-### Backend Setup
+### 📋 Prerequisites
 
-```bash
-# Navigate to backend directory
-cd server/LinguaReadApi
+Install these two tools first:
 
-# Restore dependencies
-dotnet restore
-
-# Update database (ensure connection string in appsettings.json is correct)
-dotnet ef database update --context AppDbContext
-
-# Configure API keys and JWT settings in the root `.env` file (in the Lingua_Read directory)
-# Ensure the following keys are present:
-# - DEEPL_API_KEY
-# - GEMINI_API_KEY
-# - JWT_KEY (must be sufficiently long and secret)
-# Note: JWT_ISSUER, JWT_AUDIENCE, and JWT_EXPIRY_IN_HOURS are typically set via docker-compose.yml for containerized environments.
-
-# Run the backend server
-dotnet run
-```
-
-### Frontend Setup
-
-```bash
-# Navigate to frontend directory
-cd client/lingua-read-client
-
-# Install dependencies
-npm install
-# or
-yarn install
-
-# Run the frontend development server
-npm start
-# or
-yarn start
-```
+1.  **[Git for Windows](https://git-scm.com/download/win)** — to download the code.
+2.  **[Docker Desktop](https://www.docker.com/products/docker-desktop/)** — runs everything else.
+    *   During/after install, enable the WSL 2 backend: **Docker Desktop → Settings → General → "Use the WSL 2 based engine."**
+    *   **Start Docker Desktop and wait until its whale icon goes green** before continuing. Docker must be running for every command below.
 
 ---
 
-## Docker Setup (Recommended)
+### 🚀 Step-by-Step Installation
 
-This is the recommended way to run LinguaRead, as it manages the database, backend, and frontend services together.
+#### Step 1 — Get the code
+Open **PowerShell** and clone the repository:
 
-### Prerequisites
+```powershell
+git clone https://github.com/semblable/Lingua_read2.git
+cd Lingua_read2
+```
 
-*   [Docker](https://docs.docker.com/get-docker/)
+All remaining commands are run from this folder (the one containing `docker-compose.yml`).
 
-### Configuration (`.env` file)
+#### Step 2 — Create the `.env` file
+Create a file named exactly `.env` in this folder. In PowerShell you can open a blank one with:
 
-Before running the application with Docker Compose, you need to create a `.env` file in the **`Lingua_Read` directory** (where the `docker-compose.yml` file is located). This file stores configuration secrets and settings.
+```powershell
+notepad .env
+```
 
-1.  **Copy the example:** You can create a `.env` file by copying the structure below.
-2.  **Set Database Credentials:** Change `your_secure_postgres_password_here` to a secure password for the database user.
-3.  **Generate JWT Key:** Replace the example `JWT_KEY` with a new, secure, random string (at least 32 characters long). You can use online generators or tools like `openssl rand -base64 32`.
-4.  **(Optional but Recommended) API Keys:**
-    *   **DeepL:** For high-quality translations, sign up for a DeepL API key (the free tier is usually sufficient for moderate use) and replace the placeholder `your_deepl_api_key_or_leave_empty`.
-    *   **Gemini:** For AI story generation, obtain a Google Gemini API key (free tier available) and replace the placeholder `your_gemini_api_key_or_leave_empty`.
-    *   *Note:* Using the application without these keys will disable translation and story generation features. Using free tiers is recommended to avoid unexpected charges.
-
-**Example `.env` file:**
+Paste the following template, then change `POSTGRES_PASSWORD` and `JWT_KEY` to your own secure values:
 
 ```env
-# PostgreSQL configuration
+# 1. PostgreSQL Database Configuration
 POSTGRES_DB=linguaread_db
 POSTGRES_USER=linguaread_user
 POSTGRES_PASSWORD=your_secure_postgres_password_here
 
-# JWT secret key for backend (Generate a new, secure 32+ character key)
-
+# 2. JWT Authentication Secret (must be a random 32+ character string)
 JWT_KEY="replace_this_with_your_very_long_and_secure_random_jwt_key"
+JWT_ISSUER=LinguaReadApi
+JWT_AUDIENCE=LinguaReadClient
 
-# DeepL API key for backend (Optional - Get from DeepL website, free tier recommended)
-DEEPL_API_KEY="your_deepl_api_key_or_leave_empty"
+# 3. Optional: set a login password on first startup (otherwise use the in-app setup page)
+LINGUAREAD_PASSWORD=
 
-# Gemini API key for backend (Optional - Get from Google AI Studio, no billing enabled recommended)
-GEMINI_API_KEY="your_gemini_api_key_or_leave_empty"
+# 4. Optional Third-Party API Keys (leave blank to disable that feature)
+DEEPL_API_KEY=
+GEMINI_API_KEY=
 ```
 
-### Running the Application
+> [!TIP]
+> **Generate a secure `JWT_KEY`:**
+> *   **Windows (PowerShell):**
+>     ```powershell
+>     [System.Convert]::ToBase64String((1..32 | ForEach-Object { Get-Random -Minimum 0 -Maximum 256 }))
+>     ```
+> *   **Linux / macOS / Git Bash:**
+>     ```bash
+>     openssl rand -base64 32
+>     ```
 
-1.  Open a terminal **inside the `Lingua_Read` directory** (where `docker-compose.yml` is located).
-2.  Build and start the services in detached mode:
+> [!NOTE]
+> The `.env` template above covers the essentials. Every available variable (CORS, Discord scheduler, image tags, etc.) is documented in the **[Configuration & Settings Guide](SETTINGS.md)**.
 
-    ```bash
-    docker-compose up --build -d
-    ```
+#### Step 3 — Build and start
+From the same folder, run:
 
-3.  The application should now be accessible in your web browser, typically at `http://localhost`. It will automatically log you in with a default user account.
-
-### Stopping the Application
-
-```bash
-docker-compose down
+```powershell
+docker compose up --build -d
 ```
 
-### Accessing Services
+Docker pulls the required images, builds the containers, runs database migrations, and launches everything in the background. The first build can take several minutes.
 
-*   **Frontend:** `http://localhost` (Port 80)
-*   **Backend API:** `http://localhost:5000` (Proxied via frontend at `/api`)
-*   **Database (Direct):** `localhost:5432` (Use credentials from `.env` if connecting with a DB tool)
+> If your Docker version is older and `docker compose` is not recognized, use the legacy command `docker-compose up --build -d` instead.
+
+#### Step 4 — Verify it's running
+Check that all services are up and healthy:
+
+```powershell
+docker compose ps
+```
+
+You should see three services running (with `db` and `api` reporting **healthy**):
+*   `db` — PostgreSQL 18
+*   `api` — .NET backend
+*   `nginx` — React frontend
+
+Then open the app in your browser: **[http://localhost](http://localhost)** — you'll be logged in automatically with the default local account.
+
+---
+
+### 🔗 Service Access Points
+
+| Service | URL | Notes |
+| :--- | :--- | :--- |
+| 🌐 **Frontend** | [http://localhost](http://localhost) (port `80`) | The app. Auto-logs you into the default local account. |
+| 🔌 **Backend API** | [http://localhost:5000](http://localhost:5000) | Health check: `http://localhost:5000/api/Health/ready` |
+| 🗄️ **Database** | `localhost:5432` | Connect with the PostgreSQL credentials from your `.env`. |
+
+---
+
+### 🛑 Management Commands
+
+Run these from the folder containing `docker-compose.yml`:
+
+| Action | Command | Description |
+| :--- | :--- | :--- |
+| **Stop** | `docker compose down` | Stops all services but **keeps** your database data. |
+| **Restart** | `docker compose restart` | Restarts all running containers. |
+| **View logs** | `docker compose logs -f` | Streams logs from all containers (`Ctrl+C` to exit). |
+| **Update** | `git pull` then `docker compose up --build -d` | Pull the latest code and rebuild. |
+| **Reset everything** | `docker compose down -v` | **⚠️ Destroys all containers and wipes the database.** |
+
+---
+
+### 💾 Backups
+
+For everyday use you **don't need any extra containers**. The app has built-in backup and restore: go to **Settings → Data Management** and click **Download Backup** to save a `.backup` file, or **Restore from Backup** to load one. This is the recommended option for most users.
+
+> The default `docker compose up -d` runs only `db`, `api`, and `nginx`. The automated-backup container below is opt-in and is **never started unless you explicitly ask for it**.
+
+**Advanced — automated cloud backups (optional):** the stack also includes an opt-in `backup` service that periodically snapshots the database and media to a cloud remote via [rclone](https://rclone.org/). It lives behind a Compose *profile*, so it stays out of normal commands until you enable it:
+
+1.  Configure the remote once (run in **Git Bash** or **WSL**, since it's a shell script): `bash setup.sh`
+2.  Start *only then* with the profile flag: `docker compose --profile backup up -d`
+
+For manual database + media backup and restore procedures, see **[ops/backup-runbook.md](ops/backup-runbook.md)**.
+
+---
+
+### 🩺 Troubleshooting (Windows)
+
+| Symptom | Fix |
+| :--- | :--- |
+| `cannot connect to the Docker daemon` / commands hang | Docker Desktop isn't running — start it and wait for the whale icon to turn green. |
+| `Ports are not available` / port `80` already in use | Another app (IIS, Skype, a web server) holds port 80. Stop it, or change the `nginx` mapping `"80:80"` to e.g. `"8080:80"` in `docker-compose.yml` and open [http://localhost:8080](http://localhost:8080). |
+| `docker compose` not recognized | Update Docker Desktop, or use the legacy `docker-compose` command. |
+| App loads but settings/login look wrong | Make sure `.env` is in the repo root, named exactly `.env` (not `.env.txt`), and that `JWT_KEY` has no smart/curly quotes. |
+| `api` stays *unhealthy* right after starting | It waits for the database and runs migrations on first boot. Give it ~30 seconds, then check `docker compose logs -f api`. |
+| Want a clean slate | `docker compose down -v` removes containers **and** the database, then start again from Step 3. |
 
 ---
 

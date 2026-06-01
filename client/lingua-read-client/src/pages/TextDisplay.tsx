@@ -25,7 +25,7 @@ import { useReaderState, type FetchAllLanguageWordsFn } from '../hooks/useReader
 import { extractTranslatedTextFromPairedTags } from '../utils/translationTags';
 import { cancelSpeech, isSpeechSynthesisSupported, speakText } from '../utils/browserTts';
 import { parseSrtContent, findSrtLineIndex } from '../utils/srtParser';
-import { styles, splitTextIntoSentenceSegments, prepareLanguageContext, consumeWordAt } from '../utils/readerText';
+import { styles, splitTextIntoSentenceSegments, prepareLanguageContext, consumeWordAt, extractWords } from '../utils/readerText';
 import type { SentenceSegment } from '../utils/readerText';
 import PrimaryControls from '../components/reader/PrimaryControls';
 import SecondaryControls from '../components/reader/SecondaryControls';
@@ -1756,8 +1756,9 @@ const TextDisplay = () => {
     const callingTextId = text.textId; // Capture which text we're translating for
     setTranslatingUnknown(true); setTranslateUnknownError('');
     try {
-      const wordsRegex = /\p{L}+(['-]\p{L}+)*/gu;
-      const textWords = text.content.match(wordsRegex) || [];
+      // Use the same canonical tokenizer the reader renders with, so apostrophe
+      // words (incl. curly ’ normalized to ') are captured whole rather than split.
+      const textWords = extractWords(text.content, languageConfig);
       // Also extract parts of hyphenated words so they get individual translations
       const allWords: string[] = [];
       textWords.forEach((w: string) => {
@@ -1808,8 +1809,9 @@ const TextDisplay = () => {
     if (!text || !text.content || !text.languageId || !text.textId) return;
     setIsMarkingAll(true); setError('');
     try {
-      const wordsRegex = /\p{L}+(['-]\p{L}+)*/gu;
-      const textWords = text.content.match(wordsRegex) || [];
+      // Use the same canonical tokenizer the reader renders with, so apostrophe
+      // words (incl. curly ’ normalized to ') are captured whole rather than split.
+      const textWords = extractWords(text.content, languageConfig);
       // Also extract parts of hyphenated words
       const allWords: string[] = [];
       textWords.forEach((w: string) => {

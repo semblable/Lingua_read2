@@ -425,6 +425,23 @@ export const tokenizeContent = (
   return { processed, tokens };
 };
 
+/**
+ * Extract just the word strings from content, using the canonical
+ * language-aware tokenizer (`tokenizeContent`). This guarantees the
+ * same set of words the reader renders as clickable — curly/modifier
+ * apostrophes normalized to ASCII, per-language `wordCharacters`
+ * honored, apostrophe/hyphen glue applied. Use this instead of an
+ * ad-hoc regex so bulk operations (auto-translate, mark-known) match
+ * the displayed tokens exactly.
+ */
+export const extractWords = (
+  rawContent: string | null | undefined,
+  languageConfig: LanguageConfig = null
+): string[] =>
+  tokenizeContent(rawContent, languageConfig).tokens
+    .filter(t => t.type === 'word')
+    .map(t => t.text);
+
 // =====================================================================
 // SENTENCE SPLITTING (Intl.Segmenter + sentenceSplitExceptions)
 // =====================================================================

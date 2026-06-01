@@ -2,7 +2,8 @@ import {
   tokenizeContent,
   parseCharacterSubstitutions,
   applyCharacterSubstitutions,
-  buildCoreWordRegex
+  buildCoreWordRegex,
+  extractWords
 } from '../utils/readerText';
 
 // Seeded language configs (mirror of DbInitializer.cs).
@@ -210,6 +211,28 @@ describe('tokenizeContent — built-in apostrophe normalization', () => {
 
   test('left single quote glues without user subs', () => {
     expect(wordTexts('l‘eau', emptySubs)).toEqual(["l'eau"]);
+  });
+});
+
+describe('extractWords — bulk ops capture apostrophe words whole', () => {
+  // Regression: auto-translate / mark-known previously used a raw-content
+  // regex whose connector class only matched ASCII ', so curly-apostrophe
+  // contractions split into fragments (`wasn` + `t`) and never translated.
+  test('curly apostrophe contraction is captured as one word', () => {
+    expect(extractWords('She wasn’t ready', LANG.en)).toEqual(['She', "wasn't", 'ready']);
+  });
+
+  test('ASCII apostrophe contraction still captured whole', () => {
+    expect(extractWords("don't", LANG.en)).toEqual(["don't"]);
+  });
+
+  test('hyphenated word stays one token (parts split downstream by caller)', () => {
+    expect(extractWords('well-known', LANG.en)).toEqual(['well-known']);
+  });
+
+  test('multiple curly contractions in a sentence', () => {
+    expect(extractWords('it’d work and didn’t care', LANG.en))
+      .toEqual(["it'd", 'work', 'and', "didn't", 'care']);
   });
 });
 

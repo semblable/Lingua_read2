@@ -62,7 +62,7 @@ describe('Dashboard', () => {
     });
     renderDashboard();
 
-    expect(await screen.findByText('Polyglot Dashboard')).toBeInTheDocument();
+    expect(await screen.findByText('Dashboard')).toBeInTheDocument();
     expect(screen.getByText('1,234')).toBeInTheDocument(); // totalKnownWords
     expect(screen.getByText('5,678')).toBeInTheDocument(); // totalWordsReadWeek
     expect(screen.getByText('2h')).toBeInTheDocument(); // 7200 sec = 120 min = 2h
@@ -103,7 +103,7 @@ describe('Dashboard', () => {
           totalWords: 100, knownWords: 99, unknownWordPercentage: 1 },
       ]);
       renderDashboard();
-      await screen.findByText('Polyglot Dashboard');
+      await screen.findByText('Dashboard');
       await waitFor(() => expect(getTexts).toHaveBeenCalled());
       // Section card present (it's the loading or wrapper), but no language sub-block.
       expect(screen.queryByText(/Resume at your level/i)).not.toBeInTheDocument();

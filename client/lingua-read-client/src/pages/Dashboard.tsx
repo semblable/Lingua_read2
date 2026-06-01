@@ -139,7 +139,7 @@ const Dashboard = () => {
     <Container className="py-4">
       <div className="d-flex justify-content-between align-items-end mb-4 flex-wrap gap-2">
         <div>
-          <h2 className="mb-1">Polyglot Dashboard</h2>
+          <h2 className="mb-1">Dashboard</h2>
           <div className="text-muted">
             {data.totalLanguages} language{data.totalLanguages === 1 ? '' : 's'} ·{' '}
             last 7 days

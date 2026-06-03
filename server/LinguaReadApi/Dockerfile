@@ -1,5 +1,5 @@
 # -------- Build Stage --------
-FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
 # Copy csproj and restore as distinct layers
@@ -13,16 +13,19 @@ COPY . ./
 RUN dotnet publish LinguaReadApi.csproj -c Release -o /app/publish
 
 # -------- Runtime Stage --------
-FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS final
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
 WORKDIR /app
 
 # Install PostgreSQL client for pg_dump and pg_restore
 USER root
 RUN apt-get update && \
-    # Add PostgreSQL repo setup for version 18 client tools
+    # Add PostgreSQL repo setup for version 18 client tools.
+    # Derive the pgdg suite from the base image's own codename (e.g. "noble" on the
+    # Ubuntu-based .NET 10 images, "bookworm" on the Debian-based .NET 8 images) so this
+    # keeps working when the base distro changes across .NET major versions.
     apt-get install -y --no-install-recommends curl ca-certificates gnupg lsb-release && \
     curl https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor -o /usr/share/keyrings/postgresql-archive-keyring.gpg && \
-    echo "deb [signed-by=/usr/share/keyrings/postgresql-archive-keyring.gpg] http://apt.postgresql.org/pub/repos/apt bookworm-pgdg main" > /etc/apt/sources.list.d/pgdg.list && \
+    echo "deb [signed-by=/usr/share/keyrings/postgresql-archive-keyring.gpg] http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list && \
     apt-get update && \
     # Install specific client version
     apt-get install -y --no-install-recommends postgresql-client-18 && \

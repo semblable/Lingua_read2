@@ -73,7 +73,7 @@ Language settings influence:
 ## Technology Stack
 
 *   **Frontend:** React (using Create React App)
-*   **Backend:** .NET Core (C#)
+*   **Backend:** .NET 10 (C#)
 *   **Database:** PostgreSQL
 *   **APIs:** Google Gemini DeepL
 

@@ -168,17 +168,28 @@ namespace LinguaReadApi.Services
                     g => g.Key,
                     g => new { Total = g.Where(r => r.Status != 6).Sum(r => r.Count), Known = g.Where(r => r.Status >= 4 && r.Status <= 5).Sum(r => r.Count) });
 
-            var allTexts = await ctx.Texts.ToListAsync(ct);
+            // Read only the scalar stat columns (never the large Content/
+            // StructuredContent/SrtContent). For each text whose cached
+            // counts drifted, attach a stub and mark only the stat columns
+            // modified, so SaveChanges emits a batched UPDATE of just those
+            // columns without ever materializing the row's heavy content.
+            var textStats = await ctx.Texts
+                .AsNoTracking()
+                .Select(t => new { t.TextId, t.TotalWords, t.KnownWords, HasStats = t.StatsUpdatedAt != null })
+                .ToListAsync(ct);
             int textChanged = 0;
-            foreach (var t in allTexts)
+            foreach (var t in textStats)
             {
                 int total = 0, known = 0;
                 if (textAgg.TryGetValue(t.TextId, out var s)) { total = s.Total; known = s.Known; }
-                if (t.TotalWords != total || t.KnownWords != known || t.StatsUpdatedAt == null)
+                if (t.TotalWords != total || t.KnownWords != known || !t.HasStats)
                 {
-                    t.TotalWords = total;
-                    t.KnownWords = known;
-                    t.StatsUpdatedAt = now;
+                    var stub = new Models.Text { TextId = t.TextId, TotalWords = total, KnownWords = known, StatsUpdatedAt = now };
+                    ctx.Texts.Attach(stub);
+                    var entry = ctx.Entry(stub);
+                    entry.Property(x => x.TotalWords).IsModified = true;
+                    entry.Property(x => x.KnownWords).IsModified = true;
+                    entry.Property(x => x.StatsUpdatedAt).IsModified = true;
                     textChanged++;
                 }
             }
@@ -201,21 +212,27 @@ namespace LinguaReadApi.Services
                         Learning = g.Where(r => r.Status == 2 || r.Status == 3).Sum(r => r.Count),
                     });
 
-            var allBooks = await ctx.Books.ToListAsync(ct);
+            var bookStats = await ctx.Books
+                .AsNoTracking()
+                .Select(b => new { b.BookId, b.TotalWords, b.KnownWords, b.LearningWords, HasStats = b.StatsUpdatedAt != null })
+                .ToListAsync(ct);
             int bookChanged = 0;
-            foreach (var b in allBooks)
+            foreach (var b in bookStats)
             {
                 int total = 0, known = 0, learning = 0;
                 if (bookAgg.TryGetValue(b.BookId, out var s))
                 {
                     total = s.Total; known = s.Known; learning = s.Learning;
                 }
-                if (b.TotalWords != total || b.KnownWords != known || b.LearningWords != learning || b.StatsUpdatedAt == null)
+                if (b.TotalWords != total || b.KnownWords != known || b.LearningWords != learning || !b.HasStats)
                 {
-                    b.TotalWords = total;
-                    b.KnownWords = known;
-                    b.LearningWords = learning;
-                    b.StatsUpdatedAt = now;
+                    var stub = new Models.Book { BookId = b.BookId, TotalWords = total, KnownWords = known, LearningWords = learning, StatsUpdatedAt = now };
+                    ctx.Books.Attach(stub);
+                    var entry = ctx.Entry(stub);
+                    entry.Property(x => x.TotalWords).IsModified = true;
+                    entry.Property(x => x.KnownWords).IsModified = true;
+                    entry.Property(x => x.LearningWords).IsModified = true;
+                    entry.Property(x => x.StatsUpdatedAt).IsModified = true;
                     bookChanged++;
                 }
             }

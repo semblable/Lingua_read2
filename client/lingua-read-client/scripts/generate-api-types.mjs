@@ -15,7 +15,7 @@
  *   dotnet build server/LinguaReadApi -c Debug
  *   ASPNETCORE_ENVIRONMENT=Testing dotnet swagger tofile \
  *     --output /tmp/swagger.json \
- *     server/LinguaReadApi/bin/Debug/net8.0/LinguaReadApi.dll v1
+ *     server/LinguaReadApi/bin/Debug/net10.0/LinguaReadApi.dll v1
  *   SWAGGER_FILE=/tmp/swagger.json npm run api:types
  */
 

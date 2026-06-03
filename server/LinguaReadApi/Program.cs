@@ -5,7 +5,6 @@ using Microsoft.IdentityModel.Tokens;
 using System;
 using System.Text;
 using LinguaReadApi.Data;
-using Microsoft.OpenApi.Models;
 using LinguaReadApi.Services;
 using Microsoft.Extensions.FileProviders; // Add this for StaticFileOptions
 using System.IO; // Add this for Path.Combine
@@ -25,21 +24,22 @@ var builder = WebApplication.CreateBuilder(args);
 // --- Add Kestrel Configuration ---
 builder.WebHost.ConfigureKestrel(serverOptions =>
 {
-    // Set a higher limit for the request body size to support large audiobooks
-    // Adjusted to 5 GB to allow uploading complete audiobooks
-    serverOptions.Limits.MaxRequestBodySize = 5120L * 1024 * 1024; // 5 GB (5120 MB)
+    // Keep a modest process-wide ceiling (30 MB, the framework default) so plain
+    // JSON endpoints can't be used as a memory/DoS lever. The large-upload actions
+    // (audiobooks, EPUBs, backup restore) opt in to higher limits per-endpoint via
+    // [RequestSizeLimit], which overrides this global on a per-request basis.
+    serverOptions.Limits.MaxRequestBodySize = 30L * 1024 * 1024; // 30 MB
 });
 
 // --- Add Form Options Configuration ---
 builder.Services.Configure<FormOptions>(options =>
 {
-    // Ensure this limit is also high enough for multipart requests (5 GB to match Kestrel)
-    options.MultipartBodyLengthLimit = 5120L * 1024 * 1024; // 5 GB (5120 MB)
-    // You might need to adjust other limits depending on your form data
-    options.ValueLengthLimit = int.MaxValue; // Or a specific large value
-    options.KeyLengthLimit = int.MaxValue;   // Or a specific large value
-    options.ValueCountLimit = int.MaxValue; // Or a specific large value
-    // options.MemoryBufferThreshold = int.MaxValue; // REMOVED - Use default disk buffering for large files
+    // Modest global multipart ceiling to match Kestrel above. The upload actions
+    // raise this per-endpoint via [RequestFormLimits(MultipartBodyLengthLimit = ...)],
+    // which overrides this global, so big uploads keep working. Value/Key/Count limits
+    // are left at framework defaults to keep the abuse surface small (the Texts batch
+    // endpoints re-raise ValueLengthLimit in their own [RequestFormLimits] where needed).
+    options.MultipartBodyLengthLimit = 30L * 1024 * 1024; // 30 MB
 });
 
 // --- Persist Data Protection keys ---
@@ -244,7 +244,7 @@ var forwardedHeaderOptions = new ForwardedHeadersOptions
 {
     ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
 };
-forwardedHeaderOptions.KnownNetworks.Clear();
+forwardedHeaderOptions.KnownIPNetworks.Clear(); // .NET 10: KnownNetworks is obsolete, replaced by KnownIPNetworks
 forwardedHeaderOptions.KnownProxies.Clear();
 app.UseForwardedHeaders(forwardedHeaderOptions);
 

@@ -7,6 +7,7 @@ using System.Security.Claims;
 using System.Threading.Tasks;
 using LinguaReadApi.Data;
 using LinguaReadApi.Models;
+using LinguaReadApi.Services.Tokenization;
 using System.Linq; // Required for Count() on nullable collection
 using System.Collections.Generic;
 // using Microsoft.Extensions.Logging; // TODO: Inject ILogger later
@@ -49,11 +50,18 @@ namespace LinguaReadApi.Controllers
                 return NotFound("Text not found or does not belong to the user");
             }
 
-            // Check if the word already exists for this user and language
+            // Normalize the term through the shared tokenizer helper so every
+            // write path keys words the same way (locale-aware trim+lowercase).
+            var normalizedTerm = Tokenizer.NormalizeKey(createWordDto.Term, text.Language);
+
+            // Check if the word already exists for this user and language.
+            // Match case-insensitively so this resolves to the lowercase row the
+            // linker creates (and to any legacy capitalized row) instead of
+            // inserting a duplicate.
             var existingWord = await _context.Words
                 .Include(w => w.Translation)
                 .FirstOrDefaultAsync(w =>
-                    w.Term == createWordDto.Term &&
+                    w.Term.ToLower() == normalizedTerm &&
                     w.UserId == userId &&
                     w.LanguageId == text.LanguageId);
 
@@ -136,7 +144,7 @@ namespace LinguaReadApi.Controllers
             // Create new word
             var word = new Word
             {
-                Term = createWordDto.Term,
+                Term = normalizedTerm,
                 Status = createWordDto.Status,
                 UserId = userId,
                 LanguageId = text.LanguageId,
@@ -449,8 +457,10 @@ namespace LinguaReadApi.Controllers
                 }
             }
 
-            // Update translation only if provided
-            if (updateWordDto.Translation != null) // Check if translation was provided in the request
+            // Update translation only if a non-empty value is provided. An empty
+            // string means "leave unchanged" (consistent with CreateWord), so a
+            // status-only update — online or offline replay — never erases it.
+            if (!string.IsNullOrEmpty(updateWordDto.Translation))
             {
                 await UpsertWordTranslationAsync(word.WordId, updateWordDto.Translation);
             }
@@ -526,9 +536,10 @@ namespace LinguaReadApi.Controllers
                 return BadRequest("Term list cannot be empty.");
             }
 
-            // Basic check if language exists
-            var languageExists = await _context.Languages.AnyAsync(l => l.LanguageId == languageId);
-            if (!languageExists)
+            // Fetch the language so terms can be normalized through the shared
+            // tokenizer helper (locale-aware trim+lowercase).
+            var language = await _context.Languages.FirstOrDefaultAsync(l => l.LanguageId == languageId);
+            if (language == null)
             {
                 return BadRequest($"Language with ID {languageId} not found.");
             }
@@ -553,16 +564,17 @@ namespace LinguaReadApi.Controllers
 
             var wordsToCreate = new List<Word>();
             var translationsToUpsert = new List<(Word Word, string Translation)>();
-            // Build a case-insensitive lookup for existing words
-            var existingWordsLookup = new Dictionary<string, Word>(StringComparer.OrdinalIgnoreCase);
+            // Build a lookup for existing words keyed by the normalized term so
+            // mixed-case imports collapse onto a single row.
+            var existingWordsLookup = new Dictionary<string, Word>();
             foreach (var w in existingWords)
             {
-                existingWordsLookup[w.Term.Trim()] = w;
+                existingWordsLookup[Tokenizer.NormalizeKey(w.Term, language)] = w;
             }
 
             foreach (var termDto in termsToAdd)
             {
-                var trimmedTerm = termDto.Term?.Trim();
+                var trimmedTerm = Tokenizer.NormalizeKey(termDto.Term ?? string.Empty, language);
                 if (string.IsNullOrWhiteSpace(trimmedTerm)) continue;
 
                 if (existingWordsLookup.TryGetValue(trimmedTerm, out var existingWord))

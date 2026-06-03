@@ -13,9 +13,12 @@ export const productionSyncHandlers: SyncHandlers = {
     });
   },
   wordStatusUpdate: async ({ payload }) => {
+    // Omit translation: a status-only replay must not overwrite the saved
+    // translation. The backend treats a missing/empty translation as
+    // "leave unchanged".
     await fetchApi(`/words/${payload.wordId}`, {
       method: 'PUT',
-      body: JSON.stringify({ status: payload.status, translation: '' }),
+      body: JSON.stringify({ status: payload.status }),
     });
   },
   wordCreate: async ({ payload }) => {

@@ -136,4 +136,71 @@ public class WordsControllerTests
         var card = await context.SrsCardReviews.SingleAsync(c => c.WordId == wordId);
         Assert.True(card.IsSuspended);
     }
+
+    // --- 1.1: case-insensitive matching / no duplicate Word rows ---
+
+    [Fact]
+    public async Task CreateWord_WhenLowercaseWordExists_MatchesCaseInsensitively_NoDuplicate()
+    {
+        using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        context.Users.Add(new User { Id = userId, UserName = "tester", Email = "tester@example.com" });
+        context.Languages.Add(new Language { LanguageId = 1, Name = "Spanish", Code = "es" });
+        // The linker stores terms lowercased; this is the row it created.
+        context.Words.Add(new Word { WordId = 1, UserId = userId, LanguageId = 1, Term = "perro", Status = 1 });
+        context.Texts.Add(new Text { TextId = 1, UserId = userId, LanguageId = 1, Title = "T", Content = "Perro ..." });
+        context.SaveChanges();
+
+        var controller = CreateController(context, userId);
+        // User clicks the sentence-initial capitalized form.
+        var result = await controller.CreateWord(new CreateWordDto { TextId = 1, Term = "Perro", Status = 5 });
+
+        var ok = Assert.IsType<OkObjectResult>(result.Result);
+        var dto = Assert.IsType<WordResponseDto>(ok.Value);
+        Assert.False(dto.IsNew);
+        Assert.Equal(1, dto.WordId);
+        // No duplicate row was created and the existing word was upgraded.
+        Assert.Equal(1, await context.Words.CountAsync());
+        var word = await context.Words.SingleAsync();
+        Assert.Equal(5, word.Status);
+        Assert.Equal("perro", word.Term);
+    }
+
+    // --- 1.2: status-only update must not erase the saved translation ---
+
+    [Fact]
+    public async Task UpdateWord_WithEmptyOrNullTranslation_PreservesExistingTranslation()
+    {
+        using var context = CreateContext();
+        var (userId, wordId) = SeedWord(context, status: 1);
+        context.WordTranslations.Add(new WordTranslation { WordId = wordId, Translation = "cat", CreatedAt = DateTime.UtcNow });
+        context.SaveChanges();
+
+        var controller = CreateController(context, userId);
+
+        // Empty string (offline replay / online status-only save) leaves it unchanged.
+        var r1 = await controller.UpdateWord(wordId, new UpdateWordDto { Status = 5, Translation = "" });
+        Assert.IsType<NoContentResult>(r1);
+        Assert.Equal("cat", (await context.WordTranslations.SingleAsync(t => t.WordId == wordId)).Translation);
+
+        // Null likewise means "leave unchanged".
+        var r2 = await controller.UpdateWord(wordId, new UpdateWordDto { Status = 4, Translation = null });
+        Assert.IsType<NoContentResult>(r2);
+        Assert.Equal("cat", (await context.WordTranslations.SingleAsync(t => t.WordId == wordId)).Translation);
+    }
+
+    [Fact]
+    public async Task UpdateWord_WithNonEmptyTranslation_Updates()
+    {
+        using var context = CreateContext();
+        var (userId, wordId) = SeedWord(context, status: 1);
+        context.WordTranslations.Add(new WordTranslation { WordId = wordId, Translation = "cat", CreatedAt = DateTime.UtcNow });
+        context.SaveChanges();
+
+        var controller = CreateController(context, userId);
+        var result = await controller.UpdateWord(wordId, new UpdateWordDto { Status = 5, Translation = "feline" });
+
+        Assert.IsType<NoContentResult>(result);
+        Assert.Equal("feline", (await context.WordTranslations.SingleAsync(t => t.WordId == wordId)).Translation);
+    }
 }

@@ -37,9 +37,10 @@ namespace LinguaReadApi.Services.Tokenization
         /// Word rows, and link the text via TextWord rows. Stamps the
         /// owning Text's <see cref="Text.WordLinkingTokenizerVersion"/>
         /// on success so the migration service can skip it next time.
-        /// Idempotent w.r.t. duplicate Words but does not delete
-        /// existing TextWord rows for the text — callers that need a
-        /// clean re-link should call <see cref="RelinkAsync"/>.
+        /// Idempotent: skips Words and (TextId, WordId) links that already
+        /// exist, so re-running for the same text is safe. It does not delete
+        /// stale TextWord rows — callers that need a clean re-link (e.g. after
+        /// a tokenizer change) should call <see cref="RelinkAsync"/>.
         /// </summary>
         public static async Task LinkAsync(
             AppDbContext context,
@@ -86,8 +87,11 @@ namespace LinguaReadApi.Services.Tokenization
                 existingWordsList.AddRange(batchResults);
             }
 
+            // Key by the same normalized lookup key the probes use (uniqueWords
+            // are already lowercased keys); keying by the raw Term would miss a
+            // stored capitalized row (e.g. "Été") and create a duplicate.
             var existingWords = existingWordsList
-                .GroupBy(w => w.Term)
+                .GroupBy(w => Tokenizer.NormalizeKey(w.Term, language))
                 .ToDictionary(g => g.Key, g => g.First());
 
             var newWords = new List<Word>();
@@ -115,10 +119,19 @@ namespace LinguaReadApi.Services.Tokenization
                 context.ChangeTracker.Clear();
             }
 
+            // Skip (TextId, WordId) pairs already linked so re-running LinkAsync
+            // for a text is idempotent and never violates the unique index.
+            var alreadyLinkedWordIds = (await context.TextWords
+                .Where(tw => tw.TextId == textId)
+                .Select(tw => tw.WordId)
+                .ToListAsync(cancellationToken))
+                .ToHashSet();
+
             var textWordsToAdd = new List<TextWord>();
             foreach (var wordTerm in uniqueWords)
             {
-                if (existingWords.TryGetValue(wordTerm, out var word))
+                if (existingWords.TryGetValue(wordTerm, out var word)
+                    && alreadyLinkedWordIds.Add(word.WordId))
                 {
                     textWordsToAdd.Add(new TextWord
                     {

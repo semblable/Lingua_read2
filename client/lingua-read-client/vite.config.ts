@@ -89,7 +89,17 @@ export default defineConfig({
               cacheName: 'lr-audio',
               rangeRequests: true,
               expiration: { maxEntries: 500, maxAgeSeconds: 60 * 60 * 24 * 30 },
-              cacheableResponse: { statuses: [0, 200, 206] },
+              // Only cache COMPLETE (200) responses. Never cache 206 partials:
+              // RangeRequestsPlugin passes a cached 206 through untouched
+              // (see workbox-range-requests/createPartialResponse), so a 206
+              // captured from a `Range: bytes=0-` play request gets replayed
+              // for every later seek — the browser asks for bytes=N- but gets
+              // back the bytes-0 response, and Chrome rejects the Content-Range
+              // mismatch with "A ServiceWorker intercepted the request and
+              // encountered an unexpected error." Offline downloads store a
+              // full 200 (DownloadForOfflineButton fetches without a Range
+              // header), which the range plugin can slice correctly on seek.
+              cacheableResponse: { statuses: [0, 200] },
             },
           },
         ],

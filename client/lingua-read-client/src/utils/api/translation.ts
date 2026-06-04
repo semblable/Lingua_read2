@@ -149,6 +149,27 @@ export const getSupportedLanguages = (): Promise<SupportedLanguages> => {
   return fetchApi<SupportedLanguages>('/translation/languages');
 };
 
+// Structured Wiktionary definitions for the optional rich display. Hand-typed
+// (rather than via generated ResponseOf) so it does not depend on an OpenAPI regen.
+export type WordDefinitionEntry = { partOfSpeech: string; senses: string[] };
+export type WordDefinitionResponse = {
+  term: string;
+  sourceLanguageCode: string;
+  entries: WordDefinitionEntry[];
+};
+
+export const getWordDefinition = async (
+  term: string,
+  sourceLanguageCode: string,
+  { signal }: AbortSignalOptions = {}
+): Promise<WordDefinitionResponse> => {
+  const params = new URLSearchParams({ term });
+  if (sourceLanguageCode) params.set('sourceLanguageCode', sourceLanguageCode);
+  return await fetchApi<WordDefinitionResponse>(`/translation/define?${params.toString()}`, {
+    signal
+  });
+};
+
 export const batchTranslateWords = async (
   words: string[],
   targetLanguageCode: string,

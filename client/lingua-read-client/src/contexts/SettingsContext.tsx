@@ -26,6 +26,8 @@ export type Settings = {
   sentenceTtsRate: number;
   defaultLanguageId: number;
   translationTargetLanguageCode: string;
+  wordTranslationProvider: string;
+  wiktionaryRichDisplay: boolean;
   autoAdvanceToNextLesson: boolean;
   autoAdvanceAudiobookTracks: boolean;
   autoMoveFinishedLessons: boolean;
@@ -100,6 +102,8 @@ const defaultSettings: Settings = {
   sentenceTtsRate: 1,
   defaultLanguageId: 0,
   translationTargetLanguageCode: 'EN',
+  wordTranslationProvider: 'deepl',
+  wiktionaryRichDisplay: false,
   autoAdvanceToNextLesson: false,
   autoAdvanceAudiobookTracks: true,
   autoMoveFinishedLessons: false,
@@ -194,6 +198,9 @@ const mergeSettings = (
     defaultLanguageId: d.defaultLanguageId || base.defaultLanguageId,
     translationTargetLanguageCode:
       d.translationTargetLanguageCode || base.translationTargetLanguageCode,
+    wordTranslationProvider:
+      d.wordTranslationProvider || base.wordTranslationProvider,
+    wiktionaryRichDisplay: d.wiktionaryRichDisplay ?? base.wiktionaryRichDisplay,
     autoAdvanceToNextLesson: d.autoAdvanceToNextLesson ?? base.autoAdvanceToNextLesson,
     autoAdvanceAudiobookTracks:
       d.autoAdvanceAudiobookTracks ?? base.autoAdvanceAudiobookTracks,

@@ -65,7 +65,12 @@ export const useWordTranslation = ({
       if (!termToTranslate || !text?.languageCode) return;
       if (!force && !globalSettings.autoTranslateWords) return;
 
-      const cacheKey = `${text.languageCode}|${targetLanguageCode}|${sentenceContext ? 'sel' : 'word'}|${sentenceContext}|${termToTranslate}`;
+      // Wiktionary is a per-word dictionary; it ignores sentence context, so route the
+      // click to the word-lookup endpoint (which the backend factory maps to Wiktionary)
+      // rather than the context-aware AI selection endpoint.
+      const useWiktionary = globalSettings.wordTranslationProvider === 'wiktionary';
+      const useContext = !!sentenceContext && !useWiktionary;
+      const cacheKey = `${text.languageCode}|${targetLanguageCode}|${useContext ? 'sel' : 'word'}|${useContext ? sentenceContext : ''}|${termToTranslate}`;
       const cached = translationCacheRef.current.get(cacheKey);
       if (!force && cached) {
         translationCacheRef.current.delete(cacheKey);
@@ -84,7 +89,7 @@ export const useWordTranslation = ({
       setIsTranslating(true);
       setWordTranslationError('');
       try {
-        const result = sentenceContext
+        const result = useContext
           ? await translateSelectionWithContext(termToTranslate, sentenceContext, text.languageCode, targetLanguageCode, { signal: controller.signal })
           : await translateText(termToTranslate, text.languageCode, targetLanguageCode, { signal: controller.signal });
         if (result?.translatedText) {
@@ -117,7 +122,7 @@ export const useWordTranslation = ({
         }
       }
     },
-    [globalSettings.autoTranslateWords, text?.languageCode, targetLanguageCode, applyTranslationToDisplayedWord]
+    [globalSettings.autoTranslateWords, globalSettings.wordTranslationProvider, text?.languageCode, targetLanguageCode, applyTranslationToDisplayedWord]
   );
 
   const appendAutoTranslation = useCallback(

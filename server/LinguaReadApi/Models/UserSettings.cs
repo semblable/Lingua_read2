@@ -40,7 +40,17 @@ namespace LinguaReadApi.Models
         public int DefaultLanguageId { get; set; } = 0; // default language for new texts
         [StringLength(20)]
         public string TranslationTargetLanguageCode { get; set; } = "EN"; // target language for glossary translations
-        
+
+        // Word translation provider: "deepl" (default) or "wiktionary".
+        // Affects only word-level lookups (TranslationController); sentence/full-text
+        // translation always uses the AI providers since Wiktionary is a dictionary.
+        [StringLength(20)]
+        public string WordTranslationProvider { get; set; } = "deepl";
+
+        // When the Wiktionary provider is active, show rich definitions (part of speech +
+        // multiple senses) in the Word Info panel instead of just the flattened gloss.
+        public bool WiktionaryRichDisplay { get; set; } = false;
+
         // Navigation Preferences
         public bool AutoAdvanceToNextLesson { get; set; } = false; // automatically go to next lesson after completion
         public bool ShowProgressStats { get; set; } = true; // show progress statistics

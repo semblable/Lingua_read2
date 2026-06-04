@@ -74,6 +74,8 @@ namespace LinguaReadApi.Controllers
                     SentenceTtsRate = 1.0,
                     DefaultLanguageId = 0,
                     TranslationTargetLanguageCode = "EN",
+                    WordTranslationProvider = "deepl",
+                    WiktionaryRichDisplay = false,
                     AutoAdvanceToNextLesson = false,
                     AutoAdvanceAudiobookTracks = true,
                     AutoMoveFinishedLessons = false, // Added property
@@ -123,6 +125,8 @@ namespace LinguaReadApi.Controllers
                 SentenceTtsRate = settings.SentenceTtsRate,
                 DefaultLanguageId = settings.DefaultLanguageId,
                 TranslationTargetLanguageCode = settings.TranslationTargetLanguageCode,
+                WordTranslationProvider = settings.WordTranslationProvider,
+                WiktionaryRichDisplay = settings.WiktionaryRichDisplay,
                 AutoAdvanceToNextLesson = settings.AutoAdvanceToNextLesson,
                 AutoAdvanceAudiobookTracks = settings.AutoAdvanceAudiobookTracks,
                 AutoMoveFinishedLessons = settings.AutoMoveFinishedLessons, // Added
@@ -241,6 +245,15 @@ namespace LinguaReadApi.Controllers
             {
                 settings.TranslationTargetLanguageCode = updateDto.TranslationTargetLanguageCode.Trim().ToUpperInvariant();
             }
+            if (!string.IsNullOrWhiteSpace(updateDto.WordTranslationProvider))
+            {
+                var normalizedProvider = updateDto.WordTranslationProvider.Trim().ToLowerInvariant();
+                if (normalizedProvider is "deepl" or "wiktionary")
+                {
+                    settings.WordTranslationProvider = normalizedProvider;
+                }
+            }
+            settings.WiktionaryRichDisplay = updateDto.WiktionaryRichDisplay ?? settings.WiktionaryRichDisplay;
             settings.AutoAdvanceToNextLesson = updateDto.AutoAdvanceToNextLesson ?? settings.AutoAdvanceToNextLesson;
             settings.AutoAdvanceAudiobookTracks = updateDto.AutoAdvanceAudiobookTracks ?? settings.AutoAdvanceAudiobookTracks;
             settings.AutoMoveFinishedLessons = updateDto.AutoMoveFinishedLessons ?? settings.AutoMoveFinishedLessons; // Update property
@@ -424,6 +437,8 @@ namespace LinguaReadApi.Controllers
                 SentenceTtsRate = settings.SentenceTtsRate,
                 DefaultLanguageId = settings.DefaultLanguageId,
                 TranslationTargetLanguageCode = settings.TranslationTargetLanguageCode,
+                WordTranslationProvider = settings.WordTranslationProvider,
+                WiktionaryRichDisplay = settings.WiktionaryRichDisplay,
                 AutoAdvanceToNextLesson = settings.AutoAdvanceToNextLesson,
                 AutoAdvanceAudiobookTracks = settings.AutoAdvanceAudiobookTracks,
                 AutoMoveFinishedLessons = settings.AutoMoveFinishedLessons, // Update property
@@ -829,6 +844,8 @@ namespace LinguaReadApi.Controllers
         public double SentenceTtsRate { get; set; } = 1.0;
         public int DefaultLanguageId { get; set; } = 0;
         public string TranslationTargetLanguageCode { get; set; } = "EN";
+        public string WordTranslationProvider { get; set; } = "deepl";
+        public bool WiktionaryRichDisplay { get; set; } = false;
         public bool AutoAdvanceToNextLesson { get; set; } = false;
         public bool AutoAdvanceAudiobookTracks { get; set; } = true;
         public bool AutoMoveFinishedLessons { get; set; } = false; // Added property
@@ -911,6 +928,9 @@ namespace LinguaReadApi.Controllers
         public int? DefaultLanguageId { get; set; }
         [StringLength(20)]
         public string? TranslationTargetLanguageCode { get; set; }
+        [StringLength(20)]
+        public string? WordTranslationProvider { get; set; }
+        public bool? WiktionaryRichDisplay { get; set; }
         public bool? AutoAdvanceToNextLesson { get; set; }
         public bool? AutoAdvanceAudiobookTracks { get; set; }
         public bool? AutoMoveFinishedLessons { get; set; } // Added property

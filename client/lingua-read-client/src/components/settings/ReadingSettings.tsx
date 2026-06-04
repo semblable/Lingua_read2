@@ -112,7 +112,7 @@ const ReadingSettings = ({ settings, handleChange, languages, loadingLanguages }
           </Form.Select>
         </Form.Group>
 
-        <Form.Group className="mb-0" controlId="translationTargetLanguageCode">
+        <Form.Group className="mb-3" controlId="translationTargetLanguageCode">
           <Form.Label>Translation Target Language</Form.Label>
           <Form.Select
             name="translationTargetLanguageCode"
@@ -133,6 +133,38 @@ const ReadingSettings = ({ settings, handleChange, languages, loadingLanguages }
             Used for word and sentence translation results in the reader.
           </Form.Text>
         </Form.Group>
+
+        <Form.Group className={settings.wordTranslationProvider === 'wiktionary' ? 'mb-3' : 'mb-0'} controlId="wordTranslationProvider">
+          <Form.Label>Word Translation Provider</Form.Label>
+          <Form.Select
+            name="wordTranslationProvider"
+            value={settings.wordTranslationProvider}
+            onChange={handleChange}
+          >
+            <option value="deepl">DeepL</option>
+            <option value="wiktionary">Wiktionary (free, no API key)</option>
+          </Form.Select>
+          <Form.Text className="text-muted">
+            Provider for single-word lookups in the reader. Wiktionary returns English
+            dictionary definitions and works per word (sentence context is not used).
+            Sentence and full-text translation always use your AI provider.
+          </Form.Text>
+        </Form.Group>
+
+        {settings.wordTranslationProvider === 'wiktionary' && (
+          <Form.Group className="mb-0" controlId="wiktionaryRichDisplay">
+            <Form.Check
+              type="switch"
+              name="wiktionaryRichDisplay"
+              label="Show rich Wiktionary definitions (part of speech + multiple senses)"
+              checked={settings.wiktionaryRichDisplay}
+              onChange={handleChange}
+            />
+            <Form.Text className="text-muted">
+              When off, a single combined gloss is shown, just like DeepL.
+            </Form.Text>
+          </Form.Group>
+        )}
       </div>
     </>
   );

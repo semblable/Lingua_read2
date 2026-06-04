@@ -433,6 +433,9 @@ export interface paths {
                         SplitMethod: string;
                         /** Format: int32 */
                         MaxSegmentSize: number;
+                        SubSplitOversized?: boolean;
+                        ChapterTitles?: string[];
+                        ChapterGroupingsJson?: string;
                     };
                 };
             };
@@ -447,6 +450,189 @@ export interface paths {
                         "application/json": components["schemas"]["BookDto"];
                         "text/json": components["schemas"]["BookDto"];
                     };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/Books/preview-split": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "multipart/form-data": {
+                        /** Format: int32 */
+                        LanguageId: number;
+                        Tags?: string[];
+                        /** Format: binary */
+                        File: string;
+                        TitleOverride?: string;
+                        SplitMethod: string;
+                        /** Format: int32 */
+                        MaxSegmentSize: number;
+                        SubSplitOversized?: boolean;
+                        ChapterTitles?: string[];
+                        ChapterGroupingsJson?: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["SplitPreviewDto"];
+                        "application/json": components["schemas"]["SplitPreviewDto"];
+                        "text/json": components["schemas"]["SplitPreviewDto"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/Books/preview-split-manual": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": components["schemas"]["CreateBookDto"];
+                    "text/json": components["schemas"]["CreateBookDto"];
+                    "application/*+json": components["schemas"]["CreateBookDto"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["SplitPreviewDto"];
+                        "application/json": components["schemas"]["SplitPreviewDto"];
+                        "text/json": components["schemas"]["SplitPreviewDto"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/Books/{id}/preview-re-split": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": components["schemas"]["ReSplitRequestDto"];
+                    "text/json": components["schemas"]["ReSplitRequestDto"];
+                    "application/*+json": components["schemas"]["ReSplitRequestDto"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["SplitPreviewDto"];
+                        "application/json": components["schemas"]["SplitPreviewDto"];
+                        "text/json": components["schemas"]["SplitPreviewDto"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/Books/{id}/re-split": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": components["schemas"]["ReSplitRequestDto"];
+                    "text/json": components["schemas"]["ReSplitRequestDto"];
+                    "application/*+json": components["schemas"]["ReSplitRequestDto"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
                 };
             };
         };
@@ -3283,6 +3469,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/Translation/define": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    term?: string;
+                    sourceLanguageCode?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["WordDefinitionResponse"];
+                        "application/json": components["schemas"]["WordDefinitionResponse"];
+                        "text/json": components["schemas"]["WordDefinitionResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/activity/logListening": {
         parameters: {
             query?: never;
@@ -4636,6 +4862,16 @@ export interface components {
             folderId?: number;
             name?: string | null;
         };
+        ChapterPreviewDto: {
+            /** Format: int32 */
+            index?: number;
+            title?: string | null;
+            snippet?: string | null;
+            /** Format: int32 */
+            characterCount?: number;
+            /** Format: int32 */
+            estimatedWordCount?: number;
+        };
         ClosedPeriodDto: {
             /** Format: date */
             periodStart?: string;
@@ -4660,7 +4896,10 @@ export interface components {
             splitMethod: string;
             /** Format: int32 */
             maxSegmentSize: number;
+            subSplitOversized?: boolean;
             tags?: string[] | null;
+            chapterTitles?: string[] | null;
+            chapterGroupings?: number[][] | null;
         };
         CreateFolderDto: {
             name?: string | null;
@@ -5148,6 +5387,14 @@ export interface components {
             message?: string | null;
             details?: string | null;
         };
+        ReSplitRequestDto: {
+            splitMethod: string;
+            /** Format: int32 */
+            maxSegmentSize: number;
+            subSplitOversized?: boolean;
+            chapterTitles?: string[] | null;
+            chapterGroupings?: number[][] | null;
+        };
         ReaderContentBlock: {
             type?: string | null;
             text?: string | null;
@@ -5253,6 +5500,12 @@ export interface components {
         };
         SetupRequest: {
             password?: string | null;
+        };
+        SplitPreviewDto: {
+            chapters?: components["schemas"]["ChapterPreviewDto"][] | null;
+            /** Format: int32 */
+            totalCharacters?: number;
+            detectionMethod?: string | null;
         };
         SrsAnalyticsDto: {
             retentionByStatus?: components["schemas"]["RetentionByStatusDto"][] | null;
@@ -5696,6 +5949,8 @@ export interface components {
             /** Format: int32 */
             defaultLanguageId?: number | null;
             translationTargetLanguageCode?: string | null;
+            wordTranslationProvider?: string | null;
+            wiktionaryRichDisplay?: boolean | null;
             autoAdvanceToNextLesson?: boolean | null;
             autoAdvanceAudiobookTracks?: boolean | null;
             autoMoveFinishedLessons?: boolean | null;
@@ -5803,8 +6058,9 @@ export interface components {
             /** Format: int32 */
             defaultLanguageId?: number;
             translationTargetLanguageCode?: string | null;
+            wordTranslationProvider?: string | null;
+            wiktionaryRichDisplay?: boolean;
             autoAdvanceToNextLesson?: boolean;
-            autoAdvanceAudiobookTracks?: boolean;
             showProgressStats?: boolean;
             autoMoveFinishedLessons?: boolean;
             showDesktopLessonControls?: boolean;
@@ -5812,6 +6068,7 @@ export interface components {
             currentAudiobookTrackId?: number | null;
             /** Format: double */
             currentAudiobookPosition?: number | null;
+            autoAdvanceAudiobookTracks?: boolean;
             discordWeeklyReportEnabled?: boolean;
             discordWebhookUrl?: string | null;
             discordWeeklyReportDayOfWeek?: string | null;
@@ -5897,6 +6154,8 @@ export interface components {
             /** Format: int32 */
             defaultLanguageId?: number;
             translationTargetLanguageCode?: string | null;
+            wordTranslationProvider?: string | null;
+            wiktionaryRichDisplay?: boolean;
             autoAdvanceToNextLesson?: boolean;
             autoAdvanceAudiobookTracks?: boolean;
             autoMoveFinishedLessons?: boolean;
@@ -5977,6 +6236,15 @@ export interface components {
             user?: components["schemas"]["User"];
             translation?: components["schemas"]["WordTranslation"];
             textWords?: components["schemas"]["TextWord"][] | null;
+        };
+        WordDefinitionEntryDto: {
+            partOfSpeech?: string | null;
+            senses?: string[] | null;
+        };
+        WordDefinitionResponse: {
+            term?: string | null;
+            sourceLanguageCode?: string | null;
+            entries?: components["schemas"]["WordDefinitionEntryDto"][] | null;
         };
         WordDto: {
             /** Format: int32 */

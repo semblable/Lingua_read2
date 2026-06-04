@@ -1,10 +1,13 @@
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using System.Threading.Tasks;
 using LinguaReadApi.Services;
 using System.Text.Json.Serialization;
 using System;
 using System.Collections.Generic;
+using System.Linq;
+using System.Security.Claims;
 
 namespace LinguaReadApi.Controllers
 {
@@ -13,19 +16,38 @@ namespace LinguaReadApi.Controllers
     [Authorize]
     public class TranslationController : ControllerBase
     {
-        private readonly ITranslationService _translationService;
+        private readonly IWordTranslationServiceFactory _translationServiceFactory;
+        private readonly WiktionaryTranslationService _wiktionaryService;
         private readonly ILanguageService _languageService; // Inject LanguageService
         private readonly ILogger<TranslationController> _logger;
 
         public TranslationController(
-            ITranslationService translationService,
+            IWordTranslationServiceFactory translationServiceFactory,
+            WiktionaryTranslationService wiktionaryService,
             ILanguageService languageService,
             ILogger<TranslationController> logger)
         {
-            _translationService = translationService;
+            _translationServiceFactory = translationServiceFactory;
+            _wiktionaryService = wiktionaryService;
             _languageService = languageService; // Assign injected service
             _logger = logger;
         }
+
+        private Guid GetUserId()
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var userId))
+            {
+                throw new UnauthorizedAccessException("User ID not found in token");
+            }
+            return userId;
+        }
+
+        // The Wiktionary provider surfaces a persistent upstream 429 as this exception; map it
+        // to HTTP 429 so the reader shows its existing "rate limit reached" message.
+        private ObjectResult RateLimitResult() =>
+            StatusCode(StatusCodes.Status429TooManyRequests,
+                new { message = "Wiktionary rate limit reached. Try again in a few seconds." });
 
         /// <summary>
         /// Translates text from one language to another
@@ -52,7 +74,8 @@ namespace LinguaReadApi.Controllers
 
             try
             {
-                var translatedText = await _translationService.TranslateTextAsync(
+                var translationService = await _translationServiceFactory.GetServiceForUserAsync(GetUserId());
+                var translatedText = await translationService.TranslateTextAsync(
                     request.Text,
                     request.SourceLanguageCode,
                     request.TargetLanguageCode);
@@ -64,6 +87,10 @@ namespace LinguaReadApi.Controllers
                     SourceLanguageCode = request.SourceLanguageCode,
                     TargetLanguageCode = request.TargetLanguageCode
                 });
+            }
+            catch (WiktionaryRateLimitException)
+            {
+                return RateLimitResult();
             }
             catch (Exception ex)
             {
@@ -110,11 +137,53 @@ namespace LinguaReadApi.Controllers
                 return BadRequest("Target language code cannot be empty.");
             }
 
-            var translations = await _translationService.TranslateBatchAsync(
-                request.Words,
-                request.TargetLanguageCode,
-                request.SourceLanguageCode);
-            return Ok(translations);
+            var translationService = await _translationServiceFactory.GetServiceForUserAsync(GetUserId());
+            try
+            {
+                var translations = await translationService.TranslateBatchAsync(
+                    request.Words,
+                    request.TargetLanguageCode,
+                    request.SourceLanguageCode);
+                return Ok(translations);
+            }
+            catch (WiktionaryRateLimitException)
+            {
+                return RateLimitResult();
+            }
+        }
+
+        /// <summary>
+        /// Returns structured Wiktionary definitions (part of speech + senses) for the optional
+        /// rich display. Only meaningful when the user's word translation provider is Wiktionary;
+        /// the frontend calls this only in that case.
+        /// </summary>
+        [HttpGet("define")]
+        public async Task<ActionResult<WordDefinitionResponse>> Define([FromQuery] string term, [FromQuery] string? sourceLanguageCode)
+        {
+            if (string.IsNullOrWhiteSpace(term))
+            {
+                return BadRequest("Term cannot be empty.");
+            }
+
+            try
+            {
+                var entries = await _wiktionaryService.GetDefinitionsAsync(term, sourceLanguageCode);
+
+                return Ok(new WordDefinitionResponse
+                {
+                    Term = term,
+                    SourceLanguageCode = sourceLanguageCode ?? string.Empty,
+                    Entries = entries.Select(e => new WordDefinitionEntryDto
+                    {
+                        PartOfSpeech = e.PartOfSpeech,
+                        Senses = e.Senses.Select(s => s.Definition).ToList()
+                    }).ToList()
+                });
+            }
+            catch (WiktionaryRateLimitException)
+            {
+                return RateLimitResult();
+            }
         }
     } // End of Controller class
 
@@ -166,4 +235,25 @@ namespace LinguaReadApi.Controllers
         [JsonPropertyName("name")]
         public string Name { get; set; } = string.Empty;
     }
-} 
+
+    public class WordDefinitionResponse
+    {
+        [JsonPropertyName("term")]
+        public string Term { get; set; } = string.Empty;
+
+        [JsonPropertyName("sourceLanguageCode")]
+        public string SourceLanguageCode { get; set; } = string.Empty;
+
+        [JsonPropertyName("entries")]
+        public List<WordDefinitionEntryDto> Entries { get; set; } = new();
+    }
+
+    public class WordDefinitionEntryDto
+    {
+        [JsonPropertyName("partOfSpeech")]
+        public string PartOfSpeech { get; set; } = string.Empty;
+
+        [JsonPropertyName("senses")]
+        public List<string> Senses { get; set; } = new();
+    }
+}

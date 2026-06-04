@@ -2,6 +2,7 @@ import React from 'react';
 import { Button, Alert, Form, Spinner } from 'react-bootstrap';
 import type { LanguageConfig } from '../../utils/readerText';
 import type { DisplayedWord } from '../../types/displayedWord';
+import WiktionaryDefinitions from './WiktionaryDefinitions';
 
 export type { DisplayedWord };
 
@@ -65,6 +66,13 @@ export type WordInfoLanguageState = {
   setEmbeddedUrl: (url: string | null) => void;
 };
 
+// Optional rich Wiktionary definitions; enabled only when the user's word translation
+// provider is Wiktionary and rich display is turned on.
+export type WordInfoDefinitionState = {
+  enabled: boolean;
+  sourceLanguageCode: string;
+};
+
 export type WordInfoPanelProps = {
   displayedWord: DisplayedWord | null;
   selectedWord: string;
@@ -74,6 +82,7 @@ export type WordInfoPanelProps = {
   actions: WordInfoActions;
   bookmark: WordInfoBookmarkState;
   language: WordInfoLanguageState;
+  definition?: WordInfoDefinitionState;
 };
 
 const WordInfoPanel = React.memo(({
@@ -84,7 +93,8 @@ const WordInfoPanel = React.memo(({
   speech,
   actions,
   bookmark,
-  language
+  language,
+  definition
 }: WordInfoPanelProps) => {
   if (!displayedWord) return <p>Click/hover on a word.</p>;
   return (
@@ -213,6 +223,14 @@ const WordInfoPanel = React.memo(({
           </Button>
         )}
       </div>
+
+      {definition?.enabled && displayedWord.term && (
+        <WiktionaryDefinitions
+          term={displayedWord.term}
+          sourceLanguageCode={definition.sourceLanguageCode}
+          enabled={definition.enabled}
+        />
+      )}
 
       {language.languageConfig?.dictionaries && selectedWord && (
         <div className="mt-3 pt-2 border-top">

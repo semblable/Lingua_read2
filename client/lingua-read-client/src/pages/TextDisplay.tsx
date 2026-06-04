@@ -2044,6 +2044,12 @@ const TextDisplay = () => {
       languageConfig,
       setEmbeddedUrl,
     },
+    definition: {
+      enabled:
+        globalSettings.wordTranslationProvider === 'wiktionary' &&
+        !!globalSettings.wiktionaryRichDisplay,
+      sourceLanguageCode: text?.languageCode ?? '',
+    },
   };
   return (
     <div className={`text-display-wrapper lesson-page px-0 mx-0 w-100 reader-ui-${readingUiMode}`}>

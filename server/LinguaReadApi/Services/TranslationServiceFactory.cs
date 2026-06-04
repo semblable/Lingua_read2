@@ -86,6 +86,50 @@ namespace LinguaReadApi.Services
     }
 
     /// <summary>
+    /// Factory interface for getting the appropriate word-level translation service based on
+    /// user settings (DeepL vs Wiktionary). Returns the shared <see cref="ITranslationService"/>
+    /// contract so callers stay provider-agnostic.
+    /// </summary>
+    public interface IWordTranslationServiceFactory
+    {
+        Task<ITranslationService> GetServiceForUserAsync(Guid userId);
+    }
+
+    /// <summary>
+    /// Selects between DeepL and Wiktionary for word lookups based on the user's
+    /// <c>WordTranslationProvider</c> setting. Defaults to DeepL.
+    /// </summary>
+    public class WordTranslationServiceFactory : IWordTranslationServiceFactory
+    {
+        private readonly DeepLTranslationService _deepLService;
+        private readonly WiktionaryTranslationService _wiktionaryService;
+        private readonly AppDbContext _context;
+
+        public WordTranslationServiceFactory(
+            DeepLTranslationService deepLService,
+            WiktionaryTranslationService wiktionaryService,
+            AppDbContext context)
+        {
+            _deepLService = deepLService;
+            _wiktionaryService = wiktionaryService;
+            _context = context;
+        }
+
+        public async Task<ITranslationService> GetServiceForUserAsync(Guid userId)
+        {
+            var userSettings = await _context.UserSettings.FirstOrDefaultAsync(s => s.UserId == userId);
+
+            if (userSettings != null &&
+                string.Equals(userSettings.WordTranslationProvider, "wiktionary", StringComparison.OrdinalIgnoreCase))
+            {
+                return _wiktionaryService;
+            }
+
+            return _deepLService;
+        }
+    }
+
+    /// <summary>
     /// Factory interface for getting the appropriate story generation service based on user settings
     /// </summary>
     public interface IStoryGenerationServiceFactory

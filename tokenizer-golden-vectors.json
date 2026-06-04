@@ -1,0 +1,39 @@
+{
+  "_comment": "Single source of truth for cross-language tokenization expectations, exercised by BOTH the backend (server/LinguaReadApi.Tests/TokenizerTests.cs) and the frontend (client/lingua-read-client/src/__tests__/tokenizer.spec.js) suites. The two tokenizers (Tokenizer.cs and readerText.ts) must produce the same word sequence for every case here; drift between them is the bug class this fixture guards against. Language seeds mirror DbInitializer.cs. Escape forms (\\uXXXX, \\p{...}) decode to the same string fed to both regex engines, which each honour these escapes inside a character class.",
+  "languages": {
+    "en": { "code": "en", "wordCharacters": "a-zA-ZÀ-ÖØ-öø-ȳáéíóúÁÉÍÓÚñÑ", "characterSubstitutions": "´='|`='|’='|‘='|...=…|..=‥" },
+    "fr": { "code": "fr", "wordCharacters": "a-zA-ZÀ-ÖØ-öø-ȳáéíóúÁÉÍÓÚñÑ", "characterSubstitutions": "´='|`='|’='|‘='|...=…|..=‥" },
+    "it": { "code": "it", "wordCharacters": "a-zA-ZÀàÉéÈèÌìÎîÓóÒòÙù", "characterSubstitutions": "´='|`='|’='|‘='|...=…|..=‥" },
+    "pt": { "code": "pt", "wordCharacters": "a-zA-ZÀÁÂÃÇÉÊÍÓÔÕÚÜàáâãçéêíóôõúü", "characterSubstitutions": "´='|`='|’='|‘='|...=…|..=‥" },
+    "de": { "code": "de", "wordCharacters": "a-zA-ZÀ-ÖØ-öø-ȳáéíóúÁÉÍÓÚñÑ\\u200C\\u200D", "characterSubstitutions": "´='|`='|’='|‘='|...=…|..=‥" },
+    "ru": { "code": "ru", "wordCharacters": "\\p{L}\\p{M}'-", "characterSubstitutions": "’='|‘='|...=…" }
+  },
+  "cases": [
+    { "lang": "fr", "input": "l'eau coule", "expectedWords": ["l'eau", "coule"] },
+    { "lang": "fr", "input": "qu'il vienne", "expectedWords": ["qu'il", "vienne"] },
+    { "lang": "fr", "input": "l’eau coule", "expectedWords": ["l'eau", "coule"] },
+    { "lang": "fr", "input": "c'est-à-dire", "expectedWords": ["c'est-à-dire"] },
+    { "lang": "fr", "input": "M. Dupont arriva.", "expectedWords": ["M", "Dupont", "arriva"] },
+
+    { "lang": "it", "input": "dell'acqua fresca", "expectedWords": ["dell'acqua", "fresca"] },
+    { "lang": "it", "input": "un'altra volta", "expectedWords": ["un'altra", "volta"] },
+
+    { "lang": "pt", "input": "interrompo-a agora", "expectedWords": ["interrompo-a", "agora"] },
+    { "lang": "pt", "input": "beijá-lo gentilmente", "expectedWords": ["beijá-lo", "gentilmente"] },
+    { "lang": "pt", "input": "dá-me um café", "expectedWords": ["dá-me", "um", "café"] },
+
+    { "lang": "en", "input": "don't worry", "expectedWords": ["don't", "worry"] },
+    { "lang": "en", "input": "well-known", "expectedWords": ["well-known"] },
+    { "lang": "en", "input": "'hello'", "expectedWords": ["hello"] },
+    { "lang": "en", "input": "a -- b", "expectedWords": ["a", "b"] },
+    { "lang": "en", "input": "the dogs' tails", "expectedWords": ["the", "dogs", "tails"] },
+
+    { "lang": "de", "input": "Schöne Grüße", "expectedWords": ["Schöne", "Grüße"] },
+
+    { "lang": "ru", "input": "Привет мир", "expectedWords": ["Привет", "мир"] },
+    { "lang": "ru", "input": "кое-что", "expectedWords": ["кое-что"] },
+
+    { "lang": null, "input": "l'eau coule", "expectedWords": ["l'eau", "coule"] },
+    { "lang": null, "input": "interrompo-a agora", "expectedWords": ["interrompo-a", "agora"] }
+  ]
+}

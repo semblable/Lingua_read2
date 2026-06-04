@@ -19,4 +19,13 @@
   <ItemGroup>
     <ProjectReference Include="..\LinguaReadApi\LinguaReadApi.csproj" />
   </ItemGroup>
+
+  <ItemGroup>
+    <!-- Shared tokenizer golden vectors (repo root), copied next to the test
+         assembly so TokenizerTests can read it via AppContext.BaseDirectory.
+         The same file drives the frontend tokenizer.spec.js. -->
+    <None Include="..\..\tokenizer-golden-vectors.json" Link="tokenizer-golden-vectors.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
 </Project>

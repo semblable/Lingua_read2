@@ -1,3 +1,5 @@
+import { readFileSync, existsSync } from 'node:fs';
+import { resolve, dirname } from 'node:path';
 import {
   tokenizeContent,
   parseCharacterSubstitutions,
@@ -6,39 +8,29 @@ import {
   extractWords
 } from '../utils/readerText';
 
-// Seeded language configs (mirror of DbInitializer.cs).
-const LANG = {
-  en: {
-    code: 'en',
-    wordCharacters: 'a-zA-ZÀ-ÖØ-öø-ȳáéíóúÁÉÍÓÚñÑ',
-    characterSubstitutions: "´='|`='|’='|‘='|...=…|..=‥"
-  },
-  fr: {
-    code: 'fr',
-    wordCharacters: 'a-zA-ZÀ-ÖØ-öø-ȳáéíóúÁÉÍÓÚñÑ',
-    characterSubstitutions: "´='|`='|’='|‘='|...=…|..=‥"
-  },
-  it: {
-    code: 'it',
-    wordCharacters: 'a-zA-ZÀàÉéÈèÌìÎîÓóÒòÙù',
-    characterSubstitutions: "´='|`='|’='|‘='|...=…|..=‥"
-  },
-  pt: {
-    code: 'pt',
-    wordCharacters: 'a-zA-ZÀÁÂÃÇÉÊÍÓÔÕÚÜàáâãçéêíóôõúü',
-    characterSubstitutions: "´='|`='|’='|‘='|...=…|..=‥"
-  },
-  de: {
-    code: 'de',
-    wordCharacters: 'a-zA-ZÀ-ÖØ-öø-ȳáéíóúÁÉÍÓÚñÑ\\u200C\\u200D',
-    characterSubstitutions: "´='|`='|’='|‘='|...=…|..=‥"
-  },
-  ru: {
-    code: 'ru',
-    wordCharacters: "\\p{L}\\p{M}'-",
-    characterSubstitutions: "’='|‘='|...=…"
+// Shared cross-language golden vectors (repo root). The backend
+// TokenizerTests.GoldenVectorTests loads the SAME file, so the two tokenizers
+// (readerText.ts and Tokenizer.cs) are pinned to identical word sequences;
+// drift between them is exactly the bug this fixture guards against. The
+// `languages` seeds mirror DbInitializer.cs and also serve as the language
+// configs for the suite-specific tests below.
+//
+// Resolved by walking up from the test cwd until the file is found (the file
+// lives at the monorepo root, above this package). Avoids `import.meta.url`,
+// which isn't a file: URL under the happy-dom test environment.
+const loadGoldenVectors = () => {
+  let dir = process.cwd();
+  for (let i = 0; i < 8; i += 1) {
+    const candidate = resolve(dir, 'tokenizer-golden-vectors.json');
+    if (existsSync(candidate)) return JSON.parse(readFileSync(candidate, 'utf8'));
+    const parent = dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
   }
+  throw new Error(`tokenizer-golden-vectors.json not found searching up from ${process.cwd()}`);
 };
+const golden = loadGoldenVectors();
+const LANG = golden.languages;
 
 const wordTexts = (rawContent, langCfg) =>
   tokenizeContent(rawContent, langCfg).tokens.filter(t => t.type === 'word').map(t => t.text);
@@ -104,94 +96,13 @@ describe('buildCoreWordRegex', () => {
   });
 });
 
-describe('tokenizeContent — French elisions stay glued', () => {
-  test("l'eau coule", () => {
-    expect(wordTexts("l'eau coule", LANG.fr)).toEqual(["l'eau", 'coule']);
-  });
-
-  test("qu'il vienne", () => {
-    expect(wordTexts("qu'il vienne", LANG.fr)).toEqual(["qu'il", 'vienne']);
-  });
-
-  test("curly apostrophe normalized then glued", () => {
-    expect(wordTexts('l’eau coule', LANG.fr)).toEqual(["l'eau", 'coule']);
-  });
-
-  test("c'est-à-dire stays as one token", () => {
-    expect(wordTexts("c'est-à-dire", LANG.fr)).toEqual(["c'est-à-dire"]);
-  });
-
-  test("M. Dupont — period splits, M alone", () => {
-    expect(wordTexts('M. Dupont arriva.', LANG.fr)).toEqual(['M', 'Dupont', 'arriva']);
-  });
-});
-
-describe('tokenizeContent — Italian elisions', () => {
-  test("dell'acqua fresca", () => {
-    expect(wordTexts("dell'acqua fresca", LANG.it)).toEqual(["dell'acqua", 'fresca']);
-  });
-
-  test("un'altra volta", () => {
-    expect(wordTexts("un'altra volta", LANG.it)).toEqual(["un'altra", 'volta']);
-  });
-});
-
-describe('tokenizeContent — Portuguese clitics & hyphenated forms', () => {
-  test('interrompo-a agora', () => {
-    expect(wordTexts('interrompo-a agora', LANG.pt)).toEqual(['interrompo-a', 'agora']);
-  });
-
-  test('beijá-lo gentilmente', () => {
-    expect(wordTexts('beijá-lo gentilmente', LANG.pt)).toEqual(['beijá-lo', 'gentilmente']);
-  });
-
-  test('dá-me um café', () => {
-    expect(wordTexts('dá-me um café', LANG.pt)).toEqual(['dá-me', 'um', 'café']);
-  });
-});
-
-describe('tokenizeContent — English', () => {
-  test("don't worry — apostrophe glues", () => {
-    expect(wordTexts("don't worry", LANG.en)).toEqual(["don't", 'worry']);
-  });
-
-  test('well-known stays glued', () => {
-    expect(wordTexts('well-known', LANG.en)).toEqual(['well-known']);
-  });
-
-  test("'hello' — bare quotes do not eat the word", () => {
-    expect(wordTexts("'hello'", LANG.en)).toEqual(['hello']);
-  });
-
-  test("standalone -- splits", () => {
-    expect(wordTexts('a -- b', LANG.en)).toEqual(['a', 'b']);
-  });
-
-  test("trailing apostrophe in dogs' is dropped", () => {
-    expect(wordTexts("the dogs' tails", LANG.en)).toEqual(['the', 'dogs', 'tails']);
-  });
-});
-
-describe('tokenizeContent — German', () => {
-  test('Schöne Grüße', () => {
-    expect(wordTexts('Schöne Grüße', LANG.de)).toEqual(['Schöne', 'Grüße']);
-  });
-});
-
-describe('tokenizeContent — Russian (apostrophe & hyphen are core chars in the seed)', () => {
-  test('multi-letter Cyrillic runs split on whitespace', () => {
-    expect(wordTexts('Привет мир', LANG.ru)).toEqual(['Привет', 'мир']);
-  });
-
-  test("inter-letter hyphen still glues (e.g. кое-что)", () => {
-    expect(wordTexts('кое-что', LANG.ru)).toEqual(['кое-что']);
-  });
-});
-
-describe('tokenizeContent — fallback / no language config', () => {
-  test('with null config, behaves like Unicode-letter default', () => {
-    expect(wordTexts("l'eau coule", null)).toEqual(["l'eau", 'coule']);
-    expect(wordTexts("interrompo-a agora", null)).toEqual(['interrompo-a', 'agora']);
+// Cross-language word-sequence cases (French/Italian/Portuguese/English/German/
+// Russian elisions, clitics, hyphenated forms, null-language fallback) live in
+// the shared tokenizer-golden-vectors.json so the FE and BE suites can't drift.
+describe('tokenizeContent — golden vectors (shared with backend TokenizerTests)', () => {
+  test.each(golden.cases)('[$lang] $input', ({ lang, input, expectedWords }) => {
+    const config = lang === null ? null : LANG[lang];
+    expect(wordTexts(input, config)).toEqual(expectedWords);
   });
 });
 

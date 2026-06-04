@@ -47,7 +47,9 @@ namespace LinguaReadApi.Services
             //     throw new InvalidOperationException("DeepL API Key is missing in configuration.");
             // }
 
-             _httpClient.DefaultRequestHeaders.Add("Authorization", $"DeepL-Auth-Key {_apiKey}");
+            // The Authorization header is attached per-request in TranslateBatchAsync
+            // (see SendAsync below) rather than on DefaultRequestHeaders, so this service
+            // stays correct under any HttpClient lifetime (transient, typed, or singleton).
         }
 
         public async Task<Dictionary<string, string>> TranslateBatchAsync(List<string> words, string targetLang, string? sourceLang = null) // Mark sourceLang as nullable
@@ -99,7 +101,9 @@ namespace LinguaReadApi.Services
 
                 // Removed previous detailed debug logging
 
-                var response = await _httpClient.PostAsync(_apiUrl, requestContent);
+                using var request = new HttpRequestMessage(HttpMethod.Post, _apiUrl) { Content = requestContent };
+                request.Headers.TryAddWithoutValidation("Authorization", $"DeepL-Auth-Key {_apiKey}");
+                var response = await _httpClient.SendAsync(request);
 
                 if (response.IsSuccessStatusCode)
                 {

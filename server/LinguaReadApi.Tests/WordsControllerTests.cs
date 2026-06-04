@@ -8,6 +8,7 @@ using LinguaReadApi.Models;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
 namespace LinguaReadApi.Tests;
@@ -24,7 +25,7 @@ public class WordsControllerTests
 
     private static WordsController CreateController(AppDbContext context, Guid userId)
     {
-        return new WordsController(context)
+        return new WordsController(context, NullLogger<WordsController>.Instance)
         {
             ControllerContext = new ControllerContext
             {

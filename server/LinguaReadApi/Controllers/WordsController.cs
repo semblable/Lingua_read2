@@ -10,7 +10,7 @@ using LinguaReadApi.Models;
 using LinguaReadApi.Services.Tokenization;
 using System.Linq; // Required for Count() on nullable collection
 using System.Collections.Generic;
-// using Microsoft.Extensions.Logging; // TODO: Inject ILogger later
+using Microsoft.Extensions.Logging;
 
 namespace LinguaReadApi.Controllers
 {
@@ -20,13 +20,12 @@ namespace LinguaReadApi.Controllers
     public class WordsController : ControllerBase
     {
         private readonly AppDbContext _context;
-        // private readonly ILogger<WordsController> _logger; // TODO: Inject ILogger later
+        private readonly ILogger<WordsController> _logger;
 
-        // TODO: Inject ILogger later
-        public WordsController(AppDbContext context /*, ILogger<WordsController> logger*/)
+        public WordsController(AppDbContext context, ILogger<WordsController> logger)
         {
             _context = context;
-            // _logger = logger;
+            _logger = logger;
         }
 
         // POST: api/words
@@ -641,15 +640,7 @@ namespace LinguaReadApi.Controllers
             }
             catch (DbUpdateException ex)
             {
-                 // Log the detailed exception (Inject ILogger<WordsController> later)
-                 // For now, using Console.WriteLine for immediate visibility
-                 Console.WriteLine($"DbUpdateException saving batch terms: {ex.Message}");
-                 if (ex.InnerException != null)
-                 {
-                    Console.WriteLine($"Inner Exception: {ex.InnerException.Message}");
-                 }
-                 // Log entries that might have caused the issue (if possible)
-                 Console.WriteLine($"Entries involved: {ex.Entries?.Count()}");
+                 _logger.LogError(ex, "DbUpdateException saving batch terms ({EntryCount} entries)", ex.Entries?.Count());
                  return StatusCode(500, "An error occurred while saving the terms. Check logs for details.");
             }
             // Removed extra brace here if present

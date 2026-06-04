@@ -112,15 +112,47 @@ public class CompleteTextTests
         Assert.Equal("Finished", text.Tag);
     }
 
+    [Fact]
+    public async Task CreateText_QueuesWordLinking_AndMarksProcessing()
+    {
+        // Fix C: CreateText now routes word-linking through WordLinkingChannel
+        // (the same async path books/audio use) instead of linking synchronously
+        // on the request thread.
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        context.Users.Add(new User { Id = userId, UserName = "tester", Email = "tester@example.com" });
+        context.Languages.Add(new Language { LanguageId = 1, Name = "Spanish", Code = "ES" });
+        await context.SaveChangesAsync();
+        context.ChangeTracker.Clear();
+
+        var channel = new WordLinkingChannel();
+        var controller = CreateController(context, userId, channel);
+
+        var dto = new CreateTextDto { Title = "Pasted", Content = "hola amigo mundo", LanguageId = 1 };
+        var result = await controller.CreateText(dto);
+
+        Assert.IsType<CreatedAtActionResult>(result.Result);
+
+        context.ChangeTracker.Clear();
+        var savedText = await context.Texts.AsNoTracking().SingleAsync();
+        Assert.Equal("processing", savedText.WordLinkingStatus);
+
+        // Exactly one request queued, matching the saved text.
+        Assert.True(channel.Reader.TryRead(out var req));
+        Assert.Equal(savedText.TextId, req!.TextId);
+        Assert.Equal("hola amigo mundo", req.Content);
+        Assert.False(channel.Reader.TryRead(out _));
+    }
+
     // --- Helpers ---
 
-    private static TextsController CreateController(AppDbContext context, Guid userId)
+    private static TextsController CreateController(AppDbContext context, Guid userId, WordLinkingChannel? channel = null)
     {
         var sp = BuildContextProvider(context);
         var scopeFactory = sp.GetRequiredService<IServiceScopeFactory>();
         var service = new UserActivityService(context, NullLogger<UserActivityService>.Instance);
         var stats = new StatsRecomputeService(sp, NullLogger<StatsRecomputeService>.Instance, new MigrationSignal());
-        return new TextsController(context, NullLogger<TextsController>.Instance, service, scopeFactory, new WordLinkingChannel(), stats)
+        return new TextsController(context, NullLogger<TextsController>.Instance, service, scopeFactory, channel ?? new WordLinkingChannel(), stats)
         {
             ControllerContext = new ControllerContext
             {

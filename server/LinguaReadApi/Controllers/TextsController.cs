@@ -364,14 +364,19 @@ namespace LinguaReadApi.Controllers
                 UserId = userId,
                 Tag = createTextDto.Tag, // Assign the tag
                 CreatedAt = DateTime.UtcNow,
-                LastAccessedAt = null // Explicitly null on creation
+                LastAccessedAt = null, // Explicitly null on creation
+                WordLinkingStatus = "processing"
             };
 
             _context.Texts.Add(text);
             await _context.SaveChangesAsync();
 
-            // --- Parse and link words ---
-            await LinkWordsToTextInternal(text.TextId, text.Content, text.LanguageId, userId);
+            // --- Queue word linking to run in background ---
+            // Same path books/audio use: keeps large pasted texts from blocking
+            // the response. The reader polls word-linking-status and refetches
+            // once the background service marks the text "completed".
+            await _wordLinkingChannel.Writer.WriteAsync(
+                new WordLinkingRequest(text.TextId, text.Content, text.LanguageId, userId));
 
             var language = await _context.Languages.FindAsync(text.LanguageId);
 
@@ -535,12 +540,6 @@ namespace LinguaReadApi.Controllers
             }
             return string.Join(" ", transcriptLines); // Join lines into a single transcript string
         }
-
-        private Task LinkWordsToTextInternal(int textId, string content, int languageId, Guid userId)
-        {
-            return WordLinker.LinkAsync(_context, textId, content, languageId, userId);
-        }
-
 
         // POST: api/texts/audio/batch
         [HttpPost("audio/batch")]

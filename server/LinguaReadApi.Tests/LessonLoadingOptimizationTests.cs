@@ -228,7 +228,7 @@ public class LessonLoadingOptimizationTests
 
     private static WordsController CreateWordsController(AppDbContext context, Guid userId)
     {
-        return new WordsController(context)
+        return new WordsController(context, NullLogger<WordsController>.Instance)
         {
             ControllerContext = BuildControllerContext(userId)
         };

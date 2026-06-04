@@ -1,3 +1,4 @@
+using System.Text.Json;
 using LinguaReadApi.Models;
 using LinguaReadApi.Services.Tokenization;
 using Xunit;
@@ -5,9 +6,16 @@ using Xunit;
 namespace LinguaReadApi.Tests;
 
 /// <summary>
-/// Backend mirror of `client/lingua-read-client/src/__tests__/tokenizer.spec.js`.
-/// Every fixture here MUST produce the same word sequence on both sides;
-/// drift between FE and BE is exactly the bug this work is fixing.
+/// Backend tokenizer tests. Cross-language word-sequence expectations live in
+/// the shared <c>tokenizer-golden-vectors.json</c> at the repo root and are
+/// exercised by <see cref="GoldenVectorTests"/> below; the frontend
+/// (<c>client/lingua-read-client/src/__tests__/tokenizer.spec.js</c>) loads the
+/// same file. Both tokenizers MUST produce the same word sequence for every
+/// case — drift between BE and FE is exactly the bug this fixture guards.
+///
+/// The tests in this class cover backend-specific behaviour (substitution
+/// parsing, regex construction, locale-aware lookup keys, index mapping,
+/// built-in apostrophe normalization) that isn't pure token-sequence data.
 /// </summary>
 public class TokenizerTests
 {
@@ -25,12 +33,9 @@ public class TokenizerTests
 
     private static readonly Language En = Lang("en", "a-zA-ZÀ-ÖØ-öø-ȳáéíóúÁÉÍÓÚñÑ");
     private static readonly Language Fr = Lang("fr", "a-zA-ZÀ-ÖØ-öø-ȳáéíóúÁÉÍÓÚñÑ");
-    private static readonly Language It = Lang("it", "a-zA-ZÀàÉéÈèÌìÎîÓóÒòÙù");
     private static readonly Language Pt = Lang("pt", "a-zA-ZÀÁÂÃÇÉÊÍÓÔÕÚÜàáâãçéêíóôõúü");
-    private static readonly Language De = Lang("de", "a-zA-ZÀ-ÖØ-öø-ȳáéíóúÁÉÍÓÚñÑ‌‍");
-    private static readonly Language Ru = Lang("ru", @"\p{L}\p{M}'-", "’='|‘='|...=…");
 
-    private static string[] WordsOf(string content, Language lang)
+    private static string[] WordsOf(string content, Language? lang)
     {
         var result = Tokenizer.Tokenize(content, lang);
         return result.Tokens.Where(t => t.IsWord).Select(t => t.Text).ToArray();
@@ -74,83 +79,13 @@ public class TokenizerTests
         Assert.Equal("'hi'", Tokenizer.ApplyCharacterSubstitutions("‘hi’", subs));
     }
 
-    // ---- French elisions stay glued ----------------------------------
+    // ---- Cross-language word-sequence cases --------------------------
+    // French/Italian/Portuguese/English/German/Russian elisions, clitics,
+    // hyphenated forms, and null-language fallback now live in the shared
+    // tokenizer-golden-vectors.json and are asserted by GoldenVectorTests
+    // (below) so the BE and FE suites can't drift.
 
-    [Theory]
-    [InlineData("l'eau coule", new[] { "l'eau", "coule" })]
-    [InlineData("qu'il vienne", new[] { "qu'il", "vienne" })]
-    [InlineData("l’eau coule", new[] { "l'eau", "coule" })] // curly normalized
-    [InlineData("c'est-à-dire", new[] { "c'est-à-dire" })]
-    [InlineData("M. Dupont arriva.", new[] { "M", "Dupont", "arriva" })]
-    public void Tokenize_French(string input, string[] expected)
-    {
-        Assert.Equal(expected, WordsOf(input, Fr));
-    }
-
-    // ---- Italian -----------------------------------------------------
-
-    [Theory]
-    [InlineData("dell'acqua fresca", new[] { "dell'acqua", "fresca" })]
-    [InlineData("un'altra volta", new[] { "un'altra", "volta" })]
-    public void Tokenize_Italian(string input, string[] expected)
-    {
-        Assert.Equal(expected, WordsOf(input, It));
-    }
-
-    // ---- Portuguese clitics -----------------------------------------
-
-    [Theory]
-    [InlineData("interrompo-a agora", new[] { "interrompo-a", "agora" })]
-    [InlineData("beijá-lo gentilmente", new[] { "beijá-lo", "gentilmente" })]
-    [InlineData("dá-me um café", new[] { "dá-me", "um", "café" })]
-    public void Tokenize_Portuguese(string input, string[] expected)
-    {
-        Assert.Equal(expected, WordsOf(input, Pt));
-    }
-
-    // ---- English -----------------------------------------------------
-
-    [Theory]
-    [InlineData("don't worry", new[] { "don't", "worry" })]
-    [InlineData("well-known", new[] { "well-known" })]
-    [InlineData("'hello'", new[] { "hello" })]
-    [InlineData("a -- b", new[] { "a", "b" })]
-    [InlineData("the dogs' tails", new[] { "the", "dogs", "tails" })]
-    public void Tokenize_English(string input, string[] expected)
-    {
-        Assert.Equal(expected, WordsOf(input, En));
-    }
-
-    // ---- German ------------------------------------------------------
-
-    [Fact]
-    public void Tokenize_German_PreservesUmlautsAndEszett()
-    {
-        Assert.Equal(new[] { "Schöne", "Grüße" }, WordsOf("Schöne Grüße", De));
-    }
-
-    // ---- Russian (apostrophe & hyphen are core chars in seed) -------
-
-    [Fact]
-    public void Tokenize_Russian_BasicSplit()
-    {
-        Assert.Equal(new[] { "Привет", "мир" }, WordsOf("Привет мир", Ru));
-    }
-
-    [Fact]
-    public void Tokenize_Russian_InterLetterHyphenStillGlues()
-    {
-        Assert.Equal(new[] { "кое-что" }, WordsOf("кое-что", Ru));
-    }
-
-    // ---- Null / empty / fallback ------------------------------------
-
-    [Fact]
-    public void Tokenize_NullLanguage_FallsBackToUnicodeLetters()
-    {
-        Assert.Equal(new[] { "l'eau", "coule" }, WordsOf("l'eau coule", null!));
-        Assert.Equal(new[] { "interrompo-a", "agora" }, WordsOf("interrompo-a agora", null!));
-    }
+    // ---- Empty ------------------------------------------------------
 
     [Fact]
     public void Tokenize_EmptyContent_ReturnsEmpty()
@@ -237,5 +172,70 @@ public class TokenizerTests
         var result = Tokenizer.Tokenize("quʼil vienne", fresh);
         var words = result.Tokens.Where(t => t.IsWord).Select(t => t.Text).ToArray();
         Assert.Equal(new[] { "qu'il", "vienne" }, words);
+    }
+}
+
+/// <summary>
+/// Data-driven cross-language tokenization tests fed by the shared
+/// <c>tokenizer-golden-vectors.json</c> at the repo root (copied next to the
+/// test assembly via the test .csproj). The frontend
+/// <c>tokenizer.spec.js</c> loads the same file, so every case below is
+/// asserted identically on both sides — this is the guard against the
+/// backend (<see cref="Tokenizer"/>) and frontend (<c>readerText.ts</c>)
+/// tokenizers drifting apart.
+/// </summary>
+public class GoldenVectorTests
+{
+    private const string NullLang = "(null)";
+
+    private sealed record LangSeed(string Code, string WordCharacters, string? CharacterSubstitutions);
+    private sealed record GoldenCase(string? Lang, string Input, string[] ExpectedWords);
+    private sealed record GoldenFile(Dictionary<string, LangSeed> Languages, List<GoldenCase> Cases);
+
+    private static readonly GoldenFile Golden = LoadGolden();
+
+    private static GoldenFile LoadGolden()
+    {
+        var path = Path.Combine(AppContext.BaseDirectory, "tokenizer-golden-vectors.json");
+        var json = File.ReadAllText(path);
+        return JsonSerializer.Deserialize<GoldenFile>(json, new JsonSerializerOptions
+        {
+            PropertyNameCaseInsensitive = true
+        }) ?? throw new InvalidOperationException("tokenizer-golden-vectors.json deserialized to null");
+    }
+
+    private static Language? LanguageFor(string lang)
+    {
+        if (lang == NullLang) return null;
+        var seed = Golden.Languages[lang];
+        return new Language
+        {
+            Code = seed.Code,
+            Name = seed.Code,
+            WordCharacters = seed.WordCharacters,
+            CharacterSubstitutions = seed.CharacterSubstitutions,
+            SplitSentences = ".!?",
+            ParserType = "spacedel"
+        };
+    }
+
+    public static IEnumerable<object[]> Cases()
+    {
+        foreach (var c in Golden.Cases)
+        {
+            yield return new object[] { c.Lang ?? NullLang, c.Input, c.ExpectedWords };
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(Cases))]
+    public void Tokenize_MatchesGoldenVector(string lang, string input, string[] expectedWords)
+    {
+        var language = LanguageFor(lang);
+        var words = Tokenizer.Tokenize(input, language).Tokens
+            .Where(t => t.IsWord)
+            .Select(t => t.Text)
+            .ToArray();
+        Assert.Equal(expectedWords, words);
     }
 }

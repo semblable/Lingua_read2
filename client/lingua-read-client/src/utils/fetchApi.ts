@@ -1,23 +1,20 @@
 /**
- * Typed fetch wrapper over the backend's OpenAPI/Swagger spec.
+ * Typed plumbing over the backend's OpenAPI/Swagger spec (`api-types.d.ts`).
  *
- * Phase B of the TypeScript migration adds this scaffolding without changing
- * existing call sites. Phase C1 will convert api.js to use it.
+ * This module is the project's single source of request/response *types*. Domain
+ * modules under `utils/api/*` derive their DTOs from these helpers, e.g.:
  *
- * Usage:
- *   const data = await fetchApi('/api/Auth/login', 'post', {
- *     body: { password: '...' }
- *   });
- *   // `data` is typed as the 200 response shape for POST /api/Auth/login.
+ *   import type { ResponseOf } from '../fetchApi';
+ *   export type Text = ResponseOf<'/api/Texts/{id}', 'get'>;
  *
- *   const text = await fetchApi('/api/Texts/{textId}', 'get', {
- *     params: { textId: 42 }
- *   });
+ * It intentionally exports **types only** — the single runtime HTTP client lives
+ * in `utils/api/client.ts` (re-exported from `utils/api`). An earlier typed
+ * runtime `fetchApi(path, method, options)` wrapper lived here too, but the
+ * migration that would have adopted it never happened and it had no callers, so
+ * it was removed to avoid a second `fetchApi` with a conflicting signature.
  */
 
 import type { paths } from './api-types';
-
-import { API_URL } from './api';
 
 // ---------- Type plumbing ----------
 
@@ -66,92 +63,3 @@ export type QueryParamsOf<P extends keyof paths, M extends HttpMethod> =
 export type MethodsOf<P extends keyof paths> = {
   [M in HttpMethod]: paths[P][M & keyof paths[P]] extends never | undefined ? never : M;
 }[HttpMethod];
-
-// ---------- Runtime helpers ----------
-
-function fillPath(template: string, params: Record<string, unknown> | undefined): string {
-  if (!params) return template;
-  return template.replace(/\{([^}]+)\}/g, (_, key) => {
-    const v = params[key];
-    if (v === undefined || v === null) {
-      throw new Error(`Missing path param "${key}" for ${template}`);
-    }
-    return encodeURIComponent(String(v));
-  });
-}
-
-function buildQuery(params: Record<string, unknown> | undefined): string {
-  if (!params) return '';
-  const usp = new URLSearchParams();
-  for (const [k, v] of Object.entries(params)) {
-    if (v === undefined || v === null) continue;
-    if (Array.isArray(v)) {
-      for (const item of v) usp.append(k, String(item));
-    } else {
-      usp.set(k, String(v));
-    }
-  }
-  const s = usp.toString();
-  return s ? `?${s}` : '';
-}
-
-// ---------- Public API ----------
-
-export interface FetchApiOptions<P extends keyof paths, M extends MethodsOf<P>> {
-  /** Path params for templated routes like `/api/Texts/{textId}`. */
-  params?: PathParamsOf<P, M>;
-  /** Query string params. */
-  query?: QueryParamsOf<P, M>;
-  /** JSON request body. */
-  body?: RequestBodyOf<P, M>;
-  /** Optional abort signal. */
-  signal?: AbortSignal;
-  /** Extra headers to merge in. */
-  headers?: Record<string, string>;
-}
-
-export async function fetchApi<P extends keyof paths, M extends MethodsOf<P>>(
-  path: P,
-  method: M,
-  options: FetchApiOptions<P, M> = {} as FetchApiOptions<P, M>
-): Promise<ResponseOf<P, M>> {
-  const url = API_URL.replace(/\/api$/, '') +
-    fillPath(path as string, options.params as Record<string, unknown> | undefined) +
-    buildQuery(options.query as Record<string, unknown> | undefined);
-
-  const init: RequestInit = {
-    method: (method as string).toUpperCase(),
-    credentials: 'include',
-    headers: {
-      Accept: 'application/json',
-      'X-Requested-With': 'XMLHttpRequest',
-      ...(options.body !== undefined ? { 'Content-Type': 'application/json' } : {}),
-      ...options.headers,
-    },
-    signal: options.signal,
-  };
-
-  if (options.body !== undefined) {
-    init.body = JSON.stringify(options.body);
-  }
-
-  const res = await fetch(url, init);
-  if (!res.ok) {
-    let text = '';
-    try {
-      text = await res.text();
-    } catch {
-      /* ignore */
-    }
-    throw new Error(`HTTP ${res.status} ${res.statusText} for ${method.toUpperCase()} ${path}${text ? `: ${text}` : ''}`);
-  }
-
-  // 204 No Content and other empty bodies: return undefined as void
-  if (res.status === 204) return undefined as ResponseOf<P, M>;
-  const contentType = res.headers.get('content-type') || '';
-  if (!contentType.includes('json') && !contentType.includes('text')) {
-    return undefined as ResponseOf<P, M>;
-  }
-  const isJson = contentType.includes('json');
-  return (isJson ? await res.json() : await res.text()) as ResponseOf<P, M>;
-}

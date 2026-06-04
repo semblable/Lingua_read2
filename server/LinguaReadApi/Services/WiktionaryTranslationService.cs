@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -35,13 +36,26 @@ namespace LinguaReadApi.Services
         private readonly ILogger<WiktionaryTranslationService> _logger;
         private readonly string _baseUrl;
         private readonly string _userAgent;
+        // Server-level OAuth 2.0 token from config (env/appsettings). Used as the fallback when
+        // a user has not set their own token. Null = none.
+        private readonly string? _configAccessToken;
+        // Effective token for the current (scoped) request: a per-user token applied via
+        // UseAccessToken overrides the config token. When set, requests are authenticated, which
+        // raises the Wikimedia REST limit from <5 req/s (anonymous) to 10 req/s. Null = anonymous.
+        private string? _accessToken;
 
-        // Wikimedia REST rejects requests without a descriptive User-Agent (HTTP 403).
-        private const string DefaultUserAgent = "LinguaRead/1.0 (language-learning app)";
+        // Wikimedia's User-Agent policy requires contact info (a URL or email); a bare app name
+        // can be throttled or blocked. Override via config with your own contact.
+        private const string DefaultUserAgent = "LinguaRead/1.0 (https://github.com/semblable/Lingua_read2)";
+        // Sentinel used elsewhere in appsettings.json for secrets supplied via dotenv; treat it
+        // as "unset" so an unconfigured install still works anonymously.
+        private const string UnsetSecretSentinel = "SET_IN_DOTENV";
         // Keep glosses short; a clicked word does not need every sense.
         private const int MaxSensesPerGloss = 3;
-        // Politeness / latency cap when fanning a batch out into individual requests.
-        private const int MaxConcurrentRequests = 5;
+        // Politeness / latency cap when fanning a batch out into individual requests. Wikimedia's
+        // anonymous REST guidance is 3 or fewer concurrent requests; authenticating does not lift
+        // the concurrency advice, so keep this at 3 regardless of token.
+        private const int MaxConcurrentRequests = 3;
         // On HTTP 429 we honor Retry-After once, but never wait longer than this — a clicked
         // word should fail fast rather than hang. Used as the fallback delay when the header
         // is absent.
@@ -63,7 +77,26 @@ namespace LinguaReadApi.Services
             _logger = logger;
             _baseUrl = (configuration["Wiktionary:BaseUrl"] ?? "https://en.wiktionary.org").TrimEnd('/');
             _userAgent = configuration["Wiktionary:UserAgent"] ?? DefaultUserAgent;
+
+            _configAccessToken = NormalizeToken(configuration["Wiktionary:AccessToken"]);
+            _accessToken = _configAccessToken;
         }
+
+        /// <summary>
+        /// Applies a per-user access token for the current (scoped) request, overriding the
+        /// server-level config token. A null/blank/placeholder value falls back to the config
+        /// token (which may itself be null = anonymous). Called by the word-translation factory
+        /// so each user authenticates with their own token.
+        /// </summary>
+        public void UseAccessToken(string? token)
+        {
+            _accessToken = NormalizeToken(token) ?? _configAccessToken;
+        }
+
+        // Treats blank values and the dotenv sentinel as "unset" so an unconfigured token never
+        // produces a bogus "Bearer SET_IN_DOTENV" header.
+        private static string? NormalizeToken(string? token) =>
+            string.IsNullOrWhiteSpace(token) || token == UnsetSecretSentinel ? null : token.Trim();
 
         public async Task<string> TranslateTextAsync(string text, string? sourceLang, string targetLang)
         {
@@ -199,6 +232,10 @@ namespace LinguaReadApi.Services
                     using var request = new HttpRequestMessage(HttpMethod.Get, url);
                     request.Headers.TryAddWithoutValidation("User-Agent", _userAgent);
                     request.Headers.TryAddWithoutValidation("Accept", "application/json");
+                    if (_accessToken != null)
+                    {
+                        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _accessToken);
+                    }
 
                     using var response = await _httpClient.SendAsync(request, ct);
 

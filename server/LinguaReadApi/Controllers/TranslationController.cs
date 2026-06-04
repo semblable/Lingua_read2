@@ -17,18 +17,15 @@ namespace LinguaReadApi.Controllers
     public class TranslationController : ControllerBase
     {
         private readonly IWordTranslationServiceFactory _translationServiceFactory;
-        private readonly WiktionaryTranslationService _wiktionaryService;
         private readonly ILanguageService _languageService; // Inject LanguageService
         private readonly ILogger<TranslationController> _logger;
 
         public TranslationController(
             IWordTranslationServiceFactory translationServiceFactory,
-            WiktionaryTranslationService wiktionaryService,
             ILanguageService languageService,
             ILogger<TranslationController> logger)
         {
             _translationServiceFactory = translationServiceFactory;
-            _wiktionaryService = wiktionaryService;
             _languageService = languageService; // Assign injected service
             _logger = logger;
         }
@@ -167,7 +164,8 @@ namespace LinguaReadApi.Controllers
 
             try
             {
-                var entries = await _wiktionaryService.GetDefinitionsAsync(term, sourceLanguageCode);
+                var wiktionaryService = await _translationServiceFactory.GetWiktionaryServiceForUserAsync(GetUserId());
+                var entries = await wiktionaryService.GetDefinitionsAsync(term, sourceLanguageCode);
 
                 return Ok(new WordDefinitionResponse
                 {

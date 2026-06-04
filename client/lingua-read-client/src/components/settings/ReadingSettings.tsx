@@ -152,18 +152,40 @@ const ReadingSettings = ({ settings, handleChange, languages, loadingLanguages }
         </Form.Group>
 
         {settings.wordTranslationProvider === 'wiktionary' && (
-          <Form.Group className="mb-0" controlId="wiktionaryRichDisplay">
-            <Form.Check
-              type="switch"
-              name="wiktionaryRichDisplay"
-              label="Show rich Wiktionary definitions (part of speech + multiple senses)"
-              checked={settings.wiktionaryRichDisplay}
-              onChange={handleChange}
-            />
-            <Form.Text className="text-muted">
-              When off, a single combined gloss is shown, just like DeepL.
-            </Form.Text>
-          </Form.Group>
+          <>
+            <Form.Group className="mb-3" controlId="wiktionaryRichDisplay">
+              <Form.Check
+                type="switch"
+                name="wiktionaryRichDisplay"
+                label="Show rich Wiktionary definitions (part of speech + multiple senses)"
+                checked={settings.wiktionaryRichDisplay}
+                onChange={handleChange}
+              />
+              <Form.Text className="text-muted">
+                When off, a single combined gloss is shown, just like DeepL.
+              </Form.Text>
+            </Form.Group>
+
+            <Form.Group className="mb-0" controlId="wiktionaryAccessToken">
+              <Form.Label>Wiktionary Access Token (optional)</Form.Label>
+              <Form.Control
+                type="password"
+                name="wiktionaryAccessToken"
+                value={settings.wiktionaryAccessToken}
+                onChange={handleChange}
+                placeholder="Leave blank to use Wiktionary anonymously"
+                autoComplete="off"
+              />
+              <Form.Text className="text-muted">
+                A Wikimedia OAuth 2.0 access token raises the lookup rate limit from ~5 to ~10
+                requests/second, which helps when translating many words at once. Create one at{' '}
+                <a href="https://api.wikimedia.org/wiki/Authentication" target="_blank" rel="noopener noreferrer">
+                  api.wikimedia.org
+                </a>{' '}
+                (an owner-only client is enough). Leave blank to stay anonymous.
+              </Form.Text>
+            </Form.Group>
+          </>
         )}
       </div>
     </>

@@ -51,6 +51,13 @@ namespace LinguaReadApi.Models
         // multiple senses) in the Word Info panel instead of just the flattened gloss.
         public bool WiktionaryRichDisplay { get; set; } = false;
 
+        // Optional Wikimedia OAuth 2.0 access token. When set, Wiktionary word lookups are
+        // authenticated, raising the rate limit from <5 req/s (anonymous) to 10 req/s. Tokens
+        // can be long (JWTs), so allow generous length. Null/empty = anonymous (falls back to
+        // the server-level Wiktionary:AccessToken config if one is set).
+        [StringLength(2048)]
+        public string? WiktionaryAccessToken { get; set; }
+
         // Navigation Preferences
         public bool AutoAdvanceToNextLesson { get; set; } = false; // automatically go to next lesson after completion
         public bool ShowProgressStats { get; set; } = true; // show progress statistics

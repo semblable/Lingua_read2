@@ -119,6 +119,89 @@ public class WiktionaryTranslationServiceTests
             () => service.TranslateBatchAsync(new List<string> { "chien", "chat" }, "EN", "fr"));
     }
 
+    [Fact]
+    public async Task TranslateText_WithAccessToken_SendsBearerHeader()
+    {
+        // An OAuth 2.0 access token moves the client into Wikimedia's authenticated rate-limit
+        // tier; verify it is sent as an Authorization: Bearer header.
+        var handler = new StubHandler(_ => Ok(ChienJson));
+        using var httpClient = new HttpClient(handler, disposeHandler: false);
+        var service = CreateService(httpClient, accessToken: "secret-token");
+
+        await service.TranslateTextAsync("chien", sourceLang: "fr", targetLang: "EN");
+
+        Assert.Equal(new[] { "Bearer secret-token" }, handler.AuthorizationHeaders);
+    }
+
+    [Fact]
+    public async Task TranslateText_WithoutAccessToken_OmitsAuthorizationHeader()
+    {
+        // No token configured: stay anonymous, no Authorization header at all.
+        var handler = new StubHandler(_ => Ok(ChienJson));
+        using var httpClient = new HttpClient(handler, disposeHandler: false);
+        var service = CreateService(httpClient);
+
+        await service.TranslateTextAsync("chien", sourceLang: "fr", targetLang: "EN");
+
+        Assert.All(handler.AuthorizationHeaders, Assert.Null);
+        Assert.NotEmpty(handler.AuthorizationHeaders);
+    }
+
+    [Fact]
+    public async Task TranslateText_PlaceholderAccessToken_OmitsAuthorizationHeader()
+    {
+        // The dotenv sentinel must be treated as "unset" so an unconfigured install does not
+        // send a bogus "Bearer SET_IN_DOTENV" and get rejected.
+        var handler = new StubHandler(_ => Ok(ChienJson));
+        using var httpClient = new HttpClient(handler, disposeHandler: false);
+        var service = CreateService(httpClient, accessToken: "SET_IN_DOTENV");
+
+        await service.TranslateTextAsync("chien", sourceLang: "fr", targetLang: "EN");
+
+        Assert.All(handler.AuthorizationHeaders, Assert.Null);
+    }
+
+    [Fact]
+    public async Task UseAccessToken_OverridesConfigToken()
+    {
+        // A per-user token (set by the factory) takes precedence over the server-level config token.
+        var handler = new StubHandler(_ => Ok(ChienJson));
+        using var httpClient = new HttpClient(handler, disposeHandler: false);
+        var service = CreateService(httpClient, accessToken: "config-token");
+
+        service.UseAccessToken("user-token");
+        await service.TranslateTextAsync("chien", sourceLang: "fr", targetLang: "EN");
+
+        Assert.Equal(new[] { "Bearer user-token" }, handler.AuthorizationHeaders);
+    }
+
+    [Fact]
+    public async Task UseAccessToken_Blank_FallsBackToConfigToken()
+    {
+        // A user with no token of their own still benefits from a server-level config token.
+        var handler = new StubHandler(_ => Ok(ChienJson));
+        using var httpClient = new HttpClient(handler, disposeHandler: false);
+        var service = CreateService(httpClient, accessToken: "config-token");
+
+        service.UseAccessToken("   ");
+        await service.TranslateTextAsync("chien", sourceLang: "fr", targetLang: "EN");
+
+        Assert.Equal(new[] { "Bearer config-token" }, handler.AuthorizationHeaders);
+    }
+
+    [Fact]
+    public async Task UseAccessToken_BlankWithNoConfigToken_StaysAnonymous()
+    {
+        var handler = new StubHandler(_ => Ok(ChienJson));
+        using var httpClient = new HttpClient(handler, disposeHandler: false);
+        var service = CreateService(httpClient);
+
+        service.UseAccessToken(null);
+        await service.TranslateTextAsync("chien", sourceLang: "fr", targetLang: "EN");
+
+        Assert.All(handler.AuthorizationHeaders, Assert.Null);
+    }
+
     private static HttpResponseMessage Ok(string json) => new(HttpStatusCode.OK)
     {
         Content = new StringContent(json, Encoding.UTF8, "application/json")
@@ -131,14 +214,20 @@ public class WiktionaryTranslationServiceTests
         return response;
     }
 
-    private static WiktionaryTranslationService CreateService(HttpClient httpClient)
+    private static WiktionaryTranslationService CreateService(HttpClient httpClient, string? accessToken = null)
     {
+        var settings = new Dictionary<string, string?>
+        {
+            ["Wiktionary:BaseUrl"] = "https://en.wiktionary.org",
+            ["Wiktionary:UserAgent"] = "LinguaRead-Test/1.0"
+        };
+        if (accessToken != null)
+        {
+            settings["Wiktionary:AccessToken"] = accessToken;
+        }
+
         var config = new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?>
-            {
-                ["Wiktionary:BaseUrl"] = "https://en.wiktionary.org",
-                ["Wiktionary:UserAgent"] = "LinguaRead-Test/1.0"
-            })
+            .AddInMemoryCollection(settings)
             .Build();
 
         return new WiktionaryTranslationService(
@@ -151,6 +240,7 @@ public class WiktionaryTranslationServiceTests
     {
         private readonly Func<HttpRequestMessage, HttpResponseMessage> _responder;
         public List<string?> UserAgents { get; } = new();
+        public List<string?> AuthorizationHeaders { get; } = new();
 
         public StubHandler(Func<HttpRequestMessage, HttpResponseMessage> responder) => _responder = responder;
 
@@ -160,6 +250,7 @@ public class WiktionaryTranslationServiceTests
             UserAgents.Add(request.Headers.TryGetValues("User-Agent", out var values)
                 ? string.Join(",", values)
                 : null);
+            AuthorizationHeaders.Add(request.Headers.Authorization?.ToString());
             return Task.FromResult(_responder(request));
         }
     }

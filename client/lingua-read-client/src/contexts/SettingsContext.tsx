@@ -28,6 +28,7 @@ export type Settings = {
   translationTargetLanguageCode: string;
   wordTranslationProvider: string;
   wiktionaryRichDisplay: boolean;
+  wiktionaryAccessToken: string;
   autoAdvanceToNextLesson: boolean;
   autoAdvanceAudiobookTracks: boolean;
   autoMoveFinishedLessons: boolean;
@@ -104,6 +105,7 @@ const defaultSettings: Settings = {
   translationTargetLanguageCode: 'EN',
   wordTranslationProvider: 'deepl',
   wiktionaryRichDisplay: false,
+  wiktionaryAccessToken: '',
   autoAdvanceToNextLesson: false,
   autoAdvanceAudiobookTracks: true,
   autoMoveFinishedLessons: false,
@@ -201,6 +203,7 @@ const mergeSettings = (
     wordTranslationProvider:
       d.wordTranslationProvider || base.wordTranslationProvider,
     wiktionaryRichDisplay: d.wiktionaryRichDisplay ?? base.wiktionaryRichDisplay,
+    wiktionaryAccessToken: d.wiktionaryAccessToken ?? base.wiktionaryAccessToken,
     autoAdvanceToNextLesson: d.autoAdvanceToNextLesson ?? base.autoAdvanceToNextLesson,
     autoAdvanceAudiobookTracks:
       d.autoAdvanceAudiobookTracks ?? base.autoAdvanceAudiobookTracks,

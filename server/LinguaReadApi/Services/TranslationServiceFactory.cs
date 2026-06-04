@@ -93,6 +93,13 @@ namespace LinguaReadApi.Services
     public interface IWordTranslationServiceFactory
     {
         Task<ITranslationService> GetServiceForUserAsync(Guid userId);
+
+        /// <summary>
+        /// Returns the Wiktionary service configured with the user's access token, for endpoints
+        /// that need Wiktionary-specific behaviour (e.g. structured definitions) regardless of the
+        /// user's selected provider.
+        /// </summary>
+        Task<WiktionaryTranslationService> GetWiktionaryServiceForUserAsync(Guid userId);
     }
 
     /// <summary>
@@ -122,10 +129,18 @@ namespace LinguaReadApi.Services
             if (userSettings != null &&
                 string.Equals(userSettings.WordTranslationProvider, "wiktionary", StringComparison.OrdinalIgnoreCase))
             {
+                _wiktionaryService.UseAccessToken(userSettings.WiktionaryAccessToken);
                 return _wiktionaryService;
             }
 
             return _deepLService;
+        }
+
+        public async Task<WiktionaryTranslationService> GetWiktionaryServiceForUserAsync(Guid userId)
+        {
+            var userSettings = await _context.UserSettings.FirstOrDefaultAsync(s => s.UserId == userId);
+            _wiktionaryService.UseAccessToken(userSettings?.WiktionaryAccessToken);
+            return _wiktionaryService;
         }
     }
 

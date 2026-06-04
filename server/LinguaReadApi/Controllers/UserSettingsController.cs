@@ -76,6 +76,7 @@ namespace LinguaReadApi.Controllers
                     TranslationTargetLanguageCode = "EN",
                     WordTranslationProvider = "deepl",
                     WiktionaryRichDisplay = false,
+                    WiktionaryAccessToken = null,
                     AutoAdvanceToNextLesson = false,
                     AutoAdvanceAudiobookTracks = true,
                     AutoMoveFinishedLessons = false, // Added property
@@ -127,6 +128,7 @@ namespace LinguaReadApi.Controllers
                 TranslationTargetLanguageCode = settings.TranslationTargetLanguageCode,
                 WordTranslationProvider = settings.WordTranslationProvider,
                 WiktionaryRichDisplay = settings.WiktionaryRichDisplay,
+                WiktionaryAccessToken = settings.WiktionaryAccessToken,
                 AutoAdvanceToNextLesson = settings.AutoAdvanceToNextLesson,
                 AutoAdvanceAudiobookTracks = settings.AutoAdvanceAudiobookTracks,
                 AutoMoveFinishedLessons = settings.AutoMoveFinishedLessons, // Added
@@ -254,6 +256,14 @@ namespace LinguaReadApi.Controllers
                 }
             }
             settings.WiktionaryRichDisplay = updateDto.WiktionaryRichDisplay ?? settings.WiktionaryRichDisplay;
+            // null = leave unchanged; empty string = clear it (back to anonymous). Mirrors the
+            // OpenRouter API key handling below.
+            if (updateDto.WiktionaryAccessToken != null)
+            {
+                settings.WiktionaryAccessToken = string.IsNullOrWhiteSpace(updateDto.WiktionaryAccessToken)
+                    ? null
+                    : updateDto.WiktionaryAccessToken.Trim();
+            }
             settings.AutoAdvanceToNextLesson = updateDto.AutoAdvanceToNextLesson ?? settings.AutoAdvanceToNextLesson;
             settings.AutoAdvanceAudiobookTracks = updateDto.AutoAdvanceAudiobookTracks ?? settings.AutoAdvanceAudiobookTracks;
             settings.AutoMoveFinishedLessons = updateDto.AutoMoveFinishedLessons ?? settings.AutoMoveFinishedLessons; // Update property
@@ -439,6 +449,7 @@ namespace LinguaReadApi.Controllers
                 TranslationTargetLanguageCode = settings.TranslationTargetLanguageCode,
                 WordTranslationProvider = settings.WordTranslationProvider,
                 WiktionaryRichDisplay = settings.WiktionaryRichDisplay,
+                WiktionaryAccessToken = settings.WiktionaryAccessToken,
                 AutoAdvanceToNextLesson = settings.AutoAdvanceToNextLesson,
                 AutoAdvanceAudiobookTracks = settings.AutoAdvanceAudiobookTracks,
                 AutoMoveFinishedLessons = settings.AutoMoveFinishedLessons, // Update property
@@ -846,6 +857,7 @@ namespace LinguaReadApi.Controllers
         public string TranslationTargetLanguageCode { get; set; } = "EN";
         public string WordTranslationProvider { get; set; } = "deepl";
         public bool WiktionaryRichDisplay { get; set; } = false;
+        public string? WiktionaryAccessToken { get; set; }
         public bool AutoAdvanceToNextLesson { get; set; } = false;
         public bool AutoAdvanceAudiobookTracks { get; set; } = true;
         public bool AutoMoveFinishedLessons { get; set; } = false; // Added property
@@ -931,6 +943,8 @@ namespace LinguaReadApi.Controllers
         [StringLength(20)]
         public string? WordTranslationProvider { get; set; }
         public bool? WiktionaryRichDisplay { get; set; }
+        [StringLength(2048)]
+        public string? WiktionaryAccessToken { get; set; }
         public bool? AutoAdvanceToNextLesson { get; set; }
         public bool? AutoAdvanceAudiobookTracks { get; set; }
         public bool? AutoMoveFinishedLessons { get; set; } // Added property

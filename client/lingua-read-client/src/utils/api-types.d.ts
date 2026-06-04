@@ -5951,6 +5951,7 @@ export interface components {
             translationTargetLanguageCode?: string | null;
             wordTranslationProvider?: string | null;
             wiktionaryRichDisplay?: boolean | null;
+            wiktionaryAccessToken?: string | null;
             autoAdvanceToNextLesson?: boolean | null;
             autoAdvanceAudiobookTracks?: boolean | null;
             autoMoveFinishedLessons?: boolean | null;
@@ -6060,6 +6061,7 @@ export interface components {
             translationTargetLanguageCode?: string | null;
             wordTranslationProvider?: string | null;
             wiktionaryRichDisplay?: boolean;
+            wiktionaryAccessToken?: string | null;
             autoAdvanceToNextLesson?: boolean;
             showProgressStats?: boolean;
             autoMoveFinishedLessons?: boolean;
@@ -6156,6 +6158,7 @@ export interface components {
             translationTargetLanguageCode?: string | null;
             wordTranslationProvider?: string | null;
             wiktionaryRichDisplay?: boolean;
+            wiktionaryAccessToken?: string | null;
             autoAdvanceToNextLesson?: boolean;
             autoAdvanceAudiobookTracks?: boolean;
             autoMoveFinishedLessons?: boolean;

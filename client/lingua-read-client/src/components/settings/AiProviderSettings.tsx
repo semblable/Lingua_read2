@@ -3,6 +3,7 @@ import { Form, Button, Alert } from 'react-bootstrap';
 import type { Settings } from '../../contexts/SettingsContext';
 import type { SettingsChangeHandler } from './AppearanceSettings';
 import type { ResponseOf } from '../../utils/fetchApi';
+import SecretKeyField from './SecretKeyField';
 
 type OpenRouterTestResult = ResponseOf<'/api/UserSettings/test-openrouter', 'post'>;
 
@@ -12,6 +13,8 @@ interface AiProviderSettingsProps {
   testingOpenRouter: boolean;
   openRouterTestResult: OpenRouterTestResult | null;
   onTestConnection: () => void;
+  onSaveProviderKey: (field: string, value: string) => Promise<void> | void;
+  onClearProviderKey: (field: string) => Promise<void> | void;
 }
 
 const AiProviderSettings = ({
@@ -19,7 +22,9 @@ const AiProviderSettings = ({
   handleChange,
   testingOpenRouter,
   openRouterTestResult,
-  onTestConnection
+  onTestConnection,
+  onSaveProviderKey,
+  onClearProviderKey
 }: AiProviderSettingsProps) => {
   return (
     <>
@@ -41,20 +46,20 @@ const AiProviderSettings = ({
       {settings.useOpenRouter && (
         <>
           <div className="settings-control-group">
-            <Form.Group className="mb-3" controlId="openRouterApiKey">
-              <Form.Label>OpenRouter API Key</Form.Label>
-              <Form.Control
-                type="password"
-                name="openRouterApiKey"
-                autoComplete="off"
-                placeholder="sk-or-..."
-                value={settings.openRouterApiKey}
-                onChange={handleChange}
-              />
-              <Form.Text className="text-muted">
-                Get your API key from <a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer">openrouter.ai/keys</a>
-              </Form.Text>
-            </Form.Group>
+            <SecretKeyField
+              controlId="openRouterApiKey"
+              label="OpenRouter API Key"
+              field="openRouterApiKey"
+              hasValue={settings.hasOpenRouterApiKey}
+              onSave={onSaveProviderKey}
+              onClear={onClearProviderKey}
+              placeholder="sk-or-..."
+              helpText={
+                <>
+                  Get your API key from <a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer">openrouter.ai/keys</a>
+                </>
+              }
+            />
 
             <Form.Group className="mb-0" controlId="openRouterModel">
               <Form.Label>Model Name</Form.Label>
@@ -209,7 +214,7 @@ const AiProviderSettings = ({
               variant="outline-secondary"
               size="sm"
               onClick={onTestConnection}
-              disabled={testingOpenRouter || !settings.openRouterApiKey}
+              disabled={testingOpenRouter || !settings.hasOpenRouterApiKey}
             >
               {testingOpenRouter ? 'Testing...' : 'Test Connection'}
             </Button>

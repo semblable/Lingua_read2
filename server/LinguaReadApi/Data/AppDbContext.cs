@@ -1,14 +1,38 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.AspNetCore.DataProtection;
 using LinguaReadApi.Models;
 
 namespace LinguaReadApi.Data
 {
     public class AppDbContext : DbContext
     {
-        public AppDbContext(DbContextOptions<AppDbContext> options) : base(options)
+        // Resolved from DI in the running app (Data Protection is registered there). Null when a
+        // context is new-ed up with options only — e.g. unit tests — in which case the secret
+        // columns are stored/read as plaintext, which is fine for in-memory test data.
+        private readonly IDataProtector? _secretsProtector;
+
+        // Single constructor with an optional provider: DI injects the registered
+        // IDataProtectionProvider in the running app, while tests that new this up with options
+        // only still compile (and store the secret columns as plaintext).
+        public AppDbContext(
+            DbContextOptions<AppDbContext> options,
+            IDataProtectionProvider? dataProtectionProvider = null)
+            : base(options)
         {
+            _secretsProtector = dataProtectionProvider?.CreateProtector(UserSettingsSecretProtector.Purpose);
         }
-        
+
+        // Lets the model cache tell apart the encrypting and non-encrypting model variants so the
+        // two constructors above never share a cached model within one process.
+        internal bool SecretsEncryptionEnabled => _secretsProtector != null;
+
+        protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
+        {
+            base.OnConfiguring(optionsBuilder);
+            optionsBuilder.ReplaceService<IModelCacheKeyFactory, SecretsAwareModelCacheKeyFactory>();
+        }
+
         public DbSet<User> Users { get; set; }
         public DbSet<Language> Languages { get; set; }
         public DbSet<Text> Texts { get; set; }
@@ -167,6 +191,20 @@ namespace LinguaReadApi.Data
                 .WithOne(u => u.Settings)
                 .HasForeignKey<UserSettings>(us => us.UserId)
                 .OnDelete(DeleteBehavior.Cascade);
+
+            // Encrypt secret UserSettings columns at rest. Transparent to every reader/writer; the
+            // columns are unbounded text (see UserSettings) because ciphertext is longer than input.
+            if (_secretsProtector != null)
+            {
+                var secretConverter = UserSettingsSecretProtector.CreateConverter(_secretsProtector);
+                var userSettings = modelBuilder.Entity<UserSettings>();
+                userSettings.Property(s => s.AzureTranslatorKey).HasConversion(secretConverter);
+                userSettings.Property(s => s.GoogleTranslateApiKey).HasConversion(secretConverter);
+                userSettings.Property(s => s.WiktionaryAccessToken).HasConversion(secretConverter);
+                userSettings.Property(s => s.OpenRouterApiKey).HasConversion(secretConverter);
+                userSettings.Property(s => s.HardcoverApiToken).HasConversion(secretConverter);
+                userSettings.Property(s => s.DiscordWebhookUrl).HasConversion(secretConverter);
+            }
 
             // Configure Tag entity
             modelBuilder.Entity<Tag>()
@@ -406,5 +444,18 @@ namespace LinguaReadApi.Data
             modelBuilder.Entity<UserGoalPeriod>()
                 .HasIndex(p => new { p.GoalId, p.PeriodEnd });
         }
+    }
+
+    /// <summary>
+    /// Keys the EF model cache on whether secret-column encryption is active, so a context built
+    /// with a Data Protection provider and one built without (options-only, e.g. tests) get
+    /// distinct cached models instead of whichever was compiled first.
+    /// </summary>
+    internal sealed class SecretsAwareModelCacheKeyFactory : IModelCacheKeyFactory
+    {
+        public object Create(DbContext context, bool designTime) =>
+            (context.GetType(), (context as AppDbContext)?.SecretsEncryptionEnabled ?? false, designTime);
+
+        public object Create(DbContext context) => Create(context, false);
     }
 }

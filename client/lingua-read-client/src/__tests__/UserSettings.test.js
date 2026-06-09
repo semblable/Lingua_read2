@@ -53,11 +53,14 @@ const mockSettings = {
   discordWeeklyReportDayOfWeek: 'Monday',
   discordWeeklyReportHourLocal: 8,
   discordTimezoneOffsetMinutes: 0,
+  hasWiktionaryAccessToken: false,
+  hasAzureTranslatorKey: false,
+  hasGoogleTranslateApiKey: false,
   hardcoverSyncEnabled: false,
   hasHardcoverApiToken: false,
   hardcoverLastSyncAt: null,
   useOpenRouter: false,
-  openRouterApiKey: '',
+  hasOpenRouterApiKey: false,
   openRouterModel: 'google/gemini-2.5-flash-preview-05-20:free'
 };
 

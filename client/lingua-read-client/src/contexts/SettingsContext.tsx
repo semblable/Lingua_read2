@@ -28,10 +28,11 @@ export type Settings = {
   translationTargetLanguageCode: string;
   wordTranslationProvider: string;
   wiktionaryRichDisplay: boolean;
-  wiktionaryAccessToken: string;
-  azureTranslatorKey: string;
+  // Secrets are write-only: the server returns only whether one is configured, never the value.
+  hasWiktionaryAccessToken: boolean;
+  hasAzureTranslatorKey: boolean;
   azureTranslatorRegion: string;
-  googleTranslateApiKey: string;
+  hasGoogleTranslateApiKey: boolean;
   autoAdvanceToNextLesson: boolean;
   autoAdvanceAudiobookTracks: boolean;
   autoMoveFinishedLessons: boolean;
@@ -48,7 +49,7 @@ export type Settings = {
   hasHardcoverApiToken: boolean;
   hardcoverLastSyncAt: string | null;
   useOpenRouter: boolean;
-  openRouterApiKey: string;
+  hasOpenRouterApiKey: boolean;
   openRouterModel: string;
   openRouterReasoningEnabled: boolean;
   openRouterReasoningEffort: string;
@@ -108,10 +109,10 @@ const defaultSettings: Settings = {
   translationTargetLanguageCode: 'EN',
   wordTranslationProvider: 'deepl',
   wiktionaryRichDisplay: false,
-  wiktionaryAccessToken: '',
-  azureTranslatorKey: '',
+  hasWiktionaryAccessToken: false,
+  hasAzureTranslatorKey: false,
   azureTranslatorRegion: '',
-  googleTranslateApiKey: '',
+  hasGoogleTranslateApiKey: false,
   autoAdvanceToNextLesson: false,
   autoAdvanceAudiobookTracks: true,
   autoMoveFinishedLessons: false,
@@ -128,7 +129,7 @@ const defaultSettings: Settings = {
   hasHardcoverApiToken: false,
   hardcoverLastSyncAt: null,
   useOpenRouter: false,
-  openRouterApiKey: '',
+  hasOpenRouterApiKey: false,
   openRouterModel: 'google/gemini-2.5-flash-preview-05-20:free',
   openRouterReasoningEnabled: false,
   openRouterReasoningEffort: 'medium',
@@ -209,10 +210,10 @@ const mergeSettings = (
     wordTranslationProvider:
       d.wordTranslationProvider || base.wordTranslationProvider,
     wiktionaryRichDisplay: d.wiktionaryRichDisplay ?? base.wiktionaryRichDisplay,
-    wiktionaryAccessToken: d.wiktionaryAccessToken ?? base.wiktionaryAccessToken,
-    azureTranslatorKey: d.azureTranslatorKey ?? base.azureTranslatorKey,
+    hasWiktionaryAccessToken: d.hasWiktionaryAccessToken ?? base.hasWiktionaryAccessToken,
+    hasAzureTranslatorKey: d.hasAzureTranslatorKey ?? base.hasAzureTranslatorKey,
     azureTranslatorRegion: d.azureTranslatorRegion ?? base.azureTranslatorRegion,
-    googleTranslateApiKey: d.googleTranslateApiKey ?? base.googleTranslateApiKey,
+    hasGoogleTranslateApiKey: d.hasGoogleTranslateApiKey ?? base.hasGoogleTranslateApiKey,
     autoAdvanceToNextLesson: d.autoAdvanceToNextLesson ?? base.autoAdvanceToNextLesson,
     autoAdvanceAudiobookTracks:
       d.autoAdvanceAudiobookTracks ?? base.autoAdvanceAudiobookTracks,
@@ -235,7 +236,7 @@ const mergeSettings = (
     hasHardcoverApiToken: d.hasHardcoverApiToken ?? base.hasHardcoverApiToken,
     hardcoverLastSyncAt: d.hardcoverLastSyncAt ?? base.hardcoverLastSyncAt,
     useOpenRouter: d.useOpenRouter ?? base.useOpenRouter,
-    openRouterApiKey: d.openRouterApiKey || base.openRouterApiKey,
+    hasOpenRouterApiKey: d.hasOpenRouterApiKey ?? base.hasOpenRouterApiKey,
     openRouterModel: d.openRouterModel || base.openRouterModel,
     openRouterReasoningEnabled:
       d.openRouterReasoningEnabled ?? base.openRouterReasoningEnabled,

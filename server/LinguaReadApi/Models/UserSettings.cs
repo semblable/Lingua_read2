@@ -53,23 +53,24 @@ namespace LinguaReadApi.Models
 
         // Optional Wikimedia OAuth 2.0 access token. When set, Wiktionary word lookups are
         // authenticated, raising the rate limit from <5 req/s (anonymous) to 10 req/s. Tokens
-        // can be long (JWTs), so allow generous length. Null/empty = anonymous (falls back to
-        // the server-level Wiktionary:AccessToken config if one is set).
-        [StringLength(2048)]
+        // can be long (JWTs). Null/empty = anonymous (falls back to the server-level
+        // Wiktionary:AccessToken config if one is set).
+        // Encrypted at rest → stored as unbounded text; input length is capped on the DTO.
         public string? WiktionaryAccessToken { get; set; }
 
         // Optional per-user credentials for the Azure Translator word provider. Null/empty falls
         // back to the server-level Azure:Translator:* config. Region is only needed for a regional
         // Azure resource (a global resource needs just the key).
-        [StringLength(512)]
+        // Encrypted at rest → stored as unbounded text; input length is capped on the DTO.
         public string? AzureTranslatorKey { get; set; }
 
+        // Region is not a secret (e.g. "westeurope"), so it keeps its length cap and is not encrypted.
         [StringLength(64)]
         public string? AzureTranslatorRegion { get; set; }
 
         // Optional per-user Google Cloud Translation (v2) API key for the Google word provider.
         // Null/empty falls back to the server-level Google:Translate:ApiKey config.
-        [StringLength(512)]
+        // Encrypted at rest → stored as unbounded text; input length is capped on the DTO.
         public string? GoogleTranslateApiKey { get; set; }
 
         // Navigation Preferences
@@ -86,7 +87,7 @@ namespace LinguaReadApi.Models
         // Discord reporting
         public bool DiscordWeeklyReportEnabled { get; set; } = false;
 
-        [StringLength(2048)]
+        // Encrypted at rest → stored as unbounded text; input length is capped on the DTO.
         public string? DiscordWebhookUrl { get; set; }
 
         [StringLength(20)]
@@ -103,7 +104,7 @@ namespace LinguaReadApi.Models
         // Hardcover integration
         public bool HardcoverSyncEnabled { get; set; } = false;
 
-        [StringLength(2048)]
+        // Encrypted at rest → stored as unbounded text; input length is capped on the DTO.
         public string? HardcoverApiToken { get; set; }
 
         public DateTime? HardcoverLastSyncAt { get; set; }
@@ -111,9 +112,9 @@ namespace LinguaReadApi.Models
         // AI Provider Settings (OpenRouter)
         public bool UseOpenRouter { get; set; } = false; // Toggle between Gemini/OpenRouter
         
-        [StringLength(256)]
+        // Encrypted at rest → stored as unbounded text; input length is capped on the DTO.
         public string? OpenRouterApiKey { get; set; }
-        
+
         [StringLength(100)]
         public string OpenRouterModel { get; set; } = "google/gemini-2.5-flash-preview-05-20:free";
 

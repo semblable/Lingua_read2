@@ -6164,10 +6164,10 @@ export interface components {
             translationTargetLanguageCode?: string | null;
             wordTranslationProvider?: string | null;
             wiktionaryRichDisplay?: boolean;
-            wiktionaryAccessToken?: string | null;
-            azureTranslatorKey?: string | null;
+            hasWiktionaryAccessToken?: boolean;
+            hasAzureTranslatorKey?: boolean;
             azureTranslatorRegion?: string | null;
-            googleTranslateApiKey?: string | null;
+            hasGoogleTranslateApiKey?: boolean;
             autoAdvanceToNextLesson?: boolean;
             autoAdvanceAudiobookTracks?: boolean;
             autoMoveFinishedLessons?: boolean;
@@ -6189,7 +6189,7 @@ export interface components {
             /** Format: date-time */
             hardcoverLastSyncAt?: string | null;
             useOpenRouter?: boolean;
-            openRouterApiKey?: string | null;
+            hasOpenRouterApiKey?: boolean;
             openRouterModel?: string | null;
             openRouterReasoningEnabled?: boolean;
             openRouterReasoningEffort?: string | null;

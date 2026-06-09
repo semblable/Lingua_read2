@@ -102,7 +102,10 @@ namespace LinguaReadApi.Services
             {
                 try
                 {
-                    var url = $"{_endpoint}/language/translate/v2?key={Uri.EscapeDataString(_apiKey)}";
+                    // Pass the key in the X-goog-api-key header rather than the URL query string.
+                    // Google Cloud APIs accept either, but a query-string key gets written to
+                    // HttpClient request logs (and any reverse-proxy access logs); a header does not.
+                    var url = $"{_endpoint}/language/translate/v2";
                     var payload = new GoogleTranslateRequest
                     {
                         Q = chunk,
@@ -111,7 +114,13 @@ namespace LinguaReadApi.Services
                         Format = "text"
                     };
 
-                    using var response = await _httpClient.PostAsJsonAsync(url, payload);
+                    using var request = new HttpRequestMessage(HttpMethod.Post, url)
+                    {
+                        Content = JsonContent.Create(payload)
+                    };
+                    request.Headers.TryAddWithoutValidation("X-goog-api-key", _apiKey);
+
+                    using var response = await _httpClient.SendAsync(request);
                     if (!response.IsSuccessStatusCode)
                     {
                         var errorContent = await response.Content.ReadAsStringAsync();

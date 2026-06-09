@@ -9,6 +9,7 @@ import * as api from '../utils/api';
 import { SettingsContext } from '../contexts/SettingsContext';
 import type { Settings, SettingKey } from '../contexts/SettingsContext';
 import type { Language } from '../utils/api/languages';
+import type { UpdateUserSettingsInput, UserSettings as UserSettingsResponse } from '../utils/api/settings';
 
 type PageSettings = Partial<Settings>;
 
@@ -47,6 +48,14 @@ const SECTIONS = [
   { id: 'data', label: 'Data', icon: '\uD83D\uDDC4\uFE0F' },
 ];
 
+// The settings response carries only booleans for write-only secrets (never the values).
+const applyProviderKeyFlags = (saved: UserSettingsResponse): Partial<Settings> => ({
+  hasWiktionaryAccessToken: saved.hasWiktionaryAccessToken ?? false,
+  hasAzureTranslatorKey: saved.hasAzureTranslatorKey ?? false,
+  hasGoogleTranslateApiKey: saved.hasGoogleTranslateApiKey ?? false,
+  hasOpenRouterApiKey: saved.hasOpenRouterApiKey ?? false
+});
+
 const UserSettings = () => {
   const browserTimezoneOffsetMinutes = -new Date().getTimezoneOffset();
   // Local settings state holds the subset this page initializes/persists;
@@ -72,10 +81,10 @@ const UserSettings = () => {
     translationTargetLanguageCode: 'EN',
     wordTranslationProvider: 'deepl',
     wiktionaryRichDisplay: false,
-    wiktionaryAccessToken: '',
-    azureTranslatorKey: '',
+    hasWiktionaryAccessToken: false,
+    hasAzureTranslatorKey: false,
     azureTranslatorRegion: '',
-    googleTranslateApiKey: '',
+    hasGoogleTranslateApiKey: false,
     autoAdvanceToNextLesson: false,
     autoAdvanceAudiobookTracks: true,
     autoMoveFinishedLessons: false,
@@ -90,7 +99,7 @@ const UserSettings = () => {
     hasHardcoverApiToken: false,
     hardcoverLastSyncAt: null,
     useOpenRouter: false,
-    openRouterApiKey: '',
+    hasOpenRouterApiKey: false,
     openRouterModel: 'google/gemini-2.5-flash-preview-05-20:free',
     openRouterReasoningEnabled: false,
     openRouterReasoningEffort: 'medium',
@@ -178,10 +187,10 @@ const UserSettings = () => {
           translationTargetLanguageCode: data.translationTargetLanguageCode || 'EN',
           wordTranslationProvider: data.wordTranslationProvider || 'deepl',
           wiktionaryRichDisplay: data.wiktionaryRichDisplay ?? false,
-          wiktionaryAccessToken: data.wiktionaryAccessToken ?? '',
-          azureTranslatorKey: data.azureTranslatorKey ?? '',
+          hasWiktionaryAccessToken: data.hasWiktionaryAccessToken ?? false,
+          hasAzureTranslatorKey: data.hasAzureTranslatorKey ?? false,
           azureTranslatorRegion: data.azureTranslatorRegion ?? '',
-          googleTranslateApiKey: data.googleTranslateApiKey ?? '',
+          hasGoogleTranslateApiKey: data.hasGoogleTranslateApiKey ?? false,
           autoAdvanceToNextLesson: data.autoAdvanceToNextLesson ?? false,
           autoAdvanceAudiobookTracks: data.autoAdvanceAudiobookTracks ?? true,
           autoMoveFinishedLessons: data.autoMoveFinishedLessons ?? false,
@@ -196,7 +205,7 @@ const UserSettings = () => {
           hasHardcoverApiToken: data.hasHardcoverApiToken ?? false,
           hardcoverLastSyncAt: data.hardcoverLastSyncAt ?? null,
           useOpenRouter: data.useOpenRouter ?? false,
-          openRouterApiKey: data.openRouterApiKey || '',
+          hasOpenRouterApiKey: data.hasOpenRouterApiKey ?? false,
           openRouterModel: data.openRouterModel || 'google/gemini-2.5-flash-preview-05-20:free',
           openRouterReasoningEnabled: data.openRouterReasoningEnabled ?? false,
           openRouterReasoningEffort: data.openRouterReasoningEffort || 'medium',
@@ -299,13 +308,13 @@ const UserSettings = () => {
         'readingDensity', 'showWordInfoPanel', 'readerParagraphIndent', 'readerTextAlignment',
         'leftPanelWidth', 'autoTranslateWords', 'autoTranslateOnOpen', 'pauseOnWordClick', 'highlightKnownWords',
         'tooltipOnlyForSavedWords', 'sentenceTtsEnabled', 'defaultLanguageId', 'translationTargetLanguageCode',
-        'wordTranslationProvider', 'wiktionaryRichDisplay', 'wiktionaryAccessToken',
-        'azureTranslatorKey', 'azureTranslatorRegion', 'googleTranslateApiKey',
+        'wordTranslationProvider', 'wiktionaryRichDisplay',
+        'azureTranslatorRegion',
         'autoAdvanceToNextLesson', 'autoAdvanceAudiobookTracks', 'autoMoveFinishedLessons', 'showProgressStats', 'lineSpacing',
         'discordWeeklyReportEnabled', 'discordWebhookUrl', 'discordWeeklyReportDayOfWeek',
         'discordWeeklyReportHourLocal', 'discordTimezoneOffsetMinutes',
         'hardcoverSyncEnabled', 'hasHardcoverApiToken', 'hardcoverLastSyncAt',
-        'useOpenRouter', 'openRouterApiKey', 'openRouterModel',
+        'useOpenRouter', 'openRouterModel',
         'openRouterReasoningEnabled', 'openRouterReasoningEffort',
         'openRouterStoryReasoningEnabled', 'openRouterStoryReasoningEffort',
         'openRouterTranslationModel', 'openRouterExplanationModel',
@@ -496,6 +505,34 @@ const UserSettings = () => {
     }
   }, []);
 
+  // Write-only provider keys (Azure/Google/Wiktionary/OpenRouter). Saved/cleared on their own so
+  // the bulk Save never carries a secret; the server returns only the has* booleans. Re-throws so
+  // SecretKeyField keeps the typed value for a retry.
+  const handleSaveProviderKey = useCallback(async (field: string, value: string) => {
+    if (!value.trim()) return;
+    setError('');
+    try {
+      const saved = await updateUserSettings({ [field]: value.trim() } as UpdateUserSettingsInput);
+      setSettings(prev => ({ ...prev, ...applyProviderKeyFlags(saved) }));
+      setSuccess(true);
+      setTimeout(() => setSuccess(false), 3000);
+    } catch (e: unknown) { const err = e as Error;
+      setError(err.message || 'Failed to save key.');
+      throw err;
+    }
+  }, []);
+
+  const handleClearProviderKey = useCallback(async (field: string) => {
+    setError('');
+    try {
+      const saved = await updateUserSettings({ [field]: '' } as UpdateUserSettingsInput);
+      setSettings(prev => ({ ...prev, ...applyProviderKeyFlags(saved) }));
+    } catch (e: unknown) { const err = e as Error;
+      setError(err.message || 'Failed to clear key.');
+      throw err;
+    }
+  }, []);
+
   const handleSyncAllHardcover = useCallback(async () => {
     setSyncingHardcover(true);
     setHardcoverSyncMessage({ type: '', text: '' });
@@ -578,6 +615,8 @@ const UserSettings = () => {
                 handleChange={handleChange}
                 languages={languages as Array<{ languageId: number; name: string; code?: string | null }>}
                 loadingLanguages={loadingLanguages}
+                onSaveProviderKey={handleSaveProviderKey}
+                onClearProviderKey={handleClearProviderKey}
               />
             </div>
 
@@ -602,6 +641,8 @@ const UserSettings = () => {
                 testingOpenRouter={testingOpenRouter}
                 openRouterTestResult={openRouterTestResult}
                 onTestConnection={handleTestOpenRouter}
+                onSaveProviderKey={handleSaveProviderKey}
+                onClearProviderKey={handleClearProviderKey}
               />
             </div>
 

@@ -169,6 +169,59 @@ public class UserSettingsControllerTests
     }
 
     [Fact]
+    public async Task UpdateUserSettings_StoresProviderKeysButOnlyReturnsPresenceFlags()
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        context.Users.Add(new User { Id = userId, UserName = "u", Email = "u@test.com" });
+        await context.SaveChangesAsync();
+
+        var controller = CreateController(context, userId);
+
+        // Set the per-user word-translation provider keys.
+        var result = await controller.UpdateUserSettings(new UpdateUserSettingsDto
+        {
+            AzureTranslatorKey = "  azure-secret  ",
+            GoogleTranslateApiKey = "google-secret",
+            WiktionaryAccessToken = "wiki-token"
+        });
+
+        // The response exposes only presence flags — the DTO no longer has the raw key properties.
+        var dto = Assert.IsType<UserSettingsDto>(result.Value);
+        Assert.True(dto.HasAzureTranslatorKey);
+        Assert.True(dto.HasGoogleTranslateApiKey);
+        Assert.True(dto.HasWiktionaryAccessToken);
+
+        var row = await context.UserSettings.AsNoTracking().SingleAsync();
+        Assert.Equal("azure-secret", row.AzureTranslatorKey); // trimmed + stored
+        Assert.Equal("google-secret", row.GoogleTranslateApiKey);
+
+        // A later bulk save that omits the key fields (null) must NOT wipe stored keys.
+        await controller.UpdateUserSettings(new UpdateUserSettingsDto { Theme = "dark" });
+        row = await context.UserSettings.AsNoTracking().SingleAsync();
+        Assert.Equal("azure-secret", row.AzureTranslatorKey);
+        Assert.Equal("google-secret", row.GoogleTranslateApiKey);
+        Assert.Equal("wiki-token", row.WiktionaryAccessToken);
+
+        // Clearing sends an empty string (Clear button).
+        var cleared = await controller.UpdateUserSettings(new UpdateUserSettingsDto
+        {
+            AzureTranslatorKey = "",
+            GoogleTranslateApiKey = "",
+            WiktionaryAccessToken = ""
+        });
+        var clearedDto = Assert.IsType<UserSettingsDto>(cleared.Value);
+        Assert.False(clearedDto.HasAzureTranslatorKey);
+        Assert.False(clearedDto.HasGoogleTranslateApiKey);
+        Assert.False(clearedDto.HasWiktionaryAccessToken);
+
+        row = await context.UserSettings.AsNoTracking().SingleAsync();
+        Assert.Null(row.AzureTranslatorKey);
+        Assert.Null(row.GoogleTranslateApiKey);
+        Assert.Null(row.WiktionaryAccessToken);
+    }
+
+    [Fact]
     public async Task UpdateUserSettings_PersistsPerTaskOpenRouterModelsAndPrompts()
     {
         await using var context = CreateContext();

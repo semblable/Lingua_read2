@@ -128,10 +128,10 @@ namespace LinguaReadApi.Controllers
                 TranslationTargetLanguageCode = settings.TranslationTargetLanguageCode,
                 WordTranslationProvider = settings.WordTranslationProvider,
                 WiktionaryRichDisplay = settings.WiktionaryRichDisplay,
-                WiktionaryAccessToken = settings.WiktionaryAccessToken,
-                AzureTranslatorKey = settings.AzureTranslatorKey,
+                HasWiktionaryAccessToken = !string.IsNullOrWhiteSpace(settings.WiktionaryAccessToken),
+                HasAzureTranslatorKey = !string.IsNullOrWhiteSpace(settings.AzureTranslatorKey),
                 AzureTranslatorRegion = settings.AzureTranslatorRegion,
-                GoogleTranslateApiKey = settings.GoogleTranslateApiKey,
+                HasGoogleTranslateApiKey = !string.IsNullOrWhiteSpace(settings.GoogleTranslateApiKey),
                 AutoAdvanceToNextLesson = settings.AutoAdvanceToNextLesson,
                 AutoAdvanceAudiobookTracks = settings.AutoAdvanceAudiobookTracks,
                 AutoMoveFinishedLessons = settings.AutoMoveFinishedLessons, // Added
@@ -149,7 +149,7 @@ namespace LinguaReadApi.Controllers
                 HasHardcoverApiToken = !string.IsNullOrWhiteSpace(settings.HardcoverApiToken),
                 HardcoverLastSyncAt = settings.HardcoverLastSyncAt,
                 UseOpenRouter = settings.UseOpenRouter,
-                OpenRouterApiKey = settings.OpenRouterApiKey,
+                HasOpenRouterApiKey = !string.IsNullOrWhiteSpace(settings.OpenRouterApiKey),
                 OpenRouterModel = settings.OpenRouterModel,
                 OpenRouterReasoningEnabled = settings.OpenRouterReasoningEnabled,
                 OpenRouterReasoningEffort = settings.OpenRouterReasoningEffort,
@@ -472,10 +472,10 @@ namespace LinguaReadApi.Controllers
                 TranslationTargetLanguageCode = settings.TranslationTargetLanguageCode,
                 WordTranslationProvider = settings.WordTranslationProvider,
                 WiktionaryRichDisplay = settings.WiktionaryRichDisplay,
-                WiktionaryAccessToken = settings.WiktionaryAccessToken,
-                AzureTranslatorKey = settings.AzureTranslatorKey,
+                HasWiktionaryAccessToken = !string.IsNullOrWhiteSpace(settings.WiktionaryAccessToken),
+                HasAzureTranslatorKey = !string.IsNullOrWhiteSpace(settings.AzureTranslatorKey),
                 AzureTranslatorRegion = settings.AzureTranslatorRegion,
-                GoogleTranslateApiKey = settings.GoogleTranslateApiKey,
+                HasGoogleTranslateApiKey = !string.IsNullOrWhiteSpace(settings.GoogleTranslateApiKey),
                 AutoAdvanceToNextLesson = settings.AutoAdvanceToNextLesson,
                 AutoAdvanceAudiobookTracks = settings.AutoAdvanceAudiobookTracks,
                 AutoMoveFinishedLessons = settings.AutoMoveFinishedLessons, // Update property
@@ -491,7 +491,7 @@ namespace LinguaReadApi.Controllers
                 HasHardcoverApiToken = !string.IsNullOrWhiteSpace(settings.HardcoverApiToken),
                 HardcoverLastSyncAt = settings.HardcoverLastSyncAt,
                 UseOpenRouter = settings.UseOpenRouter,
-                OpenRouterApiKey = settings.OpenRouterApiKey,
+                HasOpenRouterApiKey = !string.IsNullOrWhiteSpace(settings.OpenRouterApiKey),
                 OpenRouterModel = settings.OpenRouterModel,
                 OpenRouterReasoningEnabled = settings.OpenRouterReasoningEnabled,
                 OpenRouterReasoningEffort = settings.OpenRouterReasoningEffort,
@@ -883,10 +883,13 @@ namespace LinguaReadApi.Controllers
         public string TranslationTargetLanguageCode { get; set; } = "EN";
         public string WordTranslationProvider { get; set; } = "deepl";
         public bool WiktionaryRichDisplay { get; set; } = false;
-        public string? WiktionaryAccessToken { get; set; }
-        public string? AzureTranslatorKey { get; set; }
+        // Write-only secrets: never returned to the client (any logged-in XSS could otherwise
+        // read them). Surfaced only as a boolean "is one configured?"; the raw value is set via
+        // UpdateUserSettingsDto. Mirrors HasHardcoverApiToken.
+        public bool HasWiktionaryAccessToken { get; set; }
+        public bool HasAzureTranslatorKey { get; set; }
         public string? AzureTranslatorRegion { get; set; }
-        public string? GoogleTranslateApiKey { get; set; }
+        public bool HasGoogleTranslateApiKey { get; set; }
         public bool AutoAdvanceToNextLesson { get; set; } = false;
         public bool AutoAdvanceAudiobookTracks { get; set; } = true;
         public bool AutoMoveFinishedLessons { get; set; } = false; // Added property
@@ -903,7 +906,7 @@ namespace LinguaReadApi.Controllers
         public bool HasHardcoverApiToken { get; set; } = false;
         public DateTime? HardcoverLastSyncAt { get; set; }
         public bool UseOpenRouter { get; set; } = false;
-        public string? OpenRouterApiKey { get; set; }
+        public bool HasOpenRouterApiKey { get; set; }
         public string OpenRouterModel { get; set; } = "google/gemini-2.5-flash-preview-05-20:free";
         public bool OpenRouterReasoningEnabled { get; set; } = false;
         public string OpenRouterReasoningEffort { get; set; } = "medium";

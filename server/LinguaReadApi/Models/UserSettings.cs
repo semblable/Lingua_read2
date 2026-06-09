@@ -58,6 +58,20 @@ namespace LinguaReadApi.Models
         [StringLength(2048)]
         public string? WiktionaryAccessToken { get; set; }
 
+        // Optional per-user credentials for the Azure Translator word provider. Null/empty falls
+        // back to the server-level Azure:Translator:* config. Region is only needed for a regional
+        // Azure resource (a global resource needs just the key).
+        [StringLength(512)]
+        public string? AzureTranslatorKey { get; set; }
+
+        [StringLength(64)]
+        public string? AzureTranslatorRegion { get; set; }
+
+        // Optional per-user Google Cloud Translation (v2) API key for the Google word provider.
+        // Null/empty falls back to the server-level Google:Translate:ApiKey config.
+        [StringLength(512)]
+        public string? GoogleTranslateApiKey { get; set; }
+
         // Navigation Preferences
         public bool AutoAdvanceToNextLesson { get; set; } = false; // automatically go to next lesson after completion
         public bool ShowProgressStats { get; set; } = true; // show progress statistics

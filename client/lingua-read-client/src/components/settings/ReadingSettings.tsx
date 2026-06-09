@@ -134,7 +134,7 @@ const ReadingSettings = ({ settings, handleChange, languages, loadingLanguages }
           </Form.Text>
         </Form.Group>
 
-        <Form.Group className={settings.wordTranslationProvider === 'wiktionary' ? 'mb-3' : 'mb-0'} controlId="wordTranslationProvider">
+        <Form.Group className={settings.wordTranslationProvider === 'deepl' ? 'mb-0' : 'mb-3'} controlId="wordTranslationProvider">
           <Form.Label>Word Translation Provider</Form.Label>
           <Form.Select
             name="wordTranslationProvider"
@@ -143,6 +143,8 @@ const ReadingSettings = ({ settings, handleChange, languages, loadingLanguages }
           >
             <option value="deepl">DeepL</option>
             <option value="wiktionary">Wiktionary (free, no API key)</option>
+            <option value="azure">Azure Translator</option>
+            <option value="google">Google Translate</option>
           </Form.Select>
           <Form.Text className="text-muted">
             Provider for single-word lookups in the reader. Wiktionary returns English
@@ -186,6 +188,67 @@ const ReadingSettings = ({ settings, handleChange, languages, loadingLanguages }
               </Form.Text>
             </Form.Group>
           </>
+        )}
+
+        {settings.wordTranslationProvider === 'azure' && (
+          <>
+            <Form.Group className="mb-3" controlId="azureTranslatorKey">
+              <Form.Label>Azure Translator Key</Form.Label>
+              <Form.Control
+                type="password"
+                name="azureTranslatorKey"
+                value={settings.azureTranslatorKey}
+                onChange={handleChange}
+                placeholder="Your Azure Translator subscription key"
+                autoComplete="off"
+              />
+              <Form.Text className="text-muted">
+                A key from an Azure AI Translator resource. Create one in the{' '}
+                <a href="https://portal.azure.com/" target="_blank" rel="noopener noreferrer">
+                  Azure portal
+                </a>{' '}
+                (a free tier is available). Leave blank to use the server-configured key, if any.
+              </Form.Text>
+            </Form.Group>
+
+            <Form.Group className="mb-0" controlId="azureTranslatorRegion">
+              <Form.Label>Azure Translator Region (optional)</Form.Label>
+              <Form.Control
+                type="text"
+                name="azureTranslatorRegion"
+                value={settings.azureTranslatorRegion}
+                onChange={handleChange}
+                placeholder="e.g. westeurope"
+                autoComplete="off"
+              />
+              <Form.Text className="text-muted">
+                Required for a regional Azure resource (matches your resource's location). Leave
+                blank for a global resource.
+              </Form.Text>
+            </Form.Group>
+          </>
+        )}
+
+        {settings.wordTranslationProvider === 'google' && (
+          <Form.Group className="mb-0" controlId="googleTranslateApiKey">
+            <Form.Label>Google Translate API Key</Form.Label>
+            <Form.Control
+              type="password"
+              name="googleTranslateApiKey"
+              value={settings.googleTranslateApiKey}
+              onChange={handleChange}
+              placeholder="Your Google Cloud Translation API key"
+              autoComplete="off"
+            />
+            <Form.Text className="text-muted">
+              A Google Cloud Translation (v2) API key. Create one in the{' '}
+              <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener noreferrer">
+                Google Cloud console
+              </a>{' '}
+              with the Cloud Translation API enabled. Leave blank to use the server-configured key,
+              if any.
+            </Form.Text>
+          </Form.Group>
         )}
       </div>
     </>

@@ -103,22 +103,28 @@ namespace LinguaReadApi.Services
     }
 
     /// <summary>
-    /// Selects between DeepL and Wiktionary for word lookups based on the user's
-    /// <c>WordTranslationProvider</c> setting. Defaults to DeepL.
+    /// Selects between DeepL, Wiktionary, Azure Translator, and Google Translate for word lookups
+    /// based on the user's <c>WordTranslationProvider</c> setting. Defaults to DeepL.
     /// </summary>
     public class WordTranslationServiceFactory : IWordTranslationServiceFactory
     {
         private readonly DeepLTranslationService _deepLService;
         private readonly WiktionaryTranslationService _wiktionaryService;
+        private readonly AzureTranslationService _azureService;
+        private readonly GoogleTranslationService _googleService;
         private readonly AppDbContext _context;
 
         public WordTranslationServiceFactory(
             DeepLTranslationService deepLService,
             WiktionaryTranslationService wiktionaryService,
+            AzureTranslationService azureService,
+            GoogleTranslationService googleService,
             AppDbContext context)
         {
             _deepLService = deepLService;
             _wiktionaryService = wiktionaryService;
+            _azureService = azureService;
+            _googleService = googleService;
             _context = context;
         }
 
@@ -126,14 +132,21 @@ namespace LinguaReadApi.Services
         {
             var userSettings = await _context.UserSettings.FirstOrDefaultAsync(s => s.UserId == userId);
 
-            if (userSettings != null &&
-                string.Equals(userSettings.WordTranslationProvider, "wiktionary", StringComparison.OrdinalIgnoreCase))
+            var provider = userSettings?.WordTranslationProvider?.Trim().ToLowerInvariant();
+            switch (provider)
             {
-                _wiktionaryService.UseAccessToken(userSettings.WiktionaryAccessToken);
-                return _wiktionaryService;
+                case "wiktionary":
+                    _wiktionaryService.UseAccessToken(userSettings!.WiktionaryAccessToken);
+                    return _wiktionaryService;
+                case "azure":
+                    _azureService.UseCredentials(userSettings!.AzureTranslatorKey, userSettings.AzureTranslatorRegion);
+                    return _azureService;
+                case "google":
+                    _googleService.UseApiKey(userSettings!.GoogleTranslateApiKey);
+                    return _googleService;
+                default:
+                    return _deepLService;
             }
-
-            return _deepLService;
         }
 
         public async Task<WiktionaryTranslationService> GetWiktionaryServiceForUserAsync(Guid userId)

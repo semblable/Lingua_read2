@@ -5952,6 +5952,9 @@ export interface components {
             wordTranslationProvider?: string | null;
             wiktionaryRichDisplay?: boolean | null;
             wiktionaryAccessToken?: string | null;
+            azureTranslatorKey?: string | null;
+            azureTranslatorRegion?: string | null;
+            googleTranslateApiKey?: string | null;
             autoAdvanceToNextLesson?: boolean | null;
             autoAdvanceAudiobookTracks?: boolean | null;
             autoMoveFinishedLessons?: boolean | null;
@@ -6062,6 +6065,9 @@ export interface components {
             wordTranslationProvider?: string | null;
             wiktionaryRichDisplay?: boolean;
             wiktionaryAccessToken?: string | null;
+            azureTranslatorKey?: string | null;
+            azureTranslatorRegion?: string | null;
+            googleTranslateApiKey?: string | null;
             autoAdvanceToNextLesson?: boolean;
             showProgressStats?: boolean;
             autoMoveFinishedLessons?: boolean;
@@ -6159,6 +6165,9 @@ export interface components {
             wordTranslationProvider?: string | null;
             wiktionaryRichDisplay?: boolean;
             wiktionaryAccessToken?: string | null;
+            azureTranslatorKey?: string | null;
+            azureTranslatorRegion?: string | null;
+            googleTranslateApiKey?: string | null;
             autoAdvanceToNextLesson?: boolean;
             autoAdvanceAudiobookTracks?: boolean;
             autoMoveFinishedLessons?: boolean;

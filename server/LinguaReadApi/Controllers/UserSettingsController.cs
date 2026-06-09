@@ -129,6 +129,9 @@ namespace LinguaReadApi.Controllers
                 WordTranslationProvider = settings.WordTranslationProvider,
                 WiktionaryRichDisplay = settings.WiktionaryRichDisplay,
                 WiktionaryAccessToken = settings.WiktionaryAccessToken,
+                AzureTranslatorKey = settings.AzureTranslatorKey,
+                AzureTranslatorRegion = settings.AzureTranslatorRegion,
+                GoogleTranslateApiKey = settings.GoogleTranslateApiKey,
                 AutoAdvanceToNextLesson = settings.AutoAdvanceToNextLesson,
                 AutoAdvanceAudiobookTracks = settings.AutoAdvanceAudiobookTracks,
                 AutoMoveFinishedLessons = settings.AutoMoveFinishedLessons, // Added
@@ -250,7 +253,7 @@ namespace LinguaReadApi.Controllers
             if (!string.IsNullOrWhiteSpace(updateDto.WordTranslationProvider))
             {
                 var normalizedProvider = updateDto.WordTranslationProvider.Trim().ToLowerInvariant();
-                if (normalizedProvider is "deepl" or "wiktionary")
+                if (normalizedProvider is "deepl" or "wiktionary" or "azure" or "google")
                 {
                     settings.WordTranslationProvider = normalizedProvider;
                 }
@@ -263,6 +266,26 @@ namespace LinguaReadApi.Controllers
                 settings.WiktionaryAccessToken = string.IsNullOrWhiteSpace(updateDto.WiktionaryAccessToken)
                     ? null
                     : updateDto.WiktionaryAccessToken.Trim();
+            }
+            // Per-user Azure/Google credentials: null = leave unchanged, empty = clear (fall back
+            // to the server-level config). Same convention as the Wiktionary token above.
+            if (updateDto.AzureTranslatorKey != null)
+            {
+                settings.AzureTranslatorKey = string.IsNullOrWhiteSpace(updateDto.AzureTranslatorKey)
+                    ? null
+                    : updateDto.AzureTranslatorKey.Trim();
+            }
+            if (updateDto.AzureTranslatorRegion != null)
+            {
+                settings.AzureTranslatorRegion = string.IsNullOrWhiteSpace(updateDto.AzureTranslatorRegion)
+                    ? null
+                    : updateDto.AzureTranslatorRegion.Trim();
+            }
+            if (updateDto.GoogleTranslateApiKey != null)
+            {
+                settings.GoogleTranslateApiKey = string.IsNullOrWhiteSpace(updateDto.GoogleTranslateApiKey)
+                    ? null
+                    : updateDto.GoogleTranslateApiKey.Trim();
             }
             settings.AutoAdvanceToNextLesson = updateDto.AutoAdvanceToNextLesson ?? settings.AutoAdvanceToNextLesson;
             settings.AutoAdvanceAudiobookTracks = updateDto.AutoAdvanceAudiobookTracks ?? settings.AutoAdvanceAudiobookTracks;
@@ -450,6 +473,9 @@ namespace LinguaReadApi.Controllers
                 WordTranslationProvider = settings.WordTranslationProvider,
                 WiktionaryRichDisplay = settings.WiktionaryRichDisplay,
                 WiktionaryAccessToken = settings.WiktionaryAccessToken,
+                AzureTranslatorKey = settings.AzureTranslatorKey,
+                AzureTranslatorRegion = settings.AzureTranslatorRegion,
+                GoogleTranslateApiKey = settings.GoogleTranslateApiKey,
                 AutoAdvanceToNextLesson = settings.AutoAdvanceToNextLesson,
                 AutoAdvanceAudiobookTracks = settings.AutoAdvanceAudiobookTracks,
                 AutoMoveFinishedLessons = settings.AutoMoveFinishedLessons, // Update property
@@ -858,6 +884,9 @@ namespace LinguaReadApi.Controllers
         public string WordTranslationProvider { get; set; } = "deepl";
         public bool WiktionaryRichDisplay { get; set; } = false;
         public string? WiktionaryAccessToken { get; set; }
+        public string? AzureTranslatorKey { get; set; }
+        public string? AzureTranslatorRegion { get; set; }
+        public string? GoogleTranslateApiKey { get; set; }
         public bool AutoAdvanceToNextLesson { get; set; } = false;
         public bool AutoAdvanceAudiobookTracks { get; set; } = true;
         public bool AutoMoveFinishedLessons { get; set; } = false; // Added property
@@ -945,6 +974,12 @@ namespace LinguaReadApi.Controllers
         public bool? WiktionaryRichDisplay { get; set; }
         [StringLength(2048)]
         public string? WiktionaryAccessToken { get; set; }
+        [StringLength(512)]
+        public string? AzureTranslatorKey { get; set; }
+        [StringLength(64)]
+        public string? AzureTranslatorRegion { get; set; }
+        [StringLength(512)]
+        public string? GoogleTranslateApiKey { get; set; }
         public bool? AutoAdvanceToNextLesson { get; set; }
         public bool? AutoAdvanceAudiobookTracks { get; set; }
         public bool? AutoMoveFinishedLessons { get; set; } // Added property

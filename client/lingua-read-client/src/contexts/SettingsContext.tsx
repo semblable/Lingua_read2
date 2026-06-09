@@ -29,6 +29,9 @@ export type Settings = {
   wordTranslationProvider: string;
   wiktionaryRichDisplay: boolean;
   wiktionaryAccessToken: string;
+  azureTranslatorKey: string;
+  azureTranslatorRegion: string;
+  googleTranslateApiKey: string;
   autoAdvanceToNextLesson: boolean;
   autoAdvanceAudiobookTracks: boolean;
   autoMoveFinishedLessons: boolean;
@@ -106,6 +109,9 @@ const defaultSettings: Settings = {
   wordTranslationProvider: 'deepl',
   wiktionaryRichDisplay: false,
   wiktionaryAccessToken: '',
+  azureTranslatorKey: '',
+  azureTranslatorRegion: '',
+  googleTranslateApiKey: '',
   autoAdvanceToNextLesson: false,
   autoAdvanceAudiobookTracks: true,
   autoMoveFinishedLessons: false,
@@ -204,6 +210,9 @@ const mergeSettings = (
       d.wordTranslationProvider || base.wordTranslationProvider,
     wiktionaryRichDisplay: d.wiktionaryRichDisplay ?? base.wiktionaryRichDisplay,
     wiktionaryAccessToken: d.wiktionaryAccessToken ?? base.wiktionaryAccessToken,
+    azureTranslatorKey: d.azureTranslatorKey ?? base.azureTranslatorKey,
+    azureTranslatorRegion: d.azureTranslatorRegion ?? base.azureTranslatorRegion,
+    googleTranslateApiKey: d.googleTranslateApiKey ?? base.googleTranslateApiKey,
     autoAdvanceToNextLesson: d.autoAdvanceToNextLesson ?? base.autoAdvanceToNextLesson,
     autoAdvanceAudiobookTracks:
       d.autoAdvanceAudiobookTracks ?? base.autoAdvanceAudiobookTracks,

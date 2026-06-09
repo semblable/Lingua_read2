@@ -109,11 +109,13 @@ builder.Services.Configure<DiscordReportOptions>(builder.Configuration.GetSectio
 builder.Services.AddScoped<DiscordReportService>();
 builder.Services.AddHostedService<WeeklyDiscordReportHostedService>();
 
-// Register word-level translation providers (DeepL default, Wiktionary optional) and the
-// per-user factory that selects between them.
+// Register word-level translation providers (DeepL default; Wiktionary, Azure Translator, and
+// Google Translate optional) and the per-user factory that selects between them.
 builder.Services.AddScoped<ITranslationService, DeepLTranslationService>();
 builder.Services.AddScoped<DeepLTranslationService>();
 builder.Services.AddScoped<WiktionaryTranslationService>();
+builder.Services.AddScoped<AzureTranslationService>();
+builder.Services.AddScoped<GoogleTranslationService>();
 builder.Services.AddScoped<IWordTranslationServiceFactory, WordTranslationServiceFactory>();
 
 // Register Gemini Translation Service for sentences (concrete type for factory)

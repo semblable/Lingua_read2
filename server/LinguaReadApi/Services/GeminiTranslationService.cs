@@ -21,26 +21,32 @@ namespace LinguaReadApi.Services
 
     public class GeminiTranslationService : ISentenceTranslationService
     {
+        // Timeout configuration - 5 minutes for long texts (matches OpenRouter services)
+        private static readonly TimeSpan RequestTimeout = TimeSpan.FromMinutes(5);
+
         private readonly HttpClient _httpClient;
-        private readonly string _apiKey;
         private readonly string _baseUrl;
         private readonly string _primaryModel;
         private readonly string _fallbackModel;
         private readonly ILogger<GeminiTranslationService> _logger;
         private readonly ILanguageService _languageService; // Added LanguageService dependency
 
-        public GeminiTranslationService(IConfiguration configuration, ILogger<GeminiTranslationService> logger, ILanguageService languageService) // Added languageService parameter
+        public GeminiTranslationService(IConfiguration configuration, ILogger<GeminiTranslationService> logger, ILanguageService languageService, IHttpClientFactory httpClientFactory)
         {
-            _httpClient = new HttpClient();
-            _apiKey = configuration["Gemini:ApiKey"] ?? throw new ArgumentNullException("Gemini:ApiKey is missing in configuration");
+            var apiKey = configuration["Gemini:ApiKey"] ?? throw new ArgumentNullException("Gemini:ApiKey is missing in configuration");
+            _httpClient = httpClientFactory.CreateClient();
+            _httpClient.Timeout = RequestTimeout;
+            // Authenticate via header instead of ?key= in the URL so the key can't leak
+            // into proxy logs or HttpRequestException messages (which include the URI).
+            _httpClient.DefaultRequestHeaders.Add("x-goog-api-key", apiKey);
             _baseUrl = configuration["Gemini:BaseUrl"] ?? "https://generativelanguage.googleapis.com/v1beta";
             _primaryModel = configuration["Gemini:Model"] ?? "gemini-3-flash-preview";
             _fallbackModel = configuration["Gemini:FallbackModel"] ?? "gemini-2.5-flash";
             _logger = logger;
             _languageService = languageService; // Store injected service
-            
+
             _logger.LogInformation("GeminiTranslationService initialized");
-            _logger.LogDebug($"Using base URL: {_baseUrl}");
+            _logger.LogDebug("Using base URL: {BaseUrl}", _baseUrl);
         }
 
         public Task<string> TranslateSentenceAsync(string text, string sourceLanguage, string targetLanguage)
@@ -158,7 +164,8 @@ Text:
                 };
                 
                 string jsonPayload = JsonSerializer.Serialize(requestPayload, options);
-                _logger.LogDebug($"Request payload: {jsonPayload}");
+                // Log size only — the payload contains the user's full text.
+                _logger.LogDebug("Request payload: {PayloadChars} chars", jsonPayload.Length);
 
                 var modelsToTry = new List<string> { _primaryModel };
                 if (!string.Equals(_fallbackModel, _primaryModel, StringComparison.OrdinalIgnoreCase))
@@ -173,7 +180,7 @@ Text:
                     for (int attempt = 1; attempt <= maxAttempts; attempt++)
                     {
                         // Create the request
-                        var endpoint = $"{_baseUrl}/models/{model}:generateContent?key={_apiKey}";
+                        var endpoint = $"{_baseUrl}/models/{model}:generateContent";
                         var content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
 
                         // Send the request
@@ -200,7 +207,8 @@ Text:
                             break; // Try next model (if any)
                         }
 
-                        _logger.LogDebug($"Gemini API response: {responseContent}");
+                        // Log size only — the response contains the user's translated text.
+                        _logger.LogDebug("Gemini API response: {ResponseChars} chars", responseContent.Length);
 
                         // Parse using proper models
                         var geminiResponse = JsonSerializer.Deserialize<GeminiResponse>(responseContent, options);
@@ -295,7 +303,7 @@ Text:
                     const int maxAttempts = 3;
                     for (int attempt = 1; attempt <= maxAttempts; attempt++)
                     {
-                        var endpoint = $"{_baseUrl}/models/{model}:generateContent?key={_apiKey}";
+                        var endpoint = $"{_baseUrl}/models/{model}:generateContent";
                         var content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
                         var response = await _httpClient.PostAsync(endpoint, content);
                         var responseContent = await response.Content.ReadAsStringAsync();
@@ -418,7 +426,7 @@ Strict instructions:
                     const int maxAttempts = 3;
                     for (int attempt = 1; attempt <= maxAttempts; attempt++)
                     {
-                        var endpoint = $"{_baseUrl}/models/{model}:generateContent?key={_apiKey}";
+                        var endpoint = $"{_baseUrl}/models/{model}:generateContent";
                         var content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
                         var response = await _httpClient.PostAsync(endpoint, content);
                         var responseContent = await response.Content.ReadAsStringAsync();

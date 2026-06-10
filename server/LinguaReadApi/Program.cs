@@ -11,6 +11,8 @@ using System.IO; // Add this for Path.Combine
 using Microsoft.AspNetCore.Http.Features; // Needed for FormOptions
 using Microsoft.AspNetCore.Server.Kestrel.Core; // Needed for KestrelServerOptions
 using DotNetEnv; // <-- Add this using directive
+using LinguaReadApi.Authorization;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity; // Keep one Identity using
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.DataProtection;
@@ -201,6 +203,14 @@ builder.Services.AddAuthentication(options =>
     };
 });
 
+// Shared gate for destructive admin endpoints (see AdminOnlyPolicy.cs for the
+// single-user default-allow rationale).
+builder.Services.AddSingleton<IAuthorizationHandler, AdminOnlyHandler>();
+builder.Services.AddAuthorizationBuilder()
+    .AddPolicy(AdminOnlyRequirement.PolicyName, policy => policy
+        .RequireAuthenticatedUser()
+        .AddRequirements(new AdminOnlyRequirement()));
+
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
@@ -243,6 +253,12 @@ builder.Services.AddCors(options =>
 });
 
 var app = builder.Build();
+
+// Static hook (not DI) because the EF value converter lives in the cached model,
+// which outlives any single scoped context.
+UserSettingsSecretProtector.Logger = app.Services
+    .GetRequiredService<ILoggerFactory>()
+    .CreateLogger(typeof(UserSettingsSecretProtector).FullName!);
 
 // Trust reverse-proxy headers (Nginx) when deployed behind a proxy.
 // NOTE: We clear known networks/proxies so this works in containerized environments.
@@ -338,6 +354,26 @@ app.UseCors("AllowClientApp");
 
 app.UseRouting();
 
+// Authentication runs before the static-file middlewares so the gate below can
+// see context.User for requests to uploaded content.
+app.UseAuthentication();
+
+// User-uploaded content (audio lessons, audiobook tracks, EPUB images) lives under
+// wwwroot with guessable paths (e.g. /audiobooks/{bookId}/track_1.mp3). Static-file
+// middleware never consults authorization, so gate these prefixes explicitly. The web
+// client requests them same-origin, so the httpOnly auth cookie is sent automatically.
+string[] protectedStaticPrefixes = ["/audio_lessons", "/audiobooks", "/epub_assets"];
+app.Use(async (context, next) =>
+{
+    if (protectedStaticPrefixes.Any(prefix => context.Request.Path.StartsWithSegments(prefix)) &&
+        context.User.Identity?.IsAuthenticated != true)
+    {
+        context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+        return;
+    }
+    await next();
+});
+
 // Serve static files from wwwroot (e.g., uploaded audio)
 // Use default UseStaticFiles for general wwwroot content
 app.UseStaticFiles();
@@ -367,7 +403,7 @@ app.UseStaticFiles(new StaticFileOptions
 // Apply CORS before authentication - Redundant comment, UseCors moved up
 // app.UseCors("AllowClientApp"); // Moved up
 
-app.UseAuthentication();
+// UseAuthentication moved above the static-file middlewares (uploaded-content gate).
 app.UseAuthorization();
 
 // Lightweight CSRF protection for cookie-based auth.

@@ -105,6 +105,8 @@ namespace LinguaReadApi.Services
                 return string.Empty;
             }
 
+            // CancellationToken.None: the ITranslationService contract carries no token, and
+            // single-word lookups are bounded by the HttpClient timeout anyway.
             var entries = await FetchEntriesAsync(text.Trim(), sourceLang, CancellationToken.None);
             return BuildGloss(entries);
         }
@@ -176,6 +178,7 @@ namespace LinguaReadApi.Services
                 return Array.Empty<WordDefinitionEntry>();
             }
 
+            // CancellationToken.None: see TranslateTextAsync — no token in the calling contract.
             var entries = await FetchEntriesAsync(term.Trim(), sourceLang, CancellationToken.None);
             return entries
                 .Select(e => new WordDefinitionEntry

@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using System;
+using System.Globalization;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
@@ -167,7 +168,8 @@ namespace LinguaReadApi.Controllers
         private void SetAuthCookie(string token)
         {
             var expiryHours = _configuration["Jwt:ExpiryInHours"];
-            if (!double.TryParse(expiryHours, out var hours))
+            // InvariantCulture: config values use '.' decimals regardless of server locale.
+            if (!double.TryParse(expiryHours, NumberStyles.Float, CultureInfo.InvariantCulture, out var hours))
             {
                 hours = 2160; // 90 days default
             }
@@ -194,7 +196,8 @@ namespace LinguaReadApi.Controllers
                 throw new InvalidOperationException("JWT Key not configured.");
             }
 
-            if (!double.TryParse(expiryHours, out var hours))
+            // InvariantCulture: config values use '.' decimals regardless of server locale.
+            if (!double.TryParse(expiryHours, NumberStyles.Float, CultureInfo.InvariantCulture, out var hours))
             {
                 hours = 2160; // 90 days default
             }

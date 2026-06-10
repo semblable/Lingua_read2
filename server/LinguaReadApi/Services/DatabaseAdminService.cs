@@ -2,9 +2,11 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using Npgsql;
 
 namespace LinguaReadApi.Services
 {
@@ -16,6 +18,10 @@ namespace LinguaReadApi.Services
 
     public class DatabaseAdminService : IDatabaseAdminService
     {
+        // Upper bound for pg_dump/pg_restore. Without it a hung process (e.g. network
+        // partition to the DB) blocks the admin request forever.
+        private static readonly TimeSpan ProcessTimeout = TimeSpan.FromMinutes(10);
+
         private readonly IConfiguration _configuration;
         private readonly ILogger<DatabaseAdminService> _logger;
         private readonly string _pgHost;
@@ -129,6 +135,12 @@ namespace LinguaReadApi.Services
 
                 _logger.LogWarning("Starting database restore from {TempBackupFilePath}. THIS WILL OVERWRITE EXISTING DATA.", tempBackupFilePath);
 
+                // pg_restore --clean issues DROPs that block on locks held by this app's own
+                // idle pooled connections. Release them first so the restore isn't stuck
+                // waiting on the very process that launched it. (In-flight requests can still
+                // hold connections; the process timeout below bounds the worst case.)
+                NpgsqlConnection.ClearAllPools();
+
                 var exitCode = await ExecuteProcessAsync(_pgRestorePath, arguments, _pgPassword);
 
                 if (exitCode == 0)
@@ -185,7 +197,17 @@ namespace LinguaReadApi.Services
             process.BeginOutputReadLine();
             process.BeginErrorReadLine();
 
-            await process.WaitForExitAsync(); // Use async version
+            using var timeoutCts = new CancellationTokenSource(ProcessTimeout);
+            try
+            {
+                await process.WaitForExitAsync(timeoutCts.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                _logger.LogError("{Command} did not finish within {Timeout}; killing the process.", command, ProcessTimeout);
+                try { process.Kill(entireProcessTree: true); } catch { /* already exited */ }
+                return -1;
+            }
 
             var output = outputBuilder.ToString();
             var error = errorBuilder.ToString();

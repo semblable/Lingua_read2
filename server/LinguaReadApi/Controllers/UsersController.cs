@@ -197,6 +197,7 @@ namespace LinguaReadApi.Controllers
         public async Task<IActionResult> GetReadingActivity([FromQuery] string period = "all", [FromQuery] int? timezoneOffsetMinutes = null, [FromQuery] int? languageId = null, [FromQuery] int offset = 0)
         {
             _logger.LogInformation("Getting reading activity for period: {Period}, offset: {Offset}, timezoneOffsetMinutes: {TimezoneOffset}, languageId: {LanguageId}", period, offset, timezoneOffsetMinutes, languageId);
+            timezoneOffsetMinutes = TimezoneOffset.Clamp(timezoneOffsetMinutes);
             var userId = GetUserId();
 
             try
@@ -322,6 +323,7 @@ namespace LinguaReadApi.Controllers
         public async Task<IActionResult> GetListeningActivity([FromQuery] string period = "all", [FromQuery] int? timezoneOffsetMinutes = null, [FromQuery] int? languageId = null, [FromQuery] int offset = 0)
         {
             _logger.LogInformation("Getting listening activity for period: {Period}, offset: {Offset}, timezoneOffsetMinutes: {TimezoneOffset}, languageId: {LanguageId}", period, offset, timezoneOffsetMinutes, languageId);
+            timezoneOffsetMinutes = TimezoneOffset.Clamp(timezoneOffsetMinutes);
             var userId = GetUserId();
 
             try
@@ -447,6 +449,7 @@ namespace LinguaReadApi.Controllers
         public async Task<IActionResult> GetKnownWordsActivity([FromQuery] string period = "all", [FromQuery] int? timezoneOffsetMinutes = null, [FromQuery] int? languageId = null, [FromQuery] int offset = 0)
         {
             _logger.LogInformation("Getting known-words activity for period: {Period}, offset: {Offset}, timezoneOffsetMinutes: {TimezoneOffset}, languageId: {LanguageId}", period, offset, timezoneOffsetMinutes, languageId);
+            timezoneOffsetMinutes = TimezoneOffset.Clamp(timezoneOffsetMinutes);
             var userId = GetUserId();
 
             try
@@ -557,6 +560,7 @@ namespace LinguaReadApi.Controllers
         [HttpGet("dashboard")]
         public async Task<ActionResult<DashboardDto>> GetDashboard([FromQuery] int? timezoneOffsetMinutes = null)
         {
+            timezoneOffsetMinutes = TimezoneOffset.Clamp(timezoneOffsetMinutes);
             var userId = GetUserId();
 
             try

@@ -49,9 +49,11 @@ namespace LinguaReadApi.Services
 
         public OpenRouterStoryGenerationService(
             ILogger<OpenRouterStoryGenerationService> logger,
-            AppDbContext context)
+            AppDbContext context,
+            IHttpClientFactory httpClientFactory)
         {
-            _httpClient = new HttpClient { Timeout = RequestTimeout };
+            _httpClient = httpClientFactory.CreateClient();
+            _httpClient.Timeout = RequestTimeout;
             _logger = logger;
             _context = context;
 

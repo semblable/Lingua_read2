@@ -44,6 +44,17 @@ public class UserSettingsSecretProtectorTests
     }
 
     [Fact]
+    public void Unprotect_TreatsUndecryptableProtectedPayloadAsUnset()
+    {
+        // Two ephemeral providers = two unrelated key rings, simulating a lost keys volume.
+        var stored = UserSettingsSecretProtector.Protect(CreateProtector(), "sk-or-super-secret-value");
+
+        // The payload is recognizable as protected (Data Protection magic prefix) but cannot be
+        // decrypted; it must NOT be passed through as if it were the secret itself.
+        Assert.Null(UserSettingsSecretProtector.Unprotect(CreateProtector(), stored));
+    }
+
+    [Fact]
     public void AppDbContext_ResolvedFromDI_WithDataProtection_EnablesSecretEncryption()
     {
         var services = new ServiceCollection();

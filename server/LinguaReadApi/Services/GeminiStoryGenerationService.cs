@@ -18,24 +18,30 @@ namespace LinguaReadApi.Services
 
     public class GeminiStoryGenerationService : IStoryGenerationService
     {
+        // Timeout configuration - 5 minutes for long generations (matches OpenRouter services)
+        private static readonly TimeSpan RequestTimeout = TimeSpan.FromMinutes(5);
+
         private readonly HttpClient _httpClient;
-        private readonly string _apiKey;
         private readonly string _baseUrl;
         private readonly string _primaryModel;
         private readonly string _fallbackModel;
         private readonly ILogger<GeminiStoryGenerationService> _logger;
 
-        public GeminiStoryGenerationService(IConfiguration configuration, ILogger<GeminiStoryGenerationService> logger)
+        public GeminiStoryGenerationService(IConfiguration configuration, ILogger<GeminiStoryGenerationService> logger, IHttpClientFactory httpClientFactory)
         {
-            _httpClient = new HttpClient();
-            _apiKey = configuration["Gemini:ApiKey"] ?? throw new ArgumentNullException("Gemini:ApiKey is missing in configuration");
+            var apiKey = configuration["Gemini:ApiKey"] ?? throw new ArgumentNullException("Gemini:ApiKey is missing in configuration");
+            _httpClient = httpClientFactory.CreateClient();
+            _httpClient.Timeout = RequestTimeout;
+            // Authenticate via header instead of ?key= in the URL so the key can't leak
+            // into proxy logs or HttpRequestException messages (which include the URI).
+            _httpClient.DefaultRequestHeaders.Add("x-goog-api-key", apiKey);
             _baseUrl = configuration["Gemini:BaseUrl"] ?? "https://generativelanguage.googleapis.com/v1beta";
             _primaryModel = configuration["Gemini:Model"] ?? "gemini-3-flash-preview";
             _fallbackModel = configuration["Gemini:FallbackModel"] ?? "gemini-2.5-flash";
             _logger = logger;
-            
+
             _logger.LogInformation("GeminiStoryGenerationService initialized");
-            _logger.LogDebug($"Using base URL: {_baseUrl}");
+            _logger.LogDebug("Using base URL: {BaseUrl}", _baseUrl);
         }
 
         public async Task<string> GenerateStoryAsync(string prompt, int maxOutputTokens = 20000)
@@ -82,7 +88,8 @@ namespace LinguaReadApi.Services
                 };
                 
                 string jsonPayload = JsonSerializer.Serialize(requestPayload, options);
-                _logger.LogDebug($"Request payload: {jsonPayload}");
+                // Log size only — the payload contains the user's full prompt.
+                _logger.LogDebug("Request payload: {PayloadChars} chars", jsonPayload.Length);
 
                 var modelsToTry = new List<string> { _primaryModel };
                 if (!string.Equals(_fallbackModel, _primaryModel, StringComparison.OrdinalIgnoreCase))
@@ -97,7 +104,7 @@ namespace LinguaReadApi.Services
                     for (int attempt = 1; attempt <= maxAttempts; attempt++)
                     {
                         // Create the request
-                        var endpoint = $"{_baseUrl}/models/{model}:generateContent?key={_apiKey}";
+                        var endpoint = $"{_baseUrl}/models/{model}:generateContent";
                         var content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
 
                         // Send the request
@@ -124,7 +131,8 @@ namespace LinguaReadApi.Services
                             break; // Try next model (if any)
                         }
 
-                        _logger.LogDebug($"Gemini API response: {responseContent}");
+                        // Log size only — the response contains the generated story.
+                        _logger.LogDebug("Gemini API response: {ResponseChars} chars", responseContent.Length);
 
                         // Parse the response to extract the generated story
                         var geminiResponse = JsonSerializer.Deserialize<GeminiResponse>(responseContent, options);

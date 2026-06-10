@@ -22,9 +22,11 @@ namespace LinguaReadApi.Services
 
         public OpenRouterSummarizationService(
             ILogger<OpenRouterSummarizationService> logger,
-            AppDbContext context)
+            AppDbContext context,
+            IHttpClientFactory httpClientFactory)
         {
-            _httpClient = new HttpClient { Timeout = RequestTimeout };
+            _httpClient = httpClientFactory.CreateClient();
+            _httpClient.Timeout = RequestTimeout;
             _logger = logger;
             _context = context;
         }

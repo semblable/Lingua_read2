@@ -2,6 +2,7 @@ using System;
 using System.Security.Cryptography;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
+using Microsoft.Extensions.Logging;
 
 namespace LinguaReadApi.Data
 {
@@ -12,11 +13,25 @@ namespace LinguaReadApi.Data
     ///
     /// The decrypt side tolerates values that were stored as plaintext before this was introduced:
     /// rows that fail to unprotect are returned unchanged and get encrypted on their next save.
+    /// A value that *is* a protected payload but can no longer be decrypted (lost key ring) is
+    /// treated as unset instead — see <see cref="Unprotect"/>.
     /// </summary>
     public static class UserSettingsSecretProtector
     {
         // Versioned purpose string; bump the suffix only if the protection scheme ever changes.
         public const string Purpose = "LinguaReadApi.UserSettings.Secrets.v1";
+
+        // Every Data Protection payload starts with the magic header 0x09F0C9F0, which
+        // base64url-encodes to this prefix. Lets us tell legacy plaintext apart from a
+        // protected payload we can no longer decrypt (lost/rotated key ring).
+        private const string DataProtectionPayloadPrefix = "CfDJ8";
+
+        /// <summary>
+        /// Set once at startup so decryption failures are visible in the logs. A static hook
+        /// because the EF value converter lives in the cached model, which outlives any single
+        /// scoped context (so a per-context ILogger can't be captured safely).
+        /// </summary>
+        public static ILogger? Logger { get; set; }
 
         public static string? Protect(IDataProtector protector, string? value) =>
             value == null ? null : protector.Protect(value);
@@ -32,15 +47,24 @@ namespace LinguaReadApi.Data
             {
                 return protector.Unprotect(stored);
             }
-            catch (CryptographicException)
+            catch (Exception ex) when (ex is CryptographicException or FormatException)
             {
-                // Legacy plaintext (or a value protected with a now-missing key): pass it through so
-                // the app keeps working. It re-encrypts on the next write.
-                return stored;
-            }
-            catch (FormatException)
-            {
-                // Not a base64url payload at all → definitely legacy plaintext.
+                if (stored.StartsWith(DataProtectionPayloadPrefix, StringComparison.Ordinal))
+                {
+                    // This was written by Protect but the current key ring can't decrypt it —
+                    // most likely the Data Protection keys directory was lost (e.g. the keys
+                    // volume wasn't mounted). Surface the secret as unset rather than handing
+                    // the ciphertext blob to a provider as an "API key": the user gets a clear
+                    // "key not configured" failure and can re-enter it.
+                    Logger?.LogError(ex,
+                        "A protected user-settings secret could not be decrypted. The Data Protection " +
+                        "key ring has likely been lost (check the keys volume / DATA_PROTECTION_KEYS_PATH). " +
+                        "The secret is treated as unset and must be re-entered in Settings.");
+                    return null;
+                }
+
+                // Legacy plaintext from before encryption was introduced: pass it through so the
+                // app keeps working. It re-encrypts on the next write.
                 return stored;
             }
         }

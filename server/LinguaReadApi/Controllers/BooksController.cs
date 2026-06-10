@@ -994,16 +994,6 @@ namespace LinguaReadApi.Controllers
             }
         }
 
-        // Explicit OPTIONS handler for CORS preflight debugging
-        [HttpOptions("{bookId}/audiobook")]
-        [AllowAnonymous] // Allow preflight requests without authentication
-        public IActionResult UploadAudiobookOptions(int bookId)
-        {
-            // The CORS middleware should add the necessary headers.
-            // This action just needs to return Ok() to signal the OPTIONS request is allowed.
-            return Ok();
-        }
-
         // POST: api/books/{bookId}/audiobook
         [HttpPost("{bookId}/audiobook")]
         [RequestSizeLimit(5120L * 1024 * 1024)] // Increased to 5GB

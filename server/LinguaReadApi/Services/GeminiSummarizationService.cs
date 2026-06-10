@@ -17,17 +17,23 @@ namespace LinguaReadApi.Services
 
     public class GeminiSummarizationService : ISummarizationService
     {
+        // Timeout configuration - 5 minutes for long texts (matches OpenRouter services)
+        private static readonly TimeSpan RequestTimeout = TimeSpan.FromMinutes(5);
+
         private readonly HttpClient _httpClient;
-        private readonly string _apiKey;
         private readonly string _baseUrl;
         private readonly string _primaryModel;
         private readonly string _fallbackModel;
         private readonly ILogger<GeminiSummarizationService> _logger;
 
-        public GeminiSummarizationService(IConfiguration configuration, ILogger<GeminiSummarizationService> logger)
+        public GeminiSummarizationService(IConfiguration configuration, ILogger<GeminiSummarizationService> logger, IHttpClientFactory httpClientFactory)
         {
-            _httpClient = new HttpClient();
-            _apiKey = configuration["Gemini:ApiKey"] ?? throw new ArgumentNullException("Gemini:ApiKey is missing in configuration");
+            var apiKey = configuration["Gemini:ApiKey"] ?? throw new ArgumentNullException("Gemini:ApiKey is missing in configuration");
+            _httpClient = httpClientFactory.CreateClient();
+            _httpClient.Timeout = RequestTimeout;
+            // Authenticate via header instead of ?key= in the URL so the key can't leak
+            // into proxy logs or HttpRequestException messages (which include the URI).
+            _httpClient.DefaultRequestHeaders.Add("x-goog-api-key", apiKey);
             _baseUrl = configuration["Gemini:BaseUrl"] ?? "https://generativelanguage.googleapis.com/v1beta";
             _primaryModel = configuration["Gemini:Model"] ?? "gemini-3-flash-preview";
             _fallbackModel = configuration["Gemini:FallbackModel"] ?? "gemini-2.5-flash";
@@ -87,7 +93,7 @@ namespace LinguaReadApi.Services
                     const int maxAttempts = 3;
                     for (var attempt = 1; attempt <= maxAttempts; attempt++)
                     {
-                        var endpoint = $"{_baseUrl}/models/{model}:generateContent?key={_apiKey}";
+                        var endpoint = $"{_baseUrl}/models/{model}:generateContent";
                         var content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
                         var response = await _httpClient.PostAsync(endpoint, content);
                         var responseContent = await response.Content.ReadAsStringAsync();

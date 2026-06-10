@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using LinguaReadApi.Data;
 using LinguaReadApi.Models;
 using LinguaReadApi.Services;
+using LinguaReadApi.Utilities;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -32,6 +33,7 @@ namespace LinguaReadApi.Controllers
             [FromQuery] string status = "active",
             [FromQuery] int timezoneOffsetMinutes = 0)
         {
+            timezoneOffsetMinutes = TimezoneOffset.Clamp(timezoneOffsetMinutes);
             var userId = GetUserId();
             var statusLower = (status ?? "active").Trim().ToLowerInvariant();
 
@@ -66,6 +68,7 @@ namespace LinguaReadApi.Controllers
         [HttpGet("{id}")]
         public async Task<ActionResult<GoalProgressDto>> GetGoal(int id, [FromQuery] int timezoneOffsetMinutes = 0)
         {
+            timezoneOffsetMinutes = TimezoneOffset.Clamp(timezoneOffsetMinutes);
             var userId = GetUserId();
             var goal = await _context.UserGoals.FirstOrDefaultAsync(g => g.GoalId == id && g.UserId == userId);
             if (goal == null) return NotFound();
@@ -80,6 +83,7 @@ namespace LinguaReadApi.Controllers
         [HttpPost]
         public async Task<ActionResult<GoalProgressDto>> CreateGoal([FromBody] CreateGoalDto dto, [FromQuery] int timezoneOffsetMinutes = 0)
         {
+            timezoneOffsetMinutes = TimezoneOffset.Clamp(timezoneOffsetMinutes);
             var userId = GetUserId();
 
             // --- Validation ---
@@ -152,6 +156,7 @@ namespace LinguaReadApi.Controllers
         [HttpPut("{id}")]
         public async Task<ActionResult<GoalProgressDto>> UpdateGoal(int id, [FromBody] UpdateGoalDto dto, [FromQuery] int timezoneOffsetMinutes = 0)
         {
+            timezoneOffsetMinutes = TimezoneOffset.Clamp(timezoneOffsetMinutes);
             var userId = GetUserId();
             var goal = await _context.UserGoals.FirstOrDefaultAsync(g => g.GoalId == id && g.UserId == userId);
             if (goal == null) return NotFound();
@@ -243,6 +248,7 @@ namespace LinguaReadApi.Controllers
             [FromQuery] GoalMode mode = GoalMode.Delta,
             [FromQuery] int timezoneOffsetMinutes = 0)
         {
+            timezoneOffsetMinutes = TimezoneOffset.Clamp(timezoneOffsetMinutes);
             var userId = GetUserId();
             var nowUtc = DateTime.UtcNow;
             var weekStart = nowUtc.AddDays(-7);

@@ -55,9 +55,11 @@ namespace LinguaReadApi.Services
         public OpenRouterTranslationService(
             ILogger<OpenRouterTranslationService> logger,
             ILanguageService languageService,
-            AppDbContext context)
+            AppDbContext context,
+            IHttpClientFactory httpClientFactory)
         {
-            _httpClient = new HttpClient { Timeout = RequestTimeout };
+            _httpClient = httpClientFactory.CreateClient();
+            _httpClient.Timeout = RequestTimeout;
             _logger = logger;
             _languageService = languageService;
             _context = context;

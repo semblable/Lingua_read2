@@ -23,8 +23,9 @@ namespace LinguaReadApi.Data
 
         // Every Data Protection payload starts with the magic header 0x09F0C9F0, which
         // base64url-encodes to this prefix. Lets us tell legacy plaintext apart from a
-        // protected payload we can no longer decrypt (lost/rotated key ring).
-        private const string DataProtectionPayloadPrefix = "CfDJ8";
+        // protected payload we can no longer decrypt (lost/rotated key ring). Internal so the
+        // startup re-encryption pass can reuse the same "is this already protected?" test.
+        internal const string DataProtectionPayloadPrefix = "CfDJ8";
 
         /// <summary>
         /// Set once at startup so decryption failures are visible in the logs. A static hook

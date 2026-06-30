@@ -340,6 +340,27 @@ if (!app.Environment.IsEnvironment("Testing"))
             logger.LogError(ex, "An error occurred while running DbInitializer. Halting application startup.");
             throw;
         }
+
+        // --- Encrypt UserSettings secrets left as plaintext at rest ---
+        // The EncryptUserSettingsSecrets migration only widened the secret columns; it did not
+        // rewrite existing values, and the transparent "encrypt on next save" only fires when a
+        // secret's value actually changes. Without this pass, secrets stored before encryption was
+        // introduced stay in cleartext. Idempotent and best-effort: a failure here must not stop
+        // the app from starting (the columns still read correctly via the plaintext fallback).
+        try
+        {
+            var dataProtectionProvider = services.GetService<IDataProtectionProvider>();
+            if (dataProtectionProvider != null)
+            {
+                var dbOptions = services.GetRequiredService<DbContextOptions<AppDbContext>>();
+                await UserSettingsSecretsReencryptor.EncryptLegacyPlaintextAsync(
+                    dbOptions, dataProtectionProvider, logger);
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to encrypt legacy plaintext user-settings secrets; continuing startup.");
+        }
     }
 }
 

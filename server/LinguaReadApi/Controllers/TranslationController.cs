@@ -198,6 +198,10 @@ namespace LinguaReadApi.Controllers
             {
                 return RateLimitResult();
             }
+            catch (UnauthorizedAccessException)
+            {
+                return Unauthorized(new { message = "User ID not found in token" });
+            }
         }
     } // End of Controller class
 

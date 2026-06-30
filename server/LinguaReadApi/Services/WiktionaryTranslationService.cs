@@ -56,6 +56,12 @@ namespace LinguaReadApi.Services
         // anonymous REST guidance is 3 or fewer concurrent requests; authenticating does not lift
         // the concurrency advice, so keep this at 3 regardless of token.
         private const int MaxConcurrentRequests = 3;
+        // Wiktionary has no batch endpoint, so a batch becomes one upstream request per word — all
+        // from the server's single shared IP. Cap the fan-out per call so a very large
+        // auto-translate-on-open can't hammer Wikimedia into rate-limiting (or blocking) the whole
+        // instance, and to bound latency. Words past the cap are left untranslated (same as a
+        // not-found), which the reader already handles gracefully.
+        private const int MaxBatchLookups = 200;
         // On HTTP 429 we honor Retry-After once, but never wait longer than this — a clicked
         // word should fail fast rather than hang. Used as the fallback delay when the header
         // is absent.
@@ -127,6 +133,13 @@ namespace LinguaReadApi.Services
             using var cts = new CancellationTokenSource();
             var rateLimited = 0;
             var distinctWords = words.Where(w => !string.IsNullOrWhiteSpace(w)).Distinct().ToList();
+            if (distinctWords.Count > MaxBatchLookups)
+            {
+                _logger.LogWarning(
+                    "Wiktionary batch has {Count} words, above the per-request cap of {Cap}; the extra words are skipped.",
+                    distinctWords.Count, MaxBatchLookups);
+                distinctWords = distinctWords.Take(MaxBatchLookups).ToList();
+            }
 
             var lookups = distinctWords.Select(async word =>
             {

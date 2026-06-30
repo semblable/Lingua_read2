@@ -53,7 +53,8 @@ const applyProviderKeyFlags = (saved: UserSettingsResponse): Partial<Settings> =
   hasWiktionaryAccessToken: saved.hasWiktionaryAccessToken ?? false,
   hasAzureTranslatorKey: saved.hasAzureTranslatorKey ?? false,
   hasGoogleTranslateApiKey: saved.hasGoogleTranslateApiKey ?? false,
-  hasOpenRouterApiKey: saved.hasOpenRouterApiKey ?? false
+  hasOpenRouterApiKey: saved.hasOpenRouterApiKey ?? false,
+  hasDiscordWebhookUrl: saved.hasDiscordWebhookUrl ?? false
 });
 
 const UserSettings = () => {
@@ -91,7 +92,7 @@ const UserSettings = () => {
     showProgressStats: true,
     lineSpacing: 1.5,
     discordWeeklyReportEnabled: false,
-    discordWebhookUrl: '',
+    hasDiscordWebhookUrl: false,
     discordWeeklyReportDayOfWeek: 'Monday',
     discordWeeklyReportHourLocal: 8,
     discordTimezoneOffsetMinutes: browserTimezoneOffsetMinutes,
@@ -197,7 +198,7 @@ const UserSettings = () => {
           showProgressStats: data.showProgressStats ?? true,
           lineSpacing: data.lineSpacing || 1.5,
           discordWeeklyReportEnabled: data.discordWeeklyReportEnabled ?? false,
-          discordWebhookUrl: data.discordWebhookUrl || '',
+          hasDiscordWebhookUrl: data.hasDiscordWebhookUrl ?? false,
           discordWeeklyReportDayOfWeek: data.discordWeeklyReportDayOfWeek || 'Monday',
           discordWeeklyReportHourLocal: data.discordWeeklyReportHourLocal ?? 8,
           discordTimezoneOffsetMinutes: data.discordTimezoneOffsetMinutes ?? browserTimezoneOffsetMinutes,
@@ -311,7 +312,7 @@ const UserSettings = () => {
         'wordTranslationProvider', 'wiktionaryRichDisplay',
         'azureTranslatorRegion',
         'autoAdvanceToNextLesson', 'autoAdvanceAudiobookTracks', 'autoMoveFinishedLessons', 'showProgressStats', 'lineSpacing',
-        'discordWeeklyReportEnabled', 'discordWebhookUrl', 'discordWeeklyReportDayOfWeek',
+        'discordWeeklyReportEnabled', 'discordWeeklyReportDayOfWeek',
         'discordWeeklyReportHourLocal', 'discordTimezoneOffsetMinutes',
         'hardcoverSyncEnabled', 'hasHardcoverApiToken', 'hardcoverLastSyncAt',
         'useOpenRouter', 'openRouterModel',
@@ -655,6 +656,8 @@ const UserSettings = () => {
               <DiscordSettings
                 settings={settings as Settings}
                 handleChange={handleChange}
+                onSaveProviderKey={handleSaveProviderKey}
+                onClearProviderKey={handleClearProviderKey}
                 onSetBrowserTimezone={handleSetBrowserTimezone}
                 reportPeriod={reportPeriod}
                 setReportPeriod={setReportPeriod}

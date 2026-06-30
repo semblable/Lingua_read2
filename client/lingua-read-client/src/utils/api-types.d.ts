@@ -678,26 +678,7 @@ export interface paths {
             };
         };
         delete?: never;
-        options: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    bookId: number;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description OK */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-            };
-        };
+        options?: never;
         head?: never;
         patch?: never;
         trace?: never;
@@ -6178,7 +6159,7 @@ export interface components {
             /** Format: double */
             currentAudiobookPosition?: number | null;
             discordWeeklyReportEnabled?: boolean;
-            discordWebhookUrl?: string | null;
+            hasDiscordWebhookUrl?: boolean;
             discordWeeklyReportDayOfWeek?: string | null;
             /** Format: int32 */
             discordWeeklyReportHourLocal?: number;

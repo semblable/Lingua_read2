@@ -89,6 +89,14 @@ namespace LinguaReadApi.Controllers
             {
                 return RateLimitResult();
             }
+            catch (TranslationProviderNotConfiguredException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return Unauthorized(new { message = "User ID not found in token" });
+            }
             catch (Exception ex)
             {
                 return StatusCode(500, $"Translation failed: {ex.Message}");
@@ -134,9 +142,9 @@ namespace LinguaReadApi.Controllers
                 return BadRequest("Target language code cannot be empty.");
             }
 
-            var translationService = await _translationServiceFactory.GetServiceForUserAsync(GetUserId());
             try
             {
+                var translationService = await _translationServiceFactory.GetServiceForUserAsync(GetUserId());
                 var translations = await translationService.TranslateBatchAsync(
                     request.Words,
                     request.TargetLanguageCode,
@@ -146,6 +154,14 @@ namespace LinguaReadApi.Controllers
             catch (WiktionaryRateLimitException)
             {
                 return RateLimitResult();
+            }
+            catch (TranslationProviderNotConfiguredException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return Unauthorized(new { message = "User ID not found in token" });
             }
         }
 

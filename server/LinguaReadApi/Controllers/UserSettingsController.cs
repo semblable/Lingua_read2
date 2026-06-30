@@ -141,7 +141,7 @@ namespace LinguaReadApi.Controllers
                 CurrentAudiobookPosition = settings.CurrentAudiobookPosition, // Added
                 LeftPanelWidth = settings.LeftPanelWidth, // Map panel width to DTO
                 DiscordWeeklyReportEnabled = settings.DiscordWeeklyReportEnabled,
-                DiscordWebhookUrl = settings.DiscordWebhookUrl,
+                HasDiscordWebhookUrl = !string.IsNullOrWhiteSpace(settings.DiscordWebhookUrl),
                 DiscordWeeklyReportDayOfWeek = settings.DiscordWeeklyReportDayOfWeek,
                 DiscordWeeklyReportHourLocal = settings.DiscordWeeklyReportHourLocal,
                 DiscordTimezoneOffsetMinutes = settings.DiscordTimezoneOffsetMinutes,
@@ -483,7 +483,7 @@ namespace LinguaReadApi.Controllers
                 ShowDesktopLessonControls = settings.ShowDesktopLessonControls,
                 LeftPanelWidth = settings.LeftPanelWidth, // Map panel width to DTO
                 DiscordWeeklyReportEnabled = settings.DiscordWeeklyReportEnabled,
-                DiscordWebhookUrl = settings.DiscordWebhookUrl,
+                HasDiscordWebhookUrl = !string.IsNullOrWhiteSpace(settings.DiscordWebhookUrl),
                 DiscordWeeklyReportDayOfWeek = settings.DiscordWeeklyReportDayOfWeek,
                 DiscordWeeklyReportHourLocal = settings.DiscordWeeklyReportHourLocal,
                 DiscordTimezoneOffsetMinutes = settings.DiscordTimezoneOffsetMinutes,
@@ -898,7 +898,9 @@ namespace LinguaReadApi.Controllers
         public int? CurrentAudiobookTrackId { get; set; } // Added
         public double? CurrentAudiobookPosition { get; set; } // Added
         public bool DiscordWeeklyReportEnabled { get; set; } = false;
-        public string? DiscordWebhookUrl { get; set; }
+        // Write-only secret: the webhook URL is a posting capability, so it is never returned to
+        // the browser (only whether one is configured). Set/cleared via UpdateUserSettingsDto.
+        public bool HasDiscordWebhookUrl { get; set; }
         public string DiscordWeeklyReportDayOfWeek { get; set; } = "Monday";
         public int DiscordWeeklyReportHourLocal { get; set; } = 8;
         public int DiscordTimezoneOffsetMinutes { get; set; } = 0;

@@ -140,6 +140,44 @@ public class UserSettingsControllerTests
     }
 
     [Fact]
+    public async Task UpdateUserSettings_StoresDiscordWebhookButOnlyReturnsPresenceFlag()
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        context.Users.Add(new User { Id = userId, UserName = "u", Email = "u@test.com" });
+        await context.SaveChangesAsync();
+
+        var controller = CreateController(context, userId);
+
+        // Set the webhook URL (a posting capability, so treated as a write-only secret).
+        var result = await controller.UpdateUserSettings(new UpdateUserSettingsDto
+        {
+            DiscordWebhookUrl = "  https://discord.example/webhook  ",
+            DiscordWeeklyReportEnabled = true
+        });
+
+        // The response exposes only a presence flag — the URL itself is never returned to the
+        // client (the DTO no longer has a DiscordWebhookUrl property).
+        var dto = Assert.IsType<UserSettingsDto>(result.Value);
+        Assert.True(dto.HasDiscordWebhookUrl);
+        Assert.True(dto.DiscordWeeklyReportEnabled);
+
+        // The trimmed URL is still stored server-side for the report sender.
+        var row = await context.UserSettings.AsNoTracking().SingleAsync();
+        Assert.Equal("https://discord.example/webhook", row.DiscordWebhookUrl);
+
+        // GET returns only the flag too.
+        var getResult = await controller.GetUserSettings();
+        Assert.True(Assert.IsType<UserSettingsDto>(getResult.Value).HasDiscordWebhookUrl);
+
+        // Clearing (empty string) flips the flag off and nulls the stored value.
+        var cleared = await controller.UpdateUserSettings(new UpdateUserSettingsDto { DiscordWebhookUrl = "" });
+        Assert.False(Assert.IsType<UserSettingsDto>(cleared.Value).HasDiscordWebhookUrl);
+        row = await context.UserSettings.AsNoTracking().SingleAsync();
+        Assert.Null(row.DiscordWebhookUrl);
+    }
+
+    [Fact]
     public async Task UpdateUserSettings_StoresHardcoverTokenButOnlyReturnsPresenceFlag()
     {
         await using var context = CreateContext();

@@ -96,8 +96,11 @@ namespace LinguaReadApi.Services
 
             if (_key == null)
             {
-                _logger.LogWarning("Azure Translator key is not configured; returning no translations.");
-                return translations;
+                // No per-user key and no server fallback: surface a clear error instead of
+                // silently returning empty (which the reader can't tell apart from "no result").
+                // The controller maps this to a 400 that points the user at Settings.
+                _logger.LogWarning("Azure Translator key is not configured.");
+                throw new TranslationProviderNotConfiguredException("Azure Translator");
             }
 
             // Normalise to bare lowercase codes (Azure accepts BCP-47, but lowercase ISO is safe

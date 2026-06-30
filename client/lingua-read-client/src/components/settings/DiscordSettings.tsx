@@ -2,10 +2,13 @@ import React from 'react';
 import { Form, Button, Alert, Row, Col, Card } from 'react-bootstrap';
 import type { Settings } from '../../contexts/SettingsContext';
 import type { SettingsChangeHandler } from './AppearanceSettings';
+import SecretKeyField from './SecretKeyField';
 
 interface DiscordSettingsProps {
   settings: Settings;
   handleChange: SettingsChangeHandler;
+  onSaveProviderKey: (field: string, value: string) => Promise<void> | void;
+  onClearProviderKey: (field: string) => Promise<void> | void;
   onSetBrowserTimezone: () => void;
   reportPeriod: string;
   setReportPeriod: (period: string) => void;
@@ -19,6 +22,8 @@ interface DiscordSettingsProps {
 const DiscordSettings = ({
   settings,
   handleChange,
+  onSaveProviderKey,
+  onClearProviderKey,
   onSetBrowserTimezone,
   reportPeriod,
   setReportPeriod,
@@ -41,20 +46,17 @@ const DiscordSettings = ({
           />
         </Form.Group>
 
-        <Form.Group className="mb-0" controlId="discordWebhookUrl">
-          <Form.Label>Discord Webhook URL</Form.Label>
-          <Form.Control
-            type="url"
-            name="discordWebhookUrl"
-            autoComplete="off"
-            placeholder="https://discord.com/api/webhooks/..."
-            value={settings.discordWebhookUrl}
-            onChange={handleChange}
-          />
-          <Form.Text className="text-muted">
-            Create a webhook in your Discord channel settings and paste the URL here.
-          </Form.Text>
-        </Form.Group>
+        <SecretKeyField
+          controlId="discordWebhookUrl"
+          label="Discord Webhook URL"
+          field="discordWebhookUrl"
+          hasValue={settings.hasDiscordWebhookUrl}
+          onSave={onSaveProviderKey}
+          onClear={onClearProviderKey}
+          placeholder="https://discord.com/api/webhooks/..."
+          className="mb-0"
+          helpText="Create a webhook in your Discord channel settings and paste the URL here."
+        />
       </div>
 
       <div className="settings-control-group">

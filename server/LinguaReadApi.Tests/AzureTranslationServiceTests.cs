@@ -19,15 +19,14 @@ namespace LinguaReadApi.Tests;
 public class AzureTranslationServiceTests
 {
     [Fact]
-    public async Task TranslateBatch_WithoutKey_ReturnsEmptyAndMakesNoRequest()
+    public async Task TranslateBatch_WithoutKey_ThrowsNotConfiguredAndMakesNoRequest()
     {
         var handler = new RecordingHandler();
         using var httpClient = new HttpClient(handler, disposeHandler: false);
         var service = CreateService(httpClient); // no config key, no UseCredentials
 
-        var result = await service.TranslateBatchAsync(new List<string> { "hello" }, "FR");
-
-        Assert.Empty(result);
+        await Assert.ThrowsAsync<TranslationProviderNotConfiguredException>(
+            () => service.TranslateBatchAsync(new List<string> { "hello" }, "FR"));
         Assert.Equal(0, handler.RequestCount);
     }
 
@@ -38,9 +37,8 @@ public class AzureTranslationServiceTests
         using var httpClient = new HttpClient(handler, disposeHandler: false);
         var service = CreateService(httpClient, configKey: "SET_IN_DOTENV");
 
-        var result = await service.TranslateBatchAsync(new List<string> { "hello" }, "FR");
-
-        Assert.Empty(result);
+        await Assert.ThrowsAsync<TranslationProviderNotConfiguredException>(
+            () => service.TranslateBatchAsync(new List<string> { "hello" }, "FR"));
         Assert.Equal(0, handler.RequestCount);
     }
 

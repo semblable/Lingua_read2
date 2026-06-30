@@ -49,7 +49,7 @@ const mockSettings = {
   showProgressStats: true,
   lineSpacing: 1.5,
   discordWeeklyReportEnabled: false,
-  discordWebhookUrl: '',
+  hasDiscordWebhookUrl: false,
   discordWeeklyReportDayOfWeek: 'Monday',
   discordWeeklyReportHourLocal: 8,
   discordTimezoneOffsetMinutes: 0,

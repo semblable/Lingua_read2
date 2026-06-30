@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Tokens;
 using System;
+using System.Security.Claims;
 using System.Text;
 using LinguaReadApi.Data;
 using LinguaReadApi.Services;
@@ -113,6 +114,10 @@ builder.Services.AddHostedService<WeeklyDiscordReportHostedService>();
 
 // Register word-level translation providers (DeepL default; Wiktionary, Azure Translator, and
 // Google Translate optional) and the per-user factory that selects between them.
+// NOTE: the provider services are intentionally Scoped. The factory applies per-user credentials
+// by mutating the resolved instance (UseAccessToken/UseCredentials/UseApiKey); a Scoped lifetime
+// gives one instance per request, so those secrets can't bleed across users. Do NOT make these
+// Singleton without first removing that mutable per-request state.
 builder.Services.AddScoped<ITranslationService, DeepLTranslationService>();
 builder.Services.AddScoped<DeepLTranslationService>();
 builder.Services.AddScoped<WiktionaryTranslationService>();
@@ -360,16 +365,61 @@ app.UseAuthentication();
 
 // User-uploaded content (audio lessons, audiobook tracks, EPUB images) lives under
 // wwwroot with guessable paths (e.g. /audiobooks/{bookId}/track_1.mp3). Static-file
-// middleware never consults authorization, so gate these prefixes explicitly. The web
-// client requests them same-origin, so the httpOnly auth cookie is sent automatically.
+// middleware never consults authorization, so gate these prefixes explicitly: require
+// authentication AND that the content belongs to the caller — otherwise any logged-in
+// user could read another user's media by guessing the path. The web client requests
+// them same-origin, so the httpOnly auth cookie is sent automatically.
 string[] protectedStaticPrefixes = ["/audio_lessons", "/audiobooks", "/epub_assets"];
+
+// audio_lessons/{userId}/file and epub_assets/{userId}/{bookId}/... embed the owner's user id in
+// the path (free check); audiobooks/{bookId}/... key on an int book id and need a DB lookup.
+static async Task<bool> CallerOwnsProtectedContentAsync(HttpContext context)
+{
+    if (!Guid.TryParse(context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value, out var userId))
+    {
+        return false;
+    }
+
+    var path = context.Request.Path;
+
+    if (path.StartsWithSegments("/audio_lessons", out var rest) ||
+        path.StartsWithSegments("/epub_assets", out rest))
+    {
+        return Guid.TryParse(FirstSegment(rest), out var ownerId) && ownerId == userId;
+    }
+
+    if (path.StartsWithSegments("/audiobooks", out rest))
+    {
+        if (!int.TryParse(FirstSegment(rest), out var bookId))
+        {
+            return false;
+        }
+        var db = context.RequestServices.GetRequiredService<AppDbContext>();
+        return await db.Books.AnyAsync(b => b.BookId == bookId && b.UserId == userId);
+    }
+
+    return false;
+
+    static string? FirstSegment(PathString rest) =>
+        rest.Value?.Split('/', StringSplitOptions.RemoveEmptyEntries) is { Length: > 0 } parts
+            ? parts[0]
+            : null;
+}
+
 app.Use(async (context, next) =>
 {
-    if (protectedStaticPrefixes.Any(prefix => context.Request.Path.StartsWithSegments(prefix)) &&
-        context.User.Identity?.IsAuthenticated != true)
+    if (protectedStaticPrefixes.Any(prefix => context.Request.Path.StartsWithSegments(prefix)))
     {
-        context.Response.StatusCode = StatusCodes.Status401Unauthorized;
-        return;
+        if (context.User.Identity?.IsAuthenticated != true)
+        {
+            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+            return;
+        }
+        if (!await CallerOwnsProtectedContentAsync(context))
+        {
+            context.Response.StatusCode = StatusCodes.Status403Forbidden;
+            return;
+        }
     }
     await next();
 });

@@ -41,7 +41,8 @@ export type Settings = {
   lineSpacing: number;
   paragraphSpacing: number;
   discordWeeklyReportEnabled: boolean;
-  discordWebhookUrl: string;
+  // Write-only secret: server returns only whether a webhook is configured, never the URL.
+  hasDiscordWebhookUrl: boolean;
   discordWeeklyReportDayOfWeek: string;
   discordWeeklyReportHourLocal: number;
   discordTimezoneOffsetMinutes: number;
@@ -121,7 +122,7 @@ const defaultSettings: Settings = {
   lineSpacing: 1.5,
   paragraphSpacing: 1.0,
   discordWeeklyReportEnabled: false,
-  discordWebhookUrl: '',
+  hasDiscordWebhookUrl: false,
   discordWeeklyReportDayOfWeek: 'Monday',
   discordWeeklyReportHourLocal: 8,
   discordTimezoneOffsetMinutes: 0,
@@ -225,7 +226,7 @@ const mergeSettings = (
     paragraphSpacing: d.paragraphSpacing || base.paragraphSpacing,
     discordWeeklyReportEnabled:
       d.discordWeeklyReportEnabled ?? base.discordWeeklyReportEnabled,
-    discordWebhookUrl: d.discordWebhookUrl || base.discordWebhookUrl,
+    hasDiscordWebhookUrl: d.hasDiscordWebhookUrl ?? base.hasDiscordWebhookUrl,
     discordWeeklyReportDayOfWeek:
       d.discordWeeklyReportDayOfWeek || base.discordWeeklyReportDayOfWeek,
     discordWeeklyReportHourLocal:

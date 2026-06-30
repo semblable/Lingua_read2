@@ -10,11 +10,29 @@ const STORE = 'pending-ops';
 export type PendingOp =
   | { type: 'srsReview'; payload: { cardId: number; grade: number } }
   | { type: 'wordStatusUpdate'; payload: { wordId: number; status: number } }
-  | { type: 'wordCreate'; payload: { textId: number; term: string; translation?: string; status?: number } };
+  | { type: 'wordCreate'; payload: { textId: number; term: string; translation?: string; status?: number } }
+  // Listening time. Additive on the server, so each op carries a clientEventId
+  // the backend dedupes on — a replay (or a request whose response was lost on a
+  // flaky link) can't double-count the seconds.
+  | { type: 'logListening'; payload: { languageId: number | string; durationSeconds: number; clientEventId: string } }
+  // Audio position. Last-write-wins; coalesced on enqueue (see coalesceKey) so
+  // only the newest position replays, and carries clientUpdatedAt so a late
+  // drain can't clobber a newer value the server already holds.
+  | { type: 'audiobookProgress'; payload: { bookId: number | string; trackId: number | null; position: number | null; clientUpdatedAt: string } }
+  | { type: 'audioLessonProgress'; payload: { textId: number | string; position: number | null; clientUpdatedAt: string } }
+  // Reading position. sentenceRead is already idempotent server-side (it dedupes
+  // by credited segment index), so it is appended, not coalesced. lastRead is
+  // last-write-wins and coalesced + timestamp-guarded like audio position.
+  | { type: 'sentenceRead'; payload: { textId: number; currentSegmentIndex?: number; segments: { segmentIndex: number; segmentText: string }[] } }
+  | { type: 'lastRead'; payload: { bookId: number | string; textId: number | string; clientUpdatedAt: string } };
 
 export type StoredPendingOp = PendingOp & {
   id: number;
   enqueuedAt: number;
+  // Set on last-write-wins ops. When present, enqueue() removes any existing
+  // pending op with the same key before adding, so the queue keeps only the
+  // newest value instead of dozens of stale 10s saves.
+  coalesceKey?: string;
 };
 
 export type SyncResult = {
@@ -27,6 +45,11 @@ export interface SyncHandlers {
   srsReview: (payload: PendingOp & { type: 'srsReview' }) => Promise<void>;
   wordStatusUpdate: (payload: PendingOp & { type: 'wordStatusUpdate' }) => Promise<void>;
   wordCreate: (payload: PendingOp & { type: 'wordCreate' }) => Promise<void>;
+  logListening: (payload: PendingOp & { type: 'logListening' }) => Promise<void>;
+  audiobookProgress: (payload: PendingOp & { type: 'audiobookProgress' }) => Promise<void>;
+  audioLessonProgress: (payload: PendingOp & { type: 'audioLessonProgress' }) => Promise<void>;
+  sentenceRead: (payload: PendingOp & { type: 'sentenceRead' }) => Promise<void>;
+  lastRead: (payload: PendingOp & { type: 'lastRead' }) => Promise<void>;
 }
 
 let dbPromise: Promise<IDBDatabase> | null = null;
@@ -51,14 +74,43 @@ function txStore(db: IDBDatabase, mode: IDBTransactionMode): IDBObjectStore {
   return db.transaction(STORE, mode).objectStore(STORE);
 }
 
-export async function enqueue(op: PendingOp): Promise<number> {
+export async function enqueue(op: PendingOp, coalesceKey?: string): Promise<number> {
   const db = await openDb();
   return new Promise<number>((resolve, reject) => {
     const store = txStore(db, 'readwrite');
-    const record: Omit<StoredPendingOp, 'id'> = { ...op, enqueuedAt: Date.now() };
-    const req = store.add(record);
-    req.onsuccess = () => resolve(req.result as number);
-    req.onerror = () => reject(req.error ?? new Error('Failed to enqueue offline op'));
+
+    const add = () => {
+      const record: Omit<StoredPendingOp, 'id'> = {
+        ...op,
+        enqueuedAt: Date.now(),
+        ...(coalesceKey ? { coalesceKey } : {})
+      };
+      const req = store.add(record);
+      req.onsuccess = () => resolve(req.result as number);
+      req.onerror = () => reject(req.error ?? new Error('Failed to enqueue offline op'));
+    };
+
+    if (!coalesceKey) {
+      add();
+      return;
+    }
+
+    // Coalesce: drop any existing pending op carrying the same key (within this
+    // same transaction) so only the newest value survives to replay. The queue
+    // is small, so a full cursor scan is cheap.
+    const cursorReq = store.openCursor();
+    cursorReq.onsuccess = () => {
+      const cursor = cursorReq.result;
+      if (cursor) {
+        if ((cursor.value as StoredPendingOp).coalesceKey === coalesceKey) {
+          cursor.delete();
+        }
+        cursor.continue();
+      } else {
+        add();
+      }
+    };
+    cursorReq.onerror = () => reject(cursorReq.error ?? new Error('Failed to coalesce offline queue'));
   });
 }
 
@@ -139,6 +191,16 @@ async function drainOnce(handlers: SyncHandlers): Promise<SyncResult> {
         await handlers.wordStatusUpdate(op);
       } else if (op.type === 'wordCreate') {
         await handlers.wordCreate(op);
+      } else if (op.type === 'logListening') {
+        await handlers.logListening(op);
+      } else if (op.type === 'audiobookProgress') {
+        await handlers.audiobookProgress(op);
+      } else if (op.type === 'audioLessonProgress') {
+        await handlers.audioLessonProgress(op);
+      } else if (op.type === 'sentenceRead') {
+        await handlers.sentenceRead(op);
+      } else if (op.type === 'lastRead') {
+        await handlers.lastRead(op);
       }
       await deleteOp(op.id);
       succeeded++;

@@ -2082,16 +2082,24 @@ namespace LinguaReadApi.Controllers
                 .Where(t => t.TextId == updateDto.TextId && t.BookId == id)
                 .FirstOrDefaultAsync();
                 
-            if (text == null) 
+            if (text == null)
             {
                 return BadRequest("The specified text does not belong to this book");
             }
-            
+
+            // Stale-replay guard: a late-draining offline last-read save must not
+            // clobber a newer marker the server already holds.
+            if (updateDto.ClientUpdatedAt.HasValue && book.LastReadAt.HasValue
+                && book.LastReadAt.Value > updateDto.ClientUpdatedAt.Value)
+            {
+                return NoContent();
+            }
+
             book.LastReadTextId = updateDto.TextId;
-            book.LastReadAt = DateTime.UtcNow;
-            
+            book.LastReadAt = updateDto.ClientUpdatedAt ?? DateTime.UtcNow;
+
             await _context.SaveChangesAsync();
-            
+
             return NoContent();
         }
 
@@ -3194,6 +3202,9 @@ namespace LinguaReadApi.Controllers
     {
         [Required]
         public int TextId { get; set; }
+        // Client timestamp for last-write-wins; lets a late offline replay be
+        // rejected when the server already holds a newer last-read marker.
+        public DateTime? ClientUpdatedAt { get; set; }
     }
 
     public class CompleteLessonDto

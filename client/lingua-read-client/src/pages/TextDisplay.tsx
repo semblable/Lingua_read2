@@ -17,6 +17,7 @@ import DownloadForOfflineButton from '../components/offline/DownloadForOfflineBu
 import './TextDisplay.css';
 import { SettingsContext } from '../contexts/SettingsContext';
 import { getLastBookmarkedSentence } from '../utils/bookmarks';
+import { isOfflineQueued } from '../utils/offline/enqueueIfOffline';
 import { useReaderBookmarks } from '../hooks/useReaderBookmarks';
 import { useReaderKeyboard, type WordStatus } from '../hooks/useReaderKeyboard';
 import { useWordTranslation } from '../hooks/useWordTranslation';
@@ -1400,7 +1401,9 @@ const TextDisplay = () => {
           }]
         });
 
-        if (!cancelled) {
+        // Offline: the op is queued for replay and there's no server response —
+        // keep the existing credited indices rather than clobbering them with [].
+        if (!cancelled && !isOfflineQueued(response)) {
           const typed = response as { creditedSegmentIndices?: number[] } | null;
           setCreditedSegmentIndices(typed?.creditedSegmentIndices || []);
         }

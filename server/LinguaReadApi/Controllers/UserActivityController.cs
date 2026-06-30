@@ -37,6 +37,8 @@ namespace LinguaReadApi.Controllers
         {
             public int LanguageId { get; set; }
             public int DurationSeconds { get; set; }
+            // Optional client-generated idempotency key (offline replay / lost-response dedup).
+            public string? ClientEventId { get; set; }
         }
 [HttpPost("logListening")]
 public async Task<IActionResult> LogListeningActivity([FromBody] LogListeningRequest request)
@@ -58,6 +60,21 @@ public async Task<IActionResult> LogListeningActivity([FromBody] LogListeningReq
     }
     _logger.LogInformation("Attempting to log activity for UserId: {UserId}", userId);
 
+    // Idempotency: an offline flush replayed from the client queue (or a request
+    // whose response was lost on a flaky link) carries a ClientEventId. If we've
+    // already recorded that event, ignore the duplicate so the additive
+    // TotalSecondsListened is never double-counted.
+    if (!string.IsNullOrEmpty(request.ClientEventId))
+    {
+        var alreadyLogged = await _context.UserActivities
+            .AnyAsync(ua => ua.UserId == userId && ua.ClientEventId == request.ClientEventId);
+        if (alreadyLogged)
+        {
+            _logger.LogInformation("Duplicate listening activity ignored for UserId: {UserId}, ClientEventId: {ClientEventId}", userId, request.ClientEventId);
+            return Ok(new { message = "Listening activity already logged (duplicate ignored)." });
+        }
+    }
+
     var activity = new UserActivity
     {
         UserId = userId,
@@ -65,13 +82,16 @@ public async Task<IActionResult> LogListeningActivity([FromBody] LogListeningReq
         ActivityType = "Listening", // Specific type for listening
         WordCount = 0, // Not applicable for listening
         ListeningDurationSeconds = request.DurationSeconds,
+        ClientEventId = request.ClientEventId,
         Timestamp = DateTime.UtcNow
     };
 
     try
     {
+        // Activity row + cumulative stats are committed in a single SaveChanges so
+        // a partial commit can't leave the seconds counted without the dedup row
+        // (or vice-versa).
         _context.UserActivities.Add(activity);
-        await _context.SaveChangesAsync();
 
         // --- Update UserLanguageStatistics cumulative listening time ---
         var stats = await _context.UserLanguageStatistics
@@ -102,6 +122,14 @@ public async Task<IActionResult> LogListeningActivity([FromBody] LogListeningReq
     }
     catch (DbUpdateException dbEx) // Catch specific DB exceptions first
     {
+        // Concurrent replay of the same ClientEventId loses the race on the unique
+        // index (Postgres 23505). That's still a successful dedup, not an error.
+        if (!string.IsNullOrEmpty(request.ClientEventId)
+            && dbEx.InnerException?.Message?.Contains("23505") == true)
+        {
+            _logger.LogInformation("Concurrent duplicate listening activity ignored for UserId: {UserId}, ClientEventId: {ClientEventId}", userId, request.ClientEventId);
+            return Ok(new { message = "Listening activity already logged (duplicate ignored)." });
+        }
         _logger.LogError(dbEx, "Database error saving listening activity for UserId: {UserId}. InnerException: {InnerMessage}", userId, dbEx.InnerException?.Message);
         return StatusCode(500, $"A database error occurred while saving the activity: {dbEx.InnerException?.Message ?? dbEx.Message}");
     }
@@ -562,6 +590,9 @@ private DateTime CalculateStartDate(string period)
             public int BookId { get; set; }
             public int? CurrentAudiobookTrackId { get; set; }
             public double? CurrentAudiobookPosition { get; set; }
+            // Client timestamp for last-write-wins; lets a late offline replay be
+            // rejected when the server already holds a newer position.
+            public DateTime? ClientUpdatedAt { get; set; }
         }
 
         [HttpPut("audiobookprogress")]
@@ -619,13 +650,23 @@ private DateTime CalculateStartDate(string period)
                         BookId = request.BookId,
                         CurrentAudiobookTrackId = request.CurrentAudiobookTrackId,
                         CurrentAudiobookPosition = request.CurrentAudiobookPosition,
-                        UpdatedAt = DateTime.UtcNow
+                        UpdatedAt = request.ClientUpdatedAt ?? DateTime.UtcNow
                     };
                     _context.UserBookProgresses.Add(progressRecord);
                     _logger.LogInformation("Added new UserBookProgress to context for UserId: {UserId}, BookId: {BookId}", userId, request.BookId);
                 }
                 else
                 {
+                    // Stale-replay guard: a late-draining offline save must not clobber
+                    // a newer position the server already holds. Compared on client
+                    // timestamps so it's robust to client/server clock skew.
+                    if (request.ClientUpdatedAt.HasValue && progressRecord.UpdatedAt > request.ClientUpdatedAt.Value)
+                    {
+                        _logger.LogInformation("Ignoring stale audiobook progress for UserId: {UserId}, BookId: {BookId} (client={ClientTs:o} <= stored={StoredTs:o}).", userId, request.BookId, request.ClientUpdatedAt.Value, progressRecord.UpdatedAt);
+                        _logger.LogInformation("---- END UpdateAudiobookProgress (Stale, ignored) ----");
+                        return Ok(new { message = "Audiobook progress is older than stored value; ignored." });
+                    }
+
                     _logger.LogInformation("Found existing UserBookProgress for UserId: {UserId}, BookId: {BookId}. Updating.", userId, request.BookId);
                     _logger.LogInformation("Updating UserBookProgress: Old TrackId={OldTrackId}, Old Position={OldPosition}", progressRecord.CurrentAudiobookTrackId, progressRecord.CurrentAudiobookPosition);
                     progressRecord.CurrentAudiobookTrackId = request.CurrentAudiobookTrackId;
@@ -634,8 +675,9 @@ private DateTime CalculateStartDate(string period)
                     {
                          progressRecord.CurrentAudiobookPosition = request.CurrentAudiobookPosition;
                     }
-                    // Always update the timestamp
-                    progressRecord.UpdatedAt = DateTime.UtcNow;
+                    // Stamp with the client time when supplied so cross-device
+                    // conflict resolution stays on a single clock basis.
+                    progressRecord.UpdatedAt = request.ClientUpdatedAt ?? DateTime.UtcNow;
                     _logger.LogInformation("Updating UserBookProgress: New TrackId={NewTrackId}, New Position={NewPosition}", progressRecord.CurrentAudiobookTrackId, progressRecord.CurrentAudiobookPosition);
                     // EF Core tracks changes on the found entity, no need for explicit Update call
                 }
@@ -752,6 +794,8 @@ private DateTime CalculateStartDate(string period)
             [Required]
             public int TextId { get; set; } // ID of the Text entity representing the lesson
             public double? CurrentPosition { get; set; } // Nullable position
+            // Client timestamp for last-write-wins; see UpdateAudiobookProgressRequest.
+            public DateTime? ClientUpdatedAt { get; set; }
         }
 
         [HttpPut("audiolessonprogress")]
@@ -795,17 +839,25 @@ private DateTime CalculateStartDate(string period)
                         UserId = userId,
                         TextId = request.TextId,
                         CurrentPosition = request.CurrentPosition, // Can be null
-                        UpdatedAt = DateTime.UtcNow
+                        UpdatedAt = request.ClientUpdatedAt ?? DateTime.UtcNow
                     };
                     _context.UserAudioLessonProgresses.Add(progressRecord);
                     _logger.LogInformation("Added new UserAudioLessonProgress to context for UserId: {UserId}, TextId: {TextId}", userId, request.TextId);
                 }
                 else
                 {
+                    // Stale-replay guard (see UpdateAudiobookProgress).
+                    if (request.ClientUpdatedAt.HasValue && progressRecord.UpdatedAt > request.ClientUpdatedAt.Value)
+                    {
+                        _logger.LogInformation("Ignoring stale audio lesson progress for UserId: {UserId}, TextId: {TextId} (client={ClientTs:o} <= stored={StoredTs:o}).", userId, request.TextId, request.ClientUpdatedAt.Value, progressRecord.UpdatedAt);
+                        _logger.LogInformation("---- END UpdateAudioLessonProgress (Stale, ignored) ----");
+                        return Ok(new { message = "Audio lesson progress is older than stored value; ignored." });
+                    }
+
                     _logger.LogInformation("Found existing UserAudioLessonProgress for UserId: {UserId}, TextId: {TextId}. Updating.", userId, request.TextId);
                     _logger.LogInformation("Updating UserAudioLessonProgress: Old Position={OldPosition}", progressRecord.CurrentPosition);
                     progressRecord.CurrentPosition = request.CurrentPosition; // Update position (can be null)
-                    progressRecord.UpdatedAt = DateTime.UtcNow;
+                    progressRecord.UpdatedAt = request.ClientUpdatedAt ?? DateTime.UtcNow;
                     _logger.LogInformation("Updating UserAudioLessonProgress: New Position={NewPosition}", progressRecord.CurrentPosition);
                 }
 

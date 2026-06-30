@@ -33,4 +33,57 @@ export const productionSyncHandlers: SyncHandlers = {
       }),
     });
   },
+  // Replay handlers reconstruct the request directly from the stored payload —
+  // they must NOT call the wrapped API helpers, which would mint a fresh
+  // clientEventId / clientUpdatedAt and defeat the server-side dedup + guard.
+  logListening: async ({ payload }) => {
+    await fetchApi('/activity/logListening', {
+      method: 'POST',
+      body: JSON.stringify({
+        languageId: payload.languageId,
+        durationSeconds: payload.durationSeconds,
+        clientEventId: payload.clientEventId,
+      }),
+    });
+  },
+  audiobookProgress: async ({ payload }) => {
+    await fetchApi('/activity/audiobookprogress', {
+      method: 'PUT',
+      body: JSON.stringify({
+        bookId: payload.bookId,
+        currentAudiobookTrackId: payload.trackId,
+        currentAudiobookPosition: payload.position,
+        clientUpdatedAt: payload.clientUpdatedAt,
+      }),
+    });
+  },
+  audioLessonProgress: async ({ payload }) => {
+    await fetchApi('/activity/audiolessonprogress', {
+      method: 'PUT',
+      body: JSON.stringify({
+        textId: payload.textId,
+        currentPosition: payload.position,
+        clientUpdatedAt: payload.clientUpdatedAt,
+      }),
+    });
+  },
+  sentenceRead: async ({ payload }) => {
+    await fetchApi('/activity/logSentenceRead', {
+      method: 'POST',
+      body: JSON.stringify({
+        textId: payload.textId,
+        currentSegmentIndex: payload.currentSegmentIndex,
+        segments: payload.segments,
+      }),
+    });
+  },
+  lastRead: async ({ payload }) => {
+    await fetchApi(`/books/${payload.bookId}/lastread`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        textId: payload.textId,
+        clientUpdatedAt: payload.clientUpdatedAt,
+      }),
+    });
+  },
 };

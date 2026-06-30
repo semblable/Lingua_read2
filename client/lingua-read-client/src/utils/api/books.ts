@@ -1,6 +1,7 @@
 import { fetchApi, uploadWithProgress } from './client';
 import type { UploadProgressCallback } from './client';
 import type { ResponseOf } from '../fetchApi';
+import { enqueueIfOffline } from '../offline/enqueueIfOffline';
 
 export type Book = ResponseOf<'/api/Books/{id}', 'get'>;
 export type BooksList = ResponseOf<'/api/Books', 'get'>;
@@ -128,10 +129,15 @@ export const updateLastRead = (
   bookId: number | string,
   textId: number | string
 ): Promise<unknown> => {
-  return fetchApi(`/books/${bookId}/lastread`, {
-    method: 'PUT',
-    body: JSON.stringify({ textId })
-  });
+  const clientUpdatedAt = new Date().toISOString();
+  return enqueueIfOffline(
+    { type: 'lastRead', payload: { bookId, textId, clientUpdatedAt } },
+    () => fetchApi(`/books/${bookId}/lastread`, {
+      method: 'PUT',
+      body: JSON.stringify({ textId, clientUpdatedAt })
+    }),
+    `lastRead:book:${bookId}`
+  );
 };
 
 export const completeLesson = (

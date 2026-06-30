@@ -8,7 +8,22 @@ import {
   clearAll,
   _closeDbForTests,
 } from '../utils/offline/syncQueue';
+import { enqueueIfOffline } from '../utils/offline/enqueueIfOffline';
 import { ApiError } from '../utils/api/client';
+
+// Full handler set including the listening/position/reading-progress ops added
+// for offline resilience. Tests override individual handlers as needed.
+const fullHandlers = (overrides = {}) => ({
+  srsReview: vi.fn(),
+  wordStatusUpdate: vi.fn(),
+  wordCreate: vi.fn(),
+  logListening: vi.fn(),
+  audiobookProgress: vi.fn(),
+  audioLessonProgress: vi.fn(),
+  sentenceRead: vi.fn(),
+  lastRead: vi.fn(),
+  ...overrides,
+});
 
 const setOnline = (value) => {
   Object.defineProperty(window.navigator, 'onLine', {
@@ -223,6 +238,87 @@ describe('syncQueue', () => {
     expect(result.attempted).toBe(1);
     // All three ops still queued (none dropped).
     expect(await pending()).toBe(3);
+  });
+
+  test('enqueue coalesces ops sharing a coalesceKey, keeping only the newest', async () => {
+    await enqueue(
+      { type: 'audiobookProgress', payload: { bookId: 1, trackId: 10, position: 5, clientUpdatedAt: 'a' } },
+      'audiobookProgress:book:1'
+    );
+    await enqueue(
+      { type: 'audiobookProgress', payload: { bookId: 1, trackId: 10, position: 42, clientUpdatedAt: 'b' } },
+      'audiobookProgress:book:1'
+    );
+    // A different book has its own key and must not be coalesced away.
+    await enqueue(
+      { type: 'audiobookProgress', payload: { bookId: 2, trackId: 20, position: 7, clientUpdatedAt: 'c' } },
+      'audiobookProgress:book:2'
+    );
+
+    const ops = await listPending();
+    expect(ops).toHaveLength(2);
+    const book1 = ops.find((o) => o.payload.bookId === 1);
+    expect(book1.payload.position).toBe(42);
+  });
+
+  test('logListening ops are appended (not coalesced) and replay in order', async () => {
+    await enqueue({ type: 'logListening', payload: { languageId: 3, durationSeconds: 10, clientEventId: 'e1' } });
+    await enqueue({ type: 'logListening', payload: { languageId: 3, durationSeconds: 10, clientEventId: 'e2' } });
+    expect(await pending()).toBe(2);
+
+    const seen = [];
+    const handlers = fullHandlers({
+      logListening: vi.fn(async (op) => { seen.push(op.payload.clientEventId); }),
+    });
+    const result = await drain(handlers);
+    expect(result).toEqual({ attempted: 2, succeeded: 2, failed: 0 });
+    expect(seen).toEqual(['e1', 'e2']);
+    expect(await pending()).toBe(0);
+  });
+
+  test('drain dispatches each new op type to the matching handler', async () => {
+    await enqueue({ type: 'logListening', payload: { languageId: 1, durationSeconds: 10, clientEventId: 'x' } });
+    await enqueue(
+      { type: 'audiobookProgress', payload: { bookId: 1, trackId: 1, position: 1, clientUpdatedAt: 'a' } },
+      'audiobookProgress:book:1'
+    );
+    await enqueue(
+      { type: 'audioLessonProgress', payload: { textId: 5, position: 2, clientUpdatedAt: 'a' } },
+      'audioLessonProgress:lesson:5'
+    );
+    await enqueue({ type: 'sentenceRead', payload: { textId: 5, currentSegmentIndex: 0, segments: [{ segmentIndex: 0, segmentText: 'hi' }] } });
+    await enqueue(
+      { type: 'lastRead', payload: { bookId: 1, textId: 9, clientUpdatedAt: 'a' } },
+      'lastRead:book:1'
+    );
+
+    const handlers = fullHandlers();
+    await drain(handlers);
+
+    expect(handlers.logListening).toHaveBeenCalledTimes(1);
+    expect(handlers.audiobookProgress).toHaveBeenCalledTimes(1);
+    expect(handlers.audioLessonProgress).toHaveBeenCalledTimes(1);
+    expect(handlers.sentenceRead).toHaveBeenCalledTimes(1);
+    expect(handlers.lastRead).toHaveBeenCalledTimes(1);
+    expect(await pending()).toBe(0);
+  });
+
+  test('enqueueIfOffline forwards coalesceKey so offline position saves coalesce', async () => {
+    setOnline(false);
+    await enqueueIfOffline(
+      { type: 'audiobookProgress', payload: { bookId: 1, trackId: 1, position: 1, clientUpdatedAt: 'a' } },
+      async () => 'ran',
+      'audiobookProgress:book:1'
+    );
+    await enqueueIfOffline(
+      { type: 'audiobookProgress', payload: { bookId: 1, trackId: 1, position: 99, clientUpdatedAt: 'b' } },
+      async () => 'ran',
+      'audiobookProgress:book:1'
+    );
+
+    expect(await pending()).toBe(1);
+    const ops = await listPending();
+    expect(ops[0].payload.position).toBe(99);
   });
 
   test('clearAll empties the queue', async () => {

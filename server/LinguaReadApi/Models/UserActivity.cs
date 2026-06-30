@@ -28,6 +28,13 @@ namespace LinguaReadApi.Models
         // Duration for listening activities
         public int? ListeningDurationSeconds { get; set; }
 
+        // Client-generated idempotency key. Set by offline listening flushes so a
+        // queued replay (or a request whose response was lost on a flaky link)
+        // can be deduped instead of double-counting the seconds. Nullable +
+        // filtered-unique on (UserId, ClientEventId) so legacy rows are unaffected.
+        [StringLength(64)]
+        public string? ClientEventId { get; set; }
+
         // Audiobook progress tracking is handled in UserSettings model
         // public int? CurrentAudiobookTrackId { get; set; } // Foreign key to AudiobookTrack
         // public double? CurrentAudiobookPosition { get; set; } // Position in seconds within the current track

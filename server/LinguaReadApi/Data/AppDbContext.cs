@@ -185,6 +185,16 @@ namespace LinguaReadApi.Data
                 .HasIndex(a => new { a.UserId, a.LanguageId, a.Timestamp })
                 .HasDatabaseName("IX_UserActivities_UserId_LanguageId_Timestamp");
 
+            // Idempotency guard for offline listening-activity replays: a given
+            // (UserId, ClientEventId) may be logged at most once. Filtered so the
+            // many rows without a client event id (manual/reading activity, legacy
+            // listening rows) are not constrained.
+            modelBuilder.Entity<UserActivity>()
+                .HasIndex(a => new { a.UserId, a.ClientEventId })
+                .IsUnique()
+                .HasDatabaseName("IX_UserActivities_UserId_ClientEventId")
+                .HasFilter("\"ClientEventId\" IS NOT NULL");
+
             // User - UserSettings: One-to-One
             modelBuilder.Entity<UserSettings>()
                 .HasOne(us => us.User)

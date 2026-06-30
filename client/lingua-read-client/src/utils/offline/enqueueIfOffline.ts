@@ -18,13 +18,17 @@ function isNetworkFailure(error: unknown): boolean {
  * the synthetic success marker `{ offline: true, queuedOp: op }`. Application
  * errors (ApiError) and unexpected exceptions still propagate so callers can
  * surface them in the UI.
+ *
+ * `coalesceKey` is forwarded to enqueue() for last-write-wins ops (audio
+ * position, last-read) so the queue retains only the newest value per key.
  */
 export async function enqueueIfOffline<T>(
   op: PendingOp,
-  run: () => Promise<T>
+  run: () => Promise<T>,
+  coalesceKey?: string
 ): Promise<T | { offline: true; queuedOp: PendingOp }> {
   if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-    await enqueue(op);
+    await enqueue(op, coalesceKey);
     return { offline: true, queuedOp: op };
   }
 
@@ -32,7 +36,7 @@ export async function enqueueIfOffline<T>(
     return await run();
   } catch (err) {
     if (isNetworkFailure(err)) {
-      await enqueue(op);
+      await enqueue(op, coalesceKey);
       return { offline: true, queuedOp: op };
     }
     throw err;

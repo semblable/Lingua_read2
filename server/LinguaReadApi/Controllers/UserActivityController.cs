@@ -123,9 +123,11 @@ public async Task<IActionResult> LogListeningActivity([FromBody] LogListeningReq
     catch (DbUpdateException dbEx) // Catch specific DB exceptions first
     {
         // Concurrent replay of the same ClientEventId loses the race on the unique
-        // index (Postgres 23505). That's still a successful dedup, not an error.
+        // index (Postgres 23505 = unique_violation). That's still a successful dedup,
+        // not an error. Match on SqlState rather than a message substring so the
+        // check doesn't depend on the driver's message formatting.
         if (!string.IsNullOrEmpty(request.ClientEventId)
-            && dbEx.InnerException?.Message?.Contains("23505") == true)
+            && dbEx.InnerException is Npgsql.PostgresException pgEx && pgEx.SqlState == "23505")
         {
             _logger.LogInformation("Concurrent duplicate listening activity ignored for UserId: {UserId}, ClientEventId: {ClientEventId}", userId, request.ClientEventId);
             return Ok(new { message = "Listening activity already logged (duplicate ignored)." });
@@ -638,6 +640,14 @@ private DateTime CalculateStartDate(string period)
                 //     .OrderByDescending(ua => ua.Timestamp)
                 //     .FirstOrDefaultAsync();
 
+                // Clamp the client timestamp to server "now" so a fast client clock
+                // can't persist a future UpdatedAt (which would reject later legitimate
+                // saves as "stale"). Client time is still the comparison basis below.
+                var nowUtc = DateTime.UtcNow;
+                var effectiveClientTs = request.ClientUpdatedAt.HasValue && request.ClientUpdatedAt.Value <= nowUtc
+                    ? request.ClientUpdatedAt.Value
+                    : nowUtc;
+
                 // --- Use UserBookProgress table ---
                 var progressRecord = await _context.UserBookProgresses.FindAsync(userId, request.BookId);
 
@@ -650,7 +660,7 @@ private DateTime CalculateStartDate(string period)
                         BookId = request.BookId,
                         CurrentAudiobookTrackId = request.CurrentAudiobookTrackId,
                         CurrentAudiobookPosition = request.CurrentAudiobookPosition,
-                        UpdatedAt = request.ClientUpdatedAt ?? DateTime.UtcNow
+                        UpdatedAt = effectiveClientTs
                     };
                     _context.UserBookProgresses.Add(progressRecord);
                     _logger.LogInformation("Added new UserBookProgress to context for UserId: {UserId}, BookId: {BookId}", userId, request.BookId);
@@ -660,7 +670,7 @@ private DateTime CalculateStartDate(string period)
                     // Stale-replay guard: a late-draining offline save must not clobber
                     // a newer position the server already holds. Compared on client
                     // timestamps so it's robust to client/server clock skew.
-                    if (request.ClientUpdatedAt.HasValue && progressRecord.UpdatedAt > request.ClientUpdatedAt.Value)
+                    if (request.ClientUpdatedAt.HasValue && progressRecord.UpdatedAt > effectiveClientTs)
                     {
                         _logger.LogInformation("Ignoring stale audiobook progress for UserId: {UserId}, BookId: {BookId} (client={ClientTs:o} <= stored={StoredTs:o}).", userId, request.BookId, request.ClientUpdatedAt.Value, progressRecord.UpdatedAt);
                         _logger.LogInformation("---- END UpdateAudiobookProgress (Stale, ignored) ----");
@@ -675,9 +685,10 @@ private DateTime CalculateStartDate(string period)
                     {
                          progressRecord.CurrentAudiobookPosition = request.CurrentAudiobookPosition;
                     }
-                    // Stamp with the client time when supplied so cross-device
-                    // conflict resolution stays on a single clock basis.
-                    progressRecord.UpdatedAt = request.ClientUpdatedAt ?? DateTime.UtcNow;
+                    // Stamp with the (clamped) client time so cross-device conflict
+                    // resolution stays on a single clock basis without persisting a
+                    // future timestamp.
+                    progressRecord.UpdatedAt = effectiveClientTs;
                     _logger.LogInformation("Updating UserBookProgress: New TrackId={NewTrackId}, New Position={NewPosition}", progressRecord.CurrentAudiobookTrackId, progressRecord.CurrentAudiobookPosition);
                     // EF Core tracks changes on the found entity, no need for explicit Update call
                 }
@@ -691,8 +702,10 @@ private DateTime CalculateStartDate(string period)
             }
             catch (DbUpdateException dbEx) // Catch specific DB exceptions
             {
-                // Check for Postgres Unique Constraint Violation (Code 23505)
-                if (dbEx.InnerException != null && dbEx.InnerException.Message.Contains("23505"))
+                // Check for Postgres Unique Constraint Violation (Code 23505). Match
+                // on SqlState rather than a message substring so the check doesn't
+                // depend on the driver's message formatting.
+                if (dbEx.InnerException is Npgsql.PostgresException pgEx && pgEx.SqlState == "23505")
                 {
                     _logger.LogWarning("Duplicate key error (race condition) detected for UserId: {UserId}, BookId: {BookId}. Retrying as UPDATE.", userId, request.BookId);
                     
@@ -829,6 +842,13 @@ private DateTime CalculateStartDate(string period)
 
             try
             {
+                // Clamp the client timestamp to server "now" (see UpdateAudiobookProgress)
+                // so a fast client clock can't persist a future UpdatedAt.
+                var nowUtc = DateTime.UtcNow;
+                var effectiveClientTs = request.ClientUpdatedAt.HasValue && request.ClientUpdatedAt.Value <= nowUtc
+                    ? request.ClientUpdatedAt.Value
+                    : nowUtc;
+
                 var progressRecord = await _context.UserAudioLessonProgresses.FindAsync(userId, request.TextId);
 
                 if (progressRecord == null)
@@ -839,7 +859,7 @@ private DateTime CalculateStartDate(string period)
                         UserId = userId,
                         TextId = request.TextId,
                         CurrentPosition = request.CurrentPosition, // Can be null
-                        UpdatedAt = request.ClientUpdatedAt ?? DateTime.UtcNow
+                        UpdatedAt = effectiveClientTs
                     };
                     _context.UserAudioLessonProgresses.Add(progressRecord);
                     _logger.LogInformation("Added new UserAudioLessonProgress to context for UserId: {UserId}, TextId: {TextId}", userId, request.TextId);
@@ -847,7 +867,7 @@ private DateTime CalculateStartDate(string period)
                 else
                 {
                     // Stale-replay guard (see UpdateAudiobookProgress).
-                    if (request.ClientUpdatedAt.HasValue && progressRecord.UpdatedAt > request.ClientUpdatedAt.Value)
+                    if (request.ClientUpdatedAt.HasValue && progressRecord.UpdatedAt > effectiveClientTs)
                     {
                         _logger.LogInformation("Ignoring stale audio lesson progress for UserId: {UserId}, TextId: {TextId} (client={ClientTs:o} <= stored={StoredTs:o}).", userId, request.TextId, request.ClientUpdatedAt.Value, progressRecord.UpdatedAt);
                         _logger.LogInformation("---- END UpdateAudioLessonProgress (Stale, ignored) ----");
@@ -857,7 +877,7 @@ private DateTime CalculateStartDate(string period)
                     _logger.LogInformation("Found existing UserAudioLessonProgress for UserId: {UserId}, TextId: {TextId}. Updating.", userId, request.TextId);
                     _logger.LogInformation("Updating UserAudioLessonProgress: Old Position={OldPosition}", progressRecord.CurrentPosition);
                     progressRecord.CurrentPosition = request.CurrentPosition; // Update position (can be null)
-                    progressRecord.UpdatedAt = request.ClientUpdatedAt ?? DateTime.UtcNow;
+                    progressRecord.UpdatedAt = effectiveClientTs;
                     _logger.LogInformation("Updating UserAudioLessonProgress: New Position={NewPosition}", progressRecord.CurrentPosition);
                 }
 
@@ -868,8 +888,10 @@ private DateTime CalculateStartDate(string period)
             }
             catch (DbUpdateException dbEx)
             {
-                // Check for Postgres Unique Constraint Violation (Code 23505)
-                if (dbEx.InnerException != null && dbEx.InnerException.Message.Contains("23505"))
+                // Check for Postgres Unique Constraint Violation (Code 23505). Match
+                // on SqlState rather than a message substring so the check doesn't
+                // depend on the driver's message formatting.
+                if (dbEx.InnerException is Npgsql.PostgresException pgEx && pgEx.SqlState == "23505")
                 {
                     _logger.LogWarning("Duplicate key error (race condition) detected for UserId: {UserId}, TextId: {TextId}. Retrying as UPDATE.", userId, request.TextId);
                     

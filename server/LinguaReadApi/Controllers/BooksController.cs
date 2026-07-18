@@ -2087,16 +2087,26 @@ namespace LinguaReadApi.Controllers
                 return BadRequest("The specified text does not belong to this book");
             }
 
+            // Clamp the client timestamp to server "now" so a device with a fast
+            // clock can't persist a future LastReadAt — that would poison
+            // LastActivity/ordering and silently reject subsequent legitimate saves
+            // until wall-clock time catches up. Client time is still used for the
+            // stale-vs-fresh comparison below.
+            var nowUtc = DateTime.UtcNow;
+            var effectiveClientTs = updateDto.ClientUpdatedAt.HasValue && updateDto.ClientUpdatedAt.Value <= nowUtc
+                ? updateDto.ClientUpdatedAt.Value
+                : nowUtc;
+
             // Stale-replay guard: a late-draining offline last-read save must not
             // clobber a newer marker the server already holds.
             if (updateDto.ClientUpdatedAt.HasValue && book.LastReadAt.HasValue
-                && book.LastReadAt.Value > updateDto.ClientUpdatedAt.Value)
+                && book.LastReadAt.Value > effectiveClientTs)
             {
                 return NoContent();
             }
 
             book.LastReadTextId = updateDto.TextId;
-            book.LastReadAt = updateDto.ClientUpdatedAt ?? DateTime.UtcNow;
+            book.LastReadAt = effectiveClientTs;
 
             await _context.SaveChangesAsync();
 

@@ -12,7 +12,7 @@ This document provides a comprehensive reference for configuring **LinguaRead**.
     *   [Security & Authentication](#2-security--authentication)
     *   [Translation & AI Provider Keys](#3-translation--ai-provider-keys)
     *   [Networking & Integration](#4-networking--integration)
-    *   [Docker Image Repository / Custom Tags](#5-docker-image-repository--custom-tags)
+    *   [Docker Image Tags](#5-docker-image-tags)
 *   [In-App User Settings](#-in-app-user-settings)
     *   [UI Preferences](#1-ui-preferences)
     *   [Reading Preferences](#2-reading-preferences)
@@ -74,15 +74,15 @@ Adjust security bounds and Discord scheduler configurations.
 | `DISCORD_WEEKLY_REPORT_HOUR_UTC` | `8` | UTC hour (0-23) to run the Discord background reporting task. |
 | `DISCORD_WEEKLY_REPORT_DRY_RUN` | `false` | If `true`, runs the background service without sending actual Discord HTTP calls. |
 | `DISCORD_WEEKLY_REPORT_POLL_MINUTES` | `30` | Interval in minutes for checking the scheduling queue. |
+| `HEALTHCHECK_URL` | *None* | **Optional.** healthchecks.io-style ping URL for the backup sidecar; `backup.sh` pings it on start/success/failure so silent backup failures raise an alert. |
 
 ---
 
-### 5. Docker Image Repository / Custom Tags
-Used when fetching pre-built images from GitHub Container Registry (GHCR) instead of building them locally.
+### 5. Docker Image Tags
+Used when fetching pre-built images from GitHub Container Registry (GHCR) instead of building them locally. The deploy workflows set these automatically to the immutable `sha-<short7>` tag of the commit being deployed.
 
 | Variable Name | Default Value | Description |
 | :--- | :--- | :--- |
-| `GHCR_REPO` | `semblable/lingua-read-nginx` | Target repository prefix for pre-compiled Docker images. |
 | `API_IMAGE_TAG` | `latest` | Tag/version of the API container image to pull. |
 | `NGINX_IMAGE_TAG` | `latest` | Tag/version of the Nginx frontend container image to pull. |
 | `BACKUP_IMAGE_TAG` | `latest` | Tag/version of the backup container image to pull. |

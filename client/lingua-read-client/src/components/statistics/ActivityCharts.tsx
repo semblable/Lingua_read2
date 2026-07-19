@@ -126,21 +126,23 @@ const ActivityCharts = ({
   const hasListeningComparison = showComparison && prevListeningByDate.length > 0;
   const hasKnownWordsComparison = showComparison && prevKnownWordsByDate.length > 0;
 
-  const readingSeries = useMemo(() => {
+  // Collapse the Point[] | AnyActivityRow[] union up front — recharts 3's
+  // ChartData<T> generic rejects a union of two array types as `data`.
+  const readingSeries = useMemo<AnyActivityRow[]>(() => {
     const cur = isCumulative ? toCumulative(readingByDate, 'wordsRead') : readingByDate;
     if (!hasReadingComparison) return cur;
     const prev = isCumulative ? toCumulative(prevReadingByDate, 'wordsRead') : prevReadingByDate;
     return buildComparisonSeries(cur, prev, 'wordsRead', 'previousWordsRead');
   }, [hasReadingComparison, readingByDate, prevReadingByDate, isCumulative]);
 
-  const listeningSeries = useMemo(() => {
+  const listeningSeries = useMemo<AnyActivityRow[]>(() => {
     const cur = isCumulative ? toCumulative(listeningByDate, 'minutesListened') : listeningByDate;
     if (!hasListeningComparison) return cur;
     const prev = isCumulative ? toCumulative(prevListeningByDate, 'minutesListened') : prevListeningByDate;
     return buildComparisonSeries(cur, prev, 'minutesListened', 'previousMinutesListened');
   }, [hasListeningComparison, listeningByDate, prevListeningByDate, isCumulative]);
 
-  const knownWordsSeries = useMemo(() => {
+  const knownWordsSeries = useMemo<AnyActivityRow[]>(() => {
     const cur = isCumulative ? toCumulative(knownWordsByDate, 'knownWords') : knownWordsByDate;
     if (!hasKnownWordsComparison) return cur;
     const prev = isCumulative ? toCumulative(prevKnownWordsByDate, 'knownWords') : prevKnownWordsByDate;

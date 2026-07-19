@@ -14,10 +14,10 @@ export type { SegmentPlaybackRequest };
 // Re-exported here so consumers (SentenceModeView, etc.) keep working.
 export type { ReaderSegment, SrtSentenceSegment, SentenceSegment } from '../utils/readerText';
 
-// react-window's FixedSizeList ref shape we actually use. Typed against the
-// library's FixedSizeList directly so consumers can pass a real list ref.
-import type { FixedSizeList } from 'react-window';
-type ListLikeRef = FixedSizeList | null;
+// react-window's imperative list API we actually use. Typed against the
+// library directly so consumers can pass a real list ref.
+import type { ListImperativeAPI } from 'react-window';
+type ListLikeRef = ListImperativeAPI | null;
 
 export type UseReaderAudioSyncArgs = {
   isAudioLesson: boolean;
@@ -271,7 +271,7 @@ export const useReaderAudioSync = ({
       }
       autoScrollRafRef.current = requestAnimationFrame(() => {
         if (!snapIsMobile && snapListRef?.current && currentLineIndex !== -1) {
-          snapListRef.current.scrollToItem(currentLineIndex, 'center');
+          snapListRef.current.scrollToRow({ index: currentLineIndex, align: 'center' });
           return;
         }
         if (snapIsMobile) {

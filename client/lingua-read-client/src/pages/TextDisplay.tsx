@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback, useRef, useMemo, useContext } from 'react';
 import { Container, Card, Spinner, Alert, Button, Modal, Row, Col, Badge, ProgressBar, OverlayTrigger, Tooltip } from 'react-bootstrap';
 import { useParams, useNavigate } from 'react-router-dom';
-import type { FixedSizeList } from 'react-window';
+import type { ListImperativeAPI } from 'react-window';
 import {
   getText, getTextSrt, getWordLinkingStatus, createWord, updateWord, deleteWord, updateLastRead, completeLesson, getBook,
   translateText, translateSentence, translateFullText, translateSelectionWithContext, updateUserSettings,
@@ -46,7 +46,7 @@ const TextDisplay = () => {
   const navigate = useNavigate();
   const textContentRef = useRef<HTMLDivElement | null>(null);
   const readingContainerRef = useRef<HTMLDivElement | null>(null);
-  const listRef = useRef<FixedSizeList | null>(null);
+  const listRef = useRef<ListImperativeAPI | null>(null);
   const autoTranslateTriggeredRef = useRef(false);
   const autoTranslateTextIdRef = useRef<number | string | null>(null);
 

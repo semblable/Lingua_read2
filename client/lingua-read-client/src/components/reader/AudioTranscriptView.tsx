@@ -1,17 +1,10 @@
 import React, { useRef } from 'react';
-import { FixedSizeList as List } from 'react-window';
-import TranscriptLine from './TranscriptLine';
+import { List, type ListImperativeAPI } from 'react-window';
+import TranscriptLine, { type TranscriptRowProps } from './TranscriptLine';
 import type { Settings } from '../../contexts/SettingsContext';
 import type { SrtEntry } from '../../utils/srtParser';
 
-type TranscriptItemData = {
-  lines: SrtEntry[];
-  currentLineId: number | string | null;
-  processLineContent: (text: string) => React.ReactNode;
-  handleLineClick: (startTime: number) => void;
-  getFontStyling: (lineSpacing: number) => React.CSSProperties;
-  currentLineSpacing: number;
-};
+type TranscriptItemData = Omit<TranscriptRowProps, 'hasSelection'>;
 
 interface AudioTranscriptViewProps {
   isMobile: boolean;
@@ -26,7 +19,7 @@ interface AudioTranscriptViewProps {
   textContentRef: React.RefObject<HTMLDivElement>;
   readingContainerRef: React.RefObject<HTMLDivElement>;
   itemData: TranscriptItemData;
-  listRef: React.RefObject<List>;
+  listRef: React.RefObject<ListImperativeAPI>;
 }
 
 const AudioTranscriptView = React.memo(({
@@ -120,17 +113,14 @@ const AudioTranscriptView = React.memo(({
       onMouseUp={handleWordSelection}
     >
       <List
-        height={listHeight}
-        itemCount={srtLines.length}
-        itemSize={calculatedItemSize}
-        width="100%"
-        itemData={desktopItemData}
+        rowComponent={TranscriptLine}
+        rowCount={srtLines.length}
+        rowHeight={calculatedItemSize}
+        rowProps={desktopItemData}
         overscanCount={5}
-        ref={listRef}
-        style={{ paddingRight: '15px', paddingLeft: '15px' }}
-      >
-        {TranscriptLine}
-      </List>
+        listRef={listRef}
+        style={{ height: listHeight, paddingRight: '15px', paddingLeft: '15px' }}
+      />
     </div>
   );
 });

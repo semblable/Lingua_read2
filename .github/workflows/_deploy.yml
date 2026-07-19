@@ -56,10 +56,10 @@ jobs:
           fi
 
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Copy docker-compose and config files via SCP
-        uses: appleboy/scp-action@v0.1.7
+        uses: appleboy/scp-action@v1.0.0
         with:
           host: ${{ env.TARGET_HOST }}
           username: ${{ env.TARGET_USER }}
@@ -68,7 +68,7 @@ jobs:
           target: ${{ env.TARGET_PATH }}
 
       - name: SSH deploy
-        uses: appleboy/ssh-action@v1.0.3
+        uses: appleboy/ssh-action@v1.2.5
         with:
           host: ${{ env.TARGET_HOST }}
           username: ${{ env.TARGET_USER }}

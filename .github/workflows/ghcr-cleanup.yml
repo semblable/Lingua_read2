@@ -1,0 +1,34 @@
+name: GHCR Cleanup
+
+# Monthly retention for GHCR image versions: keeps the newest 30 tagged
+# versions per package plus everything tagged latest/prod/buildcache, and
+# removes untagged manifests. Run manually with dry_run=true first to preview.
+
+on:
+  schedule:
+    - cron: "0 5 1 * *"   # 1st of the month, 05:00 UTC
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Preview only (no deletions)"
+        type: boolean
+        default: false
+
+permissions:
+  packages: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Clean up old image versions
+        uses: dataaxiom/ghcr-cleanup-action@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          packages: lingua-read-api,lingua-read-nginx,lingua-read-backup
+          exclude-tags: latest,prod,buildcache
+          keep-n-tagged: 30
+          delete-untagged: true
+          dry-run: ${{ inputs.dry_run || false }}
+          validate: true

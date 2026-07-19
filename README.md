@@ -72,7 +72,7 @@ Language settings influence:
 
 ## Technology Stack
 
-*   **Frontend:** React (using Create React App)
+*   **Frontend:** React + TypeScript (built with Vite)
 *   **Backend:** .NET 10 (C#)
 *   **Database:** PostgreSQL
 *   **APIs:** Google Gemini DeepL
@@ -112,32 +112,14 @@ cd Lingua_read2
 All remaining commands are run from this folder (the one containing `docker-compose.yml`).
 
 #### Step 2 — Create the `.env` file
-Create a file named exactly `.env` in this folder. In PowerShell you can open a blank one with:
+Copy the provided template to a file named exactly `.env`:
 
 ```powershell
+Copy-Item .env.example .env
 notepad .env
 ```
 
-Paste the following template, then change `POSTGRES_PASSWORD` and `JWT_KEY` to your own secure values:
-
-```env
-# 1. PostgreSQL Database Configuration
-POSTGRES_DB=linguaread_db
-POSTGRES_USER=linguaread_user
-POSTGRES_PASSWORD=your_secure_postgres_password_here
-
-# 2. JWT Authentication Secret (must be a random 32+ character string)
-JWT_KEY="replace_this_with_your_very_long_and_secure_random_jwt_key"
-JWT_ISSUER=LinguaReadApi
-JWT_AUDIENCE=LinguaReadClient
-
-# 3. Optional: set a login password on first startup (otherwise use the in-app setup page)
-LINGUAREAD_PASSWORD=
-
-# 4. Optional Third-Party API Keys (leave blank to disable that feature)
-DEEPL_API_KEY=
-GEMINI_API_KEY=
-```
+Then change at least `POSTGRES_PASSWORD` and `JWT_KEY` to your own secure values (everything else works with the defaults).
 
 > [!TIP]
 > **Generate a secure `JWT_KEY`:**

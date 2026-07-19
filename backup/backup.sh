@@ -1,5 +1,20 @@
 #!/bin/bash
 set -e
+
+# Optional healthchecks.io-style heartbeat (set HEALTHCHECK_URL in .env; empty = disabled).
+# /start marks the run begun; a bare ping marks success; /fail is sent by the EXIT trap
+# on any error. The monitor's grace period also catches this script never running at all.
+HC_URL="${HEALTHCHECK_URL:-}"
+hc() { [ -n "$HC_URL" ] && curl -fsS -m 10 --retry 3 "$HC_URL$1" >/dev/null 2>&1 || true; }
+on_exit() {
+  code=$1
+  if [ "$code" -ne 0 ]; then
+    hc /fail
+  fi
+}
+trap 'on_exit $?' EXIT
+hc /start
+
 TIMESTAMP=$(date +%Y%m%d-%H%M%S)
 YEAR=$(date +%Y)
 MONTH=$(date +%m)
@@ -39,3 +54,4 @@ find "$BACKUP_DIR/logs"   -name "*.log"    -mtime +7 -delete
 find "$BACKUP_DIR/errors" -name "*.err"    -mtime +7 -delete
 
 echo "=== Backup complete: $TIMESTAMP ==="
+hc ""

@@ -21,7 +21,7 @@ services:
         max-file: "5"
 
   api:
-    image: ghcr.io/${GHCR_REPO:-semblable/lingua-read-api}:${API_IMAGE_TAG:-latest}
+    image: ghcr.io/semblable/lingua-read-api:${API_IMAGE_TAG:-latest}
     build: ./server/LinguaReadApi
     restart: unless-stopped
     depends_on:
@@ -77,14 +77,22 @@ services:
         max-file: "10"
 
   nginx:
-    image: ghcr.io/${GHCR_REPO:-semblable/lingua-read-nginx}:${NGINX_IMAGE_TAG:-latest}
+    image: ghcr.io/semblable/lingua-read-nginx:${NGINX_IMAGE_TAG:-latest}
     build: ./client/lingua-read-client
     restart: unless-stopped
     depends_on:
       api:
         condition: service_healthy
     ports:
-      - "80:80"
+      # nginx runs unprivileged (nginxinc/nginx-unprivileged) and listens on 8080 internally.
+      - "80:8080"
+    healthcheck:
+      # busybox wget (alpine image has no curl); /healthz is served on the plain-HTTP port.
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/healthz || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     logging:
       driver: "json-file"
       options:
@@ -92,7 +100,7 @@ services:
         max-file: "5"
 
   backup:
-    image: ghcr.io/${GHCR_REPO:-semblable/lingua-read-backup}:${BACKUP_IMAGE_TAG:-latest}
+    image: ghcr.io/semblable/lingua-read-backup:${BACKUP_IMAGE_TAG:-latest}
     profiles: ["backup"]
     restart: unless-stopped
     depends_on:
@@ -102,10 +110,13 @@ services:
       - POSTGRES_USER
       - POSTGRES_PASSWORD
       - POSTGRES_DB
+      # Optional healthchecks.io-style heartbeat URL pinged by backup.sh (empty = disabled).
+      - HEALTHCHECK_URL
     volumes:
       - backup_data:/backups
       - ./secrets/rclone.conf:/rclone/rclone.conf:ro
-      - /var/run/docker.sock:/var/run/docker.sock
+      # :ro is hygiene only — socket access still grants full Docker API; used to read container logs.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
 
 volumes:
   # Retired PostgreSQL 16 cluster — kept for rollback; prune once PG18 is confirmed stable.

@@ -1,0 +1,196 @@
+name: Deploy
+
+# Reusable SSH/compose deploy used by staging.yml and promote-prod.yml.
+# The target host and .env contents come from the GitHub Environment named by
+# `inputs.environment` (secrets: DEPLOY_HOST/USER/SSH_KEY/PATH, DOTENV;
+# optional variable: SMOKE_URL).
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: "GitHub environment to deploy (staging | production)"
+        type: string
+        required: true
+      image_tag:
+        description: "Immutable image tag to deploy (sha-<short7>)"
+        type: string
+        required: true
+      use_sudo:
+        description: "Prefix docker commands with sudo on the remote host"
+        type: boolean
+        default: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: ${{ inputs.environment }}
+    steps:
+      # Fail fast, before anything touches a host, if the GitHub Environment is not
+      # configured yet. DOTENV exists only as an environment-scoped secret, so its
+      # absence proves the environment setup is incomplete.
+      - name: Validate deploy configuration
+        env:
+          DOTENV_CHECK: ${{ secrets.DOTENV }}
+        run: |
+          if [ -z "$DOTENV_CHECK" ]; then
+            echo "::error::Secret DOTENV is not set in the '${{ inputs.environment }}' environment. Configure ALL environment secrets (DEPLOY_HOST, DEPLOY_USER, DEPLOY_SSH_KEY, DEPLOY_PATH, DOTENV) in Settings -> Environments before deploying."
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Copy docker-compose and config files via SCP
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          source: "docker-compose.yml,docker-compose.prod.yml,client/lingua-read-client/nginx.ssl.conf,setup.sh"
+          target: ${{ secrets.DEPLOY_PATH }}
+
+      - name: SSH deploy
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          envs: GHCR_TOKEN,GHCR_ACTOR
+          script: |
+            set -euo pipefail
+            cd "${{ secrets.DEPLOY_PATH }}"
+
+            # Some hosts restrict /var/run/docker.sock to root; callers opt into sudo.
+            DOCKER="${{ inputs.use_sudo && 'sudo docker' || 'docker' }}"
+            dc() {
+              $DOCKER compose -f docker-compose.yml -f docker-compose.prod.yml "$@"
+            }
+
+            # Write runtime config to .env from the environment-scoped DOTENV secret
+            # (multiline text), then pin all images to the immutable deploy tag.
+            cat > .env <<'EOF'
+            ${{ secrets.DOTENV }}
+            EOF
+            cat >> .env <<'EOF'
+            API_IMAGE_TAG=${{ inputs.image_tag }}
+            NGINX_IMAGE_TAG=${{ inputs.image_tag }}
+            BACKUP_IMAGE_TAG=${{ inputs.image_tag }}
+            EOF
+            chmod 600 .env
+
+            # Ensure TLS certs exist for the SSL Nginx config.
+            # If real certs are not provisioned yet, generate a temporary self-signed pair.
+            mkdir -p certs
+            if [ ! -s certs/fullchain.pem ] || [ ! -s certs/privkey.pem ]; then
+              echo "TLS certs missing at ./certs; generating self-signed certs (temporary)"
+              if ! command -v openssl >/dev/null 2>&1; then
+                sudo apt-get update
+                sudo apt-get install -y openssl
+              fi
+              openssl req -x509 -nodes -newkey rsa:2048 -days 365 \
+                -keyout certs/privkey.pem \
+                -out certs/fullchain.pem \
+                -subj "/CN=${HOSTNAME:-localhost}"
+              chmod 600 certs/privkey.pem certs/fullchain.pem
+            fi
+            # nginx runs unprivileged (uid 101) and must be able to read the mounted certs.
+            sudo chown -R 101:101 certs 2>/dev/null \
+              || echo "WARN: could not chown ./certs to uid 101; ensure the TLS key is readable by the nginx user"
+
+            # Authenticate to GHCR with the workflow's ephemeral GITHUB_TOKEN (forwarded via
+            # `envs` above). It is minted per-run and expires when the job ends, so there is
+            # no long-lived registry credential on the host.
+            echo "$GHCR_TOKEN" | $DOCKER login ghcr.io -u "$GHCR_ACTOR" --password-stdin
+
+            # Safety snapshot before rolling the stack (protects against bad migrations
+            # and the Postgres minor-version pull below). Keeps the last 3 dumps.
+            mkdir -p predeploy
+            if [ -n "$(dc ps -q db)" ]; then
+              ts=$(date +%Y%m%d-%H%M%S)
+              if dc exec -T db sh -c 'pg_dump -U "$POSTGRES_USER" -Fc "$POSTGRES_DB"' > "predeploy/pre-$ts.dump"; then
+                echo "Pre-deploy DB dump saved: predeploy/pre-$ts.dump"
+                ls -1t predeploy/pre-*.dump 2>/dev/null | tail -n +4 | xargs -r rm -f
+              else
+                rm -f "predeploy/pre-$ts.dump"
+                echo "WARN: pre-deploy pg_dump failed; continuing (db may be empty/first boot)"
+              fi
+            fi
+
+            # Pull db too so postgres:18 minor releases are applied (guarded by the dump above).
+            dc pull db api nginx
+            dc up -d db
+            dc up -d --force-recreate api
+            api_container_id=$(dc ps -q api)
+            if [ -z "$api_container_id" ]; then
+              echo "Could not resolve api container id after recreate"
+              dc ps
+              dc logs --no-color --tail=200 api || true
+              exit 1
+            fi
+
+            # Readiness: DB connectivity + seeded default user (see GET /api/Health/ready).
+            ok=""
+            for i in $(seq 1 60); do
+              if $DOCKER exec "$api_container_id" curl -fsS http://localhost:5000/api/Health/ready >/dev/null; then
+                ok="yes"
+                break
+              fi
+              echo "Waiting for API readiness (GET /api/Health/ready)... ($i/60)"
+              sleep 2
+            done
+
+            if [ "$ok" = "yes" ]; then
+              echo "Readiness check OK (database + default user)"
+            else
+              echo "Readiness check FAILED (expected HTTP 200 from /api/Health/ready); dumping status/logs"
+              dc ps
+              dc logs --no-color --tail=200 api || true
+              exit 1
+            fi
+
+            # nginx may exit once on first TLS init; give it up to 15 s to stabilize.
+            dc up -d --force-recreate nginx || true
+            nginx_ok=""
+            for i in $(seq 1 15); do
+              nginx_id=$(dc ps -q nginx)
+              if [ -n "$nginx_id" ] && [ "$($DOCKER inspect --format='{{.State.Status}}' "$nginx_id")" = "running" ]; then
+                echo "Nginx is up (settled after ${i}s)"
+                nginx_ok="yes"
+                break
+              fi
+              sleep 1
+            done
+            if [ -z "$nginx_ok" ]; then
+              echo "Nginx failed to reach running state within 15s; last 50 log lines:"
+              dc logs --no-color --tail=50 nginx || true
+              exit 1
+            fi
+
+            # Start backup service only after rclone is configured (run setup.sh once to enable).
+            # Uses --profile backup so the service is invisible to normal dc up/pull/ps commands.
+            if [ -f "secrets/rclone.conf" ]; then
+              dc --profile backup pull backup
+              dc --profile backup up -d --force-recreate backup
+            else
+              echo "Skipping backup service: secrets/rclone.conf not found (run setup.sh to enable)"
+            fi
+
+            # Drop the ephemeral GHCR credential from the host. It would expire on its own
+            # at job end, but there's no reason to leave it in the box's docker config.
+            $DOCKER logout ghcr.io || true
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_ACTOR: ${{ github.actor }}
+
+      # End-to-end proof through the public edge (TLS + nginx + api + db), not just
+      # in-container checks. Skipped until the SMOKE_URL environment variable is set.
+      - name: External smoke check
+        if: ${{ vars.SMOKE_URL != '' }}
+        run: |
+          set -euo pipefail
+          echo "Smoke-checking ${{ vars.SMOKE_URL }} (-k tolerates self-signed staging certs)"
+          curl -fskS --retry 3 --retry-all-errors --max-time 10 "${{ vars.SMOKE_URL }}/healthz" >/dev/null
+          curl -fskS --retry 3 --retry-all-errors --max-time 10 "${{ vars.SMOKE_URL }}/api/Health/ready" >/dev/null
+          echo "Smoke check passed"

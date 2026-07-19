@@ -27,7 +27,9 @@ Two GitHub Environments (Settings → Environments): **staging** and **productio
 
 Optional per-environment **variable**: `SMOKE_URL` — public base URL; when set, deploys finish with external `curl` checks of `/healthz` and `/api/Health/ready`.
 
-The deploy job fails fast (before touching any host) if `DOTENV` is missing from the target environment.
+**Transitional fallback (active now):** until the environments are populated, `_deploy.yml` falls back to the legacy repo-level secrets — staging uses `DEPLOY_*` + `PRODUCTION_ENV`, production uses `GCP_DEPLOY_*` + `GCP_PRODUCTION_ENV` (via `legacy_secret_prefix: GCP_`). Environment-scoped secrets automatically take precedence the moment they exist (same-name environment secrets shadow repo-level ones). When migrating for real: add all five environment secrets, verify a green deploy, then **delete the legacy secrets as a complete set** — deleting only some of the `GCP_*` ones could make production resolve staging's host values.
+
+The deploy job fails fast (before touching any host) if neither an environment `DOTENV` nor the legacy env-file secret resolves.
 
 ## Deploying
 

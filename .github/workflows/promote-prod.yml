@@ -88,6 +88,9 @@ jobs:
       # Deploy the immutable sha tag, not :prod, so the host records exactly what runs.
       image_tag: ${{ needs.resolve.outputs.tag }}
       use_sudo: false
+      # Until the production environment secrets are populated, fall back to the
+      # legacy GCP_-prefixed repo-level secrets (the un-prefixed ones are staging's).
+      legacy_secret_prefix: GCP_
     secrets: inherit
 
   tag_release:

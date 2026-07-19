@@ -14,13 +14,22 @@ on:
         type: boolean
         default: false
 
+# GHCR's package-delete API is rate-limited to roughly 1 req/sec, and a large
+# backlog (thousands of versions across 3 packages) can take well over an
+# hour to clear; queue instead of racing a second trigger against the first.
+concurrency:
+  group: ghcr-cleanup
+  cancel-in-progress: false
+
 permissions:
   packages: write
 
 jobs:
   cleanup:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # Deletes are one-by-one at ~1 req/sec against GHCR's rate limit; a large
+    # backlog needs well over the previous 15m to fully clear in one run.
+    timeout-minutes: 90
     steps:
       - name: Clean up old image versions
         uses: dataaxiom/ghcr-cleanup-action@v1

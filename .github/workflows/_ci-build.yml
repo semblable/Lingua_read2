@@ -1,0 +1,229 @@
+name: CI & Build
+
+# Reusable CI + image-build pipeline shared by pr.yml (validate only) and
+# staging.yml (build + push). Callers control pushing via `push_images`.
+
+on:
+  workflow_call:
+    inputs:
+      push_images:
+        description: "Push built images to GHCR (false = build-only validation)"
+        type: boolean
+        default: false
+    outputs:
+      image_tag:
+        description: "Immutable image tag (sha-<short7>) shared by all images built from this commit"
+        value: ${{ jobs.build_api.outputs.image_tag }}
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_API: ${{ github.repository_owner }}/lingua-read-api
+  IMAGE_NGINX: ${{ github.repository_owner }}/lingua-read-nginx
+  IMAGE_BACKUP: ${{ github.repository_owner }}/lingua-read-backup
+
+jobs:
+  ci_dotnet:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v5
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', '**/*.props', '**/*.targets', 'global.json') }}
+          restore-keys: |
+            nuget-${{ runner.os }}-
+
+      - name: Restore
+        run: dotnet restore Lingua_Read.sln
+
+      - name: Build
+        run: dotnet build Lingua_Read.sln -c Release --no-restore
+
+      - name: Test
+        run: dotnet test Lingua_Read.sln -c Release --no-build
+
+  ci_client:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: client/lingua-read-client/package-lock.json
+
+      - name: Install client deps
+        run: npm ci --legacy-peer-deps
+        working-directory: client/lingua-read-client
+
+      - name: Lint
+        run: npm run lint
+        working-directory: client/lingua-read-client
+
+      - name: Typecheck
+        run: npm run typecheck
+        working-directory: client/lingua-read-client
+
+      - name: Test client
+        run: npm test -- --run
+        working-directory: client/lingua-read-client
+        env:
+          CI: true
+
+  build_api:
+    runs-on: ubuntu-latest
+    needs: [ ci_dotnet ]
+    timeout-minutes: 25
+    outputs:
+      image_tag: ${{ steps.image_tag.outputs.value }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Compute image tag
+        id: image_tag
+        run: echo "value=sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      # Login also runs on PR builds (read-only token) so registry build cache is pullable.
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker meta (api)
+        id: meta_api
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_API }}
+          tags: |
+            type=sha,format=short,prefix=sha-
+            type=raw,value=latest
+
+      - name: Build & push (api)
+        uses: docker/build-push-action@v7
+        with:
+          context: ./server/LinguaReadApi
+          file: ./server/LinguaReadApi/Dockerfile
+          push: ${{ inputs.push_images }}
+          provenance: false
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_API }}:${{ steps.image_tag.outputs.value }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_API }}:latest
+          labels: ${{ steps.meta_api.outputs.labels }}
+          cache-from: |
+            type=gha
+            type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_API }}:buildcache
+          # ignore-error: PR runs hold a read-only token; the registry cache write fails harmlessly.
+          cache-to: |
+            type=gha,mode=max
+            type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_API }}:buildcache,mode=max,ignore-error=true
+
+  build_nginx:
+    runs-on: ubuntu-latest
+    needs: [ ci_client ]
+    timeout-minutes: 25
+    outputs:
+      image_tag: ${{ steps.image_tag.outputs.value }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Compute image tag
+        id: image_tag
+        run: echo "value=sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker meta (nginx)
+        id: meta_nginx
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NGINX }}
+          tags: |
+            type=sha,format=short,prefix=sha-
+            type=raw,value=latest
+
+      - name: Build & push (nginx)
+        uses: docker/build-push-action@v7
+        with:
+          context: ./client/lingua-read-client
+          file: ./client/lingua-read-client/Dockerfile
+          push: ${{ inputs.push_images }}
+          provenance: false
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NGINX }}:${{ steps.image_tag.outputs.value }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NGINX }}:latest
+          labels: ${{ steps.meta_nginx.outputs.labels }}
+          cache-from: |
+            type=gha
+            type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NGINX }}:buildcache
+          cache-to: |
+            type=gha,mode=max
+            type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NGINX }}:buildcache,mode=max,ignore-error=true
+
+  build_backup:
+    runs-on: ubuntu-latest
+    needs: [ ci_dotnet, ci_client ]
+    timeout-minutes: 25
+    outputs:
+      image_tag: ${{ steps.image_tag.outputs.value }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Compute image tag
+        id: image_tag
+        run: echo "value=sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build & push (backup)
+        uses: docker/build-push-action@v7
+        with:
+          context: ./backup
+          file: ./backup/Dockerfile
+          push: ${{ inputs.push_images }}
+          provenance: false
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_BACKUP }}:${{ steps.image_tag.outputs.value }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_BACKUP }}:latest
+          cache-from: |
+            type=gha
+            type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_BACKUP }}:buildcache
+          cache-to: |
+            type=gha,mode=max
+            type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_BACKUP }}:buildcache,mode=max,ignore-error=true

@@ -1,0 +1,22 @@
+name: PR Validation
+
+# Runs the full CI + docker-build pipeline on every pull request, without
+# pushing any images. This is the required-checks gate for branch protection.
+
+on:
+  pull_request:
+    branches: [ dev, main ]
+
+concurrency:
+  group: pr-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  ci:
+    uses: ./.github/workflows/_ci-build.yml
+    with:
+      push_images: false

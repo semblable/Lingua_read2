@@ -1,0 +1,117 @@
+name: Promote to Production
+
+# Promotes images already built and validated on staging to production —
+# by digest retag, never a rebuild — then deploys, git-tags the release,
+# and fast-forwards `main` so main always mirrors production.
+#
+# Rollback = dispatch this workflow again with an older sha- tag.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Image tag to promote (sha-XXXXXXX). Empty = last successful staging run. Enter an older tag to ROLL BACK."
+        required: false
+        default: ""
+
+concurrency:
+  group: promote-prod
+  cancel-in-progress: false
+
+permissions:
+  contents: write   # release tag + main fast-forward
+  packages: write   # retag images in GHCR
+  actions: read     # look up staging runs
+
+jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      tag: ${{ steps.pick.outputs.tag }}
+      sha: ${{ steps.pick.outputs.sha }}
+    steps:
+      - name: Resolve tag to promote
+        id: pick
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          if [ -z "$INPUT_TAG" ]; then
+            sha=$(gh api "repos/${{ github.repository }}/actions/workflows/staging.yml/runs?branch=dev&status=success&per_page=1" \
+                  --jq '.workflow_runs[0].head_sha // empty')
+            if [ -z "$sha" ]; then
+              echo "::error::No successful staging run found; pass an explicit sha- tag input"
+              exit 1
+            fi
+            tag="sha-${sha:0:7}"
+          else
+            tag="$INPUT_TAG"
+            short="${INPUT_TAG#sha-}"
+            sha=$(gh api "repos/${{ github.repository }}/commits/$short" --jq .sha 2>/dev/null || true)
+            if [ -z "$sha" ]; then
+              echo "::warning::Could not resolve '$tag' to a commit; release tagging and main fast-forward will be skipped"
+            fi
+          fi
+          echo "Promoting tag: $tag (commit: ${sha:-unknown})"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
+  promote:
+    runs-on: ubuntu-latest
+    needs: [ resolve ]
+    timeout-minutes: 10
+    steps:
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Retag staging-tested images as :prod (by digest, no rebuild)
+        run: |
+          set -euo pipefail
+          for repo in lingua-read-api lingua-read-nginx lingua-read-backup; do
+            src="ghcr.io/${{ github.repository_owner }}/$repo:${{ needs.resolve.outputs.tag }}"
+            echo "Verifying $src"
+            docker buildx imagetools inspect "$src" >/dev/null
+            docker buildx imagetools create -t "ghcr.io/${{ github.repository_owner }}/$repo:prod" "$src"
+          done
+
+  deploy:
+    needs: [ resolve, promote ]
+    uses: ./.github/workflows/_deploy.yml
+    with:
+      environment: production
+      # Deploy the immutable sha tag, not :prod, so the host records exactly what runs.
+      image_tag: ${{ needs.resolve.outputs.tag }}
+      use_sudo: false
+    secrets: inherit
+
+  tag_release:
+    runs-on: ubuntu-latest
+    needs: [ resolve, deploy ]
+    if: ${{ success() && needs.resolve.outputs.sha != '' }}
+    timeout-minutes: 5
+    steps:
+      - name: Checkout (full history)
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Tag release and fast-forward main
+        run: |
+          set -euo pipefail
+          sha="${{ needs.resolve.outputs.sha }}"
+          tag="prod-$(date -u +%Y%m%d-%H%M)-${{ needs.resolve.outputs.tag }}"
+          git tag "$tag" "$sha"
+          git push origin "refs/tags/$tag"
+          # main mirrors production. The push is non-force: on a ROLLBACK (older
+          # commit) it is rejected, which is fine — warn instead of failing the run.
+          if git push origin "$sha:refs/heads/main"; then
+            echo "main fast-forwarded to $sha"
+          else
+            echo "::warning::main was not moved (non-fast-forward — expected when rolling back); production runs $sha per the prod-* tags"
+          fi

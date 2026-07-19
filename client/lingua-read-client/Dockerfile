@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 # -------- Build Stage --------
-FROM node:24 AS build
+FROM node:24-alpine AS build
 WORKDIR /app
 
 # Install dependencies
@@ -12,18 +12,17 @@ COPY . ./
 RUN npm run build
 
 # -------- Runtime Stage --------
-FROM nginx:stable-alpine AS production
+# Unprivileged nginx: runs as uid 101, listens on 8080 (and 8443 with the SSL config).
+FROM nginxinc/nginx-unprivileged:stable-alpine AS production
 WORKDIR /usr/share/nginx/html
 
-# Remove default nginx static assets
+# The html dir is root-owned; switch to root for the asset swap, then drop back.
+USER root
 RUN rm -rf ./*
-
-# Copy built React app from build stage
 COPY --from=build /app/build ./
-
-# Copy custom nginx configuration
 COPY nginx.conf /etc/nginx/nginx.conf
+USER 101
 
-EXPOSE 80
+EXPOSE 8080
 
 CMD ["nginx", "-g", "daemon off;"]

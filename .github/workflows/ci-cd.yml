@@ -220,6 +220,7 @@ jobs:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
+          envs: GHCR_TOKEN,GHCR_ACTOR
           script: |
             set -euo pipefail
             cd "${{ secrets.DEPLOY_PATH }}"
@@ -258,7 +259,10 @@ jobs:
             fi
 
             # Use sudo because many hosts restrict /var/run/docker.sock to root/docker group.
-            echo "${{ secrets.GHCR_PAT }}" | sudo docker login ghcr.io -u "${{ secrets.GHCR_USERNAME }}" --password-stdin
+            # Authenticate to GHCR with the workflow's ephemeral GITHUB_TOKEN (forwarded via
+            # `envs` above) instead of a stored PAT. It is minted per-run and expires when the
+            # job ends, so there is no long-lived registry credential to rotate or let lapse.
+            echo "$GHCR_TOKEN" | sudo docker login ghcr.io -u "$GHCR_ACTOR" --password-stdin
 
             dc pull api nginx
             dc up -d --force-recreate api
@@ -303,4 +307,11 @@ jobs:
             else
               echo "Skipping backup service: secrets/rclone.conf not found (run setup.sh to enable)"
             fi
+
+            # Drop the ephemeral GHCR credential from the host. It would expire on its own
+            # at job end, but there's no reason to leave it in the box's docker config.
+            sudo docker logout ghcr.io || true
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_ACTOR: ${{ github.actor }}
 

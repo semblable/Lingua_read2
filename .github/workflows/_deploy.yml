@@ -3,7 +3,9 @@ name: Deploy
 # Reusable SSH/compose deploy used by staging.yml and promote-prod.yml.
 # The target host and .env contents come from the GitHub Environment named by
 # `inputs.environment` (secrets: DEPLOY_HOST/USER/SSH_KEY/PATH, DOTENV;
-# optional variable: SMOKE_URL).
+# optional variable: SMOKE_URL), falling back to the legacy repo-level secrets
+# (`inputs.legacy_secret_prefix` + DEPLOY_* / PRODUCTION_ENV) until those
+# environments are populated — see the job-level env block.
 
 on:
   workflow_call:
@@ -20,22 +22,36 @@ on:
         description: "Prefix docker commands with sudo on the remote host"
         type: boolean
         default: false
+      legacy_secret_prefix:
+        description: "Prefix of the legacy repo-level secrets to fall back on (e.g. GCP_ for production)"
+        type: string
+        default: ""
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: ${{ inputs.environment }}
+    # Secret resolution (transitional): prefer the environment-scoped unified names
+    # (DEPLOY_* / DOTENV), fall back to the legacy repo-level secrets so deploys work
+    # before the environments are populated. For the host coordinates the LEGACY name
+    # is tried first on purpose — the un-prefixed repo-level DEPLOY_* are the STAGING
+    # host, and must never leak into a production deploy; environment-scoped values
+    # still win once they exist because they shadow the repo-level names entirely.
+    # Delete the legacy secrets only as a complete set after migrating.
+    env:
+      TARGET_HOST: ${{ secrets[format('{0}DEPLOY_HOST', inputs.legacy_secret_prefix)] || secrets.DEPLOY_HOST }}
+      TARGET_USER: ${{ secrets[format('{0}DEPLOY_USER', inputs.legacy_secret_prefix)] || secrets.DEPLOY_USER }}
+      TARGET_SSH_KEY: ${{ secrets[format('{0}DEPLOY_SSH_KEY', inputs.legacy_secret_prefix)] || secrets.DEPLOY_SSH_KEY }}
+      TARGET_PATH: ${{ secrets[format('{0}DEPLOY_PATH', inputs.legacy_secret_prefix)] || secrets.DEPLOY_PATH }}
+      TARGET_DOTENV: ${{ secrets.DOTENV || secrets[format('{0}PRODUCTION_ENV', inputs.legacy_secret_prefix)] }}
     steps:
-      # Fail fast, before anything touches a host, if the GitHub Environment is not
-      # configured yet. DOTENV exists only as an environment-scoped secret, so its
-      # absence proves the environment setup is incomplete.
+      # Fail fast, before anything touches a host, if no usable configuration exists —
+      # neither environment-scoped secrets nor the legacy repo-level ones.
       - name: Validate deploy configuration
-        env:
-          DOTENV_CHECK: ${{ secrets.DOTENV }}
         run: |
-          if [ -z "$DOTENV_CHECK" ]; then
-            echo "::error::Secret DOTENV is not set in the '${{ inputs.environment }}' environment. Configure ALL environment secrets (DEPLOY_HOST, DEPLOY_USER, DEPLOY_SSH_KEY, DEPLOY_PATH, DOTENV) in Settings -> Environments before deploying."
+          if [ -z "$TARGET_DOTENV" ] || [ -z "$TARGET_HOST" ]; then
+            echo "::error::No deploy configuration for '${{ inputs.environment }}'. Set the environment secrets (DEPLOY_HOST, DEPLOY_USER, DEPLOY_SSH_KEY, DEPLOY_PATH, DOTENV) in Settings -> Environments, or keep the legacy repo-level secrets (${{ inputs.legacy_secret_prefix }}DEPLOY_* + ${{ inputs.legacy_secret_prefix }}PRODUCTION_ENV) in place."
             exit 1
           fi
 
@@ -45,22 +61,22 @@ jobs:
       - name: Copy docker-compose and config files via SCP
         uses: appleboy/scp-action@v0.1.7
         with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          host: ${{ env.TARGET_HOST }}
+          username: ${{ env.TARGET_USER }}
+          key: ${{ env.TARGET_SSH_KEY }}
           source: "docker-compose.yml,docker-compose.prod.yml,client/lingua-read-client/nginx.ssl.conf,setup.sh"
-          target: ${{ secrets.DEPLOY_PATH }}
+          target: ${{ env.TARGET_PATH }}
 
       - name: SSH deploy
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          host: ${{ env.TARGET_HOST }}
+          username: ${{ env.TARGET_USER }}
+          key: ${{ env.TARGET_SSH_KEY }}
           envs: GHCR_TOKEN,GHCR_ACTOR
           script: |
             set -euo pipefail
-            cd "${{ secrets.DEPLOY_PATH }}"
+            cd "${{ env.TARGET_PATH }}"
 
             # Some hosts restrict /var/run/docker.sock to root; callers opt into sudo.
             DOCKER="${{ inputs.use_sudo && 'sudo docker' || 'docker' }}"
@@ -68,10 +84,11 @@ jobs:
               $DOCKER compose -f docker-compose.yml -f docker-compose.prod.yml "$@"
             }
 
-            # Write runtime config to .env from the environment-scoped DOTENV secret
-            # (multiline text), then pin all images to the immutable deploy tag.
+            # Write runtime config to .env from the resolved DOTENV secret (multiline
+            # text; see the job-level env for resolution order), then pin all images
+            # to the immutable deploy tag.
             cat > .env <<'EOF'
-            ${{ secrets.DOTENV }}
+            ${{ env.TARGET_DOTENV }}
             EOF
             cat >> .env <<'EOF'
             API_IMAGE_TAG=${{ inputs.image_tag }}

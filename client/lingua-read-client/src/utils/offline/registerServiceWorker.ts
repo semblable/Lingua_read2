@@ -26,7 +26,6 @@ export async function registerServiceWorker(options: {
   } catch (err) {
     // Module is unavailable in dev (devOptions.enabled=false) and in tests.
     // Don't crash the app — just log so it's visible in the console.
-    // eslint-disable-next-line no-console
     console.debug('[pwa] service worker registration skipped:', err);
     return null;
   }

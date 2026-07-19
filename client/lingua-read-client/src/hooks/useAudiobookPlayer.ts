@@ -618,13 +618,16 @@ export const useAudiobookPlayer = ({
   }, [isPlaying, saveProgress, flushListeningActivity, listeningTrackerRef]);
 
   useEffect(() => {
+    // Alias the ref OBJECTS (not `.current`) so cleanup still reads the
+    // LATEST callbacks at unmount — copying `.current` here would defeat the
+    // purpose. Matches pre-split source-line 832-839 of the legacy hook.
+    const flushRef = flushListeningActivityRef;
+    const trackerRef = listeningTrackerRef;
+    const saveRef = saveProgressRef;
     return () => {
-      // Refs read on cleanup so the LATEST callbacks fire — copying `.current`
-      // into a local would defeat the purpose. Matches pre-split source-line
-      // 832-839 of the legacy hook.
-      flushListeningActivityRef.current?.(true);
-      listeningTrackerRef.current.clearCheckpoint();
-      saveProgressRef.current?.(true);
+      flushRef.current?.(true);
+      trackerRef.current.clearCheckpoint();
+      saveRef.current?.(true);
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 

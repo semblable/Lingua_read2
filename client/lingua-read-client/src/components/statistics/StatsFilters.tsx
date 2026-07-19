@@ -7,7 +7,7 @@ interface PeriodOption {
   label: string;
 }
 
-export const ACTIVITY_PERIODS: PeriodOption[] = [
+const ACTIVITY_PERIODS: PeriodOption[] = [
   { value: 'last_day', label: 'Today' },
   { value: 'last_week', label: 'Last 7 Days' },
   { value: 'last_month', label: 'Last 30 Days' },

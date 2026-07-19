@@ -1,7 +1,8 @@
 import { describe, test, expect, afterEach, vi, beforeEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import NextActionCard, { pickAction } from '../NextActionCard';
+import NextActionCard from '../NextActionCard';
+import { pickAction } from '../nextAction';
 import type { RecentTexts } from '../../../utils/api/texts';
 
 type RecentText = RecentTexts[number];

@@ -538,7 +538,7 @@ const TextDisplay = () => {
       setIsSpeakingSentence(false);
       setIsSpeakingWord(false);
     }
-  }, [updateSetting]);
+  }, [setIsSpeakingSentence, setIsSpeakingWord, updateSetting]);
 
   const setSentenceTtsRate = useCallback((updater: number | ((prev: number) => number)) => {
     const nextValue = typeof updater === 'function'
@@ -650,7 +650,7 @@ const TextDisplay = () => {
       setTranslation('');
       if (!skipAutoTranslate) triggerAutoTranslation(word);
     }
-  }, [clearPendingSelection, getWordData, globalSettings.pauseOnWordClick, isAudioLesson, triggerAutoTranslation, setSelectedWord, setTranslation, setWordTranslationError, setDisplayedWord, isMobile, pauseAudioPlayback]); // Dependencies using globalSettings don't need it listed if context handles updates
+  }, [clearPendingSelection, getWordData, globalSettings.pauseOnWordClick, isAudioLesson, triggerAutoTranslation, setSelectedWord, setTranslation, setWordTranslationError, setDisplayedWord, isMobile, pauseAudioPlayback, setSegmentPlaybackRequest]); // Dependencies using globalSettings don't need it listed if context handles updates
 
   // Removed handleTextSelection as selection is now handled by onMouseUp on the container
 
@@ -1238,7 +1238,7 @@ const TextDisplay = () => {
       console.error('Sentence TTS failed:', speechErr);
       setIsSpeakingSentence(false);
     }
-  }, [canUseSentenceTts, currentSentenceSegment, pauseAudioPlayback, sentenceTtsEnabled, sentenceTtsRate, text?.languageCode]);
+  }, [canUseSentenceTts, currentSentenceSegment, pauseAudioPlayback, sentenceTtsEnabled, sentenceTtsRate, setIsSpeakingSentence, setIsSpeakingWord, setSegmentPlaybackRequest, text?.languageCode]);
 
   const speakDisplayedWord = useCallback(async () => {
     const wordToSpeak = selectedWord || displayedWord?.term;
@@ -1265,7 +1265,7 @@ const TextDisplay = () => {
       console.error('Word TTS failed:', speechErr);
       setIsSpeakingWord(false);
     }
-  }, [canUseSentenceTts, displayedWord?.term, pauseAudioPlayback, selectedWord, sentenceTtsEnabled, sentenceTtsRate, text?.languageCode]);
+  }, [canUseSentenceTts, displayedWord?.term, pauseAudioPlayback, selectedWord, sentenceTtsEnabled, sentenceTtsRate, setIsSpeakingSentence, setIsSpeakingWord, setSegmentPlaybackRequest, text?.languageCode]);
 
   const replayCurrentSegmentAudio = useCallback(() => {
     if (!currentSentenceSegment) {
@@ -1288,7 +1288,7 @@ const TextDisplay = () => {
       repeatCount: sentenceAudioRepeats,
       forcePlay: true
     });
-  }, [currentSentenceSegment, sentenceAudioRepeats, speakCurrentSentence]);
+  }, [currentSentenceSegment, lastAutoSegmentPlaybackKeyRef, sentenceAudioRepeats, setIsSpeakingSentence, setSegmentPlaybackRequest, speakCurrentSentence]);
 
   const handleSegmentTranslationToggle = useCallback(async () => {
     if (!currentSentenceSegment || !text?.languageCode) return;
@@ -1454,12 +1454,18 @@ const TextDisplay = () => {
       cancelled = true;
     };
   }, [
+    audioDrivenSentenceSyncRef,
     currentSentenceSegment,
     isAudioLesson,
     isAudioPlaying,
     isSentenceMode,
+    lastAutoSegmentPlaybackKeyRef,
+    pendingSentenceCreditRef,
     sentenceAudioRepeats,
     sentenceProgressLoaded,
+    setCurrentSrtLineId,
+    setSegmentPlaybackRequest,
+    skipInitialAudioLessonSegmentPlaybackRef,
     text?.textId
   ]);
 
@@ -1631,7 +1637,7 @@ const TextDisplay = () => {
     } finally {
       setProcessingWord(false);
     }
-  }, [displayedWord, getWordData, isTranslating, processingWord, selectedWord, setWords]);
+  }, [displayedWord, getWordData, isTranslating, processingWord, selectedWord, setTranslation, setWords]);
 
   const wordInfoRetranslateContext = selectedWordAiContext || currentSentenceSegment?.text || '';
 

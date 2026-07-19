@@ -3,7 +3,8 @@ import { Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import { useAuthStore } from './utils/store';
 import 'bootstrap/dist/css/bootstrap.min.css';
 import './App.css';
-import { SettingsProvider, SettingsContext } from './contexts/SettingsContext';
+import { SettingsContext } from './contexts/SettingsContext';
+import { SettingsProvider } from './contexts/SettingsProvider';
 
 // Components (always needed)
 import Navigation from './components/Navigation';

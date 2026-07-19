@@ -1,5 +1,4 @@
-import React, { createContext, useState, useEffect, useCallback, ReactNode } from 'react';
-import { getUserSettings } from '../utils/api';
+import { createContext } from 'react';
 
 // User-facing settings shape. Keys here MUST stay in sync with the
 // /api/UserSettings response and with mergeSettings() below — those are
@@ -164,7 +163,7 @@ export const SettingsContext = createContext<SettingsContextValue>({
 });
 
 // Load cached settings from localStorage, merging with defaults for forward-compat
-const getInitialSettings = (): Settings => {
+export const getInitialSettings = (): Settings => {
   try {
     const cached = localStorage.getItem('cachedSettings');
     if (cached) {
@@ -179,7 +178,7 @@ const getInitialSettings = (): Settings => {
 
 // Server response is permissive; coerce each field to the typed shape using
 // the default as the fallback when the server omits a key or sends null/undefined.
-const mergeSettings = (
+export const mergeSettings = (
   data: Partial<Settings> | null | undefined,
   currentSettings?: Settings
 ): Settings => {
@@ -271,60 +270,4 @@ const mergeSettings = (
     srsCardType: d.srsCardType || base.srsCardType,
     minimalHome: d.minimalHome ?? base.minimalHome
   };
-};
-
-export type SettingsProviderProps = {
-  children: ReactNode;
-};
-
-export const SettingsProvider: React.FC<SettingsProviderProps> = ({ children }) => {
-  const [settings, setSettings] = useState<Settings>(getInitialSettings);
-  const [loadingSettings, setLoadingSettings] = useState(false);
-  const [errorSettings, setErrorSettings] = useState<string | null>(null);
-
-  const fetchSettings = useCallback(async () => {
-    setErrorSettings(null);
-    try {
-      const data = (await getUserSettings()) as Partial<Settings> | null | undefined;
-      setSettings((prev) => {
-        const merged = mergeSettings(data, prev);
-        localStorage.setItem('cachedSettings', JSON.stringify(merged));
-        return merged;
-      });
-    } catch (err) {
-      console.error('[SettingsContext] Failed to load settings:', err);
-      setErrorSettings('Failed to load settings. Using defaults.');
-    } finally {
-      setLoadingSettings(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    // Fetch settings when the provider mounts (only rendered when authenticated)
-    fetchSettings();
-  }, [fetchSettings]);
-
-  // Update a specific setting locally; the API write is triggered from
-  // the component making the change (so it can debounce/show save state).
-  const updateSetting = useCallback(
-    <K extends SettingKey>(key: K, value: Settings[K]) => {
-      setSettings((prevSettings) => ({
-        ...prevSettings,
-        [key]: value
-      }));
-    },
-    []
-  );
-
-  const refetchSettings = useCallback(async () => {
-    await fetchSettings();
-  }, [fetchSettings]);
-
-  return (
-    <SettingsContext.Provider
-      value={{ settings, loadingSettings, errorSettings, updateSetting, refetchSettings }}
-    >
-      {children}
-    </SettingsContext.Provider>
-  );
 };

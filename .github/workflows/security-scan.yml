@@ -24,7 +24,7 @@ jobs:
         image: [ lingua-read-api, lingua-read-nginx, lingua-read-backup ]
     steps:
       - name: Scan ${{ matrix.image }}:prod
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:prod
           severity: CRITICAL

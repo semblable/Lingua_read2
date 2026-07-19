@@ -1,10 +1,10 @@
-name: Deploy GCP
+name: Deploy Prod
 
 on:
   workflow_dispatch:
 
 concurrency:
-  group: deploy-gcp-${{ github.ref }}
+  group: deploy-prod-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -162,7 +162,7 @@ jobs:
             type=gha,mode=max
             type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NGINX }}:buildcache,mode=max
 
-  deploy_gcp:
+  deploy_prod:
     runs-on: ubuntu-latest
     needs: [ build_api, build_nginx ]
     steps:
@@ -178,12 +178,13 @@ jobs:
           source: "docker-compose.yml,docker-compose.prod.yml,client/lingua-read-client/nginx.ssl.conf,setup.sh"
           target: ${{ secrets.GCP_DEPLOY_PATH }}
 
-      - name: SSH deploy (GCP)
+      - name: SSH deploy (prod)
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.GCP_DEPLOY_HOST }}
           username: ${{ secrets.GCP_DEPLOY_USER }}
           key: ${{ secrets.GCP_DEPLOY_SSH_KEY }}
+          envs: GHCR_TOKEN,GHCR_ACTOR
           script: |
             set -euo pipefail
             cd "${{ secrets.GCP_DEPLOY_PATH }}"
@@ -219,7 +220,10 @@ jobs:
               chmod 600 certs/privkey.pem certs/fullchain.pem
             fi
 
-            echo "${{ secrets.GHCR_PAT }}" | docker login ghcr.io -u "${{ secrets.GHCR_USERNAME }}" --password-stdin
+            # Authenticate to GHCR with the workflow's ephemeral GITHUB_TOKEN (forwarded via
+            # `envs` above) instead of a stored PAT. It is minted per-run and expires when the
+            # job ends, so there is no long-lived registry credential to rotate or let lapse.
+            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_ACTOR" --password-stdin
 
             dc pull api nginx
             dc up -d --force-recreate api
@@ -270,3 +274,9 @@ jobs:
               dc logs --no-color --tail=50 nginx || true
               exit 1
             fi
+
+            # Drop the ephemeral GHCR credential from the host; it expires at job end anyway.
+            docker logout ghcr.io || true
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_ACTOR: ${{ github.actor }}

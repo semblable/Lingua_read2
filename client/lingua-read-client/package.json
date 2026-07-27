@@ -7,7 +7,15 @@
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
+    "@fontsource/atkinson-hyperlegible": "^5.3.0",
+    "@fontsource/inter": "^5.3.0",
+    "@fontsource/lato": "^5.3.0",
+    "@fontsource/lora": "^5.3.0",
+    "@fontsource/merriweather": "^5.3.0",
+    "@fontsource/open-sans": "^5.3.0",
+    "@fontsource/roboto-slab": "^5.3.0",
     "bootstrap": "^5.3.2",
+    "bootstrap-icons": "^1.13.1",
     "file-saver": "^2.0.5",
     "papaparse": "^5.5.4",
     "react": "^18.2.0",
@@ -56,7 +64,8 @@
     "test": "vitest",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src",
-    "api:types": "node scripts/generate-api-types.mjs"
+    "api:types": "node scripts/generate-api-types.mjs",
+    "postbuild": "node scripts/verify-build.mjs"
   },
   "browserslist": {
     "production": [

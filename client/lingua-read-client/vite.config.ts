@@ -114,7 +114,32 @@ export default defineConfig({
   build: {
     outDir: 'build',
     assetsDir: 'static',
-    sourcemap: true,
+    // Don't ship sourcemaps to production: they roughly double the deploy size and
+    // expose the full source. Flip to 'hidden' locally when debugging a prod build.
+    sourcemap: false,
+    rollupOptions: {
+      output: {
+        // Split big, rarely-changing vendors into their own chunks so app-code
+        // edits don't invalidate the browser's 1y-immutable cache for them
+        // (nginx serves /static/ with immutable caching). Grouped by package
+        // family — matching on the node_modules folder name keeps transitive
+        // deps (e.g. recharts' d3-* helpers) in the default chunks, which is
+        // safe: they just ride along with whatever imports them.
+        manualChunks(id: string) {
+          if (!id.includes('node_modules')) return undefined;
+          if (/[\\/]node_modules[\\/](react|react-dom|scheduler|react-router|react-router-dom)[\\/]/.test(id)) {
+            return 'vendor-react';
+          }
+          if (/[\\/]node_modules[\\/](react-bootstrap|bootstrap|@restart|@popperjs|dom-helpers|uncontrollable)[\\/]/.test(id)) {
+            return 'vendor-bootstrap';
+          }
+          if (/[\\/]node_modules[\\/](recharts|d3-[^\\/]+|victory-vendor|decimal\.js-light|internmap)[\\/]/.test(id)) {
+            return 'vendor-charts';
+          }
+          return undefined;
+        },
+      },
+    },
   },
   // Treat .js files as JSX (CRA allowed this; Vite doesn't by default).
   // Use the `tsx` loader (a permissive superset of jsx + ts) so that .ts and

@@ -1,7 +1,6 @@
 import React, { useContext, useEffect, Suspense, lazy } from 'react';
 import { Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import { useAuthStore } from './utils/store';
-import 'bootstrap/dist/css/bootstrap.min.css';
 import './App.css';
 import { SettingsContext } from './contexts/SettingsContext';
 import { SettingsProvider } from './contexts/SettingsProvider';

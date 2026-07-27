@@ -210,4 +210,16 @@ jobs:
           echo "Smoke-checking ${{ vars.SMOKE_URL }} (-k tolerates self-signed staging certs)"
           curl -fskS --retry 3 --retry-all-errors --max-time 10 "${{ vars.SMOKE_URL }}/healthz" >/dev/null
           curl -fskS --retry 3 --retry-all-errors --max-time 10 "${{ vars.SMOKE_URL }}/api/Health/ready" >/dev/null
-          echo "Smoke check passed"
+
+          # Compression regression gates (see server ResponseCompression + nginx gzip_static):
+          # API JSON must arrive Brotli/gzip-encoded through the edge…
+          api_headers=$(curl -fskSL --retry 3 --retry-all-errors --max-time 10 \
+            -H 'Accept-Encoding: br, gzip' -D - -o /dev/null "${{ vars.SMOKE_URL }}/api/Health")
+          echo "$api_headers" | grep -iq '^content-encoding: *\(br\|gzip\)' \
+            || { echo "FAIL: /api/Health response is not compressed"; exit 1; }
+          # …and the SPA shell must be gzip-served by nginx.
+          html_headers=$(curl -fskSL --retry 3 --retry-all-errors --max-time 10 \
+            -H 'Accept-Encoding: gzip' -D - -o /dev/null "${{ vars.SMOKE_URL }}/")
+          echo "$html_headers" | grep -iq '^content-encoding: *gzip' \
+            || { echo "FAIL: index.html is not gzip-served"; exit 1; }
+          echo "Smoke check passed (health + compression)"

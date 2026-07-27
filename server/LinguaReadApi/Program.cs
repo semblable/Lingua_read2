@@ -17,6 +17,8 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity; // Keep one Identity using
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.ResponseCompression;
+using System.IO.Compression;
 // using Microsoft.AspNetCore.Identity.EntityFrameworkCore; // This namespace is not needed directly here
 
 // --- Load .env file ---
@@ -67,6 +69,29 @@ if (!builder.Environment.IsEnvironment("Testing"))
 
 // Add services to the container.
 builder.Services.AddControllers();
+
+// --- Response compression ---
+// The reader payload (GET /api/texts/{id}: full content + every distinct word with
+// translations) is the hottest response and is pure JSON. Compressing at the app rather
+// than relying on nginx's on-the-fly gzip (a) preserves the strong ETags TextsController
+// emits (nginx's gzip filter strips them, breaking PWA revalidation), (b) covers clients
+// that talk to Kestrel directly (mobile builds, local dev), and (c) sends Brotli, which
+// beats nginx's gzip level 6. nginx won't re-compress responses that already carry
+// Content-Encoding. EnableForHttps is safe here: auth material lives in an httpOnly
+// cookie, never in response bodies alongside reflected input (no BREACH surface).
+builder.Services.AddResponseCompression(options =>
+{
+    options.EnableForHttps = true;
+    options.Providers.Add<BrotliCompressionProvider>();
+    options.Providers.Add<GzipCompressionProvider>();
+});
+// .NET 7+ maps Brotli Optimal to quality 4 — near-gzip CPU cost, better ratio.
+builder.Services.Configure<BrotliCompressionProviderOptions>(o => o.Level = CompressionLevel.Optimal);
+builder.Services.Configure<GzipCompressionProviderOptions>(o => o.Level = CompressionLevel.Fastest);
+
+// Process-wide cache, currently used for the language-config list that every
+// translation request needs (see LanguageService).
+builder.Services.AddMemoryCache();
 // Configure DbContext with PostgreSQL
 builder.Services.AddDbContext<AppDbContext>(options =>
 {
@@ -274,6 +299,9 @@ var forwardedHeaderOptions = new ForwardedHeadersOptions
 forwardedHeaderOptions.KnownIPNetworks.Clear(); // .NET 10: KnownNetworks is obsolete, replaced by KnownIPNetworks
 forwardedHeaderOptions.KnownProxies.Clear();
 app.UseForwardedHeaders(forwardedHeaderOptions);
+
+// Before anything that writes a response body (API JSON and static files alike).
+app.UseResponseCompression();
 
 // --- Add early exception logging middleware ---
 app.Use(async (context, next) =>

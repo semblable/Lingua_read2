@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
@@ -30,7 +31,7 @@ public class DatabaseIntegrityFixTests
         });
         await context.SaveChangesAsync();
 
-        var service = new LanguageService(context);
+        var service = new LanguageService(context, new MemoryCache(new MemoryCacheOptions()));
 
         var result = await service.DeleteLanguageAsync(1);
 
@@ -43,7 +44,7 @@ public class DatabaseIntegrityFixTests
     public async Task DeleteLanguageAsync_ReturnsNotFound_WhenLanguageDoesNotExist()
     {
         await using var context = CreateContext();
-        var service = new LanguageService(context);
+        var service = new LanguageService(context, new MemoryCache(new MemoryCacheOptions()));
 
         var result = await service.DeleteLanguageAsync(404);
 
@@ -66,7 +67,7 @@ public class DatabaseIntegrityFixTests
         });
         await context.SaveChangesAsync();
 
-        var controller = new LanguagesController(new LanguageService(context), NullLogger<LanguagesController>.Instance);
+        var controller = new LanguagesController(new LanguageService(context, new MemoryCache(new MemoryCacheOptions())), NullLogger<LanguagesController>.Instance);
 
         var result = await controller.DeleteLanguage(1);
 
@@ -136,7 +137,7 @@ public class DatabaseIntegrityFixTests
             new SrsPhrase { UserId = otherUserId, WordId = otherUserWordId, Sentence = "Other user phrase" });
         await context.SaveChangesAsync();
 
-        var service = new LanguageService(context);
+        var service = new LanguageService(context, new MemoryCache(new MemoryCacheOptions()));
 
         var result = await service.ResetLanguageContentAsync(1, userId);
 

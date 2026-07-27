@@ -25,7 +25,6 @@ namespace LinguaReadApi.Controllers
         private readonly AppDbContext _context;
         private readonly ILogger<TextsController> _logger;
         private readonly IUserActivityService _userActivityService; // Inject activity service
-        private readonly IServiceScopeFactory _scopeFactory;
         private readonly WordLinkingChannel _wordLinkingChannel;
         private const int MaxRecentTexts = 5;
         private static readonly JsonSerializerOptions StructuredContentJsonOptions = new(JsonSerializerDefaults.Web)
@@ -35,12 +34,11 @@ namespace LinguaReadApi.Controllers
 
         private readonly StatsRecomputeService _statsRecompute;
 
-        public TextsController(AppDbContext context, ILogger<TextsController> logger, IUserActivityService userActivityService, IServiceScopeFactory scopeFactory, WordLinkingChannel wordLinkingChannel, StatsRecomputeService statsRecompute) // Inject services
+        public TextsController(AppDbContext context, ILogger<TextsController> logger, IUserActivityService userActivityService, WordLinkingChannel wordLinkingChannel, StatsRecomputeService statsRecompute) // Inject services
         {
             _context = context;
             _logger = logger;
             _userActivityService = userActivityService; // Assign service
-            _scopeFactory = scopeFactory;
             _wordLinkingChannel = wordLinkingChannel;
             _statsRecompute = statsRecompute;
         }
@@ -178,25 +176,27 @@ namespace LinguaReadApi.Controllers
                 }
             }
 
-            // --- Step 2: Fire-and-forget update for LastAccessedAt (non-critical) ---
-            _ = Task.Run(async () =>
+            // --- Step 2: Bump LastAccessedAt (non-critical) ---
+            // Attach a stub and mark the one property modified: a single UPDATE on the request's
+            // own context/connection. This used to be a fire-and-forget Task.Run with a fresh DI
+            // scope per text open — unbounded thread-pool work and a second pooled connection for
+            // every read. (Stub-attach rather than ExecuteUpdateAsync so the InMemory test
+            // provider keeps working; ownership was already verified by the query above.)
+            try
             {
-                try
-                {
-                    using var scope = _scopeFactory.CreateScope();
-                    var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-                    var textToUpdate = new Text { TextId = id, UserId = userId };
-                    dbContext.Texts.Attach(textToUpdate);
-                    textToUpdate.LastAccessedAt = DateTime.UtcNow;
-                    dbContext.Entry(textToUpdate).Property(x => x.LastAccessedAt).IsModified = true;
-                    await dbContext.SaveChangesAsync();
-                }
-                catch (Exception ex)
-                {
-                    // Non-critical - log but don't fail the request
-                    _logger.LogWarning(ex, "Background update of LastAccessedAt failed for TextId {TextId}", id);
-                }
-            });
+                // Reuse an already-tracked instance if one exists (test contexts seed and keep
+                // entities tracked); production requests read with AsNoTracking, so this attaches
+                // a stub and sends only the one column.
+                var textToUpdate = _context.Texts.Local.FirstOrDefault(t => t.TextId == id)
+                    ?? _context.Texts.Attach(new Text { TextId = id, UserId = userId }).Entity;
+                textToUpdate.LastAccessedAt = DateTime.UtcNow;
+                _context.Entry(textToUpdate).Property(x => x.LastAccessedAt).IsModified = true;
+                await _context.SaveChangesAsync();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Update of LastAccessedAt failed for TextId {TextId}", id);
+            }
             // --- End Update ---
 
             // --- Step 3: Return the DTO ---

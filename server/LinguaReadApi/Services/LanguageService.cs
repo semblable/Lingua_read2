@@ -1,6 +1,7 @@
 using LinguaReadApi.Data;
 using LinguaReadApi.Models;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -11,47 +12,62 @@ namespace LinguaReadApi.Services
     public class LanguageService : ILanguageService
     {
         private readonly AppDbContext _context;
+        private readonly IMemoryCache _cache;
 
-        public LanguageService(AppDbContext context)
+        // The full language list (with dictionaries and sentence-split exceptions) is read
+        // on every DeepL/Gemini/OpenRouter call — i.e. on every word click in the reader —
+        // but only changes through the admin UI. Cache one shared entry; writes below evict
+        // it eagerly, and the TTL is a safety net for out-of-band writes (e.g. a database
+        // restore through DatabaseAdminService). Cached entities are shared across requests:
+        // callers must treat them as read-only.
+        private const string LanguagesCacheKey = "LanguageService.AllLanguages";
+        private static readonly TimeSpan LanguagesCacheTtl = TimeSpan.FromMinutes(5);
+
+        public LanguageService(AppDbContext context, IMemoryCache cache)
         {
             _context = context;
+            _cache = cache;
         }
+
+        private async Task<List<Language>> GetLanguagesCachedAsync()
+        {
+            var languages = await _cache.GetOrCreateAsync(LanguagesCacheKey, async entry =>
+            {
+                entry.AbsoluteExpirationRelativeToNow = LanguagesCacheTtl;
+
+                var loaded = await _context.Languages
+                                     .Include(l => l.Dictionaries)
+                                     .Include(l => l.SentenceSplitExceptions)
+                                     .AsSplitQuery()
+                                     .AsNoTracking()
+                                     .ToListAsync();
+
+                foreach (var lang in loaded)
+                {
+                    if (lang.Dictionaries != null)
+                    {
+                        lang.Dictionaries = lang.Dictionaries.OrderBy(d => d.SortOrder).ToList();
+                    }
+                }
+
+                return loaded;
+            });
+
+            return languages!;
+        }
+
+        private void InvalidateLanguagesCache() => _cache.Remove(LanguagesCacheKey);
 
         public async Task<IEnumerable<Language>> GetAllLanguagesAsync()
         {
-            var languages = await _context.Languages
-                                 .Include(l => l.Dictionaries)
-                                 .Include(l => l.SentenceSplitExceptions)
-                                 .AsSplitQuery()
-                                 .AsNoTracking()
-                                 .ToListAsync();
-
-            foreach (var lang in languages)
-            {
-                if (lang.Dictionaries != null)
-                {
-                    lang.Dictionaries = lang.Dictionaries.OrderBy(d => d.SortOrder).ToList();
-                }
-            }
-
-            return languages;
+            // Shallow copy so callers that reorder/append the list can't corrupt the cache.
+            return (await GetLanguagesCachedAsync()).ToList();
         }
 
         public async Task<Language?> GetLanguageByIdAsync(int id)
         {
-            var language = await _context.Languages
-                                 .Include(l => l.Dictionaries)
-                                 .Include(l => l.SentenceSplitExceptions)
-                                 .AsSplitQuery()
-                                 .AsNoTracking()
-                                 .FirstOrDefaultAsync(l => l.LanguageId == id);
-
-            if (language != null && language.Dictionaries != null)
-            {
-                language.Dictionaries = language.Dictionaries.OrderBy(d => d.SortOrder).ToList();
-            }
-
-            return language;
+            var languages = await GetLanguagesCachedAsync();
+            return languages.FirstOrDefault(l => l.LanguageId == id);
         }
 
         public async Task<Language> CreateLanguageAsync(Language language)
@@ -68,6 +84,7 @@ namespace LinguaReadApi.Services
             // EF Core will automatically handle inserting the related entities
             _context.Languages.Add(language);
             await _context.SaveChangesAsync();
+            InvalidateLanguagesCache();
             return language; // The language object will have its ID populated
         }
 
@@ -146,6 +163,7 @@ namespace LinguaReadApi.Services
             try
             {
                 await _context.SaveChangesAsync();
+                InvalidateLanguagesCache();
                 return true;
             }
             catch (DbUpdateConcurrencyException)
@@ -187,6 +205,7 @@ namespace LinguaReadApi.Services
             try
             {
                 await _context.SaveChangesAsync();
+                InvalidateLanguagesCache();
                 return DeleteLanguageResult.Deleted();
             }
             catch (DbUpdateException ex)
@@ -252,11 +271,13 @@ namespace LinguaReadApi.Services
 
         public async Task<IEnumerable<Language>> GetLanguagesForTranslationAsync()
         {
-            return await _context.Languages
-                                 .Where(l => l.IsActiveForTranslation)
-                                 .AsNoTracking()
-                                 .OrderBy(l => l.Name)
-                                 .ToListAsync();
+            var languages = await GetLanguagesCachedAsync();
+            // InvariantCulture ≈ the linguistic ORDER BY the database used to do here,
+            // so accented language names keep their familiar dropdown position.
+            return languages
+                .Where(l => l.IsActiveForTranslation)
+                .OrderBy(l => l.Name, StringComparer.InvariantCulture)
+                .ToList();
         }
     }
 }

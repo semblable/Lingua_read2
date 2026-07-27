@@ -59,26 +59,21 @@ public class LessonLoadingOptimizationTests
     }
 
     [Fact]
-    public async Task GetText_UpdatesLastAccessedAt_InBackground()
+    public async Task GetText_UpdatesLastAccessedAt()
     {
         await using var context = CreateContext();
         var userId = Guid.NewGuid();
         SeedUserLanguageAndText(context, userId, textId: 1, content: "Test");
-
-        var textBefore = await context.Texts.AsNoTracking().SingleAsync(t => t.TextId == 1);
-        var beforeTime = textBefore.LastAccessedAt;
 
         var controller = CreateTextsController(context, userId);
         var result = await controller.GetText(1);
 
         Assert.NotNull(result.Value);
 
-        // Give the background task a moment to complete
-        await Task.Delay(200);
-
+        // The update is applied synchronously within the request.
         var textAfter = await context.Texts.AsNoTracking().SingleAsync(t => t.TextId == 1);
-        Assert.True(textAfter.LastAccessedAt > beforeTime || beforeTime == default,
-            "LastAccessedAt should be updated after GetText");
+        Assert.True(textAfter.LastAccessedAt.HasValue,
+            "LastAccessedAt should be set after GetText");
     }
 
     [Fact]
@@ -210,10 +205,9 @@ public class LessonLoadingOptimizationTests
     private static TextsController CreateTextsController(AppDbContext context, Guid userId)
     {
         var sp = CreateContextProvider(context);
-        var scopeFactory = sp.GetRequiredService<IServiceScopeFactory>();
         var service = new UserActivityService(context, NullLogger<UserActivityService>.Instance);
         var stats = new StatsRecomputeService(sp, NullLogger<StatsRecomputeService>.Instance, new MigrationSignal());
-        return new TextsController(context, NullLogger<TextsController>.Instance, service, scopeFactory, new WordLinkingChannel(), stats)
+        return new TextsController(context, NullLogger<TextsController>.Instance, service, new WordLinkingChannel(), stats)
         {
             ControllerContext = BuildControllerContext(userId)
         };
@@ -232,13 +226,6 @@ public class LessonLoadingOptimizationTests
         {
             ControllerContext = BuildControllerContext(userId)
         };
-    }
-
-    private static IServiceScopeFactory CreateScopeFactory(AppDbContext context)
-    {
-        var services = new ServiceCollection();
-        services.AddSingleton(context);
-        return services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
     }
 
     private static ControllerContext BuildControllerContext(Guid userId)

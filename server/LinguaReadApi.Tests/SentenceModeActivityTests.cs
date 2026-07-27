@@ -110,7 +110,7 @@ public class SentenceModeActivityTests
         context.ChangeTracker.Clear();
 
         var service = new UserActivityService(context, NullLogger<UserActivityService>.Instance);
-        var controller = new TextsController(context, NullLogger<TextsController>.Instance, service, CreateScopeFactory(context), new WordLinkingChannel(), CreateStatsRecompute(context))
+        var controller = new TextsController(context, NullLogger<TextsController>.Instance, service, new WordLinkingChannel(), CreateStatsRecompute(context))
         {
             ControllerContext = BuildControllerContext(userId)
         };
@@ -174,7 +174,7 @@ public class SentenceModeActivityTests
         context.ChangeTracker.Clear();
 
         var service = new UserActivityService(context, NullLogger<UserActivityService>.Instance);
-        var controller = new TextsController(context, NullLogger<TextsController>.Instance, service, CreateScopeFactory(context), new WordLinkingChannel(), CreateStatsRecompute(context))
+        var controller = new TextsController(context, NullLogger<TextsController>.Instance, service, new WordLinkingChannel(), CreateStatsRecompute(context))
         {
             ControllerContext = BuildControllerContext(userId)
         };
@@ -218,7 +218,7 @@ public class SentenceModeActivityTests
         context.ChangeTracker.Clear();
 
         var service = new UserActivityService(context, NullLogger<UserActivityService>.Instance);
-        var controller = new TextsController(context, NullLogger<TextsController>.Instance, service, CreateScopeFactory(context), new WordLinkingChannel(), CreateStatsRecompute(context))
+        var controller = new TextsController(context, NullLogger<TextsController>.Instance, service, new WordLinkingChannel(), CreateStatsRecompute(context))
         {
             ControllerContext = BuildControllerContext(userId)
         };
@@ -271,7 +271,7 @@ public class SentenceModeActivityTests
         context.ChangeTracker.Clear();
 
         var service = new UserActivityService(context, NullLogger<UserActivityService>.Instance);
-        var controller = new TextsController(context, NullLogger<TextsController>.Instance, service, CreateScopeFactory(context), new WordLinkingChannel(), CreateStatsRecompute(context))
+        var controller = new TextsController(context, NullLogger<TextsController>.Instance, service, new WordLinkingChannel(), CreateStatsRecompute(context))
         {
             ControllerContext = BuildControllerContext(userId)
         };
@@ -348,14 +348,6 @@ public class SentenceModeActivityTests
             .Options;
 
         return new AppDbContext(options);
-    }
-
-    private static IServiceScopeFactory CreateScopeFactory(AppDbContext context)
-    {
-        var services = new ServiceCollection();
-        services.AddSingleton(context);
-        services.AddSingleton<AppDbContext>(context);
-        return services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
     }
 
     private static StatsRecomputeService CreateStatsRecompute(AppDbContext context)

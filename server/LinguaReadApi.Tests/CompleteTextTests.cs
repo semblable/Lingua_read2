@@ -149,10 +149,9 @@ public class CompleteTextTests
     private static TextsController CreateController(AppDbContext context, Guid userId, WordLinkingChannel? channel = null)
     {
         var sp = BuildContextProvider(context);
-        var scopeFactory = sp.GetRequiredService<IServiceScopeFactory>();
         var service = new UserActivityService(context, NullLogger<UserActivityService>.Instance);
         var stats = new StatsRecomputeService(sp, NullLogger<StatsRecomputeService>.Instance, new MigrationSignal());
-        return new TextsController(context, NullLogger<TextsController>.Instance, service, scopeFactory, channel ?? new WordLinkingChannel(), stats)
+        return new TextsController(context, NullLogger<TextsController>.Instance, service, channel ?? new WordLinkingChannel(), stats)
         {
             ControllerContext = new ControllerContext
             {

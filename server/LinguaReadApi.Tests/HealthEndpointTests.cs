@@ -56,4 +56,19 @@ public class HealthEndpointTests : IClassFixture<WebApplicationFactory<Program>>
         var content = await response.Content.ReadAsStringAsync();
         Assert.Contains("\"status\":\"healthy\"", content);
     }
+
+    [Theory]
+    [InlineData("br")]
+    [InlineData("gzip")]
+    public async Task JsonResponses_AreCompressed_WhenClientAcceptsEncoding(string encoding)
+    {
+        var client = _factory.CreateClient();
+        var request = new HttpRequestMessage(HttpMethod.Get, "/api/Health");
+        request.Headers.AcceptEncoding.ParseAdd(encoding);
+
+        var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Contains(encoding, response.Content.Headers.ContentEncoding);
+    }
 }

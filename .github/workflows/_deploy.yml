@@ -223,3 +223,23 @@ jobs:
           echo "$html_headers" | grep -iq '^content-encoding: *gzip' \
             || { echo "FAIL: index.html is not gzip-served"; exit 1; }
           echo "Smoke check passed (health + compression)"
+
+      # A skipped gate renders identically to a passing one in the run list, which is
+      # how a regression ships unnoticed. Make the no-op loud instead of silent.
+      - name: Warn that the smoke check is disabled
+        if: ${{ vars.SMOKE_URL == '' }}
+        run: |
+          echo "::warning title=Smoke check skipped::SMOKE_URL is not set for this environment, so the health and compression gates did NOT run. This deploy proves the containers started, not that the public edge serves correctly."
+          {
+            echo "### :warning: External smoke check skipped"
+            echo
+            echo "\`SMOKE_URL\` is not set for this environment, so the health and compression"
+            echo "gates did not run. This deploy proves the containers started — not that the"
+            echo "public edge serves correctly."
+            echo
+            echo "Enable it with:"
+            echo
+            echo '```'
+            echo "gh variable set SMOKE_URL --env <environment> --body 'https://<host>'"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

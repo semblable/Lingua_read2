@@ -65,9 +65,12 @@ echo "[media] Done."
 
 # 5. Drive retention: DB dumps and moved-aside media for 90 days, logs for 30.
 # Exit 3 = directory not found (e.g. media/deleted before anything was ever removed).
+# Empty folders go in a second pass WITHOUT --min-age: `delete --rmdirs` applies the age
+# filter to its emptiness check too, so a folder holding only recent files looks empty,
+# the rmdir is refused ("directory not empty"), and the whole run fails.
 prune() {
-  rclone delete "$REMOTE/$1" --min-age "$2" --rmdirs --config /tmp/rclone.conf \
-    || [ $? -eq 3 ]
+  rclone delete "$REMOTE/$1" --min-age "$2" --config /tmp/rclone.conf || [ $? -eq 3 ]
+  rclone rmdirs "$REMOTE/$1" --leave-root --config /tmp/rclone.conf || [ $? -eq 3 ]
 }
 prune db            90d
 prune media/deleted 90d

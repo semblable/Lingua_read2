@@ -27,7 +27,9 @@ Two GitHub Environments (Settings → Environments): **staging** and **productio
 
 Optional per-environment **variable**: `SMOKE_URL` — public base URL; when set, deploys finish with external `curl` checks of `/healthz` and `/api/Health/ready`.
 
-**Keep these names out of repo-level secrets.** GitHub fills a missing environment secret from a same-named repo-level one, so a repo-level `DEPLOY_HOST` would silently become the target of any environment that lacks its own — e.g. production's `.env` shipped to the staging box. `_deploy.yml` reads environment secrets only and fails fast (before touching any host), naming each missing one.
+The target host is the environment **variable** `DEPLOY_HOST` (an IP is public anyway). GitHub fills a missing environment *secret* from a same-named repo-level one; there are no repo-level variables, so a host can't leak between environments that way. `_deploy.yml` fails fast (before touching any host), naming each missing value.
+
+**Staging fallback (active now):** staging hasn't been moved to its environment yet, so it alone may fall back to the repo-level secrets `DEPLOY_HOST` and `PRODUCTION_ENV` (plus `DEPLOY_USER/PATH/SSH_KEY` via normal shadowing). To finish: give the `staging` environment all five secrets and the `DEPLOY_HOST` variable, remove the two `inputs.environment == 'staging'` clauses in `_deploy.yml`, then delete the repo-level `DEPLOY_*` + `PRODUCTION_ENV`.
 
 The deploy appends `*_IMAGE_TAG` (the sha tag) and `BACKUP_ENV` (the environment name) to `.env` itself — don't put them in `DOTENV`.
 

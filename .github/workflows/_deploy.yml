@@ -26,28 +26,32 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: ${{ inputs.environment }}
-    # Environment secrets only — no repo-level fallback. A same-named repo-level secret
-    # would still fill a gap left by a missing environment secret (that's how GitHub
-    # resolves them), which could pair one environment's .env with another's host.
-    # Keep repo-level DEPLOY_* / DOTENV undefined; ops/deploy-runbook.md explains.
+    # GitHub fills a missing environment secret from a same-named repo-level one. Staging
+    # still lives in repo-level DEPLOY_* + PRODUCTION_ENV (not yet moved to its environment),
+    # so everything that decides WHERE and WHAT is deployed is pinned per environment:
+    # - host: the environment VARIABLE DEPLOY_HOST (no repo-level variable exists to leak in);
+    #   only staging may fall back to the repo-level secret.
+    # - .env: environment DOTENV; only staging may fall back to repo-level PRODUCTION_ENV.
+    # Once staging has its own secrets + DEPLOY_HOST variable, drop both staging clauses and
+    # delete the repo-level secrets (ops/deploy-runbook.md).
     env:
-      TARGET_HOST: ${{ secrets.DEPLOY_HOST }}
+      TARGET_HOST: ${{ vars.DEPLOY_HOST || (inputs.environment == 'staging' && secrets.DEPLOY_HOST) || '' }}
       TARGET_USER: ${{ secrets.DEPLOY_USER }}
       TARGET_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
       TARGET_PATH: ${{ secrets.DEPLOY_PATH }}
-      TARGET_DOTENV: ${{ secrets.DOTENV }}
+      TARGET_DOTENV: ${{ secrets.DOTENV || (inputs.environment == 'staging' && secrets.PRODUCTION_ENV) || '' }}
     steps:
       # Fail fast, before anything touches a host, if any part of the configuration is missing.
       - name: Validate deploy configuration
         run: |
           missing=""
-          [ -n "$TARGET_HOST" ]    || missing="$missing DEPLOY_HOST"
+          [ -n "$TARGET_HOST" ]    || missing="$missing DEPLOY_HOST(variable)"
           [ -n "$TARGET_USER" ]    || missing="$missing DEPLOY_USER"
           [ -n "$TARGET_SSH_KEY" ] || missing="$missing DEPLOY_SSH_KEY"
           [ -n "$TARGET_PATH" ]    || missing="$missing DEPLOY_PATH"
           [ -n "$TARGET_DOTENV" ]  || missing="$missing DOTENV"
           if [ -n "$missing" ]; then
-            echo "::error::'${{ inputs.environment }}' environment is missing secrets:$missing (Settings -> Environments -> ${{ inputs.environment }})."
+            echo "::error::'${{ inputs.environment }}' environment is missing:$missing (Settings -> Environments -> ${{ inputs.environment }})."
             exit 1
           fi
 

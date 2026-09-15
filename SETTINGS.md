@@ -69,12 +69,13 @@ Adjust security bounds and Discord scheduler configurations.
 
 | Variable Name | Default Value | Description |
 | :--- | :--- | :--- |
-| `CORS_ALLOWED_ORIGINS` | *None* | Comma-separated list of allowed origins (e.g. `http://localhost:3000`). If blank, the API defaults to standard docker service bounds. |
+| `CORS_ALLOWED_ORIGINS` | *None* | Comma-separated origins allowed to call the API **cross-origin**. The app itself is served same-origin by nginx and needs no entry, so this normally stays blank (= deny cross-origin in production; dev always allows localhost). |
 | `DISCORD_WEEKLY_REPORT_DAY` | `Monday` | Day of the week for generating the background system reports (`Monday`, `Tuesday`, etc.). |
 | `DISCORD_WEEKLY_REPORT_HOUR_UTC` | `8` | UTC hour (0-23) to run the Discord background reporting task. |
 | `DISCORD_WEEKLY_REPORT_DRY_RUN` | `false` | If `true`, runs the background service without sending actual Discord HTTP calls. |
 | `DISCORD_WEEKLY_REPORT_POLL_MINUTES` | `30` | Interval in minutes for checking the scheduling queue. |
 | `HEALTHCHECK_URL` | *None* | **Optional.** healthchecks.io-style ping URL for the backup sidecar; `backup.sh` pings it on start/success/failure so silent backup failures raise an alert. |
+| `BACKUP_ENV` | *None* | **Set by the deploy workflow** to the GitHub environment name. Selects the backup sidecar's Drive folder (`lingua-read-backups/<BACKUP_ENV>/`); `backup.sh` refuses to run without it so two environments can never share (and overwrite) one folder. |
 
 ---
 

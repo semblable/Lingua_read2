@@ -27,9 +27,11 @@ Two GitHub Environments (Settings → Environments): **staging** and **productio
 
 Optional per-environment **variable**: `SMOKE_URL` — public base URL; when set, deploys finish with external `curl` checks of `/healthz` and `/api/Health/ready`.
 
-**Transitional fallback (active now):** until the environments are populated, `_deploy.yml` falls back to the legacy repo-level secrets — staging uses `DEPLOY_*` + `PRODUCTION_ENV`, production uses `GCP_DEPLOY_*` + `GCP_PRODUCTION_ENV` (via `legacy_secret_prefix: GCP_`). Environment-scoped secrets automatically take precedence the moment they exist (same-name environment secrets shadow repo-level ones). When migrating for real: add all five environment secrets, verify a green deploy, then **delete the legacy secrets as a complete set** — deleting only some of the `GCP_*` ones could make production resolve staging's host values.
+**Keep these names out of repo-level secrets.** GitHub fills a missing environment secret from a same-named repo-level one, so a repo-level `DEPLOY_HOST` would silently become the target of any environment that lacks its own — e.g. production's `.env` shipped to the staging box. `_deploy.yml` reads environment secrets only and fails fast (before touching any host), naming each missing one.
 
-The deploy job fails fast (before touching any host) if neither an environment `DOTENV` nor the legacy env-file secret resolves.
+The deploy appends `*_IMAGE_TAG` (the sha tag) and `BACKUP_ENV` (the environment name) to `.env` itself — don't put them in `DOTENV`.
+
+**The domain isn't in `DOTENV`.** `JWT_ISSUER`/`JWT_AUDIENCE` are opaque labels (defaults `LinguaReadApi`/`LinguaReadClient`) and the site is same-origin behind nginx, so `CORS_ALLOWED_ORIGINS` stays blank. A domain lives only in DNS, the certificate, and `SMOKE_URL`.
 
 ## Deploying
 
@@ -41,6 +43,8 @@ The deploy job fails fast (before touching any host) if neither an environment `
 Run *Promote to Production* with an older `sha-XXXXXXX` tag (find candidates in the `prod-…` git tags, the Actions history, or GHCR). The same digest-retag + deploy path runs; nothing is rebuilt. If GHCR cleanup already deleted that tag, the promote fails at the verify step — rebuild the image from the corresponding `prod-…` git tag instead.
 
 ## Host expectations
+
+**New host:** `ops/bootstrap-host.sh` sets up everything below in one idempotent run (Docker, `deploy` user + keys, deploy dir, optional Let's Encrypt cert with renewal hooks) — see its header for usage. Restore data **before** the first deploy, or the API initialises an empty database.
 
 - Docker + docker compose v2; deploy user can run docker (staging uses `sudo docker`, production plain `docker`).
 - Deploy dir (`DEPLOY_PATH`) contains: `.env` (written by deploys), `certs/`, `secrets/rclone.conf` (optional, enables the backup sidecar), `predeploy/` (automatic pre-deploy `pg_dump` snapshots, last 3 kept).
@@ -56,7 +60,7 @@ Run *Promote to Production* with an older `sha-XXXXXXX` tag (find candidates in 
 
 A backup that has never been restored is a hope, not a backup. Every ~3 months:
 
-1. Pull the latest dump from Google Drive (`rclone copy gdrive:lingua-read-backups/db/<year>/<month>/<latest>.backup .`).
+1. Pull the latest dump from Google Drive (`rclone copy gdrive:lingua-read-backups/production/db/<year>/<month>/<latest>.backup .`).
 2. Restore into a scratch container:
    ```bash
    docker run -d --name restore-drill -e POSTGRES_PASSWORD=drill postgres:18

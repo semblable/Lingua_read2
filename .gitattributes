@@ -1,0 +1,3 @@
+# Shell scripts run on Linux hosts and in containers; a CRLF checkout (core.autocrlf=true
+# on Windows) breaks them the moment one is copied or bind-mounted from a working tree.
+*.sh text eol=lf

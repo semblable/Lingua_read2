@@ -4,8 +4,44 @@ This repo’s Docker stack persists:
 - **Postgres data**: `db_data_pg18` volume
 - **Audio lessons**: `api_audio_lessons` volume
 - **Audiobooks**: `api_audiobooks` volume
+- **EPUB assets**: `api_epub_assets` volume
+- **Data Protection keys**: `api_dp_keys` volume (losing it only forces a re-login)
 
 Backups should cover **both** the database and the media volumes.
+
+### Automated nightly backup (the `backup` sidecar)
+
+Runs at 02:00 once `secrets/rclone.conf` exists in the deploy dir (the deploy starts the
+`backup` profile only then). Each environment writes to its own Drive folder,
+`gdrive:lingua-read-backups/<BACKUP_ENV>/` — `BACKUP_ENV` is appended to `.env` by the
+deploy, and `backup.sh` refuses to run without it:
+
+| Path | Contents | Kept on Drive |
+|---|---|---|
+| `db/<yyyy>/<mm>/db-<ts>.backup` | full `pg_dump -Fc`, every night | 90 days |
+| `media/current/<volume>/` | mirror of the four media volumes | always (it's the live copy) |
+| `media/deleted/<ts>/<volume>/` | files removed or replaced since the previous night | 90 days |
+| `logs/`, `errors/` | last 24 h of container logs, and the error lines from them | 30 days |
+
+Media is **incremental**: `rclone sync` compares size + modification time and uploads only
+new or changed files, so after the first full upload a night costs only that day's uploads.
+
+**Enable on a host** — authorize on a machine with a browser, then copy the config over:
+
+```bash
+rclone config create gdrive drive scope=drive.file   # drive.file: rclone sees only what it created
+scp ~/.config/rclone/rclone.conf deploy@HOST:/opt/lingua-read/secrets/rclone.conf   # Windows: %APPDATA%\rclone\rclone.conf
+```
+
+Then redeploy (or `docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile backup up -d backup`).
+Run one immediately: `docker compose … --profile backup exec backup /backup.sh`.
+
+**Restore from Drive:** `rclone copy gdrive:lingua-read-backups/production/media/current/audio_lessons ./audio_lessons`
+(etc.), then load it into the volume with a throwaway container
+(`docker run --rm -v lingua-read_api_audio_lessons:/data -v "$PWD/audio_lessons:/src:ro" alpine cp -a /src/. /data/`);
+the database restore is §3 below.
+
+The manual procedures that follow still work for one-off copies.
 
 ### Prerequisites (on the VM)
 - Docker + Compose installed

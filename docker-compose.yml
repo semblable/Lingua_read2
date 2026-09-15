@@ -61,8 +61,10 @@ services:
       PGPASSWORD: ${POSTGRES_PASSWORD}
       # Other variables
       Jwt__Key: ${JWT_KEY}
-      Jwt__Issuer: ${JWT_ISSUER}
-      Jwt__Audience: ${JWT_AUDIENCE}
+      # Issuer/audience are opaque labels matched against themselves, not the site's domain,
+      # so a domain move never requires changing them. Override only to rotate every session.
+      Jwt__Issuer: ${JWT_ISSUER:-LinguaReadApi}
+      Jwt__Audience: ${JWT_AUDIENCE:-LinguaReadClient}
       Jwt__ExpiryInHours: ${JWT_EXPIRY_HOURS:-2160}
       DeepL__ApiKey: ${DEEPL_API_KEY}
       Gemini__ApiKey: ${GEMINI_API_KEY}
@@ -133,11 +135,18 @@ services:
       - POSTGRES_USER
       - POSTGRES_PASSWORD
       - POSTGRES_DB
+      # Selects the per-environment Drive folder; required by backup.sh (appended by _deploy.yml).
+      - BACKUP_ENV
       # Optional healthchecks.io-style heartbeat URL pinged by backup.sh (empty = disabled).
       - HEALTHCHECK_URL
     volumes:
       - backup_data:/backups
       - ./secrets/rclone.conf:/rclone/rclone.conf:ro
+      # Media volumes, read-only — mirrored to Drive by backup.sh (the DB dump alone can't restore uploads).
+      - api_audio_lessons:/srv/media/audio_lessons:ro
+      - api_audiobooks:/srv/media/audiobooks:ro
+      - api_epub_assets:/srv/media/epub_assets:ro
+      - api_dp_keys:/srv/media/dp_keys:ro
       # :ro is hygiene only — socket access still grants full Docker API; used to read container logs.
       - /var/run/docker.sock:/var/run/docker.sock:ro
 

@@ -19,6 +19,10 @@ TIMESTAMP=$(date +%Y%m%d-%H%M%S)
 YEAR=$(date +%Y)
 MONTH=$(date +%m)
 BACKUP_DIR=/backups
+# One Drive folder per environment, and no default on purpose: `rclone sync` below makes the
+# destination match the source, so staging writing into production's folder would move every
+# production media file into deleted/. _deploy.yml appends BACKUP_ENV to .env.
+REMOTE="gdrive:lingua-read-backups/${BACKUP_ENV:?BACKUP_ENV must be set (production|staging)}"
 mkdir -p "$BACKUP_DIR/db/$YEAR/$MONTH" "$BACKUP_DIR/logs/$YEAR/$MONTH" "$BACKUP_DIR/errors/$YEAR/$MONTH"
 
 echo "=== Backup started: $TIMESTAMP ==="
@@ -44,11 +48,33 @@ echo "[logs] Done."
 # 3. Upload to Google Drive
 echo "[rclone] Uploading..."
 cp /rclone/rclone.conf /tmp/rclone.conf
-rclone copy "$BACKUP_DIR" gdrive:lingua-read-backups \
+rclone copy "$BACKUP_DIR" "$REMOTE" \
   --config /tmp/rclone.conf \
   --log-level INFO
 
-# 4. Prune local copies older than 7 days
+# 4. Media volumes: mirror to Drive. Files removed or replaced since the last run are
+# moved into a dated deleted/ folder rather than dropped, so a bad delete is recoverable.
+echo "[media] Syncing..."
+for d in audio_lessons audiobooks epub_assets dp_keys; do
+  rclone sync "/srv/media/$d" "$REMOTE/media/current/$d" \
+    --backup-dir "$REMOTE/media/deleted/$TIMESTAMP/$d" \
+    --config /tmp/rclone.conf \
+    --log-level INFO
+done
+echo "[media] Done."
+
+# 5. Drive retention: DB dumps and moved-aside media for 90 days, logs for 30.
+# Exit 3 = directory not found (e.g. media/deleted before anything was ever removed).
+prune() {
+  rclone delete "$REMOTE/$1" --min-age "$2" --rmdirs --config /tmp/rclone.conf \
+    || [ $? -eq 3 ]
+}
+prune db            90d
+prune media/deleted 90d
+prune logs          30d
+prune errors        30d
+
+# 6. Prune local copies older than 7 days
 find "$BACKUP_DIR/db"     -name "*.backup" -mtime +7 -delete
 find "$BACKUP_DIR/logs"   -name "*.log"    -mtime +7 -delete
 find "$BACKUP_DIR/errors" -name "*.err"    -mtime +7 -delete

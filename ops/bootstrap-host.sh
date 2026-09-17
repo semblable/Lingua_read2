@@ -5,7 +5,7 @@
 # Installs Docker (with live-restore, so containers survive daemon upgrades), creates the
 # deploy user and directory the deploy workflow expects, schedules Docker image cleanup,
 # adds a swap file (unless the host already has swap), installs Ubuntu bug-fix and Docker
-# updates automatically alongside security updates and reboots at 04:30 when one needs it,
+# updates automatically alongside security updates and reboots at 02:45 when one needs it,
 # turns off SSH password logins once a key is in place, bans SSH brute-forcers with
 # fail2ban, and (optionally) issues a Let's Encrypt certificate.
 # Idempotent: re-running on a prepared host changes nothing. Contains no secrets.
@@ -176,11 +176,11 @@ log "Deploy dir $DEPLOY_PATH ready"
 # images are removed (a rollback re-pulls from GHCR). Never prunes volumes.
 mkdir -p /etc/cron.d
 cat > /etc/cron.d/docker-prune <<'CRON'
-# Managed by ops/bootstrap-host.sh. Runs after the 02:00 backup.
+# Managed by ops/bootstrap-host.sh. Runs after the 00:00 backup, before the 02:00 updates.
 SHELL=/bin/sh
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-30 3 * * * root docker image prune -a --filter "until=168h" -f >> /var/log/docker-prune.log 2>&1
-0 4 1 * * root docker system prune --filter "until=720h" -f >> /var/log/docker-prune.log 2>&1
+30 1 * * * root docker image prune -a --filter "until=168h" -f >> /var/log/docker-prune.log 2>&1
+45 1 1 * * root docker system prune --filter "until=720h" -f >> /var/log/docker-prune.log 2>&1
 CRON
 chmod 644 /etc/cron.d/docker-prune
 command -v cron >/dev/null 2>&1 || apt_install cron
@@ -218,8 +218,15 @@ fi
 #   - Ubuntu's bug-fix updates (the -updates pocket);
 #   - Docker's packages, held at the installed major version: live-restore is only promised
 #     across minor upgrades, so a new major waits for a deliberate upgrade (see below);
-# and reboots at 04:30 (after the 02:00 backup and 03:30 prune) when an update requires it.
-# Containers come back through their restart policies.
+# and reboots when an update requires it. Containers come back through their restart policies.
+#
+# All of it runs in one quiet block, in UTC (the hosts' clock), chosen to sit in the small
+# hours of Central European time in both CET and CEST:
+#   00:00 backup (the backup container's own cron) -> 01:30 image prune -> 02:00 updates
+#   -> 02:45 reboot if one is required.
+# Ubuntu's stock timing would run the updates at 06:00-07:00, i.e. AFTER the 02:45 reboot
+# window, so a kernel fix installed in the morning would wait ~22 hours for the next night's
+# reboot. The timer overrides below move the run before it instead.
 command -v unattended-upgrade >/dev/null 2>&1 || apt_install unattended-upgrades
 rm -f /etc/apt/apt.conf.d/52linguaread-auto-reboot   # earlier name of the file below
 cat > /etc/apt/apt.conf.d/52linguaread-unattended-upgrades <<'APT'
@@ -231,12 +238,34 @@ Unattended-Upgrade::Allowed-Origins {
 Unattended-Upgrade::Origins-Pattern {
   "origin=Docker,archive=${distro_codename},component=stable";
 };
-// Reboot when an update needs it (kernel, libc). 04:30 server time: after the 02:00 backup
-// and 03:30 image prune.
+// Reboot when an update needs it (kernel, libc). 02:45 UTC, 45 minutes after the update run
+// below, so the reboot happens the same night rather than waiting for the next one.
 Unattended-Upgrade::Automatic-Reboot "true";
 Unattended-Upgrade::Automatic-Reboot-WithUsers "true";
-Unattended-Upgrade::Automatic-Reboot-Time "04:30";
+Unattended-Upgrade::Automatic-Reboot-Time "02:45";
 APT
+
+# Ubuntu's stock timers: lists at 06:00/18:00 (+12h random), upgrades at 06:00 (+1h random).
+# Move both so the upgrade lands at 02:00 UTC with a fresh list behind it. The empty
+# OnCalendar= line clears the vendor schedule before setting ours; without it they stack.
+for unit in apt-daily apt-daily-upgrade; do
+  mkdir -p "/etc/systemd/system/$unit.timer.d"
+  case "$unit" in
+    apt-daily)         when='*-*-* 01,13:00:00'; jitter=30m ;;   # refresh lists
+    apt-daily-upgrade) when='*-*-* 02:00:00';    jitter=15m ;;   # install
+  esac
+  cat > "/etc/systemd/system/$unit.timer.d/linguaread.conf" <<TIMER
+# Managed by ops/bootstrap-host.sh — maintenance window, see the comment above.
+[Timer]
+OnCalendar=
+OnCalendar=$when
+RandomizedDelaySec=$jitter
+Persistent=true
+TIMER
+done
+systemctl daemon-reload
+systemctl restart apt-daily.timer apt-daily-upgrade.timer 2>/dev/null \
+  || warn "could not restart the apt timers — check systemctl status apt-daily-upgrade.timer"
 # Hold every package from Docker's repository at its installed major version, each with its
 # own version series. live-restore only promises to carry containers across a *minor* daemon
 # upgrade, and a containerd or compose major can change behaviour that every deploy depends
@@ -274,11 +303,11 @@ pin_stanza() {   # $1 = package setting the series, $2… = packages to pin to i
 if grep -q '^Package:' "$DOCKER_PIN.tmp"; then
   mv "$DOCKER_PIN.tmp" "$DOCKER_PIN"
   DOCKER_MAJOR=$(installed_major docker-ce || true)
-  log "Automatic updates: security, bug fixes, Docker ${DOCKER_MAJOR#*:}.x (majors held, $DOCKER_PIN); reboot at 04:30 when required"
+  log "Automatic updates: security, bug fixes, Docker ${DOCKER_MAJOR#*:}.x (majors held, $DOCKER_PIN); reboot at 02:45 when required"
 else
   # Nothing from Docker's repository here (Ubuntu's docker.io): nothing to pin.
   rm -f "$DOCKER_PIN.tmp" "$DOCKER_PIN"
-  log "Automatic updates: security, bug fixes (incl. Ubuntu's Docker); reboot at 04:30 when required"
+  log "Automatic updates: security, bug fixes (incl. Ubuntu's Docker); reboot at 02:45 when required"
 fi
 
 # A held-back major is otherwise invisible: unattended-upgrades just stops finding anything

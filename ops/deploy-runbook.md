@@ -59,12 +59,13 @@ Changing a `POSTGRES_*` value restarts the database container on the next deploy
 
 Run *Promote to Production* with an older `sha-XXXXXXX` tag (find candidates in the `prod-…` git tags, the Actions history, or GHCR). The same digest-retag + deploy path runs; nothing is rebuilt, and the host gets that commit's compose and nginx files too.
 
+If GHCR cleanup already deleted that tag, the promote fails at the verify step — rebuild the image from the corresponding `prod-…` git tag instead.
+
 > **Rolling back across a Postgres bump:** the deploy **refuses** to start an older Postgres than the one whose data directory is on disk (say `18.4` against data written by `18.6`) and fails with an error naming both versions. PostgreSQL doesn't support opening a data directory with an older server, and the pre-deploy dump doesn't save you either — a dump taken by the newer server may not restore into the older one. To roll the app back without the database, cherry-pick the current `postgres:` pin onto the commit you're promoting and promote that.
- If GHCR cleanup already deleted that tag, the promote fails at the verify step — rebuild the image from the corresponding `prod-…` git tag instead.
 
 ## Host expectations
 
-**New host:** `ops/bootstrap-host.sh` sets up everything below in one idempotent run (Docker with live-restore, `deploy` user + keys, deploy dir, nightly image prune in `/etc/cron.d/docker-prune`, a 2 GB swap file with swappiness 10, automatic updates with a reboot at 04:30 when one needs it (see [Patching](#patching)), key-only SSH, a fail2ban SSH jail, optional Let's Encrypt cert with renewal hooks) — see its header for usage. On staging run it with `FAIL2BAN=0`: its 954 MiB of RAM has no room for another daemon. Restore data **before** the first deploy, or the API initialises an empty database.
+**New host:** `ops/bootstrap-host.sh` sets up everything below in one idempotent run (Docker with live-restore, `deploy` user + keys, deploy dir, nightly image prune in `/etc/cron.d/docker-prune`, a 2 GB swap file with swappiness 10, automatic updates with a reboot at 02:45 UTC when one needs it (see [Patching](#patching)), key-only SSH, a fail2ban SSH jail, optional Let's Encrypt cert with renewal hooks) — see its header for usage. On staging run it with `FAIL2BAN=0`: its 954 MiB of RAM has no room for another daemon. Restore data **before** the first deploy, or the API initialises an empty database.
 
 - Docker + docker compose v2; deploy user can run docker (staging uses `sudo docker`, production plain `docker`).
 - Deploy dir (`DEPLOY_PATH`) contains: `.env` (written by deploys), `certs/`, `secrets/rclone.conf` (optional, enables the backup sidecar), `secrets/beszel-agent.env` (production, enables the dashboard's agent), `predeploy/` (automatic pre-deploy `pg_dump` snapshots, last 3 kept).
@@ -73,10 +74,24 @@ Run *Promote to Production* with an older `sha-XXXXXXX` tag (find candidates in 
 
 ## Patching
 
+Everything unattended runs in one nightly block. The hosts' clock is **UTC**; the local
+column is Central European time, which is where the window was chosen to land.
+
+| UTC | CET (winter) | CEST (summer) | What runs |
+|---|---|---|---|
+| 00:00 | 01:00 | 02:00 | Database dump + media sync to Drive (the backup container's own cron) |
+| 01:30 | 02:30 | 03:30 | Docker image prune (`/etc/cron.d/docker-prune`; system prune on the 1st at 01:45) |
+| 02:00 | 03:00 | 04:00 | Package updates (+ up to 15 min jitter) |
+| 02:45 | 03:45 | 04:45 | Reboot — only if an update asked for one |
+
+The window slides by an hour when DST flips, which is why nothing here is tighter than
+45 minutes apart. Keeping the hosts on UTC is deliberate: log timestamps then line up with
+GitHub Actions, the `prod-…` tags and the backup filenames.
+
 | What | How it gets updated |
 |---|---|
-| Ubuntu packages | unattended-upgrades, daily around 06:00–07:00 UTC: security fixes and bug fixes (`-updates`). Config: `/etc/apt/apt.conf.d/52linguaread-unattended-upgrades`; log: `/var/log/unattended-upgrades/`. |
-| Kernel, libc | Same, plus a reboot at 04:30 UTC only when `/var/run/reboot-required` exists. Containers restart via their restart policies (about 40 s). |
+| Ubuntu packages | unattended-upgrades, daily at 02:00 UTC (+ up to 15 min jitter): security fixes and bug fixes (`-updates`). Config: `/etc/apt/apt.conf.d/52linguaread-unattended-upgrades` and the timer overrides in `/etc/systemd/system/apt-daily*.timer.d/`; log: `/var/log/unattended-upgrades/`. |
+| Kernel, libc | Same, plus a reboot at 02:45 UTC — 45 min after the update run, so it happens the same night — and only when `/var/run/reboot-required` exists. Containers restart via their restart policies (about 40 s). |
 | Services using updated libraries | `needrestart` restarts them; it never restarts Docker. |
 | Docker (production: `docker-ce` from Docker's repository) | unattended-upgrades, with every package from that repository (`docker-ce*`, `containerd.io`, the compose and buildx plugins) **held at its installed major version** by `/etc/apt/preferences.d/linguaread-docker-major`. Live-restore keeps containers running while the daemon restarts. A held-back major is reported at every SSH login by `/etc/update-motd.d/99-linguaread-docker` — that notice is the only signal that a Docker fix is waiting, so don't ignore it. |
 | Docker (staging: Ubuntu's `docker.io`) | Ubuntu's own updates, like any other package. |
@@ -143,7 +158,7 @@ Notes:
 ## Monitoring checklist (external, free tiers)
 
 - **Uptime**: UptimeRobot (or similar) on `https://<prod-domain>/healthz` (nginx alive) and `https://<prod-domain>/api/Health/ready` (full stack: DB + seed user).
-- **Backups**: healthchecks.io check pinged by `backup.sh` (set `HEALTHCHECK_URL` in the `DOTENV` secrets; ~26 h grace period for the nightly 02:00 job). Alerts on silence — catches a dead backup container, not just failed runs.
+- **Backups**: healthchecks.io check pinged by `backup.sh` (set `HEALTHCHECK_URL` in the `DOTENV` secrets; ~26 h grace period for the nightly 00:00 UTC job). Alerts on silence — catches a dead backup container, not just failed runs.
 
 ## Quarterly restore drill
 

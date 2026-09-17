@@ -24,30 +24,39 @@ namespace LinguaReadApi.Services
         private readonly IServiceProvider _serviceProvider;
         private readonly ILogger<StatsRecomputeService> _logger;
         private readonly MigrationSignal _migrationSignal;
+        private readonly TimeProvider _timeProvider;
 
         // Debounced-pulse machinery. A caller (e.g. the
         // WordLinkingBackgroundService when a link completes) invokes
-        // RequestSweep(delay). Each call cancels any pending timer and
-        // schedules a new one — so a burst of N linker completions
+        // RequestSweep(delay). Each call disposes any pending timer and
+        // arms a new one — so a burst of N linker completions
         // (e.g. an import of a 247-part book) produces exactly one
         // sweep, fired ~delay after the LAST completion. Idempotent
         // and lock-protected so concurrent callers stay safe.
         private readonly object _pulseLock = new();
-        private CancellationTokenSource? _pendingPulseCts;
+        private ITimer? _pendingPulse;
         private CancellationToken _serviceStoppingToken;
+        private int _debouncedSweepCount;
+
+        // Test seams: how many debounced sweeps have started, and the
+        // most recent one (so a test can await it instead of sleeping).
+        internal int DebouncedSweepCount => Volatile.Read(ref _debouncedSweepCount);
+        internal Task? LastDebouncedSweep { get; private set; }
 
         public StatsRecomputeService(
             IServiceProvider serviceProvider,
             ILogger<StatsRecomputeService> logger,
-            MigrationSignal migrationSignal)
+            MigrationSignal migrationSignal,
+            TimeProvider? timeProvider = null)
         {
             _serviceProvider = serviceProvider;
             _logger = logger;
             _migrationSignal = migrationSignal;
+            _timeProvider = timeProvider ?? TimeProvider.System;
         }
 
         /// <summary>
-        /// Ask for a debounced stats sweep. Each call cancels the
+        /// Ask for a debounced stats sweep. Each call drops the
         /// previously-scheduled pulse and re-arms the timer; the actual
         /// recompute fires only after <paramref name="debounce"/> has
         /// elapsed with no further calls. Safe to invoke from anywhere
@@ -56,28 +65,32 @@ namespace LinguaReadApi.Services
         /// </summary>
         public void RequestSweep(TimeSpan debounce)
         {
-            CancellationTokenSource newCts;
-            CancellationToken stoppingToken;
+            // The timer is armed here, on the caller's thread, so the
+            // debounce is measured from this call rather than from
+            // whenever the thread pool gets around to starting it.
             lock (_pulseLock)
             {
-                _pendingPulseCts?.Cancel();
-                _pendingPulseCts?.Dispose();
-                stoppingToken = _serviceStoppingToken;
-                newCts = stoppingToken.CanBeCanceled
-                    ? CancellationTokenSource.CreateLinkedTokenSource(stoppingToken)
-                    : new CancellationTokenSource();
-                _pendingPulseCts = newCts;
+                _pendingPulse?.Dispose();
+                _pendingPulse = _timeProvider.CreateTimer(
+                    static state => ((StatsRecomputeService)state!).StartDebouncedSweep(),
+                    this, debounce, Timeout.InfiniteTimeSpan);
             }
+        }
 
-            _ = Task.Run(async () =>
+        private void StartDebouncedSweep()
+        {
+            var stoppingToken = _serviceStoppingToken;
+            if (stoppingToken.IsCancellationRequested) return; // host is shutting down
+
+            Interlocked.Increment(ref _debouncedSweepCount);
+            LastDebouncedSweep = Task.Run(async () =>
             {
                 try
                 {
-                    await Task.Delay(debounce, newCts.Token);
                     _logger.LogInformation("StatsRecomputeService running debounced sweep.");
-                    await RecomputeAllAsync(stoppingToken.CanBeCanceled ? stoppingToken : CancellationToken.None);
+                    await RecomputeAllAsync(stoppingToken);
                 }
-                catch (OperationCanceledException) { /* superseded by a later pulse */ }
+                catch (OperationCanceledException) { /* host shutting down */ }
                 catch (Exception ex)
                 {
                     _logger.LogError(ex, "Debounced stats sweep failed.");
@@ -116,10 +129,10 @@ namespace LinguaReadApi.Services
 
             while (!stoppingToken.IsCancellationRequested)
             {
-                var delay = TimeUntilNextRun(DateTime.UtcNow);
+                var delay = TimeUntilNextRun(_timeProvider.GetUtcNow().UtcDateTime);
                 try
                 {
-                    await Task.Delay(delay, stoppingToken);
+                    await Task.Delay(delay, _timeProvider, stoppingToken);
                 }
                 catch (OperationCanceledException)
                 {
@@ -154,7 +167,7 @@ namespace LinguaReadApi.Services
             using var scope = _serviceProvider.CreateScope();
             var ctx = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
-            var now = DateTime.UtcNow;
+            var now = _timeProvider.GetUtcNow().UtcDateTime;
 
             var textRows = await ctx.TextWords
                 .AsNoTracking()

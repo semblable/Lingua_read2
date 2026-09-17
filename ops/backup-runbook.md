@@ -19,7 +19,7 @@ same throwaway-container `cp -a` as the restore below, with `lingua-read_api_dp_
 
 ### Automated nightly backup (the `backup` sidecar)
 
-Runs at 02:00 once `secrets/rclone.conf` exists in the deploy dir (the deploy starts the
+Runs at 00:00 UTC once `secrets/rclone.conf` exists in the deploy dir (the deploy starts the
 `backup` profile only then). Each environment writes to its own Drive folder,
 `gdrive:lingua-read-backups/<BACKUP_ENV>/` — `BACKUP_ENV` is appended to `.env` by the
 deploy, and `backup.sh` refuses to run without it:
@@ -144,17 +144,17 @@ old images accumulate and eventually fill the disk.
 
 ```crontab
 # Prune unused Docker images older than 7 days (daily, 3:30 AM UTC — after the 2 AM backup)
-30 3 * * * docker image prune -a --filter "until=168h" -f >> /var/log/docker-prune.log 2>&1
+30 1 * * * docker image prune -a --filter "until=168h" -f >> /var/log/docker-prune.log 2>&1
 
 # Clean build cache, stopped containers, and dangling networks older than 30 days (1st of month, 4 AM UTC)
-0 4 1 * * docker system prune --filter "until=720h" -f >> /var/log/docker-prune.log 2>&1
+45 1 1 * * docker system prune --filter "until=720h" -f >> /var/log/docker-prune.log 2>&1
 ```
 
 **What each does:**
 
 | Entry | Schedule | Effect |
 |---|---|---|
-| `docker image prune -a` | Daily 03:30 UTC | Removes images not used by any running container and older than 7 days. Running containers' images are **never** touched. |
+| `docker image prune -a` | Daily 01:30 UTC | Removes images not used by any running container and older than 7 days. Running containers' images are **never** touched. |
 | `docker system prune` | Monthly (1st) 04:00 UTC | Cleans build cache, stopped containers, and unused networks older than 30 days. |
 
 ### Verify

@@ -27,9 +27,9 @@ Two GitHub Environments (Settings → Environments): **staging** and **productio
 
 Per-environment **variables**: `DEPLOY_HOST` (required — the SSH target) and `SMOKE_URL` (optional) — public base URL; when set, deploys finish with external `curl` checks of `/healthz` and `/api/Health/ready`.
 
-The target host is the environment **variable** `DEPLOY_HOST` (an IP is public anyway). GitHub fills a missing environment *secret* from a same-named repo-level one; there are no repo-level variables, so a host can't leak between environments that way. `_deploy.yml` fails fast (before touching any host), naming each missing value.
+The target host is the environment **variable** `DEPLOY_HOST` (an IP is public anyway). GitHub fills a missing environment *secret* or *variable* from a same-named repo-level one; none are defined at repo level, so a host can't leak between environments that way (keep it so — see below). `_deploy.yml` fails fast (before touching any host), naming each missing value.
 
-**No repo-level deploy secrets.** Both environments are self-contained; keep `DEPLOY_*`, `DOTENV` and `PRODUCTION_ENV` out of the repository-level secrets so nothing can fill a gap in one environment with another's values.
+**No repo-level deploy secrets.** Both environments are self-contained; keep `DEPLOY_*`, `DOTENV` and `PRODUCTION_ENV` out of the repository-level secrets so nothing can fill a gap in one environment with another's values. The same goes for **variables**: an environment without `DEPLOY_HOST` silently inherits a repository- (or organization-) level `DEPLOY_HOST` variable, so never create one there.
 
 | Environment | `DEPLOY_HOST` | `DEPLOY_USER` | `DEPLOY_PATH` | Docker |
 | :--- | :--- | :--- | :--- | :--- |

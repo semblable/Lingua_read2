@@ -5,9 +5,17 @@ This repo’s Docker stack persists:
 - **Audio lessons**: `api_audio_lessons` volume
 - **Audiobooks**: `api_audiobooks` volume
 - **EPUB assets**: `api_epub_assets` volume
-- **Data Protection keys**: `api_dp_keys` volume (losing it only forces a re-login)
+- **Data Protection keys**: `api_dp_keys` volume — **deliberately not backed up offsite**
 
 Backups should cover **both** the database and the media volumes.
+
+`api_dp_keys` only decrypts the integration secrets saved in Settings (Azure Translator and
+Google Translate keys, Wiktionary token, OpenRouter key, Hardcover token, Discord webhook).
+Uploading it next to the DB dump would hand anyone with the Drive folder those secrets in
+the clear. Losing it doesn't affect logins (the auth cookie is a JWT signed with `JWT_KEY`):
+after a restore onto a fresh volume those six fields read as unset (an error is logged) and
+are re-entered in Settings. For a **planned host move**, copy the volume directly instead —
+same throwaway-container `cp -a` as the restore below, with `lingua-read_api_dp_keys`.
 
 ### Automated nightly backup (the `backup` sidecar)
 
@@ -19,7 +27,7 @@ deploy, and `backup.sh` refuses to run without it:
 | Path | Contents | Kept on Drive |
 |---|---|---|
 | `db/<yyyy>/<mm>/db-<ts>.backup` | full `pg_dump -Fc`, every night | 90 days |
-| `media/current/<volume>/` | mirror of the four media volumes | always (it's the live copy) |
+| `media/current/<volume>/` | mirror of the three media volumes (audio lessons, audiobooks, EPUB assets) | always (it's the live copy) |
 | `media/deleted/<ts>/<volume>/` | files removed or replaced since the previous night | 90 days |
 | `logs/`, `errors/` | last 24 h of container logs, and the error lines from them | 30 days |
 

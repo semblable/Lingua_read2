@@ -75,16 +75,28 @@ visudo -cf "$SUDOERS.tmp" >/dev/null || { rm -f "$SUDOERS.tmp"; die "generated s
 mv "$SUDOERS.tmp" "$SUDOERS"
 
 # --- SSH keys: root's keys (your own access) + the CI key, de-duplicated ----
+# The deploy user's existing lines are kept verbatim, options (from=, restrict) included, so a
+# re-run never drops a key. From root, only plain key lines are imported: cloud images prefix
+# root's copy with command="echo Please login as …", which logs nobody in.
+grep_ok() { grep "$@" || [ $? -eq 1 ]; }   # "no match" is fine; a read error is not
 HOME_DIR=$(getent passwd "$DEPLOY_USER" | cut -d: -f6)
 AUTH="$HOME_DIR/.ssh/authorized_keys"
 install -d -m 700 -o "$DEPLOY_USER" -g "$DEPLOY_USER" "$HOME_DIR/.ssh"
 touch "$AUTH"
-{ cat "$AUTH"; [ -f /root/.ssh/authorized_keys ] && cat /root/.ssh/authorized_keys; [ -n "$CI_PUBKEY" ] && echo "$CI_PUBKEY"; } \
-  | grep -E '^(ssh-|ecdsa-|sk-)' | awk '!seen[$0]++' > "$AUTH.tmp" || true
+# awk (not cat) so a file without a final newline can't glue its last key to the next one.
+{
+  awk 'NF' "$AUTH"
+  if [ -f /root/.ssh/authorized_keys ]; then grep_ok -E '^(ssh-|ecdsa-|sk-)' /root/.ssh/authorized_keys; fi
+  if [ -n "$CI_PUBKEY" ]; then printf '%s\n' "$CI_PUBKEY"; fi
+} | awk '!seen[$0]++' > "$AUTH.tmp"
+# Every existing line is carried over, so a shorter result means the merge went wrong.
+[ "$(wc -l < "$AUTH.tmp")" -ge "$(awk 'NF && !seen[$0]++' "$AUTH" | wc -l)" ] \
+  || { rm -f "$AUTH.tmp"; die "merged $AUTH is missing lines — left it unchanged"; }
 mv "$AUTH.tmp" "$AUTH"
 chmod 600 "$AUTH"; chown "$DEPLOY_USER:$DEPLOY_USER" "$AUTH"
+KEY_COUNT=$(grep_ok -c '^[[:space:]]*[^#[:space:]]' "$AUTH")
 [ -n "$CI_PUBKEY" ] || warn "CI_PUBKEY not set — GitHub Actions can't deploy until its key is in $AUTH"
-log "$AUTH holds $(wc -l < "$AUTH") key(s)"
+log "$AUTH holds $KEY_COUNT key(s)"
 
 # --- Deploy directory -----------------------------------------------------
 install -d -o "$DEPLOY_USER" -g "$DEPLOY_USER" "$DEPLOY_PATH"
@@ -122,10 +134,12 @@ log "Automatic security updates reboot at 04:30 when required"
 
 # --- SSH: keys only -------------------------------------------------------
 # Only once a key can log in — otherwise this would lock out a password-provisioned host.
+# KEY_COUNT counts usable lines in $AUTH, which already holds every usable key root has; a
+# root file with only cloud-init "Please login as …" lines doesn't count.
 # The 00- prefix wins over cloud-init's 50-cloud-init.conf (sshd keeps the first value).
 if ! command -v sshd >/dev/null 2>&1; then
   warn "sshd not installed — SSH hardening skipped"
-elif [ -s "$AUTH" ] || [ -s /root/.ssh/authorized_keys ]; then
+elif [ "$KEY_COUNT" -gt 0 ]; then
   HARDEN=/etc/ssh/sshd_config.d/00-linguaread-hardening.conf
   mkdir -p /etc/ssh/sshd_config.d
   printf 'PasswordAuthentication no\nKbdInteractiveAuthentication no\n' > "$HARDEN.tmp"
@@ -140,7 +154,7 @@ elif [ -s "$AUTH" ] || [ -s /root/.ssh/authorized_keys ]; then
     log "SSH password logins disabled (existing sessions unaffected)"
   fi
 else
-  warn "no authorized SSH keys found — leaving password logins enabled"
+  warn "no usable SSH key for $DEPLOY_USER — leaving password logins enabled"
 fi
 
 # --- TLS (optional) -------------------------------------------------------

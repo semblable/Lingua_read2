@@ -104,7 +104,7 @@ jobs:
       # Host-side scripts run unattended (cron, first boot) where a typo only surfaces
       # as a missing backup or a half-provisioned host — lint them here instead.
       - name: Lint shell scripts
-        run: shellcheck -S warning backup/backup.sh ops/bootstrap-host.sh
+        run: shellcheck -S warning backup/backup.sh ops/bootstrap-host.sh setup.sh
 
   build_api:
     runs-on: ubuntu-latest

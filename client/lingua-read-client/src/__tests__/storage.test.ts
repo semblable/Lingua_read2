@@ -1,6 +1,18 @@
 import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest';
 import storage from '../utils/storage';
 
+// Swap in a localStorage whose `method` throws. Spying on the real one doesn't work:
+// happy-dom's Storage is a Proxy that ignores `delete` for its own methods, and
+// Vitest 4+ restores a spy by deleting it, so the throwing mock would leak into
+// every later test in the file.
+const stubThrowingStorage = (method: 'getItem' | 'setItem' | 'removeItem' | 'clear', error: Error) => {
+  vi.stubGlobal('localStorage', {
+    [method]: () => {
+      throw error;
+    },
+  });
+};
+
 describe('storage wrapper', () => {
   let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
 
@@ -10,6 +22,7 @@ describe('storage wrapper', () => {
   });
 
   afterEach(() => {
+    vi.unstubAllGlobals();
     vi.restoreAllMocks();
   });
 
@@ -23,9 +36,7 @@ describe('storage wrapper', () => {
   });
 
   test('getItem returns null and logs when localStorage.getItem throws', () => {
-    vi.spyOn(window.localStorage, 'getItem').mockImplementation(() => {
-      throw new Error('SecurityError');
-    });
+    stubThrowingStorage('getItem', new Error('SecurityError'));
     expect(storage.getItem('foo')).toBeNull();
     expect(consoleErrorSpy).toHaveBeenCalled();
   });
@@ -36,9 +47,7 @@ describe('storage wrapper', () => {
   });
 
   test('setItem returns false and logs when localStorage.setItem throws', () => {
-    vi.spyOn(window.localStorage, 'setItem').mockImplementation(() => {
-      throw new Error('QuotaExceededError');
-    });
+    stubThrowingStorage('setItem', new Error('QuotaExceededError'));
     expect(storage.setItem('foo', 'bar')).toBe(false);
     expect(consoleErrorSpy).toHaveBeenCalled();
   });
@@ -50,9 +59,7 @@ describe('storage wrapper', () => {
   });
 
   test('removeItem returns false and logs when localStorage.removeItem throws', () => {
-    vi.spyOn(window.localStorage, 'removeItem').mockImplementation(() => {
-      throw new Error('boom');
-    });
+    stubThrowingStorage('removeItem', new Error('boom'));
     expect(storage.removeItem('foo')).toBe(false);
     expect(consoleErrorSpy).toHaveBeenCalled();
   });
@@ -65,9 +72,7 @@ describe('storage wrapper', () => {
   });
 
   test('clear returns false and logs when localStorage.clear throws', () => {
-    vi.spyOn(window.localStorage, 'clear').mockImplementation(() => {
-      throw new Error('boom');
-    });
+    stubThrowingStorage('clear', new Error('boom'));
     expect(storage.clear()).toBe(false);
     expect(consoleErrorSpy).toHaveBeenCalled();
   });

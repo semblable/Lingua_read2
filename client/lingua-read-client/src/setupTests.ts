@@ -15,3 +15,14 @@ if (!window.matchMedia) {
     })
   });
 }
+
+// happy-dom has no window.confirm. Tests stub it with vi.spyOn(window, 'confirm'),
+// which Vitest 4+ refuses to do on a missing method, so give them one to spy on.
+// Unstubbed, it answers "Cancel", like a headless browser dismissing the dialog.
+if (!window.confirm) {
+  Object.defineProperty(window, 'confirm', {
+    writable: true,
+    configurable: true,
+    value: () => false
+  });
+}

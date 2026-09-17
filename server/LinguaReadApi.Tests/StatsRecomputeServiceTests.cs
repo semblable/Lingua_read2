@@ -4,6 +4,7 @@ using LinguaReadApi.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Time.Testing;
 using Xunit;
 
 namespace LinguaReadApi.Tests;
@@ -173,7 +174,8 @@ public class StatsRecomputeServiceTests
         SeedBookAndStandaloneText(dbName, userId);
 
         var (provider, _) = CreateProvider(dbName);
-        var service = new StatsRecomputeService(provider, NullLogger<StatsRecomputeService>.Instance, new MigrationSignal());
+        var time = new FakeTimeProvider();
+        var service = NewService(provider, time);
         await service.RecomputeAllAsync(CancellationToken.None);
 
         await using (var firstCtx = NewContext(dbName))
@@ -189,8 +191,8 @@ public class StatsRecomputeServiceTests
             stampBefore = (await beforeCtx.Texts.SingleAsync(x => x.TextId == 100)).StatsUpdatedAt;
         }
 
-        // Wait briefly so a second pass would produce a different timestamp if it wrote.
-        await Task.Delay(20);
+        // Move the clock so a second pass would stamp a different time if it wrote.
+        time.Advance(TimeSpan.FromHours(1));
         await service.RecomputeAllAsync(CancellationToken.None);
 
         await using var afterCtx = NewContext(dbName);
@@ -206,7 +208,8 @@ public class StatsRecomputeServiceTests
         SeedBookAndStandaloneText(dbName, userId);
 
         var (provider, _) = CreateProvider(dbName);
-        var service = NewService(provider);
+        var time = new FakeTimeProvider();
+        var service = NewService(provider, time);
 
         // Pre-condition: standalone text has no cached stats yet.
         await using (var pre = NewContext(dbName))
@@ -216,20 +219,18 @@ public class StatsRecomputeServiceTests
 
         service.RequestSweep(TimeSpan.FromMilliseconds(50));
 
-        // Wait long enough for the debounce timer to elapse and
-        // the background recompute to finish.
-        var deadline = DateTime.UtcNow.AddSeconds(2);
-        Text? observed = null;
-        while (DateTime.UtcNow < deadline)
-        {
-            await Task.Delay(50);
-            await using var probe = NewContext(dbName);
-            observed = await probe.Texts.AsNoTracking().SingleAsync(t => t.TextId == 100);
-            if (observed.StatsUpdatedAt != null) break;
-        }
+        // The fake clock only moves when told to, so "not yet" is exact.
+        time.Advance(TimeSpan.FromMilliseconds(49));
+        Assert.Equal(0, service.DebouncedSweepCount);
 
-        Assert.NotNull(observed?.StatsUpdatedAt);
-        Assert.Equal(3, observed!.TotalWords);
+        time.Advance(TimeSpan.FromMilliseconds(1));
+        Assert.Equal(1, service.DebouncedSweepCount);
+        await AwaitLastSweepAsync(service);
+
+        await using var probe = NewContext(dbName);
+        var observed = await probe.Texts.AsNoTracking().SingleAsync(t => t.TextId == 100);
+        Assert.NotNull(observed.StatsUpdatedAt);
+        Assert.Equal(3, observed.TotalWords);
         Assert.Equal(1, observed.KnownWords);
     }
 
@@ -241,27 +242,41 @@ public class StatsRecomputeServiceTests
         SeedBookAndStandaloneText(dbName, userId);
 
         var (provider, _) = CreateProvider(dbName);
-        var service = NewService(provider);
+        var time = new FakeTimeProvider();
+        var service = NewService(provider, time);
+        var debounce = TimeSpan.FromMilliseconds(150);
 
-        // Re-arm the debounce 10 times in quick succession. Only the
-        // last call's timer should survive; the recompute should fire
-        // exactly once, ~150ms after the final RequestSweep call.
+        // Re-arm the debounce 10 times, 20ms apart on the fake clock.
+        // Only the last call's timer should survive; the recompute
+        // should fire exactly once, 150ms after the final RequestSweep
+        // call. The burst spans 180ms, longer than the debounce, so an
+        // earlier timer that survived would fire mid-burst.
         for (int i = 0; i < 10; i++)
         {
-            service.RequestSweep(TimeSpan.FromMilliseconds(150));
-            await Task.Delay(20);
+            time.Advance(TimeSpan.FromMilliseconds(20));
+            service.RequestSweep(debounce);
         }
+        Assert.Equal(0, service.DebouncedSweepCount);
 
-        // Within the debounce window (150ms after the last call):
+        // 1ms short of the debounce window after the last call:
         // sweep should NOT have run yet.
+        time.Advance(debounce - TimeSpan.FromMilliseconds(1));
+        Assert.Equal(0, service.DebouncedSweepCount);
         await using (var midProbe = NewContext(dbName))
         {
             var midText = await midProbe.Texts.AsNoTracking().SingleAsync(t => t.TextId == 100);
             Assert.Null(midText.StatsUpdatedAt);
         }
 
-        // After the window elapses, the single coalesced sweep runs.
-        await Task.Delay(400);
+        // When the window elapses, the single coalesced sweep runs.
+        time.Advance(TimeSpan.FromMilliseconds(1));
+        Assert.Equal(1, service.DebouncedSweepCount);
+        await AwaitLastSweepAsync(service);
+
+        // The superseded timers never fire, however much later.
+        time.Advance(TimeSpan.FromHours(1));
+        Assert.Equal(1, service.DebouncedSweepCount);
+
         await using var afterProbe = NewContext(dbName);
         var afterText = await afterProbe.Texts.AsNoTracking().SingleAsync(t => t.TextId == 100);
         Assert.NotNull(afterText.StatsUpdatedAt);
@@ -397,15 +412,21 @@ public class StatsRecomputeServiceTests
             Assert.Null(t.StatsUpdatedAt);
         }
 
-        // Unblock the service and wait for the in-memory sweep to finish.
+        // Unblock the service and poll until the in-memory sweep has
+        // stamped the text. A fixed sleep here is too short on a loaded
+        // CI runner; the deadline only turns a hang into a failure.
         signal.SetComplete();
-        await Task.Delay(200);
 
-        await using (var ctx = NewContext(dbName))
+        Text stamped;
+        var deadline = DateTime.UtcNow.Add(SweepTimeout);
+        do
         {
-            var t = await ctx.Texts.SingleAsync(x => x.TextId == 100);
-            Assert.NotNull(t.StatsUpdatedAt);
+            await Task.Delay(20);
+            await using var ctx = NewContext(dbName);
+            stamped = await ctx.Texts.AsNoTracking().SingleAsync(x => x.TextId == 100);
         }
+        while (stamped.StatsUpdatedAt == null && DateTime.UtcNow < deadline);
+        Assert.NotNull(stamped.StatsUpdatedAt);
 
         await service.StopAsync(CancellationToken.None);
     }
@@ -425,8 +446,18 @@ public class StatsRecomputeServiceTests
 
     // --- Helpers ---
 
-    private static StatsRecomputeService NewService(IServiceProvider provider)
-        => new StatsRecomputeService(provider, NullLogger<StatsRecomputeService>.Instance, new MigrationSignal());
+    // Upper bound on a background sweep over the tiny seeded DB. Only
+    // reached if the sweep hangs; never a timing assertion.
+    private static readonly TimeSpan SweepTimeout = TimeSpan.FromSeconds(30);
+
+    private static StatsRecomputeService NewService(IServiceProvider provider, TimeProvider? timeProvider = null)
+        => new StatsRecomputeService(provider, NullLogger<StatsRecomputeService>.Instance, new MigrationSignal(), timeProvider);
+
+    private static Task AwaitLastSweepAsync(StatsRecomputeService service)
+    {
+        Assert.NotNull(service.LastDebouncedSweep);
+        return service.LastDebouncedSweep.WaitAsync(SweepTimeout);
+    }
 
     private static (IServiceProvider provider, ServiceProvider services) CreateProvider(string dbName)
     {

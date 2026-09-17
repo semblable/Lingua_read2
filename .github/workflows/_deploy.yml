@@ -21,6 +21,10 @@ on:
         description: "Prefix docker commands with sudo on the remote host"
         type: boolean
         default: false
+      ref:
+        description: "Commit whose compose/nginx files are deployed (empty = the triggering commit)"
+        type: string
+        default: ""
 
 jobs:
   deploy:
@@ -53,6 +57,8 @@ jobs:
 
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
 
       - name: Copy docker-compose and config files via SCP
         uses: appleboy/scp-action@v1.0.0

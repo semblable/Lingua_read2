@@ -51,7 +51,7 @@ jobs:
             short="${INPUT_TAG#sha-}"
             sha=$(gh api "repos/${{ github.repository }}/commits/$short" --jq .sha 2>/dev/null || true)
             if [ -z "$sha" ]; then
-              echo "::warning::Could not resolve '$tag' to a commit; release tagging and main fast-forward will be skipped"
+              echo "::warning::Could not resolve '$tag' to a commit; the deploy uses the compose files of the branch this run was started from, and release tagging and main fast-forward will be skipped"
             fi
           fi
           echo "Promoting tag: $tag (commit: ${sha:-unknown})"
@@ -87,6 +87,9 @@ jobs:
       environment: production
       # Deploy the immutable sha tag, not :prod, so the host records exactly what runs.
       image_tag: ${{ needs.resolve.outputs.tag }}
+      # Ship the compose/nginx files of the promoted commit, not of the branch the run was
+      # started from (the Actions UI defaults to main, which still holds the previous release).
+      ref: ${{ needs.resolve.outputs.sha }}
       use_sudo: false
     secrets: inherit
 

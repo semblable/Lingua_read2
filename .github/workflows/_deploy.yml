@@ -148,8 +148,13 @@ jobs:
             # PostgreSQL does not support that, and the dump above doesn't rescue it either: a
             # dump taken by the newer server may not restore into the older one. Same-version
             # and forward moves are untouched.
-            want_pg=$(grep -oE '^\s*image:\s*postgres:[0-9.]+' docker-compose.yml | head -1 | sed 's/.*postgres://')
-            have_pg=$($DOCKER inspect --format '{{.Config.Image}}' "$(dc ps -q db)" 2>/dev/null | sed 's/.*postgres://')
+            # Both lookups end in `|| true`: under `set -euo pipefail` an empty result would
+            # otherwise abort the deploy — on a first deploy there is no db container yet, and
+            # a digest-pinned or templated image has no plain version to compare. Either way
+            # the check simply doesn't apply. `dc config` resolves any ${VAR} in the tag.
+            pg_tag() { sed -n 's#^.*postgres:\([0-9][0-9.]*\)$#\1#p'; }
+            want_pg=$(dc config --images 2>/dev/null | pg_tag | head -1 || true)
+            have_pg=$($DOCKER inspect --format '{{.Config.Image}}' "$(dc ps -q db)" 2>/dev/null | pg_tag || true)
             if [ -n "$want_pg" ] && [ -n "$have_pg" ] && [ "$want_pg" != "$have_pg" ]; then
               older=$(printf '%s\n%s\n' "$want_pg" "$have_pg" | sort -V | head -1)
               if [ "$older" = "$want_pg" ]; then

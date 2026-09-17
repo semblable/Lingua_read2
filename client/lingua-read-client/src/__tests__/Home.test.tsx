@@ -12,8 +12,8 @@ vi.mock('../utils/api', () => ({
   getTexts: vi.fn(),
 }));
 
-// Recharts inside LanguageDashboardCard needs ResizeObserver — stub it out
-// so the dashboard-card render path doesn't crash in happy-dom.
+// Stub LanguageDashboardCard: these tests assert which languages Home renders
+// and in what order, not how a card looks.
 vi.mock('../components/dashboard/LanguageDashboardCard', () => ({
   default: ({ lang }: { lang: { languageId: number; languageName: string } }) => (
     <div data-testid={`lang-card-${lang.languageId}`}>{lang.languageName}</div>

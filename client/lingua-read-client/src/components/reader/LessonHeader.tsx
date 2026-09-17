@@ -17,7 +17,7 @@ interface LessonHeaderProps {
   translateUnknownError?: string | null;
   audioSrc?: string | null;
   textId?: number | string | null;
-  audioRef?: React.RefObject<HTMLAudioElement>;
+  audioRef?: React.RefObject<HTMLAudioElement | null>;
   onTimeUpdate?: (newTime: number) => void;
   onPlaybackStateChange?: (nextIsPlaying: boolean) => void;
   segmentPlaybackRequest?: SegmentPlaybackRequest | null;

@@ -16,10 +16,10 @@ interface AudioTranscriptViewProps {
   processTextContent: (text: string) => React.ReactNode;
   globalSettings: Settings;
   mobileReadingConfig: { lineSpacing: number };
-  textContentRef: React.RefObject<HTMLDivElement>;
-  readingContainerRef: React.RefObject<HTMLDivElement>;
+  textContentRef: React.RefObject<HTMLDivElement | null>;
+  readingContainerRef: React.RefObject<HTMLDivElement | null>;
   itemData: TranscriptItemData;
-  listRef: React.RefObject<ListImperativeAPI>;
+  listRef: React.RefObject<ListImperativeAPI | null>;
 }
 
 const AudioTranscriptView = React.memo(({

@@ -31,7 +31,7 @@ export type UseReaderAudioSyncArgs = {
 };
 
 export type UseReaderAudioSyncResult = {
-  audioRef: React.RefObject<HTMLAudioElement>;
+  audioRef: React.RefObject<HTMLAudioElement | null>;
   audioCurrentTimeRef: React.MutableRefObject<number>;
   currentSrtLineId: number | null;
   setCurrentSrtLineId: React.Dispatch<React.SetStateAction<number | null>>;

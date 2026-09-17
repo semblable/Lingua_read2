@@ -12,7 +12,7 @@ interface SentenceModeViewProps {
   fontStyle: React.CSSProperties;
   processTextContent: (text: string) => React.ReactNode;
   handleWordSelection: () => void;
-  textContentRef: React.RefObject<HTMLDivElement>;
+  textContentRef: React.RefObject<HTMLDivElement | null>;
   canGoPrev: boolean;
   canGoNext: boolean;
   onPrev: () => void;

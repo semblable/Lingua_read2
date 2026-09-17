@@ -21,7 +21,7 @@ interface DataManagementSettingsProps {
   restoreMessage: MessageBanner;
   onRestoreFileChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onRestoreClick: () => void;
-  fileInputRef: React.RefObject<HTMLInputElement>;
+  fileInputRef: React.RefObject<HTMLInputElement | null>;
   isResettingStats: boolean;
   resetStatsMessage: MessageBanner;
   onResetStatistics: () => void;

@@ -27,7 +27,7 @@ interface StandardTextViewProps {
     startIndex: number
   ) => ProcessedSentenceResult;
   isMobile: boolean;
-  textContentRef: React.RefObject<HTMLDivElement>;
+  textContentRef: React.RefObject<HTMLDivElement | null>;
   canUseSentenceTts: boolean;
   isSpeakingSentence: boolean;
   sentenceTtsEnabled: boolean;

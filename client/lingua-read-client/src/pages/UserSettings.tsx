@@ -597,7 +597,7 @@ const UserSettings = () => {
         <div className="settings-content">
           <Form onSubmit={handleSubmit} id="settings-form">
             {/* Appearance */}
-            <div ref={el => sectionRefs.current.appearance = el} className="settings-section-card mb-4">
+            <div ref={el => { sectionRefs.current.appearance = el; }} className="settings-section-card mb-4">
               <div className="settings-section-header">
                 <span className="settings-section-header-icon">{'\uD83C\uDFA8'}</span>
                 <span>Appearance</span>
@@ -606,7 +606,7 @@ const UserSettings = () => {
             </div>
 
             {/* Reading */}
-            <div ref={el => sectionRefs.current.reading = el} className="settings-section-card mb-4">
+            <div ref={el => { sectionRefs.current.reading = el; }} className="settings-section-card mb-4">
               <div className="settings-section-header">
                 <span className="settings-section-header-icon">{'\uD83D\uDCDA'}</span>
                 <span>Reading</span>
@@ -622,7 +622,7 @@ const UserSettings = () => {
             </div>
 
             {/* Navigation */}
-            <div ref={el => sectionRefs.current.navigation = el} className="settings-section-card mb-4">
+            <div ref={el => { sectionRefs.current.navigation = el; }} className="settings-section-card mb-4">
               <div className="settings-section-header">
                 <span className="settings-section-header-icon">{'\u2699\uFE0F'}</span>
                 <span>Navigation</span>
@@ -631,7 +631,7 @@ const UserSettings = () => {
             </div>
 
             {/* AI Provider */}
-            <div ref={el => sectionRefs.current.ai = el} className="settings-section-card mb-4">
+            <div ref={el => { sectionRefs.current.ai = el; }} className="settings-section-card mb-4">
               <div className="settings-section-header">
                 <span className="settings-section-header-icon">{'\uD83E\uDD16'}</span>
                 <span>AI Provider</span>
@@ -648,7 +648,7 @@ const UserSettings = () => {
             </div>
 
             {/* Discord */}
-            <div ref={el => sectionRefs.current.discord = el} className="settings-section-card mb-4">
+            <div ref={el => { sectionRefs.current.discord = el; }} className="settings-section-card mb-4">
               <div className="settings-section-header">
                 <span className="settings-section-header-icon">{'\uD83D\uDCE8'}</span>
                 <span>Discord Reports</span>
@@ -670,7 +670,7 @@ const UserSettings = () => {
             </div>
 
             {/* Hardcover */}
-            <div ref={el => sectionRefs.current.hardcover = el} className="settings-section-card mb-4">
+            <div ref={el => { sectionRefs.current.hardcover = el; }} className="settings-section-card mb-4">
               <div className="settings-section-header">
                 <span className="settings-section-header-icon">HC</span>
                 <span>Hardcover</span>
@@ -691,7 +691,7 @@ const UserSettings = () => {
           </Form>
 
           {/* Data Management - outside form since it has independent actions */}
-          <div ref={el => sectionRefs.current.data = el} className="settings-section-card mb-4">
+          <div ref={el => { sectionRefs.current.data = el; }} className="settings-section-card mb-4">
             <div className="settings-section-header">
               <span className="settings-section-header-icon">{'\uD83D\uDDC4\uFE0F'}</span>
               <span>Data Management</span>

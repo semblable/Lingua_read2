@@ -286,9 +286,21 @@ var app = builder.Build();
 
 // Static hook (not DI) because the EF value converter lives in the cached model,
 // which outlives any single scoped context.
-UserSettingsSecretProtector.Logger = app.Services
+var secretProtectorLogger = app.Services
     .GetRequiredService<ILoggerFactory>()
     .CreateLogger(typeof(UserSettingsSecretProtector).FullName!);
+UserSettingsSecretProtector.Logger = secretProtectorLogger;
+// The static outlives this host's ILoggerFactory, which is disposed with the host. Unhook it once
+// the host has stopped so nothing logs through disposed providers (the Windows EventLog provider
+// throws ObjectDisposedException). Matters when several hosts share a process, as the
+// WebApplicationFactory tests do; leave it alone if a newer host has already replaced it.
+app.Lifetime.ApplicationStopped.Register(() =>
+{
+    if (ReferenceEquals(UserSettingsSecretProtector.Logger, secretProtectorLogger))
+    {
+        UserSettingsSecretProtector.Logger = null;
+    }
+});
 
 // Trust reverse-proxy headers (Nginx) when deployed behind a proxy.
 // NOTE: We clear known networks/proxies so this works in containerized environments.

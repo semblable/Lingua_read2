@@ -147,7 +147,7 @@ services:
       - api_audio_lessons:/srv/media/audio_lessons:ro
       - api_audiobooks:/srv/media/audiobooks:ro
       - api_epub_assets:/srv/media/epub_assets:ro
-      - api_dp_keys:/srv/media/dp_keys:ro
+      # No api_dp_keys: those keys decrypt secrets in the DB dump and must not go to Drive with it.
       # :ro is hygiene only — socket access still grants full Docker API; used to read container logs.
       - /var/run/docker.sock:/var/run/docker.sock:ro
 

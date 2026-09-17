@@ -61,12 +61,33 @@ Run *Promote to Production* with an older `sha-XXXXXXX` tag (find candidates in 
 
 ## Host expectations
 
-**New host:** `ops/bootstrap-host.sh` sets up everything below in one idempotent run (Docker, `deploy` user + keys, deploy dir, nightly image prune in `/etc/cron.d/docker-prune`, a 2 GB swap file with swappiness 10, automatic reboot at 04:30 when a security update needs one, key-only SSH, a fail2ban SSH jail, optional Let's Encrypt cert with renewal hooks) — see its header for usage. On staging run it with `FAIL2BAN=0`: its 954 MiB of RAM has no room for another daemon. Restore data **before** the first deploy, or the API initialises an empty database.
+**New host:** `ops/bootstrap-host.sh` sets up everything below in one idempotent run (Docker with live-restore, `deploy` user + keys, deploy dir, nightly image prune in `/etc/cron.d/docker-prune`, a 2 GB swap file with swappiness 10, automatic updates with a reboot at 04:30 when one needs it (see [Patching](#patching)), key-only SSH, a fail2ban SSH jail, optional Let's Encrypt cert with renewal hooks) — see its header for usage. On staging run it with `FAIL2BAN=0`: its 954 MiB of RAM has no room for another daemon. Restore data **before** the first deploy, or the API initialises an empty database.
 
 - Docker + docker compose v2; deploy user can run docker (staging uses `sudo docker`, production plain `docker`).
 - Deploy dir (`DEPLOY_PATH`) contains: `.env` (written by deploys), `certs/`, `secrets/rclone.conf` (optional, enables the backup sidecar), `secrets/beszel-agent.env` (production, enables the dashboard's agent), `predeploy/` (automatic pre-deploy `pg_dump` snapshots, last 3 kept).
 - **TLS certs must be readable by uid 101** (unprivileged nginx): `sudo chown -R 101:101 certs`. The deploy script attempts this automatically. If you provision Let's Encrypt later, the certbot renewal deploy-hook must re-apply that ownership after each renewal.
-- The deploy also pulls `db` (Postgres **minor** releases apply on deploy, protected by the pre-deploy dump). Major Postgres upgrades remain a manual migration.
+- The deploy also pulls `db`, so a Postgres **minor** bump in `docker-compose.yml` applies on the next deploy, protected by the pre-deploy dump. Major Postgres upgrades remain a manual migration.
+
+## Patching
+
+| What | How it gets updated |
+|---|---|
+| Ubuntu packages | unattended-upgrades, daily around 06:00–07:00 UTC: security fixes and bug fixes (`-updates`). Config: `/etc/apt/apt.conf.d/52linguaread-unattended-upgrades`; log: `/var/log/unattended-upgrades/`. |
+| Kernel, libc | Same, plus a reboot at 04:30 UTC only when `/var/run/reboot-required` exists. Containers restart via their restart policies (about 40 s). |
+| Services using updated libraries | `needrestart` restarts them; it never restarts Docker. |
+| Docker (production: `docker-ce` from Docker's repository) | unattended-upgrades, **held at the installed major version** by `/etc/apt/preferences.d/linguaread-docker-major`. Live-restore keeps containers running while the daemon restarts. |
+| Docker (staging: Ubuntu's `docker.io`) | Ubuntu's own updates, like any other package. |
+| Postgres, Beszel, Dozzle | Pinned tags in the compose files. Dependabot (`docker-compose`, weekly) opens PRs to `dev`; they reach production with the next promote. |
+| Our images (api, nginx, backup) | Rebuilt on every push to `dev`, picking up base images patched upstream since the last build (base tags are bumped by Dependabot's `docker` ecosystem). Between pushes they age; the Monday Trivy scan reports critical vulnerabilities in the `:prod` images. |
+
+**New Docker major version** (a deliberate step; containers may restart):
+
+```bash
+rm /etc/apt/preferences.d/linguaread-docker-major && apt-get update && apt-get upgrade
+docker ps   # everything back up?
+```
+
+Then re-run `ops/bootstrap-host.sh` so automatic updates hold the new major.
 
 ## Login and SSH protection
 

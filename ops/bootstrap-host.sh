@@ -2,11 +2,12 @@
 # ---------------------------------------------------------------------------
 # bootstrap-host.sh — prepare a fresh Ubuntu host to receive LinguaRead deploys.
 #
-# Installs Docker, creates the deploy user and directory the deploy workflow
-# expects, schedules Docker image cleanup, adds a swap file (unless the host already
-# has swap), lets security updates reboot at 04:30, turns off SSH password logins
-# once a key is in place, bans SSH brute-forcers with fail2ban, and (optionally)
-# issues a Let's Encrypt certificate.
+# Installs Docker (with live-restore, so containers survive daemon upgrades), creates the
+# deploy user and directory the deploy workflow expects, schedules Docker image cleanup,
+# adds a swap file (unless the host already has swap), installs Ubuntu bug-fix and Docker
+# updates automatically alongside security updates and reboots at 04:30 when one needs it,
+# turns off SSH password logins once a key is in place, bans SSH brute-forcers with
+# fail2ban, and (optionally) issues a Let's Encrypt certificate.
 # Idempotent: re-running on a prepared host changes nothing. Contains no secrets.
 #
 # Run once as root, from your workstation:
@@ -66,6 +67,55 @@ else
   curl -fsSL https://get.docker.com | sh >/tmp/docker-install.log 2>&1 \
     || { tail -20 /tmp/docker-install.log >&2; die "Docker install failed (log: /tmp/docker-install.log)"; }
   log "Installed: $(docker --version)"
+fi
+
+# --- Docker live-restore --------------------------------------------------
+# Containers keep running while dockerd restarts, so a Docker package upgrade (automatic, see
+# below) doesn't take the site down. Merged into any existing daemon.json and applied with a
+# reload, not a restart. Incompatible with swarm mode, which this stack doesn't use.
+if command -v dockerd >/dev/null 2>&1; then
+  command -v python3 >/dev/null 2>&1 || die "python3 is needed to edit /etc/docker/daemon.json"
+  mkdir -p /etc/docker
+  DAEMON_JSON=/etc/docker/daemon.json
+  [ -f "$DAEMON_JSON" ] && cp "$DAEMON_JSON" "$DAEMON_JSON.prev"
+  CHANGED=$(python3 - "$DAEMON_JSON" <<'PY'
+import json, os, sys
+path = sys.argv[1]
+cfg = {}
+if os.path.exists(path):
+    with open(path) as f:
+        text = f.read().strip()
+    cfg = json.loads(text) if text else {}
+if cfg.get("live-restore") is True:
+    print("no")
+    sys.exit()
+cfg["live-restore"] = True
+with open(path + ".tmp", "w") as f:
+    json.dump(cfg, f, indent=2)
+    f.write("\n")
+os.replace(path + ".tmp", path)
+print("yes")
+PY
+)
+  if [ "$CHANGED" = "yes" ]; then
+    if ! dockerd --validate --config-file "$DAEMON_JSON" >/dev/null 2>&1; then
+      if [ -f "$DAEMON_JSON.prev" ]; then mv "$DAEMON_JSON.prev" "$DAEMON_JSON"; else rm -f "$DAEMON_JSON"; fi
+      die "dockerd rejected $DAEMON_JSON — restored the previous version"
+    fi
+    systemctl reload docker 2>/dev/null || warn "reload Docker manually: systemctl reload docker"
+  fi
+  rm -f "$DAEMON_JSON.prev"
+  LIVE_RESTORE=false
+  for _ in 1 2 3 4 5; do
+    LIVE_RESTORE=$(docker info --format '{{.LiveRestoreEnabled}}' 2>/dev/null || true)
+    [ "$LIVE_RESTORE" = "true" ] && break
+    sleep 1
+  done
+  if [ "$LIVE_RESTORE" = "true" ]; then
+    log "Docker live-restore on"
+  else
+    warn "Docker live-restore is set in $DAEMON_JSON but not active yet"
+  fi
 fi
 
 # --- Deploy user ----------------------------------------------------------
@@ -155,19 +205,55 @@ else
   log "Swappiness $(cat /proc/sys/vm/swappiness)"
 fi
 
-# --- Security updates: reboot when required --------------------------------
-# unattended-upgrades installs security fixes but, by default, never reboots, so kernel and
-# libc fixes wait indefinitely. Reboot at 04:30 (after the 02:00 backup and 03:30 prune) only
-# when an update requires it; containers come back via their restart policies.
+# --- Automatic updates ----------------------------------------------------
+# By default unattended-upgrades installs only Ubuntu's security fixes and never reboots, so
+# bug fixes, Docker's own packages (docker-ce comes from Docker's repository, not Ubuntu's),
+# and kernel/libc fixes all wait for someone to log in. This also installs:
+#   - Ubuntu's bug-fix updates (the -updates pocket);
+#   - Docker's packages, held at the installed major version: live-restore is only promised
+#     across minor upgrades, so a new major waits for a deliberate upgrade (see below);
+# and reboots at 04:30 (after the 02:00 backup and 03:30 prune) when an update requires it.
+# Containers come back through their restart policies.
 command -v unattended-upgrade >/dev/null 2>&1 || apt_install unattended-upgrades
-cat > /etc/apt/apt.conf.d/52linguaread-auto-reboot <<'APT'
-// Managed by ops/bootstrap-host.sh — reboot after security updates that need it
-// (kernel, libc). 04:30 server time: after the 02:00 backup and 03:30 image prune.
+rm -f /etc/apt/apt.conf.d/52linguaread-auto-reboot   # earlier name of the file below
+cat > /etc/apt/apt.conf.d/52linguaread-unattended-upgrades <<'APT'
+// Managed by ops/bootstrap-host.sh. Lists here add to 50unattended-upgrades.
+Unattended-Upgrade::Allowed-Origins {
+  "${distro_id}:${distro_codename}-updates";
+};
+// Docker's repository (download.docker.com); matches nothing where Docker is Ubuntu's docker.io.
+Unattended-Upgrade::Origins-Pattern {
+  "origin=Docker,archive=${distro_codename},component=stable";
+};
+// Reboot when an update needs it (kernel, libc). 04:30 server time: after the 02:00 backup
+// and 03:30 image prune.
 Unattended-Upgrade::Automatic-Reboot "true";
 Unattended-Upgrade::Automatic-Reboot-WithUsers "true";
 Unattended-Upgrade::Automatic-Reboot-Time "04:30";
 APT
-log "Automatic security updates reboot at 04:30 when required"
+# Moving Docker to a new major version, by hand:
+#   rm /etc/apt/preferences.d/linguaread-docker-major && apt-get update && apt-get upgrade
+# then re-run this script to hold the new major.
+DOCKER_PIN=/etc/apt/preferences.d/linguaread-docker-major
+DOCKER_VERSION=$(dpkg-query -W -f='${db:Status-Status} ${Version}' docker-ce 2>/dev/null || true)
+case "$DOCKER_VERSION" in
+  "installed "*)
+    DOCKER_MAJOR=${DOCKER_VERSION#installed }
+    DOCKER_MAJOR=${DOCKER_MAJOR%%.*}   # 5:29.8.1-1~ubuntu… -> 5:29
+    cat > "$DOCKER_PIN" <<PIN
+# Managed by ops/bootstrap-host.sh — automatic updates stay on Docker ${DOCKER_MAJOR#*:}.x.
+# 999: preferred over newer majors, but never downgrades a newer installed version.
+Package: docker-ce docker-ce-cli docker-ce-rootless-extras
+Pin: version ${DOCKER_MAJOR}.*
+Pin-Priority: 999
+PIN
+    log "Automatic updates: security, bug fixes, Docker ${DOCKER_MAJOR#*:}.x; reboot at 04:30 when required"
+    ;;
+  *)
+    rm -f "$DOCKER_PIN"
+    log "Automatic updates: security, bug fixes (incl. Ubuntu's Docker); reboot at 04:30 when required"
+    ;;
+esac
 
 # --- SSH: keys only -------------------------------------------------------
 # Only once a key can log in — otherwise this would lock out a password-provisioned host.

@@ -154,7 +154,12 @@ jobs:
             # the check simply doesn't apply. `dc config` resolves any ${VAR} in the tag.
             pg_tag() { sed -n 's#^.*postgres:\([0-9][0-9.]*\)$#\1#p'; }
             want_pg=$(dc config --images 2>/dev/null | pg_tag | head -1 || true)
-            have_pg=$($DOCKER inspect --format '{{.Config.Image}}' "$(dc ps -q db)" 2>/dev/null | pg_tag || true)
+            # `ps -aq`, not `ps -q`: a *stopped* db container still owns the data directory
+            # on disk, and that is exactly what a failed deploy leaves behind. The running-only
+            # form returns nothing there, so the guard would wave the downgrade through. The
+            # ids are deliberately unquoted (there can be more than one); if several match, take
+            # the highest version — that is the server that last wrote the data directory.
+            have_pg=$($DOCKER inspect --format '{{.Config.Image}}' $(dc ps -aq db) 2>/dev/null | pg_tag | sort -V | tail -1 || true)
             if [ -n "$want_pg" ] && [ -n "$have_pg" ] && [ "$want_pg" != "$have_pg" ]; then
               older=$(printf '%s\n%s\n' "$want_pg" "$have_pg" | sort -V | head -1)
               if [ "$older" = "$want_pg" ]; then

@@ -23,7 +23,7 @@ This is the frontend application for LinguaRead, a language learning tool that h
 
 ### Prerequisites
 
-- Node.js (v14 or higher)
+- Node.js 22.12+ or 24+ (Vite 8 and Vitest 5 minimum; CI uses 24, the Docker build 26)
 - npm or yarn
 - LinguaRead backend server running
 

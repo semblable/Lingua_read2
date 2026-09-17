@@ -1,7 +1,31 @@
-/// <reference types="vitest" />
-import { defineConfig } from 'vite';
+/// <reference types="vitest/config" />
+import { defineConfig, transformWithOxc, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
+
+// CRA allowed JSX in .js files. Vite 8's Oxc transform skips .js by default and
+// picks the parser from the extension, so JSX in a .js file is a parse error.
+// Run src/**/*.js (today: only tests under src/__tests__) through Oxc as JSX first;
+// the output is plain JS, which the rest of the pipeline handles as usual.
+// Phase C renames .js -> .tsx as files are converted; drop this once none are left.
+function jsxInJs(): Plugin {
+  return {
+    name: 'lingua-read:jsx-in-js',
+    enforce: 'pre',
+    transform: {
+      filter: {
+        id: { include: /[\\/]src[\\/][^?]*\.js(?:\?|$)/, exclude: /[\\/]node_modules[\\/]/ },
+      },
+      async handler(code, id) {
+        const result = await transformWithOxc(code, id, {
+          lang: 'jsx',
+          jsx: { runtime: 'automatic' },
+        });
+        return { code: result.code, map: result.map };
+      },
+    },
+  };
+}
 
 // Vite config replacing Create React App.
 // - dev server stays on :3000 to match prior CRA setup (docker/nginx assume nothing here, but devs do)
@@ -9,6 +33,7 @@ import { VitePWA } from 'vite-plugin-pwa';
 // - assets nested under `static/` so nginx.conf's `location /static/` aggressive-cache rule keeps working
 export default defineConfig({
   plugins: [
+    jsxInJs(),
     react(),
     VitePWA({
       registerType: 'autoUpdate',
@@ -117,45 +142,40 @@ export default defineConfig({
     // Don't ship sourcemaps to production: they roughly double the deploy size and
     // expose the full source. Flip to 'hidden' locally when debugging a prod build.
     sourcemap: false,
-    rollupOptions: {
+    // Vite 7+ defaults to the "Baseline Widely Available" set (Safari 16.4, Chrome 111,
+    // Firefox 114 as of Vite 8). Keep the range Vite 5 targeted ('modules') so the
+    // toolchain upgrade doesn't quietly drop older iOS/Android browsers.
+    target: ['es2020', 'edge88', 'firefox78', 'chrome87', 'safari14'],
+    rolldownOptions: {
       output: {
         // Split big, rarely-changing vendors into their own chunks so app-code
         // edits don't invalidate the browser's 1y-immutable cache for them
         // (nginx serves /static/ with immutable caching). Grouped by package
-        // family — matching on the node_modules folder name keeps transitive
-        // deps (e.g. recharts' d3-* helpers) in the default chunks, which is
-        // safe: they just ride along with whatever imports them.
-        manualChunks(id: string) {
-          if (!id.includes('node_modules')) return undefined;
-          if (/[\\/]node_modules[\\/](react|react-dom|scheduler|react-router|react-router-dom)[\\/]/.test(id)) {
-            return 'vendor-react';
-          }
-          if (/[\\/]node_modules[\\/](react-bootstrap|bootstrap|@restart|@popperjs|dom-helpers|uncontrollable)[\\/]/.test(id)) {
-            return 'vendor-bootstrap';
-          }
-          if (/[\\/]node_modules[\\/](recharts|d3-[^\\/]+|victory-vendor|decimal\.js-light|internmap)[\\/]/.test(id)) {
-            return 'vendor-charts';
-          }
-          return undefined;
+        // family, matched on the node_modules folder name. scripts/verify-build.mjs
+        // asserts these three chunk names exist.
+        codeSplitting: {
+          groups: [
+            {
+              name: 'vendor-react',
+              test: /[\\/]node_modules[\\/](react|react-dom|scheduler|react-router|react-router-dom)[\\/]/,
+            },
+            {
+              name: 'vendor-bootstrap',
+              test: /[\\/]node_modules[\\/](react-bootstrap|bootstrap|@restart|@popperjs|dom-helpers|uncontrollable)[\\/]/,
+            },
+            {
+              name: 'vendor-charts',
+              test: /[\\/]node_modules[\\/](recharts|d3-[^\\/]+|victory-vendor|decimal\.js-light|internmap)[\\/]/,
+            },
+          ],
         },
       },
     },
   },
-  // Treat .js files as JSX (CRA allowed this; Vite doesn't by default).
-  // Use the `tsx` loader (a permissive superset of jsx + ts) so that .ts and
-  // .tsx files added during the Phase C migration are also handled — setting
-  // `esbuild.include` REPLACES Vite's default ts/jsx/tsx include, so we have
-  // to list every extension we want processed.
-  // Phase C will rename .js -> .tsx as files are converted; this config keeps
-  // working throughout the migration.
-  esbuild: {
-    loader: 'tsx',
-    include: /src\/.*\.[jt]sx?$/,
-    exclude: [],
-  },
   optimizeDeps: {
-    esbuildOptions: {
-      loader: { '.js': 'jsx' },
+    // Dependency pre-bundling counterpart of jsxInJs() (was esbuildOptions.loader).
+    rolldownOptions: {
+      moduleTypes: { '.js': 'jsx' },
     },
   },
   test: {

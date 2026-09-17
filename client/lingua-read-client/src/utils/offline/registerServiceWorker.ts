@@ -13,8 +13,11 @@ export async function registerServiceWorker(options: {
   if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return null;
 
   try {
-    // Resolved at build time by vite-plugin-pwa.
-    const { registerSW } = await import(/* @vite-ignore */ 'virtual:pwa-register');
+    // Resolved at build time by vite-plugin-pwa. No `@vite-ignore` here: Rolldown
+    // (Vite 8) honours it by leaving the bare specifier in the bundle, which the
+    // browser can't load, and vite-plugin-pwa then falls back to injecting its
+    // own registerSW.js without the autoUpdate reload handling.
+    const { registerSW } = await import('virtual:pwa-register');
     // With `registerType: 'autoUpdate'` the plugin automatically calls
     // skipWaiting + clients.claim and reloads the page when a new SW is
     // downloaded — no manual "Reload to update" prompt is needed.

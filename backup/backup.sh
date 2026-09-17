@@ -54,8 +54,10 @@ rclone copy "$BACKUP_DIR" "$REMOTE" \
 
 # 4. Media volumes: mirror to Drive. Files removed or replaced since the last run are
 # moved into a dated deleted/ folder rather than dropped, so a bad delete is recoverable.
+# api_dp_keys is left out on purpose: it decrypts the API keys inside the DB dump, so the
+# two must never share a folder (losing it only means re-entering those keys in Settings).
 echo "[media] Syncing..."
-for d in audio_lessons audiobooks epub_assets dp_keys; do
+for d in audio_lessons audiobooks epub_assets; do
   rclone sync "/srv/media/$d" "$REMOTE/media/current/$d" \
     --backup-dir "$REMOTE/media/deleted/$TIMESTAMP/$d" \
     --config /tmp/rclone.conf \

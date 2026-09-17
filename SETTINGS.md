@@ -49,6 +49,9 @@ Configure JSON Web Tokens (JWT) for secure authentication and authorize initial 
 | `JWT_EXPIRY_HOURS` | `2160` | Duration (in hours) before a JWT token expires (defaults to 90 days). |
 | `LINGUAREAD_PASSWORD`| *None* | **Optional.** Sets an initial administrator/default user password on the first startup. |
 
+> [!NOTE]
+> Behind the bundled nginx, login and first-time setup accept 5 password attempts a minute per address (plus a burst of 5); further attempts get "Too many password attempts" until the minute passes.
+
 > [!CAUTION]
 > **Keep `JWT_KEY` and `POSTGRES_PASSWORD` private!** Never commit your `.env` file containing these values to public version control systems.
 
@@ -76,6 +79,10 @@ Adjust security bounds and Discord scheduler configurations.
 | `DISCORD_WEEKLY_REPORT_POLL_MINUTES` | `30` | Interval in minutes for checking the scheduling queue. |
 | `HEALTHCHECK_URL` | *None* | **Optional.** healthchecks.io-style ping URL for the backup sidecar; `backup.sh` pings it on start/success/failure so silent backup failures raise an alert. |
 | `BACKUP_ENV` | *None* | **Set by the deploy workflow** to the GitHub environment name. Selects the backup sidecar's Drive folder (`lingua-read-backups/<BACKUP_ENV>/`); `backup.sh` refuses to run without it so two environments can never share (and overwrite) one folder. |
+| `MONITORING` | *unset* | **GitHub environment variable**, not `.env`. `true` makes the deploy start the Beszel + Dozzle dashboard (production). See the [deploy runbook](ops/deploy-runbook.md#monitoring-dashboard-production). |
+| `POSTGRES_SHARED_BUFFERS` | `1GB` | Postgres cache, sized for a ~4 GB host (about 25% of RAM). Deployed hosts set it as a GitHub environment variable, which the deploy appends to `.env`. |
+| `POSTGRES_EFFECTIVE_CACHE_SIZE` | `2GB` | Postgres planner hint for the OS cache (about 50% of RAM); not an allocation. Set like `POSTGRES_SHARED_BUFFERS`. |
+| `API_MEMSWAP_LIMIT` | `1500M` | API container memory **plus** swap (production overlay). Equal to the API's 1500M memory limit means it never swaps and is restarted instead; a host with less RAM than that limit sets it higher (staging: `3000M`). Set like `POSTGRES_SHARED_BUFFERS`. |
 
 ---
 

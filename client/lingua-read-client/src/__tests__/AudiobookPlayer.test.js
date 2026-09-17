@@ -75,7 +75,8 @@ const renderReadyLessonPlayer = async (props = {}) => {
 
 describe('AudiobookPlayer', () => {
   beforeEach(() => {
-    // Mock HTMLMediaElement methods that JSDOM doesn't implement
+    // Stub HTMLMediaElement methods: happy-dom's real ones dispatch play/pause/emptied
+    // events, and these tests drive playback events themselves via fireEvent.
     window.HTMLMediaElement.prototype.play = vi.fn().mockResolvedValue();
     window.HTMLMediaElement.prototype.pause = vi.fn();
     window.HTMLMediaElement.prototype.load = vi.fn();

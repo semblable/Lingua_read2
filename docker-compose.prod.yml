@@ -1,5 +1,9 @@
 services:
   api:
+    # memswap_limit is memory + swap, so matching the memory limit means no swap: on a host
+    # with swap, a runaway API is then restarted in seconds instead of crawling on disk.
+    # A host with less RAM than the limit can allow swap with API_MEMSWAP_LIMIT (e.g. 3000M).
+    memswap_limit: ${API_MEMSWAP_LIMIT:-1500M}
     deploy:
       resources:
         limits:
@@ -30,3 +34,72 @@ services:
 
   # db intentionally has no memory limit: OOM-killing Postgres is worse than
   # letting it self-regulate around its shared_buffers defaults.
+
+  # ── Monitoring dashboard (profile "monitoring", production only) ──────────
+  # Started by the deploy when the GitHub environment variable MONITORING is "true".
+  # Both UIs listen on the server's loopback only — open them through an SSH tunnel
+  # (ops/deploy-runbook.md). Hub and agent versions must match; bump them together.
+  beszel:
+    image: henrygd/beszel:0.19.0
+    profiles: ["monitoring"]
+    restart: unless-stopped
+    environment:
+      APP_URL: http://localhost:8090
+    ports:
+      - "127.0.0.1:8090:8090"
+    volumes:
+      - beszel_data:/beszel_data
+      - beszel_socket:/beszel_socket
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+
+  beszel-agent:
+    image: henrygd/beszel-agent:0.19.0
+    profiles: ["monitoring"]
+    restart: unless-stopped
+    # Host network so the agent reports the server's own network traffic; it talks to the
+    # hub over the shared socket and 127.0.0.1, so it opens no port.
+    network_mode: host
+    env_file:
+      # KEY and TOKEN from the hub's "Add system" dialog. The deploy starts the agent only
+      # once this file exists.
+      - path: ./secrets/beszel-agent.env
+        required: false
+    environment:
+      LISTEN: /beszel_socket/beszel.sock
+      HUB_URL: http://127.0.0.1:8090
+    volumes:
+      - beszel_agent_data:/var/lib/beszel-agent
+      - beszel_socket:/beszel_socket
+      # :ro is hygiene only — socket access still grants full Docker API; used for container stats.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+
+  dozzle:
+    image: amir20/dozzle:v11.1.0
+    profiles: ["monitoring"]
+    restart: unless-stopped
+    environment:
+      DOZZLE_NO_ANALYTICS: "true"
+      # Read-only log viewer: no start/stop buttons, no shell into containers (the defaults).
+      DOZZLE_ENABLE_ACTIONS: "false"
+      DOZZLE_ENABLE_SHELL: "false"
+    ports:
+      - "127.0.0.1:8081:8080"
+    volumes:
+      # :ro is hygiene only — socket access still grants full Docker API; used to read logs.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+
+volumes:
+  beszel_data:
+  beszel_socket:
+  beszel_agent_data:

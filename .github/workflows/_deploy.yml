@@ -2,8 +2,9 @@ name: Deploy
 
 # Reusable SSH/compose deploy used by staging.yml and promote-prod.yml.
 # The target host and .env contents come only from the GitHub Environment named by
-# `inputs.environment` (secrets: DEPLOY_HOST/USER/SSH_KEY/PATH, DOTENV;
-# optional variable: SMOKE_URL).
+# `inputs.environment` (variables: DEPLOY_HOST, optional SMOKE_URL, MONITORING and host
+# sizing POSTGRES_SHARED_BUFFERS / POSTGRES_EFFECTIVE_CACHE_SIZE / API_MEMSWAP_LIMIT;
+# secrets: DEPLOY_USER/SSH_KEY/PATH, DOTENV).
 
 on:
   workflow_call:
@@ -26,20 +27,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: ${{ inputs.environment }}
-    # GitHub fills a missing environment secret from a same-named repo-level one. Staging
-    # still lives in repo-level DEPLOY_* + PRODUCTION_ENV (not yet moved to its environment),
-    # so everything that decides WHERE and WHAT is deployed is pinned per environment:
-    # - host: the environment VARIABLE DEPLOY_HOST (no repo-level variable exists to leak in);
-    #   only staging may fall back to the repo-level secret.
-    # - .env: environment DOTENV; only staging may fall back to repo-level PRODUCTION_ENV.
-    # Once staging has its own secrets + DEPLOY_HOST variable, drop both staging clauses and
-    # delete the repo-level secrets (ops/deploy-runbook.md).
+    # Everything comes from the GitHub Environment. The host is an environment VARIABLE:
+    # GitHub fills a missing environment *secret* from a same-named repo-level one, so keep
+    # repo-level DEPLOY_* / DOTENV secrets undefined (ops/deploy-runbook.md).
     env:
-      TARGET_HOST: ${{ vars.DEPLOY_HOST || (inputs.environment == 'staging' && secrets.DEPLOY_HOST) || '' }}
+      TARGET_HOST: ${{ vars.DEPLOY_HOST }}
       TARGET_USER: ${{ secrets.DEPLOY_USER }}
       TARGET_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
       TARGET_PATH: ${{ secrets.DEPLOY_PATH }}
-      TARGET_DOTENV: ${{ secrets.DOTENV || (inputs.environment == 'staging' && secrets.PRODUCTION_ENV) || '' }}
+      TARGET_DOTENV: ${{ secrets.DOTENV }}
     steps:
       # Fail fast, before anything touches a host, if any part of the configuration is missing.
       - name: Validate deploy configuration
@@ -84,9 +80,10 @@ jobs:
               $DOCKER compose -f docker-compose.yml -f docker-compose.prod.yml "$@"
             }
 
-            # Write runtime config to .env from the resolved DOTENV secret (multiline
-            # text; see the job-level env for resolution order), then pin all images
-            # to the immutable deploy tag.
+            # Write runtime config to .env from the environment's DOTENV secret
+            # (multiline text), then pin all images to the immutable deploy tag and add
+            # the environment's sizing variables (a blank line when one isn't set, so the
+            # compose default applies and a value in DOTENV isn't overridden).
             cat > .env <<'EOF'
             ${{ env.TARGET_DOTENV }}
             EOF
@@ -95,6 +92,9 @@ jobs:
             NGINX_IMAGE_TAG=${{ inputs.image_tag }}
             BACKUP_IMAGE_TAG=${{ inputs.image_tag }}
             BACKUP_ENV=${{ inputs.environment }}
+            ${{ vars.POSTGRES_SHARED_BUFFERS && format('POSTGRES_SHARED_BUFFERS={0}', vars.POSTGRES_SHARED_BUFFERS) || '' }}
+            ${{ vars.POSTGRES_EFFECTIVE_CACHE_SIZE && format('POSTGRES_EFFECTIVE_CACHE_SIZE={0}', vars.POSTGRES_EFFECTIVE_CACHE_SIZE) || '' }}
+            ${{ vars.API_MEMSWAP_LIMIT && format('API_MEMSWAP_LIMIT={0}', vars.API_MEMSWAP_LIMIT) || '' }}
             EOF
             chmod 600 .env
 
@@ -193,6 +193,20 @@ jobs:
               dc --profile backup up -d --force-recreate backup
             else
               echo "Skipping backup service: secrets/rclone.conf not found (run setup.sh to enable)"
+            fi
+
+            # Monitoring dashboard (Beszel + Dozzle on 127.0.0.1) where the environment sets
+            # MONITORING=true. The agent needs the KEY/TOKEN the hub hands out, so it joins once
+            # secrets/beszel-agent.env exists (ops/deploy-runbook.md, "Monitoring dashboard").
+            if [ "${{ vars.MONITORING }}" = "true" ]; then
+              monitoring="beszel dozzle"
+              if [ -f secrets/beszel-agent.env ]; then
+                monitoring="$monitoring beszel-agent"
+              else
+                echo "Beszel agent not started yet: secrets/beszel-agent.env not found"
+              fi
+              dc --profile monitoring pull $monitoring
+              dc --profile monitoring up -d $monitoring
             fi
 
             # Drop the ephemeral GHCR credential from the host. It would expire on its own

@@ -98,8 +98,8 @@ jobs:
       - name: Validate docker-compose (prod overlay)
         run: docker compose -f docker-compose.yml -f docker-compose.prod.yml config --quiet
 
-      - name: Validate docker-compose (prod overlay + backup profile)
-        run: docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile backup config --quiet
+      - name: Validate docker-compose (prod overlay + backup and monitoring profiles)
+        run: docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile backup --profile monitoring config --quiet
 
       # Host-side scripts run unattended (cron, first boot) where a typo only surfaces
       # as a missing backup or a half-provisioned host — lint them here instead.

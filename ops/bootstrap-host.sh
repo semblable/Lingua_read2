@@ -4,9 +4,9 @@
 #
 # Installs Docker, creates the deploy user and directory the deploy workflow
 # expects, schedules Docker image cleanup, adds a swap file (unless the host already
-# has swap), lets security updates reboot at 04:30,
-# turns off SSH password logins once a key is in place, and (optionally) issues a
-# Let's Encrypt certificate.
+# has swap), lets security updates reboot at 04:30, turns off SSH password logins
+# once a key is in place, bans SSH brute-forcers with fail2ban, and (optionally)
+# issues a Let's Encrypt certificate.
 # Idempotent: re-running on a prepared host changes nothing. Contains no secrets.
 #
 # Run once as root, from your workstation:
@@ -22,6 +22,8 @@
 #   LE_EMAIL       Let's Encrypt account email (setting it accepts the LE terms)
 #   SWAP_SIZE      swap file size when the host has no swap, e.g. 2G (default) or
 #                  512M; 0 = leave swap alone
+#   FAIL2BAN       1 (default) = install fail2ban's SSH jail; 0 = skip (staging:
+#                  its 954 MiB of RAM has no room for another daemon)
 #   SKIP_DOCKER_INSTALL  1 = don't install Docker (tests / pre-baked images)
 # ---------------------------------------------------------------------------
 set -euo pipefail
@@ -32,6 +34,7 @@ CI_PUBKEY="${CI_PUBKEY:-}"
 DOMAIN="${DOMAIN:-}"
 LE_EMAIL="${LE_EMAIL:-}"
 SWAP_SIZE="${SWAP_SIZE:-2G}"
+FAIL2BAN="${FAIL2BAN:-1}"
 SKIP_DOCKER_INSTALL="${SKIP_DOCKER_INSTALL:-0}"
 export DEBIAN_FRONTEND=noninteractive
 
@@ -40,6 +43,7 @@ warn() { printf '[warn] %s\n' "$*" >&2; }
 die()  { printf '[fail] %s\n' "$*" >&2; exit 1; }
 
 [ "$(id -u)" -eq 0 ] || die "run as root"
+case "$FAIL2BAN" in 0|1) ;; *) die "FAIL2BAN must be 0 or 1 (got '$FAIL2BAN')" ;; esac
 case "$SWAP_SIZE" in
   0|[1-9]*[GM]) ;;
   *) die "SWAP_SIZE must look like 2G or 512M, or be 0 (got '$SWAP_SIZE')" ;;
@@ -103,7 +107,7 @@ touch "$AUTH"
 mv "$AUTH.tmp" "$AUTH"
 chmod 600 "$AUTH"; chown "$DEPLOY_USER:$DEPLOY_USER" "$AUTH"
 KEY_COUNT=$(grep_ok -c '^[[:space:]]*[^#[:space:]]' "$AUTH")
-[ -n "$CI_PUBKEY" ] || warn "CI_PUBKEY not set — GitHub Actions can't deploy until its key is in $AUTH"
+[ -n "$CI_PUBKEY" ] || warn "CI_PUBKEY not set — fine if the environment's DEPLOY_SSH_KEY is already among the keys in $AUTH"
 log "$AUTH holds $KEY_COUNT key(s)"
 
 # --- Deploy directory -----------------------------------------------------
@@ -188,6 +192,52 @@ elif [ "$KEY_COUNT" -gt 0 ]; then
   fi
 else
   warn "no usable SSH key for $DEPLOY_USER — leaving password logins enabled"
+fi
+
+# --- fail2ban: ban SSH brute-forcers --------------------------------------
+# Password logins are off, so bots can't get in, but they try thousands of times a day.
+# Five failures within 10 minutes ban the address for an hour, doubling for repeat offenders
+# up to a week. Deploys never fail authentication, so GitHub's runners are never banned.
+# "aggressive" also counts the pre-auth disconnects that key-only bots end with. Ubuntu logs
+# them as sshd-session inside ssh.service; the journalmatch covers that and plain sshd.
+# Banned yourself? From another address or the Hetzner console:
+#   fail2ban-client set sshd unbanip <ip>
+if [ "$FAIL2BAN" = "1" ]; then
+  command -v fail2ban-client >/dev/null 2>&1 || apt_install fail2ban
+  JAIL=/etc/fail2ban/jail.d/linguaread.local
+  cat > "$JAIL.tmp" <<'F2B'
+# Managed by ops/bootstrap-host.sh
+[DEFAULT]
+bantime = 1h
+bantime.increment = true
+bantime.maxtime = 1w
+findtime = 10m
+maxretry = 5
+
+[sshd]
+enabled = true
+mode = aggressive
+backend = systemd
+journalmatch = _SYSTEMD_UNIT=ssh.service + _SYSTEMD_UNIT=sshd.service + _COMM=sshd + _COMM=sshd-session
+F2B
+  if cmp -s "$JAIL.tmp" "$JAIL"; then
+    rm -f "$JAIL.tmp"
+  else
+    [ -f "$JAIL" ] && cp "$JAIL" "$JAIL.prev"
+    mv "$JAIL.tmp" "$JAIL"
+    if ! fail2ban-client --test >/dev/null 2>&1; then
+      if [ -f "$JAIL.prev" ]; then mv "$JAIL.prev" "$JAIL"; else rm -f "$JAIL"; fi
+      die "fail2ban rejected $JAIL — restored the previous version"
+    fi
+    rm -f "$JAIL.prev"
+    systemctl enable --quiet fail2ban
+    systemctl restart fail2ban
+  fi
+  for _ in 1 2 3 4 5 6 7 8 9 10; do fail2ban-client ping >/dev/null 2>&1 && break; sleep 1; done
+  fail2ban-client status sshd >/dev/null 2>&1 || die "fail2ban's sshd jail isn't running — journalctl -u fail2ban"
+  log "fail2ban SSH jail active ($(fail2ban-client status sshd | awk -F'\t' '/Currently banned/ {print $2}') address(es) banned now)"
+else
+  log "fail2ban skipped (FAIL2BAN=0)"
 fi
 
 # --- TLS (optional) -------------------------------------------------------

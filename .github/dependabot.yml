@@ -19,10 +19,16 @@ updates:
     schedule:
       interval: monthly
     ignore:
-      # TypeScript 7 (the native compiler) can't be linted yet: typescript-eslint
-      # refuses to load with "does not support TS 7.0", so `npm run lint` fails
-      # outright. Drop this once typescript-eslint ships TS 7 support.
+      # Two majors our lint stack can't load yet. Both are one-line removals once the
+      # plugins catch up — check the peer ranges before dropping either.
+      # TypeScript 7 (the native compiler): typescript-eslint refuses to load with
+      # "does not support TS 7.0", so `npm run lint` fails outright.
       - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
+      # ESLint 10 removed the legacy rule context API. eslint-plugin-react 7.37.5 (its
+      # latest) still calls context.getFilename(), so every run dies on
+      # "contextOrFilename.getFilename is not a function"; its peer range ends at ^9.7.
+      - dependency-name: "eslint"
         update-types: ["version-update:semver-major"]
     groups:
       npm-minor-patch:

@@ -57,7 +57,10 @@ Changing a `POSTGRES_*` value restarts the database container on the next deploy
 
 ## Rolling back production
 
-Run *Promote to Production* with an older `sha-XXXXXXX` tag (find candidates in the `prod-…` git tags, the Actions history, or GHCR). The same digest-retag + deploy path runs; nothing is rebuilt, and the host gets that commit's compose and nginx files too (including its Postgres minor pin; a minor downgrade within one major is safe). If GHCR cleanup already deleted that tag, the promote fails at the verify step — rebuild the image from the corresponding `prod-…` git tag instead.
+Run *Promote to Production* with an older `sha-XXXXXXX` tag (find candidates in the `prod-…` git tags, the Actions history, or GHCR). The same digest-retag + deploy path runs; nothing is rebuilt, and the host gets that commit's compose and nginx files too.
+
+> **Rolling back across a Postgres bump:** the deploy **refuses** to start an older Postgres than the one whose data directory is on disk (say `18.4` against data written by `18.6`) and fails with an error naming both versions. PostgreSQL doesn't support opening a data directory with an older server, and the pre-deploy dump doesn't save you either — a dump taken by the newer server may not restore into the older one. To roll the app back without the database, cherry-pick the current `postgres:` pin onto the commit you're promoting and promote that.
+ If GHCR cleanup already deleted that tag, the promote fails at the verify step — rebuild the image from the corresponding `prod-…` git tag instead.
 
 ## Host expectations
 
@@ -75,7 +78,7 @@ Run *Promote to Production* with an older `sha-XXXXXXX` tag (find candidates in 
 | Ubuntu packages | unattended-upgrades, daily around 06:00–07:00 UTC: security fixes and bug fixes (`-updates`). Config: `/etc/apt/apt.conf.d/52linguaread-unattended-upgrades`; log: `/var/log/unattended-upgrades/`. |
 | Kernel, libc | Same, plus a reboot at 04:30 UTC only when `/var/run/reboot-required` exists. Containers restart via their restart policies (about 40 s). |
 | Services using updated libraries | `needrestart` restarts them; it never restarts Docker. |
-| Docker (production: `docker-ce` from Docker's repository) | unattended-upgrades, **held at the installed major version** by `/etc/apt/preferences.d/linguaread-docker-major`. Live-restore keeps containers running while the daemon restarts. |
+| Docker (production: `docker-ce` from Docker's repository) | unattended-upgrades, with every package from that repository (`docker-ce*`, `containerd.io`, the compose and buildx plugins) **held at its installed major version** by `/etc/apt/preferences.d/linguaread-docker-major`. Live-restore keeps containers running while the daemon restarts. A held-back major is reported at every SSH login by `/etc/update-motd.d/99-linguaread-docker` — that notice is the only signal that a Docker fix is waiting, so don't ignore it. |
 | Docker (staging: Ubuntu's `docker.io`) | Ubuntu's own updates, like any other package. |
 | Postgres, Beszel, Dozzle | Pinned tags in the compose files. Dependabot (`docker-compose`, weekly) opens PRs to `dev`; they reach production with the next promote. |
 | Our images (api, nginx, backup) | Rebuilt on every push to `dev`, picking up base images patched upstream since the last build (base tags are bumped by Dependabot's `docker` ecosystem). Between pushes they age; the Monday Trivy scan reports critical vulnerabilities in the `:prod` images. |
@@ -87,7 +90,7 @@ rm /etc/apt/preferences.d/linguaread-docker-major && apt-get update && apt-get u
 docker ps   # everything back up?
 ```
 
-Then re-run `ops/bootstrap-host.sh` so automatic updates hold the new major.
+Then re-run `ops/bootstrap-host.sh` so automatic updates hold the new majors.
 
 ## Login and SSH protection
 

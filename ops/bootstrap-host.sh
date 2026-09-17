@@ -78,7 +78,10 @@ if command -v dockerd >/dev/null 2>&1; then
   mkdir -p /etc/docker
   DAEMON_JSON=/etc/docker/daemon.json
   [ -f "$DAEMON_JSON" ] && cp "$DAEMON_JSON" "$DAEMON_JSON.prev"
-  CHANGED=$(python3 - "$DAEMON_JSON" <<'PY'
+  # A parse failure here means the existing daemon.json is malformed. Say so plainly and
+  # leave /etc/docker as we found it, rather than exiting on a traceback and stranding
+  # .prev/.tmp files that later runs would mistake for a usable backup.
+  if ! CHANGED=$(python3 - "$DAEMON_JSON" <<'PY'
 import json, os, sys
 path = sys.argv[1]
 cfg = {}
@@ -96,7 +99,10 @@ with open(path + ".tmp", "w") as f:
 os.replace(path + ".tmp", path)
 print("yes")
 PY
-)
+  ); then
+    rm -f "$DAEMON_JSON.tmp" "$DAEMON_JSON.prev"
+    die "could not read $DAEMON_JSON as JSON — fix it by hand, then re-run (nothing was changed)"
+  fi
   if [ "$CHANGED" = "yes" ]; then
     if ! dockerd --validate --config-file "$DAEMON_JSON" >/dev/null 2>&1; then
       if [ -f "$DAEMON_JSON.prev" ]; then mv "$DAEMON_JSON.prev" "$DAEMON_JSON"; else rm -f "$DAEMON_JSON"; fi
@@ -231,29 +237,79 @@ Unattended-Upgrade::Automatic-Reboot "true";
 Unattended-Upgrade::Automatic-Reboot-WithUsers "true";
 Unattended-Upgrade::Automatic-Reboot-Time "04:30";
 APT
+# Hold every package from Docker's repository at its installed major version, each with its
+# own version series. live-restore only promises to carry containers across a *minor* daemon
+# upgrade, and a containerd or compose major can change behaviour that every deploy depends
+# on, so a major is a deliberate step (ops/deploy-runbook.md, "Patching").
 # Moving Docker to a new major version, by hand:
 #   rm /etc/apt/preferences.d/linguaread-docker-major && apt-get update && apt-get upgrade
-# then re-run this script to hold the new major.
+# then re-run this script to hold the new majors.
 DOCKER_PIN=/etc/apt/preferences.d/linguaread-docker-major
-DOCKER_VERSION=$(dpkg-query -W -f='${db:Status-Status} ${Version}' docker-ce 2>/dev/null || true)
-case "$DOCKER_VERSION" in
-  "installed "*)
-    DOCKER_MAJOR=${DOCKER_VERSION#installed }
-    DOCKER_MAJOR=${DOCKER_MAJOR%%.*}   # 5:29.8.1-1~ubuntu… -> 5:29
-    cat > "$DOCKER_PIN" <<PIN
-# Managed by ops/bootstrap-host.sh — automatic updates stay on Docker ${DOCKER_MAJOR#*:}.x.
-# 999: preferred over newer majors, but never downgrades a newer installed version.
-Package: docker-ce docker-ce-cli docker-ce-rootless-extras
-Pin: version ${DOCKER_MAJOR}.*
-Pin-Priority: 999
-PIN
-    log "Automatic updates: security, bug fixes, Docker ${DOCKER_MAJOR#*:}.x; reboot at 04:30 when required"
-    ;;
-  *)
-    rm -f "$DOCKER_PIN"
-    log "Automatic updates: security, bug fixes (incl. Ubuntu's Docker); reboot at 04:30 when required"
-    ;;
-esac
+
+installed_major() {   # package -> its major version series, or nothing if not installed
+  local ver
+  ver=$(dpkg-query -W -f='${db:Status-Status} ${Version}' "$1" 2>/dev/null || true)
+  case "$ver" in
+    "installed "*) ver=${ver#installed } ; printf '%s' "${ver%%.*}" ;;   # 5:29.8.1-1~… -> 5:29
+    *) return 1 ;;
+  esac
+}
+
+pin_stanza() {   # $1 = package setting the series, $2… = packages to pin to it
+  local major src="$1"
+  major=$(installed_major "$src") || return 0
+  shift
+  printf '\nPackage: %s\nPin: version %s.*\nPin-Priority: 999\n' "$*" "$major"
+}
+
+{
+  echo "# Managed by ops/bootstrap-host.sh — automatic updates stay on each package's"
+  echo "# installed major. 999: preferred over a newer major, but never a downgrade."
+  pin_stanza docker-ce docker-ce docker-ce-cli docker-ce-rootless-extras
+  pin_stanza containerd.io containerd.io
+  pin_stanza docker-compose-plugin docker-compose-plugin
+  pin_stanza docker-buildx-plugin docker-buildx-plugin
+} > "$DOCKER_PIN.tmp"
+
+if grep -q '^Package:' "$DOCKER_PIN.tmp"; then
+  mv "$DOCKER_PIN.tmp" "$DOCKER_PIN"
+  DOCKER_MAJOR=$(installed_major docker-ce || true)
+  log "Automatic updates: security, bug fixes, Docker ${DOCKER_MAJOR#*:}.x (majors held, $DOCKER_PIN); reboot at 04:30 when required"
+else
+  # Nothing from Docker's repository here (Ubuntu's docker.io): nothing to pin.
+  rm -f "$DOCKER_PIN.tmp" "$DOCKER_PIN"
+  log "Automatic updates: security, bug fixes (incl. Ubuntu's Docker); reboot at 04:30 when required"
+fi
+
+# A held-back major is otherwise invisible: unattended-upgrades just stops finding anything
+# to install, so a Docker security fix that only lands in the next major would wait silently.
+# Say so at every interactive login instead.
+MOTD=/etc/update-motd.d/99-linguaread-docker
+if [ -d /etc/update-motd.d ]; then
+  cat > "$MOTD" <<'MOTDEOF'
+#!/bin/sh
+# Managed by ops/bootstrap-host.sh — report Docker majors held back by our apt pin.
+pin=/etc/apt/preferences.d/linguaread-docker-major
+[ -f "$pin" ] || exit 0
+for pkg in docker-ce containerd.io docker-compose-plugin; do
+  installed=$(dpkg-query -W -f='${Version}' "$pkg" 2>/dev/null) || continue
+  [ -n "$installed" ] || continue
+  newest=$(apt-cache madison "$pkg" 2>/dev/null | awk 'NR==1 {print $3}')
+  [ -n "$newest" ] || continue
+  if [ "${newest%%.*}" != "${installed%%.*}" ]; then
+    printf ' * %s %s is available; held at %s by the LinguaRead pin.\n' \
+      "$pkg" "$newest" "$installed"
+    printf '   Upgrading restarts the Docker stack: see ops/deploy-runbook.md (Patching).\n'
+  fi
+done
+MOTDEOF
+  chmod 755 "$MOTD"
+  HELD=$("$MOTD" || true)
+  if [ -n "$HELD" ]; then
+    warn "a newer Docker major is available and held back:"
+    printf '%s\n' "$HELD" >&2
+  fi
+fi
 
 # --- SSH: keys only -------------------------------------------------------
 # Only once a key can log in — otherwise this would lock out a password-provisioned host.

@@ -172,6 +172,9 @@ export default defineConfig({
               test: /[\\/]node_modules[\\/](react-bootstrap|bootstrap|@restart|@popperjs|dom-helpers|uncontrollable)[\\/]/,
             },
             {
+              // Kept out of the first page load (scripts/verify-build.mjs enforces it), but
+              // still in the Workbox precache below — so for a visitor with the service
+              // worker installed these bytes are deferred to the background, not saved.
               name: 'vendor-charts',
               test: /[\\/]node_modules[\\/](recharts|d3-[^\\/]+|victory-vendor|decimal\.js-light|internmap)[\\/]/,
             },

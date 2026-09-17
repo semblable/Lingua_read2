@@ -50,6 +50,35 @@ for (const chunk of ['vendor-react', 'vendor-bootstrap', 'vendor-charts']) {
   }
 }
 
+// 3b. The first page load must not pull the chart chunk. recharts is ~107 kB gzipped and
+// is only used by the Statistics route, which is lazy — but anything the eager entry graph
+// touches drags the whole chunk in. That happened twice: once through a sparkline on the
+// home page, once through shared vendor code (zustand, Oxc's transform helpers) that fell
+// into vendor-charts because no group in vite.config.ts claimed it. Neither showed up in
+// tests or in the build log; only measuring the first load caught it. This is that check:
+// walk what index.html loads plus everything those chunks statically import.
+const html = existsSync(join(buildDir, 'index.html'))
+  ? readFileSync(join(buildDir, 'index.html'), 'utf8')
+  : '';
+const firstLoad = new Set(
+  [...html.matchAll(/(?:src|href)="\/static\/([^"]+\.js)"/g)].map((m) => m[1]),
+);
+for (const file of firstLoad) {
+  const path = join(staticDir, file);
+  if (!existsSync(path)) continue;
+  for (const [, imported] of readFileSync(path, 'utf8').matchAll(/from"\.\/([^"]+\.js)"/g)) {
+    firstLoad.add(imported);
+  }
+}
+const eagerCharts = [...firstLoad].filter((f) => f.startsWith('vendor-charts-'));
+if (eagerCharts.length > 0) {
+  failures.push(
+    `${eagerCharts[0]} is in the first page load — something the entry imports pulls in recharts. ` +
+      'Check what the eager chunks import (build with --minify false to read the names), then either ' +
+      "stop importing it on the eager path or claim it in vite.config.ts's codeSplitting groups.",
+  );
+}
+
 // 4. Fonts are bundled locally.
 if (!staticFiles.some((f) => f.endsWith('.woff2'))) {
   failures.push('no .woff2 files in build/static — @fontsource imports in src/index.tsx are missing');

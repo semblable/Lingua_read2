@@ -2,9 +2,9 @@ import { describe, test, expect, afterEach, vi } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 
-// LanguageDashboardCard internally renders a Recharts AreaChart, which needs
-// ResizeObserver. Mock it with a minimal stand-in so LanguagesStrip tests
-// stay focused on this component's own responsibilities (sort + cap + link).
+// A minimal stand-in for LanguageDashboardCard, so these tests stay focused on
+// LanguagesStrip's own responsibilities (sort + cap + link) and can assert on
+// stable test ids. The card itself is covered by its own tests.
 vi.mock('../../dashboard/LanguageDashboardCard', () => ({
   default: ({ lang }: { lang: { languageId: number; languageName: string } }) => (
     <div data-testid={`lang-card-${lang.languageId}`}>{lang.languageName}</div>

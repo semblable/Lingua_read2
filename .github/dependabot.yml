@@ -1,8 +1,11 @@
 version: 2
 updates:
+  # All update PRs go to dev: staging tests them, and main stays whatever production runs
+  # (a PR merged straight into main would skip staging and break promote-prod's fast-forward).
   # Keep GitHub Actions pinned versions fresh
   - package-ecosystem: github-actions
     directory: "/"
+    target-branch: dev
     schedule:
       interval: weekly
     groups:
@@ -12,6 +15,7 @@ updates:
   # Client (React/Vite) — group minor+patch into one monthly PR to keep noise low
   - package-ecosystem: npm
     directory: "/client/lingua-read-client"
+    target-branch: dev
     schedule:
       interval: monthly
     groups:
@@ -21,6 +25,7 @@ updates:
   # Backend (.NET) — solution at repo root covers API + Tests projects
   - package-ecosystem: nuget
     directory: "/"
+    target-branch: dev
     schedule:
       interval: monthly
     groups:
@@ -31,13 +36,16 @@ updates:
   # minor releases arrive via `docker compose pull db` during deploys)
   - package-ecosystem: docker
     directory: "/server/LinguaReadApi"
+    target-branch: dev
     schedule:
       interval: monthly
   - package-ecosystem: docker
     directory: "/client/lingua-read-client"
+    target-branch: dev
     schedule:
       interval: monthly
   - package-ecosystem: docker
     directory: "/backup"
+    target-branch: dev
     schedule:
       interval: monthly

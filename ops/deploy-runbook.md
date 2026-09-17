@@ -46,7 +46,7 @@ Run *Promote to Production* with an older `sha-XXXXXXX` tag (find candidates in 
 
 ## Host expectations
 
-**New host:** `ops/bootstrap-host.sh` sets up everything below in one idempotent run (Docker, `deploy` user + keys, deploy dir, nightly image prune in `/etc/cron.d/docker-prune`, key-only SSH, optional Let's Encrypt cert with renewal hooks) — see its header for usage. Restore data **before** the first deploy, or the API initialises an empty database.
+**New host:** `ops/bootstrap-host.sh` sets up everything below in one idempotent run (Docker, `deploy` user + keys, deploy dir, nightly image prune in `/etc/cron.d/docker-prune`, automatic reboot at 04:30 when a security update needs one, key-only SSH, optional Let's Encrypt cert with renewal hooks) — see its header for usage. Restore data **before** the first deploy, or the API initialises an empty database.
 
 - Docker + docker compose v2; deploy user can run docker (staging uses `sudo docker`, production plain `docker`).
 - Deploy dir (`DEPLOY_PATH`) contains: `.env` (written by deploys), `certs/`, `secrets/rclone.conf` (optional, enables the backup sidecar), `predeploy/` (automatic pre-deploy `pg_dump` snapshots, last 3 kept).

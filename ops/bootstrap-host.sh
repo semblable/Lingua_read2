@@ -3,8 +3,9 @@
 # bootstrap-host.sh — prepare a fresh Ubuntu host to receive LinguaRead deploys.
 #
 # Installs Docker, creates the deploy user and directory the deploy workflow
-# expects, schedules Docker image cleanup, turns off SSH password logins once a
-# key is in place, and (optionally) issues a Let's Encrypt certificate.
+# expects, schedules Docker image cleanup, lets security updates reboot at 04:30,
+# turns off SSH password logins once a key is in place, and (optionally) issues a
+# Let's Encrypt certificate.
 # Idempotent: re-running on a prepared host changes nothing. Contains no secrets.
 #
 # Run once as root, from your workstation:
@@ -104,6 +105,20 @@ CRON
 chmod 644 /etc/cron.d/docker-prune
 command -v cron >/dev/null 2>&1 || apt_install cron
 log "Docker prune scheduled (/etc/cron.d/docker-prune)"
+
+# --- Security updates: reboot when required --------------------------------
+# unattended-upgrades installs security fixes but, by default, never reboots, so kernel and
+# libc fixes wait indefinitely. Reboot at 04:30 (after the 02:00 backup and 03:30 prune) only
+# when an update requires it; containers come back via their restart policies.
+command -v unattended-upgrade >/dev/null 2>&1 || apt_install unattended-upgrades
+cat > /etc/apt/apt.conf.d/52linguaread-auto-reboot <<'APT'
+// Managed by ops/bootstrap-host.sh — reboot after security updates that need it
+// (kernel, libc). 04:30 server time: after the 02:00 backup and 03:30 image prune.
+Unattended-Upgrade::Automatic-Reboot "true";
+Unattended-Upgrade::Automatic-Reboot-WithUsers "true";
+Unattended-Upgrade::Automatic-Reboot-Time "04:30";
+APT
+log "Automatic security updates reboot at 04:30 when required"
 
 # --- SSH: keys only -------------------------------------------------------
 # Only once a key can log in — otherwise this would lock out a password-provisioned host.

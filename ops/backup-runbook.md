@@ -132,7 +132,7 @@ old images accumulate and eventually fill the disk.
 
 ### Crontab entries
 
-Add these to the **host** crontab (`sudo crontab -e`):
+`ops/bootstrap-host.sh` installs these as `/etc/cron.d/docker-prune`. On a host set up by hand, add them to the **host** crontab (`sudo crontab -e`):
 
 ```crontab
 # Prune unused Docker images older than 7 days (daily, 3:30 AM UTC — after the 2 AM backup)

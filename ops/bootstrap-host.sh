@@ -3,7 +3,8 @@
 # bootstrap-host.sh — prepare a fresh Ubuntu host to receive LinguaRead deploys.
 #
 # Installs Docker, creates the deploy user and directory the deploy workflow
-# expects, and (optionally) issues a Let's Encrypt certificate with renewal hooks.
+# expects, schedules Docker image cleanup, turns off SSH password logins once a
+# key is in place, and (optionally) issues a Let's Encrypt certificate.
 # Idempotent: re-running on a prepared host changes nothing. Contains no secrets.
 #
 # Run once as root, from your workstation:
@@ -88,6 +89,44 @@ log "$AUTH holds $(wc -l < "$AUTH") key(s)"
 install -d -o "$DEPLOY_USER" -g "$DEPLOY_USER" "$DEPLOY_PATH"
 install -d -m 700 -o "$DEPLOY_USER" -g "$DEPLOY_USER" "$DEPLOY_PATH/secrets"
 log "Deploy dir $DEPLOY_PATH ready"
+
+# --- Docker cleanup -------------------------------------------------------
+# Every deploy pulls new sha-* images; without pruning they fill the disk. Only unused
+# images are removed (a rollback re-pulls from GHCR). Never prunes volumes.
+mkdir -p /etc/cron.d
+cat > /etc/cron.d/docker-prune <<'CRON'
+# Managed by ops/bootstrap-host.sh. Runs after the 02:00 backup.
+SHELL=/bin/sh
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+30 3 * * * root docker image prune -a --filter "until=168h" -f >> /var/log/docker-prune.log 2>&1
+0 4 1 * * root docker system prune --filter "until=720h" -f >> /var/log/docker-prune.log 2>&1
+CRON
+chmod 644 /etc/cron.d/docker-prune
+command -v cron >/dev/null 2>&1 || apt_install cron
+log "Docker prune scheduled (/etc/cron.d/docker-prune)"
+
+# --- SSH: keys only -------------------------------------------------------
+# Only once a key can log in — otherwise this would lock out a password-provisioned host.
+# The 00- prefix wins over cloud-init's 50-cloud-init.conf (sshd keeps the first value).
+if ! command -v sshd >/dev/null 2>&1; then
+  warn "sshd not installed — SSH hardening skipped"
+elif [ -s "$AUTH" ] || [ -s /root/.ssh/authorized_keys ]; then
+  HARDEN=/etc/ssh/sshd_config.d/00-linguaread-hardening.conf
+  mkdir -p /etc/ssh/sshd_config.d
+  printf 'PasswordAuthentication no\nKbdInteractiveAuthentication no\n' > "$HARDEN.tmp"
+  if cmp -s "$HARDEN.tmp" "$HARDEN" 2>/dev/null; then
+    rm -f "$HARDEN.tmp"
+    log "SSH already key-only"
+  else
+    mv "$HARDEN.tmp" "$HARDEN"
+    mkdir -p /run/sshd   # socket-activated sshd (Ubuntu 24.04+) may not have created it yet
+    sshd -t || { rm -f "$HARDEN"; die "sshd rejected the hardening config — removed it"; }
+    systemctl reload ssh 2>/dev/null || systemctl reload sshd 2>/dev/null || warn "reload sshd manually"
+    log "SSH password logins disabled (existing sessions unaffected)"
+  fi
+else
+  warn "no authorized SSH keys found — leaving password logins enabled"
+fi
 
 # --- TLS (optional) -------------------------------------------------------
 if [ -n "$DOMAIN" ] && [ -n "$LE_EMAIL" ]; then

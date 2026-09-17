@@ -22,10 +22,10 @@ Two GitHub Environments (Settings → Environments): **staging** and **productio
 
 | Secret | Meaning |
 | :--- | :--- |
-| `DEPLOY_HOST` / `DEPLOY_USER` / `DEPLOY_SSH_KEY` / `DEPLOY_PATH` | SSH target for the compose deploy. |
+| `DEPLOY_USER` / `DEPLOY_SSH_KEY` / `DEPLOY_PATH` | SSH login and deploy directory for the compose deploy. |
 | `DOTENV` | Full contents of the host's `.env` (multiline). See `.env.example`. |
 
-Optional per-environment **variable**: `SMOKE_URL` — public base URL; when set, deploys finish with external `curl` checks of `/healthz` and `/api/Health/ready`.
+Per-environment **variables**: `DEPLOY_HOST` (required — the SSH target) and `SMOKE_URL` (optional) — public base URL; when set, deploys finish with external `curl` checks of `/healthz` and `/api/Health/ready`.
 
 The target host is the environment **variable** `DEPLOY_HOST` (an IP is public anyway). GitHub fills a missing environment *secret* from a same-named repo-level one; there are no repo-level variables, so a host can't leak between environments that way. `_deploy.yml` fails fast (before touching any host), naming each missing value.
 
@@ -46,7 +46,7 @@ Run *Promote to Production* with an older `sha-XXXXXXX` tag (find candidates in 
 
 ## Host expectations
 
-**New host:** `ops/bootstrap-host.sh` sets up everything below in one idempotent run (Docker, `deploy` user + keys, deploy dir, optional Let's Encrypt cert with renewal hooks) — see its header for usage. Restore data **before** the first deploy, or the API initialises an empty database.
+**New host:** `ops/bootstrap-host.sh` sets up everything below in one idempotent run (Docker, `deploy` user + keys, deploy dir, nightly image prune in `/etc/cron.d/docker-prune`, key-only SSH, optional Let's Encrypt cert with renewal hooks) — see its header for usage. Restore data **before** the first deploy, or the API initialises an empty database.
 
 - Docker + docker compose v2; deploy user can run docker (staging uses `sudo docker`, production plain `docker`).
 - Deploy dir (`DEPLOY_PATH`) contains: `.env` (written by deploys), `certs/`, `secrets/rclone.conf` (optional, enables the backup sidecar), `predeploy/` (automatic pre-deploy `pg_dump` snapshots, last 3 kept).

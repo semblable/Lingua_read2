@@ -18,7 +18,7 @@ Shared internals: `_ci-build.yml` (CI + builds) and `_deploy.yml` (SSH/compose d
 
 ## Environments & secrets
 
-Two GitHub Environments (Settings → Environments): **staging** and **production**. Each defines the same secret names:
+Two GitHub Environments (Settings → Environments): **staging** and **production**. Each defines the same names:
 
 | Secret | Meaning |
 | :--- | :--- |
@@ -29,7 +29,12 @@ Per-environment **variables**: `DEPLOY_HOST` (required — the SSH target) and `
 
 The target host is the environment **variable** `DEPLOY_HOST` (an IP is public anyway). GitHub fills a missing environment *secret* from a same-named repo-level one; there are no repo-level variables, so a host can't leak between environments that way. `_deploy.yml` fails fast (before touching any host), naming each missing value.
 
-**Staging fallback (active now):** staging hasn't been moved to its environment yet, so it alone may fall back to the repo-level secrets `DEPLOY_HOST` and `PRODUCTION_ENV` (plus `DEPLOY_USER/PATH/SSH_KEY` via normal shadowing). To finish: give the `staging` environment all five secrets and the `DEPLOY_HOST` variable, remove the two `inputs.environment == 'staging'` clauses in `_deploy.yml`, then delete the repo-level `DEPLOY_*` + `PRODUCTION_ENV`.
+**No repo-level deploy secrets.** Both environments are self-contained; keep `DEPLOY_*`, `DOTENV` and `PRODUCTION_ENV` out of the repository-level secrets so nothing can fill a gap in one environment with another's values.
+
+| Environment | `DEPLOY_HOST` | `DEPLOY_USER` | `DEPLOY_PATH` | Docker |
+| :--- | :--- | :--- | :--- | :--- |
+| staging | Oracle VM, self-signed cert (`SMOKE_URL` is its IP) | `ubuntu` | `/home/ubuntu/lingua-read` | `sudo docker` |
+| production | Hetzner VM, Let's Encrypt | `deploy` | `/opt/lingua-read` | `docker` |
 
 The deploy appends `*_IMAGE_TAG` (the sha tag) and `BACKUP_ENV` (the environment name) to `.env` itself — don't put them in `DOTENV`.
 

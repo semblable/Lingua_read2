@@ -1,8 +1,8 @@
 import React from 'react';
 import { Card, ProgressBar, Button } from 'react-bootstrap';
-import { ResponsiveContainer, AreaChart, Area, YAxis } from 'recharts';
 import { LinkContainer } from 'react-router-bootstrap';
 import CefrBadge from './CefrBadge';
+import Sparkline from './Sparkline';
 
 const formatMinutes = (seconds: number | null | undefined): string => {
   if (!seconds) return '0 min';
@@ -41,7 +41,6 @@ interface LanguageDashboardCardProps {
 
 const LanguageDashboardCard = ({ lang }: LanguageDashboardCardProps) => {
   const {
-    languageId,
     languageName,
     knownWords,
     totalWords,
@@ -134,24 +133,10 @@ const LanguageDashboardCard = ({ lang }: LanguageDashboardCardProps) => {
 
         <div style={{ height: 48 }} className="mb-3">
           {hasActivity ? (
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={sparkData} margin={{ top: 4, right: 0, left: 0, bottom: 0 }}>
-                <defs>
-                  <linearGradient id={`spark-${languageId}`} x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#3498DB" stopOpacity={0.4} />
-                    <stop offset="95%" stopColor="#3498DB" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <YAxis hide domain={[0, 'dataMax']} />
-                <Area
-                  type="monotone"
-                  dataKey="count"
-                  stroke="#3498DB"
-                  strokeWidth={1.5}
-                  fill={`url(#spark-${languageId})`}
-                />
-              </AreaChart>
-            </ResponsiveContainer>
+            <Sparkline
+              data={sparkData}
+              ariaLabel={`${languageName}: words read over the last 14 days`}
+            />
           ) : (
             <div className="text-muted small d-flex align-items-center h-100">
               No reading in the last 14 days

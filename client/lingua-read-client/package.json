@@ -26,7 +26,6 @@
     "react-router-dom": "^7.18.3",
     "react-window": "^2.3.1",
     "recharts": "^3.10.1",
-    "web-vitals": "^2.1.4",
     "zustand": "^4.5.1"
   },
   "devDependencies": {
@@ -45,7 +44,7 @@
     "@vitejs/plugin-react": "^6.1.1",
     "eslint": "^9.11.1",
     "eslint-plugin-react": "^7.37.1",
-    "eslint-plugin-react-hooks": "^5.0.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.7",
     "fake-indexeddb": "^6.2.5",
     "globals": "^17.12.0",

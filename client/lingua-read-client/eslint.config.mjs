@@ -43,6 +43,14 @@ export default [
       'react/no-unescaped-entities': 'off',
       'no-unused-vars': 'off',
       'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
+      // eslint-plugin-react-hooks 7 turned the React Compiler checks on in `recommended`.
+      // They flag 45 existing places (mostly setState in an effect) that are real advice
+      // but need per-component review, not a sweeping rewrite: keep the upgrade's other
+      // fixes enforced and let these surface as warnings until they're worked through.
+      'react-hooks/set-state-in-effect': 'warn',
+      'react-hooks/preserve-manual-memoization': 'warn',
+      'react-hooks/refs': 'warn',
+      'react-hooks/purity': 'warn',
     },
   },
   {

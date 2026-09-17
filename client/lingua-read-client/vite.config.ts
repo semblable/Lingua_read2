@@ -156,8 +156,16 @@ export default defineConfig({
         codeSplitting: {
           groups: [
             {
+              // Also the shared odds and ends that the eager entry graph needs, so they
+              // don't strand it behind a lazy chunk: zustand and use-sync-external-store
+              // (the store and API client use them; recharts' react-redux shares the shim),
+              // and Oxc's transform helpers (class fields compiled for the Safari 14 target
+              // emit _defineProperty). Left ungrouped, all of these landed in vendor-charts
+              // and the first page load had to fetch that whole ~380 kB chunk to get them.
+              // The helpers' module ids are virtual (\0@oxc-project+runtime@…), not paths
+              // under node_modules, which is why they need their own alternative here.
               name: 'vendor-react',
-              test: /[\\/]node_modules[\\/](react|react-dom|scheduler|react-router|react-router-dom)[\\/]/,
+              test: /(?:[\\/]node_modules[\\/](?:react|react-dom|scheduler|react-router|react-router-dom|zustand|use-sync-external-store)[\\/]|@oxc-project[+\\/]runtime)/,
             },
             {
               name: 'vendor-bootstrap',

@@ -2,7 +2,8 @@ name: Deploy
 
 # Reusable SSH/compose deploy used by staging.yml and promote-prod.yml.
 # The target host and .env contents come only from the GitHub Environment named by
-# `inputs.environment` (variables: DEPLOY_HOST, optional SMOKE_URL;
+# `inputs.environment` (variables: DEPLOY_HOST, optional SMOKE_URL and host sizing
+# POSTGRES_SHARED_BUFFERS / POSTGRES_EFFECTIVE_CACHE_SIZE / API_MEMSWAP_LIMIT;
 # secrets: DEPLOY_USER/SSH_KEY/PATH, DOTENV).
 
 on:
@@ -80,7 +81,9 @@ jobs:
             }
 
             # Write runtime config to .env from the environment's DOTENV secret
-            # (multiline text), then pin all images to the immutable deploy tag.
+            # (multiline text), then pin all images to the immutable deploy tag and add
+            # the environment's sizing variables (a blank line when one isn't set, so the
+            # compose default applies and a value in DOTENV isn't overridden).
             cat > .env <<'EOF'
             ${{ env.TARGET_DOTENV }}
             EOF
@@ -89,6 +92,9 @@ jobs:
             NGINX_IMAGE_TAG=${{ inputs.image_tag }}
             BACKUP_IMAGE_TAG=${{ inputs.image_tag }}
             BACKUP_ENV=${{ inputs.environment }}
+            ${{ vars.POSTGRES_SHARED_BUFFERS && format('POSTGRES_SHARED_BUFFERS={0}', vars.POSTGRES_SHARED_BUFFERS) || '' }}
+            ${{ vars.POSTGRES_EFFECTIVE_CACHE_SIZE && format('POSTGRES_EFFECTIVE_CACHE_SIZE={0}', vars.POSTGRES_EFFECTIVE_CACHE_SIZE) || '' }}
+            ${{ vars.API_MEMSWAP_LIMIT && format('API_MEMSWAP_LIMIT={0}', vars.API_MEMSWAP_LIMIT) || '' }}
             EOF
             chmod 600 .env
 

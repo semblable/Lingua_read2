@@ -1,5 +1,9 @@
 services:
   api:
+    # memswap_limit is memory + swap, so matching the memory limit means no swap: on a host
+    # with swap, a runaway API is then restarted in seconds instead of crawling on disk.
+    # A host with less RAM than the limit can allow swap with API_MEMSWAP_LIMIT (e.g. 3000M).
+    memswap_limit: ${API_MEMSWAP_LIMIT:-1500M}
     deploy:
       resources:
         limits:

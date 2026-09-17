@@ -3,7 +3,8 @@
 # bootstrap-host.sh — prepare a fresh Ubuntu host to receive LinguaRead deploys.
 #
 # Installs Docker, creates the deploy user and directory the deploy workflow
-# expects, schedules Docker image cleanup, lets security updates reboot at 04:30,
+# expects, schedules Docker image cleanup, adds a swap file (unless the host already
+# has swap), lets security updates reboot at 04:30,
 # turns off SSH password logins once a key is in place, and (optionally) issues a
 # Let's Encrypt certificate.
 # Idempotent: re-running on a prepared host changes nothing. Contains no secrets.
@@ -19,6 +20,8 @@
 #                  project name, which prefixes every volume (lingua-read_*)
 #   DOMAIN         if set with LE_EMAIL: issue a cert for DOMAIN and www.DOMAIN
 #   LE_EMAIL       Let's Encrypt account email (setting it accepts the LE terms)
+#   SWAP_SIZE      swap file size when the host has no swap, e.g. 2G (default) or
+#                  512M; 0 = leave swap alone
 #   SKIP_DOCKER_INSTALL  1 = don't install Docker (tests / pre-baked images)
 # ---------------------------------------------------------------------------
 set -euo pipefail
@@ -28,6 +31,7 @@ DEPLOY_PATH="${DEPLOY_PATH:-/opt/lingua-read}"
 CI_PUBKEY="${CI_PUBKEY:-}"
 DOMAIN="${DOMAIN:-}"
 LE_EMAIL="${LE_EMAIL:-}"
+SWAP_SIZE="${SWAP_SIZE:-2G}"
 SKIP_DOCKER_INSTALL="${SKIP_DOCKER_INSTALL:-0}"
 export DEBIAN_FRONTEND=noninteractive
 
@@ -36,6 +40,10 @@ warn() { printf '[warn] %s\n' "$*" >&2; }
 die()  { printf '[fail] %s\n' "$*" >&2; exit 1; }
 
 [ "$(id -u)" -eq 0 ] || die "run as root"
+case "$SWAP_SIZE" in
+  0|[1-9]*[GM]) ;;
+  *) die "SWAP_SIZE must look like 2G or 512M, or be 0 (got '$SWAP_SIZE')" ;;
+esac
 [ "$(basename "$DEPLOY_PATH")" = "lingua-read" ] \
   || warn "DEPLOY_PATH basename is not 'lingua-read': volumes will be named $(basename "$DEPLOY_PATH")_*, not lingua-read_* — restored data won't be found"
 
@@ -117,6 +125,31 @@ CRON
 chmod 644 /etc/cron.d/docker-prune
 command -v cron >/dev/null 2>&1 || apt_install cron
 log "Docker prune scheduled (/etc/cron.d/docker-prune)"
+
+# --- Swap -----------------------------------------------------------------
+# A safety net, not extra capacity. Without swap, a memory spike (an import during the
+# nightly dump or a deploy) makes the kernel kill something, most likely Postgres, which has
+# no memory limit. Swappiness 10 keeps hot memory in RAM and swaps only under real pressure.
+# The API opts out through memswap_limit in docker-compose.prod.yml.
+if [ "$SWAP_SIZE" = "0" ]; then
+  log "Swap left alone (SWAP_SIZE=0)"
+else
+  if [ -n "$(swapon --noheadings --show 2>/dev/null)" ]; then
+    log "Swap present: $(swapon --noheadings --show=NAME,SIZE | tr -s ' ' | paste -sd ',')"
+  else
+    [ ! -e /swapfile ] || die "/swapfile exists but isn't active swap — check it by hand"
+    log "Creating a $SWAP_SIZE swap file at /swapfile"
+    fallocate -l "$SWAP_SIZE" /swapfile || { rm -f /swapfile; die "fallocate failed — create the swap file by hand"; }
+    chmod 600 /swapfile
+    mkswap /swapfile >/dev/null
+    swapon /swapfile
+    grep -qE '^/swapfile[[:space:]]' /etc/fstab || echo '/swapfile none swap sw 0 0' >> /etc/fstab
+  fi
+  printf '# Managed by ops/bootstrap-host.sh — swap only under real memory pressure.\nvm.swappiness = 10\n' \
+    > /etc/sysctl.d/60-linguaread-swap.conf
+  sysctl -q -p /etc/sysctl.d/60-linguaread-swap.conf
+  log "Swappiness $(cat /proc/sys/vm/swappiness)"
+fi
 
 # --- Security updates: reboot when required --------------------------------
 # unattended-upgrades installs security fixes but, by default, never reboots, so kernel and

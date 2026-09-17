@@ -7,13 +7,14 @@ services:
     # Postgres ships defaults sized for tiny machines (shared_buffers=128MB).
     # Tune for the ~4GB VPS this stack targets, leaving room for the api (1.5G
     # limit), nginx/backup (256M each), and the OS. effective_cache_size is a
-    # planner hint, not an allocation. Adjust proportionally on bigger hosts.
+    # planner hint, not an allocation. Other hosts override both (roughly 25% and
+    # 50% of RAM) with the POSTGRES_* variables of their GitHub environment.
     command:
       - postgres
       - -c
-      - shared_buffers=1GB
+      - shared_buffers=${POSTGRES_SHARED_BUFFERS:-1GB}
       - -c
-      - effective_cache_size=2GB
+      - effective_cache_size=${POSTGRES_EFFECTIVE_CACHE_SIZE:-2GB}
       - -c
       - work_mem=16MB
       - -c

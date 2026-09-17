@@ -53,11 +53,11 @@ Changing a `POSTGRES_*` value restarts the database container on the next deploy
 ## Deploying
 
 - **Staging**: merge/push to `dev`. Fully automatic.
-- **Production**: Actions → *Promote to Production* → *Run workflow*. Leave the tag empty to promote whatever the last successful staging run deployed.
+- **Production**: Actions → *Promote to Production* → *Run workflow*. Leave the tag empty to promote whatever the last successful staging run deployed. The branch you start it from doesn't matter: the deploy ships the compose and nginx files of the promoted commit.
 
 ## Rolling back production
 
-Run *Promote to Production* with an older `sha-XXXXXXX` tag (find candidates in the `prod-…` git tags, the Actions history, or GHCR). The same digest-retag + deploy path runs; nothing is rebuilt. If GHCR cleanup already deleted that tag, the promote fails at the verify step — rebuild the image from the corresponding `prod-…` git tag instead.
+Run *Promote to Production* with an older `sha-XXXXXXX` tag (find candidates in the `prod-…` git tags, the Actions history, or GHCR). The same digest-retag + deploy path runs; nothing is rebuilt, and the host gets that commit's compose and nginx files too (including its Postgres minor pin; a minor downgrade within one major is safe). If GHCR cleanup already deleted that tag, the promote fails at the verify step — rebuild the image from the corresponding `prod-…` git tag instead.
 
 ## Host expectations
 

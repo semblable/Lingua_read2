@@ -1,3 +1,5 @@
 # Shell scripts run on Linux hosts and in containers; a CRLF checkout (core.autocrlf=true
 # on Windows) breaks them the moment one is copied or bind-mounted from a working tree.
 *.sh text eol=lf
+# Copied into the backup image; supercronic would run "/backup.sh\r" from a CRLF line.
+backup/crontab text eol=lf

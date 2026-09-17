@@ -2,8 +2,8 @@ name: Deploy
 
 # Reusable SSH/compose deploy used by staging.yml and promote-prod.yml.
 # The target host and .env contents come only from the GitHub Environment named by
-# `inputs.environment` (variables: DEPLOY_HOST, optional SMOKE_URL and host sizing
-# POSTGRES_SHARED_BUFFERS / POSTGRES_EFFECTIVE_CACHE_SIZE / API_MEMSWAP_LIMIT;
+# `inputs.environment` (variables: DEPLOY_HOST, optional SMOKE_URL, MONITORING and host
+# sizing POSTGRES_SHARED_BUFFERS / POSTGRES_EFFECTIVE_CACHE_SIZE / API_MEMSWAP_LIMIT;
 # secrets: DEPLOY_USER/SSH_KEY/PATH, DOTENV).
 
 on:
@@ -193,6 +193,20 @@ jobs:
               dc --profile backup up -d --force-recreate backup
             else
               echo "Skipping backup service: secrets/rclone.conf not found (run setup.sh to enable)"
+            fi
+
+            # Monitoring dashboard (Beszel + Dozzle on 127.0.0.1) where the environment sets
+            # MONITORING=true. The agent needs the KEY/TOKEN the hub hands out, so it joins once
+            # secrets/beszel-agent.env exists (ops/deploy-runbook.md, "Monitoring dashboard").
+            if [ "${{ vars.MONITORING }}" = "true" ]; then
+              monitoring="beszel dozzle"
+              if [ -f secrets/beszel-agent.env ]; then
+                monitoring="$monitoring beszel-agent"
+              else
+                echo "Beszel agent not started yet: secrets/beszel-agent.env not found"
+              fi
+              dc --profile monitoring pull $monitoring
+              dc --profile monitoring up -d $monitoring
             fi
 
             # Drop the ephemeral GHCR credential from the host. It would expire on its own

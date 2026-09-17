@@ -63,8 +63,8 @@ for d in audio_lessons audiobooks epub_assets dp_keys; do
 done
 echo "[media] Done."
 
-# 5. Drive retention: DB dumps and moved-aside media for 90 days, logs for 30.
-# Exit 3 = directory not found (e.g. media/deleted before anything was ever removed).
+# 5. Drive retention: DB dumps for 90 days, logs for 30, moved-aside media for 90.
+# Exit 3 = directory not found. Deleted files go to Drive's trash (kept 30 more days).
 # Empty folders go in a second pass WITHOUT --min-age: `delete --rmdirs` applies the age
 # filter to its emptiness check too, so a folder holding only recent files looks empty,
 # the rmdir is refused ("directory not empty"), and the whole run fails.
@@ -72,10 +72,27 @@ prune() {
   rclone delete "$REMOTE/$1" --min-age "$2" --config /tmp/rclone.conf || [ $? -eq 3 ]
   rclone rmdirs "$REMOTE/$1" --leave-root --config /tmp/rclone.conf || [ $? -eq 3 ]
 }
-prune db            90d
-prune media/deleted 90d
-prune logs          30d
-prune errors        30d
+prune db     90d
+prune logs   30d
+prune errors 30d
+
+# Moved-aside media keeps its ORIGINAL modification time, so --min-age would judge a file
+# removed today by when it was first uploaded and could delete it in the same run. Age each
+# deleted/<yyyymmdd-hhmmss> snapshot by the date in its name (when it was set aside) instead.
+CUTOFF=$(date -u -d "@$(( $(date +%s) - 90 * 86400 ))" +%Y%m%d)
+SNAPSHOTS=$(rclone lsf --dirs-only "$REMOTE/media/deleted" --config /tmp/rclone.conf) || [ $? -eq 3 ]
+for snap in $SNAPSHOTS; do
+  snap=${snap%/}
+  day=${snap%%-*}
+  case "$day" in
+    [0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]) ;;
+    *) continue ;;
+  esac
+  if [ "$day" -lt "$CUTOFF" ]; then
+    echo "[prune] media/deleted/$snap (set aside $day, before $CUTOFF)"
+    rclone purge "$REMOTE/media/deleted/$snap" --config /tmp/rclone.conf
+  fi
+done
 
 # 6. Prune local copies older than 7 days
 find "$BACKUP_DIR/db"     -name "*.backup" -mtime +7 -delete

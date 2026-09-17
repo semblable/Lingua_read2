@@ -32,8 +32,24 @@ updates:
       nuget-minor-patch:
         update-types: ["minor", "patch"]
 
-  # Dockerfile base images (compose's postgres:18 is a deliberate major pin;
-  # minor releases arrive via `docker compose pull db` during deploys)
+  # Images pinned in docker-compose*.yml: postgres, and the monitoring stack in the prod file.
+  # Postgres majors are ignored: they need a dump/restore migration, not a tag bump.
+  # The Beszel hub and agent versions must match, so they arrive in one PR.
+  - package-ecosystem: docker-compose
+    directory: "/"
+    target-branch: dev
+    schedule:
+      interval: weekly
+    ignore:
+      - dependency-name: "postgres"
+        update-types: ["version-update:semver-major"]
+      # Our own images: the tag is set per deploy, the compose default is only a fallback
+      - dependency-name: "*lingua-read-*"
+    groups:
+      beszel:
+        patterns: ["henrygd/beszel*"]
+
+  # Dockerfile base images
   - package-ecosystem: docker
     directory: "/server/LinguaReadApi"
     target-branch: dev

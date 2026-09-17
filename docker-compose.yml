@@ -2,8 +2,8 @@ services:
   db:
     # Pinned minor (not floating `postgres:18`) so a deploy's `pull` can't move the
     # database version underneath us and rollbacks are reproducible. Dependabot's
-    # docker ecosystem proposes minor bumps.
-    image: postgres:18.4
+    # docker-compose ecosystem proposes minor bumps (majors need a dump/restore).
+    image: postgres:18.6
     # Postgres ships defaults sized for tiny machines (shared_buffers=128MB).
     # Tune for the ~4GB VPS this stack targets, leaving room for the api (1.5G
     # limit), nginx/backup (256M each), and the OS. effective_cache_size is a

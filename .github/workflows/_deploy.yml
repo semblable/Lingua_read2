@@ -142,6 +142,26 @@ jobs:
               fi
             fi
 
+            # Refuse to move Postgres BACKWARDS. Since the deploy ships the promoted commit's
+            # compose file, rolling back to an older release also rolls back the image pin, and
+            # an older server would then open a data directory a newer one has already written.
+            # PostgreSQL does not support that, and the dump above doesn't rescue it either: a
+            # dump taken by the newer server may not restore into the older one. Same-version
+            # and forward moves are untouched.
+            want_pg=$(grep -oE '^\s*image:\s*postgres:[0-9.]+' docker-compose.yml | head -1 | sed 's/.*postgres://')
+            have_pg=$($DOCKER inspect --format '{{.Config.Image}}' "$(dc ps -q db)" 2>/dev/null | sed 's/.*postgres://')
+            if [ -n "$want_pg" ] && [ -n "$have_pg" ] && [ "$want_pg" != "$have_pg" ]; then
+              older=$(printf '%s\n%s\n' "$want_pg" "$have_pg" | sort -V | head -1)
+              if [ "$older" = "$want_pg" ]; then
+                echo "::error::This deploy would downgrade Postgres $have_pg -> $want_pg. The running data"
+                echo "::error::directory was written by $have_pg, which $want_pg cannot open safely."
+                echo "::error::Roll back the app without the database: promote this tag again after"
+                echo "::error::cherry-picking the postgres:$have_pg pin onto the target commit, or restore"
+                echo "::error::from predeploy/ into a $want_pg container deliberately (ops/deploy-runbook.md)."
+                exit 1
+              fi
+            fi
+
             # Pull db too so postgres:18 minor releases are applied (guarded by the dump above).
             dc pull db api nginx
             dc up -d db

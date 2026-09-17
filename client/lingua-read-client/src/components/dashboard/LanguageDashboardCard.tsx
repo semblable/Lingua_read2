@@ -135,7 +135,7 @@ const LanguageDashboardCard = ({ lang }: LanguageDashboardCardProps) => {
           {hasActivity ? (
             <Sparkline
               data={sparkData}
-              ariaLabel={`${languageName}: words read over the last 14 days`}
+              ariaLabel={`${languageName}: words read over the last ${sparkData.length} days`}
             />
           ) : (
             <div className="text-muted small d-flex align-items-center h-100">

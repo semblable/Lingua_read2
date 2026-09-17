@@ -47,6 +47,8 @@ export default [
       // They flag 45 existing places (mostly setState in an effect) that are real advice
       // but need per-component review, not a sweeping rewrite: keep the upgrade's other
       // fixes enforced and let these surface as warnings until they're worked through.
+      // `npm run lint` caps warnings at today's count, so the debt can shrink but a NEW
+      // violation fails the build — lower the cap in package.json as they get fixed.
       'react-hooks/set-state-in-effect': 'warn',
       'react-hooks/preserve-manual-memoization': 'warn',
       'react-hooks/refs': 'warn',

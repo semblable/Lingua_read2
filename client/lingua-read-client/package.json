@@ -62,7 +62,7 @@
     "preview": "vite preview",
     "test": "vitest",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint src",
+    "lint": "eslint src --max-warnings 46",
     "api:types": "node scripts/generate-api-types.mjs",
     "postbuild": "node scripts/verify-build.mjs"
   },

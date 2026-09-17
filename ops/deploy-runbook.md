@@ -38,6 +38,16 @@ The target host is the environment **variable** `DEPLOY_HOST` (an IP is public a
 
 The deploy appends `*_IMAGE_TAG` (the sha tag) and `BACKUP_ENV` (the environment name) to `.env` itself — don't put them in `DOTENV`.
 
+**Host sizing** is per-environment *variables* too, appended only when set (the compose defaults fit a ~4 GB host, so production sets none):
+
+| Variable | staging (954 MiB RAM) | Default |
+| :--- | :--- | :--- |
+| `POSTGRES_SHARED_BUFFERS` | `256MB` | `1GB` |
+| `POSTGRES_EFFECTIVE_CACHE_SIZE` | `512MB` | `2GB` |
+| `API_MEMSWAP_LIMIT` | `3000M` (API may swap; its 1500M limit exceeds the RAM) | `1500M` (no swap for the API) |
+
+Changing a `POSTGRES_*` value restarts the database container on the next deploy.
+
 **The domain isn't in `DOTENV`.** `JWT_ISSUER`/`JWT_AUDIENCE` are opaque labels (defaults `LinguaReadApi`/`LinguaReadClient`) and the site is same-origin behind nginx, so `CORS_ALLOWED_ORIGINS` stays blank. A domain lives only in DNS, the certificate, and `SMOKE_URL`.
 
 ## Deploying
@@ -51,7 +61,7 @@ Run *Promote to Production* with an older `sha-XXXXXXX` tag (find candidates in 
 
 ## Host expectations
 
-**New host:** `ops/bootstrap-host.sh` sets up everything below in one idempotent run (Docker, `deploy` user + keys, deploy dir, nightly image prune in `/etc/cron.d/docker-prune`, automatic reboot at 04:30 when a security update needs one, key-only SSH, optional Let's Encrypt cert with renewal hooks) — see its header for usage. Restore data **before** the first deploy, or the API initialises an empty database.
+**New host:** `ops/bootstrap-host.sh` sets up everything below in one idempotent run (Docker, `deploy` user + keys, deploy dir, nightly image prune in `/etc/cron.d/docker-prune`, a 2 GB swap file with swappiness 10, automatic reboot at 04:30 when a security update needs one, key-only SSH, optional Let's Encrypt cert with renewal hooks) — see its header for usage. Restore data **before** the first deploy, or the API initialises an empty database.
 
 - Docker + docker compose v2; deploy user can run docker (staging uses `sudo docker`, production plain `docker`).
 - Deploy dir (`DEPLOY_PATH`) contains: `.env` (written by deploys), `certs/`, `secrets/rclone.conf` (optional, enables the backup sidecar), `predeploy/` (automatic pre-deploy `pg_dump` snapshots, last 3 kept).

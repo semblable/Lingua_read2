@@ -30,6 +30,8 @@ public class ProtectedStaticContentTests : IClassFixture<WebApplicationFactory<P
     private const string JwtAudience = "LinguaRead.Tests";
     // The authenticated caller in these tests; ownership is checked against this id.
     private const string UserId = "a1a1a1a1-b2b2-c3c3-d4d4-e5e5e5e5e5e5";
+    // Hardcover covers use the "N" (no-dash) form of the id.
+    private const string UserIdNoDashes = "a1a1a1a1b2b2c3c3d4d4e5e5e5e5e5e5";
     private const string OtherUserId = "b9b9b9b9-c8c8-d7d7-e6e6-f5f5f5f5f5f5";
 
     private readonly WebApplicationFactory<Program> _factory;
@@ -79,7 +81,7 @@ public class ProtectedStaticContentTests : IClassFixture<WebApplicationFactory<P
     [InlineData("/audio_lessons/lesson.mp3")]
     [InlineData("/audiobooks/1/track_1.mp3")]
     [InlineData("/epub_assets/a1a1a1a1-b2b2-c3c3-d4d4-e5e5e5e5e5e5/1/cover.jpg")]
-    [InlineData("/hardcover-covers/a1a1a1a1b2b2c3c3d4d4e5e5e5e5e5e5/1.jpg")]
+    [InlineData("/hardcover-covers/" + UserIdNoDashes + "/1.jpg")]
     public async Task UploadedContent_WithoutAuth_Returns401(string path)
     {
         var client = _factory.CreateClient();
@@ -90,11 +92,12 @@ public class ProtectedStaticContentTests : IClassFixture<WebApplicationFactory<P
     }
 
     [Theory]
-    // Both prefixes embed the owner's user id as the first path segment.
+    // These prefixes embed the owner's user id as the first path segment. UserId is also the
+    // app's real default user and the files are looked up in the developer's real wwwroot, so the
+    // paths are ones no real upload can have (a real book 1 cover would turn the 404 into a 200).
     [InlineData("/audio_lessons/" + UserId + "/does-not-exist.mp3")]
-    [InlineData("/epub_assets/" + UserId + "/1/cover.jpg")]
-    // Hardcover covers use the "N" (no-dash) form of the id.
-    [InlineData("/hardcover-covers/a1a1a1a1b2b2c3c3d4d4e5e5e5e5e5e5/1.jpg")]
+    [InlineData("/epub_assets/" + UserId + "/" + GateTestBookId + "/does-not-exist.jpg")]
+    [InlineData("/hardcover-covers/" + UserIdNoDashes + "/does-not-exist.jpg")]
     public async Task OwnedContent_WithAuthCookie_PassesTheGate(string path)
     {
         var client = _factory.CreateClient();
@@ -150,7 +153,7 @@ public class ProtectedStaticContentTests : IClassFixture<WebApplicationFactory<P
     [InlineData("audio_lessons/" + UserId + "/gate-test.mp3")]
     [InlineData("audiobooks/" + GateTestBookId + "/track_1.mp3")]
     [InlineData("epub_assets/" + UserId + "/" + GateTestBookId + "/gate-test.jpg")]
-    [InlineData("hardcover-covers/a1a1a1a1b2b2c3c3d4d4e5e5e5e5e5e5/gate-test.jpg")]
+    [InlineData("hardcover-covers/" + UserIdNoDashes + "/gate-test.jpg")]
     public async Task DoubleSlashPath_DoesNotServeUploadedContent(string relativePath)
     {
         // "//audiobooks/..." does not start with the "/audiobooks" segment, so the gate skips it.
@@ -194,6 +197,56 @@ public class ProtectedStaticContentTests : IClassFixture<WebApplicationFactory<P
         }
     }
 
+    [Theory]
+    // Audio lessons keep the uploader's file name, and files stored before extensions were
+    // sanitized can still sit on disk: each mount only serves its own media types.
+    [InlineData("audio_lessons/" + UserId + "/gate-test.js")]
+    [InlineData("epub_assets/" + UserId + "/" + GateTestBookId + "/gate-test.html")]
+    [InlineData("hardcover-covers/" + UserIdNoDashes + "/gate-test.html")]
+    public async Task OwnedFile_WithNonMediaExtension_IsNotServed(string relativePath)
+    {
+        var file = WriteUploadedFile(relativePath, "<script>alert(1)</script>");
+        try
+        {
+            var client = _factory.CreateClient();
+            var request = new HttpRequestMessage(HttpMethod.Get, "/" + relativePath);
+            request.Headers.Add("Cookie", $".LinguaRead.Auth={CreateJwt()}");
+
+            var response = await client.SendAsync(request);
+
+            Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        }
+        finally
+        {
+            DeleteUploadedFile(file);
+        }
+    }
+
+    [Fact]
+    public async Task OwnedSvg_IsServedSandboxed()
+    {
+        var relativePath = $"epub_assets/{UserId}/{GateTestBookId}/gate-test.svg";
+        var file = WriteUploadedFile(relativePath, "<svg xmlns=\"http://www.w3.org/2000/svg\"/>");
+        try
+        {
+            var client = _factory.CreateClient();
+            var request = new HttpRequestMessage(HttpMethod.Get, "/" + relativePath);
+            request.Headers.Add("Cookie", $".LinguaRead.Auth={CreateJwt()}");
+
+            var response = await client.SendAsync(request);
+
+            // Still usable as <img src>, but opened directly it can't run script on our origin.
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            Assert.Equal("image/svg+xml", response.Content.Headers.ContentType?.MediaType);
+            Assert.True(response.Headers.TryGetValues("Content-Security-Policy", out var policies));
+            Assert.Contains("sandbox", string.Join(";", policies));
+        }
+        finally
+        {
+            DeleteUploadedFile(file);
+        }
+    }
+
     // Writes a real file under the test host's wwwroot (gitignored) so the static-file
     // middleware has something to serve. The names above are test-only (real lesson audio is
     // "{guid}_{name}", real books have small ids), so overwriting a leftover from an aborted
@@ -207,10 +260,22 @@ public class ProtectedStaticContentTests : IClassFixture<WebApplicationFactory<P
         return fullPath;
     }
 
-    // Deletes only the file. Directories stay: audio_lessons/{UserId} is shared with
-    // CompressionPipelineTests, which xUnit runs in parallel, so removing an "empty" directory
-    // could pull it out from under that test's write.
-    private static void DeleteUploadedFile(string fullPath) => File.Delete(fullPath);
+    // Deletes the file, and its folder when that folder is one of the test-only book ids above:
+    // only this class writes there, and its tests run one at a time. Every other folder stays:
+    // audio_lessons/{UserId} is shared with CompressionPipelineTests, which xUnit runs in
+    // parallel, so removing an "empty" one could pull it out from under that test's write.
+    private static void DeleteUploadedFile(string fullPath)
+    {
+        File.Delete(fullPath);
+
+        var directory = Path.GetDirectoryName(fullPath)!;
+        var name = Path.GetFileName(directory);
+        if ((name == GateTestBookId || name == OwnedGateTestBookId.ToString()) &&
+            !Directory.EnumerateFileSystemEntries(directory).Any())
+        {
+            Directory.Delete(directory);
+        }
+    }
 
     private async Task SeedBookAsync(int bookId, string ownerId)
     {

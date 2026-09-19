@@ -500,6 +500,32 @@ public class UserSettingsControllerTests
     }
 
     [Fact]
+    public async Task UpdateUserSettings_RoundTripsAndValidatesStatusSync()
+    {
+        var (context, userId, _) = await SeedGraduatedCard();
+        await using var _ctx = context;
+        var controller = CreateController(context, userId);
+
+        var ok = await controller.UpdateUserSettings(new UpdateUserSettingsDto
+        {
+            SrsAutoCreateCards = " WITH_SENTENCE ",
+            SrsStatusSyncMode = "promote_demote",
+            SrsStatusLevel3Days = 5,
+            SrsStatusLevel4Days = 15,
+            SrsAutoKnownDays = 60,
+            SrsKnownCardAction = "suspend",
+        });
+        var dto = Assert.IsType<UserSettingsDto>(ok.Value);
+        Assert.Equal(("with_sentence", "promote_demote", 5, 15, 60, "suspend"),
+            (dto.SrsAutoCreateCards, dto.SrsStatusSyncMode, dto.SrsStatusLevel3Days, dto.SrsStatusLevel4Days, dto.SrsAutoKnownDays, dto.SrsKnownCardAction));
+
+        Assert.IsType<BadRequestObjectResult>((await controller.UpdateUserSettings(new UpdateUserSettingsDto { SrsStatusSyncMode = "sometimes" })).Result);
+        Assert.IsType<BadRequestObjectResult>((await controller.UpdateUserSettings(new UpdateUserSettingsDto { SrsStatusLevel4Days = 3 })).Result);
+        Assert.IsType<BadRequestObjectResult>((await controller.UpdateUserSettings(new UpdateUserSettingsDto { SrsAutoKnownDays = 10 })).Result);
+        Assert.IsType<UserSettingsDto>((await controller.UpdateUserSettings(new UpdateUserSettingsDto { SrsAutoKnownDays = 0 })).Value);
+    }
+
+    [Fact]
     public async Task UnrelatedSettingChange_LeavesDueDatesAlone()
     {
         var (context, userId, cardId) = await SeedGraduatedCard();

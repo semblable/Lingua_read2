@@ -271,6 +271,9 @@ namespace LinguaReadApi.Controllers
 
             card.Apply(outcome.Card);
 
+            // 3. The word's reader status follows the card (word-status sync settings).
+            var statusChange = await SyncWordStatusAsync(userId, card, outcome, settings, reviewLog);
+
             try
             {
                 await _context.SaveChangesAsync();
@@ -284,7 +287,9 @@ namespace LinguaReadApi.Controllers
                 throw;
             }
 
-            return Ok(ToReviewResult(card, reviewLog, scheduler, now));
+            var result = ToReviewResult(card, reviewLog, scheduler, now);
+            result.WordStatusChange = statusChange;
+            return Ok(result);
         }
 
         // POST: api/srs/mine
@@ -423,6 +428,15 @@ namespace LinguaReadApi.Controllers
             card.Difficulty = lastLog.OldDifficulty;
             card.Lapses = lastLog.OldLapses;
 
+            // Put back the word status this review changed, and lift the Known
+            // suspension that change may have caused.
+            if (lastLog.WordStatusBefore is { } statusBefore)
+            {
+                var word = await _context.Words.FirstOrDefaultAsync(w => w.WordId == card.WordId && w.UserId == userId);
+                if (word != null) word.Status = statusBefore;
+                if (statusBefore != SrsCardLifecycle.StatusKnown) SrsCardLifecycle.LiftStatusSuspension(card);
+            }
+
             // Revert daily limits and streak. Reading credit never counted toward them.
             var settings = await _context.UserSettings.FirstOrDefaultAsync(u => u.UserId == userId);
             if (settings != null && lastLog.Kind != (int)SrsReviewKind.Reading)
@@ -435,7 +449,7 @@ namespace LinguaReadApi.Controllers
             _context.SrsReviewLogs.Remove(lastLog);
 
             await _context.SaveChangesAsync();
-            return Ok(new { Message = "Undo successful.", card.SrsCardReviewId, lastLog.SrsReviewLogId });
+            return Ok(new { Message = "Undo successful.", card.SrsCardReviewId, lastLog.SrsReviewLogId, RestoredWordStatus = lastLog.WordStatusBefore });
         }
 
         // GET: api/srs/forecast?languageId=1&days=14&timezoneOffsetMinutes=120
@@ -868,6 +882,27 @@ namespace LinguaReadApi.Controllers
             settings.SrsDailyStudyDate = previousDay is { } p ? AsStudyDate(p) : null;
             settings.SrsDailyNewCardsStudied = 0;
             settings.SrsDailyReviewsStudied = 0;
+        }
+
+        /// <summary>
+        /// Moves the reviewed word's status per the word-status sync settings (records the old
+        /// one on <paramref name="log"/> for undo) and applies the Known card rule. Returns the
+        /// change, or null if the status stays.
+        /// </summary>
+        private async Task<SrsWordStatusChangeDto?> SyncWordStatusAsync(
+            Guid userId, SrsCardReview card, SrsReviewOutcome outcome, UserSettings? settings, SrsReviewLog log)
+        {
+            var word = await _context.Words.FirstOrDefaultAsync(w => w.WordId == card.WordId && w.UserId == userId);
+            if (word == null) return null;
+
+            if (SrsCardLifecycle.StatusAfterReview(word.Status, outcome, settings) is not { } newStatus)
+                return null;
+
+            var change = new SrsWordStatusChangeDto { From = word.Status, To = newStatus };
+            log.WordStatusBefore = word.Status;
+            word.Status = newStatus;
+            SrsCardLifecycle.ApplyStatusRules(word, card, hasSentence: true, settings);
+            return change;
         }
 
         /// <summary>A log row capturing <paramref name="card"/>'s state before <paramref name="outcome"/> is applied.</summary>
@@ -1460,6 +1495,15 @@ Format (one object per provided word, in the same order):
         public double? Retrievability { get; set; }
         public int Lapses { get; set; }
         public List<long> NextIntervals { get; set; } = new();
+
+        /// <summary>Set when this review moved the word's reader status (word-status sync).</summary>
+        public SrsWordStatusChangeDto? WordStatusChange { get; set; }
+    }
+
+    public class SrsWordStatusChangeDto
+    {
+        public int From { get; set; }
+        public int To { get; set; }
     }
 
     public class SrsUndoDto

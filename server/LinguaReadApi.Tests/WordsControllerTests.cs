@@ -100,7 +100,8 @@ public class WordsControllerTests
             UserId = userId,
             NextReviewAt = DateTime.UtcNow,
             CreatedAt = DateTime.UtcNow,
-            IsSuspended = true
+            IsSuspended = true,
+            SuspendReason = "ignored" // what ignoring (or the AddFsrsScheduling migration) records
         });
         context.SaveChanges();
 
@@ -110,6 +111,28 @@ public class WordsControllerTests
         Assert.IsType<NoContentResult>(result);
         var card = await context.SrsCardReviews.SingleAsync(c => c.WordId == wordId);
         Assert.False(card.IsSuspended);
+        Assert.Null(card.SuspendReason);
+    }
+
+    [Fact]
+    public async Task UpdateWord_UnignoringWord_KeepsAManualSuspension()
+    {
+        using var context = CreateContext();
+        var (userId, wordId) = SeedWord(context, status: 3);
+        context.SrsCardReviews.Add(new SrsCardReview
+        {
+            WordId = wordId, UserId = userId, NextReviewAt = DateTime.UtcNow, CreatedAt = DateTime.UtcNow,
+            IsSuspended = true, SuspendReason = "manual"
+        });
+        context.SaveChanges();
+        var controller = CreateController(context, userId);
+
+        await controller.UpdateWord(wordId, new UpdateWordDto { Status = 6 });
+        await controller.UpdateWord(wordId, new UpdateWordDto { Status = 2 });
+
+        var card = await context.SrsCardReviews.SingleAsync(c => c.WordId == wordId);
+        Assert.True(card.IsSuspended);
+        Assert.Equal("manual", card.SuspendReason);
     }
 
     [Fact]

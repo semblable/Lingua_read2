@@ -174,7 +174,13 @@ namespace LinguaReadApi.Controllers
                 SrsRelearningStepMinutes = settings.SrsRelearningStepMinutes ?? "10",
                 SrsDesiredRetention = settings.SrsDesiredRetention,
                 SrsDayStartHour = settings.SrsDayStartHour,
-                SrsFsrsWeights = settings.SrsFsrsWeights
+                SrsFsrsWeights = settings.SrsFsrsWeights,
+                SrsAutoCreateCards = SrsCardLifecycle.AutoCreateMode(settings),
+                SrsStatusSyncMode = SrsCardLifecycle.StatusSyncMode(settings),
+                SrsStatusLevel3Days = settings.SrsStatusLevel3Days,
+                SrsStatusLevel4Days = settings.SrsStatusLevel4Days,
+                SrsAutoKnownDays = settings.SrsAutoKnownDays,
+                SrsKnownCardAction = SrsCardLifecycle.KnownCardAction(settings)
             };
         }
 
@@ -472,6 +478,37 @@ namespace LinguaReadApi.Controllers
                     });
                 }
             }
+            // Word-status sync. Enumerations are rejected rather than silently ignored,
+            // like SrsCardType above.
+            string? NormalizeChoice(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim().ToLowerInvariant();
+            if (NormalizeChoice(updateDto.SrsAutoCreateCards) is { } autoCreate)
+            {
+                if (!SrsCardLifecycle.IsAutoCreate(autoCreate))
+                    return BadRequest(new { message = "srsAutoCreateCards must be one of: always, with_sentence, never." });
+                settings.SrsAutoCreateCards = autoCreate;
+            }
+            if (NormalizeChoice(updateDto.SrsStatusSyncMode) is { } syncMode)
+            {
+                if (!SrsCardLifecycle.IsSyncMode(syncMode))
+                    return BadRequest(new { message = "srsStatusSyncMode must be one of: off, promote, promote_demote." });
+                settings.SrsStatusSyncMode = syncMode;
+            }
+            if (NormalizeChoice(updateDto.SrsKnownCardAction) is { } knownAction)
+            {
+                if (!SrsCardLifecycle.IsKnownAction(knownAction))
+                    return BadRequest(new { message = "srsKnownCardAction must be one of: keep, suspend." });
+                settings.SrsKnownCardAction = knownAction;
+            }
+            var level3Days = updateDto.SrsStatusLevel3Days ?? settings.SrsStatusLevel3Days;
+            var level4Days = updateDto.SrsStatusLevel4Days ?? settings.SrsStatusLevel4Days;
+            var autoKnownDays = updateDto.SrsAutoKnownDays ?? settings.SrsAutoKnownDays;
+            if (level4Days < level3Days || (autoKnownDays > 0 && autoKnownDays < level4Days))
+            {
+                return BadRequest(new { message = "Status thresholds must rise: level 3 <= level 4 <= auto-Known (or auto-Known off)." });
+            }
+            settings.SrsStatusLevel3Days = level3Days;
+            settings.SrsStatusLevel4Days = level4Days;
+            settings.SrsAutoKnownDays = autoKnownDays;
             settings.UpdatedAt = DateTime.UtcNow;
 
             await _context.SaveChangesAsync();
@@ -549,7 +586,13 @@ namespace LinguaReadApi.Controllers
                 SrsRelearningStepMinutes = settings.SrsRelearningStepMinutes ?? "10",
                 SrsDesiredRetention = settings.SrsDesiredRetention,
                 SrsDayStartHour = settings.SrsDayStartHour,
-                SrsFsrsWeights = settings.SrsFsrsWeights
+                SrsFsrsWeights = settings.SrsFsrsWeights,
+                SrsAutoCreateCards = SrsCardLifecycle.AutoCreateMode(settings),
+                SrsStatusSyncMode = SrsCardLifecycle.StatusSyncMode(settings),
+                SrsStatusLevel3Days = settings.SrsStatusLevel3Days,
+                SrsStatusLevel4Days = settings.SrsStatusLevel4Days,
+                SrsAutoKnownDays = settings.SrsAutoKnownDays,
+                SrsKnownCardAction = SrsCardLifecycle.KnownCardAction(settings)
             };
         }
 
@@ -977,6 +1020,12 @@ namespace LinguaReadApi.Controllers
         public double SrsDesiredRetention { get; set; } = 0.9;
         public int SrsDayStartHour { get; set; } = 4;
         public string? SrsFsrsWeights { get; set; }
+        public string SrsAutoCreateCards { get; set; } = "always";
+        public string SrsStatusSyncMode { get; set; } = "promote";
+        public int SrsStatusLevel3Days { get; set; } = 7;
+        public int SrsStatusLevel4Days { get; set; } = 21;
+        public int SrsAutoKnownDays { get; set; }
+        public string SrsKnownCardAction { get; set; } = "keep";
     }
 
     public class UpdateUserSettingsDto
@@ -1136,6 +1185,26 @@ namespace LinguaReadApi.Controllers
         // 21 comma-separated FSRS weights; empty string resets to the defaults.
         [StringLength(1000)]
         public string? SrsFsrsWeights { get; set; }
+
+        // Word-status sync (see SrsCardLifecycle).
+        [StringLength(20)]
+        public string? SrsAutoCreateCards { get; set; }
+
+        [StringLength(20)]
+        public string? SrsStatusSyncMode { get; set; }
+
+        [Range(1, 3650)]
+        public int? SrsStatusLevel3Days { get; set; }
+
+        [Range(1, 3650)]
+        public int? SrsStatusLevel4Days { get; set; }
+
+        // 0 turns auto-Known off.
+        [Range(0, 36500)]
+        public int? SrsAutoKnownDays { get; set; }
+
+        [StringLength(20)]
+        public string? SrsKnownCardAction { get; set; }
     }
 
     public class UpdateAudiobookProgressDto

@@ -351,6 +351,50 @@ describe('SrsReview', () => {
     });
   });
 
+  it('tells the user when a review moved the word to another status', async () => {
+    submitSrsReview.mockResolvedValue({
+      ...graduated(9),
+      result: { ...graduated(9).result, wordStatusChange: { from: 1, to: 3 } }
+    });
+    renderComponent();
+    await selectSpanish();
+    fireEvent.click(await screen.findByRole('button', { name: /Start Review/i }));
+    await screen.findByText(/duerme/);
+    fireEvent.click(screen.getByText(/Click or press/));
+    fireEvent.click(await screen.findByRole('button', { name: /^Good/ }));
+
+    expect(await screen.findByTestId('srs-status-notice')).toHaveTextContent(/gato/);
+  });
+
+  it('saves the word-status sync options and checks the thresholds rise', async () => {
+    renderComponent();
+    await selectSpanish();
+    fireEvent.click(await screen.findByRole('button', { name: /Options/i }));
+
+    fireEvent.change(await screen.findByLabelText(/Status 4 at/), { target: { value: '3' } });
+    fireEvent.click(screen.getByRole('button', { name: /Save Changes/i }));
+    expect(await screen.findByText(/thresholds must rise/)).toBeInTheDocument();
+    expect(updateUserSettings).not.toHaveBeenCalled();
+
+    fireEvent.change(screen.getByLabelText(/Status 4 at/), { target: { value: '30' } });
+    fireEvent.change(screen.getByLabelText(/Known at/), { target: { value: '90' } });
+    fireEvent.change(screen.getByLabelText(/Reviews change the word/), { target: { value: 'promote_demote' } });
+    fireEvent.change(screen.getByLabelText(/When a word becomes Known/), { target: { value: 'suspend' } });
+    fireEvent.change(screen.getByLabelText(/Create a card when you save/), { target: { value: 'with_sentence' } });
+    fireEvent.click(screen.getByRole('button', { name: /Save Changes/i }));
+
+    await waitFor(() => {
+      expect(updateUserSettings).toHaveBeenCalledWith(expect.objectContaining({
+        srsStatusSyncMode: 'promote_demote',
+        srsStatusLevel3Days: 7,
+        srsStatusLevel4Days: 30,
+        srsAutoKnownDays: 90,
+        srsKnownCardAction: 'suspend',
+        srsAutoCreateCards: 'with_sentence'
+      }));
+    });
+  });
+
   it("keys heatmap cells by the local calendar date, so today's reviews land on today", async () => {
     const d = new Date();
     const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;

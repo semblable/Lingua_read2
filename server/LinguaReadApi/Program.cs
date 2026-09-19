@@ -426,16 +426,18 @@ app.UseRouting();
 // see context.User for requests to uploaded content.
 app.UseAuthentication();
 
-// User-uploaded content (audio lessons, audiobook tracks, EPUB images) lives under
-// wwwroot with guessable paths (e.g. /audiobooks/{bookId}/track_1.mp3). Static-file
+// User-uploaded content (audio lessons, audiobook tracks, EPUB images, Hardcover covers) lives
+// under wwwroot with guessable paths (e.g. /audiobooks/{bookId}/track_1.mp3). Static-file
 // middleware never consults authorization, so gate these prefixes explicitly: require
 // authentication AND that the content belongs to the caller — otherwise any logged-in
 // user could read another user's media by guessing the path. The web client requests
 // them same-origin, so the httpOnly auth cookie is sent automatically.
-string[] protectedStaticPrefixes = ["/audio_lessons", "/audiobooks", "/epub_assets"];
+// These prefixes are also the ONLY static mounts (see below).
+string[] protectedStaticPrefixes = ["/audio_lessons", "/audiobooks", "/epub_assets", "/hardcover-covers"];
 
-// audio_lessons/{userId}/file and epub_assets/{userId}/{bookId}/... embed the owner's user id in
-// the path (free check); audiobooks/{bookId}/... key on an int book id and need a DB lookup.
+// audio_lessons/{userId}/file, epub_assets/{userId}/{bookId}/... and hardcover-covers/{userId:N}/...
+// embed the owner's user id in the path (free check); audiobooks/{bookId}/... key on an int book
+// id and need a DB lookup.
 static async Task<bool> CallerOwnsProtectedContentAsync(HttpContext context)
 {
     if (!Guid.TryParse(context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value, out var userId))
@@ -446,7 +448,8 @@ static async Task<bool> CallerOwnsProtectedContentAsync(HttpContext context)
     var path = context.Request.Path;
 
     if (path.StartsWithSegments("/audio_lessons", out var rest) ||
-        path.StartsWithSegments("/epub_assets", out rest))
+        path.StartsWithSegments("/epub_assets", out rest) ||
+        path.StartsWithSegments("/hardcover-covers", out rest))
     {
         return Guid.TryParse(FirstSegment(rest), out var ownerId) && ownerId == userId;
     }
@@ -487,31 +490,21 @@ app.Use(async (context, next) =>
     await next();
 });
 
-// Serve static files from wwwroot (e.g., uploaded audio)
-// Use default UseStaticFiles for general wwwroot content
-app.UseStaticFiles();
-
-// Ensure the audio_lessons directory exists before configuring static files for it
-var audioLessonsPath = Path.Combine(builder.Environment.ContentRootPath, "wwwroot", "audio_lessons");
-Directory.CreateDirectory(audioLessonsPath); // Create if it doesn't exist
-
-// Explicitly serve audio_lessons directory with a specific request path
-app.UseStaticFiles(new StaticFileOptions
+// Serve uploaded content through one mount per gated prefix, and nothing else from wwwroot.
+// A mount matches its RequestPath with the same StartsWithSegments test the gate uses, so only
+// requests the gate has checked can reach a file. Do NOT add a catch-all app.UseStaticFiles():
+// "//audiobooks/1/track_1.mp3" fails the gate's prefix test, and a wwwroot-wide file provider
+// trims the leading slashes and would serve it without authentication.
+foreach (var prefix in protectedStaticPrefixes)
 {
-    FileProvider = new PhysicalFileProvider(
-        audioLessonsPath), // Use the ensured path variable
-    RequestPath = "/audio_lessons" // Map requests starting with /audio_lessons
-});
-// Ensure the base audiobooks directory exists before configuring static files for it
-var audiobooksBasePath = Path.Combine(builder.Environment.ContentRootPath, "wwwroot", "audiobooks");
-Directory.CreateDirectory(audiobooksBasePath); // This does nothing if the directory already exists
-
-// Explicitly serve audiobooks directory
-app.UseStaticFiles(new StaticFileOptions
-{
-    FileProvider = new PhysicalFileProvider(audiobooksBasePath), // Use the ensured path
-    RequestPath = "/audiobooks" // Map requests starting with /audiobooks
-});
+    var directory = Path.Combine(builder.Environment.ContentRootPath, "wwwroot", prefix.TrimStart('/'));
+    Directory.CreateDirectory(directory); // PhysicalFileProvider requires the root to exist
+    app.UseStaticFiles(new StaticFileOptions
+    {
+        FileProvider = new PhysicalFileProvider(directory),
+        RequestPath = prefix
+    });
+}
 
 // Apply CORS before authentication - Redundant comment, UseCors moved up
 // app.UseCors("AllowClientApp"); // Moved up

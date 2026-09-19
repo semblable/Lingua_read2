@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using LinguaReadApi.Data;
 using LinguaReadApi.Models;
+using LinguaReadApi.Utilities;
 using Microsoft.EntityFrameworkCore;
 
 namespace LinguaReadApi.Services;
@@ -783,11 +784,7 @@ public sealed class HardcoverService : IHardcoverService
                 return null;
             }
 
-            var extension = Path.GetExtension(uri.AbsolutePath);
-            if (string.IsNullOrWhiteSpace(extension) || extension.Length > 5)
-            {
-                extension = ".jpg";
-            }
+            var extension = ImageFileExtension.From(uri.AbsolutePath, response.Content.Headers.ContentType?.MediaType);
 
             var relativeDirectory = Path.Combine("hardcover-covers", userId.ToString("N"));
             var absoluteDirectory = Path.Combine(GetWebRootPath(), relativeDirectory);

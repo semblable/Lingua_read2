@@ -9,6 +9,9 @@ certs/
 !secrets/.gitkeep
 !certs/.gitkeep
 backups/
+# ASP.NET Data Protection key ring (decrypts stored user API keys) and local pg_dump output
+server/LinguaReadApi/keys/
+server/LinguaReadApi/temp_backups/
 
 # ===================================================================
 # OS-specific

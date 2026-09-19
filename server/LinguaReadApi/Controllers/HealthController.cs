@@ -42,15 +42,16 @@ namespace LinguaReadApi.Controllers
                 if (!defaultUserExists)
                 {
                     _logger.LogWarning("Readiness check failed: default user {UserId} is missing", DefaultUserId);
-                    return StatusCode(503, new { status = "not_ready", reason = "default_user_missing", defaultUserId = DefaultUserId });
+                    return StatusCode(503, new { status = "not_ready", reason = "default_user_missing" });
                 }
 
                 return Ok(new { status = "ready", database = true, defaultUser = true });
             }
             catch (Exception ex)
             {
+                // Anonymous endpoint: the exception (which can name internal hosts) goes to the log only.
                 _logger.LogError(ex, "Readiness check failed");
-                return StatusCode(503, new { status = "not_ready", reason = "readiness_error", error = ex.Message });
+                return StatusCode(503, new { status = "not_ready", reason = "readiness_error" });
             }
         }
 

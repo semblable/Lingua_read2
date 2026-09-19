@@ -1821,23 +1821,10 @@ namespace LinguaReadApi.Controllers
             return NormalizeArchivePath(WebUtility.UrlDecode(path) ?? path).TrimStart('/');
         }
 
-        private static string GetImageExtension(string? mimeType, string? filePath)
-        {
-            var extension = Path.GetExtension(filePath ?? string.Empty);
-            if (!string.IsNullOrWhiteSpace(extension))
-            {
-                return extension.StartsWith('.') ? extension.ToLowerInvariant() : "." + extension.ToLowerInvariant();
-            }
-
-            return mimeType?.ToLowerInvariant() switch
-            {
-                "image/png" => ".png",
-                "image/gif" => ".gif",
-                "image/webp" => ".webp",
-                "image/svg+xml" => ".svg",
-                _ => ".jpg"
-            };
-        }
+        // The archive path's extension is attacker-controlled (a manifest can call "x.html" an
+        // image), so it only survives if it's an image extension; see ImageFileExtension.
+        private static string GetImageExtension(string? mimeType, string? filePath) =>
+            ImageFileExtension.From(filePath, mimeType);
 
         private static void CleanupBookAssets(Guid userId, int bookId)
         {

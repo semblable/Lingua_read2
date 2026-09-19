@@ -142,6 +142,10 @@ export default defineConfig({
     // Don't ship sourcemaps to production: they roughly double the deploy size and
     // expose the full source. Flip to 'hidden' locally when debugging a prod build.
     sourcemap: false,
+    // Never inline fonts as data: URIs. nginx's CSP (font-src 'self') blocks them, so the small
+    // @fontsource subsets under the 4 KiB default were silently dropped in production. Other
+    // assets keep Vite's default rule (undefined).
+    assetsInlineLimit: (filePath) => (/\.(woff2?|ttf|otf|eot)$/i.test(filePath) ? false : undefined),
     // Vite 7+ defaults to the "Baseline Widely Available" set (Safari 16.4, Chrome 111,
     // Firefox 114 as of Vite 8). Keep the range Vite 5 targeted ('modules') so the
     // toolchain upgrade doesn't quietly drop older iOS/Android browsers.

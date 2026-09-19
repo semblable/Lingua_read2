@@ -186,9 +186,13 @@ namespace LinguaReadApi.Controllers
             };
         }
 
-        // PUT: api/usersettings
+        // PUT: api/usersettings?timezoneOffsetMinutes=120
+        // The offset is the user's (as on the SRS endpoints); it only matters when a change
+        // reschedules SRS cards, which fall due at the start of a local day.
         [HttpPut]
-        public async Task<ActionResult<UserSettingsDto>> UpdateUserSettings([FromBody] UpdateUserSettingsDto updateDto)
+        public async Task<ActionResult<UserSettingsDto>> UpdateUserSettings(
+            [FromBody] UpdateUserSettingsDto updateDto,
+            [FromQuery] int timezoneOffsetMinutes = 0)
         {
             if (!ModelState.IsValid)
             {
@@ -420,8 +424,10 @@ namespace LinguaReadApi.Controllers
                     : updateDto.CustomSummarizationPrompt;
             }
             // Retention, maximum interval and weights shift every graduated card's ideal
-            // interval, so a change to any of them reschedules those cards after saving.
-            var fsrsBefore = (settings.SrsDesiredRetention, settings.SrsMaxIntervalDays, settings.SrsFsrsWeights);
+            // interval, and the day start moves the local hour cards fall due at (raised, a
+            // stored due time would land on the previous day), so a change to any of them
+            // reschedules those cards (in the same save).
+            var scheduleBefore = (settings.SrsDesiredRetention, settings.SrsMaxIntervalDays, settings.SrsFsrsWeights, settings.SrsDayStartHour);
             settings.SrsMaxNewCards = updateDto.SrsMaxNewCards ?? settings.SrsMaxNewCards;
             settings.SrsMaxReviews = updateDto.SrsMaxReviews ?? settings.SrsMaxReviews;
             if (!string.IsNullOrWhiteSpace(updateDto.SrsReviewOrder))
@@ -520,12 +526,14 @@ namespace LinguaReadApi.Controllers
             settings.SrsAutoKnownDays = autoKnownDays;
             settings.UpdatedAt = DateTime.UtcNow;
 
-            await _context.SaveChangesAsync();
-
-            if (fsrsBefore != (settings.SrsDesiredRetention, settings.SrsMaxIntervalDays, settings.SrsFsrsWeights))
+            // One save for the settings and the cards: if rescheduling failed after the settings
+            // were stored, a retry would see nothing changed and never reschedule.
+            if (scheduleBefore != (settings.SrsDesiredRetention, settings.SrsMaxIntervalDays, settings.SrsFsrsWeights, settings.SrsDayStartHour))
             {
-                await SrsRescheduler.RescheduleUserAsync(_context, userId, settings);
+                await SrsRescheduler.RescheduleUserAsync(_context, userId, settings, timezoneOffsetMinutes);
             }
+
+            await _context.SaveChangesAsync();
 
             return new UserSettingsDto
             {

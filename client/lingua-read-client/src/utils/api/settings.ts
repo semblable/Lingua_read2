@@ -1,5 +1,6 @@
 import { fetchApi } from './client';
 import type { ResponseOf, RequestBodyOf } from '../fetchApi';
+import { tzOffsetMinutes } from '../timezone';
 
 export type UserSettings = ResponseOf<'/api/UserSettings', 'get'>;
 export type UpdateUserSettingsInput = RequestBodyOf<'/api/UserSettings', 'put'>;
@@ -18,7 +19,9 @@ export const updateUserSettings = async (
   settings: UpdateUserSettingsInput
 ): Promise<UserSettings> => {
   try {
-    return await fetchApi<UserSettings>('/usersettings', {
+    // A change to the SRS retention, maximum interval or weights reschedules the
+    // user's cards, which fall due at the start of a local day.
+    return await fetchApi<UserSettings>(`/usersettings?timezoneOffsetMinutes=${tzOffsetMinutes()}`, {
       method: 'PUT',
       body: JSON.stringify(settings)
     });

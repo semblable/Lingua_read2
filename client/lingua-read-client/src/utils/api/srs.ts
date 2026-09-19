@@ -3,6 +3,7 @@ import type { ResponseOf } from '../fetchApi';
 import { enqueueIfOffline } from '../offline/enqueueIfOffline';
 import { newClientEventId } from '../offline/clientEventId';
 import { removePending } from '../offline/syncQueue';
+import { tzOffsetMinutes as tzOffset } from '../timezone';
 
 export type SrsDueCards = ResponseOf<'/api/Srs/due', 'get'>;
 export type SrsStats = ResponseOf<'/api/Srs/stats', 'get'>;
@@ -16,8 +17,6 @@ export type SrsReviewResult = ResponseOf<'/api/Srs/review', 'post'>;
 
 // The server counts SRS days (due dates, daily limits, streaks, heatmap) in the
 // user's local day, so every SRS call says which time zone the user is in.
-const tzOffset = (): number => -new Date().getTimezoneOffset();
-
 const srsUrl = (path: string, params: URLSearchParams = new URLSearchParams()): string => {
   params.set('timezoneOffsetMinutes', String(tzOffset()));
   return `/srs/${path}?${params.toString()}`;
@@ -103,11 +102,17 @@ export const getSrsStats = async (
   return await fetchApi<SrsStats>(srsUrl('stats', params));
 };
 
-/** Reverts one review by its log id (from the review response). */
-export const undoSrsReview = async (srsReviewLogId: number): Promise<unknown> => {
+/**
+ * Reverts one review: by its log id (from the review response), or by the
+ * clientEventId it was submitted with, for a grade that was queued offline and
+ * has synced since (so the client never saw its log id).
+ */
+export const undoSrsReview = async (
+  review: { srsReviewLogId: number } | { clientEventId: string }
+): Promise<unknown> => {
   return await fetchApi(srsUrl('undo'), {
     method: 'POST',
-    body: JSON.stringify({ srsReviewLogId })
+    body: JSON.stringify(review)
   });
 };
 

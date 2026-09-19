@@ -251,7 +251,7 @@ namespace LinguaReadApi.Controllers
 
             // Offline reviews are scheduled from when they happened, but never from before
             // the card's previous review or from the future.
-            var reviewedAt = dto.ReviewedAt is { } at ? AsUtc(at) : now;
+            var reviewedAt = dto.ReviewedAt is { } at ? SrsDay.AsUtc(at) : now;
             if (reviewedAt > now) reviewedAt = now;
             if (card.LastReviewedAt is { } lastReviewed && reviewedAt < lastReviewed) reviewedAt = lastReviewed;
 
@@ -328,25 +328,10 @@ namespace LinguaReadApi.Controllers
             };
             _context.SrsPhrases.Add(phrase);
 
-            // Auto-create SRS card if not already tracking this word.
-            // Ignored words (Status 6) must never surface in review — skip card creation.
-            if (word.Status != 6)
-            {
-                var existingCard = await _context.SrsCardReviews
-                    .FirstOrDefaultAsync(scr => scr.WordId == dto.WordId && scr.UserId == userId);
-
-                if (existingCard == null)
-                {
-                    var card = new SrsCardReview
-                    {
-                        WordId = dto.WordId,
-                        UserId = userId,
-                        NextReviewAt = DateTime.UtcNow,
-                        CreatedAt = DateTime.UtcNow
-                    };
-                    _context.SrsCardReviews.Add(card);
-                }
-            }
+            // Mining asks for a card, so create one if needed (never for an Ignored word), then
+            // apply the status rules to it: a Known word's card is suspended if Known cards are retired.
+            var settings = await _context.UserSettings.AsNoTracking().FirstOrDefaultAsync(u => u.UserId == userId);
+            await SrsCardLifecycle.EnsureMinedCardAsync(_context, word, settings);
 
             await _context.SaveChangesAsync();
 
@@ -378,9 +363,10 @@ namespace LinguaReadApi.Controllers
             return lastReviewLog;
         }
 
-        // POST: api/srs/undo  body: { "srsReviewLogId": 123 }
-        // Reverts that review. Without a body (older clients) it reverts the user's most
-        // recent review from the last 15 minutes.
+        // POST: api/srs/undo  body: { "srsReviewLogId": 123 } or { "clientEventId": "..." }
+        // Reverts that review; the client event id finds a grade that was queued offline and
+        // synced since, so the client never got its log id. Without a body (older clients) it
+        // reverts the user's most recent review from the last 15 minutes.
         [HttpPost("undo")]
         public async Task<IActionResult> UndoLastReview(
             [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] SrsUndoDto? dto = null,
@@ -390,9 +376,13 @@ namespace LinguaReadApi.Controllers
             var now = DateTime.UtcNow;
             var cutoffTime = now.AddMinutes(-15);
 
+            var clientEventId = dto?.ClientEventId;
             var lastLog = dto?.SrsReviewLogId is { } logId
                 ? await _context.SrsReviewLogs
                     .FirstOrDefaultAsync(log => log.SrsReviewLogId == logId && log.UserId == userId)
+                : !string.IsNullOrEmpty(clientEventId)
+                ? await _context.SrsReviewLogs
+                    .FirstOrDefaultAsync(log => log.UserId == userId && log.ClientEventId == clientEventId)
                 : await _context.SrsReviewLogs
                     .Where(log => log.UserId == userId && log.ReviewedAt >= cutoffTime && log.Kind != (int)SrsReviewKind.Reading)
                     .OrderByDescending(log => log.ReviewedAt)
@@ -430,13 +420,20 @@ namespace LinguaReadApi.Controllers
             card.Difficulty = lastLog.OldDifficulty;
             card.Lapses = lastLog.OldLapses;
 
-            // Put back the word status this review changed, and lift the Known
-            // suspension that change may have caused.
+            // Put back the word status this review changed, and lift the Known suspension that
+            // change may have caused. Not if the status has changed since (say the user ignored
+            // the word meanwhile): that newer choice stands. Logs from before WordStatusAfter
+            // existed don't record it and are always restored.
+            int? restoredWordStatus = null;
             if (lastLog.WordStatusBefore is { } statusBefore)
             {
                 var word = await _context.Words.FirstOrDefaultAsync(w => w.WordId == card.WordId && w.UserId == userId);
-                if (word != null) word.Status = statusBefore;
-                if (statusBefore != SrsCardLifecycle.StatusKnown) SrsCardLifecycle.LiftStatusSuspension(card);
+                if (word != null && (lastLog.WordStatusAfter is not { } statusAfter || word.Status == statusAfter))
+                {
+                    word.Status = statusBefore;
+                    restoredWordStatus = statusBefore;
+                    if (statusBefore != SrsCardLifecycle.StatusKnown) SrsCardLifecycle.LiftStatusSuspension(card);
+                }
             }
 
             // Revert daily limits and streak. Reading credit never counted toward them.
@@ -452,7 +449,7 @@ namespace LinguaReadApi.Controllers
             _context.SrsReviewLogs.Remove(lastLog);
 
             await _context.SaveChangesAsync();
-            return Ok(new { Message = "Undo successful.", card.SrsCardReviewId, lastLog.SrsReviewLogId, RestoredWordStatus = lastLog.WordStatusBefore });
+            return Ok(new { Message = "Undo successful.", card.SrsCardReviewId, lastLog.SrsReviewLogId, RestoredWordStatus = restoredWordStatus });
         }
 
         // GET: api/srs/forecast?languageId=1&days=14&timezoneOffsetMinutes=120
@@ -610,10 +607,12 @@ namespace LinguaReadApi.Controllers
                 .Where(log => log.UserId == userId && log.ReviewedAt >= thirtyDaysAgo && log.Kind == (int)SrsReviewKind.Review);
             if (languageId.HasValue)
                 reviewLogs = reviewLogs.Where(log => log.SrsCardReview.Word.LanguageId == languageId.Value);
-            int totalRecentReviews = await reviewLogs.CountAsync();
-            int passedRecentReviews = await reviewLogs.CountAsync(log => log.Grade >= 1);
-            double retentionRate = totalRecentReviews > 0
-                ? Math.Round((double)passedRecentReviews / totalRecentReviews * 100, 1)
+            var recent = await reviewLogs
+                .GroupBy(log => 1)
+                .Select(g => new { Total = g.Count(), Passed = g.Count(log => log.Grade >= 1) })
+                .FirstOrDefaultAsync();
+            double retentionRate = recent is { Total: > 0 }
+                ? Math.Round((double)recent.Passed / recent.Total * 100, 1)
                 : 0;
 
             return new SrsStatsDto
@@ -807,9 +806,6 @@ namespace LinguaReadApi.Controllers
                 ? (settings!.SrsDailyNewCardsStudied, settings.SrsDailyReviewsStudied)
                 : (0, 0);
 
-        private static DateTime AsUtc(DateTime value) =>
-            value.Kind == DateTimeKind.Local ? value.ToUniversalTime() : DateTime.SpecifyKind(value, DateTimeKind.Utc);
-
         /// <summary>
         /// Advances the streak and daily new/review counters for a review that happened at
         /// <paramref name="reviewedAt"/>. A card counts once per day, on its first review that day.
@@ -909,6 +905,7 @@ namespace LinguaReadApi.Controllers
 
             var change = new SrsWordStatusChangeDto { From = word.Status, To = newStatus };
             log.WordStatusBefore = word.Status;
+            log.WordStatusAfter = newStatus;
             word.Status = newStatus;
             SrsCardLifecycle.ApplyStatusRules(word, card, hasSentence: true, settings);
             return change;
@@ -932,7 +929,7 @@ namespace LinguaReadApi.Controllers
             OldDifficulty = card.Difficulty,
             OldLapses = card.Lapses,
             Kind = (int)outcome.Kind,
-            NewInterval = outcome.IntervalDays,
+            NewInterval = outcome.Card.IntervalDays,
         };
 
         private async Task<SrsReviewResultDto?> FindReplayedReviewAsync(Guid userId, string clientEventId, SrsScheduler scheduler, DateTime now)
@@ -1542,6 +1539,10 @@ Format (one object per provided word, in the same order):
     public class SrsUndoDto
     {
         public int? SrsReviewLogId { get; set; }
+
+        /// <summary>The idempotency key the review was submitted with (used when the log id is unknown).</summary>
+        [StringLength(64)]
+        public string? ClientEventId { get; set; }
     }
 
     public class SrsMineDto

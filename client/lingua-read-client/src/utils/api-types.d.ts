@@ -4155,7 +4155,9 @@ export interface paths {
         };
         put: {
             parameters: {
-                query?: never;
+                query?: {
+                    timezoneOffsetMinutes?: number;
+                };
                 header?: never;
                 path?: never;
                 cookie?: never;
@@ -5721,6 +5723,7 @@ export interface components {
         SrsUndoDto: {
             /** Format: int32 */
             srsReviewLogId?: number | null;
+            clientEventId?: string | null;
         };
         SrsWordStatusChangeDto: {
             /** Format: int32 */

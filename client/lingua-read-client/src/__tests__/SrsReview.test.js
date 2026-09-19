@@ -306,9 +306,45 @@ describe('SrsReview', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /Undo/ }));
 
-    await waitFor(() => expect(undoSrsReview).toHaveBeenCalledWith(55));
+    await waitFor(() => expect(undoSrsReview).toHaveBeenCalledWith({ srsReviewLogId: 55 }));
     expect(await screen.findByText(/duerme/)).toBeInTheDocument();
     expect(cancelQueuedSrsReview).not.toHaveBeenCalled();
+  });
+
+  it('undo is offered on the session-complete screen for the last grade', async () => {
+    getSrsDueCards.mockResolvedValue([mockCards[0]]);
+    submitSrsReview.mockResolvedValue(graduated(77));
+    renderComponent();
+    await selectSpanish();
+    fireEvent.click(await screen.findByRole('button', { name: /Start Review/i }));
+    await screen.findByText(/duerme/);
+    fireEvent.click(screen.getByText(/Click or press/));
+    fireEvent.click(await screen.findByRole('button', { name: /^Good/ }));
+    expect(await screen.findByText('Session Complete')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Undo last/ }));
+
+    await waitFor(() => expect(undoSrsReview).toHaveBeenCalledWith({ srsReviewLogId: 77 }));
+    expect(await screen.findByText(/duerme/)).toBeInTheDocument();
+    expect(screen.queryByText('Session Complete')).not.toBeInTheDocument();
+  });
+
+  it('undo of an offline grade that has synced since reverts it by its client event id', async () => {
+    submitSrsReview.mockResolvedValue({ queued: true, clientEventId: 'evt-synced' });
+    cancelQueuedSrsReview.mockResolvedValue(false); // the queue already drained it
+    renderComponent();
+    await selectSpanish();
+    fireEvent.click(await screen.findByRole('button', { name: /Start Review/i }));
+    await screen.findByText(/duerme/);
+    fireEvent.click(screen.getByText(/Click or press/));
+    fireEvent.click(await screen.findByRole('button', { name: /^Good/ }));
+    await screen.findByText(/corre/);
+
+    fireEvent.click(screen.getByRole('button', { name: /Undo/ }));
+
+    await waitFor(() => expect(undoSrsReview).toHaveBeenCalledWith({ clientEventId: 'evt-synced' }));
+    expect(await screen.findByText(/duerme/)).toBeInTheDocument();
+    expect(screen.queryByText(/Failed to undo/)).not.toBeInTheDocument();
   });
 
   it('undo of a grade still queued offline drops it from the queue instead', async () => {

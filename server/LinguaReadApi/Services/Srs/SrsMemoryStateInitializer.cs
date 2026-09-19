@@ -25,7 +25,8 @@ namespace LinguaReadApi.Services.Srs
         public static (double Stability, double Difficulty) EstimateWithoutHistory(int intervalDays) =>
             (Math.Max(intervalDays, 1), 5.0);
 
-        public sealed record ReplayResult(double Stability, double Difficulty, int Lapses, int Reviews);
+        /// <param name="HasGraduated">Whether the history shows the card in review at some point.</param>
+        public sealed record ReplayResult(double Stability, double Difficulty, int Lapses, int Reviews, bool HasGraduated);
 
         /// <summary>
         /// Replays <paramref name="logs"/> (any order; sorted here) through the FSRS memory
@@ -34,6 +35,9 @@ namespace LinguaReadApi.Services.Srs
         /// what the newest log produced. Returns null when there are no logs.
         /// Elapsed days are counted between UTC calendar days: historical reviews carry no
         /// time zone, and the error is at most one day at a boundary.
+        /// SM-2 only marked a card graduated when it left the learning steps, so a card that
+        /// went straight to review and later lapsed was logged as a plain learning card; once
+        /// a log shows the card in review, later learning reviews are treated as relearning.
         /// </summary>
         public static ReplayResult? Replay(IEnumerable<SrsReviewLog> logs, int currentInterval, FsrsAlgorithm fsrs)
         {
@@ -43,12 +47,14 @@ namespace LinguaReadApi.Services.Srs
             double? stability = null;
             double? difficulty = null;
             int lapses = 0;
+            bool graduated = false;
             DateTime? previous = null;
 
             for (int i = 0; i < ordered.Count; i++)
             {
                 var log = ordered[i];
-                var before = SrsCardStates.Derive(log.OldIsLearning, log.OldHasEverGraduated, log.OldLastReviewedAt);
+                var before = SrsCardStates.Derive(log.OldIsLearning, log.OldHasEverGraduated || graduated, log.OldLastReviewedAt);
+                graduated |= before is SrsCardState.Review or SrsCardState.Relearning;
                 var rating = FsrsAlgorithm.RatingFromGrade(Math.Clamp(log.Grade, 0, 3));
 
                 if (log.Kind != (int)SrsReviewKind.Reading)
@@ -87,7 +93,7 @@ namespace LinguaReadApi.Services.Srs
                 previous = log.ReviewedAt;
             }
 
-            return new ReplayResult(stability!.Value, difficulty!.Value, lapses, ordered.Count);
+            return new ReplayResult(stability!.Value, difficulty!.Value, lapses, ordered.Count, graduated);
         }
 
         /// <summary>
@@ -98,12 +104,21 @@ namespace LinguaReadApi.Services.Srs
         public static async Task<bool> EnsureAsync(
             AppDbContext db, SrsCardReview card, FsrsAlgorithm fsrs, CancellationToken cancellationToken = default)
         {
-            if (card.LastReviewedAt == null || (card.Stability != null && card.Difficulty != null))
-                return false;
+            if (!NeedsState(card)) return false;
 
             var logs = await db.SrsReviewLogs
                 .Where(l => l.SrsCardReviewId == card.SrsCardReviewId)
                 .ToListAsync(cancellationToken);
+            return Ensure(card, logs, fsrs);
+        }
+
+        /// <summary>
+        /// <see cref="EnsureAsync"/> with the card's logs already loaded (all of them), for
+        /// callers converting many cards at once. Does not save.
+        /// </summary>
+        public static bool Ensure(SrsCardReview card, IEnumerable<SrsReviewLog> logs, FsrsAlgorithm fsrs)
+        {
+            if (!NeedsState(card)) return false;
 
             var replay = Replay(logs, card.Interval, fsrs);
             if (replay != null)
@@ -112,6 +127,8 @@ namespace LinguaReadApi.Services.Srs
                 card.Difficulty = replay.Difficulty;
                 card.Lapses = replay.Lapses;
                 card.Repetitions = replay.Reviews;
+                // A card SM-2 sent back to learning after it had been in review is relearning.
+                if (replay.HasGraduated) card.HasEverGraduated = true;
             }
             else
             {
@@ -121,5 +138,8 @@ namespace LinguaReadApi.Services.Srs
             }
             return true;
         }
+
+        private static bool NeedsState(SrsCardReview card) =>
+            card.LastReviewedAt != null && (card.Stability == null || card.Difficulty == null);
     }
 }

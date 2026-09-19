@@ -42,6 +42,7 @@ const SrsStoryReview = () => {
   const [phase, setPhase] = useState('setup'); // setup | loading | review | complete
   const [microContexts, setMicroContexts] = useState<MicroContext[]>([]);
   const [reviewedWords, setReviewedWords] = useState<Map<number, number>>(new Map()); // wordId -> grade
+  const [reviewNotes, setReviewNotes] = useState<Map<number, string>>(new Map()); // wordId -> status change or leech note
   const [revealedWords, setRevealedWords] = useState<Set<number>>(new Set()); // wordIds whose translation is unhidden
   const [error, setError] = useState('');
   const [stats, setStats] = useState<SrsStats | null>(null);
@@ -115,6 +116,7 @@ const SrsStoryReview = () => {
 
       setMicroContexts(result.microContexts);
       setReviewedWords(new Map());
+      setReviewNotes(new Map());
       setRevealedWords(new Set());
       setStoryTextId(result.textId ?? null);
       setLanguageCode(result.languageCode || '');
@@ -144,8 +146,29 @@ const SrsStoryReview = () => {
     if (reviewedWords.has(mc.wordId)) return;
     setGradingWordId(mc.wordId);
     try {
-      await submitSrsReview(mc.srsCardReviewId, grade);
+      const submitted = await submitSrsReview(mc.srsCardReviewId, grade);
       setReviewedWords(prev => new Map(prev).set(mc.wordId!, grade));
+
+      // The review may have moved the word's reader status (word-status sync) or made
+      // the card a leech. (A grade queued offline has no server result yet.)
+      const result = submitted.queued ? null : submitted.result;
+      if (result) {
+        const { wordStatusChange: change, becameLeech, lapses, isSuspended } = result;
+        const newStatus = change?.to;
+        if (newStatus != null) {
+          setMicroContexts(prev => prev.map(c => (c.wordId === mc.wordId ? { ...c, wordStatus: newStatus } : c)));
+          const key = mc.term?.toLowerCase();
+          if (key) {
+            setExistingWordsMap(prev => (prev[key] ? { ...prev, [key]: { ...prev[key], status: newStatus } } : prev));
+          }
+        }
+        const note = becameLeech
+          ? `Leech: forgotten ${lapses} times${isSuspended ? ', suspended' : ''}`
+          : change?.from != null && newStatus != null
+            ? `${STATUS_LABELS[change.from as WordStatus]} → ${STATUS_LABELS[newStatus as WordStatus]}`
+            : null;
+        if (note) setReviewNotes(prev => new Map(prev).set(mc.wordId!, note));
+      }
     } catch (err: unknown) {
       setError(`Failed to submit review: ${(err as Error)?.message}`);
     } finally {
@@ -432,6 +455,9 @@ const SrsStoryReview = () => {
                     <Badge bg="success" className="me-2">✓</Badge>
                     <strong>{mc.term}</strong>
                     {mc.translation && <span className="text-muted ms-2">— {mc.translation}</span>}
+                    {reviewNotes.has(wordId) && (
+                      <small className="text-muted ms-2" data-testid="srs-microcontext-note">({reviewNotes.get(wordId)})</small>
+                    )}
                   </span>
                   <Badge bg="secondary">{gradeLabel}</Badge>
                 </Card.Body>
@@ -560,7 +586,7 @@ const SrsStoryReview = () => {
             </div>
           )}
           <div className="d-flex gap-2 justify-content-center">
-            <Button variant="primary" onClick={() => { setPhase('setup'); setMicroContexts([]); setReviewedWords(new Map()); setRevealedWords(new Set()); }}>
+            <Button variant="primary" onClick={() => { setPhase('setup'); setMicroContexts([]); setReviewedWords(new Map()); setReviewNotes(new Map()); setRevealedWords(new Set()); }}>
               Generate Another
             </Button>
             <Button variant="outline-secondary" onClick={() => navigate('/srs')}>

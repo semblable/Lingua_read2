@@ -2524,6 +2524,45 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/Srs/suspended": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    languageId?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["SrsSuspendedCardDto"][];
+                        "application/json": components["schemas"]["SrsSuspendedCardDto"][];
+                        "text/json": components["schemas"]["SrsSuspendedCardDto"][];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/Srs/bury/{cardId}": {
         parameters: {
             query?: never;
@@ -5719,6 +5758,19 @@ export interface components {
             /** Format: date-time */
             createdAt?: string;
             contentPreview?: string | null;
+        };
+        SrsSuspendedCardDto: {
+            /** Format: int32 */
+            srsCardReviewId?: number;
+            /** Format: int32 */
+            wordId?: number;
+            term?: string | null;
+            translation?: string | null;
+            /** Format: int32 */
+            wordStatus?: number;
+            suspendReason?: string | null;
+            /** Format: int32 */
+            lapses?: number;
         };
         SrsUndoDto: {
             /** Format: int32 */

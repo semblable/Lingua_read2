@@ -465,4 +465,62 @@ public class SrsFsrsControllerTests
 
         Assert.Equal(new[] { 1, 0, 0 }, forecast.Select(f => f.Count).ToArray());
     }
+
+    // ---- Suspended cards ----
+
+    private static SrsCardReview Suspended(Guid userId, int wordId, string reason)
+    {
+        var card = ReviewCard(userId, wordId);
+        card.IsSuspended = true;
+        card.SuspendReason = reason;
+        return card;
+    }
+
+    [Fact]
+    public async Task SuspendedCards_ListsManualAndLeechSuspensions_NotStatusOnes()
+    {
+        using var context = CreateContext();
+        var userId = SeedUser(context,
+            (1, "gato", 3), (2, "perro", 2), (3, "casa", 5), (4, "mesa", 6), (5, "luna", 2), (6, "sol", 6));
+        context.Languages.Add(new Language { LanguageId = 2, Name = "French", Code = "fr" });
+        context.Words.Add(new Word { WordId = 7, UserId = userId, LanguageId = 2, Term = "chat", Status = 2 });
+        context.SaveChanges();
+        AddCard(context, Suspended(userId, 1, SrsSuspendReasons.Manual));
+        AddCard(context, Suspended(userId, 2, SrsSuspendReasons.Leech));
+        AddCard(context, Suspended(userId, 3, SrsSuspendReasons.Known));
+        AddCard(context, Suspended(userId, 4, SrsSuspendReasons.Ignored));
+        AddCard(context, ReviewCard(userId, 5));
+        AddCard(context, Suspended(userId, 6, SrsSuspendReasons.Manual)); // suspended by hand, then ignored
+        AddCard(context, Suspended(userId, 7, SrsSuspendReasons.Manual));
+        var otherUser = Guid.NewGuid();
+        context.Words.Add(new Word { WordId = 8, UserId = otherUser, LanguageId = 1, Term = "agua", Status = 2 });
+        context.SaveChanges();
+        AddCard(context, Suspended(otherUser, 8, SrsSuspendReasons.Manual));
+        var controller = CreateController(context, userId);
+
+        var spanish = Unwrap(await controller.GetSuspendedCards(languageId: 1));
+        Assert.Equal(new (string, string?)[] { ("gato", "manual"), ("perro", "leech") },
+            spanish.Select(c => (c.Term, c.SuspendReason)).ToArray());
+
+        var all = Unwrap(await controller.GetSuspendedCards());
+        Assert.Equal(new[] { "chat", "gato", "perro" }, all.Select(c => c.Term).ToArray());
+    }
+
+    [Fact]
+    public async Task Unsuspend_LiftsTheSuspension_ButNotForAnIgnoredWord()
+    {
+        using var context = CreateContext();
+        var userId = SeedUser(context, (1, "gato", 3), (2, "mesa", 6));
+        var leechId = AddCard(context, Suspended(userId, 1, SrsSuspendReasons.Leech));
+        var ignoredId = AddCard(context, Suspended(userId, 2, SrsSuspendReasons.Ignored));
+        var controller = CreateController(context, userId);
+
+        Assert.IsType<OkObjectResult>(await controller.UnsuspendCard(leechId));
+        var leech = Reload(context, leechId);
+        Assert.False(leech.IsSuspended);
+        Assert.Null(leech.SuspendReason);
+
+        Assert.IsType<BadRequestObjectResult>(await controller.UnsuspendCard(ignoredId));
+        Assert.True(Reload(context, ignoredId).IsSuspended);
+    }
 }

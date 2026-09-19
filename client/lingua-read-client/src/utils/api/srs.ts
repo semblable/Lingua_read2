@@ -1,5 +1,5 @@
 import { fetchApi } from './client';
-import type { ResponseOf } from '../fetchApi';
+import type { ResponseOf, RequestBodyOf } from '../fetchApi';
 import { enqueueIfOffline } from '../offline/enqueueIfOffline';
 import { newClientEventId } from '../offline/clientEventId';
 import { removePending } from '../offline/syncQueue';
@@ -14,6 +14,7 @@ export type SrsStories = ResponseOf<'/api/Srs/stories', 'get'>;
 export type SrsPhrases = ResponseOf<'/api/Srs/phrases/{wordId}', 'get'>;
 export type SrsStoryGenerationResult = ResponseOf<'/api/Srs/story-generate', 'post'>;
 export type SrsReviewResult = ResponseOf<'/api/Srs/review', 'post'>;
+export type SrsSuspendedCards = ResponseOf<'/api/Srs/suspended', 'get'>;
 
 // The server counts SRS days (due dates, daily limits, streaks, heatmap) in the
 // user's local day, so every SRS call says which time zone the user is in.
@@ -142,11 +143,25 @@ export const unsuspendSrsCard = async (cardId: number | string): Promise<unknown
   return await fetchApi(`/srs/unsuspend/${cardId}`, { method: 'POST' });
 };
 
+/** Cards suspended by hand or as leeches; they stay out of review until unsuspended. */
+export const getSrsSuspendedCards = async (
+  languageId: number | string | null = null
+): Promise<SrsSuspendedCards> => {
+  const params = new URLSearchParams();
+  if (languageId) params.append('languageId', String(languageId));
+  const queryString = params.toString();
+  return await fetchApi<SrsSuspendedCards>(`/srs/suspended${queryString ? `?${queryString}` : ''}`);
+};
+
 export const burySrsCard = async (cardId: number | string): Promise<unknown> => {
   return await fetchApi(srsUrl(`bury/${cardId}`), { method: 'POST' });
 };
 
-export type UpdateSrsCardInput = { flag?: number | string | null; tags?: string[] | null };
+export type UpdateSrsCardInput = {
+  flag?: number | string | null;
+  /** Comma-separated, as stored on the card. */
+  tags?: RequestBodyOf<'/api/Srs/cards/{cardId}', 'patch'>['tags'];
+};
 
 export const updateSrsCard = async (
   cardId: number | string,

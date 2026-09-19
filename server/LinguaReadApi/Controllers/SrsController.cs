@@ -656,12 +656,50 @@ namespace LinguaReadApi.Controllers
         {
             var userId = GetUserId();
             var card = await _context.SrsCardReviews
+                .Include(scr => scr.Word)
                 .FirstOrDefaultAsync(scr => scr.SrsCardReviewId == cardId && scr.UserId == userId);
             if (card == null) return NotFound();
+            // Ignored words never come up in review; changing the word's status lifts that suspension.
+            if (card.Word.Status == SrsCardLifecycle.StatusIgnored)
+                return BadRequest(new { Message = "The word is ignored; change its status to review it again." });
             card.IsSuspended = false;
             card.SuspendReason = null;
             await _context.SaveChangesAsync();
             return Ok(new { Message = "Card unsuspended." });
+        }
+
+        // GET: api/srs/suspended?languageId=1
+        // Cards suspended by hand or as leeches, which stay out of review until unsuspended.
+        // Cards suspended for their word's status (Ignored, or Known when Known cards are
+        // retired) aren't listed: they follow the status, so changing it brings them back.
+        [HttpGet("suspended")]
+        public async Task<ActionResult<List<SrsSuspendedCardDto>>> GetSuspendedCards([FromQuery] int? languageId = null)
+        {
+            var userId = GetUserId();
+            var query = _context.SrsCardReviews
+                .AsNoTracking()
+                .Where(scr => scr.UserId == userId && scr.IsSuspended
+                    && scr.SuspendReason != SrsSuspendReasons.Ignored
+                    && scr.SuspendReason != SrsSuspendReasons.Known
+                    && scr.Word.Status != SrsCardLifecycle.StatusIgnored);
+            if (languageId.HasValue)
+                query = query.Where(scr => scr.Word.LanguageId == languageId.Value);
+
+            return await query
+                .OrderBy(scr => scr.Word.Term)
+                .ThenBy(scr => scr.SrsCardReviewId)
+                .Take(200)
+                .Select(scr => new SrsSuspendedCardDto
+                {
+                    SrsCardReviewId = scr.SrsCardReviewId,
+                    WordId = scr.WordId,
+                    Term = scr.Word.Term,
+                    Translation = scr.Word.Translation != null ? scr.Word.Translation.Translation : "",
+                    WordStatus = scr.Word.Status,
+                    SuspendReason = scr.SuspendReason,
+                    Lapses = scr.Lapses,
+                })
+                .ToListAsync();
         }
 
         // POST: api/srs/bury/{cardId}?timezoneOffsetMinutes=120
@@ -1661,6 +1699,18 @@ Format (one object per provided word, in the same order):
         public int WordStatus { get; set; }
         public double? Difficulty { get; set; }
         public bool IsSuspended { get; set; }
+    }
+
+    public class SrsSuspendedCardDto
+    {
+        public int SrsCardReviewId { get; set; }
+        public int WordId { get; set; }
+        public string Term { get; set; } = string.Empty;
+        public string Translation { get; set; } = string.Empty;
+        public int WordStatus { get; set; }
+        // "manual" or "leech" (see SrsSuspendReasons).
+        public string? SuspendReason { get; set; }
+        public int Lapses { get; set; }
     }
 
     public class SrsStoryListDto

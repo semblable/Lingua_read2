@@ -14,8 +14,10 @@ import {
   getSrsAnalytics,
   updateUserSettings,
   suspendSrsCard,
+  unsuspendSrsCard,
   burySrsCard,
-  updateSrsCard
+  updateSrsCard,
+  getSrsSuspendedCards
 } from '../utils/api';
 import { SettingsContext } from '../contexts/SettingsContext';
 import '@testing-library/jest-dom';
@@ -32,8 +34,10 @@ vi.mock('../utils/api', () => ({
   getSrsAnalytics: vi.fn(),
   updateUserSettings: vi.fn(),
   suspendSrsCard: vi.fn(),
+  unsuspendSrsCard: vi.fn(),
   burySrsCard: vi.fn(),
-  updateSrsCard: vi.fn()
+  updateSrsCard: vi.fn(),
+  getSrsSuspendedCards: vi.fn()
 }));
 
 const mockSettings = {
@@ -140,6 +144,8 @@ describe('SrsReview', () => {
       leechCards: []
     });
     updateUserSettings.mockResolvedValue({});
+    getSrsSuspendedCards.mockResolvedValue([]);
+    unsuspendSrsCard.mockResolvedValue({});
   });
 
   const renderComponent = () =>
@@ -424,6 +430,47 @@ describe('SrsReview', () => {
     fireEvent.click(await screen.findByRole('button', { name: /Again/ }));
 
     expect(await screen.findByTestId('srs-status-notice')).toHaveTextContent(/gato is a leech \(forgotten 8 times\)/);
+  });
+
+  it('lists suspended cards and puts one back into review', async () => {
+    getSrsSuspendedCards
+      .mockResolvedValueOnce([
+        { srsCardReviewId: 201, wordId: 9, term: 'lobo', translation: 'wolf', suspendReason: 'leech', lapses: 9 },
+        { srsCardReviewId: 202, wordId: 10, term: 'oso', translation: 'bear', suspendReason: 'manual', lapses: 0 }
+      ])
+      .mockResolvedValue([{ srsCardReviewId: 202, wordId: 10, term: 'oso', translation: 'bear', suspendReason: 'manual', lapses: 0 }]);
+    renderComponent();
+    await selectSpanish();
+
+    expect(await screen.findByText(/Suspended cards \(2\)/)).toBeInTheDocument();
+    expect(getSrsSuspendedCards).toHaveBeenCalledWith('1');
+    fireEvent.click(screen.getByLabelText('Unsuspend lobo'));
+
+    await waitFor(() => expect(unsuspendSrsCard).toHaveBeenCalledWith(201));
+    expect(await screen.findByText(/Suspended cards \(1\)/)).toBeInTheDocument();
+    expect(screen.queryByLabelText('Unsuspend lobo')).not.toBeInTheDocument();
+  });
+
+  it('offers unsuspend instead of bury and suspend for a suspended leech', async () => {
+    getSrsAnalytics.mockResolvedValue({
+      retentionByStatus: [],
+      gradeDistribution: [],
+      totalReviewsLast30Days: 0,
+      avgReviewsPerDay: 0,
+      cardsMaturedThisWeek: 0,
+      leechThreshold: 8,
+      leechCards: [
+        { srsCardReviewId: 301, wordId: 11, term: 'zorro', translation: 'fox', lapseCount: 8, isSuspended: true },
+        { srsCardReviewId: 302, wordId: 12, term: 'rana', translation: 'frog', lapseCount: 5, isSuspended: false }
+      ]
+    });
+    renderComponent();
+    await selectSpanish();
+
+    fireEvent.click(await screen.findByLabelText('Unsuspend zorro'));
+    await waitFor(() => expect(unsuspendSrsCard).toHaveBeenCalledWith(301));
+    expect(screen.queryByLabelText('Unsuspend rana')).not.toBeInTheDocument();
+    expect(screen.getAllByTitle('Bury until tomorrow')).toHaveLength(1);
   });
 
   it('tells the user when a review moved the word to another status', async () => {

@@ -76,7 +76,7 @@ describe('SrsStoryReview (micro-contexts)', () => {
     getAllLanguages.mockResolvedValue(mockLanguages);
     getSrsStats.mockResolvedValue(mockStats);
     generateSrsStory.mockResolvedValue(mockResult);
-    submitSrsReview.mockResolvedValue({});
+    submitSrsReview.mockResolvedValue({ queued: false, clientEventId: 'evt-1', result: { srsReviewLogId: 1 } });
     getWordsByLanguage.mockResolvedValue([]);
     getSrsStories.mockResolvedValue([]);
   });
@@ -188,6 +188,42 @@ describe('SrsStoryReview (micro-contexts)', () => {
 
     expect(await screen.findByText('Session Complete!')).toBeInTheDocument();
     expect(screen.getByText(/You reviewed/)).toBeInTheDocument();
+  });
+
+  it('notes a word-status change on the reviewed card and updates that word elsewhere', async () => {
+    getWordsByLanguage.mockResolvedValue([{ term: 'gato', translation: 'cat', status: 3 }]);
+    submitSrsReview.mockResolvedValue({
+      queued: false,
+      clientEventId: 'evt-2',
+      result: { srsReviewLogId: 2, wordStatusChange: { from: 3, to: 4 } }
+    });
+    renderComponent();
+    await selectSpanish();
+    fireEvent.click(await screen.findByRole('button', generateBtnQuery));
+
+    const cards = await screen.findAllByTestId('srs-microcontext-card');
+    fireEvent.click(within(cards[0]).getByTestId('srs-microcontext-reveal'));
+    fireEvent.click(within(cards[0]).getByRole('button', { name: /^Good$/ }));
+
+    expect(await screen.findByTestId('srs-microcontext-note')).toHaveTextContent('(Familiar → Advanced)');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('notes a card that became a leech', async () => {
+    submitSrsReview.mockResolvedValue({
+      queued: false,
+      clientEventId: 'evt-3',
+      result: { srsReviewLogId: 3, becameLeech: true, lapses: 8, isSuspended: true }
+    });
+    renderComponent();
+    await selectSpanish();
+    fireEvent.click(await screen.findByRole('button', generateBtnQuery));
+
+    const cards = await screen.findAllByTestId('srs-microcontext-card');
+    fireEvent.click(within(cards[0]).getByTestId('srs-microcontext-reveal'));
+    fireEvent.click(within(cards[0]).getByRole('button', { name: /^Again$/ }));
+
+    expect(await screen.findByTestId('srs-microcontext-note')).toHaveTextContent('(Leech: forgotten 8 times, suspended)');
   });
 
   it('shows error and returns to setup when generation fails', async () => {

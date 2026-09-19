@@ -213,4 +213,4 @@ Configure flashcard reviews. Cards are scheduled with **FSRS-6** (the algorithm 
 | `SrsAutoKnownDays` | `0` | Days of stability, `0` = never | Card stability at which a review marks the word Known (5). |
 | `SrsKnownCardAction` | `"keep"` | `"keep"`, `"suspend"` | What happens to a card when its word becomes Known (from the reader, a batch import or auto-Known). Ignored words always have their card suspended. |
 | `SrsLeechThreshold` | `8` | `0` - `100` | Times forgotten that make a card a leech (and again every half as many after). `0` turns leech detection off. |
-| `SrsLeechAction` | `"tag"` | `"tag"`, `"suspend"` | Whether a leech is only tagged `leech` or also suspended. |
+| `SrsLeechAction` | `"tag"` | `"tag"`, `"suspend"` | Whether a leech is only tagged `leech` or also suspended. Suspended leeches are listed on the review page, where they can be unsuspended. |

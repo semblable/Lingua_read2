@@ -282,7 +282,7 @@ public class SrsFsrsControllerTests
         var t1 = DateTime.UtcNow.AddDays(-6);
         var cardId = AddCard(context, new SrsCardReview
         {
-            WordId = 1, UserId = userId, HasEverGraduated = true, EaseFactor = 2.5,
+            WordId = 1, UserId = userId, HasEverGraduated = true,
             Interval = 6, Repetitions = 2, LastReviewedAt = t1, NextReviewAt = DateTime.UtcNow.AddHours(-1),
         });
         context.SrsReviewLogs.AddRange(

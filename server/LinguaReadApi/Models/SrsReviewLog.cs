@@ -23,7 +23,6 @@ namespace LinguaReadApi.Models
 
         // Pre-review state (for Undo functionality)
         public int OldInterval { get; set; }
-        public double OldEaseFactor { get; set; }
         public int OldRepetitions { get; set; }
         public DateTime OldNextReviewAt { get; set; }
         public bool OldIsLearning { get; set; } = false;

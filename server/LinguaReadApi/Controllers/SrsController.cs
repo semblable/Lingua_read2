@@ -270,6 +270,7 @@ namespace LinguaReadApi.Controllers
             _context.SrsReviewLogs.Add(reviewLog);
 
             card.Apply(outcome.Card);
+            bool becameLeech = outcome.IsLapse && SrsLeeches.OnLapse(card, settings);
 
             // 3. The word's reader status follows the card (word-status sync settings).
             var statusChange = await SyncWordStatusAsync(userId, card, outcome, settings, reviewLog);
@@ -289,6 +290,7 @@ namespace LinguaReadApi.Controllers
 
             var result = ToReviewResult(card, reviewLog, scheduler, now);
             result.WordStatusChange = statusChange;
+            result.BecameLeech = becameLeech;
             return Ok(result);
         }
 
@@ -416,8 +418,8 @@ namespace LinguaReadApi.Controllers
             if (card == null) return NotFound();
 
             // Restore state
+            var lapsesAfterReview = card.Lapses;
             card.Interval = lastLog.OldInterval;
-            card.EaseFactor = lastLog.OldEaseFactor;
             card.Repetitions = lastLog.OldRepetitions;
             card.NextReviewAt = lastLog.OldNextReviewAt;
             card.IsLearning = lastLog.OldIsLearning;
@@ -439,6 +441,7 @@ namespace LinguaReadApi.Controllers
 
             // Revert daily limits and streak. Reading credit never counted toward them.
             var settings = await _context.UserSettings.FirstOrDefaultAsync(u => u.UserId == userId);
+            SrsLeeches.OnUndo(card, lapsesAfterReview, settings);
             if (settings != null && lastLog.Kind != (int)SrsReviewKind.Reading)
             {
                 var day = DayContext(settings, timezoneOffsetMinutes, now);
@@ -564,23 +567,30 @@ namespace LinguaReadApi.Controllers
                 cardQuery = cardQuery.Where(scr => scr.Word.LanguageId == languageId.Value);
             }
 
-            var allCards = await cardQuery.ToListAsync();
+            // Counted in the database: learning (0), new (1), young (2), mature (3).
+            var byGroup = await cardQuery
+                .GroupBy(c => c.IsLearning ? 0 : c.LastReviewedAt == null ? 1 : c.Interval < SrsSchedulerSettings.MatureIntervalDays ? 2 : 3)
+                .Select(g => new { g.Key, Count = g.Count() })
+                .ToDictionaryAsync(g => g.Key, g => g.Count);
+            var dueByGroup = await cardQuery
+                .Where(IsDue(now, day.TomorrowStartUtc))
+                .GroupBy(c => c.IsLearning ? 0 : c.LastReviewedAt == null ? 1 : 2)
+                .Select(g => new { g.Key, Count = g.Count() })
+                .ToDictionaryAsync(g => g.Key, g => g.Count);
 
-            var isDue = IsDue(now, day.TomorrowStartUtc).Compile();
-            var dueCards = allCards.Where(isDue).ToList();
-            var dueCount = dueCards.Count;
-            var totalCards = allCards.Count;
-            var newCards = allCards.Count(c => c.Repetitions == 0 && c.LastReviewedAt == null);
-            var learningCards = allCards.Count(c => c.IsLearning || ((c.Repetitions > 0 || c.LastReviewedAt != null) && c.Interval < 21));
-            var matureCards = allCards.Count(c => c.Interval >= 21);
+            int learningCards = byGroup.GetValueOrDefault(0);
+            int newCards = byGroup.GetValueOrDefault(1);
+            int youngCards = byGroup.GetValueOrDefault(2);
+            int matureCards = byGroup.GetValueOrDefault(3);
+            int dueLearnCount = dueByGroup.GetValueOrDefault(0);
+            int dueNewCount = dueByGroup.GetValueOrDefault(1);
+            int dueReviewCount = dueByGroup.GetValueOrDefault(2);
+
+            var reviewedToday = await cardQuery.CountAsync(c => c.LastReviewedAt >= day.TodayStartUtc);
 
             var totalPhrases = await _context.SrsPhrases
                 .AsNoTracking()
                 .CountAsync(sp => sp.UserId == userId);
-
-            var reviewedToday = allCards.Count(c =>
-                c.LastReviewedAt.HasValue &&
-                c.LastReviewedAt.Value >= day.TodayStartUtc);
 
             var (studiedNew, studiedReviews) = StudiedOn(settings, day.Today);
 
@@ -589,37 +599,36 @@ namespace LinguaReadApi.Controllers
             int maxReviews = EffectiveSrsMaxReviews(settings?.SrsMaxReviews);
             int remainingNew = Math.Max(0, maxNew - studiedNew);
             int remainingReviews = Math.Max(0, maxReviews - studiedReviews);
-
-            int dueLearnCount = dueCards.Count(c => c.IsLearning);
-            int dueNewCount = dueCards.Count(c => !c.IsLearning && c.Repetitions == 0 && c.LastReviewedAt == null);
-            int dueReviewCount = dueCards.Count(c => !c.IsLearning && (c.Repetitions > 0 || c.LastReviewedAt != null));
             int reviewableCount = dueLearnCount + Math.Min(dueNewCount, remainingNew) + Math.Min(dueReviewCount, remainingReviews);
 
-            // Calculate Retention Rate (Last 30 Days)
+            // True retention (last 30 days): how often graduated cards were remembered when
+            // they came due. Learning steps and reading credit are left out, and Hard counts
+            // as remembered.
             var thirtyDaysAgo = now.AddDays(-30);
-            var recentLogs = await _context.SrsReviewLogs
+            var reviewLogs = _context.SrsReviewLogs
                 .AsNoTracking()
-                .Where(log => log.UserId == userId && log.ReviewedAt >= thirtyDaysAgo && log.Kind != (int)SrsReviewKind.Reading)
-                .ToListAsync();
-
-            int totalRecentReviews = recentLogs.Count;
-            int goodRecentReviews = recentLogs.Count(log => log.Grade >= 2);
+                .Where(log => log.UserId == userId && log.ReviewedAt >= thirtyDaysAgo && log.Kind == (int)SrsReviewKind.Review);
+            if (languageId.HasValue)
+                reviewLogs = reviewLogs.Where(log => log.SrsCardReview.Word.LanguageId == languageId.Value);
+            int totalRecentReviews = await reviewLogs.CountAsync();
+            int passedRecentReviews = await reviewLogs.CountAsync(log => log.Grade >= 1);
             double retentionRate = totalRecentReviews > 0
-                ? Math.Round((double)goodRecentReviews / totalRecentReviews * 100, 1)
+                ? Math.Round((double)passedRecentReviews / totalRecentReviews * 100, 1)
                 : 0;
 
             return new SrsStatsDto
             {
-                DueCount = dueCount,
+                DueCount = dueLearnCount + dueNewCount + dueReviewCount,
                 ReviewableCount = reviewableCount,
-                TotalCards = totalCards,
+                TotalCards = learningCards + newCards + youngCards + matureCards,
                 NewCards = newCards,
                 LearningCards = learningCards,
+                YoungCards = youngCards,
                 MatureCards = matureCards,
                 TotalPhrases = totalPhrases,
                 ReviewedToday = reviewedToday,
-                MaxNewCards = EffectiveSrsMaxNew(settings?.SrsMaxNewCards),
-                MaxReviews = EffectiveSrsMaxReviews(settings?.SrsMaxReviews),
+                MaxNewCards = maxNew,
+                MaxReviews = maxReviews,
                 StudiedNewCardsToday = studiedNew,
                 StudiedReviewsToday = studiedReviews,
                 CurrentStreak = settings?.SrsCurrentStreak ?? 0,
@@ -913,7 +922,6 @@ namespace LinguaReadApi.Controllers
             Grade = grade,
             ReviewedAt = reviewedAt,
             OldInterval = card.Interval,
-            OldEaseFactor = card.EaseFactor,
             OldRepetitions = card.Repetitions,
             OldNextReviewAt = card.NextReviewAt,
             OldIsLearning = card.IsLearning,
@@ -953,6 +961,7 @@ namespace LinguaReadApi.Controllers
                 IsLearning = card.IsLearning,
                 CurrentLearningStepIndex = card.CurrentLearningStepIndex,
                 HasEverGraduated = card.HasEverGraduated,
+                IsSuspended = card.IsSuspended,
                 Stability = card.Stability,
                 Difficulty = card.Difficulty,
                 Lapses = card.Lapses,
@@ -1051,40 +1060,53 @@ namespace LinguaReadApi.Controllers
             string UserDate(DateTime t) => SrsDay.UserDay(t, dayOptions.TimezoneOffsetMinutes, dayOptions.DayStartHour)
                 .ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
 
-            // Fetch all review logs for the last 30 days with card info (reading credit is not a review)
-            var recentLogs = await _context.SrsReviewLogs
+            // Review logs of the last 30 days, filtered and projected in the database
+            // (reading credit is not a review).
+            var logQuery = _context.SrsReviewLogs
                 .AsNoTracking()
-                .Where(log => log.UserId == userId && log.ReviewedAt >= thirtyDaysAgo && log.Kind != (int)SrsReviewKind.Reading)
-                .Include(log => log.SrsCardReview)
-                    .ThenInclude(scr => scr.Word)
-                        .ThenInclude(w => w.Translation)
+                .Where(log => log.UserId == userId && log.ReviewedAt >= thirtyDaysAgo && log.Kind != (int)SrsReviewKind.Reading);
+            if (languageId.HasValue)
+                logQuery = logQuery.Where(log => log.SrsCardReview.Word.LanguageId == languageId.Value);
+
+            var recentLogs = await logQuery
+                .Select(log => new
+                {
+                    log.SrsCardReviewId,
+                    log.ReviewedAt,
+                    log.Grade,
+                    log.Kind,
+                    log.OldInterval,
+                    log.NewInterval,
+                    WordStatus = log.SrsCardReview.Word.Status,
+                })
                 .ToListAsync();
 
-            if (languageId.HasValue)
-                recentLogs = recentLogs.Where(log => log.SrsCardReview.Word.LanguageId == languageId.Value).ToList();
+            // Retention counts only graduated cards coming due (true retention); Hard is a pass.
+            var retentionLogs = recentLogs.Where(log => log.Kind == (int)SrsReviewKind.Review).ToList();
+            static double Rate(int passed, int total) => total > 0 ? Math.Round((double)passed / total * 100, 1) : 0;
 
             // 1. Retention by word status
-            var retentionByStatus = recentLogs
-                .GroupBy(log => log.SrsCardReview.Word.Status)
+            var retentionByStatus = retentionLogs
+                .GroupBy(log => log.WordStatus)
                 .Select(g => new RetentionByStatusDto
                 {
                     Status = g.Key,
                     TotalReviews = g.Count(),
-                    GoodReviews = g.Count(l => l.Grade >= 2),
-                    RetentionRate = g.Count() > 0 ? Math.Round((double)g.Count(l => l.Grade >= 2) / g.Count() * 100, 1) : 0
+                    GoodReviews = g.Count(l => l.Grade >= 1),
+                    RetentionRate = Rate(g.Count(l => l.Grade >= 1), g.Count())
                 })
                 .OrderBy(r => r.Status)
                 .ToList();
 
-            // 2. Accuracy trend (daily retention rate for last 30 days)
-            var accuracyTrend = recentLogs
+            // 2. Accuracy trend (daily true retention for the last 30 days)
+            var accuracyTrend = retentionLogs
                 .GroupBy(log => UserDate(log.ReviewedAt))
                 .Select(g => new AccuracyTrendDto
                 {
                     Date = g.Key,
                     TotalReviews = g.Count(),
-                    GoodReviews = g.Count(l => l.Grade >= 2),
-                    RetentionRate = g.Count() > 0 ? Math.Round((double)g.Count(l => l.Grade >= 2) / g.Count() * 100, 1) : 0
+                    GoodReviews = g.Count(l => l.Grade >= 1),
+                    RetentionRate = Rate(g.Count(l => l.Grade >= 1), g.Count())
                 })
                 .OrderBy(a => a.Date)
                 .ToList();
@@ -1107,36 +1129,40 @@ namespace LinguaReadApi.Controllers
                 .OrderBy(r => r.Date)
                 .ToList();
 
-            // 5. Leech detection (cards with 3+ "Again" grades in last 30 days)
-            var leechCards = recentLogs
-                .Where(log => log.Grade == 0)
-                .GroupBy(log => log.SrsCardReviewId)
-                .Where(g => g.Count() >= 3)
-                .Select(g =>
-                {
-                    var card = g.First().SrsCardReview;
-                    return new LeechCardDto
-                    {
-                        SrsCardReviewId = card.SrsCardReviewId,
-                        WordId = card.WordId,
-                        Term = card.Word.Term,
-                        Translation = card.Word.Translation?.Translation ?? "",
-                        LapseCount = g.Count(),
-                        WordStatus = card.Word.Status,
-                        Difficulty = card.Difficulty
-                    };
-                })
-                .OrderByDescending(l => l.LapseCount)
-                .Take(20)
-                .ToList();
-
-            // 6. Cards matured this week
-            var weekAgo = now.AddDays(-7);
-            var maturedThisWeek = await _context.SrsCardReviews
+            // 5. Leeches: cards forgotten again and again, by their lifetime lapse count.
+            // Listed from half the leech threshold on, so trouble shows before it trips.
+            int leechThreshold = SrsLeeches.Threshold(settings);
+            int listFrom = Math.Max(2, (leechThreshold > 0 ? leechThreshold : SrsLeeches.DefaultThreshold) / 2);
+            var leechQuery = _context.SrsCardReviews
                 .AsNoTracking()
-                .Where(scr => scr.UserId == userId && scr.Interval >= 21
-                    && scr.LastReviewedAt.HasValue && scr.LastReviewedAt >= weekAgo)
-                .CountAsync();
+                .Where(scr => scr.UserId == userId && scr.Lapses >= listFrom);
+            if (languageId.HasValue)
+                leechQuery = leechQuery.Where(scr => scr.Word.LanguageId == languageId.Value);
+            var leechCards = await leechQuery
+                .OrderByDescending(scr => scr.Lapses)
+                .Take(20)
+                .Select(scr => new LeechCardDto
+                {
+                    SrsCardReviewId = scr.SrsCardReviewId,
+                    WordId = scr.WordId,
+                    Term = scr.Word.Term,
+                    Translation = scr.Word.Translation != null ? scr.Word.Translation.Translation : "",
+                    LapseCount = scr.Lapses,
+                    WordStatus = scr.Word.Status,
+                    Difficulty = scr.Difficulty,
+                    IsSuspended = scr.IsSuspended,
+                })
+                .ToListAsync();
+
+            // 6. Cards that crossed into mature (interval of 21+ days) in the last 7 days
+            var weekAgo = now.AddDays(-7);
+            var maturedThisWeek = recentLogs
+                .Where(log => log.ReviewedAt >= weekAgo
+                    && log.OldInterval < SrsSchedulerSettings.MatureIntervalDays
+                    && log.NewInterval >= SrsSchedulerSettings.MatureIntervalDays)
+                .Select(log => log.SrsCardReviewId)
+                .Distinct()
+                .Count();
 
             return new SrsAnalyticsDto
             {
@@ -1145,6 +1171,7 @@ namespace LinguaReadApi.Controllers
                 GradeDistribution = gradeDistribution,
                 ReviewsPerDay = reviewsPerDay,
                 LeechCards = leechCards,
+                LeechThreshold = leechThreshold,
                 CardsMaturedThisWeek = maturedThisWeek,
                 TotalReviewsLast30Days = recentLogs.Count,
                 AvgReviewsPerDay = recentLogs.Count > 0 ? Math.Round((double)recentLogs.Count / 30, 1) : 0
@@ -1167,8 +1194,9 @@ namespace LinguaReadApi.Controllers
             var settings = await _context.UserSettings.FirstOrDefaultAsync(u => u.UserId == userId);
             var day = DayContext(settings, timezoneOffsetMinutes, now);
             var (studiedNew, studiedReviews) = StudiedOn(settings, day.Today);
-            int effectiveMaxNew = (settings?.SrsMaxNewCards ?? 0) == 0 ? 20 : settings!.SrsMaxNewCards;
-            int effectiveMaxReviews = (settings?.SrsMaxReviews ?? 0) == 0 ? 100 : settings!.SrsMaxReviews;
+            // Same caps as /srs/due (this used to default reviews to 100 instead of 200).
+            int effectiveMaxNew = EffectiveSrsMaxNew(settings?.SrsMaxNewCards);
+            int effectiveMaxReviews = EffectiveSrsMaxReviews(settings?.SrsMaxReviews);
             int remainingNew = Math.Max(0, effectiveMaxNew - studiedNew);
             int remainingReviews = Math.Max(0, effectiveMaxReviews - studiedReviews);
 
@@ -1372,10 +1400,10 @@ Format (one object per provided word, in the same order):
         }
 
         /// <summary>Daily new-card cap: DB may store 0 from an old migration default; treat as app default.</summary>
-        private static int EffectiveSrsMaxNew(int? stored) => stored is > 0 ? stored.Value : 20;
+        private static int EffectiveSrsMaxNew(int? stored) => stored is > 0 ? stored.Value : SrsSchedulerSettings.DefaultMaxNewCards;
 
         /// <summary>Daily review cap: same as <see cref="EffectiveSrsMaxNew"/>.</summary>
-        private static int EffectiveSrsMaxReviews(int? stored) => stored is > 0 ? stored.Value : 200;
+        private static int EffectiveSrsMaxReviews(int? stored) => stored is > 0 ? stored.Value : SrsSchedulerSettings.DefaultMaxReviews;
 
         /// <summary>Defensive normalizer for UserSettings.SrsCardType. Falls back to "translation".</summary>
         internal static string NormalizeCardType(string? value)
@@ -1496,8 +1524,13 @@ Format (one object per provided word, in the same order):
         public int Lapses { get; set; }
         public List<long> NextIntervals { get; set; } = new();
 
+        public bool IsSuspended { get; set; }
+
         /// <summary>Set when this review moved the word's reader status (word-status sync).</summary>
         public SrsWordStatusChangeDto? WordStatusChange { get; set; }
+
+        /// <summary>True when this lapse made the card a leech (tagged, and suspended if so configured).</summary>
+        public bool BecameLeech { get; set; }
     }
 
     public class SrsWordStatusChangeDto
@@ -1529,7 +1562,10 @@ Format (one object per provided word, in the same order):
         public int ReviewableCount { get; set; }
         public int TotalCards { get; set; }
         public int NewCards { get; set; }
+        /// <summary>Cards on a (re)learning step.</summary>
         public int LearningCards { get; set; }
+        /// <summary>Graduated cards with an interval under 21 days.</summary>
+        public int YoungCards { get; set; }
         public int MatureCards { get; set; }
         public int TotalPhrases { get; set; }
         public int ReviewedToday { get; set; }
@@ -1541,6 +1577,7 @@ Format (one object per provided word, in the same order):
 
         public int CurrentStreak { get; set; }
         public int LongestStreak { get; set; }
+        /// <summary>True retention over 30 days: graduated cards remembered (Hard/Good/Easy) when due.</summary>
         public double RetentionRate { get; set; }
     }
 
@@ -1578,6 +1615,8 @@ Format (one object per provided word, in the same order):
         public List<GradeDistributionDto> GradeDistribution { get; set; } = new();
         public List<ReviewsPerDayDto> ReviewsPerDay { get; set; } = new();
         public List<LeechCardDto> LeechCards { get; set; } = new();
+        /// <summary>Lapses that make a card a leech (0 = detection off).</summary>
+        public int LeechThreshold { get; set; }
         public int CardsMaturedThisWeek { get; set; }
         public int TotalReviewsLast30Days { get; set; }
         public double AvgReviewsPerDay { get; set; }
@@ -1620,6 +1659,7 @@ Format (one object per provided word, in the same order):
         public int LapseCount { get; set; }
         public int WordStatus { get; set; }
         public double? Difficulty { get; set; }
+        public bool IsSuspended { get; set; }
     }
 
     public class SrsStoryListDto

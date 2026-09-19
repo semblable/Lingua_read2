@@ -180,7 +180,9 @@ namespace LinguaReadApi.Controllers
                 SrsStatusLevel3Days = settings.SrsStatusLevel3Days,
                 SrsStatusLevel4Days = settings.SrsStatusLevel4Days,
                 SrsAutoKnownDays = settings.SrsAutoKnownDays,
-                SrsKnownCardAction = SrsCardLifecycle.KnownCardAction(settings)
+                SrsKnownCardAction = SrsCardLifecycle.KnownCardAction(settings),
+                SrsLeechThreshold = SrsLeeches.Threshold(settings),
+                SrsLeechAction = SrsLeeches.LeechAction(settings)
             };
         }
 
@@ -499,6 +501,13 @@ namespace LinguaReadApi.Controllers
                     return BadRequest(new { message = "srsKnownCardAction must be one of: keep, suspend." });
                 settings.SrsKnownCardAction = knownAction;
             }
+            if (NormalizeChoice(updateDto.SrsLeechAction) is { } leechAction)
+            {
+                if (!SrsLeeches.IsAction(leechAction))
+                    return BadRequest(new { message = "srsLeechAction must be one of: tag, suspend." });
+                settings.SrsLeechAction = leechAction;
+            }
+            settings.SrsLeechThreshold = updateDto.SrsLeechThreshold ?? settings.SrsLeechThreshold;
             var level3Days = updateDto.SrsStatusLevel3Days ?? settings.SrsStatusLevel3Days;
             var level4Days = updateDto.SrsStatusLevel4Days ?? settings.SrsStatusLevel4Days;
             var autoKnownDays = updateDto.SrsAutoKnownDays ?? settings.SrsAutoKnownDays;
@@ -592,7 +601,9 @@ namespace LinguaReadApi.Controllers
                 SrsStatusLevel3Days = settings.SrsStatusLevel3Days,
                 SrsStatusLevel4Days = settings.SrsStatusLevel4Days,
                 SrsAutoKnownDays = settings.SrsAutoKnownDays,
-                SrsKnownCardAction = SrsCardLifecycle.KnownCardAction(settings)
+                SrsKnownCardAction = SrsCardLifecycle.KnownCardAction(settings),
+                SrsLeechThreshold = SrsLeeches.Threshold(settings),
+                SrsLeechAction = SrsLeeches.LeechAction(settings)
             };
         }
 
@@ -1026,6 +1037,8 @@ namespace LinguaReadApi.Controllers
         public int SrsStatusLevel4Days { get; set; } = 21;
         public int SrsAutoKnownDays { get; set; }
         public string SrsKnownCardAction { get; set; } = "keep";
+        public int SrsLeechThreshold { get; set; } = 8;
+        public string SrsLeechAction { get; set; } = "tag";
     }
 
     public class UpdateUserSettingsDto
@@ -1205,6 +1218,13 @@ namespace LinguaReadApi.Controllers
 
         [StringLength(20)]
         public string? SrsKnownCardAction { get; set; }
+
+        // Lapses that make a card a leech; 0 turns leech detection off.
+        [Range(0, 100)]
+        public int? SrsLeechThreshold { get; set; }
+
+        [StringLength(20)]
+        public string? SrsLeechAction { get; set; }
     }
 
     public class UpdateAudiobookProgressDto

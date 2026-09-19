@@ -125,6 +125,8 @@ const SrsReview = () => {
     srsStatusLevel4Days: number | string;
     srsAutoKnownDays: number | string;
     srsKnownCardAction: string;
+    srsLeechThreshold: number | string;
+    srsLeechAction: string;
   };
   const [localSettings, setLocalSettings] = useState<SrsLocalSettings>({
     srsMaxNewCards: 20,
@@ -143,13 +145,15 @@ const SrsReview = () => {
     srsStatusLevel3Days: 7,
     srsStatusLevel4Days: 21,
     srsAutoKnownDays: 0,
-    srsKnownCardAction: 'keep'
+    srsKnownCardAction: 'keep',
+    srsLeechThreshold: 8,
+    srsLeechAction: 'tag'
   });
 
   useEffect(() => {
     setLocalSettings({
       srsMaxNewCards: settings?.srsMaxNewCards ?? 20,
-      srsMaxReviews: settings?.srsMaxReviews ?? 100,
+      srsMaxReviews: settings?.srsMaxReviews ?? 200,
       srsReviewOrder: settings?.srsReviewOrder ?? 'mix',
       srsLearningStepMinutes: settings?.srsLearningStepMinutes ?? '1,10',
       srsMaxIntervalDays: settings?.srsMaxIntervalDays ?? 36500,
@@ -164,7 +168,9 @@ const SrsReview = () => {
       srsStatusLevel3Days: settings?.srsStatusLevel3Days ?? 7,
       srsStatusLevel4Days: settings?.srsStatusLevel4Days ?? 21,
       srsAutoKnownDays: settings?.srsAutoKnownDays ?? 0,
-      srsKnownCardAction: settings?.srsKnownCardAction ?? 'keep'
+      srsKnownCardAction: settings?.srsKnownCardAction ?? 'keep',
+      srsLeechThreshold: settings?.srsLeechThreshold ?? 8,
+      srsLeechAction: settings?.srsLeechAction ?? 'tag'
     });
   }, [settings]);
 
@@ -208,6 +214,11 @@ const SrsReview = () => {
       setError('Status thresholds must rise: level 3 <= level 4 <= Known (or Known set to 0 for never).');
       return;
     }
+    const leechThreshold = parseInt(String(localSettings.srsLeechThreshold), 10);
+    if (isNaN(leechThreshold) || leechThreshold < 0 || leechThreshold > 100) {
+      setError('Leech threshold must be between 0 (off) and 100.');
+      return;
+    }
     try {
       await updateUserSettings({
         srsMaxNewCards: maxNew,
@@ -226,7 +237,9 @@ const SrsReview = () => {
         srsStatusLevel3Days: level3Days,
         srsStatusLevel4Days: level4Days,
         srsAutoKnownDays: autoKnownDays,
-        srsKnownCardAction: localSettings.srsKnownCardAction
+        srsKnownCardAction: localSettings.srsKnownCardAction,
+        srsLeechThreshold: leechThreshold,
+        srsLeechAction: localSettings.srsLeechAction
       });
       updateSetting('srsMaxNewCards', maxNew);
       updateSetting('srsMaxReviews', maxReviews);
@@ -245,6 +258,8 @@ const SrsReview = () => {
       updateSetting('srsStatusLevel4Days', level4Days);
       updateSetting('srsAutoKnownDays', autoKnownDays);
       updateSetting('srsKnownCardAction', localSettings.srsKnownCardAction);
+      updateSetting('srsLeechThreshold', leechThreshold);
+      updateSetting('srsLeechAction', localSettings.srsLeechAction);
       setShowSettingsModal(false);
       loadStats(); // refresh visual stats
     } catch (err: unknown) {
@@ -372,16 +387,20 @@ const SrsReview = () => {
       let nextQueue = queue;
       if (!submitted.queued) {
         const result = submitted.result;
-        if (result.isLearning && result.nextReviewAt) {
+        if (result.isLearning && !result.isSuspended && result.nextReviewAt) {
           const updated: DueCard = { ...currentCard, ...result };
           nextQueue = requeue(queue, updated, Date.parse(result.nextReviewAt), Date.now());
         }
       }
 
       const statusChange = submitted.queued ? null : submitted.result.wordStatusChange;
-      if (statusChange?.from != null && statusChange.to != null) {
+      if (!submitted.queued && submitted.result.becameLeech) {
         setStatusNotice(
-          `${currentCard.term}: ${STATUS_LABELS[statusChange.from as WordStatus]} → ${STATUS_LABELS[statusChange.to as WordStatus]}`
+          `${currentCard.term} is a leech (forgotten ${submitted.result.lapses} times)${submitted.result.isSuspended ? ' and was suspended' : ''}. Try a new sentence or mnemonic for it.`
+        );
+      } else if (statusChange?.from != null && statusChange.to != null) {
+        setStatusNotice(
+          `Word status: ${currentCard.term}: ${STATUS_LABELS[statusChange.from as WordStatus]} → ${STATUS_LABELS[statusChange.to as WordStatus]}`
         );
       }
 
@@ -620,7 +639,7 @@ const SrsReview = () => {
             <Card.Body className="py-3">
               <div className="d-flex justify-content-between align-items-center mb-3">
                 <Badge bg="danger" className="srs-streak-badge">Streak: {stats.currentStreak}d ({stats.longestStreak} best)</Badge>
-                <Badge bg="success" className="srs-streak-badge">Retention: {stats.retentionRate}%</Badge>
+                <Badge bg="success" className="srs-streak-badge" title="Share of graduated cards you remembered when they came due (last 30 days)">True retention: {stats.retentionRate}%</Badge>
               </div>
               <Row className="text-center g-2 mb-3">
                 <Col>
@@ -629,6 +648,7 @@ const SrsReview = () => {
                 </Col>
                 <Col><div className="srs-stat-value text-info">{stats.newCards}</div><div className="srs-stat-label">New</div></Col>
                 <Col><div className="srs-stat-value text-warning">{stats.learningCards}</div><div className="srs-stat-label">Learning</div></Col>
+                <Col><div className="srs-stat-value text-primary">{stats.youngCards}</div><div className="srs-stat-label">Young</div></Col>
                 <Col><div className="srs-stat-value text-success">{stats.matureCards}</div><div className="srs-stat-label">Mature</div></Col>
                 <Col><div className="srs-stat-value">{stats.reviewedToday}</div><div className="srs-stat-label">Today</div></Col>
               </Row>
@@ -697,7 +717,7 @@ const SrsReview = () => {
             <Col md={6}>
               <Card className="shadow-sm h-100">
                 <Card.Body className="py-2">
-                  <small className="text-muted fw-bold mb-2 d-block text-center">Retention by Status (30d)</small>
+                  <small className="text-muted fw-bold mb-2 d-block text-center">True Retention by Status (30d)</small>
                   {analytics.retentionByStatus?.map((r) => (
                     <div key={r.status} className="d-flex align-items-center mb-1">
                       <Badge bg={STATUS_VARIANTS[r.status as WordStatus]} className="me-2" style={{ width: '70px', fontSize: '0.7rem' }}>
@@ -752,7 +772,9 @@ const SrsReview = () => {
         {analytics && (analytics.leechCards?.length ?? 0) > 0 && !statsLoading && (
           <Card className="mb-3 shadow-sm border-warning">
             <Card.Body className="py-2">
-              <small className="text-muted fw-bold mb-2 d-block">Leeches — cards with 3+ lapses (30d)</small>
+              <small className="text-muted fw-bold mb-2 d-block">
+                Struggling cards — forgotten most often{(analytics.leechThreshold ?? 0) > 0 ? ` (leech at ${analytics.leechThreshold})` : ''}
+              </small>
               <div className="d-flex flex-wrap gap-2">
                 {analytics.leechCards?.map((lc) => (
                   <Badge
@@ -761,9 +783,9 @@ const SrsReview = () => {
                     text="dark"
                     className="d-flex align-items-center gap-1"
                     style={{ fontSize: '0.75rem', padding: '0.3rem 0.6rem' }}
-                    title={`${lc.translation} — ${lc.lapseCount} lapses${lc.difficulty != null ? `, difficulty ${lc.difficulty.toFixed(1)}/10` : ''}`}
+                    title={`${lc.translation} — ${lc.lapseCount} lapses${lc.difficulty != null ? `, difficulty ${lc.difficulty.toFixed(1)}/10` : ''}${lc.isSuspended ? ' (suspended)' : ''}`}
                   >
-                    {lc.term} <span className="opacity-75">({lc.lapseCount}x)</span>
+                    {lc.term} <span className="opacity-75">({lc.lapseCount}x{lc.isSuspended ? ', suspended' : ''})</span>
                     <span
                       role="button"
                       title="Bury until tomorrow"
@@ -1077,6 +1099,38 @@ const SrsReview = () => {
                 <Form.Text className="text-muted">Ignored words always have their card suspended.</Form.Text>
               </Form.Group>
             </fieldset>
+            <fieldset className="border-top pt-3 mb-3">
+              <legend className="fs-6">Leeches</legend>
+              <Row className="g-2">
+                <Col xs={5}>
+                  <Form.Group controlId="srs-leech-threshold">
+                    <Form.Label className="small">Leech after (times forgotten)</Form.Label>
+                    <Form.Control
+                      type="number"
+                      min={0}
+                      max={100}
+                      value={localSettings.srsLeechThreshold}
+                      onChange={e => setLocalSettings(p => ({ ...p, srsLeechThreshold: e.target.value }))}
+                    />
+                  </Form.Group>
+                </Col>
+                <Col>
+                  <Form.Group controlId="srs-leech-action">
+                    <Form.Label className="small">Then</Form.Label>
+                    <Form.Select
+                      value={localSettings.srsLeechAction}
+                      onChange={e => setLocalSettings(p => ({ ...p, srsLeechAction: e.target.value }))}
+                    >
+                      <option value="tag">Tag it "leech"</option>
+                      <option value="suspend">Tag and suspend it</option>
+                    </Form.Select>
+                  </Form.Group>
+                </Col>
+              </Row>
+              <Form.Text className="text-muted">
+                A card forgotten this many times (and every half as many again) wastes review time; 0 turns this off.
+              </Form.Text>
+            </fieldset>
             <details className="mb-2">
               <summary className="small text-muted">Advanced: FSRS parameters</summary>
               <Form.Group className="mt-2" controlId="srs-fsrs-weights">
@@ -1185,7 +1239,7 @@ const SrsReview = () => {
       {error && <Alert variant="danger" className="mb-2" dismissible onClose={() => setError(null)}>{error}</Alert>}
       {statusNotice && (
         <Alert variant="success" className="mb-2 py-1 small" data-testid="srs-status-notice">
-          Word status: {statusNotice}
+          {statusNotice}
         </Alert>
       )}
 

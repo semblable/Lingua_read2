@@ -32,7 +32,7 @@ namespace LinguaReadApi.Services.Srs
             if (estimateMissingState && (stability == null || difficulty == null)
                 && state is SrsCardState.Review or SrsCardState.Relearning)
             {
-                (stability, difficulty) = SrsMemoryStateInitializer.EstimateFromLegacy(card.Interval, card.EaseFactor);
+                (stability, difficulty) = SrsMemoryStateInitializer.EstimateWithoutHistory(card.Interval);
             }
 
             return new SrsCardSnapshot
@@ -70,6 +70,13 @@ namespace LinguaReadApi.Services.Srs
         public const double MinDesiredRetention = 0.70;
         public const double MaxDesiredRetention = 0.97;
         public const double DefaultDesiredRetention = 0.9;
+
+        /// <summary>Daily caps when the user hasn't set one (old rows may hold 0).</summary>
+        public const int DefaultMaxNewCards = 20;
+        public const int DefaultMaxReviews = 200;
+
+        /// <summary>A card with an interval of this many days or more counts as mature.</summary>
+        public const int MatureIntervalDays = 21;
 
         /// <summary>Learning cards due within this window are served early when nothing else is left.</summary>
         public static readonly TimeSpan LearnAhead = TimeSpan.FromMinutes(20);

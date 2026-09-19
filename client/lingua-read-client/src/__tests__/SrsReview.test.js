@@ -8,6 +8,7 @@ import {
   getSrsDueCards,
   submitSrsReview,
   undoSrsReview,
+  cancelQueuedSrsReview,
   getSrsForecast,
   getSrsHeatmap,
   getSrsAnalytics,
@@ -25,6 +26,7 @@ vi.mock('../utils/api', () => ({
   getSrsDueCards: vi.fn(),
   submitSrsReview: vi.fn(),
   undoSrsReview: vi.fn(),
+  cancelQueuedSrsReview: vi.fn(),
   getSrsForecast: vi.fn(),
   getSrsHeatmap: vi.fn(),
   getSrsAnalytics: vi.fn(),
@@ -93,8 +95,8 @@ describe('SrsReview', () => {
       phrases: [{ srsPhraseId: 1, sentence: 'El gato duerme.' }],
       repetitions: 0,
       interval: 0,
-      easeFactor: 2.5,
-      isLearning: false
+      isLearning: false,
+      nextIntervals: [60, 330, 600, 86400]
     },
     {
       srsCardReviewId: 102,
@@ -105,10 +107,17 @@ describe('SrsReview', () => {
       phrases: [{ srsPhraseId: 2, sentence: 'El perro corre.' }],
       repetitions: 0,
       interval: 0,
-      easeFactor: 2.5,
-      isLearning: false
+      isLearning: false,
+      nextIntervals: [60, 330, 600, 86400]
     }
   ];
+
+  // Server response for a grade that moves the card out of today's session.
+  const graduated = (logId) => ({
+    queued: false,
+    clientEventId: `evt-${logId}`,
+    result: { srsReviewLogId: logId, isLearning: false, interval: 1, nextReviewAt: new Date(Date.now() + 86_400_000).toISOString() }
+  });
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -116,8 +125,9 @@ describe('SrsReview', () => {
     getAllLanguages.mockResolvedValue(mockLanguages);
     getSrsStats.mockResolvedValue(mockStats);
     getSrsDueCards.mockResolvedValue(mockCards);
-    submitSrsReview.mockResolvedValue({});
+    submitSrsReview.mockResolvedValue(graduated(1));
     undoSrsReview.mockResolvedValue({});
+    cancelQueuedSrsReview.mockResolvedValue(true);
     getSrsForecast.mockResolvedValue([]);
     getSrsHeatmap.mockResolvedValue([]);
     getSrsAnalytics.mockResolvedValue({
@@ -230,6 +240,125 @@ describe('SrsReview', () => {
 
     // Next card visible
     expect(await screen.findByText(/corre/)).toBeInTheDocument();
+  });
+
+  it('labels the grade buttons with the intervals the server previewed', async () => {
+    renderComponent();
+    await selectSpanish();
+    fireEvent.click(await screen.findByRole('button', { name: /Start Review/i }));
+    await screen.findByText(/duerme/);
+    fireEvent.click(screen.getByText(/Click or press/));
+
+    expect(await screen.findByRole('button', { name: /Again.*1m/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Hard.*5\.5m/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Good.*10m/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Easy.*1d/ })).toBeInTheDocument();
+  });
+
+  it('brings a card back later in the session when it lands on a learning step', async () => {
+    submitSrsReview
+      .mockResolvedValueOnce({
+        queued: false,
+        clientEventId: 'evt-1',
+        result: {
+          srsReviewLogId: 1,
+          isLearning: true,
+          currentLearningStepIndex: 0,
+          nextReviewAt: new Date(Date.now() + 60_000).toISOString(),
+          nextIntervals: [60, 330, 600, 86400]
+        }
+      })
+      .mockResolvedValue(graduated(2));
+    renderComponent();
+    await selectSpanish();
+    fireEvent.click(await screen.findByRole('button', { name: /Start Review/i }));
+    await screen.findByText(/duerme/);
+
+    // gato -> Again: comes back after perro.
+    fireEvent.click(screen.getByText(/Click or press/));
+    fireEvent.click(await screen.findByRole('button', { name: /Again/ }));
+    expect(await screen.findByText(/corre/)).toBeInTheDocument();
+    expect(screen.getByText('1/3')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText(/Click or press/));
+    fireEvent.click(await screen.findByRole('button', { name: /^Good/ }));
+
+    // Nothing else is left, so gato is shown ahead of its 1-minute step.
+    expect(await screen.findByText(/duerme/)).toBeInTheDocument();
+    expect(screen.queryByText('Session Complete')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText(/Click or press/));
+    fireEvent.click(await screen.findByRole('button', { name: /^Good/ }));
+    expect(await screen.findByText('Session Complete')).toBeInTheDocument();
+    expect(submitSrsReview).toHaveBeenCalledTimes(3);
+  });
+
+  it('undo reverts the graded review by its log id and shows that card again', async () => {
+    submitSrsReview.mockResolvedValue(graduated(55));
+    renderComponent();
+    await selectSpanish();
+    fireEvent.click(await screen.findByRole('button', { name: /Start Review/i }));
+    await screen.findByText(/duerme/);
+    fireEvent.click(screen.getByText(/Click or press/));
+    fireEvent.click(await screen.findByRole('button', { name: /^Good/ }));
+    await screen.findByText(/corre/);
+
+    fireEvent.click(screen.getByRole('button', { name: /Undo/ }));
+
+    await waitFor(() => expect(undoSrsReview).toHaveBeenCalledWith(55));
+    expect(await screen.findByText(/duerme/)).toBeInTheDocument();
+    expect(cancelQueuedSrsReview).not.toHaveBeenCalled();
+  });
+
+  it('undo of a grade still queued offline drops it from the queue instead', async () => {
+    submitSrsReview.mockResolvedValue({ queued: true, clientEventId: 'evt-offline' });
+    renderComponent();
+    await selectSpanish();
+    fireEvent.click(await screen.findByRole('button', { name: /Start Review/i }));
+    await screen.findByText(/duerme/);
+    fireEvent.click(screen.getByText(/Click or press/));
+    fireEvent.click(await screen.findByRole('button', { name: /^Good/ }));
+    await screen.findByText(/corre/);
+
+    fireEvent.click(screen.getByRole('button', { name: /Undo/ }));
+
+    await waitFor(() => expect(cancelQueuedSrsReview).toHaveBeenCalledWith('evt-offline'));
+    expect(undoSrsReview).not.toHaveBeenCalled();
+    expect(await screen.findByText(/duerme/)).toBeInTheDocument();
+  });
+
+  it('saves the FSRS options and rejects a retention outside 0.70-0.97', async () => {
+    renderComponent();
+    await selectSpanish();
+    fireEvent.click(await screen.findByRole('button', { name: /Options/i }));
+
+    fireEvent.change(await screen.findByLabelText('Desired Retention'), { target: { value: '0.99' } });
+    fireEvent.click(screen.getByRole('button', { name: /Save Changes/i }));
+    expect(await screen.findByText(/between 0.70 and 0.97/)).toBeInTheDocument();
+    expect(updateUserSettings).not.toHaveBeenCalled();
+
+    fireEvent.change(screen.getByLabelText('Desired Retention'), { target: { value: '0.85' } });
+    fireEvent.change(screen.getByLabelText(/Relearning Steps/), { target: { value: '5, 30' } });
+    fireEvent.change(screen.getByLabelText(/Next Day Starts At/), { target: { value: '6' } });
+    fireEvent.click(screen.getByRole('button', { name: /Save Changes/i }));
+
+    await waitFor(() => {
+      expect(updateUserSettings).toHaveBeenCalledWith(expect.objectContaining({
+        srsDesiredRetention: 0.85,
+        srsRelearningStepMinutes: '5, 30',
+        srsDayStartHour: 6,
+        srsFsrsWeights: ''
+      }));
+    });
+  });
+
+  it("keys heatmap cells by the local calendar date, so today's reviews land on today", async () => {
+    const d = new Date();
+    const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    getSrsHeatmap.mockResolvedValue([{ date: today, reviewCount: 3 }]);
+    renderComponent();
+    await selectSpanish();
+
+    expect(await screen.findByTitle(`${today}: 3 reviews`)).toBeInTheDocument();
   });
 
   it('completes the session after grading the final card', async () => {

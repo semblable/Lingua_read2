@@ -364,6 +364,23 @@ namespace LinguaReadApi.Data
                 .HasForeignKey(srl => srl.SrsCardReviewId)
                 .OnDelete(DeleteBehavior.Cascade);
 
+            // Idempotency guard for offline review replays, mirroring UserActivities.
+            modelBuilder.Entity<SrsReviewLog>()
+                .HasIndex(srl => new { srl.UserId, srl.ClientEventId })
+                .IsUnique()
+                .HasDatabaseName("IX_SrsReviewLogs_UserId_ClientEventId")
+                .HasFilter("\"ClientEventId\" IS NOT NULL");
+
+            // History replay and undo read a card's logs newest-first.
+            modelBuilder.Entity<SrsReviewLog>()
+                .HasIndex(srl => new { srl.SrsCardReviewId, srl.ReviewedAt });
+
+            // Per-user date-range reads (heatmap, retention, analytics, streak undo). Also
+            // stands in for the plain UserId FK index, which the filtered ClientEventId index
+            // above can't serve because it skips rows without a client event id.
+            modelBuilder.Entity<SrsReviewLog>()
+                .HasIndex(srl => new { srl.UserId, srl.ReviewedAt });
+
             // Configure SrsPhrase entity
             modelBuilder.Entity<SrsPhrase>()
                 .HasOne(sp => sp.User)

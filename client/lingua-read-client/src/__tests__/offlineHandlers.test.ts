@@ -33,3 +33,34 @@ describe('productionSyncHandlers.wordStatusUpdate', () => {
     expect(body).not.toHaveProperty('translation');
   });
 });
+
+describe('productionSyncHandlers.srsReview', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  test('replays the stored event id, review time and time zone verbatim', async () => {
+    await productionSyncHandlers.srsReview({
+      type: 'srsReview',
+      payload: { cardId: 7, grade: 2, clientEventId: 'evt-1', reviewedAt: '2026-09-19T08:00:00.000Z', timezoneOffsetMinutes: 120 },
+    });
+
+    const [url, options] = vi.mocked(fetchApi).mock.calls[0];
+    expect(url).toBe('/srs/review?timezoneOffsetMinutes=120');
+    expect(options?.method).toBe('POST');
+    expect(JSON.parse(String(options?.body))).toEqual({
+      srsCardReviewId: 7,
+      grade: 2,
+      clientEventId: 'evt-1',
+      reviewedAt: '2026-09-19T08:00:00.000Z',
+    });
+  });
+
+  test('still replays grades queued by older builds without those fields', async () => {
+    await productionSyncHandlers.srsReview({ type: 'srsReview', payload: { cardId: 7, grade: 0 } });
+
+    const [url, options] = vi.mocked(fetchApi).mock.calls[0];
+    expect(url).toBe('/srs/review?timezoneOffsetMinutes=0');
+    expect(JSON.parse(String(options?.body))).toEqual({ srsCardReviewId: 7, grade: 0 });
+  });
+});

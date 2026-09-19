@@ -8,9 +8,14 @@ using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Linq;
 using System.Collections.Generic;
+using System.Globalization;
+using System.Linq.Expressions;
+using Microsoft.AspNetCore.Mvc.ModelBinding;
 using LinguaReadApi.Data;
 using LinguaReadApi.Models;
 using LinguaReadApi.Services;
+using LinguaReadApi.Services.Srs;
+using LinguaReadApi.Utilities;
 
 namespace LinguaReadApi.Controllers
 {
@@ -28,7 +33,7 @@ namespace LinguaReadApi.Controllers
             _storyGenerationServiceFactory = storyGenerationServiceFactory;
         }
 
-        // GET: api/srs/due?languageId=1&status=1,2&onlyOneTarget=false&limit=20
+        // GET: api/srs/due?languageId=1&status=1,2&onlyOneTarget=false&limit=20&timezoneOffsetMinutes=120
         [HttpGet("due")]
         public async Task<ActionResult<List<SrsDueCardDto>>> GetDueCards(
             [FromQuery] int? languageId = null,
@@ -36,14 +41,16 @@ namespace LinguaReadApi.Controllers
             [FromQuery] bool onlyOneTarget = false,
             [FromQuery] int? flag = null,
             [FromQuery] string? tags = null,
-            [FromQuery] int limit = 50)
+            [FromQuery] int limit = 50,
+            [FromQuery] int timezoneOffsetMinutes = 0)
         {
             var userId = GetUserId();
             var now = DateTime.UtcNow;
-            var today = now.Date;
+            limit = Math.Clamp(limit, 1, 200);
 
             // 1. Get User Limits
-            var settings = await _context.UserSettings.FirstOrDefaultAsync(u => u.UserId == userId);
+            var settings = await _context.UserSettings.AsNoTracking().FirstOrDefaultAsync(u => u.UserId == userId);
+            var day = DayContext(settings, timezoneOffsetMinutes, now);
             // Migration AddAnkiSrsSettings defaulted these columns to 0; 0 is not a valid cap (pools stay empty).
             int maxNew = EffectiveSrsMaxNew(settings?.SrsMaxNewCards);
             int maxReviews = EffectiveSrsMaxReviews(settings?.SrsMaxReviews);
@@ -57,9 +64,7 @@ namespace LinguaReadApi.Controllers
             string cardType = NormalizeCardType(settings?.SrsCardType);
             bool emitClozeSentence = cardType is "cloze" or "mixed";
 
-            int studiedNew = (settings?.SrsDailyStudyDate?.Date == today) ? settings.SrsDailyNewCardsStudied : 0;
-            int studiedReviews = (settings?.SrsDailyStudyDate?.Date == today) ? settings.SrsDailyReviewsStudied : 0;
-            
+            var (studiedNew, studiedReviews) = StudiedOn(settings, day.Today);
             int remainingNew = Math.Max(0, maxNew - studiedNew);
             int remainingReviews = Math.Max(0, maxReviews - studiedReviews);
 
@@ -69,9 +74,9 @@ namespace LinguaReadApi.Controllers
             // 2. Base query for due cards
             var query = _context.SrsCardReviews
                 .AsNoTracking()
-                .Where(scr => scr.UserId == userId && scr.NextReviewAt <= now)
-                .Where(scr => !scr.IsSuspended)
+                .Where(scr => scr.UserId == userId && !scr.IsSuspended)
                 .Where(scr => scr.BuriedUntil == null || scr.BuriedUntil <= now)
+                .Where(IsDue(now, day.TomorrowStartUtc))
                 .Include(scr => scr.Word)
                     .ThenInclude(w => w.Translation)
                 .AsQueryable();
@@ -96,9 +101,14 @@ namespace LinguaReadApi.Controllers
                         ("," + scr.Tags.ToLower() + ",").Contains("," + t + ",")));
             }
 
-            // 3. Separate Queries & Over-fetch
-            var learningCardsPool = await query.Where(scr => scr.IsLearning).OrderBy(scr => scr.NextReviewAt).ToListAsync();
-            
+            // 3. Separate queries. The 1T filter drops cards after fetching, so over-fetch when it's on.
+            int overFetch = onlyOneTarget ? 4 : 1;
+            var learningCardsPool = await query
+                .Where(scr => scr.IsLearning)
+                .OrderBy(scr => scr.NextReviewAt)
+                .Take(limit * overFetch)
+                .ToListAsync();
+
             var newCardsPool = new List<SrsCardReview>();
             if (remainingNew > 0)
             {
@@ -106,50 +116,49 @@ namespace LinguaReadApi.Controllers
                     .Where(scr => !scr.IsLearning && scr.Repetitions == 0 && scr.LastReviewedAt == null)
                     .OrderByDescending(scr => _context.TextWords.Count(tw => tw.WordId == scr.WordId)) // Safe EF Core explicit subquery
                     .ThenBy(scr => scr.CreatedAt);
-                newCardsPool = await newCardsQuery.Take(Math.Max(limit * 2, remainingNew * 2)).ToListAsync();
+                newCardsPool = await newCardsQuery.Take(Math.Min(remainingNew, limit) * overFetch).ToListAsync();
             }
 
             var reviewCardsPool = new List<SrsCardReview>();
             if (remainingReviews > 0)
             {
                 var reviewCardsQuery = query.Where(scr => !scr.IsLearning && (scr.Repetitions > 0 || scr.LastReviewedAt != null)).OrderBy(scr => scr.NextReviewAt);
-                reviewCardsPool = await reviewCardsQuery.Take(Math.Max(limit * 2, remainingReviews * 2)).ToListAsync();
+                reviewCardsPool = await reviewCardsQuery.Take(Math.Min(remainingReviews, limit) * overFetch).ToListAsync();
             }
 
             var allFetchedCards = learningCardsPool.Concat(newCardsPool).Concat(reviewCardsPool).ToList();
             if (!allFetchedCards.Any()) return new List<SrsDueCardDto>();
 
-            // 4. Fetch Phrases for 1T validation
+            // 4. Fetch phrases, then count unknown words in each card's newest phrase in one pass (1T).
             var cardWordIds = allFetchedCards.Select(c => c.WordId).Distinct().ToList();
             var phrases = await _context.SrsPhrases
                 .AsNoTracking()
                 .Where(sp => sp.UserId == userId && cardWordIds.Contains(sp.WordId))
                 .ToListAsync();
-            var phrasesByWordId = phrases.GroupBy(p => p.WordId).ToDictionary(g => g.Key, g => g.ToList());
+            var phrasesByWordId = phrases
+                .GroupBy(p => p.WordId)
+                .ToDictionary(g => g.Key, g => g.OrderByDescending(p => p.CreatedAt).ToList());
+
+            var unknownCounts = await SrsUnknownWordCounter.CountAsync(_context, userId, allFetchedCards
+                .Where(c => phrasesByWordId.ContainsKey(c.WordId))
+                .Select(c => new SrsUnknownWordCounter.Sentence(
+                    c.SrsCardReviewId, c.WordId, c.Word.LanguageId, phrasesByWordId[c.WordId][0].Sentence))
+                .ToList());
 
             // 5. Apply 1T filter to build lists
+            var scheduler = new SrsScheduler(day.Options);
             var validLearningCards = new List<SrsDueCardDto>();
             var validNewCards = new List<SrsDueCardDto>();
             var validReviewCards = new List<SrsDueCardDto>();
 
             foreach (var card in allFetchedCards)
             {
-                var cardPhrases = phrasesByWordId.GetValueOrDefault(card.WordId, new List<SrsPhrase>());
-                int unknownWordsInBestPhrase = 0;
-                SrsPhrase? bestPhrase = null;
+                var cardPhrases = phrasesByWordId.GetValueOrDefault(card.WordId) ?? new List<SrsPhrase>();
+                var bestPhrase = cardPhrases.FirstOrDefault();
+                int unknownWordsInBestPhrase = unknownCounts.GetValueOrDefault(card.SrsCardReviewId);
 
-                if (cardPhrases.Any())
-                {
-                    bestPhrase = cardPhrases.OrderByDescending(p => p.CreatedAt).First();
-                    unknownWordsInBestPhrase = await CountUnknownWordsInSentence(
-                        bestPhrase.Sentence, userId, card.Word.LanguageId, card.WordId);
-
-                    if (onlyOneTarget && unknownWordsInBestPhrase != 1) continue; // Skip non-1T
-                }
-                else if (onlyOneTarget)
-                {
-                    continue; // No phrases for 1T
-                }
+                // 1T needs a phrase whose only unknown word is the card's own.
+                if (onlyOneTarget && (bestPhrase == null || unknownWordsInBestPhrase != 1)) continue;
 
                 string? clozeSentence = null;
                 if (emitClozeSentence && bestPhrase != null)
@@ -157,38 +166,21 @@ namespace LinguaReadApi.Controllers
                     clozeSentence = BuildClozeSentence(bestPhrase.Sentence, card.Word.Term);
                 }
 
-                var dto = new SrsDueCardDto
-                {
-                    SrsCardReviewId = card.SrsCardReviewId,
-                    WordId = card.WordId,
-                    Term = card.Word.Term,
-                    Translation = card.Word.Translation?.Translation ?? "",
-                    WordStatus = card.Word.Status,
-                    EaseFactor = card.EaseFactor,
-                    Interval = card.Interval,
-                    Repetitions = card.Repetitions,
-                    IsLearning = card.IsLearning,
-                    CurrentLearningStepIndex = card.CurrentLearningStepIndex,
-                    HasEverGraduated = card.HasEverGraduated,
-                    IsSuspended = card.IsSuspended,
-                    Flag = card.Flag,
-                    Tags = card.Tags,
-                    Phrases = cardPhrases
-                    .OrderByDescending(p => p.CreatedAt)
-                    .Select(p => new SrsPhraseDto
-                    {
-                        SrsPhraseId = p.SrsPhraseId,
-                        Sentence = p.Sentence,
-                        TextTitle = p.TextTitle,
-                        CreatedAt = p.CreatedAt
-                    }).ToList(),
-                    UnknownWordsInPhrase = unknownWordsInBestPhrase,
-                    ClozeSentence = clozeSentence
-                };
+                var dto = ToDueCardDto(card, cardPhrases, unknownWordsInBestPhrase, clozeSentence, scheduler, now);
 
-                if (card.IsLearning) validLearningCards.Add(dto);
-                else if (card.Repetitions == 0 && card.LastReviewedAt == null) validNewCards.Add(dto);
-                else validReviewCards.Add(dto);
+                switch (card.GetState())
+                {
+                    case SrsCardState.Learning:
+                    case SrsCardState.Relearning:
+                        validLearningCards.Add(dto);
+                        break;
+                    case SrsCardState.New:
+                        validNewCards.Add(dto);
+                        break;
+                    default:
+                        validReviewCards.Add(dto);
+                        break;
+                }
             }
 
             // 6. Enforce remaining limits
@@ -221,14 +213,29 @@ namespace LinguaReadApi.Controllers
             return rawResult.Take(limit).ToList();
         }
 
-        // POST: api/srs/review
+        // POST: api/srs/review?timezoneOffsetMinutes=120
         [HttpPost("review")]
-        public async Task<IActionResult> SubmitReview([FromBody] SrsReviewSubmitDto dto)
+        public async Task<ActionResult<SrsReviewResultDto>> SubmitReview(
+            [FromBody] SrsReviewSubmitDto dto,
+            [FromQuery] int timezoneOffsetMinutes = 0)
         {
             if (!ModelState.IsValid)
                 return BadRequest(ModelState);
 
             var userId = GetUserId();
+            var now = DateTime.UtcNow;
+
+            var settings = await _context.UserSettings.FirstOrDefaultAsync(u => u.UserId == userId);
+            var day = DayContext(settings, timezoneOffsetMinutes, now);
+            var scheduler = new SrsScheduler(day.Options);
+
+            // An offline replay (or a retry whose response was lost) of a review that was
+            // already applied: report the stored result instead of grading the card twice.
+            if (!string.IsNullOrEmpty(dto.ClientEventId))
+            {
+                var replayed = await FindReplayedReviewAsync(userId, dto.ClientEventId, scheduler, now);
+                if (replayed != null) return Ok(replayed);
+            }
 
             var card = await _context.SrsCardReviews
                 .FirstOrDefaultAsync(scr => scr.SrsCardReviewId == dto.SrsCardReviewId && scr.UserId == userId);
@@ -239,87 +246,45 @@ namespace LinguaReadApi.Controllers
             if (card.IsSuspended)
                 return BadRequest(new { Message = "Card is suspended." });
 
-            if (card.BuriedUntil.HasValue && card.BuriedUntil.Value > DateTime.UtcNow)
+            if (card.BuriedUntil.HasValue && card.BuriedUntil.Value > now)
                 return BadRequest(new { Message = "Card is buried." });
 
-            // 1. Streak Tracking
-            var settings = await _context.UserSettings.FirstOrDefaultAsync(u => u.UserId == userId);
-            var today = DateTime.UtcNow.Date;
+            // Offline reviews are scheduled from when they happened, but never from before
+            // the card's previous review or from the future.
+            var reviewedAt = dto.ReviewedAt is { } at ? AsUtc(at) : now;
+            if (reviewedAt > now) reviewedAt = now;
+            if (card.LastReviewedAt is { } lastReviewed && reviewedAt < lastReviewed) reviewedAt = lastReviewed;
+
+            // SM-2-era cards the backfill hasn't reached yet get their FSRS state from history first.
+            await SrsMemoryStateInitializer.EnsureAsync(_context, card, scheduler.Algorithm);
+            var before = card.ToSnapshot();
+            var outcome = scheduler.Review(before, dto.Grade, reviewedAt);
+
+            // 1. Streak & daily limits, on the user day the review happened.
             if (settings != null)
-            {
-                var lastStudyDate = settings.SrsDailyStudyDate?.Date;
-                if (lastStudyDate != today)
-                {
-                    // Update streak
-                    if (lastStudyDate == today.AddDays(-1))
-                    {
-                        settings.SrsCurrentStreak += 1; // Continued streak
-                    }
-                    else
-                    {
-                        settings.SrsCurrentStreak = 1; // Reset or slow-started streak
-                    }
+                CountTowardDailyLimits(settings, before, reviewedAt, day.Options);
 
-                    settings.SrsLongestStreak = Math.Max(settings.SrsLongestStreak, settings.SrsCurrentStreak);
-
-                    // Reset daily limits
-                    settings.SrsDailyStudyDate = today;
-                    settings.SrsDailyNewCardsStudied = 0;
-                    settings.SrsDailyReviewsStudied = 0;
-                }
-                else if (settings.SrsCurrentStreak == 0)
-                {
-                    // Edge case: manual reset or starting today
-                    settings.SrsCurrentStreak = 1;
-                    settings.SrsLongestStreak = Math.Max(settings.SrsLongestStreak, 1);
-                }
-                
-                // Only increment limits if this is the FIRST review of this card today
-                bool isFirstReviewToday = card.LastReviewedAt == null || card.LastReviewedAt.Value.Date != today;
-                if (isFirstReviewToday)
-                {
-                    bool wasBrandNew = card.Repetitions == 0 && card.LastReviewedAt == null;
-                    if (wasBrandNew) settings.SrsDailyNewCardsStudied++;
-                    else settings.SrsDailyReviewsStudied++;
-                }
-            }
-
-            // 2. Logging for Undo & Retention
-            var reviewLog = new SrsReviewLog
-            {
-                UserId = userId,
-                SrsCardReviewId = dto.SrsCardReviewId,
-                Grade = dto.Grade,
-                OldInterval = card.Interval,
-                OldEaseFactor = card.EaseFactor,
-                OldRepetitions = card.Repetitions,
-                OldNextReviewAt = card.NextReviewAt,
-                OldIsLearning = card.IsLearning,
-                OldCurrentLearningStepIndex = card.CurrentLearningStepIndex,
-                OldLastReviewedAt = card.LastReviewedAt,
-                OldHasEverGraduated = card.HasEverGraduated,
-                ReviewedAt = DateTime.UtcNow
-            };
+            // 2. Log for undo & statistics, capturing the state before the review.
+            var reviewLog = NewReviewLog(userId, card, dto.Grade, reviewedAt, outcome);
+            reviewLog.ClientEventId = string.IsNullOrEmpty(dto.ClientEventId) ? null : dto.ClientEventId;
             _context.SrsReviewLogs.Add(reviewLog);
 
-            // Parse learning steps from user settings
-            var learningSteps = ParseLearningSteps(settings?.SrsLearningStepMinutes);
-            int maxIntervalDays = settings?.SrsMaxIntervalDays > 0 ? settings.SrsMaxIntervalDays : 36500;
-            int lapseMinIntervalDays = settings?.SrsLapseMinimumIntervalDays > 0 ? settings.SrsLapseMinimumIntervalDays : 1;
+            card.Apply(outcome.Card);
 
-            // Apply SM-2 algorithm with learning steps
-            ApplySm2(card, dto.Grade, learningSteps, maxIntervalDays, lapseMinIntervalDays);
-
-            await _context.SaveChangesAsync();
-
-            return Ok(new
+            try
             {
-                card.SrsCardReviewId,
-                card.Interval,
-                card.EaseFactor,
-                card.Repetitions,
-                card.NextReviewAt
-            });
+                await _context.SaveChangesAsync();
+            }
+            catch (DbUpdateException) when (!string.IsNullOrEmpty(dto.ClientEventId))
+            {
+                // A concurrent replay of the same event won the unique index; report its result.
+                _context.ChangeTracker.Clear();
+                var replayed = await FindReplayedReviewAsync(userId, dto.ClientEventId!, scheduler, now);
+                if (replayed != null) return Ok(replayed);
+                throw;
+            }
+
+            return Ok(ToReviewResult(card, reviewLog, scheduler, now));
         }
 
         // POST: api/srs/mine
@@ -406,19 +371,39 @@ namespace LinguaReadApi.Controllers
             return lastReviewLog;
         }
 
-        // POST: api/srs/undo
+        // POST: api/srs/undo  body: { "srsReviewLogId": 123 }
+        // Reverts that review. Without a body (older clients) it reverts the user's most
+        // recent review from the last 15 minutes.
         [HttpPost("undo")]
-        public async Task<IActionResult> UndoLastReview()
+        public async Task<IActionResult> UndoLastReview(
+            [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] SrsUndoDto? dto = null,
+            [FromQuery] int timezoneOffsetMinutes = 0)
         {
             var userId = GetUserId();
-            var cutoffTime = DateTime.UtcNow.AddMinutes(-15);
-            
-            var lastLog = await _context.SrsReviewLogs
-                .Where(log => log.UserId == userId && log.ReviewedAt >= cutoffTime)
-                .OrderByDescending(log => log.ReviewedAt)
-                .FirstOrDefaultAsync();
+            var now = DateTime.UtcNow;
+            var cutoffTime = now.AddMinutes(-15);
 
-            if (lastLog == null) return NotFound(new { Message = "No recent review found to undo." });
+            var lastLog = dto?.SrsReviewLogId is { } logId
+                ? await _context.SrsReviewLogs
+                    .FirstOrDefaultAsync(log => log.SrsReviewLogId == logId && log.UserId == userId)
+                : await _context.SrsReviewLogs
+                    .Where(log => log.UserId == userId && log.ReviewedAt >= cutoffTime && log.Kind != (int)SrsReviewKind.Reading)
+                    .OrderByDescending(log => log.ReviewedAt)
+                    .ThenByDescending(log => log.SrsReviewLogId)
+                    .FirstOrDefaultAsync();
+
+            if (lastLog == null || lastLog.ReviewedAt < cutoffTime)
+                return NotFound(new { Message = "No recent review found to undo." });
+
+            // Undo restores the state *before* this review, which is only right if nothing
+            // reviewed the card after it.
+            bool newerReviewExists = await _context.SrsReviewLogs.AnyAsync(log =>
+                log.SrsCardReviewId == lastLog.SrsCardReviewId
+                && log.SrsReviewLogId != lastLog.SrsReviewLogId
+                && (log.ReviewedAt > lastLog.ReviewedAt
+                    || (log.ReviewedAt == lastLog.ReviewedAt && log.SrsReviewLogId > lastLog.SrsReviewLogId)));
+            if (newerReviewExists)
+                return Conflict(new { Message = "This card was reviewed again afterwards; undo that review first." });
 
             var card = await _context.SrsCardReviews
                 .FirstOrDefaultAsync(scr => scr.SrsCardReviewId == lastLog.SrsCardReviewId && scr.UserId == userId);
@@ -434,106 +419,68 @@ namespace LinguaReadApi.Controllers
             card.CurrentLearningStepIndex = lastLog.OldCurrentLearningStepIndex;
             card.LastReviewedAt = lastLog.OldLastReviewedAt;
             card.HasEverGraduated = lastLog.OldHasEverGraduated;
+            card.Stability = lastLog.OldStability;
+            card.Difficulty = lastLog.OldDifficulty;
+            card.Lapses = lastLog.OldLapses;
 
-            // Revert daily limits
+            // Revert daily limits and streak. Reading credit never counted toward them.
             var settings = await _context.UserSettings.FirstOrDefaultAsync(u => u.UserId == userId);
-            var today = DateTime.UtcNow.Date;
-            bool wasFirstReviewToday = lastLog.OldLastReviewedAt == null || lastLog.OldLastReviewedAt.Value.Date != today;
-
-            if (settings != null && settings.SrsDailyStudyDate?.Date == today && wasFirstReviewToday && lastLog.ReviewedAt.Date == today)
+            if (settings != null && lastLog.Kind != (int)SrsReviewKind.Reading)
             {
-                bool wasBrandNewBefore = lastLog.OldRepetitions == 0 && lastLog.OldLastReviewedAt == null;
-                if (wasBrandNewBefore) 
-                {
-                    settings.SrsDailyNewCardsStudied = Math.Max(0, settings.SrsDailyNewCardsStudied - 1);
-                } 
-                else 
-                {
-                    settings.SrsDailyReviewsStudied = Math.Max(0, settings.SrsDailyReviewsStudied - 1);
-                }
-            }
-
-            // Revert streak if this undo leaves no other reviews today
-            if (settings != null && settings.SrsDailyStudyDate?.Date == today)
-            {
-                bool hasOtherReviewsToday = await _context.SrsReviewLogs
-                    .AnyAsync(log => log.UserId == userId
-                        && log.SrsReviewLogId != lastLog.SrsReviewLogId
-                        && log.ReviewedAt.Date == today);
-
-                if (!hasOtherReviewsToday)
-                {
-                    // This was the only review today — revert the streak increment
-                    var yesterday = today.AddDays(-1);
-                    var previousLog = await _context.SrsReviewLogs
-                        .AsNoTracking()
-                        .Where(log => log.UserId == userId && log.ReviewedAt.Date < today)
-                        .OrderByDescending(log => log.ReviewedAt)
-                        .FirstOrDefaultAsync();
-
-                    if (previousLog != null && previousLog.ReviewedAt.Date == yesterday)
-                    {
-                        // Had a streak going before today — just decrement
-                        settings.SrsCurrentStreak = Math.Max(0, settings.SrsCurrentStreak - 1);
-                    }
-                    else
-                    {
-                        // No review yesterday — streak was started fresh today, reset to 0
-                        settings.SrsCurrentStreak = 0;
-                    }
-                    settings.SrsDailyStudyDate = previousLog?.ReviewedAt.Date;
-                    settings.SrsDailyNewCardsStudied = 0;
-                    settings.SrsDailyReviewsStudied = 0;
-                }
+                var day = DayContext(settings, timezoneOffsetMinutes, now);
+                await RevertDailyLimitsAsync(settings, lastLog, day.Options);
             }
 
             // Remove the log
             _context.SrsReviewLogs.Remove(lastLog);
 
             await _context.SaveChangesAsync();
-            return Ok(new { Message = "Undo successful." });
+            return Ok(new { Message = "Undo successful.", card.SrsCardReviewId, lastLog.SrsReviewLogId });
         }
 
-        // GET: api/srs/forecast?languageId=1&days=14
+        // GET: api/srs/forecast?languageId=1&days=14&timezoneOffsetMinutes=120
         [HttpGet("forecast")]
-        public async Task<ActionResult<List<SrsForecastDto>>> GetForecast([FromQuery] int? languageId = null, [FromQuery] int days = 14)
+        public async Task<ActionResult<List<SrsForecastDto>>> GetForecast(
+            [FromQuery] int? languageId = null,
+            [FromQuery] int days = 14,
+            [FromQuery] int timezoneOffsetMinutes = 0)
         {
             var userId = GetUserId();
-            var today = DateTime.UtcNow.Date;
-            var endDate = today.AddDays(days);
+            var now = DateTime.UtcNow;
+            days = Math.Clamp(days, 1, 366);
+
+            var settings = await _context.UserSettings.AsNoTracking().FirstOrDefaultAsync(u => u.UserId == userId);
+            var day = DayContext(settings, timezoneOffsetMinutes, now);
+            var end = SrsDay.DayStartUtc(day.Today.AddDays(days), day.Options.TimezoneOffsetMinutes, day.Options.DayStartHour);
 
             var query = _context.SrsCardReviews
                 .AsNoTracking()
-                .Where(scr => scr.UserId == userId && scr.NextReviewAt < endDate);
+                .Where(scr => scr.UserId == userId && !scr.IsSuspended && scr.NextReviewAt < end);
 
             if (languageId.HasValue)
             {
                 query = query.Where(scr => scr.Word.LanguageId == languageId.Value);
             }
 
-            // Grouping by Date locally as Date property translations can be tricky in EF depending on DB provider
-            var cards = await query
-                .Select(scr => new { scr.NextReviewAt })
-                .ToListAsync();
+            var dueTimes = await query.Select(scr => scr.NextReviewAt).ToListAsync();
 
-            var grouped = cards
-                .Select(c => c.NextReviewAt < today ? today : c.NextReviewAt.Date) // Compress past-due into today
+            // Group by user day in memory; past-due cards all land on today.
+            var countsByDay = dueTimes
+                .Select(t => SrsDay.UserDay(t, day.Options.TimezoneOffsetMinutes, day.Options.DayStartHour))
+                .Select(d => d < day.Today ? day.Today : d)
                 .GroupBy(d => d)
-                .Select(g => new SrsForecastDto
-                {
-                    Date = g.Key.ToString("yyyy-MM-dd"),
-                    Count = g.Count()
-                })
-                .OrderBy(f => f.Date)
-                .ToList();
+                .ToDictionary(g => g.Key, g => g.Count());
 
             // Fill empty days for charting consistency
             var forecastList = new List<SrsForecastDto>();
-            for(int i = 0; i < days; i++)
+            for (int i = 0; i < days; i++)
             {
-                var targetDateStr = today.AddDays(i).ToString("yyyy-MM-dd");
-                var dayData = grouped.FirstOrDefault(g => g.Date == targetDateStr);
-                forecastList.Add(dayData ?? new SrsForecastDto { Date = targetDateStr, Count = 0 });
+                var date = day.Today.AddDays(i);
+                forecastList.Add(new SrsForecastDto
+                {
+                    Date = date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                    Count = countsByDay.GetValueOrDefault(date),
+                });
             }
 
             return forecastList;
@@ -579,12 +526,18 @@ namespace LinguaReadApi.Controllers
             return NoContent();
         }
 
-        // GET: api/srs/stats?languageId=1
+        // GET: api/srs/stats?languageId=1&timezoneOffsetMinutes=120
         [HttpGet("stats")]
-        public async Task<ActionResult<SrsStatsDto>> GetStats([FromQuery] int? languageId = null)
+        public async Task<ActionResult<SrsStatsDto>> GetStats(
+            [FromQuery] int? languageId = null,
+            [FromQuery] int timezoneOffsetMinutes = 0)
         {
             var userId = GetUserId();
             var now = DateTime.UtcNow;
+
+            // Fetch settings for limit info, streak and the user's day boundary
+            var settings = await _context.UserSettings.AsNoTracking().FirstOrDefaultAsync(u => u.UserId == userId);
+            var day = DayContext(settings, timezoneOffsetMinutes, now);
 
             var cardQuery = _context.SrsCardReviews
                 .AsNoTracking()
@@ -597,11 +550,10 @@ namespace LinguaReadApi.Controllers
                 cardQuery = cardQuery.Where(scr => scr.Word.LanguageId == languageId.Value);
             }
 
-            var allCards = await cardQuery
-                .Include(scr => scr.Word)
-                .ToListAsync();
+            var allCards = await cardQuery.ToListAsync();
 
-            var dueCards = allCards.Where(c => c.NextReviewAt <= now).ToList();
+            var isDue = IsDue(now, day.TomorrowStartUtc).Compile();
+            var dueCards = allCards.Where(isDue).ToList();
             var dueCount = dueCards.Count;
             var totalCards = allCards.Count;
             var newCards = allCards.Count(c => c.Repetitions == 0 && c.LastReviewedAt == null);
@@ -614,13 +566,9 @@ namespace LinguaReadApi.Controllers
 
             var reviewedToday = allCards.Count(c =>
                 c.LastReviewedAt.HasValue &&
-                c.LastReviewedAt.Value.Date == now.Date);
+                c.LastReviewedAt.Value >= day.TodayStartUtc);
 
-            // Fetch settings for limit info and streak
-            var settings = await _context.UserSettings.AsNoTracking().FirstOrDefaultAsync(u => u.UserId == userId);
-            
-            int studiedNew = (settings?.SrsDailyStudyDate?.Date == now.Date) ? settings.SrsDailyNewCardsStudied : 0;
-            int studiedReviews = (settings?.SrsDailyStudyDate?.Date == now.Date) ? settings.SrsDailyReviewsStudied : 0;
+            var (studiedNew, studiedReviews) = StudiedOn(settings, day.Today);
 
             // Calculate reviewable count (quota-aware) to match what GetDueCards would serve
             int maxNew = EffectiveSrsMaxNew(settings?.SrsMaxNewCards);
@@ -637,13 +585,13 @@ namespace LinguaReadApi.Controllers
             var thirtyDaysAgo = now.AddDays(-30);
             var recentLogs = await _context.SrsReviewLogs
                 .AsNoTracking()
-                .Where(log => log.UserId == userId && log.ReviewedAt >= thirtyDaysAgo)
+                .Where(log => log.UserId == userId && log.ReviewedAt >= thirtyDaysAgo && log.Kind != (int)SrsReviewKind.Reading)
                 .ToListAsync();
 
             int totalRecentReviews = recentLogs.Count;
             int goodRecentReviews = recentLogs.Count(log => log.Grade >= 2);
-            double retentionRate = totalRecentReviews > 0 
-                ? Math.Round((double)goodRecentReviews / totalRecentReviews * 100, 1) 
+            double retentionRate = totalRecentReviews > 0
+                ? Math.Round((double)goodRecentReviews / totalRecentReviews * 100, 1)
                 : 0;
 
             return new SrsStatsDto
@@ -675,6 +623,7 @@ namespace LinguaReadApi.Controllers
                 .FirstOrDefaultAsync(scr => scr.SrsCardReviewId == cardId && scr.UserId == userId);
             if (card == null) return NotFound();
             card.IsSuspended = true;
+            card.SuspendReason = SrsSuspendReasons.Manual;
             await _context.SaveChangesAsync();
             return Ok(new { Message = "Card suspended." });
         }
@@ -688,19 +637,21 @@ namespace LinguaReadApi.Controllers
                 .FirstOrDefaultAsync(scr => scr.SrsCardReviewId == cardId && scr.UserId == userId);
             if (card == null) return NotFound();
             card.IsSuspended = false;
+            card.SuspendReason = null;
             await _context.SaveChangesAsync();
             return Ok(new { Message = "Card unsuspended." });
         }
 
-        // POST: api/srs/bury/{cardId}
+        // POST: api/srs/bury/{cardId}?timezoneOffsetMinutes=120
         [HttpPost("bury/{cardId}")]
-        public async Task<IActionResult> BuryCard(int cardId)
+        public async Task<IActionResult> BuryCard(int cardId, [FromQuery] int timezoneOffsetMinutes = 0)
         {
             var userId = GetUserId();
             var card = await _context.SrsCardReviews
                 .FirstOrDefaultAsync(scr => scr.SrsCardReviewId == cardId && scr.UserId == userId);
             if (card == null) return NotFound();
-            card.BuriedUntil = DateTime.UtcNow.Date.AddDays(1);
+            var settings = await _context.UserSettings.AsNoTracking().FirstOrDefaultAsync(u => u.UserId == userId);
+            card.BuriedUntil = DayContext(settings, timezoneOffsetMinutes, DateTime.UtcNow).TomorrowStartUtc;
             await _context.SaveChangesAsync();
             return Ok(new { Message = "Card buried until tomorrow." });
         }
@@ -723,234 +674,303 @@ namespace LinguaReadApi.Controllers
             return Ok(new { card.Flag, card.Tags });
         }
 
-        // GET: api/srs/heatmap?days=365
+        // GET: api/srs/heatmap?days=365&timezoneOffsetMinutes=120
         [HttpGet("heatmap")]
-        public async Task<ActionResult<List<SrsHeatmapDto>>> GetHeatmap([FromQuery] int days = 365)
+        public async Task<ActionResult<List<SrsHeatmapDto>>> GetHeatmap(
+            [FromQuery] int days = 365,
+            [FromQuery] int timezoneOffsetMinutes = 0)
         {
             var userId = GetUserId();
-            var startDate = DateTime.UtcNow.Date.AddDays(-days);
+            days = Math.Clamp(days, 1, 731);
+            var settings = await _context.UserSettings.AsNoTracking().FirstOrDefaultAsync(u => u.UserId == userId);
+            var day = DayContext(settings, timezoneOffsetMinutes, DateTime.UtcNow);
+            var tz = day.Options.TimezoneOffsetMinutes;
+            var dayStart = day.Options.DayStartHour;
+            var startDate = SrsDay.DayStartUtc(day.Today.AddDays(-days), tz, dayStart);
 
-            var logs = await _context.SrsReviewLogs
+            var reviewTimes = await _context.SrsReviewLogs
                 .AsNoTracking()
-                .Where(log => log.UserId == userId && log.ReviewedAt >= startDate)
-                .Select(log => new { log.ReviewedAt })
+                .Where(log => log.UserId == userId && log.ReviewedAt >= startDate && log.Kind != (int)SrsReviewKind.Reading)
+                .Select(log => log.ReviewedAt)
                 .ToListAsync();
 
-            var grouped = logs
-                .GroupBy(l => l.ReviewedAt.Date)
+            // Keyed by user day, so the client can match cells on its local calendar date.
+            var grouped = reviewTimes
+                .GroupBy(t => SrsDay.UserDay(t, tz, dayStart))
+                .OrderBy(g => g.Key)
                 .Select(g => new SrsHeatmapDto
                 {
-                    Date = g.Key.ToString("yyyy-MM-dd"),
+                    Date = g.Key.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
                     ReviewCount = g.Count()
                 })
-                .OrderBy(h => h.Date)
                 .ToList();
 
             return grouped;
         }
 
-        // POST: api/srs/reading-credit/{wordId}
+        // POST: api/srs/reading-credit/{wordId}?timezoneOffsetMinutes=120
+        // Meeting a word while reading counts as a successful (Good) review of its card: once
+        // per card per day, only for graduated cards, logged like any other review, but kept
+        // out of the daily limits, streak and retention figures. FSRS gives an early review a
+        // small boost only, so this can't inflate intervals the way the old flat +10% did.
         [HttpPost("reading-credit/{wordId}")]
-        public async Task<IActionResult> ApplyReadingCredit(int wordId)
+        public async Task<IActionResult> ApplyReadingCredit(int wordId, [FromQuery] int timezoneOffsetMinutes = 0)
         {
             var userId = GetUserId();
+            var now = DateTime.UtcNow;
             var card = await _context.SrsCardReviews
                 .FirstOrDefaultAsync(scr => scr.WordId == wordId && scr.UserId == userId);
 
             if (card == null) return NotFound(new { Message = "No SRS card found for this word." });
+            if (card.IsSuspended)
+                return Ok(new { Message = "Card is suspended.", Applied = false });
 
-            // Only apply if card has graduated and has some history
-            if (card.IsLearning || card.Repetitions <= 2)
+            var settings = await _context.UserSettings.AsNoTracking().FirstOrDefaultAsync(u => u.UserId == userId);
+            var day = DayContext(settings, timezoneOffsetMinutes, now);
+            var scheduler = new SrsScheduler(day.Options);
+
+            if (card.GetState() != SrsCardState.Review)
                 return Ok(new { Message = "Card too new for reading credit.", Applied = false });
+            if (card.LastReviewedAt >= day.TodayStartUtc)
+                return Ok(new { Message = "Card already reviewed today.", Applied = false });
 
-            // Boost: multiply interval by 1.1, cap at 10% increase (minimum +2 days)
-            var boostedInterval = (int)Math.Round(card.Interval * 1.1);
-            var maxInterval = card.Interval + Math.Max(2, card.Interval / 10);
-            card.Interval = Math.Min(boostedInterval, maxInterval);
-            card.NextReviewAt = DateTime.UtcNow.AddDays(card.Interval);
+            await SrsMemoryStateInitializer.EnsureAsync(_context, card, scheduler.Algorithm);
+            var outcome = scheduler.Review(card.ToSnapshot(), grade: 2, now) with { Kind = SrsReviewKind.Reading };
+
+            _context.SrsReviewLogs.Add(NewReviewLog(userId, card, grade: 2, now, outcome));
+            card.Apply(outcome.Card);
 
             await _context.SaveChangesAsync();
             return Ok(new { Message = "Reading credit applied.", Applied = true, card.Interval, card.NextReviewAt });
         }
 
-        // --- SM-2 Algorithm with Learning Steps ---
-        private void ApplySm2(SrsCardReview card, int grade, List<int> learningSteps, int maxIntervalDays = 36500, int lapseMinIntervalDays = 1)
+        // --- User-day helpers ---
+
+        private sealed record SrsDayContext(SrsSchedulerOptions Options, DateOnly Today, DateTime TodayStartUtc, DateTime TomorrowStartUtc);
+
+        private static SrsDayContext DayContext(UserSettings? settings, int timezoneOffsetMinutes, DateTime now)
         {
-            // grade: 0=Again, 1=Hard, 2=Good, 3=Easy
-
-            if (card.IsLearning)
-            {
-                // Card is in learning phase
-                if (grade < 2)
-                {
-                    // Again/Hard: reset to first learning step
-                    card.CurrentLearningStepIndex = 0;
-                    int stepMinutes = learningSteps.Count > 0 ? learningSteps[0] : 1;
-                    card.Interval = 0;
-                    card.NextReviewAt = DateTime.UtcNow.AddMinutes(stepMinutes);
-                    card.LastReviewedAt = DateTime.UtcNow;
-                    // Update ease factor for lapse
-                    card.EaseFactor = Math.Max(1.3,
-                        card.EaseFactor + 0.1 - (3 - grade) * (0.08 + (3 - grade) * 0.02));
-                    return;
-                }
-                else
-                {
-                    // Good/Easy: advance to next step (Easy graduates immediately from any step)
-                    card.CurrentLearningStepIndex++;
-                    if (grade == 3) card.CurrentLearningStepIndex = learningSteps.Count; // Easy: skip to graduation
-                    if (card.CurrentLearningStepIndex >= learningSteps.Count)
-                    {
-                        // Graduate: exit learning phase
-                        card.IsLearning = false;
-                        card.CurrentLearningStepIndex = 0;
-                        bool isRelearning = card.HasEverGraduated;
-                        if (isRelearning)
-                        {
-                            // Re-learning graduation: use lapse minimum interval
-                            card.Interval = (grade == 3) ? Math.Max(lapseMinIntervalDays, 1) * 2 : Math.Max(lapseMinIntervalDays, 1);
-                        }
-                        else
-                        {
-                            card.Interval = (grade == 3) ? 4 : 1; // First-time graduation
-                            card.Repetitions = 1;
-                            card.HasEverGraduated = true;
-                        }
-                        card.Interval = Math.Min(card.Interval, maxIntervalDays);
-                        card.NextReviewAt = DateTime.UtcNow.AddDays(card.Interval);
-                    }
-                    else
-                    {
-                        // Next learning step
-                        int stepMinutes = learningSteps[card.CurrentLearningStepIndex];
-                        card.Interval = 0;
-                        card.NextReviewAt = DateTime.UtcNow.AddMinutes(stepMinutes);
-                    }
-                    card.LastReviewedAt = DateTime.UtcNow;
-                    card.EaseFactor = Math.Max(1.3,
-                        card.EaseFactor + 0.1 - (3 - grade) * (0.08 + (3 - grade) * 0.02));
-                    return;
-                }
-            }
-
-            // Card is NOT in learning phase
-            if (grade < 2)
-            {
-                // Lapse: enter learning phase and reset repetitions
-                card.IsLearning = true;
-                card.CurrentLearningStepIndex = 0;
-                card.Repetitions = 0;
-                int stepMinutes = learningSteps.Count > 0 ? learningSteps[0] : 1;
-                card.Interval = 0;
-                card.NextReviewAt = DateTime.UtcNow.AddMinutes(stepMinutes);
-            }
-            else
-            {
-                // Passed (normal SM-2 flow)
-                if (card.Repetitions == 0 && card.LastReviewedAt == null)
-                    card.Interval = 1;
-                else if (card.Repetitions == 1 || (card.Repetitions == 0 && card.LastReviewedAt != null))
-                    card.Interval = 6;
-                else
-                    card.Interval = (int)Math.Round(card.Interval * card.EaseFactor);
-
-                card.Repetitions++;
-
-                // Easy bonus
-                if (grade == 3)
-                    card.Interval = (int)Math.Round(card.Interval * 1.3);
-
-                // Cap at maximum interval
-                card.Interval = Math.Min(card.Interval, maxIntervalDays);
-
-                card.NextReviewAt = DateTime.UtcNow.AddDays(Math.Max(card.Interval, 0));
-            }
-
-            // Update ease factor
-            card.EaseFactor = Math.Max(1.3,
-                card.EaseFactor + 0.1 - (3 - grade) * (0.08 + (3 - grade) * 0.02));
-
-            card.LastReviewedAt = DateTime.UtcNow;
+            var options = SrsSchedulerSettings.FromUserSettings(settings, timezoneOffsetMinutes);
+            var tz = options.TimezoneOffsetMinutes;
+            var today = SrsDay.UserDay(now, tz, options.DayStartHour);
+            return new SrsDayContext(
+                options,
+                today,
+                SrsDay.DayStartUtc(today, tz, options.DayStartHour),
+                SrsDay.DayStartUtc(today.AddDays(1), tz, options.DayStartHour));
         }
 
-        // Parse learning step minutes from comma-separated string
-        private List<int> ParseLearningSteps(string? stepsString)
+        /// <summary>
+        /// Cards to review now. A graduated card is due for the whole of the user day it falls
+        /// on, from the start of that day (so "1 day" never turns into 2 because of the time
+        /// it was last reviewed). Learning cards are due to the minute; those due within the
+        /// learn-ahead window are included so the client can show them when nothing else is left.
+        /// </summary>
+        private static Expression<Func<SrsCardReview, bool>> IsDue(DateTime now, DateTime tomorrowStartUtc)
         {
-            if (string.IsNullOrWhiteSpace(stepsString))
-                return new List<int> { 1, 10 }; // default
-
-            var steps = stepsString.Split(',')
-                .Select(s => s.Trim())
-                .Where(s => int.TryParse(s, out _))
-                .Select(int.Parse)
-                .Where(s => s > 0)
-                .ToList();
-
-            return steps.Count > 0 ? steps : new List<int> { 1, 10 };
+            var learnAheadUntil = now + SrsSchedulerSettings.LearnAhead;
+            return scr => (scr.IsLearning && scr.NextReviewAt <= learnAheadUntil)
+                || (!scr.IsLearning && scr.NextReviewAt < tomorrowStartUtc);
         }
 
-        // --- Helper: Count unknown words in a sentence ---
-        private async Task<int> CountUnknownWordsInSentence(string sentence, Guid userId, int languageId, int targetWordId)
+        private static DateOnly? StudyDay(UserSettings? settings) =>
+            settings?.SrsDailyStudyDate is { } date ? DateOnly.FromDateTime(date) : null;
+
+        private static DateTime AsStudyDate(DateOnly day) =>
+            DateTime.SpecifyKind(day.ToDateTime(TimeOnly.MinValue), DateTimeKind.Utc);
+
+        private static (int New, int Reviews) StudiedOn(UserSettings? settings, DateOnly day) =>
+            StudyDay(settings) == day
+                ? (settings!.SrsDailyNewCardsStudied, settings.SrsDailyReviewsStudied)
+                : (0, 0);
+
+        private static DateTime AsUtc(DateTime value) =>
+            value.Kind == DateTimeKind.Local ? value.ToUniversalTime() : DateTime.SpecifyKind(value, DateTimeKind.Utc);
+
+        /// <summary>
+        /// Advances the streak and daily new/review counters for a review that happened at
+        /// <paramref name="reviewedAt"/>. A card counts once per day, on its first review that day.
+        /// </summary>
+        private static void CountTowardDailyLimits(UserSettings settings, SrsCardSnapshot before, DateTime reviewedAt, SrsSchedulerOptions options)
         {
-            if (string.IsNullOrWhiteSpace(sentence))
-                return 0;
+            var tz = options.TimezoneOffsetMinutes;
+            var reviewDay = SrsDay.UserDay(reviewedAt, tz, options.DayStartHour);
+            var studyDay = StudyDay(settings);
 
-            // Tokenize sentence into words, preserving internal apostrophes and hyphens
-            var sentenceWords = Regex.Split(sentence, @"[\s,.:;!?""()\[\]{}\—\–\…«»]+")
-                .Select(w => w.Trim().Trim('\'', '\u2019', '\u2018').ToLowerInvariant())
-                .Where(w => w.Length > 0)
-                .Distinct()
-                .ToList();
+            // A late offline replay of an earlier day: those counters are gone, leave today's alone.
+            if (studyDay is { } current && reviewDay < current) return;
 
-            if (!sentenceWords.Any()) return 0;
+            if (studyDay != reviewDay)
+            {
+                settings.SrsCurrentStreak = studyDay == reviewDay.AddDays(-1) ? settings.SrsCurrentStreak + 1 : 1;
+                settings.SrsLongestStreak = Math.Max(settings.SrsLongestStreak, settings.SrsCurrentStreak);
+                settings.SrsDailyStudyDate = AsStudyDate(reviewDay);
+                settings.SrsDailyNewCardsStudied = 0;
+                settings.SrsDailyReviewsStudied = 0;
+            }
+            else if (settings.SrsCurrentStreak == 0)
+            {
+                // Edge case: manual reset or starting today
+                settings.SrsCurrentStreak = 1;
+                settings.SrsLongestStreak = Math.Max(settings.SrsLongestStreak, 1);
+            }
 
-            // Get known words (status 5) for this user & language
-            var knownWords = await _context.Words
+            bool firstReviewThatDay = before.LastReviewedAtUtc is not { } last
+                || SrsDay.UserDay(last, tz, options.DayStartHour) != reviewDay;
+            if (firstReviewThatDay)
+            {
+                if (before.State == SrsCardState.New) settings.SrsDailyNewCardsStudied++;
+                else settings.SrsDailyReviewsStudied++;
+            }
+        }
+
+        /// <summary>Reverses <see cref="CountTowardDailyLimits"/> for an undone review.</summary>
+        private async Task RevertDailyLimitsAsync(UserSettings settings, SrsReviewLog log, SrsSchedulerOptions options)
+        {
+            var tz = options.TimezoneOffsetMinutes;
+            var reviewDay = SrsDay.UserDay(log.ReviewedAt, tz, options.DayStartHour);
+            if (StudyDay(settings) != reviewDay) return;
+
+            bool wasFirstReviewThatDay = log.OldLastReviewedAt is not { } last
+                || SrsDay.UserDay(last, tz, options.DayStartHour) != reviewDay;
+            if (wasFirstReviewThatDay)
+            {
+                var stateBefore = SrsCardStates.Derive(log.OldIsLearning, log.OldHasEverGraduated, log.OldLastReviewedAt);
+                if (stateBefore == SrsCardState.New)
+                    settings.SrsDailyNewCardsStudied = Math.Max(0, settings.SrsDailyNewCardsStudied - 1);
+                else
+                    settings.SrsDailyReviewsStudied = Math.Max(0, settings.SrsDailyReviewsStudied - 1);
+            }
+
+            // Revert the streak if this undo leaves no other reviews that day
+            var dayStartUtc = SrsDay.DayStartUtc(reviewDay, tz, options.DayStartHour);
+            var nextDayStartUtc = SrsDay.DayStartUtc(reviewDay.AddDays(1), tz, options.DayStartHour);
+            bool hasOtherReviewsThatDay = await _context.SrsReviewLogs.AnyAsync(l =>
+                l.UserId == log.UserId
+                && l.SrsReviewLogId != log.SrsReviewLogId
+                && l.Kind != (int)SrsReviewKind.Reading
+                && l.ReviewedAt >= dayStartUtc && l.ReviewedAt < nextDayStartUtc);
+            if (hasOtherReviewsThatDay) return;
+
+            var previousLog = await _context.SrsReviewLogs
                 .AsNoTracking()
-                .Where(w => w.UserId == userId && w.LanguageId == languageId &&
-                            sentenceWords.Contains(w.Term.ToLower()))
-                .Select(w => new { w.Term, w.Status, w.WordId })
-                .ToListAsync();
+                .Where(l => l.UserId == log.UserId && l.Kind != (int)SrsReviewKind.Reading && l.ReviewedAt < dayStartUtc)
+                .OrderByDescending(l => l.ReviewedAt)
+                .FirstOrDefaultAsync();
+            DateOnly? previousDay = previousLog != null
+                ? SrsDay.UserDay(previousLog.ReviewedAt, tz, options.DayStartHour)
+                : null;
 
-            // Use ToLookup, not ToDictionary: a user's vocab may contain duplicate
-            // rows for the same term (data corruption, or a race between concurrent
-            // createWord calls). ToDictionary throws on the first duplicate key,
-            // which previously crashed the entire GET /api/srs/due response with a
-            // 500.
-            var knownLookup = knownWords.ToLookup(w => w.Term.ToLowerInvariant());
-
-            int unknownCount = 0;
-            foreach (var word in sentenceWords)
-            {
-                var matches = knownLookup[word];
-                if (!matches.Any())
-                {
-                    // Word not in database at all — treat as unknown only if it looks like a real word
-                    if (word.Length > 1)
-                    {
-                        unknownCount++;
-                    }
-                    continue;
-                }
-                // If any of the duplicates IS the target word, always count as unknown.
-                if (matches.Any(m => m.WordId == targetWordId))
-                {
-                    unknownCount++;
-                    continue;
-                }
-                // Otherwise pick the highest-status duplicate — the most "known"
-                // interpretation, which keeps the count optimistic in the face of
-                // dirty vocab data.
-                var best = matches.OrderByDescending(m => m.Status).First();
-                if (best.Status < 5)
-                {
-                    unknownCount++;
-                }
-                // Status 5 = known, don't count
-            }
-
-            return unknownCount;
+            // Had a streak going before that day: just decrement. Otherwise it started that day.
+            settings.SrsCurrentStreak = previousDay == reviewDay.AddDays(-1)
+                ? Math.Max(0, settings.SrsCurrentStreak - 1)
+                : 0;
+            settings.SrsDailyStudyDate = previousDay is { } p ? AsStudyDate(p) : null;
+            settings.SrsDailyNewCardsStudied = 0;
+            settings.SrsDailyReviewsStudied = 0;
         }
+
+        /// <summary>A log row capturing <paramref name="card"/>'s state before <paramref name="outcome"/> is applied.</summary>
+        private static SrsReviewLog NewReviewLog(Guid userId, SrsCardReview card, int grade, DateTime reviewedAt, SrsReviewOutcome outcome) => new()
+        {
+            UserId = userId,
+            SrsCardReviewId = card.SrsCardReviewId,
+            Grade = grade,
+            ReviewedAt = reviewedAt,
+            OldInterval = card.Interval,
+            OldEaseFactor = card.EaseFactor,
+            OldRepetitions = card.Repetitions,
+            OldNextReviewAt = card.NextReviewAt,
+            OldIsLearning = card.IsLearning,
+            OldCurrentLearningStepIndex = card.CurrentLearningStepIndex,
+            OldLastReviewedAt = card.LastReviewedAt,
+            OldHasEverGraduated = card.HasEverGraduated,
+            OldStability = card.Stability,
+            OldDifficulty = card.Difficulty,
+            OldLapses = card.Lapses,
+            Kind = (int)outcome.Kind,
+            NewInterval = outcome.IntervalDays,
+        };
+
+        private async Task<SrsReviewResultDto?> FindReplayedReviewAsync(Guid userId, string clientEventId, SrsScheduler scheduler, DateTime now)
+        {
+            var log = await _context.SrsReviewLogs
+                .AsNoTracking()
+                .FirstOrDefaultAsync(l => l.UserId == userId && l.ClientEventId == clientEventId);
+            if (log == null) return null;
+
+            var card = await _context.SrsCardReviews
+                .AsNoTracking()
+                .FirstOrDefaultAsync(c => c.SrsCardReviewId == log.SrsCardReviewId && c.UserId == userId);
+            return card == null ? null : ToReviewResult(card, log, scheduler, now);
+        }
+
+        private static SrsReviewResultDto ToReviewResult(SrsCardReview card, SrsReviewLog log, SrsScheduler scheduler, DateTime now)
+        {
+            var snapshot = card.ToSnapshot(estimateMissingState: true);
+            return new SrsReviewResultDto
+            {
+                SrsCardReviewId = card.SrsCardReviewId,
+                SrsReviewLogId = log.SrsReviewLogId,
+                Interval = card.Interval,
+                Repetitions = card.Repetitions,
+                NextReviewAt = card.NextReviewAt,
+                IsLearning = card.IsLearning,
+                CurrentLearningStepIndex = card.CurrentLearningStepIndex,
+                HasEverGraduated = card.HasEverGraduated,
+                Stability = card.Stability,
+                Difficulty = card.Difficulty,
+                Lapses = card.Lapses,
+                Retrievability = scheduler.Retrievability(snapshot, now),
+                NextIntervals = PreviewSeconds(scheduler, snapshot, now),
+            };
+        }
+
+        private static SrsDueCardDto ToDueCardDto(
+            SrsCardReview card,
+            IEnumerable<SrsPhrase> phrases,
+            int unknownWordsInPhrase,
+            string? clozeSentence,
+            SrsScheduler scheduler,
+            DateTime now)
+        {
+            var snapshot = card.ToSnapshot(estimateMissingState: true);
+            return new SrsDueCardDto
+            {
+                SrsCardReviewId = card.SrsCardReviewId,
+                WordId = card.WordId,
+                Term = card.Word.Term,
+                Translation = card.Word.Translation?.Translation ?? "",
+                WordStatus = card.Word.Status,
+                Interval = card.Interval,
+                Repetitions = card.Repetitions,
+                IsLearning = card.IsLearning,
+                CurrentLearningStepIndex = card.CurrentLearningStepIndex,
+                HasEverGraduated = card.HasEverGraduated,
+                IsSuspended = card.IsSuspended,
+                Flag = card.Flag,
+                Tags = card.Tags,
+                NextReviewAt = card.NextReviewAt,
+                Stability = card.Stability,
+                Difficulty = card.Difficulty,
+                Lapses = card.Lapses,
+                Retrievability = scheduler.Retrievability(snapshot, now),
+                NextIntervals = PreviewSeconds(scheduler, snapshot, now),
+                Phrases = phrases
+                    .Select(p => new SrsPhraseDto
+                    {
+                        SrsPhraseId = p.SrsPhraseId,
+                        Sentence = p.Sentence,
+                        TextTitle = p.TextTitle,
+                        CreatedAt = p.CreatedAt
+                    }).ToList(),
+                UnknownWordsInPhrase = unknownWordsInPhrase,
+                ClozeSentence = clozeSentence
+            };
+        }
+
+        private static List<long> PreviewSeconds(SrsScheduler scheduler, SrsCardSnapshot snapshot, DateTime now) =>
+            scheduler.PreviewIntervals(snapshot, now).Select(t => (long)Math.Round(t.TotalSeconds)).ToList();
 
         // GET: api/srs/stories?languageId=1
         [HttpGet("stories")]
@@ -982,18 +1002,24 @@ namespace LinguaReadApi.Controllers
             return stories;
         }
 
-        // GET: api/srs/analytics?languageId=1
+        // GET: api/srs/analytics?languageId=1&timezoneOffsetMinutes=120
         [HttpGet("analytics")]
-        public async Task<ActionResult<SrsAnalyticsDto>> GetAnalytics([FromQuery] int? languageId = null)
+        public async Task<ActionResult<SrsAnalyticsDto>> GetAnalytics(
+            [FromQuery] int? languageId = null,
+            [FromQuery] int timezoneOffsetMinutes = 0)
         {
             var userId = GetUserId();
             var now = DateTime.UtcNow;
             var thirtyDaysAgo = now.AddDays(-30);
+            var settings = await _context.UserSettings.AsNoTracking().FirstOrDefaultAsync(u => u.UserId == userId);
+            var dayOptions = DayContext(settings, timezoneOffsetMinutes, now).Options;
+            string UserDate(DateTime t) => SrsDay.UserDay(t, dayOptions.TimezoneOffsetMinutes, dayOptions.DayStartHour)
+                .ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
 
-            // Fetch all review logs for the last 30 days with card info
+            // Fetch all review logs for the last 30 days with card info (reading credit is not a review)
             var recentLogs = await _context.SrsReviewLogs
                 .AsNoTracking()
-                .Where(log => log.UserId == userId && log.ReviewedAt >= thirtyDaysAgo)
+                .Where(log => log.UserId == userId && log.ReviewedAt >= thirtyDaysAgo && log.Kind != (int)SrsReviewKind.Reading)
                 .Include(log => log.SrsCardReview)
                     .ThenInclude(scr => scr.Word)
                         .ThenInclude(w => w.Translation)
@@ -1017,10 +1043,10 @@ namespace LinguaReadApi.Controllers
 
             // 2. Accuracy trend (daily retention rate for last 30 days)
             var accuracyTrend = recentLogs
-                .GroupBy(log => log.ReviewedAt.Date)
+                .GroupBy(log => UserDate(log.ReviewedAt))
                 .Select(g => new AccuracyTrendDto
                 {
-                    Date = g.Key.ToString("yyyy-MM-dd"),
+                    Date = g.Key,
                     TotalReviews = g.Count(),
                     GoodReviews = g.Count(l => l.Grade >= 2),
                     RetentionRate = g.Count() > 0 ? Math.Round((double)g.Count(l => l.Grade >= 2) / g.Count() * 100, 1) : 0
@@ -1037,10 +1063,10 @@ namespace LinguaReadApi.Controllers
 
             // 4. Reviews per day (last 30 days)
             var reviewsPerDay = recentLogs
-                .GroupBy(log => log.ReviewedAt.Date)
+                .GroupBy(log => UserDate(log.ReviewedAt))
                 .Select(g => new ReviewsPerDayDto
                 {
-                    Date = g.Key.ToString("yyyy-MM-dd"),
+                    Date = g.Key,
                     Count = g.Count()
                 })
                 .OrderBy(r => r.Date)
@@ -1062,7 +1088,7 @@ namespace LinguaReadApi.Controllers
                         Translation = card.Word.Translation?.Translation ?? "",
                         LapseCount = g.Count(),
                         WordStatus = card.Word.Status,
-                        EaseFactor = card.EaseFactor
+                        Difficulty = card.Difficulty
                     };
                 })
                 .OrderByDescending(l => l.LapseCount)
@@ -1092,7 +1118,9 @@ namespace LinguaReadApi.Controllers
 
         // POST: api/srs/story-generate
         [HttpPost("story-generate")]
-        public async Task<ActionResult<SrsStoryGenerateResponse>> GenerateStoryFromDueWords([FromBody] SrsStoryGenerateRequest request)
+        public async Task<ActionResult<SrsStoryGenerateResponse>> GenerateStoryFromDueWords(
+            [FromBody] SrsStoryGenerateRequest request,
+            [FromQuery] int timezoneOffsetMinutes = 0)
         {
             if (!ModelState.IsValid)
                 return BadRequest(ModelState);
@@ -1102,9 +1130,8 @@ namespace LinguaReadApi.Controllers
 
             // 1. Load user settings for daily limits
             var settings = await _context.UserSettings.FirstOrDefaultAsync(u => u.UserId == userId);
-            var today = now.Date;
-            int studiedNew = (settings?.SrsDailyStudyDate?.Date == today) ? settings.SrsDailyNewCardsStudied : 0;
-            int studiedReviews = (settings?.SrsDailyStudyDate?.Date == today) ? settings.SrsDailyReviewsStudied : 0;
+            var day = DayContext(settings, timezoneOffsetMinutes, now);
+            var (studiedNew, studiedReviews) = StudiedOn(settings, day.Today);
             int effectiveMaxNew = (settings?.SrsMaxNewCards ?? 0) == 0 ? 20 : settings!.SrsMaxNewCards;
             int effectiveMaxReviews = (settings?.SrsMaxReviews ?? 0) == 0 ? 100 : settings!.SrsMaxReviews;
             int remainingNew = Math.Max(0, effectiveMaxNew - studiedNew);
@@ -1113,7 +1140,8 @@ namespace LinguaReadApi.Controllers
             // 2. Fetch due cards with card type filter and daily limits
             var baseQuery = _context.SrsCardReviews
                 .AsNoTracking()
-                .Where(scr => scr.UserId == userId && scr.NextReviewAt <= now)
+                .Where(scr => scr.UserId == userId)
+                .Where(IsDue(now, day.TomorrowStartUtc))
                 .Where(scr => !scr.IsSuspended)
                 .Where(scr => scr.BuriedUntil == null || scr.BuriedUntil <= now)
                 .Include(scr => scr.Word)
@@ -1191,7 +1219,6 @@ namespace LinguaReadApi.Controllers
                 Term = card.Word.Term,
                 Translation = card.Word.Translation?.Translation ?? "",
                 WordStatus = card.Word.Status,
-                EaseFactor = card.EaseFactor,
                 Interval = card.Interval,
                 Repetitions = card.Repetitions,
                 IsLearning = card.IsLearning,
@@ -1365,13 +1392,22 @@ Format (one object per provided word, in the same order):
         public string Term { get; set; } = string.Empty;
         public string Translation { get; set; } = string.Empty;
         public int WordStatus { get; set; }
-        public double EaseFactor { get; set; }
         public int Interval { get; set; }
         public int Repetitions { get; set; }
         public bool IsLearning { get; set; }
         public int CurrentLearningStepIndex { get; set; }
         public bool HasEverGraduated { get; set; }
         public bool IsSuspended { get; set; }
+        public DateTime NextReviewAt { get; set; }
+
+        // FSRS memory state. Null for a card that has never been reviewed.
+        public double? Stability { get; set; }
+        public double? Difficulty { get; set; }
+        public double? Retrievability { get; set; }
+        public int Lapses { get; set; }
+
+        /// <summary>Interval each grade (Again, Hard, Good, Easy) would give, in seconds.</summary>
+        public List<long> NextIntervals { get; set; } = new();
         public int Flag { get; set; }
         public string? Tags { get; set; }
         public List<SrsPhraseDto> Phrases { get; set; } = new();
@@ -1400,6 +1436,35 @@ Format (one object per provided word, in the same order):
         [Required]
         [Range(0, 3)]
         public int Grade { get; set; } // 0=Again, 1=Hard, 2=Good, 3=Easy
+
+        /// <summary>Idempotency key; a replay with the same key returns the first result.</summary>
+        [StringLength(64)]
+        public string? ClientEventId { get; set; }
+
+        /// <summary>When the review actually happened (offline replays). Defaults to now.</summary>
+        public DateTime? ReviewedAt { get; set; }
+    }
+
+    public class SrsReviewResultDto
+    {
+        public int SrsCardReviewId { get; set; }
+        public int SrsReviewLogId { get; set; }
+        public int Interval { get; set; }
+        public int Repetitions { get; set; }
+        public DateTime NextReviewAt { get; set; }
+        public bool IsLearning { get; set; }
+        public int CurrentLearningStepIndex { get; set; }
+        public bool HasEverGraduated { get; set; }
+        public double? Stability { get; set; }
+        public double? Difficulty { get; set; }
+        public double? Retrievability { get; set; }
+        public int Lapses { get; set; }
+        public List<long> NextIntervals { get; set; } = new();
+    }
+
+    public class SrsUndoDto
+    {
+        public int? SrsReviewLogId { get; set; }
     }
 
     public class SrsMineDto
@@ -1510,7 +1575,7 @@ Format (one object per provided word, in the same order):
         public string Translation { get; set; } = string.Empty;
         public int LapseCount { get; set; }
         public int WordStatus { get; set; }
-        public double EaseFactor { get; set; }
+        public double? Difficulty { get; set; }
     }
 
     public class SrsStoryListDto
@@ -1552,7 +1617,6 @@ Format (one object per provided word, in the same order):
         public string Term { get; set; } = string.Empty;
         public string Translation { get; set; } = string.Empty;
         public int WordStatus { get; set; }
-        public double EaseFactor { get; set; }
         public int Interval { get; set; }
         public int Repetitions { get; set; }
         public bool IsLearning { get; set; }

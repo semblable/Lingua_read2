@@ -2108,6 +2108,7 @@ export interface paths {
                     flag?: number;
                     tags?: string;
                     limit?: number;
+                    timezoneOffsetMinutes?: number;
                 };
                 header?: never;
                 path?: never;
@@ -2147,7 +2148,9 @@ export interface paths {
         put?: never;
         post: {
             parameters: {
-                query?: never;
+                query?: {
+                    timezoneOffsetMinutes?: number;
+                };
                 header?: never;
                 path?: never;
                 cookie?: never;
@@ -2165,7 +2168,11 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "text/plain": components["schemas"]["SrsReviewResultDto"];
+                        "application/json": components["schemas"]["SrsReviewResultDto"];
+                        "text/json": components["schemas"]["SrsReviewResultDto"];
+                    };
                 };
             };
         };
@@ -2262,12 +2269,20 @@ export interface paths {
         put?: never;
         post: {
             parameters: {
-                query?: never;
+                query?: {
+                    timezoneOffsetMinutes?: number;
+                };
                 header?: never;
                 path?: never;
                 cookie?: never;
             };
-            requestBody?: never;
+            requestBody?: {
+                content: {
+                    "application/json": components["schemas"]["SrsUndoDto"];
+                    "text/json": components["schemas"]["SrsUndoDto"];
+                    "application/*+json": components["schemas"]["SrsUndoDto"];
+                };
+            };
             responses: {
                 /** @description OK */
                 200: {
@@ -2296,6 +2311,7 @@ export interface paths {
                 query?: {
                     languageId?: number;
                     days?: number;
+                    timezoneOffsetMinutes?: number;
                 };
                 header?: never;
                 path?: never;
@@ -2409,6 +2425,7 @@ export interface paths {
             parameters: {
                 query?: {
                     languageId?: number;
+                    timezoneOffsetMinutes?: number;
                 };
                 header?: never;
                 path?: never;
@@ -2518,7 +2535,9 @@ export interface paths {
         put?: never;
         post: {
             parameters: {
-                query?: never;
+                query?: {
+                    timezoneOffsetMinutes?: number;
+                };
                 header?: never;
                 path: {
                     cardId: number;
@@ -2594,6 +2613,7 @@ export interface paths {
             parameters: {
                 query?: {
                     days?: number;
+                    timezoneOffsetMinutes?: number;
                 };
                 header?: never;
                 path?: never;
@@ -2633,7 +2653,9 @@ export interface paths {
         put?: never;
         post: {
             parameters: {
-                query?: never;
+                query?: {
+                    timezoneOffsetMinutes?: number;
+                };
                 header?: never;
                 path: {
                     wordId: number;
@@ -2707,6 +2729,7 @@ export interface paths {
             parameters: {
                 query?: {
                     languageId?: number;
+                    timezoneOffsetMinutes?: number;
                 };
                 header?: never;
                 path?: never;
@@ -2746,7 +2769,9 @@ export interface paths {
         put?: never;
         post: {
             parameters: {
-                query?: never;
+                query?: {
+                    timezoneOffsetMinutes?: number;
+                };
                 header?: never;
                 path?: never;
                 cookie?: never;
@@ -5244,7 +5269,7 @@ export interface components {
             /** Format: int32 */
             wordStatus?: number;
             /** Format: double */
-            easeFactor?: number;
+            difficulty?: number | null;
         };
         LibraryBookDto: {
             /** Format: int32 */
@@ -5327,6 +5352,7 @@ export interface components {
             languageId?: number;
             /** Format: int32 */
             durationSeconds?: number;
+            clientEventId?: string | null;
         };
         LogManualActivityRequest: {
             /** Format: int32 */
@@ -5515,8 +5541,6 @@ export interface components {
             translation?: string | null;
             /** Format: int32 */
             wordStatus?: number;
-            /** Format: double */
-            easeFactor?: number;
             /** Format: int32 */
             interval?: number;
             /** Format: int32 */
@@ -5526,6 +5550,17 @@ export interface components {
             currentLearningStepIndex?: number;
             hasEverGraduated?: boolean;
             isSuspended?: boolean;
+            /** Format: date-time */
+            nextReviewAt?: string;
+            /** Format: double */
+            stability?: number | null;
+            /** Format: double */
+            difficulty?: number | null;
+            /** Format: double */
+            retrievability?: number | null;
+            /** Format: int32 */
+            lapses?: number;
+            nextIntervals?: number[] | null;
             /** Format: int32 */
             flag?: number;
             tags?: string | null;
@@ -5582,11 +5617,39 @@ export interface components {
             /** Format: date-time */
             reviewedAt?: string;
         };
+        SrsReviewResultDto: {
+            /** Format: int32 */
+            srsCardReviewId?: number;
+            /** Format: int32 */
+            srsReviewLogId?: number;
+            /** Format: int32 */
+            interval?: number;
+            /** Format: int32 */
+            repetitions?: number;
+            /** Format: date-time */
+            nextReviewAt?: string;
+            isLearning?: boolean;
+            /** Format: int32 */
+            currentLearningStepIndex?: number;
+            hasEverGraduated?: boolean;
+            /** Format: double */
+            stability?: number | null;
+            /** Format: double */
+            difficulty?: number | null;
+            /** Format: double */
+            retrievability?: number | null;
+            /** Format: int32 */
+            lapses?: number;
+            nextIntervals?: number[] | null;
+        };
         SrsReviewSubmitDto: {
             /** Format: int32 */
             srsCardReviewId: number;
             /** Format: int32 */
             grade: number;
+            clientEventId?: string | null;
+            /** Format: date-time */
+            reviewedAt?: string | null;
         };
         SrsStatsDto: {
             /** Format: int32 */
@@ -5646,6 +5709,10 @@ export interface components {
             /** Format: date-time */
             createdAt?: string;
             contentPreview?: string | null;
+        };
+        SrsUndoDto: {
+            /** Format: int32 */
+            srsReviewLogId?: number | null;
         };
         StoryGenerationRequest: {
             prompt: string;
@@ -5848,6 +5915,8 @@ export interface components {
             textId: number;
             /** Format: double */
             currentPosition?: number | null;
+            /** Format: date-time */
+            clientUpdatedAt?: string | null;
         };
         UpdateAudiobookProgressDto: {
             /** Format: int32 */
@@ -5862,6 +5931,8 @@ export interface components {
             currentAudiobookTrackId?: number | null;
             /** Format: double */
             currentAudiobookPosition?: number | null;
+            /** Format: date-time */
+            clientUpdatedAt?: string | null;
         };
         UpdateBookDto: {
             title: string;
@@ -5890,6 +5961,8 @@ export interface components {
         UpdateLastReadDto: {
             /** Format: int32 */
             textId: number;
+            /** Format: date-time */
+            clientUpdatedAt?: string | null;
         };
         UpdateTextDto: {
             /** Format: int32 */
@@ -5977,6 +6050,12 @@ export interface components {
             /** Format: int32 */
             srsLapseMinimumIntervalDays?: number | null;
             srsCardType?: string | null;
+            srsRelearningStepMinutes?: string | null;
+            /** Format: double */
+            srsDesiredRetention?: number | null;
+            /** Format: int32 */
+            srsDayStartHour?: number | null;
+            srsFsrsWeights?: string | null;
         };
         UpdateWordDto: {
             /** Format: int32 */
@@ -6098,10 +6177,16 @@ export interface components {
             /** Format: int32 */
             srsDailyReviewsStudied?: number;
             srsLearningStepMinutes?: string | null;
+            srsRelearningStepMinutes?: string | null;
             /** Format: int32 */
             srsMaxIntervalDays?: number;
             /** Format: int32 */
             srsLapseMinimumIntervalDays?: number;
+            /** Format: double */
+            srsDesiredRetention?: number;
+            /** Format: int32 */
+            srsDayStartHour?: number;
+            srsFsrsWeights?: string | null;
             /** Format: int32 */
             srsCurrentStreak?: number;
             /** Format: int32 */
@@ -6195,6 +6280,12 @@ export interface components {
             /** Format: int32 */
             srsLapseMinimumIntervalDays?: number;
             srsCardType?: string | null;
+            srsRelearningStepMinutes?: string | null;
+            /** Format: double */
+            srsDesiredRetention?: number;
+            /** Format: int32 */
+            srsDayStartHour?: number;
+            srsFsrsWeights?: string | null;
         };
         UserStatisticsDto: {
             /** Format: int32 */

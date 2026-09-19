@@ -7,9 +7,14 @@ import type { SyncHandlers } from './syncQueue';
 
 export const productionSyncHandlers: SyncHandlers = {
   srsReview: async ({ payload }) => {
-    await fetchApi('/srs/review', {
+    await fetchApi(`/srs/review?timezoneOffsetMinutes=${payload.timezoneOffsetMinutes ?? 0}`, {
       method: 'POST',
-      body: JSON.stringify({ srsCardReviewId: payload.cardId, grade: payload.grade }),
+      body: JSON.stringify({
+        srsCardReviewId: payload.cardId,
+        grade: payload.grade,
+        clientEventId: payload.clientEventId,
+        reviewedAt: payload.reviewedAt,
+      }),
     });
   },
   wordStatusUpdate: async ({ payload }) => {

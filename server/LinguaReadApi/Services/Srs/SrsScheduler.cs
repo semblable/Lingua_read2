@@ -149,6 +149,29 @@ namespace LinguaReadApi.Services.Srs
                 .Select(grade => ReviewCore(card, FsrsAlgorithm.RatingFromGrade(grade), nowUtc, fuzz: null).DisplayInterval)
                 .ToList();
 
+        /// <summary>
+        /// Recomputes a Review card's interval and due day from its memory state and the
+        /// current options (retention, maximum interval, weights), counting from the day of
+        /// its last review. Other cards come back unchanged.
+        /// </summary>
+        public SrsCardSnapshot Reschedule(SrsCardSnapshot card, Random? random = null)
+        {
+            if (card.State != SrsCardState.Review || card.Stability is not { } stability || card.LastReviewedAtUtc is not { } last)
+                return card;
+
+            var max = Math.Max(1, _options.MaximumIntervalDays);
+            var days = _fsrs.NextIntervalDays(stability, _desiredRetention, max);
+            if (_options.EnableFuzz)
+                days = FsrsAlgorithm.Fuzz(days, max, random ?? Random.Shared);
+
+            var lastDay = SrsDay.UserDay(last, _options.TimezoneOffsetMinutes, _options.DayStartHour);
+            return card with
+            {
+                IntervalDays = days,
+                DueUtc = SrsDay.DayStartUtc(lastDay.AddDays(days), _options.TimezoneOffsetMinutes, _options.DayStartHour),
+            };
+        }
+
         /// <summary>Current probability of recall, or null for cards without memory state.</summary>
         public double? Retrievability(SrsCardSnapshot card, DateTime nowUtc)
         {

@@ -2,9 +2,18 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Container, Card, Button, Spinner, Alert, Form, Row, Col, Badge, ProgressBar, Modal } from 'react-bootstrap';
 import { useNavigate } from 'react-router-dom';
 import { SettingsContext } from '../contexts/SettingsContext';
-import { getAllLanguages, getSrsDueCards, submitSrsReview, getSrsStats, updateUserSettings, undoSrsReview, getSrsForecast, suspendSrsCard, burySrsCard, updateSrsCard, getSrsHeatmap, getSrsAnalytics } from '../utils/api';
+import { getAllLanguages, getSrsDueCards, submitSrsReview, getSrsStats, updateUserSettings, undoSrsReview, cancelQueuedSrsReview, getSrsForecast, suspendSrsCard, burySrsCard, updateSrsCard, getSrsHeatmap, getSrsAnalytics } from '../utils/api';
 import type { Language } from '../utils/api/languages';
 import type { SrsDueCards, SrsStats, SrsForecast, SrsHeatmap, SrsAnalytics } from '../utils/api/srs';
+import {
+  createSessionQueue,
+  formatInterval,
+  nextCard,
+  remainingCount,
+  requeue,
+  takeCard,
+  type SessionQueue,
+} from '../utils/srsSessionQueue';
 import {
   WORD_STATUS_LABELS as STATUS_LABELS,
   WORD_STATUS_VARIANTS as STATUS_VARIANTS,
@@ -16,6 +25,25 @@ import './SrsReview.css';
 type DueCard = SrsDueCards[number];
 type ForecastEntry = SrsForecast[number];
 type HeatmapEntry = SrsHeatmap[number];
+
+// What undo needs to put the session back as it was before the last grade.
+type LastGrade = {
+  card: DueCard;
+  queue: SessionQueue<DueCard>;
+  clientEventId: string;
+  logId: number | null; // null while the grade waits in the offline queue
+};
+
+// Local calendar date as YYYY-MM-DD. (toISOString() would give the UTC date,
+// which is yesterday for part of every evening east of Greenwich.)
+const localDateKey = (d: Date): string =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+// Parses a server YYYY-MM-DD as a local date, not as UTC midnight.
+const parseLocalDate = (key: string): Date => new Date(`${key}T00:00:00`);
+
+const learningDueAt = (card: DueCard): number | null =>
+  card.isLearning && card.nextReviewAt ? Date.parse(card.nextReviewAt) : null;
 
 const FLAG_COLORS = ['', '🟥', '🟧', '🟨', '🟩'];
 const FLAG_LABELS = ['None', 'Red', 'Orange', 'Yellow', 'Green'];
@@ -87,6 +115,10 @@ const SrsReview = () => {
     srsMaxIntervalDays: number | string;
     srsLapseMinimumIntervalDays: number | string;
     srsCardType: string;
+    srsRelearningStepMinutes: string;
+    srsDesiredRetention: number | string;
+    srsDayStartHour: number | string;
+    srsFsrsWeights: string;
   };
   const [localSettings, setLocalSettings] = useState<SrsLocalSettings>({
     srsMaxNewCards: 20,
@@ -95,7 +127,11 @@ const SrsReview = () => {
     srsLearningStepMinutes: '1,10',
     srsMaxIntervalDays: 36500,
     srsLapseMinimumIntervalDays: 1,
-    srsCardType: 'translation'
+    srsCardType: 'translation',
+    srsRelearningStepMinutes: '10',
+    srsDesiredRetention: 0.9,
+    srsDayStartHour: 4,
+    srsFsrsWeights: ''
   });
 
   useEffect(() => {
@@ -106,7 +142,11 @@ const SrsReview = () => {
       srsLearningStepMinutes: settings?.srsLearningStepMinutes ?? '1,10',
       srsMaxIntervalDays: settings?.srsMaxIntervalDays ?? 36500,
       srsLapseMinimumIntervalDays: settings?.srsLapseMinimumIntervalDays ?? 1,
-      srsCardType: settings?.srsCardType ?? 'translation'
+      srsCardType: settings?.srsCardType ?? 'translation',
+      srsRelearningStepMinutes: settings?.srsRelearningStepMinutes ?? '10',
+      srsDesiredRetention: settings?.srsDesiredRetention ?? 0.9,
+      srsDayStartHour: settings?.srsDayStartHour ?? 4,
+      srsFsrsWeights: settings?.srsFsrsWeights ?? ''
     });
   }, [settings]);
 
@@ -131,6 +171,17 @@ const SrsReview = () => {
       setError('Lapse minimum interval must be at least 1 day.');
       return;
     }
+    const desiredRetention = parseFloat(String(localSettings.srsDesiredRetention));
+    if (isNaN(desiredRetention) || desiredRetention < 0.7 || desiredRetention > 0.97) {
+      setError('Desired retention must be between 0.70 and 0.97.');
+      return;
+    }
+    const dayStartHour = parseInt(String(localSettings.srsDayStartHour), 10);
+    if (isNaN(dayStartHour) || dayStartHour < 0 || dayStartHour > 23) {
+      setError('The new day must start at an hour from 0 to 23.');
+      return;
+    }
+    const fsrsWeights = localSettings.srsFsrsWeights.trim();
     try {
       await updateUserSettings({
         srsMaxNewCards: maxNew,
@@ -139,7 +190,11 @@ const SrsReview = () => {
         srsLearningStepMinutes: localSettings.srsLearningStepMinutes,
         srsMaxIntervalDays: maxInterval,
         srsLapseMinimumIntervalDays: lapseMin,
-        srsCardType: localSettings.srsCardType
+        srsCardType: localSettings.srsCardType,
+        srsRelearningStepMinutes: localSettings.srsRelearningStepMinutes,
+        srsDesiredRetention: desiredRetention,
+        srsDayStartHour: dayStartHour,
+        srsFsrsWeights: fsrsWeights
       });
       updateSetting('srsMaxNewCards', maxNew);
       updateSetting('srsMaxReviews', maxReviews);
@@ -148,6 +203,10 @@ const SrsReview = () => {
       updateSetting('srsMaxIntervalDays', maxInterval);
       updateSetting('srsLapseMinimumIntervalDays', lapseMin);
       updateSetting('srsCardType', localSettings.srsCardType);
+      updateSetting('srsRelearningStepMinutes', localSettings.srsRelearningStepMinutes);
+      updateSetting('srsDesiredRetention', desiredRetention);
+      updateSetting('srsDayStartHour', dayStartHour);
+      updateSetting('srsFsrsWeights', fsrsWeights || null);
       setShowSettingsModal(false);
       loadStats(); // refresh visual stats
     } catch (err: unknown) {
@@ -155,9 +214,11 @@ const SrsReview = () => {
     }
   };
 
-  // Session state
-  const [cards, setCards] = useState<DueCard[]>([]);
-  const [currentIndex, setCurrentIndex] = useState(0);
+  // Session state. The queue holds the cards still to come (including learning
+  // cards that come back within the session); currentCard has been taken out of it.
+  const [queue, setQueue] = useState<SessionQueue<DueCard>>({ unseen: [], learning: [] });
+  const [currentCard, setCurrentCard] = useState<DueCard | null>(null);
+  const [lastGrade, setLastGrade] = useState<LastGrade | null>(null);
   const [isFlipped, setIsFlipped] = useState(false);
   const [sessionStarted, setSessionStarted] = useState(false);
   const [sessionComplete, setSessionComplete] = useState(false);
@@ -203,6 +264,16 @@ const SrsReview = () => {
     loadStats();
   }, [loadStats]);
 
+  // Shows the next card from `q`, or ends the session when there is none.
+  const advance = useCallback((q: SessionQueue<DueCard>) => {
+    const next = nextCard(q, Date.now());
+    setQueue(next ? takeCard(q, next) : q);
+    setCurrentCard(next);
+    setIsFlipped(false);
+    if (!next) setSessionComplete(true);
+    return next;
+  }, [setQueue, setCurrentCard, setIsFlipped, setSessionComplete]);
+
   // Start review session
   const startSession = useCallback(async () => {
     if (!selectedLanguage) return;
@@ -210,8 +281,8 @@ const SrsReview = () => {
     setError(null);
     setSessionComplete(false);
     setReviewedCount(0);
-    setCurrentIndex(0);
-    setIsFlipped(false);
+    setLastGrade(null);
+    setUndoVisible(false);
 
     try {
       const data = await getSrsDueCards(selectedLanguage, {
@@ -219,27 +290,14 @@ const SrsReview = () => {
         onlyOneTarget,
         limit: 50
       });
-      if (!data || data.length === 0) {
-        setCards([]);
-        setSessionStarted(true);
-        setSessionComplete(true);
-      } else {
-        setCards(data);
-        setSessionStarted(true);
-      }
+      setSessionStarted(true);
+      advance(createSessionQueue(data ?? [], learningDueAt, Date.now()));
     } catch (err: unknown) {
       setError(`Failed to load cards: ${(err as Error)?.message}`);
     } finally {
       setLoading(false);
     }
-  }, [selectedLanguage, statusFilter, onlyOneTarget]);
-
-  const currentCard = useMemo(() => {
-    if (currentIndex >= 0 && currentIndex < cards.length) {
-      return cards[currentIndex];
-    }
-    return null;
-  }, [cards, currentIndex]);
+  }, [selectedLanguage, statusFilter, onlyOneTarget, advance]);
 
   const primaryPhrase = useMemo(() => {
     if (!currentCard?.phrases?.length || !currentCard?.term) return null;
@@ -260,45 +318,61 @@ const SrsReview = () => {
   // Handle grading
   const handleGrade = useCallback(async (grade: number) => {
     if (!currentCard || submitting) return;
+    if (currentCard.srsCardReviewId == null) return;
     setSubmitting(true);
     setUndoVisible(false); // Hide any existing undo before submitting new
 
     try {
-      if (currentCard.srsCardReviewId == null) return;
-      await submitSrsReview(currentCard.srsCardReviewId, grade);
+      const submitted = await submitSrsReview(currentCard.srsCardReviewId, grade);
       setReviewedCount(prev => prev + 1);
 
+      // A card sent to a (re)learning step comes back later in this session.
+      // (A grade queued offline has no server result yet, so its card is done for now.)
+      let nextQueue = queue;
+      if (!submitted.queued) {
+        const result = submitted.result;
+        if (result.isLearning && result.nextReviewAt) {
+          const updated: DueCard = { ...currentCard, ...result };
+          nextQueue = requeue(queue, updated, Date.parse(result.nextReviewAt), Date.now());
+        }
+      }
+
+      setLastGrade({
+        card: currentCard,
+        queue,
+        clientEventId: submitted.clientEventId,
+        logId: submitted.queued ? null : submitted.result.srsReviewLogId ?? null,
+      });
       setUndoVisible(true);
       setUndoTimer(5);
 
-      if (currentIndex + 1 >= cards.length) {
-        setSessionComplete(true);
-        loadStats();
-      } else {
-        setCurrentIndex(prev => prev + 1);
-        setIsFlipped(false);
-      }
+      if (!advance(nextQueue)) loadStats();
     } catch (err: unknown) {
       setError(`Failed to submit review: ${(err as Error)?.message}`);
     } finally {
       setSubmitting(false);
     }
-  }, [currentCard, currentIndex, cards.length, submitting, loadStats]);
+  }, [currentCard, queue, submitting, loadStats, advance]);
 
   const handleUndo = async () => {
-    if (submitting) return;
+    if (submitting || !lastGrade) return;
     try {
       setSubmitting(true);
-      await undoSrsReview();
+      // A grade still waiting offline is simply dropped from the queue; one the
+      // server already applied is reverted by its log id.
+      const cancelled = lastGrade.logId == null && await cancelQueuedSrsReview(lastGrade.clientEventId);
+      if (!cancelled) {
+        if (lastGrade.logId == null) throw new Error('the review has not reached the server yet');
+        await undoSrsReview(lastGrade.logId);
+      }
       setUndoVisible(false);
       setReviewedCount(prev => Math.max(0, prev - 1));
-      
-      if (sessionComplete) {
-        setSessionComplete(false);
-        setCurrentIndex(cards.length - 1);
-      } else {
-        setCurrentIndex(prev => Math.max(0, prev - 1));
-      }
+
+      // Put the session back as it was before that grade.
+      setQueue(lastGrade.queue);
+      setCurrentCard(lastGrade.card);
+      setLastGrade(null);
+      setSessionComplete(false);
       setIsFlipped(true); // Show back of the card they just undid
       loadStats(); // Refresh limits
     } catch (err: unknown) {
@@ -351,7 +425,8 @@ const SrsReview = () => {
     localStorage.setItem('srsSelectedLanguage', langId);
     setSessionStarted(false);
     setSessionComplete(false);
-    setCards([]);
+    setQueue({ unseen: [], learning: [] });
+    setCurrentCard(null);
   };
 
   const handleStatusFilterChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -374,74 +449,16 @@ const SrsReview = () => {
     );
   };
 
-  // Parse learning steps from settings
-  const learningSteps = useMemo(() => {
-    const raw = localSettings.srsLearningStepMinutes || '1,10';
-    return raw.split(',').map(s => parseInt(s.trim(), 10)).filter(n => n > 0);
-  }, [localSettings.srsLearningStepMinutes]);
+  // The server previews what each grade would do, so labels always match the scheduler.
+  const getIntervalLabel = (grade: number, card: DueCard | null): string =>
+    formatInterval(card?.nextIntervals?.[grade]);
 
-  const getIntervalLabel = (grade: number, card: DueCard | null): string => {
-    if (!card) return '';
-    const ef = card.easeFactor ?? 2.5;
-
-    // If card is currently in learning phase
-    if (card.isLearning) {
-      const stepIdx = card.currentLearningStepIndex || 0;
-      switch (grade) {
-        case 0: // Again: reset to step 0
-          return learningSteps.length > 0 ? `${learningSteps[0]}m` : '1m';
-        case 1: // Hard: also reset to step 0
-          return learningSteps.length > 0 ? `${learningSteps[0]}m` : '1m';
-        case 2: { // Good: next step or graduate
-          const nextStep = stepIdx + 1;
-          if (nextStep >= learningSteps.length) {
-            const isRelearning = card.hasEverGraduated;
-            const lapseMin = parseInt(String(localSettings.srsLapseMinimumIntervalDays), 10) || 1;
-            return isRelearning ? `${lapseMin}d` : '1d';
-          }
-          return `${learningSteps[nextStep]}m`;
-        }
-        case 3: { // Easy: graduate immediately (from any step)
-          const isRelearning = card.hasEverGraduated;
-          const lapseMin = parseInt(String(localSettings.srsLapseMinimumIntervalDays), 10) || 1;
-          return isRelearning ? `${lapseMin * 2}d` : '4d';
-        }
-        default: return '';
-      }
-    }
-
-    // Not in learning phase (normal SM-2 preview)
-    let interval;
-    switch (grade) {
-      case 0: // Lapse: enter learning (first step)
-        return learningSteps.length > 0 ? `${learningSteps[0]}m` : '1m';
-      case 1: // Hard lapse
-        return learningSteps.length > 0 ? `${learningSteps[0]}m` : '1m';
-      case 2:
-        if (card.repetitions === 0) interval = 1;
-        else if (card.repetitions === 1) interval = 6;
-        else interval = Math.round((card.interval ?? 0) * ef);
-        return `${interval}d`;
-      case 3:
-        if (card.repetitions === 0) interval = 1;
-        else if (card.repetitions === 1) interval = 6;
-        else interval = Math.round((card.interval ?? 0) * ef);
-        interval = Math.round(interval * 1.3);
-        return `${interval}d`;
-      default: return '';
-    }
-  };
-
-  // Remove card from session and handle index/completion
+  // Remove the current card from the session (suspended or buried) and move on
   const removeCardFromSession = (cardId: number) => {
-    setCards(prev => {
-      const updated = prev.filter((c) => c.srsCardReviewId !== cardId);
-      if (updated.length === 0 || currentIndex >= updated.length) {
-        setSessionComplete(true);
-        loadStats();
-      }
-      return updated;
-    });
+    if (currentCard?.srsCardReviewId !== cardId) return;
+    setLastGrade(null);
+    setUndoVisible(false);
+    if (!advance(queue)) loadStats();
   };
 
   // Suspend card handler
@@ -468,7 +485,7 @@ const SrsReview = () => {
   const handleFlag = async (cardId: number, flagValue: number) => {
     try {
       await updateSrsCard(cardId, { flag: flagValue });
-      setCards(prev => prev.map((c) => c.srsCardReviewId === cardId ? { ...c, flag: flagValue } : c));
+      setCurrentCard(c => (c && c.srsCardReviewId === cardId ? { ...c, flag: flagValue } : c));
     } catch (err: unknown) {
       setError(`Failed to flag: ${(err as Error)?.message}`);
     }
@@ -489,7 +506,7 @@ const SrsReview = () => {
     for (let i = 364; i >= 0; i--) {
       const d = new Date(today);
       d.setDate(d.getDate() - i);
-      const dateStr = d.toISOString().slice(0, 10);
+      const dateStr = localDateKey(d);
       days.push({ date: dateStr, count: heatmapMap[dateStr] || 0, dayOfWeek: d.getDay() });
     }
 
@@ -596,7 +613,7 @@ const SrsReview = () => {
                   const dayCount = day.count ?? 0;
                   const maxCount = Math.max(...forecast.map(f => f.count ?? 0), 1);
                   const heightPct = (dayCount / maxCount) * 100;
-                  const dateObj = day.date ? new Date(day.date) : null;
+                  const dateObj = day.date ? parseLocalDate(day.date) : null;
                   const dayStr = idx === 0 ? 'Today' : dateObj?.toLocaleDateString(undefined, { weekday: 'short' }) ?? '';
                   return (
                     <div key={idx} className="d-flex flex-column align-items-center" style={{ flex: 1 }} title={`${day.date}: ${dayCount} cards`}>
@@ -690,7 +707,7 @@ const SrsReview = () => {
                     text="dark"
                     className="d-flex align-items-center gap-1"
                     style={{ fontSize: '0.75rem', padding: '0.3rem 0.6rem' }}
-                    title={`${lc.translation} — ${lc.lapseCount} lapses, ease ${(lc.easeFactor ?? 0).toFixed(2)}`}
+                    title={`${lc.translation} — ${lc.lapseCount} lapses${lc.difficulty != null ? `, difficulty ${lc.difficulty.toFixed(1)}/10` : ''}`}
                   >
                     {lc.term} <span className="opacity-75">({lc.lapseCount}x)</span>
                     <span
@@ -838,7 +855,43 @@ const SrsReview = () => {
                 value={localSettings.srsLearningStepMinutes}
                 onChange={e => setLocalSettings(p => ({ ...p, srsLearningStepMinutes: e.target.value }))}
               />
-              <Form.Text className="text-muted">E.g. "1, 10" means 1 minute then 10 minute step before graduating.</Form.Text>
+              <Form.Text className="text-muted">E.g. "1, 10": a new card is shown again after 1 minute, then 10 minutes, before its first day-long interval.</Form.Text>
+            </Form.Group>
+            <Form.Group className="mb-3" controlId="srs-relearning-steps">
+              <Form.Label>Relearning Steps (minutes, comma-separated)</Form.Label>
+              <Form.Control
+                type="text"
+                placeholder="10"
+                value={localSettings.srsRelearningStepMinutes}
+                onChange={e => setLocalSettings(p => ({ ...p, srsRelearningStepMinutes: e.target.value }))}
+              />
+              <Form.Text className="text-muted">Steps a card you forgot goes through before it returns to review.</Form.Text>
+            </Form.Group>
+            <Form.Group className="mb-3" controlId="srs-desired-retention">
+              <Form.Label>Desired Retention</Form.Label>
+              <Form.Control
+                type="number"
+                min={0.7}
+                max={0.97}
+                step={0.01}
+                value={localSettings.srsDesiredRetention}
+                onChange={e => setLocalSettings(p => ({ ...p, srsDesiredRetention: e.target.value }))}
+              />
+              <Form.Text className="text-muted">
+                How likely you should be to remember a card when it comes due (0.70-0.97, default 0.90). Higher means more reviews.
+                Changing it reschedules your existing cards.
+              </Form.Text>
+            </Form.Group>
+            <Form.Group className="mb-3" controlId="srs-day-start-hour">
+              <Form.Label>Next Day Starts At (hour)</Form.Label>
+              <Form.Control
+                type="number"
+                min={0}
+                max={23}
+                value={localSettings.srsDayStartHour}
+                onChange={e => setLocalSettings(p => ({ ...p, srsDayStartHour: e.target.value }))}
+              />
+              <Form.Text className="text-muted">Daily limits and streaks roll over at this local hour (default 4, so late-night reviews count for the day before).</Form.Text>
             </Form.Group>
             <Form.Group className="mb-3">
               <Form.Label>Maximum Interval (days)</Form.Label>
@@ -860,7 +913,7 @@ const SrsReview = () => {
                 value={localSettings.srsLapseMinimumIntervalDays}
                 onChange={e => setLocalSettings(p => ({ ...p, srsLapseMinimumIntervalDays: e.target.value }))}
               />
-              <Form.Text className="text-muted">After failing a card, its interval won't go below this value after re-learning. Default: 1.</Form.Text>
+              <Form.Text className="text-muted">After you forget a card, its next interval won't go below this. Default: 1.</Form.Text>
             </Form.Group>
             <Form.Group className="mb-3" data-testid="srs-card-type-group">
               <Form.Label>Card Style</Form.Label>
@@ -895,6 +948,21 @@ const SrsReview = () => {
                 Cloze cards require a mined sentence. Cards without one fall back to the translation style.
               </Form.Text>
             </Form.Group>
+            <details className="mb-2">
+              <summary className="small text-muted">Advanced: FSRS parameters</summary>
+              <Form.Group className="mt-2" controlId="srs-fsrs-weights">
+                <Form.Control
+                  as="textarea"
+                  rows={3}
+                  placeholder="Leave empty to use the FSRS-6 defaults"
+                  value={localSettings.srsFsrsWeights}
+                  onChange={e => setLocalSettings(p => ({ ...p, srsFsrsWeights: e.target.value }))}
+                />
+                <Form.Text className="text-muted">
+                  21 comma-separated weights, e.g. from an FSRS optimizer. Changing them reschedules your existing cards.
+                </Form.Text>
+              </Form.Group>
+            </details>
           </Modal.Body>
           <Modal.Footer>
             <Button variant="secondary" onClick={() => setShowSettingsModal(false)}>Cancel</Button>
@@ -956,13 +1024,14 @@ const SrsReview = () => {
   }
 
   // Review Card Screen
+  const sessionTotal = reviewedCount + remainingCount(queue) + (currentCard ? 1 : 0);
   return (
     <Container className="mt-3" style={{ maxWidth: '700px' }}>
       {/* Progress Bar */}
       <div className="d-flex align-items-center mb-2 gap-2">
-        <small className="text-muted">{reviewedCount}/{cards.length}</small>
+        <small className="text-muted">{reviewedCount}/{sessionTotal}</small>
         <ProgressBar
-          now={(reviewedCount / cards.length) * 100}
+          now={sessionTotal > 0 ? (reviewedCount / sessionTotal) * 100 : 0}
           className="flex-grow-1 srs-progress-bar"
           variant="success"
         />
@@ -1030,7 +1099,10 @@ const SrsReview = () => {
                       {currentCard.unknownWordsInPhrase === 1 ? '1T' : `${currentCard.unknownWordsInPhrase}T`}
                     </Badge>
                   }
-                  Rep: {currentCard.repetitions} | Int: {currentCard.interval}d
+                  Int: {currentCard.interval}d
+                  {currentCard.retrievability != null && (
+                    <span title="Estimated chance of remembering this card right now"> | R: {Math.round(currentCard.retrievability * 100)}%</span>
+                  )}
                 </small>
               </div>
             </div>

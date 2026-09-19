@@ -425,6 +425,92 @@ public class UserSettingsControllerTests
         Assert.Equal("cloze", row.SrsCardType);
     }
 
+    // ---- FSRS settings ----
+
+    private static async Task<(AppDbContext Context, Guid UserId, int CardId)> SeedGraduatedCard()
+    {
+        var context = CreateContext();
+        var userId = Guid.NewGuid();
+        context.Users.Add(new User { Id = userId, UserName = "u", Email = "u@test.com" });
+        context.UserSettings.Add(new UserSettings { UserId = userId });
+        var card = new SrsCardReview
+        {
+            WordId = 1, UserId = userId, HasEverGraduated = true, Stability = 30, Difficulty = 5,
+            Interval = 30, Repetitions = 5, LastReviewedAt = DateTime.UtcNow.AddDays(-1),
+            NextReviewAt = DateTime.UtcNow.AddDays(29),
+        };
+        context.SrsCardReviews.Add(card);
+        await context.SaveChangesAsync();
+        return (context, userId, card.SrsCardReviewId);
+    }
+
+    [Fact]
+    public async Task UpdateUserSettings_RoundTripsFsrsSettings()
+    {
+        var (context, userId, _) = await SeedGraduatedCard();
+        await using var _ctx = context;
+        var weights = string.Join(",", LinguaReadApi.Services.Srs.FsrsParameters.DefaultWeights
+            .Select(w => w.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+
+        var result = await CreateController(context, userId).UpdateUserSettings(new UpdateUserSettingsDto
+        {
+            SrsDesiredRetention = 0.85,
+            SrsRelearningStepMinutes = " 5, 20 ",
+            SrsDayStartHour = 6,
+            SrsFsrsWeights = weights,
+        });
+
+        var dto = Assert.IsType<UserSettingsDto>(result.Value);
+        Assert.Equal(0.85, dto.SrsDesiredRetention);
+        Assert.Equal("5, 20", dto.SrsRelearningStepMinutes);
+        Assert.Equal(6, dto.SrsDayStartHour);
+        Assert.Equal(weights, dto.SrsFsrsWeights);
+
+        await CreateController(context, userId).UpdateUserSettings(new UpdateUserSettingsDto { SrsFsrsWeights = "" });
+        Assert.Null((await context.UserSettings.AsNoTracking().SingleAsync()).SrsFsrsWeights);
+    }
+
+    [Fact]
+    public async Task UpdateUserSettings_RejectsMalformedFsrsWeights()
+    {
+        var (context, userId, _) = await SeedGraduatedCard();
+        await using var _ctx = context;
+
+        var result = await CreateController(context, userId).UpdateUserSettings(new UpdateUserSettingsDto { SrsFsrsWeights = "1,2,3" });
+
+        Assert.IsType<BadRequestObjectResult>(result.Result);
+        Assert.Null((await context.UserSettings.AsNoTracking().SingleAsync()).SrsFsrsWeights);
+    }
+
+    [Fact]
+    public async Task ChangingDesiredRetention_ReschedulesGraduatedCards()
+    {
+        var (context, userId, cardId) = await SeedGraduatedCard();
+        await using var _ctx = context;
+
+        await CreateController(context, userId).UpdateUserSettings(new UpdateUserSettingsDto { SrsDesiredRetention = 0.95 });
+
+        var card = await context.SrsCardReviews.AsNoTracking().SingleAsync(c => c.SrsCardReviewId == cardId);
+        var ideal = new LinguaReadApi.Services.Srs.FsrsAlgorithm().NextIntervalDays(30, 0.95, 36500);
+        var (min, max) = LinguaReadApi.Services.Srs.FsrsAlgorithm.FuzzRange(ideal, 36500);
+        Assert.InRange(card.Interval, min, max);
+        Assert.True(card.Interval < 30, $"higher retention should shorten the interval, got {card.Interval}d");
+        var lastDay = LinguaReadApi.Utilities.SrsDay.UserDay(card.LastReviewedAt!.Value, 0, 4);
+        Assert.Equal(LinguaReadApi.Utilities.SrsDay.DayStartUtc(lastDay.AddDays(card.Interval), 0, 4), card.NextReviewAt);
+    }
+
+    [Fact]
+    public async Task UnrelatedSettingChange_LeavesDueDatesAlone()
+    {
+        var (context, userId, cardId) = await SeedGraduatedCard();
+        await using var _ctx = context;
+        var before = (await context.SrsCardReviews.AsNoTracking().SingleAsync(c => c.SrsCardReviewId == cardId)).NextReviewAt;
+
+        await CreateController(context, userId).UpdateUserSettings(new UpdateUserSettingsDto { SrsMaxNewCards = 5, SrsDesiredRetention = 0.9 });
+
+        Assert.Equal(before, (await context.SrsCardReviews.AsNoTracking().SingleAsync(c => c.SrsCardReviewId == cardId)).NextReviewAt);
+    }
+
     private static UserSettingsController CreateController(AppDbContext context, Guid userId)
     {
         var discord = new DiscordReportService(

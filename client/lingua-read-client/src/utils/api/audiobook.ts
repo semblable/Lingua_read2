@@ -5,18 +5,13 @@
 import { fetchApi } from './client';
 import type { ResponseOf, RequestBodyOf } from '../fetchApi';
 import { enqueueIfOffline } from '../offline/enqueueIfOffline';
+import { newClientEventId } from '../offline/clientEventId';
 
 // A monotonic-ish stamp the server uses for last-write-wins conflict
 // resolution on position/last-read so a late-draining offline save can't
 // clobber a newer value.
 const nowIso = (): string => new Date().toISOString();
 
-// Unique id per listening flush so the additive logListening endpoint can
-// dedupe replays (and responses lost on a flaky link) instead of double-counting.
-const newClientEventId = (): string =>
-  (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function')
-    ? crypto.randomUUID()
-    : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
 // The Swagger spec for these endpoints lacks a body schema (controllers
 // return `Ok(object)` without [ProducesResponseType]). Define the shapes

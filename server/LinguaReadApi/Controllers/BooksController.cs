@@ -1465,7 +1465,9 @@ namespace LinguaReadApi.Controllers
                 return null;
             }
 
-            var extension = GetImageExtension(imageFile.ContentMimeType, imageFile.FilePath);
+            // The archive path's extension is attacker-controlled (a manifest can call "x.html" an
+            // image), so it only survives if it's an image extension.
+            var extension = ImageFileExtension.From(imageFile.FilePath, imageFile.ContentMimeType);
             var fileName = $"img_{extractionContext.NextImageIndex:D4}{extension}";
             extractionContext.NextImageIndex++;
 
@@ -1549,7 +1551,7 @@ namespace LinguaReadApi.Controllers
         {
             if (extractionContext.Book.Content.Cover != null && extractionContext.Book.Content.Cover.Content.Length > 0)
             {
-                var extension = GetImageExtension(extractionContext.Book.Content.Cover.ContentMimeType, extractionContext.Book.Content.Cover.FilePath);
+                var extension = ImageFileExtension.From(extractionContext.Book.Content.Cover.FilePath, extractionContext.Book.Content.Cover.ContentMimeType);
                 var relativePath = $"{extractionContext.RelativeAssetRoot}/cover{extension}";
                 var absolutePath = Path.Combine(extractionContext.AbsoluteAssetRoot, $"cover{extension}");
                 System.IO.File.WriteAllBytes(absolutePath, extractionContext.Book.Content.Cover.Content);
@@ -1558,7 +1560,7 @@ namespace LinguaReadApi.Controllers
 
             if (extractionContext.Book.CoverImage != null && extractionContext.Book.CoverImage.Length > 0)
             {
-                var extension = GetImageExtension(null, "cover");
+                var extension = ImageFileExtension.From("cover", null);
                 var relativePath = $"{extractionContext.RelativeAssetRoot}/cover{extension}";
                 var absolutePath = Path.Combine(extractionContext.AbsoluteAssetRoot, $"cover{extension}");
                 System.IO.File.WriteAllBytes(absolutePath, extractionContext.Book.CoverImage);
@@ -1820,11 +1822,6 @@ namespace LinguaReadApi.Controllers
 
             return NormalizeArchivePath(WebUtility.UrlDecode(path) ?? path).TrimStart('/');
         }
-
-        // The archive path's extension is attacker-controlled (a manifest can call "x.html" an
-        // image), so it only survives if it's an image extension; see ImageFileExtension.
-        private static string GetImageExtension(string? mimeType, string? filePath) =>
-            ImageFileExtension.From(filePath, mimeType);
 
         private static void CleanupBookAssets(Guid userId, int bookId)
         {

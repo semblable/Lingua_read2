@@ -249,26 +249,7 @@ public class HardcoverServiceTests
         context.Books.Add(book);
         await context.SaveChangesAsync();
 
-        var handler = new QueueMessageHandler([
-            JsonResponse("""
-            {
-              "data": {
-                "books": [{
-                  "id": 328491,
-                  "title": "Oathbringer",
-                  "slug": "oathbringer",
-                  "description": "Imported description",
-                  "pages": 1248,
-                  "release_date": "2017-11-14",
-                  "image": { "url": "https://example.test/cover.jpg" },
-                  "contributions": [{ "author": { "name": "Brandon Sanderson" } }],
-                  "editions": [{ "id": 1, "title": "Oathbringer", "isbn_13": "9780765326379", "pages": 1248, "release_date": "2017-11-14", "publisher": { "name": "Tor" }, "image": { "url": "https://example.test/edition.jpg" } }]
-                }]
-              }
-            }
-            """),
-            JsonResponse("fake-image")
-        ]);
+        var handler = new QueueMessageHandler([OathbringerBookResponse(), JsonResponse("fake-image")]);
         var environment = new TestWebHostEnvironment();
         var service = CreateService(context, handler, environment);
 
@@ -288,6 +269,87 @@ public class HardcoverServiceTests
         Assert.NotNull(saved.CoverImagePath);
         Assert.True(File.Exists(Path.Combine(environment.WebRootPath, saved.CoverImagePath!.Replace('/', Path.DirectorySeparatorChar))));
     }
+
+    [Fact]
+    public async Task ImportMetadataAsync_DownloadedCoverFileMissing_DownloadsItAgain()
+    {
+        // Covers downloaded before hardcover-covers had its own volume were lost on redeploy
+        // while the book still points at them.
+        await using var context = CreateContext();
+        var userId = await SeedUserWithSettingsAsync(context, hardcoverToken: "token");
+        var stalePath = $"hardcover-covers/{userId:N}/lost.jpg";
+        var book = new Book
+        {
+            UserId = userId,
+            LanguageId = await SeedLanguageAsync(context),
+            Title = "Oathbringer",
+            HardcoverBookId = 328491,
+            HardcoverEditionId = 1,
+            CoverImagePath = stalePath
+        };
+        context.Books.Add(book);
+        await context.SaveChangesAsync();
+
+        var handler = new QueueMessageHandler([OathbringerBookResponse(), JsonResponse("fake-image")]);
+        var environment = new TestWebHostEnvironment();
+        var service = CreateService(context, handler, environment);
+
+        var result = await service.ImportMetadataAsync(userId, book.BookId);
+
+        Assert.True(result.Success);
+        Assert.Contains("coverImage", result.UpdatedFields);
+        var saved = await context.Books.SingleAsync();
+        Assert.NotEqual(stalePath, saved.CoverImagePath);
+        Assert.True(File.Exists(Path.Combine(environment.WebRootPath, saved.CoverImagePath!.Replace('/', Path.DirectorySeparatorChar))));
+    }
+
+    [Fact]
+    public async Task ImportMetadataAsync_MissingCoverFromElsewhere_IsLeftAlone()
+    {
+        // Only covers this service downloaded are replaced; an EPUB cover path stays as it is.
+        await using var context = CreateContext();
+        var userId = await SeedUserWithSettingsAsync(context, hardcoverToken: "token");
+        var epubCover = $"epub_assets/{userId}/1/cover.jpg";
+        var book = new Book
+        {
+            UserId = userId,
+            LanguageId = await SeedLanguageAsync(context),
+            Title = "Oathbringer",
+            HardcoverBookId = 328491,
+            HardcoverEditionId = 1,
+            CoverImagePath = epubCover
+        };
+        context.Books.Add(book);
+        await context.SaveChangesAsync();
+
+        var handler = new QueueMessageHandler([OathbringerBookResponse()]);
+        var service = CreateService(context, handler);
+
+        var result = await service.ImportMetadataAsync(userId, book.BookId);
+
+        Assert.True(result.Success);
+        Assert.DoesNotContain("coverImage", result.UpdatedFields);
+        Assert.Equal(1, handler.RequestCount); // the book lookup only, no cover download
+        Assert.Equal(epubCover, (await context.Books.SingleAsync()).CoverImagePath);
+    }
+
+    private static HttpResponseMessage OathbringerBookResponse() => JsonResponse("""
+        {
+          "data": {
+            "books": [{
+              "id": 328491,
+              "title": "Oathbringer",
+              "slug": "oathbringer",
+              "description": "Imported description",
+              "pages": 1248,
+              "release_date": "2017-11-14",
+              "image": { "url": "https://example.test/cover.jpg" },
+              "contributions": [{ "author": { "name": "Brandon Sanderson" } }],
+              "editions": [{ "id": 1, "title": "Oathbringer", "isbn_13": "9780765326379", "pages": 1248, "release_date": "2017-11-14", "publisher": { "name": "Tor" }, "image": { "url": "https://example.test/edition.jpg" } }]
+            }]
+          }
+        }
+        """);
 
     [Fact]
     public async Task SyncProgressAsync_WhenSyncDisabledAndRequired_SkipsWithoutCallingApi()

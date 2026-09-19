@@ -7,6 +7,7 @@ using System.Security.Claims;
 using System.Text;
 using LinguaReadApi.Data;
 using LinguaReadApi.Services;
+using LinguaReadApi.Utilities;
 using Microsoft.Extensions.FileProviders; // Add this for StaticFileOptions
 using System.IO; // Add this for Path.Combine
 using Microsoft.AspNetCore.Http.Features; // Needed for FormOptions
@@ -502,7 +503,10 @@ foreach (var prefix in protectedStaticPrefixes)
     app.UseStaticFiles(new StaticFileOptions
     {
         FileProvider = new PhysicalFileProvider(directory),
-        RequestPath = prefix
+        RequestPath = prefix,
+        // Only this prefix's media types: any other extension (x.html, x.js) is a 404, even for the owner.
+        ContentTypeProvider = UploadedContentTypes.For(prefix),
+        OnPrepareResponse = UploadedContentTypes.SandboxScriptableFiles
     });
 }
 

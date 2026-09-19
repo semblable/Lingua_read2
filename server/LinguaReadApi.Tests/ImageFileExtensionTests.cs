@@ -10,6 +10,7 @@ public class ImageFileExtensionTests
     [InlineData("OEBPS/images/Figure.PNG", null, ".png")]
     [InlineData("/covers/1.webp", null, ".webp")] // HardcoverService passes Uri.AbsolutePath
     [InlineData("OEBPS/images/diagram.svg", "image/svg+xml", ".svg")]
+    [InlineData("OEBPS/images/scan.TIF", "image/tiff", ".tif")]
     public void KeepsImageExtensions(string path, string? mimeType, string expected)
     {
         Assert.Equal(expected, ImageFileExtension.From(path, mimeType));

@@ -161,7 +161,8 @@ public sealed class HardcoverService : IHardcoverService
             changed.Add("pageCount");
         }
 
-        if (string.IsNullOrWhiteSpace(book.CoverImagePath) && !string.IsNullOrWhiteSpace(candidate.ImageUrl))
+        if ((string.IsNullOrWhiteSpace(book.CoverImagePath) || IsMissingDownloadedCover(book.CoverImagePath)) &&
+            !string.IsNullOrWhiteSpace(candidate.ImageUrl))
         {
             var coverPath = await DownloadCoverAsync(candidate.ImageUrl!, userId, book.BookId, cancellationToken);
             if (!string.IsNullOrWhiteSpace(coverPath))
@@ -803,6 +804,13 @@ public sealed class HardcoverService : IHardcoverService
             return null;
         }
     }
+
+    // A cover this service downloaded whose file is gone. Before hardcover-covers had its own
+    // volume, every redeploy dropped these files while the book kept pointing at them; downloading
+    // again heals the book. Covers from anywhere else (EPUB covers) are never replaced here.
+    private bool IsMissingDownloadedCover(string coverImagePath) =>
+        coverImagePath.StartsWith("hardcover-covers/", StringComparison.Ordinal) &&
+        !File.Exists(Path.Combine(GetWebRootPath(), coverImagePath.Replace('/', Path.DirectorySeparatorChar)));
 
     private string GetWebRootPath()
     {

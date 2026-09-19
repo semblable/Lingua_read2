@@ -12,15 +12,34 @@ namespace LinguaReadApi.Utilities
     /// </summary>
     public static class ImageFileExtension
     {
-        private static readonly HashSet<string> Allowed = new(StringComparer.OrdinalIgnoreCase)
-        {
-            ".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg", ".bmp", ".avif"
-        };
+        /// <summary>
+        /// The extensions images may be stored with, and the Content-Type each is served as.
+        /// The image static mounts serve exactly these (see <see cref="UploadedContentTypes"/>),
+        /// so the rarer raster types stay listed: images stored before extensions were
+        /// sanitized keep them, and dropping one would turn those into 404s.
+        /// </summary>
+        public static readonly IReadOnlyDictionary<string, string> ContentTypes =
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                [".jpg"] = "image/jpeg",
+                [".jpeg"] = "image/jpeg",
+                [".jpe"] = "image/jpeg",
+                [".jfif"] = "image/jpeg",
+                [".png"] = "image/png",
+                [".gif"] = "image/gif",
+                [".webp"] = "image/webp",
+                [".svg"] = "image/svg+xml",
+                [".bmp"] = "image/bmp",
+                [".avif"] = "image/avif",
+                [".tif"] = "image/tiff",
+                [".tiff"] = "image/tiff",
+                [".ico"] = "image/x-icon",
+            };
 
         public static string From(string? pathOrUrl, string? mimeType)
         {
             var extension = Path.GetExtension(pathOrUrl ?? string.Empty);
-            if (Allowed.Contains(extension))
+            if (ContentTypes.ContainsKey(extension))
             {
                 return extension.ToLowerInvariant();
             }

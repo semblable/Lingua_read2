@@ -32,8 +32,8 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/* # Clean up
 
 # Create the directories the application needs at runtime and ensure correct ownership
-RUN mkdir -p /app/wwwroot/audio_lessons /app/wwwroot/audiobooks /app/wwwroot/epub_assets /app/keys && \
-    chown -R app:app /app/wwwroot/audio_lessons /app/wwwroot/audiobooks /app/wwwroot/epub_assets /app/keys
+RUN mkdir -p /app/wwwroot/audio_lessons /app/wwwroot/audiobooks /app/wwwroot/epub_assets /app/wwwroot/hardcover-covers /app/keys && \
+    chown -R app:app /app/wwwroot/audio_lessons /app/wwwroot/audiobooks /app/wwwroot/epub_assets /app/wwwroot/hardcover-covers /app/keys
 
 # Copy published output from build stage
 COPY --from=build /app/publish ./

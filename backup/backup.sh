@@ -57,7 +57,7 @@ rclone copy "$BACKUP_DIR" "$REMOTE" \
 # api_dp_keys is left out on purpose: it decrypts the API keys inside the DB dump, so the
 # two must never share a folder (losing it only means re-entering those keys in Settings).
 echo "[media] Syncing..."
-for d in audio_lessons audiobooks epub_assets; do
+for d in audio_lessons audiobooks epub_assets hardcover-covers; do
   rclone sync "/srv/media/$d" "$REMOTE/media/current/$d" \
     --backup-dir "$REMOTE/media/deleted/$TIMESTAMP/$d" \
     --config /tmp/rclone.conf \

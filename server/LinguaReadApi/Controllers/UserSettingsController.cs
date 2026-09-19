@@ -10,6 +10,7 @@ using System.Threading.Tasks;
 using LinguaReadApi.Data;
 using LinguaReadApi.Models;
 using LinguaReadApi.Services;
+using LinguaReadApi.Services.Srs;
 using System.ComponentModel.DataAnnotations;
 using Microsoft.Extensions.Logging;
 
@@ -169,7 +170,11 @@ namespace LinguaReadApi.Controllers
                 SrsLearningStepMinutes = settings.SrsLearningStepMinutes ?? "1,10",
                 SrsMaxIntervalDays = settings.SrsMaxIntervalDays,
                 SrsLapseMinimumIntervalDays = settings.SrsLapseMinimumIntervalDays,
-                SrsCardType = NormalizeSrsCardType(settings.SrsCardType)
+                SrsCardType = NormalizeSrsCardType(settings.SrsCardType),
+                SrsRelearningStepMinutes = settings.SrsRelearningStepMinutes ?? "10",
+                SrsDesiredRetention = settings.SrsDesiredRetention,
+                SrsDayStartHour = settings.SrsDayStartHour,
+                SrsFsrsWeights = settings.SrsFsrsWeights
             };
         }
 
@@ -406,6 +411,9 @@ namespace LinguaReadApi.Controllers
                     ? null
                     : updateDto.CustomSummarizationPrompt;
             }
+            // Retention, maximum interval and weights shift every graduated card's ideal
+            // interval, so a change to any of them reschedules those cards after saving.
+            var fsrsBefore = (settings.SrsDesiredRetention, settings.SrsMaxIntervalDays, settings.SrsFsrsWeights);
             settings.SrsMaxNewCards = updateDto.SrsMaxNewCards ?? settings.SrsMaxNewCards;
             settings.SrsMaxReviews = updateDto.SrsMaxReviews ?? settings.SrsMaxReviews;
             if (!string.IsNullOrWhiteSpace(updateDto.SrsReviewOrder))
@@ -424,6 +432,27 @@ namespace LinguaReadApi.Controllers
             }
             settings.SrsMaxIntervalDays = updateDto.SrsMaxIntervalDays ?? settings.SrsMaxIntervalDays;
             settings.SrsLapseMinimumIntervalDays = updateDto.SrsLapseMinimumIntervalDays ?? settings.SrsLapseMinimumIntervalDays;
+            if (updateDto.SrsRelearningStepMinutes != null)
+            {
+                settings.SrsRelearningStepMinutes = string.IsNullOrWhiteSpace(updateDto.SrsRelearningStepMinutes)
+                    ? "10"
+                    : updateDto.SrsRelearningStepMinutes.Trim();
+            }
+            if (updateDto.SrsDesiredRetention is { } desiredRetention)
+            {
+                settings.SrsDesiredRetention = Math.Round(desiredRetention, 3);
+            }
+            settings.SrsDayStartHour = updateDto.SrsDayStartHour ?? settings.SrsDayStartHour;
+            if (updateDto.SrsFsrsWeights != null)
+            {
+                if (!FsrsParameters.TryParse(updateDto.SrsFsrsWeights, out _, out var weightsError))
+                {
+                    return BadRequest(new { message = weightsError });
+                }
+                settings.SrsFsrsWeights = string.IsNullOrWhiteSpace(updateDto.SrsFsrsWeights)
+                    ? null
+                    : updateDto.SrsFsrsWeights.Trim();
+            }
             if (!string.IsNullOrWhiteSpace(updateDto.SrsCardType))
             {
                 var normalizedCardType = updateDto.SrsCardType.Trim().ToLowerInvariant();
@@ -446,7 +475,12 @@ namespace LinguaReadApi.Controllers
             settings.UpdatedAt = DateTime.UtcNow;
 
             await _context.SaveChangesAsync();
-            
+
+            if (fsrsBefore != (settings.SrsDesiredRetention, settings.SrsMaxIntervalDays, settings.SrsFsrsWeights))
+            {
+                await SrsRescheduler.RescheduleUserAsync(_context, userId, settings);
+            }
+
             return new UserSettingsDto
             {
                 Theme = settings.Theme,
@@ -511,7 +545,11 @@ namespace LinguaReadApi.Controllers
                 SrsLearningStepMinutes = settings.SrsLearningStepMinutes ?? "1,10",
                 SrsMaxIntervalDays = settings.SrsMaxIntervalDays,
                 SrsLapseMinimumIntervalDays = settings.SrsLapseMinimumIntervalDays,
-                SrsCardType = NormalizeSrsCardType(settings.SrsCardType)
+                SrsCardType = NormalizeSrsCardType(settings.SrsCardType),
+                SrsRelearningStepMinutes = settings.SrsRelearningStepMinutes ?? "10",
+                SrsDesiredRetention = settings.SrsDesiredRetention,
+                SrsDayStartHour = settings.SrsDayStartHour,
+                SrsFsrsWeights = settings.SrsFsrsWeights
             };
         }
 
@@ -935,6 +973,10 @@ namespace LinguaReadApi.Controllers
         public int SrsMaxIntervalDays { get; set; } = 36500;
         public int SrsLapseMinimumIntervalDays { get; set; } = 1;
         public string SrsCardType { get; set; } = "translation";
+        public string SrsRelearningStepMinutes { get; set; } = "10";
+        public double SrsDesiredRetention { get; set; } = 0.9;
+        public int SrsDayStartHour { get; set; } = 4;
+        public string? SrsFsrsWeights { get; set; }
     }
 
     public class UpdateUserSettingsDto
@@ -1079,6 +1121,21 @@ namespace LinguaReadApi.Controllers
 
         [StringLength(20)]
         public string? SrsCardType { get; set; }
+
+        [StringLength(50)]
+        public string? SrsRelearningStepMinutes { get; set; }
+
+        // FSRS target recall probability when a card comes due.
+        [Range(0.70, 0.97)]
+        public double? SrsDesiredRetention { get; set; }
+
+        // Local hour at which a new SRS day begins.
+        [Range(0, 23)]
+        public int? SrsDayStartHour { get; set; }
+
+        // 21 comma-separated FSRS weights; empty string resets to the defaults.
+        [StringLength(1000)]
+        public string? SrsFsrsWeights { get; set; }
     }
 
     public class UpdateAudiobookProgressDto

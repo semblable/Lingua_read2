@@ -17,10 +17,17 @@ namespace LinguaReadApi.Models
         [ForeignKey("User")]
         public Guid UserId { get; set; }
 
-        // SM-2 algorithm fields
+        // Legacy SM-2 ease. No longer written: FSRS uses Stability/Difficulty. Kept only
+        // as the fallback when rebuilding FSRS state for a card with no review history.
         public double EaseFactor { get; set; } = 2.5;
-        public int Interval { get; set; } = 0;        // Days until next review
-        public int Repetitions { get; set; } = 0;     // Consecutive correct reviews
+        public int Interval { get; set; } = 0;        // Scheduled interval in days (0 while on a learning step)
+        public int Repetitions { get; set; } = 0;     // Total reviews (under SM-2: consecutive successes)
+
+        // FSRS memory state. Null until the card's first review, or until
+        // SrsFsrsBackfillService rebuilds it from the review history of an SM-2-era card.
+        public double? Stability { get; set; }        // Days until recall probability drops to 90%
+        public double? Difficulty { get; set; }       // 1 (easy) .. 10 (hard)
+        public int Lapses { get; set; } = 0;          // Times the card was forgotten after graduating
 
         public DateTime? LastReviewedAt { get; set; }
         public DateTime NextReviewAt { get; set; } = DateTime.UtcNow; // Due immediately on creation
@@ -32,6 +39,10 @@ namespace LinguaReadApi.Models
 
         // Suspend & Bury
         public bool IsSuspended { get; set; } = false;
+        // Why the card is suspended: see SrsSuspendReasons. Lets un-ignoring a word lift an
+        // automatic suspension without also lifting one the user made by hand.
+        [StringLength(16)]
+        public string? SuspendReason { get; set; }
         public DateTime? BuriedUntil { get; set; }
 
         // Graduation tracking

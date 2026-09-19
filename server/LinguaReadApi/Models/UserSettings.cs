@@ -168,9 +168,24 @@ namespace LinguaReadApi.Models
         // SRS Learning Steps
         public string SrsLearningStepMinutes { get; set; } = "1,10"; // comma-separated step intervals in minutes
 
+        // Steps a forgotten (lapsed) card goes through before returning to review, in minutes.
+        [StringLength(100)]
+        public string SrsRelearningStepMinutes { get; set; } = "10";
+
         // SRS Advanced Settings
         public int SrsMaxIntervalDays { get; set; } = 36500; // Maximum review interval in days (Anki default ~100 years)
         public int SrsLapseMinimumIntervalDays { get; set; } = 1; // Minimum interval after lapse re-graduation
+
+        // FSRS: target probability of recalling a card when it comes due (0.70-0.97).
+        public double SrsDesiredRetention { get; set; } = 0.9;
+
+        // Local hour at which a new SRS day begins (Anki's "next day starts at").
+        public int SrsDayStartHour { get; set; } = 4;
+
+        // Optional custom FSRS weights (21 comma-separated numbers, e.g. from an optimizer).
+        // Null or blank uses the FSRS-6 defaults.
+        [StringLength(1000)]
+        public string? SrsFsrsWeights { get; set; }
 
         // SRS Streak Tracking
         public int SrsCurrentStreak { get; set; } = 0;

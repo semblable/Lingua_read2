@@ -183,6 +183,8 @@ builder.Services.AddSingleton<MigrationSignal>();
 // One-shot migration service: re-links any text below the current
 // tokenizer version on startup (idempotent across restarts).
 builder.Services.AddHostedService<WordLinkingMigrationService>();
+// One-shot move of SM-2-era SRS cards onto FSRS (idempotent across restarts).
+builder.Services.AddHostedService<LinguaReadApi.Services.Srs.SrsFsrsBackfillService>();
 // Nightly recompute of cached word stats (TotalWords/KnownWords/...)
 // on Books and Texts. Drives the "% unknown" indicators in the UI.
 // Registered as both a singleton (so an admin endpoint can trigger

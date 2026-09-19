@@ -8,7 +8,11 @@ const DB_VERSION = 1;
 const STORE = 'pending-ops';
 
 export type PendingOp =
-  | { type: 'srsReview'; payload: { cardId: number; grade: number } }
+  // SRS grade. Carries a clientEventId the backend dedupes on (a grade applied
+  // twice would double-advance the card), plus when and in which time zone it
+  // happened so the replay is scheduled from the review, not from the sync.
+  // The three are optional only for ops queued by older builds.
+  | { type: 'srsReview'; payload: { cardId: number; grade: number; clientEventId?: string; reviewedAt?: string; timezoneOffsetMinutes?: number } }
   | { type: 'wordStatusUpdate'; payload: { wordId: number; status: number } }
   | { type: 'wordCreate'; payload: { textId: number; term: string; translation?: string; status?: number } }
   // Listening time. Additive on the server, so each op carries a clientEventId
@@ -132,6 +136,16 @@ export async function listPending(): Promise<StoredPendingOp[]> {
     req.onsuccess = () => resolve((req.result as StoredPendingOp[]).sort((a, b) => a.id - b.id));
     req.onerror = () => reject(req.error ?? new Error('Failed to list pending ops'));
   });
+}
+
+/**
+ * Removes queued ops matching `match` before they sync, e.g. an SRS grade
+ * the user undid while offline. Returns how many were removed.
+ */
+export async function removePending(match: (op: StoredPendingOp) => boolean): Promise<number> {
+  const matches = (await listPending()).filter(match);
+  for (const op of matches) await deleteOp(op.id);
+  return matches.length;
 }
 
 async function deleteOp(id: number): Promise<void> {

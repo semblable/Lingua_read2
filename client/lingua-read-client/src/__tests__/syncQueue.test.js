@@ -6,6 +6,7 @@ import {
   listPending,
   drain,
   clearAll,
+  removePending,
   _closeDbForTests,
 } from '../utils/offline/syncQueue';
 import { enqueueIfOffline } from '../utils/offline/enqueueIfOffline';
@@ -72,6 +73,18 @@ describe('syncQueue', () => {
     await enqueue({ type: 'srsReview', payload: { cardId: 1, grade: 2 } });
     await enqueue({ type: 'wordStatusUpdate', payload: { wordId: 5, status: 3 } });
     expect(await pending()).toBe(2);
+  });
+
+  test('removePending drops only the matching ops (an SRS grade undone while offline)', async () => {
+    await enqueue({ type: 'srsReview', payload: { cardId: 1, grade: 2, clientEventId: 'keep' } });
+    await enqueue({ type: 'srsReview', payload: { cardId: 2, grade: 0, clientEventId: 'undo-me' } });
+    await enqueue({ type: 'wordStatusUpdate', payload: { wordId: 5, status: 3 } });
+
+    const removed = await removePending((op) => op.type === 'srsReview' && op.payload.clientEventId === 'undo-me');
+
+    expect(removed).toBe(1);
+    const left = await listPending();
+    expect(left.map((op) => op.payload.clientEventId ?? op.type)).toEqual(['keep', 'wordStatusUpdate']);
   });
 
   test('listPending returns ops sorted by insertion order', async () => {

@@ -70,6 +70,10 @@ export type Settings = {
   srsLapseMinimumIntervalDays: number;
   srsLearningStepMinutes: string;
   srsCardType: string;
+  srsRelearningStepMinutes: string;
+  srsDesiredRetention: number;
+  srsDayStartHour: number;
+  srsFsrsWeights: string | null;
   minimalHome: boolean;
 };
 
@@ -150,6 +154,10 @@ const defaultSettings: Settings = {
   srsLapseMinimumIntervalDays: 1,
   srsLearningStepMinutes: '1,10',
   srsCardType: 'translation',
+  srsRelearningStepMinutes: '10',
+  srsDesiredRetention: 0.9,
+  srsDayStartHour: 4,
+  srsFsrsWeights: null,
   minimalHome: false
 };
 
@@ -268,6 +276,10 @@ export const mergeSettings = (
       d.srsLapseMinimumIntervalDays ?? base.srsLapseMinimumIntervalDays,
     srsLearningStepMinutes: d.srsLearningStepMinutes || base.srsLearningStepMinutes,
     srsCardType: d.srsCardType || base.srsCardType,
+    srsRelearningStepMinutes: d.srsRelearningStepMinutes || base.srsRelearningStepMinutes,
+    srsDesiredRetention: d.srsDesiredRetention ?? base.srsDesiredRetention,
+    srsDayStartHour: d.srsDayStartHour ?? base.srsDayStartHour,
+    srsFsrsWeights: d.srsFsrsWeights ?? base.srsFsrsWeights,
     minimalHome: d.minimalHome ?? base.minimalHome
   };
 };

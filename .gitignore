@@ -175,3 +175,7 @@ scripts/
 
 # Local Claude worktree artifacts
 .claude/worktrees/
+
+# Ops runbooks: kept locally, not published
+ops/deploy-runbook.md
+ops/backup-runbook.md

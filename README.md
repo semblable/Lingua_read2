@@ -197,8 +197,6 @@ For everyday use you **don't need any extra containers**. The app has built-in b
 1.  Configure the remote once (run in **Git Bash** or **WSL**, since it's a shell script): `bash setup.sh`
 2.  Start *only then* with the profile flag: `docker compose --profile backup up -d`
 
-For manual database + media backup and restore procedures, see **[ops/backup-runbook.md](ops/backup-runbook.md)**.
-
 ---
 
 ### 🩺 Troubleshooting (Windows)

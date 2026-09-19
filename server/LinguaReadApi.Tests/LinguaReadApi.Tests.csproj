@@ -28,5 +28,9 @@
     <None Include="..\..\tokenizer-golden-vectors.json" Link="tokenizer-golden-vectors.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <!-- FSRS reference outputs from py-fsrs (see FsrsGoldenVectors/generate.py). -->
+    <None Update="FsrsGoldenVectors\fsrs-golden-vectors.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 </Project>

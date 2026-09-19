@@ -7,6 +7,7 @@ using System.Security.Claims;
 using System.Threading.Tasks;
 using LinguaReadApi.Data;
 using LinguaReadApi.Models;
+using LinguaReadApi.Services.Srs;
 using LinguaReadApi.Services.Tokenization;
 using System.Linq; // Required for Count() on nullable collection
 using System.Collections.Generic;
@@ -27,6 +28,9 @@ namespace LinguaReadApi.Controllers
             _context = context;
             _logger = logger;
         }
+
+        private Task<UserSettings?> GetSettingsAsync(Guid userId) =>
+            _context.UserSettings.AsNoTracking().FirstOrDefaultAsync(s => s.UserId == userId);
 
         // POST: api/words
         [HttpPost]
@@ -116,17 +120,11 @@ namespace LinguaReadApi.Controllers
                             CreatedAt = DateTime.UtcNow
                         });
                     }
-                    // status 5 (Known) and 6 (Ignored) get no SRS card
-                    if (createWordDto.Status >= 1 && createWordDto.Status < 5)
-                    {
-                        var existingCard = await _context.SrsCardReviews
-                            .FirstOrDefaultAsync(scr => scr.WordId == existingWord.WordId && scr.UserId == userId);
-                        if (existingCard == null)
-                        {
-                            _context.SrsCardReviews.Add(new SrsCardReview { WordId = existingWord.WordId, UserId = userId });
-                        }
-                    }
                 }
+
+                // Create, suspend or restore the SRS card to match the (possibly raised) status.
+                await SrsCardLifecycle.ApplyStatusRulesAsync(
+                    _context, existingWord, hasSentence: !string.IsNullOrEmpty(createWordDto.Sentence), await GetSettingsAsync(userId));
 
                 await _context.SaveChangesAsync();
 
@@ -183,13 +181,10 @@ namespace LinguaReadApi.Controllers
                     TextTitle = text.Title,
                     CreatedAt = DateTime.UtcNow
                 });
-
-                // status 5 (Known) and 6 (Ignored) get no SRS card
-                if (createWordDto.Status >= 1 && createWordDto.Status < 5)
-                {
-                    _context.SrsCardReviews.Add(new SrsCardReview { WordId = word.WordId, UserId = userId });
-                }
             }
+
+            await SrsCardLifecycle.ApplyStatusRulesAsync(
+                _context, word, hasSentence: !string.IsNullOrEmpty(createWordDto.Sentence), await GetSettingsAsync(userId));
 
             // Save relationships and potentially translation and SRS data
             await _context.SaveChangesAsync();
@@ -427,34 +422,11 @@ namespace LinguaReadApi.Controllers
                 return NotFound();
             }
 
-            // Capture the previous status before overwriting so we can detect an un-ignore transition.
-            var previousStatus = word.Status;
-
-            // Update word status
+            // Update word status, then create, suspend or restore its SRS card to match
+            // (Ignored always suspends; leaving Known/Ignored lifts only that suspension).
             word.Status = updateWordDto.Status;
-
-            if (word.Status == 6)
-            {
-                // Ignored words must never surface in SRS; suspend any existing card.
-                var cards = await _context.SrsCardReviews
-                    .Where(scr => scr.WordId == word.WordId && scr.UserId == userId)
-                    .ToListAsync();
-                foreach (var c in cards) c.IsSuspended = true;
-            }
-            else if (word.Status >= 1 && word.Status < 5)
-            {
-                // status 5 (Known) and 6 (Ignored) get no SRS card
-                var existingCard = await _context.SrsCardReviews
-                    .FirstOrDefaultAsync(scr => scr.WordId == word.WordId && scr.UserId == userId);
-                if (existingCard == null)
-                {
-                    _context.SrsCardReviews.Add(new SrsCardReview { WordId = word.WordId, UserId = userId });
-                }
-                else if (previousStatus == 6)
-                {
-                    existingCard.IsSuspended = false; // un-ignoring restores reviews
-                }
-            }
+            var hasSentence = await _context.SrsPhrases.AnyAsync(sp => sp.WordId == word.WordId && sp.UserId == userId);
+            await SrsCardLifecycle.ApplyStatusRulesAsync(_context, word, hasSentence, await GetSettingsAsync(userId));
 
             // Update translation only if a non-empty value is provided. An empty
             // string means "leave unchanged" (consistent with CreateWord), so a
@@ -562,6 +534,7 @@ namespace LinguaReadApi.Controllers
                 .ToListAsync();
 
             var wordsToCreate = new List<Word>();
+            var wordsMadeKnown = new List<Word>();
             var translationsToUpsert = new List<(Word Word, string Translation)>();
             // Build a lookup for existing words keyed by the normalized term so
             // mixed-case imports collapse onto a single row.
@@ -582,6 +555,7 @@ namespace LinguaReadApi.Controllers
                     if (existingWord.Status < 5)
                     {
                         existingWord.Status = 5;
+                        wordsMadeKnown.Add(existingWord);
                     }
                     // Handle translation only if provided in the DTO
                     if (!string.IsNullOrEmpty(termDto.Translation))
@@ -627,6 +601,12 @@ namespace LinguaReadApi.Controllers
             try
             {
                 var changedCount = await _context.SaveChangesAsync();
+
+                // Cards follow the new statuses (Known may suspend; 1-4 may create a card).
+                await SrsCardLifecycle.ApplyStatusRulesAsync(
+                    _context, userId, wordsMadeKnown.Concat(wordsToCreate).ToList(), await GetSettingsAsync(userId));
+                changedCount += await _context.SaveChangesAsync();
+
                 foreach (var translationToUpsert in translationsToUpsert)
                 {
                     await UpsertWordTranslationAsync(translationToUpsert.Word.WordId, translationToUpsert.Translation);

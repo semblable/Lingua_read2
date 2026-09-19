@@ -119,6 +119,12 @@ const SrsReview = () => {
     srsDesiredRetention: number | string;
     srsDayStartHour: number | string;
     srsFsrsWeights: string;
+    srsAutoCreateCards: string;
+    srsStatusSyncMode: string;
+    srsStatusLevel3Days: number | string;
+    srsStatusLevel4Days: number | string;
+    srsAutoKnownDays: number | string;
+    srsKnownCardAction: string;
   };
   const [localSettings, setLocalSettings] = useState<SrsLocalSettings>({
     srsMaxNewCards: 20,
@@ -131,7 +137,13 @@ const SrsReview = () => {
     srsRelearningStepMinutes: '10',
     srsDesiredRetention: 0.9,
     srsDayStartHour: 4,
-    srsFsrsWeights: ''
+    srsFsrsWeights: '',
+    srsAutoCreateCards: 'always',
+    srsStatusSyncMode: 'promote',
+    srsStatusLevel3Days: 7,
+    srsStatusLevel4Days: 21,
+    srsAutoKnownDays: 0,
+    srsKnownCardAction: 'keep'
   });
 
   useEffect(() => {
@@ -146,7 +158,13 @@ const SrsReview = () => {
       srsRelearningStepMinutes: settings?.srsRelearningStepMinutes ?? '10',
       srsDesiredRetention: settings?.srsDesiredRetention ?? 0.9,
       srsDayStartHour: settings?.srsDayStartHour ?? 4,
-      srsFsrsWeights: settings?.srsFsrsWeights ?? ''
+      srsFsrsWeights: settings?.srsFsrsWeights ?? '',
+      srsAutoCreateCards: settings?.srsAutoCreateCards ?? 'always',
+      srsStatusSyncMode: settings?.srsStatusSyncMode ?? 'promote',
+      srsStatusLevel3Days: settings?.srsStatusLevel3Days ?? 7,
+      srsStatusLevel4Days: settings?.srsStatusLevel4Days ?? 21,
+      srsAutoKnownDays: settings?.srsAutoKnownDays ?? 0,
+      srsKnownCardAction: settings?.srsKnownCardAction ?? 'keep'
     });
   }, [settings]);
 
@@ -182,6 +200,14 @@ const SrsReview = () => {
       return;
     }
     const fsrsWeights = localSettings.srsFsrsWeights.trim();
+    const level3Days = parseInt(String(localSettings.srsStatusLevel3Days), 10);
+    const level4Days = parseInt(String(localSettings.srsStatusLevel4Days), 10);
+    const autoKnownDays = parseInt(String(localSettings.srsAutoKnownDays), 10) || 0;
+    if (isNaN(level3Days) || isNaN(level4Days) || level3Days < 1 || level4Days < level3Days
+        || (autoKnownDays > 0 && autoKnownDays < level4Days)) {
+      setError('Status thresholds must rise: level 3 <= level 4 <= Known (or Known set to 0 for never).');
+      return;
+    }
     try {
       await updateUserSettings({
         srsMaxNewCards: maxNew,
@@ -194,7 +220,13 @@ const SrsReview = () => {
         srsRelearningStepMinutes: localSettings.srsRelearningStepMinutes,
         srsDesiredRetention: desiredRetention,
         srsDayStartHour: dayStartHour,
-        srsFsrsWeights: fsrsWeights
+        srsFsrsWeights: fsrsWeights,
+        srsAutoCreateCards: localSettings.srsAutoCreateCards,
+        srsStatusSyncMode: localSettings.srsStatusSyncMode,
+        srsStatusLevel3Days: level3Days,
+        srsStatusLevel4Days: level4Days,
+        srsAutoKnownDays: autoKnownDays,
+        srsKnownCardAction: localSettings.srsKnownCardAction
       });
       updateSetting('srsMaxNewCards', maxNew);
       updateSetting('srsMaxReviews', maxReviews);
@@ -207,6 +239,12 @@ const SrsReview = () => {
       updateSetting('srsDesiredRetention', desiredRetention);
       updateSetting('srsDayStartHour', dayStartHour);
       updateSetting('srsFsrsWeights', fsrsWeights || null);
+      updateSetting('srsAutoCreateCards', localSettings.srsAutoCreateCards);
+      updateSetting('srsStatusSyncMode', localSettings.srsStatusSyncMode);
+      updateSetting('srsStatusLevel3Days', level3Days);
+      updateSetting('srsStatusLevel4Days', level4Days);
+      updateSetting('srsAutoKnownDays', autoKnownDays);
+      updateSetting('srsKnownCardAction', localSettings.srsKnownCardAction);
       setShowSettingsModal(false);
       loadStats(); // refresh visual stats
     } catch (err: unknown) {
@@ -235,6 +273,9 @@ const SrsReview = () => {
   const [forecast, setForecast] = useState<ForecastEntry[]>([]);
   const [heatmap, setHeatmap] = useState<HeatmapEntry[]>([]);
   const [analytics, setAnalytics] = useState<SrsAnalytics | null>(null);
+
+  // Shown briefly when a review moved the word's reader status (word-status sync)
+  const [statusNotice, setStatusNotice] = useState<string | null>(null);
 
   // Undo state
   const [undoVisible, setUndoVisible] = useState(false);
@@ -337,6 +378,13 @@ const SrsReview = () => {
         }
       }
 
+      const statusChange = submitted.queued ? null : submitted.result.wordStatusChange;
+      if (statusChange?.from != null && statusChange.to != null) {
+        setStatusNotice(
+          `${currentCard.term}: ${STATUS_LABELS[statusChange.from as WordStatus]} → ${STATUS_LABELS[statusChange.to as WordStatus]}`
+        );
+      }
+
       setLastGrade({
         card: currentCard,
         queue,
@@ -381,6 +429,12 @@ const SrsReview = () => {
       setSubmitting(false);
     }
   };
+
+  useEffect(() => {
+    if (!statusNotice) return;
+    const timer = setTimeout(() => setStatusNotice(null), 4000);
+    return () => clearTimeout(timer);
+  }, [statusNotice]);
 
   useEffect(() => {
     if (undoTimer > 0 && undoVisible) {
@@ -948,6 +1002,81 @@ const SrsReview = () => {
                 Cloze cards require a mined sentence. Cards without one fall back to the translation style.
               </Form.Text>
             </Form.Group>
+            <fieldset className="border-top pt-3 mb-3" data-testid="srs-status-sync-group">
+              <legend className="fs-6">Word status sync</legend>
+              <Form.Group className="mb-2" controlId="srs-auto-create-cards">
+                <Form.Label>Create a card when you save a word</Form.Label>
+                <Form.Select
+                  value={localSettings.srsAutoCreateCards}
+                  onChange={e => setLocalSettings(p => ({ ...p, srsAutoCreateCards: e.target.value }))}
+                >
+                  <option value="always">Always (statuses 1-4)</option>
+                  <option value="with_sentence">Only when a sentence is saved with it</option>
+                  <option value="never">Never (only with "Mine sentence")</option>
+                </Form.Select>
+              </Form.Group>
+              <Form.Group className="mb-2" controlId="srs-status-sync-mode">
+                <Form.Label>Reviews change the word's status</Form.Label>
+                <Form.Select
+                  value={localSettings.srsStatusSyncMode}
+                  onChange={e => setLocalSettings(p => ({ ...p, srsStatusSyncMode: e.target.value }))}
+                >
+                  <option value="promote">Raise it as the card gets stronger</option>
+                  <option value="promote_demote">Raise it, and lower it when you forget the card</option>
+                  <option value="off">Never</option>
+                </Form.Select>
+              </Form.Group>
+              <Row className="g-2 mb-2">
+                <Col>
+                  <Form.Group controlId="srs-status-level3-days">
+                    <Form.Label className="small">Status 3 at (days)</Form.Label>
+                    <Form.Control
+                      type="number"
+                      min={1}
+                      value={localSettings.srsStatusLevel3Days}
+                      onChange={e => setLocalSettings(p => ({ ...p, srsStatusLevel3Days: e.target.value }))}
+                    />
+                  </Form.Group>
+                </Col>
+                <Col>
+                  <Form.Group controlId="srs-status-level4-days">
+                    <Form.Label className="small">Status 4 at (days)</Form.Label>
+                    <Form.Control
+                      type="number"
+                      min={1}
+                      value={localSettings.srsStatusLevel4Days}
+                      onChange={e => setLocalSettings(p => ({ ...p, srsStatusLevel4Days: e.target.value }))}
+                    />
+                  </Form.Group>
+                </Col>
+                <Col>
+                  <Form.Group controlId="srs-auto-known-days">
+                    <Form.Label className="small">Known at (days, 0 = never)</Form.Label>
+                    <Form.Control
+                      type="number"
+                      min={0}
+                      value={localSettings.srsAutoKnownDays}
+                      onChange={e => setLocalSettings(p => ({ ...p, srsAutoKnownDays: e.target.value }))}
+                    />
+                  </Form.Group>
+                </Col>
+              </Row>
+              <Form.Text className="text-muted d-block mb-2">
+                Days are the card's memory strength: roughly how long until you have a 90% chance of recalling it.
+                A card that leaves the learning steps makes the word at least status 2.
+              </Form.Text>
+              <Form.Group controlId="srs-known-card-action">
+                <Form.Label>When a word becomes Known</Form.Label>
+                <Form.Select
+                  value={localSettings.srsKnownCardAction}
+                  onChange={e => setLocalSettings(p => ({ ...p, srsKnownCardAction: e.target.value }))}
+                >
+                  <option value="keep">Keep reviewing its card</option>
+                  <option value="suspend">Retire (suspend) its card</option>
+                </Form.Select>
+                <Form.Text className="text-muted">Ignored words always have their card suspended.</Form.Text>
+              </Form.Group>
+            </fieldset>
             <details className="mb-2">
               <summary className="small text-muted">Advanced: FSRS parameters</summary>
               <Form.Group className="mt-2" controlId="srs-fsrs-weights">
@@ -1054,6 +1183,11 @@ const SrsReview = () => {
       </div>
 
       {error && <Alert variant="danger" className="mb-2" dismissible onClose={() => setError(null)}>{error}</Alert>}
+      {statusNotice && (
+        <Alert variant="success" className="mb-2 py-1 small" data-testid="srs-status-notice">
+          Word status: {statusNotice}
+        </Alert>
+      )}
 
       {currentCard && (
         <Card className="srs-review-card" style={{ minHeight: '400px' }}>

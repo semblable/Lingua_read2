@@ -74,6 +74,12 @@ export type Settings = {
   srsDesiredRetention: number;
   srsDayStartHour: number;
   srsFsrsWeights: string | null;
+  srsAutoCreateCards: string;
+  srsStatusSyncMode: string;
+  srsStatusLevel3Days: number;
+  srsStatusLevel4Days: number;
+  srsAutoKnownDays: number;
+  srsKnownCardAction: string;
   minimalHome: boolean;
 };
 
@@ -158,6 +164,12 @@ const defaultSettings: Settings = {
   srsDesiredRetention: 0.9,
   srsDayStartHour: 4,
   srsFsrsWeights: null,
+  srsAutoCreateCards: 'always',
+  srsStatusSyncMode: 'promote',
+  srsStatusLevel3Days: 7,
+  srsStatusLevel4Days: 21,
+  srsAutoKnownDays: 0,
+  srsKnownCardAction: 'keep',
   minimalHome: false
 };
 
@@ -280,6 +292,12 @@ export const mergeSettings = (
     srsDesiredRetention: d.srsDesiredRetention ?? base.srsDesiredRetention,
     srsDayStartHour: d.srsDayStartHour ?? base.srsDayStartHour,
     srsFsrsWeights: d.srsFsrsWeights ?? base.srsFsrsWeights,
+    srsAutoCreateCards: d.srsAutoCreateCards || base.srsAutoCreateCards,
+    srsStatusSyncMode: d.srsStatusSyncMode || base.srsStatusSyncMode,
+    srsStatusLevel3Days: d.srsStatusLevel3Days ?? base.srsStatusLevel3Days,
+    srsStatusLevel4Days: d.srsStatusLevel4Days ?? base.srsStatusLevel4Days,
+    srsAutoKnownDays: d.srsAutoKnownDays ?? base.srsAutoKnownDays,
+    srsKnownCardAction: d.srsKnownCardAction || base.srsKnownCardAction,
     minimalHome: d.minimalHome ?? base.minimalHome
   };
 };

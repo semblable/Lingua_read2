@@ -187,6 +187,26 @@ namespace LinguaReadApi.Models
         [StringLength(1000)]
         public string? SrsFsrsWeights { get; set; }
 
+        // Word status <-> SRS card sync (see SrsCardLifecycle).
+        // When saving a word at status 1-4 creates its card: "always", "with_sentence", "never".
+        [StringLength(20)]
+        public string SrsAutoCreateCards { get; set; } = "always";
+
+        // Whether reviews change word status: "off", "promote" (only raise), "promote_demote".
+        [StringLength(20)]
+        public string SrsStatusSyncMode { get; set; } = "promote";
+
+        // Card stability (days) at which the word reaches status 3 and 4.
+        public int SrsStatusLevel3Days { get; set; } = 7;
+        public int SrsStatusLevel4Days { get; set; } = 21;
+
+        // Card stability (days) at which the word becomes Known (5); 0 = never.
+        public int SrsAutoKnownDays { get; set; } = 0;
+
+        // What happens to a card when its word becomes Known: "keep" reviewing or "suspend".
+        [StringLength(20)]
+        public string SrsKnownCardAction { get; set; } = "keep";
+
         // SRS Streak Tracking
         public int SrsCurrentStreak { get; set; } = 0;
         public int SrsLongestStreak { get; set; } = 0;

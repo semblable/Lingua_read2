@@ -5641,6 +5641,7 @@ export interface components {
             /** Format: int32 */
             lapses?: number;
             nextIntervals?: number[] | null;
+            wordStatusChange?: components["schemas"]["SrsWordStatusChangeDto"];
         };
         SrsReviewSubmitDto: {
             /** Format: int32 */
@@ -5713,6 +5714,12 @@ export interface components {
         SrsUndoDto: {
             /** Format: int32 */
             srsReviewLogId?: number | null;
+        };
+        SrsWordStatusChangeDto: {
+            /** Format: int32 */
+            from?: number;
+            /** Format: int32 */
+            to?: number;
         };
         StoryGenerationRequest: {
             prompt: string;
@@ -6056,6 +6063,15 @@ export interface components {
             /** Format: int32 */
             srsDayStartHour?: number | null;
             srsFsrsWeights?: string | null;
+            srsAutoCreateCards?: string | null;
+            srsStatusSyncMode?: string | null;
+            /** Format: int32 */
+            srsStatusLevel3Days?: number | null;
+            /** Format: int32 */
+            srsStatusLevel4Days?: number | null;
+            /** Format: int32 */
+            srsAutoKnownDays?: number | null;
+            srsKnownCardAction?: string | null;
         };
         UpdateWordDto: {
             /** Format: int32 */
@@ -6187,6 +6203,15 @@ export interface components {
             /** Format: int32 */
             srsDayStartHour?: number;
             srsFsrsWeights?: string | null;
+            srsAutoCreateCards?: string | null;
+            srsStatusSyncMode?: string | null;
+            /** Format: int32 */
+            srsStatusLevel3Days?: number;
+            /** Format: int32 */
+            srsStatusLevel4Days?: number;
+            /** Format: int32 */
+            srsAutoKnownDays?: number;
+            srsKnownCardAction?: string | null;
             /** Format: int32 */
             srsCurrentStreak?: number;
             /** Format: int32 */
@@ -6286,6 +6311,15 @@ export interface components {
             /** Format: int32 */
             srsDayStartHour?: number;
             srsFsrsWeights?: string | null;
+            srsAutoCreateCards?: string | null;
+            srsStatusSyncMode?: string | null;
+            /** Format: int32 */
+            srsStatusLevel3Days?: number;
+            /** Format: int32 */
+            srsStatusLevel4Days?: number;
+            /** Format: int32 */
+            srsAutoKnownDays?: number;
+            srsKnownCardAction?: string | null;
         };
         UserStatisticsDto: {
             /** Format: int32 */

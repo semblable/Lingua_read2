@@ -7,6 +7,7 @@
 //   3. Vendor chunk splitting removed (react/bootstrap/charts must cache independently)
 //   4. Fonts no longer bundled
 //   5. PWA service worker not generated
+//   6. Inline scripts in index.html (the nginx CSP has no 'unsafe-inline' for scripts)
 // Keep this list in sync with vite.config.ts and nginx.conf.
 
 import { readdirSync, readFileSync, existsSync, statSync } from 'node:fs';
@@ -89,6 +90,18 @@ if (!existsSync(join(buildDir, 'sw.js'))) {
   failures.push('build/sw.js missing — vite-plugin-pwa did not run');
 }
 
+// 6. No inline scripts in index.html. nginx sends script-src 'self' without 'unsafe-inline', so
+// an inline <script> or on*= handler would be blocked in production while working fine under
+// `vite dev`, which sends no CSP.
+const inlineScripts = [...html.matchAll(/<script\b(?![^>]*\ssrc=)[^>]*>/gi)].length;
+const inlineHandlers = [...html.matchAll(/<[^>]+\son[a-z]+\s*=/gi)].length;
+if (inlineScripts > 0 || inlineHandlers > 0) {
+  failures.push(
+    `build/index.html has ${inlineScripts} inline <script> tag(s) and ${inlineHandlers} on*= handler(s) — ` +
+      "nginx's CSP (script-src 'self') blocks them; move the code into a module the entry imports",
+  );
+}
+
 if (failures.length > 0) {
   console.error('verify-build: FAILED');
   for (const f of failures) console.error(`  ✗ ${f}`);
@@ -98,4 +111,4 @@ if (failures.length > 0) {
 const totalKb = Math.round(
   staticFiles.reduce((sum, f) => sum + statSync(join(staticDir, f)).size, 0) / 1024
 );
-console.log(`verify-build: OK (${staticFiles.length} static assets, ${totalKb} KiB, 0 sourcemaps, 0 CDN refs, vendor chunks present)`);
+console.log(`verify-build: OK (${staticFiles.length} static assets, ${totalKb} KiB, 0 sourcemaps, 0 CDN refs, vendor chunks present, no inline scripts)`);

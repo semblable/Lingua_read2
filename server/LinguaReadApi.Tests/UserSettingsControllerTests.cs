@@ -500,6 +500,44 @@ public class UserSettingsControllerTests
     }
 
     [Fact]
+    public async Task ChangingDesiredRetention_ReschedulesOnTheUsersLocalDays()
+    {
+        var (context, userId, cardId) = await SeedGraduatedCard();
+        await using var _ctx = context;
+        // Reviewed at noon on March 10 for a user at UTC-5; stability 1 gives a 1-day interval (never fuzzed).
+        var card = await context.SrsCardReviews.SingleAsync(c => c.SrsCardReviewId == cardId);
+        card.Stability = 1;
+        card.LastReviewedAt = new DateTime(2026, 3, 10, 17, 0, 0, DateTimeKind.Utc);
+        await context.SaveChangesAsync();
+
+        await CreateController(context, userId).UpdateUserSettings(
+            new UpdateUserSettingsDto { SrsDesiredRetention = 0.95 }, timezoneOffsetMinutes: -300);
+
+        // Due at 04:00 local on March 11. On UTC days it would be 04:00 UTC, i.e. 23:00 local
+        // on March 10: due again the evening it was reviewed.
+        var rescheduled = await context.SrsCardReviews.AsNoTracking().SingleAsync(c => c.SrsCardReviewId == cardId);
+        Assert.Equal(1, rescheduled.Interval);
+        Assert.Equal(new DateTime(2026, 3, 11, 9, 0, 0, DateTimeKind.Utc), rescheduled.NextReviewAt);
+    }
+
+    [Fact]
+    public async Task RaisingTheDayStart_ReschedulesCardsOntoTheNewDayStart()
+    {
+        var (context, userId, cardId) = await SeedGraduatedCard();
+        await using var _ctx = context;
+        var card = await context.SrsCardReviews.SingleAsync(c => c.SrsCardReviewId == cardId);
+        card.Stability = 1; // a 1-day interval, never fuzzed
+        card.LastReviewedAt = new DateTime(2026, 3, 10, 12, 0, 0, DateTimeKind.Utc);
+        await context.SaveChangesAsync();
+
+        await CreateController(context, userId).UpdateUserSettings(new UpdateUserSettingsDto { SrsDayStartHour = 6 });
+
+        // Left at 04:00 on March 11, the card would belong to March 10 under a 06:00 day start.
+        var rescheduled = await context.SrsCardReviews.AsNoTracking().SingleAsync(c => c.SrsCardReviewId == cardId);
+        Assert.Equal(new DateTime(2026, 3, 11, 6, 0, 0, DateTimeKind.Utc), rescheduled.NextReviewAt);
+    }
+
+    [Fact]
     public async Task UpdateUserSettings_RoundTripsAndValidatesStatusSync()
     {
         var (context, userId, _) = await SeedGraduatedCard();

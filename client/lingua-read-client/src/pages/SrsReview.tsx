@@ -426,11 +426,13 @@ const SrsReview = () => {
     try {
       setSubmitting(true);
       // A grade still waiting offline is simply dropped from the queue; one the
-      // server already applied is reverted by its log id.
+      // server already applied is reverted by its log id, or, if it was queued
+      // offline and has synced since, by the clientEventId it was sent with.
       const cancelled = lastGrade.logId == null && await cancelQueuedSrsReview(lastGrade.clientEventId);
       if (!cancelled) {
-        if (lastGrade.logId == null) throw new Error('the review has not reached the server yet');
-        await undoSrsReview(lastGrade.logId);
+        await undoSrsReview(lastGrade.logId != null
+          ? { srsReviewLogId: lastGrade.logId }
+          : { clientEventId: lastGrade.clientEventId });
       }
       setUndoVisible(false);
       setReviewedCount(prev => Math.max(0, prev - 1));
@@ -967,7 +969,7 @@ const SrsReview = () => {
                 value={localSettings.srsDayStartHour}
                 onChange={e => setLocalSettings(p => ({ ...p, srsDayStartHour: e.target.value }))}
               />
-              <Form.Text className="text-muted">Daily limits and streaks roll over at this local hour (default 4, so late-night reviews count for the day before).</Form.Text>
+              <Form.Text className="text-muted">Daily limits and streaks roll over at this local hour (default 4, so late-night reviews count for the day before). Changing it reschedules your existing cards.</Form.Text>
             </Form.Group>
             <Form.Group className="mb-3">
               <Form.Label>Maximum Interval (days)</Form.Label>
@@ -1189,6 +1191,11 @@ const SrsReview = () => {
             )}
 
             <div className="d-flex gap-2 justify-content-center">
+              {undoVisible && (
+                <Button variant="warning" onClick={handleUndo} disabled={submitting}>
+                  ↩ Undo last ({undoTimer}s)
+                </Button>
+              )}
               <Button variant="primary" onClick={startSession}>
                 Review More
               </Button>

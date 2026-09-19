@@ -240,6 +240,25 @@ public class SrsFsrsControllerTests
     }
 
     [Fact]
+    public async Task Undo_ByClientEventId_RevertsAGradeThatSyncedFromTheOfflineQueue()
+    {
+        using var context = CreateContext();
+        var userId = SeedUser(context, (1, "gato", 3), (2, "perro", 3));
+        var a = AddCard(context, ReviewCard(userId, 1));
+        var b = AddCard(context, ReviewCard(userId, 2));
+        var controller = CreateController(context, userId);
+
+        await controller.SubmitReview(new SrsReviewSubmitDto { SrsCardReviewId = a, Grade = Again, ClientEventId = "evt-a" });
+        await controller.SubmitReview(new SrsReviewSubmitDto { SrsCardReviewId = b, Grade = Good, ClientEventId = "evt-b" });
+        var undo = await controller.UndoLastReview(new SrsUndoDto { ClientEventId = "evt-a" });
+
+        Assert.IsType<OkObjectResult>(undo);
+        Assert.Equal("evt-b", context.SrsReviewLogs.AsNoTracking().Single().ClientEventId);
+        Assert.Equal(0, Reload(context, a).Lapses);
+        Assert.IsType<NotFoundObjectResult>(await controller.UndoLastReview(new SrsUndoDto { ClientEventId = "evt-unknown" }));
+    }
+
+    [Fact]
     public async Task Undo_RefusesAReviewThatWasFollowedByAnother()
     {
         using var context = CreateContext();

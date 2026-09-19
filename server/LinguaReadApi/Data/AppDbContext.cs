@@ -339,6 +339,14 @@ namespace LinguaReadApi.Data
             modelBuilder.Entity<SrsCardReview>()
                 .HasIndex(scr => new { scr.UserId, scr.NextReviewAt });
 
+            // A card's FSRS stability changes with (nearly) every review, so it serves as the
+            // card's version: an update computed from a stale read, like the FSRS backfill
+            // converting a card the user reviewed meanwhile, or two grades of one card racing,
+            // fails with DbUpdateConcurrencyException instead of overwriting the newer review.
+            modelBuilder.Entity<SrsCardReview>()
+                .Property(scr => scr.Stability)
+                .IsConcurrencyToken();
+
             modelBuilder.Entity<SrsCardReview>()
                 .HasOne(scr => scr.User)
                 .WithMany()

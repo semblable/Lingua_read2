@@ -128,7 +128,7 @@ public class SrsStatusSyncTests
 
     private static SrsReviewOutcome Outcome(double stability, bool lapse = false) =>
         new(ReviewSnapshot(stability) with { State = lapse ? SrsCardState.Relearning : SrsCardState.Review },
-            SrsReviewKind.Review, lapse, null, 1);
+            SrsReviewKind.Review, lapse, null);
 
     [Fact]
     public void StatusAfterReview_PromotesOnly_UnlessDemotionIsOn()
@@ -221,6 +221,89 @@ public class SrsStatusSyncTests
         card = context.SrsCardReviews.AsNoTracking().Single();
         Assert.False(card.IsSuspended);
         Assert.Equal(25, card.Stability);
+    }
+
+    [Fact]
+    public async Task Undo_KeepsAStatusTheUserChoseAfterTheReview()
+    {
+        using var context = CreateContext();
+        var userId = Seed(context, Settings(), wordStatus: 1);
+        context.SrsCardReviews.Add(new SrsCardReview { WordId = 1, UserId = userId, NextReviewAt = DateTime.UtcNow.AddHours(-1) });
+        context.SaveChanges();
+        var srs = Srs(context, userId);
+
+        var response = await srs.SubmitReview(new SrsReviewSubmitDto { SrsCardReviewId = 1, Grade = 3 }); // 1 -> 3
+        var result = Assert.IsType<SrsReviewResultDto>(Assert.IsType<OkObjectResult>(response.Result).Value);
+        Assert.Equal(3, context.SrsReviewLogs.AsNoTracking().Single().WordStatusAfter);
+
+        // Before undoing, the user ignores the word in the reader.
+        await Words(context, userId).UpdateWord(1, new UpdateWordDto { Status = 6 });
+        await srs.UndoLastReview(new SrsUndoDto { SrsReviewLogId = result.SrsReviewLogId });
+
+        Assert.Equal(6, context.Words.AsNoTracking().Single().Status);
+        var card = context.SrsCardReviews.AsNoTracking().Single();
+        Assert.True(card.IsSuspended);
+        Assert.Equal("ignored", card.SuspendReason);
+        Assert.Null(card.LastReviewedAt); // the review itself is still undone
+    }
+
+    [Fact]
+    public async Task Undo_RestoresTheStatus_WhenNothingChangedItSince()
+    {
+        using var context = CreateContext();
+        var userId = Seed(context, Settings(), wordStatus: 1);
+        context.SrsCardReviews.Add(new SrsCardReview { WordId = 1, UserId = userId, NextReviewAt = DateTime.UtcNow.AddHours(-1) });
+        context.SaveChanges();
+        var srs = Srs(context, userId);
+
+        var response = await srs.SubmitReview(new SrsReviewSubmitDto { SrsCardReviewId = 1, Grade = 3 });
+        var result = Assert.IsType<SrsReviewResultDto>(Assert.IsType<OkObjectResult>(response.Result).Value);
+        var undo = await srs.UndoLastReview(new SrsUndoDto { SrsReviewLogId = result.SrsReviewLogId });
+
+        Assert.Equal(1, context.Words.AsNoTracking().Single().Status);
+        var restored = Assert.IsType<OkObjectResult>(undo).Value!;
+        Assert.Equal(1, restored.GetType().GetProperty("RestoredWordStatus")!.GetValue(restored));
+    }
+
+    [Fact]
+    public async Task MiningASentence_ForAKnownWord_CreatesItsCardRetired_WhenKnownCardsAreRetired()
+    {
+        using var context = CreateContext();
+        var userId = Seed(context, Settings(knownAction: "suspend"), wordStatus: 5);
+
+        await Srs(context, userId).MineSentence(new SrsMineDto { WordId = 1, Sentence = "El gato duerme." });
+
+        var card = context.SrsCardReviews.AsNoTracking().Single();
+        Assert.True(card.IsSuspended);
+        Assert.Equal("known", card.SuspendReason);
+    }
+
+    [Theory]
+    [InlineData(1, true)]  // mining asks for a card, even with auto-create off
+    [InlineData(6, false)] // but never for an Ignored word
+    public async Task MiningASentence_CreatesAnActiveCard_ExceptForIgnoredWords(int status, bool expectCard)
+    {
+        using var context = CreateContext();
+        var userId = Seed(context, Settings(autoCreate: "never"), wordStatus: status);
+
+        await Srs(context, userId).MineSentence(new SrsMineDto { WordId = 1, Sentence = "El gato duerme." });
+
+        Assert.Equal(expectCard, context.SrsCardReviews.Any());
+        if (expectCard) Assert.False(context.SrsCardReviews.AsNoTracking().Single().IsSuspended);
+    }
+
+    [Fact]
+    public async Task SavingAWord_WithSentenceMode_CountsASentenceMinedEarlier()
+    {
+        using var context = CreateContext();
+        var userId = Seed(context, Settings(autoCreate: "with_sentence"), wordStatus: 0);
+        context.SrsPhrases.Add(new SrsPhrase { WordId = 1, UserId = userId, Sentence = "El gato duerme.", CreatedAt = DateTime.UtcNow });
+        context.SaveChanges();
+
+        // No sentence in this request, but one was mined before.
+        await Words(context, userId).CreateWord(new CreateWordDto { TextId = 1, Term = "gato", Status = 1 });
+
+        Assert.True(context.SrsCardReviews.Any());
     }
 
     [Fact]

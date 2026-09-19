@@ -32,6 +32,16 @@ namespace LinguaReadApi.Controllers
         private Task<UserSettings?> GetSettingsAsync(Guid userId) =>
             _context.UserSettings.AsNoTracking().FirstOrDefaultAsync(s => s.UserId == userId);
 
+        /// <summary>
+        /// Whether <paramref name="word"/> has a mined sentence, for the "with_sentence"
+        /// auto-create mode: one sent with this request, or one mined earlier. Other modes
+        /// don't look at it, so the lookup is skipped for them.
+        /// </summary>
+        private async Task<bool> HasSentenceAsync(Word word, string? newSentence, UserSettings? settings) =>
+            !string.IsNullOrEmpty(newSentence)
+            || (SrsCardLifecycle.AutoCreateMode(settings) == SrsCardLifecycle.AutoCreate.WithSentence
+                && await _context.SrsPhrases.AnyAsync(sp => sp.WordId == word.WordId && sp.UserId == word.UserId));
+
         // POST: api/words
         [HttpPost]
         public async Task<ActionResult<WordResponseDto>> CreateWord([FromBody] CreateWordDto createWordDto)
@@ -123,8 +133,9 @@ namespace LinguaReadApi.Controllers
                 }
 
                 // Create, suspend or restore the SRS card to match the (possibly raised) status.
+                var settings = await GetSettingsAsync(userId);
                 await SrsCardLifecycle.ApplyStatusRulesAsync(
-                    _context, existingWord, hasSentence: !string.IsNullOrEmpty(createWordDto.Sentence), await GetSettingsAsync(userId));
+                    _context, existingWord, await HasSentenceAsync(existingWord, createWordDto.Sentence, settings), settings);
 
                 await _context.SaveChangesAsync();
 
@@ -425,8 +436,9 @@ namespace LinguaReadApi.Controllers
             // Update word status, then create, suspend or restore its SRS card to match
             // (Ignored always suspends; leaving Known/Ignored lifts only that suspension).
             word.Status = updateWordDto.Status;
-            var hasSentence = await _context.SrsPhrases.AnyAsync(sp => sp.WordId == word.WordId && sp.UserId == userId);
-            await SrsCardLifecycle.ApplyStatusRulesAsync(_context, word, hasSentence, await GetSettingsAsync(userId));
+            var settings = await GetSettingsAsync(userId);
+            await SrsCardLifecycle.ApplyStatusRulesAsync(
+                _context, word, await HasSentenceAsync(word, newSentence: null, settings), settings);
 
             // Update translation only if a non-empty value is provided. An empty
             // string means "leave unchanged" (consistent with CreateWord), so a

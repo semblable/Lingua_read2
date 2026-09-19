@@ -38,8 +38,10 @@ namespace LinguaReadApi.Models
         public int Kind { get; set; }
         public int? NewInterval { get; set; }
 
-        // Word status before this review changed it (word-status sync), so undo can restore it.
+        // Word status before and after this review changed it (word-status sync), so undo can
+        // restore it, but only while the word still has the status the review gave it.
         public int? WordStatusBefore { get; set; }
+        public int? WordStatusAfter { get; set; }
 
         // Client-generated idempotency key for offline replays; filtered-unique per user.
         [StringLength(64)]

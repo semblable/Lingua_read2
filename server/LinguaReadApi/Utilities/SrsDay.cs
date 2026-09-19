@@ -37,9 +37,11 @@ namespace LinguaReadApi.Utilities
             UserDay(toUtc, tzOffsetMinutes, dayStartHour).DayNumber
             - UserDay(fromUtc, tzOffsetMinutes, dayStartHour).DayNumber;
 
-        // Npgsql hands back timestamptz as Kind=Utc, but in-memory/test values may be
-        // Unspecified; every DateTime in the SRS tables is UTC by convention.
-        private static DateTime AsUtc(DateTime value) =>
+        /// <summary>
+        /// Npgsql hands back timestamptz as Kind=Utc, but in-memory/test values (and
+        /// client-sent ones) may be Unspecified; every DateTime in the SRS tables is UTC by convention.
+        /// </summary>
+        public static DateTime AsUtc(DateTime value) =>
             value.Kind == DateTimeKind.Local ? value.ToUniversalTime() : DateTime.SpecifyKind(value, DateTimeKind.Utc);
     }
 }

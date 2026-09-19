@@ -74,8 +74,8 @@ public class SrsSchedulerTests
 
         Assert.Equal(SrsCardState.Review, easy.Card.State);
         Assert.Null(easy.StepDelay);
-        Assert.True(easy.IntervalDays > goodThenGood.IntervalDays,
-            $"Easy {easy.IntervalDays}d should beat Good-Good {goodThenGood.IntervalDays}d");
+        Assert.True(easy.Card.IntervalDays > goodThenGood.Card.IntervalDays,
+            $"Easy {easy.Card.IntervalDays}d should beat Good-Good {goodThenGood.Card.IntervalDays}d");
     }
 
     [Fact]
@@ -86,7 +86,7 @@ public class SrsSchedulerTests
         var graduated = scheduler.Review(first.Card, Good, Noon.AddMinutes(10));
 
         Assert.Equal(SrsCardState.Review, graduated.Card.State);
-        Assert.True(graduated.IntervalDays >= 1);
+        Assert.True(graduated.Card.IntervalDays >= 1);
         Assert.Equal(SrsReviewKind.Learn, graduated.Kind);
     }
 
@@ -102,7 +102,7 @@ public class SrsSchedulerTests
         Assert.False(outcome.IsLapse);
         Assert.Equal(0, outcome.Card.Lapses);
         Assert.True(outcome.Card.Stability > card.Stability, "a successful recall must not lower stability");
-        Assert.True(outcome.IntervalDays >= card.IntervalDays, $"Hard gave {outcome.IntervalDays}d");
+        Assert.True(outcome.Card.IntervalDays >= card.IntervalDays, $"Hard gave {outcome.Card.IntervalDays}d");
         Assert.Equal(SrsReviewKind.Review, outcome.Kind);
     }
 
@@ -137,7 +137,7 @@ public class SrsSchedulerTests
 
         Assert.Equal(SrsCardState.Review, back.Card.State);
         Assert.Equal(SrsReviewKind.Relearn, back.Kind);
-        Assert.Equal(5, back.IntervalDays);
+        Assert.Equal(5, back.Card.IntervalDays);
         Assert.False(back.IsLapse);
     }
 
@@ -150,14 +150,14 @@ public class SrsSchedulerTests
         Assert.True(outcome.IsLapse);
         Assert.Equal(1, outcome.Card.Lapses);
         Assert.Equal(SrsCardState.Review, outcome.Card.State);
-        Assert.Equal(3, outcome.IntervalDays);
+        Assert.Equal(3, outcome.Card.IntervalDays);
     }
 
     [Fact]
     public void Interval_IsCappedAtMaximum()
     {
         var outcome = Scheduler(o => o with { MaximumIntervalDays = 30 }).Review(ReviewCard(stability: 500, intervalDays: 30), Easy, Noon);
-        Assert.Equal(30, outcome.IntervalDays);
+        Assert.Equal(30, outcome.Card.IntervalDays);
     }
 
     [Fact]
@@ -229,7 +229,7 @@ public class SrsSchedulerTests
         var now = new DateTime(2026, 3, 10, 1, 30, 0, DateTimeKind.Utc);
         var outcome = scheduler.Review(ReviewCard() with { LastReviewedAtUtc = now.AddDays(-10) }, Good, now);
 
-        var expected = new DateTime(2026, 3, 9, 2, 0, 0, DateTimeKind.Utc).AddDays(outcome.IntervalDays); // 04:00 local
+        var expected = new DateTime(2026, 3, 9, 2, 0, 0, DateTimeKind.Utc).AddDays(outcome.Card.IntervalDays); // 04:00 local
         Assert.Equal(expected, outcome.Card.DueUtc);
     }
 
@@ -274,16 +274,16 @@ public class SrsSchedulerTests
     {
         var fuzzing = new SrsScheduler(new SrsSchedulerOptions { TimezoneOffsetMinutes = 0, DayStartHour = 0, EnableFuzz = true });
         var card = ReviewCard(stability: 45, intervalDays: 40);
-        var unfuzzed = Scheduler().Review(card, Good, Noon).IntervalDays;
+        var unfuzzed = Scheduler().Review(card, Good, Noon).Card.IntervalDays;
         var (min, max) = FsrsAlgorithm.FuzzRange(unfuzzed, 36500);
 
         var seen = new HashSet<int>();
         for (int seed = 0; seed < 200; seed++)
         {
             var outcome = fuzzing.Review(card, Good, Noon, new Random(seed));
-            Assert.InRange(outcome.IntervalDays, min, max);
-            Assert.Equal(SrsDay.DayStartUtc(DateOnly.FromDateTime(Noon).AddDays(outcome.IntervalDays), 0, 0), outcome.Card.DueUtc);
-            seen.Add(outcome.IntervalDays);
+            Assert.InRange(outcome.Card.IntervalDays, min, max);
+            Assert.Equal(SrsDay.DayStartUtc(DateOnly.FromDateTime(Noon).AddDays(outcome.Card.IntervalDays), 0, 0), outcome.Card.DueUtc);
+            seen.Add(outcome.Card.IntervalDays);
         }
         Assert.True(seen.Count > 1, "fuzz never changed the interval");
     }

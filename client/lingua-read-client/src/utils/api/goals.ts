@@ -1,13 +1,12 @@
 import { fetchApi } from './client';
 import type { ResponseOf, RequestBodyOf } from '../fetchApi';
+import { tzOffsetMinutes as tzOffset } from '../timezone';
 
 export type GoalsList = ResponseOf<'/api/Goals', 'get'>;
 export type Goal = ResponseOf<'/api/Goals/{id}', 'get'>;
 export type GoalSuggestion = ResponseOf<'/api/Goals/suggestions', 'get'>;
 export type CreateGoalInput = RequestBodyOf<'/api/Goals', 'post'>;
 export type UpdateGoalInput = RequestBodyOf<'/api/Goals/{id}', 'put'>;
-
-const tzOffset = (): number => -new Date().getTimezoneOffset();
 
 export const getGoals = (status: string = 'active'): Promise<GoalsList> => {
   const params = new URLSearchParams({ status, timezoneOffsetMinutes: String(tzOffset()) });

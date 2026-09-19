@@ -67,11 +67,10 @@ namespace LinguaReadApi.Services.Srs
         SrsCardSnapshot Card,
         SrsReviewKind Kind,
         bool IsLapse,
-        TimeSpan? StepDelay,
-        int IntervalDays)
+        TimeSpan? StepDelay)
     {
         /// <summary>The interval to show on a grade button: the step delay, or whole days.</summary>
-        public TimeSpan DisplayInterval => StepDelay ?? TimeSpan.FromDays(IntervalDays);
+        public TimeSpan DisplayInterval => StepDelay ?? TimeSpan.FromDays(Card.IntervalDays);
     }
 
     public sealed record SrsSchedulerOptions
@@ -288,7 +287,7 @@ namespace LinguaReadApi.Services.Srs
                 IntervalDays = 0,
                 DueUtc = nowUtc + delay,
             };
-            return new SrsReviewOutcome(card, kind, isLapse, delay, 0);
+            return new SrsReviewOutcome(card, kind, isLapse, delay);
         }
 
         private SrsReviewOutcome Graduate(
@@ -309,7 +308,7 @@ namespace LinguaReadApi.Services.Srs
                 IntervalDays = days,
                 DueUtc = SrsDay.DayStartUtc(today.AddDays(days), _options.TimezoneOffsetMinutes, _options.DayStartHour),
             };
-            return new SrsReviewOutcome(card, kind, isLapse, null, days);
+            return new SrsReviewOutcome(card, kind, isLapse, null);
         }
 
         private int ElapsedDays(DateTime lastUtc, DateTime nowUtc) =>

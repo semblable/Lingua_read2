@@ -122,6 +122,25 @@ namespace LinguaReadApi.Services.Srs
         }
 
         /// <summary>
+        /// For "Mine sentence", an explicit request for a card: creates one whatever the
+        /// auto-create setting (but never for an Ignored word), then applies the status rules
+        /// to it, so a Known word's card is created suspended if Known cards are retired. Does not save.
+        /// </summary>
+        public static async Task EnsureMinedCardAsync(AppDbContext db, Word word, UserSettings? settings)
+        {
+            var card = db.SrsCardReviews.Local.FirstOrDefault(c => c.WordId == word.WordId && c.UserId == word.UserId)
+                ?? await db.SrsCardReviews.FirstOrDefaultAsync(c => c.WordId == word.WordId && c.UserId == word.UserId);
+            if (card == null)
+            {
+                if (word.Status == StatusIgnored) return;
+                var now = DateTime.UtcNow;
+                card = new SrsCardReview { WordId = word.WordId, UserId = word.UserId, NextReviewAt = now, CreatedAt = now };
+                db.SrsCardReviews.Add(card);
+            }
+            ApplyStatusRules(word, card, hasSentence: true, settings);
+        }
+
+        /// <summary>
         /// Undoes a Known/Ignored suspension, e.g. when undoing the review that made a word
         /// Known. Leaves manual and leech suspensions alone.
         /// </summary>

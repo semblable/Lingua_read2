@@ -2,9 +2,9 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Container, Card, Button, Spinner, Alert, Form, Row, Col, Badge, ProgressBar, Modal } from 'react-bootstrap';
 import { useNavigate } from 'react-router-dom';
 import { SettingsContext } from '../contexts/SettingsContext';
-import { getAllLanguages, getSrsDueCards, submitSrsReview, getSrsStats, updateUserSettings, undoSrsReview, cancelQueuedSrsReview, getSrsForecast, suspendSrsCard, burySrsCard, updateSrsCard, getSrsHeatmap, getSrsAnalytics } from '../utils/api';
+import { getAllLanguages, getSrsDueCards, submitSrsReview, getSrsStats, updateUserSettings, undoSrsReview, cancelQueuedSrsReview, getSrsForecast, suspendSrsCard, unsuspendSrsCard, burySrsCard, updateSrsCard, getSrsHeatmap, getSrsAnalytics, getSrsSuspendedCards } from '../utils/api';
 import type { Language } from '../utils/api/languages';
-import type { SrsDueCards, SrsStats, SrsForecast, SrsHeatmap, SrsAnalytics } from '../utils/api/srs';
+import type { SrsDueCards, SrsStats, SrsForecast, SrsHeatmap, SrsAnalytics, SrsSuspendedCards } from '../utils/api/srs';
 import {
   createSessionQueue,
   formatInterval,
@@ -288,6 +288,7 @@ const SrsReview = () => {
   const [forecast, setForecast] = useState<ForecastEntry[]>([]);
   const [heatmap, setHeatmap] = useState<HeatmapEntry[]>([]);
   const [analytics, setAnalytics] = useState<SrsAnalytics | null>(null);
+  const [suspendedCards, setSuspendedCards] = useState<SrsSuspendedCards>([]);
 
   // Shown briefly when a review moved the word's reader status (word-status sync)
   const [statusNotice, setStatusNotice] = useState<string | null>(null);
@@ -309,6 +310,8 @@ const SrsReview = () => {
       setHeatmap(heatmapData);
       const analyticsData = await getSrsAnalytics(selectedLanguage);
       setAnalytics(analyticsData);
+      const suspendedData = await getSrsSuspendedCards(selectedLanguage);
+      setSuspendedCards(suspendedData ?? []);
     } catch (err) {
       console.error('Failed to load stats, forecast, or heatmap:', err);
     } finally {
@@ -543,6 +546,16 @@ const SrsReview = () => {
       removeCardFromSession(cardId);
     } catch (err: unknown) {
       setError(`Failed to suspend: ${(err as Error)?.message}`);
+    }
+  };
+
+  // Unsuspend handler (suspended and leech lists): the card goes back into review
+  const handleUnsuspend = async (cardId: number) => {
+    try {
+      await unsuspendSrsCard(cardId);
+      loadStats();
+    } catch (err: unknown) {
+      setError(`Failed to unsuspend: ${(err as Error)?.message}`);
     }
   };
 
@@ -788,28 +801,78 @@ const SrsReview = () => {
                     title={`${lc.translation} — ${lc.lapseCount} lapses${lc.difficulty != null ? `, difficulty ${lc.difficulty.toFixed(1)}/10` : ''}${lc.isSuspended ? ' (suspended)' : ''}`}
                   >
                     {lc.term} <span className="opacity-75">({lc.lapseCount}x{lc.isSuspended ? ', suspended' : ''})</span>
+                    {lc.isSuspended ? (
+                      <span
+                        role="button"
+                        title="Unsuspend: back into review"
+                        aria-label={`Unsuspend ${lc.term}`}
+                        className="ms-1 opacity-50"
+                        style={{ cursor: 'pointer', fontSize: '0.7rem' }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (lc.srsCardReviewId != null) handleUnsuspend(lc.srsCardReviewId);
+                        }}
+                      >▶</span>
+                    ) : (
+                      <>
+                        <span
+                          role="button"
+                          title="Bury until tomorrow"
+                          className="ms-1 opacity-50"
+                          style={{ cursor: 'pointer', fontSize: '0.7rem' }}
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            try { if (lc.srsCardReviewId != null) { await burySrsCard(lc.srsCardReviewId); loadStats(); } }
+                            catch (err: unknown) { setError(`Failed to bury: ${(err as Error)?.message}`); }
+                          }}
+                        >⏸</span>
+                        <span
+                          role="button"
+                          title="Suspend card"
+                          className="opacity-50"
+                          style={{ cursor: 'pointer', fontSize: '0.7rem' }}
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            try { if (lc.srsCardReviewId != null) { await suspendSrsCard(lc.srsCardReviewId); loadStats(); } }
+                            catch (err: unknown) { setError(`Failed to suspend: ${(err as Error)?.message}`); }
+                          }}
+                        >⛔</span>
+                      </>
+                    )}
+                  </Badge>
+                ))}
+              </div>
+            </Card.Body>
+          </Card>
+        )}
+
+        {/* Suspended cards: out of review until unsuspended. Cards suspended for their
+            word's status (Ignored, retired Known) follow the status and aren't listed. */}
+        {suspendedCards.length > 0 && !statsLoading && (
+          <Card className="mb-3 shadow-sm">
+            <Card.Body className="py-2">
+              <small className="text-muted fw-bold mb-2 d-block">
+                Suspended cards ({suspendedCards.length}) — out of review until unsuspended
+              </small>
+              <div className="d-flex flex-wrap gap-2" style={{ maxHeight: '9rem', overflowY: 'auto' }}>
+                {suspendedCards.map((sc) => (
+                  <Badge
+                    key={sc.srsCardReviewId}
+                    bg="secondary"
+                    className="d-flex align-items-center gap-1"
+                    style={{ fontSize: '0.75rem', padding: '0.3rem 0.6rem' }}
+                    title={`${sc.translation}${sc.suspendReason === 'leech' ? ` — leech, ${sc.lapses} lapses` : ''}`}
+                  >
+                    {sc.term}
+                    {sc.suspendReason === 'leech' && <span className="opacity-75">(leech)</span>}
                     <span
                       role="button"
-                      title="Bury until tomorrow"
-                      className="ms-1 opacity-50"
+                      title="Unsuspend: back into review"
+                      aria-label={`Unsuspend ${sc.term}`}
+                      className="ms-1 opacity-75"
                       style={{ cursor: 'pointer', fontSize: '0.7rem' }}
-                      onClick={async (e) => {
-                        e.stopPropagation();
-                        try { if (lc.srsCardReviewId != null) { await burySrsCard(lc.srsCardReviewId); loadStats(); } }
-                        catch (err: unknown) { setError(`Failed to bury: ${(err as Error)?.message}`); }
-                      }}
-                    >⏸</span>
-                    <span
-                      role="button"
-                      title="Suspend card"
-                      className="opacity-50"
-                      style={{ cursor: 'pointer', fontSize: '0.7rem' }}
-                      onClick={async (e) => {
-                        e.stopPropagation();
-                        try { if (lc.srsCardReviewId != null) { await suspendSrsCard(lc.srsCardReviewId); loadStats(); } }
-                        catch (err: unknown) { setError(`Failed to suspend: ${(err as Error)?.message}`); }
-                      }}
-                    >⛔</span>
+                      onClick={() => { if (sc.srsCardReviewId != null) handleUnsuspend(sc.srsCardReviewId); }}
+                    >▶</span>
                   </Badge>
                 ))}
               </div>

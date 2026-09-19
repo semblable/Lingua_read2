@@ -5270,6 +5270,7 @@ export interface components {
             wordStatus?: number;
             /** Format: double */
             difficulty?: number | null;
+            isSuspended?: boolean;
         };
         LibraryBookDto: {
             /** Format: int32 */
@@ -5521,6 +5522,8 @@ export interface components {
             reviewsPerDay?: components["schemas"]["ReviewsPerDayDto"][] | null;
             leechCards?: components["schemas"]["LeechCardDto"][] | null;
             /** Format: int32 */
+            leechThreshold?: number;
+            /** Format: int32 */
             cardsMaturedThisWeek?: number;
             /** Format: int32 */
             totalReviewsLast30Days?: number;
@@ -5641,7 +5644,9 @@ export interface components {
             /** Format: int32 */
             lapses?: number;
             nextIntervals?: number[] | null;
+            isSuspended?: boolean;
             wordStatusChange?: components["schemas"]["SrsWordStatusChangeDto"];
+            becameLeech?: boolean;
         };
         SrsReviewSubmitDto: {
             /** Format: int32 */
@@ -5663,6 +5668,8 @@ export interface components {
             newCards?: number;
             /** Format: int32 */
             learningCards?: number;
+            /** Format: int32 */
+            youngCards?: number;
             /** Format: int32 */
             matureCards?: number;
             /** Format: int32 */
@@ -6072,6 +6079,9 @@ export interface components {
             /** Format: int32 */
             srsAutoKnownDays?: number | null;
             srsKnownCardAction?: string | null;
+            /** Format: int32 */
+            srsLeechThreshold?: number | null;
+            srsLeechAction?: string | null;
         };
         UpdateWordDto: {
             /** Format: int32 */
@@ -6213,6 +6223,9 @@ export interface components {
             srsAutoKnownDays?: number;
             srsKnownCardAction?: string | null;
             /** Format: int32 */
+            srsLeechThreshold?: number;
+            srsLeechAction?: string | null;
+            /** Format: int32 */
             srsCurrentStreak?: number;
             /** Format: int32 */
             srsLongestStreak?: number;
@@ -6320,6 +6333,9 @@ export interface components {
             /** Format: int32 */
             srsAutoKnownDays?: number;
             srsKnownCardAction?: string | null;
+            /** Format: int32 */
+            srsLeechThreshold?: number;
+            srsLeechAction?: string | null;
         };
         UserStatisticsDto: {
             /** Format: int32 */

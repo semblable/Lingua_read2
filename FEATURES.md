@@ -43,7 +43,9 @@ Power users can route AI requests through **OpenRouter** instead of Gemini, pick
 
 ## Spaced Repetition (SRS)
 
-Saved terms feed an **Anki-style flashcard** system built on the SuperMemo-2 algorithm. Cards can be **translation** (see the term, recall its meaning), **cloze** (a mined example sentence with the target word blanked out), or a **mix** of both. You set daily limits for new cards and reviews, the review order, and how aggressively intervals grow. All of these live in [SETTINGS.md → Spaced Repetition System (SRS)](SETTINGS.md#6-spaced-repetition-system-srs--anki-settings).
+Saved terms feed an **Anki-style flashcard** system scheduled with **FSRS**, the memory model modern Anki uses: intervals follow how well you actually remember each card, and you choose the target retention. New and forgotten cards come back within the same session on short learning steps, and review cards are due for the whole of your local day. Cards can be **translation** (see the term, recall its meaning), **cloze** (a mined example sentence with the target word blanked out), or a **mix** of both.
+
+Cards and the reader's word statuses stay in step: as a card grows stronger the word's status rises (optionally up to Known, which can retire the card), Ignored words never come up for review, and a word you meet while reading can count as a review from the word panel ("reading credit", once a day). Cards you keep forgetting are flagged as leeches. The review page shows true retention, a forecast, a heatmap and your struggling cards. All of this is configurable in [SETTINGS.md → Spaced Repetition System (SRS)](SETTINGS.md#6-spaced-repetition-system-srs--anki-settings).
 
 ## Terms Management
 

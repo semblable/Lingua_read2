@@ -17,9 +17,6 @@ namespace LinguaReadApi.Models
         [ForeignKey("User")]
         public Guid UserId { get; set; }
 
-        // Legacy SM-2 ease. No longer written: FSRS uses Stability/Difficulty. Kept only
-        // as the fallback when rebuilding FSRS state for a card with no review history.
-        public double EaseFactor { get; set; } = 2.5;
         public int Interval { get; set; } = 0;        // Scheduled interval in days (0 while on a learning step)
         public int Repetitions { get; set; } = 0;     // Total reviews (under SM-2: consecutive successes)
 

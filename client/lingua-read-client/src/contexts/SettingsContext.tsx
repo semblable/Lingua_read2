@@ -80,6 +80,8 @@ export type Settings = {
   srsStatusLevel4Days: number;
   srsAutoKnownDays: number;
   srsKnownCardAction: string;
+  srsLeechThreshold: number;
+  srsLeechAction: string;
   minimalHome: boolean;
 };
 
@@ -170,6 +172,8 @@ const defaultSettings: Settings = {
   srsStatusLevel4Days: 21,
   srsAutoKnownDays: 0,
   srsKnownCardAction: 'keep',
+  srsLeechThreshold: 8,
+  srsLeechAction: 'tag',
   minimalHome: false
 };
 
@@ -298,6 +302,8 @@ export const mergeSettings = (
     srsStatusLevel4Days: d.srsStatusLevel4Days ?? base.srsStatusLevel4Days,
     srsAutoKnownDays: d.srsAutoKnownDays ?? base.srsAutoKnownDays,
     srsKnownCardAction: d.srsKnownCardAction || base.srsKnownCardAction,
+    srsLeechThreshold: d.srsLeechThreshold ?? base.srsLeechThreshold,
+    srsLeechAction: d.srsLeechAction || base.srsLeechAction,
     minimalHome: d.minimalHome ?? base.minimalHome
   };
 };

@@ -207,6 +207,13 @@ namespace LinguaReadApi.Models
         [StringLength(20)]
         public string SrsKnownCardAction { get; set; } = "keep";
 
+        // Leeches (see SrsLeeches): lapses that make a card a leech (0 = off), and whether
+        // a leech is only tagged or also suspended ("tag" | "suspend").
+        public int SrsLeechThreshold { get; set; } = 8;
+
+        [StringLength(20)]
+        public string SrsLeechAction { get; set; } = "tag";
+
         // SRS Streak Tracking
         public int SrsCurrentStreak { get; set; } = 0;
         public int SrsLongestStreak { get; set; } = 0;

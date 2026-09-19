@@ -83,13 +83,12 @@ public class SrsBackfillTests
     }
 
     [Fact]
-    public void Replay_WithNoLogs_ReturnsNull_AndLegacyEstimateIsSane()
+    public void Replay_WithNoLogs_ReturnsNull_AndTheEstimateIsSane()
     {
         Assert.Null(SrsMemoryStateInitializer.Replay(Array.Empty<SrsReviewLog>(), 5, new FsrsAlgorithm()));
 
-        Assert.Equal((12.0, 5.0), SrsMemoryStateInitializer.EstimateFromLegacy(12, 2.5));
-        Assert.Equal((1.0, 10.0), SrsMemoryStateInitializer.EstimateFromLegacy(0, 1.3));
-        Assert.Equal((30.0, 2.5), SrsMemoryStateInitializer.EstimateFromLegacy(30, 3.0));
+        Assert.Equal((12.0, 5.0), SrsMemoryStateInitializer.EstimateWithoutHistory(12));
+        Assert.Equal((1.0, 5.0), SrsMemoryStateInitializer.EstimateWithoutHistory(0));
     }
 
     [Fact]
@@ -108,7 +107,7 @@ public class SrsBackfillTests
             db.UserSettings.Add(new UserSettings { UserId = userId });
             var legacy = new SrsCardReview
             {
-                SrsCardReviewId = 7, WordId = 1, UserId = userId, HasEverGraduated = true, EaseFactor = 2.5,
+                SrsCardReviewId = 7, WordId = 1, UserId = userId, HasEverGraduated = true,
                 Interval = 6, Repetitions = 2, LastReviewedAt = logs[^1].ReviewedAt,
                 NextReviewAt = logs[^1].ReviewedAt.AddDays(6).AddHours(5),
             };

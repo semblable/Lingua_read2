@@ -74,6 +74,7 @@ describe('SrsReview', () => {
     reviewableCount: 10,
     newCards: 3,
     learningCards: 4,
+    youngCards: 2,
     matureCards: 3,
     reviewedToday: 5,
     currentStreak: 7,
@@ -179,7 +180,8 @@ describe('SrsReview', () => {
     await waitFor(() => {
       expect(getSrsStats).toHaveBeenCalledWith('1');
     });
-    expect(await screen.findByText(/Retention: 85%/)).toBeInTheDocument();
+    expect(await screen.findByText(/True retention: 85%/)).toBeInTheDocument();
+    expect(screen.getByText('Young')).toBeInTheDocument();
 
     const startBtn = screen.getByRole('button', { name: /Start Review/i });
     await waitFor(() => expect(startBtn).not.toBeDisabled());
@@ -349,6 +351,43 @@ describe('SrsReview', () => {
         srsFsrsWeights: ''
       }));
     });
+  });
+
+  it('flags a new leech and does not bring back a card the review suspended', async () => {
+    submitSrsReview.mockResolvedValue({
+      queued: false,
+      clientEventId: 'evt-leech',
+      result: {
+        srsReviewLogId: 3, isLearning: true, isSuspended: true, becameLeech: true, lapses: 8,
+        nextReviewAt: new Date(Date.now() + 600_000).toISOString()
+      }
+    });
+    getSrsDueCards.mockResolvedValue([mockCards[0]]);
+    renderComponent();
+    await selectSpanish();
+    fireEvent.click(await screen.findByRole('button', { name: /Start Review/i }));
+    await screen.findByText(/duerme/);
+    fireEvent.click(screen.getByText(/Click or press/));
+    fireEvent.click(await screen.findByRole('button', { name: /Again/ }));
+
+    expect(await screen.findByText('Session Complete')).toBeInTheDocument();
+  });
+
+  it('shows the leech notice while the session goes on', async () => {
+    submitSrsReview.mockResolvedValue({
+      queued: false,
+      clientEventId: 'evt-leech',
+      result: { srsReviewLogId: 3, isLearning: false, isSuspended: false, becameLeech: true, lapses: 8,
+        nextReviewAt: new Date(Date.now() + 86_400_000).toISOString() }
+    });
+    renderComponent();
+    await selectSpanish();
+    fireEvent.click(await screen.findByRole('button', { name: /Start Review/i }));
+    await screen.findByText(/duerme/);
+    fireEvent.click(screen.getByText(/Click or press/));
+    fireEvent.click(await screen.findByRole('button', { name: /Again/ }));
+
+    expect(await screen.findByTestId('srs-status-notice')).toHaveTextContent(/gato is a leech \(forgotten 8 times\)/);
   });
 
   it('tells the user when a review moved the word to another status', async () => {

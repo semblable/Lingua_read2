@@ -192,14 +192,25 @@ Allows replacing standard Gemini configuration with **OpenRouter**, custom model
 ---
 
 ### 6. Spaced Repetition System (SRS) / Anki Settings
-Configure flashcard reviews using a SuperMemo-2 style spaced-repetition algorithm.
+Configure flashcard reviews. Cards are scheduled with **FSRS-6** (the algorithm Anki uses by default): each card has a stability (days until recall probability falls to 90%) and a difficulty, and its next interval is chosen so you have the desired chance of remembering it when it comes due. Changing the retention, maximum interval or FSRS weights reschedules existing cards.
 
 | Setting Field | Default Value | Allowed / Type | Description |
 | :--- | :---: | :--- | :--- |
 | `SrsMaxNewCards` | `20` | Positive Integer | Daily limit of new terms to introduce into study decks. |
 | `SrsMaxReviews` | `200` | Positive Integer | Maximum number of existing flashcards scheduled for review in a single day. |
 | `SrsReviewOrder` | `"mix"` | `"mix"`, `"new_first"`, `"reviews_first"` | Determines the queue ordering of card presentation. |
-| `SrsLearningStepMinutes` | `"1,10"` | Comma-separated minutes | Learning steps for cards in learning state (re-displays after X minutes on incorrect recall). |
+| `SrsLearningStepMinutes` | `"1,10"` | Comma-separated minutes | Steps a new card goes through (shown again after each, within the same session) before its first day-long interval. |
+| `SrsRelearningStepMinutes` | `"10"` | Comma-separated minutes | Steps a forgotten (lapsed) card goes through before it returns to review. |
+| `SrsDesiredRetention` | `0.9` | `0.70` - `0.97` | Target probability of recalling a card when it comes due. Higher means shorter intervals and more reviews. |
+| `SrsDayStartHour` | `4` | `0` - `23` | Local hour a new SRS day starts. Review cards are due for the whole day; daily limits, streaks and bury roll over at this hour. |
 | `SrsMaxIntervalDays` | `36500` | Positive Integer | Maximum possible spacing interval between card reviews (defaults to ~100 years). |
-| `SrsLapseMinimumIntervalDays`| `1` | Positive Integer | Minimum interval in days assigned to a card that lapses (failed during review). |
+| `SrsLapseMinimumIntervalDays`| `1` | Positive Integer | Minimum interval in days a forgotten card returns to review with. |
+| `SrsFsrsWeights` | *None* | 21 comma-separated numbers | Custom FSRS model weights (e.g. from an FSRS optimizer). Empty uses the FSRS-6 defaults. |
 | `SrsCardType` | `"translation"` | `"translation"`, `"cloze"`, `"mixed"` | Review formats: **translation** (term -> translation), **cloze** (sentence fill-in-the-blank), or **mixed**. |
+| `SrsAutoCreateCards` | `"always"` | `"always"`, `"with_sentence"`, `"never"` | When saving a word at status 1-4 creates its SRS card. With `"never"`, cards come only from *Mine sentence*. |
+| `SrsStatusSyncMode` | `"promote"` | `"off"`, `"promote"`, `"promote_demote"` | Whether reviews change the word's reader status: raise it as the card gets stronger, and with `"promote_demote"` also lower it when the card is forgotten. |
+| `SrsStatusLevel3Days` / `SrsStatusLevel4Days` | `7` / `21` | Days of stability | Card stability at which the word reaches status 3 and 4. A card that leaves the learning steps makes the word at least status 2. |
+| `SrsAutoKnownDays` | `0` | Days of stability, `0` = never | Card stability at which a review marks the word Known (5). |
+| `SrsKnownCardAction` | `"keep"` | `"keep"`, `"suspend"` | What happens to a card when its word becomes Known (from the reader, a batch import or auto-Known). Ignored words always have their card suspended. |
+| `SrsLeechThreshold` | `8` | `0` - `100` | Times forgotten that make a card a leech (and again every half as many after). `0` turns leech detection off. |
+| `SrsLeechAction` | `"tag"` | `"tag"`, `"suspend"` | Whether a leech is only tagged `leech` or also suspended. |

@@ -18,12 +18,12 @@ namespace LinguaReadApi.Services.Srs
     public static class SrsMemoryStateInitializer
     {
         /// <summary>
-        /// Rough memory state for an SM-2 card with no usable history. With retention 0.9
-        /// an FSRS interval equals stability, so the SM-2 interval stands in for it; ease
-        /// maps linearly onto difficulty (2.5 -> 5, 1.3 -> 10+, 3.0 -> 2.5).
+        /// Rough memory state for a reviewed card with no usable history. With retention 0.9
+        /// an FSRS interval equals stability, so the scheduled interval stands in for it;
+        /// difficulty starts mid-scale.
         /// </summary>
-        public static (double Stability, double Difficulty) EstimateFromLegacy(int intervalDays, double easeFactor) =>
-            (Math.Max(intervalDays, 1), Math.Clamp(5 + (2.5 - easeFactor) * 5, FsrsAlgorithm.DifficultyMin, FsrsAlgorithm.DifficultyMax));
+        public static (double Stability, double Difficulty) EstimateWithoutHistory(int intervalDays) =>
+            (Math.Max(intervalDays, 1), 5.0);
 
         public sealed record ReplayResult(double Stability, double Difficulty, int Lapses, int Reviews);
 
@@ -115,7 +115,7 @@ namespace LinguaReadApi.Services.Srs
             }
             else
             {
-                (var stability, var difficulty) = EstimateFromLegacy(card.Interval, card.EaseFactor);
+                (var stability, var difficulty) = EstimateWithoutHistory(card.Interval);
                 card.Stability = stability;
                 card.Difficulty = difficulty;
             }

@@ -195,29 +195,22 @@ public class ProtectedStaticContentTests : IClassFixture<WebApplicationFactory<P
     }
 
     // Writes a real file under the test host's wwwroot (gitignored) so the static-file
-    // middleware has something to serve. Refuses to touch a file that already exists.
+    // middleware has something to serve. The names above are test-only (real lesson audio is
+    // "{guid}_{name}", real books have small ids), so overwriting a leftover from an aborted
+    // run is safe.
     private string WriteUploadedFile(string relativePath, string contents)
     {
         var contentRoot = _factory.Services.GetRequiredService<IWebHostEnvironment>().ContentRootPath;
         var fullPath = Path.Combine(contentRoot, "wwwroot", relativePath.Replace('/', Path.DirectorySeparatorChar));
         Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
-        using (var stream = new FileStream(fullPath, FileMode.CreateNew))
-        using (var writer = new StreamWriter(stream))
-        {
-            writer.Write(contents);
-        }
+        File.WriteAllText(fullPath, contents);
         return fullPath;
     }
 
-    private static void DeleteUploadedFile(string fullPath)
-    {
-        File.Delete(fullPath);
-        var directory = Path.GetDirectoryName(fullPath)!;
-        if (!Directory.EnumerateFileSystemEntries(directory).Any())
-        {
-            Directory.Delete(directory);
-        }
-    }
+    // Deletes only the file. Directories stay: audio_lessons/{UserId} is shared with
+    // CompressionPipelineTests, which xUnit runs in parallel, so removing an "empty" directory
+    // could pull it out from under that test's write.
+    private static void DeleteUploadedFile(string fullPath) => File.Delete(fullPath);
 
     private async Task SeedBookAsync(int bookId, string ownerId)
     {

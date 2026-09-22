@@ -241,12 +241,60 @@ public class CompleteTextTests
         Assert.Equal(2, langStats.TotalTextCompletions);
     }
 
+    [Fact]
+    public async Task CompleteText_ActivityLogFailure_PropagatesAndLeavesTextUnfinished()
+    {
+        // Inside the completion transaction a failed activity write has aborted the transaction, so
+        // carrying on would only fail at the next statement with an error the execution strategy
+        // won't retry. The failure has to surface, and the text must not be marked finished without
+        // its credit (the next call would then credit it as a re-read).
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        SeedStandaloneText(context, userId, textId: 1, content: "hola amigo mundo");
+
+        var controller = CreateController(context, userId, activityService: new ThrowingActivityService());
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => controller.CompleteText(1));
+
+        context.ChangeTracker.Clear();
+        var text = await context.Texts.SingleAsync();
+        Assert.False(text.IsFinished);
+        Assert.Null(text.LastCompletedAt);
+    }
+
+    [Fact]
+    public async Task LogTextCompletedActivity_SaveFailure_Propagates()
+    {
+        // The service used to log and swallow every exception, which hid a failed save from
+        // CompleteText's transaction and its retry.
+        await using var context = CreateContext(new FailingSaveInterceptor());
+        var service = new UserActivityService(context, NullLogger<UserActivityService>.Instance);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            service.LogTextCompletedActivity(Guid.NewGuid(), languageId: 1, textId: 1, wordCount: 3, isListening: false, isFirstCompletion: true));
+    }
+
     // --- Helpers ---
 
-    private static TextsController CreateController(AppDbContext context, Guid userId, WordLinkingChannel? channel = null)
+    private sealed class ThrowingActivityService : IUserActivityService
+    {
+        public Task LogTextCompletedActivity(Guid userId, int languageId, int textId, int wordCount, bool isListening, bool isFirstCompletion)
+            => throw new InvalidOperationException("activity write failed");
+
+        public Task UpdateUserLanguageStats(Guid userId, int languageId) => Task.CompletedTask;
+    }
+
+    private sealed class FailingSaveInterceptor : SaveChangesInterceptor
+    {
+        public override ValueTask<InterceptionResult<int>> SavingChangesAsync(
+            DbContextEventData eventData, InterceptionResult<int> result, CancellationToken cancellationToken = default)
+            => throw new InvalidOperationException("save failed");
+    }
+
+    private static TextsController CreateController(AppDbContext context, Guid userId, WordLinkingChannel? channel = null, IUserActivityService? activityService = null)
     {
         var sp = BuildContextProvider(context);
-        var service = new UserActivityService(context, NullLogger<UserActivityService>.Instance);
+        var service = activityService ?? new UserActivityService(context, NullLogger<UserActivityService>.Instance);
         var stats = new StatsRecomputeService(sp, NullLogger<StatsRecomputeService>.Instance, new MigrationSignal());
         return new TextsController(context, NullLogger<TextsController>.Instance, service, channel ?? new WordLinkingChannel(), stats)
         {
@@ -270,10 +318,11 @@ public class CompleteTextTests
         return services.BuildServiceProvider();
     }
 
-    private static AppDbContext CreateContext()
+    private static AppDbContext CreateContext(params IInterceptor[] interceptors)
     {
         var options = new DbContextOptionsBuilder<AppDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .AddInterceptors(interceptors)
             // InMemory is non-transactional; suppress the warning so BeginTransactionAsync() is a no-op instead of throwing.
             .ConfigureWarnings(w => w.Ignore(InMemoryEventId.TransactionIgnoredWarning))
             .Options;

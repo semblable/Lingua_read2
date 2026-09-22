@@ -1062,26 +1062,23 @@ namespace LinguaReadApi.Controllers
                 }
 
                 // --- 2. Log Activity ---
+                // Not wrapped in a catch: this runs inside the transaction, where a failed statement
+                // aborts it. Swallowing the error here would only turn it into "current transaction
+                // is aborted" at step 3, which the execution strategy doesn't retry. Letting it
+                // propagate rolls the whole attempt back, and a serialization conflict (the
+                // concurrent double-click) gets retried, where the dedup check above answers it.
                 if (!skipStats)
                 {
-                    try
-                    {
-                        // Only credit the remaining unread words so sentence-mode progress does not double count.
-                        await _userActivityService.LogTextCompletedActivity(
-                            userId,
-                            text.LanguageId,
-                            textId,
-                            completionWordCredit,
-                            text.IsAudioLesson,
-                            isFirstCompletion: !text.IsFinished);
-                        // TODO: Optionally call UpdateUserLanguageStats here or within LogTextCompletedActivity
-                        // await _userActivityService.UpdateUserLanguageStats(userId, text.LanguageId);
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogError(ex, "Failed to log TextCompleted activity or update stats for UserId {UserId}, TextId {TextId}", userId, textId);
-                        // Decide if this should prevent completion - likely not critical, just log.
-                    }
+                    // Only credit the remaining unread words so sentence-mode progress does not double count.
+                    await _userActivityService.LogTextCompletedActivity(
+                        userId,
+                        text.LanguageId,
+                        textId,
+                        completionWordCredit,
+                        text.IsAudioLesson,
+                        isFirstCompletion: !text.IsFinished);
+                    // TODO: Optionally call UpdateUserLanguageStats here or within LogTextCompletedActivity
+                    // await _userActivityService.UpdateUserLanguageStats(userId, text.LanguageId);
                 }
 
                 // --- 3. Update Text Status & Cached Stats ---

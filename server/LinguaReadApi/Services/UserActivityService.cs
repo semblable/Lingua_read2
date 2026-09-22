@@ -20,67 +20,61 @@ namespace LinguaReadApi.Services
 
         public async Task LogTextCompletedActivity(Guid userId, int languageId, int textId, int wordCount, bool isListening, bool isFirstCompletion)
         {
-            try
+            // Deliberately no catch: the only caller (TextsController.CompleteText) runs this inside
+            // its completion transaction and needs a failure to abort and retry the whole attempt.
+            wordCount = Math.Max(wordCount, 0);
+
+            var stats = await _context.UserLanguageStatistics
+                .Where(uls => uls.UserId == userId && uls.LanguageId == languageId)
+                .OrderBy(uls => uls.UserLanguageStatisticsId)
+                .FirstOrDefaultAsync();
+
+            if (stats == null)
             {
-                wordCount = Math.Max(wordCount, 0);
-
-                var stats = await _context.UserLanguageStatistics
-                    .Where(uls => uls.UserId == userId && uls.LanguageId == languageId)
-                    .OrderBy(uls => uls.UserLanguageStatisticsId)
-                    .FirstOrDefaultAsync();
-
-                if (stats == null)
-                {
-                    stats = new UserLanguageStatistics
-                    {
-                        UserId = userId,
-                        LanguageId = languageId,
-                        TotalWordsRead = wordCount,
-                        TotalTextsCompleted = isFirstCompletion ? 1 : 0,
-                        TotalTextCompletions = 1,
-                        // Initialize other counters if needed (e.g., listening)
-                        TotalSecondsListened = isListening ? 0 : 0, // Placeholder - need actual duration if isListening
-                        LastUpdatedAt = DateTime.UtcNow
-                    };
-                    _context.UserLanguageStatistics.Add(stats);
-                    _logger.LogInformation("Created new UserLanguageStatistics record for UserId {UserId}, LanguageId {LanguageId}", userId, languageId);
-                }
-                else
-                {
-                    stats.TotalWordsRead += wordCount;
-                    if (isFirstCompletion)
-                    {
-                        stats.TotalTextsCompleted += 1;
-                    }
-                    stats.TotalTextCompletions += 1;
-                    // Update listening time if applicable and duration is available
-                    // stats.TotalSecondsListened += isListening ? duration : 0;
-                    stats.LastUpdatedAt = DateTime.UtcNow;
-                    _logger.LogInformation("Updated UserLanguageStatistics record for UserId {UserId}, LanguageId {LanguageId}. WordsRead: +{WordCount}, TextsCompleted: +1", userId, languageId, wordCount);
-                }
-
-                // Optional: Log detailed event to UserActivities table
-                var activity = new UserActivity
+                stats = new UserLanguageStatistics
                 {
                     UserId = userId,
                     LanguageId = languageId,
-                    ActivityType = "TextCompleted", // Use string representation
-                    WordCount = wordCount, // Use the correct property
-                    Timestamp = DateTime.UtcNow,
-                    ListeningDurationSeconds = null // Not a listening activity
-                    // textId is not stored in UserActivity currently
+                    TotalWordsRead = wordCount,
+                    TotalTextsCompleted = isFirstCompletion ? 1 : 0,
+                    TotalTextCompletions = 1,
+                    // Initialize other counters if needed (e.g., listening)
+                    TotalSecondsListened = isListening ? 0 : 0, // Placeholder - need actual duration if isListening
+                    LastUpdatedAt = DateTime.UtcNow
                 };
-                _context.UserActivities.Add(activity);
-
-                _logger.LogInformation("Attempting to save changes for UserLanguageStatistics (ID: {StatsId}, TextsCompleted: {TextsCompleted}, WordsRead: {WordsRead}) and UserActivity (ID: {ActivityId})", stats.UserLanguageStatisticsId, stats.TotalTextsCompleted, stats.TotalWordsRead, activity.ActivityId);
-                var changesSaved = await _context.SaveChangesAsync();
-                _logger.LogInformation("{ChangesCount} changes saved to the database.", changesSaved);
+                _context.UserLanguageStatistics.Add(stats);
+                _logger.LogInformation("Created new UserLanguageStatistics record for UserId {UserId}, LanguageId {LanguageId}", userId, languageId);
             }
-            catch (Exception ex)
+            else
             {
-                _logger.LogError(ex, "Failed to log text completed activity or update stats for UserId {UserId}, LanguageId {LanguageId}, TextId {TextId}", userId, languageId, textId);
-                // Do not rethrow, as logging failure shouldn't block the main operation (text completion)
+                stats.TotalWordsRead += wordCount;
+                if (isFirstCompletion)
+                {
+                    stats.TotalTextsCompleted += 1;
+                }
+                stats.TotalTextCompletions += 1;
+                // Update listening time if applicable and duration is available
+                // stats.TotalSecondsListened += isListening ? duration : 0;
+                stats.LastUpdatedAt = DateTime.UtcNow;
+                _logger.LogInformation("Updated UserLanguageStatistics record for UserId {UserId}, LanguageId {LanguageId}. WordsRead: +{WordCount}, TextsCompleted: +1", userId, languageId, wordCount);
             }
+
+            // Optional: Log detailed event to UserActivities table
+            var activity = new UserActivity
+            {
+                UserId = userId,
+                LanguageId = languageId,
+                ActivityType = "TextCompleted", // Use string representation
+                WordCount = wordCount, // Use the correct property
+                Timestamp = DateTime.UtcNow,
+                ListeningDurationSeconds = null // Not a listening activity
+                // textId is not stored in UserActivity currently
+            };
+            _context.UserActivities.Add(activity);
+
+            _logger.LogInformation("Attempting to save changes for UserLanguageStatistics (ID: {StatsId}, TextsCompleted: {TextsCompleted}, WordsRead: {WordsRead}) and UserActivity (ID: {ActivityId})", stats.UserLanguageStatisticsId, stats.TotalTextsCompleted, stats.TotalWordsRead, activity.ActivityId);
+            var changesSaved = await _context.SaveChangesAsync();
+            _logger.LogInformation("{ChangesCount} changes saved to the database.", changesSaved);
         }
 
         public Task UpdateUserLanguageStats(Guid userId, int languageId)

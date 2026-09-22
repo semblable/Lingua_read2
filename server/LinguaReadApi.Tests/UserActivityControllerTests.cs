@@ -255,6 +255,104 @@ public class UserActivityControllerTests
         Assert.Equal(75, dto.ListeningByLanguage[0].TotalSeconds);
     }
 
+    [Fact]
+    public async Task UpdateAudiobookProgress_ReturnsNotFound_ForUnknownBook()
+    {
+        // Without the ownership guard this reached the insert and surfaced the FK violation as a
+        // 500 carrying the raw Npgsql message.
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        SeedUserAndLanguage(context, userId, languageId: 1);
+
+        var controller = CreateController(context, userId);
+
+        var result = await controller.UpdateAudiobookProgress(new UserActivityController.UpdateAudiobookProgressRequest
+        {
+            BookId = 999,
+            CurrentAudiobookPosition = 12.5
+        });
+
+        Assert.IsType<NotFoundObjectResult>(result);
+        Assert.Empty(await context.UserBookProgresses.ToListAsync());
+    }
+
+    [Fact]
+    public async Task UpdateAudiobookProgress_ReturnsNotFound_ForAnotherUsersBook()
+    {
+        await using var context = CreateContext();
+        var ownerId = Guid.NewGuid();
+        var otherId = Guid.NewGuid();
+        SeedUserAndLanguage(context, ownerId, languageId: 1);
+        context.Users.Add(new User { Id = otherId, UserName = "other", Email = "other@example.com" });
+        context.Books.Add(new Book { BookId = 7, UserId = ownerId, LanguageId = 1, Title = "Owned" });
+        await context.SaveChangesAsync();
+        context.ChangeTracker.Clear();
+
+        var controller = CreateController(context, otherId);
+
+        var result = await controller.UpdateAudiobookProgress(new UserActivityController.UpdateAudiobookProgressRequest
+        {
+            BookId = 7,
+            CurrentAudiobookPosition = 30
+        });
+
+        Assert.IsType<NotFoundObjectResult>(result);
+        Assert.Empty(await context.UserBookProgresses.ToListAsync());
+    }
+
+    [Fact]
+    public async Task UpdateAudiobookProgress_RejectsTrackFromAnotherBook()
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        SeedUserAndLanguage(context, userId, languageId: 1);
+        context.Books.Add(new Book { BookId = 1, UserId = userId, LanguageId = 1, Title = "First" });
+        context.Books.Add(new Book { BookId = 2, UserId = userId, LanguageId = 1, Title = "Second" });
+        context.AudiobookTracks.Add(new AudiobookTrack { Id = 50, BookId = 2, FilePath = "audiobooks/2/track_1.mp3", TrackNumber = 1 });
+        await context.SaveChangesAsync();
+        context.ChangeTracker.Clear();
+
+        var controller = CreateController(context, userId);
+
+        var result = await controller.UpdateAudiobookProgress(new UserActivityController.UpdateAudiobookProgressRequest
+        {
+            BookId = 1,
+            CurrentAudiobookTrackId = 50,
+            CurrentAudiobookPosition = 5
+        });
+
+        Assert.IsType<BadRequestObjectResult>(result);
+    }
+
+    [Fact]
+    public async Task UpdateAudiobookProgress_SavesProgress_ForOwnedBook()
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        SeedUserAndLanguage(context, userId, languageId: 1);
+        context.Books.Add(new Book { BookId = 3, UserId = userId, LanguageId = 1, Title = "Mine" });
+        context.AudiobookTracks.Add(new AudiobookTrack { Id = 9, BookId = 3, FilePath = "audiobooks/3/track_1.mp3", TrackNumber = 1 });
+        await context.SaveChangesAsync();
+        context.ChangeTracker.Clear();
+
+        var controller = CreateController(context, userId);
+
+        var result = await controller.UpdateAudiobookProgress(new UserActivityController.UpdateAudiobookProgressRequest
+        {
+            BookId = 3,
+            CurrentAudiobookTrackId = 9,
+            CurrentAudiobookPosition = 42.5
+        });
+
+        Assert.IsType<OkObjectResult>(result);
+
+        context.ChangeTracker.Clear();
+        var progress = await context.UserBookProgresses.SingleAsync();
+        Assert.Equal(3, progress.BookId);
+        Assert.Equal(9, progress.CurrentAudiobookTrackId);
+        Assert.Equal(42.5, progress.CurrentAudiobookPosition);
+    }
+
     private static UserActivityController CreateController(AppDbContext context, Guid userId)
     {
         return new UserActivityController(context, null!, NullLogger<UserActivityController>.Instance)

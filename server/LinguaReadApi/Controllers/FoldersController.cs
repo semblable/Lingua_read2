@@ -8,6 +8,8 @@ using System.Security.Claims;
 using System.Threading.Tasks;
 using LinguaReadApi.Data;
 using LinguaReadApi.Models;
+using LinguaReadApi.Utilities;
+using Microsoft.Extensions.Logging;
 
 namespace LinguaReadApi.Controllers
 {
@@ -17,10 +19,12 @@ namespace LinguaReadApi.Controllers
     public class FoldersController : ControllerBase
     {
         private readonly AppDbContext _context;
+        private readonly ILogger<FoldersController> _logger;
 
-        public FoldersController(AppDbContext context)
+        public FoldersController(AppDbContext context, ILogger<FoldersController> logger)
         {
             _context = context;
+            _logger = logger;
         }
 
         // GET: api/folders
@@ -316,12 +320,21 @@ namespace LinguaReadApi.Controllers
             var bookIdList = bookIds?.Split(',').Select(s => int.TryParse(s, out var id) ? (int?)id : null).Where(id => id.HasValue).Select(id => id!.Value).ToList() ?? new List<int>();
             var folderIdList = folderIds?.Split(',').Select(s => int.TryParse(s, out var id) ? (int?)id : null).Where(id => id.HasValue).Select(id => id!.Value).ToList() ?? new List<int>();
 
+            // Media paths are collected before the delete so they can be removed from disk once the
+            // database change has committed. Without this the Library grid — the usual way books are
+            // deleted — leaves every EPUB image, audiobook track and cover on the volume forever.
+            var audioFilePathsToDelete = new List<string>();
+            var bookIdsToDelete = new List<int>();
+
             // Delete texts (and their TextWords via cascade)
             if (textIdList.Any())
             {
                 var texts = await _context.Texts
                     .Where(t => textIdList.Contains(t.TextId) && t.UserId == userId)
                     .ToListAsync();
+                audioFilePathsToDelete.AddRange(texts
+                    .Where(t => t.IsAudioLesson && !string.IsNullOrEmpty(t.AudioFilePath))
+                    .Select(t => t.AudioFilePath!));
                 _context.Texts.RemoveRange(texts);
             }
 
@@ -331,6 +344,16 @@ namespace LinguaReadApi.Controllers
                 var books = await _context.Books
                     .Where(b => bookIdList.Contains(b.BookId) && b.UserId == userId)
                     .ToListAsync();
+                bookIdsToDelete.AddRange(books.Select(b => b.BookId));
+
+                // A book's lessons go with it via cascade, so their audio files have to go too.
+                var bookAudioPaths = await _context.Texts
+                    .Where(t => t.BookId != null && bookIdsToDelete.Contains(t.BookId.Value)
+                             && t.UserId == userId && t.IsAudioLesson && t.AudioFilePath != null)
+                    .Select(t => t.AudioFilePath!)
+                    .ToListAsync();
+                audioFilePathsToDelete.AddRange(bookAudioPaths);
+
                 _context.Books.RemoveRange(books);
             }
 
@@ -358,6 +381,19 @@ namespace LinguaReadApi.Controllers
             }
 
             await _context.SaveChangesAsync();
+
+            // Best-effort, after the commit: a disk failure here must not undo the delete.
+            foreach (var bookId in bookIdsToDelete)
+            {
+                BookAssetStorage.DeleteBookAssets(userId, bookId, _logger);
+            }
+            // A lesson can be listed both directly and via its book; deleting twice would log a
+            // spurious "not found on disk" warning for the second pass.
+            foreach (var audioPath in audioFilePathsToDelete.Distinct())
+            {
+                BookAssetStorage.DeleteAudioLessonFile(audioPath, _logger);
+            }
+
             return NoContent();
         }
 

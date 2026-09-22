@@ -135,6 +135,17 @@ export default defineConfig({
     port: 3000,
     host: true,
     open: false,
+    // In production nginx serves the SPA and proxies /api to the API container, so the client
+    // resolves its base URL to a relative '/api' (see utils/api/client.ts). Without this proxy the
+    // dev server has nothing behind /api and every call 404s, which is why iterating used to mean
+    // a full `docker compose up --build`. Point it at the API published by
+    // docker-compose.override.yml (or a locally run `dotnet run`).
+    proxy: {
+      '/api': {
+        target: process.env.VITE_DEV_API_TARGET || 'http://localhost:5000',
+        changeOrigin: true,
+      },
+    },
   },
   build: {
     outDir: 'build',

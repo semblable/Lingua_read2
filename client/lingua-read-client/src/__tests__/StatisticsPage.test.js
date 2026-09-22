@@ -146,5 +146,13 @@ describe('Statistics page', () => {
     });
     renderStatistics();
     expect(screen.getByText('No Statistics Available')).toBeInTheDocument();
+
+    // The empty state used to offer "Initialize Languages", which POSTed to
+    // /admin/initialize-languages — an endpoint that does not exist on the server. The 404 was
+    // swallowed into console.error, so the one actionable control on a new user's screen did
+    // nothing. It now links to the page that can actually help.
+    expect(screen.queryByRole('button', { name: /Initialize Languages/i })).not.toBeInTheDocument();
+    const manageLink = screen.getByRole('link', { name: /Manage languages/i });
+    expect(manageLink).toHaveAttribute('href', '/settings/languages');
   });
 });

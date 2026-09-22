@@ -1,5 +1,6 @@
 using LinguaReadApi.Data;
 using LinguaReadApi.Models;
+using LinguaReadApi.Utilities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using System;
@@ -231,6 +232,19 @@ namespace LinguaReadApi.Services
 
                 await using var transaction = await _context.Database.BeginTransactionAsync();
 
+                // The ExecuteDeleteAsync calls below bypass the change tracker, so nothing can tell
+                // afterwards which rows existed. Capture the media identities now and clean the disk
+                // up after the commit.
+                var bookIdsToDelete = await _context.Books
+                    .Where(b => b.UserId == userId && b.LanguageId == languageId)
+                    .Select(b => b.BookId)
+                    .ToListAsync();
+                var audioFilePathsToDelete = await _context.Texts
+                    .Where(t => t.UserId == userId && t.LanguageId == languageId
+                             && t.IsAudioLesson && t.AudioFilePath != null)
+                    .Select(t => t.AudioFilePath!)
+                    .ToListAsync();
+
                 // SrsPhrase.WordId is Restrict, so remove phrases tied to this user's words in this language
                 // before deleting the words themselves.
                 await _context.SrsPhrases
@@ -265,6 +279,17 @@ namespace LinguaReadApi.Services
                     .ExecuteDeleteAsync();
 
                 await transaction.CommitAsync();
+
+                // Best-effort, after the commit: a disk failure must not undo the reset.
+                foreach (var bookId in bookIdsToDelete)
+                {
+                    BookAssetStorage.DeleteBookAssets(userId, bookId);
+                }
+                foreach (var audioPath in audioFilePathsToDelete)
+                {
+                    BookAssetStorage.DeleteAudioLessonFile(audioPath);
+                }
+
                 return true;
             });
         }

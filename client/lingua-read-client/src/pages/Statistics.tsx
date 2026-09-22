@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { useLocation } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { Alert, Button, Container, Spinner } from 'react-bootstrap';
-import { API_URL } from '../utils/api';
 import ManualEntryModal from '../components/ManualEntryModal';
 import ActivityCharts from '../components/statistics/ActivityCharts';
 import ActivityHeatmap from '../components/statistics/ActivityHeatmap';
@@ -22,7 +21,6 @@ const Statistics = () => {
   const location = useLocation();
   const [selectedLanguage, setSelectedLanguage] = useState('all');
   const [activityPeriod, setActivityPeriod] = useState('all');
-  const [initializingLanguages, setInitializingLanguages] = useState(false);
   const [showManualEntryModal, setShowManualEntryModal] = useState(false);
   const {
     stats,
@@ -67,29 +65,6 @@ const Statistics = () => {
     : languages.find((language) => String(language.languageId) === String(selectedLanguage))?.languageName || 'Selected Language';
 
   const showComparison = supportsPreviousPeriod(activityPeriod);
-
-  const handleInitializeLanguages = async () => {
-    try {
-      setInitializingLanguages(true);
-      const response = await fetch(`${API_URL}/admin/initialize-languages`, {
-        credentials: 'include',
-        headers: {
-          Accept: 'application/json',
-          'X-Requested-With': 'XMLHttpRequest'
-        }
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to initialize languages');
-      }
-
-      refetchAll();
-    } catch (err) {
-      console.error('Error initializing languages:', err);
-    } finally {
-      setInitializingLanguages(false);
-    }
-  };
 
   const renderNetworkBanner = () => {
     if (networkStatus === 'connected') return null;
@@ -168,14 +143,9 @@ const Statistics = () => {
         <Alert variant="info" className="mb-4">
           <Alert.Heading>No Statistics Available</Alert.Heading>
           <p>Add a text or book in any language to start tracking your progress.</p>
-          <Button
-            variant="outline-secondary"
-            size="sm"
-            onClick={handleInitializeLanguages}
-            disabled={initializingLanguages}
-          >
-            {initializingLanguages ? <Spinner size="sm" /> : 'Initialize Languages'}
-          </Button>
+          <Link to="/settings/languages" className="btn btn-outline-secondary btn-sm">
+            Manage languages
+          </Link>
         </Alert>
       )}
 

@@ -630,6 +630,32 @@ private DateTime CalculateStartDate(string period)
                 return Unauthorized("User ID not found or invalid in token.");
             }
             _logger.LogInformation("Successfully parsed UserId: {UserId}", userId);
+
+            // The book must exist and belong to the caller. Without this the FK violation from an
+            // unknown BookId surfaced as a 500 carrying the raw Npgsql message, and a progress row
+            // could be written against someone else's book. Mirrors UpdateAudioLessonProgress.
+            var bookBelongsToUser = await _context.Books
+                .AnyAsync(b => b.BookId == request.BookId && b.UserId == userId);
+            if (!bookBelongsToUser)
+            {
+                _logger.LogWarning("BookId {BookId} not found for UserId {UserId}.", request.BookId, userId);
+                return NotFound("Book not found.");
+            }
+
+            // Same check the settings controller applies before persisting a track id.
+            if (request.CurrentAudiobookTrackId.HasValue)
+            {
+                var trackBelongsToUser = await _context.AudiobookTracks
+                    .AnyAsync(at => at.Id == request.CurrentAudiobookTrackId.Value
+                                 && at.BookId == request.BookId
+                                 && at.Book.UserId == userId);
+                if (!trackBelongsToUser)
+                {
+                    _logger.LogWarning("TrackId {TrackId} is not a track of BookId {BookId} for UserId {UserId}.", request.CurrentAudiobookTrackId, request.BookId, userId);
+                    return BadRequest("Invalid Audiobook Track ID or track does not belong to user.");
+                }
+            }
+
             _logger.LogInformation("Attempting to find UserBookProgress for UserId: {UserId}, BookId: {BookId}", userId, request.BookId);
 
             try

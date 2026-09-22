@@ -123,6 +123,11 @@ const UserSettings = () => {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
   const [loadingLanguages, setLoadingLanguages] = useState(true);
+  // When the initial GET fails the form must not render: it would be filled with the hard-coded
+  // defaults above, and saving sends a full PUT that would overwrite the real server-side values
+  // (custom prompts, model ids, default language) with those defaults.
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
   const [hasChanges, setHasChanges] = useState(false);
   const [activeSection, setActiveSection] = useState('appearance');
 
@@ -165,6 +170,9 @@ const UserSettings = () => {
 
   useEffect(() => {
     const fetchSettings = async () => {
+      setLoading(true);
+      setLoadFailed(false);
+      setError('');
       try {
         const data = await getUserSettings();
         setSettings({
@@ -220,10 +228,16 @@ const UserSettings = () => {
           customExplanationPrompt: data.customExplanationPrompt ?? '',
           customStoryPrompt: data.customStoryPrompt ?? '',
           customSummarizationPrompt: data.customSummarizationPrompt ?? '',
+          // Deliberately localStorage, not `data`: minimalHome has no server-side column or DTO
+          // field, so the PUT carries it but the API drops it and never echoes it back. Reading
+          // `data.minimalHome` here would always yield undefined and silently turn the toggle off.
+          // Persisting it server-side (model + migration + DTO) is what would make it sync across
+          // devices; until then this is the only store.
           minimalHome: localStorage.getItem('minimalHome') === 'true'
         });
       } catch (e: unknown) { const err = e as Error;
         setError('Failed to load settings. Please try again later.');
+        setLoadFailed(true);
       } finally {
         setLoading(false);
       }
@@ -256,7 +270,7 @@ const UserSettings = () => {
     fetchSettings();
     fetchLanguages();
     fetchStorageSize();
-  }, [browserTimezoneOffsetMinutes]);
+  }, [browserTimezoneOffsetMinutes, reloadKey]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const target = e.target as HTMLInputElement;
@@ -566,6 +580,22 @@ const UserSettings = () => {
         <Spinner animation="border" role="status">
           <span className="visually-hidden">Loading settings...</span>
         </Spinner>
+      </Container>
+    );
+  }
+
+  // Settings never loaded: render the error on its own. Showing the form here would let a save
+  // PUT the component's default values over the real ones on the server.
+  if (loadFailed) {
+    return (
+      <Container className="py-4" style={{ maxWidth: '1100px' }}>
+        <h2 className="settings-page-header">Settings</h2>
+        <Alert variant="danger">
+          <p className="mb-3">{error || 'Failed to load settings. Please try again later.'}</p>
+          <Button variant="outline-danger" onClick={() => setReloadKey(k => k + 1)}>
+            Try again
+          </Button>
+        </Alert>
       </Container>
     );
   }

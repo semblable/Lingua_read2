@@ -130,4 +130,32 @@ describe('UserSettings', () => {
       await screen.findByText(/Failed to load settings\. Please try again later\./)
     ).toBeInTheDocument();
   });
+
+  test('hides the form entirely when the initial load fails', async () => {
+    // The form is populated from hard-coded defaults, and saving sends a full PUT — rendering it
+    // after a failed load lets one click overwrite the real server-side settings with defaults.
+    getUserSettings.mockRejectedValue(new Error('forbidden'));
+    renderPage();
+
+    await screen.findByText(/Failed to load settings\. Please try again later\./);
+
+    expect(document.querySelector('#settings-form')).not.toBeInTheDocument();
+    expect(document.querySelector('input[name="autoTranslateWords"]')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Save Settings/i })).not.toBeInTheDocument();
+  });
+
+  test('retries the load when Try again is clicked', async () => {
+    getUserSettings.mockRejectedValueOnce(new Error('forbidden'));
+    renderPage();
+
+    const retry = await screen.findByRole('button', { name: /Try again/i });
+
+    getUserSettings.mockResolvedValue(mockSettings);
+    fireEvent.click(retry);
+
+    expect(await screen.findByRole('button', { name: /Appearance/i })).toBeInTheDocument();
+    expect(
+      screen.queryByText(/Failed to load settings\. Please try again later\./)
+    ).not.toBeInTheDocument();
+  });
 });

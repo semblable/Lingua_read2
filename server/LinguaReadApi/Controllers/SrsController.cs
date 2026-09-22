@@ -316,6 +316,16 @@ namespace LinguaReadApi.Controllers
             if (duplicateExists)
                 return Conflict(new { Message = "This sentence has already been mined for this word." });
 
+            // TextId comes from the client and is persisted on the phrase, so it has to be one of
+            // the caller's texts — the word ownership check above says nothing about it.
+            if (dto.TextId.HasValue)
+            {
+                var textBelongsToUser = await _context.Texts
+                    .AnyAsync(t => t.TextId == dto.TextId.Value && t.UserId == userId);
+                if (!textBelongsToUser)
+                    return NotFound("Text not found.");
+            }
+
             // Create the phrase
             var phrase = new SrsPhrase
             {

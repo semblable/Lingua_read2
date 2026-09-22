@@ -6,6 +6,7 @@ using LinguaReadApi.Services;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
@@ -224,7 +225,14 @@ public class SentenceModeActivityTests
         };
 
         await controller.CompleteText(textId);
+
+        // Push the last-completed timestamp well outside the retry window, so the second call is a
+        // genuine re-read rather than a duplicate of the first (see CompleteText_DedupsImmediateRetry).
+        var completedText = await context.Texts.SingleAsync(t => t.TextId == textId);
+        completedText.LastCompletedAt = DateTime.UtcNow.AddMinutes(-5);
+        await context.SaveChangesAsync();
         context.ChangeTracker.Clear();
+
         await controller.CompleteText(textId);
 
         var stats = await context.UserLanguageStatistics.SingleAsync();
@@ -345,6 +353,8 @@ public class SentenceModeActivityTests
     {
         var options = new DbContextOptionsBuilder<AppDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            // InMemory is non-transactional; suppress the warning so BeginTransactionAsync() is a no-op instead of throwing.
+            .ConfigureWarnings(w => w.Ignore(InMemoryEventId.TransactionIgnoredWarning))
             .Options;
 
         return new AppDbContext(options);

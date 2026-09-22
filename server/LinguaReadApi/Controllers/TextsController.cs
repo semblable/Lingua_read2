@@ -3,11 +3,14 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using System;
 using System.Collections.Generic;
+using System.Data;
 using System.Linq;
 using System.Security.Claims;
 using System.Threading.Tasks;
 using LinguaReadApi.Data;
+using LinguaReadApi.Authorization;
 using LinguaReadApi.Models;
+using LinguaReadApi.Utilities;
 using System.ComponentModel.DataAnnotations;
 using Microsoft.Extensions.Logging;
 using System.IO;
@@ -290,6 +293,7 @@ namespace LinguaReadApi.Controllers
 
         // POST: api/texts/admin/relink-all
         // This utility endpoint fixes existing texts that were created without proper word linking
+        [Authorize(Policy = AdminOnlyRequirement.PolicyName)] // Shared admin gate; see AdminOnlyPolicy.cs
         [HttpPost("admin/relink-all")]
         public async Task<IActionResult> RelinkAllTextWords()
         {
@@ -329,6 +333,7 @@ namespace LinguaReadApi.Controllers
         // Safety valve for refreshing book/text "% unknown" stats after
         // a tokenizer-version bump or other out-of-band data change,
         // without waiting for 03:00 UTC.
+        [Authorize(Policy = AdminOnlyRequirement.PolicyName)] // Shared admin gate; see AdminOnlyPolicy.cs
         [HttpPost("admin/recompute-stats")]
         public async Task<IActionResult> RecomputeStats(CancellationToken ct)
         {
@@ -513,17 +518,14 @@ namespace LinguaReadApi.Controllers
             {
                 _logger.LogError(ex, "Error creating audio lesson for user {UserId}", userId); // Use structured logging
                 // Consider cleanup: delete saved audio file if creation fails halfway
-                if (!string.IsNullOrEmpty(audioFilePath))
-                {
-                     // Attempt to delete saved file on error
-                    var fullPathToDelete = Path.Combine("wwwroot", audioFilePath.Replace("/", "\\"));
-                     if(System.IO.File.Exists(fullPathToDelete)) {
-                         try { System.IO.File.Delete(fullPathToDelete); } catch (IOException ioEx) { _logger.LogWarning(ioEx, "Failed to delete audio file during cleanup: {FilePath}", fullPathToDelete); }
-                     }
-                }
+                // Attempt to delete saved file on error
+                TryDeleteAudioFile(audioFilePath);
                 return StatusCode(500, $"Internal server error: {ex.Message}");
             }
         }
+
+        private void TryDeleteAudioFile(string? relativeAudioPath)
+            => BookAssetStorage.DeleteAudioLessonFile(relativeAudioPath, _logger);
 
         // Placeholder for SRT parsing logic
         private string ParseSrt(string srtContent)
@@ -629,10 +631,7 @@ namespace LinguaReadApi.Controllers
                         {
                             _logger.LogWarning("Could not parse transcript from SRT file: {SrtFileName}. Skipping.", srtInfo.OriginalName);
                             skippedFiles.Add($"{mp3Info.OriginalName} / {srtInfo.OriginalName} (Transcript parsing failed)");
-                            if (!string.IsNullOrEmpty(audioFilePath)) {
-                                 var fullPathToDelete = Path.Combine("wwwroot", audioFilePath.Replace("/", "\\"));
-                                 if(System.IO.File.Exists(fullPathToDelete)) try { System.IO.File.Delete(fullPathToDelete); } catch (IOException ioEx) { _logger.LogWarning(ioEx, "Failed to delete audio file during cleanup: {FilePath}", fullPathToDelete); }
-                            }
+                            TryDeleteAudioFile(audioFilePath);
                             continue;
                         }
 
@@ -659,10 +658,7 @@ namespace LinguaReadApi.Controllers
                     {
                         _logger.LogError(ex, "Error processing pair. MP3: {Mp3Name}, SRT: {SrtName}. Skipping.", mp3Info.OriginalName, srtInfo.OriginalName);
                         skippedFiles.Add($"{mp3Info.OriginalName} / {srtInfo.OriginalName} (Error: {ex.Message})");
-                        if (!string.IsNullOrEmpty(audioFilePath)) {
-                            var fullPathToDelete = Path.Combine("wwwroot", audioFilePath.Replace("/", "\\"));
-                            if(System.IO.File.Exists(fullPathToDelete)) try { System.IO.File.Delete(fullPathToDelete); } catch (IOException ioEx) { _logger.LogWarning(ioEx, "Failed to delete audio file during cleanup: {FilePath}", fullPathToDelete); }
-                        }
+                        TryDeleteAudioFile(audioFilePath);
                     }
                 }
                 else // No matching SRT found
@@ -974,13 +970,10 @@ namespace LinguaReadApi.Controllers
                 return NotFound();
             }
 
-            // Optionally: Add logic to delete associated audio files if it's an audio lesson
-            if (text.IsAudioLesson && !string.IsNullOrEmpty(text.AudioFilePath))
+            // Delete the associated audio file if it's an audio lesson
+            if (text.IsAudioLesson)
             {
-                 var fullPathToDelete = Path.Combine("wwwroot", text.AudioFilePath.Replace("/", "\\"));
-                 if(System.IO.File.Exists(fullPathToDelete)) {
-                     try { System.IO.File.Delete(fullPathToDelete); } catch (IOException ex) { _logger.LogWarning(ex, "Could not delete associated audio file during text deletion: {FilePath}", fullPathToDelete); }
-                 }
+                TryDeleteAudioFile(text.AudioFilePath);
             }
 
 
@@ -1011,97 +1004,129 @@ namespace LinguaReadApi.Controllers
         {
             var userId = GetUserId();
 
-            var text = await _context.Texts
-                .AsNoTracking() // Add AsNoTracking here
-                .Include(t => t.TextWords)
-                    .ThenInclude(tw => tw.Word)
-                .FirstOrDefaultAsync(t => t.TextId == textId && t.UserId == userId);
+            // Retry dedup, same rule and window as the book path (BooksController.CompleteLesson):
+            // a second completion of the same text inside this window is the same logical action
+            // (double-click, offline queue replay, reload on a flaky link) and must not be credited
+            // twice. 10s is too short for a deliberate re-read to fit inside.
+            var retryWindow = TimeSpan.FromSeconds(10);
 
-            if (text == null)
+            var strategy = _context.Database.CreateExecutionStrategy();
+
+            return await strategy.ExecuteAsync<ActionResult<TextStatsDto>>(async () =>
             {
-                return NotFound("Text not found.");
-            }
+                _context.ChangeTracker.Clear();
+                var now = DateTime.UtcNow;
 
-            // --- 1. Calculate Stats ---
-            // Running-word counts (sum of TextWord occurrences) so the
-            // numbers stay consistent across text/book scope. Known
-            // = Status 4-5; status 6 (Ignored) is excluded from all counts.
-            var totalWordsRunning = text.TextWords.Where(tw => tw.Word.Status != 6).Sum(tw => tw.OccurrenceCount);
-            var knownWordsRunning = text.TextWords.Where(tw => tw.Word.Status >= 4 && tw.Word.Status <= 5).Sum(tw => tw.OccurrenceCount);
-            var learningWordsRunning = text.TextWords.Where(tw => tw.Word.Status >= 2 && tw.Word.Status < 4).Sum(tw => tw.OccurrenceCount);
+                await using var transaction = await _context.Database.BeginTransactionAsync(IsolationLevel.Serializable);
 
-            // 'totalActualWordCount' is used for daily activity tracking (total tokens read)
-            var totalActualWordCount = LinguaReadApi.Utilities.WordCountUtility.CountTotalWords(text.Content);
-            var sentenceProgress = await _context.UserSentenceProgresses.FindAsync(userId, textId);
-            var alreadyCreditedWordCount = sentenceProgress?.CreditedWordCount ?? 0;
-            var completionWordCredit = Math.Max(totalActualWordCount - alreadyCreditedWordCount, 0);
+                var text = await _context.Texts
+                    .AsNoTracking() // Add AsNoTracking here
+                    .Include(t => t.TextWords)
+                        .ThenInclude(tw => tw.Word)
+                    .FirstOrDefaultAsync(t => t.TextId == textId && t.UserId == userId);
 
-            // --- 2. Log Activity ---
-            if (!skipStats)
-            {
-                try
+                if (text == null)
                 {
-                    // Only credit the remaining unread words so sentence-mode progress does not double count.
-                    await _userActivityService.LogTextCompletedActivity(
-                        userId,
-                        text.LanguageId,
-                        textId,
-                        completionWordCredit,
-                        text.IsAudioLesson,
-                        isFirstCompletion: !text.IsFinished);
-                    // TODO: Optionally call UpdateUserLanguageStats here or within LogTextCompletedActivity
-                    // await _userActivityService.UpdateUserLanguageStats(userId, text.LanguageId);
+                    return NotFound("Text not found.");
                 }
-                catch (Exception ex)
+
+                // --- 1. Calculate Stats ---
+                // Running-word counts (sum of TextWord occurrences) so the
+                // numbers stay consistent across text/book scope. Known
+                // = Status 4-5; status 6 (Ignored) is excluded from all counts.
+                var totalWordsRunning = text.TextWords.Where(tw => tw.Word.Status != 6).Sum(tw => tw.OccurrenceCount);
+                var knownWordsRunning = text.TextWords.Where(tw => tw.Word.Status >= 4 && tw.Word.Status <= 5).Sum(tw => tw.OccurrenceCount);
+                var learningWordsRunning = text.TextWords.Where(tw => tw.Word.Status >= 2 && tw.Word.Status < 4).Sum(tw => tw.OccurrenceCount);
+
+                // 'totalActualWordCount' is used for daily activity tracking (total tokens read)
+                var totalActualWordCount = LinguaReadApi.Utilities.WordCountUtility.CountTotalWords(text.Content);
+                var sentenceProgress = await _context.UserSentenceProgresses.FindAsync(userId, textId);
+                var alreadyCreditedWordCount = sentenceProgress?.CreditedWordCount ?? 0;
+                var completionWordCredit = Math.Max(totalActualWordCount - alreadyCreditedWordCount, 0);
+
+                var stats = new TextStatsDto
                 {
-                    _logger.LogError(ex, "Failed to log TextCompleted activity or update stats for UserId {UserId}, TextId {TextId}", userId, textId);
-                    // Decide if this should prevent completion - likely not critical, just log.
+                    TotalWords = totalWordsRunning,
+                    KnownWords = knownWordsRunning,
+                    LearningWords = learningWordsRunning,
+                    CompletionPercentage = totalWordsRunning > 0 ? (double)knownWordsRunning / totalWordsRunning * 100 : 0
+                };
+
+                // A duplicate of a completion we just processed: report the same stats and write nothing.
+                bool isRetry = text.LastCompletedAt.HasValue
+                    && now - text.LastCompletedAt.Value < retryWindow;
+                if (isRetry)
+                {
+                    _logger.LogInformation("Ignoring duplicate completion of TextId {TextId} within the retry window.", textId);
+                    return Ok(stats);
                 }
-            }
 
-            // --- 3. Update Text Status & Cached Stats ---
-            // Always persist refreshed unique-word stats (drives the
-            // "% unknown" indicator in the standalone-text library);
-            // also flip IsFinished/Tag if this is a first completion.
-            {
-                var textToUpdate = new Text { TextId = textId, UserId = userId };
-                _context.Texts.Attach(textToUpdate);
-
-                textToUpdate.TotalWords = totalWordsRunning;
-                textToUpdate.KnownWords = knownWordsRunning;
-                textToUpdate.StatsUpdatedAt = DateTime.UtcNow;
-                _context.Entry(textToUpdate).Property(t => t.TotalWords).IsModified = true;
-                _context.Entry(textToUpdate).Property(t => t.KnownWords).IsModified = true;
-                _context.Entry(textToUpdate).Property(t => t.StatsUpdatedAt).IsModified = true;
-
-                if (!text.IsFinished)
+                // --- 2. Log Activity ---
+                if (!skipStats)
                 {
-                    textToUpdate.IsFinished = true;
-                    _context.Entry(textToUpdate).Property(t => t.IsFinished).IsModified = true;
-
-                    // Check for AutoMoveFinishedLessons setting
-                    var userSettings = await _context.UserSettings.FindAsync(userId);
-                    if (userSettings != null && userSettings.AutoMoveFinishedLessons)
+                    try
                     {
-                        textToUpdate.Tag = "Finished";
-                        _context.Entry(textToUpdate).Property(t => t.Tag).IsModified = true;
+                        // Only credit the remaining unread words so sentence-mode progress does not double count.
+                        await _userActivityService.LogTextCompletedActivity(
+                            userId,
+                            text.LanguageId,
+                            textId,
+                            completionWordCredit,
+                            text.IsAudioLesson,
+                            isFirstCompletion: !text.IsFinished);
+                        // TODO: Optionally call UpdateUserLanguageStats here or within LogTextCompletedActivity
+                        // await _userActivityService.UpdateUserLanguageStats(userId, text.LanguageId);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Failed to log TextCompleted activity or update stats for UserId {UserId}, TextId {TextId}", userId, textId);
+                        // Decide if this should prevent completion - likely not critical, just log.
                     }
                 }
 
-                await _context.SaveChangesAsync();
-            }
+                // --- 3. Update Text Status & Cached Stats ---
+                // Always persist refreshed unique-word stats (drives the
+                // "% unknown" indicator in the standalone-text library);
+                // also flip IsFinished/Tag if this is a first completion.
+                {
+                    var textToUpdate = new Text { TextId = textId, UserId = userId };
+                    _context.Texts.Attach(textToUpdate);
 
-            // --- 4. Return Stats ---
-            var stats = new TextStatsDto
-            {
-                TotalWords = totalWordsRunning,
-                KnownWords = knownWordsRunning,
-                LearningWords = learningWordsRunning,
-                CompletionPercentage = totalWordsRunning > 0 ? (double)knownWordsRunning / totalWordsRunning * 100 : 0
-            };
+                    textToUpdate.TotalWords = totalWordsRunning;
+                    textToUpdate.KnownWords = knownWordsRunning;
+                    textToUpdate.StatsUpdatedAt = now;
+                    // Stamps the retry window for the next call. The book path does the same.
+                    textToUpdate.LastCompletedAt = now;
+                    _context.Entry(textToUpdate).Property(t => t.TotalWords).IsModified = true;
+                    _context.Entry(textToUpdate).Property(t => t.KnownWords).IsModified = true;
+                    _context.Entry(textToUpdate).Property(t => t.StatsUpdatedAt).IsModified = true;
+                    _context.Entry(textToUpdate).Property(t => t.LastCompletedAt).IsModified = true;
 
-            // Use Ok() as we are returning stats. Use NoContent() if not returning anything.
-            return Ok(stats);
+                    if (!text.IsFinished)
+                    {
+                        textToUpdate.IsFinished = true;
+                        _context.Entry(textToUpdate).Property(t => t.IsFinished).IsModified = true;
+
+                        // Check for AutoMoveFinishedLessons setting
+                        var userSettings = await _context.UserSettings.FindAsync(userId);
+                        if (userSettings != null && userSettings.AutoMoveFinishedLessons)
+                        {
+                            textToUpdate.Tag = "Finished";
+                            _context.Entry(textToUpdate).Property(t => t.Tag).IsModified = true;
+                        }
+                    }
+
+                    await _context.SaveChangesAsync();
+                }
+
+                // --- 4. Commit and return stats ---
+                // The activity row and the IsFinished flip commit together: a failure after step 2
+                // must not leave the text credited but unfinished (which the next call would credit again).
+                await transaction.CommitAsync();
+
+                // Use Ok() as we are returning stats. Use NoContent() if not returning anything.
+                return Ok(stats);
+            });
         }
 
     } // End of Controller Class (Ensure this closing brace exists)

@@ -1,0 +1,15 @@
+# Local development only.
+#
+# Compose auto-loads this file for a bare `docker compose up`, which is exactly what you want on a
+# dev machine and never what you want on a server. It cannot reach production: _deploy.yml copies a
+# fixed whitelist of files to the host (docker-compose.yml, docker-compose.prod.yml, the nginx conf
+# and setup.sh), and every CI/deploy invocation passes its compose files explicitly with -f, which
+# disables auto-loading. Keep it that way — do not add this file to the SCP list.
+#
+# What it does: publishes the API on the host so `npm run dev` in client/lingua-read-client can
+# proxy /api to it (see server.proxy in vite.config.ts). Without it the dev server has nothing
+# behind /api and the only way to see a change is a full image rebuild.
+services:
+  api:
+    ports:
+      - "127.0.0.1:5000:5000"

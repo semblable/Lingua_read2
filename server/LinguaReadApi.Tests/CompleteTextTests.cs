@@ -6,6 +6,7 @@ using LinguaReadApi.Services;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
@@ -144,6 +145,102 @@ public class CompleteTextTests
         Assert.False(channel.Reader.TryRead(out _));
     }
 
+    [Fact]
+    public async Task CompleteText_DedupsImmediateRetry()
+    {
+        // A double-click or a replayed offline request must be credited once, not twice.
+        // Mirrors CompleteLessonTests.CompleteLesson_DedupsImmediateRetry for the book path.
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        SeedStandaloneText(context, userId, textId: 1, content: "hola amigo mundo");
+
+        var controller = CreateController(context, userId);
+
+        await controller.CompleteText(1);
+        context.ChangeTracker.Clear();
+        await controller.CompleteText(1);
+
+        context.ChangeTracker.Clear();
+
+        var activities = await context.UserActivities.ToListAsync();
+        Assert.Single(activities);
+
+        var langStats = await context.UserLanguageStatistics.SingleAsync();
+        Assert.Equal(3, langStats.TotalWordsRead);
+        Assert.Equal(1, langStats.TotalTextsCompleted);
+        Assert.Equal(1, langStats.TotalTextCompletions);
+    }
+
+    [Fact]
+    public async Task CompleteText_DedupsConcurrentDuplicateRequests()
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        SeedStandaloneText(context, userId, textId: 1, content: "hola amigo mundo");
+
+        var controller = CreateController(context, userId);
+
+        // Sequential awaits on one controller/context: the second call still has to observe the
+        // LastCompletedAt stamp the first one wrote and bail out.
+        await controller.CompleteText(1);
+        await controller.CompleteText(1);
+        await controller.CompleteText(1);
+
+        context.ChangeTracker.Clear();
+
+        var activities = await context.UserActivities.ToListAsync();
+        Assert.Single(activities);
+
+        var langStats = await context.UserLanguageStatistics.SingleAsync();
+        Assert.Equal(1, langStats.TotalTextCompletions);
+    }
+
+    [Fact]
+    public async Task CompleteText_StampsLastCompletedAt()
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        SeedStandaloneText(context, userId, textId: 1, content: "hola amigo mundo");
+
+        var controller = CreateController(context, userId);
+        await controller.CompleteText(1);
+
+        context.ChangeTracker.Clear();
+
+        var text = await context.Texts.SingleAsync();
+        Assert.NotNull(text.LastCompletedAt);
+    }
+
+    [Fact]
+    public async Task CompleteText_CountsReread_WhenPastRetryWindow()
+    {
+        // A genuine re-read (outside the window) still credits reading volume and logs activity,
+        // but must not inflate the unique-texts counter.
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        SeedStandaloneText(context, userId, textId: 1, content: "hola amigo mundo");
+
+        var controller = CreateController(context, userId);
+        await controller.CompleteText(1);
+
+        var completedText = await context.Texts.SingleAsync();
+        completedText.LastCompletedAt = DateTime.UtcNow.AddMinutes(-5);
+        await context.SaveChangesAsync();
+        context.ChangeTracker.Clear();
+
+        await controller.CompleteText(1);
+
+        context.ChangeTracker.Clear();
+
+        var activities = await context.UserActivities.ToListAsync();
+        Assert.Equal(2, activities.Count);
+
+        var langStats = await context.UserLanguageStatistics.SingleAsync();
+        Assert.Equal(6, langStats.TotalWordsRead);
+        Assert.Equal(1, langStats.TotalTextsCompleted);
+        Assert.Equal(2, langStats.TotalTextCompletions);
+    }
+
     // --- Helpers ---
 
     private static TextsController CreateController(AppDbContext context, Guid userId, WordLinkingChannel? channel = null)
@@ -177,6 +274,8 @@ public class CompleteTextTests
     {
         var options = new DbContextOptionsBuilder<AppDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            // InMemory is non-transactional; suppress the warning so BeginTransactionAsync() is a no-op instead of throwing.
+            .ConfigureWarnings(w => w.Ignore(InMemoryEventId.TransactionIgnoredWarning))
             .Options;
         return new AppDbContext(options);
     }

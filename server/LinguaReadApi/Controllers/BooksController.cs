@@ -2573,19 +2573,9 @@ namespace LinguaReadApi.Controllers
                 return StatusCode(StatusCodes.Status500InternalServerError, "Error deleting book.");
             }
 
-            // Clean up audiobook files from disk
-            try
-            {
-                var audiobookDir = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "audiobooks", id.ToString());
-                if (Directory.Exists(audiobookDir))
-                {
-                    Directory.Delete(audiobookDir, recursive: true);
-                }
-            }
-            catch (Exception)
-            {
-                // Log but don't fail the delete — DB record is already gone
-            }
+            // Clean up the book's media from disk — audiobook tracks, extracted EPUB assets and the
+            // Hardcover cover. Runs after the DB delete committed and never fails the request.
+            BookAssetStorage.DeleteBookAssets(userId, id, _logger);
 
             return NoContent();
         }

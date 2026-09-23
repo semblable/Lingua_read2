@@ -80,25 +80,132 @@ export function toSpeechLanguageTag(languageCode: string | null | undefined): st
   return LANGUAGE_TAG_OVERRIDES[normalized.toUpperCase()] || normalized.toLowerCase();
 }
 
-function pickVoice(
+// Neural/cloud-backed voices sound far better than the default robotic ones,
+// and every platform names them differently: Edge "Microsoft … Online
+// (Natural)", Chrome "Google …", Apple "… (Enhanced)" / "(Premium)".
+const NATURAL_VOICE_PATTERN = /natural|neural|online|premium|enhanced/i;
+
+export function isNaturalVoice(voice: SpeechSynthesisVoice): boolean {
+  return NATURAL_VOICE_PATTERN.test(voice.name || '') || /^google /i.test(voice.name || '');
+}
+
+/**
+ * Voices for `speechLang`, best first: the exact tag (e.g. fr-FR) before other
+ * regions of the language (fr-CA), and within each, natural voices first.
+ * Voices of other languages are left out.
+ */
+export function rankVoices(
   voices: SpeechSynthesisVoice[] | null | undefined,
   speechLang: string
-): SpeechSynthesisVoice | null {
+): SpeechSynthesisVoice[] {
   if (!voices || voices.length === 0) {
-    return null;
+    return [];
   }
 
   const normalizedLang = speechLang.toLowerCase();
   const baseLanguage = normalizedLang.split('-')[0];
+  const score = (voice: SpeechSynthesisVoice): number => {
+    const voiceLang = (voice.lang || '').toLowerCase().replace('_', '-');
+    let value;
+    if (voiceLang === normalizedLang || voiceLang.startsWith(`${normalizedLang}-`)) {
+      value = 4;
+    } else if (voiceLang === baseLanguage || voiceLang.startsWith(`${baseLanguage}-`)) {
+      value = 2;
+    } else {
+      return -1;
+    }
+    return isNaturalVoice(voice) ? value + 1 : value;
+  };
 
-  return (
-    voices.find((voice) => voice.lang?.toLowerCase() === normalizedLang) ||
-    voices.find((voice) => voice.lang?.toLowerCase().startsWith(`${normalizedLang}-`)) ||
-    voices.find((voice) => voice.lang?.toLowerCase().startsWith(`${baseLanguage}-`)) ||
-    voices.find((voice) => voice.lang?.toLowerCase() === baseLanguage) ||
-    voices.find((voice) => voice.default) ||
-    null
-  );
+  return voices
+    .map((voice, index) => ({ voice, index, score: score(voice) }))
+    .filter((entry) => entry.score >= 0)
+    // Stable: equal scores keep the browser's own order.
+    .sort((a, b) => b.score - a.score || a.index - b.index)
+    .map((entry) => entry.voice);
+}
+
+/**
+ * The chosen voice if it's still installed, else the best-ranked one. Null
+ * when the device has no voice for the language: the browser then picks from
+ * utterance.lang instead of us forcing the default (often English) voice.
+ */
+export function pickVoice(
+  voices: SpeechSynthesisVoice[] | null | undefined,
+  speechLang: string,
+  preferredVoiceURI?: string | null
+): SpeechSynthesisVoice | null {
+  if (preferredVoiceURI && voices) {
+    const preferred = voices.find((voice) => voice.voiceURI === preferredVoiceURI);
+    if (preferred) {
+      return preferred;
+    }
+  }
+  return rankVoices(voices, speechLang)[0] ?? null;
+}
+
+// Voice choice per speech tag. Deliberately device-local (never synced to the
+// server): every device and browser has its own set of voices, so a voice
+// chosen on the desktop usually doesn't exist on the phone.
+const VOICE_PREFS_STORAGE_KEY = 'linguaReadTtsVoices';
+
+const readVoicePrefs = (): Record<string, string> => {
+  try {
+    const stored = localStorage.getItem(VOICE_PREFS_STORAGE_KEY);
+    return stored ? JSON.parse(stored) : {};
+  } catch {
+    return {};
+  }
+};
+
+export function getPreferredVoiceURI(languageCode: string | null | undefined): string | null {
+  return readVoicePrefs()[toSpeechLanguageTag(languageCode)] ?? null;
+}
+
+export function setPreferredVoiceURI(
+  languageCode: string | null | undefined,
+  voiceURI: string | null
+): void {
+  const prefs = readVoicePrefs();
+  const tag = toSpeechLanguageTag(languageCode);
+  if (voiceURI) {
+    prefs[tag] = voiceURI;
+  } else {
+    delete prefs[tag];
+  }
+  try {
+    localStorage.setItem(VOICE_PREFS_STORAGE_KEY, JSON.stringify(prefs));
+  } catch (error) {
+    console.error('Error saving TTS voice choice to localStorage:', error);
+  }
+}
+
+// Chrome fills the voice list asynchronously; wait for it briefly.
+function loadVoices(synth: SpeechSynthesis, timeoutMs: number): Promise<SpeechSynthesisVoice[]> {
+  const voices = synth.getVoices();
+  if (voices.length > 0) {
+    return Promise.resolve(voices);
+  }
+  return new Promise((resolve) => {
+    const done = () => {
+      synth.removeEventListener('voiceschanged', done);
+      window.clearTimeout(timer);
+      resolve(synth.getVoices());
+    };
+    const timer = window.setTimeout(done, timeoutMs);
+    synth.addEventListener('voiceschanged', done);
+  });
+}
+
+/** Installed voices for a language, best first (for the voice picker). */
+export async function getVoicesForLanguage(
+  languageCode: string | null | undefined
+): Promise<SpeechSynthesisVoice[]> {
+  const synth = getSynth();
+  if (!synth) {
+    return [];
+  }
+  return rankVoices(await loadVoices(synth, 1000), toSpeechLanguageTag(languageCode));
 }
 
 export function cancelSpeech(): void {
@@ -112,6 +219,8 @@ export type SpeakTextOptions = {
   text?: string | null;
   languageCode?: string | null;
   rate?: number | string | null;
+  // Defaults to the voice chosen for this language in settings.
+  voiceURI?: string | null;
   onStart?: () => void;
   onEnd?: () => void;
   onError?: (error: Error) => void;
@@ -121,6 +230,7 @@ export function speakText({
   text,
   languageCode,
   rate,
+  voiceURI,
   onStart,
   onEnd,
   onError
@@ -153,7 +263,8 @@ export function speakText({
       }
       didSpeak = true;
 
-      const voice = pickVoice(synth.getVoices(), speechLang);
+      const preferred = voiceURI === undefined ? getPreferredVoiceURI(languageCode) : voiceURI;
+      const voice = pickVoice(synth.getVoices(), speechLang, preferred);
       if (voice) {
         utterance.voice = voice;
         utterance.lang = voice.lang || speechLang;

@@ -258,6 +258,134 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/bookmarks/{textId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    textId: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["TextBookmarksDto"];
+                        "application/json": components["schemas"]["TextBookmarksDto"];
+                        "text/json": components["schemas"]["TextBookmarksDto"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/bookmarks/{textId}/{sentenceIndex}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    textId: number;
+                    sentenceIndex: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": components["schemas"]["SetBookmarkRequest"];
+                    "text/json": components["schemas"]["SetBookmarkRequest"];
+                    "application/*+json": components["schemas"]["SetBookmarkRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["TextBookmarksDto"];
+                        "application/json": components["schemas"]["TextBookmarksDto"];
+                        "text/json": components["schemas"]["TextBookmarksDto"];
+                    };
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/bookmarks/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": components["schemas"]["ImportBookmarksRequest"];
+                    "text/json": components["schemas"]["ImportBookmarksRequest"];
+                    "application/*+json": components["schemas"]["ImportBookmarksRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["ImportBookmarksResult"];
+                        "application/json": components["schemas"]["ImportBookmarksResult"];
+                        "text/json": components["schemas"]["ImportBookmarksResult"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/Books": {
         parameters: {
             query?: never;
@@ -5210,6 +5338,22 @@ export interface components {
             results?: components["schemas"]["HardcoverProgressSyncResult"][] | null;
             message?: string | null;
         };
+        ImportBookmarksRequest: {
+            texts?: components["schemas"]["ImportedTextBookmarks"][] | null;
+        };
+        ImportBookmarksResult: {
+            /** Format: int32 */
+            imported?: number;
+            /** Format: int32 */
+            skippedTexts?: number;
+        };
+        ImportedTextBookmarks: {
+            /** Format: int32 */
+            textId?: number;
+            sentenceIndices?: number[] | null;
+            /** Format: int32 */
+            lastSentenceIndex?: number | null;
+        };
         Language: {
             /** Format: int32 */
             languageId?: number;
@@ -5547,6 +5691,11 @@ export interface components {
             sourceLanguageCode?: string | null;
             targetLanguageCode?: string | null;
         };
+        SetBookmarkRequest: {
+            bookmarked?: boolean;
+            /** Format: date-time */
+            clientUpdatedAt?: string | null;
+        };
         SetupRequest: {
             password?: string | null;
         };
@@ -5860,6 +6009,13 @@ export interface components {
             statsUpdatedAt?: string | null;
             /** Format: int32 */
             wordLinkingTokenizerVersion?: number | null;
+        };
+        TextBookmarksDto: {
+            /** Format: int32 */
+            textId?: number;
+            sentenceIndices?: number[] | null;
+            /** Format: int32 */
+            lastSentenceIndex?: number | null;
         };
         TextDetailDto: {
             /** Format: int32 */

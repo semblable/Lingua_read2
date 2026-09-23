@@ -28,7 +28,11 @@ export type PendingOp =
   // by credited segment index), so it is appended, not coalesced. lastRead is
   // last-write-wins and coalesced + timestamp-guarded like audio position.
   | { type: 'sentenceRead'; payload: { textId: number; currentSegmentIndex?: number; segments: { segmentIndex: number; segmentText: string }[] } }
-  | { type: 'lastRead'; payload: { bookId: number | string; textId: number | string; clientUpdatedAt: string } };
+  | { type: 'lastRead'; payload: { bookId: number | string; textId: number | string; clientUpdatedAt: string } }
+  // Sentence bookmark add/remove. Last-write-wins per sentence: coalesced on
+  // enqueue and timestamp-guarded server-side, so a late drain can't undo a
+  // newer toggle made on another device.
+  | { type: 'bookmarkSet'; payload: { textId: number; sentenceIndex: number; bookmarked: boolean; clientUpdatedAt: string } };
 
 export type StoredPendingOp = PendingOp & {
   id: number;
@@ -54,6 +58,7 @@ export interface SyncHandlers {
   audioLessonProgress: (payload: PendingOp & { type: 'audioLessonProgress' }) => Promise<void>;
   sentenceRead: (payload: PendingOp & { type: 'sentenceRead' }) => Promise<void>;
   lastRead: (payload: PendingOp & { type: 'lastRead' }) => Promise<void>;
+  bookmarkSet: (payload: PendingOp & { type: 'bookmarkSet' }) => Promise<void>;
 }
 
 let dbPromise: Promise<IDBDatabase> | null = null;
@@ -215,6 +220,8 @@ async function drainOnce(handlers: SyncHandlers): Promise<SyncResult> {
         await handlers.sentenceRead(op);
       } else if (op.type === 'lastRead') {
         await handlers.lastRead(op);
+      } else if (op.type === 'bookmarkSet') {
+        await handlers.bookmarkSet(op);
       }
       await deleteOp(op.id);
       succeeded++;

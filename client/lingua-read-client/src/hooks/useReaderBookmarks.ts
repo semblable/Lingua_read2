@@ -1,8 +1,18 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   getBookmarkedSentences,
+  getLastBookmarkedSentence,
+  isLegacyBookmarkImportDone,
+  setCachedBookmarks,
   toggleBookmark as toggleBookmarkInStorage
 } from '../utils/bookmarks';
+import { getTextBookmarks, setTextBookmark } from '../utils/api/bookmarks';
+import {
+  applyPendingBookmarkOps,
+  mergeWithUnimportedCache,
+  migrateLegacyBookmarks
+} from '../utils/bookmarkSync';
+import { listPending } from '../utils/offline/syncQueue';
 
 export type UseReaderBookmarksArgs = {
   textId: number | string | null | undefined;
@@ -12,6 +22,11 @@ export type UseReaderBookmarksArgs = {
 
 export type UseReaderBookmarksResult = {
   bookmarkedIndices: number[];
+  // Newest bookmark; the reader scrolls to it when the text opens.
+  lastBookmarkedIndex: number | null;
+  // False until the server answered (or failed, e.g. offline) for this text,
+  // so the scroll-on-open uses the synced anchor, not a stale local one.
+  bookmarksReady: boolean;
   isBookmarked: (sentenceIndex: number) => boolean;
   toggleBookmarkForIndex: (sentenceIndex: number) => void;
   handleSentenceContextMenu: (
@@ -20,20 +35,74 @@ export type UseReaderBookmarksResult = {
   ) => void;
 };
 
+const toTextIdNumber = (textId: number | string): number => parseInt(String(textId), 10);
+
 export const useReaderBookmarks = ({
   textId,
   isMobile,
   hasActiveTextSelection
 }: UseReaderBookmarksArgs): UseReaderBookmarksResult => {
   const [bookmarkedIndices, setBookmarkedIndices] = useState<number[]>([]);
+  const [lastBookmarkedIndex, setLastBookmarkedIndex] = useState<number | null>(null);
+  // The text whose server answer is in (or failed). Keyed by text rather than a
+  // boolean so it's never briefly "ready" with the previous text's anchor.
+  const [readyForTextId, setReadyForTextId] = useState<string | null>(null);
+  // Bumped per load, so an answer for a text the reader already left is dropped.
+  const loadIdRef = useRef(0);
+
+  const showCached = useCallback((id: number | string) => {
+    setBookmarkedIndices(getBookmarkedSentences(id));
+    setLastBookmarkedIndex(getLastBookmarkedSentence(id));
+  }, []);
+
+  const loadFromServer = useCallback(async (id: number | string) => {
+    const loadId = ++loadIdRef.current;
+    try {
+      await migrateLegacyBookmarks();
+      const server = await getTextBookmarks(id);
+      let pendingOps: Awaited<ReturnType<typeof listPending>> = [];
+      try {
+        pendingOps = await listPending();
+      } catch {
+        /* no IndexedDB: nothing queued to replay */
+      }
+      if (loadId !== loadIdRef.current) return;
+
+      let state = applyPendingBookmarkOps(
+        {
+          sentenceIndices: server?.sentenceIndices ?? [],
+          lastSentenceIndex: server?.lastSentenceIndex ?? null
+        },
+        pendingOps,
+        toTextIdNumber(id)
+      );
+      if (!isLegacyBookmarkImportDone()) {
+        state = mergeWithUnimportedCache(state, {
+          sentenceIndices: getBookmarkedSentences(id),
+          lastSentenceIndex: getLastBookmarkedSentence(id)
+        });
+      }
+      setCachedBookmarks(id, state.sentenceIndices, state.lastSentenceIndex);
+      setBookmarkedIndices(state.sentenceIndices);
+      setLastBookmarkedIndex(state.lastSentenceIndex);
+    } catch (error) {
+      // Offline or server error: keep showing the cached copy.
+      console.error('Failed to load bookmarks:', error);
+    } finally {
+      if (loadId === loadIdRef.current) setReadyForTextId(String(id));
+    }
+  }, []);
 
   useEffect(() => {
     if (!textId) {
+      loadIdRef.current++;
       setBookmarkedIndices([]);
+      setLastBookmarkedIndex(null);
       return;
     }
-    setBookmarkedIndices(getBookmarkedSentences(textId));
-  }, [textId]);
+    showCached(textId);
+    void loadFromServer(textId);
+  }, [textId, showCached, loadFromServer]);
 
   const isBookmarked = useCallback(
     (sentenceIndex: number) => bookmarkedIndices.includes(sentenceIndex),
@@ -43,10 +112,20 @@ export const useReaderBookmarks = ({
   const toggleBookmarkForIndex = useCallback(
     (sentenceIndex: number) => {
       if (!textId || typeof sentenceIndex !== 'number' || sentenceIndex < 0) return;
+      const bookmarked = !getBookmarkedSentences(textId).includes(sentenceIndex);
+      // A load still in flight may predate this toggle; drop its answer.
+      loadIdRef.current++;
+      setReadyForTextId(String(textId));
       toggleBookmarkInStorage(textId, sentenceIndex);
-      setBookmarkedIndices(getBookmarkedSentences(textId));
+      showCached(textId);
+      // Offline, this queues the toggle and resolves; only a server rejection
+      // lands here, and then the server's state is the one to show.
+      setTextBookmark(toTextIdNumber(textId), sentenceIndex, bookmarked).catch((error: unknown) => {
+        console.error('Failed to save bookmark:', error);
+        void loadFromServer(textId);
+      });
     },
-    [textId]
+    [textId, showCached, loadFromServer]
   );
 
   const handleSentenceContextMenu = useCallback(
@@ -60,6 +139,8 @@ export const useReaderBookmarks = ({
 
   return {
     bookmarkedIndices,
+    lastBookmarkedIndex,
+    bookmarksReady: textId != null && readyForTextId === String(textId),
     isBookmarked,
     toggleBookmarkForIndex,
     handleSentenceContextMenu

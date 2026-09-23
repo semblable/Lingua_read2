@@ -10,6 +10,7 @@ import Navigation from './components/Navigation';
 import OfflineIndicator from './components/offline/OfflineIndicator';
 import { productionSyncHandlers } from './utils/offline/handlers';
 import { registerServiceWorker } from './utils/offline/registerServiceWorker';
+import { migrateLegacyBookmarks } from './utils/bookmarkSync';
 
 // Pages needed on initial render (eager)
 import Home from './pages/Home';
@@ -51,6 +52,11 @@ const ProtectedRoute = ({ isAuthenticated, isLoading }: { isAuthenticated: boole
 const AuthenticatedApp = () => {
   const { isAuthenticated, isLoading } = useAuthStore();
   const settingsContext = useContext(SettingsContext);
+
+  // Bookmarks used to live only in this browser; upload them once so they sync.
+  useEffect(() => {
+    if (isAuthenticated) void migrateLegacyBookmarks();
+  }, [isAuthenticated]);
 
   // Theme management
   useEffect(() => {

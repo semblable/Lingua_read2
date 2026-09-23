@@ -9,6 +9,7 @@ import {
   getLastBookmarkedSentence,
   toggleBookmark
 } from '../utils/bookmarks';
+import { getTextBookmarks, setTextBookmark } from '../utils/api/bookmarks';
 import { speakText, cancelSpeech, isSpeechSynthesisSupported } from '../utils/browserTts';
 import {
   getText,
@@ -64,7 +65,25 @@ vi.mock('../utils/api', () => ({
 vi.mock('../utils/bookmarks', () => ({
   getBookmarkedSentences: vi.fn(() => []),
   getLastBookmarkedSentence: vi.fn(() => null),
-  toggleBookmark: vi.fn()
+  toggleBookmark: vi.fn(),
+  setCachedBookmarks: vi.fn(),
+  isLegacyBookmarkImportDone: vi.fn(() => true)
+}));
+
+vi.mock('../utils/api/bookmarks', () => ({
+  getTextBookmarks: vi.fn(),
+  setTextBookmark: vi.fn(),
+  importLegacyBookmarks: vi.fn()
+}));
+
+vi.mock('../utils/bookmarkSync', async (importOriginal) => ({
+  ...(await importOriginal()),
+  migrateLegacyBookmarks: vi.fn(() => Promise.resolve())
+}));
+
+vi.mock('../utils/offline/syncQueue', async (importOriginal) => ({
+  ...(await importOriginal()),
+  listPending: vi.fn(() => Promise.resolve([]))
 }));
 
 const mockAudiobookPlayer = vi.fn();
@@ -159,6 +178,10 @@ describe('TextDisplay', () => {
     });
     getBookmarkedSentences.mockReturnValue([]);
     getLastBookmarkedSentence.mockReturnValue(null);
+    getTextBookmarks.mockReset();
+    getTextBookmarks.mockResolvedValue({ textId: 1, sentenceIndices: [], lastSentenceIndex: null });
+    setTextBookmark.mockReset();
+    setTextBookmark.mockResolvedValue({ textId: 1, sentenceIndices: [], lastSentenceIndex: null });
     createWord.mockReset();
     updateWord.mockReset();
     deleteWord.mockReset();
@@ -1682,7 +1705,7 @@ describe('TextDisplay', () => {
         words: [],
         bookId: null
       });
-      getLastBookmarkedSentence.mockReturnValue(2);
+      getTextBookmarks.mockResolvedValue({ textId: 1, sentenceIndices: [2], lastSentenceIndex: 2 });
       const scrollSpy = vi
         .spyOn(window.HTMLElement.prototype, 'scrollIntoView')
         .mockImplementation(() => {});
@@ -1711,6 +1734,97 @@ describe('TextDisplay', () => {
       scrollSpy.mockRestore();
     });
 
+    const scrolledSentenceIndices = (scrollSpy) =>
+      scrollSpy.mock.instances
+        .filter((node) => node instanceof window.HTMLElement)
+        .map((node) => node.getAttribute('data-sentence-index'));
+
+    test('scrolls to the synced bookmark, not the stale local one', async () => {
+      getText.mockResolvedValueOnce({
+        textId: 1,
+        title: 'Synced Bookmark',
+        content: longText,
+        languageId: null,
+        languageCode: 'ES',
+        languageName: 'Spanish',
+        isAudioLesson: false,
+        words: [],
+        bookId: null
+      });
+      // This device last bookmarked sentence 1; another device then bookmarked 3.
+      getLastBookmarkedSentence.mockReturnValue(1);
+      getTextBookmarks.mockResolvedValue({ textId: 1, sentenceIndices: [1, 3], lastSentenceIndex: 3 });
+      const scrollSpy = vi
+        .spyOn(window.HTMLElement.prototype, 'scrollIntoView')
+        .mockImplementation(() => {});
+
+      renderTextDisplay();
+
+      await screen.findByText('Synced Bookmark');
+      await waitFor(() => expect(scrollSpy).toHaveBeenCalled());
+      expect(scrolledSentenceIndices(scrollSpy)).toEqual(['3']);
+
+      scrollSpy.mockRestore();
+    });
+
+    test("scrolls to the next lesson's bookmark when navigating in place", async () => {
+      // The reader stays mounted across "Next lesson". Lesson 2 loads slowly, so
+      // for a while the route says 2 while lesson 1 (a single sentence) is on
+      // screen; a scroll attempted then finds nothing and must not use up the
+      // once-per-text scroll.
+      const lesson = (textId, content) => ({
+        textId,
+        title: `Lesson ${textId}`,
+        content,
+        languageId: null,
+        languageCode: 'ES',
+        languageName: 'Spanish',
+        isAudioLesson: false,
+        words: [],
+        bookId: null
+      });
+      let releaseLesson2;
+      const lesson2 = new Promise((resolve) => { releaseLesson2 = () => resolve(lesson(2, longText)); });
+      getText.mockImplementation((id) =>
+        Number(id) === 2 ? lesson2 : Promise.resolve(lesson(1, 'Only one sentence.')));
+      getTextBookmarks.mockImplementation((id) => Promise.resolve(
+        Number(id) === 2
+          ? { textId: 2, sentenceIndices: [2], lastSentenceIndex: 2 }
+          : { textId: 1, sentenceIndices: [], lastSentenceIndex: null }
+      ));
+      getLastBookmarkedSentence.mockImplementation((id) => (Number(id) === 2 ? 2 : null));
+      const scrollSpy = vi
+        .spyOn(window.HTMLElement.prototype, 'scrollIntoView')
+        .mockImplementation(() => {});
+      const router = createMemoryRouter(
+        [{ path: '/texts/:textId', element: <TextDisplay /> }],
+        {
+          initialEntries: ['/texts/1'],
+          future: { v7_startTransition: true, v7_relativeSplatPath: true }
+        }
+      );
+
+      renderTextDisplayWithRouter(router);
+      await screen.findByText('Lesson 1');
+
+      await act(async () => {
+        await router.navigate('/texts/2');
+      });
+      // Let any scroll queued against lesson 1's DOM run first.
+      await act(async () => {
+        await new Promise((resolve) => requestAnimationFrame(() => resolve()));
+      });
+      await act(async () => {
+        releaseLesson2();
+      });
+      await screen.findByText('Lesson 2');
+
+      await waitFor(() => expect(scrollSpy).toHaveBeenCalled());
+      expect(scrolledSentenceIndices(scrollSpy)).toEqual(['2']);
+
+      scrollSpy.mockRestore();
+    });
+
     test('does not scroll when no bookmark is stored', async () => {
       getText.mockResolvedValueOnce({
         textId: 1,
@@ -1723,7 +1837,7 @@ describe('TextDisplay', () => {
         words: [],
         bookId: null
       });
-      getLastBookmarkedSentence.mockReturnValue(null);
+      getTextBookmarks.mockResolvedValue({ textId: 1, sentenceIndices: [], lastSentenceIndex: null });
       const scrollSpy = vi
         .spyOn(window.HTMLElement.prototype, 'scrollIntoView')
         .mockImplementation(() => {});
@@ -1754,7 +1868,7 @@ describe('TextDisplay', () => {
         words: [],
         bookId: null
       });
-      getLastBookmarkedSentence.mockReturnValue(1);
+      getTextBookmarks.mockResolvedValue({ textId: 1, sentenceIndices: [1], lastSentenceIndex: 1 });
       const scrollSpy = vi
         .spyOn(window.HTMLElement.prototype, 'scrollIntoView')
         .mockImplementation(() => {});

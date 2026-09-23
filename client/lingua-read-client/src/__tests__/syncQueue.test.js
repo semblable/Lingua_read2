@@ -23,6 +23,7 @@ const fullHandlers = (overrides = {}) => ({
   audioLessonProgress: vi.fn(),
   sentenceRead: vi.fn(),
   lastRead: vi.fn(),
+  bookmarkSet: vi.fn(),
   ...overrides,
 });
 
@@ -304,6 +305,10 @@ describe('syncQueue', () => {
       { type: 'lastRead', payload: { bookId: 1, textId: 9, clientUpdatedAt: 'a' } },
       'lastRead:book:1'
     );
+    await enqueue(
+      { type: 'bookmarkSet', payload: { textId: 9, sentenceIndex: 3, bookmarked: true, clientUpdatedAt: 'a' } },
+      'bookmark:9:3'
+    );
 
     const handlers = fullHandlers();
     await drain(handlers);
@@ -313,7 +318,28 @@ describe('syncQueue', () => {
     expect(handlers.audioLessonProgress).toHaveBeenCalledTimes(1);
     expect(handlers.sentenceRead).toHaveBeenCalledTimes(1);
     expect(handlers.lastRead).toHaveBeenCalledTimes(1);
+    expect(handlers.bookmarkSet).toHaveBeenCalledTimes(1);
     expect(await pending()).toBe(0);
+  });
+
+  test('an offline bookmark add then remove replays only the removal', async () => {
+    setOnline(false);
+    const toggle = (bookmarked, clientUpdatedAt) => enqueueIfOffline(
+      { type: 'bookmarkSet', payload: { textId: 9, sentenceIndex: 3, bookmarked, clientUpdatedAt } },
+      async () => 'ran',
+      'bookmark:9:3'
+    );
+    await toggle(true, 'a');
+    await toggle(false, 'b');
+    // A different sentence is its own key and is kept.
+    await enqueueIfOffline(
+      { type: 'bookmarkSet', payload: { textId: 9, sentenceIndex: 4, bookmarked: true, clientUpdatedAt: 'c' } },
+      async () => 'ran',
+      'bookmark:9:4'
+    );
+
+    const ops = await listPending();
+    expect(ops.map((op) => [op.payload.sentenceIndex, op.payload.bookmarked])).toEqual([[3, false], [4, true]]);
   });
 
   test('enqueueIfOffline forwards coalesceKey so offline position saves coalesce', async () => {

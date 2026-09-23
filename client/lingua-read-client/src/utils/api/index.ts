@@ -9,6 +9,7 @@ export * from './languages';
 export * from './texts';
 export * from './books';
 export * from './audiobook';
+export * from './bookmarks';
 export * from './hardcover';
 export * from './stats';
 export * from './goals';

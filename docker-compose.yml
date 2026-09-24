@@ -142,14 +142,18 @@ services:
       - BACKUP_ENV
       # Optional healthchecks.io-style heartbeat URL pinged by backup.sh (empty = disabled).
       - HEALTHCHECK_URL
+      # Staging only: 1 = refresh-from-prod.sh replaces staging's data with production's backup nightly.
+      - REFRESH_FROM_PROD
     volumes:
       - backup_data:/backups
       - ./secrets/rclone.conf:/rclone/rclone.conf:ro
-      # Media volumes, read-only — mirrored to Drive by backup.sh (the DB dump alone can't restore uploads).
-      - api_audio_lessons:/srv/media/audio_lessons:ro
-      - api_audiobooks:/srv/media/audiobooks:ro
-      - api_epub_assets:/srv/media/epub_assets:ro
-      - api_hardcover_covers:/srv/media/hardcover-covers:ro
+      # Media volumes, mirrored to Drive by backup.sh (the DB dump alone can't restore uploads).
+      # Read-only everywhere except staging with REFRESH_FROM_PROD, which writes production's media
+      # into them (_deploy.yml sets BACKUP_MEDIA_MOUNT=rw only there).
+      - api_audio_lessons:/srv/media/audio_lessons:${BACKUP_MEDIA_MOUNT:-ro}
+      - api_audiobooks:/srv/media/audiobooks:${BACKUP_MEDIA_MOUNT:-ro}
+      - api_epub_assets:/srv/media/epub_assets:${BACKUP_MEDIA_MOUNT:-ro}
+      - api_hardcover_covers:/srv/media/hardcover-covers:${BACKUP_MEDIA_MOUNT:-ro}
       # No api_dp_keys: those keys decrypt secrets in the DB dump and must not go to Drive with it.
       # :ro is hygiene only — socket access still grants full Docker API; used to read container logs.
       - /var/run/docker.sock:/var/run/docker.sock:ro

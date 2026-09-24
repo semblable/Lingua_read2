@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Form, Button, Alert, Row, Col, Card } from 'react-bootstrap';
 import type { Settings } from '../../contexts/SettingsContext';
 import type { SettingsChangeHandler } from './AppearanceSettings';
@@ -33,6 +33,10 @@ const DiscordSettings = ({
   reportMessage,
   onSendReportNow
 }: DiscordSettingsProps) => {
+  // What is in the offset box while it has focus. The setting only takes whole numbers, so without
+  // this a cleared box or a lone "-" would snap straight back to the saved value.
+  const [offsetDraft, setOffsetDraft] = useState<string | null>(null);
+
   return (
     <>
       <div className="settings-control-group">
@@ -102,8 +106,12 @@ const DiscordSettings = ({
           <Form.Control
             type="number"
             name="discordTimezoneOffsetMinutes"
-            value={settings.discordTimezoneOffsetMinutes}
-            onChange={handleChange}
+            value={offsetDraft ?? settings.discordTimezoneOffsetMinutes}
+            onChange={(event) => {
+              setOffsetDraft(event.target.value);
+              handleChange(event);
+            }}
+            onBlur={() => setOffsetDraft(null)}
             min={-840}
             max={840}
           />

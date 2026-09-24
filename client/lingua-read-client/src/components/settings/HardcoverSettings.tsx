@@ -32,10 +32,27 @@ const HardcoverSettings = ({
   onSyncAll
 }: HardcoverSettingsProps) => {
   const [token, setToken] = useState('');
+  const [savingToken, setSavingToken] = useState(false);
 
   const saveToken = async () => {
-    await onSaveToken(token);
-    setToken('');
+    if (!token.trim() || savingToken) return;
+    setSavingToken(true);
+    try {
+      await onSaveToken(token);
+      setToken('');
+    } catch {
+      // The parent shows the error; keep the typed token so the user can retry.
+    } finally {
+      setSavingToken(false);
+    }
+  };
+
+  // Enter would otherwise reach the settings form, which never carries the token.
+  const handleTokenKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      void saveToken();
+    }
   };
 
   return (
@@ -62,7 +79,11 @@ const HardcoverSettings = ({
             placeholder={settings.hasHardcoverApiToken ? 'Token configured' : 'Paste your Hardcover API token'}
             value={token}
             onChange={(event) => setToken(event.target.value)}
+            onKeyDown={handleTokenKeyDown}
           />
+          {token.trim() && !savingToken && (
+            <Form.Text className="d-block text-warning-emphasis">Not saved yet: press Enter or Save Token</Form.Text>
+          )}
           <Form.Text className="text-muted">
             Get your token from <a href="https://hardcover.app/account/api" target="_blank" rel="noopener noreferrer">Hardcover API settings</a>.
             Saved tokens are not returned to the browser.
@@ -75,7 +96,7 @@ const HardcoverSettings = ({
             size="sm"
             type="button"
             onClick={saveToken}
-            disabled={!token.trim()}
+            disabled={savingToken || !token.trim()}
           >
             Save Token
           </Button>

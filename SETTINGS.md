@@ -102,6 +102,8 @@ Used when fetching pre-built images from GitHub Container Registry (GHCR) instea
 
 These parameters are configured directly through the user profile interface in the web application and are stored on a per-user basis in the database.
 
+The Settings page saves each change by itself, with no Save button: switches and dropdowns right away, text once you pause typing or leave the field. A status pill at the bottom of the screen shows *Saving…*, *All changes saved*, or an error with **Retry**. API keys, the Discord webhook and the Hardcover token are the exception: they are saved only when you press their **Save** button (or Enter), so a half-pasted secret is never stored.
+
 ### 1. UI Preferences
 Tailor the look, theme, size, and layout of the reader.
 

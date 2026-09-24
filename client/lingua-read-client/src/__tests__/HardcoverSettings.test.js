@@ -42,6 +42,31 @@ describe('HardcoverSettings', () => {
     await waitFor(() => expect(screen.getByPlaceholderText('Token configured')).toHaveValue(''));
   });
 
+  test('Enter in the token field saves the token', async () => {
+    const props = renderSettings();
+    const input = screen.getByPlaceholderText('Paste your Hardcover API token');
+
+    fireEvent.change(input, { target: { value: 'typed-token' } });
+    expect(screen.getByText(/Not saved yet/)).toBeInTheDocument();
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    await waitFor(() => expect(props.onSaveToken).toHaveBeenCalledWith('typed-token'));
+    await waitFor(() => expect(input).toHaveValue(''));
+    expect(screen.queryByText(/Not saved yet/)).not.toBeInTheDocument();
+  });
+
+  test('keeps the typed token when saving it fails', async () => {
+    const props = renderSettings({}, { onSaveToken: vi.fn(() => Promise.reject(new Error('401'))) });
+    const input = screen.getByPlaceholderText('Paste your Hardcover API token');
+
+    fireEvent.change(input, { target: { value: 'typed-token' } });
+    fireEvent.click(screen.getByRole('button', { name: /save token/i }));
+
+    await waitFor(() => expect(props.onSaveToken).toHaveBeenCalled());
+    await waitFor(() => expect(screen.getByRole('button', { name: /save token/i })).not.toBeDisabled());
+    expect(input).toHaveValue('typed-token');
+  });
+
   test('disables sync-all until token exists and sync is enabled', () => {
     renderSettings();
     expect(screen.getByRole('button', { name: /sync all books/i })).toBeDisabled();

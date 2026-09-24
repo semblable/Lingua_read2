@@ -85,6 +85,8 @@ builder.Services.AddResponseCompression(options =>
     options.EnableForHttps = true;
     options.Providers.Add<BrotliCompressionProvider>();
     options.Providers.Add<GzipCompressionProvider>();
+    // The terms CSV export is the largest plain-text download; text/csv isn't a default type.
+    options.MimeTypes = ResponseCompressionDefaults.MimeTypes.Append("text/csv");
 });
 // .NET 7+ maps Brotli Optimal to quality 4 — near-gzip CPU cost, better ratio.
 builder.Services.Configure<BrotliCompressionProviderOptions>(o => o.Level = CompressionLevel.Optimal);

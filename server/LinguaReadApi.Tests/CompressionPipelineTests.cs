@@ -138,6 +138,40 @@ public class CompressionPipelineTests : IClassFixture<WebApplicationFactory<Prog
         }
     }
 
+    [Fact]
+    public async Task WordsCsvExport_IsCompressed_AndKeepsAttachmentFilename()
+    {
+        // text/csv isn't in the framework's default compressible types; the export is the largest
+        // plain-text download the app serves.
+        await SeedTextAsync();
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            if (!await db.Words.AnyAsync(w => w.WordId == TextId))
+            {
+                db.Words.Add(new Word { WordId = TextId, UserId = Guid.Parse(UserId), LanguageId = 1, Term = "comprimido", Status = 1 });
+                await db.SaveChangesAsync();
+            }
+        }
+        var client = _factory.CreateClient();
+        var request = new HttpRequestMessage(HttpMethod.Get, "/api/words/export");
+        request.Headers.Add("Cookie", $".LinguaRead.Auth={CreateJwt()}");
+        request.Headers.AcceptEncoding.ParseAdd("gzip");
+
+        var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Contains("gzip", response.Content.Headers.ContentEncoding);
+        Assert.Equal("text/csv", response.Content.Headers.ContentType?.MediaType);
+        Assert.StartsWith("linguaread_terms_", response.Content.Headers.ContentDisposition?.FileName?.Trim('"'));
+        await using var body = await response.Content.ReadAsStreamAsync();
+        await using var gzip = new GZipStream(body, CompressionMode.Decompress);
+        using var reader = new StreamReader(gzip, Encoding.UTF8);
+        var csv = await reader.ReadToEndAsync();
+        Assert.StartsWith("Term,Translation,Status,Language", csv);
+        Assert.Contains("comprimido,,1,Spanish", csv);
+    }
+
     private static async Task<HttpResponseMessage> SendGetTextAsync(
         HttpClient client, string acceptEncoding, string? ifNoneMatch = null)
     {

@@ -51,6 +51,7 @@ namespace LinguaReadApi.Data
         public DbSet<UserLanguageStatistics> UserLanguageStatistics { get; set; } // Added for aggregated stats
         public DbSet<UserAudioLessonProgress> UserAudioLessonProgresses { get; set; } // Added for audio lesson progress
         public DbSet<UserSentenceProgress> UserSentenceProgresses { get; set; }
+        public DbSet<TextBookmark> TextBookmarks { get; set; }
         public DbSet<SrsCardReview> SrsCardReviews { get; set; }
         public DbSet<SrsPhrase> SrsPhrases { get; set; }
         public DbSet<SrsReviewLog> SrsReviewLogs { get; set; }
@@ -329,6 +330,22 @@ namespace LinguaReadApi.Data
                 .HasOne(usp => usp.Text)
                 .WithMany()
                 .HasForeignKey(usp => usp.TextId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // Configure TextBookmark entity
+            modelBuilder.Entity<TextBookmark>()
+                .HasKey(tb => new { tb.UserId, tb.TextId, tb.SentenceIndex });
+
+            modelBuilder.Entity<TextBookmark>()
+                .HasOne(tb => tb.User)
+                .WithMany()
+                .HasForeignKey(tb => tb.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<TextBookmark>()
+                .HasOne(tb => tb.Text)
+                .WithMany()
+                .HasForeignKey(tb => tb.TextId)
                 .OnDelete(DeleteBehavior.Cascade);
 
             // Configure SrsCardReview entity

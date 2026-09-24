@@ -16,7 +16,6 @@ import AudiobookPlayer from '../components/AudiobookPlayer';
 import DownloadForOfflineButton from '../components/offline/DownloadForOfflineButton';
 import './TextDisplay.css';
 import { SettingsContext } from '../contexts/SettingsContext';
-import { getLastBookmarkedSentence } from '../utils/bookmarks';
 import { isOfflineQueued } from '../utils/offline/enqueueIfOffline';
 import { useReaderBookmarks } from '../hooks/useReaderBookmarks';
 import { useReaderKeyboard, type WordStatus } from '../hooks/useReaderKeyboard';
@@ -185,6 +184,8 @@ const TextDisplay = () => {
   }, []);
 
   const {
+    lastBookmarkedIndex,
+    bookmarksReady,
     isBookmarked,
     toggleBookmarkForIndex,
     handleSentenceContextMenu
@@ -248,17 +249,20 @@ const TextDisplay = () => {
     setSummaryError('');
   }, [text?.textId]);
 
-  // Scroll to the most recently bookmarked sentence once per text load.
+  // Scroll to the most recently bookmarked sentence once per text load, after
+  // the synced bookmarks arrive (a bookmark made on another device counts).
+  // bookmarksReady is per text, so after "Next lesson" (the reader stays
+  // mounted) it can't fire early against the previous lesson's DOM.
   // The ref guard prevents re-scrolling on re-renders (translations, word state
   // updates) within the same load — only the first ready frame fires a scroll.
   const scrolledForTextIdRef = useRef<string | number | null>(null);
   useEffect(() => {
-    if (loading || !text || !textId) return;
+    if (loading || !text || !textId || !bookmarksReady) return;
     if (scrolledForTextIdRef.current === textId) return;
     const container = textContentRef.current;
     if (!container) return;
     scrolledForTextIdRef.current = textId;
-    const idx = getLastBookmarkedSentence(textId);
+    const idx = lastBookmarkedIndex;
     if (idx == null) return;
     requestAnimationFrame(() => {
       const el = container.querySelector(
@@ -266,7 +270,7 @@ const TextDisplay = () => {
       ) as HTMLElement | null;
       el?.scrollIntoView({ block: 'center', behavior: 'smooth' });
     });
-  }, [loading, text, textId]);
+  }, [loading, text, textId, bookmarksReady, lastBookmarkedIndex]);
 
   const applyTranslationToDisplayedWord = useCallback(
     (term: string, translationText: string) => {

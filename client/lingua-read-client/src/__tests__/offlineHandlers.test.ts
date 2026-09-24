@@ -64,3 +64,24 @@ describe('productionSyncHandlers.srsReview', () => {
     expect(JSON.parse(String(options?.body))).toEqual({ srsCardReviewId: 7, grade: 0 });
   });
 });
+
+describe('productionSyncHandlers.bookmarkSet', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  test('replays the stored toggle time verbatim, so a late drain loses to a newer toggle', async () => {
+    await productionSyncHandlers.bookmarkSet({
+      type: 'bookmarkSet',
+      payload: { textId: 12, sentenceIndex: 4, bookmarked: false, clientUpdatedAt: '2026-09-22T08:00:00.000Z' },
+    });
+
+    const [url, options] = vi.mocked(fetchApi).mock.calls[0];
+    expect(url).toBe('/bookmarks/12/4');
+    expect(options?.method).toBe('PUT');
+    expect(JSON.parse(String(options?.body))).toEqual({
+      bookmarked: false,
+      clientUpdatedAt: '2026-09-22T08:00:00.000Z',
+    });
+  });
+});

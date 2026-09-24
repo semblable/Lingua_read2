@@ -91,4 +91,13 @@ export const productionSyncHandlers: SyncHandlers = {
       }),
     });
   },
+  bookmarkSet: async ({ payload }) => {
+    await fetchApi(`/bookmarks/${payload.textId}/${payload.sentenceIndex}`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        bookmarked: payload.bookmarked,
+        clientUpdatedAt: payload.clientUpdatedAt,
+      }),
+    });
+  },
 };

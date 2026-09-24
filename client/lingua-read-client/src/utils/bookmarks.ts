@@ -1,5 +1,12 @@
+// Local copy of the reader's sentence bookmarks. The server holds the real
+// set (api/bookmarks.ts); this cache gives an instant first paint and works
+// offline, and the reader overwrites a text's entry with server state once it
+// loads. Builds before bookmark sync kept bookmarks ONLY here, so until
+// bookmarkSync.migrateLegacyBookmarks has uploaded them once (marker key below),
+// nothing may overwrite or clear this data.
 const BOOKMARKS_STORAGE_KEY = 'linguaReadBookmarks';
 const LAST_BOOKMARK_STORAGE_KEY = 'linguaReadLastBookmark';
+const LEGACY_IMPORTED_STORAGE_KEY = 'linguaReadBookmarksImported';
 
 type BookmarksByText = Record<string, number[]>;
 type LastBookmarkByText = Record<string, number>;
@@ -127,4 +134,76 @@ export const toggleBookmark = (
   }
 
   saveAllBookmarks(allBookmarks);
+};
+
+/**
+ * Overwrites one text's cached bookmarks with the server's state.
+ */
+export const setCachedBookmarks = (
+  textId: string | number | null | undefined,
+  sentenceIndices: number[],
+  lastSentenceIndex: number | null
+): void => {
+  if (!textId) return;
+  const stringTextId = String(textId);
+
+  const allBookmarks = getAllBookmarks();
+  if (sentenceIndices.length === 0) {
+    delete allBookmarks[stringTextId];
+  } else {
+    allBookmarks[stringTextId] = [...sentenceIndices].sort((a, b) => a - b);
+  }
+  saveAllBookmarks(allBookmarks);
+
+  const lastMap = getAllLastBookmarks();
+  if (lastSentenceIndex == null) {
+    delete lastMap[stringTextId];
+  } else {
+    lastMap[stringTextId] = lastSentenceIndex;
+  }
+  saveAllLastBookmarks(lastMap);
+};
+
+/** Every cached text's bookmarks plus its last-bookmark anchor, for the one-time import. */
+export const getAllCachedBookmarks = (): Array<{
+  textId: string;
+  sentenceIndices: number[];
+  lastSentenceIndex: number | null;
+}> => {
+  const lastMap = getAllLastBookmarks();
+  return Object.entries(getAllBookmarks()).map(([textId, sentenceIndices]) => ({
+    textId,
+    sentenceIndices: Array.isArray(sentenceIndices) ? sentenceIndices : [],
+    lastSentenceIndex: typeof lastMap[textId] === 'number' ? lastMap[textId] : null
+  }));
+};
+
+export const isLegacyBookmarkImportDone = (): boolean => {
+  try {
+    return localStorage.getItem(LEGACY_IMPORTED_STORAGE_KEY) === '1';
+  } catch {
+    return false;
+  }
+};
+
+export const markLegacyBookmarkImportDone = (): void => {
+  try {
+    localStorage.setItem(LEGACY_IMPORTED_STORAGE_KEY, '1');
+  } catch (error) {
+    console.error('Error saving bookmark import marker to localStorage:', error);
+  }
+};
+
+/**
+ * Drops the local bookmark cache (logout). Skipped while the one-time import
+ * is still pending: then this is the only copy of those bookmarks.
+ */
+export const clearCachedBookmarks = (): void => {
+  if (!isLegacyBookmarkImportDone()) return;
+  try {
+    localStorage.removeItem(BOOKMARKS_STORAGE_KEY);
+    localStorage.removeItem(LAST_BOOKMARK_STORAGE_KEY);
+  } catch (error) {
+    console.error('Error clearing bookmarks from localStorage:', error);
+  }
 };

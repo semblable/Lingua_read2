@@ -23,13 +23,19 @@ const mockLocalStorage = (() => {
 Object.defineProperty(window, 'localStorage', { value: mockLocalStorage, configurable: true });
 
 import {
+  clearCachedBookmarks,
+  getAllCachedBookmarks,
   getBookmarkedSentences,
   getLastBookmarkedSentence,
+  isLegacyBookmarkImportDone,
+  markLegacyBookmarkImportDone,
+  setCachedBookmarks,
   toggleBookmark
 } from '../utils/bookmarks';
 
 const KEY = 'linguaReadBookmarks';
 const LAST_KEY = 'linguaReadLastBookmark';
+const IMPORTED_KEY = 'linguaReadBookmarksImported';
 
 describe('getBookmarkedSentences', () => {
   beforeEach(() => {
@@ -200,5 +206,61 @@ describe('toggleBookmark + lastBookmarkedIndex coordination', () => {
     // Last bookmark is 9. Remove 2 — 9 should still be the anchor.
     toggleBookmark(7, 2);
     expect(getLastBookmarkedSentence(7)).toBe(9);
+  });
+});
+
+describe('local bookmark cache', () => {
+  beforeEach(() => {
+    mockLocalStorage.clear();
+    vi.clearAllMocks();
+  });
+
+  test("setCachedBookmarks replaces one text's entry and leaves others alone", () => {
+    mockLocalStorage._setStore({
+      [KEY]: JSON.stringify({ 7: [1, 2], 8: [5] }),
+      [LAST_KEY]: JSON.stringify({ 7: 2, 8: 5 })
+    });
+
+    setCachedBookmarks(7, [9, 3], 9);
+
+    expect(getBookmarkedSentences(7)).toEqual([3, 9]);
+    expect(getLastBookmarkedSentence(7)).toBe(9);
+    expect(getBookmarkedSentences(8)).toEqual([5]);
+    expect(getLastBookmarkedSentence(8)).toBe(5);
+  });
+
+  test('setCachedBookmarks with no bookmarks drops the entry and its anchor', () => {
+    toggleBookmark(7, 1);
+
+    setCachedBookmarks(7, [], null);
+
+    expect(JSON.parse(mockLocalStorage._getStore()[KEY])).toEqual({});
+    expect(JSON.parse(mockLocalStorage._getStore()[LAST_KEY])).toEqual({});
+  });
+
+  test('getAllCachedBookmarks lists every text with its anchor', () => {
+    toggleBookmark(7, 4);
+    toggleBookmark(7, 1);
+    toggleBookmark(8, 2);
+    setCachedBookmarks(8, [2], null);
+
+    expect(getAllCachedBookmarks()).toEqual([
+      { textId: '7', sentenceIndices: [1, 4], lastSentenceIndex: 1 },
+      { textId: '8', sentenceIndices: [2], lastSentenceIndex: null }
+    ]);
+  });
+
+  test('clearCachedBookmarks keeps local-only bookmarks until the one-time upload has run', () => {
+    toggleBookmark(7, 1);
+
+    clearCachedBookmarks();
+    expect(getBookmarkedSentences(7)).toEqual([1]);
+
+    markLegacyBookmarkImportDone();
+    expect(isLegacyBookmarkImportDone()).toBe(true);
+    clearCachedBookmarks();
+    expect(getBookmarkedSentences(7)).toEqual([]);
+    expect(getLastBookmarkedSentence(7)).toBeNull();
+    expect(mockLocalStorage._getStore()[IMPORTED_KEY]).toBe('1');
   });
 });

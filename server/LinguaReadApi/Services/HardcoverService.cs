@@ -7,6 +7,7 @@ using LinguaReadApi.Data;
 using LinguaReadApi.Models;
 using LinguaReadApi.Utilities;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 namespace LinguaReadApi.Services;
 
@@ -36,17 +37,20 @@ public sealed class HardcoverService : IHardcoverService
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IWebHostEnvironment _environment;
     private readonly ILogger<HardcoverService> _logger;
+    private readonly bool _externalWritesDisabled;
 
     public HardcoverService(
         AppDbContext context,
         IHttpClientFactory httpClientFactory,
         IWebHostEnvironment environment,
-        ILogger<HardcoverService> logger)
+        ILogger<HardcoverService> logger,
+        IOptions<ExternalWritesOptions>? externalWrites = null)
     {
         _context = context;
         _httpClientFactory = httpClientFactory;
         _environment = environment;
         _logger = logger;
+        _externalWritesDisabled = externalWrites?.Value.Disabled ?? false;
     }
 
     public async Task<HardcoverConnectionResult> GetStatusAsync(Guid userId, CancellationToken cancellationToken = default)
@@ -180,6 +184,11 @@ public sealed class HardcoverService : IHardcoverService
 
     public async Task<HardcoverProgressSyncResult> SyncProgressAsync(Guid userId, int bookId, bool requireSyncEnabled = false, decimal? rating = null, CancellationToken cancellationToken = default)
     {
+        if (_externalWritesDisabled)
+        {
+            return HardcoverProgressSyncResult.SkippedResult(bookId, ExternalWritesOptions.DisabledMessage);
+        }
+
         var settings = await RequireSettingsWithTokenAsync(userId, cancellationToken);
         if (requireSyncEnabled && !settings.HardcoverSyncEnabled)
         {
@@ -233,6 +242,11 @@ public sealed class HardcoverService : IHardcoverService
 
     public async Task<HardcoverSyncAllResult> SyncAllAsync(Guid userId, CancellationToken cancellationToken = default)
     {
+        if (_externalWritesDisabled)
+        {
+            return new HardcoverSyncAllResult(Array.Empty<HardcoverProgressSyncResult>(), ExternalWritesOptions.DisabledMessage);
+        }
+
         var settings = await RequireSettingsWithTokenAsync(userId, cancellationToken);
         if (!settings.HardcoverSyncEnabled)
         {
@@ -583,7 +597,7 @@ public sealed class HardcoverService : IHardcoverService
         {
             @object = insertObject
         };
-        var data = await ExecuteGraphQlAsync(token, mutation, variables, cancellationToken);
+        var data = await ExecuteMutationAsync(token, mutation, variables, cancellationToken);
         var result = data.GetProperty("insert_user_book");
         ThrowIfMutationError(result);
         var userBookId = result.TryGetProperty("id", out var id) && id.ValueKind == JsonValueKind.Number
@@ -656,7 +670,7 @@ public sealed class HardcoverService : IHardcoverService
             update["rating"] = rating.Value;
         }
 
-        var data = await ExecuteGraphQlAsync(token, mutation, new { id = userBookId, @object = update }, cancellationToken);
+        var data = await ExecuteMutationAsync(token, mutation, new { id = userBookId, @object = update }, cancellationToken);
         ThrowIfMutationError(data.GetProperty("update_user_book"));
     }
 
@@ -688,7 +702,7 @@ public sealed class HardcoverService : IHardcoverService
                   }
                 }
                 """;
-            var data = await ExecuteGraphQlAsync(token, updateMutation, new { id = existingReadId.Value, @object = read }, cancellationToken);
+            var data = await ExecuteMutationAsync(token, updateMutation, new { id = existingReadId.Value, @object = read }, cancellationToken);
             var result = data.GetProperty("update_user_book_read");
             ThrowIfMutationError(result);
             return result.TryGetProperty("id", out var id) && id.ValueKind == JsonValueKind.Number
@@ -705,12 +719,24 @@ public sealed class HardcoverService : IHardcoverService
               }
             }
             """;
-        var insertData = await ExecuteGraphQlAsync(token, insertMutation, new { userBookId, userBookRead = read }, cancellationToken);
+        var insertData = await ExecuteMutationAsync(token, insertMutation, new { userBookId, userBookRead = read }, cancellationToken);
         var insertResult = insertData.GetProperty("insert_user_book_read");
         ThrowIfMutationError(insertResult);
         return insertResult.TryGetProperty("id", out var insertedId) && insertedId.ValueKind == JsonValueKind.Number
             ? insertedId.GetInt32()
             : insertResult.GetProperty("user_book_read").GetProperty("id").GetInt32();
+    }
+
+    // Every write to the user's Hardcover account goes through here. The sync entry points already
+    // return early when external writes are disabled; this is the backstop for any new caller.
+    private Task<JsonElement> ExecuteMutationAsync(string token, string mutation, object? variables, CancellationToken cancellationToken)
+    {
+        if (_externalWritesDisabled)
+        {
+            throw new InvalidOperationException("Hardcover writes: " + ExternalWritesOptions.DisabledMessage);
+        }
+
+        return ExecuteGraphQlAsync(token, mutation, variables, cancellationToken);
     }
 
     private async Task<JsonElement> ExecuteGraphQlAsync(string token, string query, object? variables, CancellationToken cancellationToken)

@@ -7,9 +7,11 @@
 # BACKUP_ENV isn't "staging". It only reads from production's Drive folder.
 #
 # What staging keeps across a refresh:
-#   - its own saved integration secrets. Production's are encrypted with production's Data
-#     Protection keys, which never leave production, so staging can't use them anyway; they are
-#     cleared and staging's own values are put back.
+#   - its own translation-provider keys (KEEP_SECRET_COLUMNS). Production's secrets are encrypted
+#     with production's Data Protection keys, which never leave production, so staging can't use
+#     them anyway; they are all cleared and only staging's translation keys are put back. The
+#     Hardcover token and Discord webhook stay empty: staging must not write to those accounts
+#     (the api also refuses to there, via ExternalWrites__Disabled).
 #   - the previous database, as ${POSTGRES_DB}_prev, until the next refresh (manual rollback:
 #     stop api, swap the names back, start api).
 # Everything else (users, texts, words, media) becomes production's.
@@ -32,6 +34,8 @@ MEDIA_DIRS="audio_lessons audiobooks epub_assets hardcover-covers"
 # The UserSettings columns AppDbContext encrypts with Data Protection. RefreshFromProdScriptTests
 # fails when this list and the model drift apart.
 SECRET_COLUMNS="AzureTranslatorKey GoogleTranslateApiKey WiktionaryAccessToken OpenRouterApiKey HardcoverApiToken DiscordWebhookUrl"
+# The subset staging keeps its own values for: lookup-only providers, no writes to user accounts.
+KEEP_SECRET_COLUMNS="AzureTranslatorKey GoogleTranslateApiKey WiktionaryAccessToken OpenRouterApiKey"
 export PGHOST="${PGHOST:-db}" PGUSER="${POSTGRES_USER:?}" PGPASSWORD="${POSTGRES_PASSWORD:?}"
 export PGOPTIONS="-c client_min_messages=warning"   # no NOTICEs for DROP ... IF EXISTS
 
@@ -97,10 +101,13 @@ pg_restore --no-owner --no-acl --exit-on-error -d "$NEW_DB" "$WORK/prod.backup"
 log "restored into $NEW_DB: $(psql -X -At -d "$NEW_DB" -c 'SELECT count(*) FROM "Words"') words"
 
 # --- 4. keep staging's own integration secrets --------------------------------
-col_list=""; set_null=""; set_from=""; col_defs=""
+set_null=""
 for c in $SECRET_COLUMNS; do
-  col_list+="${col_list:+, }\"$c\""
   set_null+="${set_null:+, }\"$c\" = NULL"
+done
+col_list=""; set_from=""; col_defs=""
+for c in $KEEP_SECRET_COLUMNS; do
+  col_list+="${col_list:+, }\"$c\""
   set_from+="${set_from:+, }\"$c\" = staging_secrets.\"$c\""
   col_defs+=", \"$c\" text"
 done
@@ -118,7 +125,7 @@ CREATE TEMP TABLE staging_secrets ("UserId" uuid$col_defs);
 UPDATE "UserSettings" u SET $set_from FROM staging_secrets WHERE u."UserId" = staging_secrets."UserId";
 COMMIT;
 SQL
-log "kept staging's secrets for $(wc -l < "$WORK/staging-secrets.tsv") user(s)"
+log "kept staging's translation keys for $(wc -l < "$WORK/staging-secrets.tsv") user(s); Hardcover and Discord cleared"
 
 # --- 5. swap the databases while the api is stopped ---------------------------
 project=$(docker inspect --format '{{index .Config.Labels "com.docker.compose.project"}}' "$HOSTNAME")

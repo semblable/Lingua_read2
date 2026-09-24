@@ -101,6 +101,7 @@ jobs:
             ${{ vars.POSTGRES_SHARED_BUFFERS && format('POSTGRES_SHARED_BUFFERS={0}', vars.POSTGRES_SHARED_BUFFERS) || '' }}
             ${{ vars.POSTGRES_EFFECTIVE_CACHE_SIZE && format('POSTGRES_EFFECTIVE_CACHE_SIZE={0}', vars.POSTGRES_EFFECTIVE_CACHE_SIZE) || '' }}
             ${{ vars.API_MEMSWAP_LIMIT && format('API_MEMSWAP_LIMIT={0}', vars.API_MEMSWAP_LIMIT) || '' }}
+            ${{ inputs.environment == 'staging' && 'EXTERNAL_WRITES_DISABLED=true' || '' }}
             ${{ inputs.environment == 'staging' && vars.REFRESH_FROM_PROD == '1' && 'REFRESH_FROM_PROD=1' || '' }}
             ${{ inputs.environment == 'staging' && vars.REFRESH_FROM_PROD == '1' && 'BACKUP_MEDIA_MOUNT=rw' || '' }}
             EOF

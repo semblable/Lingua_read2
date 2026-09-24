@@ -86,6 +86,64 @@ public class DiscordReportServiceTests
     }
 
     [Fact]
+    public async Task SendDueWeeklyReportsAsync_WhenExternalWritesDisabled_PostsNothing()
+    {
+        // Staging runs on a copy of production's data; its weekly job must never post.
+        using var context = CreateDbContext();
+        var handler = new CapturingHttpMessageHandler();
+        var service = CreateServiceWithExternalWritesDisabled(context, handler);
+        var userId = Guid.NewGuid();
+        context.Users.Add(new User { Id = userId, Email = "staging@example.com", UserName = "staging@example.com" });
+        context.UserSettings.Add(new UserSettings
+        {
+            UserId = userId,
+            DiscordWeeklyReportEnabled = true,
+            DiscordWebhookUrl = "https://discord.com/api/webhooks/test/test",
+            DiscordWeeklyReportDayOfWeek = "Monday",
+            DiscordWeeklyReportHourLocal = 8,
+            DiscordTimezoneOffsetMinutes = 0
+        });
+        await context.SaveChangesAsync();
+
+        var result = await service.SendDueWeeklyReportsAsync(
+            new DiscordReportOptions(), new DateTime(2026, 1, 26, 10, 0, 0, DateTimeKind.Utc), forceSend: true, CancellationToken.None);
+
+        Assert.Equal(0, result.SentCount);
+        Assert.Empty(handler.Requests);
+        Assert.Null((await context.UserSettings.SingleAsync()).DiscordWeeklyReportLastSentAt);
+    }
+
+    [Fact]
+    public async Task SendReportForUserAsync_WhenExternalWritesDisabled_SkipsWithoutPosting()
+    {
+        using var context = CreateDbContext();
+        var handler = new CapturingHttpMessageHandler();
+        var service = CreateServiceWithExternalWritesDisabled(context, handler);
+        var settings = new UserSettings
+        {
+            UserId = Guid.NewGuid(),
+            DiscordWebhookUrl = "https://discord.com/api/webhooks/test/test"
+        };
+
+        var result = await service.SendReportForUserAsync(
+            settings, new DateTime(2026, 1, 15, 0, 0, 0, DateTimeKind.Utc), new DateTime(2026, 1, 22, 0, 0, 0, DateTimeKind.Utc),
+            dryRun: false, CancellationToken.None);
+
+        Assert.False(result.Sent);
+        Assert.True(result.Skipped);
+        Assert.Equal(ExternalWritesOptions.DisabledMessage, result.Reason);
+        Assert.Empty(handler.Requests);
+    }
+
+    private static DiscordReportService CreateServiceWithExternalWritesDisabled(AppDbContext context, CapturingHttpMessageHandler handler) =>
+        new(
+            context,
+            new StubHttpClientFactory(handler),
+            NullLogger<DiscordReportService>.Instance,
+            new StubDatabaseAdminService(),
+            Microsoft.Extensions.Options.Options.Create(new ExternalWritesOptions { Disabled = true }));
+
+    [Fact]
     public async Task SendDueWeeklyReportsAsync_SkipsIfAlreadySentForSchedule()
     {
         using var context = CreateDbContext();

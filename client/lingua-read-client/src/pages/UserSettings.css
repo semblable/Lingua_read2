@@ -5,6 +5,15 @@
   color: var(--font-color);
 }
 
+.settings-page-header--with-hint {
+  margin-bottom: var(--space-xs);
+}
+
+.settings-page-hint {
+  font-size: var(--text-sm);
+  margin-bottom: var(--space-lg);
+}
+
 .settings-layout {
   display: flex;
   gap: var(--space-lg);
@@ -128,52 +137,91 @@
   border-bottom-color: rgba(255, 255, 255, 0.06);
 }
 
-/* Sticky Save Bar */
-.settings-save-bar {
-  position: sticky;
-  bottom: 0;
-  left: 0;
-  right: 0;
+/* Auto-save status: a pill pinned to the bottom of the viewport, lined up with the page's
+   1100px column. Fixed rather than sticky: body's global overflow-x: hidden (index.css) turns it
+   into a scroll container that never scrolls, so a sticky element there never sticks. */
+.settings-save-status-dock {
+  position: fixed;
+  bottom: calc(var(--space-md) + env(safe-area-inset-bottom, 0px));
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(1100px, 100%);
   display: flex;
   justify-content: flex-end;
+  padding: 0 var(--space-md);
+  pointer-events: none;
+  z-index: 1020;
+}
+
+.settings-save-status {
+  display: inline-flex;
   align-items: center;
-  gap: var(--space-md);
-  padding: var(--space-md) var(--space-lg);
-  margin-top: var(--space-lg);
-  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
-  background: rgba(255, 255, 255, 0.9);
+  gap: var(--space-sm);
+  max-width: 100%;
+  min-height: 2.5rem;
+  padding: 6px 16px;
+  border-radius: var(--radius-full);
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--font-color);
+  background: rgba(255, 255, 255, 0.95);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
-  border-top: 1px solid var(--theme-border-color);
-  box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.08);
-  z-index: 10;
-  transform: translateY(0);
-  opacity: 1;
-  transition: transform 0.3s ease, opacity 0.3s ease;
+  border: 1px solid var(--theme-border-color);
+  box-shadow: var(--shadow-md);
+  pointer-events: auto;
+  transition: transform 0.25s ease, opacity 0.25s ease;
 }
 
-.dark-theme .settings-save-bar {
-  background: rgba(44, 62, 80, 0.92);
-  border-top-color: var(--border-color-dark);
-  box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.25);
+.dark-theme .settings-save-status {
+  background: rgba(44, 62, 80, 0.95);
+  border-color: var(--border-color-dark);
 }
 
-.classic-dark-theme .settings-save-bar {
-  background: rgba(58, 63, 75, 0.92);
-  border-top-color: rgba(255, 255, 255, 0.08);
-  box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.25);
+.classic-dark-theme .settings-save-status {
+  background: rgba(58, 63, 75, 0.95);
+  border-color: rgba(255, 255, 255, 0.08);
 }
 
-.settings-save-bar--hidden {
-  transform: translateY(100%);
+.settings-save-status .bi-check-circle-fill {
+  color: var(--accent-color);
+}
+
+.settings-save-status--hidden {
   opacity: 0;
+  transform: translateY(8px);
   pointer-events: none;
 }
 
-.settings-save-indicator {
-  font-size: var(--text-sm);
-  color: var(--accent-color);
-  font-weight: var(--font-weight-medium);
+/* An error can wrap onto two lines, which a full pill shape handles badly */
+.settings-save-status--error {
+  border-radius: var(--radius-lg);
+  border-color: rgba(220, 53, 69, 0.6);
+}
+
+.dark-theme .settings-save-status--error,
+.classic-dark-theme .settings-save-status--error {
+  border-color: rgba(234, 134, 143, 0.6);
+}
+
+.settings-save-status--error .bi-exclamation-triangle-fill {
+  color: #dc3545;
+  flex-shrink: 0;
+}
+
+.dark-theme .settings-save-status--error .bi-exclamation-triangle-fill,
+.classic-dark-theme .settings-save-status--error .bi-exclamation-triangle-fill {
+  color: #ea868f;
+}
+
+.settings-save-status--error .btn {
+  flex-shrink: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .settings-save-status {
+    transition: none;
+  }
 }
 
 /* Switch styling enhancements */
@@ -217,8 +265,7 @@
     padding: var(--space-md);
   }
 
-  .settings-save-bar {
-    border-radius: 0;
-    padding: var(--space-sm) var(--space-md);
+  .settings-save-status-dock {
+    justify-content: center;
   }
 }

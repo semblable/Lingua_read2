@@ -10,6 +10,7 @@ import { SettingsContext } from '../contexts/SettingsContext';
 import type { Settings, SettingKey } from '../contexts/SettingsContext';
 import type { Language } from '../utils/api/languages';
 import type { UpdateUserSettingsInput, UserSettings as UserSettingsResponse } from '../utils/api/settings';
+import { useAutoSave } from '../hooks/useAutoSave';
 
 type PageSettings = Partial<Settings>;
 
@@ -36,6 +37,7 @@ import AiProviderSettings from '../components/settings/AiProviderSettings';
 import DiscordSettings from '../components/settings/DiscordSettings';
 import HardcoverSettings from '../components/settings/HardcoverSettings';
 import DataManagementSettings from '../components/settings/DataManagementSettings';
+import SaveStatus from '../components/settings/SaveStatus';
 import './UserSettings.css';
 
 const SECTIONS = [
@@ -57,78 +59,180 @@ const applyProviderKeyFlags = (saved: UserSettingsResponse): Partial<Settings> =
   hasDiscordWebhookUrl: saved.hasDiscordWebhookUrl ?? false
 });
 
+// The settings this page edits, and so saves. The rest of PageSettings is display-only: the has*
+// flags of write-only secrets and Hardcover's token/sync status change through their own requests.
+const EDITABLE_KEYS: readonly SettingKey[] = [
+  'theme', 'textSize', 'textFont', 'readingUiMode', 'readerContentWidth',
+  'readingDensity', 'showWordInfoPanel', 'readerParagraphIndent', 'readerTextAlignment',
+  'leftPanelWidth', 'autoTranslateWords', 'autoTranslateOnOpen', 'pauseOnWordClick', 'highlightKnownWords',
+  'tooltipOnlyForSavedWords', 'sentenceTtsEnabled', 'defaultLanguageId', 'translationTargetLanguageCode',
+  'wordTranslationProvider', 'wiktionaryRichDisplay',
+  'azureTranslatorRegion',
+  'autoAdvanceToNextLesson', 'autoAdvanceAudiobookTracks', 'autoMoveFinishedLessons', 'showProgressStats', 'lineSpacing',
+  'discordWeeklyReportEnabled', 'discordWeeklyReportDayOfWeek',
+  'discordWeeklyReportHourLocal', 'discordTimezoneOffsetMinutes',
+  'hardcoverSyncEnabled',
+  'useOpenRouter', 'openRouterModel',
+  'openRouterReasoningEnabled', 'openRouterReasoningEffort',
+  'openRouterStoryReasoningEnabled', 'openRouterStoryReasoningEffort',
+  'openRouterTranslationModel', 'openRouterExplanationModel',
+  'openRouterStoryModel', 'openRouterSummarizationModel',
+  'customTranslationPrompt', 'customExplanationPrompt',
+  'customStoryPrompt', 'customSummarizationPrompt',
+  'minimalHome'
+];
+
+// Kept in this browser only (see the minimalHome note in fetchSettings), so a change to just these
+// makes no request.
+const LOCAL_ONLY_KEYS: ReadonlySet<SettingKey> = new Set<SettingKey>(['minimalHome']);
+
+const NUMERIC_FIELDS: ReadonlySet<string> = new Set([
+  'textSize', 'readerContentWidth', 'leftPanelWidth', 'lineSpacing',
+  'defaultLanguageId', 'discordWeeklyReportHourLocal', 'discordTimezoneOffsetMinutes'
+]);
+
+// How long a change waits for the next one before it is saved. A switch or a dropdown saves at
+// once; a slider waits out the drag; typing waits for a pause, so a model name or prompt is saved
+// once rather than letter by letter. Leaving a text field saves it straight away.
+const SAVE_DELAY_MS = { choice: 150, slider: 400, typing: 800 };
+
+const applyThemeToBody = (theme: string) => {
+  document.body.classList.remove('light-theme', 'dark-theme', 'classic-dark-theme');
+  if (theme === 'dark') {
+    document.body.classList.add('dark-theme');
+  } else if (theme === 'light') {
+    document.body.classList.add('light-theme');
+  } else if (theme === 'classic-dark') {
+    document.body.classList.add('classic-dark-theme');
+  } else {
+    const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+    document.body.classList.add(prefersDark ? 'dark-theme' : 'light-theme');
+  }
+};
+
+const readCachedSettings = (): Record<string, unknown> => {
+  try {
+    const cached = JSON.parse(localStorage.getItem('cachedSettings') || '{}');
+    return cached && typeof cached === 'object' ? cached : {};
+  } catch {
+    return {};
+  }
+};
+
+// Sends the server-side part of a patch; local-only keys never reach the API.
+const saveSettingsPatch = async (patch: PageSettings): Promise<UserSettingsResponse | null> => {
+  const serverPatch = Object.fromEntries(
+    Object.entries(patch).filter(([key]) => !LOCAL_ONLY_KEYS.has(key as SettingKey))
+  );
+  if (Object.keys(serverPatch).length === 0) return null;
+  return updateUserSettings(serverPatch as UpdateUserSettingsInput);
+};
+
 const UserSettings = () => {
   const browserTimezoneOffsetMinutes = -new Date().getTimezoneOffset();
+  const { updateSetting } = useContext(SettingsContext);
+
+  // Once a patch is saved, hand it to the rest of the app (context, localStorage, theme).
+  const handleSaved = useCallback((patch: PageSettings, result: unknown) => {
+    const saved = (result ?? {}) as Partial<Record<SettingKey, unknown>>;
+    const syncSetting = <K extends SettingKey>(key: K) => {
+      // What the server stored (it may normalise a value), else what was sent: local-only keys
+      // are never echoed back.
+      const val = saved[key] ?? patch[key];
+      if (val === undefined || val === null) return;
+      updateSetting(key, val as Settings[K]);
+      localStorage.setItem(key, String(val));
+    };
+    (Object.keys(patch) as SettingKey[]).forEach(syncSetting);
+
+    const localOnly = Object.fromEntries(
+      Object.entries(patch).filter(([key]) => LOCAL_ONLY_KEYS.has(key as SettingKey))
+    );
+    localStorage.setItem('cachedSettings', JSON.stringify({ ...readCachedSettings(), ...(result ?? {}), ...localOnly }));
+
+    if (patch.theme !== undefined) applyThemeToBody(String(saved.theme ?? patch.theme));
+  }, [updateSetting]);
+
   // Local settings state holds the subset this page initializes/persists;
   // missing keys are filled in by the API response on first load.
-  const [settings, setSettings] = useState<PageSettings>({
-    theme: 'dark',
-    textSize: 16,
-    textFont: 'default',
-    readingUiMode: 'classic',
-    readerContentWidth: 740,
-    readingDensity: 'balanced',
-    showWordInfoPanel: true,
-    readerParagraphIndent: true,
-    readerTextAlignment: 'left',
-    leftPanelWidth: 85,
-    autoTranslateWords: true,
-    autoTranslateOnOpen: false,
-    pauseOnWordClick: false,
-    highlightKnownWords: true,
-    tooltipOnlyForSavedWords: false,
-    sentenceTtsEnabled: false,
-    defaultLanguageId: 0,
-    translationTargetLanguageCode: 'EN',
-    wordTranslationProvider: 'deepl',
-    wiktionaryRichDisplay: false,
-    hasWiktionaryAccessToken: false,
-    hasAzureTranslatorKey: false,
-    azureTranslatorRegion: '',
-    hasGoogleTranslateApiKey: false,
-    autoAdvanceToNextLesson: false,
-    autoAdvanceAudiobookTracks: true,
-    autoMoveFinishedLessons: false,
-    showProgressStats: true,
-    lineSpacing: 1.5,
-    discordWeeklyReportEnabled: false,
-    hasDiscordWebhookUrl: false,
-    discordWeeklyReportDayOfWeek: 'Monday',
-    discordWeeklyReportHourLocal: 8,
-    discordTimezoneOffsetMinutes: browserTimezoneOffsetMinutes,
-    hardcoverSyncEnabled: false,
-    hasHardcoverApiToken: false,
-    hardcoverLastSyncAt: null,
-    useOpenRouter: false,
-    hasOpenRouterApiKey: false,
-    openRouterModel: 'google/gemini-2.5-flash-preview-05-20:free',
-    openRouterReasoningEnabled: false,
-    openRouterReasoningEffort: 'medium',
-    openRouterStoryReasoningEnabled: false,
-    openRouterStoryReasoningEffort: 'medium',
-    openRouterTranslationModel: '',
-    openRouterExplanationModel: '',
-    openRouterStoryModel: '',
-    openRouterSummarizationModel: '',
-    customTranslationPrompt: '',
-    customExplanationPrompt: '',
-    customStoryPrompt: '',
-    customSummarizationPrompt: '',
-    minimalHome: false
+  const {
+    values: settings,
+    status: saveStatus,
+    error: saveError,
+    setField,
+    reset: resetSettings,
+    applyServerValues,
+    flush: flushSettings
+  } = useAutoSave<PageSettings>({
+    editableKeys: EDITABLE_KEYS,
+    save: saveSettingsPatch,
+    onSaved: handleSaved,
+    initialValues: {
+      theme: 'dark',
+      textSize: 16,
+      textFont: 'default',
+      readingUiMode: 'classic',
+      readerContentWidth: 740,
+      readingDensity: 'balanced',
+      showWordInfoPanel: true,
+      readerParagraphIndent: true,
+      readerTextAlignment: 'left',
+      leftPanelWidth: 85,
+      autoTranslateWords: true,
+      autoTranslateOnOpen: false,
+      pauseOnWordClick: false,
+      highlightKnownWords: true,
+      tooltipOnlyForSavedWords: false,
+      sentenceTtsEnabled: false,
+      defaultLanguageId: 0,
+      translationTargetLanguageCode: 'EN',
+      wordTranslationProvider: 'deepl',
+      wiktionaryRichDisplay: false,
+      hasWiktionaryAccessToken: false,
+      hasAzureTranslatorKey: false,
+      azureTranslatorRegion: '',
+      hasGoogleTranslateApiKey: false,
+      autoAdvanceToNextLesson: false,
+      autoAdvanceAudiobookTracks: true,
+      autoMoveFinishedLessons: false,
+      showProgressStats: true,
+      lineSpacing: 1.5,
+      discordWeeklyReportEnabled: false,
+      hasDiscordWebhookUrl: false,
+      discordWeeklyReportDayOfWeek: 'Monday',
+      discordWeeklyReportHourLocal: 8,
+      discordTimezoneOffsetMinutes: browserTimezoneOffsetMinutes,
+      hardcoverSyncEnabled: false,
+      hasHardcoverApiToken: false,
+      hardcoverLastSyncAt: null,
+      useOpenRouter: false,
+      hasOpenRouterApiKey: false,
+      openRouterModel: 'google/gemini-2.5-flash-preview-05-20:free',
+      openRouterReasoningEnabled: false,
+      openRouterReasoningEffort: 'medium',
+      openRouterStoryReasoningEnabled: false,
+      openRouterStoryReasoningEffort: 'medium',
+      openRouterTranslationModel: '',
+      openRouterExplanationModel: '',
+      openRouterStoryModel: '',
+      openRouterSummarizationModel: '',
+      customTranslationPrompt: '',
+      customExplanationPrompt: '',
+      customStoryPrompt: '',
+      customSummarizationPrompt: '',
+      minimalHome: false
+    }
   });
 
   const [languages, setLanguages] = useState<Language[]>([]);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  const [success, setSuccess] = useState(false);
   const [loadingLanguages, setLoadingLanguages] = useState(true);
   // When the initial GET fails the form must not render: it would be filled with the hard-coded
-  // defaults above, and saving sends a full PUT that would overwrite the real server-side values
-  // (custom prompts, model ids, default language) with those defaults.
+  // defaults above, and any edit would save them over the real server-side values (custom
+  // prompts, model ids, default language).
   const [loadFailed, setLoadFailed] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
-  const [hasChanges, setHasChanges] = useState(false);
   const [activeSection, setActiveSection] = useState('appearance');
 
   // Backup/Restore state
@@ -166,8 +270,6 @@ const UserSettings = () => {
   // values are the section's outer <div>.
   const sectionRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
-  const { updateSetting } = useContext(SettingsContext);
-
   useEffect(() => {
     const fetchSettings = async () => {
       setLoading(true);
@@ -175,7 +277,7 @@ const UserSettings = () => {
       setError('');
       try {
         const data = await getUserSettings();
-        setSettings({
+        resetSettings({
           theme: data.theme || 'dark',
           textSize: data.textSize || 16,
           textFont: data.textFont || 'default',
@@ -270,91 +372,38 @@ const UserSettings = () => {
     fetchSettings();
     fetchLanguages();
     fetchStorageSize();
-  }, [browserTimezoneOffsetMinutes, reloadKey]);
+  }, [browserTimezoneOffsetMinutes, reloadKey, resetSettings]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const target = e.target as HTMLInputElement;
     const { name, value, type } = target;
-    const checked = target.checked;
     let processedValue: string | number | boolean = value;
+    let delay = SAVE_DELAY_MS.typing;
     if (type === 'checkbox') {
-      processedValue = checked;
-    } else if (
-      type === 'number' || type === 'range' ||
-      name === 'textSize' || name === 'readerContentWidth' ||
-      name === 'leftPanelWidth' || name === 'lineSpacing' ||
-      name === 'defaultLanguageId' || name === 'discordWeeklyReportHourLocal' ||
-      name === 'discordTimezoneOffsetMinutes'
-    ) {
+      processedValue = target.checked;
+      delay = SAVE_DELAY_MS.choice;
+    } else if (type === 'number' || type === 'range' || NUMERIC_FIELDS.has(name)) {
       const parsed = name === 'lineSpacing' ? parseFloat(value) : parseInt(value, 10);
-      processedValue = isNaN(parsed) ? 0 : parsed;
+      // A half-typed number ("" or "-") would save as 0; keep the saved value until it parses.
+      if (isNaN(parsed)) return;
+      processedValue = parsed;
     }
-    setSettings((prev) => ({ ...prev, [name]: processedValue }));
-    setHasChanges(true);
+    if (type === 'range') delay = SAVE_DELAY_MS.slider;
+    else if (type.startsWith('select')) delay = SAVE_DELAY_MS.choice;
+    setField(name as SettingKey, processedValue as Settings[SettingKey], delay);
   };
 
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+  // The form has no submit button, so Enter doesn't normally submit it. If something ever does,
+  // save what is waiting rather than reload the page.
+  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    setSaving(true);
-    setError('');
-    setSuccess(false);
+    void flushSettings();
+  };
 
-    try {
-      const savedSettings = await updateUserSettings(settings);
-      const persistedSettings = { ...settings, ...savedSettings };
-
-      // Apply theme
-      localStorage.setItem('theme', persistedSettings.theme ?? 'dark');
-      document.body.classList.remove('light-theme', 'dark-theme', 'classic-dark-theme');
-      if (persistedSettings.theme === 'dark') {
-        document.body.classList.add('dark-theme');
-      } else if (persistedSettings.theme === 'light') {
-        document.body.classList.add('light-theme');
-      } else if (persistedSettings.theme === 'classic-dark') {
-        document.body.classList.add('classic-dark-theme');
-      } else {
-        const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-        document.body.classList.add(prefersDark ? 'dark-theme' : 'light-theme');
-      }
-
-      // Update context and localStorage for all settings
-      const settingsToSync: SettingKey[] = [
-        'theme', 'textSize', 'textFont', 'readingUiMode', 'readerContentWidth',
-        'readingDensity', 'showWordInfoPanel', 'readerParagraphIndent', 'readerTextAlignment',
-        'leftPanelWidth', 'autoTranslateWords', 'autoTranslateOnOpen', 'pauseOnWordClick', 'highlightKnownWords',
-        'tooltipOnlyForSavedWords', 'sentenceTtsEnabled', 'defaultLanguageId', 'translationTargetLanguageCode',
-        'wordTranslationProvider', 'wiktionaryRichDisplay',
-        'azureTranslatorRegion',
-        'autoAdvanceToNextLesson', 'autoAdvanceAudiobookTracks', 'autoMoveFinishedLessons', 'showProgressStats', 'lineSpacing',
-        'discordWeeklyReportEnabled', 'discordWeeklyReportDayOfWeek',
-        'discordWeeklyReportHourLocal', 'discordTimezoneOffsetMinutes',
-        'hardcoverSyncEnabled', 'hasHardcoverApiToken', 'hardcoverLastSyncAt',
-        'useOpenRouter', 'openRouterModel',
-        'openRouterReasoningEnabled', 'openRouterReasoningEffort',
-        'openRouterStoryReasoningEnabled', 'openRouterStoryReasoningEffort',
-        'openRouterTranslationModel', 'openRouterExplanationModel',
-        'openRouterStoryModel', 'openRouterSummarizationModel',
-        'customTranslationPrompt', 'customExplanationPrompt',
-        'customStoryPrompt', 'customSummarizationPrompt',
-        'minimalHome'
-      ];
-      const syncSetting = <K extends SettingKey>(key: K) => {
-        const val = persistedSettings[key];
-        if (val === undefined || val === null) return;
-        updateSetting(key, val as Settings[K]);
-        localStorage.setItem(key, String(val));
-      };
-      settingsToSync.forEach(syncSetting);
-      localStorage.setItem('cachedSettings', JSON.stringify(persistedSettings));
-
-      setSuccess(true);
-      setHasChanges(false);
-      setTimeout(() => setSuccess(false), 3000);
-    } catch (e: unknown) { const err = e as Error;
-      setError(err.message || 'Failed to update settings. Please try again.');
-    } finally {
-      setSaving(false);
-    }
+  // Leaving a field saves its edit straight away rather than after the typing pause; also the
+  // status pill's Retry.
+  const saveNow = () => {
+    void flushSettings();
   };
 
   const handleSendReportNow = async () => {
@@ -372,8 +421,7 @@ const UserSettings = () => {
 
   const handleSetBrowserTimezone = () => {
     const offsetMinutes = -new Date().getTimezoneOffset();
-    setSettings((prev: any) => ({ ...prev, discordTimezoneOffsetMinutes: offsetMinutes }));
-    setHasChanges(true);
+    setField('discordTimezoneOffsetMinutes', offsetMinutes, SAVE_DELAY_MS.choice);
   };
 
   const handleBackupClick = async () => {
@@ -456,7 +504,14 @@ const UserSettings = () => {
     setTestingOpenRouter(true);
     setOpenRouterTestResult(null);
     try {
-      await api.updateUserSettings(settings);
+      // The test reads the saved settings, so a model name still waiting to save goes out first.
+      if (!(await flushSettings())) {
+        setOpenRouterTestResult({
+          success: false,
+          message: "Your latest changes aren't saved yet, so the test would use the old ones. Retry the save first."
+        });
+        return;
+      }
       const result = await api.testOpenRouterConnection();
       setOpenRouterTestResult(result as { success?: boolean; message?: string });
     } catch (e: unknown) { const err = e as Error;
@@ -464,7 +519,7 @@ const UserSettings = () => {
     } finally {
       setTestingOpenRouter(false);
     }
-  }, [settings]);
+  }, [flushSettings]);
 
   const handleTestHardcover = useCallback(async () => {
     setTestingHardcover(true);
@@ -480,73 +535,61 @@ const UserSettings = () => {
     }
   }, []);
 
+  // Re-throws so HardcoverSettings keeps the typed token for a retry.
   const handleSaveHardcoverToken = useCallback(async (token: string) => {
     if (!token.trim()) return;
     setHardcoverSyncMessage({ type: '', text: '' });
     try {
-      const saved = await updateUserSettings({
-        hardcoverApiToken: token.trim(),
-        hardcoverSyncEnabled: settings.hardcoverSyncEnabled
-      });
-      setSettings((prev: any) => ({
-        ...prev,
+      const saved = await updateUserSettings({ hardcoverApiToken: token.trim() });
+      applyServerValues({
         hasHardcoverApiToken: saved.hasHardcoverApiToken ?? true,
-        hardcoverSyncEnabled: saved.hardcoverSyncEnabled ?? prev.hardcoverSyncEnabled,
-        hardcoverLastSyncAt: saved.hardcoverLastSyncAt ?? prev.hardcoverLastSyncAt
-      }));
+        ...(saved.hardcoverLastSyncAt ? { hardcoverLastSyncAt: saved.hardcoverLastSyncAt } : {})
+      });
+      updateSetting('hasHardcoverApiToken', saved.hasHardcoverApiToken ?? true);
       setHardcoverSyncMessage({ type: 'success', text: 'Hardcover token saved.' });
-      const status = await getHardcoverStatus();
-      setHardcoverTestResult(status);
     } catch (e: unknown) { const err = e as Error;
       setHardcoverSyncMessage({ type: 'danger', text: err.message || 'Failed to save Hardcover token.' });
+      throw err;
     }
-  }, [settings.hardcoverSyncEnabled]);
+    try {
+      setHardcoverTestResult(await getHardcoverStatus());
+    } catch (e: unknown) { const err = e as Error;
+      setHardcoverTestResult({ connected: false, message: err.message || 'Failed to test Hardcover connection.' });
+    }
+  }, [applyServerValues, updateSetting]);
 
   const handleClearHardcoverToken = useCallback(async () => {
     setHardcoverSyncMessage({ type: '', text: '' });
     setHardcoverTestResult(null);
     try {
       await updateUserSettings({ clearHardcoverApiToken: true });
-      setSettings((prev: any) => ({
-        ...prev,
+      // Clearing the token also turns sync off on the server.
+      applyServerValues({
         hasHardcoverApiToken: false,
         hardcoverSyncEnabled: false,
         hardcoverLastSyncAt: null
-      }));
-      setHasChanges(false);
+      });
+      updateSetting('hasHardcoverApiToken', false);
+      updateSetting('hardcoverSyncEnabled', false);
       setHardcoverSyncMessage({ type: 'success', text: 'Hardcover token cleared.' });
     } catch (e: unknown) { const err = e as Error;
       setHardcoverSyncMessage({ type: 'danger', text: err.message || 'Failed to clear Hardcover token.' });
     }
-  }, []);
+  }, [applyServerValues, updateSetting]);
 
-  // Write-only provider keys (Azure/Google/Wiktionary/OpenRouter). Saved/cleared on their own so
-  // the bulk Save never carries a secret; the server returns only the has* booleans. Re-throws so
-  // SecretKeyField keeps the typed value for a retry.
+  // Write-only provider keys (Azure/Google/Wiktionary/OpenRouter/Discord). Saved/cleared on their
+  // own, never with the other settings; the server returns only the has* booleans. Re-throws so
+  // SecretKeyField shows the error and keeps the typed value for a retry.
   const handleSaveProviderKey = useCallback(async (field: string, value: string) => {
     if (!value.trim()) return;
-    setError('');
-    try {
-      const saved = await updateUserSettings({ [field]: value.trim() } as UpdateUserSettingsInput);
-      setSettings(prev => ({ ...prev, ...applyProviderKeyFlags(saved) }));
-      setSuccess(true);
-      setTimeout(() => setSuccess(false), 3000);
-    } catch (e: unknown) { const err = e as Error;
-      setError(err.message || 'Failed to save key.');
-      throw err;
-    }
-  }, []);
+    const saved = await updateUserSettings({ [field]: value.trim() } as UpdateUserSettingsInput);
+    applyServerValues(applyProviderKeyFlags(saved));
+  }, [applyServerValues]);
 
   const handleClearProviderKey = useCallback(async (field: string) => {
-    setError('');
-    try {
-      const saved = await updateUserSettings({ [field]: '' } as UpdateUserSettingsInput);
-      setSettings(prev => ({ ...prev, ...applyProviderKeyFlags(saved) }));
-    } catch (e: unknown) { const err = e as Error;
-      setError(err.message || 'Failed to clear key.');
-      throw err;
-    }
-  }, []);
+    const saved = await updateUserSettings({ [field]: '' } as UpdateUserSettingsInput);
+    applyServerValues(applyProviderKeyFlags(saved));
+  }, [applyServerValues]);
 
   const handleSyncAllHardcover = useCallback(async () => {
     setSyncingHardcover(true);
@@ -555,16 +598,15 @@ const UserSettings = () => {
       const result = (await syncAllHardcover()) as { message?: string } | null;
       setHardcoverSyncMessage({ type: 'success', text: result?.message || 'Hardcover sync completed.' });
       const refreshed = await getUserSettings();
-      setSettings((prev: any) => ({
-        ...prev,
-        hardcoverLastSyncAt: refreshed.hardcoverLastSyncAt ?? prev.hardcoverLastSyncAt
-      }));
+      if (refreshed.hardcoverLastSyncAt) {
+        applyServerValues({ hardcoverLastSyncAt: refreshed.hardcoverLastSyncAt });
+      }
     } catch (e: unknown) { const err = e as Error;
       setHardcoverSyncMessage({ type: 'danger', text: err.message || 'Hardcover sync failed.' });
     } finally {
       setSyncingHardcover(false);
     }
-  }, []);
+  }, [applyServerValues]);
 
   const scrollToSection = (sectionId: string) => {
     setActiveSection(sectionId);
@@ -602,10 +644,8 @@ const UserSettings = () => {
 
   return (
     <Container className="py-4" style={{ maxWidth: '1100px' }}>
-      <h2 className="settings-page-header">Settings</h2>
-
-      {error && <Alert variant="danger" dismissible onClose={() => setError('')}>{error}</Alert>}
-      {success && <Alert variant="success">Settings saved successfully!</Alert>}
+      <h2 className="settings-page-header settings-page-header--with-hint">Settings</h2>
+      <p className="settings-page-hint text-muted">Changes are saved automatically.</p>
 
       <div className="settings-layout">
         {/* Sidebar */}
@@ -625,7 +665,7 @@ const UserSettings = () => {
 
         {/* Content */}
         <div className="settings-content">
-          <Form onSubmit={handleSubmit} id="settings-form">
+          <Form onSubmit={handleSubmit} onBlur={saveNow} id="settings-form">
             {/* Appearance */}
             <div ref={el => { sectionRefs.current.appearance = el; }} className="settings-section-card mb-4">
               <div className="settings-section-header">
@@ -747,23 +787,7 @@ const UserSettings = () => {
         </div>
       </div>
 
-      {/* Sticky Save Bar */}
-      <div className={`settings-save-bar ${hasChanges ? '' : 'settings-save-bar--hidden'}`}>
-        <span className="settings-save-indicator">Unsaved changes</span>
-        <Button
-          variant="primary"
-          type="submit"
-          form="settings-form"
-          disabled={saving}
-        >
-          {saving ? (
-            <>
-              <Spinner animation="border" size="sm" className="me-2" />
-              Saving...
-            </>
-          ) : 'Save Settings'}
-        </Button>
-      </div>
+      <SaveStatus status={saveStatus} error={saveError} onRetry={saveNow} />
     </Container>
   );
 };

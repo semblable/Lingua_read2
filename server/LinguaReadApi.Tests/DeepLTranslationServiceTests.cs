@@ -179,6 +179,167 @@ public class DeepLTranslationServiceTests
         Assert.All(words.Skip(50), w => Assert.Equal("T:" + w, result[w]));
     }
 
+    [Theory]
+    [InlineData(HttpStatusCode.BadRequest)]
+    [InlineData(HttpStatusCode.RequestEntityTooLarge)]
+    public async Task TranslateBatch_ChunkRejectedForItsContent_StillSendsTheRest(HttpStatusCode status)
+    {
+        var words = Enumerable.Range(1, 60).Select(i => $"w{i}").ToList();
+        var handler = new ScriptedHandler(Status(status), Echo());
+        var service = CreateFastService(handler);
+
+        var result = await service.TranslateBatchAsync(words, "FR");
+
+        Assert.Equal(2, handler.Requests.Count);
+        Assert.Equal(10, result.Count);
+        Assert.All(words.Skip(50), w => Assert.Equal("T:" + w, result[w]));
+    }
+
+    [Fact]
+    public async Task TranslateBatch_UnreadableResponse_StillSendsTheRest()
+    {
+        var words = Enumerable.Range(1, 60).Select(i => $"w{i}").ToList();
+        var notJson = new Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>>((_, _) =>
+            Task.FromResult(Json("<html>502 from a proxy</html>")));
+        var handler = new ScriptedHandler(notJson, Echo());
+        var service = CreateFastService(handler);
+
+        var result = await service.TranslateBatchAsync(words, "FR");
+
+        Assert.Equal(2, handler.Requests.Count);
+        Assert.Equal(10, result.Count);
+    }
+
+    [Theory]
+    // Not retried: one request for the failing chunk.
+    [InlineData((HttpStatusCode)456, 2)]
+    [InlineData(HttpStatusCode.Unauthorized, 2)]
+    [InlineData(HttpStatusCode.Forbidden, 2)]
+    // Retried: the batch only ends once all three attempts have failed.
+    [InlineData(HttpStatusCode.TooManyRequests, 4)]
+    [InlineData(HttpStatusCode.InternalServerError, 4)]
+    [InlineData(HttpStatusCode.ServiceUnavailable, 4)]
+    [InlineData(HttpStatusCode.GatewayTimeout, 4)]
+    public async Task TranslateBatch_FailureThatWouldHitEveryChunk_EndsTheBatch(HttpStatusCode status, int expectedRequests)
+    {
+        var words = Enumerable.Range(1, 120).Select(i => $"w{i}").ToList();
+        var handler = new ScriptedHandler(Echo(), Status(status), Status(status), Status(status), Echo());
+        var service = CreateFastService(handler);
+
+        var result = await service.TranslateBatchAsync(words, "FR");
+
+        Assert.Equal(expectedRequests, handler.Requests.Count);
+        Assert.DoesNotContain(handler.Requests, r => r.Texts.Contains("w101"));
+        // What the first chunk got back is kept.
+        Assert.Equal(50, result.Count);
+        Assert.All(words.Take(50), w => Assert.Equal("T:" + w, result[w]));
+    }
+
+    [Fact]
+    public async Task TranslateBatch_RateLimitedWithLongRetryAfter_EndsTheBatch()
+    {
+        // Returned on the first attempt without retrying (Retry-After over the 5 s cap), and the next
+        // chunk would be told the same.
+        var words = Enumerable.Range(1, 120).Select(i => $"w{i}").ToList();
+        var tooLong = Status(HttpStatusCode.TooManyRequests, retryAfter: TimeSpan.FromSeconds(60));
+        var handler = new ScriptedHandler(Echo(), tooLong, Echo());
+        var service = CreateFastService(handler);
+
+        var result = await service.TranslateBatchAsync(words, "FR");
+
+        Assert.Equal(2, handler.Requests.Count);
+        Assert.Equal(50, result.Count);
+    }
+
+    [Fact]
+    public async Task TranslateBatch_FailureTheRetryRecovers_DoesNotEndTheBatch()
+    {
+        var words = Enumerable.Range(1, 120).Select(i => $"w{i}").ToList();
+        var handler = new ScriptedHandler(Echo(), Status(HttpStatusCode.ServiceUnavailable), Echo(), Echo());
+        var service = CreateFastService(handler);
+
+        var result = await service.TranslateBatchAsync(words, "FR");
+
+        Assert.Equal(4, handler.Requests.Count);
+        Assert.Equal(120, result.Count);
+    }
+
+    [Fact]
+    public async Task TranslateBatch_Timeout_EndsTheBatch()
+    {
+        // Chunks go out one after another, so a DeepL that hangs would otherwise cost the reader
+        // one full timeout per remaining chunk.
+        var hang = new Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>>(async (_, ct) =>
+        {
+            await Task.Delay(Timeout.Infinite, ct);
+            throw new InvalidOperationException("unreachable");
+        });
+        var words = Enumerable.Range(1, 120).Select(i => $"w{i}").ToList();
+        var handler = new ScriptedHandler(Echo(), hang, Echo());
+        var service = CreateFastService(handler);
+        service.RequestTimeout = TimeSpan.FromMilliseconds(100);
+
+        var result = await service.TranslateBatchAsync(words, "FR");
+
+        Assert.Equal(2, handler.Requests.Count);
+        Assert.Equal(50, result.Count);
+    }
+
+    [Fact]
+    public async Task TranslateBatch_StillUnreachableAfterRetries_EndsTheBatch()
+    {
+        Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> reset =
+            (_, _) => throw new HttpRequestException("connection reset");
+        var words = Enumerable.Range(1, 120).Select(i => $"w{i}").ToList();
+        var handler = new ScriptedHandler(Echo(), reset, reset, reset, Echo());
+        var service = CreateFastService(handler);
+
+        var result = await service.TranslateBatchAsync(words, "FR");
+
+        Assert.Equal(4, handler.Requests.Count);
+        Assert.Equal(50, result.Count);
+    }
+
+    [Fact]
+    public async Task TranslateBatch_SendsEachDistinctNonBlankWordOnce()
+    {
+        var handler = new ScriptedHandler(Echo());
+        var service = CreateFastService(handler);
+
+        var result = await service.TranslateBatchAsync(new List<string> { "hola", "amigo", "hola", " ", "", "Hola" }, "FR");
+
+        Assert.Equal(new[] { "hola", "amigo", "Hola" }, Assert.Single(handler.Requests).Texts);
+        Assert.Equal(new[] { "Hola", "amigo", "hola" }, result.Keys.Order(StringComparer.Ordinal));
+    }
+
+    [Fact]
+    public async Task TranslateBatch_DuplicatesDoNotCostAnExtraRequest()
+    {
+        // 50 distinct words, each sent twice by the caller: one full chunk, not two.
+        var distinct = Enumerable.Range(1, 50).Select(i => $"w{i}").ToList();
+        var handler = new ScriptedHandler(Echo(), Echo());
+        var service = CreateFastService(handler);
+
+        var result = await service.TranslateBatchAsync(distinct.Concat(distinct).ToList(), "FR");
+
+        Assert.Equal(distinct, Assert.Single(handler.Requests).Texts);
+        Assert.Equal(50, result.Count);
+    }
+
+    [Fact]
+    public async Task TranslateBatch_OnlyBlankWords_SendsNothing()
+    {
+        var handler = new ScriptedHandler();
+        var service = CreateFastService(handler);
+
+        var result = await service.TranslateBatchAsync(new List<string> { " ", "", "\t" }, "FR");
+        var single = await service.TranslateTextAsync("  ", sourceLang: null, targetLang: "FR");
+
+        Assert.Empty(result);
+        Assert.Equal(string.Empty, single);
+        Assert.Empty(handler.Requests);
+    }
+
     [Fact]
     public async Task TranslateBatch_SendsSourceLang_AndConfiguredTargetCode()
     {

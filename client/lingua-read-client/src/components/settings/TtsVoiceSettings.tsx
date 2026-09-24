@@ -4,6 +4,7 @@ import {
   getPreferredVoiceURI,
   getVoicesForLanguage,
   isNaturalVoice,
+  needsInternet,
   setPreferredVoiceURI,
   speakText
 } from '../../utils/browserTts';
@@ -66,6 +67,7 @@ const VoiceRow = ({ language }: { language: VoiceLanguage }) => {
           {(voices ?? []).map((voice) => (
             <option key={voice.voiceURI} value={voice.voiceURI}>
               {voice.name} ({voice.lang}){isNaturalVoice(voice) ? ' · natural' : ''}
+              {needsInternet(voice) ? ' · needs internet' : ''}
             </option>
           ))}
         </Form.Select>
@@ -96,7 +98,8 @@ const TtsVoiceSettings = ({ languages }: TtsVoiceSettingsProps) => {
     <div className="mt-3" data-testid="tts-voice-settings">
       <div className="fw-semibold mb-1">Voices on this device</div>
       <Form.Text className="d-block text-muted mb-2">
-        Saved on this device only. For more voices: on Windows, Settings → Time &amp; language →
+        Saved on this device only. Offline, voices marked "needs internet" give way to one on the
+        device. For more voices: on Windows, Settings → Time &amp; language →
         Speech; on Android, the Google speech engine's voice data; on iOS, Accessibility → Spoken
         Content → Voices. On desktop, Edge has the most natural voices.
       </Form.Text>

@@ -141,6 +141,27 @@ jobs:
             # no long-lived registry credential on the host.
             echo "$GHCR_TOKEN" | $DOCKER login ghcr.io -u "$GHCR_ACTOR" --password-stdin
 
+            # Staging's nightly refresh-from-prod runs inside the backup container, which this deploy
+            # recreates below; killing it mid-run leaves production's media next to the old
+            # database until the next night. Give a running refresh up to 5 minutes to finish (this
+            # SSH step times out at 10). One still running after that is safe to interrupt: its
+            # database swap is a single transaction, so it just runs again the next night.
+            # `|| true`: no backup container (first deploy, or no rclone.conf) means nothing to wait for.
+            if [ -n "$(dc --profile backup ps -q backup 2>/dev/null || true)" ]; then
+              for i in $(seq 1 30); do
+                if ! dc --profile backup exec -T backup pgrep -f refresh-from-prod.sh >/dev/null 2>&1; then
+                  break
+                fi
+                if [ "$i" = 1 ]; then
+                  echo "Waiting for the running staging refresh to finish (up to 5 min)..."
+                fi
+                if [ "$i" = 30 ]; then
+                  echo "::warning::The staging refresh is still running after 5 minutes; deploying anyway (it runs again tonight)."
+                fi
+                sleep 10
+              done
+            fi
+
             # Safety snapshot before rolling the stack (protects against bad migrations
             # and the Postgres minor-version pull below). Keeps the last 3 dumps.
             mkdir -p predeploy

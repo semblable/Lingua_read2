@@ -95,6 +95,60 @@ public class HardcoverServiceTests
     }
 
     [Fact]
+    public async Task SyncProgressAsync_WhenExternalWritesDisabled_SkipsWithoutContactingHardcover()
+    {
+        // Staging runs on a copy of production's data (with sync enabled and Hardcover ids set);
+        // finishing a book there must not touch the real Hardcover account.
+        await using var context = CreateContext();
+        var userId = await SeedUserWithSettingsAsync(context, hardcoverToken: "token", syncEnabled: true);
+        var book = new Book
+        {
+            UserId = userId,
+            LanguageId = await SeedLanguageAsync(context),
+            Title = "Oathbringer",
+            Description = "",
+            HardcoverBookId = 328491,
+            IsFinished = true
+        };
+        context.Books.Add(book);
+        await context.SaveChangesAsync();
+        var handler = new QueueMessageHandler([]); // any request would throw
+        var service = CreateService(context, handler, externalWritesDisabled: true);
+
+        var single = await service.SyncProgressAsync(userId, book.BookId, requireSyncEnabled: true, rating: 4.5m);
+        var all = await service.SyncAllAsync(userId);
+
+        Assert.True(single.Skipped);
+        Assert.Equal(ExternalWritesOptions.DisabledMessage, single.Message);
+        Assert.Empty(all.Results);
+        Assert.Equal(ExternalWritesOptions.DisabledMessage, all.Message);
+        Assert.Equal(0, handler.RequestCount);
+        Assert.Null((await context.Books.SingleAsync()).HardcoverLastSyncedAt);
+    }
+
+    [Fact]
+    public async Task MatchBookAsync_StillWorks_WhenExternalWritesDisabled()
+    {
+        // Matching only reads from Hardcover and updates the local book, so staging keeps it.
+        await using var context = CreateContext();
+        var userId = await SeedUserWithSettingsAsync(context, hardcoverToken: "token");
+        var book = new Book { UserId = userId, LanguageId = await SeedLanguageAsync(context), Title = "Oathbringer", Description = "" };
+        context.Books.Add(book);
+        await context.SaveChangesAsync();
+        var handler = new QueueMessageHandler([
+            JsonResponse("""{ "data": { "search": { "ids": [328491] } } }"""),
+            JsonResponse("""{ "data": { "books": [{ "id": 328491, "title": "Oathbringer", "slug": "oathbringer", "pages": 1248, "contributions": [], "editions": [] }] } }""")
+        ]);
+        var service = CreateService(context, handler, externalWritesDisabled: true);
+
+        var result = await service.MatchBookAsync(userId, book.BookId);
+
+        Assert.True(result.Applied);
+        Assert.Equal(328491, (await context.Books.SingleAsync()).HardcoverBookId);
+        Assert.All(handler.RequestBodies, body => Assert.DoesNotContain("mutation", body));
+    }
+
+    [Fact]
     public async Task MatchBookAsync_ExactTitle_AppliesHardcoverIds()
     {
         await using var context = CreateContext();
@@ -583,13 +637,14 @@ public class HardcoverServiceTests
         Assert.NotNull(settings.HardcoverLastSyncAt);
     }
 
-    private static HardcoverService CreateService(AppDbContext context, HttpMessageHandler handler, IWebHostEnvironment? environment = null)
+    private static HardcoverService CreateService(AppDbContext context, HttpMessageHandler handler, IWebHostEnvironment? environment = null, bool externalWritesDisabled = false)
     {
         return new HardcoverService(
             context,
             new SingleClientFactory(handler),
             environment ?? new TestWebHostEnvironment(),
-            NullLogger<HardcoverService>.Instance);
+            NullLogger<HardcoverService>.Instance,
+            Microsoft.Extensions.Options.Options.Create(new ExternalWritesOptions { Disabled = externalWritesDisabled }));
     }
 
     private static AppDbContext CreateContext()

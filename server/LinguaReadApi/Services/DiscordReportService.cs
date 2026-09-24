@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 using LinguaReadApi.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace LinguaReadApi.Services
 {
@@ -38,17 +39,20 @@ namespace LinguaReadApi.Services
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly ILogger<DiscordReportService> _logger;
         private readonly IDatabaseAdminService _databaseAdminService;
+        private readonly bool _externalWritesDisabled;
 
         public DiscordReportService(
             AppDbContext context,
             IHttpClientFactory httpClientFactory,
             ILogger<DiscordReportService> logger,
-            IDatabaseAdminService databaseAdminService)
+            IDatabaseAdminService databaseAdminService,
+            IOptions<ExternalWritesOptions>? externalWrites = null)
         {
             _context = context;
             _httpClientFactory = httpClientFactory;
             _logger = logger;
             _databaseAdminService = databaseAdminService;
+            _externalWritesDisabled = externalWrites?.Value.Disabled ?? false;
         }
 
         public async Task<DiscordReportResult> SendDueWeeklyReportsAsync(
@@ -58,6 +62,10 @@ namespace LinguaReadApi.Services
             CancellationToken cancellationToken)
         {
             var result = new DiscordReportResult();
+            if (_externalWritesDisabled)
+            {
+                return result;
+            }
 
             var targets = await _context.UserSettings
                 .Where(us =>
@@ -208,6 +216,11 @@ namespace LinguaReadApi.Services
                 return DiscordReportSendResult.SkippedResult("Dry run enabled.");
             }
 
+            if (_externalWritesDisabled)
+            {
+                return DiscordReportSendResult.SkippedResult(ExternalWritesOptions.DisabledMessage);
+            }
+
             var result = await PostWebhookAsync(
                 settings.DiscordWebhookUrl,
                 jsonPayload,
@@ -343,6 +356,13 @@ namespace LinguaReadApi.Services
             string jsonPayload,
             CancellationToken cancellationToken)
         {
+            // Backstop: the public send paths return before building a request when external
+            // writes are disabled.
+            if (_externalWritesDisabled)
+            {
+                return DiscordWebhookPostResult.Failed(ExternalWritesOptions.DisabledMessage);
+            }
+
             try
             {
                 using var client = _httpClientFactory.CreateClient();

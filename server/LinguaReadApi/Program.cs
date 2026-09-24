@@ -138,6 +138,7 @@ builder.Services.AddHttpClient();
 // Discord weekly report configuration and services
 builder.Services.Configure<DiscordReportOptions>(builder.Configuration.GetSection("Discord"));
 builder.Services.AddScoped<DiscordReportService>();
+builder.Services.Configure<ExternalWritesOptions>(builder.Configuration.GetSection(ExternalWritesOptions.SectionName));
 builder.Services.AddHostedService<WeeklyDiscordReportHostedService>();
 
 // Register word-level translation providers (DeepL default; Wiktionary, Azure Translator, and

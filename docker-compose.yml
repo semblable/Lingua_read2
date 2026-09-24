@@ -84,6 +84,9 @@ services:
       Discord__WeeklyReportHourUtc: ${DISCORD_WEEKLY_REPORT_HOUR_UTC:-8}
       Discord__DryRun: ${DISCORD_WEEKLY_REPORT_DRY_RUN:-false}
       Discord__PollIntervalMinutes: ${DISCORD_WEEKLY_REPORT_POLL_MINUTES:-30}
+      # true = never write to outside accounts (Hardcover progress/ratings, Discord posts).
+      # _deploy.yml sets it for staging, which runs on a copy of production's data.
+      ExternalWrites__Disabled: ${EXTERNAL_WRITES_DISABLED:-false}
     volumes:
       - api_audio_lessons:/app/wwwroot/audio_lessons
       - api_audiobooks:/app/wwwroot/audiobooks

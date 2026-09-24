@@ -218,6 +218,7 @@ const TextDisplay = () => {
     setEmbeddedUrl,
     previousTextId,
     nextTextId,
+    isLastBookPart,
     isAudioLesson,
     setIsAudioLesson,
     displayMode,
@@ -2009,6 +2010,7 @@ const TextDisplay = () => {
       isAudioLesson={isAudioLesson}
       previousTextId={previousTextId}
       nextTextId={nextTextId}
+      isLastBookPart={isLastBookPart}
       completing={completing}
       navigate={navigate}
       handleCompleteLesson={handleCompleteLesson}
@@ -2237,7 +2239,7 @@ const TextDisplay = () => {
                     onSpeakSentence={speakCurrentSentence}
                     handleCompleteLesson={handleCompleteLesson}
                     completing={completing}
-                    nextTextId={nextTextId}
+                    isLastBookPart={isLastBookPart}
                   />
                 )}
               </div>

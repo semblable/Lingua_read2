@@ -12,7 +12,7 @@ vi.mock('../utils/api', () => ({
   getSentenceProgress: vi.fn()
 }));
 
-import { getText, getLanguage, getSentenceProgress } from '../utils/api';
+import { getText, getLanguage, getSentenceProgress, getBook, updateLastRead } from '../utils/api';
 import { useReaderState } from '../hooks/useReaderState';
 
 const renderReaderStateHook = (overrides = {}) => {
@@ -77,6 +77,7 @@ describe('useReaderState', () => {
         setEmbeddedUrl: expect.any(Function),
         previousTextId: null,
         nextTextId: null,
+        isLastBookPart: false,
         isAudioLesson: false,
         setIsAudioLesson: expect.any(Function),
         displayMode: 'audio',
@@ -167,6 +168,77 @@ describe('useReaderState', () => {
     });
     expect(result.current.audioSrc).toBe('/media/foo.mp3');
     expect(result.current.displayMode).toBe('audio');
+  });
+
+  describe('book navigation', () => {
+    const bookText = { textId: 20, bookId: 3, languageId: 5, content: 'hola', isAudioLesson: false };
+    const bookWithParts = (...ids) => ({ bookId: 3, parts: ids.map((textId, i) => ({ textId, partNumber: i + 1 })) });
+    // The language vocabulary is the slowest request; book navigation must not wait for it.
+    const pendingVocabulary = () => ({ current: vi.fn(() => new Promise(() => {})) });
+
+    beforeEach(() => {
+      getBook.mockReset();
+      updateLastRead.mockReset();
+      updateLastRead.mockResolvedValue(undefined);
+      getLanguage.mockResolvedValue(null);
+      getSentenceProgress.mockResolvedValue(null);
+    });
+
+    test('is not treated as the last part while the book is still loading', async () => {
+      getText.mockResolvedValue(bookText);
+      let resolveBook;
+      getBook.mockReturnValue(new Promise(resolve => { resolveBook = resolve; }));
+
+      const { result } = renderReaderStateHook({ textId: '20', fetchAllLanguageWordsRef: pendingVocabulary() });
+
+      await waitFor(() => expect(result.current.text?.textId).toBe(20));
+      await waitFor(() => expect(getBook).toHaveBeenCalledWith(3));
+      expect(result.current.nextTextId).toBeNull();
+      expect(result.current.isLastBookPart).toBe(false);
+
+      await act(async () => { resolveBook(bookWithParts(19, 20, 21)); });
+
+      expect(result.current.previousTextId).toBe(19);
+      expect(result.current.nextTextId).toBe(21);
+      expect(result.current.isLastBookPart).toBe(false);
+      // Applied while the vocabulary request is still pending.
+      expect(result.current.sentenceProgressLoaded).toBe(false);
+    });
+
+    test('flags the last part once the book has loaded', async () => {
+      getText.mockResolvedValue(bookText);
+      getBook.mockResolvedValue(bookWithParts(18, 19, 20));
+
+      const { result } = renderReaderStateHook({ textId: '20', fetchAllLanguageWordsRef: pendingVocabulary() });
+
+      await waitFor(() => expect(result.current.isLastBookPart).toBe(true));
+      expect(result.current.previousTextId).toBe(19);
+      expect(result.current.nextTextId).toBeNull();
+    });
+
+    test('does not claim the last part when the book fails to load', async () => {
+      getText.mockResolvedValue(bookText);
+      getBook.mockRejectedValue(new Error('offline'));
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      const { result } = renderReaderStateHook({ textId: '20' });
+
+      await waitFor(() => expect(result.current.sentenceProgressLoaded).toBe(true));
+      expect(result.current.nextTextId).toBeNull();
+      expect(result.current.isLastBookPart).toBe(false);
+      expect(consoleError).toHaveBeenCalledWith('Failed to get book data:', expect.any(Error));
+      consoleError.mockRestore();
+    });
+
+    test('a standalone text is never the last book part', async () => {
+      getText.mockResolvedValue({ ...bookText, bookId: null });
+
+      const { result } = renderReaderStateHook({ textId: '20' });
+
+      await waitFor(() => expect(result.current.sentenceProgressLoaded).toBe(true));
+      expect(getBook).not.toHaveBeenCalled();
+      expect(result.current.isLastBookPart).toBe(false);
+    });
   });
 
   test('applies leftPanelWidth from settings on mount', () => {

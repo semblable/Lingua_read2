@@ -7,6 +7,8 @@ interface ReaderLessonActionsProps {
   isAudioLesson: boolean;
   previousTextId?: number | null;
   nextTextId?: number | null;
+  /** Offer "Finish Book" instead of "Complete Lesson" (see useReaderState). */
+  isLastBookPart?: boolean;
   completing: boolean;
   navigate: NavigateFunction;
   handleCompleteLesson: () => void;
@@ -17,6 +19,7 @@ const ReaderLessonActions = React.memo(({
   isAudioLesson,
   previousTextId,
   nextTextId,
+  isLastBookPart = false,
   completing,
   navigate,
   handleCompleteLesson
@@ -56,7 +59,7 @@ const ReaderLessonActions = React.memo(({
           size="sm"
           className={showBookNav ? 'ms-1' : ''}
         >
-          {completing ? <Spinner animation="border" size="sm" /> : (nextTextId === null && text?.bookId ? 'Finish Book' : 'Complete Lesson')}
+          {completing ? <Spinner animation="border" size="sm" /> : (isLastBookPart ? 'Finish Book' : 'Complete Lesson')}
         </Button>
       )}
     </div>

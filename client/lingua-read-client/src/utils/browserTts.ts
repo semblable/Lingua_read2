@@ -125,23 +125,34 @@ export function rankVoices(
     .map((entry) => entry.voice);
 }
 
+// Cloud voices (Chrome's "Google …", Edge's "Online (Natural)") need the
+// internet; offline they fail instead of speaking.
+export function needsInternet(voice: SpeechSynthesisVoice): boolean {
+  return voice.localService === false;
+}
+
+const isOffline = (): boolean => typeof navigator !== 'undefined' && navigator.onLine === false;
+
 /**
  * The chosen voice if it's still installed, else the best-ranked one. Null
  * when the device has no voice for the language: the browser then picks from
  * utterance.lang instead of us forcing the default (often English) voice.
+ * Offline, voices that need the internet are skipped, the chosen one included.
  */
 export function pickVoice(
   voices: SpeechSynthesisVoice[] | null | undefined,
   speechLang: string,
-  preferredVoiceURI?: string | null
+  preferredVoiceURI?: string | null,
+  offline: boolean = isOffline()
 ): SpeechSynthesisVoice | null {
-  if (preferredVoiceURI && voices) {
-    const preferred = voices.find((voice) => voice.voiceURI === preferredVoiceURI);
+  const usable = offline ? voices?.filter((voice) => !needsInternet(voice)) : voices;
+  if (preferredVoiceURI && usable) {
+    const preferred = usable.find((voice) => voice.voiceURI === preferredVoiceURI);
     if (preferred) {
       return preferred;
     }
   }
-  return rankVoices(voices, speechLang)[0] ?? null;
+  return rankVoices(usable, speechLang)[0] ?? null;
 }
 
 // Voice choice per speech tag. Deliberately device-local (never synced to the

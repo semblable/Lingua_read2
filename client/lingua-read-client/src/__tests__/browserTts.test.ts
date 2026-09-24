@@ -59,6 +59,39 @@ describe('pickVoice', () => {
   test('returns null rather than the default English voice when the language has none', () => {
     expect(pickVoice(VOICES, 'de-DE')).toBeNull();
   });
+
+  describe('offline', () => {
+    const CLOUD_VOICES = [
+      voice('Microsoft Hortense - French (France)', 'fr-FR'),
+      voice('Microsoft Denise Online (Natural) - French (France)', 'fr-FR', { localService: false }),
+      voice('Google français', 'fr-FR', { localService: false })
+    ];
+
+    test('skips voices that need the internet, the chosen one included', () => {
+      expect(pickVoice(CLOUD_VOICES, 'fr-FR', 'uri:Google français', true)?.name)
+        .toBe('Microsoft Hortense - French (France)');
+      expect(pickVoice(CLOUD_VOICES, 'fr-FR', null, true)?.name)
+        .toBe('Microsoft Hortense - French (France)');
+    });
+
+    test('leaves the voice to the browser when only cloud voices exist for the language', () => {
+      expect(pickVoice(CLOUD_VOICES.slice(1), 'fr-FR', null, true)).toBeNull();
+    });
+
+    test('online, cloud voices are still preferred', () => {
+      expect(pickVoice(CLOUD_VOICES, 'fr-FR', null, false)?.name)
+        .toBe('Microsoft Denise Online (Natural) - French (France)');
+    });
+
+    test('follows navigator.onLine by default', () => {
+      const onLine = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+      try {
+        expect(pickVoice(CLOUD_VOICES, 'fr-FR')?.name).toBe('Microsoft Hortense - French (France)');
+      } finally {
+        onLine.mockRestore();
+      }
+    });
+  });
 });
 
 describe('voice preference', () => {

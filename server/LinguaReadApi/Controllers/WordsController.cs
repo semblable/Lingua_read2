@@ -647,11 +647,8 @@ namespace LinguaReadApi.Controllers
             var userId = GetUserId();
 
             var query = _context.Words
-                .AsNoTracking() // Add AsNoTracking here
-                .Where(w => w.UserId == userId)
-                .Include(w => w.Translation)
-                .Include(w => w.Language) // Include Language for the name
-                .AsQueryable();
+                .AsNoTracking()
+                .Where(w => w.UserId == userId);
 
             // Apply language filtering
             if (languageId.HasValue)
@@ -673,12 +670,21 @@ namespace LinguaReadApi.Controllers
                 }
             }
 
-            // Default sort by Language then Term for consistent export
-            query = query.OrderBy(w => w.Language.Name).ThenBy(w => w.Term);
+            // Default sort by Language then Term for consistent export.
+            // Only the four exported columns are read, not whole Word/Translation/Language entities.
+            var wordsToExport = await query
+                .OrderBy(w => w.Language.Name).ThenBy(w => w.Term)
+                .Select(w => new
+                {
+                    w.Term,
+                    Translation = w.Translation != null ? w.Translation.Translation : null,
+                    w.Status,
+                    LanguageName = w.Language.Name
+                })
+                .ToListAsync();
 
-            var wordsToExport = await query.ToListAsync();
-
-            // Generate CSV content
+            // Built in memory rather than streamed on purpose: a DB error part-way through a streamed
+            // response would leave a truncated file behind a 200, and this file is a terms backup.
             var csvBuilder = new System.Text.StringBuilder();
             // Add header row
             csvBuilder.AppendLine("Term,Translation,Status,Language");
@@ -686,9 +692,9 @@ namespace LinguaReadApi.Controllers
             foreach (var word in wordsToExport)
             {
                 var termCsv = EscapeCsvField(word.Term);
-                var translationCsv = EscapeCsvField(word.Translation?.Translation ?? "");
+                var translationCsv = EscapeCsvField(word.Translation ?? "");
                 var statusCsv = word.Status.ToString();
-                var languageCsv = EscapeCsvField(word.Language?.Name ?? "Unknown"); // Handle potential null language if needed
+                var languageCsv = EscapeCsvField(word.LanguageName ?? "Unknown"); // Handle potential null language if needed
 
                 csvBuilder.AppendLine($"{termCsv},{translationCsv},{statusCsv},{languageCsv}");
             }

@@ -1102,7 +1102,7 @@ namespace LinguaReadApi.Controllers
             {
                 case "paragraph":
                     // Split by paragraphs
-                    var paragraphs = Regex.Split(content, @"\r?\n\s*\r?\n+")
+                    var paragraphs = ImportRegex.ParagraphBreak.Split(content)
                         .Where(p => !string.IsNullOrWhiteSpace(p))
                         .ToArray();
                     
@@ -1133,7 +1133,7 @@ namespace LinguaReadApi.Controllers
                     
                 case "sentence":
                     // Split by sentences (roughly)
-                    var sentences = System.Text.RegularExpressions.Regex.Split(content, @"(?<=[.!?])\s+")
+                    var sentences = ImportRegex.SentenceBreak.Split(content)
                         .Where(s => !string.IsNullOrWhiteSpace(s))
                         .ToList();
                     
@@ -1247,12 +1247,12 @@ namespace LinguaReadApi.Controllers
             }
 
             var normalizedHtml = textFile.Content;
-            normalizedHtml = Regex.Replace(normalizedHtml, @"<!--.*?-->", string.Empty, RegexOptions.Singleline);
-            normalizedHtml = Regex.Replace(normalizedHtml, @"<(script|style)\b[^>]*>.*?</\1>", string.Empty, RegexOptions.Singleline | RegexOptions.IgnoreCase);
+            normalizedHtml = ImportRegex.HtmlComment.Replace(normalizedHtml, string.Empty);
+            normalizedHtml = ImportRegex.ScriptOrStyleElement.Replace(normalizedHtml, string.Empty);
 
             var blocks = new List<ReaderContentBlock>();
             var textBuffer = new StringBuilder();
-            var tokenMatches = Regex.Matches(normalizedHtml, @"<img\b[^>]*>|</?[^>]+>|[^<]+", RegexOptions.IgnoreCase);
+            var tokenMatches = ImportRegex.HtmlToken.Matches(normalizedHtml);
             bool inHeading = false;
             bool inCaption = false;
             bool pendingChapterBreak = false;
@@ -1272,13 +1272,13 @@ namespace LinguaReadApi.Controllers
                     continue;
                 }
 
-                if (Regex.IsMatch(token, @"^<br\s*/?>$", RegexOptions.IgnoreCase))
+                if (ImportRegex.BrTag.IsMatch(token))
                 {
                     textBuffer.Append('\n');
                     continue;
                 }
 
-                if (Regex.IsMatch(token, @"^<img\b", RegexOptions.IgnoreCase))
+                if (ImportRegex.ImgTag.IsMatch(token))
                 {
                     FlushBufferedText(blocks, textBuffer, inHeading ? ReaderContentBlockTypes.Title : ReaderContentBlockTypes.Paragraph, ref pendingChapterBreak);
                     var imageBlock = TryCreateImageBlock(token, textFile, extractionContext);
@@ -1295,7 +1295,7 @@ namespace LinguaReadApi.Controllers
                     continue;
                 }
 
-                if (Regex.IsMatch(token, @"^<h[1-6]\b", RegexOptions.IgnoreCase))
+                if (ImportRegex.HeadingOpen.IsMatch(token))
                 {
                     FlushBufferedText(blocks, textBuffer, ReaderContentBlockTypes.Paragraph, ref pendingChapterBreak);
                     if (HasPageBreak(token, pageBreakClasses))
@@ -1306,21 +1306,21 @@ namespace LinguaReadApi.Controllers
                     continue;
                 }
 
-                if (Regex.IsMatch(token, @"^</h[1-6]\s*>$", RegexOptions.IgnoreCase))
+                if (ImportRegex.HeadingClose.IsMatch(token))
                 {
                     FlushBufferedText(blocks, textBuffer, ReaderContentBlockTypes.Title, ref pendingChapterBreak);
                     inHeading = false;
                     continue;
                 }
 
-                if (Regex.IsMatch(token, @"^<figcaption\b", RegexOptions.IgnoreCase))
+                if (ImportRegex.FigcaptionOpen.IsMatch(token))
                 {
                     FlushBufferedText(blocks, textBuffer, inHeading ? ReaderContentBlockTypes.Title : ReaderContentBlockTypes.Paragraph, ref pendingChapterBreak);
                     inCaption = true;
                     continue;
                 }
 
-                if (Regex.IsMatch(token, @"^</figcaption\s*>$", RegexOptions.IgnoreCase))
+                if (ImportRegex.FigcaptionClose.IsMatch(token))
                 {
                     var caption = NormalizeTextFragment(textBuffer.ToString());
                     textBuffer.Clear();
@@ -1351,9 +1351,9 @@ namespace LinguaReadApi.Controllers
                     continue;
                 }
 
-                if (Regex.IsMatch(token, @"^<(p|div|section|article|aside|header|footer|nav|figure|blockquote|pre|li|tr)\b", RegexOptions.IgnoreCase) ||
-                    Regex.IsMatch(token, @"^</(p|div|section|article|aside|header|footer|nav|figure|blockquote|pre|li|tr)\s*>$", RegexOptions.IgnoreCase) ||
-                    Regex.IsMatch(token, @"^<hr\b", RegexOptions.IgnoreCase))
+                if (ImportRegex.BlockOpen.IsMatch(token) ||
+                    ImportRegex.BlockClose.IsMatch(token) ||
+                    ImportRegex.HrTag.IsMatch(token))
                 {
                     FlushBufferedText(blocks, textBuffer, inHeading ? ReaderContentBlockTypes.Title : ReaderContentBlockTypes.Paragraph, ref pendingChapterBreak);
                     if (token[1] != '/' && HasPageBreak(token, pageBreakClasses))
@@ -1363,14 +1363,14 @@ namespace LinguaReadApi.Controllers
                     continue;
                 }
 
-                if (Regex.IsMatch(token, @"^<(td|th)\b", RegexOptions.IgnoreCase) ||
-                    Regex.IsMatch(token, @"^</(td|th)\s*>$", RegexOptions.IgnoreCase))
+                if (ImportRegex.CellOpen.IsMatch(token) ||
+                    ImportRegex.CellClose.IsMatch(token))
                 {
                     textBuffer.Append(' ');
                     continue;
                 }
 
-                if (inCaption && Regex.IsMatch(token, @"^</?(span|em|strong|b|i|small|a)\b", RegexOptions.IgnoreCase))
+                if (inCaption && ImportRegex.CaptionInlineTag.IsMatch(token))
                 {
                     continue;
                 }
@@ -1390,7 +1390,7 @@ namespace LinguaReadApi.Controllers
             // Check inline style for page-break-before: always or break-before: page/always
             var style = ExtractHtmlAttribute(tag, "style");
             if (!string.IsNullOrWhiteSpace(style) &&
-                Regex.IsMatch(style, @"(?:page-break-before\s*:\s*always|break-before\s*:\s*(?:page|always))", RegexOptions.IgnoreCase))
+                ImportRegex.PageBreakStyle.IsMatch(style))
             {
                 return true;
             }
@@ -1661,7 +1661,7 @@ namespace LinguaReadApi.Controllers
 
                 IEnumerable<string> chunks = splitMethod.ToLowerInvariant() switch
                 {
-                    "sentence" => Regex.Matches(blockText, @"[^.!?…]+(?:[.!?…]+(?:""|”|'|’)?|$)")
+                    "sentence" => ImportRegex.SentenceChunk.Matches(blockText)
                         .Select(match => match.Value.Trim())
                         .Where(chunk => !string.IsNullOrWhiteSpace(chunk))
                         .DefaultIfEmpty(blockText),
@@ -1762,9 +1762,9 @@ namespace LinguaReadApi.Controllers
                 .Replace('\r', '\n')
                 .Replace('\u00A0', ' ');
 
-            text = Regex.Replace(text, @"[ \t\f\v]+", " ");
-            text = Regex.Replace(text, @" *\n *", "\n");
-            text = Regex.Replace(text, @"\n{3,}", "\n\n");
+            text = ImportRegex.HorizontalWhitespace.Replace(text, " ");
+            text = ImportRegex.SpacesAroundNewline.Replace(text, "\n");
+            text = ImportRegex.ExcessNewlines.Replace(text, "\n\n");
             return text.Trim();
         }
 
@@ -1841,27 +1841,23 @@ namespace LinguaReadApi.Controllers
 
             var normalizedHtml = htmlContent;
 
-            normalizedHtml = Regex.Replace(normalizedHtml, @"<!--.*?-->", string.Empty, RegexOptions.Singleline);
-            normalizedHtml = Regex.Replace(normalizedHtml, @"<(script|style)\b[^>]*>.*?</\1>", string.Empty, RegexOptions.Singleline | RegexOptions.IgnoreCase);
-            normalizedHtml = Regex.Replace(normalizedHtml, @"<br\s*/?>", "\n", RegexOptions.IgnoreCase);
-            normalizedHtml = Regex.Replace(
-                normalizedHtml,
-                @"</(p|div|section|article|aside|header|footer|nav|figure|figcaption|blockquote|pre|li|h[1-6])\s*>",
-                "\n\n",
-                RegexOptions.IgnoreCase);
-            normalizedHtml = Regex.Replace(normalizedHtml, @"</(tr)\s*>", "\n", RegexOptions.IgnoreCase);
-            normalizedHtml = Regex.Replace(normalizedHtml, @"<(hr)\b[^>]*>", "\n\n", RegexOptions.IgnoreCase);
-            normalizedHtml = Regex.Replace(normalizedHtml, @"<(td|th)\b[^>]*>", " ", RegexOptions.IgnoreCase);
-            normalizedHtml = Regex.Replace(normalizedHtml, @"</(td|th)\s*>", " ", RegexOptions.IgnoreCase);
-            normalizedHtml = Regex.Replace(normalizedHtml, @"<[^>]*>", string.Empty);
+            normalizedHtml = ImportRegex.HtmlComment.Replace(normalizedHtml, string.Empty);
+            normalizedHtml = ImportRegex.ScriptOrStyleElement.Replace(normalizedHtml, string.Empty);
+            normalizedHtml = ImportRegex.BrTagAnywhere.Replace(normalizedHtml, "\n");
+            normalizedHtml = ImportRegex.DescriptionBlockClose.Replace(normalizedHtml, "\n\n");
+            normalizedHtml = ImportRegex.TrClose.Replace(normalizedHtml, "\n");
+            normalizedHtml = ImportRegex.HrTagAnywhere.Replace(normalizedHtml, "\n\n");
+            normalizedHtml = ImportRegex.CellOpenAnywhere.Replace(normalizedHtml, " ");
+            normalizedHtml = ImportRegex.CellCloseAnywhere.Replace(normalizedHtml, " ");
+            normalizedHtml = ImportRegex.AnyTag.Replace(normalizedHtml, string.Empty);
 
             var plainText = WebUtility.HtmlDecode(normalizedHtml)
                 .Replace("\r\n", "\n")
                 .Replace('\r', '\n');
 
-            plainText = Regex.Replace(plainText, @"[ \t\f\v]+", " ");
-            plainText = Regex.Replace(plainText, @" *\n *", "\n");
-            plainText = Regex.Replace(plainText, @"\n{3,}", "\n\n");
+            plainText = ImportRegex.HorizontalWhitespace.Replace(plainText, " ");
+            plainText = ImportRegex.SpacesAroundNewline.Replace(plainText, "\n");
+            plainText = ImportRegex.ExcessNewlines.Replace(plainText, "\n\n");
 
             return plainText.Trim();
         }
@@ -1905,22 +1901,19 @@ namespace LinguaReadApi.Controllers
 
                 yield return current;
 
-                var withoutTrailingSuffix = Regex.Replace(current, @"(?:_|-)(?:\d+|[a-f0-9]{6,}|part\d+|page\d+|copy)$", string.Empty).Trim('_', '-');
+                var withoutTrailingSuffix = ImportRegex.ArtifactTrailingSuffix.Replace(current, string.Empty).Trim('_', '-');
                 if (!string.IsNullOrWhiteSpace(withoutTrailingSuffix) && !string.Equals(withoutTrailingSuffix, current, StringComparison.Ordinal))
                 {
                     pending.Enqueue(withoutTrailingSuffix);
                 }
 
-                var truncatedAfterFormatToken = Regex.Replace(
-                    current,
-                    @"^(.+?_(?:epub|pdf|mobi|azw3))(?:_.+)$",
-                    "$1");
+                var truncatedAfterFormatToken = ImportRegex.ArtifactAfterFormatToken.Replace(current, "$1");
                 if (!string.IsNullOrWhiteSpace(truncatedAfterFormatToken) && !string.Equals(truncatedAfterFormatToken, current, StringComparison.Ordinal))
                 {
                     pending.Enqueue(truncatedAfterFormatToken);
                 }
 
-                var withoutCommonSuffix = Regex.Replace(current, @"(?:_|-)?(?:epub|pdf|mobi|azw3|book|novel)$", string.Empty).Trim('_', '-');
+                var withoutCommonSuffix = ImportRegex.ArtifactCommonSuffix.Replace(current, string.Empty).Trim('_', '-');
                 if (!string.IsNullOrWhiteSpace(withoutCommonSuffix) && !string.Equals(withoutCommonSuffix, current, StringComparison.Ordinal))
                 {
                     pending.Enqueue(withoutCommonSuffix);
@@ -2043,7 +2036,7 @@ namespace LinguaReadApi.Controllers
                 }
             }
 
-            return Regex.Replace(builder.ToString(), @"_+", "_").Trim('_');
+            return ImportRegex.UnderscoreRun.Replace(builder.ToString(), "_").Trim('_');
         }
 
         // PUT: api/books/5/lastread
@@ -2138,8 +2131,6 @@ namespace LinguaReadApi.Controllers
 
                     // Verify the text belongs to this book
                     var text = await _context.Texts
-                        .Include(t => t.TextWords)
-                        .ThenInclude(tw => tw.Word)
                         .Where(t => t.TextId == lessonDto.TextId && t.BookId == id)
                         .FirstOrDefaultAsync();
 
@@ -2637,6 +2628,57 @@ namespace LinguaReadApi.Controllers
 
             public List<ReaderContentBlock> Blocks { get; }
             public string PlainText { get; }
+        }
+
+        /// <summary>
+        /// Import/split patterns, built once. As static <c>Regex.*</c> calls they went through the
+        /// framework's 15-entry pattern cache, which the ~20 patterns of the per-tag loop kept evicting,
+        /// so patterns were re-parsed during every import. A nested class so the controller's other
+        /// endpoints don't pay for constructing them. Per-file/per-tag/per-block patterns are Compiled;
+        /// the ones that run a few times per upload stay interpreted. Options are unchanged from the
+        /// original call sites.
+        /// </summary>
+        private static class ImportRegex
+        {
+            private const RegexOptions Hot = RegexOptions.Compiled;
+
+            public static readonly Regex HtmlComment = new(@"<!--.*?-->", Hot | RegexOptions.Singleline);
+            public static readonly Regex ScriptOrStyleElement = new(@"<(script|style)\b[^>]*>.*?</\1>", Hot | RegexOptions.Singleline | RegexOptions.IgnoreCase);
+            public static readonly Regex HtmlToken = new(@"<img\b[^>]*>|</?[^>]+>|[^<]+", Hot | RegexOptions.IgnoreCase);
+            public static readonly Regex BrTag = new(@"^<br\s*/?>$", Hot | RegexOptions.IgnoreCase);
+            public static readonly Regex ImgTag = new(@"^<img\b", Hot | RegexOptions.IgnoreCase);
+            public static readonly Regex HeadingOpen = new(@"^<h[1-6]\b", Hot | RegexOptions.IgnoreCase);
+            public static readonly Regex HeadingClose = new(@"^</h[1-6]\s*>$", Hot | RegexOptions.IgnoreCase);
+            public static readonly Regex FigcaptionOpen = new(@"^<figcaption\b", Hot | RegexOptions.IgnoreCase);
+            public static readonly Regex FigcaptionClose = new(@"^</figcaption\s*>$", Hot | RegexOptions.IgnoreCase);
+            public static readonly Regex BlockOpen = new(@"^<(p|div|section|article|aside|header|footer|nav|figure|blockquote|pre|li|tr)\b", Hot | RegexOptions.IgnoreCase);
+            public static readonly Regex BlockClose = new(@"^</(p|div|section|article|aside|header|footer|nav|figure|blockquote|pre|li|tr)\s*>$", Hot | RegexOptions.IgnoreCase);
+            public static readonly Regex HrTag = new(@"^<hr\b", Hot | RegexOptions.IgnoreCase);
+            public static readonly Regex CellOpen = new(@"^<(td|th)\b", Hot | RegexOptions.IgnoreCase);
+            public static readonly Regex CellClose = new(@"^</(td|th)\s*>$", Hot | RegexOptions.IgnoreCase);
+            public static readonly Regex CaptionInlineTag = new(@"^</?(span|em|strong|b|i|small|a)\b", Hot | RegexOptions.IgnoreCase);
+            public static readonly Regex PageBreakStyle = new(@"(?:page-break-before\s*:\s*always|break-before\s*:\s*(?:page|always))", Hot | RegexOptions.IgnoreCase);
+            public static readonly Regex SentenceChunk = new(@"[^.!?…]+(?:[.!?…]+(?:""|”|'|’)?|$)", Hot);
+            public static readonly Regex HorizontalWhitespace = new(@"[ \t\f\v]+", Hot);
+            public static readonly Regex SpacesAroundNewline = new(@" *\n *", Hot);
+            public static readonly Regex ExcessNewlines = new(@"\n{3,}", Hot);
+            public static readonly Regex ParagraphBreak = new(@"\r?\n\s*\r?\n+", Hot);
+            public static readonly Regex SentenceBreak = new(@"(?<=[.!?])\s+", Hot);
+
+            // Book description (NormalizeEpubHtmlToText): once per upload.
+            public static readonly Regex BrTagAnywhere = new(@"<br\s*/?>", RegexOptions.IgnoreCase);
+            public static readonly Regex DescriptionBlockClose = new(@"</(p|div|section|article|aside|header|footer|nav|figure|figcaption|blockquote|pre|li|h[1-6])\s*>", RegexOptions.IgnoreCase);
+            public static readonly Regex TrClose = new(@"</(tr)\s*>", RegexOptions.IgnoreCase);
+            public static readonly Regex HrTagAnywhere = new(@"<(hr)\b[^>]*>", RegexOptions.IgnoreCase);
+            public static readonly Regex CellOpenAnywhere = new(@"<(td|th)\b[^>]*>", RegexOptions.IgnoreCase);
+            public static readonly Regex CellCloseAnywhere = new(@"</(td|th)\s*>", RegexOptions.IgnoreCase);
+            public static readonly Regex AnyTag = new(@"<[^>]*>");
+
+            // Artifact keys (title / file stem variants): a handful of short strings per upload.
+            public static readonly Regex ArtifactTrailingSuffix = new(@"(?:_|-)(?:\d+|[a-f0-9]{6,}|part\d+|page\d+|copy)$");
+            public static readonly Regex ArtifactAfterFormatToken = new(@"^(.+?_(?:epub|pdf|mobi|azw3))(?:_.+)$");
+            public static readonly Regex ArtifactCommonSuffix = new(@"(?:_|-)?(?:epub|pdf|mobi|azw3|book|novel)$");
+            public static readonly Regex UnderscoreRun = new(@"_+");
         }
 
         private sealed class EpubExtractionContext

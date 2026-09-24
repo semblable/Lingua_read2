@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.Net;
 using System.Net.Http;
+using System.Threading;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
@@ -26,6 +28,14 @@ namespace LinguaReadApi.Services
         private readonly ILanguageService _languageService; // Added LanguageService dependency
         private readonly string _apiKey;
         private readonly string _apiUrl;
+
+        private const int MaxTextsPerRequest = 50;
+        private const int MaxAttempts = 3;
+        private static readonly TimeSpan MaxRetryAfter = TimeSpan.FromSeconds(5);
+
+        // Per attempt. Well below the default HttpClient's 100 s, which used to be the only limit.
+        internal TimeSpan RequestTimeout { get; set; } = TimeSpan.FromSeconds(15);
+        internal TimeSpan RetryBaseDelay { get; set; } = TimeSpan.FromSeconds(1);
 
         public DeepLTranslationService(HttpClient httpClient, IConfiguration configuration, ILogger<DeepLTranslationService> logger, ILanguageService languageService) // Added languageService parameter
         {
@@ -79,58 +89,12 @@ namespace LinguaReadApi.Services
                 }
                 // --- End determining target code ---
 
-                 // DeepL Free API expects form data (application/x-www-form-urlencoded).
-                 // Create the key-value pairs for the form data.
-                var formData = new List<KeyValuePair<string, string>>();
-                foreach (var word in words)
+                // The reader sends every unknown word of a text at once. Chunk the request, as the
+                // Azure and Google providers do: DeepL caps the request size, and a failed chunk then
+                // only loses its own words.
+                foreach (var chunk in words.Chunk(MaxTextsPerRequest))
                 {
-                    formData.Add(new KeyValuePair<string, string>("text", word));
-                }
-                // Use the determined final target code
-                formData.Add(new KeyValuePair<string, string>("target_lang", finalDeepLTargetCode));
-
-                if (!string.IsNullOrEmpty(sourceLang))
-                {
-                    // Keep sending the original source language code if provided
-                    formData.Add(new KeyValuePair<string, string>("source_lang", sourceLang));
-                }
-
-                // Create FormUrlEncodedContent. HttpClient sets the Content-Type header.
-                var requestContent = new FormUrlEncodedContent(formData);
-
-
-                // Removed previous detailed debug logging
-
-                using var request = new HttpRequestMessage(HttpMethod.Post, _apiUrl) { Content = requestContent };
-                request.Headers.TryAddWithoutValidation("Authorization", $"DeepL-Auth-Key {_apiKey}");
-                var response = await _httpClient.SendAsync(request);
-
-                if (response.IsSuccessStatusCode)
-                {
-                    // Need DeepLResponse model defined appropriately
-                    var responseContent = await response.Content.ReadFromJsonAsync<DeepLResponse>(); 
-                    if (responseContent?.translations != null && responseContent.translations.Length == words.Count)
-                    {
-                        for (int i = 0; i < words.Count; i++)
-                        {
-                            string originalWord = words[i] ?? string.Empty;
-                            string translatedWord = responseContent.translations[i].text ?? string.Empty;
-
-                            // Add raw strings to the dictionary (no sanitization)
-                            translations[originalWord] = translatedWord;
-                        }
-                        _logger.LogInformation($"Successfully received {translations.Count} translations from DeepL.");
-                    }
-                    else
-                    {
-                         _logger.LogWarning("DeepL response format mismatch or missing translations. Response: {Response}", await response.Content.ReadAsStringAsync());
-                    }
-                }
-                else
-                {
-                    var errorContent = await response.Content.ReadAsStringAsync();
-                    _logger.LogError($"DeepL API request failed with status {response.StatusCode}: {errorContent}");
-                    // Consider throwing a specific exception or handling differently
+                    await TranslateChunkAsync(chunk, finalDeepLTargetCode, sourceLang, translations);
                 }
             }
             catch (Exception ex)
@@ -141,6 +105,129 @@ namespace LinguaReadApi.Services
 
             return translations;
         }
+
+        private async Task TranslateChunkAsync(string[] words, string targetCode, string? sourceLang, Dictionary<string, string> translations)
+        {
+            try
+            {
+                using var response = await SendWithRetryAsync(() => BuildRequest(words, targetCode, sourceLang));
+                if (response == null)
+                {
+                    return; // Timed out; already logged.
+                }
+
+                if (response.IsSuccessStatusCode)
+                {
+                    // Need DeepLResponse model defined appropriately
+                    var responseContent = await response.Content.ReadFromJsonAsync<DeepLResponse>();
+                    if (responseContent?.translations != null && responseContent.translations.Length == words.Length)
+                    {
+                        for (int i = 0; i < words.Length; i++)
+                        {
+                            string originalWord = words[i] ?? string.Empty;
+                            string translatedWord = responseContent.translations[i].text ?? string.Empty;
+
+                            // Add raw strings to the dictionary (no sanitization)
+                            translations[originalWord] = translatedWord;
+                        }
+                        _logger.LogInformation("Successfully received {Count} translations from DeepL.", words.Length);
+                    }
+                    else
+                    {
+                        _logger.LogWarning("DeepL response format mismatch or missing translations. Response: {Response}", await response.Content.ReadAsStringAsync());
+                    }
+                }
+                else
+                {
+                    var errorContent = await response.Content.ReadAsStringAsync();
+                    _logger.LogError("DeepL API request failed with status {Status}: {Error}", response.StatusCode, errorContent);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error occurred while calling DeepL API.");
+            }
+        }
+
+        private HttpRequestMessage BuildRequest(string[] words, string targetCode, string? sourceLang)
+        {
+            // DeepL Free API expects form data (application/x-www-form-urlencoded).
+            var formData = new List<KeyValuePair<string, string>>();
+            foreach (var word in words)
+            {
+                formData.Add(new KeyValuePair<string, string>("text", word));
+            }
+            formData.Add(new KeyValuePair<string, string>("target_lang", targetCode));
+
+            if (!string.IsNullOrEmpty(sourceLang))
+            {
+                // Keep sending the original source language code if provided
+                formData.Add(new KeyValuePair<string, string>("source_lang", sourceLang));
+            }
+
+            // HttpClient sets the Content-Type header from FormUrlEncodedContent.
+            var request = new HttpRequestMessage(HttpMethod.Post, _apiUrl) { Content = new FormUrlEncodedContent(formData) };
+            request.Headers.TryAddWithoutValidation("Authorization", $"DeepL-Auth-Key {_apiKey}");
+            return request;
+        }
+
+        // Retries rate limiting (429) and transient server/transport errors with backoff, as DeepL
+        // recommends. Never retries 456 (quota exhausted) or other client errors, and never a timeout:
+        // the reader is waiting, and a retry would multiply that wait. Returns null on timeout.
+        private async Task<HttpResponseMessage?> SendWithRetryAsync(Func<HttpRequestMessage> buildRequest)
+        {
+            for (var attempt = 1; ; attempt++)
+            {
+                using var request = buildRequest();
+                using var timeout = new CancellationTokenSource(RequestTimeout);
+                HttpResponseMessage response;
+                try
+                {
+                    response = await _httpClient.SendAsync(request, timeout.Token);
+                }
+                catch (OperationCanceledException) when (timeout.IsCancellationRequested)
+                {
+                    _logger.LogWarning("DeepL request timed out after {Timeout}.", RequestTimeout);
+                    return null;
+                }
+                catch (HttpRequestException ex) when (attempt < MaxAttempts)
+                {
+                    var delay = BackoffDelay(attempt);
+                    _logger.LogWarning(ex, "DeepL request failed (attempt {Attempt}/{Max}); retrying in {Delay}.", attempt, MaxAttempts, delay);
+                    await Task.Delay(delay);
+                    continue;
+                }
+
+                if (attempt < MaxAttempts && IsRetryableStatus(response.StatusCode))
+                {
+                    var delay = response.Headers.RetryAfter switch
+                    {
+                        { Delta: { } delta } => delta,
+                        { Date: { } date } => date - DateTimeOffset.UtcNow,
+                        _ => BackoffDelay(attempt)
+                    };
+                    if (delay <= MaxRetryAfter)
+                    {
+                        if (delay < TimeSpan.Zero) delay = TimeSpan.Zero;
+                        _logger.LogWarning("DeepL returned {Status} (attempt {Attempt}/{Max}); retrying in {Delay}.", response.StatusCode, attempt, MaxAttempts, delay);
+                        response.Dispose();
+                        await Task.Delay(delay);
+                        continue;
+                    }
+                }
+
+                return response;
+            }
+        }
+
+        private TimeSpan BackoffDelay(int attempt) => RetryBaseDelay * Math.Pow(2, attempt - 1);
+
+        private static bool IsRetryableStatus(HttpStatusCode status) =>
+            status is HttpStatusCode.TooManyRequests
+                or HttpStatusCode.InternalServerError
+                or HttpStatusCode.BadGateway
+                or HttpStatusCode.ServiceUnavailable
+                or HttpStatusCode.GatewayTimeout;
 
         // Implementation for single text translation
         public async Task<string> TranslateTextAsync(string text, string? sourceLang, string targetLang) // Mark sourceLang as nullable

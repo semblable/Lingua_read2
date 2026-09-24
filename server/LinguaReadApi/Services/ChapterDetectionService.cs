@@ -41,6 +41,15 @@ namespace LinguaReadApi.Services
 
         private static readonly Regex NumberedHeadingRegex = new Regex(@"^\s*(?:[0-9]+|[IVXLCDMivxlcdm]+)\s*[\.\-–—:]\s+(.+)$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
+        // Hoisted from the methods below, which built (and IL-compiled) a new instance per call —
+        // IsRegularChapterTitle once per chapter title.
+        private static readonly Regex StandaloneRomanRegex = new Regex(@"^\s*[IVXLCDMivxlcdm]+\s*$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+        private static readonly Regex PureNumericOrRomanRegex = new Regex(@"^\s*(?:[0-9]+|[IVXLCDMivxlcdm]+)\s*$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+        private static readonly Regex PageBreakRuleRegex = new Regex(
+            @"([^{}]+)\{[^}]*(?:page-break-before\s*:\s*always|break-before\s*:\s*(?:page|always))[^}]*\}",
+            RegexOptions.IgnoreCase | RegexOptions.Singleline);
+        private static readonly Regex ClassInSelectorRegex = new Regex(@"\.([a-zA-Z_][\w-]*)", RegexOptions.Compiled);
+
         // Plain Text Heading Detection
         public List<DetectedChapter> DetectChaptersFromTextHeadings(string content)
         {
@@ -205,7 +214,7 @@ namespace LinguaReadApi.Services
                 }
             }
 
-            var romanRegex = new Regex(@"^\s*[IVXLCDMivxlcdm]+\s*$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+            var romanRegex = StandaloneRomanRegex;
             var currentChapterTitle = "Start";
             var currentChapterBlocks = new List<ReaderContentBlock>();
 
@@ -348,11 +357,8 @@ namespace LinguaReadApi.Services
             if (cssTexts == null) return classes;
 
             // Match CSS rule blocks: selectors { ... page-break-before: always ... }
-            var ruleRegex = new Regex(
-                @"([^{}]+)\{[^}]*(?:page-break-before\s*:\s*always|break-before\s*:\s*(?:page|always))[^}]*\}",
-                RegexOptions.IgnoreCase | RegexOptions.Singleline);
-
-            var classInSelectorRegex = new Regex(@"\.([a-zA-Z_][\w-]*)", RegexOptions.Compiled);
+            var ruleRegex = PageBreakRuleRegex;
+            var classInSelectorRegex = ClassInSelectorRegex;
 
             foreach (var css in cssTexts)
             {
@@ -497,8 +503,7 @@ namespace LinguaReadApi.Services
             if (NumberedHeadingRegex.IsMatch(title)) return true;
 
             // Check purely numeric or standalone Roman numerals
-            var pureNumericOrRoman = new Regex(@"^\s*(?:[0-9]+|[IVXLCDMivxlcdm]+)\s*$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
-            if (pureNumericOrRoman.IsMatch(title)) return true;
+            if (PureNumericOrRomanRegex.IsMatch(title)) return true;
 
             return false;
         }

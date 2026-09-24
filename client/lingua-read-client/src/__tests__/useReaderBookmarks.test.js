@@ -207,6 +207,10 @@ describe('useReaderBookmarks', () => {
     vi.mocked(getTextBookmarks).mockImplementationOnce(
       () => new Promise((resolve) => { resolveLoad = resolve; })
     );
+    let resolveSave;
+    vi.mocked(setTextBookmark).mockImplementationOnce(
+      () => new Promise((resolve) => { resolveSave = resolve; })
+    );
     const { result } = renderBookmarks(42);
     await waitFor(() => expect(getTextBookmarks).toHaveBeenCalled());
 
@@ -219,6 +223,53 @@ describe('useReaderBookmarks', () => {
 
     expect(result.current.bookmarkedIndices).toEqual([5]);
     expect(result.current.bookmarksReady).toBe(true);
+
+    // The dropped answer is fetched again once the toggle is saved, so
+    // bookmarks from other devices still show up.
+    vi.mocked(getTextBookmarks).mockResolvedValue(serverState(42, [5, 8], 5));
+    await act(async () => {
+      resolveSave(serverState(42, [5], 5));
+    });
+
+    await waitFor(() => expect(result.current.bookmarkedIndices).toEqual([5, 8]));
+    expect(getTextBookmarks).toHaveBeenCalledTimes(2);
+  });
+
+  test('does not fetch again after a toggle when no load was dropped', async () => {
+    const { result } = renderBookmarks(42);
+    await waitFor(() => expect(result.current.bookmarksReady).toBe(true));
+
+    await act(async () => {
+      result.current.toggleBookmarkForIndex(5);
+    });
+
+    expect(getTextBookmarks).toHaveBeenCalledTimes(1);
+  });
+
+  test('a save that fails after moving to the next text does not reload the previous one', async () => {
+    let rejectSave;
+    vi.mocked(setTextBookmark).mockImplementationOnce(
+      () => new Promise((_resolve, reject) => { rejectSave = reject; })
+    );
+    vi.mocked(getTextBookmarks).mockImplementation((id) =>
+      Promise.resolve(Number(id) === 1 ? serverState(1, [10], 10) : serverState(2, [20], 20))
+    );
+    const { result, rerender } = renderBookmarks(1);
+    await waitFor(() => expect(result.current.bookmarksReady).toBe(true));
+
+    act(() => {
+      result.current.toggleBookmarkForIndex(3);
+    });
+    rerender({ textId: 2 });
+    await waitFor(() => expect(result.current.bookmarkedIndices).toEqual([20]));
+
+    await act(async () => {
+      rejectSave(Object.assign(new Error('gone'), { name: 'ApiError', status: 404 }));
+    });
+
+    expect(result.current.bookmarkedIndices).toEqual([20]);
+    expect(result.current.lastBookmarkedIndex).toBe(20);
+    expect(vi.mocked(getTextBookmarks).mock.calls.filter(([id]) => String(id) === '1')).toHaveLength(1);
   });
 
   test('reloads from the server when saving a toggle is rejected', async () => {

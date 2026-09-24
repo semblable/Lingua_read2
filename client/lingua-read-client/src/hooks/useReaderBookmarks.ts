@@ -49,6 +49,15 @@ export const useReaderBookmarks = ({
   const [readyForTextId, setReadyForTextId] = useState<string | null>(null);
   // Bumped per load, so an answer for a text the reader already left is dropped.
   const loadIdRef = useRef(0);
+  const loadInFlightRef = useRef(false);
+  // The text on screen, so a save that settles after "Next lesson" doesn't
+  // reload the previous text over the new one.
+  const textIdRef = useRef<string | null>(null);
+  // Toggles still being saved, and whether the server state must be fetched
+  // again once they have all landed (a toggle dropped an in-flight load's
+  // answer, or the server rejected one).
+  const savesInFlightRef = useRef(0);
+  const reloadAfterSavesRef = useRef(false);
 
   const showCached = useCallback((id: number | string) => {
     setBookmarkedIndices(getBookmarkedSentences(id));
@@ -57,6 +66,7 @@ export const useReaderBookmarks = ({
 
   const loadFromServer = useCallback(async (id: number | string) => {
     const loadId = ++loadIdRef.current;
+    loadInFlightRef.current = true;
     try {
       await migrateLegacyBookmarks();
       const server = await getTextBookmarks(id);
@@ -89,13 +99,19 @@ export const useReaderBookmarks = ({
       // Offline or server error: keep showing the cached copy.
       console.error('Failed to load bookmarks:', error);
     } finally {
-      if (loadId === loadIdRef.current) setReadyForTextId(String(id));
+      if (loadId === loadIdRef.current) {
+        loadInFlightRef.current = false;
+        setReadyForTextId(String(id));
+      }
     }
   }, []);
 
   useEffect(() => {
+    textIdRef.current = textId ? String(textId) : null;
+    reloadAfterSavesRef.current = false;
     if (!textId) {
       loadIdRef.current++;
+      loadInFlightRef.current = false;
       setBookmarkedIndices([]);
       setLastBookmarkedIndex(null);
       return;
@@ -113,17 +129,30 @@ export const useReaderBookmarks = ({
     (sentenceIndex: number) => {
       if (!textId || typeof sentenceIndex !== 'number' || sentenceIndex < 0) return;
       const bookmarked = !getBookmarkedSentences(textId).includes(sentenceIndex);
-      // A load still in flight may predate this toggle; drop its answer.
+      // A load still in flight may predate this toggle; drop its answer, and
+      // fetch again once the toggle is saved so other devices' bookmarks show.
+      if (loadInFlightRef.current) reloadAfterSavesRef.current = true;
       loadIdRef.current++;
+      loadInFlightRef.current = false;
       setReadyForTextId(String(textId));
       toggleBookmarkInStorage(textId, sentenceIndex);
       showCached(textId);
+      savesInFlightRef.current++;
       // Offline, this queues the toggle and resolves; only a server rejection
-      // lands here, and then the server's state is the one to show.
-      setTextBookmark(toTextIdNumber(textId), sentenceIndex, bookmarked).catch((error: unknown) => {
-        console.error('Failed to save bookmark:', error);
-        void loadFromServer(textId);
-      });
+      // lands in the catch, and then the server's state is the one to show.
+      setTextBookmark(toTextIdNumber(textId), sentenceIndex, bookmarked)
+        .catch((error: unknown) => {
+          console.error('Failed to save bookmark:', error);
+          reloadAfterSavesRef.current = true;
+        })
+        .finally(() => {
+          savesInFlightRef.current--;
+          // Waiting for every save keeps the answer from missing one still in flight.
+          if (savesInFlightRef.current > 0 || !reloadAfterSavesRef.current) return;
+          if (textIdRef.current !== String(textId)) return;
+          reloadAfterSavesRef.current = false;
+          void loadFromServer(textId);
+        });
     },
     [textId, showCached, loadFromServer]
   );

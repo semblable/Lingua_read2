@@ -179,6 +179,101 @@ public class DeepLTranslationServiceTests
         Assert.All(words.Skip(50), w => Assert.Equal("T:" + w, result[w]));
     }
 
+    [Theory]
+    [InlineData(HttpStatusCode.BadRequest)]
+    [InlineData(HttpStatusCode.RequestEntityTooLarge)]
+    public async Task TranslateBatch_ChunkRejectedForItsContent_StillSendsTheRest(HttpStatusCode status)
+    {
+        var words = Enumerable.Range(1, 60).Select(i => $"w{i}").ToList();
+        var handler = new ScriptedHandler(Status(status), Echo());
+        var service = CreateFastService(handler);
+
+        var result = await service.TranslateBatchAsync(words, "FR");
+
+        Assert.Equal(2, handler.Requests.Count);
+        Assert.Equal(10, result.Count);
+    }
+
+    [Theory]
+    [InlineData((HttpStatusCode)456)]
+    [InlineData(HttpStatusCode.Unauthorized)]
+    [InlineData(HttpStatusCode.Forbidden)]
+    [InlineData(HttpStatusCode.TooManyRequests)]
+    [InlineData(HttpStatusCode.InternalServerError)]
+    [InlineData(HttpStatusCode.ServiceUnavailable)]
+    public async Task TranslateBatch_FailureThatWouldHitEveryChunk_EndsTheBatch(HttpStatusCode status)
+    {
+        // Three failures cover the retryable statuses' retries; the non-retryable ones use one.
+        var words = Enumerable.Range(1, 120).Select(i => $"w{i}").ToList();
+        var handler = new ScriptedHandler(Echo(), Status(status), Status(status), Status(status), Echo());
+        var service = CreateFastService(handler);
+
+        var result = await service.TranslateBatchAsync(words, "FR");
+
+        Assert.Equal(50, result.Count);
+        Assert.DoesNotContain(handler.Requests, r => r.Texts.Contains("w101"));
+    }
+
+    [Fact]
+    public async Task TranslateBatch_Timeout_EndsTheBatch()
+    {
+        // Chunks go out one after another, so a DeepL that hangs would otherwise cost the reader
+        // one full timeout per remaining chunk.
+        var hang = new Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>>(async (_, ct) =>
+        {
+            await Task.Delay(Timeout.Infinite, ct);
+            throw new InvalidOperationException("unreachable");
+        });
+        var words = Enumerable.Range(1, 120).Select(i => $"w{i}").ToList();
+        var handler = new ScriptedHandler(Echo(), hang, Echo());
+        var service = CreateFastService(handler);
+        service.RequestTimeout = TimeSpan.FromMilliseconds(100);
+
+        var result = await service.TranslateBatchAsync(words, "FR");
+
+        Assert.Equal(2, handler.Requests.Count);
+        Assert.Equal(50, result.Count);
+    }
+
+    [Fact]
+    public async Task TranslateBatch_StillUnreachableAfterRetries_EndsTheBatch()
+    {
+        Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> reset =
+            (_, _) => throw new HttpRequestException("connection reset");
+        var words = Enumerable.Range(1, 120).Select(i => $"w{i}").ToList();
+        var handler = new ScriptedHandler(Echo(), reset, reset, reset, Echo());
+        var service = CreateFastService(handler);
+
+        var result = await service.TranslateBatchAsync(words, "FR");
+
+        Assert.Equal(4, handler.Requests.Count);
+        Assert.Equal(50, result.Count);
+    }
+
+    [Fact]
+    public async Task TranslateBatch_SendsEachDistinctNonBlankWordOnce()
+    {
+        var handler = new ScriptedHandler(Echo());
+        var service = CreateFastService(handler);
+
+        var result = await service.TranslateBatchAsync(new List<string> { "hola", "amigo", "hola", " ", "", "Hola" }, "FR");
+
+        Assert.Equal(new[] { "hola", "amigo", "Hola" }, Assert.Single(handler.Requests).Texts);
+        Assert.Equal(new[] { "Hola", "amigo", "hola" }, result.Keys.Order(StringComparer.Ordinal));
+    }
+
+    [Fact]
+    public async Task TranslateBatch_OnlyBlankWords_SendsNothing()
+    {
+        var handler = new ScriptedHandler();
+        var service = CreateFastService(handler);
+
+        var result = await service.TranslateBatchAsync(new List<string> { " ", "" }, "FR");
+
+        Assert.Empty(result);
+        Assert.Empty(handler.Requests);
+    }
+
     [Fact]
     public async Task TranslateBatch_SendsSourceLang_AndConfiguredTargetCode()
     {

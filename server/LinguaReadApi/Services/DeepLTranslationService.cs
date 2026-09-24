@@ -65,7 +65,10 @@ namespace LinguaReadApi.Services
         public async Task<Dictionary<string, string>> TranslateBatchAsync(List<string> words, string targetLang, string? sourceLang = null) // Mark sourceLang as nullable
         {
             var translations = new Dictionary<string, string>();
-            if (words == null || words.Count == 0)
+            // Same input cleanup as the Azure and Google providers: duplicates and blanks only spend
+            // DeepL quota, and duplicates can push a batch into an extra request.
+            var distinctWords = words?.Where(w => !string.IsNullOrWhiteSpace(w)).Distinct().ToList();
+            if (distinctWords == null || distinctWords.Count == 0)
             {
                 return translations;
             }
@@ -90,11 +93,21 @@ namespace LinguaReadApi.Services
                 // --- End determining target code ---
 
                 // The reader sends every unknown word of a text at once. Chunk the request, as the
-                // Azure and Google providers do: DeepL caps the request size, and a failed chunk then
-                // only loses its own words.
-                foreach (var chunk in words.Chunk(MaxTextsPerRequest))
+                // Azure and Google providers do: DeepL caps the request size, and a chunk DeepL
+                // rejects then only loses its own words. A failure that would hit every chunk
+                // (timeout, rate limit, quota, key, DeepL down) ends the batch instead: the chunks
+                // run one after another, so each would add its own wait for the reader.
+                var chunks = distinctWords.Chunk(MaxTextsPerRequest).ToList();
+                for (var i = 0; i < chunks.Count; i++)
                 {
-                    await TranslateChunkAsync(chunk, finalDeepLTargetCode, sourceLang, translations);
+                    if (!await TranslateChunkAsync(chunks[i], finalDeepLTargetCode, sourceLang, translations))
+                    {
+                        if (i < chunks.Count - 1)
+                        {
+                            _logger.LogWarning("Skipping the remaining {Remaining} DeepL request(s) of this batch.", chunks.Count - 1 - i);
+                        }
+                        break;
+                    }
                 }
             }
             catch (Exception ex)
@@ -106,14 +119,16 @@ namespace LinguaReadApi.Services
             return translations;
         }
 
-        private async Task TranslateChunkAsync(string[] words, string targetCode, string? sourceLang, Dictionary<string, string> translations)
+        // Returns whether the rest of the batch is worth sending: false when this chunk failed in a way
+        // the next one would too.
+        private async Task<bool> TranslateChunkAsync(string[] words, string targetCode, string? sourceLang, Dictionary<string, string> translations)
         {
             try
             {
                 using var response = await SendWithRetryAsync(() => BuildRequest(words, targetCode, sourceLang));
                 if (response == null)
                 {
-                    return; // Timed out; already logged.
+                    return false; // Timed out; already logged.
                 }
 
                 if (response.IsSuccessStatusCode)
@@ -141,12 +156,21 @@ namespace LinguaReadApi.Services
                 {
                     var errorContent = await response.Content.ReadAsStringAsync();
                     _logger.LogError("DeepL API request failed with status {Status}: {Error}", response.StatusCode, errorContent);
+                    return !FailsEveryRequest(response.StatusCode);
                 }
+            }
+            catch (HttpRequestException ex)
+            {
+                // Still unreachable after the retries.
+                _logger.LogError(ex, "Error occurred while calling DeepL API.");
+                return false;
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error occurred while calling DeepL API.");
             }
+
+            return true;
         }
 
         private HttpRequestMessage BuildRequest(string[] words, string targetCode, string? sourceLang)
@@ -228,6 +252,16 @@ namespace LinguaReadApi.Services
                 or HttpStatusCode.BadGateway
                 or HttpStatusCode.ServiceUnavailable
                 or HttpStatusCode.GatewayTimeout;
+
+        // Failures about the account or the service rather than the chunk's content: a bad key (401/403),
+        // still rate limited after the retries (429), quota exhausted (456), or DeepL still failing (5xx).
+        // Anything else (400, 413, ...) is specific to the texts sent, so the next chunk may still work.
+        private static bool FailsEveryRequest(HttpStatusCode status) =>
+            status is HttpStatusCode.Unauthorized
+                or HttpStatusCode.Forbidden
+                or HttpStatusCode.TooManyRequests
+                or (HttpStatusCode)456
+            || (int)status >= 500;
 
         // Implementation for single text translation
         public async Task<string> TranslateTextAsync(string text, string? sourceLang, string targetLang) // Mark sourceLang as nullable

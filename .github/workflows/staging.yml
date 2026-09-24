@@ -4,7 +4,7 @@ name: Staging
 # builds + pushes images tagged sha-<short7>, and deploys that exact tag.
 # Production promotion of these images happens via promote-prod.yml.
 # Run it by hand (Actions -> Staging -> Run workflow, branch `dev`) to rebuild and
-# redeploy the dev tip; the deploy refuses any other branch.
+# redeploy the dev tip; any other branch fails before anything is built.
 
 on:
   push:
@@ -21,8 +21,22 @@ permissions:
   packages: write
 
 jobs:
+  # Runs before ci_build, which pushes images (:latest included) for whatever branch it is on.
+  # _deploy.yml also refuses a non-dev staging deploy, but only once the build is done.
+  branch_guard:
+    name: Check branch is dev
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Refuse to build a branch other than dev for staging
+        if: github.ref != 'refs/heads/dev'
+        run: |
+          echo "::error::Staging only builds and deploys dev, but this run is on ${GITHUB_REF}. Pick 'dev' in the Run workflow branch menu."
+          exit 1
+
   ci_build:
     name: CI
+    needs: [ branch_guard ]
     uses: ./.github/workflows/_ci-build.yml
     with:
       push_images: true

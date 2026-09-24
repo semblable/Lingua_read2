@@ -45,7 +45,9 @@ flock -n 9 || die "another refresh is already running"
 API=""
 API_STOPPED=0
 on_exit() {
-  rm -f "$WORK/staging-secrets.tsv"
+  # prod.backup too, also after a failure: backup.sh uploads /backups to staging's Drive folder,
+  # where no retention rule would ever remove a leftover copy of production's database.
+  rm -f "$WORK/staging-secrets.tsv" "$WORK/prod.backup"
   if [ "$API_STOPPED" = 1 ]; then
     log "restarting api after an interrupted refresh"
     docker start "$API" >/dev/null || true
@@ -176,5 +178,4 @@ if ! wait_healthy; then
   die "kept the refreshed copy as $FAILED_DB for inspection; staging is back on its previous data"
 fi
 
-rm -f "$WORK/prod.backup"
 log "=== refresh done in $(( $(date +%s) - started )) s (previous database kept as $PREV_DB) ==="

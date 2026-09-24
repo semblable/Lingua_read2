@@ -39,7 +39,7 @@ const baseProps = (overrides = {}) => ({
   onSpeakSentence: vi.fn(),
   handleCompleteLesson: vi.fn(),
   completing: false,
-  nextTextId: null,
+  isLastBookPart: false,
   ...overrides
 });
 
@@ -54,7 +54,7 @@ describe('StandardTextView', () => {
     expect(screen.getByRole('button', { name: /Complete Lesson/i })).toBeInTheDocument();
   });
 
-  test('renders the Finish Book label when nextTextId is null and the text belongs to a book', () => {
+  test('renders the Finish Book label on the last part of a book', () => {
     const props = baseProps({
       text: {
         textId: 1,
@@ -63,10 +63,26 @@ describe('StandardTextView', () => {
         bookId: 42,
         structuredContent: null
       },
-      nextTextId: null
+      isLastBookPart: true
     });
     render(<StandardTextView {...props} />);
     expect(screen.getByRole('button', { name: /Finish Book/i })).toBeInTheDocument();
+  });
+
+  test('keeps Complete Lesson for a book part until it is known to be the last one', () => {
+    const props = baseProps({
+      text: {
+        textId: 1,
+        title: 'Sample',
+        content: 'Hello world',
+        bookId: 42,
+        structuredContent: null
+      },
+      isLastBookPart: false
+    });
+    render(<StandardTextView {...props} />);
+    expect(screen.getByRole('button', { name: /Complete Lesson/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Finish Book/i })).not.toBeInTheDocument();
   });
 
   test('calls handleCompleteLesson when the complete button is clicked', () => {

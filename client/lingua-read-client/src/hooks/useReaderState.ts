@@ -59,6 +59,12 @@ export type UseReaderStateResult = {
   setPreviousTextId: React.Dispatch<React.SetStateAction<number | null>>;
   nextTextId: number | null;
   setNextTextId: React.Dispatch<React.SetStateAction<number | null>>;
+  /**
+   * True only once this text's book has loaded and the text is its last part. `nextTextId` is
+   * also null while the book is still loading (or if it failed to load), so it can't tell
+   * "last part" from "not known yet" on its own.
+   */
+  isLastBookPart: boolean;
   isAudioLesson: boolean;
   setIsAudioLesson: React.Dispatch<React.SetStateAction<boolean>>;
   displayMode: string;
@@ -228,11 +234,36 @@ export const useReaderState = ({
           data.languageId ? (getLanguage(data.languageId) as Promise<unknown>) : Promise.resolve(null)
         );
 
-        promises.push(
-          data.bookId && data.textId != null
-            ? (updateLastRead(data.bookId, data.textId).then(() => getBook(data.bookId!)) as Promise<unknown>)
-            : Promise.resolve(null)
-        );
+        // Book navigation only needs the part list, so apply it as soon as it arrives rather than
+        // after the whole batch: the language vocabulary above can be hundreds of KB, and until
+        // this runs the reader can't tell whether a next part exists.
+        const applyBook = async () => {
+          if (!data.bookId || data.textId == null) {
+            if (isCurrentRequest()) {
+              setPreviousTextId(null);
+              setNextTextId(null);
+            }
+            return;
+          }
+          try {
+            await updateLastRead(data.bookId, data.textId);
+            const bookData = (await getBook(data.bookId)) as ReaderBook | null;
+            if (!isCurrentRequest()) return;
+            if (!bookData) {
+              console.error('Failed to get book data:', 'unknown');
+              return;
+            }
+            setBook(bookData);
+            if (bookData.parts) {
+              const currentPartIndex = bookData.parts.findIndex((part: { textId?: number | null }) => part.textId === parseInt(textId ?? '', 10));
+              setPreviousTextId(currentPartIndex > 0 ? (bookData.parts[currentPartIndex - 1].textId ?? null) : null);
+              setNextTextId(currentPartIndex >= 0 && currentPartIndex < bookData.parts.length - 1 ? (bookData.parts[currentPartIndex + 1].textId ?? null) : null);
+            }
+          } catch (bookErr) {
+            if (isCurrentRequest()) console.error('Failed to get book data:', bookErr);
+          }
+        };
+        promises.push(applyBook());
 
         promises.push(
           data?.textId ? (getSentenceProgress(data.textId) as Promise<unknown>) : Promise.resolve(null)
@@ -254,26 +285,6 @@ export const useReaderState = ({
             setError(prev => `${prev} (Warning: Failed to load language config)`);
           }
           setLanguageConfig(null);
-        }
-
-        if (data.bookId) {
-          if (results[2].status === 'fulfilled' && results[2].value) {
-            const bookData = results[2].value as ReaderBook;
-            setBook(bookData);
-            if (bookData?.parts) {
-              const currentPartIndex = bookData.parts.findIndex((part: { textId?: number | null }) => part.textId === parseInt(textId ?? '', 10));
-              setPreviousTextId(currentPartIndex > 0 ? (bookData.parts[currentPartIndex - 1].textId ?? null) : null);
-              setNextTextId(currentPartIndex >= 0 && currentPartIndex < bookData.parts.length - 1 ? (bookData.parts[currentPartIndex + 1].textId ?? null) : null);
-            }
-          } else {
-            console.error(
-              'Failed to get book data:',
-              results[2].status === 'rejected' ? results[2].reason : 'unknown'
-            );
-          }
-        } else {
-          setPreviousTextId(null);
-          setNextTextId(null);
         }
 
         if (results[3].status === 'fulfilled' && results[3].value) {
@@ -310,6 +321,12 @@ export const useReaderState = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [textId]);
 
+  const bookParts = book?.parts;
+  const isLastBookPart =
+    !!text?.bookId &&
+    !!bookParts?.length &&
+    bookParts[bookParts.length - 1].textId === text.textId;
+
   return {
     loading,
     setLoading,
@@ -331,6 +348,7 @@ export const useReaderState = ({
     setPreviousTextId,
     nextTextId,
     setNextTextId,
+    isLastBookPart,
     isAudioLesson,
     setIsAudioLesson,
     displayMode,

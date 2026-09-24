@@ -37,7 +37,8 @@ interface StandardTextViewProps {
   onSpeakSentence: () => void;
   handleCompleteLesson: () => void;
   completing: boolean;
-  nextTextId?: number | null;
+  /** Offer "Finish Book" instead of "Complete Lesson" (see useReaderState). */
+  isLastBookPart?: boolean;
 }
 
 const StandardTextView = React.memo(({
@@ -60,7 +61,7 @@ const StandardTextView = React.memo(({
   onSpeakSentence,
   handleCompleteLesson,
   completing,
-  nextTextId
+  isLastBookPart = false
 }: StandardTextViewProps) => {
   if (!text?.content) return null;
   const displayBlocks = buildDisplayBlocks(text.content, text.structuredContent ?? undefined);
@@ -228,7 +229,7 @@ const StandardTextView = React.memo(({
           onClick={handleCompleteLesson}
           disabled={completing}
         >
-          {completing ? <Spinner animation="border" size="sm" /> : (nextTextId === null && text?.bookId ? 'Finish Book' : 'Complete Lesson')}
+          {completing ? <Spinner animation="border" size="sm" /> : (isLastBookPart ? 'Finish Book' : 'Complete Lesson')}
         </Button>
       </div>
     </div>

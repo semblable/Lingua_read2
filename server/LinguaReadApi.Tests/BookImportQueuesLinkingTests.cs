@@ -64,18 +64,13 @@ public class BookImportQueuesLinkingTests
     }
 
     [Fact]
-    public async Task CreateBook_LargerThanChannel_PersistsProcessingBeforeEnqueue_AndKeepsWorkerCompletions()
+    public async Task CreateBook_SavesProcessingBeforeAnyRequestIsReadable()
     {
         // Staging book 29 (317 parts) ended with parts 1-216 stuck at
-        // "processing": the import set the status in memory, wrote every
-        // request, and saved only after the loop. The channel is bounded,
-        // so the writes past its capacity waited on the worker, which
-        // meanwhile marked the early parts "completed" on its own context;
-        // the final save put them back. With capacity + 2 parts the worker
-        // is guaranteed to take the first request before the import can
-        // finish enqueueing, so the old ordering fails every run.
-        var partCount = MeasureChannelCapacity() + 2;
-
+        // "processing": the import wrote every request and only then saved
+        // the status, putting back parts the worker had already marked
+        // "completed" on its own context. The save that persists
+        // "processing" has to happen while the channel is still empty.
         var options = CreateOptions();
         await using var context = new AppDbContext(options);
         var userId = Guid.NewGuid();
@@ -84,46 +79,53 @@ public class BookImportQueuesLinkingTests
         var channel = new WordLinkingChannel();
         var controller = CreateController(context, userId, channel);
 
-        // Stand-in for WordLinkingBackgroundService: record the status a
-        // separate context sees once each request is readable, then mark
-        // the text "completed" the way the worker does. It never throws,
-        // so a failure can't leave the import blocked on a full channel.
-        var statusesSeenByWorker = new List<string?>();
-        var worker = Task.Run(async () =>
+        var queuedWhenProcessingSaved = new List<int>();
+        context.SavingChanges += (_, _) =>
         {
-            for (var i = 0; i < partCount; i++)
-            {
-                var request = await channel.Reader.ReadAsync();
-                await using var workerContext = new AppDbContext(options);
-                var text = await workerContext.Texts.FindAsync(request.TextId);
-                statusesSeenByWorker.Add(text?.WordLinkingStatus);
-                if (text == null) continue;
-                text.WordLinkingStatus = "completed";
-                await workerContext.SaveChangesAsync();
-            }
-        });
-
-        var dto = new CreateBookDto
-        {
-            Title = "Large",
-            Description = "",
-            LanguageId = 1,
-            Content = string.Join("\n\n", Enumerable.Range(1, partCount).Select(i => $"Parrafo numero {i} del libro.")),
-            SplitMethod = "paragraph",
-            MaxSegmentSize = 10 // shorter than any paragraph → one part each
+            var savesProcessing = context.ChangeTracker.Entries<Text>().Any(e =>
+                e.State == EntityState.Modified &&
+                e.Property(t => t.WordLinkingStatus).IsModified &&
+                e.Entity.WordLinkingStatus == "processing");
+            if (savesProcessing) queuedWhenProcessingSaved.Add(channel.Reader.Count);
         };
 
-        var result = await controller.CreateBook(dto).WaitAsync(TimeSpan.FromSeconds(30));
+        const int partCount = 5;
+        var result = await controller.CreateBook(ManyPartsBook(partCount));
         Assert.IsType<CreatedAtActionResult>(result.Result);
-        await worker.WaitAsync(TimeSpan.FromSeconds(30));
 
-        Assert.Equal(partCount, statusesSeenByWorker.Count);
-        Assert.All(statusesSeenByWorker, s => Assert.Equal("processing", s));
+        Assert.Equal(0, Assert.Single(queuedWhenProcessingSaved));
 
-        await using var verifyContext = new AppDbContext(options);
-        var savedStatuses = await verifyContext.Texts.AsNoTracking().Select(t => t.WordLinkingStatus).ToListAsync();
-        Assert.Equal(partCount, savedStatuses.Count);
-        Assert.All(savedStatuses, s => Assert.Equal("completed", s));
+        // What the worker sees: every readable request's text is already
+        // persisted as "processing".
+        await using var workerContext = new AppDbContext(options);
+        var seen = 0;
+        while (channel.Reader.TryRead(out var request))
+        {
+            var text = await workerContext.Texts.AsNoTracking().SingleAsync(t => t.TextId == request.TextId);
+            Assert.Equal("processing", text.WordLinkingStatus);
+            seen++;
+        }
+        Assert.Equal(partCount, seen);
+    }
+
+    [Fact]
+    public async Task CreateBook_WithManyParts_ReturnsWithoutWaitingForTheWorker()
+    {
+        // Nothing reads the channel here. With the old bound of 100 the
+        // import blocked on part 101 until the worker caught up, holding
+        // the HTTP request open while most of the book was linked.
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        SeedUserAndLanguage(context, userId);
+
+        var channel = new WordLinkingChannel();
+        var controller = CreateController(context, userId, channel);
+
+        const int partCount = 250;
+        var result = await controller.CreateBook(ManyPartsBook(partCount)).WaitAsync(TimeSpan.FromSeconds(10));
+
+        Assert.IsType<CreatedAtActionResult>(result.Result);
+        Assert.Equal(partCount, channel.Reader.Count);
     }
 
     [Fact]
@@ -185,19 +187,16 @@ public class BookImportQueuesLinkingTests
             .Options;
     }
 
-    // Probed rather than hard-coded so the regression test above keeps
-    // outrunning the channel if its capacity changes. Capped in case it
-    // ever becomes unbounded.
-    private static int MeasureChannelCapacity()
+    // Paragraphs longer than MaxSegmentSize → one part per paragraph.
+    private static CreateBookDto ManyPartsBook(int partCount) => new()
     {
-        var probe = new WordLinkingChannel();
-        var capacity = 0;
-        while (capacity < 1000 && probe.Writer.TryWrite(new WordLinkingRequest(0, "", 0, Guid.Empty)))
-        {
-            capacity++;
-        }
-        return capacity;
-    }
+        Title = "Many parts",
+        Description = "",
+        LanguageId = 1,
+        Content = string.Join("\n\n", Enumerable.Range(1, partCount).Select(i => $"Parrafo numero {i} del libro.")),
+        SplitMethod = "paragraph",
+        MaxSegmentSize = 10
+    };
 
     private static void SeedUserAndLanguage(AppDbContext context, Guid userId)
     {

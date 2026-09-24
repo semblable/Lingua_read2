@@ -373,6 +373,32 @@ namespace LinguaReadApi.Tests
         }
 
         [Fact]
+        public void ExtractStructuredBlocksFromHtml_SkipsHeadTitleAndNav_KeepsHeader()
+        {
+            // Publisher files often carry a placeholder <title> ("ebook") and the EPUB 3
+            // nav document sits in the spine; neither is reading material.
+            var textFile = CreateMockTextContentFile(
+                @"<html>
+                    <head>
+                        <title>ebook</title>
+                    </head>
+                    <body>
+                        <nav epub:type=""toc"" id=""toc"">
+                            <h1>Índice</h1>
+                            <ol><li><a href=""ch1.xhtml"">Primeira parte</a></li></ol>
+                        </nav>
+                        <header><p>Kept header line.</p></header>
+                        <p>Body paragraph.</p>
+                    </body>
+                    </html>",
+                "OEBPS/Section0001.xhtml");
+
+            var blocks = ExtractBlocks(textFile, new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+
+            Assert.Equal(new[] { "Kept header line.", "Body paragraph." }, blocks.Select(b => b.Text));
+        }
+
+        [Fact]
         public async Task ReSplitBook_UsesEpubSourceFileFallback_WhenHeadingsAndPageBreaksAreAbsent()
         {
             await using var context = CreateContext();

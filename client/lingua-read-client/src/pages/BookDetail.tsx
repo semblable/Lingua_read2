@@ -631,7 +631,8 @@ const BookDetail = () => {
                 action
                 className="d-flex justify-content-between align-items-center"
               >
-              <div>
+              {/* text-start: .App centres text globally, which centred title and meta against each other */}
+              <div className="text-start">
                 <h6 className="mb-0">{part.title}</h6>
                 <small className="text-muted">
                   Added: {formatDate(part.createdAt ?? '')}

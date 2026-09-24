@@ -1261,7 +1261,7 @@ namespace LinguaReadApi.Controllers
 
             var normalizedHtml = textFile.Content;
             normalizedHtml = ImportRegex.HtmlComment.Replace(normalizedHtml, string.Empty);
-            normalizedHtml = ImportRegex.ScriptOrStyleElement.Replace(normalizedHtml, string.Empty);
+            normalizedHtml = ImportRegex.NonContentElement.Replace(normalizedHtml, string.Empty);
 
             var blocks = new List<ReaderContentBlock>();
             var textBuffer = new StringBuilder();
@@ -2657,6 +2657,11 @@ namespace LinguaReadApi.Controllers
 
             public static readonly Regex HtmlComment = new(@"<!--.*?-->", Hot | RegexOptions.Singleline);
             public static readonly Regex ScriptOrStyleElement = new(@"<(script|style)\b[^>]*>.*?</\1>", Hot | RegexOptions.Singleline | RegexOptions.IgnoreCase);
+            // Chapter extraction also drops <head> and <nav>. <head> holds the document <title>
+            // (often a placeholder like "ebook"), which would otherwise leak into every file as a
+            // paragraph. <nav> is the EPUB 3 table of contents / landmarks: publishers often put
+            // that document in the spine, and its link list is not reading material.
+            public static readonly Regex NonContentElement = new(@"<(script|style|head|nav)\b[^>]*>.*?</\1\s*>", Hot | RegexOptions.Singleline | RegexOptions.IgnoreCase);
             public static readonly Regex HtmlToken = new(@"<img\b[^>]*>|</?[^>]+>|[^<]+", Hot | RegexOptions.IgnoreCase);
             public static readonly Regex BrTag = new(@"^<br\s*/?>$", Hot | RegexOptions.IgnoreCase);
             public static readonly Regex ImgTag = new(@"^<img\b", Hot | RegexOptions.IgnoreCase);

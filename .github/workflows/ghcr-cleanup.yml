@@ -26,6 +26,7 @@ permissions:
 
 jobs:
   cleanup:
+    name: Prune old image versions
     runs-on: ubuntu-latest
     # Deletes are one-by-one at ~1 req/sec against GHCR's rate limit; a large
     # backlog needs well over the previous 15m to fully clear in one run.

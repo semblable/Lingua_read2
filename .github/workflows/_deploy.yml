@@ -28,6 +28,7 @@ on:
 
 jobs:
   deploy:
+    name: ${{ inputs.environment }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: ${{ inputs.environment }}
@@ -41,6 +42,15 @@ jobs:
       TARGET_PATH: ${{ secrets.DEPLOY_PATH }}
       TARGET_DOTENV: ${{ secrets.DOTENV }}
     steps:
+      # Staging mirrors `dev`. A manual Staging run defaults to the default branch (main)
+      # in the Run workflow menu; deploying that, or a feature branch, would run its
+      # migrations against the staging database.
+      - name: Refuse to deploy a branch other than dev to staging
+        if: inputs.environment == 'staging' && github.ref != 'refs/heads/dev'
+        run: |
+          echo "::error::Staging only deploys dev, but this run is on ${GITHUB_REF}. Pick 'dev' in the Run workflow branch menu."
+          exit 1
+
       # Fail fast, before anything touches a host, if any part of the configuration is missing.
       - name: Validate deploy configuration
         run: |

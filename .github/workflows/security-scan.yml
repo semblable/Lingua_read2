@@ -16,6 +16,7 @@ permissions:
 
 jobs:
   trivy:
+    name: Scan ${{ matrix.image }}:prod
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:

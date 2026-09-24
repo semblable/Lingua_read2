@@ -25,6 +25,7 @@ permissions:
 
 jobs:
   resolve:
+    name: Resolve tag
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -59,6 +60,7 @@ jobs:
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
 
   promote:
+    name: Retag images as :prod
     runs-on: ubuntu-latest
     needs: [ resolve ]
     timeout-minutes: 10
@@ -81,6 +83,7 @@ jobs:
           done
 
   deploy:
+    name: Deploy
     needs: [ resolve, promote ]
     uses: ./.github/workflows/_deploy.yml
     with:
@@ -94,6 +97,7 @@ jobs:
     secrets: inherit
 
   tag_release:
+    name: Tag release & fast-forward main
     runs-on: ubuntu-latest
     needs: [ resolve, deploy ]
     if: ${{ success() && needs.resolve.outputs.sha != '' }}

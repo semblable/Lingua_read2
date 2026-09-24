@@ -160,6 +160,13 @@ namespace LinguaReadApi.Services
                     totalProcessed, totalErrors);
             }
 
+            // Runs after the relink pass so texts it just stamped (queued
+            // requests lost on restart) are picked up in the same startup.
+            if (!stoppingToken.IsCancellationRequested)
+            {
+                await CompleteStuckStatuses(stoppingToken);
+            }
+
             // Cleanup runs unconditionally each startup. ExecuteDelete
             // is a single SQL statement filtered by Status + NOT EXISTS
             // subqueries against indexed FKs, so the no-op case is
@@ -168,6 +175,30 @@ namespace LinguaReadApi.Services
             if (!stoppingToken.IsCancellationRequested)
             {
                 await CleanupOrphans(stoppingToken);
+            }
+        }
+
+        private async Task CompleteStuckStatuses(CancellationToken stoppingToken)
+        {
+            try
+            {
+                using var scope = _serviceProvider.CreateScope();
+                var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                var fixedCount = await WordLinker.CompleteLinkedTextsStuckProcessingAsync(context, stoppingToken);
+                if (fixedCount > 0)
+                {
+                    _logger.LogInformation(
+                        "WordLinkingMigrationService: marked {Count} already-linked texts " +
+                        "'completed' that were stuck at 'processing'.",
+                        fixedCount);
+                }
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // Best-effort like the orphan cleanup: the rows are linked
+                // either way, only the status flag is wrong.
+                _logger.LogWarning(ex,
+                    "WordLinkingMigrationService: stuck-status repair failed (non-fatal).");
             }
         }
 

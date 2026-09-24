@@ -53,18 +53,31 @@ namespace LinguaReadApi.Controllers
         /// app restart for WordLinkingMigrationService to catch them —
         /// which is why imported books showed no "% new" indicator
         /// until the service was restarted.
+        ///
+        /// The "processing" status is saved before the first request is
+        /// written. The worker marks each text "completed" on its own
+        /// DbContext, and the channel is bounded, so on a large book it
+        /// finishes the early parts while this loop is still waiting to
+        /// enqueue the rest. Saving after the loop overwrote those parts
+        /// back to "processing" for good.
         /// </summary>
         private async Task QueueWordLinking(IEnumerable<Text> texts, Guid userId)
         {
             if (_wordLinkingChannel == null) return;
-            foreach (var text in texts)
+            var toLink = texts.Where(t => !string.IsNullOrWhiteSpace(t.Content)).ToList();
+            if (toLink.Count == 0) return;
+
+            foreach (var text in toLink)
             {
-                if (string.IsNullOrWhiteSpace(text.Content)) continue;
                 text.WordLinkingStatus = "processing";
+            }
+            await _context.SaveChangesAsync();
+
+            foreach (var text in toLink)
+            {
                 await _wordLinkingChannel.Writer.WriteAsync(
                     new WordLinkingRequest(text.TextId, text.Content, text.LanguageId, userId));
             }
-            await _context.SaveChangesAsync();
         }
 
         // GET: api/books

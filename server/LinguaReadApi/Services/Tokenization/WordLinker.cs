@@ -203,6 +203,30 @@ namespace LinguaReadApi.Services.Tokenization
                 .ExecuteDeleteAsync(cancellationToken);
         }
 
+        /// <summary>
+        /// Mark "completed" every text still flagged "processing" that has
+        /// already been linked with the current tokenizer. Two paths leave
+        /// such rows behind: book imports that saved "processing" after
+        /// enqueueing, overwriting parts the worker had already finished,
+        /// and texts whose queued request was lost on restart and then
+        /// relinked by <see cref="Services.WordLinkingMigrationService"/>,
+        /// which stamps the version but never touches the status. The
+        /// reader polls audio lessons for as long as the status says
+        /// "processing". Texts not yet stamped are left alone: they are
+        /// either still queued or waiting for the migration pass.
+        /// </summary>
+        public static async Task<int> CompleteLinkedTextsStuckProcessingAsync(
+            AppDbContext context,
+            CancellationToken cancellationToken = default)
+        {
+            return await context.Texts
+                .Where(t => t.WordLinkingStatus == "processing")
+                .Where(t => t.WordLinkingTokenizerVersion >= CurrentTokenizerVersion)
+                .ExecuteUpdateAsync(
+                    s => s.SetProperty(t => t.WordLinkingStatus, "completed"),
+                    cancellationToken);
+        }
+
         private static async Task StampVersion(AppDbContext context, int textId, CancellationToken ct)
         {
             // Use a targeted UPDATE so we don't have to load the Text

@@ -50,12 +50,12 @@ export const useReaderBookmarks = ({
   // Bumped per load, so an answer for a text the reader already left is dropped.
   const loadIdRef = useRef(0);
   const loadInFlightRef = useRef(false);
-  // The text on screen, so a save that settles after "Next lesson" doesn't
-  // reload the previous text over the new one.
+  // The text on screen (null once the reader closes). A refetch is always for
+  // it, never for the text a save belonged to, which may be gone by then.
   const textIdRef = useRef<string | null>(null);
-  // Toggles still being saved, and whether the server state must be fetched
-  // again once they have all landed (a toggle dropped an in-flight load's
-  // answer, or the server rejected one).
+  // Toggles still being saved (on any text), and whether the text on screen
+  // must be fetched again once they have all landed: a toggle dropped its
+  // in-flight load's answer, or the server rejected one of its toggles.
   const savesInFlightRef = useRef(0);
   const reloadAfterSavesRef = useRef(false);
 
@@ -120,6 +120,10 @@ export const useReaderBookmarks = ({
     void loadFromServer(textId);
   }, [textId, showCached, loadFromServer]);
 
+  useEffect(() => () => {
+    textIdRef.current = null;
+  }, []);
+
   const isBookmarked = useCallback(
     (sentenceIndex: number) => bookmarkedIndices.includes(sentenceIndex),
     [bookmarkedIndices]
@@ -143,15 +147,15 @@ export const useReaderBookmarks = ({
       setTextBookmark(toTextIdNumber(textId), sentenceIndex, bookmarked)
         .catch((error: unknown) => {
           console.error('Failed to save bookmark:', error);
-          reloadAfterSavesRef.current = true;
+          if (textIdRef.current === String(textId)) reloadAfterSavesRef.current = true;
         })
         .finally(() => {
           savesInFlightRef.current--;
           // Waiting for every save keeps the answer from missing one still in flight.
-          if (savesInFlightRef.current > 0 || !reloadAfterSavesRef.current) return;
-          if (textIdRef.current !== String(textId)) return;
+          const current = textIdRef.current;
+          if (savesInFlightRef.current > 0 || !reloadAfterSavesRef.current || !current) return;
           reloadAfterSavesRef.current = false;
-          void loadFromServer(textId);
+          void loadFromServer(current);
         });
     },
     [textId, showCached, loadFromServer]

@@ -118,6 +118,58 @@ public class BookmarksControllerTests : IDisposable
     }
 
     [Fact]
+    public async Task ClientTimestampWithAnOffset_IsComparedInUtc()
+    {
+        await using var context = CreateContext();
+        Seed(context);
+        var controller = CreateController(context, UserId);
+        var now = DateTime.UtcNow;
+
+        // System.Text.Json reads "...+02:00" as a Local DateTime.
+        await controller.SetBookmark(TextId, 3, new SetBookmarkRequest { Bookmarked = true, ClientUpdatedAt = now.AddMinutes(-10).ToLocalTime() });
+        var stale = Value(await controller.SetBookmark(TextId, 3, new SetBookmarkRequest { Bookmarked = false, ClientUpdatedAt = now.AddMinutes(-20) }));
+        Assert.Equal(new[] { 3 }, stale.SentenceIndices);
+
+        var newer = Value(await controller.SetBookmark(TextId, 3, new SetBookmarkRequest { Bookmarked = false, ClientUpdatedAt = now.AddMinutes(-5) }));
+        Assert.Empty(newer.SentenceIndices);
+        Assert.Equal(DateTimeKind.Utc, (await context.TextBookmarks.AsNoTracking().SingleAsync()).UpdatedAt.Kind);
+    }
+
+    [Fact]
+    public async Task ClientTimestampWithoutAZone_IsTakenAsUtc()
+    {
+        await using var context = CreateContext();
+        Seed(context);
+        var controller = CreateController(context, UserId);
+        var now = DateTime.UtcNow;
+
+        // System.Text.Json reads a timestamp with no zone as Unspecified.
+        await controller.SetBookmark(TextId, 3, new SetBookmarkRequest { Bookmarked = true, ClientUpdatedAt = DateTime.SpecifyKind(now.AddMinutes(-10), DateTimeKind.Unspecified) });
+        var stale = Value(await controller.SetBookmark(TextId, 3, new SetBookmarkRequest { Bookmarked = false, ClientUpdatedAt = now.AddMinutes(-20) }));
+        Assert.Equal(new[] { 3 }, stale.SentenceIndices);
+
+        var row = await context.TextBookmarks.AsNoTracking().SingleAsync();
+        Assert.Equal(DateTimeKind.Utc, row.UpdatedAt.Kind);
+        Assert.Equal(now.AddMinutes(-10), row.UpdatedAt);
+    }
+
+    [Fact]
+    public async Task MissingUserIdClaim_IsUnauthorized()
+    {
+        await using var context = CreateContext();
+        Seed(context);
+        var controller = new BookmarksController(context)
+        {
+            ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() }
+        };
+
+        Assert.IsType<UnauthorizedObjectResult>((await controller.GetBookmarks(TextId)).Result);
+        Assert.IsType<UnauthorizedObjectResult>((await controller.SetBookmark(TextId, 1, new SetBookmarkRequest { Bookmarked = true })).Result);
+        Assert.IsType<UnauthorizedObjectResult>((await controller.ImportBookmarks(new ImportBookmarksRequest())).Result);
+        Assert.Empty(context.TextBookmarks);
+    }
+
+    [Fact]
     public async Task NegativeSentenceIndex_IsRejected()
     {
         await using var context = CreateContext();
@@ -243,6 +295,54 @@ public class BookmarksControllerTests : IDisposable
         Assert.Empty(result.SentenceIndices);
         await using var check = new AppDbContext(options);
         Assert.False((await check.TextBookmarks.SingleAsync()).IsActive);
+    }
+
+    [Fact]
+    public async Task SetBookmark_StillLosesToANewerRow_WhenAConcurrentRequestInsertedItFirst()
+    {
+        var options = await CreateSqliteOptions();
+        var now = DateTime.UtcNow;
+        await using var context = new AppDbContext(WithInsertBeforeFirstSave(options, () =>
+            InsertBookmark(options, 3, isActive: true, at: now)));
+
+        // An offline removal made before the other device's add drains at the same moment.
+        var result = Value(await CreateController(context, UserId)
+            .SetBookmark(TextId, 3, new SetBookmarkRequest { Bookmarked = false, ClientUpdatedAt = now.AddMinutes(-1) }));
+
+        Assert.Equal(new[] { 3 }, result.SentenceIndices);
+    }
+
+    [Fact]
+    public async Task SetBookmark_RethrowsASaveFailureThatIsNotARace()
+    {
+        var options = await CreateSqliteOptions();
+        // The text is deleted between the ownership check and the save: a foreign-key
+        // failure with no row to fall back to, which must not be swallowed.
+        await using var context = new AppDbContext(WithInsertBeforeFirstSave(options, async () =>
+        {
+            await using var other = new AppDbContext(options);
+            await other.Database.ExecuteSqlRawAsync("DELETE FROM \"Texts\" WHERE \"TextId\" = {0}", TextId);
+        }));
+
+        await Assert.ThrowsAsync<DbUpdateException>(() => CreateController(context, UserId)
+            .SetBookmark(TextId, 3, new SetBookmarkRequest { Bookmarked = true }));
+    }
+
+    [Fact]
+    public async Task Import_StampsRowsBeforeSyncExisted()
+    {
+        await using var context = CreateContext();
+        Seed(context);
+
+        await CreateController(context, UserId).ImportBookmarks(new ImportBookmarksRequest
+        {
+            Texts = [new ImportedTextBookmarks { TextId = TextId, SentenceIndices = [1, 2], LastSentenceIndex = 2 }]
+        });
+
+        var rows = await context.TextBookmarks.AsNoTracking().OrderBy(b => b.SentenceIndex).ToListAsync();
+        Assert.All(rows, b => Assert.Equal(b.BookmarkedAt, b.UpdatedAt));
+        Assert.Equal(BookmarksController.LegacyBookmarkTime.AddSeconds(-1), rows[0].BookmarkedAt);
+        Assert.Equal(BookmarksController.LegacyBookmarkTime, rows[1].BookmarkedAt);
     }
 
     [Fact]

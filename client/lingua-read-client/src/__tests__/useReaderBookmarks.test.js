@@ -235,6 +235,93 @@ describe('useReaderBookmarks', () => {
     expect(getTextBookmarks).toHaveBeenCalledTimes(2);
   });
 
+  test('refetches the text on screen once saves on the previous text land too', async () => {
+    let resolveFirstSave;
+    let resolveSecondSave;
+    vi.mocked(setTextBookmark)
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveFirstSave = resolve; }))
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveSecondSave = resolve; }));
+    const { result, rerender } = renderBookmarks(1);
+    await waitFor(() => expect(result.current.bookmarksReady).toBe(true));
+
+    // A slow save on text 1, then "Next lesson" and a toggle on text 2
+    // while its load is still in flight.
+    act(() => {
+      result.current.toggleBookmarkForIndex(3);
+    });
+    let resolveLoad2;
+    vi.mocked(getTextBookmarks).mockImplementationOnce(
+      () => new Promise((resolve) => { resolveLoad2 = resolve; })
+    );
+    rerender({ textId: 2 });
+    await waitFor(() => expect(resolveLoad2).toBeDefined());
+    act(() => {
+      result.current.toggleBookmarkForIndex(4);
+    });
+    await act(async () => {
+      resolveLoad2(serverState(2, [], null));
+    });
+
+    vi.mocked(getTextBookmarks).mockResolvedValue(serverState(2, [4, 9], 4));
+    await act(async () => {
+      resolveSecondSave(serverState(2, [4], 4));
+    });
+    // Text 1's save is still in flight; wait for it.
+    expect(result.current.bookmarkedIndices).toEqual([4]);
+
+    await act(async () => {
+      resolveFirstSave(serverState(1, [3], 3));
+    });
+
+    await waitFor(() => expect(result.current.bookmarkedIndices).toEqual([4, 9]));
+    expect(vi.mocked(getTextBookmarks).mock.calls.map(([id]) => String(id))).toEqual(['1', '2', '2']);
+  });
+
+  test('refetches after a rejected save only once every save has landed', async () => {
+    const { result } = renderBookmarks(42);
+    await waitFor(() => expect(result.current.bookmarksReady).toBe(true));
+    let resolveSecondSave;
+    vi.mocked(setTextBookmark)
+      .mockRejectedValueOnce(Object.assign(new Error('gone'), { name: 'ApiError', status: 404 }))
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveSecondSave = resolve; }));
+    vi.mocked(getTextBookmarks).mockResolvedValue(serverState(42, [6], 6));
+
+    await act(async () => {
+      result.current.toggleBookmarkForIndex(3);
+      result.current.toggleBookmarkForIndex(6);
+    });
+    // The rejected save alone doesn't refetch: the answer could miss the save still in flight.
+    expect(getTextBookmarks).toHaveBeenCalledTimes(1);
+    expect(result.current.bookmarkedIndices).toEqual([3, 6]);
+
+    await act(async () => {
+      resolveSecondSave(serverState(42, [6], 6));
+    });
+
+    await waitFor(() => expect(result.current.bookmarkedIndices).toEqual([6]));
+    expect(getTextBookmarks).toHaveBeenCalledTimes(2);
+  });
+
+  test('does not refetch once the reader has closed', async () => {
+    vi.mocked(getTextBookmarks).mockImplementationOnce(() => new Promise(() => {}));
+    let resolveSave;
+    vi.mocked(setTextBookmark).mockImplementationOnce(
+      () => new Promise((resolve) => { resolveSave = resolve; })
+    );
+    const { result, unmount } = renderBookmarks(42);
+    await waitFor(() => expect(getTextBookmarks).toHaveBeenCalled());
+
+    act(() => {
+      result.current.toggleBookmarkForIndex(5);
+    });
+    unmount();
+    await act(async () => {
+      resolveSave(serverState(42, [5], 5));
+    });
+
+    expect(getTextBookmarks).toHaveBeenCalledTimes(1);
+  });
+
   test('does not fetch again after a toggle when no load was dropped', async () => {
     const { result } = renderBookmarks(42);
     await waitFor(() => expect(result.current.bookmarksReady).toBe(true));
@@ -284,6 +371,35 @@ describe('useReaderBookmarks', () => {
     expect(result.current.bookmarkedIndices).toEqual([3]);
 
     await waitFor(() => expect(result.current.bookmarkedIndices).toEqual([]));
+  });
+
+  test('toggleBookmarkForIndex ignores a negative index and a closed reader', () => {
+    const { result, rerender } = renderBookmarks(9);
+
+    act(() => {
+      result.current.toggleBookmarkForIndex(-1);
+    });
+    rerender({ textId: null });
+    act(() => {
+      result.current.toggleBookmarkForIndex(2);
+    });
+
+    expect(setTextBookmark).not.toHaveBeenCalled();
+    expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
+  });
+
+  test('handleSentenceContextMenu toggles the bookmark on desktop', async () => {
+    const { result } = renderBookmarks(9);
+    await waitFor(() => expect(result.current.bookmarksReady).toBe(true));
+
+    const fakeEvent = { preventDefault: vi.fn() };
+    act(() => {
+      result.current.handleSentenceContextMenu(fakeEvent, 4);
+    });
+
+    expect(fakeEvent.preventDefault).toHaveBeenCalled();
+    expect(result.current.bookmarkedIndices).toEqual([4]);
+    expect(setTextBookmark).toHaveBeenLastCalledWith(9, 4, true);
   });
 
   test('handleSentenceContextMenu skips toggle on mobile', () => {

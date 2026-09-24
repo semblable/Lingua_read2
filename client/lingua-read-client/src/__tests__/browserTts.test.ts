@@ -1,6 +1,7 @@
 import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   getPreferredVoiceURI,
+  getVoicesForLanguage,
   isNaturalVoice,
   pickVoice,
   rankVoices,
@@ -94,6 +95,66 @@ describe('pickVoice', () => {
   });
 });
 
+describe('getVoicesForLanguage', () => {
+  const originalSynth = window.speechSynthesis;
+  let voices: SpeechSynthesisVoice[];
+  let listeners: Array<() => void>;
+
+  beforeEach(() => {
+    voices = [];
+    listeners = [];
+    Object.defineProperty(window, 'speechSynthesis', {
+      configurable: true,
+      value: {
+        getVoices: () => voices,
+        addEventListener: (_type: string, listener: () => void) => listeners.push(listener),
+        removeEventListener: (_type: string, listener: () => void) => {
+          listeners = listeners.filter((l) => l !== listener);
+        }
+      }
+    });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    Object.defineProperty(window, 'speechSynthesis', { configurable: true, value: originalSynth });
+  });
+
+  test('ranks the voices the browser already has', async () => {
+    voices = VOICES;
+
+    expect((await getVoicesForLanguage('PL')).map((v) => v.name)).toEqual(['Microsoft Paulina - Polish (Poland)']);
+    expect(listeners).toHaveLength(0);
+  });
+
+  test('waits for voices that load late (Chrome), then stops listening', async () => {
+    const pending = getVoicesForLanguage('PL');
+    expect(listeners).toHaveLength(1);
+
+    voices = VOICES;
+    listeners[0]();
+
+    expect((await pending).map((v) => v.name)).toEqual(['Microsoft Paulina - Polish (Poland)']);
+    expect(listeners).toHaveLength(0);
+  });
+
+  test('gives up after a second when no voices arrive', async () => {
+    vi.useFakeTimers();
+    const pending = getVoicesForLanguage('PL');
+
+    vi.advanceTimersByTime(1000);
+
+    expect(await pending).toEqual([]);
+    expect(listeners).toHaveLength(0);
+  });
+
+  test('is empty without speech synthesis', async () => {
+    Object.defineProperty(window, 'speechSynthesis', { configurable: true, value: undefined });
+
+    expect(await getVoicesForLanguage('FR')).toEqual([]);
+  });
+});
+
 describe('voice preference', () => {
   beforeEach(() => localStorage.clear());
 
@@ -175,6 +236,51 @@ describe('speakText voice selection', () => {
 
     await speakText({ text: '1, 2, 3', languageCode: 'FR', voiceURI: null });
     expect(spoken[1].voice?.name).toBe('Microsoft Denise Online (Natural) - French (France)');
+  });
+
+  test('offline, reads with an on-device voice even when a cloud voice was chosen', async () => {
+    const cloud = voice('Google français', 'fr-FR', { localService: false });
+    const local = voice('Microsoft Hortense - French (France)', 'fr-FR');
+    vi.spyOn(window.speechSynthesis, 'getVoices').mockReturnValue([cloud, local]);
+    setPreferredVoiceURI('FR', cloud.voiceURI);
+    const onLine = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+    try {
+      await speakText({ text: 'Bonjour', languageCode: 'FR' });
+    } finally {
+      onLine.mockRestore();
+    }
+    await speakText({ text: 'Bonjour', languageCode: 'FR' });
+
+    expect(spoken[0].voice?.name).toBe('Microsoft Hortense - French (France)');
+    // Back online, the chosen voice is used again.
+    expect(spoken[1].voice?.name).toBe('Google français');
+  });
+
+  test('waits for voices that load late before choosing one', async () => {
+    const synth = window.speechSynthesis;
+    let onVoicesChanged: (() => void) | undefined;
+    vi.spyOn(synth, 'getVoices').mockReturnValueOnce([]).mockReturnValue(VOICES);
+    vi.mocked(synth.addEventListener).mockImplementation((_type, listener) => {
+      onVoicesChanged = listener as () => void;
+    });
+
+    const pending = speakText({ text: 'Bonjour', languageCode: 'FR' });
+    expect(spoken).toHaveLength(0);
+    onVoicesChanged?.();
+    await pending;
+
+    expect(spoken).toHaveLength(1);
+    expect(spoken[0].voice?.name).toBe('Microsoft Denise Online (Natural) - French (France)');
+  });
+
+  test('rejects and reports a speech error', async () => {
+    vi.spyOn(window.speechSynthesis, 'speak').mockImplementation((utterance) => {
+      utterance.onerror?.({ error: 'network' } as SpeechSynthesisErrorEvent);
+    });
+    const onError = vi.fn();
+
+    await expect(speakText({ text: 'Bonjour', languageCode: 'FR', onError })).rejects.toThrow('network');
+    expect(onError).toHaveBeenCalledWith(expect.objectContaining({ message: 'network' }));
   });
 
   test('leaves the voice to the browser when the language has none', async () => {

@@ -24,6 +24,13 @@ namespace LinguaReadApi.Controllers
         internal const int MaxImportTexts = 2000;
         internal const int MaxImportIndicesPerText = 1000;
 
+        // Imported bookmarks have no time of their own, but all of them predate
+        // sync, so they're stamped with when the TextBookmarks table was created
+        // (migration 20260922200737). Every synced bookmark is then newer: an import
+        // from a device that sat offline for weeks can't take over a text's
+        // scroll-on-open anchor, and a toggle that races the import still wins.
+        internal static readonly DateTime LegacyBookmarkTime = new(2026, 9, 22, 20, 7, 37, DateTimeKind.Utc);
+
         private readonly AppDbContext _context;
 
         public BookmarksController(AppDbContext context)
@@ -80,16 +87,30 @@ namespace LinguaReadApi.Controllers
                     BookmarkedAt = effectiveTs,
                     UpdatedAt = effectiveTs
                 });
+                try
+                {
+                    await _context.SaveChangesAsync();
+                    return Ok(await LoadBookmarks(userId, textId));
+                }
+                catch (DbUpdateException)
+                {
+                    // A concurrent request inserted this sentence's row first (another
+                    // device, or the one-time import). Apply this write to that row
+                    // like any other instead of failing it.
+                    _context.ChangeTracker.Clear();
+                    bookmark = await _context.TextBookmarks.FindAsync(userId, textId, sentenceIndex);
+                    if (bookmark == null) throw;
+                }
             }
-            else if (bookmark.UpdatedAt <= effectiveTs)
+
+            if (bookmark.UpdatedAt <= effectiveTs)
             {
                 bookmark.IsActive = request.Bookmarked;
                 if (request.Bookmarked) bookmark.BookmarkedAt = effectiveTs;
                 bookmark.UpdatedAt = effectiveTs;
+                await _context.SaveChangesAsync();
             }
             // else: stale replay; a newer add or remove already landed.
-
-            await _context.SaveChangesAsync();
 
             return Ok(await LoadBookmarks(userId, textId));
         }
@@ -104,6 +125,21 @@ namespace LinguaReadApi.Controllers
             var userId = GetUserId();
             if (userId == Guid.Empty) return Unauthorized("User ID not found in token.");
 
+            try
+            {
+                return Ok(await ImportMissing(userId, request));
+            }
+            catch (DbUpdateException)
+            {
+                // A toggle (or another tab's import) inserted one of these rows first.
+                // Nothing was saved; the retry skips the rows that are there now.
+                _context.ChangeTracker.Clear();
+                return Ok(await ImportMissing(userId, request));
+            }
+        }
+
+        private async Task<ImportBookmarksResult> ImportMissing(Guid userId, ImportBookmarksRequest request)
+        {
             var groups = (request.Texts ?? new List<ImportedTextBookmarks>())
                 .GroupBy(t => t.TextId)
                 .ToList();
@@ -122,7 +158,6 @@ namespace LinguaReadApi.Controllers
                 .Select(b => (b.TextId, b.SentenceIndex))
                 .ToHashSet();
 
-            var now = DateTime.UtcNow;
             var imported = 0;
             var skippedTexts = groups.Count - candidateIds.Count;
 
@@ -146,9 +181,9 @@ namespace LinguaReadApi.Controllers
                 {
                     if (existing.Contains((group.Key, index))) continue;
 
-                    // The local "last bookmark" gets the newest time so it stays
-                    // the scroll-on-open anchor.
-                    var at = index == lastIndex ? now : now.AddSeconds(-1);
+                    // The local "last bookmark" gets the newest time among the
+                    // imported ones so it stays the scroll-on-open anchor.
+                    var at = index == lastIndex ? LegacyBookmarkTime : LegacyBookmarkTime.AddSeconds(-1);
                     _context.TextBookmarks.Add(new TextBookmark
                     {
                         UserId = userId,
@@ -164,7 +199,7 @@ namespace LinguaReadApi.Controllers
 
             await _context.SaveChangesAsync();
 
-            return Ok(new ImportBookmarksResult { Imported = imported, SkippedTexts = skippedTexts });
+            return new ImportBookmarksResult { Imported = imported, SkippedTexts = skippedTexts };
         }
 
         private Task<bool> OwnsText(Guid userId, int textId) =>

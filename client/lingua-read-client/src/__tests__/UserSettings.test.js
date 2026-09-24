@@ -78,6 +78,10 @@ const deferred = () => {
   return { promise, resolve, reject };
 };
 
+// The page's save delays (SAVE_DELAY_MS in pages/UserSettings.tsx).
+const CHOICE_DELAY = 150;
+const TYPING_DELAY = 800;
+
 let updateSetting;
 
 const renderPage = () =>
@@ -93,9 +97,23 @@ const renderPage = () =>
     </SettingsContext.Provider>
   );
 
+// Renders and waits for the form. The generous timeout only matters on a starved CI runner.
+const renderLoaded = async () => {
+  const view = renderPage();
+  await screen.findByText('Settings', {}, { timeout: 5000 });
+  return view;
+};
+
+// Auto-save runs on timers. Once the page has loaded, the tests that depend on them stop the
+// clock, so time only moves when the test advances it: a slow machine can neither fire a save
+// "too early" nor make one arrive "too late". (The project default lets fake time drift with
+// the wall clock, which is exactly what these tests must not do.)
+const useManualClock = () =>
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'], shouldAdvanceTime: false });
+const advance = (ms) => act(() => vi.advanceTimersByTimeAsync(ms));
+
 const field = (name) => document.querySelector(`[name="${name}"]`);
 const sectionOf = (element) => within(element.closest('.settings-section-card'));
-const sleep = (ms) => act(() => new Promise((resolve) => setTimeout(resolve, ms)));
 
 describe('UserSettings', () => {
   beforeEach(() => {
@@ -114,6 +132,10 @@ describe('UserSettings', () => {
     updateUserSettings.mockImplementation(echoSave);
   });
 
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   test('renders a spinner while loading', () => {
     getUserSettings.mockReturnValue(new Promise(() => {}));
     const { container } = renderPage();
@@ -121,8 +143,7 @@ describe('UserSettings', () => {
   });
 
   test('renders the settings layout after data loads', async () => {
-    renderPage();
-    expect(await screen.findByText('Settings')).toBeInTheDocument();
+    await renderLoaded();
     // Sidebar entries
     expect(screen.getByRole('button', { name: /Appearance/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Reading/i })).toBeInTheDocument();
@@ -130,148 +151,176 @@ describe('UserSettings', () => {
     expect(screen.queryByRole('button', { name: /Save Settings/i })).not.toBeInTheDocument();
   });
 
+  test('loading the page saves nothing', async () => {
+    await renderLoaded();
+    useManualClock();
+    await advance(10_000);
+
+    expect(updateUserSettings).not.toHaveBeenCalled();
+  });
+
   test('saves a toggled switch by itself, sending only that field', async () => {
-    renderPage();
-    await screen.findByText('Settings');
+    await renderLoaded();
+    useManualClock();
 
     fireEvent.click(field('autoTranslateWords'));
+    expect(screen.getByText('Saving…')).toBeInTheDocument();
+    await advance(CHOICE_DELAY - 1);
+    expect(updateUserSettings).not.toHaveBeenCalled();
 
-    await waitFor(() => expect(updateUserSettings).toHaveBeenCalledTimes(1));
+    await advance(1);
+    expect(updateUserSettings).toHaveBeenCalledTimes(1);
     expect(updateUserSettings).toHaveBeenCalledWith({ autoTranslateWords: false });
-    expect(await screen.findByText('All changes saved')).toBeInTheDocument();
+    expect(screen.getByText('All changes saved')).toBeInTheDocument();
     expect(updateSetting).toHaveBeenCalledWith('autoTranslateWords', false);
     expect(localStorage.getItem('autoTranslateWords')).toBe('false');
     expect(JSON.parse(localStorage.getItem('cachedSettings')).autoTranslateWords).toBe(false);
   });
 
   test('sends nothing when a switch is flipped back before it saves', async () => {
-    renderPage();
-    await screen.findByText('Settings');
+    await renderLoaded();
+    useManualClock();
 
     fireEvent.click(field('autoTranslateWords'));
     fireEvent.click(field('autoTranslateWords'));
-    await sleep(400);
+    await advance(10_000);
 
     expect(updateUserSettings).not.toHaveBeenCalled();
+    expect(screen.queryByText('Saving…')).not.toBeInTheDocument();
   });
 
   test('saves typing once, after a pause, with the final text', async () => {
     getUserSettings.mockResolvedValue({ ...mockSettings, useOpenRouter: true });
-    renderPage();
-    await screen.findByText('Settings');
+    await renderLoaded();
+    useManualClock();
 
     const model = field('openRouterModel');
+    // Keystrokes closer together than the pause keep pushing the save back.
     fireEvent.change(model, { target: { value: 'a' } });
+    await advance(TYPING_DELAY - 100);
     fireEvent.change(model, { target: { value: 'an' } });
+    await advance(TYPING_DELAY - 100);
     fireEvent.change(model, { target: { value: 'anthropic/claude' } });
-    await sleep(300);
+    await advance(TYPING_DELAY - 1);
     expect(updateUserSettings).not.toHaveBeenCalled();
     expect(screen.getByText('Saving…')).toBeInTheDocument();
 
-    await waitFor(() => expect(updateUserSettings).toHaveBeenCalledTimes(1), { timeout: 2000 });
+    await advance(1);
+    expect(updateUserSettings).toHaveBeenCalledTimes(1);
     expect(updateUserSettings).toHaveBeenCalledWith({ openRouterModel: 'anthropic/claude' });
   });
 
   test('saves a text edit as soon as the field loses focus', async () => {
     getUserSettings.mockResolvedValue({ ...mockSettings, useOpenRouter: true });
-    renderPage();
-    await screen.findByText('Settings');
+    await renderLoaded();
+    useManualClock();
 
     const model = field('openRouterModel');
     fireEvent.change(model, { target: { value: 'openai/gpt' } });
     fireEvent.blur(model);
 
-    await waitFor(() => expect(updateUserSettings).toHaveBeenCalledWith({ openRouterModel: 'openai/gpt' }), { timeout: 300 });
+    // No time has passed: only the blur can have sent it.
+    expect(updateUserSettings).toHaveBeenCalledWith({ openRouterModel: 'openai/gpt' });
   });
 
   test('does not save a half-typed timezone offset as 0', async () => {
     getUserSettings.mockResolvedValue({ ...mockSettings, discordTimezoneOffsetMinutes: 120 });
-    renderPage();
-    await screen.findByText('Settings');
+    await renderLoaded();
+    useManualClock();
 
     const offset = field('discordTimezoneOffsetMinutes');
     fireEvent.change(offset, { target: { value: '' } });
     fireEvent.blur(offset);
-    await sleep(200);
+    await advance(10_000);
     expect(updateUserSettings).not.toHaveBeenCalled();
 
     fireEvent.change(offset, { target: { value: '-300' } });
     fireEvent.blur(offset);
-    await waitFor(() => expect(updateUserSettings).toHaveBeenCalledWith({ discordTimezoneOffsetMinutes: -300 }));
+    expect(updateUserSettings).toHaveBeenCalledTimes(1);
+    expect(updateUserSettings).toHaveBeenCalledWith({ discordTimezoneOffsetMinutes: -300 });
   });
 
   test('sends a change made while a save is running right after it, not alongside', async () => {
     const first = deferred();
     updateUserSettings.mockImplementationOnce(() => first.promise);
-    renderPage();
-    await screen.findByText('Settings');
+    await renderLoaded();
+    useManualClock();
 
     fireEvent.click(field('autoTranslateWords'));
-    await waitFor(() => expect(updateUserSettings).toHaveBeenCalledTimes(1));
+    await advance(CHOICE_DELAY);
+    expect(updateUserSettings).toHaveBeenCalledTimes(1);
 
     fireEvent.click(field('pauseOnWordClick'));
-    await sleep(300);
+    await advance(10_000);
+    // Still waiting for the first response.
     expect(updateUserSettings).toHaveBeenCalledTimes(1);
 
     await act(async () => {
       first.resolve({ ...mockSettings, autoTranslateWords: false });
     });
+    await advance(0);
 
-    await waitFor(() => expect(updateUserSettings).toHaveBeenCalledTimes(2));
+    expect(updateUserSettings).toHaveBeenCalledTimes(2);
     expect(updateUserSettings).toHaveBeenLastCalledWith({ pauseOnWordClick: true });
+    expect(screen.getByText('All changes saved')).toBeInTheDocument();
   });
 
   test('shows a failed save with Retry, which sends it again', async () => {
     updateUserSettings.mockRejectedValueOnce(new Error('Network down'));
-    renderPage();
-    await screen.findByText('Settings');
+    await renderLoaded();
+    useManualClock();
 
     fireEvent.click(field('autoTranslateWords'));
+    await advance(CHOICE_DELAY);
 
-    const alert = await screen.findByRole('alert');
-    expect(alert).toHaveTextContent("Couldn't save your changes: Network down");
+    expect(screen.getByRole('alert')).toHaveTextContent("Couldn't save your changes: Network down");
     expect(updateSetting).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await advance(0);
 
-    await waitFor(() => expect(updateUserSettings).toHaveBeenCalledTimes(2));
+    expect(updateUserSettings).toHaveBeenCalledTimes(2);
     expect(updateUserSettings).toHaveBeenLastCalledWith({ autoTranslateWords: false });
-    expect(await screen.findByText('All changes saved')).toBeInTheDocument();
+    expect(screen.getByText('All changes saved')).toBeInTheDocument();
     expect(screen.queryByText(/Couldn't save your changes/)).not.toBeInTheDocument();
+    expect(updateSetting).toHaveBeenCalledWith('autoTranslateWords', false);
   });
 
   test('saves a change still waiting when the page is left', async () => {
     getUserSettings.mockResolvedValue({ ...mockSettings, useOpenRouter: true });
-    const { unmount } = renderPage();
-    await screen.findByText('Settings');
+    const { unmount } = await renderLoaded();
+    useManualClock();
 
     fireEvent.change(field('openRouterModel'), { target: { value: 'left/in-a-hurry' } });
+    expect(updateUserSettings).not.toHaveBeenCalled();
     unmount();
 
-    await waitFor(() => expect(updateUserSettings).toHaveBeenCalledWith({ openRouterModel: 'left/in-a-hurry' }));
+    expect(updateUserSettings).toHaveBeenCalledWith({ openRouterModel: 'left/in-a-hurry' });
   });
 
   test('keeps minimalHome on this device: no request, but stored and applied', async () => {
-    renderPage();
-    await screen.findByText('Settings');
+    await renderLoaded();
+    useManualClock();
 
     fireEvent.click(field('minimalHome'));
+    await advance(CHOICE_DELAY);
 
-    await waitFor(() => expect(updateSetting).toHaveBeenCalledWith('minimalHome', true));
+    expect(updateSetting).toHaveBeenCalledWith('minimalHome', true);
     expect(updateUserSettings).not.toHaveBeenCalled();
     expect(localStorage.getItem('minimalHome')).toBe('true');
     expect(JSON.parse(localStorage.getItem('cachedSettings')).minimalHome).toBe(true);
   });
 
   test('applies a saved theme to the page', async () => {
-    renderPage();
-    await screen.findByText('Settings');
+    await renderLoaded();
+    useManualClock();
 
     fireEvent.change(field('theme'), { target: { value: 'light' } });
+    await advance(CHOICE_DELAY);
 
-    await waitFor(() => expect(document.body).toHaveClass('light-theme'));
-    expect(document.body).not.toHaveClass('dark-theme');
     expect(updateUserSettings).toHaveBeenCalledWith({ theme: 'light' });
+    expect(document.body).toHaveClass('light-theme');
+    expect(document.body).not.toHaveClass('dark-theme');
     expect(localStorage.getItem('theme')).toBe('light');
   });
 
@@ -280,15 +329,14 @@ describe('UserSettings', () => {
       ...mockSettings,
       hasDiscordWebhookUrl: Boolean(body.discordWebhookUrl)
     }));
-    renderPage();
-    await screen.findByText('Settings');
+    await renderLoaded();
 
     const webhook = document.querySelector('#discordWebhookUrl');
     fireEvent.change(webhook, { target: { value: 'https://discord.com/api/webhooks/1' } });
     expect(screen.getByText(/Not saved yet/)).toBeInTheDocument();
     fireEvent.keyDown(webhook, { key: 'Enter' });
 
-    await waitFor(() => expect(updateUserSettings).toHaveBeenCalledTimes(1));
+    expect(updateUserSettings).toHaveBeenCalledTimes(1);
     expect(updateUserSettings).toHaveBeenCalledWith({ discordWebhookUrl: 'https://discord.com/api/webhooks/1' });
     await waitFor(() => expect(webhook).toHaveValue(''));
     expect(webhook).toHaveAttribute('placeholder', 'Configured — leave blank to keep');
@@ -297,8 +345,7 @@ describe('UserSettings', () => {
 
   test('a key that fails to save shows the error by the field and keeps what was typed', async () => {
     updateUserSettings.mockRejectedValueOnce(new Error('Webhook URL must start with https://discord.com'));
-    renderPage();
-    await screen.findByText('Settings');
+    await renderLoaded();
 
     const webhook = document.querySelector('#discordWebhookUrl');
     fireEvent.change(webhook, { target: { value: 'http://example.com' } });
@@ -311,8 +358,7 @@ describe('UserSettings', () => {
   test('Test Connection saves a waiting model change before testing', async () => {
     getUserSettings.mockResolvedValue({ ...mockSettings, useOpenRouter: true, hasOpenRouterApiKey: true });
     testOpenRouterConnection.mockResolvedValue({ success: true, message: 'Connected' });
-    renderPage();
-    await screen.findByText('Settings');
+    await renderLoaded();
 
     fireEvent.change(field('openRouterModel'), { target: { value: 'new/model' } });
     fireEvent.click(sectionOf(field('openRouterModel')).getByRole('button', { name: 'Test Connection' }));
@@ -326,8 +372,7 @@ describe('UserSettings', () => {
   test('Test Connection does not run on stale settings when the save fails', async () => {
     getUserSettings.mockResolvedValue({ ...mockSettings, useOpenRouter: true, hasOpenRouterApiKey: true });
     updateUserSettings.mockRejectedValue(new Error('Network down'));
-    renderPage();
-    await screen.findByText('Settings');
+    await renderLoaded();
 
     fireEvent.change(field('openRouterModel'), { target: { value: 'new/model' } });
     fireEvent.click(sectionOf(field('openRouterModel')).getByRole('button', { name: 'Test Connection' }));
@@ -370,13 +415,5 @@ describe('UserSettings', () => {
     expect(
       screen.queryByText(/Failed to load settings\. Please try again later\./)
     ).not.toBeInTheDocument();
-  });
-
-  test('loading the page saves nothing', async () => {
-    renderPage();
-    await screen.findByText('Settings');
-    await sleep(300);
-
-    expect(updateUserSettings).not.toHaveBeenCalled();
   });
 });

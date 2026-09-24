@@ -3,6 +3,8 @@ import { Form } from 'react-bootstrap';
 import type { Settings } from '../../contexts/SettingsContext';
 import type { SettingsChangeHandler } from './AppearanceSettings';
 import SecretKeyField from './SecretKeyField';
+import TtsVoiceSettings from './TtsVoiceSettings';
+import { isSpeechSynthesisSupported } from '../../utils/browserTts';
 
 interface LanguageOption {
   languageId: number;
@@ -102,6 +104,9 @@ const ReadingSettings = ({
             onChange={handleChange}
           />
         </Form.Group>
+        {settings.sentenceTtsEnabled && isSpeechSynthesisSupported() && (
+          <TtsVoiceSettings languages={languages} />
+        )}
       </div>
 
       <div className="settings-control-group">

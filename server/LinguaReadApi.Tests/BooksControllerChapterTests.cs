@@ -320,6 +320,59 @@ namespace LinguaReadApi.Tests
         }
 
         [Fact]
+        public void ExtractStructuredBlocksFromHtml_TagBranches_ProduceExpectedBlocks()
+        {
+            // Pins every per-tag branch of the extraction loop (script/style/comment stripping,
+            // headings, <br>, inline tags inside captions, table cells, upper-case tags, inline
+            // page-break styles, whitespace and entity normalization).
+            var textFile = CreateMockTextContentFile(
+                @"<html><head><style>p { color: red; }</style><SCRIPT type=""text/javascript"">var x = ""<p>no</p>"";</SCRIPT></head><body>
+                    <!-- <p>hidden comment</p> -->
+                    <h2 class=""x"">Chapter&nbsp;One</h2>
+                    <p>Line one<br/>line two &amp;   more</p>
+                    <figure><img src=""data:image/png;base64,AAAA"" alt=""pic""/><figcaption><em>A</em> caption</figcaption></figure>
+                    <table><tr><td>cell1</td><td>cell2</td></tr></table>
+                    <P>Upper   case	tag</P>
+                    <div style=""break-before: page""><p>Broken</p></div>
+                    <hr/>
+                    <blockquote>Quoted
+
+
+                    text</blockquote>
+                </body></html>",
+                "oebps/chapter2.html");
+
+            var blocks = ExtractBlocks(textFile, new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+
+            Assert.Equal(
+                new (string, string?)[]
+                {
+                    (ReaderContentBlockTypes.Title, "Chapter One"),
+                    (ReaderContentBlockTypes.Paragraph, "Line one\nline two & more"),
+                    (ReaderContentBlockTypes.Paragraph, "A caption"),
+                    (ReaderContentBlockTypes.Paragraph, "cell1 cell2"),
+                    (ReaderContentBlockTypes.Paragraph, "Upper case tag"),
+                    (ReaderContentBlockTypes.Paragraph, "Broken"),
+                    (ReaderContentBlockTypes.Paragraph, "Quoted\n\ntext"),
+                },
+                blocks.Select(b => (b.Type, b.Text)).ToArray());
+            Assert.Equal("caption", blocks[2].Meta!["variant"]);
+            Assert.Equal("true", blocks[5].Meta!["chapterBreak"]);
+            Assert.All(blocks.Where((_, i) => i != 2 && i != 5), b => Assert.Null(b.Meta));
+        }
+
+        private static List<ReaderContentBlock> ExtractBlocks(EpubLocalTextContentFile textFile, HashSet<string> pageBreakClasses)
+        {
+            var contextType = typeof(BooksController).GetNestedType("EpubExtractionContext", System.Reflection.BindingFlags.NonPublic)!;
+            var context = Activator.CreateInstance(contextType, new object[] { null!, "", "" });
+            contextType.GetField("_pageBreakClasses", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
+                .SetValue(context, pageBreakClasses);
+            var method = typeof(BooksController).GetMethod("ExtractStructuredBlocksFromHtml",
+                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
+            return ((IEnumerable<ReaderContentBlock>)method.Invoke(null, new object[] { textFile, new HashSet<string>(), context! })!).ToList();
+        }
+
+        [Fact]
         public async Task ReSplitBook_UsesEpubSourceFileFallback_WhenHeadingsAndPageBreaksAreAbsent()
         {
             await using var context = CreateContext();

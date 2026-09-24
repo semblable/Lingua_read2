@@ -14,8 +14,8 @@ import ReadingSettings from '../components/settings/ReadingSettings';
 import type { Settings } from '../contexts/SettingsContext';
 import { getPreferredVoiceURI, getVoicesForLanguage, speakText } from '../utils/browserTts';
 
-const voice = (name: string, lang: string) =>
-  ({ name, lang, voiceURI: `uri:${name}`, default: false, localService: true }) as SpeechSynthesisVoice;
+const voice = (name: string, lang: string, localService = true) =>
+  ({ name, lang, voiceURI: `uri:${name}`, default: false, localService }) as SpeechSynthesisVoice;
 
 const LANGUAGES = [
   { languageId: 1, name: 'French', code: 'FR' },
@@ -40,7 +40,7 @@ describe('TtsVoiceSettings in Reading settings', () => {
     vi.mocked(speakText).mockClear();
     vi.mocked(getVoicesForLanguage).mockImplementation(async (code) =>
       code === 'FR'
-        ? [voice('Microsoft Denise Online (Natural) - French (France)', 'fr-FR'), voice('Microsoft Hortense - French (France)', 'fr-FR')]
+        ? [voice('Microsoft Denise Online (Natural) - French (France)', 'fr-FR', false), voice('Microsoft Hortense - French (France)', 'fr-FR')]
         : []
     );
   });
@@ -54,7 +54,7 @@ describe('TtsVoiceSettings in Reading settings', () => {
   test('lists voices per language, labels natural ones, and says when a language has none', async () => {
     renderSettings(true);
 
-    expect(await screen.findByRole('option', { name: /Denise.*· natural/ })).toBeInTheDocument();
+    expect(await screen.findByRole('option', { name: /Denise.*· natural · needs internet$/ })).toBeInTheDocument();
     expect(screen.getByRole('option', { name: 'Microsoft Hortense - French (France) (fr-FR)' })).toBeInTheDocument();
     expect(await screen.findByText('No German voice on this device.')).toBeInTheDocument();
   });

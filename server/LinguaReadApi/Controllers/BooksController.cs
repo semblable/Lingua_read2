@@ -2138,8 +2138,6 @@ namespace LinguaReadApi.Controllers
 
                     // Verify the text belongs to this book
                     var text = await _context.Texts
-                        .Include(t => t.TextWords)
-                        .ThenInclude(tw => tw.Word)
                         .Where(t => t.TextId == lessonDto.TextId && t.BookId == id)
                         .FirstOrDefaultAsync();
 

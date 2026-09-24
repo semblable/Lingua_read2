@@ -96,6 +96,121 @@ public class CompleteTextTests
     }
 
     [Fact]
+    public async Task CompleteText_ReturnsRunningWordStats_WeightedByOccurrence_PerStatusBand()
+    {
+        // Pins the stats contract: running counts (Sum of OccurrenceCount), total excludes Ignored (6)
+        // but includes 0 (auto-created) and 1 (New), known = 4-5, learning = 2-3, and only this
+        // text's TextWords count.
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        SeedStandaloneText(context, userId, textId: 1, content: "hola amigo mundo");
+        context.Texts.Add(new Text { TextId = 2, UserId = userId, LanguageId = 1, Title = "Other", Content = "otro" });
+
+        var occurrencesByStatus = new Dictionary<int, int> { [0] = 2, [1] = 3, [2] = 5, [3] = 7, [4] = 11, [5] = 13, [6] = 17 };
+        foreach (var (status, occurrences) in occurrencesByStatus)
+        {
+            context.Words.Add(new Word { WordId = 10 + status, UserId = userId, LanguageId = 1, Term = $"w{status}", Status = status });
+            context.TextWords.Add(new TextWord { TextWordId = 100 + status, TextId = 1, WordId = 10 + status, OccurrenceCount = occurrences });
+        }
+        context.TextWords.Add(new TextWord { TextWordId = 200, TextId = 2, WordId = 15, OccurrenceCount = 1000 });
+        await context.SaveChangesAsync();
+        context.ChangeTracker.Clear();
+
+        var controller = CreateController(context, userId);
+        var result = await controller.CompleteText(1);
+
+        var stats = Assert.IsType<TextStatsDto>(Assert.IsType<OkObjectResult>(result.Result).Value);
+        Assert.Equal(41, stats.TotalWords);
+        Assert.Equal(24, stats.KnownWords);
+        Assert.Equal(12, stats.LearningWords);
+        Assert.Equal(24.0 / 41 * 100, stats.CompletionPercentage);
+
+        context.ChangeTracker.Clear();
+        var text = await context.Texts.SingleAsync(t => t.TextId == 1);
+        Assert.Equal(41, text.TotalWords);
+        Assert.Equal(24, text.KnownWords);
+    }
+
+    [Fact]
+    public async Task CompleteText_RetryWithinWindow_ReturnsSameStatsWithoutWriting()
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        SeedStandaloneText(context, userId, textId: 1, content: "hola amigo mundo");
+        context.Words.AddRange(
+            new Word { WordId = 10, UserId = userId, LanguageId = 1, Term = "hola", Status = 5 },
+            new Word { WordId = 11, UserId = userId, LanguageId = 1, Term = "amigo", Status = 2 });
+        context.TextWords.AddRange(
+            new TextWord { TextWordId = 100, TextId = 1, WordId = 10, OccurrenceCount = 3 },
+            new TextWord { TextWordId = 101, TextId = 1, WordId = 11, OccurrenceCount = 1 });
+        await context.SaveChangesAsync();
+        context.ChangeTracker.Clear();
+
+        var controller = CreateController(context, userId);
+        await controller.CompleteText(1);
+        context.ChangeTracker.Clear();
+        var retry = await controller.CompleteText(1);
+
+        var stats = Assert.IsType<TextStatsDto>(Assert.IsType<OkObjectResult>(retry.Result).Value);
+        Assert.Equal(4, stats.TotalWords);
+        Assert.Equal(3, stats.KnownWords);
+        Assert.Equal(1, stats.LearningWords);
+        Assert.Equal(75.0, stats.CompletionPercentage);
+        Assert.Single(await context.UserActivities.ToListAsync());
+    }
+
+    [Fact]
+    public async Task CompleteText_NoTextWords_ReturnsZeroStats()
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        SeedStandaloneText(context, userId, textId: 1, content: "hola amigo mundo");
+
+        var controller = CreateController(context, userId);
+        var result = await controller.CompleteText(1);
+
+        var stats = Assert.IsType<TextStatsDto>(Assert.IsType<OkObjectResult>(result.Result).Value);
+        Assert.Equal(0, stats.TotalWords);
+        Assert.Equal(0, stats.KnownWords);
+        Assert.Equal(0, stats.LearningWords);
+        Assert.Equal(0, stats.CompletionPercentage);
+    }
+
+    [Fact]
+    public async Task CompleteText_OtherUsersText_ReturnsNotFound()
+    {
+        await using var context = CreateContext();
+        var ownerId = Guid.NewGuid();
+        SeedStandaloneText(context, ownerId, textId: 1, content: "hola amigo mundo");
+
+        var controller = CreateController(context, Guid.NewGuid());
+        var result = await controller.CompleteText(1);
+
+        Assert.IsType<NotFoundObjectResult>(result.Result);
+        context.ChangeTracker.Clear();
+        Assert.False((await context.Texts.SingleAsync()).IsFinished);
+        Assert.Empty(await context.UserActivities.ToListAsync());
+    }
+
+    [Fact]
+    public void TextWordCountsByStatus_TranslatesToPostgresGroupBy()
+    {
+        // The tests above run on InMemory, which evaluates anything client-side. ToQueryString()
+        // compiles the real Npgsql translation without opening a connection, so this fails if the
+        // per-status aggregate stops translating to a single GROUP BY.
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseNpgsql("Host=localhost;Database=translation-check;Username=none;Password=none")
+            .Options;
+        using var context = new AppDbContext(options);
+
+        var sql = TextsController.TextWordCountsByStatus(context, 1).ToQueryString();
+
+        Assert.Contains("GROUP BY", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("sum(", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("\"OccurrenceCount\"", sql);
+    }
+
+    [Fact]
     public async Task CompleteText_SkipStats_HonoursAutoMoveFinishedLessons()
     {
         await using var context = CreateContext();

@@ -1019,11 +1019,12 @@ namespace LinguaReadApi.Controllers
 
                 await using var transaction = await _context.Database.BeginTransactionAsync(IsolationLevel.Serializable);
 
+                // Only the columns used below: the full row would drag in StructuredContent/SrtContent.
                 var text = await _context.Texts
-                    .AsNoTracking() // Add AsNoTracking here
-                    .Include(t => t.TextWords)
-                        .ThenInclude(tw => tw.Word)
-                    .FirstOrDefaultAsync(t => t.TextId == textId && t.UserId == userId);
+                    .AsNoTracking()
+                    .Where(t => t.TextId == textId && t.UserId == userId)
+                    .Select(t => new { t.Content, t.LanguageId, t.IsAudioLesson, t.IsFinished, t.LastCompletedAt })
+                    .FirstOrDefaultAsync();
 
                 if (text == null)
                 {
@@ -1034,9 +1035,11 @@ namespace LinguaReadApi.Controllers
                 // Running-word counts (sum of TextWord occurrences) so the
                 // numbers stay consistent across text/book scope. Known
                 // = Status 4-5; status 6 (Ignored) is excluded from all counts.
-                var totalWordsRunning = text.TextWords.Where(tw => tw.Word.Status != 6).Sum(tw => tw.OccurrenceCount);
-                var knownWordsRunning = text.TextWords.Where(tw => tw.Word.Status >= 4 && tw.Word.Status <= 5).Sum(tw => tw.OccurrenceCount);
-                var learningWordsRunning = text.TextWords.Where(tw => tw.Word.Status >= 2 && tw.Word.Status < 4).Sum(tw => tw.OccurrenceCount);
+                // Aggregated per status in SQL (as CompleteLesson does) instead of loading every TextWord+Word.
+                var statusCounts = await TextWordCountsByStatus(_context, textId).ToListAsync();
+                var totalWordsRunning = statusCounts.Where(s => s.Status != 6).Sum(s => s.Count);
+                var knownWordsRunning = statusCounts.Where(s => s.Status >= 4 && s.Status <= 5).Sum(s => s.Count);
+                var learningWordsRunning = statusCounts.Where(s => s.Status >= 2 && s.Status < 4).Sum(s => s.Count);
 
                 // 'totalActualWordCount' is used for daily activity tracking (total tokens read)
                 var totalActualWordCount = LinguaReadApi.Utilities.WordCountUtility.CountTotalWords(text.Content);
@@ -1125,6 +1128,16 @@ namespace LinguaReadApi.Controllers
                 return Ok(stats);
             });
         }
+
+        internal sealed record TextWordStatusCount(int Status, int Count);
+
+        /// <summary>Running-word counts (sum of OccurrenceCount) of a text's words, one row per word status.</summary>
+        internal static IQueryable<TextWordStatusCount> TextWordCountsByStatus(AppDbContext context, int textId) =>
+            context.TextWords
+                .AsNoTracking()
+                .Where(tw => tw.TextId == textId)
+                .GroupBy(tw => tw.Word.Status)
+                .Select(g => new TextWordStatusCount(g.Key, g.Sum(tw => tw.OccurrenceCount)));
 
     } // End of Controller Class (Ensure this closing brace exists)
 

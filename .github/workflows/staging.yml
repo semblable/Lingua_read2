@@ -3,10 +3,13 @@ name: Staging
 # Continuous deployment to the staging host: every push to `dev` runs CI,
 # builds + pushes images tagged sha-<short7>, and deploys that exact tag.
 # Production promotion of these images happens via promote-prod.yml.
+# Run it by hand (Actions -> Staging -> Run workflow, branch `dev`) to rebuild and
+# redeploy the dev tip; the deploy refuses any other branch.
 
 on:
   push:
     branches: [ "dev" ]
+  workflow_dispatch:
 
 # Never cancel a run that may be mid-deploy; a rapid second push queues instead.
 concurrency:
@@ -19,11 +22,13 @@ permissions:
 
 jobs:
   ci_build:
+    name: CI
     uses: ./.github/workflows/_ci-build.yml
     with:
       push_images: true
 
   deploy:
+    name: Deploy
     needs: [ ci_build ]
     uses: ./.github/workflows/_deploy.yml
     with:

@@ -48,7 +48,9 @@ echo "[logs] Done."
 # 3. Upload to Google Drive
 echo "[rclone] Uploading..."
 cp /rclone/rclone.conf /tmp/rclone.conf
+# prod-refresh/ is staging's download area for production's dump (refresh-from-prod.sh), not a backup.
 rclone copy "$BACKUP_DIR" "$REMOTE" \
+  --exclude "prod-refresh/**" \
   --config /tmp/rclone.conf \
   --log-level INFO
 

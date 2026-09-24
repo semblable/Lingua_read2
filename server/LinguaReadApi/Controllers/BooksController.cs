@@ -56,9 +56,9 @@ namespace LinguaReadApi.Controllers
         ///
         /// The "processing" status is saved before the first request is
         /// written. The worker marks each text "completed" on its own
-        /// DbContext as soon as it picks the request up, so saving after
-        /// the loop put parts it had already finished back to
-        /// "processing" for good.
+        /// DbContext as soon as it has linked it, so saving after the
+        /// loop put parts it had already finished back to "processing"
+        /// for good.
         /// </summary>
         private async Task QueueWordLinking(IEnumerable<Text> texts, Guid userId)
         {

@@ -10,7 +10,8 @@ RUN ARCH=$([ "$TARGETARCH" = "arm64" ] && echo "linux-arm64" || echo "linux-amd6
     -o /usr/local/bin/supercronic && chmod +x /usr/local/bin/supercronic
 
 COPY backup.sh /backup.sh
+COPY refresh-from-prod.sh /refresh-from-prod.sh
 COPY crontab /crontab
-RUN chmod +x /backup.sh
+RUN chmod +x /backup.sh /refresh-from-prod.sh
 
 CMD ["supercronic", "/crontab"]

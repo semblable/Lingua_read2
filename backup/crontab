@@ -1,1 +1,4 @@
 0 0 * * * /backup.sh >> /var/log/backup.log 2>&1
+# Staging only (a no-op unless REFRESH_FROM_PROD=1): replace staging's data with production's
+# latest backup, after that backup has reached Drive. Output goes to the container log.
+45 0 * * * /refresh-from-prod.sh

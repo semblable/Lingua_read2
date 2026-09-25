@@ -50,8 +50,9 @@ flock -n 9 || die "another refresh is already running"
 API=""
 API_STOPPED=0
 on_exit() {
-  # prod.backup too, also after a failure: backup.sh uploads /backups to staging's Drive folder,
-  # where no retention rule would ever remove a leftover copy of production's database.
+  # prod.backup too, also after a failure: a leftover copy of production's database that ever
+  # reached staging's Drive folder would stay there, since no retention rule covers it (backup.sh
+  # uploads only db/, logs/ and errors/ from /backups).
   rm -f "$WORK/staging-secrets.tsv" "$WORK/staging-ai-keys.tsv" "$WORK/prod.backup"
   if [ "$API_STOPPED" = 1 ]; then
     log "restarting api after an interrupted refresh"

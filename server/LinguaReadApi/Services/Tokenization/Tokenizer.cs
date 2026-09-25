@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Globalization;
+using System.Text;
 using System.Text.RegularExpressions;
 using LinguaReadApi.Models;
 
@@ -10,19 +11,27 @@ namespace LinguaReadApi.Services.Tokenization
     /// and the word-linking background service. The algorithm mirrors
     /// `client/lingua-read-client/src/utils/readerText.js`:
     ///
-    /// 1. Apply <see cref="Language.CharacterSubstitutions"/> as literal
+    /// 1. <see cref="NormalizeInput"/>: drop soft hyphens (U+00AD, invisible
+    ///    hyphenation points ebooks put inside words) and compose decomposed
+    ///    accents (e + U+0301 → é), so neither splits a word.
+    /// 2. Apply the built-in substitutions (curly / modifier apostrophes → ',
+    ///    Unicode hyphens U+2010 / U+2011 → -), then
+    ///    <see cref="Language.CharacterSubstitutions"/> as literal
     ///    find-and-replace pairs (pipe-separated <c>old=new</c>).
-    /// 2. Build a per-character regex from <see cref="Language.WordCharacters"/>
+    /// 3. Build a per-character regex from <see cref="Language.WordCharacters"/>
     ///    with a Unicode-letter (\p{L}) fallback.
-    /// 3. Walk the substituted content, accumulating runs of core word
-    ///    chars **plus glued connectors**: ASCII apostrophe (U+0027) and
-    ///    hyphen-minus, but only when sandwiched between two core word
-    ///    chars. This preserves glued forms required for translation
-    ///    lookup quality:
+    /// 4. Walk the substituted content, accumulating runs of core word
+    ///    chars **plus glued connectors**: ASCII apostrophe (U+0027),
+    ///    hyphen-minus and middle dot (U+00B7), but only when sandwiched
+    ///    between two core word chars. This preserves glued forms required
+    ///    for translation lookup quality:
     ///      - French / Italian / Catalan / Occitan elisions: l'eau, qu'il, dell'acqua
     ///      - Portuguese clitics: interrompo-a, beijá-lo
     ///      - English contractions and hyphenated compounds: don't, well-known
-    /// 4. Lookup keys are produced via locale-aware <see cref="TextInfo.ToLower(string)"/>
+    ///      - Catalan geminated l: col·lecció
+    ///    A combining mark or format character can continue a word but not
+    ///    start one (an emoji's variation selector is not a word).
+    /// 5. Lookup keys are produced via locale-aware <see cref="TextInfo.ToLower(string)"/>
     ///    using the language's BCP-47 code, falling back to invariant.
     ///
     /// CJK parser types (mecab/jieba) currently fall back to the default
@@ -32,19 +41,29 @@ namespace LinguaReadApi.Services.Tokenization
     {
         private const char Apostrophe = '\'';
         private const char Hyphen = '-';
+        private const char MiddleDot = '·';
+        private const char SoftHyphen = '\u00AD';
         private const string DefaultWordClass = @"\p{L}";
 
         // Built-in normalizations applied BEFORE user-defined
-        // CharacterSubstitutions. Guarantees that apostrophe glue works
+        // CharacterSubstitutions. Guarantees that apostrophe/hyphen glue works
         // in every language — even custom ones with empty CharacterSubstitutions —
-        // by mapping common curly / modifier apostrophe variants to
-        // ASCII U+0027. User subs can still override.
+        // by mapping common curly / modifier apostrophe and Unicode hyphen
+        // variants to ASCII. User subs can still override.
         private static readonly (string Old, string New)[] BuiltInSubstitutions =
         {
             ("’", "'"), // ’ right single quote
             ("‘", "'"), // ‘ left single quote
-            ("ʼ", "'")  // ʼ modifier letter apostrophe
+            ("ʼ", "'"), // ʼ modifier letter apostrophe
+            ("\u2010", "-"), // hyphen
+            ("\u2011", "-")  // non-breaking hyphen
         };
+
+        // A base character followed by one or more combining marks. A surrogate
+        // pair counts as one base so Normalize never sees half of it.
+        private static readonly Regex BaseWithCombiningMarks = new(
+            @"(?:[\uD800-\uDBFF][\uDC00-\uDFFF]|\P{M})\p{M}+",
+            RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
         private static readonly ConcurrentDictionary<string, Regex> _regexCache = new();
         private static readonly ConcurrentDictionary<string, TextInfo> _textInfoCache = new();
@@ -89,6 +108,47 @@ namespace LinguaReadApi.Services.Tokenization
             return current;
         }
 
+        /// <summary>
+        /// Remove soft hyphens and compose decomposed accents (NFC, applied only
+        /// to base + combining-mark runs so the rest of the text is untouched).
+        /// Runs before any substitution. Mirrors <c>normalizeTokenizerInput</c>
+        /// in the client's readerText.ts.
+        /// </summary>
+        public static string NormalizeInput(string content)
+        {
+            if (string.IsNullOrEmpty(content)) return content;
+            var current = content.Contains(SoftHyphen)
+                ? content.Replace(SoftHyphen.ToString(), string.Empty, StringComparison.Ordinal)
+                : content;
+            if (!HasCombiningMark(current)) return current;
+            return BaseWithCombiningMarks.Replace(current, m =>
+            {
+                try
+                {
+                    return m.Value.Normalize(NormalizationForm.FormC);
+                }
+                catch (ArgumentException)
+                {
+                    // Unpaired surrogate in malformed input: leave the run as-is.
+                    return m.Value;
+                }
+            });
+        }
+
+        private static bool HasCombiningMark(string text)
+        {
+            foreach (var ch in text)
+            {
+                if (IsCombiningMark(ch)) return true;
+            }
+            return false;
+        }
+
+        private static bool IsCombiningMark(char ch) =>
+            char.GetUnicodeCategory(ch) is UnicodeCategory.NonSpacingMark
+                or UnicodeCategory.SpacingCombiningMark
+                or UnicodeCategory.EnclosingMark;
+
         public static Regex BuildCoreWordRegex(string? wordCharacters)
         {
             var raw = (wordCharacters ?? string.Empty).Trim();
@@ -122,7 +182,7 @@ namespace LinguaReadApi.Services.Tokenization
             // Built-in apostrophe normalizations run first so glue
             // works even when a custom language has empty
             // CharacterSubstitutions; user subs can override.
-            var processed = ApplyCharacterSubstitutions(rawContent, BuiltInSubstitutions);
+            var processed = ApplyCharacterSubstitutions(NormalizeInput(rawContent), BuiltInSubstitutions);
             processed = ApplyCharacterSubstitutions(processed, userSubs);
             var coreRegex = BuildCoreWordRegex(language?.WordCharacters);
 
@@ -134,7 +194,7 @@ namespace LinguaReadApi.Services.Tokenization
 
             while (i < len)
             {
-                if (IsCoreWordChar(coreRegex, span, i))
+                if (CanStartWord(coreRegex, span, i))
                 {
                     var start = i;
                     i++;
@@ -185,11 +245,27 @@ namespace LinguaReadApi.Services.Tokenization
             }
         }
 
+        /// <summary>
+        /// Lookup key for a term that did not come out of <see cref="Tokenize"/>
+        /// (a reader save, a CSV row, a stored Word): the same input
+        /// normalization and built-in substitutions as the tokenizer, so a
+        /// term with a soft hyphen or a curly apostrophe keys like the word
+        /// the reader shows, then trimmed and lowercased.
+        /// </summary>
         public static string NormalizeKey(string text, Language? language)
         {
             if (string.IsNullOrEmpty(text)) return text;
-            return GetTextInfo(language?.Code).ToLower(text.Trim());
+            var normalized = ApplyCharacterSubstitutions(NormalizeInput(text), BuiltInSubstitutions);
+            return GetTextInfo(language?.Code).ToLower(normalized.Trim());
         }
+
+        // A combining mark or format character (an emoji's variation selector, a
+        // zero-width joiner) may continue a word but never start one: on its own
+        // it would be an invisible clickable "word".
+        private static bool CanStartWord(Regex coreRegex, ReadOnlySpan<char> span, int index) =>
+            IsCoreWordChar(coreRegex, span, index)
+            && !IsCombiningMark(span[index])
+            && char.GetUnicodeCategory(span[index]) != UnicodeCategory.Format;
 
         private static bool IsCoreWordChar(Regex coreRegex, ReadOnlySpan<char> span, int index)
         {
@@ -198,7 +274,7 @@ namespace LinguaReadApi.Services.Tokenization
             return coreRegex.IsMatch(span.Slice(index, 1));
         }
 
-        private static bool IsConnector(char ch) => ch == Apostrophe || ch == Hyphen;
+        private static bool IsConnector(char ch) => ch == Apostrophe || ch == Hyphen || ch == MiddleDot;
 
         private static TextInfo GetTextInfo(string? code)
         {

@@ -1,6 +1,9 @@
 using System.Text.Json;
+using LinguaReadApi.Data;
 using LinguaReadApi.Models;
 using LinguaReadApi.Services.Tokenization;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
 namespace LinguaReadApi.Tests;
@@ -31,9 +34,9 @@ public class TokenizerTests
         ParserType = "spacedel"
     };
 
-    private static readonly Language En = Lang("en", "a-zA-ZÀ-ÖØ-öø-ȳáéíóúÁÉÍÓÚñÑ");
-    private static readonly Language Fr = Lang("fr", "a-zA-ZÀ-ÖØ-öø-ȳáéíóúÁÉÍÓÚñÑ");
-    private static readonly Language Pt = Lang("pt", "a-zA-ZÀÁÂÃÇÉÊÍÓÔÕÚÜàáâãçéêíóôõúü");
+    private static readonly Language En = Lang("en", Language.LatinWordCharacters);
+    private static readonly Language Fr = Lang("fr", Language.LatinWordCharacters);
+    private static readonly Language Pt = Lang("pt", Language.LatinWordCharacters);
 
     private static string[] WordsOf(string content, Language? lang)
     {
@@ -173,6 +176,120 @@ public class TokenizerTests
         var words = result.Tokens.Where(t => t.IsWord).Select(t => t.Text).ToArray();
         Assert.Equal(new[] { "qu'il", "vienne" }, words);
     }
+
+    // ---- Input normalization: soft hyphens, decomposed accents ------
+
+    // Spelled by code point: a literal soft hyphen in source is invisible.
+    private static readonly string Shy = ((char)0x00AD).ToString();
+    private static readonly string Acute = ((char)0x0301).ToString();
+    private static readonly string Diaeresis = ((char)0x0308).ToString();
+
+    [Fact]
+    public void NormalizeInput_DropsSoftHyphens()
+    {
+        Assert.Equal("reparava", Tokenizer.NormalizeInput($"repa{Shy}rava"));
+        Assert.Equal("contá-las", Tokenizer.NormalizeInput($"contá-{Shy}las"));
+        Assert.Equal(string.Empty, Tokenizer.NormalizeInput(Shy + Shy));
+    }
+
+    [Fact]
+    public void NormalizeInput_ComposesDecomposedAccents()
+    {
+        Assert.Equal("été", Tokenizer.NormalizeInput($"e{Acute}te{Acute}"));
+        Assert.Equal("Grüße", Tokenizer.NormalizeInput($"Gru{Diaeresis}ße"));
+    }
+
+    [Fact]
+    public void NormalizeInput_KeepsMarkWithNoPrecomposedForm()
+    {
+        Assert.Equal($"n{Diaeresis}", Tokenizer.NormalizeInput($"n{Diaeresis}"));
+    }
+
+    [Fact]
+    public void NormalizeInput_LeavesTextOutsideBaseMarkRunsUntouched()
+    {
+        // Blanket NFC would turn the Angstrom sign into Å and a CJK compatibility
+        // ideograph into its unified form; only runs with combining marks change.
+        var angstrom = ((char)0x212B).ToString();
+        var cjkCompat = ((char)0xF900).ToString();
+        Assert.Equal(angstrom, Tokenizer.NormalizeInput(angstrom));
+        Assert.Equal($"{cjkCompat} é", Tokenizer.NormalizeInput($"{cjkCompat} e{Acute}"));
+    }
+
+    [Fact]
+    public void NormalizeInput_SurrogatesNeverThrow()
+    {
+        // A mark after an astral base (a surrogate pair) must see the whole pair,
+        // and a mark after an unpaired surrogate (malformed text) is left alone
+        // instead of making string.Normalize throw.
+        var astral = char.ConvertFromUtf32(0x1D49C); // 𝒜
+        Assert.Equal(astral + Acute, Tokenizer.NormalizeInput(astral + Acute));
+        var lone = ((char)0xD800).ToString();
+        Assert.Equal($"{lone}{Acute} é", Tokenizer.NormalizeInput($"{lone}{Acute} e{Acute}"));
+    }
+
+    [Fact]
+    public void Tokenize_IndicesReferenceNormalizedText()
+    {
+        var result = Tokenizer.Tokenize($"o repa{Shy}rava", Pt);
+        Assert.Equal("o reparava", result.Processed);
+        var word = result.Tokens.Where(t => t.IsWord).ElementAt(1);
+        Assert.Equal(("reparava", 2, 10), (word.Text, word.Start, word.End));
+    }
+
+    [Fact]
+    public void ExtractLookupKeys_SoftHyphenatedWordIsOneKey()
+    {
+        Assert.Equal(new[] { "quis", "contá-las" }, LookupKeysOf($"Quis contá-{Shy}las", Pt));
+    }
+
+    [Fact]
+    public void NormalizeKey_MatchesTokenizerNormalization()
+    {
+        // Terms that reach the server without going through Tokenize (reader
+        // saves, CSV import, stored rows) must key like the tokens the reader shows.
+        Assert.Equal("verantwortung", Tokenizer.NormalizeKey($"Verant{Shy}wortung", De));
+        Assert.Equal("été", Tokenizer.NormalizeKey($"E{Acute}TE{Acute}", Fr));
+        Assert.Equal("l'eau", Tokenizer.NormalizeKey(" L’Eau ", Fr));
+        Assert.Equal("peut-être", Tokenizer.NormalizeKey($"peut{(char)0x2011}être", Fr));
+    }
+
+    // ---- Word-character classes ---------------------------------------
+
+    private static readonly Language De = Lang("de", Language.LatinWordCharacters + @"\u200C\u200D");
+
+    [Fact]
+    public void LatinClass_CompilesAsWritten_NotTheAnyLetterFallback()
+    {
+        var regex = Tokenizer.BuildCoreWordRegex(Language.LatinWordCharacters);
+        // The \p{L} fallback would accept these; the Latin class must not.
+        foreach (var ch in new[] { "ª", "º", "α", "ж", "×", "÷", "·" })
+        {
+            Assert.DoesNotMatch(regex, ch);
+        }
+        foreach (var ch in new[] { "ñ", "è", "ò", "ü", "ẞ", "ș", "ł", "ř", "ŵ", "ệ", Acute })
+        {
+            Assert.Matches(regex, ch);
+        }
+    }
+
+    [Fact]
+    public void DefaultClass_AcceptsAnyLetterAndCombiningMarks()
+    {
+        var regex = Tokenizer.BuildCoreWordRegex(Language.DefaultWordCharacters);
+        foreach (var ch in new[] { "a", "ą", "α", "ж", "ß", Acute })
+        {
+            Assert.Matches(regex, ch);
+        }
+        Assert.DoesNotMatch(regex, "1");
+        Assert.DoesNotMatch(regex, "·");
+    }
+
+    [Fact]
+    public void NewLanguage_DefaultsToAnyLetter()
+    {
+        Assert.Equal(Language.DefaultWordCharacters, new Language().WordCharacters);
+    }
 }
 
 /// <summary>
@@ -225,6 +342,48 @@ public class GoldenVectorTests
         {
             yield return new object[] { c.Lang ?? NullLang, c.Input, c.ExpectedWords };
         }
+    }
+
+    [Fact]
+    public void LanguageSeeds_MirrorDbInitializer()
+    {
+        // The golden file claims its seeds mirror what a fresh install stores;
+        // run the real seeding and hold it to that.
+        var services = new ServiceCollection();
+        services.AddSingleton(new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options);
+        using var provider = services.BuildServiceProvider();
+        DbInitializer.Initialize(provider);
+
+        using var context = new AppDbContext(provider.GetRequiredService<DbContextOptions<AppDbContext>>());
+        var seeded = context.Languages.AsNoTracking().ToDictionary(l => l.Code, l => l.WordCharacters);
+        Assert.Equal(new[] { "de", "en", "es", "fr", "it", "pt", "ru" }, seeded.Keys.OrderBy(k => k));
+        foreach (var (code, wordCharacters) in seeded)
+        {
+            Assert.Equal(Golden.Languages[code].WordCharacters, wordCharacters);
+        }
+    }
+
+    [Fact]
+    public void LanguageSeeds_UseTheSharedConstants()
+    {
+        foreach (var code in new[] { "en", "es", "fr", "it", "pt" })
+        {
+            Assert.Equal(Language.LatinWordCharacters, Golden.Languages[code].WordCharacters);
+        }
+        foreach (var code in new[] { "pl", "cs", "ca", "ro", "el", "lt", "nl", "hu", "is" })
+        {
+            Assert.Equal(Language.DefaultWordCharacters, Golden.Languages[code].WordCharacters);
+        }
+
+        // German is the Latin class plus zero-width (non-)joiners.
+        var german = Golden.Languages["de"].WordCharacters;
+        Assert.StartsWith(Language.LatinWordCharacters, german);
+        var regex = Tokenizer.BuildCoreWordRegex(german);
+        Assert.Matches(regex, ((char)0x200C).ToString());
+        Assert.Matches(regex, ((char)0x200D).ToString());
+        Assert.DoesNotMatch(regex, "ª");
     }
 
     [Theory]

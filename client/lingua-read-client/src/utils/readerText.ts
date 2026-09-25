@@ -76,7 +76,7 @@ export const normalizeAssetUrl = (value: string | null | undefined): string | nu
 
 export const countWordsInText = (content: string | null | undefined): number => {
   if (!content) return 0;
-  return (content.match(/[\p{L}\p{N}'’-]+/gu) || []).length;
+  return (content.match(/[\p{L}\p{M}\p{N}'’\u00AD-]+/gu) || []).length;
 };
 
 export const titleLineEndsLikeSentence = (line: string): boolean =>
@@ -231,19 +231,24 @@ export const buildDisplayBlocks = (
 // =====================================================================
 //
 // Pipeline:
-//   1. parseCharacterSubstitutions(language.characterSubstitutions)
+//   1. normalizeTokenizerInput: drop soft hyphens (U+00AD, invisible
+//      hyphenation points that ebooks put inside words: `repa<U+00AD>rava`)
+//      and compose decomposed accents (`e` + U+0301 -> `é`), so neither
+//      splits a word. Only base+combining-mark runs are normalized (NFC);
+//      the rest of the text is left untouched.
+//   2. parseCharacterSubstitutions(language.characterSubstitutions)
 //      Pipe-separated `old=new|...`. Used to normalize curly apostrophes
 //      to ASCII `'`, fancy quotes, ellipsis, etc. The first `=` separates
 //      old and new; later `=` chars belong to `new`.
-//   2. applyCharacterSubstitutions: replace each `old` with `new` in
-//      declaration order. Users must declare longer-old-first to avoid
-//      greediness issues (e.g. `...=…|..=‥`).
-//   3. buildCoreWordRegex(language.wordCharacters): regex character class
-//      defining the language's base alphabet. ASCII `'` and `-` are
-//      stripped before building, because they're handled exclusively by
-//      the universal connector rule below — this keeps glue semantics
-//      consistent across languages whose seeds vary on those chars.
-//   4. tokenizeContent walks the substituted text and accumulates runs
+//   3. applyCharacterSubstitutions: built-in substitutions first (curly /
+//      modifier apostrophes -> `'`, Unicode hyphens U+2010/U+2011 -> `-`),
+//      then the language's, each in declaration order. Users must declare
+//      longer-old-first to avoid greediness issues (e.g. `...=…|..=‥`).
+//   4. buildCoreWordRegex(language.wordCharacters): regex character class
+//      defining the language's base alphabet, used as-is. Latin seeds leave
+//      `'` and `-` out so the connector rule below decides glue; Russian
+//      lists them, which makes them core characters there.
+//   5. tokenizeContent walks the substituted text and accumulates runs
 //      of core word chars **plus glued connectors**:
 //        - Apostrophe `'` (after substitution): glued only when both
 //          previous and next char are core. Allows `l'eau`, `qu'il`,
@@ -252,6 +257,10 @@ export const buildDisplayBlocks = (
 //        - Hyphen `-`: glued only when both neighbours are core. Allows
 //          `beijá-lo`, `interrompo-a`, `well-known`. Standalone `--`
 //          and en-dashes split.
+//        - Middle dot `·`: glued only when both neighbours are core, for
+//          the Catalan geminated l (`col·lecció`).
+//      A combining mark or format character can continue a word but not
+//      start one (an emoji's variation selector is not a word).
 //      Tokens preserve original casing for display; lookups normalize
 //      via JS `toLowerCase()` (BE uses locale-aware `ToLower`).
 //
@@ -261,18 +270,51 @@ export const buildDisplayBlocks = (
 
 const APOSTROPHE = "'";
 const HYPHEN = '-';
+const MIDDLE_DOT = '·';
+
+// Word characters for Latin-script languages (mirrors
+// Language.LatinWordCharacters on the backend). Basic Latin letters,
+// Latin-1 letters (skipping × ÷ and the ordinal indicators ª º, so `1º`
+// is not a word), Latin Extended-A/B, Latin Extended Additional (ẞ, ẁ,
+// Vietnamese), and combining marks.
+export const LATIN_WORD_CHARACTERS = 'a-zA-ZÀ-ÖØ-öø-ɏḀ-ỿ\\p{M}';
+
+// Default for a language the user adds: any letter plus combining marks,
+// so Polish, Greek, Czech, … work without editing the field (mirrors
+// Language.DefaultWordCharacters).
+export const DEFAULT_LANGUAGE_WORD_CHARACTERS = '\\p{L}\\p{M}';
 
 // Built-in normalizations applied BEFORE user-defined characterSubstitutions.
 // These guarantee that apostrophe/hyphen glue works in every language —
 // even custom ones with empty CharacterSubstitutions — by mapping common
-// curly / modifier apostrophe variants to ASCII. User subs can still
-// override these (e.g. mapping U+2019 to a different char) by listing
-// the same `old` in the language config.
+// curly / modifier apostrophe and Unicode hyphen variants to ASCII. User
+// subs can still override these (e.g. mapping U+2019 to a different char)
+// by listing the same `old` in the language config.
 const BUILT_IN_SUBSTITUTIONS: CharSubstitution[] = [
   { old: '’', replacement: APOSTROPHE },
   { old: '‘', replacement: APOSTROPHE },
-  { old: 'ʼ', replacement: APOSTROPHE }
+  { old: 'ʼ', replacement: APOSTROPHE },
+  { old: '\u2010', replacement: HYPHEN }, // hyphen
+  { old: '\u2011', replacement: HYPHEN } // non-breaking hyphen
 ];
+
+const SOFT_HYPHEN_PATTERN = /\u00AD/g;
+const HAS_COMBINING_MARK = /\p{M}/u;
+const BASE_WITH_COMBINING_MARKS = /\P{M}\p{M}+/gu;
+
+/**
+ * Remove soft hyphens and compose decomposed accents. Runs before any
+ * substitution so words split by either are whole again. Mirrors
+ * `Tokenizer.NormalizeInput` on the backend.
+ */
+export const normalizeTokenizerInput = (content: string): string => {
+  if (!content) return content;
+  let out = content.includes('\u00AD') ? content.replace(SOFT_HYPHEN_PATTERN, '') : content;
+  if (HAS_COMBINING_MARK.test(out)) {
+    out = out.replace(BASE_WITH_COMBINING_MARKS, (run) => run.normalize('NFC'));
+  }
+  return out;
+};
 
 export const parseCharacterSubstitutions = (
   str: string | null | undefined
@@ -314,7 +356,7 @@ const wordRegexCache = new Map<string, RegExp>();
 // (`\p{L}`). We use it as-is; ASCII `'` and `-` may or may not be
 // present depending on the language seed (e.g. Russian includes them,
 // Latin-script languages do not). The universal connector rule below
-// adds glued-apostrophe / glued-hyphen behaviour on top of this regex.
+// adds glued apostrophe / hyphen / middle-dot behaviour on top of this regex.
 export const buildCoreWordRegex = (wordCharacters: string | null | undefined): RegExp => {
   const raw = (wordCharacters || '').trim();
   const key = raw || '__default__';
@@ -336,10 +378,19 @@ export const buildCoreWordRegex = (wordCharacters: string | null | undefined): R
 
 const isCoreWordChar = (regex: RegExp, ch: string | undefined): boolean =>
   !!ch && regex.test(ch);
-const isConnector = (ch: string): boolean => ch === APOSTROPHE || ch === HYPHEN;
+
+// A combining mark or format character (an emoji's variation selector, a
+// zero-width joiner) may continue a word but never start one: on its own it
+// would be an invisible clickable "word".
+const MARK_OR_FORMAT = /[\p{M}\p{Cf}]/u;
+const canStartWord = (regex: RegExp, ch: string | undefined): boolean =>
+  isCoreWordChar(regex, ch) && !MARK_OR_FORMAT.test(ch as string);
+const isConnector = (ch: string): boolean =>
+  ch === APOSTROPHE || ch === HYPHEN || ch === MIDDLE_DOT;
 
 /**
- * Apply built-in + user character substitutions and return the
+ * Normalize the input (soft hyphens, decomposed accents), apply
+ * built-in + user character substitutions, and return the
  * processed text plus the precomputed core-word regex. Used by
  * `tokenizeContent` and by callers that walk content with their
  * own outer loop (e.g. the reader's phrase-aware renderer).
@@ -350,7 +401,7 @@ export const prepareLanguageContext = (
 ): { processed: string; coreRegex: RegExp } => {
   const userSubs = parseCharacterSubstitutions(languageConfig?.characterSubstitutions);
   const processed = applyCharacterSubstitutions(
-    applyCharacterSubstitutions(rawContent || '', BUILT_IN_SUBSTITUTIONS),
+    applyCharacterSubstitutions(normalizeTokenizerInput(rawContent || ''), BUILT_IN_SUBSTITUTIONS),
     userSubs
   );
   const coreRegex = buildCoreWordRegex(languageConfig?.wordCharacters);
@@ -368,7 +419,7 @@ export const consumeWordAt = (
   coreRegex: RegExp
 ): { text: string; end: number } | null => {
   if (!processed || index < 0 || index >= processed.length) return null;
-  if (!isCoreWordChar(coreRegex, processed[index])) return null;
+  if (!canStartWord(coreRegex, processed[index])) return null;
 
   let i = index + 1;
   let word = processed[index];

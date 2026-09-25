@@ -51,6 +51,11 @@ namespace LinguaReadApi.Controllers
                 return BadRequest(ModelState);
             }
 
+            return await CreateWordAsync(createWordDto, attempt: 1);
+        }
+
+        private async Task<ActionResult<WordResponseDto>> CreateWordAsync(CreateWordDto createWordDto, int attempt)
+        {
             var userId = GetUserId();
 
             // Check if the text exists and belongs to the user
@@ -161,7 +166,18 @@ namespace LinguaReadApi.Controllers
 
             _context.Words.Add(word);
             // Save here to get the WordId for relationships
-            await _context.SaveChangesAsync();
+            try
+            {
+                await _context.SaveChangesAsync();
+            }
+            catch (DbUpdateException ex) when (attempt < MaxTermWriteAttempts)
+            {
+                // The word linker (or another tab) inserted this word after the lookup
+                // above. Nothing was saved; go again and take the existing-word path.
+                _logger.LogWarning(ex, "New word collided with a concurrent word insert (attempt {Attempt}); retrying", attempt);
+                _context.ChangeTracker.Clear();
+                return await CreateWordAsync(createWordDto, attempt + 1);
+            }
 
             // Create text-word relationship
             var textWord = new TextWord
@@ -539,6 +555,69 @@ namespace LinguaReadApi.Controllers
                  return BadRequest("Term list contains no valid terms.");
             }
 
+            try
+            {
+                TermsBatchPlan plan;
+                int changedCount;
+                for (var attempt = 1; ; attempt++)
+                {
+                    plan = await PlanTermsBatchAsync(userId, language, termsToAdd);
+                    try
+                    {
+                        changedCount = await _context.SaveChangesAsync();
+                        break;
+                    }
+                    catch (DbUpdateException ex) when (attempt < MaxTermWriteAttempts)
+                    {
+                        // The word linker inserts every new word of a text it links, and
+                        // a book import leaves it doing that in the background for
+                        // minutes. A word it inserted after our read collides on
+                        // IX_Words_UserId_LanguageId_Term. Nothing was saved, so plan
+                        // again against the rows that are there now.
+                        _logger.LogWarning(ex, "Term batch collided with a concurrent word insert (attempt {Attempt}); retrying", attempt);
+                        _context.ChangeTracker.Clear();
+                    }
+                }
+
+                // Cards follow the new statuses (Known may suspend; 1-4 may create a card).
+                await SrsCardLifecycle.ApplyStatusRulesAsync(
+                    _context, userId, plan.WordsMadeKnown.Concat(plan.WordsToCreate).ToList(), await GetSettingsAsync(userId));
+                changedCount += await _context.SaveChangesAsync();
+
+                foreach (var translationToUpsert in plan.TranslationsToUpsert)
+                {
+                    await UpsertWordTranslationAsync(translationToUpsert.Word.WordId, translationToUpsert.Translation);
+                }
+                if (plan.TranslationsToUpsert.Any() && !_context.Database.IsRelational())
+                {
+                    changedCount += await _context.SaveChangesAsync();
+                }
+                // Return a summary of actions or just success
+                return Ok(new { Message = $"Batch processed. {changedCount} database changes saved." });
+            }
+            catch (DbUpdateException ex)
+            {
+                 _logger.LogError(ex, "DbUpdateException saving batch terms ({EntryCount} entries)", ex.Entries?.Count());
+                 return StatusCode(500, "An error occurred while saving the terms. Check logs for details.");
+            }
+        }
+
+        // A save that loses a race with a concurrent insert of the same word is
+        // re-planned; each retry reads the rows the other writer added.
+        private const int MaxTermWriteAttempts = 3;
+
+        private sealed record TermsBatchPlan(
+            List<Word> WordsToCreate,
+            List<Word> WordsMadeKnown,
+            List<(Word Word, string Translation)> TranslationsToUpsert);
+
+        // Reads the user's words for the language and stages the batch's changes
+        // on the context (new words added, existing ones raised to Known) without
+        // saving them.
+        private async Task<TermsBatchPlan> PlanTermsBatchAsync(Guid userId, Language language, List<NewTermDto> termsToAdd)
+        {
+            var languageId = language.LanguageId;
+
             // Fetch existing words for this user and language efficiently
             var existingWords = await _context.Words
                 .Include(w => w.Translation)
@@ -610,32 +689,7 @@ namespace LinguaReadApi.Controllers
             {
                 _context.Words.AddRange(wordsToCreate);
             }
-            try
-            {
-                var changedCount = await _context.SaveChangesAsync();
-
-                // Cards follow the new statuses (Known may suspend; 1-4 may create a card).
-                await SrsCardLifecycle.ApplyStatusRulesAsync(
-                    _context, userId, wordsMadeKnown.Concat(wordsToCreate).ToList(), await GetSettingsAsync(userId));
-                changedCount += await _context.SaveChangesAsync();
-
-                foreach (var translationToUpsert in translationsToUpsert)
-                {
-                    await UpsertWordTranslationAsync(translationToUpsert.Word.WordId, translationToUpsert.Translation);
-                }
-                if (translationsToUpsert.Any() && !_context.Database.IsRelational())
-                {
-                    changedCount += await _context.SaveChangesAsync();
-                }
-                // Return a summary of actions or just success
-                return Ok(new { Message = $"Batch processed. {changedCount} database changes saved." });
-            }
-            catch (DbUpdateException ex)
-            {
-                 _logger.LogError(ex, "DbUpdateException saving batch terms ({EntryCount} entries)", ex.Entries?.Count());
-                 return StatusCode(500, "An error occurred while saving the terms. Check logs for details.");
-            }
-            // Removed extra brace here if present
+            return new TermsBatchPlan(wordsToCreate, wordsMadeKnown, translationsToUpsert);
         }
 
         // GET: api/words/export?languageId=5&status=1,5

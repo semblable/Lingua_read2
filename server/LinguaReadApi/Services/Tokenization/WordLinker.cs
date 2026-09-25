@@ -28,7 +28,13 @@ namespace LinguaReadApi.Services.Tokenization
         // legacy text replaces its placeholder OccurrenceCount=1 rows
         // with real frequencies so book/text stats reflect actual
         // running-word percentages instead of unique-word percentages.
-        public const int CurrentTokenizerVersion = 2;
+        // Bump to 3: soft hyphens are dropped and decomposed accents
+        // composed before tokenizing, Unicode hyphens glue like '-', a
+        // middle dot glues (col·lecció), and the Latin seeds cover every
+        // Latin letter. Re-linking replaces fragments such as "repa" +
+        // "rava" with "reparava"; the orphan cleanup then deletes the
+        // fragments nobody translated or marked.
+        public const int CurrentTokenizerVersion = 3;
 
         private const int WordBatchSize = 500;
 

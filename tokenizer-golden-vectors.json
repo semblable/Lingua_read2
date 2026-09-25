@@ -1,12 +1,22 @@
 {
-  "_comment": "Single source of truth for cross-language tokenization expectations, exercised by BOTH the backend (server/LinguaReadApi.Tests/TokenizerTests.cs) and the frontend (client/lingua-read-client/src/__tests__/tokenizer.spec.js) suites. The two tokenizers (Tokenizer.cs and readerText.ts) must produce the same word sequence for every case here; drift between them is the bug class this fixture guards against. Language seeds mirror DbInitializer.cs. Escape forms (\\uXXXX, \\p{...}) decode to the same string fed to both regex engines, which each honour these escapes inside a character class.",
+  "_comment": "Single source of truth for cross-language tokenization expectations, exercised by BOTH the backend (server/LinguaReadApi.Tests/TokenizerTests.cs) and the frontend (client/lingua-read-client/src/__tests__/tokenizer.spec.js) suites. The two tokenizers (Tokenizer.cs and readerText.ts) must produce the same word sequence for every case here; drift between them is the bug class this fixture guards against. Language seeds en/es/fr/it/pt/de/ru mirror DbInitializer.cs (Language.LatinWordCharacters); pl/cs/ca/ro/el/lt/nl/hu/is are languages added through the language form with its defaults (Language.DefaultWordCharacters, no substitutions). Escape forms (\\uXXXX, \\p{...}) in wordCharacters decode to the same string fed to both regex engines, which each honour these escapes inside a character class. Invisible characters in inputs (soft hyphens, combining marks, Unicode hyphens) are written as JSON \\u escapes.",
   "languages": {
-    "en": { "code": "en", "wordCharacters": "a-zA-ZÀ-ÖØ-öø-ȳáéíóúÁÉÍÓÚñÑ", "characterSubstitutions": "´='|`='|’='|‘='|...=…|..=‥" },
-    "fr": { "code": "fr", "wordCharacters": "a-zA-ZÀ-ÖØ-öø-ȳáéíóúÁÉÍÓÚñÑ", "characterSubstitutions": "´='|`='|’='|‘='|...=…|..=‥" },
-    "it": { "code": "it", "wordCharacters": "a-zA-ZÀàÉéÈèÌìÎîÓóÒòÙù", "characterSubstitutions": "´='|`='|’='|‘='|...=…|..=‥" },
-    "pt": { "code": "pt", "wordCharacters": "a-zA-ZÀÁÂÃÇÉÊÍÓÔÕÚÜàáâãçéêíóôõúü", "characterSubstitutions": "´='|`='|’='|‘='|...=…|..=‥" },
-    "de": { "code": "de", "wordCharacters": "a-zA-ZÀ-ÖØ-öø-ȳáéíóúÁÉÍÓÚñÑ\\u200C\\u200D", "characterSubstitutions": "´='|`='|’='|‘='|...=…|..=‥" },
-    "ru": { "code": "ru", "wordCharacters": "\\p{L}\\p{M}'-", "characterSubstitutions": "’='|‘='|...=…" }
+    "en": { "code": "en", "wordCharacters": "a-zA-ZÀ-ÖØ-öø-ɏḀ-ỿ\\p{M}", "characterSubstitutions": "´='|`='|’='|‘='|...=…|..=‥" },
+    "es": { "code": "es", "wordCharacters": "a-zA-ZÀ-ÖØ-öø-ɏḀ-ỿ\\p{M}", "characterSubstitutions": "´='|`='|’='|‘='|...=…|..=‥" },
+    "fr": { "code": "fr", "wordCharacters": "a-zA-ZÀ-ÖØ-öø-ɏḀ-ỿ\\p{M}", "characterSubstitutions": "´='|`='|’='|‘='|...=…|..=‥" },
+    "it": { "code": "it", "wordCharacters": "a-zA-ZÀ-ÖØ-öø-ɏḀ-ỿ\\p{M}", "characterSubstitutions": "´='|`='|’='|‘='|...=…|..=‥" },
+    "pt": { "code": "pt", "wordCharacters": "a-zA-ZÀ-ÖØ-öø-ɏḀ-ỿ\\p{M}", "characterSubstitutions": "´='|`='|’='|‘='|...=…|..=‥" },
+    "de": { "code": "de", "wordCharacters": "a-zA-ZÀ-ÖØ-öø-ɏḀ-ỿ\\p{M}\\u200C\\u200D", "characterSubstitutions": "´='|`='|’='|‘='|...=…|..=‥" },
+    "ru": { "code": "ru", "wordCharacters": "\\p{L}\\p{M}'-", "characterSubstitutions": "’='|‘='|...=…" },
+    "pl": { "code": "pl", "wordCharacters": "\\p{L}\\p{M}", "characterSubstitutions": "" },
+    "cs": { "code": "cs", "wordCharacters": "\\p{L}\\p{M}", "characterSubstitutions": "" },
+    "ca": { "code": "ca", "wordCharacters": "\\p{L}\\p{M}", "characterSubstitutions": "" },
+    "ro": { "code": "ro", "wordCharacters": "\\p{L}\\p{M}", "characterSubstitutions": "" },
+    "el": { "code": "el", "wordCharacters": "\\p{L}\\p{M}", "characterSubstitutions": "" },
+    "lt": { "code": "lt", "wordCharacters": "\\p{L}\\p{M}", "characterSubstitutions": "" },
+    "nl": { "code": "nl", "wordCharacters": "\\p{L}\\p{M}", "characterSubstitutions": "" },
+    "hu": { "code": "hu", "wordCharacters": "\\p{L}\\p{M}", "characterSubstitutions": "" },
+    "is": { "code": "is", "wordCharacters": "\\p{L}\\p{M}", "characterSubstitutions": "" }
   },
   "cases": [
     { "lang": "fr", "input": "l'eau coule", "expectedWords": ["l'eau", "coule"] },
@@ -34,6 +44,51 @@
     { "lang": "ru", "input": "кое-что", "expectedWords": ["кое-что"] },
 
     { "lang": null, "input": "l'eau coule", "expectedWords": ["l'eau", "coule"] },
-    { "lang": null, "input": "interrompo-a agora", "expectedWords": ["interrompo-a", "agora"] }
+    { "lang": null, "input": "interrompo-a agora", "expectedWords": ["interrompo-a", "agora"] },
+
+    { "lang": "pt", "input": "quis contá-\u00adlas, começou a fazê-\u00adlo", "expectedWords": ["quis", "contá-las", "começou", "a", "fazê-lo"] },
+    { "lang": "pt", "input": "Fazal Elahi repa\u00adrava no modo", "expectedWords": ["Fazal", "Elahi", "reparava", "no", "modo"] },
+    { "lang": "de", "input": "Verant\u00adwor\u00adtung", "expectedWords": ["Verantwortung"] },
+    { "lang": "en", "input": "hy\u00adphen\u00adation", "expectedWords": ["hyphenation"] },
+    { "lang": "en", "input": "end\u00ad of\u00ad\u00ad line", "expectedWords": ["end", "of", "line"] },
+    { "lang": "ru", "input": "моло\u00adко", "expectedWords": ["молоко"] },
+    { "lang": "pl", "input": "przy\u00adjaciół\u00adka", "expectedWords": ["przyjaciółka"] },
+
+    { "lang": "fr", "input": "e\u0301te\u0301 a\u0300 Paris", "expectedWords": ["été", "à", "Paris"] },
+    { "lang": "pt", "input": "na\u0303o e\u0301", "expectedWords": ["não", "é"] },
+    { "lang": "de", "input": "Gru\u0308ße", "expectedWords": ["Grüße"] },
+    { "lang": "en", "input": "Spın\u0308al Tap", "expectedWords": ["Spın\u0308al", "Tap"] },
+    { "lang": "ru", "input": "молоко\u0301", "expectedWords": ["молоко\u0301"] },
+    { "lang": "lt", "input": "e\u0307\u0301jo namo", "expectedWords": ["ė\u0301jo", "namo"] },
+
+    { "lang": "en", "input": "⚠\ufe0f Warning", "expectedWords": ["Warning"] },
+    { "lang": "de", "input": "👨\u200d👩 und Kind", "expectedWords": ["und", "Kind"] },
+    { "lang": "ru", "input": "\u0301молоко", "expectedWords": ["молоко"] },
+    { "lang": "de", "input": "Auf\u200clage", "expectedWords": ["Auf\u200clage"] },
+
+    { "lang": "fr", "input": "peut\u2011être", "expectedWords": ["peut-être"] },
+    { "lang": "fr", "input": "arc\u2010en\u2010ciel", "expectedWords": ["arc-en-ciel"] },
+    { "lang": "pt", "input": "dá\u2011me", "expectedWords": ["dá-me"] },
+    { "lang": "en", "input": "a \u2011 b", "expectedWords": ["a", "b"] },
+
+    { "lang": "ca", "input": "col·lecció intel·ligent", "expectedWords": ["col·lecció", "intel·ligent"] },
+    { "lang": "ca", "input": "l'Albert i l’Anna", "expectedWords": ["l'Albert", "i", "l'Anna"] },
+    { "lang": "en", "input": "a · b", "expectedWords": ["a", "b"] },
+
+    { "lang": "pt", "input": "Müller e Peña, crème brûlée", "expectedWords": ["Müller", "e", "Peña", "crème", "brûlée"] },
+    { "lang": "it", "input": "Müller, così, perché Garibaldí", "expectedWords": ["Müller", "così", "perché", "Garibaldí"] },
+    { "lang": "pt", "input": "1º andar, 2ª vez", "expectedWords": ["andar", "vez"] },
+    { "lang": "es", "input": "¿Qué pasó? ¡Niño!", "expectedWords": ["Qué", "pasó", "Niño"] },
+    { "lang": "de", "input": "GROẞ und groß", "expectedWords": ["GROẞ", "und", "groß"] },
+    { "lang": "en", "input": "Łódź, Dvořák, Târgu Mureș, ŵyn, Việt", "expectedWords": ["Łódź", "Dvořák", "Târgu", "Mureș", "ŵyn", "Việt"] },
+    { "lang": "en", "input": "a×b÷c", "expectedWords": ["a", "b", "c"] },
+
+    { "lang": "pl", "input": "Zażółć gęślą jaźń", "expectedWords": ["Zażółć", "gęślą", "jaźń"] },
+    { "lang": "cs", "input": "Příliš žluťoučký kůň", "expectedWords": ["Příliš", "žluťoučký", "kůň"] },
+    { "lang": "ro", "input": "Țară și şcoală", "expectedWords": ["Țară", "și", "şcoală"] },
+    { "lang": "el", "input": "Καλημέρα, κόσμε! Τι κάνεις;", "expectedWords": ["Καλημέρα", "κόσμε", "Τι", "κάνεις"] },
+    { "lang": "nl", "input": "zo'n café", "expectedWords": ["zo'n", "café"] },
+    { "lang": "hu", "input": "Győr őrült űrhajó", "expectedWords": ["Győr", "őrült", "űrhajó"] },
+    { "lang": "is", "input": "Þórður fór til Reykjavíkur", "expectedWords": ["Þórður", "fór", "til", "Reykjavíkur"] }
   ]
 }

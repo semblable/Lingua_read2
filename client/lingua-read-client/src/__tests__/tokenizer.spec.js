@@ -5,8 +5,18 @@ import {
   parseCharacterSubstitutions,
   applyCharacterSubstitutions,
   buildCoreWordRegex,
-  extractWords
+  extractWords,
+  normalizeTokenizerInput,
+  LATIN_WORD_CHARACTERS,
+  DEFAULT_LANGUAGE_WORD_CHARACTERS
 } from '../utils/readerText';
+
+// Invisible / combining characters, spelled by code point so the test source
+// stays readable (a literal soft hyphen is indistinguishable from nothing).
+const SHY = String.fromCharCode(0x00ad);
+const ACUTE = String.fromCharCode(0x0301);
+const DIAERESIS = String.fromCharCode(0x0308);
+const BACKSLASH = String.fromCharCode(92);
 
 // Shared cross-language golden vectors (repo root). The backend
 // TokenizerTests.GoldenVectorTests loads the SAME file, so the two tokenizers
@@ -154,5 +164,95 @@ describe('tokenizeContent — token start/end indices map into processed text', 
     const word = tokens.find(t => t.type === 'word');
     expect(word.text).toBe("l'eau");
     expect(processed.slice(word.start, word.end)).toBe("l'eau");
+  });
+
+  test('soft hyphens are gone from processed text and token offsets', () => {
+    const { processed, tokens } = tokenizeContent(`o repa${SHY}rava`, LANG.pt);
+    expect(processed).toBe('o reparava');
+    const word = tokens.filter(t => t.type === 'word')[1];
+    expect(word).toMatchObject({ text: 'reparava', start: 2, end: 10 });
+    expect(processed.slice(word.start, word.end)).toBe('reparava');
+  });
+
+  test('decomposed accents are composed in processed text', () => {
+    const { processed, tokens } = tokenizeContent(`e${ACUTE}te${ACUTE}`, LANG.fr);
+    expect(processed).toBe('été');
+    expect(tokens).toEqual([{ type: 'word', text: 'été', start: 0, end: 3 }]);
+  });
+});
+
+describe('normalizeTokenizerInput', () => {
+  test('drops soft hyphens, including one after a clitic hyphen', () => {
+    expect(normalizeTokenizerInput(`repa${SHY}rava`)).toBe('reparava');
+    expect(normalizeTokenizerInput(`contá-${SHY}las`)).toBe('contá-las');
+    expect(normalizeTokenizerInput(`${SHY}${SHY}`)).toBe('');
+  });
+
+  test('composes decomposed accents', () => {
+    expect(normalizeTokenizerInput(`e${ACUTE}te${ACUTE}`)).toBe('été');
+    expect(normalizeTokenizerInput(`Gru${DIAERESIS}ße`)).toBe('Grüße');
+  });
+
+  test('keeps a mark that has no precomposed form', () => {
+    expect(normalizeTokenizerInput(`n${DIAERESIS}`)).toBe(`n${DIAERESIS}`);
+  });
+
+  test('leaves characters outside base+mark runs untouched (no blanket NFC)', () => {
+    // NFC would turn the Angstrom sign into Å and a CJK compatibility
+    // ideograph into its unified form; only runs with combining marks change.
+    const angstrom = String.fromCharCode(0x212b);
+    const cjkCompat = String.fromCharCode(0xf900);
+    expect(normalizeTokenizerInput(angstrom)).toBe(angstrom);
+    expect(normalizeTokenizerInput(`${cjkCompat} e${ACUTE}`)).toBe(`${cjkCompat} é`);
+  });
+
+  test('returns empty input unchanged', () => {
+    expect(normalizeTokenizerInput('')).toBe('');
+  });
+});
+
+describe('word-character constants', () => {
+  // The golden file's seeds are what DbInitializer / the migration store, and
+  // the backend tests compare them with Language.LatinWordCharacters and
+  // Language.DefaultWordCharacters, so these pin FE == BE.
+  test('Latin seeds match LATIN_WORD_CHARACTERS', () => {
+    for (const code of ['en', 'es', 'fr', 'it', 'pt']) {
+      expect(LANG[code].wordCharacters).toBe(LATIN_WORD_CHARACTERS);
+    }
+    expect(LANG.de.wordCharacters)
+      .toBe(`${LATIN_WORD_CHARACTERS}${BACKSLASH}u200C${BACKSLASH}u200D`);
+  });
+
+  test('form-added languages match DEFAULT_LANGUAGE_WORD_CHARACTERS', () => {
+    for (const code of ['pl', 'cs', 'ca', 'ro', 'el', 'lt', 'nl', 'hu', 'is']) {
+      expect(LANG[code].wordCharacters).toBe(DEFAULT_LANGUAGE_WORD_CHARACTERS);
+    }
+  });
+
+  test('the Latin class compiles as written instead of falling back to any letter', () => {
+    const r = buildCoreWordRegex(LATIN_WORD_CHARACTERS);
+    // The any-letter fallback would accept these; the Latin class must not.
+    for (const ch of ['ª', 'º', 'α', 'ж', '×', '÷', '·']) {
+      expect(r.test(ch)).toBe(false);
+    }
+    for (const ch of ['ñ', 'è', 'ò', 'ü', 'ẞ', 'ș', 'ł', 'ř', 'ŵ', 'ệ', ACUTE]) {
+      expect(r.test(ch)).toBe(true);
+    }
+  });
+
+  test('the default class accepts any letter and combining marks', () => {
+    const r = buildCoreWordRegex(DEFAULT_LANGUAGE_WORD_CHARACTERS);
+    for (const ch of ['a', 'ą', 'α', 'ж', 'ß', ACUTE]) {
+      expect(r.test(ch)).toBe(true);
+    }
+    expect(r.test('1')).toBe(false);
+    expect(r.test('·')).toBe(false);
+  });
+});
+
+describe('extractWords — bulk ops see normalized words', () => {
+  test('soft-hyphenated words are captured whole for auto-translate / mark-known', () => {
+    expect(extractWords(`Verant${SHY}wortung und Schuld`, LANG.de))
+      .toEqual(['Verantwortung', 'und', 'Schuld']);
   });
 });

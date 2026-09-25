@@ -32,7 +32,7 @@ namespace LinguaReadApi.Data
                          new Language { // English
                             Name = "English", Code = "en",
                             ShowRomanization = false, RightToLeft = false, ParserType = "spacedel",
-                            SplitSentences = ",.!?", WordCharacters = "a-zA-ZÀ-ÖØ-öø-ȳáéíóúÁÉÍÓÚñÑ",
+                            SplitSentences = ",.!?", WordCharacters = Language.LatinWordCharacters,
                             IsActiveForTranslation = true,
                             CharacterSubstitutions = "´='|`='|’='|‘='|...=…|..=‥",
                             Dictionaries = new List<LanguageDictionary> { }
@@ -40,7 +40,7 @@ namespace LinguaReadApi.Data
                         new Language { // Spanish
                             Name = "Spanish", Code = "es",
                             ShowRomanization = false, RightToLeft = false, ParserType = "spacedel",
-                            SplitSentences = ",.!?", WordCharacters = "a-zA-ZÀ-ÖØ-öø-ȳáéíóúÁÉÍÓÚñÑ",
+                            SplitSentences = ",.!?", WordCharacters = Language.LatinWordCharacters,
                             IsActiveForTranslation = true,
                             CharacterSubstitutions = "´='|`='|’='|‘='|...=…|..=‥",
                             Dictionaries = new List<LanguageDictionary> { }
@@ -48,7 +48,7 @@ namespace LinguaReadApi.Data
                         new Language { // French
                             Name = "French", Code = "fr",
                             ShowRomanization = false, RightToLeft = false, ParserType = "spacedel",
-                            SplitSentences = ",.!?", WordCharacters = "a-zA-ZÀ-ÖØ-öø-ȳáéíóúÁÉÍÓÚñÑ",
+                            SplitSentences = ",.!?", WordCharacters = Language.LatinWordCharacters,
                             IsActiveForTranslation = true,
                             CharacterSubstitutions = "´='|`='|’='|‘='|...=…|..=‥",
                             Dictionaries = new List<LanguageDictionary> { }
@@ -56,7 +56,7 @@ namespace LinguaReadApi.Data
                         new Language { // German
                             Name = "German", Code = "de",
                             ShowRomanization = false, RightToLeft = false, ParserType = "spacedel",
-                            SplitSentences = ",.!?", WordCharacters = "a-zA-ZÀ-ÖØ-öø-ȳáéíóúÁÉÍÓÚñÑ\\u200C\\u200D",
+                            SplitSentences = ",.!?", WordCharacters = Language.LatinWordCharacters + "\\u200C\\u200D",
                             IsActiveForTranslation = true,
                             CharacterSubstitutions = "´='|`='|’='|‘='|...=…|..=‥",
                             Dictionaries = new List<LanguageDictionary> { }
@@ -64,7 +64,7 @@ namespace LinguaReadApi.Data
                         new Language { // Italian
                             Name = "Italian", Code = "it",
                             ShowRomanization = false, RightToLeft = false, ParserType = "spacedel",
-                            SplitSentences = ",.!?", WordCharacters = "a-zA-ZÀàÉéÈèÌìÎîÓóÒòÙù",
+                            SplitSentences = ",.!?", WordCharacters = Language.LatinWordCharacters,
                             IsActiveForTranslation = true,
                             CharacterSubstitutions = "´='|`='|’='|‘='|...=…|..=‥",
                             Dictionaries = new List<LanguageDictionary> { }
@@ -72,7 +72,7 @@ namespace LinguaReadApi.Data
                         new Language { // Portuguese
                             Name = "Portuguese", Code = "pt",
                             ShowRomanization = false, RightToLeft = false, ParserType = "spacedel",
-                            SplitSentences = ",.!?", WordCharacters = "a-zA-ZÀÁÂÃÇÉÊÍÓÔÕÚÜàáâãçéêíóôõúü",
+                            SplitSentences = ",.!?", WordCharacters = Language.LatinWordCharacters,
                             IsActiveForTranslation = true,
                             CharacterSubstitutions = "´='|`='|’='|‘='|...=…|..=‥",
                             Dictionaries = new List<LanguageDictionary> { }

@@ -289,6 +289,55 @@ describe('TextDisplay', () => {
     expect(screen.getByText(/Untracked/i)).toBeInTheDocument();
   });
 
+  test('soft-hyphenated European words render as single clickable words', async () => {
+    // Ebooks put invisible soft hyphens (U+00AD) inside words; the reader used
+    // to split "repa|rava" into two words and "contá-|las" into "contá" + "las".
+    const shy = String.fromCharCode(0x00ad);
+    getText.mockResolvedValueOnce({
+      textId: 1,
+      title: 'Capítulo',
+      content: `Fazal Elahi repa${shy}rava, quis contá-${shy}las.`,
+      languageId: 6,
+      languageCode: 'pt',
+      languageName: 'Portuguese',
+      isAudioLesson: false,
+      words: [{ wordId: 9, term: 'contá-las', status: 3, translation: 'count them' }],
+      bookId: null
+    });
+    getLanguage.mockResolvedValueOnce({
+      languageId: 6,
+      name: 'Portuguese',
+      code: 'pt',
+      wordCharacters: String.raw`a-zA-ZÀ-ÖØ-öø-ɏḀ-ỿ\p{M}`,
+      characterSubstitutions: "´='|`='|’='|‘='|...=…|..=‥"
+    });
+    // The reader colours words from the language's whole vocabulary.
+    global.fetch = vi.fn(() =>
+      Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve([{ wordId: 9, term: 'contá-las', status: 3, translation: 'count them' }])
+      })
+    );
+
+    const { container } = renderTextDisplay();
+    await waitFor(() => expect(getLanguage).toHaveBeenCalledWith(6));
+
+    const reparava = await screen.findByText('reparava');
+    expect(reparava).toHaveClass('clickable-word');
+    const contaLas = await screen.findByText('contá-las');
+    expect(contaLas).toHaveClass('clickable-word');
+    await waitFor(() => expect(contaLas).toHaveClass('word-status-3'));
+
+    const words = [...container.querySelectorAll('.clickable-word')].map(el => el.textContent);
+    expect(words).toEqual(['Fazal', 'Elahi', 'reparava', 'quis', 'contá-las']);
+    expect(container.textContent).not.toContain(shy);
+
+    fireEvent.click(reparava);
+    expect(screen.getByRole('heading', { name: 'reparava' })).toBeInTheDocument();
+
+    delete global.fetch;
+  });
+
   test('deleting a tracked word from Word Info removes it locally', async () => {
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
     deleteWord.mockResolvedValue({});

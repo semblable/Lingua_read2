@@ -3,6 +3,7 @@ import { Form, Button, Row, Col, Card, InputGroup, Alert } from 'react-bootstrap
 import { createLanguage, updateLanguage, deleteLanguage, resetLanguageContent } from '../../utils/api'; // <-- Import deleteLanguage
 import type { Language, LanguageInput } from '../../utils/api/languages';
 import type { components } from '../../utils/api-types';
+import { DEFAULT_LANGUAGE_WORD_CHARACTERS } from '../../utils/readerText';
 
 // Form rows are partial of the full DTO because new entries don't yet have a
 // `languageId` (assigned by the backend at save time).
@@ -35,7 +36,7 @@ const initialLanguageState: LanguageFormData = {
     parserType: 'spacedel',
     characterSubstitutions: '',
     splitSentences: '.!?',
-    wordCharacters: 'a-zA-Z',
+    wordCharacters: DEFAULT_LANGUAGE_WORD_CHARACTERS,
     isActiveForTranslation: false,
     dictionaries: [],
     sentenceSplitExceptions: [],
@@ -263,13 +264,13 @@ function LanguageForm({ language, onSave, onCancel, onDelete, onResetContent }: 
                     <Form.Label>Word Characters (Regex)</Form.Label>
                     <Form.Control
                         type="text"
-                        placeholder="e.g., a-zA-ZÀ-Üà-ü'-"
+                        placeholder={`e.g., ${DEFAULT_LANGUAGE_WORD_CHARACTERS}`}
                         name="wordCharacters"
                         value={formData.wordCharacters}
                         onChange={handleChange}
                         required
                     />
-                     <Form.Text muted>Regex character class defining valid word characters.</Form.Text>
+                     <Form.Text muted>Regex character class defining valid word characters. <code>{DEFAULT_LANGUAGE_WORD_CHARACTERS}</code> (any letter, with accents) fits most languages.</Form.Text>
                 </Form.Group>
             </Row>
 

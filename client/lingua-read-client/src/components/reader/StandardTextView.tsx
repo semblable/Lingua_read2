@@ -152,6 +152,7 @@ const StandardTextView = React.memo(({
       <div
         className={`text-content text-content-${modeClass} reader-align-${globalSettings.readerTextAlignment || 'left'} ${globalSettings.readerParagraphIndent ? 'reader-indent-on' : 'reader-indent-off'}`}
         ref={textContentRef}
+        lang={text?.languageCode || undefined}
         style={{
           fontSize: `${globalSettings.textSize}px`,
           lineHeight: isMobile ? mobileReadingConfig.lineSpacing : 'var(--reading-line-height)',

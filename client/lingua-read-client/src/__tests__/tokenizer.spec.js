@@ -7,6 +7,8 @@ import {
   buildCoreWordRegex,
   extractWords,
   normalizeTokenizerInput,
+  splitSentenceAroundTerm,
+  splitTextIntoSentenceSegments,
   LATIN_WORD_CHARACTERS,
   DEFAULT_LANGUAGE_WORD_CHARACTERS
 } from '../utils/readerText';
@@ -83,17 +85,21 @@ describe('applyCharacterSubstitutions', () => {
 });
 
 describe('buildCoreWordRegex', () => {
-  test('falls back to \\p{L} when wordCharacters is empty', () => {
+  test('falls back to letters and marks when wordCharacters is empty', () => {
     const r = buildCoreWordRegex('');
     expect(r.test('a')).toBe(true);
     expect(r.test('é')).toBe(true);
+    expect(r.test(ACUTE)).toBe(true);
     expect(r.test('1')).toBe(false);
     expect(r.test(' ')).toBe(false);
   });
 
-  test('falls back when wordCharacters is invalid regex', () => {
-    const r = buildCoreWordRegex('a-z[unbalanced');
-    expect(r.test('a')).toBe(true);
+  test('falls back to letters and marks when wordCharacters is invalid regex', () => {
+    // A reversed range, rejected by JS and .NET alike.
+    const r = buildCoreWordRegex('z-a');
+    expect(r.test('ж')).toBe(true);
+    expect(r.test(ACUTE)).toBe(true);
+    expect(r.test('1')).toBe(false);
   });
 
   test("does not strip range hyphens from `a-z`", () => {
@@ -209,6 +215,60 @@ describe('normalizeTokenizerInput', () => {
   test('returns empty input unchanged', () => {
     expect(normalizeTokenizerInput('')).toBe('');
   });
+
+  test('maps Greek oxia letters onto the tonos letters keyboards type', () => {
+    // Omicron with oxia (U+1F79) and with tonos (U+03CC) look the same.
+    const oxia = `κ${String.fromCharCode(0x1f79)}σμος`;
+    const tonos = `κ${String.fromCharCode(0x3cc)}σμος`;
+    expect(normalizeTokenizerInput(oxia)).toBe(tonos);
+    expect(normalizeTokenizerInput(tonos)).toBe(tonos);
+  });
+});
+
+describe('splitSentenceAroundTerm', () => {
+  const highlighted = (sentence, term) =>
+    splitSentenceAroundTerm(sentence, term).filter(p => p.isTerm).map(p => p.text);
+
+  test('finds a term across a soft hyphen in the stored sentence', () => {
+    // Mined sentences are raw reader text; terms are keyed from normalized tokens.
+    expect(splitSentenceAroundTerm(`Fazal Elahi repa${SHY}rava no modo.`, 'reparava')).toEqual([
+      { text: 'Fazal Elahi ', isTerm: false },
+      { text: 'reparava', isTerm: true },
+      { text: ' no modo.', isTerm: false }
+    ]);
+  });
+
+  test('finds a term in a decomposed sentence, case-insensitively, every time', () => {
+    expect(highlighted(`E${ACUTE}te${ACUTE} ou e${ACUTE}te${ACUTE}`, 'été')).toEqual(['Été', 'été']);
+  });
+
+  test('matches an ASCII-apostrophe term but keeps the curly apostrophe for display', () => {
+    expect(highlighted('Il boit l’eau.', "l'eau")).toEqual(['l’eau']);
+  });
+
+  test('returns the whole sentence when the term is absent or empty', () => {
+    expect(splitSentenceAroundTerm('Mi perro corre.', 'gato')).toEqual([{ text: 'Mi perro corre.', isTerm: false }]);
+    expect(splitSentenceAroundTerm('Mi perro corre.', '')).toEqual([{ text: 'Mi perro corre.', isTerm: false }]);
+  });
+
+  test('treats regex metacharacters in the term literally', () => {
+    expect(highlighted('He said e.g. that, not eXg.', 'e.g.')).toEqual(['e.g.']);
+  });
+});
+
+describe('splitTextIntoSentenceSegments', () => {
+  test('segment text is normalized, since it leaves the reader as mined sentences and requests', () => {
+    const segments = splitTextIntoSentenceSegments(`Fazal Elahi repa${SHY}rava. Il fait e${ACUTE}te${ACUTE}.`, [], LANG.pt, 'pt');
+    expect(segments.map(s => s.text)).toEqual(['Fazal Elahi reparava.', 'Il fait été.']);
+  });
+
+  test('normalizing never drops a segment: bookmarks and progress are keyed by sentence index', () => {
+    const segments = splitTextIntoSentenceSegments('', [
+      { type: 'title', text: SHY },
+      { type: 'paragraph', text: 'Um dia. Outro dia.' }
+    ], LANG.pt, 'pt');
+    expect(segments.map(s => [s.index, s.text])).toEqual([[0, ''], [1, 'Um dia.'], [2, 'Outro dia.']]);
+  });
 });
 
 describe('word-character constants', () => {
@@ -223,8 +283,8 @@ describe('word-character constants', () => {
       .toBe(`${LATIN_WORD_CHARACTERS}${BACKSLASH}u200C${BACKSLASH}u200D`);
   });
 
-  test('form-added languages match DEFAULT_LANGUAGE_WORD_CHARACTERS', () => {
-    for (const code of ['pl', 'cs', 'ca', 'ro', 'el', 'lt', 'nl', 'hu', 'is']) {
+  test('Russian and form-added languages match DEFAULT_LANGUAGE_WORD_CHARACTERS', () => {
+    for (const code of ['ru', 'pl', 'cs', 'ca', 'ro', 'el', 'lt', 'nl', 'hu', 'is']) {
       expect(LANG[code].wordCharacters).toBe(DEFAULT_LANGUAGE_WORD_CHARACTERS);
     }
   });

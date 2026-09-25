@@ -80,7 +80,7 @@ namespace LinguaReadApi.Data
                         new Language { // Russian
                             Name = "Russian", Code = "ru",
                             ShowRomanization = true, RightToLeft = false, ParserType = "spacedel",
-                            SplitSentences = ".!?", WordCharacters = @"\p{L}\p{M}'-", IsActiveForTranslation = true,
+                            SplitSentences = ".!?", WordCharacters = Language.DefaultWordCharacters, IsActiveForTranslation = true,
                             CharacterSubstitutions = "’='|‘='|“=\"|”=\"|...=…|--=—",
                              Dictionaries = new List<LanguageDictionary> {
                                 new LanguageDictionary { Purpose = "terms", DisplayType = "popup", UrlTemplate = "https://www.wordreference.com/enru/###", IsActive = true, SortOrder = 0 },

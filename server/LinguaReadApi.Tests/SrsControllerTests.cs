@@ -333,6 +333,44 @@ public class SrsControllerTests
         Assert.Equal("He said ___ that is fine.", masked);
     }
 
+    // Mined sentences are the reader's raw segment text; terms are keyed from the
+    // normalized tokens. Spelled by code point: a literal soft hyphen is invisible.
+    private static readonly string Shy = ((char)0x00AD).ToString();
+    private static readonly string Acute = ((char)0x0301).ToString();
+
+    [Fact]
+    public void BuildClozeSentence_FindsTermAcrossSoftHyphen()
+    {
+        // Regression (tokenizer v3): the reader now keys "reparava" whole, so the
+        // cloze must look past the soft hyphen stored in the mined sentence.
+        var masked = SrsController.BuildClozeSentence($"Fazal Elahi repa{Shy}rava no modo.", "reparava");
+        Assert.Equal("Fazal Elahi ___ no modo.", masked);
+    }
+
+    [Fact]
+    public void BuildClozeSentence_FindsTermInDecomposedSentence()
+    {
+        var masked = SrsController.BuildClozeSentence($"Il fait beau cet e{Acute}te{Acute}.", "été");
+        Assert.Equal("Il fait beau cet ___.", masked);
+    }
+
+    [Fact]
+    public void BuildClozeSentence_FindsElisionWrittenWithCurlyApostrophe()
+    {
+        var masked = SrsController.BuildClozeSentence("Il boit l’eau froide.", "l'eau");
+        Assert.Equal("Il boit ___ froide.", masked);
+    }
+
+    [Fact]
+    public void BuildClozeSentence_AppliesTheLanguageSubstitutions()
+    {
+        var portuguese = new Language { Code = "pt", CharacterSubstitutions = "´='|`='" };
+        Assert.Null(SrsController.BuildClozeSentence("Voltou das terras d´África.", "d'áfrica"));
+        Assert.Equal(
+            "Voltou das terras ___.",
+            SrsController.BuildClozeSentence("Voltou das terras d´África.", "d'áfrica", portuguese));
+    }
+
     [Fact]
     public void NormalizeCardType_AcceptsTranslationClozeAndMixed()
     {
@@ -364,6 +402,23 @@ public class SrsControllerTests
         var card = Assert.Single(cards);
         Assert.Equal("The ___ sat on the mat.", card.ClozeSentence);
         Assert.Equal("cat", card.Term);
+    }
+
+    [Fact]
+    public async Task GetDueCards_ClozeMatchesInTheCardLanguagesNormalizedForm()
+    {
+        using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        // Only the language's own substitution (´ for ') makes this term match.
+        context.Languages.Add(new Language { LanguageId = 1, Name = "Portuguese", Code = "pt", CharacterSubstitutions = "´='" });
+        context.SaveChanges();
+        SeedCardWithPhrase(context, userId, 110, "d'áfrica", "Voltou das terras d´África.", cardType: "cloze");
+
+        var controller = CreateController(context, userId);
+        var result = await controller.GetDueCards();
+
+        var cards = result.Value ?? Assert.IsType<List<SrsDueCardDto>>(((OkObjectResult)result.Result!).Value);
+        Assert.Equal("Voltou das terras ___.", Assert.Single(cards).ClozeSentence);
     }
 
     [Fact]

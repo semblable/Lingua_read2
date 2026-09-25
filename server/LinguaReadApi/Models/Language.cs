@@ -17,8 +17,9 @@ namespace LinguaReadApi.Models
 
         /// <summary>
         /// Default for a language the user adds: any letter plus combining marks, so Polish,
-        /// Greek, Czech, … work without editing the field. Mirrored by
-        /// <c>DEFAULT_LANGUAGE_WORD_CHARACTERS</c> in the client's readerText.ts.
+        /// Greek, Czech, … work without editing the field. Also the Russian seed and the
+        /// tokenizer's fallback when a language's class is empty or not a valid regex. Mirrored
+        /// by <c>DEFAULT_LANGUAGE_WORD_CHARACTERS</c> in the client's readerText.ts.
         /// </summary>
         public const string DefaultWordCharacters = @"\p{L}\p{M}";
 

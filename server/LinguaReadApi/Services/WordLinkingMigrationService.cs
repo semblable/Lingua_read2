@@ -75,6 +75,7 @@ namespace LinguaReadApi.Services
             int totalProcessed = 0;
             int totalErrors = 0;
             int reportedTotal = -1;
+            var rekeyPending = false;
             var failedIds = new HashSet<int>();
 
             while (!stoppingToken.IsCancellationRequested)
@@ -108,6 +109,7 @@ namespace LinguaReadApi.Services
                         _logger.LogInformation(
                             "WordLinkingMigrationService: starting re-link of {Total} texts to tokenizer version {V}.",
                             reportedTotal, WordLinker.CurrentTokenizerVersion);
+                        rekeyPending = true;
                     }
 
                     batch = await context.Texts
@@ -124,6 +126,14 @@ namespace LinguaReadApi.Services
                 }
 
                 if (batch.Count == 0) break;
+
+                // Before the first relink, so a stored term the new tokenizer
+                // spells differently is found by the linker instead of duplicated.
+                if (rekeyPending)
+                {
+                    rekeyPending = false;
+                    await RekeyLegacyTerms(stoppingToken);
+                }
 
                 foreach (var (textId, content, languageId, userId) in batch)
                 {
@@ -175,6 +185,29 @@ namespace LinguaReadApi.Services
             if (!stoppingToken.IsCancellationRequested)
             {
                 await CleanupOrphans(stoppingToken);
+            }
+        }
+
+        private async Task RekeyLegacyTerms(CancellationToken stoppingToken)
+        {
+            try
+            {
+                using var scope = _serviceProvider.CreateScope();
+                var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                var rekeyed = await WordLinker.RekeyLegacyTermsAsync(context, stoppingToken);
+                if (rekeyed > 0)
+                {
+                    _logger.LogInformation(
+                        "WordLinkingMigrationService: rewrote {Count} stored terms into the current tokenizer's form.",
+                        rekeyed);
+                }
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // Best-effort like the cleanup: an old-form term only means a
+                // duplicate row, not a failed relink.
+                _logger.LogWarning(ex,
+                    "WordLinkingMigrationService: stored-term rewrite failed (non-fatal).");
             }
         }
 

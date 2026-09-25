@@ -2201,6 +2201,7 @@ const TextDisplay = () => {
                     isExplanationVisible={visibleExplanationIndex === currentSentenceSegment?.index}
                     currentSegmentTranslation={currentSentenceSegment ? segmentTranslations[currentSentenceSegment.index] : ''}
                     currentSegmentExplanation={currentSentenceSegment ? segmentExplanations[currentSentenceSegment.index] : ''}
+                    languageCode={text?.languageCode}
                   />
                 ) : isAudioLesson && displayMode === 'audio' ? (
                   <AudioTranscriptView
@@ -2217,6 +2218,7 @@ const TextDisplay = () => {
                     readingContainerRef={readingContainerRef}
                     itemData={itemData}
                     listRef={listRef}
+                    languageCode={text?.languageCode}
                   />
                 ) : (
                   <StandardTextView

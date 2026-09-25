@@ -254,9 +254,54 @@ public class TokenizerTests
         Assert.Equal("peut-être", Tokenizer.NormalizeKey($"peut{(char)0x2011}être", Fr));
     }
 
+    [Fact]
+    public void NormalizeKey_AppliesTheLanguageSubstitutions()
+    {
+        // The Latin seeds map ´ and ` to an apostrophe, so the reader shows "d'África";
+        // a CSV row or a stored term spelled with ´ must key the same way.
+        Assert.Equal("d'áfrica", Tokenizer.NormalizeKey("d´África", Pt));
+        Assert.Equal(LookupKeysOf("terras d´África", Pt)[1], Tokenizer.NormalizeKey("d´África", Pt));
+    }
+
+    [Fact]
+    public void NormalizeText_IsTheTextTheTokenizerWalks()
+    {
+        var input = $"Il boit l’eau... e{Acute}te{Acute} repa{Shy}rava";
+        Assert.Equal("Il boit l'eau… été reparava", Tokenizer.NormalizeText(input, Fr));
+        Assert.Equal(Tokenizer.Tokenize(input, Fr).Processed, Tokenizer.NormalizeText(input, Fr));
+        Assert.Equal(string.Empty, Tokenizer.NormalizeText(null, Fr));
+    }
+
+    [Fact]
+    public void NormalizeInput_MapsGreekOxiaLettersToTonos()
+    {
+        // Omicron with oxia (U+1F79) and with tonos (U+03CC) look the same; ebooks
+        // carry both, keyboards type the tonos one.
+        var oxia = $"κ{(char)0x1F79}σμος";
+        var tonos = $"κ{(char)0x03CC}σμος";
+        Assert.Equal(tonos, Tokenizer.NormalizeInput(oxia));
+        Assert.Equal(Tokenizer.NormalizeKey(tonos, El), Tokenizer.NormalizeKey(oxia, El));
+        // Greek already in NFC is left as it is.
+        Assert.Equal(tonos, Tokenizer.NormalizeInput(tonos));
+    }
+
     // ---- Word-character classes ---------------------------------------
 
-    private static readonly Language De = Lang("de", Language.LatinWordCharacters + @"\u200C\u200D");
+    private static readonly Language De = Lang("de", Language.LatinWordCharacters + @"\" + "u200C" + @"\" + "u200D");
+    private static readonly Language El = Lang("el", Language.DefaultWordCharacters, subs: "");
+
+    [Fact]
+    public void EmptyOrInvalidClass_FallsBackToLettersAndMarks()
+    {
+        // "z-a" is a reversed range, rejected by .NET and JS alike.
+        foreach (var wordCharacters in new[] { "", "z-a" })
+        {
+            var regex = Tokenizer.BuildCoreWordRegex(wordCharacters);
+            Assert.Matches(regex, "ж");
+            Assert.Matches(regex, Acute);
+            Assert.DoesNotMatch(regex, "1");
+        }
+    }
 
     [Fact]
     public void LatinClass_CompilesAsWritten_NotTheAnyLetterFallback()
@@ -372,7 +417,8 @@ public class GoldenVectorTests
         {
             Assert.Equal(Language.LatinWordCharacters, Golden.Languages[code].WordCharacters);
         }
-        foreach (var code in new[] { "pl", "cs", "ca", "ro", "el", "lt", "nl", "hu", "is" })
+        // Russian is seeded with the any-letter default; the rest are form-added languages.
+        foreach (var code in new[] { "ru", "pl", "cs", "ca", "ro", "el", "lt", "nl", "hu", "is" })
         {
             Assert.Equal(Language.DefaultWordCharacters, Golden.Languages[code].WordCharacters);
         }

@@ -1,5 +1,5 @@
 {
-  "_comment": "Single source of truth for cross-language tokenization expectations, exercised by BOTH the backend (server/LinguaReadApi.Tests/TokenizerTests.cs) and the frontend (client/lingua-read-client/src/__tests__/tokenizer.spec.js) suites. The two tokenizers (Tokenizer.cs and readerText.ts) must produce the same word sequence for every case here; drift between them is the bug class this fixture guards against. Language seeds en/es/fr/it/pt/de/ru mirror DbInitializer.cs (Language.LatinWordCharacters); pl/cs/ca/ro/el/lt/nl/hu/is are languages added through the language form with its defaults (Language.DefaultWordCharacters, no substitutions). Escape forms (\\uXXXX, \\p{...}) in wordCharacters decode to the same string fed to both regex engines, which each honour these escapes inside a character class. Invisible characters in inputs (soft hyphens, combining marks, Unicode hyphens) are written as JSON \\u escapes.",
+  "_comment": "Single source of truth for cross-language tokenization expectations, exercised by BOTH the backend (server/LinguaReadApi.Tests/TokenizerTests.cs) and the frontend (client/lingua-read-client/src/__tests__/tokenizer.spec.js) suites. The two tokenizers (Tokenizer.cs and readerText.ts) must produce the same word sequence for every case here; drift between them is the bug class this fixture guards against. Language seeds mirror DbInitializer.cs: en/es/fr/it/pt/de use Language.LatinWordCharacters and ru Language.DefaultWordCharacters; pl/cs/ca/ro/el/lt/nl/hu/is are languages added through the language form with its defaults (Language.DefaultWordCharacters, no substitutions). Escape forms (\\uXXXX, \\p{...}) in wordCharacters decode to the same string fed to both regex engines, which each honour these escapes inside a character class. Invisible characters in inputs (soft hyphens, combining marks, Unicode hyphens) are written as JSON \\u escapes.",
   "languages": {
     "en": { "code": "en", "wordCharacters": "a-zA-ZÀ-ÖØ-öø-ɏḀ-ỿ\\p{M}", "characterSubstitutions": "´='|`='|’='|‘='|...=…|..=‥" },
     "es": { "code": "es", "wordCharacters": "a-zA-ZÀ-ÖØ-öø-ɏḀ-ỿ\\p{M}", "characterSubstitutions": "´='|`='|’='|‘='|...=…|..=‥" },
@@ -7,7 +7,7 @@
     "it": { "code": "it", "wordCharacters": "a-zA-ZÀ-ÖØ-öø-ɏḀ-ỿ\\p{M}", "characterSubstitutions": "´='|`='|’='|‘='|...=…|..=‥" },
     "pt": { "code": "pt", "wordCharacters": "a-zA-ZÀ-ÖØ-öø-ɏḀ-ỿ\\p{M}", "characterSubstitutions": "´='|`='|’='|‘='|...=…|..=‥" },
     "de": { "code": "de", "wordCharacters": "a-zA-ZÀ-ÖØ-öø-ɏḀ-ỿ\\p{M}\\u200C\\u200D", "characterSubstitutions": "´='|`='|’='|‘='|...=…|..=‥" },
-    "ru": { "code": "ru", "wordCharacters": "\\p{L}\\p{M}'-", "characterSubstitutions": "’='|‘='|...=…" },
+    "ru": { "code": "ru", "wordCharacters": "\\p{L}\\p{M}", "characterSubstitutions": "’='|‘='|...=…" },
     "pl": { "code": "pl", "wordCharacters": "\\p{L}\\p{M}", "characterSubstitutions": "" },
     "cs": { "code": "cs", "wordCharacters": "\\p{L}\\p{M}", "characterSubstitutions": "" },
     "ca": { "code": "ca", "wordCharacters": "\\p{L}\\p{M}", "characterSubstitutions": "" },
@@ -89,6 +89,12 @@
     { "lang": "el", "input": "Καλημέρα, κόσμε! Τι κάνεις;", "expectedWords": ["Καλημέρα", "κόσμε", "Τι", "κάνεις"] },
     { "lang": "nl", "input": "zo'n café", "expectedWords": ["zo'n", "café"] },
     { "lang": "hu", "input": "Győr őrült űrhajó", "expectedWords": ["Győr", "őrült", "űrhajó"] },
-    { "lang": "is", "input": "Þórður fór til Reykjavíkur", "expectedWords": ["Þórður", "fór", "til", "Reykjavíkur"] }
+    { "lang": "is", "input": "Þórður fór til Reykjavíkur", "expectedWords": ["Þórður", "fór", "til", "Reykjavíkur"] },
+    { "lang": "ru", "input": "слово - слово", "expectedWords": ["слово", "слово"] },
+    { "lang": "ru", "input": "\"'сказал'\" он", "expectedWords": ["сказал", "он"] },
+    { "lang": "ru", "input": "из-за него", "expectedWords": ["из-за", "него"] },
+    { "lang": null, "input": "молоко\u0301", "expectedWords": ["молоко\u0301"] },
+    { "lang": "el", "input": "κ\u1f79σμος", "expectedWords": ["κ\u03ccσμος"] },
+    { "lang": "el", "input": "\u1f00λλ\u1f70 τ\u1f77", "expectedWords": ["\u1f00λλ\u1f70", "τ\u03af"] }
   ]
 }

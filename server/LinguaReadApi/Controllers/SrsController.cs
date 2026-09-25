@@ -16,6 +16,7 @@ using LinguaReadApi.Models;
 using LinguaReadApi.Services;
 using LinguaReadApi.Services.Ai;
 using LinguaReadApi.Services.Srs;
+using LinguaReadApi.Services.Tokenization;
 using LinguaReadApi.Utilities;
 
 namespace LinguaReadApi.Controllers
@@ -146,6 +147,17 @@ namespace LinguaReadApi.Controllers
                     c.SrsCardReviewId, c.WordId, c.Word.LanguageId, phrasesByWordId[c.WordId][0].Sentence))
                 .ToList());
 
+            // Cloze sentences are matched in the reader's normalized form, which depends on
+            // each card's language (its character substitutions).
+            var clozeLanguages = new Dictionary<int, Language>();
+            if (emitClozeSentence)
+            {
+                var clozeLanguageIds = allFetchedCards.Select(c => c.Word.LanguageId).Distinct().ToList();
+                clozeLanguages = await _context.Languages.AsNoTracking()
+                    .Where(l => clozeLanguageIds.Contains(l.LanguageId))
+                    .ToDictionaryAsync(l => l.LanguageId);
+            }
+
             // 5. Apply 1T filter to build lists
             var scheduler = new SrsScheduler(day.Options);
             var validLearningCards = new List<SrsDueCardDto>();
@@ -164,7 +176,8 @@ namespace LinguaReadApi.Controllers
                 string? clozeSentence = null;
                 if (emitClozeSentence && bestPhrase != null)
                 {
-                    clozeSentence = BuildClozeSentence(bestPhrase.Sentence, card.Word.Term);
+                    clozeSentence = BuildClozeSentence(
+                        bestPhrase.Sentence, card.Word.Term, clozeLanguages.GetValueOrDefault(card.Word.LanguageId));
                 }
 
                 var dto = ToDueCardDto(card, cardPhrases, unknownWordsInBestPhrase, clozeSentence, scheduler, now);
@@ -1475,11 +1488,20 @@ Format (one object per provided word, in the same order):
         /// to match. The cloze view drops to translation mode for those cards
         /// rather than producing a garbled mask.</item>
         /// </list>
+        ///
+        /// Both the sentence and the term go through <see cref="Tokenizer.NormalizeText"/>
+        /// first, and the masked sentence is returned in that form, the way the reader
+        /// shows it. Mined sentences are stored as the reader's raw segment text, so a
+        /// soft hyphen, a decomposed accent or a curly apostrophe in the sentence would
+        /// otherwise hide a term that was keyed without it ("reparava" in "repa" + U+00AD + "rava").
         /// </summary>
-        internal static string? BuildClozeSentence(string? sentence, string? term)
+        internal static string? BuildClozeSentence(string? sentence, string? term, Language? language = null)
         {
             if (string.IsNullOrEmpty(sentence) || string.IsNullOrEmpty(term)) return null;
             const string Mask = "___";
+            sentence = Tokenizer.NormalizeText(sentence, language);
+            term = Tokenizer.NormalizeText(term, language).Trim();
+            if (sentence.Length == 0 || term.Length == 0) return null;
             var match = Regex.Match(
                 sentence,
                 $@"(?<!\w){Regex.Escape(term)}(?!\w)",

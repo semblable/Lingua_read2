@@ -20,6 +20,8 @@ interface AudioTranscriptViewProps {
   readingContainerRef: React.RefObject<HTMLDivElement | null>;
   itemData: TranscriptItemData;
   listRef: React.RefObject<ListImperativeAPI | null>;
+  // BCP-47 code of the text, for the browser's hyphenation and screen readers.
+  languageCode?: string | null;
 }
 
 const AudioTranscriptView = React.memo(({
@@ -35,7 +37,8 @@ const AudioTranscriptView = React.memo(({
   textContentRef,
   readingContainerRef,
   itemData,
-  listRef
+  listRef,
+  languageCode
 }: AudioTranscriptViewProps) => {
   const suppressLineClickUntilRef = useRef(0);
   const touchMovedRef = useRef(false);
@@ -70,6 +73,7 @@ const AudioTranscriptView = React.memo(({
       <div
         className="audio-transcript-container"
         ref={textContentRef}
+        lang={languageCode || undefined}
         onMouseUp={handleWordSelection}
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
@@ -109,6 +113,7 @@ const AudioTranscriptView = React.memo(({
     <div
       className="audio-transcript-container"
       ref={textContentRef}
+      lang={languageCode || undefined}
       style={{ height: '100%', overflow: 'hidden' }}
       onMouseUp={handleWordSelection}
     >

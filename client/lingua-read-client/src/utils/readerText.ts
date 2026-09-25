@@ -234,8 +234,9 @@ export const buildDisplayBlocks = (
 //   1. normalizeTokenizerInput: drop soft hyphens (U+00AD, invisible
 //      hyphenation points that ebooks put inside words: `repa<U+00AD>rava`)
 //      and compose decomposed accents (`e` + U+0301 -> `é`), so neither
-//      splits a word. Only base+combining-mark runs are normalized (NFC);
-//      the rest of the text is left untouched.
+//      splits a word. Only base+combining-mark runs and Greek letters are
+//      normalized (NFC; Greek oxia letters become the tonos ones keyboards
+//      type); the rest of the text is left untouched.
 //   2. parseCharacterSubstitutions(language.characterSubstitutions)
 //      Pipe-separated `old=new|...`. Used to normalize curly apostrophes
 //      to ASCII `'`, fancy quotes, ellipsis, etc. The first `=` separates
@@ -245,9 +246,10 @@ export const buildDisplayBlocks = (
 //      then the language's, each in declaration order. Users must declare
 //      longer-old-first to avoid greediness issues (e.g. `...=…|..=‥`).
 //   4. buildCoreWordRegex(language.wordCharacters): regex character class
-//      defining the language's base alphabet, used as-is. Latin seeds leave
-//      `'` and `-` out so the connector rule below decides glue; Russian
-//      lists them, which makes them core characters there.
+//      defining the language's base alphabet, used as-is (letters plus
+//      marks when empty or invalid). No seed lists `'` or `-`, so the
+//      connector rule below decides glue; a class a user edits to list them
+//      makes them core characters.
 //   5. tokenizeContent walks the substituted text and accumulates runs
 //      of core word chars **plus glued connectors**:
 //        - Apostrophe `'` (after substitution): glued only when both
@@ -280,7 +282,8 @@ const MIDDLE_DOT = '·';
 export const LATIN_WORD_CHARACTERS = 'a-zA-ZÀ-ÖØ-öø-ɏḀ-ỿ\\p{M}';
 
 // Default for a language the user adds: any letter plus combining marks,
-// so Polish, Greek, Czech, … work without editing the field (mirrors
+// so Polish, Greek, Czech, … work without editing the field. Also the
+// Russian seed and the fallback for an empty or invalid class (mirrors
 // Language.DefaultWordCharacters).
 export const DEFAULT_LANGUAGE_WORD_CHARACTERS = '\\p{L}\\p{M}';
 
@@ -299,21 +302,61 @@ const BUILT_IN_SUBSTITUTIONS: CharSubstitution[] = [
 ];
 
 const SOFT_HYPHEN_PATTERN = /\u00AD/g;
-const HAS_COMBINING_MARK = /\p{M}/u;
-const BASE_WITH_COMBINING_MARKS = /\P{M}\p{M}+/gu;
+// Greek and Coptic (U+0370-U+03FF) and Greek Extended (U+1F00-U+1FFF).
+const NEEDS_COMPOSITION = /[\p{M}\u{370}-\u{3FF}\u{1F00}-\u{1FFF}]/u;
+// A run of Greek letters (with any marks after it), or any other base
+// character followed by one or more combining marks.
+const COMPOSABLE_RUNS = /[\u{370}-\u{3FF}\u{1F00}-\u{1FFF}]+\p{M}*|\P{M}\p{M}+/gu;
 
 /**
- * Remove soft hyphens and compose decomposed accents. Runs before any
- * substitution so words split by either are whole again. Mirrors
+ * Remove soft hyphens and compose decomposed accents. Greek letters are
+ * composed even without a mark, which maps the oxia forms of Greek Extended
+ * (alpha with oxia, U+1F71) onto the tonos letters keyboards type (U+03AC):
+ * they look the same but would otherwise be different words. Runs before
+ * any substitution so words split by either are whole again. Mirrors
  * `Tokenizer.NormalizeInput` on the backend.
  */
 export const normalizeTokenizerInput = (content: string): string => {
   if (!content) return content;
   let out = content.includes('\u00AD') ? content.replace(SOFT_HYPHEN_PATTERN, '') : content;
-  if (HAS_COMBINING_MARK.test(out)) {
-    out = out.replace(BASE_WITH_COMBINING_MARKS, (run) => run.normalize('NFC'));
+  if (NEEDS_COMPOSITION.test(out)) {
+    out = out.replace(COMPOSABLE_RUNS, (run) => run.normalize('NFC'));
   }
   return out;
+};
+
+const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * Split a stored sentence around every case-insensitive occurrence of a
+ * stored term, for highlighting a flashcard's word in its mined sentence.
+ * Mined sentences are the reader's raw segment text while terms are keyed
+ * from normalized tokens, so both are normalized first: without that a soft
+ * hyphen, a decomposed accent or a curly apostrophe in the sentence hides
+ * the term. The returned text keeps the sentence's own apostrophes and
+ * hyphens: the built-in substitutions swap one UTF-16 unit for another, so
+ * offsets found after them are offsets in the displayed text.
+ */
+export const splitSentenceAroundTerm = (
+  sentence: string,
+  term: string
+): { text: string; isTerm: boolean }[] => {
+  const display = normalizeTokenizerInput(sentence || '');
+  const needle = applyCharacterSubstitutions(normalizeTokenizerInput(term || ''), BUILT_IN_SUBSTITUTIONS).trim();
+  if (!display) return [];
+  if (!needle) return [{ text: display, isTerm: false }];
+
+  const haystack = applyCharacterSubstitutions(display, BUILT_IN_SUBSTITUTIONS);
+  const parts: { text: string; isTerm: boolean }[] = [];
+  let last = 0;
+  for (const match of haystack.matchAll(new RegExp(escapeRegExp(needle), 'giu'))) {
+    const start = match.index ?? 0;
+    if (start > last) parts.push({ text: display.slice(last, start), isTerm: false });
+    parts.push({ text: display.slice(start, start + match[0].length), isTerm: true });
+    last = start + match[0].length;
+  }
+  if (last < display.length) parts.push({ text: display.slice(last), isTerm: false });
+  return parts;
 };
 
 export const parseCharacterSubstitutions = (
@@ -346,17 +389,16 @@ export const applyCharacterSubstitutions = (
   return out;
 };
 
-const DEFAULT_WORD_CLASS = '\\p{L}';
+const DEFAULT_WORD_CLASS = DEFAULT_LANGUAGE_WORD_CHARACTERS;
 
 const wordRegexCache = new Map<string, RegExp>();
 
 // Build a per-character matcher from the language's `wordCharacters`
 // regex character-class fragment. The fragment may contain ranges
-// (`a-z`), Unicode escapes (`‌`), and Unicode property classes
-// (`\p{L}`). We use it as-is; ASCII `'` and `-` may or may not be
-// present depending on the language seed (e.g. Russian includes them,
-// Latin-script languages do not). The universal connector rule below
-// adds glued apostrophe / hyphen / middle-dot behaviour on top of this regex.
+// (`a-z`), Unicode escapes (`\u200C`), and Unicode property classes
+// (`\p{L}`). We use it as-is; no seed lists ASCII `'` or `-`, so the
+// universal connector rule below adds glued apostrophe / hyphen /
+// middle-dot behaviour on top of this regex.
 export const buildCoreWordRegex = (wordCharacters: string | null | undefined): RegExp => {
   const raw = (wordCharacters || '').trim();
   const key = raw || '__default__';
@@ -369,7 +411,7 @@ export const buildCoreWordRegex = (wordCharacters: string | null | undefined): R
   try {
     regex = new RegExp(`^[${cls}]$`, 'u');
   } catch {
-    // Invalid wordCharacters → fall back to Unicode letters.
+    // Invalid wordCharacters → fall back to Unicode letters and marks.
     regex = new RegExp(`^[${DEFAULT_WORD_CLASS}]$`, 'u');
   }
   wordRegexCache.set(key, regex);
@@ -605,7 +647,15 @@ const splitBlockIntoSentences = (
       ? intlResult
       : segmentSentencesRegex(blockText, languageConfig?.splitSentences);
   const merged = applyExceptionMerging(candidates, languageConfig?.sentenceSplitExceptions);
-  return merged.map((sentence) => sentence.replace(/\s+/g, ' ').trim()).filter(Boolean);
+  // Segment text leaves the reader as a mined sentence, a translation or
+  // explanation request and TTS input, so drop soft hyphens and compose
+  // accents here too (display is unaffected: the renderer normalizes anyway).
+  // Normalize after the emptiness filter: bookmarks and reading progress are
+  // keyed by sentence index, so the segment count must not change.
+  return merged
+    .map((sentence) => sentence.replace(/\s+/g, ' ').trim())
+    .filter(Boolean)
+    .map(normalizeTokenizerInput);
 };
 
 export const splitTextIntoSentenceSegments = (
@@ -630,7 +680,7 @@ export const splitTextIntoSentenceSegments = (
       if (titleSegmentText) {
         segments.push({
           index: segments.length,
-          text: titleSegmentText,
+          text: normalizeTokenizerInput(titleSegmentText),
           type: 'title',
           mediaBlocks: pendingMediaBlocks
         });

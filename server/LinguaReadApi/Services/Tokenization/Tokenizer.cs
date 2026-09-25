@@ -17,9 +17,11 @@ namespace LinguaReadApi.Services.Tokenization
     /// 2. Apply the built-in substitutions (curly / modifier apostrophes → ',
     ///    Unicode hyphens U+2010 / U+2011 → -), then
     ///    <see cref="Language.CharacterSubstitutions"/> as literal
-    ///    find-and-replace pairs (pipe-separated <c>old=new</c>).
+    ///    find-and-replace pairs (pipe-separated <c>old=new</c>). Steps 1 and 2
+    ///    together are <see cref="NormalizeText"/>.
     /// 3. Build a per-character regex from <see cref="Language.WordCharacters"/>
-    ///    with a Unicode-letter (\p{L}) fallback.
+    ///    with a fallback to <see cref="Language.DefaultWordCharacters"/> when the
+    ///    class is empty or invalid.
     /// 4. Walk the substituted content, accumulating runs of core word
     ///    chars **plus glued connectors**: ASCII apostrophe (U+0027),
     ///    hyphen-minus and middle dot (U+00B7), but only when sandwiched
@@ -43,7 +45,7 @@ namespace LinguaReadApi.Services.Tokenization
         private const char Hyphen = '-';
         private const char MiddleDot = '·';
         private const char SoftHyphen = '\u00AD';
-        private const string DefaultWordClass = @"\p{L}";
+        private const string DefaultWordClass = Language.DefaultWordCharacters;
 
         // Built-in normalizations applied BEFORE user-defined
         // CharacterSubstitutions. Guarantees that apostrophe/hyphen glue works
@@ -59,10 +61,11 @@ namespace LinguaReadApi.Services.Tokenization
             ("\u2011", "-")  // non-breaking hyphen
         };
 
-        // A base character followed by one or more combining marks. A surrogate
-        // pair counts as one base so Normalize never sees half of it.
-        private static readonly Regex BaseWithCombiningMarks = new(
-            @"(?:[\uD800-\uDBFF][\uDC00-\uDFFF]|\P{M})\p{M}+",
+        // The runs NormalizeInput composes: a run of Greek letters (with any marks
+        // after it), or any other base character followed by one or more combining
+        // marks. A surrogate pair counts as one base so Normalize never sees half of it.
+        private static readonly Regex ComposableRuns = new(
+            @"[\u0370-\u03FF\u1F00-\u1FFF]+\p{M}*|(?:[\uD800-\uDBFF][\uDC00-\uDFFF]|\P{M})\p{M}+",
             RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
         private static readonly ConcurrentDictionary<string, Regex> _regexCache = new();
@@ -110,9 +113,13 @@ namespace LinguaReadApi.Services.Tokenization
 
         /// <summary>
         /// Remove soft hyphens and compose decomposed accents (NFC, applied only
-        /// to base + combining-mark runs so the rest of the text is untouched).
-        /// Runs before any substitution. Mirrors <c>normalizeTokenizerInput</c>
-        /// in the client's readerText.ts.
+        /// to base + combining-mark runs and to Greek letters, so the rest of the
+        /// text is untouched). Greek letters are composed even without a mark:
+        /// that maps the oxia forms of Greek Extended (alpha with oxia, U+1F71)
+        /// onto the tonos letters keyboards produce (alpha with tonos, U+03AC),
+        /// which look the same but would otherwise be different words. Runs
+        /// before any substitution. Mirrors
+        /// <c>normalizeTokenizerInput</c> in the client's readerText.ts.
         /// </summary>
         public static string NormalizeInput(string content)
         {
@@ -120,8 +127,8 @@ namespace LinguaReadApi.Services.Tokenization
             var current = content.Contains(SoftHyphen)
                 ? content.Replace(SoftHyphen.ToString(), string.Empty, StringComparison.Ordinal)
                 : content;
-            if (!HasCombiningMark(current)) return current;
-            return BaseWithCombiningMarks.Replace(current, m =>
+            if (!NeedsComposition(current)) return current;
+            return ComposableRuns.Replace(current, m =>
             {
                 try
                 {
@@ -135,14 +142,32 @@ namespace LinguaReadApi.Services.Tokenization
             });
         }
 
-        private static bool HasCombiningMark(string text)
+        /// <summary>
+        /// <see cref="NormalizeInput"/>, then the built-in substitutions, then the
+        /// language's <see cref="Language.CharacterSubstitutions"/>: the text the
+        /// tokenizer walks and the reader displays. Also the form a sentence or a
+        /// term has to be in before it is compared with tokens.
+        /// </summary>
+        public static string NormalizeText(string? content, Language? language)
+        {
+            if (string.IsNullOrEmpty(content)) return content ?? string.Empty;
+            var processed = ApplyCharacterSubstitutions(NormalizeInput(content), BuiltInSubstitutions);
+            return ApplyCharacterSubstitutions(processed, ParseCharacterSubstitutions(language?.CharacterSubstitutions));
+        }
+
+        private static bool NeedsComposition(string text)
         {
             foreach (var ch in text)
             {
-                if (IsCombiningMark(ch)) return true;
+                if (IsCombiningMark(ch) || IsGreek(ch)) return true;
             }
             return false;
         }
+
+        // Greek and Coptic (U+0370-U+03FF) and Greek Extended (U+1F00-U+1FFF), the
+        // blocks the first alternative of ComposableRuns covers.
+        private static bool IsGreek(char ch) =>
+            (ch >= 0x0370 && ch <= 0x03FF) || (ch >= 0x1F00 && ch <= 0x1FFF);
 
         private static bool IsCombiningMark(char ch) =>
             char.GetUnicodeCategory(ch) is UnicodeCategory.NonSpacingMark
@@ -178,12 +203,10 @@ namespace LinguaReadApi.Services.Tokenization
                 return new TokenizationResult(string.Empty, Array.Empty<Token>());
             }
 
-            var userSubs = ParseCharacterSubstitutions(language?.CharacterSubstitutions);
             // Built-in apostrophe normalizations run first so glue
             // works even when a custom language has empty
             // CharacterSubstitutions; user subs can override.
-            var processed = ApplyCharacterSubstitutions(NormalizeInput(rawContent), BuiltInSubstitutions);
-            processed = ApplyCharacterSubstitutions(processed, userSubs);
+            var processed = NormalizeText(rawContent, language);
             var coreRegex = BuildCoreWordRegex(language?.WordCharacters);
 
             var tokens = new List<Token>();
@@ -247,16 +270,15 @@ namespace LinguaReadApi.Services.Tokenization
 
         /// <summary>
         /// Lookup key for a term that did not come out of <see cref="Tokenize"/>
-        /// (a reader save, a CSV row, a stored Word): the same input
-        /// normalization and built-in substitutions as the tokenizer, so a
-        /// term with a soft hyphen or a curly apostrophe keys like the word
-        /// the reader shows, then trimmed and lowercased.
+        /// (a reader save, a CSV row, a stored Word): <see cref="NormalizeText"/>
+        /// like the tokenizer, so a term with a soft hyphen, a curly apostrophe or
+        /// a character the language substitutes (´ for ') keys like the word the
+        /// reader shows, then trimmed and lowercased.
         /// </summary>
         public static string NormalizeKey(string text, Language? language)
         {
             if (string.IsNullOrEmpty(text)) return text;
-            var normalized = ApplyCharacterSubstitutions(NormalizeInput(text), BuiltInSubstitutions);
-            return GetTextInfo(language?.Code).ToLower(normalized.Trim());
+            return GetTextInfo(language?.Code).ToLower(NormalizeText(text, language).Trim());
         }
 
         // A combining mark or format character (an emoji's variation selector, a

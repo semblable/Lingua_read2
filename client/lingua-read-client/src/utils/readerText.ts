@@ -74,9 +74,14 @@ export const normalizeAssetUrl = (value: string | null | undefined): string | nu
   return `/${value.replace(/^\/+/, '')}`;
 };
 
+// Only feeds the title heuristics in buildDisplayBlocks, which decide how a
+// block is split into sentence segments. Bookmarks and reading progress are
+// keyed by segment index, so this must keep counting exactly as it always has:
+// counting a soft-hyphenated or decomposed word as one word would turn some
+// blocks into titles (or back) and shift every later index.
 export const countWordsInText = (content: string | null | undefined): number => {
   if (!content) return 0;
-  return (content.match(/[\p{L}\p{M}\p{N}'’\u00AD-]+/gu) || []).length;
+  return (content.match(/[\p{L}\p{N}'’-]+/gu) || []).length;
 };
 
 export const titleLineEndsLikeSentence = (line: string): boolean =>
@@ -305,8 +310,10 @@ const SOFT_HYPHEN_PATTERN = /\u00AD/g;
 // Greek and Coptic (U+0370-U+03FF) and Greek Extended (U+1F00-U+1FFF).
 const NEEDS_COMPOSITION = /[\p{M}\u{370}-\u{3FF}\u{1F00}-\u{1FFF}]/u;
 // A run of Greek letters (with any marks after it), or any other base
-// character followed by one or more combining marks.
-const COMPOSABLE_RUNS = /[\u{370}-\u{3FF}\u{1F00}-\u{1FFF}]+\p{M}*|\P{M}\p{M}+/gu;
+// character followed by one or more combining marks. Greek punctuation stays
+// out of the letter runs: NFC turns the ano teleia (U+0387) into a middle
+// dot, which glues the words around it.
+const COMPOSABLE_RUNS = /(?:(?=\p{L})[\u{370}-\u{3FF}\u{1F00}-\u{1FFF}])+\p{M}*|\P{M}\p{M}+/gu;
 
 /**
  * Remove soft hyphens and compose decomposed accents. Greek letters are
@@ -327,6 +334,27 @@ export const normalizeTokenizerInput = (content: string): string => {
 
 const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
+// Split `display` at every case-insensitive match of `needle` in `haystack`,
+// which must be `display` with same-length substitutions applied (or
+// `display` itself). Null when there is no match.
+const splitAtMatches = (
+  display: string,
+  haystack: string,
+  needle: string
+): { text: string; isTerm: boolean }[] | null => {
+  const parts: { text: string; isTerm: boolean }[] = [];
+  let last = 0;
+  for (const match of haystack.matchAll(new RegExp(escapeRegExp(needle), 'giu'))) {
+    const start = match.index ?? 0;
+    if (start > last) parts.push({ text: display.slice(last, start), isTerm: false });
+    parts.push({ text: display.slice(start, start + match[0].length), isTerm: true });
+    last = start + match[0].length;
+  }
+  if (parts.length === 0) return null;
+  if (last < display.length) parts.push({ text: display.slice(last), isTerm: false });
+  return parts;
+};
+
 /**
  * Split a stored sentence around every case-insensitive occurrence of a
  * stored term, for highlighting a flashcard's word in its mined sentence.
@@ -336,10 +364,16 @@ const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\
  * the term. The returned text keeps the sentence's own apostrophes and
  * hyphens: the built-in substitutions swap one UTF-16 unit for another, so
  * offsets found after them are offsets in the displayed text.
+ *
+ * Terms are also keyed after the language's own substitutions (`d´África`
+ * is stored as `d'áfrica`). Those can change lengths (`...=…`), so when the
+ * term only matches after them, the sentence is returned the way the reader
+ * shows it, with the substitutions applied.
  */
 export const splitSentenceAroundTerm = (
   sentence: string,
-  term: string
+  term: string,
+  characterSubstitutions?: string | null
 ): { text: string; isTerm: boolean }[] => {
   const display = normalizeTokenizerInput(sentence || '');
   const needle = applyCharacterSubstitutions(normalizeTokenizerInput(term || ''), BUILT_IN_SUBSTITUTIONS).trim();
@@ -347,17 +381,25 @@ export const splitSentenceAroundTerm = (
   if (!needle) return [{ text: display, isTerm: false }];
 
   const haystack = applyCharacterSubstitutions(display, BUILT_IN_SUBSTITUTIONS);
-  const parts: { text: string; isTerm: boolean }[] = [];
-  let last = 0;
-  for (const match of haystack.matchAll(new RegExp(escapeRegExp(needle), 'giu'))) {
-    const start = match.index ?? 0;
-    if (start > last) parts.push({ text: display.slice(last, start), isTerm: false });
-    parts.push({ text: display.slice(start, start + match[0].length), isTerm: true });
-    last = start + match[0].length;
+  const parts = splitAtMatches(display, haystack, needle);
+  if (parts) return parts;
+
+  const userSubs = parseCharacterSubstitutions(characterSubstitutions);
+  if (userSubs.length > 0) {
+    const processed = applyCharacterSubstitutions(haystack, userSubs);
+    const processedNeedle = applyCharacterSubstitutions(needle, userSubs).trim();
+    const processedParts = processedNeedle ? splitAtMatches(processed, processed, processedNeedle) : null;
+    if (processedParts) return processedParts;
   }
-  if (last < display.length) parts.push({ text: display.slice(last), isTerm: false });
-  return parts;
+  return [{ text: display, isTerm: false }];
 };
+
+/** Whether {@link splitSentenceAroundTerm} finds the term in the sentence. */
+export const sentenceContainsTerm = (
+  sentence: string,
+  term: string,
+  characterSubstitutions?: string | null
+): boolean => splitSentenceAroundTerm(sentence, term, characterSubstitutions).some(part => part.isTerm);
 
 export const parseCharacterSubstitutions = (
   str: string | null | undefined

@@ -190,6 +190,51 @@ public class WordsControllerTests
         Assert.Equal("perro", word.Term);
     }
 
+    private static readonly string Shy = ((char)0x00AD).ToString();
+
+    private static Guid SeedPortugueseText(AppDbContext context)
+    {
+        var userId = Guid.NewGuid();
+        context.Users.Add(new User { Id = userId, UserName = "tester", Email = "tester@example.com" });
+        context.Languages.Add(new Language { LanguageId = 1, Name = "Portuguese", Code = "pt" });
+        context.Texts.Add(new Text { TextId = 1, UserId = userId, LanguageId = 1, Title = "T", Content = "Fazal Elahi reparava." });
+        context.SaveChanges();
+        return userId;
+    }
+
+    [Fact]
+    public async Task CreateWord_TermThatNormalizesToNothing_IsRejected()
+    {
+        using var context = CreateContext();
+        var userId = SeedPortugueseText(context);
+
+        // [Required] accepts a lone soft hyphen; normalizing drops it.
+        var result = await CreateController(context, userId)
+            .CreateWord(new CreateWordDto { TextId = 1, Term = Shy, Status = 1 });
+
+        Assert.IsType<BadRequestObjectResult>(result.Result);
+        Assert.Empty(context.Words);
+    }
+
+    [Fact]
+    public async Task CreateWord_SentenceMinedBeforeNormalizing_IsNotMinedAgain()
+    {
+        using var context = CreateContext();
+        var userId = SeedPortugueseText(context);
+        context.Words.Add(new Word { WordId = 1, UserId = userId, LanguageId = 1, Term = "reparava", Status = 1 });
+        // Mined before tokenizer v3: the reader's raw segment text.
+        context.SrsPhrases.Add(new SrsPhrase { WordId = 1, UserId = userId, Sentence = $"Fazal Elahi repa{Shy}rava.", CreatedAt = DateTime.UtcNow });
+        context.SaveChanges();
+
+        // The reader now sends the same sentence normalized.
+        await CreateController(context, userId).CreateWord(new CreateWordDto
+        {
+            TextId = 1, Term = "reparava", Status = 2, Sentence = "Fazal Elahi reparava."
+        });
+
+        Assert.Single(context.SrsPhrases);
+    }
+
     // --- 1.2: status-only update must not erase the saved translation ---
 
     [Fact]

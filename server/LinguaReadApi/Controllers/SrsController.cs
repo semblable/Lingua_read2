@@ -141,22 +141,19 @@ namespace LinguaReadApi.Controllers
                 .GroupBy(p => p.WordId)
                 .ToDictionary(g => g.Key, g => g.OrderByDescending(p => p.CreatedAt).ToList());
 
+            // The unknown-word counts tokenize with each card's language, and cloze
+            // sentences are matched in the reader's normalized form, which depends on it
+            // too (its character substitutions): one lookup serves both.
+            var cardLanguageIds = allFetchedCards.Select(c => c.Word.LanguageId).Distinct().ToList();
+            var cardLanguages = await _context.Languages.AsNoTracking()
+                .Where(l => cardLanguageIds.Contains(l.LanguageId))
+                .ToDictionaryAsync(l => l.LanguageId);
+
             var unknownCounts = await SrsUnknownWordCounter.CountAsync(_context, userId, allFetchedCards
                 .Where(c => phrasesByWordId.ContainsKey(c.WordId))
                 .Select(c => new SrsUnknownWordCounter.Sentence(
                     c.SrsCardReviewId, c.WordId, c.Word.LanguageId, phrasesByWordId[c.WordId][0].Sentence))
-                .ToList());
-
-            // Cloze sentences are matched in the reader's normalized form, which depends on
-            // each card's language (its character substitutions).
-            var clozeLanguages = new Dictionary<int, Language>();
-            if (emitClozeSentence)
-            {
-                var clozeLanguageIds = allFetchedCards.Select(c => c.Word.LanguageId).Distinct().ToList();
-                clozeLanguages = await _context.Languages.AsNoTracking()
-                    .Where(l => clozeLanguageIds.Contains(l.LanguageId))
-                    .ToDictionaryAsync(l => l.LanguageId);
-            }
+                .ToList(), cardLanguages);
 
             // 5. Apply 1T filter to build lists
             var scheduler = new SrsScheduler(day.Options);
@@ -177,7 +174,7 @@ namespace LinguaReadApi.Controllers
                 if (emitClozeSentence && bestPhrase != null)
                 {
                     clozeSentence = BuildClozeSentence(
-                        bestPhrase.Sentence, card.Word.Term, clozeLanguages.GetValueOrDefault(card.Word.LanguageId));
+                        bestPhrase.Sentence, card.Word.Term, cardLanguages.GetValueOrDefault(card.Word.LanguageId));
                 }
 
                 var dto = ToDueCardDto(card, cardPhrases, unknownWordsInBestPhrase, clozeSentence, scheduler, now);
@@ -325,9 +322,9 @@ namespace LinguaReadApi.Controllers
                 return NotFound("Word not found.");
 
             // Check for duplicate phrase
-            var duplicateExists = await _context.SrsPhrases
-                .AnyAsync(sp => sp.WordId == dto.WordId && sp.UserId == userId && sp.Sentence == dto.Sentence);
-            if (duplicateExists)
+            var language = await _context.Languages.AsNoTracking()
+                .FirstOrDefaultAsync(l => l.LanguageId == word.LanguageId);
+            if (await SrsMinedSentences.ExistsAsync(_context, dto.WordId, userId, dto.Sentence, language))
                 return Conflict(new { Message = "This sentence has already been mined for this word." });
 
             // TextId comes from the client and is persisted on the phrase, so it has to be one of

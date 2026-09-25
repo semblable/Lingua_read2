@@ -633,6 +633,24 @@ describe('SrsReview', () => {
       expect(screen.queryByTestId('cloze-review-card')).not.toBeInTheDocument();
     });
 
+    it('shows a mined sentence that only contains the term once normalized', async () => {
+      // Mined sentences are raw reader text. A raw includes() missed "reparava"
+      // in "repa<SHY>rava" and the card showed the bare term instead.
+      const shy = String.fromCharCode(0x00ad);
+      getSrsDueCards.mockResolvedValue([{
+        ...mockCards[0],
+        term: 'reparava',
+        phrases: [{ srsPhraseId: 9, sentence: `Fazal Elahi repa${shy}rava no modo.` }]
+      }]);
+      renderComponent();
+      await selectSpanish();
+      fireEvent.click(await screen.findByRole('button', { name: /Start Review/i }));
+
+      const card = await screen.findByTestId('translation-review-card');
+      expect(card).toHaveTextContent('Fazal Elahi reparava no modo.');
+      expect(card.querySelector('.srs-term-highlight')).toHaveTextContent(/^reparava$/);
+    });
+
     it('renders the cloze card when srsCardType is "cloze" and the card has a clozeSentence', async () => {
       getSrsDueCards.mockResolvedValue([clozeCard]);
       renderWithCardType('cloze');

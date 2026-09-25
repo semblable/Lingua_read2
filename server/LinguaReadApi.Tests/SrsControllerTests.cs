@@ -220,6 +220,28 @@ public class SrsControllerTests
         Assert.Empty(context.SrsCardReviews.Where(c => c.WordId == 1));
     }
 
+    [Fact]
+    public async Task MineSentence_NormalizedCopyOfASentenceMinedBeforeV3_IsADuplicate()
+    {
+        using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        var shy = ((char)0x00AD).ToString();
+        context.Languages.Add(new Language { LanguageId = 1, Name = "Portuguese", Code = "pt" });
+        context.Words.Add(new Word { WordId = 1, UserId = userId, LanguageId = 1, Term = "reparava", Status = 1 });
+        // Mined before tokenizer v3, as the reader's raw segment text.
+        context.SrsPhrases.Add(new SrsPhrase { WordId = 1, UserId = userId, Sentence = $"Fazal Elahi repa{shy}rava.", CreatedAt = DateTime.UtcNow });
+        context.SaveChanges();
+
+        var result = await CreateController(context, userId).MineSentence(new SrsMineDto
+        {
+            WordId = 1,
+            Sentence = "Fazal Elahi reparava."
+        });
+
+        Assert.IsType<ConflictObjectResult>(result);
+        Assert.Single(context.SrsPhrases);
+    }
+
     // --- Cloze-card support (Feature 1) ---
 
     private static void SeedCardWithPhrase(

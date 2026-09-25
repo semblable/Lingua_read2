@@ -95,6 +95,7 @@
     { "lang": "ru", "input": "из-за него", "expectedWords": ["из-за", "него"] },
     { "lang": null, "input": "молоко\u0301", "expectedWords": ["молоко\u0301"] },
     { "lang": "el", "input": "κ\u1f79σμος", "expectedWords": ["κ\u03ccσμος"] },
-    { "lang": "el", "input": "\u1f00λλ\u1f70 τ\u1f77", "expectedWords": ["\u1f00λλ\u1f70", "τ\u03af"] }
+    { "lang": "el", "input": "\u1f00λλ\u1f70 τ\u1f77", "expectedWords": ["\u1f00λλ\u1f70", "τ\u03af"] },
+    { "lang": "el", "input": "λέξη\u0387άλλη\u037e", "expectedWords": ["λέξη", "άλλη"] }
   ]
 }

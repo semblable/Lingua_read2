@@ -72,6 +72,13 @@ namespace LinguaReadApi.Controllers
             // write path keys words the same way (locale-aware trim+lowercase).
             var normalizedTerm = Tokenizer.NormalizeKey(createWordDto.Term, text.Language);
 
+            // [Required] lets through a term that normalizing empties (a lone soft
+            // hyphen, a character the language substitutes with nothing).
+            if (string.IsNullOrWhiteSpace(normalizedTerm))
+            {
+                return BadRequest("The term has no characters left after normalization.");
+            }
+
             // Check if the word already exists for this user and language.
             // Match case-insensitively so this resolves to the lowercase row the
             // linker creates (and to any legacy capitalized row) instead of
@@ -121,9 +128,8 @@ namespace LinguaReadApi.Controllers
                 // Auto-mine sentence if provided
                 if (!string.IsNullOrEmpty(createWordDto.Sentence))
                 {
-                    var existingPhrase = await _context.SrsPhrases
-                        .FirstOrDefaultAsync(p => p.WordId == existingWord.WordId && p.Sentence == createWordDto.Sentence);
-                    if (existingPhrase == null)
+                    if (!await SrsMinedSentences.ExistsAsync(
+                            _context, existingWord.WordId, userId, createWordDto.Sentence, text.Language))
                     {
                         _context.SrsPhrases.Add(new SrsPhrase
                         {

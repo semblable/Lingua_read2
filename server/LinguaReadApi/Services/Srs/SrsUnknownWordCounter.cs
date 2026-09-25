@@ -26,19 +26,25 @@ namespace LinguaReadApi.Services.Srs
         /// below Known (5), or if it isn't in the vocabulary at all and is longer than one
         /// character. Known (5) and Ignored (6) words don't count.
         /// </summary>
+        /// <param name="languages">The sentences' languages by id when the caller has
+        /// already loaded them; looked up otherwise.</param>
         public static async Task<Dictionary<int, int>> CountAsync(
             AppDbContext db,
             Guid userId,
             IReadOnlyCollection<Sentence> sentences,
+            IReadOnlyDictionary<int, Language>? languages = null,
             CancellationToken cancellationToken = default)
         {
             var counts = new Dictionary<int, int>();
             if (sentences.Count == 0) return counts;
 
-            var languageIds = sentences.Select(s => s.LanguageId).Distinct().ToList();
-            var languages = await db.Languages.AsNoTracking()
-                .Where(l => languageIds.Contains(l.LanguageId))
-                .ToDictionaryAsync(l => l.LanguageId, cancellationToken);
+            if (languages == null)
+            {
+                var languageIds = sentences.Select(s => s.LanguageId).Distinct().ToList();
+                languages = await db.Languages.AsNoTracking()
+                    .Where(l => languageIds.Contains(l.LanguageId))
+                    .ToDictionaryAsync(l => l.LanguageId, cancellationToken);
+            }
 
             foreach (var group in sentences.GroupBy(s => s.LanguageId))
             {

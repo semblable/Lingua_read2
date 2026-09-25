@@ -20,7 +20,7 @@ import {
   type WordStatus
 } from '../types/wordStatus';
 import ClozeReviewCard from '../components/srs/ClozeReviewCard';
-import { splitSentenceAroundTerm } from '../utils/readerText';
+import { sentenceContainsTerm, splitSentenceAroundTerm } from '../utils/readerText';
 import './SrsReview.css';
 
 type DueCard = SrsDueCards[number];
@@ -359,13 +359,23 @@ const SrsReview = () => {
     }
   }, [selectedLanguage, statusFilter, onlyOneTarget, advance]);
 
+  // The due cards are all in the selected language; its substitutions are part of
+  // how terms are keyed, so sentence matching needs them too.
+  const languageSubstitutions = useMemo(
+    () => languages.find((lang) => String(lang.languageId) === selectedLanguage)?.characterSubstitutions ?? null,
+    [languages, selectedLanguage]
+  );
+
+  // Same normalized match as the highlight: a raw includes() misses a mined
+  // sentence with a soft hyphen, a decomposed accent or a curly apostrophe.
   const primaryPhrase = useMemo(() => {
     if (!currentCard?.phrases?.length || !currentCard?.term) return null;
-    const lowerTerm = currentCard.term.toLowerCase();
+    const term = currentCard.term;
     return currentCard.phrases.find(
-      (phrase) => typeof phrase?.sentence === 'string' && phrase.sentence.toLowerCase().includes(lowerTerm)
+      (phrase) => typeof phrase?.sentence === 'string'
+        && sentenceContainsTerm(phrase.sentence, term, languageSubstitutions)
     ) || null;
-  }, [currentCard]);
+  }, [currentCard, languageSubstitutions]);
 
   const otherPhrases = useMemo(() => {
     if (!currentCard?.phrases?.length) return [];
@@ -519,7 +529,7 @@ const SrsReview = () => {
   // Highlight target word in sentence (both normalized, see splitSentenceAroundTerm)
   const renderSentenceWithHighlight = (sentence: string | null | undefined, term: string | null | undefined): React.ReactNode => {
     if (!sentence || !term) return sentence;
-    return splitSentenceAroundTerm(sentence, term).map((part, i: number) =>
+    return splitSentenceAroundTerm(sentence, term, languageSubstitutions).map((part, i: number) =>
       part.isTerm
         ? <span key={i} className="srs-term-highlight">{part.text}</span>
         : part.text

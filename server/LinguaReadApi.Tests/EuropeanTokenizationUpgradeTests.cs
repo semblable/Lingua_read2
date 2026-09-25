@@ -1,9 +1,11 @@
+using System.Data.Common;
 using LinguaReadApi.Data;
 using LinguaReadApi.Data.Migrations;
 using LinguaReadApi.Models;
 using LinguaReadApi.Services.Tokenization;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Migrations.Operations;
 using Xunit;
 
@@ -252,6 +254,141 @@ public class EuropeanTokenizationUpgradeTests
 
             // Nothing left to do on a second run.
             Assert.Equal(0, await WordLinker.RekeyLegacyTermsAsync(context));
+        }
+    }
+
+    [Fact]
+    public async Task RekeyLegacyTerms_MergesAnUntouchedLinkerWordIntoTheUsersWord()
+    {
+        // The old reader split "repa<SHY>rava", so the user saved it by selecting both halves;
+        // where the word appeared unhyphenated, the linker made an untouched "reparava" row.
+        // Keeping the linker row would relink every text to it and hide the user's word.
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<AppDbContext>().UseSqlite(connection).Options;
+        var userId = Guid.NewGuid();
+        var acute = ((char)0x0301).ToString();
+
+        await using (var seed = new AppDbContext(options))
+        {
+            await seed.Database.EnsureCreatedAsync();
+            seed.Users.Add(new User { Id = userId, UserName = "tester", Email = "tester@example.com" });
+            seed.Languages.Add(Lang(1, "pt", Language.LatinWordCharacters));
+            seed.Texts.AddRange(
+                new Text { TextId = 1, UserId = userId, LanguageId = 1, Title = "Hyphenated", Content = $"Ele repa{Shy}rava.", WordLinkingTokenizerVersion = 2 },
+                new Text { TextId = 2, UserId = userId, LanguageId = 1, Title = "Plain", Content = "Ele reparava.", WordLinkingTokenizerVersion = 2 });
+            seed.Words.AddRange(
+                // The user's word, saved from text 1, with a translation.
+                new Word { WordId = 1, UserId = userId, LanguageId = 1, Term = $"repa{Shy}rava", Status = 3 },
+                // The linker's word for text 2: status 0, nothing attached.
+                new Word { WordId = 2, UserId = userId, LanguageId = 1, Term = "reparava", Status = 0 },
+                // A status-0 word that has a mined sentence is the user's too: left alone.
+                new Word { WordId = 3, UserId = userId, LanguageId = 1, Term = $"cafe{acute}", Status = 2 },
+                new Word { WordId = 4, UserId = userId, LanguageId = 1, Term = "café", Status = 0 },
+                new Word { WordId = 5, UserId = userId, LanguageId = 1, Term = "ele", Status = 0 });
+            seed.WordTranslations.Add(new WordTranslation { WordId = 1, Translation = "repaired" });
+            seed.SrsPhrases.Add(new SrsPhrase { WordId = 4, UserId = userId, Sentence = "Um café." });
+            seed.TextWords.AddRange(
+                new TextWord { TextId = 1, WordId = 1 },
+                new TextWord { TextId = 1, WordId = 2 },
+                new TextWord { TextId = 2, WordId = 2, OccurrenceCount = 1 },
+                new TextWord { TextId = 1, WordId = 5 },
+                new TextWord { TextId = 2, WordId = 5 });
+            await seed.SaveChangesAsync();
+        }
+
+        await using (var context = new AppDbContext(options))
+        {
+            Assert.Equal(1, await WordLinker.RekeyLegacyTermsAsync(context));
+        }
+
+        await using (var context = new AppDbContext(options))
+        {
+            var terms = await context.Words.AsNoTracking().ToDictionaryAsync(w => w.WordId, w => w.Term);
+            Assert.Equal("reparava", terms[1]);
+            Assert.False(terms.ContainsKey(2));
+            Assert.Equal($"cafe{acute}", terms[3]);
+            Assert.Equal("café", terms[4]);
+            Assert.Equal("repaired", (await context.WordTranslations.AsNoTracking().SingleAsync(wt => wt.WordId == 1)).Translation);
+            // Text 2's link moved over; text 1 keeps the one link it already had.
+            var links = await context.TextWords.AsNoTracking()
+                .Where(tw => tw.WordId == 1).Select(tw => tw.TextId).OrderBy(id => id).ToListAsync();
+            Assert.Equal(new[] { 1, 2 }, links);
+
+            // The relink that follows finds the user's word in both texts.
+            foreach (var textId in new[] { 1, 2 })
+            {
+                var content = await context.Texts.AsNoTracking().Where(t => t.TextId == textId).Select(t => t.Content).SingleAsync();
+                await WordLinker.RelinkAsync(context, textId, content, 1, userId);
+            }
+            var reparavaLinks = await context.TextWords.AsNoTracking()
+                .Where(tw => tw.WordId == 1).Select(tw => tw.TextId).OrderBy(id => id).ToListAsync();
+            Assert.Equal(new[] { 1, 2 }, reparavaLinks);
+            Assert.Equal(1, await context.Words.CountAsync(w => w.Term == "reparava"));
+        }
+    }
+
+    [Fact]
+    public async Task RekeyLegacyTerms_MergeRollsBack_WhenTheLinkerWordGainsUserDataMidway()
+    {
+        // The merge re-checks "untouched" in the delete itself. A translation saved after the
+        // read (here: inside the merge's transaction, just before the delete) must keep the
+        // word, and the text links already moved must move back.
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<AppDbContext>().UseSqlite(connection).Options;
+        var userId = Guid.NewGuid();
+
+        await using (var seed = new AppDbContext(options))
+        {
+            await seed.Database.EnsureCreatedAsync();
+            seed.Users.Add(new User { Id = userId, UserName = "tester", Email = "tester@example.com" });
+            seed.Languages.Add(Lang(1, "pt", Language.LatinWordCharacters));
+            seed.Texts.Add(new Text { TextId = 1, UserId = userId, LanguageId = 1, Title = "Plain", Content = "Ele reparava." });
+            seed.Words.AddRange(
+                new Word { WordId = 1, UserId = userId, LanguageId = 1, Term = $"repa{Shy}rava", Status = 3 },
+                new Word { WordId = 2, UserId = userId, LanguageId = 1, Term = "reparava", Status = 0 });
+            seed.TextWords.Add(new TextWord { TextId = 1, WordId = 2 });
+            await seed.SaveChangesAsync();
+        }
+
+        var racing = new DbContextOptionsBuilder<AppDbContext>()
+            .UseSqlite(connection)
+            .AddInterceptors(new TranslateBeforeWordDelete(wordId: 2))
+            .Options;
+        await using (var context = new AppDbContext(racing))
+        {
+            Assert.Equal(0, await WordLinker.RekeyLegacyTermsAsync(context));
+        }
+
+        await using (var context = new AppDbContext(options))
+        {
+            var terms = await context.Words.AsNoTracking().ToDictionaryAsync(w => w.WordId, w => w.Term);
+            Assert.Equal($"repa{Shy}rava", terms[1]);
+            Assert.Equal("reparava", terms[2]);
+            Assert.Equal(2, (await context.TextWords.AsNoTracking().SingleAsync()).WordId);
+        }
+    }
+
+    // Saves a translation for a word right before a DELETE on Words runs, in the same
+    // transaction: what a reader save landing mid-merge leaves behind.
+    private sealed class TranslateBeforeWordDelete(int wordId) : DbCommandInterceptor
+    {
+        public override async ValueTask<InterceptionResult<int>> NonQueryExecutingAsync(
+            DbCommand command,
+            CommandEventData eventData,
+            InterceptionResult<int> result,
+            CancellationToken cancellationToken = default)
+        {
+            if (command.CommandText.Contains("DELETE FROM \"Words\"", StringComparison.Ordinal))
+            {
+                await using var insert = command.Connection!.CreateCommand();
+                insert.Transaction = command.Transaction;
+                insert.CommandText =
+                    $"INSERT INTO \"WordTranslations\" (\"WordId\", \"Translation\", \"CreatedAt\") VALUES ({wordId}, 'repaired', '2026-09-25 00:00:00')";
+                await insert.ExecuteNonQueryAsync(cancellationToken);
+            }
+            return result;
         }
     }
 

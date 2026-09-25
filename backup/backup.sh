@@ -45,14 +45,20 @@ for container in $CONTAINERS; do
 done
 echo "[logs] Done."
 
-# 3. Upload to Google Drive
+# 3. Upload to Google Drive, leaving out files older than Drive keeps them (step 5): those would
+# be uploaded only to go to Drive's trash in the same run, and uploaded again the next night.
+# prod-refresh/ is staging's download area for production's dump (refresh-from-prod.sh), not a
+# backup, so it is not one of the folders uploaded.
+DB_KEEP=90d
+LOG_KEEP=30d
 echo "[rclone] Uploading..."
 cp /rclone/rclone.conf /tmp/rclone.conf
-# prod-refresh/ is staging's download area for production's dump (refresh-from-prod.sh), not a backup.
-rclone copy "$BACKUP_DIR" "$REMOTE" \
-  --exclude "prod-refresh/**" \
-  --config /tmp/rclone.conf \
-  --log-level INFO
+upload() {
+  rclone copy "$BACKUP_DIR/$1" "$REMOTE/$1" --max-age "$2" --config /tmp/rclone.conf --log-level INFO
+}
+upload db     "$DB_KEEP"
+upload logs   "$LOG_KEEP"
+upload errors "$LOG_KEEP"
 
 # 4. Media volumes: mirror to Drive. Files removed or replaced since the last run are
 # moved into a dated deleted/ folder rather than dropped, so a bad delete is recoverable.
@@ -76,9 +82,9 @@ prune() {
   rclone delete "$REMOTE/$1" --min-age "$2" --config /tmp/rclone.conf || [ $? -eq 3 ]
   rclone rmdirs "$REMOTE/$1" --leave-root --config /tmp/rclone.conf || [ $? -eq 3 ]
 }
-prune db     90d
-prune logs   30d
-prune errors 30d
+prune db     "$DB_KEEP"
+prune logs   "$LOG_KEEP"
+prune errors "$LOG_KEEP"
 
 # Moved-aside media keeps its ORIGINAL modification time, so --min-age would judge a file
 # removed today by when it was first uploaded and could delete it in the same run. Age each
@@ -98,10 +104,10 @@ for snap in $SNAPSHOTS; do
   fi
 done
 
-# 6. Prune local copies older than 7 days
-find "$BACKUP_DIR/db"     -name "*.backup" -mtime +7 -delete
-find "$BACKUP_DIR/logs"   -name "*.log"    -mtime +7 -delete
-find "$BACKUP_DIR/errors" -name "*.err"    -mtime +7 -delete
+# 6. Prune local copies older than 7 days, whatever their name: a "*.backup" filter here kept the
+# .sql.gz dumps of the April 2026 script forever. Reached only after a successful upload (set -e).
+find "$BACKUP_DIR/db" "$BACKUP_DIR/logs" "$BACKUP_DIR/errors" -type f -mtime +7 -delete
+find "$BACKUP_DIR/db" "$BACKUP_DIR/logs" "$BACKUP_DIR/errors" -mindepth 1 -type d -empty -delete
 
 echo "=== Backup complete: $TIMESTAMP ==="
 hc ""

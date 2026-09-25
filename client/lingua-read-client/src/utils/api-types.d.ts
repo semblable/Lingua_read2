@@ -114,6 +114,121 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/AiProviders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["AiProviderInfoDto"][];
+                        "application/json": components["schemas"]["AiProviderInfoDto"][];
+                        "text/json": components["schemas"]["AiProviderInfoDto"][];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/AiProviders/{provider}/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    provider: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["AiProviderTestResultDto"];
+                        "application/json": components["schemas"]["AiProviderTestResultDto"];
+                        "text/json": components["schemas"]["AiProviderTestResultDto"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/AiProviders/{provider}/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    provider: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["AiProviderModelsDto"];
+                        "application/json": components["schemas"]["AiProviderModelsDto"];
+                        "text/json": components["schemas"]["AiProviderModelsDto"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/Auth/login": {
         parameters: {
             query?: never;
@@ -4469,43 +4584,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/UserSettings/test-openrouter": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description OK */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "text/plain": components["schemas"]["OpenRouterTestResultDto"];
-                        "application/json": components["schemas"]["OpenRouterTestResultDto"];
-                        "text/json": components["schemas"]["OpenRouterTestResultDto"];
-                    };
-                };
-            };
-        };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/Words": {
         parameters: {
             query?: never;
@@ -4813,6 +4891,35 @@ export interface components {
             /** Format: int32 */
             languageId: number;
             terms: components["schemas"]["NewTermDto"][];
+        };
+        AiProviderConfigDto: {
+            baseUrl?: string | null;
+            model?: string | null;
+            translationModel?: string | null;
+            explanationModel?: string | null;
+            storyModel?: string | null;
+            summarizationModel?: string | null;
+        };
+        AiProviderInfoDto: {
+            id?: string | null;
+            displayName?: string | null;
+            baseUrl?: string | null;
+            defaultModel?: string | null;
+            keyPlaceholder?: string | null;
+            keysUrl?: string | null;
+            modelsUrl?: string | null;
+            requiresBaseUrl?: boolean;
+            apiKeyOptional?: boolean;
+            supportsReasoning?: boolean;
+        };
+        AiProviderModelsDto: {
+            models?: string[] | null;
+            error?: string | null;
+        };
+        AiProviderTestResultDto: {
+            success?: boolean;
+            message?: string | null;
+            details?: string | null;
         };
         AudioStorageSizeDto: {
             /** Format: int64 */
@@ -5575,11 +5682,6 @@ export interface components {
             /** Format: int32 */
             textId?: number | null;
         };
-        OpenRouterTestResultDto: {
-            success?: boolean;
-            message?: string | null;
-            details?: string | null;
-        };
         ReSplitRequestDto: {
             splitMethod: string;
             /** Format: int32 */
@@ -6249,17 +6351,17 @@ export interface components {
             hardcoverSyncEnabled?: boolean | null;
             hardcoverApiToken?: string | null;
             clearHardcoverApiToken?: boolean | null;
-            useOpenRouter?: boolean | null;
-            openRouterApiKey?: string | null;
-            openRouterModel?: string | null;
+            aiProvider?: string | null;
+            aiProviders?: {
+                [key: string]: components["schemas"]["AiProviderConfigDto"];
+            } | null;
+            aiApiKeys?: {
+                [key: string]: string | null;
+            } | null;
             openRouterReasoningEnabled?: boolean | null;
             openRouterReasoningEffort?: string | null;
             openRouterStoryReasoningEnabled?: boolean | null;
             openRouterStoryReasoningEffort?: string | null;
-            openRouterTranslationModel?: string | null;
-            openRouterExplanationModel?: string | null;
-            openRouterStoryModel?: string | null;
-            openRouterSummarizationModel?: string | null;
             customTranslationPrompt?: string | null;
             customExplanationPrompt?: string | null;
             customStoryPrompt?: string | null;
@@ -6387,17 +6489,11 @@ export interface components {
             hardcoverApiToken?: string | null;
             /** Format: date-time */
             hardcoverLastSyncAt?: string | null;
-            useOpenRouter?: boolean;
-            openRouterApiKey?: string | null;
-            openRouterModel?: string | null;
+            aiProvider?: string | null;
             openRouterReasoningEnabled?: boolean;
             openRouterReasoningEffort?: string | null;
             openRouterStoryReasoningEnabled?: boolean;
             openRouterStoryReasoningEffort?: string | null;
-            openRouterTranslationModel?: string | null;
-            openRouterExplanationModel?: string | null;
-            openRouterStoryModel?: string | null;
-            openRouterSummarizationModel?: string | null;
             customTranslationPrompt?: string | null;
             customExplanationPrompt?: string | null;
             customStoryPrompt?: string | null;
@@ -6503,17 +6599,15 @@ export interface components {
             hasHardcoverApiToken?: boolean;
             /** Format: date-time */
             hardcoverLastSyncAt?: string | null;
-            useOpenRouter?: boolean;
-            hasOpenRouterApiKey?: boolean;
-            openRouterModel?: string | null;
+            aiProvider?: string | null;
+            aiProviders?: {
+                [key: string]: components["schemas"]["AiProviderConfigDto"];
+            } | null;
+            aiProvidersWithApiKey?: string[] | null;
             openRouterReasoningEnabled?: boolean;
             openRouterReasoningEffort?: string | null;
             openRouterStoryReasoningEnabled?: boolean;
             openRouterStoryReasoningEffort?: string | null;
-            openRouterTranslationModel?: string | null;
-            openRouterExplanationModel?: string | null;
-            openRouterStoryModel?: string | null;
-            openRouterSummarizationModel?: string | null;
             customTranslationPrompt?: string | null;
             customExplanationPrompt?: string | null;
             customStoryPrompt?: string | null;

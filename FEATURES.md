@@ -39,7 +39,7 @@ For whole books, upload a set of MP3s to build a persistent **audiobook playlist
 
 LinguaRead generates original reading material on demand: describe what you want (topic, level, length) and **Google Gemini** writes a lesson or story in your target language. It also produces **summaries** of imported texts. For word and phrase translations, it integrates with the **DeepL API** for high-quality results (its free tier is plenty for personal use).
 
-Power users can route AI requests through **OpenRouter** instead of Gemini, pick a specific model per task (translation, explanation, story, summary), and even replace the built-in prompts with their own. See [SETTINGS.md → Advanced AI Translation & Overrides](SETTINGS.md#5-advanced-ai-translation--overrides). API keys are configured in your `.env` (see [SETTINGS.md → Translation & AI Provider Keys](SETTINGS.md#3-translation--ai-provider-keys)); leaving a key blank simply disables that feature.
+Power users can route AI requests to their own provider instead of the built-in Gemini (**OpenRouter**, **DeepSeek**, **OpenAI**, **Google Gemini**, **Mistral**, **Groq**, or any OpenAI-compatible server such as Ollama or LM Studio), pick a specific model per task (translation, explanation, story, summary), and even replace the built-in prompts with their own. See [SETTINGS.md → Advanced AI Translation & Overrides](SETTINGS.md#5-advanced-ai-translation--overrides). API keys are configured in your `.env` (see [SETTINGS.md → Translation & AI Provider Keys](SETTINGS.md#3-translation--ai-provider-keys)); leaving a key blank simply disables that feature.
 
 ## Spaced Repetition (SRS)
 

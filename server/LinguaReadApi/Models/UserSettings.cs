@@ -109,15 +109,14 @@ namespace LinguaReadApi.Models
 
         public DateTime? HardcoverLastSyncAt { get; set; }
 
-        // AI Provider Settings (OpenRouter)
-        public bool UseOpenRouter { get; set; } = false; // Toggle between Gemini/OpenRouter
-        
-        // Encrypted at rest → stored as unbounded text; input length is capped on the DTO.
-        public string? OpenRouterApiKey { get; set; }
+        // AI provider for sentence translation, explanations, stories and summaries: "gemini" (the
+        // server-configured Gemini) or a catalog id (see Services.Ai.AiProviderCatalog) whose key and
+        // models live in UserAiProviders. A catalog provider without a usable key falls back to Gemini.
+        [StringLength(32)]
+        public string AiProvider { get; set; } = "gemini";
 
-        [StringLength(100)]
-        public string OpenRouterModel { get; set; } = "google/gemini-2.5-flash-preview-05-20:free";
-
+        // Reasoning settings for the catalog providers that can switch reasoning on and off
+        // (OpenRouter, DeepSeek). The names predate the other providers.
         public bool OpenRouterReasoningEnabled { get; set; } = false;
 
         [StringLength(20)]
@@ -128,19 +127,6 @@ namespace LinguaReadApi.Models
 
         [StringLength(20)]
         public string OpenRouterStoryReasoningEffort { get; set; } = "medium";
-
-        // Per-task model overrides (OpenRouter). Empty/null = fall back to OpenRouterModel.
-        [StringLength(100)]
-        public string? OpenRouterTranslationModel { get; set; }
-
-        [StringLength(100)]
-        public string? OpenRouterExplanationModel { get; set; }
-
-        [StringLength(100)]
-        public string? OpenRouterStoryModel { get; set; }
-
-        [StringLength(100)]
-        public string? OpenRouterSummarizationModel { get; set; }
 
         // Per-task custom prompt overrides. Empty/null = use built-in default template.
         [StringLength(8000)]

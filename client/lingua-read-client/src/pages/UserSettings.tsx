@@ -7,9 +7,10 @@ import {
 } from '../utils/api';
 import * as api from '../utils/api';
 import { SettingsContext } from '../contexts/SettingsContext';
-import type { Settings, SettingKey } from '../contexts/SettingsContext';
+import type { AiProviderConfig, Settings, SettingKey } from '../contexts/SettingsContext';
 import type { Language } from '../utils/api/languages';
 import type { UpdateUserSettingsInput, UserSettings as UserSettingsResponse } from '../utils/api/settings';
+import type { AiProviderInfo, AiProviderTestResult } from '../utils/api/aiProviders';
 import { useAutoSave } from '../hooks/useAutoSave';
 
 type PageSettings = Partial<Settings>;
@@ -34,6 +35,7 @@ import AppearanceSettings from '../components/settings/AppearanceSettings';
 import ReadingSettings from '../components/settings/ReadingSettings';
 import NavigationSettings from '../components/settings/NavigationSettings';
 import AiProviderSettings from '../components/settings/AiProviderSettings';
+import type { AiProviderConfigField } from '../components/settings/AiProviderSettings';
 import DiscordSettings from '../components/settings/DiscordSettings';
 import HardcoverSettings from '../components/settings/HardcoverSettings';
 import DataManagementSettings from '../components/settings/DataManagementSettings';
@@ -55,7 +57,6 @@ const applyProviderKeyFlags = (saved: UserSettingsResponse): Partial<Settings> =
   hasWiktionaryAccessToken: saved.hasWiktionaryAccessToken ?? false,
   hasAzureTranslatorKey: saved.hasAzureTranslatorKey ?? false,
   hasGoogleTranslateApiKey: saved.hasGoogleTranslateApiKey ?? false,
-  hasOpenRouterApiKey: saved.hasOpenRouterApiKey ?? false,
   hasDiscordWebhookUrl: saved.hasDiscordWebhookUrl ?? false
 });
 
@@ -72,11 +73,9 @@ const EDITABLE_KEYS: readonly SettingKey[] = [
   'discordWeeklyReportEnabled', 'discordWeeklyReportDayOfWeek',
   'discordWeeklyReportHourLocal', 'discordTimezoneOffsetMinutes',
   'hardcoverSyncEnabled',
-  'useOpenRouter', 'openRouterModel',
+  'aiProvider', 'aiProviders',
   'openRouterReasoningEnabled', 'openRouterReasoningEffort',
   'openRouterStoryReasoningEnabled', 'openRouterStoryReasoningEffort',
-  'openRouterTranslationModel', 'openRouterExplanationModel',
-  'openRouterStoryModel', 'openRouterSummarizationModel',
   'customTranslationPrompt', 'customExplanationPrompt',
   'customStoryPrompt', 'customSummarizationPrompt',
   'minimalHome'
@@ -141,7 +140,7 @@ const UserSettings = () => {
       const val = saved[key] ?? patch[key];
       if (val === undefined || val === null) return;
       updateSetting(key, val as Settings[K]);
-      localStorage.setItem(key, String(val));
+      localStorage.setItem(key, typeof val === 'object' ? JSON.stringify(val) : String(val));
     };
     (Object.keys(patch) as SettingKey[]).forEach(syncSetting);
 
@@ -205,17 +204,13 @@ const UserSettings = () => {
       hardcoverSyncEnabled: false,
       hasHardcoverApiToken: false,
       hardcoverLastSyncAt: null,
-      useOpenRouter: false,
-      hasOpenRouterApiKey: false,
-      openRouterModel: 'google/gemini-2.5-flash-preview-05-20:free',
+      aiProvider: 'gemini',
+      aiProviders: {},
+      aiProvidersWithApiKey: [],
       openRouterReasoningEnabled: false,
       openRouterReasoningEffort: 'medium',
       openRouterStoryReasoningEnabled: false,
       openRouterStoryReasoningEffort: 'medium',
-      openRouterTranslationModel: '',
-      openRouterExplanationModel: '',
-      openRouterStoryModel: '',
-      openRouterSummarizationModel: '',
       customTranslationPrompt: '',
       customExplanationPrompt: '',
       customStoryPrompt: '',
@@ -257,9 +252,11 @@ const UserSettings = () => {
   const [syncingHardcover, setSyncingHardcover] = useState(false);
   const [hardcoverSyncMessage, setHardcoverSyncMessage] = useState({ type: '', text: '' });
 
-  // OpenRouter test state
-  const [testingOpenRouter, setTestingOpenRouter] = useState(false);
-  const [openRouterTestResult, setOpenRouterTestResult] = useState<{ success?: boolean; message?: string } | null>(null);
+  // AI provider catalog and connection test state
+  const [aiProviderCatalog, setAiProviderCatalog] = useState<AiProviderInfo[] | null>(null);
+  const [aiProviderCatalogError, setAiProviderCatalogError] = useState('');
+  const [testingAiProvider, setTestingAiProvider] = useState(false);
+  const [aiProviderTestResult, setAiProviderTestResult] = useState<{ provider: string; result: AiProviderTestResult } | null>(null);
 
   // Audio storage state
   const [audioStorage, setAudioStorage] = useState<AudioStorageInfo | null>(null);
@@ -315,17 +312,13 @@ const UserSettings = () => {
           hardcoverSyncEnabled: data.hardcoverSyncEnabled ?? false,
           hasHardcoverApiToken: data.hasHardcoverApiToken ?? false,
           hardcoverLastSyncAt: data.hardcoverLastSyncAt ?? null,
-          useOpenRouter: data.useOpenRouter ?? false,
-          hasOpenRouterApiKey: data.hasOpenRouterApiKey ?? false,
-          openRouterModel: data.openRouterModel || 'google/gemini-2.5-flash-preview-05-20:free',
+          aiProvider: data.aiProvider || 'gemini',
+          aiProviders: (data.aiProviders ?? {}) as Record<string, AiProviderConfig>,
+          aiProvidersWithApiKey: data.aiProvidersWithApiKey ?? [],
           openRouterReasoningEnabled: data.openRouterReasoningEnabled ?? false,
           openRouterReasoningEffort: data.openRouterReasoningEffort || 'medium',
           openRouterStoryReasoningEnabled: data.openRouterStoryReasoningEnabled ?? false,
           openRouterStoryReasoningEffort: data.openRouterStoryReasoningEffort || 'medium',
-          openRouterTranslationModel: data.openRouterTranslationModel ?? '',
-          openRouterExplanationModel: data.openRouterExplanationModel ?? '',
-          openRouterStoryModel: data.openRouterStoryModel ?? '',
-          openRouterSummarizationModel: data.openRouterSummarizationModel ?? '',
           customTranslationPrompt: data.customTranslationPrompt ?? '',
           customExplanationPrompt: data.customExplanationPrompt ?? '',
           customStoryPrompt: data.customStoryPrompt ?? '',
@@ -369,9 +362,20 @@ const UserSettings = () => {
       }
     };
 
+    const fetchAiProviderCatalog = async () => {
+      setAiProviderCatalogError('');
+      try {
+        setAiProviderCatalog(await api.getAiProviders());
+      } catch (e: unknown) {
+        setAiProviderCatalog([]);
+        setAiProviderCatalogError((e instanceof Error && e.message) || 'Request failed.');
+      }
+    };
+
     fetchSettings();
     fetchLanguages();
     fetchStorageSize();
+    fetchAiProviderCatalog();
   }, [browserTimezoneOffsetMinutes, reloadKey, resetSettings]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
@@ -500,26 +504,49 @@ const UserSettings = () => {
     }
   };
 
-  const handleTestOpenRouter = useCallback(async () => {
-    setTestingOpenRouter(true);
-    setOpenRouterTestResult(null);
+  const handleTestAiProvider = useCallback(async (provider: string) => {
+    setTestingAiProvider(true);
+    setAiProviderTestResult(null);
     try {
       // The test reads the saved settings, so a model name still waiting to save goes out first.
       if (!(await flushSettings())) {
-        setOpenRouterTestResult({
-          success: false,
-          message: "Your latest changes aren't saved yet, so the test would use the old ones. Retry the save first."
+        setAiProviderTestResult({
+          provider,
+          result: {
+            success: false,
+            message: "Your latest changes aren't saved yet, so the test would use the old ones. Retry the save first."
+          }
         });
         return;
       }
-      const result = await api.testOpenRouterConnection();
-      setOpenRouterTestResult(result as { success?: boolean; message?: string });
+      setAiProviderTestResult({ provider, result: await api.testAiProvider(provider) });
     } catch (e: unknown) { const err = e as Error;
-      setOpenRouterTestResult({ success: false, message: err.message });
+      setAiProviderTestResult({ provider, result: { success: false, message: err.message } });
     } finally {
-      setTestingOpenRouter(false);
+      setTestingAiProvider(false);
     }
   }, [flushSettings]);
+
+  // A field of one provider's settings. The whole provider map is one auto-saved setting: entries
+  // are keyed by provider, so a switch to another provider can never land an edit on the wrong one.
+  const handleAiProviderConfigChange = (provider: string, field: AiProviderConfigField, value: string) => {
+    const current = settings.aiProviders ?? {};
+    setField('aiProviders', { ...current, [provider]: { ...current[provider], [field]: value } }, SAVE_DELAY_MS.typing);
+  };
+
+  // AI provider keys are write-only secrets like the ones below, one per provider.
+  const handleSaveAiApiKey = useCallback(async (provider: string, value: string) => {
+    if (!value.trim()) return;
+    const saved = await updateUserSettings({ aiApiKeys: { [provider]: value.trim() } });
+    applyServerValues({ aiProvidersWithApiKey: saved.aiProvidersWithApiKey ?? [] });
+    updateSetting('aiProvidersWithApiKey', saved.aiProvidersWithApiKey ?? []);
+  }, [applyServerValues, updateSetting]);
+
+  const handleClearAiApiKey = useCallback(async (provider: string) => {
+    const saved = await updateUserSettings({ aiApiKeys: { [provider]: '' } });
+    applyServerValues({ aiProvidersWithApiKey: saved.aiProvidersWithApiKey ?? [] });
+    updateSetting('aiProvidersWithApiKey', saved.aiProvidersWithApiKey ?? []);
+  }, [applyServerValues, updateSetting]);
 
   const handleTestHardcover = useCallback(async () => {
     setTestingHardcover(true);
@@ -577,7 +604,7 @@ const UserSettings = () => {
     }
   }, [applyServerValues, updateSetting]);
 
-  // Write-only provider keys (Azure/Google/Wiktionary/OpenRouter/Discord). Saved/cleared on their
+  // Write-only provider keys (Azure/Google/Wiktionary/Discord). Saved/cleared on their
   // own, never with the other settings; the server returns only the has* booleans. Re-throws so
   // SecretKeyField shows the error and keeps the typed value for a retry.
   const handleSaveProviderKey = useCallback(async (field: string, value: string) => {
@@ -709,11 +736,15 @@ const UserSettings = () => {
               <AiProviderSettings
                 settings={settings as Settings}
                 handleChange={handleChange}
-                testingOpenRouter={testingOpenRouter}
-                openRouterTestResult={openRouterTestResult}
-                onTestConnection={handleTestOpenRouter}
-                onSaveProviderKey={handleSaveProviderKey}
-                onClearProviderKey={handleClearProviderKey}
+                providers={aiProviderCatalog}
+                providersError={aiProviderCatalogError}
+                onProviderConfigChange={handleAiProviderConfigChange}
+                onSaveApiKey={handleSaveAiApiKey}
+                onClearApiKey={handleClearAiApiKey}
+                testingConnection={testingAiProvider}
+                testResult={aiProviderTestResult}
+                onTestConnection={handleTestAiProvider}
+                saveNow={flushSettings}
               />
             </div>
 

@@ -10,6 +10,7 @@ using System.Threading.Tasks;
 using LinguaReadApi.Data;
 using LinguaReadApi.Models;
 using LinguaReadApi.Services;
+using LinguaReadApi.Services.Ai;
 using LinguaReadApi.Services.Srs;
 using System.ComponentModel.DataAnnotations;
 using Microsoft.Extensions.Logging;
@@ -23,19 +24,13 @@ namespace LinguaReadApi.Controllers
     {
         private readonly AppDbContext _context;
         private readonly DiscordReportService _discordReportService;
-        private readonly IHttpClientFactory _httpClientFactory;
-        private readonly ILogger<UserSettingsController> _logger;
 
         public UserSettingsController(
-            AppDbContext context, 
-            DiscordReportService discordReportService,
-            IHttpClientFactory httpClientFactory,
-            ILogger<UserSettingsController> logger)
+            AppDbContext context,
+            DiscordReportService discordReportService)
         {
             _context = context;
             _discordReportService = discordReportService;
-            _httpClientFactory = httpClientFactory;
-            _logger = logger;
         }
 
         // GET: api/usersettings
@@ -91,9 +86,7 @@ namespace LinguaReadApi.Controllers
                     DiscordTimezoneOffsetMinutes = 0,
                     HardcoverSyncEnabled = false,
                     HardcoverApiToken = null,
-                    UseOpenRouter = false,
-                    OpenRouterApiKey = null,
-                    OpenRouterModel = "google/gemini-2.5-flash-preview-05-20:free",
+                    AiProvider = AiProviderCatalog.BuiltInGemini,
                     OpenRouterReasoningEnabled = false,
                     OpenRouterReasoningEffort = "medium",
                     OpenRouterStoryReasoningEnabled = false,
@@ -103,7 +96,9 @@ namespace LinguaReadApi.Controllers
                 _context.UserSettings.Add(settings);
                 await _context.SaveChangesAsync();
             }
-            
+
+            var aiProviders = await _context.UserAiProviders.Where(p => p.UserId == userId).ToListAsync();
+
             return new UserSettingsDto
             {
                 Theme = settings.Theme,
@@ -149,17 +144,13 @@ namespace LinguaReadApi.Controllers
                 HardcoverSyncEnabled = settings.HardcoverSyncEnabled,
                 HasHardcoverApiToken = !string.IsNullOrWhiteSpace(settings.HardcoverApiToken),
                 HardcoverLastSyncAt = settings.HardcoverLastSyncAt,
-                UseOpenRouter = settings.UseOpenRouter,
-                HasOpenRouterApiKey = !string.IsNullOrWhiteSpace(settings.OpenRouterApiKey),
-                OpenRouterModel = settings.OpenRouterModel,
+                AiProvider = AiProviderCatalog.NormalizeSelection(settings.AiProvider) ?? AiProviderCatalog.BuiltInGemini,
+                AiProviders = aiProviders.ToDictionary(p => p.Provider, AiProviderConfigDto.From),
+                AiProvidersWithApiKey = aiProviders.Where(p => !string.IsNullOrWhiteSpace(p.ApiKey)).Select(p => p.Provider).Order().ToList(),
                 OpenRouterReasoningEnabled = settings.OpenRouterReasoningEnabled,
                 OpenRouterReasoningEffort = settings.OpenRouterReasoningEffort,
                 OpenRouterStoryReasoningEnabled = settings.OpenRouterStoryReasoningEnabled,
                 OpenRouterStoryReasoningEffort = settings.OpenRouterStoryReasoningEffort,
-                OpenRouterTranslationModel = settings.OpenRouterTranslationModel,
-                OpenRouterExplanationModel = settings.OpenRouterExplanationModel,
-                OpenRouterStoryModel = settings.OpenRouterStoryModel,
-                OpenRouterSummarizationModel = settings.OpenRouterSummarizationModel,
                 CustomTranslationPrompt = settings.CustomTranslationPrompt,
                 CustomExplanationPrompt = settings.CustomExplanationPrompt,
                 CustomStoryPrompt = settings.CustomStoryPrompt,
@@ -277,7 +268,7 @@ namespace LinguaReadApi.Controllers
             }
             settings.WiktionaryRichDisplay = updateDto.WiktionaryRichDisplay ?? settings.WiktionaryRichDisplay;
             // null = leave unchanged; empty string = clear it (back to anonymous). Mirrors the
-            // OpenRouter API key handling below.
+            // AI provider key handling below.
             if (updateDto.WiktionaryAccessToken != null)
             {
                 settings.WiktionaryAccessToken = string.IsNullOrWhiteSpace(updateDto.WiktionaryAccessToken)
@@ -346,16 +337,19 @@ namespace LinguaReadApi.Controllers
                     ? null
                     : updateDto.HardcoverApiToken.Trim();
             }
-            settings.UseOpenRouter = updateDto.UseOpenRouter ?? settings.UseOpenRouter;
-            if (updateDto.OpenRouterApiKey != null)
+            if (updateDto.AiProvider != null)
             {
-                settings.OpenRouterApiKey = string.IsNullOrWhiteSpace(updateDto.OpenRouterApiKey)
-                    ? null
-                    : updateDto.OpenRouterApiKey.Trim();
+                var selection = AiProviderCatalog.NormalizeSelection(updateDto.AiProvider);
+                if (selection == null)
+                {
+                    return BadRequest(new { message = $"aiProvider must be one of: {string.Join(", ", AllAiProviderSelections())} (got '{updateDto.AiProvider}')." });
+                }
+                settings.AiProvider = selection;
             }
-            if (!string.IsNullOrWhiteSpace(updateDto.OpenRouterModel))
+            var aiProviders = await _context.UserAiProviders.Where(p => p.UserId == userId).ToListAsync();
+            if (ApplyAiProviderChanges(updateDto, userId, aiProviders) is { } aiProviderError)
             {
-                settings.OpenRouterModel = updateDto.OpenRouterModel.Trim();
+                return BadRequest(new { message = aiProviderError });
             }
             settings.OpenRouterReasoningEnabled = updateDto.OpenRouterReasoningEnabled ?? settings.OpenRouterReasoningEnabled;
             if (!string.IsNullOrWhiteSpace(updateDto.OpenRouterReasoningEffort))
@@ -374,30 +368,6 @@ namespace LinguaReadApi.Controllers
                 {
                     settings.OpenRouterStoryReasoningEffort = normalizedEffort;
                 }
-            }
-            if (updateDto.OpenRouterTranslationModel != null)
-            {
-                settings.OpenRouterTranslationModel = string.IsNullOrWhiteSpace(updateDto.OpenRouterTranslationModel)
-                    ? null
-                    : updateDto.OpenRouterTranslationModel.Trim();
-            }
-            if (updateDto.OpenRouterExplanationModel != null)
-            {
-                settings.OpenRouterExplanationModel = string.IsNullOrWhiteSpace(updateDto.OpenRouterExplanationModel)
-                    ? null
-                    : updateDto.OpenRouterExplanationModel.Trim();
-            }
-            if (updateDto.OpenRouterStoryModel != null)
-            {
-                settings.OpenRouterStoryModel = string.IsNullOrWhiteSpace(updateDto.OpenRouterStoryModel)
-                    ? null
-                    : updateDto.OpenRouterStoryModel.Trim();
-            }
-            if (updateDto.OpenRouterSummarizationModel != null)
-            {
-                settings.OpenRouterSummarizationModel = string.IsNullOrWhiteSpace(updateDto.OpenRouterSummarizationModel)
-                    ? null
-                    : updateDto.OpenRouterSummarizationModel.Trim();
             }
             if (updateDto.CustomTranslationPrompt != null)
             {
@@ -578,17 +548,13 @@ namespace LinguaReadApi.Controllers
                 HardcoverSyncEnabled = settings.HardcoverSyncEnabled,
                 HasHardcoverApiToken = !string.IsNullOrWhiteSpace(settings.HardcoverApiToken),
                 HardcoverLastSyncAt = settings.HardcoverLastSyncAt,
-                UseOpenRouter = settings.UseOpenRouter,
-                HasOpenRouterApiKey = !string.IsNullOrWhiteSpace(settings.OpenRouterApiKey),
-                OpenRouterModel = settings.OpenRouterModel,
+                AiProvider = AiProviderCatalog.NormalizeSelection(settings.AiProvider) ?? AiProviderCatalog.BuiltInGemini,
+                AiProviders = aiProviders.ToDictionary(p => p.Provider, AiProviderConfigDto.From),
+                AiProvidersWithApiKey = aiProviders.Where(p => !string.IsNullOrWhiteSpace(p.ApiKey)).Select(p => p.Provider).Order().ToList(),
                 OpenRouterReasoningEnabled = settings.OpenRouterReasoningEnabled,
                 OpenRouterReasoningEffort = settings.OpenRouterReasoningEffort,
                 OpenRouterStoryReasoningEnabled = settings.OpenRouterStoryReasoningEnabled,
                 OpenRouterStoryReasoningEffort = settings.OpenRouterStoryReasoningEffort,
-                OpenRouterTranslationModel = settings.OpenRouterTranslationModel,
-                OpenRouterExplanationModel = settings.OpenRouterExplanationModel,
-                OpenRouterStoryModel = settings.OpenRouterStoryModel,
-                OpenRouterSummarizationModel = settings.OpenRouterSummarizationModel,
                 CustomTranslationPrompt = settings.CustomTranslationPrompt,
                 CustomExplanationPrompt = settings.CustomExplanationPrompt,
                 CustomStoryPrompt = settings.CustomStoryPrompt,
@@ -623,6 +589,90 @@ namespace LinguaReadApi.Controllers
             var normalized = (value ?? "translation").Trim().ToLowerInvariant();
             return normalized is "translation" or "cloze" or "mixed" ? normalized : "translation";
         }
+
+        private static IEnumerable<string> AllAiProviderSelections() =>
+            new[] { AiProviderCatalog.BuiltInGemini }.Concat(AiProviderCatalog.Providers.Select(p => p.Id));
+
+        /// <summary>
+        /// Applies the per-provider settings and keys of an update to the user's provider rows,
+        /// adding rows as needed. Returns an error message for an unknown provider or invalid value,
+        /// before changing anything.
+        /// </summary>
+        private string? ApplyAiProviderChanges(UpdateUserSettingsDto updateDto, Guid userId, List<UserAiProvider> rows)
+        {
+            var configs = updateDto.AiProviders ?? new Dictionary<string, AiProviderConfigDto>();
+            var keys = updateDto.AiApiKeys ?? new Dictionary<string, string?>();
+
+            // Validate first, so a bad entry leaves every provider untouched.
+            var normalizedBaseUrls = new Dictionary<string, string?>();
+            foreach (var (providerId, config) in configs)
+            {
+                var definition = AiProviderCatalog.Find(providerId);
+                if (definition == null) return $"Unknown AI provider '{providerId}'.";
+                if (config == null) continue;
+                foreach (var model in new[] { config.Model, config.TranslationModel, config.ExplanationModel, config.StoryModel, config.SummarizationModel })
+                {
+                    if (model != null && model.Trim().Length > AiProviderConfigDto.MaxModelLength)
+                        return $"{definition.DisplayName}: model names are limited to {AiProviderConfigDto.MaxModelLength} characters.";
+                }
+                if (definition.RequiresBaseUrl && config.BaseUrl != null)
+                {
+                    if (config.BaseUrl.Length > AiProviderConfigDto.MaxBaseUrlLength)
+                        return $"{definition.DisplayName}: the base URL is limited to {AiProviderConfigDto.MaxBaseUrlLength} characters.";
+                    if (!AiProviderCatalog.TryNormalizeBaseUrl(config.BaseUrl, out var baseUrl, out var baseUrlError))
+                        return $"{definition.DisplayName}: {baseUrlError}";
+                    normalizedBaseUrls[definition.Id] = baseUrl;
+                }
+            }
+            foreach (var (providerId, key) in keys)
+            {
+                var definition = AiProviderCatalog.Find(providerId);
+                if (definition == null) return $"Unknown AI provider '{providerId}'.";
+                if (key != null && key.Trim().Length > MaxAiApiKeyLength)
+                    return $"{definition.DisplayName}: the API key is limited to {MaxAiApiKeyLength} characters.";
+            }
+
+            UserAiProvider RowFor(AiProviderDefinition definition)
+            {
+                var row = rows.FirstOrDefault(r => r.Provider == definition.Id);
+                if (row == null)
+                {
+                    row = new UserAiProvider { UserId = userId, Provider = definition.Id };
+                    rows.Add(row);
+                    _context.UserAiProviders.Add(row);
+                }
+                return row;
+            }
+
+            // Every field: null = leave unchanged, empty = clear.
+            static string? Clean(string? value, string? current) =>
+                value == null ? current : string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+            foreach (var (providerId, config) in configs)
+            {
+                if (config == null) continue;
+                var definition = AiProviderCatalog.Find(providerId)!;
+                var row = RowFor(definition);
+                row.Model = Clean(config.Model, row.Model);
+                row.TranslationModel = Clean(config.TranslationModel, row.TranslationModel);
+                row.ExplanationModel = Clean(config.ExplanationModel, row.ExplanationModel);
+                row.StoryModel = Clean(config.StoryModel, row.StoryModel);
+                row.SummarizationModel = Clean(config.SummarizationModel, row.SummarizationModel);
+                if (normalizedBaseUrls.TryGetValue(definition.Id, out var baseUrl))
+                {
+                    row.BaseUrl = baseUrl;
+                }
+            }
+            foreach (var (providerId, key) in keys)
+            {
+                if (key == null) continue;
+                var row = RowFor(AiProviderCatalog.Find(providerId)!);
+                row.ApiKey = string.IsNullOrWhiteSpace(key) ? null : key.Trim();
+            }
+            return null;
+        }
+
+        private const int MaxAiApiKeyLength = 1024;
 
         // PUT: api/usersettings/audiobook-progress
         [HttpPut("audiobook-progress")]
@@ -839,122 +889,6 @@ namespace LinguaReadApi.Controllers
 
             return true;
         }
-
-        // POST: api/usersettings/test-openrouter
-        [HttpPost("test-openrouter")]
-        public async Task<ActionResult<OpenRouterTestResultDto>> TestOpenRouterConnection()
-        {
-            if (!TryGetUserIdFromClaims(out var userId, out var unauthorizedBody))
-                return Unauthorized(unauthorizedBody);
-            var settings = await _context.UserSettings.FirstOrDefaultAsync(s => s.UserId == userId);
-            
-            if (settings == null || string.IsNullOrWhiteSpace(settings.OpenRouterApiKey))
-            {
-                return BadRequest(new OpenRouterTestResultDto 
-                { 
-                    Success = false, 
-                    Message = "OpenRouter API key not configured" 
-                });
-            }
-
-            try
-            {
-                var httpClient = _httpClientFactory.CreateClient();
-                httpClient.Timeout = TimeSpan.FromSeconds(30);
-                
-                var request = new HttpRequestMessage(HttpMethod.Post, "https://openrouter.ai/api/v1/chat/completions");
-                request.Headers.Add("Authorization", $"Bearer {settings.OpenRouterApiKey}");
-                request.Headers.Add("HTTP-Referer", "https://lingua-read.app");
-                request.Headers.Add("X-Title", "Lingua-Read");
-                
-                var payload = new
-                {
-                    model = settings.OpenRouterModel,
-                    messages = new[]
-                    {
-                        new { role = "user", content = "Reply with only the word 'OK'" }
-                    },
-                    max_tokens = 10
-                };
-                
-                var jsonOptions = new JsonSerializerOptions 
-                { 
-                    PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower 
-                };
-                var json = JsonSerializer.Serialize(payload, jsonOptions);
-                request.Content = new StringContent(json, Encoding.UTF8, "application/json");
-                
-                _logger.LogInformation("Testing OpenRouter with model: {Model}", settings.OpenRouterModel);
-                
-                var response = await httpClient.SendAsync(request);
-                var responseContent = await response.Content.ReadAsStringAsync();
-                
-                _logger.LogInformation("OpenRouter test response: {StatusCode} - {Content}", 
-                    response.StatusCode, responseContent.Substring(0, Math.Min(500, responseContent.Length)));
-                
-                if (!response.IsSuccessStatusCode)
-                {
-                    return Ok(new OpenRouterTestResultDto
-                    {
-                        Success = false,
-                        Message = $"API Error: {response.StatusCode}",
-                        Details = responseContent
-                    });
-                }
-                
-                // Parse response to check for API-level errors
-                using var doc = JsonDocument.Parse(responseContent);
-                if (doc.RootElement.TryGetProperty("error", out var errorElement))
-                {
-                    var errorMessage = errorElement.TryGetProperty("message", out var msgProp) 
-                        ? msgProp.GetString() 
-                        : "Unknown error";
-                    return Ok(new OpenRouterTestResultDto
-                    {
-                        Success = false,
-                        Message = $"OpenRouter Error: {errorMessage}",
-                        Details = responseContent
-                    });
-                }
-                
-                // Success - extract the response
-                var reply = "";
-                if (doc.RootElement.TryGetProperty("choices", out var choices) && 
-                    choices.GetArrayLength() > 0)
-                {
-                    var firstChoice = choices[0];
-                    if (firstChoice.TryGetProperty("message", out var message) &&
-                        message.TryGetProperty("content", out var content))
-                    {
-                        reply = content.GetString() ?? "";
-                    }
-                }
-                
-                return Ok(new OpenRouterTestResultDto
-                {
-                    Success = true,
-                    Message = $"Connection successful! Model '{settings.OpenRouterModel}' responded.",
-                    Details = reply
-                });
-            }
-            catch (TaskCanceledException)
-            {
-                return Ok(new OpenRouterTestResultDto
-                {
-                    Success = false,
-                    Message = "Request timed out after 30 seconds"
-                });
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "OpenRouter test failed");
-                return Ok(new OpenRouterTestResultDto
-                {
-                    Success = false,
-                    Message = $"Error: {ex.Message}"
-                });
-            }
-        }
     }
 
     public class UserSettingsDto
@@ -1007,19 +941,16 @@ namespace LinguaReadApi.Controllers
         public bool HardcoverSyncEnabled { get; set; } = false;
         public bool HasHardcoverApiToken { get; set; } = false;
         public DateTime? HardcoverLastSyncAt { get; set; }
-        public bool UseOpenRouter { get; set; } = false;
-        public bool HasOpenRouterApiKey { get; set; }
-        public string OpenRouterModel { get; set; } = "google/gemini-2.5-flash-preview-05-20:free";
+        // "gemini" (built-in) or an AiProviderCatalog id.
+        public string AiProvider { get; set; } = AiProviderCatalog.BuiltInGemini;
+        // The settings of each provider the user has set up, by provider id.
+        public Dictionary<string, AiProviderConfigDto> AiProviders { get; set; } = new();
+        // Write-only secrets: only which providers have a key is returned, never the key.
+        public List<string> AiProvidersWithApiKey { get; set; } = new();
         public bool OpenRouterReasoningEnabled { get; set; } = false;
         public string OpenRouterReasoningEffort { get; set; } = "medium";
         public bool OpenRouterStoryReasoningEnabled { get; set; } = false;
         public string OpenRouterStoryReasoningEffort { get; set; } = "medium";
-
-        // Per-task model overrides
-        public string? OpenRouterTranslationModel { get; set; }
-        public string? OpenRouterExplanationModel { get; set; }
-        public string? OpenRouterStoryModel { get; set; }
-        public string? OpenRouterSummarizationModel { get; set; }
 
         // Per-task custom prompt overrides
         public string? CustomTranslationPrompt { get; set; }
@@ -1125,14 +1056,16 @@ namespace LinguaReadApi.Controllers
 
         public bool? ClearHardcoverApiToken { get; set; }
 
-        // OpenRouter Settings
-        public bool? UseOpenRouter { get; set; }
+        // AI provider: "gemini" or an AiProviderCatalog id.
+        [StringLength(32)]
+        public string? AiProvider { get; set; }
 
-        [StringLength(256)]
-        public string? OpenRouterApiKey { get; set; }
+        // Per-provider settings by provider id. In each entry null leaves a field unchanged and an
+        // empty string clears it.
+        public Dictionary<string, AiProviderConfigDto>? AiProviders { get; set; }
 
-        [StringLength(100)]
-        public string? OpenRouterModel { get; set; }
+        // Write-only API keys by provider id; an empty string removes the key.
+        public Dictionary<string, string?>? AiApiKeys { get; set; }
 
         public bool? OpenRouterReasoningEnabled { get; set; }
 
@@ -1143,19 +1076,6 @@ namespace LinguaReadApi.Controllers
 
         [StringLength(20)]
         public string? OpenRouterStoryReasoningEffort { get; set; }
-
-        // Per-task model overrides (empty/whitespace clears the override)
-        [StringLength(100)]
-        public string? OpenRouterTranslationModel { get; set; }
-
-        [StringLength(100)]
-        public string? OpenRouterExplanationModel { get; set; }
-
-        [StringLength(100)]
-        public string? OpenRouterStoryModel { get; set; }
-
-        [StringLength(100)]
-        public string? OpenRouterSummarizationModel { get; set; }
 
         // Per-task custom prompts (empty/whitespace clears the override)
         [StringLength(8000)]
@@ -1253,10 +1173,28 @@ namespace LinguaReadApi.Controllers
         public int TotalFiles { get; set; }
     }
 
-    public class OpenRouterTestResultDto
+    /// <summary>One AI provider's settings (never its key). Model fields left empty fall back as described on UserAiProvider.</summary>
+    public class AiProviderConfigDto
     {
-        public bool Success { get; set; }
-        public string Message { get; set; } = string.Empty;
-        public string? Details { get; set; }
+        public const int MaxModelLength = 200;
+        public const int MaxBaseUrlLength = 500;
+
+        // Only used by the "custom" provider.
+        public string? BaseUrl { get; set; }
+        public string? Model { get; set; }
+        public string? TranslationModel { get; set; }
+        public string? ExplanationModel { get; set; }
+        public string? StoryModel { get; set; }
+        public string? SummarizationModel { get; set; }
+
+        public static AiProviderConfigDto From(UserAiProvider row) => new()
+        {
+            BaseUrl = row.BaseUrl,
+            Model = row.Model,
+            TranslationModel = row.TranslationModel,
+            ExplanationModel = row.ExplanationModel,
+            StoryModel = row.StoryModel,
+            SummarizationModel = row.SummarizationModel
+        };
     }
 } 

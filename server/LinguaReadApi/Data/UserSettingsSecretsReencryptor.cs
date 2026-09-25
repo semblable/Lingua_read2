@@ -8,8 +8,9 @@ using Microsoft.Extensions.Logging;
 namespace LinguaReadApi.Data
 {
     /// <summary>
-    /// One-shot startup pass that encrypts <see cref="Models.UserSettings"/> secret columns left as
-    /// plaintext by the <c>EncryptUserSettingsSecrets</c> migration. That migration only widened the
+    /// One-shot startup pass that encrypts <see cref="Models.UserSettings"/> secret columns (and AI
+    /// provider keys in <see cref="Models.UserAiProvider"/>) left as plaintext by the
+    /// <c>EncryptUserSettingsSecrets</c> migration. That migration only widened the
     /// column types; it never rewrote existing values. The EF value converter encrypts transparently
     /// on write, but only when a secret's value actually changes — so a secret stored before
     /// encryption was introduced (or re-entered unchanged) would stay in cleartext indefinitely.
@@ -42,9 +43,14 @@ namespace LinguaReadApi.Data
                 encrypted += Encrypt(protector, s.AzureTranslatorKey, v => s.AzureTranslatorKey = v);
                 encrypted += Encrypt(protector, s.GoogleTranslateApiKey, v => s.GoogleTranslateApiKey = v);
                 encrypted += Encrypt(protector, s.WiktionaryAccessToken, v => s.WiktionaryAccessToken = v);
-                encrypted += Encrypt(protector, s.OpenRouterApiKey, v => s.OpenRouterApiKey = v);
                 encrypted += Encrypt(protector, s.HardcoverApiToken, v => s.HardcoverApiToken = v);
                 encrypted += Encrypt(protector, s.DiscordWebhookUrl, v => s.DiscordWebhookUrl = v);
+            }
+
+            // AI provider keys, which the AddAiProviders migration copied over as stored.
+            foreach (var p in await raw.UserAiProviders.ToListAsync(ct))
+            {
+                encrypted += Encrypt(protector, p.ApiKey, v => p.ApiKey = v);
             }
 
             if (encrypted > 0)

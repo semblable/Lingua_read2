@@ -1,9 +1,9 @@
 using System.Collections.Generic;
 using LinguaReadApi.Models;
 
-namespace LinguaReadApi.Services
+namespace LinguaReadApi.Services.Ai
 {
-    public enum OpenRouterTask
+    public enum AiTask
     {
         Translation,
         Explanation,
@@ -11,22 +11,26 @@ namespace LinguaReadApi.Services
         Summarization
     }
 
-    public static class OpenRouterTaskConfig
+    public static class AiTaskConfig
     {
-        public static string ResolveModel(UserSettings settings, OpenRouterTask task)
+        /// <summary>
+        /// The model for a task: the provider's per-task override, else its model, else the catalog
+        /// default. Null when none is set and the provider has no default.
+        /// </summary>
+        public static string? ResolveModel(UserAiProvider config, AiProviderDefinition definition, AiTask task)
         {
             string? perTask = task switch
             {
-                OpenRouterTask.Translation => settings.OpenRouterTranslationModel,
-                OpenRouterTask.Explanation => settings.OpenRouterExplanationModel,
-                OpenRouterTask.Story => settings.OpenRouterStoryModel,
-                OpenRouterTask.Summarization => settings.OpenRouterSummarizationModel,
+                AiTask.Translation => config.TranslationModel,
+                AiTask.Explanation => config.ExplanationModel,
+                AiTask.Story => config.StoryModel,
+                AiTask.Summarization => config.SummarizationModel,
                 _ => null
             };
 
-            return string.IsNullOrWhiteSpace(perTask)
-                ? settings.OpenRouterModel
-                : perTask.Trim();
+            if (!string.IsNullOrWhiteSpace(perTask)) return perTask.Trim();
+            if (!string.IsNullOrWhiteSpace(config.Model)) return config.Model.Trim();
+            return definition.DefaultModel;
         }
 
         public static string ResolvePromptOrDefault(

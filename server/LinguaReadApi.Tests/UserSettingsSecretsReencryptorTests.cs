@@ -40,10 +40,12 @@ public class UserSettingsSecretsReencryptorTests
             seed.UserSettings.Add(new UserSettings
             {
                 UserId = userId,
-                OpenRouterApiKey = "sk-or-legacy-plaintext",
+                GoogleTranslateApiKey = "google-legacy-plaintext",
                 DiscordWebhookUrl = "https://discord.com/api/webhooks/legacy",
                 CreatedAt = DateTime.UtcNow
             });
+            // AddAiProviders copied the OpenRouter key over as stored, so a plaintext one stays plaintext.
+            seed.UserAiProviders.Add(new UserAiProvider { UserId = userId, Provider = "openrouter", ApiKey = "sk-or-legacy-plaintext" });
             await seed.SaveChangesAsync();
         }
 
@@ -55,31 +57,35 @@ public class UserSettingsSecretsReencryptorTests
         using (var raw = new AppDbContext(options))
         {
             var s = await raw.UserSettings.SingleAsync();
-            Assert.StartsWith("CfDJ8", s.OpenRouterApiKey);
+            Assert.StartsWith("CfDJ8", s.GoogleTranslateApiKey);
             Assert.StartsWith("CfDJ8", s.DiscordWebhookUrl);
+            Assert.StartsWith("CfDJ8", (await raw.UserAiProviders.SingleAsync()).ApiKey);
         }
 
         // A protector-backed context transparently decrypts back to the original plaintext.
         using (var protectedCtx = new AppDbContext(options, dataProtection))
         {
             var s = await protectedCtx.UserSettings.SingleAsync();
-            Assert.Equal("sk-or-legacy-plaintext", s.OpenRouterApiKey);
+            Assert.Equal("google-legacy-plaintext", s.GoogleTranslateApiKey);
             Assert.Equal("https://discord.com/api/webhooks/legacy", s.DiscordWebhookUrl);
+            Assert.Equal("sk-or-legacy-plaintext", (await protectedCtx.UserAiProviders.SingleAsync()).ApiKey);
         }
 
         // Second pass must be a no-op: an already-protected value is left exactly as-is (a re-encrypt
         // would produce different ciphertext, since Data Protection is non-deterministic).
-        string cipherBefore;
+        string cipherBefore, aiCipherBefore;
         using (var raw = new AppDbContext(options))
         {
-            cipherBefore = (await raw.UserSettings.SingleAsync()).OpenRouterApiKey!;
+            cipherBefore = (await raw.UserSettings.SingleAsync()).GoogleTranslateApiKey!;
+            aiCipherBefore = (await raw.UserAiProviders.SingleAsync()).ApiKey!;
         }
 
         await UserSettingsSecretsReencryptor.EncryptLegacyPlaintextAsync(options, dataProtection, NullLogger.Instance);
 
         using (var raw = new AppDbContext(options))
         {
-            Assert.Equal(cipherBefore, (await raw.UserSettings.SingleAsync()).OpenRouterApiKey);
+            Assert.Equal(cipherBefore, (await raw.UserSettings.SingleAsync()).GoogleTranslateApiKey);
+            Assert.Equal(aiCipherBefore, (await raw.UserAiProviders.SingleAsync()).ApiKey);
         }
     }
 
@@ -105,7 +111,7 @@ public class UserSettingsSecretsReencryptorTests
         using (var raw = new AppDbContext(options))
         {
             var s = await raw.UserSettings.SingleAsync();
-            Assert.Null(s.OpenRouterApiKey);
+            Assert.Null(s.GoogleTranslateApiKey);
             Assert.Null(s.DiscordWebhookUrl);
         }
     }

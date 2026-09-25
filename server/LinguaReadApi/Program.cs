@@ -7,6 +7,7 @@ using System.Security.Claims;
 using System.Text;
 using LinguaReadApi.Data;
 using LinguaReadApi.Services;
+using LinguaReadApi.Services.Ai;
 using LinguaReadApi.Utilities;
 using Microsoft.Extensions.FileProviders; // Add this for StaticFileOptions
 using System.IO; // Add this for Path.Combine
@@ -166,12 +167,13 @@ builder.Services.AddScoped<IStoryGenerationService, GeminiStoryGenerationService
 builder.Services.AddScoped<GeminiSummarizationService>();
 builder.Services.AddScoped<ISummarizationService, GeminiSummarizationService>();
 
-// Register OpenRouter Services
-builder.Services.AddScoped<OpenRouterTranslationService>();
-builder.Services.AddScoped<OpenRouterStoryGenerationService>();
-builder.Services.AddScoped<OpenRouterSummarizationService>();
+// Register the OpenAI-compatible provider services (OpenRouter, DeepSeek, ... see AiProviderCatalog)
+builder.Services.AddScoped<OpenAiCompatibleChatClient>();
+builder.Services.AddScoped<OpenAiCompatibleTranslationService>();
+builder.Services.AddScoped<OpenAiCompatibleStoryGenerationService>();
+builder.Services.AddScoped<OpenAiCompatibleSummarizationService>();
 
-// Register Service Factories (select between Gemini/OpenRouter per-user)
+// Register Service Factories (select between built-in Gemini and the user's AI provider)
 builder.Services.AddScoped<ITranslationServiceFactory, TranslationServiceFactory>();
 builder.Services.AddScoped<IStoryGenerationServiceFactory, StoryGenerationServiceFactory>();
 builder.Services.AddScoped<ISummarizationServiceFactory, SummarizationServiceFactory>();

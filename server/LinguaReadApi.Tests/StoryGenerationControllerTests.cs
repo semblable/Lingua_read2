@@ -14,7 +14,7 @@ namespace LinguaReadApi.Tests;
 public class StoryGenerationControllerTests
 {
     [Fact]
-    public async Task GenerateStory_UsesCustomPrompt_WhenUseOpenRouterIsTrue()
+    public async Task GenerateStory_UsesCustomPrompt_WhenAnAiProviderIsSelected()
     {
         await using var context = CreateContext();
         var userId = Guid.NewGuid();
@@ -22,8 +22,7 @@ public class StoryGenerationControllerTests
         context.UserSettings.Add(new UserSettings
         {
             UserId = userId,
-            UseOpenRouter = true,
-            OpenRouterApiKey = "key",
+            AiProvider = "deepseek",
             CustomStoryPrompt = "CUSTOM {level} {language} {prompt} {maxLength}",
             CreatedAt = DateTime.UtcNow
         });
@@ -44,7 +43,7 @@ public class StoryGenerationControllerTests
     }
 
     [Fact]
-    public async Task GenerateStory_IgnoresCustomPrompt_WhenUseOpenRouterIsFalse()
+    public async Task GenerateStory_IgnoresCustomPrompt_WhenBuiltInGeminiIsSelected()
     {
         await using var context = CreateContext();
         var userId = Guid.NewGuid();
@@ -52,7 +51,7 @@ public class StoryGenerationControllerTests
         context.UserSettings.Add(new UserSettings
         {
             UserId = userId,
-            UseOpenRouter = false,
+            AiProvider = "gemini",
             CustomStoryPrompt = "CUSTOM {level} {language} {prompt} {maxLength}",
             CreatedAt = DateTime.UtcNow
         });

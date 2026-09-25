@@ -42,6 +42,7 @@ namespace LinguaReadApi.Data
         public DbSet<Book> Books { get; set; }
         public DbSet<UserActivity> UserActivities { get; set; }
         public DbSet<UserSettings> UserSettings { get; set; }
+        public DbSet<UserAiProvider> UserAiProviders { get; set; }
         public DbSet<Tag> Tags { get; set; }
         public DbSet<BookTag> BookTags { get; set; }
         public DbSet<AudiobookTrack> AudiobookTracks { get; set; } // Added for Audiobook feature
@@ -212,10 +213,20 @@ namespace LinguaReadApi.Data
                 userSettings.Property(s => s.AzureTranslatorKey).HasConversion(secretConverter);
                 userSettings.Property(s => s.GoogleTranslateApiKey).HasConversion(secretConverter);
                 userSettings.Property(s => s.WiktionaryAccessToken).HasConversion(secretConverter);
-                userSettings.Property(s => s.OpenRouterApiKey).HasConversion(secretConverter);
                 userSettings.Property(s => s.HardcoverApiToken).HasConversion(secretConverter);
                 userSettings.Property(s => s.DiscordWebhookUrl).HasConversion(secretConverter);
+                modelBuilder.Entity<UserAiProvider>().Property(p => p.ApiKey).HasConversion(secretConverter);
             }
+
+            // One row per (user, AI provider); see UserAiProvider.
+            modelBuilder.Entity<UserAiProvider>()
+                .HasKey(p => new { p.UserId, p.Provider });
+
+            modelBuilder.Entity<UserAiProvider>()
+                .HasOne(p => p.User)
+                .WithMany()
+                .HasForeignKey(p => p.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
 
             // Configure Tag entity
             modelBuilder.Entity<Tag>()

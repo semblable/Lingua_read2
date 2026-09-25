@@ -14,6 +14,7 @@ using Microsoft.AspNetCore.Mvc.ModelBinding;
 using LinguaReadApi.Data;
 using LinguaReadApi.Models;
 using LinguaReadApi.Services;
+using LinguaReadApi.Services.Ai;
 using LinguaReadApi.Services.Srs;
 using LinguaReadApi.Utilities;
 
@@ -1376,7 +1377,7 @@ Format (one object per provided word, in the same order):
                 ["level"] = level,
                 ["wordList"] = wordList
             };
-            var prompt = OpenRouterTaskConfig.ResolvePromptOrDefault(
+            var prompt = AiTaskConfig.ResolvePromptOrDefault(
                 settingsForPrompt.CustomStoryPrompt, defaultPrompt, promptVars);
 
             // 5. Generate using user's configured AI provider

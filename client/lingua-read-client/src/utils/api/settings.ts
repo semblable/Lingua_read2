@@ -44,12 +44,6 @@ export const sendDiscordReport = async (
   });
 };
 
-export const testOpenRouterConnection = async (): Promise<unknown> => {
-  return await fetchApi('/usersettings/test-openrouter', {
-    method: 'POST'
-  });
-};
-
 export const getAudioStorageSize = async (): Promise<AudioStorageSize> => {
   try {
     return await fetchApi<AudioStorageSize>('/usersettings/audio-storage-size');

@@ -171,21 +171,34 @@ Synchronize book metadata, shelf progress, and reviews to [Hardcover.app](https:
 ---
 
 ### 5. Advanced AI Translation & Overrides
-Allows replacing standard Gemini configuration with **OpenRouter**, custom models, and customized prompting templates.
+Choose which AI service handles sentence and selection translation, sentence explanations, story generation and summaries. The default is the server's **built-in Gemini**; alternatively pick one of the OpenAI-compatible providers below and use your own key. Each provider keeps its own key and models, so you can switch between them without re-entering anything. A provider that is missing its key, model or (for Custom) server URL is not used: AI features fall back to the built-in Gemini, and Settings says what is missing.
+
+| Provider | Default model | Notes |
+| :--- | :--- | :--- |
+| OpenRouter | *choose one* | Hundreds of models behind one key. Reasoning is sent as `reasoning.effort`. |
+| DeepSeek | `deepseek-flash` | Thinks by default; with reasoning off, LinguaRead asks it not to (faster, cheaper). Efforts map to DeepSeek's `low` / `high` / `max`. |
+| OpenAI | *choose one* | |
+| Google Gemini (your own key) | *choose one* | Gemini's OpenAI-compatible endpoint with an AI Studio key. |
+| Mistral | *choose one* | |
+| Groq | *choose one* | |
+| Custom (OpenAI-compatible) | *choose one* | Any server with an OpenAI chat-completions API: Ollama (`http://host:11434/v1`), LM Studio, vLLM, LiteLLM, Together, Fireworks... The key is optional. The server calls it, so it must be reachable from the server. |
+
+**Load models** in Settings lists the models your saved key can use. **Test Connection** sends a one-word request with the saved key and model. If a provider rejects an optional request parameter (such as `max_tokens` or `temperature` on some reasoning models), the request is retried once with just the model and the messages.
 
 | Setting Field | Default Value | Allowed / Type | Description |
 | :--- | :---: | :--- | :--- |
-| `UseOpenRouter` | `false` | `true` / `false` | Routes AI translation/generation queries to OpenRouter instead of direct Google Gemini. |
-| `OpenRouterApiKey` | *None* | API Token | Authentication token for OpenRouter. |
-| `OpenRouterModel` | `"google/gemini-2.5-flash-preview-05-20:free"` | Model Slug | The default OpenRouter model used for AI processes. |
-| `OpenRouterReasoningEnabled` | `false` | `true` / `false` | Turn on deep reasoning for translation tasks. |
-| `OpenRouterReasoningEffort` | `"medium"` | `"low"`, `"medium"`, `"high"` | Reasoning scale parameter for LLMs. |
-| `OpenRouterStoryReasoningEnabled` | `false` | `true` / `false` | Enable reasoning LLM processing specifically for AI Story Generation. |
-| `OpenRouterStoryReasoningEffort` | `"medium"` | `"low"`, `"medium"`, `"high"` | Reasoning scale specifically for Story generation. |
-| `OpenRouterTranslationModel` | *None* | Model Slug | Override model used *strictly* for single-word / phrase translations. |
-| `OpenRouterExplanationModel` | *None* | Model Slug | Override model used *strictly* for grammar / context explanations. |
-| `OpenRouterStoryModel` | *None* | Model Slug | Override model used *strictly* for generating prompt-based stories. |
-| `OpenRouterSummarizationModel`| *None* | Model Slug | Override model used *strictly* for text summaries. |
+| `AiProvider` | `"gemini"` | `gemini`, `openrouter`, `deepseek`, `openai`, `google`, `mistral`, `groq`, `custom` | The provider used for AI tasks. |
+| `AiApiKeys` | *None* | Provider → API key | Write-only per-provider keys, encrypted at rest; the API only reports which providers have one. An empty string removes a key. |
+| `AiProviders.{provider}.Model` | Provider's default | Model id | The provider's model for every AI task. |
+| `AiProviders.{provider}.BaseUrl` | *None* | `http(s)://` URL | Custom provider only: the base URL that `/chat/completions` is appended to. |
+| `AiProviders.{provider}.TranslationModel` | *None* | Model id | Override for sentence and selection translation. |
+| `AiProviders.{provider}.ExplanationModel` | *None* | Model id | Override for sentence explanations. |
+| `AiProviders.{provider}.StoryModel` | *None* | Model id | Override for story generation. |
+| `AiProviders.{provider}.SummarizationModel` | *None* | Model id | Override for summaries. |
+| `OpenRouterReasoningEnabled` | `false` | `true` / `false` | Reasoning for translations and explanations (OpenRouter and DeepSeek). |
+| `OpenRouterReasoningEffort` | `"medium"` | `"xhigh"`, `"high"`, `"medium"`, `"low"`, `"minimal"`, `"none"` | Reasoning effort for translations. |
+| `OpenRouterStoryReasoningEnabled` | `false` | `true` / `false` | Reasoning for story generation and summaries (OpenRouter and DeepSeek). |
+| `OpenRouterStoryReasoningEffort` | `"medium"` | `"xhigh"`, `"high"`, `"medium"`, `"low"`, `"minimal"`, `"none"` | Reasoning effort for stories and summaries. |
 | `CustomTranslationPrompt` | *None* | System prompt text | Replaces the built-in system prompt used during word/phrase translations. |
 | `CustomExplanationPrompt` | *None* | System prompt text | Replaces the built-in system prompt used during paragraph grammar analysis. |
 | `CustomStoryPrompt` | *None* | System prompt text | Replaces the built-in system prompt used during story generation. |

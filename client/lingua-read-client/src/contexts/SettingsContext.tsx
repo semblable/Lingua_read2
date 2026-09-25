@@ -1,5 +1,16 @@
 import { createContext } from 'react';
 
+// One AI provider's settings (never its key). Empty model fields fall back to the provider's
+// model, then to the provider's default model.
+export type AiProviderConfig = {
+  baseUrl?: string | null;
+  model?: string | null;
+  translationModel?: string | null;
+  explanationModel?: string | null;
+  storyModel?: string | null;
+  summarizationModel?: string | null;
+};
+
 // User-facing settings shape. Keys here MUST stay in sync with the
 // /api/UserSettings response and with mergeSettings() below — those are
 // the seams where new settings land.
@@ -48,17 +59,16 @@ export type Settings = {
   hardcoverSyncEnabled: boolean;
   hasHardcoverApiToken: boolean;
   hardcoverLastSyncAt: string | null;
-  useOpenRouter: boolean;
-  hasOpenRouterApiKey: boolean;
-  openRouterModel: string;
+  // 'gemini' (the built-in Gemini) or a provider id from GET /api/aiproviders.
+  aiProvider: string;
+  // Per-provider settings by provider id.
+  aiProviders: Record<string, AiProviderConfig>;
+  // Write-only secrets: which providers have a key saved.
+  aiProvidersWithApiKey: string[];
   openRouterReasoningEnabled: boolean;
   openRouterReasoningEffort: string;
   openRouterStoryReasoningEnabled: boolean;
   openRouterStoryReasoningEffort: string;
-  openRouterTranslationModel: string;
-  openRouterExplanationModel: string;
-  openRouterStoryModel: string;
-  openRouterSummarizationModel: string;
   customTranslationPrompt: string;
   customExplanationPrompt: string;
   customStoryPrompt: string;
@@ -140,17 +150,13 @@ const defaultSettings: Settings = {
   hardcoverSyncEnabled: false,
   hasHardcoverApiToken: false,
   hardcoverLastSyncAt: null,
-  useOpenRouter: false,
-  hasOpenRouterApiKey: false,
-  openRouterModel: 'google/gemini-2.5-flash-preview-05-20:free',
+  aiProvider: 'gemini',
+  aiProviders: {},
+  aiProvidersWithApiKey: [],
   openRouterReasoningEnabled: false,
   openRouterReasoningEffort: 'medium',
   openRouterStoryReasoningEnabled: false,
   openRouterStoryReasoningEffort: 'medium',
-  openRouterTranslationModel: '',
-  openRouterExplanationModel: '',
-  openRouterStoryModel: '',
-  openRouterSummarizationModel: '',
   customTranslationPrompt: '',
   customExplanationPrompt: '',
   customStoryPrompt: '',
@@ -259,9 +265,9 @@ export const mergeSettings = (
     hardcoverSyncEnabled: d.hardcoverSyncEnabled ?? base.hardcoverSyncEnabled,
     hasHardcoverApiToken: d.hasHardcoverApiToken ?? base.hasHardcoverApiToken,
     hardcoverLastSyncAt: d.hardcoverLastSyncAt ?? base.hardcoverLastSyncAt,
-    useOpenRouter: d.useOpenRouter ?? base.useOpenRouter,
-    hasOpenRouterApiKey: d.hasOpenRouterApiKey ?? base.hasOpenRouterApiKey,
-    openRouterModel: d.openRouterModel || base.openRouterModel,
+    aiProvider: d.aiProvider || base.aiProvider,
+    aiProviders: d.aiProviders ?? base.aiProviders,
+    aiProvidersWithApiKey: d.aiProvidersWithApiKey ?? base.aiProvidersWithApiKey,
     openRouterReasoningEnabled:
       d.openRouterReasoningEnabled ?? base.openRouterReasoningEnabled,
     openRouterReasoningEffort:
@@ -270,13 +276,6 @@ export const mergeSettings = (
       d.openRouterStoryReasoningEnabled ?? base.openRouterStoryReasoningEnabled,
     openRouterStoryReasoningEffort:
       d.openRouterStoryReasoningEffort || base.openRouterStoryReasoningEffort,
-    openRouterTranslationModel:
-      d.openRouterTranslationModel ?? base.openRouterTranslationModel,
-    openRouterExplanationModel:
-      d.openRouterExplanationModel ?? base.openRouterExplanationModel,
-    openRouterStoryModel: d.openRouterStoryModel ?? base.openRouterStoryModel,
-    openRouterSummarizationModel:
-      d.openRouterSummarizationModel ?? base.openRouterSummarizationModel,
     customTranslationPrompt:
       d.customTranslationPrompt ?? base.customTranslationPrompt,
     customExplanationPrompt:

@@ -10,6 +10,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using LinguaReadApi.Data;
 using LinguaReadApi.Services;
+using LinguaReadApi.Services.Ai;
 
 namespace LinguaReadApi.Controllers
 {
@@ -68,12 +69,13 @@ namespace LinguaReadApi.Controllers
                 ["maxLength"] = request.MaxLength.ToString(CultureInfo.InvariantCulture)
             };
 
-            // Custom prompts are an OpenRouter feature — Gemini path keeps the built-in template.
-            string? customPrompt = (userSettings?.UseOpenRouter == true)
-                ? userSettings.CustomStoryPrompt
+            // Custom prompts belong to the selectable AI providers; the built-in Gemini path keeps
+            // the built-in template.
+            string? customPrompt = AiProviderCatalog.IsExternal(userSettings?.AiProvider)
+                ? userSettings!.CustomStoryPrompt
                 : null;
 
-            string fullPrompt = OpenRouterTaskConfig.ResolvePromptOrDefault(
+            string fullPrompt = AiTaskConfig.ResolvePromptOrDefault(
                 customPrompt,
                 defaultPrompt,
                 storyVars,

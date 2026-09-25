@@ -9,7 +9,9 @@ import {
   updateUserSettings,
   getAllLanguages,
   getAudioStorageSize,
-  testOpenRouterConnection
+  getAiProviders,
+  testAiProvider,
+  getAiProviderModels
 } from '../utils/api';
 
 vi.mock('../utils/api', () => ({
@@ -23,7 +25,9 @@ vi.mock('../utils/api', () => ({
   getAudioStorageSize: vi.fn(),
   getHardcoverStatus: vi.fn(),
   syncAllHardcover: vi.fn(),
-  testOpenRouterConnection: vi.fn()
+  getAiProviders: vi.fn(),
+  testAiProvider: vi.fn(),
+  getAiProviderModels: vi.fn()
 }));
 
 const mockSettings = {
@@ -60,9 +64,41 @@ const mockSettings = {
   hardcoverSyncEnabled: false,
   hasHardcoverApiToken: false,
   hardcoverLastSyncAt: null,
-  useOpenRouter: false,
-  hasOpenRouterApiKey: false,
-  openRouterModel: 'google/gemini-2.5-flash-preview-05-20:free'
+  aiProvider: 'gemini',
+  aiProviders: {},
+  aiProvidersWithApiKey: []
+};
+
+// GET /api/aiproviders, trimmed to the providers the tests use.
+const catalog = [
+  {
+    id: 'openrouter', displayName: 'OpenRouter', baseUrl: 'https://openrouter.ai/api/v1', defaultModel: null,
+    keyPlaceholder: 'sk-or-...', keysUrl: 'https://openrouter.ai/keys', modelsUrl: 'https://openrouter.ai/models',
+    requiresBaseUrl: false, apiKeyOptional: false, supportsReasoning: true
+  },
+  {
+    id: 'deepseek', displayName: 'DeepSeek', baseUrl: 'https://api.deepseek.com', defaultModel: 'deepseek-flash',
+    keyPlaceholder: 'sk-...', keysUrl: 'https://platform.deepseek.com/api_keys', modelsUrl: null,
+    requiresBaseUrl: false, apiKeyOptional: false, supportsReasoning: true
+  },
+  {
+    id: 'openai', displayName: 'OpenAI', baseUrl: 'https://api.openai.com/v1', defaultModel: null,
+    keyPlaceholder: 'sk-...', keysUrl: null, modelsUrl: null,
+    requiresBaseUrl: false, apiKeyOptional: false, supportsReasoning: false
+  },
+  {
+    id: 'custom', displayName: 'Custom (OpenAI-compatible)', baseUrl: null, defaultModel: null,
+    keyPlaceholder: '(optional)', keysUrl: null, modelsUrl: null,
+    requiresBaseUrl: true, apiKeyOptional: true, supportsReasoning: false
+  }
+];
+
+// A user on OpenRouter with a key and a model, like the settings the migration carries over.
+const onOpenRouter = {
+  ...mockSettings,
+  aiProvider: 'openrouter',
+  aiProviders: { openrouter: { model: 'mistralai/mistral-small-2603' } },
+  aiProvidersWithApiKey: ['openrouter']
 };
 
 // The PUT is a partial update: the server applies what was sent and returns the full settings.
@@ -130,6 +166,7 @@ describe('UserSettings', () => {
       totalFiles: 0
     });
     updateUserSettings.mockImplementation(echoSave);
+    getAiProviders.mockResolvedValue(catalog);
   });
 
   afterEach(() => {
@@ -190,11 +227,11 @@ describe('UserSettings', () => {
   });
 
   test('saves typing once, after a pause, with the final text', async () => {
-    getUserSettings.mockResolvedValue({ ...mockSettings, useOpenRouter: true });
+    getUserSettings.mockResolvedValue(onOpenRouter);
     await renderLoaded();
+    const model = await screen.findByLabelText('Model');
     useManualClock();
 
-    const model = field('openRouterModel');
     // Keystrokes closer together than the pause keep pushing the save back.
     fireEvent.change(model, { target: { value: 'a' } });
     await advance(TYPING_DELAY - 100);
@@ -207,20 +244,20 @@ describe('UserSettings', () => {
 
     await advance(1);
     expect(updateUserSettings).toHaveBeenCalledTimes(1);
-    expect(updateUserSettings).toHaveBeenCalledWith({ openRouterModel: 'anthropic/claude' });
+    expect(updateUserSettings).toHaveBeenCalledWith({ aiProviders: { openrouter: { model: 'anthropic/claude' } } });
   });
 
   test('saves a text edit as soon as the field loses focus', async () => {
-    getUserSettings.mockResolvedValue({ ...mockSettings, useOpenRouter: true });
+    getUserSettings.mockResolvedValue(onOpenRouter);
     await renderLoaded();
+    const model = await screen.findByLabelText('Model');
     useManualClock();
 
-    const model = field('openRouterModel');
     fireEvent.change(model, { target: { value: 'openai/gpt' } });
     fireEvent.blur(model);
 
     // No time has passed: only the blur can have sent it.
-    expect(updateUserSettings).toHaveBeenCalledWith({ openRouterModel: 'openai/gpt' });
+    expect(updateUserSettings).toHaveBeenCalledWith({ aiProviders: { openrouter: { model: 'openai/gpt' } } });
   });
 
   test('does not save a half-typed timezone offset as 0', async () => {
@@ -287,15 +324,16 @@ describe('UserSettings', () => {
   });
 
   test('saves a change still waiting when the page is left', async () => {
-    getUserSettings.mockResolvedValue({ ...mockSettings, useOpenRouter: true });
+    getUserSettings.mockResolvedValue(onOpenRouter);
     const { unmount } = await renderLoaded();
+    const model = await screen.findByLabelText('Model');
     useManualClock();
 
-    fireEvent.change(field('openRouterModel'), { target: { value: 'left/in-a-hurry' } });
+    fireEvent.change(model, { target: { value: 'left/in-a-hurry' } });
     expect(updateUserSettings).not.toHaveBeenCalled();
     unmount();
 
-    expect(updateUserSettings).toHaveBeenCalledWith({ openRouterModel: 'left/in-a-hurry' });
+    expect(updateUserSettings).toHaveBeenCalledWith({ aiProviders: { openrouter: { model: 'left/in-a-hurry' } } });
   });
 
   test('keeps minimalHome on this device: no request, but stored and applied', async () => {
@@ -355,30 +393,238 @@ describe('UserSettings', () => {
     expect(webhook).toHaveValue('http://example.com');
   });
 
-  test('Test Connection saves a waiting model change before testing', async () => {
-    getUserSettings.mockResolvedValue({ ...mockSettings, useOpenRouter: true, hasOpenRouterApiKey: true });
-    testOpenRouterConnection.mockResolvedValue({ success: true, message: 'Connected' });
+  test('Test Connection saves a waiting model change before testing the selected provider', async () => {
+    getUserSettings.mockResolvedValue(onOpenRouter);
+    testAiProvider.mockResolvedValue({ success: true, message: 'Connected' });
     await renderLoaded();
 
-    fireEvent.change(field('openRouterModel'), { target: { value: 'new/model' } });
-    fireEvent.click(sectionOf(field('openRouterModel')).getByRole('button', { name: 'Test Connection' }));
+    const model = await screen.findByLabelText('Model');
+    fireEvent.change(model, { target: { value: 'new/model' } });
+    fireEvent.click(sectionOf(model).getByRole('button', { name: 'Test Connection' }));
 
     expect(await screen.findByText('Connected')).toBeInTheDocument();
-    expect(updateUserSettings).toHaveBeenCalledWith({ openRouterModel: 'new/model' });
+    expect(updateUserSettings).toHaveBeenCalledWith({ aiProviders: { openrouter: { model: 'new/model' } } });
+    expect(testAiProvider).toHaveBeenCalledWith('openrouter');
     expect(updateUserSettings.mock.invocationCallOrder[0])
-      .toBeLessThan(testOpenRouterConnection.mock.invocationCallOrder[0]);
+      .toBeLessThan(testAiProvider.mock.invocationCallOrder[0]);
   });
 
   test('Test Connection does not run on stale settings when the save fails', async () => {
-    getUserSettings.mockResolvedValue({ ...mockSettings, useOpenRouter: true, hasOpenRouterApiKey: true });
+    getUserSettings.mockResolvedValue(onOpenRouter);
     updateUserSettings.mockRejectedValue(new Error('Network down'));
     await renderLoaded();
 
-    fireEvent.change(field('openRouterModel'), { target: { value: 'new/model' } });
-    fireEvent.click(sectionOf(field('openRouterModel')).getByRole('button', { name: 'Test Connection' }));
+    const model = await screen.findByLabelText('Model');
+    fireEvent.change(model, { target: { value: 'new/model' } });
+    fireEvent.click(sectionOf(model).getByRole('button', { name: 'Test Connection' }));
 
     expect(await screen.findByText(/latest changes aren't saved yet/)).toBeInTheDocument();
-    expect(testOpenRouterConnection).not.toHaveBeenCalled();
+    expect(testAiProvider).not.toHaveBeenCalled();
+  });
+
+  // --- AI providers ---
+
+  test('the built-in Gemini shows no key or model fields', async () => {
+    await renderLoaded();
+
+    expect(await screen.findByRole('option', { name: 'DeepSeek' })).toBeInTheDocument();
+    expect(field('aiProvider')).toHaveValue('gemini');
+    expect(screen.queryByLabelText('Model')).not.toBeInTheDocument();
+    expect(sectionOf(field('aiProvider')).queryByText(/API key/)).not.toBeInTheDocument();
+  });
+
+  test('picking DeepSeek saves the choice and asks for its key', async () => {
+    await renderLoaded();
+    await screen.findByRole('option', { name: 'DeepSeek' });
+    useManualClock();
+
+    fireEvent.change(field('aiProvider'), { target: { value: 'deepseek' } });
+    await advance(CHOICE_DELAY);
+
+    expect(updateUserSettings).toHaveBeenCalledWith({ aiProvider: 'deepseek' });
+    expect(updateSetting).toHaveBeenCalledWith('aiProvider', 'deepseek');
+    expect(screen.getByLabelText('DeepSeek API key')).toBeInTheDocument();
+    // DeepSeek has a default model, so only the key is missing.
+    expect(screen.getByTestId('ai-provider-incomplete'))
+      .toHaveTextContent('DeepSeek is not in use yet: add an API key. Until then, AI features use the built-in Gemini.');
+    expect(screen.getByLabelText('Model')).toHaveAttribute('placeholder', 'deepseek-flash');
+  });
+
+  test('a provider key saves on its own, for that provider only, and is never shown again', async () => {
+    getUserSettings.mockResolvedValue({ ...mockSettings, aiProvider: 'deepseek' });
+    updateUserSettings.mockImplementation(async (body) => ({
+      ...mockSettings,
+      aiProvider: 'deepseek',
+      aiProvidersWithApiKey: body.aiApiKeys?.deepseek ? ['deepseek'] : []
+    }));
+    await renderLoaded();
+
+    const key = await screen.findByLabelText('DeepSeek API key');
+    fireEvent.change(key, { target: { value: '  sk-deepseek  ' } });
+    fireEvent.keyDown(key, { key: 'Enter' });
+
+    expect(updateUserSettings).toHaveBeenCalledTimes(1);
+    expect(updateUserSettings).toHaveBeenCalledWith({ aiApiKeys: { deepseek: 'sk-deepseek' } });
+    await waitFor(() => expect(key).toHaveValue(''));
+    expect(key).toHaveAttribute('placeholder', 'Configured — leave blank to keep');
+    expect(screen.queryByTestId('ai-provider-incomplete')).not.toBeInTheDocument();
+    expect(updateSetting).toHaveBeenCalledWith('aiProvidersWithApiKey', ['deepseek']);
+
+    fireEvent.click(sectionOf(key).getAllByRole('button', { name: 'Clear' })[0]);
+    await waitFor(() => expect(updateUserSettings).toHaveBeenLastCalledWith({ aiApiKeys: { deepseek: '' } }));
+    expect(await screen.findByTestId('ai-provider-incomplete')).toBeInTheDocument();
+  });
+
+  test('each provider keeps its own model: an edit made just before switching stays with its provider', async () => {
+    getUserSettings.mockResolvedValue({
+      ...onOpenRouter,
+      aiProviders: { ...onOpenRouter.aiProviders, deepseek: { model: 'deepseek-v4-pro' } },
+      aiProvidersWithApiKey: ['openrouter', 'deepseek']
+    });
+    await renderLoaded();
+    const model = await screen.findByLabelText('Model');
+    useManualClock();
+
+    fireEvent.change(model, { target: { value: 'openai/gpt-6-luna' } });
+    fireEvent.change(field('aiProvider'), { target: { value: 'deepseek' } });
+    expect(screen.getByLabelText('Model')).toHaveValue('deepseek-v4-pro');
+    await advance(TYPING_DELAY);
+
+    expect(updateUserSettings).toHaveBeenCalledTimes(1);
+    expect(updateUserSettings).toHaveBeenCalledWith({
+      aiProvider: 'deepseek',
+      aiProviders: {
+        openrouter: { model: 'openai/gpt-6-luna' },
+        deepseek: { model: 'deepseek-v4-pro' }
+      }
+    });
+
+    fireEvent.change(field('aiProvider'), { target: { value: 'openrouter' } });
+    expect(screen.getByLabelText('Model')).toHaveValue('openai/gpt-6-luna');
+  });
+
+  test('per-task models belong to the selected provider', async () => {
+    getUserSettings.mockResolvedValue(onOpenRouter);
+    await renderLoaded();
+    await screen.findByLabelText('Model');
+    useManualClock();
+
+    fireEvent.change(field('aiStoryModel'), { target: { value: 'anthropic/claude-story' } });
+    await advance(TYPING_DELAY);
+
+    expect(updateUserSettings).toHaveBeenCalledWith({
+      aiProviders: { openrouter: { model: 'mistralai/mistral-small-2603', storyModel: 'anthropic/claude-story' } }
+    });
+  });
+
+  test('a custom endpoint asks for a server URL, and its key is optional', async () => {
+    getUserSettings.mockResolvedValue({ ...mockSettings, aiProvider: 'custom' });
+    await renderLoaded();
+    const url = await screen.findByLabelText('Server URL');
+    useManualClock();
+
+    expect(screen.getByLabelText('Custom (OpenAI-compatible) API key (optional)')).toBeInTheDocument();
+    expect(screen.getByTestId('ai-provider-incomplete')).toHaveTextContent('add the server URL and a model');
+
+    fireEvent.change(url, { target: { value: 'http://localhost:11434/v1' } });
+    fireEvent.change(screen.getByLabelText('Model'), { target: { value: 'llama3.3' } });
+    await advance(TYPING_DELAY);
+
+    expect(updateUserSettings).toHaveBeenCalledWith({
+      aiProviders: { custom: { baseUrl: 'http://localhost:11434/v1', model: 'llama3.3' } }
+    });
+    expect(screen.queryByTestId('ai-provider-incomplete')).not.toBeInTheDocument();
+  });
+
+  test('Load models lists the provider\'s models as suggestions', async () => {
+    getUserSettings.mockResolvedValue(onOpenRouter);
+    getAiProviderModels.mockResolvedValue({ models: ['a/one', 'b/two'], error: null });
+    await renderLoaded();
+
+    const model = await screen.findByLabelText('Model');
+    fireEvent.click(screen.getByRole('button', { name: 'Load models' }));
+
+    expect(await screen.findByText(/2 models loaded/)).toBeInTheDocument();
+    expect(getAiProviderModels).toHaveBeenCalledWith('openrouter');
+    const list = document.getElementById(model.getAttribute('list'));
+    expect([...list.querySelectorAll('option')].map(o => o.value)).toEqual(['a/one', 'b/two']);
+    // The per-task fields share the suggestions.
+    expect(field('aiTranslationModel')).toHaveAttribute('list', model.getAttribute('list'));
+  });
+
+  test('Load models saves a server URL still waiting to save before fetching', async () => {
+    getUserSettings.mockResolvedValue({ ...mockSettings, aiProvider: 'custom' });
+    getAiProviderModels.mockResolvedValue({ models: ['llama3.3'], error: null });
+    await renderLoaded();
+
+    const url = await screen.findByLabelText('Server URL');
+    fireEvent.change(url, { target: { value: 'http://localhost:11434/v1' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Load models' }));
+
+    expect(await screen.findByText(/1 models loaded/)).toBeInTheDocument();
+    expect(updateUserSettings).toHaveBeenCalledWith({ aiProviders: { custom: { baseUrl: 'http://localhost:11434/v1' } } });
+    expect(updateUserSettings.mock.invocationCallOrder[0])
+      .toBeLessThan(getAiProviderModels.mock.invocationCallOrder[0]);
+  });
+
+  test('a connection test result stays with the provider it was for', async () => {
+    getUserSettings.mockResolvedValue(onOpenRouter);
+    testAiProvider.mockResolvedValue({ success: false, message: 'OpenRouter error: Unauthorized' });
+    await renderLoaded();
+
+    const model = await screen.findByLabelText('Model');
+    fireEvent.click(sectionOf(model).getByRole('button', { name: 'Test Connection' }));
+    expect(await screen.findByText('OpenRouter error: Unauthorized')).toBeInTheDocument();
+
+    fireEvent.change(field('aiProvider'), { target: { value: 'deepseek' } });
+    expect(screen.queryByText('OpenRouter error: Unauthorized')).not.toBeInTheDocument();
+    fireEvent.change(field('aiProvider'), { target: { value: 'openrouter' } });
+    expect(screen.getByText('OpenRouter error: Unauthorized')).toBeInTheDocument();
+  });
+
+  test('Load models shows why the list could not be fetched', async () => {
+    getUserSettings.mockResolvedValue({ ...mockSettings, aiProvider: 'openai' });
+    getAiProviderModels.mockResolvedValue({ models: [], error: 'OpenAI API key not configured' });
+    await renderLoaded();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Load models' }));
+
+    expect(await screen.findByText('OpenAI API key not configured')).toBeInTheDocument();
+  });
+
+  test('reasoning settings show only for providers that support them', async () => {
+    getUserSettings.mockResolvedValue({ ...onOpenRouter });
+    await renderLoaded();
+    await screen.findByLabelText('Model');
+    expect(field('openRouterReasoningEnabled')).toBeInTheDocument();
+
+    fireEvent.change(field('aiProvider'), { target: { value: 'openai' } });
+    expect(field('openRouterReasoningEnabled')).not.toBeInTheDocument();
+
+    fireEvent.change(field('aiProvider'), { target: { value: 'deepseek' } });
+    expect(field('openRouterReasoningEnabled')).toBeInTheDocument();
+    expect(screen.getByText(/DeepSeek thinks by default/)).toBeInTheDocument();
+  });
+
+  test('keeps a saved provider selectable when the provider list fails to load', async () => {
+    getUserSettings.mockResolvedValue(onOpenRouter);
+    getAiProviders.mockRejectedValue(new Error('Server unavailable'));
+    await renderLoaded();
+
+    expect(await screen.findByText(/Couldn't load the list of providers: Server unavailable/)).toBeInTheDocument();
+    expect(field('aiProvider')).toHaveValue('openrouter');
+  });
+
+  test('saved provider settings are cached as JSON, not "[object Object]"', async () => {
+    getUserSettings.mockResolvedValue(onOpenRouter);
+    await renderLoaded();
+    const model = await screen.findByLabelText('Model');
+    useManualClock();
+
+    fireEvent.change(model, { target: { value: 'x/y' } });
+    await advance(TYPING_DELAY);
+
+    expect(JSON.parse(localStorage.getItem('aiProviders'))).toEqual({ openrouter: { model: 'x/y' } });
   });
 
   test('surfaces the error alert when initial settings load fails', async () => {

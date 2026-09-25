@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using LinguaReadApi.Data;
+using LinguaReadApi.Services.Ai;
 
 namespace LinguaReadApi.Services
 {
@@ -17,71 +18,66 @@ namespace LinguaReadApi.Services
     }
 
     /// <summary>
-    /// Factory that selects between Gemini and OpenRouter translation services based on user preferences
+    /// Factory that selects between the built-in Gemini service and the user's AI provider
+    /// (UserSettings.AiProvider) for sentence translation
     /// </summary>
     public class TranslationServiceFactory : ITranslationServiceFactory
     {
         private readonly GeminiTranslationService _geminiService;
-        private readonly OpenRouterTranslationService _openRouterService;
+        private readonly OpenAiCompatibleTranslationService _providerService;
         private readonly AppDbContext _context;
 
         public TranslationServiceFactory(
             GeminiTranslationService geminiService,
-            OpenRouterTranslationService openRouterService,
+            OpenAiCompatibleTranslationService providerService,
             AppDbContext context)
         {
             _geminiService = geminiService;
-            _openRouterService = openRouterService;
+            _providerService = providerService;
             _context = context;
         }
 
         public async Task<ISentenceTranslationService> GetServiceForUserAsync(Guid userId)
         {
-            var userSettings = await _context.UserSettings.FirstOrDefaultAsync(s => s.UserId == userId);
-
-            if (userSettings != null && 
-                userSettings.UseOpenRouter && 
-                !string.IsNullOrWhiteSpace(userSettings.OpenRouterApiKey))
-            {
-                return new OpenRouterServiceAdapter(_openRouterService, userId);
-            }
-
-            return _geminiService;
+            var connection = await AiProviderResolver.ResolveActiveAsync(_context, userId);
+            return connection != null
+                ? new ProviderTranslationServiceAdapter(_providerService, connection)
+                : _geminiService;
         }
     }
 
     /// <summary>
-    /// Adapter to make OpenRouterTranslationService implement ISentenceTranslationService
+    /// Adapter to make OpenAiCompatibleTranslationService implement ISentenceTranslationService
     /// </summary>
-    public class OpenRouterServiceAdapter : ISentenceTranslationService
+    public class ProviderTranslationServiceAdapter : ISentenceTranslationService
     {
-        private readonly OpenRouterTranslationService _service;
-        private readonly Guid _userId;
+        private readonly OpenAiCompatibleTranslationService _service;
+        private readonly AiProviderConnection _connection;
 
-        public OpenRouterServiceAdapter(OpenRouterTranslationService service, Guid userId)
+        public ProviderTranslationServiceAdapter(OpenAiCompatibleTranslationService service, AiProviderConnection connection)
         {
             _service = service;
-            _userId = userId;
+            _connection = connection;
         }
 
         public Task<string> TranslateSentenceAsync(string text, string sourceLanguage, string targetLanguage)
         {
-            return _service.TranslateSentenceAsync(text, sourceLanguage, targetLanguage, _userId);
+            return _service.TranslateSentenceAsync(text, sourceLanguage, targetLanguage, _connection);
         }
 
         public Task<string> TranslateFullTextAsync(string text, string sourceLanguage, string targetLanguage)
         {
-            return _service.TranslateFullTextAsync(text, sourceLanguage, targetLanguage, _userId);
+            return _service.TranslateFullTextAsync(text, sourceLanguage, targetLanguage, _connection);
         }
 
         public Task<string> ExplainSentenceAsync(string text, string sourceLanguage, string targetLanguage)
         {
-            return _service.ExplainSentenceAsync(text, sourceLanguage, targetLanguage, _userId);
+            return _service.ExplainSentenceAsync(text, sourceLanguage, targetLanguage, _connection);
         }
 
         public Task<string> TranslateSelectionWithContextAsync(string selectedText, string sentenceContext, string sourceLanguage, string targetLanguage)
         {
-            return _service.TranslateSelectionWithContextAsync(selectedText, sentenceContext, sourceLanguage, targetLanguage, _userId);
+            return _service.TranslateSelectionWithContextAsync(selectedText, sentenceContext, sourceLanguage, targetLanguage, _connection);
         }
     }
 
@@ -166,56 +162,50 @@ namespace LinguaReadApi.Services
     }
 
     /// <summary>
-    /// Factory that selects between Gemini and OpenRouter story generation services based on user preferences
+    /// Factory that selects between the built-in Gemini service and the user's AI provider for story generation
     /// </summary>
     public class StoryGenerationServiceFactory : IStoryGenerationServiceFactory
     {
         private readonly GeminiStoryGenerationService _geminiService;
-        private readonly OpenRouterStoryGenerationService _openRouterService;
+        private readonly OpenAiCompatibleStoryGenerationService _providerService;
         private readonly AppDbContext _context;
 
         public StoryGenerationServiceFactory(
             GeminiStoryGenerationService geminiService,
-            OpenRouterStoryGenerationService openRouterService,
+            OpenAiCompatibleStoryGenerationService providerService,
             AppDbContext context)
         {
             _geminiService = geminiService;
-            _openRouterService = openRouterService;
+            _providerService = providerService;
             _context = context;
         }
 
         public async Task<IStoryGenerationService> GetServiceForUserAsync(Guid userId)
         {
-            var userSettings = await _context.UserSettings.FirstOrDefaultAsync(s => s.UserId == userId);
-
-            if (userSettings != null && 
-                userSettings.UseOpenRouter && 
-                !string.IsNullOrWhiteSpace(userSettings.OpenRouterApiKey))
-            {
-                return new OpenRouterStoryServiceAdapter(_openRouterService, userId);
-            }
-
-            return _geminiService;
+            var connection = await AiProviderResolver.ResolveActiveAsync(_context, userId);
+            return connection != null
+                ? new ProviderStoryServiceAdapter(_providerService, connection)
+                : _geminiService;
         }
     }
 
     /// <summary>
-    /// Adapter to make OpenRouterStoryGenerationService implement IStoryGenerationService
+    /// Adapter to make OpenAiCompatibleStoryGenerationService implement IStoryGenerationService
     /// </summary>
-    public class OpenRouterStoryServiceAdapter : IStoryGenerationService
+    public class ProviderStoryServiceAdapter : IStoryGenerationService
     {
-        private readonly OpenRouterStoryGenerationService _service;
-        private readonly Guid _userId;
+        private readonly OpenAiCompatibleStoryGenerationService _service;
+        private readonly AiProviderConnection _connection;
 
-        public OpenRouterStoryServiceAdapter(OpenRouterStoryGenerationService service, Guid userId)
+        public ProviderStoryServiceAdapter(OpenAiCompatibleStoryGenerationService service, AiProviderConnection connection)
         {
             _service = service;
-            _userId = userId;
+            _connection = connection;
         }
 
         public Task<string> GenerateStoryAsync(string prompt, int maxOutputTokens = 20000)
         {
-            return _service.GenerateStoryAsync(prompt, maxOutputTokens, _userId);
+            return _service.GenerateStoryAsync(prompt, maxOutputTokens, _connection);
         }
     }
 
@@ -228,56 +218,50 @@ namespace LinguaReadApi.Services
     }
 
     /// <summary>
-    /// Factory that selects between Gemini and OpenRouter summarization services based on user preferences
+    /// Factory that selects between the built-in Gemini service and the user's AI provider for summarization
     /// </summary>
     public class SummarizationServiceFactory : ISummarizationServiceFactory
     {
         private readonly GeminiSummarizationService _geminiService;
-        private readonly OpenRouterSummarizationService _openRouterService;
+        private readonly OpenAiCompatibleSummarizationService _providerService;
         private readonly AppDbContext _context;
 
         public SummarizationServiceFactory(
             GeminiSummarizationService geminiService,
-            OpenRouterSummarizationService openRouterService,
+            OpenAiCompatibleSummarizationService providerService,
             AppDbContext context)
         {
             _geminiService = geminiService;
-            _openRouterService = openRouterService;
+            _providerService = providerService;
             _context = context;
         }
 
         public async Task<ISummarizationService> GetServiceForUserAsync(Guid userId)
         {
-            var userSettings = await _context.UserSettings.FirstOrDefaultAsync(s => s.UserId == userId);
-
-            if (userSettings != null &&
-                userSettings.UseOpenRouter &&
-                !string.IsNullOrWhiteSpace(userSettings.OpenRouterApiKey))
-            {
-                return new OpenRouterSummarizationServiceAdapter(_openRouterService, userId);
-            }
-
-            return _geminiService;
+            var connection = await AiProviderResolver.ResolveActiveAsync(_context, userId);
+            return connection != null
+                ? new ProviderSummarizationServiceAdapter(_providerService, connection)
+                : _geminiService;
         }
     }
 
     /// <summary>
-    /// Adapter to make OpenRouterSummarizationService implement ISummarizationService
+    /// Adapter to make OpenAiCompatibleSummarizationService implement ISummarizationService
     /// </summary>
-    public class OpenRouterSummarizationServiceAdapter : ISummarizationService
+    public class ProviderSummarizationServiceAdapter : ISummarizationService
     {
-        private readonly OpenRouterSummarizationService _service;
-        private readonly Guid _userId;
+        private readonly OpenAiCompatibleSummarizationService _service;
+        private readonly AiProviderConnection _connection;
 
-        public OpenRouterSummarizationServiceAdapter(OpenRouterSummarizationService service, Guid userId)
+        public ProviderSummarizationServiceAdapter(OpenAiCompatibleSummarizationService service, AiProviderConnection connection)
         {
             _service = service;
-            _userId = userId;
+            _connection = connection;
         }
 
         public Task<string> SummarizeAsync(string text, string sourceLanguage, string targetLanguage, int maxSummaryWords = 200)
         {
-            return _service.SummarizeAsync(text, sourceLanguage, targetLanguage, maxSummaryWords, _userId);
+            return _service.SummarizeAsync(text, sourceLanguage, targetLanguage, maxSummaryWords, _connection);
         }
     }
 }

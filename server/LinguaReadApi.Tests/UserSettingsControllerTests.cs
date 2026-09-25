@@ -5,6 +5,7 @@ using LinguaReadApi.Controllers;
 using LinguaReadApi.Data;
 using LinguaReadApi.Models;
 using LinguaReadApi.Services;
+using LinguaReadApi.Services.Ai;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -31,8 +32,9 @@ public class UserSettingsControllerTests
         Assert.Equal("light", dto.Theme);
         Assert.Equal(16, dto.TextSize);
         Assert.Equal(1.5, dto.LineSpacing);
-        Assert.False(dto.UseOpenRouter);
-        Assert.Equal("google/gemini-2.5-flash-preview-05-20:free", dto.OpenRouterModel);
+        Assert.Equal("gemini", dto.AiProvider);
+        Assert.Empty(dto.AiProviders);
+        Assert.Empty(dto.AiProvidersWithApiKey);
 
         Assert.Equal(1, await context.UserSettings.CountAsync());
         var row = await context.UserSettings.SingleAsync();
@@ -71,8 +73,8 @@ public class UserSettingsControllerTests
         {
             Theme = "dark",
             TextSize = 20,
-            UseOpenRouter = true,
-            OpenRouterModel = "anthropic/claude-3-haiku",
+            AiProvider = "openrouter",
+            AiProviders = new() { ["openrouter"] = new AiProviderConfigDto { Model = "anthropic/claude-3-haiku" } },
             AutoTranslateWords = false,
             AutoTranslateOnOpen = true,
             PauseOnWordClick = true,
@@ -85,8 +87,8 @@ public class UserSettingsControllerTests
         var dto = Assert.IsType<UserSettingsDto>(result.Value);
         Assert.Equal("dark", dto.Theme);
         Assert.Equal(20, dto.TextSize);
-        Assert.True(dto.UseOpenRouter);
-        Assert.Equal("anthropic/claude-3-haiku", dto.OpenRouterModel);
+        Assert.Equal("openrouter", dto.AiProvider);
+        Assert.Equal("anthropic/claude-3-haiku", dto.AiProviders["openrouter"].Model);
         Assert.False(dto.AutoTranslateWords);
         Assert.True(dto.AutoTranslateOnOpen);
         Assert.True(dto.PauseOnWordClick);
@@ -95,14 +97,14 @@ public class UserSettingsControllerTests
 
         var row = await context.UserSettings.SingleAsync();
         Assert.Equal("dark", row.Theme);
-        Assert.True(row.UseOpenRouter);
+        Assert.Equal("openrouter", row.AiProvider);
         Assert.True(row.AutoTranslateOnOpen);
         Assert.Equal(1.75, row.LineSpacing);
         Assert.Equal(72, row.LeftPanelWidth);
     }
 
     [Fact]
-    public async Task UpdateUserSettings_TrimsOpenRouterApiKeyAndDiscordWebhook_AndClearsWhenWhitespaceOnly()
+    public async Task UpdateUserSettings_TrimsAiApiKeyAndDiscordWebhook_AndClearsWhenWhitespaceOnly()
     {
         await using var context = CreateContext();
         var userId = Guid.NewGuid();
@@ -111,9 +113,9 @@ public class UserSettingsControllerTests
         {
             UserId = userId,
             DiscordWebhookUrl = "old",
-            OpenRouterApiKey = "oldkey",
             CreatedAt = DateTime.UtcNow
         });
+        context.UserAiProviders.Add(new UserAiProvider { UserId = userId, Provider = "openrouter", ApiKey = "oldkey" });
         await context.SaveChangesAsync();
 
         var controller = CreateController(context, userId);
@@ -121,22 +123,22 @@ public class UserSettingsControllerTests
         await controller.UpdateUserSettings(new UpdateUserSettingsDto
         {
             DiscordWebhookUrl = "  https://discord.example/webhook  ",
-            OpenRouterApiKey = "  secret-key  "
+            AiApiKeys = new() { ["openrouter"] = "  secret-key  " }
         });
 
         var row = await context.UserSettings.SingleAsync();
         Assert.Equal("https://discord.example/webhook", row.DiscordWebhookUrl);
-        Assert.Equal("secret-key", row.OpenRouterApiKey);
+        Assert.Equal("secret-key", (await context.UserAiProviders.SingleAsync()).ApiKey);
 
         await controller.UpdateUserSettings(new UpdateUserSettingsDto
         {
             DiscordWebhookUrl = "   ",
-            OpenRouterApiKey = "  "
+            AiApiKeys = new() { ["openrouter"] = "  " }
         });
 
         row = await context.UserSettings.AsNoTracking().SingleAsync();
         Assert.Null(row.DiscordWebhookUrl);
-        Assert.Null(row.OpenRouterApiKey);
+        Assert.Null((await context.UserAiProviders.AsNoTracking().SingleAsync()).ApiKey);
     }
 
     [Fact]
@@ -260,7 +262,7 @@ public class UserSettingsControllerTests
     }
 
     [Fact]
-    public async Task UpdateUserSettings_PersistsPerTaskOpenRouterModelsAndPrompts()
+    public async Task UpdateUserSettings_PersistsPerTaskProviderModelsAndPrompts()
     {
         await using var context = CreateContext();
         var userId = Guid.NewGuid();
@@ -271,10 +273,16 @@ public class UserSettingsControllerTests
 
         var update = new UpdateUserSettingsDto
         {
-            OpenRouterTranslationModel = "anthropic/claude-3.5-sonnet",
-            OpenRouterExplanationModel = "openai/gpt-4o",
-            OpenRouterStoryModel = "google/gemini-pro-1.5",
-            OpenRouterSummarizationModel = "meta-llama/llama-3.3-8b-instruct:free",
+            AiProviders = new()
+            {
+                ["openrouter"] = new AiProviderConfigDto
+                {
+                    TranslationModel = "anthropic/claude-3.5-sonnet",
+                    ExplanationModel = "openai/gpt-4o",
+                    StoryModel = "google/gemini-pro-1.5",
+                    SummarizationModel = "meta-llama/llama-3.3-8b-instruct:free"
+                }
+            },
             CustomTranslationPrompt = "Translate {text} to {targetLanguage}.",
             CustomExplanationPrompt = "Explain {text} in {explanationLanguage}.",
             CustomStoryPrompt = "Write a {level} {language} story about {prompt} in {maxLength} words.",
@@ -284,23 +292,24 @@ public class UserSettingsControllerTests
         var result = await controller.UpdateUserSettings(update);
 
         var dto = Assert.IsType<UserSettingsDto>(result.Value);
-        Assert.Equal("anthropic/claude-3.5-sonnet", dto.OpenRouterTranslationModel);
-        Assert.Equal("openai/gpt-4o", dto.OpenRouterExplanationModel);
-        Assert.Equal("google/gemini-pro-1.5", dto.OpenRouterStoryModel);
-        Assert.Equal("meta-llama/llama-3.3-8b-instruct:free", dto.OpenRouterSummarizationModel);
+        var openRouter = dto.AiProviders["openrouter"];
+        Assert.Equal("anthropic/claude-3.5-sonnet", openRouter.TranslationModel);
+        Assert.Equal("openai/gpt-4o", openRouter.ExplanationModel);
+        Assert.Equal("google/gemini-pro-1.5", openRouter.StoryModel);
+        Assert.Equal("meta-llama/llama-3.3-8b-instruct:free", openRouter.SummarizationModel);
         Assert.Equal("Translate {text} to {targetLanguage}.", dto.CustomTranslationPrompt);
         Assert.Equal("Explain {text} in {explanationLanguage}.", dto.CustomExplanationPrompt);
         Assert.Equal("Write a {level} {language} story about {prompt} in {maxLength} words.", dto.CustomStoryPrompt);
         Assert.Equal("Summarize {text} in under {maxSummaryWords} words in {targetLanguage}.", dto.CustomSummarizationPrompt);
 
         var row = await context.UserSettings.AsNoTracking().SingleAsync();
-        Assert.Equal("anthropic/claude-3.5-sonnet", row.OpenRouterTranslationModel);
+        Assert.Equal("anthropic/claude-3.5-sonnet", (await context.UserAiProviders.AsNoTracking().SingleAsync()).TranslationModel);
         Assert.Equal("Explain {text} in {explanationLanguage}.", row.CustomExplanationPrompt);
 
         // GET should round-trip the same values.
         var getResult = await controller.GetUserSettings();
         var getDto = Assert.IsType<UserSettingsDto>(getResult.Value);
-        Assert.Equal("google/gemini-pro-1.5", getDto.OpenRouterStoryModel);
+        Assert.Equal("google/gemini-pro-1.5", getDto.AiProviders["openrouter"].StoryModel);
         Assert.Equal("Summarize {text} in under {maxSummaryWords} words in {targetLanguage}.", getDto.CustomSummarizationPrompt);
     }
 
@@ -310,13 +319,18 @@ public class UserSettingsControllerTests
         await using var context = CreateContext();
         var userId = Guid.NewGuid();
         context.Users.Add(new User { Id = userId, UserName = "u", Email = "u@test.com" });
+        context.UserAiProviders.Add(new UserAiProvider
+        {
+            UserId = userId,
+            Provider = "openrouter",
+            TranslationModel = "previous/model",
+            ExplanationModel = "previous/exp",
+            StoryModel = "previous/story",
+            SummarizationModel = "previous/sum"
+        });
         await context.UserSettings.AddAsync(new UserSettings
         {
             UserId = userId,
-            OpenRouterTranslationModel = "previous/model",
-            OpenRouterExplanationModel = "previous/exp",
-            OpenRouterStoryModel = "previous/story",
-            OpenRouterSummarizationModel = "previous/sum",
             CustomTranslationPrompt = "old translation prompt",
             CustomExplanationPrompt = "old explanation prompt",
             CustomStoryPrompt = "old story prompt",
@@ -329,10 +343,16 @@ public class UserSettingsControllerTests
 
         await controller.UpdateUserSettings(new UpdateUserSettingsDto
         {
-            OpenRouterTranslationModel = "   ",
-            OpenRouterExplanationModel = "",
-            OpenRouterStoryModel = "  ",
-            OpenRouterSummarizationModel = "\t",
+            AiProviders = new()
+            {
+                ["openrouter"] = new AiProviderConfigDto
+                {
+                    TranslationModel = "   ",
+                    ExplanationModel = "",
+                    StoryModel = "  ",
+                    SummarizationModel = "\t"
+                }
+            },
             CustomTranslationPrompt = "   ",
             CustomExplanationPrompt = "",
             CustomStoryPrompt = "  ",
@@ -340,14 +360,219 @@ public class UserSettingsControllerTests
         });
 
         var row = await context.UserSettings.AsNoTracking().SingleAsync();
-        Assert.Null(row.OpenRouterTranslationModel);
-        Assert.Null(row.OpenRouterExplanationModel);
-        Assert.Null(row.OpenRouterStoryModel);
-        Assert.Null(row.OpenRouterSummarizationModel);
+        var provider = await context.UserAiProviders.AsNoTracking().SingleAsync();
+        Assert.Null(provider.TranslationModel);
+        Assert.Null(provider.ExplanationModel);
+        Assert.Null(provider.StoryModel);
+        Assert.Null(provider.SummarizationModel);
         Assert.Null(row.CustomTranslationPrompt);
         Assert.Null(row.CustomExplanationPrompt);
         Assert.Null(row.CustomStoryPrompt);
         Assert.Null(row.CustomSummarizationPrompt);
+    }
+
+    // --- AI providers ---
+
+    [Fact]
+    public async Task UpdateUserSettings_KeepsEachProvidersKeyAndModels_AcrossSwitches()
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        context.Users.Add(new User { Id = userId, UserName = "u", Email = "u@test.com" });
+        await context.SaveChangesAsync();
+        var controller = CreateController(context, userId);
+
+        await controller.UpdateUserSettings(new UpdateUserSettingsDto
+        {
+            AiProvider = "openrouter",
+            AiProviders = new() { ["openrouter"] = new AiProviderConfigDto { Model = "mistralai/mistral-small-2603" } },
+            AiApiKeys = new() { ["openrouter"] = "sk-or-1" }
+        });
+        await controller.UpdateUserSettings(new UpdateUserSettingsDto
+        {
+            AiProvider = "DeepSeek ", // normalized
+            AiProviders = new() { ["deepseek"] = new AiProviderConfigDto { Model = "deepseek-v4-pro" } },
+            AiApiKeys = new() { ["deepseek"] = "sk-ds" }
+        });
+
+        var dto = Assert.IsType<UserSettingsDto>((await controller.GetUserSettings()).Value);
+        Assert.Equal("deepseek", dto.AiProvider);
+        Assert.Equal("mistralai/mistral-small-2603", dto.AiProviders["openrouter"].Model);
+        Assert.Equal("deepseek-v4-pro", dto.AiProviders["deepseek"].Model);
+        Assert.Equal(new[] { "deepseek", "openrouter" }, dto.AiProvidersWithApiKey);
+
+        // Switching back touches nothing else.
+        await controller.UpdateUserSettings(new UpdateUserSettingsDto { AiProvider = "openrouter" });
+        var rows = await context.UserAiProviders.AsNoTracking().OrderBy(p => p.Provider).ToListAsync();
+        Assert.Equal(new[] { "sk-ds", "sk-or-1" }, rows.Select(r => r.ApiKey));
+        Assert.Equal("openrouter", (await context.UserSettings.AsNoTracking().SingleAsync()).AiProvider);
+    }
+
+    [Fact]
+    public async Task UpdateUserSettings_NeverReturnsAiApiKeys()
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        context.Users.Add(new User { Id = userId, UserName = "u", Email = "u@test.com" });
+        await context.SaveChangesAsync();
+        var controller = CreateController(context, userId);
+
+        var result = await controller.UpdateUserSettings(new UpdateUserSettingsDto
+        {
+            AiApiKeys = new() { ["deepseek"] = "sk-secret-value" }
+        });
+
+        var json = System.Text.Json.JsonSerializer.Serialize(result.Value);
+        Assert.DoesNotContain("sk-secret-value", json);
+        Assert.Equal(new[] { "deepseek" }, Assert.IsType<UserSettingsDto>(result.Value).AiProvidersWithApiKey);
+    }
+
+    [Theory]
+    [InlineData("anthropic")]
+    [InlineData("")]
+    [InlineData("xai")]
+    public async Task UpdateUserSettings_RejectsUnknownAiProviderSelection(string selection)
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        context.Users.Add(new User { Id = userId, UserName = "u", Email = "u@test.com" });
+        await context.SaveChangesAsync();
+        var controller = CreateController(context, userId);
+
+        var result = await controller.UpdateUserSettings(new UpdateUserSettingsDto { AiProvider = selection });
+
+        Assert.IsType<BadRequestObjectResult>(result.Result);
+    }
+
+    [Fact]
+    public async Task UpdateUserSettings_RejectsUnknownProviderInConfigsOrKeys_WithoutChangingAnything()
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        context.Users.Add(new User { Id = userId, UserName = "u", Email = "u@test.com" });
+        context.UserSettings.Add(new UserSettings { UserId = userId, CreatedAt = DateTime.UtcNow });
+        await context.SaveChangesAsync();
+        var controller = CreateController(context, userId);
+
+        var badConfig = await controller.UpdateUserSettings(new UpdateUserSettingsDto
+        {
+            AiProviders = new()
+            {
+                ["deepseek"] = new AiProviderConfigDto { Model = "deepseek-flash" },
+                ["nope"] = new AiProviderConfigDto { Model = "x" }
+            }
+        });
+        var badKey = await controller.UpdateUserSettings(new UpdateUserSettingsDto
+        {
+            AiApiKeys = new() { ["openai"] = "sk", ["nope"] = "sk" }
+        });
+
+        Assert.IsType<BadRequestObjectResult>(badConfig.Result);
+        Assert.IsType<BadRequestObjectResult>(badKey.Result);
+        Assert.Empty(await context.UserAiProviders.ToListAsync());
+    }
+
+    [Fact]
+    public async Task UpdateUserSettings_RejectsOverlongModelOrKey()
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        context.Users.Add(new User { Id = userId, UserName = "u", Email = "u@test.com" });
+        context.UserSettings.Add(new UserSettings { UserId = userId, CreatedAt = DateTime.UtcNow });
+        await context.SaveChangesAsync();
+        var controller = CreateController(context, userId);
+
+        var longModel = await controller.UpdateUserSettings(new UpdateUserSettingsDto
+        {
+            AiProviders = new() { ["openai"] = new AiProviderConfigDto { StoryModel = new string('m', 201) } }
+        });
+        var longKey = await controller.UpdateUserSettings(new UpdateUserSettingsDto
+        {
+            AiApiKeys = new() { ["openai"] = new string('k', 1025) }
+        });
+
+        Assert.IsType<BadRequestObjectResult>(longModel.Result);
+        Assert.IsType<BadRequestObjectResult>(longKey.Result);
+    }
+
+    [Theory]
+    [InlineData("http://localhost:11434/v1", "http://localhost:11434/v1")]
+    [InlineData("  http://localhost:11434/v1/  ", "http://localhost:11434/v1")]
+    [InlineData("https://llm.example.com/v1/chat/completions", "https://llm.example.com/v1")]
+    [InlineData("", null)]
+    public async Task UpdateUserSettings_NormalizesCustomBaseUrl(string input, string? expected)
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        context.Users.Add(new User { Id = userId, UserName = "u", Email = "u@test.com" });
+        await context.SaveChangesAsync();
+        var controller = CreateController(context, userId);
+
+        var result = await controller.UpdateUserSettings(new UpdateUserSettingsDto
+        {
+            AiProviders = new() { ["custom"] = new AiProviderConfigDto { BaseUrl = input, Model = "llama3" } }
+        });
+
+        Assert.Equal(expected, Assert.IsType<UserSettingsDto>(result.Value).AiProviders["custom"].BaseUrl);
+    }
+
+    [Theory]
+    [InlineData("localhost:11434")]
+    [InlineData("ftp://example.com/v1")]
+    [InlineData("https://user:pass@example.com/v1")]
+    [InlineData("https://example.com/v1?key=1")]
+    public async Task UpdateUserSettings_RejectsInvalidCustomBaseUrl(string input)
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        context.Users.Add(new User { Id = userId, UserName = "u", Email = "u@test.com" });
+        await context.SaveChangesAsync();
+        var controller = CreateController(context, userId);
+
+        var result = await controller.UpdateUserSettings(new UpdateUserSettingsDto
+        {
+            AiProviders = new() { ["custom"] = new AiProviderConfigDto { BaseUrl = input } }
+        });
+
+        Assert.IsType<BadRequestObjectResult>(result.Result);
+    }
+
+    [Fact]
+    public async Task UpdateUserSettings_IgnoresBaseUrlForCatalogProviders()
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        context.Users.Add(new User { Id = userId, UserName = "u", Email = "u@test.com" });
+        await context.SaveChangesAsync();
+        var controller = CreateController(context, userId);
+
+        await controller.UpdateUserSettings(new UpdateUserSettingsDto
+        {
+            AiProviders = new() { ["deepseek"] = new AiProviderConfigDto { BaseUrl = "http://evil.example", Model = "deepseek-flash" } }
+        });
+
+        Assert.Null((await context.UserAiProviders.AsNoTracking().SingleAsync()).BaseUrl);
+    }
+
+    [Fact]
+    public async Task UpdateUserSettings_NullConfigFieldsLeaveValuesUnchanged()
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        context.Users.Add(new User { Id = userId, UserName = "u", Email = "u@test.com" });
+        context.UserAiProviders.Add(new UserAiProvider { UserId = userId, Provider = "groq", ApiKey = "gsk", Model = "old", StoryModel = "story" });
+        await context.SaveChangesAsync();
+        var controller = CreateController(context, userId);
+
+        await controller.UpdateUserSettings(new UpdateUserSettingsDto
+        {
+            AiProviders = new() { ["groq"] = new AiProviderConfigDto { Model = "new" } }
+        });
+
+        var row = await context.UserAiProviders.AsNoTracking().SingleAsync();
+        Assert.Equal("new", row.Model);
+        Assert.Equal("story", row.StoryModel);
+        Assert.Equal("gsk", row.ApiKey);
     }
 
     // --- SrsCardType (Feature 1) ---
@@ -585,9 +810,7 @@ public class UserSettingsControllerTests
 
         return new UserSettingsController(
             context,
-            discord,
-            new MinimalHttpClientFactory(),
-            NullLogger<UserSettingsController>.Instance)
+            discord)
         {
             ControllerContext = BuildControllerContext(userId)
         };

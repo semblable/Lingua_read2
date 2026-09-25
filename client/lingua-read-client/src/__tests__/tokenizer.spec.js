@@ -8,6 +8,7 @@ import {
   extractWords,
   normalizeTokenizerInput,
   splitSentenceAroundTerm,
+  sentenceContainsTerm,
   splitTextIntoSentenceSegments,
   LATIN_WORD_CHARACTERS,
   DEFAULT_LANGUAGE_WORD_CHARACTERS
@@ -223,6 +224,13 @@ describe('normalizeTokenizerInput', () => {
     expect(normalizeTokenizerInput(oxia)).toBe(tonos);
     expect(normalizeTokenizerInput(tonos)).toBe(tonos);
   });
+
+  test('leaves Greek punctuation alone', () => {
+    // NFC maps the ano teleia (U+0387) to a middle dot, a word connector, and
+    // the Greek question mark (U+037E) to ';'.
+    const text = `λέξη${String.fromCharCode(0x0387)}άλλη${String.fromCharCode(0x037e)}`;
+    expect(normalizeTokenizerInput(text)).toBe(text);
+  });
 });
 
 describe('splitSentenceAroundTerm', () => {
@@ -254,6 +262,35 @@ describe('splitSentenceAroundTerm', () => {
   test('treats regex metacharacters in the term literally', () => {
     expect(highlighted('He said e.g. that, not eXg.', 'e.g.')).toEqual(['e.g.']);
   });
+
+  test("matches a term keyed after the language's substitutions, shown the way the reader shows it", () => {
+    // NormalizeKey applies the language's substitutions, so a CSV "d´África"
+    // is stored as "d'áfrica"; the mined sentence still has the acute accent.
+    expect(splitSentenceAroundTerm('Vinha d´África... ontem.', "d'áfrica", LANG.pt.characterSubstitutions)).toEqual([
+      { text: 'Vinha ', isTerm: false },
+      { text: "d'África", isTerm: true },
+      { text: '… ontem.', isTerm: false }
+    ]);
+    // Without the language there is nothing to match.
+    expect(highlighted('Vinha d´África ontem.', "d'áfrica")).toEqual([]);
+  });
+
+  test('keeps the sentence as stored when it matches without the language substitutions', () => {
+    expect(splitSentenceAroundTerm('Ele reparava... sempre.', 'reparava', LANG.pt.characterSubstitutions)).toEqual([
+      { text: 'Ele ', isTerm: false },
+      { text: 'reparava', isTerm: true },
+      { text: '... sempre.', isTerm: false }
+    ]);
+  });
+});
+
+describe('sentenceContainsTerm', () => {
+  test('uses the same normalized match as the highlight', () => {
+    expect(sentenceContainsTerm(`Fazal Elahi repa${SHY}rava no modo.`, 'reparava')).toBe(true);
+    expect(sentenceContainsTerm('Il boit l’eau.', "l'eau")).toBe(true);
+    expect(sentenceContainsTerm('Vinha d´África.', "d'áfrica", LANG.pt.characterSubstitutions)).toBe(true);
+    expect(sentenceContainsTerm('Mi perro corre.', 'gato')).toBe(false);
+  });
 });
 
 describe('splitTextIntoSentenceSegments', () => {
@@ -268,6 +305,22 @@ describe('splitTextIntoSentenceSegments', () => {
       { type: 'paragraph', text: 'Um dia. Outro dia.' }
     ], LANG.pt, 'pt');
     expect(segments.map(s => [s.index, s.text])).toEqual([[0, ''], [1, 'Um dia.'], [2, 'Outro dia.']]);
+  });
+
+  test('soft hyphens never change which blocks are titles, so later indices stay put', () => {
+    // The title heuristics count words; counting "repa<SHY>rava" as one word
+    // instead of two made the paragraph below a title (one segment instead of
+    // four) and the one-line block a heading, shifting every later sentence
+    // index that bookmarks and reading progress were stored with.
+    const types = (content) =>
+      splitTextIntoSentenceSegments(content, [], LANG.pt, 'pt').map(s => s.type[0]).join('');
+    const paragraph = `Fa${SHY}zal E${SHY}lahi repa${SHY}rava sa${SHY}pa${SHY}tos na rua. `
+      + `Todos os dias da semana ele gostava do tra${SHY}ba${SHY}lho\n`
+      + `e dos cli${SHY}en${SHY}tes. Depois voltava para casa`;
+    expect(types(['Capítulo um', '', paragraph, '', 'Outro parágrafo. Com duas frases.'].join('\n')))
+      .toBe('tssssss');
+    expect(types([`Sim. Repa${SHY}ra${SHY}ção de sa${SHY}pa${SHY}tos`, '', 'Primeira frase. Segunda frase.'].join('\n')))
+      .toBe('ssss');
   });
 });
 

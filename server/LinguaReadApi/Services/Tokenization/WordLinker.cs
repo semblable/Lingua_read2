@@ -252,14 +252,24 @@ namespace LinguaReadApi.Services.Tokenization
         /// <see cref="Tokenizer.NormalizeText"/> form (trimmed, case kept), so the
         /// reader, the linker and word saves find them again: a phrase saved with
         /// a soft hyphen in it, a word stored with decomposed accents, a curly
-        /// apostrophe from before the built-in substitutions. The row keeps its
-        /// WordId, so its status, translation, sentences and card stay attached.
+        /// apostrophe from before the built-in substitutions, a character the
+        /// language substitutes. The row keeps its WordId, so its status,
+        /// translation, sentences and card stay attached.
         ///
-        /// A term whose normalized form another row already has (in any case) is
-        /// left alone: that row is the one lookups find, and merging two rows'
-        /// statuses, translations and cards is not worth it for a few
-        /// duplicates. When several stale rows normalize to the same term, the
-        /// oldest (lowest WordId) is rewritten. Called by
+        /// The old linker never produced such terms, so a stale row is one the user
+        /// saved. When rows already in normalized form answer the same lookup key:
+        /// <list type="bullet">
+        /// <item>If they are all untouched linker output (status 0, no translation,
+        /// mined sentence or card) and the stale row is not, they are merged into
+        /// it: their text links move over, they are deleted and the stale row is
+        /// rewritten. Otherwise the relink would link every text to the empty row
+        /// and hide the user's status and translation.</item>
+        /// <item>If one of them has user data too, both are left alone: merging two
+        /// rows' statuses, translations and cards is not worth it for a few
+        /// duplicates.</item>
+        /// </list>
+        /// When several stale rows normalize to the same term, one with user data
+        /// wins, then the oldest (lowest WordId). Called by
         /// <see cref="Services.WordLinkingMigrationService"/> before a relink pass;
         /// new writes are normalized by <see cref="Tokenizer.NormalizeKey"/>.
         /// </summary>
@@ -272,47 +282,144 @@ namespace LinguaReadApi.Services.Tokenization
                 .ToDictionaryAsync(l => l.LanguageId, cancellationToken);
             var words = await context.Words
                 .AsNoTracking()
-                .Select(w => new { w.WordId, w.UserId, w.LanguageId, w.Term })
+                .Select(w => new { w.WordId, w.UserId, w.LanguageId, w.Term, w.Status })
                 .ToListAsync(cancellationToken);
 
-            var rewrites = new List<(int WordId, string Term)>();
+            // Per user, language and lookup key: the stale rows and the rows already
+            // in normalized form that answer the same key.
+            var plans = new List<(List<RekeyRow> Stale, List<RekeyRow> Current)>();
             foreach (var group in words.GroupBy(w => (w.UserId, w.LanguageId)))
             {
                 var language = languages.GetValueOrDefault(group.Key.LanguageId);
-                // Lookup keys answered by rows already in normalized form.
-                var taken = new HashSet<string>(StringComparer.Ordinal);
-                var stale = new List<(int WordId, string Term, string Key)>();
-                foreach (var w in group)
+                var rows = group.Select(w =>
                 {
                     var normalized = Tokenizer.NormalizeText(w.Term, language).Trim();
-                    var key = Tokenizer.NormalizeKey(w.Term, language);
-                    if (normalized == w.Term) taken.Add(key);
-                    else stale.Add((w.WordId, normalized, key));
-                }
-                foreach (var row in stale.OrderBy(s => s.WordId))
+                    return new RekeyRow(w.WordId, w.Status, w.Term, normalized,
+                        Tokenizer.LowercaseKey(normalized, language));
+                });
+                foreach (var byKey in rows.GroupBy(r => r.Key))
                 {
-                    if (row.Term.Length == 0 || !taken.Add(row.Key)) continue;
-                    rewrites.Add((row.WordId, row.Term));
+                    var stale = byKey.Where(r => r.Normalized != r.Term && r.Normalized.Length > 0).ToList();
+                    if (stale.Count == 0) continue;
+                    plans.Add((stale, byKey.Where(r => r.Normalized == r.Term).ToList()));
                 }
             }
+            if (plans.Count == 0) return 0;
+
+            var involvedIds = plans.SelectMany(p => p.Stale.Concat(p.Current)).Select(r => r.WordId).ToList();
+            var withUserData = await WordIdsWithUserDataAsync(context, involvedIds, cancellationToken);
+            bool Touched(RekeyRow row) => row.Status != 0 || withUserData.Contains(row.WordId);
 
             var changed = 0;
-            foreach (var (wordId, term) in rewrites)
+            foreach (var (stale, current) in plans)
             {
-                try
+                var survivor = stale.OrderByDescending(Touched).ThenBy(r => r.WordId).First();
+                if (current.Count == 0)
                 {
-                    changed += await context.Words
-                        .Where(w => w.WordId == wordId)
-                        .ExecuteUpdateAsync(s => s.SetProperty(w => w.Term, term), cancellationToken);
+                    changed += await RewriteTermAsync(context, survivor.WordId, survivor.Normalized, cancellationToken);
                 }
-                catch (Exception ex) when (ex is DbUpdateException or System.Data.Common.DbException)
+                else if (Touched(survivor) && !current.Any(Touched))
                 {
-                    // A reader save inserted the same term since the read above (the
-                    // unique index says no), or the term outgrew the column. The new
-                    // row is the one lookups find; leave this one as it is.
+                    changed += await MergeUntouchedWordsAsync(
+                        context, survivor.WordId, survivor.Normalized,
+                        current.Select(r => r.WordId).ToList(), cancellationToken);
                 }
             }
             return changed;
+        }
+
+        private sealed record RekeyRow(int WordId, int Status, string Term, string Normalized, string Key);
+
+        // Words with a translation, a mined sentence or an SRS card: the user's data,
+        // which a merge must never delete.
+        private static async Task<HashSet<int>> WordIdsWithUserDataAsync(
+            AppDbContext context,
+            List<int> wordIds,
+            CancellationToken cancellationToken)
+        {
+            var result = new HashSet<int>();
+            foreach (var chunk in wordIds.Distinct().Chunk(WordBatchSize))
+            {
+                result.UnionWith(await context.WordTranslations
+                    .Where(wt => chunk.Contains(wt.WordId)).Select(wt => wt.WordId).ToListAsync(cancellationToken));
+                result.UnionWith(await context.SrsPhrases
+                    .Where(sp => chunk.Contains(sp.WordId)).Select(sp => sp.WordId).ToListAsync(cancellationToken));
+                result.UnionWith(await context.SrsCardReviews
+                    .Where(c => chunk.Contains(c.WordId)).Select(c => c.WordId).ToListAsync(cancellationToken));
+            }
+            return result;
+        }
+
+        private static async Task<int> RewriteTermAsync(
+            AppDbContext context,
+            int wordId,
+            string term,
+            CancellationToken cancellationToken)
+        {
+            try
+            {
+                return await context.Words
+                    .Where(w => w.WordId == wordId)
+                    .ExecuteUpdateAsync(s => s.SetProperty(w => w.Term, term), cancellationToken);
+            }
+            catch (Exception ex) when (ex is DbUpdateException or System.Data.Common.DbException)
+            {
+                // A reader save inserted the same term since the read above (the
+                // unique index says no), or the term outgrew the column. The new
+                // row is the one lookups find; leave this one as it is.
+                return 0;
+            }
+        }
+
+        // Move the untouched words' text links onto the user's word, delete them and
+        // rewrite the user's word, all or nothing. Returns 0 and changes nothing when
+        // one of them gained user data since the read, or the write collides.
+        private static async Task<int> MergeUntouchedWordsAsync(
+            AppDbContext context,
+            int survivorId,
+            string term,
+            List<int> untouchedIds,
+            CancellationToken cancellationToken)
+        {
+            var strategy = context.Database.CreateExecutionStrategy();
+            try
+            {
+                return await strategy.ExecuteAsync(async () =>
+                {
+                    await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
+                    foreach (var id in untouchedIds)
+                    {
+                        // A text linked to both keeps the user's word's link; the relink
+                        // pass that follows recounts occurrences either way.
+                        await context.TextWords
+                            .Where(tw => tw.WordId == id
+                                && !context.TextWords.Any(o => o.TextId == tw.TextId && o.WordId == survivorId))
+                            .ExecuteUpdateAsync(s => s.SetProperty(tw => tw.WordId, survivorId), cancellationToken);
+                        await context.TextWords
+                            .Where(tw => tw.WordId == id)
+                            .ExecuteDeleteAsync(cancellationToken);
+                        var deleted = await context.Words
+                            .Where(w => w.WordId == id
+                                && w.Status == 0
+                                && !context.WordTranslations.Any(wt => wt.WordId == w.WordId)
+                                && !context.SrsPhrases.Any(sp => sp.WordId == w.WordId)
+                                && !context.SrsCardReviews.Any(c => c.WordId == w.WordId))
+                            .ExecuteDeleteAsync(cancellationToken);
+                        if (deleted == 0) return 0; // no commit: the transaction rolls back
+                    }
+                    var updated = await context.Words
+                        .Where(w => w.WordId == survivorId)
+                        .ExecuteUpdateAsync(s => s.SetProperty(w => w.Term, term), cancellationToken);
+                    await transaction.CommitAsync(cancellationToken);
+                    return updated;
+                });
+            }
+            catch (Exception ex) when (ex is DbUpdateException or System.Data.Common.DbException)
+            {
+                // A reader save inserted the same term, or linked the untouched word
+                // to a new text, since the read. Nothing was committed.
+                return 0;
+            }
         }
 
         /// <summary>

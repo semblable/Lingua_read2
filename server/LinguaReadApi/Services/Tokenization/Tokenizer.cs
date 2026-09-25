@@ -64,12 +64,15 @@ namespace LinguaReadApi.Services.Tokenization
         // The runs NormalizeInput composes: a run of Greek letters (with any marks
         // after it), or any other base character followed by one or more combining
         // marks. A surrogate pair counts as one base so Normalize never sees half of it.
+        // Greek punctuation stays out of the letter runs: NFC turns the ano teleia
+        // (U+0387) into a middle dot, which glues the words around it.
         private static readonly Regex ComposableRuns = new(
-            @"[\u0370-\u03FF\u1F00-\u1FFF]+\p{M}*|(?:[\uD800-\uDBFF][\uDC00-\uDFFF]|\P{M})\p{M}+",
+            @"(?:(?=\p{L})[\u0370-\u03FF\u1F00-\u1FFF])+\p{M}*|(?:[\uD800-\uDBFF][\uDC00-\uDFFF]|\P{M})\p{M}+",
             RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
         private static readonly ConcurrentDictionary<string, Regex> _regexCache = new();
         private static readonly ConcurrentDictionary<string, TextInfo> _textInfoCache = new();
+        private static readonly ConcurrentDictionary<string, IReadOnlyList<(string Old, string New)>> _substitutionCache = new();
 
         public readonly record struct Token(string Text, int Start, int End, bool IsWord);
 
@@ -152,8 +155,15 @@ namespace LinguaReadApi.Services.Tokenization
         {
             if (string.IsNullOrEmpty(content)) return content ?? string.Empty;
             var processed = ApplyCharacterSubstitutions(NormalizeInput(content), BuiltInSubstitutions);
-            return ApplyCharacterSubstitutions(processed, ParseCharacterSubstitutions(language?.CharacterSubstitutions));
+            return ApplyCharacterSubstitutions(processed, GetCharacterSubstitutions(language?.CharacterSubstitutions));
         }
+
+        // NormalizeKey runs this for every stored word a lookup or an import touches,
+        // so the parsed pairs are cached per substitution string (a handful of languages).
+        private static IReadOnlyList<(string Old, string New)> GetCharacterSubstitutions(string? raw) =>
+            string.IsNullOrEmpty(raw)
+                ? Array.Empty<(string, string)>()
+                : _substitutionCache.GetOrAdd(raw, ParseCharacterSubstitutions);
 
         private static bool NeedsComposition(string text)
         {
@@ -278,8 +288,15 @@ namespace LinguaReadApi.Services.Tokenization
         public static string NormalizeKey(string text, Language? language)
         {
             if (string.IsNullOrEmpty(text)) return text;
-            return GetTextInfo(language?.Code).ToLower(NormalizeText(text, language).Trim());
+            return LowercaseKey(NormalizeText(text, language).Trim(), language);
         }
+
+        /// <summary>
+        /// The lookup key of a term already in <see cref="NormalizeText"/> form and
+        /// trimmed: <see cref="NormalizeKey"/> without normalizing a second time.
+        /// </summary>
+        internal static string LowercaseKey(string normalized, Language? language) =>
+            GetTextInfo(language?.Code).ToLower(normalized);
 
         // A combining mark or format character (an emoji's variation selector, a
         // zero-width joiner) may continue a word but never start one: on its own

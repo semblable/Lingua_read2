@@ -661,6 +661,10 @@ Strict instructions:
                         var is429 = response.StatusCode == HttpStatusCode.TooManyRequests;
                         var attemptsBudget = is429 ? 2 : maxAttempts;
                         var isRetryable = is429 || response.StatusCode == HttpStatusCode.ServiceUnavailable;
+
+                        _logger.LogWarning("OpenRouter selection translation error (attempt={Attempt}/{Max}): {StatusCode}. Retryable={Retryable}. Response={Response}",
+                            attempt, attemptsBudget, response.StatusCode, isRetryable, responseContent);
+
                         if (isRetryable && attempt < attemptsBudget)
                         {
                             var delayMs = (int)Math.Pow(2, attempt - 1) * 1000;
@@ -674,6 +678,7 @@ Strict instructions:
                     var openRouterResponse = JsonSerializer.Deserialize<OpenRouterResponse>(responseContent, options);
                     if (openRouterResponse?.Error != null)
                     {
+                        _logger.LogWarning("OpenRouter selection translation returned error: {Error}", openRouterResponse.Error.Message);
                         return $"Translation error: {openRouterResponse.Error.Message}";
                     }
 

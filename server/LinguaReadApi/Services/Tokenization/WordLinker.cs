@@ -32,6 +32,9 @@ namespace LinguaReadApi.Services.Tokenization
 
         private const int WordBatchSize = 500;
 
+        // Tries at the Word insert when a reader save keeps winning the race.
+        private const int MaxWordInsertAttempts = 3;
+
         /// <summary>
         /// Tokenize <paramref name="content"/>, materialise any new
         /// Word rows, and link the text via TextWord rows. Stamps the
@@ -74,49 +77,47 @@ namespace LinguaReadApi.Services.Tokenization
                 .GroupBy(w => w)
                 .ToDictionary(g => g.Key, g => g.Count());
 
-            var existingWordsList = new List<Word>();
-            foreach (var batch in uniqueWords.Chunk(WordBatchSize))
+            // The reader saves words too (a word click, auto-translate's batch), and
+            // one it inserts between our probe and our insert collides on
+            // IX_Words_UserId_LanguageId_Term. Chunks saved before the collision
+            // stay; the re-probe finds them along with the reader's row.
+            Dictionary<string, Word> existingWords;
+            for (var attempt = 1; ; attempt++)
             {
-                var batchList = batch.ToList();
-                var batchResults = await context.Words
-                    .AsNoTracking()
-                    .Where(w => w.UserId == userId
-                             && w.LanguageId == languageId
-                             && batchList.Contains(w.Term.ToLower()))
-                    .ToListAsync(cancellationToken);
-                existingWordsList.AddRange(batchResults);
-            }
+                existingWords = await LoadWordsAsync(context, uniqueWords, language, languageId, userId, cancellationToken);
 
-            // Key by the same normalized lookup key the probes use (uniqueWords
-            // are already lowercased keys); keying by the raw Term would miss a
-            // stored capitalized row (e.g. "Été") and create a duplicate.
-            var existingWords = existingWordsList
-                .GroupBy(w => Tokenizer.NormalizeKey(w.Term, language))
-                .ToDictionary(g => g.Key, g => g.First());
-
-            var newWords = new List<Word>();
-            foreach (var wordTerm in uniqueWords)
-            {
-                if (!existingWords.ContainsKey(wordTerm))
+                var newWords = new List<Word>();
+                foreach (var wordTerm in uniqueWords)
                 {
-                    var newWord = new Word
+                    if (!existingWords.ContainsKey(wordTerm))
                     {
-                        UserId = userId,
-                        LanguageId = languageId,
-                        Term = wordTerm,
-                        Status = 0,
-                        CreatedAt = DateTime.UtcNow
-                    };
-                    newWords.Add(newWord);
-                    existingWords[wordTerm] = newWord;
+                        var newWord = new Word
+                        {
+                            UserId = userId,
+                            LanguageId = languageId,
+                            Term = wordTerm,
+                            Status = 0,
+                            CreatedAt = DateTime.UtcNow
+                        };
+                        newWords.Add(newWord);
+                        existingWords[wordTerm] = newWord;
+                    }
                 }
-            }
 
-            foreach (var batch in newWords.Chunk(WordBatchSize))
-            {
-                context.Words.AddRange(batch);
-                await context.SaveChangesAsync(cancellationToken);
-                context.ChangeTracker.Clear();
+                try
+                {
+                    foreach (var batch in newWords.Chunk(WordBatchSize))
+                    {
+                        context.Words.AddRange(batch);
+                        await context.SaveChangesAsync(cancellationToken);
+                        context.ChangeTracker.Clear();
+                    }
+                    break;
+                }
+                catch (DbUpdateException) when (attempt < MaxWordInsertAttempts)
+                {
+                    context.ChangeTracker.Clear();
+                }
             }
 
             // Skip (TextId, WordId) pairs already linked so re-running LinkAsync
@@ -151,6 +152,35 @@ namespace LinguaReadApi.Services.Tokenization
             }
 
             await StampVersion(context, textId, cancellationToken);
+        }
+
+        private static async Task<Dictionary<string, Word>> LoadWordsAsync(
+            AppDbContext context,
+            List<string> uniqueWords,
+            Language? language,
+            int languageId,
+            Guid userId,
+            CancellationToken cancellationToken)
+        {
+            var existingWordsList = new List<Word>();
+            foreach (var batch in uniqueWords.Chunk(WordBatchSize))
+            {
+                var batchList = batch.ToList();
+                var batchResults = await context.Words
+                    .AsNoTracking()
+                    .Where(w => w.UserId == userId
+                             && w.LanguageId == languageId
+                             && batchList.Contains(w.Term.ToLower()))
+                    .ToListAsync(cancellationToken);
+                existingWordsList.AddRange(batchResults);
+            }
+
+            // Key by the same normalized lookup key the probes use (uniqueWords
+            // are already lowercased keys); keying by the raw Term would miss a
+            // stored capitalized row (e.g. "Été") and create a duplicate.
+            return existingWordsList
+                .GroupBy(w => Tokenizer.NormalizeKey(w.Term, language))
+                .ToDictionary(g => g.Key, g => g.First());
         }
 
         /// <summary>

@@ -29,11 +29,13 @@ namespace LinguaReadApi.Services.Tokenization
         // with real frequencies so book/text stats reflect actual
         // running-word percentages instead of unique-word percentages.
         // Bump to 3: soft hyphens are dropped and decomposed accents
-        // composed before tokenizing, Unicode hyphens glue like '-', a
-        // middle dot glues (col·lecció), and the Latin seeds cover every
-        // Latin letter. Re-linking replaces fragments such as "repa" +
-        // "rava" with "reparava"; the orphan cleanup then deletes the
-        // fragments nobody translated or marked.
+        // composed before tokenizing (Greek oxia letters become tonos
+        // letters), Unicode hyphens glue like '-', a middle dot glues
+        // (col·lecció), the Latin seeds cover every Latin letter, Russian
+        // no longer counts a lone ' or - as a word, and an empty or invalid
+        // class falls back to letters plus marks. Re-linking replaces
+        // fragments such as "repa" + "rava" with "reparava"; the orphan
+        // cleanup then deletes the fragments nobody translated or marked.
         public const int CurrentTokenizerVersion = 3;
 
         private const int WordBatchSize = 500;
@@ -224,9 +226,13 @@ namespace LinguaReadApi.Services.Tokenization
         /// "l" / "eau" stranded once "l'eau" became a single token).
         ///
         /// Words the user has interacted with are preserved unconditionally:
-        /// any Status &gt; 0 (bumped past the linker default) or any
-        /// WordTranslation row keeps the Word alive even if it has no
-        /// current TextWord references.
+        /// any Status &gt; 0 (bumped past the linker default), any
+        /// WordTranslation row, a mined sentence or an SRS card keeps the Word
+        /// alive even if it has no current TextWord references. Mining works on
+        /// an untranslated status-0 word and reviews never raise status 0, so the
+        /// last two are needed: a mined sentence's foreign key restricts the
+        /// delete, which would fail the whole statement, and a card's cascades,
+        /// which would take its review history with it.
         /// </summary>
         public static async Task<int> CleanupOrphanWordsAsync(
             AppDbContext context,
@@ -236,7 +242,77 @@ namespace LinguaReadApi.Services.Tokenization
                 .Where(w => w.Status == 0)
                 .Where(w => !context.TextWords.Any(tw => tw.WordId == w.WordId))
                 .Where(w => !context.WordTranslations.Any(wt => wt.WordId == w.WordId))
+                .Where(w => !context.SrsPhrases.Any(sp => sp.WordId == w.WordId))
+                .Where(w => !context.SrsCardReviews.Any(c => c.WordId == w.WordId))
                 .ExecuteDeleteAsync(cancellationToken);
+        }
+
+        /// <summary>
+        /// Rewrite stored terms the tokenizer can no longer produce into their
+        /// <see cref="Tokenizer.NormalizeText"/> form (trimmed, case kept), so the
+        /// reader, the linker and word saves find them again: a phrase saved with
+        /// a soft hyphen in it, a word stored with decomposed accents, a curly
+        /// apostrophe from before the built-in substitutions. The row keeps its
+        /// WordId, so its status, translation, sentences and card stay attached.
+        ///
+        /// A term whose normalized form another row already has (in any case) is
+        /// left alone: that row is the one lookups find, and merging two rows'
+        /// statuses, translations and cards is not worth it for a few
+        /// duplicates. When several stale rows normalize to the same term, the
+        /// oldest (lowest WordId) is rewritten. Called by
+        /// <see cref="Services.WordLinkingMigrationService"/> before a relink pass;
+        /// new writes are normalized by <see cref="Tokenizer.NormalizeKey"/>.
+        /// </summary>
+        public static async Task<int> RekeyLegacyTermsAsync(
+            AppDbContext context,
+            CancellationToken cancellationToken = default)
+        {
+            var languages = await context.Languages
+                .AsNoTracking()
+                .ToDictionaryAsync(l => l.LanguageId, cancellationToken);
+            var words = await context.Words
+                .AsNoTracking()
+                .Select(w => new { w.WordId, w.UserId, w.LanguageId, w.Term })
+                .ToListAsync(cancellationToken);
+
+            var rewrites = new List<(int WordId, string Term)>();
+            foreach (var group in words.GroupBy(w => (w.UserId, w.LanguageId)))
+            {
+                var language = languages.GetValueOrDefault(group.Key.LanguageId);
+                // Lookup keys answered by rows already in normalized form.
+                var taken = new HashSet<string>(StringComparer.Ordinal);
+                var stale = new List<(int WordId, string Term, string Key)>();
+                foreach (var w in group)
+                {
+                    var normalized = Tokenizer.NormalizeText(w.Term, language).Trim();
+                    var key = Tokenizer.NormalizeKey(w.Term, language);
+                    if (normalized == w.Term) taken.Add(key);
+                    else stale.Add((w.WordId, normalized, key));
+                }
+                foreach (var row in stale.OrderBy(s => s.WordId))
+                {
+                    if (row.Term.Length == 0 || !taken.Add(row.Key)) continue;
+                    rewrites.Add((row.WordId, row.Term));
+                }
+            }
+
+            var changed = 0;
+            foreach (var (wordId, term) in rewrites)
+            {
+                try
+                {
+                    changed += await context.Words
+                        .Where(w => w.WordId == wordId)
+                        .ExecuteUpdateAsync(s => s.SetProperty(w => w.Term, term), cancellationToken);
+                }
+                catch (Exception ex) when (ex is DbUpdateException or System.Data.Common.DbException)
+                {
+                    // A reader save inserted the same term since the read above (the
+                    // unique index says no), or the term outgrew the column. The new
+                    // row is the one lookups find; leave this one as it is.
+                }
+            }
+            return changed;
         }
 
         /// <summary>

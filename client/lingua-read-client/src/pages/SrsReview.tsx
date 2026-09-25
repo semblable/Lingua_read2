@@ -20,6 +20,7 @@ import {
   type WordStatus
 } from '../types/wordStatus';
 import ClozeReviewCard from '../components/srs/ClozeReviewCard';
+import { splitSentenceAroundTerm } from '../utils/readerText';
 import './SrsReview.css';
 
 type DueCard = SrsDueCards[number];
@@ -515,15 +516,13 @@ const SrsReview = () => {
     );
   };
 
-  // Highlight target word in sentence
+  // Highlight target word in sentence (both normalized, see splitSentenceAroundTerm)
   const renderSentenceWithHighlight = (sentence: string | null | undefined, term: string | null | undefined): React.ReactNode => {
     if (!sentence || !term) return sentence;
-    const regex = new RegExp(`(${term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
-    const parts = sentence.split(regex);
-    return parts.map((part: string, i: number) =>
-      i % 2 === 1
-        ? <span key={i} className="srs-term-highlight">{part}</span>
-        : part
+    return splitSentenceAroundTerm(sentence, term).map((part, i: number) =>
+      part.isTerm
+        ? <span key={i} className="srs-term-highlight">{part.text}</span>
+        : part.text
     );
   };
 

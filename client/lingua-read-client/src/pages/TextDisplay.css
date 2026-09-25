@@ -264,9 +264,15 @@
   word-wrap: break-word;
 }
 
+/* The tokenizer drops the soft hyphens ebooks put inside words (they split
+   words), which were the only break points inside long words. Justified text
+   needs them to avoid wide gaps, so let the browser hyphenate by the text's
+   `lang` instead; ragged-right text is left unhyphenated. */
 .reader-align-justify .reader-paragraph {
   text-align: justify;
   text-justify: inter-word;
+  -webkit-hyphens: auto;
+  hyphens: auto;
 }
 
 .reader-align-left .reader-paragraph {

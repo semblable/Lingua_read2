@@ -331,6 +331,9 @@ describe('TextDisplay', () => {
     const words = [...container.querySelectorAll('.clickable-word')].map(el => el.textContent);
     expect(words).toEqual(['Fazal', 'Elahi', 'reparava', 'quis', 'contá-las']);
     expect(container.textContent).not.toContain(shy);
+    // With the soft hyphens gone, justified text hyphenates via the browser, which
+    // needs the text's language on its container.
+    expect(reparava.closest('.text-content')).toHaveAttribute('lang', 'pt');
 
     fireEvent.click(reparava);
     expect(screen.getByRole('heading', { name: 'reparava' })).toBeInTheDocument();
@@ -1089,6 +1092,7 @@ describe('TextDisplay', () => {
     await waitFor(() => expect(getText).toHaveBeenCalled());
     expect(await screen.findByText('Hello')).toBeInTheDocument();
     expect(screen.queryByText('Another')).not.toBeInTheDocument();
+    expect(screen.getByText('Hello').closest('.sentence-mode-text')).toHaveAttribute('lang', 'ES');
 
     fireEvent.click(screen.getByRole('button', { name: /Next/i }));
 

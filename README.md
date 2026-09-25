@@ -44,7 +44,7 @@ This is an early version of the application and is still under active developmen
 LinguaRead supports a wide range of languages with customizable settings, including:
 
 *   Right-to-left (RTL) support
-*   Parser type (space-delimited, MeCab, Jieba, etc.)
+*   Parser type (space-delimited; MeCab and Jieba segmentation not implemented yet)
 *   Character substitutions for normalization
 *   Sentence splitting rules
 *   Word character sets

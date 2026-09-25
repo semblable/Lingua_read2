@@ -259,6 +259,13 @@ function LanguageForm({ language, onSave, onCancel, onDelete, onResetContent }: 
                         {/* Add other parser types as needed */}
                     </Form.Select>
                     <Form.Text muted>Select the word tokenization strategy.</Form.Text>
+                    {formData.parserType !== 'spacedel' && (
+                        <Alert variant="warning" className="mt-2 mb-0 py-2 small" data-testid="parser-not-implemented">
+                            MeCab and Jieba segmentation isn&apos;t implemented yet: text is split at spaces and
+                            punctuation only, so with <code>{DEFAULT_LANGUAGE_WORD_CHARACTERS}</code> each unspaced run
+                            of Japanese or Chinese becomes one word.
+                        </Alert>
+                    )}
                 </Form.Group>
                  <Form.Group as={Col} controlId="formWordCharacters">
                     <Form.Label>Word Characters (Regex)</Form.Label>

@@ -650,9 +650,12 @@ const splitBlockIntoSentences = (
   // Segment text leaves the reader as a mined sentence, a translation or
   // explanation request and TTS input, so drop soft hyphens and compose
   // accents here too (display is unaffected: the renderer normalizes anyway).
+  // Normalize after the emptiness filter: bookmarks and reading progress are
+  // keyed by sentence index, so the segment count must not change.
   return merged
-    .map((sentence) => normalizeTokenizerInput(sentence.replace(/\s+/g, ' ').trim()))
-    .filter(Boolean);
+    .map((sentence) => sentence.replace(/\s+/g, ' ').trim())
+    .filter(Boolean)
+    .map(normalizeTokenizerInput);
 };
 
 export const splitTextIntoSentenceSegments = (
@@ -673,11 +676,11 @@ export const splitTextIntoSentenceSegments = (
     }
 
     if (block.isTitleBlock) {
-      const titleSegmentText = normalizeTokenizerInput(block.lines.join('\n').trim());
+      const titleSegmentText = block.lines.join('\n').trim();
       if (titleSegmentText) {
         segments.push({
           index: segments.length,
-          text: titleSegmentText,
+          text: normalizeTokenizerInput(titleSegmentText),
           type: 'title',
           mediaBlocks: pendingMediaBlocks
         });

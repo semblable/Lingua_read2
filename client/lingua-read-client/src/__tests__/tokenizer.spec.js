@@ -261,6 +261,14 @@ describe('splitTextIntoSentenceSegments', () => {
     const segments = splitTextIntoSentenceSegments(`Fazal Elahi repa${SHY}rava. Il fait e${ACUTE}te${ACUTE}.`, [], LANG.pt, 'pt');
     expect(segments.map(s => s.text)).toEqual(['Fazal Elahi reparava.', 'Il fait été.']);
   });
+
+  test('normalizing never drops a segment: bookmarks and progress are keyed by sentence index', () => {
+    const segments = splitTextIntoSentenceSegments('', [
+      { type: 'title', text: SHY },
+      { type: 'paragraph', text: 'Um dia. Outro dia.' }
+    ], LANG.pt, 'pt');
+    expect(segments.map(s => [s.index, s.text])).toEqual([[0, ''], [1, 'Um dia.'], [2, 'Outro dia.']]);
+  });
 });
 
 describe('word-character constants', () => {

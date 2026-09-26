@@ -214,6 +214,19 @@ describe('UserSettings', () => {
     expect(JSON.parse(localStorage.getItem('cachedSettings')).autoTranslateWords).toBe(false);
   });
 
+  test('saves the status for automatically translated words as a number', async () => {
+    await renderLoaded();
+    useManualClock();
+    // Older accounts have no value yet: Known, what these words always got.
+    expect(field('autoTranslateWordStatus')).toHaveValue('5');
+
+    fireEvent.change(field('autoTranslateWordStatus'), { target: { value: '1' } });
+    await advance(CHOICE_DELAY);
+
+    expect(updateUserSettings).toHaveBeenCalledWith({ autoTranslateWordStatus: 1 });
+    expect(updateSetting).toHaveBeenCalledWith('autoTranslateWordStatus', 1);
+  });
+
   test('sends nothing when a switch is flipped back before it saves', async () => {
     await renderLoaded();
     useManualClock();

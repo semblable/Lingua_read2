@@ -368,4 +368,71 @@ public class SrsStatusSyncTests
         var perroId = context.Words.AsNoTracking().Single(w => w.Term == "perro").WordId;
         Assert.False(context.SrsCardReviews.AsNoTracking().Single(c => c.WordId == perroId).IsSuspended);
     }
+
+    [Fact]
+    public async Task BatchTranslateUnknownWords_KeepsTrackedStatuses_AndSavesNewWordsAtTheChosenStatus()
+    {
+        using var context = CreateContext();
+        var userId = Seed(context, Settings(), wordStatus: 2);
+
+        // What the reader's "translate unknown words" sends: the user's status for new words, and
+        // existing words only get their missing translation.
+        await Words(context, userId).AddTermsBatch(new AddTermBatchDto
+        {
+            LanguageId = 1,
+            KeepExistingStatus = true,
+            Terms = new List<NewTermDto>
+            {
+                new() { Term = "gato", Translation = "cat", Status = 1 },
+                new() { Term = "perro", Translation = "dog", Status = 1 },
+            },
+        });
+
+        var gato = context.Words.AsNoTracking().Include(w => w.Translation).Single(w => w.Term == "gato");
+        Assert.Equal(2, gato.Status);
+        Assert.Equal("cat", gato.Translation.Translation);
+        var perro = context.Words.AsNoTracking().Include(w => w.Translation).Single(w => w.Term == "perro");
+        Assert.Equal(1, perro.Status);
+        Assert.Equal("dog", perro.Translation.Translation);
+        // A new word below Known follows the usual card rules (auto-create "always").
+        Assert.True(context.SrsCardReviews.Any(c => c.WordId == perro.WordId));
+    }
+
+    [Fact]
+    public async Task BatchWithoutKeepExistingStatus_StillRaisesTrackedWordsToKnown()
+    {
+        using var context = CreateContext();
+        var userId = Seed(context, Settings(), wordStatus: 2);
+
+        await Words(context, userId).AddTermsBatch(new AddTermBatchDto
+        {
+            LanguageId = 1,
+            Terms = new List<NewTermDto> { new() { Term = "gato" }, new() { Term = "perro" } },
+        });
+
+        Assert.Equal(5, context.Words.AsNoTracking().Single(w => w.Term == "gato").Status);
+        Assert.Equal(5, context.Words.AsNoTracking().Single(w => w.Term == "perro").Status);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Batch_SavesARowLinkingStoredAtStatus0_AtTheRequestedStatus(bool keepExistingStatus)
+    {
+        using var context = CreateContext();
+        // Linking a text stores each of its unsaved words as a status-0 row.
+        var userId = Seed(context, Settings(), wordStatus: 0);
+
+        await Words(context, userId).AddTermsBatch(new AddTermBatchDto
+        {
+            LanguageId = 1,
+            KeepExistingStatus = keepExistingStatus,
+            Terms = new List<NewTermDto> { new() { Term = "gato", Translation = "cat", Status = 1 } },
+        });
+
+        var gato = context.Words.AsNoTracking().Include(w => w.Translation).Single();
+        Assert.Equal(1, gato.Status);
+        Assert.Equal("cat", gato.Translation.Translation);
+        Assert.True(context.SrsCardReviews.Any(c => c.WordId == gato.WordId));
+    }
 }

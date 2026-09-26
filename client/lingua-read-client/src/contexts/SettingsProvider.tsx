@@ -21,11 +21,7 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({ children }) 
     setErrorSettings(null);
     try {
       const data = (await getUserSettings()) as Partial<Settings> | null | undefined;
-      setSettings((prev) => {
-        const merged = mergeSettings(data, prev);
-        localStorage.setItem('cachedSettings', JSON.stringify(merged));
-        return merged;
-      });
+      setSettings((prev) => mergeSettings(data, prev));
     } catch (err) {
       console.error('[SettingsContext] Failed to load settings:', err);
       setErrorSettings('Failed to load settings. Using defaults.');
@@ -38,6 +34,17 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({ children }) 
     // Fetch settings when the provider mounts (only rendered when authenticated)
     fetchSettings();
   }, [fetchSettings]);
+
+  // The next load starts from this copy until the server answers, so it follows every change,
+  // not only the fetched values: otherwise a size or width set in the reader comes back at its
+  // old value on reload.
+  useEffect(() => {
+    try {
+      localStorage.setItem('cachedSettings', JSON.stringify(settings));
+    } catch {
+      // Storage full or blocked: the server copy still loads.
+    }
+  }, [settings]);
 
   // Update a specific setting locally; the API write is triggered from
   // the component making the change (so it can debounce/show save state).

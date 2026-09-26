@@ -1,6 +1,7 @@
 import React from 'react';
 import { Button, ButtonGroup, OverlayTrigger, Tooltip, Spinner } from 'react-bootstrap';
-import type { Settings, SettingKey } from '../../contexts/SettingsContext';
+import type { Settings } from '../../contexts/SettingsContext';
+import { WORD_STATUS_LABELS, type WordStatus } from '../../types/wordStatus';
 
 interface SecondaryControlsProps {
   isMobile: boolean;
@@ -10,9 +11,7 @@ interface SecondaryControlsProps {
   setShowWordInfoPanel: (show: boolean) => void;
   setReaderParagraphIndent: (indent: boolean) => void;
   setReaderTextAlignment: (alignment: string) => void;
-  updateSetting: <K extends SettingKey>(key: K, value: Settings[K]) => void;
-  updateUserSettings: (partial: Partial<Settings>) => Promise<unknown>;
-  leftPanelWidth: number;
+  setTextSize: (size: number) => void;
   setLeftPanelWidth: (width: number) => void;
   handleLineSpacingChange: (value: number) => void;
   handleParagraphSpacingChange: (value: number) => void;
@@ -38,9 +37,7 @@ const SecondaryControls = React.memo(({
   setShowWordInfoPanel,
   setReaderParagraphIndent,
   setReaderTextAlignment,
-  updateSetting,
-  updateUserSettings,
-  leftPanelWidth,
+  setTextSize,
   setLeftPanelWidth,
   handleLineSpacingChange,
   handleParagraphSpacingChange,
@@ -84,24 +81,14 @@ const SecondaryControls = React.memo(({
     <ButtonGroup size="sm" className="me-1">
       <Button
         variant="outline-secondary"
-        onClick={() => {
-          const newSize = Math.max(12, globalSettings.textSize - 2);
-          updateSetting('textSize', newSize);
-          updateUserSettings({ textSize: newSize })
-            .catch((err: unknown) => console.error('[Save Settings] Failed to save text size via API:', err));
-        }}
+        onClick={() => setTextSize(globalSettings.textSize - 2)}
         title="Decrease text size"
       >
         A-
       </Button>
       <Button
         variant="outline-secondary"
-        onClick={() => {
-          const newSize = Math.min(32, globalSettings.textSize + 2);
-          updateSetting('textSize', newSize);
-          updateUserSettings({ textSize: newSize })
-            .catch((err: unknown) => console.error('[Save Settings] Failed to save text size via API:', err));
-        }}
+        onClick={() => setTextSize(globalSettings.textSize + 2)}
         title="Increase text size"
       >
         A+
@@ -110,26 +97,14 @@ const SecondaryControls = React.memo(({
     <ButtonGroup size="sm" className="me-1">
       <Button
         variant="outline-secondary"
-        onClick={() => {
-          const newWidth = Math.min(leftPanelWidth + 5, 85);
-          setLeftPanelWidth(newWidth);
-          updateSetting('leftPanelWidth', newWidth);
-          updateUserSettings({ leftPanelWidth: newWidth })
-            .catch((err: unknown) => console.error('[Save Settings] Failed to save panel width via API:', err));
-        }}
+        onClick={() => setLeftPanelWidth(globalSettings.leftPanelWidth + 5)}
         title="Increase reading area (Wider)"
       >
         ◀
       </Button>
       <Button
         variant="outline-secondary"
-        onClick={() => {
-          const newWidth = Math.max(leftPanelWidth - 5, 20);
-          setLeftPanelWidth(newWidth);
-          updateSetting('leftPanelWidth', newWidth);
-          updateUserSettings({ leftPanelWidth: newWidth })
-            .catch((err: unknown) => console.error('[Save Settings] Failed to save panel width via API:', err));
-        }}
+        onClick={() => setLeftPanelWidth(globalSettings.leftPanelWidth - 5)}
         title="Decrease reading area (Narrower)"
       >
         ▶
@@ -287,7 +262,7 @@ const SecondaryControls = React.memo(({
         onClick={handleTranslateUnknownWords}
         disabled={translatingUnknown}
         className="ms-1"
-        title="Translate unknown/learning words"
+        title={`Translate unknown/learning words; new ones are saved as ${WORD_STATUS_LABELS[(globalSettings.autoTranslateWordStatus || 5) as WordStatus] ?? 'Known'}`}
       >
         {translatingUnknown ? <Spinner size="sm" /> : 'Auto ?'}
       </Button>

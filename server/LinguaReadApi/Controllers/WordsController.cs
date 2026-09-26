@@ -567,7 +567,7 @@ namespace LinguaReadApi.Controllers
                 int changedCount;
                 for (var attempt = 1; ; attempt++)
                 {
-                    plan = await PlanTermsBatchAsync(userId, language, termsToAdd);
+                    plan = await PlanTermsBatchAsync(userId, language, termsToAdd, batchDto.KeepExistingStatus);
                     try
                     {
                         changedCount = await _context.SaveChangesAsync();
@@ -587,7 +587,7 @@ namespace LinguaReadApi.Controllers
 
                 // Cards follow the new statuses (Known may suspend; 1-4 may create a card).
                 await SrsCardLifecycle.ApplyStatusRulesAsync(
-                    _context, userId, plan.WordsMadeKnown.Concat(plan.WordsToCreate).ToList(), await GetSettingsAsync(userId));
+                    _context, userId, plan.WordsWithNewStatus.Concat(plan.WordsToCreate).ToList(), await GetSettingsAsync(userId));
                 changedCount += await _context.SaveChangesAsync();
 
                 foreach (var translationToUpsert in plan.TranslationsToUpsert)
@@ -614,13 +614,14 @@ namespace LinguaReadApi.Controllers
 
         private sealed record TermsBatchPlan(
             List<Word> WordsToCreate,
-            List<Word> WordsMadeKnown,
+            List<Word> WordsWithNewStatus,
             List<(Word Word, string Translation)> TranslationsToUpsert);
 
         // Reads the user's words for the language and stages the batch's changes
-        // on the context (new words added, existing ones raised to Known) without
-        // saving them.
-        private async Task<TermsBatchPlan> PlanTermsBatchAsync(Guid userId, Language language, List<NewTermDto> termsToAdd)
+        // on the context without saving them: new words are added, rows the word
+        // linker made for words never saved (status 0) are saved like new ones, and
+        // saved words are raised to Known unless keepExistingStatus.
+        private async Task<TermsBatchPlan> PlanTermsBatchAsync(Guid userId, Language language, List<NewTermDto> termsToAdd, bool keepExistingStatus)
         {
             var languageId = language.LanguageId;
 
@@ -631,7 +632,7 @@ namespace LinguaReadApi.Controllers
                 .ToListAsync();
 
             var wordsToCreate = new List<Word>();
-            var wordsMadeKnown = new List<Word>();
+            var wordsWithNewStatus = new List<Word>();
             var translationsToUpsert = new List<(Word Word, string Translation)>();
             // Build a lookup for existing words keyed by the normalized term so
             // mixed-case imports collapse onto a single row.
@@ -649,10 +650,16 @@ namespace LinguaReadApi.Controllers
                 if (existingWordsLookup.TryGetValue(trimmedTerm, out var existingWord))
                 {
                     // Word exists - update status if needed
-                    if (existingWord.Status < 5)
+                    if (existingWord.Status == 0)
+                    {
+                        // Linking a text stores its unsaved words at 0; this is the first save.
+                        existingWord.Status = RequestedStatus(termDto);
+                        wordsWithNewStatus.Add(existingWord);
+                    }
+                    else if (!keepExistingStatus && existingWord.Status < 5)
                     {
                         existingWord.Status = 5;
-                        wordsMadeKnown.Add(existingWord);
+                        wordsWithNewStatus.Add(existingWord);
                     }
                     // Handle translation only if provided in the DTO
                     if (!string.IsNullOrEmpty(termDto.Translation))
@@ -669,14 +676,10 @@ namespace LinguaReadApi.Controllers
                 }
                 else
                 {
-                    int initialStatus = (termDto.Status.HasValue && termDto.Status.Value >= 1 && termDto.Status.Value <= 5)
-                        ? termDto.Status.Value
-                        : 5;
-
                     var newWord = new Word
                     {
                         Term = trimmedTerm,
-                        Status = initialStatus,
+                        Status = RequestedStatus(termDto),
                         UserId = userId,
                         LanguageId = languageId,
                         CreatedAt = DateTime.UtcNow
@@ -695,8 +698,12 @@ namespace LinguaReadApi.Controllers
             {
                 _context.Words.AddRange(wordsToCreate);
             }
-            return new TermsBatchPlan(wordsToCreate, wordsMadeKnown, translationsToUpsert);
+            return new TermsBatchPlan(wordsToCreate, wordsWithNewStatus, translationsToUpsert);
         }
+
+        // The status a batch term asks for: 1-5, Known when left out.
+        private static int RequestedStatus(NewTermDto termDto) =>
+            termDto.Status is >= 1 and <= 5 ? termDto.Status.Value : 5;
 
         // GET: api/words/export?languageId=5&status=1,5
         [HttpGet("export")]
@@ -833,6 +840,11 @@ SET ""Translation"" = EXCLUDED.""Translation"",
 
         [Required]
         public List<NewTermDto> Terms { get; set; } = new List<NewTermDto>();
+
+        // Leave the status of saved words alone and only fill in their translation. Off, a saved
+        // word below Known is raised to Known ("mark all known", CSV import). Either way a status-0
+        // row (linked but never saved) takes the term's status, like a new word.
+        public bool KeepExistingStatus { get; set; }
     }
 
     // DTO for each term in the batch

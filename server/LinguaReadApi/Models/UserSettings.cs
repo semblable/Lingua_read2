@@ -21,6 +21,8 @@ namespace LinguaReadApi.Models
         public string ReadingDensity { get; set; } = "balanced"; // compact, balanced, spacious
         [Range(1.0, 3.0)]
         public double LineSpacing { get; set; } = 1.5; // reading line height multiplier
+        [Range(0.2, 3.0)]
+        public double ParagraphSpacing { get; set; } = 1.0; // gap between paragraphs, in em
         public bool ShowWordInfoPanel { get; set; } = true; // show desktop word info panel by default
         public bool TooltipOnlyForSavedWords { get; set; } = false; // when true, clicking an already-saved single word only shows hover tooltip
         public bool ReaderParagraphIndent { get; set; } = true; // indent body paragraphs in reading mode
@@ -31,6 +33,8 @@ namespace LinguaReadApi.Models
         // Reading Preferences
         public bool AutoTranslateWords { get; set; } = true; // automatically translate words on click
         public bool AutoTranslateOnOpen { get; set; } = false; // auto-translate all unknown words when opening a text
+        [Range(1, 5)]
+        public int AutoTranslateWordStatus { get; set; } = 5; // status of new words saved by translating a text's unknown words (1-5)
         public bool PauseOnWordClick { get; set; } = false; // pause lesson audio before opening word details
         public bool HighlightKnownWords { get; set; } = true; // highlight words based on knowledge level
         public bool SentenceMode { get; set; } = false; // default reader mode

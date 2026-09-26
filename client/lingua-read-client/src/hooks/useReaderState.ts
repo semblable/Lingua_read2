@@ -28,8 +28,6 @@ export type FetchAllLanguageWordsFn = (
 export type UseReaderStateArgs = {
   textId: string | undefined;
   fetchAllLanguageWordsRef: React.MutableRefObject<FetchAllLanguageWordsFn | null>;
-  leftPanelWidthFromSettings: number;
-  setLeftPanelWidth: (value: number) => void;
   onSentenceProgressApplied: (
     initialSegmentIndex: number,
     creditedIndices: number[]
@@ -80,8 +78,6 @@ export type UseReaderStateResult = {
 export const useReaderState = ({
   textId,
   fetchAllLanguageWordsRef,
-  leftPanelWidthFromSettings,
-  setLeftPanelWidth,
   onSentenceProgressApplied,
   autoTranslateTriggeredRef,
   autoTranslateTextIdRef
@@ -119,8 +115,6 @@ export const useReaderState = ({
 
   const stableOnSentenceProgressApplied = useRef(onSentenceProgressApplied);
   stableOnSentenceProgressApplied.current = onSentenceProgressApplied;
-  const stableSetLeftPanelWidth = useRef(setLeftPanelWidth);
-  stableSetLeftPanelWidth.current = setLeftPanelWidth;
 
   useEffect(() => {
     const requestVersion = textLoadRequestVersionRef.current + 1;
@@ -168,8 +162,6 @@ export const useReaderState = ({
       clearWordLinkingPoll();
       wordLinkingPollInterval = setInterval(checkWordLinkingStatus, 5000);
     };
-
-    stableSetLeftPanelWidth.current(leftPanelWidthFromSettings);
 
     const fetchText = async () => {
       if (!textId) return;

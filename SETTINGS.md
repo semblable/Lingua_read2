@@ -116,11 +116,14 @@ Tailor the look, theme, size, and layout of the reader.
 | `ReaderContentWidth` | `740` | Pixels | The maximum width (in pixels) of the text container to maintain readability. |
 | `ReadingDensity` | `"balanced"` | `"compact"`, `"balanced"`, `"spacious"` | Padding and margin level for parsed words. |
 | `LineSpacing` | `1.5` | `1.0` to `3.0` | Line-height multiplier for the reader. |
+| `ParagraphSpacing` | `1.0` | `0.2` to `3.0` (em) | Gap between paragraphs; the reader toolbar offers Tight (0.6), Normal (1.0) and Relaxed (1.6). |
 | `ShowWordInfoPanel` | `true` | `true` / `false` | Automatically show/hide the word information sidebar. |
 | `TooltipOnlyForSavedWords` | `false` | `true` / `false` | If `true`, single-clicking a word already saved only shows a tooltip instead of loading sidebar. |
 | `ReaderParagraphIndent` | `true` | `true` / `false` | Indents body paragraphs in classic/modern reading modes. |
 | `ReaderTextAlignment` | `"left"` | `"left"`, `"justify"` | Text alignment property of body text. |
-| `LeftPanelWidth` | `85` | `1` to `99` | Width percentage occupied by the main reading canvas (default 85%). |
+| `LeftPanelWidth` | `85` | `20` to `85` | Width percentage occupied by the main reading canvas (default 85%). |
+
+The reader toolbar (text size, panel width, density, spacing, indent, alignment, panel toggle) changes these settings in place. Each change applies at once and is kept in this browser; the server gets it after a short pause, one request at a time, so a run of clicks is one save. A save that fails is retried with the next change or when you leave the page.
 
 ---
 
@@ -131,6 +134,7 @@ Controls language parser, default behavior during clicks, and playback sync.
 | :--- | :---: | :--- | :--- |
 | `AutoTranslateWords` | `true` | `true` / `false` | Auto-translate words instantly upon clicking them. |
 | `AutoTranslateOnOpen` | `false` | `true` / `false` | Automatically fetch machine translations for all unknown words on loading. |
+| `AutoTranslateWordStatus` | `5` | `1` to `5` | Status given to words not saved yet when translating a text's unknown words saves them (the reader's **Auto ?** button and `AutoTranslateOnOpen`). Words already tracked keep their status and only get the missing translation. Statuses 1-4 create flashcards when `SrsAutoCreateCards` allows it. |
 | `PauseOnWordClick` | `false` | `true` / `false` | Automatically pauses active media playing before showing word details. |
 | `HighlightKnownWords` | `true` | `true` / `false` | Color-code words based on acquaintance status. |
 | `SentenceMode` | `false` | `true` / `false` | Enter sentence-by-sentence view by default. |

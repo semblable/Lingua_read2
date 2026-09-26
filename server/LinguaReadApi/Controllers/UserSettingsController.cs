@@ -56,12 +56,14 @@ namespace LinguaReadApi.Controllers
                     ReaderContentWidth = 740,
                     ReadingDensity = "balanced",
                     LineSpacing = 1.5,
+                    ParagraphSpacing = 1.0,
                     ShowWordInfoPanel = true,
                     TooltipOnlyForSavedWords = false,
                     ReaderParagraphIndent = true,
                     ReaderTextAlignment = "left",
                     AutoTranslateWords = true,
                     AutoTranslateOnOpen = false,
+                    AutoTranslateWordStatus = 5,
                     PauseOnWordClick = false,
                     HighlightKnownWords = true,
                     SentenceMode = false,
@@ -108,12 +110,14 @@ namespace LinguaReadApi.Controllers
                 ReaderContentWidth = settings.ReaderContentWidth,
                 ReadingDensity = settings.ReadingDensity,
                 LineSpacing = settings.LineSpacing,
+                ParagraphSpacing = settings.ParagraphSpacing,
                 ShowWordInfoPanel = settings.ShowWordInfoPanel,
                 TooltipOnlyForSavedWords = settings.TooltipOnlyForSavedWords,
                 ReaderParagraphIndent = settings.ReaderParagraphIndent,
                 ReaderTextAlignment = settings.ReaderTextAlignment,
                 AutoTranslateWords = settings.AutoTranslateWords,
                 AutoTranslateOnOpen = settings.AutoTranslateOnOpen,
+                AutoTranslateWordStatus = settings.AutoTranslateWordStatus,
                 PauseOnWordClick = settings.PauseOnWordClick,
                 HighlightKnownWords = settings.HighlightKnownWords,
                 SentenceMode = settings.SentenceMode,
@@ -234,6 +238,7 @@ namespace LinguaReadApi.Controllers
                 }
             }
             settings.LineSpacing = updateDto.LineSpacing ?? settings.LineSpacing;
+            settings.ParagraphSpacing = updateDto.ParagraphSpacing ?? settings.ParagraphSpacing;
             settings.ShowWordInfoPanel = updateDto.ShowWordInfoPanel ?? settings.ShowWordInfoPanel;
             settings.TooltipOnlyForSavedWords = updateDto.TooltipOnlyForSavedWords ?? settings.TooltipOnlyForSavedWords;
             settings.ReaderParagraphIndent = updateDto.ReaderParagraphIndent ?? settings.ReaderParagraphIndent;
@@ -247,6 +252,7 @@ namespace LinguaReadApi.Controllers
             }
             settings.AutoTranslateWords = updateDto.AutoTranslateWords ?? settings.AutoTranslateWords;
             settings.AutoTranslateOnOpen = updateDto.AutoTranslateOnOpen ?? settings.AutoTranslateOnOpen;
+            settings.AutoTranslateWordStatus = updateDto.AutoTranslateWordStatus ?? settings.AutoTranslateWordStatus;
             settings.PauseOnWordClick = updateDto.PauseOnWordClick ?? settings.PauseOnWordClick;
             settings.HighlightKnownWords = updateDto.HighlightKnownWords ?? settings.HighlightKnownWords;
             settings.SentenceMode = updateDto.SentenceMode ?? settings.SentenceMode;
@@ -514,12 +520,14 @@ namespace LinguaReadApi.Controllers
                 ReaderContentWidth = settings.ReaderContentWidth,
                 ReadingDensity = settings.ReadingDensity,
                 LineSpacing = settings.LineSpacing,
+                ParagraphSpacing = settings.ParagraphSpacing,
                 ShowWordInfoPanel = settings.ShowWordInfoPanel,
                 TooltipOnlyForSavedWords = settings.TooltipOnlyForSavedWords,
                 ReaderParagraphIndent = settings.ReaderParagraphIndent,
                 ReaderTextAlignment = settings.ReaderTextAlignment,
                 AutoTranslateWords = settings.AutoTranslateWords,
                 AutoTranslateOnOpen = settings.AutoTranslateOnOpen,
+                AutoTranslateWordStatus = settings.AutoTranslateWordStatus,
                 PauseOnWordClick = settings.PauseOnWordClick,
                 HighlightKnownWords = settings.HighlightKnownWords,
                 SentenceMode = settings.SentenceMode,
@@ -900,6 +908,7 @@ namespace LinguaReadApi.Controllers
         public int ReaderContentWidth { get; set; } = 740;
         public string ReadingDensity { get; set; } = "balanced";
         public double LineSpacing { get; set; } = 1.5;
+        public double ParagraphSpacing { get; set; } = 1.0;
         public bool ShowWordInfoPanel { get; set; } = true;
         public bool TooltipOnlyForSavedWords { get; set; } = false;
         public bool ReaderParagraphIndent { get; set; } = true;
@@ -907,6 +916,7 @@ namespace LinguaReadApi.Controllers
         public int LeftPanelWidth { get; set; } // Already added in previous step, ensure it's correct
         public bool AutoTranslateWords { get; set; } = true;
         public bool AutoTranslateOnOpen { get; set; } = false;
+        public int AutoTranslateWordStatus { get; set; } = 5;
         public bool PauseOnWordClick { get; set; } = false;
         public bool HighlightKnownWords { get; set; } = true;
         public bool SentenceMode { get; set; } = false;
@@ -996,6 +1006,8 @@ namespace LinguaReadApi.Controllers
         public string? ReadingDensity { get; set; }
         [Range(1.0, 3.0)]
         public double? LineSpacing { get; set; }
+        [Range(0.2, 3.0)]
+        public double? ParagraphSpacing { get; set; }
         public bool? ShowWordInfoPanel { get; set; }
         public bool? TooltipOnlyForSavedWords { get; set; }
         public bool? ReaderParagraphIndent { get; set; }
@@ -1006,6 +1018,8 @@ namespace LinguaReadApi.Controllers
         public int? LeftPanelWidth { get; set; } // Already added in previous step, ensure it's correct
         public bool? AutoTranslateWords { get; set; }
         public bool? AutoTranslateOnOpen { get; set; }
+        [Range(1, 5)]
+        public int? AutoTranslateWordStatus { get; set; }
         public bool? PauseOnWordClick { get; set; }
         public bool? HighlightKnownWords { get; set; }
         public bool? SentenceMode { get; set; }

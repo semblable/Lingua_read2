@@ -1285,6 +1285,7 @@ export interface paths {
             parameters: {
                 query?: {
                     q?: string;
+                    excludeFolderId?: number;
                 };
                 header?: never;
                 path?: never;
@@ -5678,6 +5679,12 @@ export interface components {
             title?: string | null;
             author?: string | null;
             languageName?: string | null;
+            tags?: string[] | null;
+            isFinished?: boolean;
+            /** Format: int32 */
+            totalWords?: number;
+            /** Format: int32 */
+            knownWords?: number;
             /** Format: int32 */
             folderId?: number | null;
             folderPath?: string | null;
@@ -5691,6 +5698,7 @@ export interface components {
             folderPath?: string | null;
         };
         LibrarySearchResultDto: {
+            hasMore?: boolean;
             folders?: components["schemas"]["LibrarySearchFolderDto"][] | null;
             books?: components["schemas"]["LibrarySearchBookDto"][] | null;
             texts?: components["schemas"]["LibrarySearchTextDto"][] | null;
@@ -5701,6 +5709,12 @@ export interface components {
             title?: string | null;
             languageName?: string | null;
             isAudioLesson?: boolean;
+            tag?: string | null;
+            isFinished?: boolean;
+            /** Format: int32 */
+            totalWords?: number;
+            /** Format: int32 */
+            knownWords?: number;
             /** Format: int32 */
             folderId?: number | null;
             folderPath?: string | null;

@@ -171,6 +171,16 @@ describe('elsewhereRows', () => {
     expect(elsewhereRows(result, null).map((r) => r.key)).toEqual(['folder-5', 'book-10', 'text-20']);
     expect(elsewhereRows(result, null)[1].detail).toBe('A · Spanish');
   });
+
+  test('applies the Library filters but not the search again, and keeps folders for navigation', () => {
+    // Nothing here contains "zzz": the server matched, so its own search is not re-applied.
+    const withSearch = { ...EMPTY_FILTERS, search: 'zzz' };
+    expect(elsewhereRows(result, 7, withSearch).map((r) => r.key)).toEqual(['folder-6', 'book-11', 'text-20']);
+    expect(elsewhereRows(result, 7, { ...EMPTY_FILTERS, language: 'French' }).map((r) => r.key))
+      .toEqual(['folder-6', 'text-20']);
+    expect(elsewhereRows(result, 7, { ...EMPTY_FILTERS, type: 'books' }).map((r) => r.key))
+      .toEqual(['folder-6', 'book-11']);
+  });
 });
 
 describe('reorderSection', () => {
@@ -300,5 +310,17 @@ describe('createLibraryCollisionDetection', () => {
 
   test('a folder never targets another folder for nesting, it just reorders among folders', () => {
     expect(firstId(createLibraryCollisionDetection(true)(args('folder', { x: 250, y: 125 })))).toBe('folder-1');
+  });
+
+  // A keyboard drag has no pointer; the arrow keys move the card onto the next card's position.
+  const keyboardArgs = (activeType, at) => ({ ...args(activeType, at), pointerCoordinates: null });
+
+  test('a book moved by keyboard onto a folder card targets the folder', () => {
+    expect(firstId(createLibraryCollisionDetection(true)(keyboardArgs('book', { x: 50, y: 25 })))).toBe('folder-1');
+    expect(firstId(createLibraryCollisionDetection(false)(keyboardArgs('book', { x: 50, y: 25 })))).toBe('folder-1');
+  });
+
+  test('a book moved by keyboard among books still reorders', () => {
+    expect(firstId(createLibraryCollisionDetection(true)(keyboardArgs('book', { x: 250, y: 125 })))).toBe('book-11');
   });
 });

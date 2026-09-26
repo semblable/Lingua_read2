@@ -176,44 +176,65 @@ namespace LinguaReadApi.Controllers
         private const int MinSearchLength = 2;
         private const int SearchLimitPerType = 20;
 
-        // GET: api/folders/search?q=
+        // GET: api/folders/search?q=&excludeFolderId=
         // Finds folders, books (title or author) and standalone texts anywhere in the library, each
         // with the path of the folder it lives in, so the Library can point at matches outside the
-        // folder being viewed.
+        // folder being viewed. excludeFolderId leaves out what sits directly in that folder (0 = the
+        // library root), which the Library already shows; left in, those matches would use up the
+        // per-type limit and push the ones elsewhere out.
         [HttpGet("search")]
-        public async Task<ActionResult<LibrarySearchResultDto>> SearchLibrary([FromQuery] string? q = null)
+        public async Task<ActionResult<LibrarySearchResultDto>> SearchLibrary(
+            [FromQuery] string? q = null, [FromQuery] int? excludeFolderId = null)
         {
             var userId = GetUserId();
             var query = q?.Trim() ?? string.Empty;
             if (query.Length < MinSearchLength)
                 return new LibrarySearchResultDto();
 
+            var exclude = excludeFolderId.HasValue;
+            int? excludedFolder = excludeFolderId > 0 ? excludeFolderId : null;
+
             // ToLower().Contains() rather than ILike: it translates on Npgsql (strpos, so % and _ are
             // literal) and also runs on the InMemory provider the tests use.
             var needle = query.ToLowerInvariant();
 
+            // One row past the limit tells whether there were more.
             var folders = await _context.Folders
-                .Where(f => f.UserId == userId && f.Name.ToLower().Contains(needle))
+                .Where(f => f.UserId == userId && f.Name.ToLower().Contains(needle) &&
+                            (!exclude || f.ParentFolderId != excludedFolder))
                 .OrderBy(f => f.Name)
-                .Take(SearchLimitPerType)
+                .Take(SearchLimitPerType + 1)
                 .Select(f => new { f.FolderId, f.Name, f.ParentFolderId })
                 .ToListAsync();
 
+            // Books and texts carry what the Library's filters look at (language, tag, type, status,
+            // comprehension), so the matches elsewhere can be filtered like the folder's own items.
             var books = await _context.Books
                 .Where(b => b.UserId == userId &&
                             (b.Title.ToLower().Contains(needle) ||
-                             (b.Author != null && b.Author.ToLower().Contains(needle))))
+                             (b.Author != null && b.Author.ToLower().Contains(needle))) &&
+                            (!exclude || b.FolderId != excludedFolder))
                 .OrderBy(b => b.Title)
-                .Take(SearchLimitPerType)
-                .Select(b => new { b.BookId, b.Title, b.Author, LanguageName = b.Language.Name, b.FolderId })
+                .Take(SearchLimitPerType + 1)
+                .Select(b => new
+                {
+                    b.BookId, b.Title, b.Author, LanguageName = b.Language.Name, b.FolderId,
+                    b.IsFinished, b.TotalWords, b.KnownWords,
+                    Tags = b.BookTags.Select(bt => bt.Tag.Name).ToList()
+                })
                 .ToListAsync();
 
             var texts = await _context.Texts
                 .Where(t => t.UserId == userId && t.BookId == null && t.Tag != "srs-story" &&
-                            t.Title.ToLower().Contains(needle))
+                            t.Title.ToLower().Contains(needle) &&
+                            (!exclude || t.FolderId != excludedFolder))
                 .OrderBy(t => t.Title)
-                .Take(SearchLimitPerType)
-                .Select(t => new { t.TextId, t.Title, LanguageName = t.Language.Name, t.IsAudioLesson, t.FolderId })
+                .Take(SearchLimitPerType + 1)
+                .Select(t => new
+                {
+                    t.TextId, t.Title, LanguageName = t.Language.Name, t.IsAudioLesson, t.FolderId,
+                    t.Tag, t.IsFinished, t.TotalWords, t.KnownWords
+                })
                 .ToListAsync();
 
             var lookup = await LoadFolderLookupAsync(userId);
@@ -221,28 +242,38 @@ namespace LinguaReadApi.Controllers
 
             return new LibrarySearchResultDto
             {
-                Folders = folders.Select(f => new LibrarySearchFolderDto
+                HasMore = folders.Count > SearchLimitPerType || books.Count > SearchLimitPerType ||
+                          texts.Count > SearchLimitPerType,
+                Folders = folders.Take(SearchLimitPerType).Select(f => new LibrarySearchFolderDto
                 {
                     FolderId = f.FolderId,
                     Name = f.Name,
                     ParentFolderId = f.ParentFolderId,
                     FolderPath = PathOf(f.ParentFolderId)
                 }).ToList(),
-                Books = books.Select(b => new LibrarySearchBookDto
+                Books = books.Take(SearchLimitPerType).Select(b => new LibrarySearchBookDto
                 {
                     BookId = b.BookId,
                     Title = b.Title,
                     Author = b.Author,
                     LanguageName = b.LanguageName,
+                    Tags = b.Tags,
+                    IsFinished = b.IsFinished,
+                    TotalWords = b.TotalWords,
+                    KnownWords = b.KnownWords,
                     FolderId = b.FolderId,
                     FolderPath = PathOf(b.FolderId)
                 }).ToList(),
-                Texts = texts.Select(t => new LibrarySearchTextDto
+                Texts = texts.Take(SearchLimitPerType).Select(t => new LibrarySearchTextDto
                 {
                     TextId = t.TextId,
                     Title = t.Title,
                     LanguageName = t.LanguageName,
                     IsAudioLesson = t.IsAudioLesson,
+                    Tag = t.Tag,
+                    IsFinished = t.IsFinished,
+                    TotalWords = t.TotalWords,
+                    KnownWords = t.KnownWords,
                     FolderId = t.FolderId,
                     FolderPath = PathOf(t.FolderId)
                 }).ToList()
@@ -478,6 +509,11 @@ namespace LinguaReadApi.Controllers
             if (dto.TargetFolderId.HasValue && !await _context.UserOwnsFolderAsync(userId, dto.TargetFolderId.Value))
                 return BadRequest("Target folder not found");
 
+            // Everything moved goes after what is already in the target, in one running order: each
+            // type reading the target's maximum on its own would hand out the same numbers again,
+            // since nothing is saved until the end.
+            var maxSort = await GetMaxSortOrderInFolder(userId, dto.TargetFolderId);
+
             // Move texts
             if (dto.TextIds?.Any() == true)
             {
@@ -486,8 +522,6 @@ namespace LinguaReadApi.Controllers
                     .Where(t => dto.TextIds.Contains(t.TextId) && t.UserId == userId && t.BookId == null)
                     .ToListAsync();
 
-                // Get max sort order in target
-                var maxSort = await GetMaxSortOrderInFolder(userId, dto.TargetFolderId);
                 foreach (var text in texts)
                 {
                     text.FolderId = dto.TargetFolderId;
@@ -502,7 +536,6 @@ namespace LinguaReadApi.Controllers
                     .Where(b => dto.BookIds.Contains(b.BookId) && b.UserId == userId)
                     .ToListAsync();
 
-                var maxSort = await GetMaxSortOrderInFolder(userId, dto.TargetFolderId);
                 foreach (var book in books)
                 {
                     book.FolderId = dto.TargetFolderId;
@@ -529,7 +562,6 @@ namespace LinguaReadApi.Controllers
 
                 // Moved folders go after what is already there, like moved books and texts, instead
                 // of keeping a sort order from their old parent that may clash with the new one's.
-                var maxSort = await GetMaxSortOrderInFolder(userId, dto.TargetFolderId);
                 foreach (var folder in folders)
                 {
                     // Prevent moving folder into itself
@@ -758,6 +790,8 @@ namespace LinguaReadApi.Controllers
 
     public class LibrarySearchResultDto
     {
+        // True when a type had more matches than the per-type limit returns.
+        public bool HasMore { get; set; }
         public List<LibrarySearchFolderDto> Folders { get; set; } = new();
         public List<LibrarySearchBookDto> Books { get; set; } = new();
         public List<LibrarySearchTextDto> Texts { get; set; } = new();
@@ -778,6 +812,10 @@ namespace LinguaReadApi.Controllers
         public string Title { get; set; } = string.Empty;
         public string? Author { get; set; }
         public string LanguageName { get; set; } = string.Empty;
+        public List<string> Tags { get; set; } = new();
+        public bool IsFinished { get; set; }
+        public int TotalWords { get; set; }
+        public int KnownWords { get; set; }
         public int? FolderId { get; set; }
         public string FolderPath { get; set; } = string.Empty;
     }
@@ -788,6 +826,10 @@ namespace LinguaReadApi.Controllers
         public string Title { get; set; } = string.Empty;
         public string LanguageName { get; set; } = string.Empty;
         public bool IsAudioLesson { get; set; }
+        public string? Tag { get; set; }
+        public bool IsFinished { get; set; }
+        public int TotalWords { get; set; }
+        public int KnownWords { get; set; }
         public int? FolderId { get; set; }
         public string FolderPath { get; set; } = string.Empty;
     }

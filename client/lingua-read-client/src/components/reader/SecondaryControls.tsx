@@ -27,6 +27,9 @@ interface SecondaryControlsProps {
   translatingUnknown: boolean;
   handleMarkAllUnknownAsKnown: () => void;
   isMarkingAll: boolean;
+  // The language's word list has loaded. Auto ? and All Known wait for it: a save made while it
+  // is still loading would be undone when it lands, as it was read before the save.
+  wordsReady: boolean;
 }
 
 const SecondaryControls = React.memo(({
@@ -49,7 +52,8 @@ const SecondaryControls = React.memo(({
   handleTranslateUnknownWords,
   translatingUnknown,
   handleMarkAllUnknownAsKnown,
-  isMarkingAll
+  isMarkingAll,
+  wordsReady
 }: SecondaryControlsProps) => (
   <>
     <ButtonGroup size="sm" className="me-1" aria-label="Reading density">
@@ -260,7 +264,7 @@ const SecondaryControls = React.memo(({
         variant="secondary"
         size="sm"
         onClick={handleTranslateUnknownWords}
-        disabled={translatingUnknown}
+        disabled={translatingUnknown || !wordsReady}
         className="ms-1"
         title={`Translate unknown/learning words; new ones are saved as ${WORD_STATUS_LABELS[(globalSettings.autoTranslateWordStatus || 5) as WordStatus] ?? 'Known'}`}
       >
@@ -272,7 +276,7 @@ const SecondaryControls = React.memo(({
         variant="outline-success"
         size="sm"
         onClick={handleMarkAllUnknownAsKnown}
-        disabled={isMarkingAll}
+        disabled={isMarkingAll || !wordsReady}
         className="ms-1"
         title="Mark all untracked words as Known"
       >

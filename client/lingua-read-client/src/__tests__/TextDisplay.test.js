@@ -392,6 +392,24 @@ describe('TextDisplay', () => {
     const languageLoads = () =>
       global.fetch.mock.calls.filter(([url]) => String(url).includes('/words/language/')).length;
 
+    test('Auto ? and All Known wait for the word list, whose load would undo an earlier save', async () => {
+      let finishLoad;
+      global.fetch = vi.fn(() => new Promise((resolve) => {
+        finishLoad = () => resolve({ ok: true, json: () => Promise.resolve(trackedWords) });
+      }));
+      renderTextDisplay();
+      await screen.findByText('Hello');
+      await waitFor(() => expect(languageLoads()).toBe(1));
+
+      expect(screen.getByRole('button', { name: 'Auto ?' })).toBeDisabled();
+      expect(screen.getByRole('button', { name: 'All Known' })).toBeDisabled();
+
+      await act(async () => { finishLoad(); });
+
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Auto ?' })).toBeEnabled());
+      expect(screen.getByRole('button', { name: 'All Known' })).toBeEnabled();
+    });
+
     test('a save puts the returned rows into the word list instead of reloading the language', async () => {
       batchTranslateWords.mockResolvedValue({ hello: 'hola', world: 'mundo' });
       addTermsBatch.mockResolvedValue({

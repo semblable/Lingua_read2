@@ -59,6 +59,20 @@ describe('filterLibrary', () => {
     expect(ids(filterLibrary(items, { ...EMPTY_FILTERS, search: 'kafka' })).books).toEqual([11]);
   });
 
+  test('search ignores accents, like the cross-folder search on the server', () => {
+    const accented = {
+      folders: [{ folderId: 3, name: 'Músicas' }],
+      books: [{ bookId: 12, title: 'Sob sanção', author: 'José Saramago', languageName: 'Portuguese', tags: [] }],
+      texts: [{ textId: 22, title: 'Être ou ne pas être', languageName: 'French', tag: null }],
+    };
+    expect(ids(filterLibrary(accented, { ...EMPTY_FILTERS, search: 'sancao' })))
+      .toEqual({ folders: [], books: [12], texts: [] });
+    expect(ids(filterLibrary(accented, { ...EMPTY_FILTERS, search: 'JOSE saramago' })).books).toEqual([12]);
+    expect(ids(filterLibrary(accented, { ...EMPTY_FILTERS, search: 'musicas' })).folders).toEqual([3]);
+    expect(ids(filterLibrary(accented, { ...EMPTY_FILTERS, search: 'etre' })).texts).toEqual([22]);
+    expect(ids(filterLibrary(items, { ...EMPTY_FILTERS, search: 'cien anos' })).books).toEqual([10]);
+  });
+
   test('type filter: books, plain texts or audio lessons (folders stay for navigation)', () => {
     expect(ids(filterLibrary(items, { ...EMPTY_FILTERS, type: 'books' })))
       .toEqual({ folders: [1, 2], books: [10, 11], texts: [] });

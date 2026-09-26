@@ -1,7 +1,9 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Query.SqlExpressions;
 using Microsoft.AspNetCore.DataProtection;
 using LinguaReadApi.Models;
+using LinguaReadApi.Utilities;
 
 namespace LinguaReadApi.Data
 {
@@ -506,6 +508,23 @@ namespace LinguaReadApi.Data
 
             modelBuilder.Entity<UserGoalPeriod>()
                 .HasIndex(p => new { p.GoalId, p.PeriodEnd });
+
+            // Accent- and case-insensitive search (see SearchText): Fold(x) runs in the database as
+            // unaccent(lower(x)), for the searched column and the query alike. Postgres only; on the
+            // in-memory test provider the C# Fold runs instead.
+            if (Database.IsNpgsql())
+            {
+                modelBuilder.HasPostgresExtension("unaccent");
+                modelBuilder.HasDbFunction(typeof(SearchText).GetMethod(nameof(SearchText.Fold))!)
+                    .HasTranslation(args =>
+                    {
+                        var text = args[0];
+                        var lower = new SqlFunctionExpression("lower", [text], nullable: true,
+                            argumentsPropagateNullability: [true], typeof(string), text.TypeMapping);
+                        return new SqlFunctionExpression("unaccent", [lower], nullable: true,
+                            argumentsPropagateNullability: [true], typeof(string), text.TypeMapping);
+                    });
+            }
         }
     }
 

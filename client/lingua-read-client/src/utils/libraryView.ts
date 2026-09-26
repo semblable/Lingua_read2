@@ -5,6 +5,7 @@ import { closestCenter, pointerWithin, rectIntersection, type CollisionDetection
 import { arrayMove } from '@dnd-kit/sortable';
 import { comprehensionBand, comprehensionPercent, type ComprehensionBand } from './comprehensibility';
 import { libraryPath } from './helpers';
+import { foldForSearch } from './searchText';
 import type { LibrarySearchResult } from './api/folders';
 import type { LibraryBook, LibraryFolder, LibraryText, SelectableType, SelectedItem } from './store';
 
@@ -46,8 +47,9 @@ export function hasActiveFilters(filters: LibraryFilters): boolean {
   );
 }
 
+// `query` is already folded; case and accents are ignored like in the server's search.
 const includesQuery = (query: string, ...fields: Array<string | null | undefined>): boolean =>
-  fields.some((field) => (field ?? '').toLowerCase().includes(query));
+  fields.some((field) => foldForSearch(field).includes(query));
 
 // Generic so the cross-folder search results, which carry the same fields plus their folder path,
 // go through the same rules.
@@ -55,7 +57,7 @@ export function filterLibrary<F extends LibraryFolder, B extends LibraryBook, T 
   items: { folders: F[]; books: B[]; texts: T[] },
   filters: LibraryFilters
 ): { folders: F[]; books: B[]; texts: T[] } {
-  const query = filters.search.trim().toLowerCase();
+  const query = foldForSearch(filters.search.trim());
   const inBand = (item: LibraryBook | LibraryText) =>
     filters.comprehension === 'all' ||
     comprehensionBand(comprehensionPercent(item)) === filters.comprehension;

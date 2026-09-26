@@ -9,6 +9,7 @@ using LinguaReadApi.Data;
 using LinguaReadApi.Models;
 using LinguaReadApi.Services.Srs;
 using LinguaReadApi.Services.Tokenization;
+using LinguaReadApi.Utilities;
 using System.Linq; // Required for Count() on nullable collection
 using System.Collections.Generic;
 using Microsoft.Extensions.Logging;
@@ -288,12 +289,10 @@ namespace LinguaReadApi.Controllers
                 }
             }
 
-            // Apply search term filtering (case-insensitive)
+            // Apply search term filtering (case- and accent-insensitive)
             if (!string.IsNullOrWhiteSpace(searchTerm))
             {
-                var termLower = searchTerm.ToLower();
-                query = query.Where(w => w.Term.ToLower().Contains(termLower) ||
-                                       (w.Translation != null && w.Translation.Translation.ToLower().Contains(termLower)));
+                query = WhereTermOrTranslationContains(query, searchTerm);
             }
 
             // Apply sorting (skip when caller only needs unsorted data, e.g. for Map-based lookups)
@@ -376,9 +375,7 @@ namespace LinguaReadApi.Controllers
 
             if (!string.IsNullOrWhiteSpace(searchTerm))
             {
-                var termLower = searchTerm.ToLower();
-                query = query.Where(w => w.Term.ToLower().Contains(termLower) ||
-                                       (w.Translation != null && w.Translation.Translation.ToLower().Contains(termLower)));
+                query = WhereTermOrTranslationContains(query, searchTerm);
             }
 
             // Apply sorting
@@ -434,6 +431,13 @@ namespace LinguaReadApi.Controllers
                 TotalPages = totalPages
             };
         }
+
+        // The Terms page search: the term or its translation contains the search, ignoring case and
+        // accents (SearchText), so "sancao" finds "sanção".
+        internal static IQueryable<Word> WhereTermOrTranslationContains(IQueryable<Word> words, string searchTerm) =>
+            words.Where(w => SearchText.Fold(w.Term).Contains(SearchText.Fold(searchTerm)) ||
+                             (w.Translation != null &&
+                              SearchText.Fold(w.Translation.Translation).Contains(SearchText.Fold(searchTerm))));
 
         // PUT: api/words/5
         [HttpPut("{id}")]

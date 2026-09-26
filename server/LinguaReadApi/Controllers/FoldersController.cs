@@ -194,13 +194,9 @@ namespace LinguaReadApi.Controllers
             var exclude = excludeFolderId >= 0;
             int? excludedFolder = excludeFolderId > 0 ? excludeFolderId : null;
 
-            // ToLower().Contains() rather than ILike: it translates on Npgsql (strpos, so % and _ are
-            // literal) and also runs on the InMemory provider the tests use.
-            var needle = query.ToLowerInvariant();
-
             // One row past the limit tells whether there were more.
-            var folders = await _context.Folders
-                .Where(f => f.UserId == userId && f.Name.ToLower().Contains(needle) &&
+            var folders = await FoldersMatching(_context.Folders, query)
+                .Where(f => f.UserId == userId &&
                             (!exclude || (f.ParentFolderId != excludedFolder && f.FolderId != excludedFolder)))
                 .OrderBy(f => f.Name)
                 .Take(SearchLimitPerType + 1)
@@ -209,11 +205,8 @@ namespace LinguaReadApi.Controllers
 
             // Books and texts carry what the Library's filters look at (language, tag, type, status,
             // comprehension), so the matches elsewhere can be filtered like the folder's own items.
-            var books = await _context.Books
-                .Where(b => b.UserId == userId &&
-                            (b.Title.ToLower().Contains(needle) ||
-                             (b.Author != null && b.Author.ToLower().Contains(needle))) &&
-                            (!exclude || b.FolderId != excludedFolder))
+            var books = await BooksMatching(_context.Books, query)
+                .Where(b => b.UserId == userId && (!exclude || b.FolderId != excludedFolder))
                 .OrderBy(b => b.Title)
                 .Take(SearchLimitPerType + 1)
                 .Select(b => new
@@ -224,9 +217,8 @@ namespace LinguaReadApi.Controllers
                 })
                 .ToListAsync();
 
-            var texts = await _context.Texts
+            var texts = await TextsMatching(_context.Texts, query)
                 .Where(t => t.UserId == userId && t.BookId == null && t.Tag != "srs-story" &&
-                            t.Title.ToLower().Contains(needle) &&
                             (!exclude || t.FolderId != excludedFolder))
                 .OrderBy(t => t.Title)
                 .Take(SearchLimitPerType + 1)
@@ -279,6 +271,18 @@ namespace LinguaReadApi.Controllers
                 }).ToList()
             };
         }
+
+        // The search ignores case and accents (SearchText), so "sancao" finds "Sob sanção". Contains
+        // becomes strpos on Npgsql, so % and _ in the query are literal.
+        internal static IQueryable<Folder> FoldersMatching(IQueryable<Folder> folders, string query) =>
+            folders.Where(f => SearchText.Fold(f.Name).Contains(SearchText.Fold(query)));
+
+        internal static IQueryable<Book> BooksMatching(IQueryable<Book> books, string query) =>
+            books.Where(b => SearchText.Fold(b.Title).Contains(SearchText.Fold(query)) ||
+                             (b.Author != null && SearchText.Fold(b.Author).Contains(SearchText.Fold(query))));
+
+        internal static IQueryable<Text> TextsMatching(IQueryable<Text> texts, string query) =>
+            texts.Where(t => SearchText.Fold(t.Title).Contains(SearchText.Fold(query)));
 
         // POST: api/folders
         [HttpPost]

@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act, within } from '@testing-library/react';
 import { MemoryRouter, Routes, Route, useNavigate } from 'react-router-dom';
 import '@testing-library/jest-dom';
 import Library from '../pages/Library';
@@ -9,7 +9,8 @@ import {
   getFolders,
   createFolder,
   searchLibrary,
-  deleteLibraryItems
+  deleteLibraryItems,
+  moveLibraryItems
 } from '../utils/api';
 
 vi.mock('../utils/api', () => ({
@@ -187,6 +188,41 @@ describe('Library', () => {
       expect(screen.getByRole('link', { name: 'Novels / French' })).toHaveAttribute('href', '/library/3');
     });
 
+    test('the search runs again after a move, so a moved match shows where it went', async () => {
+      getLibraryContents.mockResolvedValue(sampleContents);
+      getFolders.mockResolvedValue([{ folderId: 1, name: 'My Folder', parentFolderId: null }]);
+      moveLibraryItems.mockResolvedValue(undefined);
+      // Before the move the book sits right here, so it is not listed elsewhere.
+      searchLibrary.mockResolvedValueOnce({
+        folders: [],
+        books: [{ bookId: 10, title: 'Sample Book', languageName: 'French', folderId: null, folderPath: '' }],
+        texts: []
+      });
+      renderLibrary();
+      await screen.findByText('Sample Book');
+
+      fireEvent.change(screen.getByLabelText('Search library'), { target: { value: 'sample' } });
+      await waitFor(() => expect(searchLibrary).toHaveBeenCalledTimes(1), { timeout: 2000 });
+
+      getLibraryContents.mockResolvedValue({ ...sampleContents, books: [] });
+      searchLibrary.mockResolvedValueOnce({
+        folders: [],
+        books: [{ bookId: 10, title: 'Sample Book', languageName: 'French', folderId: 1, folderPath: 'My Folder' }],
+        texts: []
+      });
+      fireEvent.click(screen.getByLabelText('Select Sample Book'));
+      fireEvent.click(screen.getByRole('button', { name: /Move to Folder/ }));
+      const dialog = await screen.findByRole('dialog');
+      fireEvent.click(within(dialog).getByText('My Folder'));
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Move Here' }));
+
+      const section = await screen.findByTestId('library-search-elsewhere', {}, { timeout: 2000 });
+      expect(moveLibraryItems).toHaveBeenCalledWith(null, [10], null, 1);
+      expect(searchLibrary).toHaveBeenCalledTimes(2);
+      expect(section).toHaveTextContent('Sample Book');
+      expect(within(section).getByRole('link', { name: 'My Folder' })).toHaveAttribute('href', '/library/1');
+    });
+
     test('a one-letter search does not query the whole library', async () => {
       getLibraryContents.mockResolvedValue(sampleContents);
       renderLibrary();
@@ -225,6 +261,16 @@ describe('Library', () => {
 
       expect(localStorage.getItem('librarySort')).toBe('title');
       expect(screen.getByText(/Switch to Manual order to reorder/)).toBeInTheDocument();
+    });
+
+    test('a saved language filter does not turn reordering off', async () => {
+      localStorage.setItem('libraryLanguageFilter', 'French');
+      getLibraryContents.mockResolvedValue(sampleContents);
+      renderLibrary();
+      await screen.findByText('Sample Book');
+
+      expect(screen.getByLabelText('Language filter')).toHaveValue('French');
+      expect(screen.queryByText(/to reorder/)).not.toBeInTheDocument();
     });
   });
 

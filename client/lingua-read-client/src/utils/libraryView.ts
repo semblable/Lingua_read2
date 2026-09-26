@@ -243,6 +243,23 @@ export function reorderSection(
   return arrayMove(ids, from, to).map((id, sortOrder) => ({ id, type, sortOrder }));
 }
 
+// reorderSection over the whole section in manual order, including items a filter hides. Moving
+// the dragged item next to the one it was dropped on keeps every hidden item where it was, so
+// reordering works while the list is filtered.
+export function reorderInSection(
+  items: LibraryItems,
+  type: SelectableType,
+  activeId: number,
+  overId: number
+): ReorderEntry[] | null {
+  const ids = type === 'folder'
+    ? items.folders.map((f) => f.folderId!)
+    : type === 'book'
+      ? items.books.map((b) => b.bookId!)
+      : items.texts.map((t) => t.textId!);
+  return reorderSection(ids, type, activeId, overId);
+}
+
 export type DragEndpoint = { type: SelectableType; id: number };
 
 export type DragIntent =
@@ -252,7 +269,7 @@ export type DragIntent =
 
 // Books and texts dropped on a folder go into it, together with the rest of the selection when
 // the dragged card is part of it. Everything else is a reorder within the dragged item's own
-// section, and only when reordering is allowed (manual order, no filters hiding items).
+// section, and only when reordering is allowed (manual order on screen).
 export function resolveDragIntent(
   active: DragEndpoint,
   over: DragEndpoint | null,
@@ -272,7 +289,9 @@ export function resolveDragIntent(
   return { kind: 'reorder', type: active.type, activeId: active.id, overId: over.id };
 }
 
+// A folder drag only reorders that folder, so it never carries the selection along.
 export function dragCount(active: DragEndpoint, selectedItems: SelectedItem[]): number {
+  if (active.type === 'folder') return 1;
   const isSelected = selectedItems.some((i) => i.type === active.type && i.id === active.id);
   return isSelected ? selectedItems.length : 1;
 }

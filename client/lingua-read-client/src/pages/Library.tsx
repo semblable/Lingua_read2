@@ -514,7 +514,7 @@ const Library = () => {
             <i className="bi bi-folder-plus me-1"></i>New Folder
           </Button>
           <Dropdown>
-            <Dropdown.Toggle size="sm" variant="success" id="add-content-dropdown">
+            <Dropdown.Toggle size="sm" variant="success" id="library-add-content-dropdown">
               <i className="bi bi-plus-lg me-1"></i>Add Content
             </Dropdown.Toggle>
             <Dropdown.Menu>

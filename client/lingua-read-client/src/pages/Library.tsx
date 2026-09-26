@@ -824,7 +824,7 @@ const Library = () => {
       <SelectionRectangle rect={selectionRect} />
 
       {/* Search matches in other folders */}
-      {contentsReady && (elsewhere.length > 0 || elsewhereTruncated) && (
+      {contentsReady && elsewhere.length > 0 && (
         <div className="mt-4" data-testid="library-search-elsewhere">
           <h6 className="text-muted text-uppercase small mb-2">
             <i className="bi bi-search me-1"></i>Elsewhere in your library

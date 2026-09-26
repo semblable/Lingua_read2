@@ -175,6 +175,10 @@ public class FoldersControllerLibraryTests
         Assert.Equal(new[] { RootBook }, outsideA.Books.Select(b => b.BookId));
         Assert.Empty((await controller.SearchLibrary("chi", excludeFolderId: FolderA)).Value!.Folders);
         Assert.Equal(new[] { RootText }, (await controller.SearchLibrary("text", excludeFolderId: FolderA)).Value!.Texts.Select(t => t.TextId));
+        // Nor the folder being viewed itself.
+        Assert.Empty((await controller.SearchLibrary("alpha", excludeFolderId: FolderA)).Value!.Folders);
+        // A negative id excludes nothing.
+        Assert.Equal(2, (await controller.SearchLibrary("book", excludeFolderId: -1)).Value!.Books.Count);
     }
 
     [Fact]

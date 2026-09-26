@@ -179,9 +179,9 @@ namespace LinguaReadApi.Controllers
         // GET: api/folders/search?q=&excludeFolderId=
         // Finds folders, books (title or author) and standalone texts anywhere in the library, each
         // with the path of the folder it lives in, so the Library can point at matches outside the
-        // folder being viewed. excludeFolderId leaves out what sits directly in that folder (0 = the
-        // library root), which the Library already shows; left in, those matches would use up the
-        // per-type limit and push the ones elsewhere out.
+        // folder being viewed. excludeFolderId leaves out that folder and what sits directly in it
+        // (0 = the library root), which the Library already shows; left in, those matches would use
+        // up the per-type limit and push the ones elsewhere out.
         [HttpGet("search")]
         public async Task<ActionResult<LibrarySearchResultDto>> SearchLibrary(
             [FromQuery] string? q = null, [FromQuery] int? excludeFolderId = null)
@@ -191,7 +191,7 @@ namespace LinguaReadApi.Controllers
             if (query.Length < MinSearchLength)
                 return new LibrarySearchResultDto();
 
-            var exclude = excludeFolderId.HasValue;
+            var exclude = excludeFolderId >= 0;
             int? excludedFolder = excludeFolderId > 0 ? excludeFolderId : null;
 
             // ToLower().Contains() rather than ILike: it translates on Npgsql (strpos, so % and _ are
@@ -201,7 +201,7 @@ namespace LinguaReadApi.Controllers
             // One row past the limit tells whether there were more.
             var folders = await _context.Folders
                 .Where(f => f.UserId == userId && f.Name.ToLower().Contains(needle) &&
-                            (!exclude || f.ParentFolderId != excludedFolder))
+                            (!exclude || (f.ParentFolderId != excludedFolder && f.FolderId != excludedFolder)))
                 .OrderBy(f => f.Name)
                 .Take(SearchLimitPerType + 1)
                 .Select(f => new { f.FolderId, f.Name, f.ParentFolderId })

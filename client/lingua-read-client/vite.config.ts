@@ -61,8 +61,34 @@ export default defineConfig({
         // Static assets are precached by Workbox. Increase the size cap so the
         // larger React bundle from the migration fits.
         maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
-        // Custom runtime caching for the API surface.
+        // No NavigationRoute to the precached index.html (the plugin's default). With it, the
+        // first page load after a deploy always started the previous build, and the page
+        // reloaded itself seconds later once the new service worker took over. Page loads now
+        // come from the network (first runtimeCaching entry below); the precached copy is the
+        // offline fallback. registerServiceWorker.ts skips the reload when it isn't needed.
+        navigateFallback: null,
+        // The precache route runs first and would otherwise still answer `/` (the home
+        // page) with the precached index.html.
+        directoryIndex: null,
+        // Custom runtime caching for page loads and the API surface.
         runtimeCaching: [
+          {
+            // Page loads of the SPA's routes, falling back to the precached shell when the
+            // network fails (offline fails at once). The backend paths nginx proxies are
+            // left alone: a failed download there must not turn into the app shell.
+            // Serialized into sw.js, so the callback can't use anything from this file.
+            //
+            // No timeout: workbox-build allows networkTimeoutSeconds only with NetworkFirst,
+            // whose cache would keep per-route copies of older builds' index.html. The
+            // precached one always matches the chunks this service worker holds.
+            urlPattern: ({ request, url }) =>
+              request.mode === 'navigate' &&
+              !/^\/(?:api|audio_lessons|audiobooks|epub_assets|hardcover-covers)\//.test(url.pathname),
+            handler: 'NetworkOnly',
+            options: {
+              precacheFallback: { fallbackURL: 'index.html' },
+            },
+          },
           {
             // GET /api/texts/{id}/content — heaviest reads, served fresh when
             // online and from cache (up to a week old) when offline.

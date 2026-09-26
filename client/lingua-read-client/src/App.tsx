@@ -186,9 +186,9 @@ function App() {
   // Register the PWA service worker once on mount. Safe in tests — the
   // wrapper silently skips when the virtual module isn't available.
   //
-  // With `registerType: 'autoUpdate'` the plugin automatically calls
-  // skipWaiting + clients.claim and reloads the page when a new service
-  // worker has been downloaded — no manual prompt needed.
+  // With `registerType: 'autoUpdate'` a new service worker takes over by
+  // itself; the page reloads only if it is from an older build (see
+  // registerServiceWorker.ts) — no manual prompt needed.
   useEffect(() => {
     void registerServiceWorker();
   }, []);

@@ -4875,7 +4875,11 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "text/plain": components["schemas"]["AddTermsBatchResultDto"];
+                        "application/json": components["schemas"]["AddTermsBatchResultDto"];
+                        "text/json": components["schemas"]["AddTermsBatchResultDto"];
+                    };
                 };
             };
         };
@@ -4939,6 +4943,10 @@ export interface components {
             languageId: number;
             terms: components["schemas"]["NewTermDto"][];
             keepExistingStatus?: boolean;
+        };
+        AddTermsBatchResultDto: {
+            message?: string | null;
+            words?: components["schemas"]["WordResponseDto"][] | null;
         };
         AiProviderConfigDto: {
             baseUrl?: string | null;

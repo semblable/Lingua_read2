@@ -38,7 +38,8 @@ import WordInfoPanel from '../components/reader/WordInfoPanel';
 import AudioTranscriptView from '../components/reader/AudioTranscriptView';
 import StandardTextView from '../components/reader/StandardTextView';
 import SentenceModeView from '../components/reader/SentenceModeView';
-import type { Word } from '../utils/api/words';
+// Imported from the module itself: tests mock '../utils/api' with a fixed list of calls.
+import { mergeSavedWords, type AddTermsBatchResult, type Word } from '../utils/api/words';
 import type { Language } from '../utils/api/languages';
 import type { DisplayedWord } from '../types/displayedWord';
 
@@ -552,6 +553,20 @@ const TextDisplay = () => {
     }
   }, [setWords, setLanguageWordsLoaded]);
   fetchAllLanguageWordsRef.current = fetchAllLanguageWords as FetchAllLanguageWordsFn;
+  // After a batch save the response carries the saved rows, so only those change in the word
+  // list; reloading the whole language (tens of thousands of words) took seconds. An API that
+  // doesn't send them yet (mid-deploy) gets the full reload as before.
+  const applySavedWords = useCallback(async (
+    saved: AddTermsBatchResult | null | undefined,
+    languageId: number | string | null | undefined
+  ) => {
+    const savedWords = saved?.words;
+    if (Array.isArray(savedWords)) {
+      setWords(prev => mergeSavedWords(prev, savedWords));
+    } else {
+      await fetchAllLanguageWords(languageId);
+    }
+  }, [setWords, fetchAllLanguageWords]);
 
   // --- Optimized Data Structures ---
   // 1. Create a Map for O(1) word lookups
@@ -1790,8 +1805,9 @@ const TextDisplay = () => {
       if (termsToAdd.length === 0) { if (!silent) alert("No translations received."); setTranslatingUnknown(false); return; } // Exit early
 
       // Two-step workflow: first fetch translations, then save terms+translations
+      let saved: AddTermsBatchResult;
       try {
-        await addTermsBatch(text.languageId, termsToAdd, { keepExistingStatus: true });
+        saved = await addTermsBatch(text.languageId, termsToAdd, { keepExistingStatus: true });
       } catch (saveError: unknown) {
         console.error("Error saving translated terms:", saveError);
         setTranslateUnknownError(`Failed to save terms: ${(saveError as Error)?.message}`);
@@ -1801,7 +1817,7 @@ const TextDisplay = () => {
       }
       // Bail out if user navigated away before refreshing word list
       if (silent && autoTranslateTextIdRef.current !== callingTextId) { setTranslatingUnknown(false); return; }
-      await fetchAllLanguageWords(text.languageId);
+      await applySavedWords(saved, text.languageId);
       if (!silent) alert(`Successfully translated and updated ${termsToAdd.length} words.`);
     } catch (err: unknown) { console.error("Error translating unknown words:", err); setTranslateUnknownError(`Failed: ${(err as Error)?.message}`); if (!silent) alert(`Error: ${(err as Error)?.message}`); }
     finally { setTranslatingUnknown(false); }
@@ -1831,8 +1847,7 @@ const TextDisplay = () => {
       const originalCaseMap = new Map<string, string>();
       allWords.forEach((w: string) => { const lower = w.toLowerCase(); if (!originalCaseMap.has(lower)) { originalCaseMap.set(lower, w); } });
       const termsToMark = unknownWords.map((word: string) => ({ term: originalCaseMap.get(word) || word, translation: '', status: 5 }));
-      await addTermsBatch(text.languageId, termsToMark);
-      await fetchAllLanguageWords(text.languageId);
+      await applySavedWords(await addTermsBatch(text.languageId, termsToMark), text.languageId);
       alert(`Attempted to mark ${unknownWords.length} words as Known.`);
     } catch (err: unknown) { console.error("Error marking all unknown as known:", err); setError(`Failed: ${(err as Error)?.message}`); alert(`Error: ${(err as Error)?.message}`); }
     finally { setIsMarkingAll(false); }

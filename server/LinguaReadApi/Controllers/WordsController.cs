@@ -525,6 +525,7 @@ namespace LinguaReadApi.Controllers
 
         // POST: api/words/batch
         [HttpPost("batch")]
+        [ProducesResponseType(typeof(AddTermsBatchResultDto), 200)]
         public async Task<IActionResult> AddTermsBatch([FromBody] AddTermBatchDto batchDto)
         {
             if (!ModelState.IsValid)
@@ -598,8 +599,27 @@ namespace LinguaReadApi.Controllers
                 {
                     changedCount += await _context.SaveChangesAsync();
                 }
-                // Return a summary of actions or just success
-                return Ok(new { Message = $"Batch processed. {changedCount} database changes saved." });
+
+                // The upserts run as SQL, so the tracked words still carry their old
+                // translation; the last one sent for a word is the one stored.
+                var savedTranslations = new Dictionary<int, string>();
+                foreach (var (word, translation) in plan.TranslationsToUpsert)
+                {
+                    savedTranslations[word.WordId] = translation;
+                }
+                return Ok(new AddTermsBatchResultDto
+                {
+                    Message = $"Batch processed. {changedCount} database changes saved.",
+                    Words = plan.BatchWords.Select(w => new WordResponseDto
+                    {
+                        WordId = w.WordId,
+                        Term = w.Term,
+                        Status = w.Status,
+                        Translation = savedTranslations.GetValueOrDefault(w.WordId) ?? w.Translation?.Translation ?? "",
+                        IsNew = w.Status == 1, // as GET words/language sets it
+                        CreatedAt = w.CreatedAt
+                    }).ToList()
+                });
             }
             catch (DbUpdateException ex)
             {
@@ -612,23 +632,35 @@ namespace LinguaReadApi.Controllers
         // re-planned; each retry reads the rows the other writer added.
         private const int MaxTermWriteAttempts = 3;
 
+        // BatchWords: every word the batch names, found or created, once each.
         private sealed record TermsBatchPlan(
             List<Word> WordsToCreate,
             List<Word> WordsWithNewStatus,
-            List<(Word Word, string Translation)> TranslationsToUpsert);
+            List<(Word Word, string Translation)> TranslationsToUpsert,
+            List<Word> BatchWords);
 
-        // Reads the user's words for the language and stages the batch's changes
-        // on the context without saving them: new words are added, rows the word
-        // linker made for words never saved (status 0) are saved like new ones, and
-        // saved words are raised to Known unless keepExistingStatus.
+        // Reads the batch's words and stages its changes on the context without
+        // saving them: new words are added, rows the word linker made for words
+        // never saved (status 0) are saved like new ones, and saved words are
+        // raised to Known unless keepExistingStatus.
         private async Task<TermsBatchPlan> PlanTermsBatchAsync(Guid userId, Language language, List<NewTermDto> termsToAdd, bool keepExistingStatus)
         {
             var languageId = language.LanguageId;
 
-            // Fetch existing words for this user and language efficiently
+            // Only the rows these terms can match, found like the word linker finds
+            // them: stored terms are in NormalizeText form (RekeyLegacyTermsAsync
+            // rewrites older ones), so lower(Term) equals their key, and the
+            // IX_Words_UserId_LanguageId_LowerTerm index serves the lookup. Reading
+            // the whole language instead made every save track all of the user's
+            // words (tens of thousands) to change a few dozen.
+            var keys = termsToAdd
+                .Select(t => Tokenizer.NormalizeKey(t.Term ?? string.Empty, language))
+                .Where(k => !string.IsNullOrWhiteSpace(k))
+                .Distinct()
+                .ToList();
             var existingWords = await _context.Words
                 .Include(w => w.Translation)
-                .Where(w => w.UserId == userId && w.LanguageId == languageId)
+                .Where(w => w.UserId == userId && w.LanguageId == languageId && keys.Contains(w.Term.ToLower()))
                 .ToListAsync();
 
             var wordsToCreate = new List<Word>();
@@ -698,7 +730,11 @@ namespace LinguaReadApi.Controllers
             {
                 _context.Words.AddRange(wordsToCreate);
             }
-            return new TermsBatchPlan(wordsToCreate, wordsWithNewStatus, translationsToUpsert);
+            var batchWords = keys
+                .Select(k => existingWordsLookup.GetValueOrDefault(k))
+                .OfType<Word>()
+                .ToList();
+            return new TermsBatchPlan(wordsToCreate, wordsWithNewStatus, translationsToUpsert, batchWords);
         }
 
         // The status a batch term asks for: 1-5, Known when left out.
@@ -831,6 +867,14 @@ SET ""Translation"" = EXCLUDED.""Translation"",
         }
 
     } // End of Controller class
+
+    public class AddTermsBatchResultDto
+    {
+        public string Message { get; set; } = string.Empty;
+        // The batch's words as now stored, shaped like GET words/language returns them, so the
+        // reader can update its word list without downloading the whole language again.
+        public List<WordResponseDto> Words { get; set; } = new();
+    }
 
     // DTO for the batch request
     public class AddTermBatchDto

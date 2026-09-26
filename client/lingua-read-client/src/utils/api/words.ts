@@ -177,13 +177,16 @@ export type AddTermsBatchOptions = {
   keepExistingStatus?: boolean;
 };
 
+// `words` holds the batch's words as now stored (see mergeSavedWords).
+export type AddTermsBatchResult = ResponseOf<'/api/Words/batch', 'post'>;
+
 export const addTermsBatch = async (
   languageId: number | string,
   terms: BatchTerm[],
   options: AddTermsBatchOptions = {}
-): Promise<unknown> => {
+): Promise<AddTermsBatchResult> => {
   try {
-    return await fetchApi('/words/batch', {
+    return await fetchApi<AddTermsBatchResult>('/words/batch', {
       method: 'POST',
       body: JSON.stringify({ languageId, terms, ...options })
     });
@@ -191,4 +194,15 @@ export const addTermsBatch = async (
     console.error('Batch add terms failed:', error);
     throw error;
   }
+};
+
+// A language's word list (GET words/language) with the rows a batch save returned put in place of
+// the ones they supersede, matched by id or by term the way the reader looks words up, so the
+// reader need not download the whole language again after saving a few words.
+export const mergeSavedWords = (words: Word[], saved: Word[]): Word[] => {
+  if (saved.length === 0) return words;
+  const savedIds = new Set(saved.map((w) => w.wordId));
+  const savedTerms = new Set(saved.flatMap((w) => (w.term ? [w.term.toLowerCase()] : [])));
+  const kept = words.filter((w) => !savedIds.has(w.wordId) && !(w.term && savedTerms.has(w.term.toLowerCase())));
+  return [...kept, ...saved];
 };

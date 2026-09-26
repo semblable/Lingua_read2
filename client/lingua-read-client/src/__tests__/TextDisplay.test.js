@@ -388,6 +388,49 @@ describe('TextDisplay', () => {
       await waitFor(() => expect(addTermsBatch).toHaveBeenCalled());
       expect(addTermsBatch).toHaveBeenCalledWith(5, [{ term: 'world', translation: '', status: 5 }]);
     });
+
+    const languageLoads = () =>
+      global.fetch.mock.calls.filter(([url]) => String(url).includes('/words/language/')).length;
+
+    test('a save puts the returned rows into the word list instead of reloading the language', async () => {
+      batchTranslateWords.mockResolvedValue({ hello: 'hola', world: 'mundo' });
+      addTermsBatch.mockResolvedValue({
+        message: 'ok',
+        words: [
+          { wordId: 1, term: 'hello', status: 2, translation: 'hola', isNew: false },
+          { wordId: 2, term: 'world', status: 1, translation: 'mundo', isNew: true }
+        ]
+      });
+      renderTextDisplay({ autoTranslateWordStatus: 1 });
+      await screen.findByText('Hello');
+      await waitFor(() => expect(languageLoads()).toBe(1));
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Auto ?' }));
+      });
+      await waitFor(() => expect(window.alert).toHaveBeenCalledWith('Successfully translated and updated 2 words.'));
+      expect(languageLoads()).toBe(1);
+
+      // "world" is saved now, so All Known has nothing left to save.
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'All Known' }));
+      });
+      await waitFor(() => expect(window.alert).toHaveBeenCalledWith('No untracked words found.'));
+      expect(addTermsBatch).toHaveBeenCalledTimes(1);
+    });
+
+    test('a save whose response has no rows (an older API) reloads the language', async () => {
+      batchTranslateWords.mockResolvedValue({ hello: 'hola', world: 'mundo' });
+      renderTextDisplay();
+      await screen.findByText('Hello');
+      await waitFor(() => expect(languageLoads()).toBe(1));
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Auto ?' }));
+      });
+
+      await waitFor(() => expect(languageLoads()).toBe(2));
+    });
   });
 
   test('with tooltips only for saved words, a saved New word keeps the panel closed but a linked unsaved one opens it', async () => {

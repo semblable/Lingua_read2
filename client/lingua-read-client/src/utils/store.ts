@@ -168,6 +168,9 @@ export type LibraryFolder = {
 export type LibraryBook = {
   bookId?: number;
   title?: string | null;
+  author?: string | null;
+  createdAt?: string;
+  lastReadAt?: string | null;
   coverImagePath?: string | null;
   isFinished?: boolean;
   languageName?: string | null;
@@ -190,6 +193,7 @@ export type LibraryText = {
   languageName?: string | null;
   tag?: string | null;
   createdAt?: string;
+  lastAccessedAt?: string | null;
   totalWords?: number;
   knownWords?: number;
   unknownWords?: number;

@@ -102,6 +102,108 @@ public class FoldersControllerLibraryTests
         Assert.Equal(3, (await context.Books.FindAsync(RootBook))!.SortOrder);
     }
 
+    [Fact]
+    public async Task SearchLibrary_MatchesTitlesAndAuthors_CaseInsensitively()
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        Seed(context, userId);
+        var controller = CreateController(context, userId);
+
+        var byAuthor = (await controller.SearchLibrary("AUTORA")).Value!;
+        Assert.Equal(new[] { RootBook }, byAuthor.Books.Select(b => b.BookId));
+        Assert.Equal("Ana Autora", byAuthor.Books[0].Author);
+
+        var byTitle = (await controller.SearchLibrary("foldered")).Value!;
+        Assert.Equal(new[] { FolderBook }, byTitle.Books.Select(b => b.BookId));
+        Assert.Equal(new[] { FolderText }, byTitle.Texts.Select(t => t.TextId));
+        Assert.Equal("Alpha", byTitle.Books[0].FolderPath);
+        Assert.Equal(FolderA, byTitle.Texts[0].FolderId);
+    }
+
+    [Fact]
+    public async Task SearchLibrary_SkipsBookPartsSrsStoriesAndOtherUsers()
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        var otherId = Guid.NewGuid();
+        Seed(context, userId);
+        context.Texts.Add(new Text { TextId = 30, UserId = userId, LanguageId = 1, Title = "Root story", Content = "x", Tag = "srs-story" });
+        context.Texts.Add(new Text { TextId = 31, UserId = otherId, LanguageId = 1, Title = "Root other", Content = "x" });
+        await context.SaveChangesAsync();
+        context.ChangeTracker.Clear();
+
+        var result = (await CreateController(context, userId).SearchLibrary("root")).Value!;
+
+        Assert.Equal(new[] { RootBook }, result.Books.Select(b => b.BookId));
+        Assert.Equal(new[] { RootText }, result.Texts.Select(t => t.TextId));
+        Assert.Equal(string.Empty, result.Texts[0].FolderPath);
+    }
+
+    [Fact]
+    public async Task SearchLibrary_GivesAFolderTheParentsPath()
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        Seed(context, userId);
+
+        var result = (await CreateController(context, userId).SearchLibrary("chi")).Value!;
+
+        var folder = Assert.Single(result.Folders);
+        Assert.Equal(ChildOfA, folder.FolderId);
+        Assert.Equal(FolderA, folder.ParentFolderId);
+        Assert.Equal("Alpha", folder.FolderPath);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData(" o ")]
+    public async Task SearchLibrary_IgnoresQueriesShorterThanTwoCharacters(string? query)
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        Seed(context, userId);
+
+        var result = (await CreateController(context, userId).SearchLibrary(query)).Value!;
+
+        Assert.Empty(result.Folders);
+        Assert.Empty(result.Books);
+        Assert.Empty(result.Texts);
+    }
+
+    [Fact]
+    public async Task GetLibraryContents_IncludesAuthorAndReadingDates()
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        Seed(context, userId);
+        var lastOpened = new DateTime(2026, 9, 1, 12, 0, 0, DateTimeKind.Utc);
+        var text = await context.Texts.FindAsync(RootText);
+        text!.LastAccessedAt = lastOpened;
+        await context.SaveChangesAsync();
+        context.ChangeTracker.Clear();
+
+        var contents = (await CreateController(context, userId).GetLibraryContents()).Value!;
+
+        var book = Assert.Single(contents.Books);
+        Assert.Equal("Ana Autora", book.Author);
+        Assert.NotEqual(default, book.CreatedAt);
+        Assert.Equal(lastOpened, Assert.Single(contents.Texts).LastAccessedAt);
+    }
+
+    [Fact]
+    public async Task GetLibraryContents_BuildsTheBreadcrumbChain()
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        Seed(context, userId);
+
+        var contents = (await CreateController(context, userId).GetLibraryContents(ChildOfA)).Value!;
+
+        Assert.Equal(new[] { "Alpha", "Child" }, contents.Breadcrumbs.Select(b => b.Name));
+    }
+
     // ---- helpers ----
 
     internal static void Seed(AppDbContext context, Guid userId)

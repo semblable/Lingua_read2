@@ -3,6 +3,7 @@ import type { ResponseOf } from '../fetchApi';
 
 export type FoldersList = ResponseOf<'/api/Folders', 'get'>;
 export type LibraryContents = ResponseOf<'/api/Folders/library', 'get'>;
+export type LibrarySearchResult = ResponseOf<'/api/Folders/search', 'get'>;
 
 export const getLibraryContents = async (
   folderId: number | string | null = null
@@ -13,6 +14,11 @@ export const getLibraryContents = async (
   return await fetchApi<LibraryContents>(
     `/folders/library${queryString ? `?${queryString}` : ''}`
   );
+};
+
+// Folders, books (title or author) and standalone texts anywhere in the library.
+export const searchLibrary = async (query: string): Promise<LibrarySearchResult> => {
+  return await fetchApi<LibrarySearchResult>(`/folders/search?q=${encodeURIComponent(query)}`);
 };
 
 export const deleteLibraryItems = async (

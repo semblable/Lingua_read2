@@ -7,7 +7,8 @@ import { useLibraryStore } from '../utils/store';
 import {
   getLibraryContents,
   getFolders,
-  createFolder
+  createFolder,
+  searchLibrary
 } from '../utils/api';
 
 vi.mock('../utils/api', () => ({
@@ -18,7 +19,8 @@ vi.mock('../utils/api', () => ({
   deleteFolder: vi.fn(),
   moveLibraryItems: vi.fn(),
   reorderLibraryItems: vi.fn(),
-  deleteLibraryItems: vi.fn()
+  deleteLibraryItems: vi.fn(),
+  searchLibrary: vi.fn()
 }));
 
 // useDragSelect uses Pointer events; stub it to a no-op so we don't need to
@@ -148,6 +150,72 @@ describe('Library', () => {
     expect(await screen.findByText('Your library is empty')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Add Book/ }).closest('[href]'))
       .toHaveAttribute('href', '/books/create');
+  });
+
+  describe('search, sort and type', () => {
+    test('search also lists matches from other folders, with where they live', async () => {
+      getLibraryContents.mockResolvedValue(sampleContents);
+      searchLibrary.mockResolvedValue({
+        folders: [],
+        books: [
+          // Already on screen at the root: not repeated.
+          { bookId: 10, title: 'Sample Book', languageName: 'French', folderId: null, folderPath: '' },
+          { bookId: 55, title: 'Sample Elsewhere', author: 'Ana', languageName: 'French', folderId: 3, folderPath: 'Novels / French' }
+        ],
+        texts: []
+      });
+      renderLibrary();
+      await screen.findByText('Sample Book');
+
+      fireEvent.change(screen.getByLabelText('Search library'), { target: { value: 'sample' } });
+
+      const section = await screen.findByTestId('library-search-elsewhere', {}, { timeout: 2000 });
+      expect(searchLibrary).toHaveBeenCalledWith('sample');
+      expect(section).toHaveTextContent('Sample Elsewhere');
+      expect(section).not.toHaveTextContent('Sample Book');
+      expect(screen.getByRole('link', { name: 'Sample Elsewhere' })).toHaveAttribute('href', '/books/55');
+      expect(screen.getByRole('link', { name: 'Novels / French' })).toHaveAttribute('href', '/library/3');
+    });
+
+    test('a one-letter search does not query the whole library', async () => {
+      getLibraryContents.mockResolvedValue(sampleContents);
+      renderLibrary();
+      await screen.findByText('Sample Book');
+
+      fireEvent.change(screen.getByLabelText('Search library'), { target: { value: 's' } });
+      await new Promise((resolve) => setTimeout(resolve, 400));
+
+      expect(searchLibrary).not.toHaveBeenCalled();
+    });
+
+    test('the type filter narrows to audio lessons', async () => {
+      getLibraryContents.mockResolvedValue({
+        ...sampleContents,
+        texts: [
+          { textId: 100, title: 'Sample Text', languageName: 'French', tag: null },
+          { textId: 101, title: 'Sample Audio', languageName: 'French', tag: null, isAudioLesson: true }
+        ]
+      });
+      renderLibrary();
+      await screen.findByText('Sample Book');
+
+      fireEvent.change(screen.getByLabelText('Type filter'), { target: { value: 'audio' } });
+
+      expect(screen.getByText('Sample Audio')).toBeInTheDocument();
+      expect(screen.queryByText('Sample Text')).not.toBeInTheDocument();
+      expect(screen.queryByText('Sample Book')).not.toBeInTheDocument();
+    });
+
+    test('the sort choice is remembered', async () => {
+      getLibraryContents.mockResolvedValue(sampleContents);
+      renderLibrary();
+      await screen.findByText('Sample Book');
+
+      fireEvent.change(screen.getByLabelText('Sort'), { target: { value: 'title' } });
+
+      expect(localStorage.getItem('librarySort')).toBe('title');
+      expect(screen.getByText(/Switch to Manual order to reorder/)).toBeInTheDocument();
+    });
   });
 
   describe('switching folders', () => {

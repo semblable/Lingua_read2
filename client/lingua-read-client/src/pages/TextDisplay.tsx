@@ -1602,8 +1602,8 @@ const TextDisplay = () => {
       const existingWord = getWordData(selectedWord);
       if (existingWord) {
         await updateWord(existingWord.wordId!, numericStatus, translation);
-        const updatedWords = words.map(w => w.wordId === existingWord.wordId ? { ...w, status: numericStatus, translation } : w);
-        setWords(updatedWords);
+        // From the list as it is now: a batch save may have merged rows in during the await.
+        setWords(prev => prev.map(w => w.wordId === existingWord.wordId ? { ...w, status: numericStatus, translation } : w));
         setDisplayedWord((prev) => (prev?.term === selectedWord ? { ...prev, status: numericStatus, translation } : prev));
       } else {
         if (text?.textId == null) return;
@@ -1614,7 +1614,7 @@ const TextDisplay = () => {
       setSaveSuccess(true); setTimeout(() => setSaveSuccess(false), 2000);
     } catch (error) { console.error('Error saving word:', error); alert(`Failed to save word: ${error instanceof Error ? error.message : ''}`); }
     finally { setProcessingWord(false); }
-  }, [selectedWord, displayedWord, processingWord, isTranslating, translation, text?.textId, currentSentenceSegment?.text, words, getWordData, setWords, setDisplayedWord, setSaveSuccess, setProcessingWord]); // createWord/updateWord are module imports (stable); omit to satisfy exhaustive-deps
+  }, [selectedWord, displayedWord, processingWord, isTranslating, translation, text?.textId, currentSentenceSegment?.text, getWordData, setWords, setDisplayedWord, setSaveSuccess, setProcessingWord]); // createWord/updateWord are module imports (stable); omit to satisfy exhaustive-deps
 
   const handleDeleteWord = useCallback(async () => {
     const wordToDelete = displayedWord?.wordId ? displayedWord : getWordData(selectedWord);
@@ -1766,7 +1766,9 @@ const TextDisplay = () => {
   }, [displayedWord, currentSentenceSegment, text]);
 
   const handleTranslateUnknownWords = async ({ silent = false } = {}) => {
-    if (!text || !text.content || !text.languageId) return;
+    // Saved rows are merged into the word list; the list's own load, if still running, would
+    // replace them with what it read before the save.
+    if (!text || !text.content || !text.languageId || !languageWordsLoaded) return;
     const callingTextId = text.textId; // Capture which text we're translating for
     setTranslatingUnknown(true); setTranslateUnknownError('');
     try {
@@ -1825,7 +1827,7 @@ const TextDisplay = () => {
   handleTranslateUnknownWordsRef.current = handleTranslateUnknownWords;
 
   const handleMarkAllUnknownAsKnown = async () => {
-    if (!text || !text.content || !text.languageId || !text.textId) return;
+    if (!text || !text.content || !text.languageId || !text.textId || !languageWordsLoaded) return;
     setIsMarkingAll(true); setError('');
     try {
       // Use the same canonical tokenizer the reader renders with, so apostrophe
@@ -2004,6 +2006,7 @@ const TextDisplay = () => {
       translatingUnknown={translatingUnknown}
       handleMarkAllUnknownAsKnown={handleMarkAllUnknownAsKnown}
       isMarkingAll={isMarkingAll}
+      wordsReady={languageWordsLoaded}
     />
   );
 

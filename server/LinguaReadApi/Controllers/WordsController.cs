@@ -601,7 +601,7 @@ namespace LinguaReadApi.Controllers
                 }
 
                 // The upserts run as SQL, so the tracked words still carry their old
-                // translation; the last one sent for a word is the one stored.
+                // translation; the last upsert for a word is the one stored.
                 var savedTranslations = new Dictionary<int, string>();
                 foreach (var (word, translation) in plan.TranslationsToUpsert)
                 {

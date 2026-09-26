@@ -6,6 +6,7 @@ import {
   filterLibrary,
   hasActiveFilters,
   languageOptions,
+  reorderInSection,
   reorderSection,
   resolveDragIntent,
   sortLibrary,
@@ -188,6 +189,32 @@ describe('reorderSection', () => {
   });
 });
 
+describe('reorderInSection', () => {
+  // Books 1..5 in manual order; a filter shows only 1, 3 and 5.
+  const items = {
+    folders: [{ folderId: 7 }, { folderId: 8 }],
+    books: [1, 2, 3, 4, 5].map((bookId) => ({ bookId })),
+    texts: [],
+  };
+  const ids = (order) => order.map((o) => o.id);
+
+  test('renumbers the whole section, so hidden items keep their place', () => {
+    // Dragging 5 onto 1 among the visible 1, 3, 5 puts it before 1; 2 and 4 stay between.
+    expect(ids(reorderInSection(items, 'book', 5, 1))).toEqual([5, 1, 2, 3, 4]);
+    // Dragging 1 onto 3 puts it right after 3.
+    expect(ids(reorderInSection(items, 'book', 1, 3))).toEqual([2, 3, 1, 4, 5]);
+    expect(reorderInSection(items, 'book', 1, 3).map((o) => o.sortOrder)).toEqual([0, 1, 2, 3, 4]);
+  });
+
+  test('works on the dragged type only', () => {
+    expect(reorderInSection(items, 'folder', 8, 7)).toEqual([
+      { id: 8, type: 'folder', sortOrder: 0 },
+      { id: 7, type: 'folder', sortOrder: 1 },
+    ]);
+    expect(reorderInSection(items, 'text', 1, 3)).toBeNull();
+  });
+});
+
 describe('resolveDragIntent', () => {
   const book = { type: 'book', id: 10 };
   const text = { type: 'text', id: 20 };
@@ -226,6 +253,10 @@ describe('resolveDragIntent', () => {
   test('dragCount reports the selection size only for a selected card', () => {
     expect(dragCount(book, [book, text])).toBe(2);
     expect(dragCount(book, [text])).toBe(1);
+  });
+
+  test('a folder drag only reorders that folder, even when it is selected with others', () => {
+    expect(dragCount(folderA, [folderA, folderB, book])).toBe(1);
   });
 });
 

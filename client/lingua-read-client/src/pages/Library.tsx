@@ -45,7 +45,7 @@ import {
   hasActiveFilters,
   isLibrarySort,
   languageOptions,
-  reorderSection,
+  reorderInSection,
   resolveDragIntent,
   sortLibrary,
   sortableId,
@@ -162,9 +162,9 @@ const Library = () => {
     setComprehensionFilter('all');
   };
 
-  // Reordering edits the manual order, so it needs that order on screen with every item of a
-  // section visible; with a filter active the new positions would collide with hidden items' ones.
-  const canReorder = sort === 'manual' && !filtersActive;
+  // Reordering edits the manual order, so it needs that order on screen. Filters are fine: the new
+  // order is worked out over the whole section, hidden items included (reorderInSection).
+  const canReorder = sort === 'manual';
   const collisionDetection = useMemo(() => createLibraryCollisionDetection(canReorder), [canReorder]);
 
   // Drag-select
@@ -224,17 +224,25 @@ const Library = () => {
     clearSelection();
   }, [fetchContents, fetchAllFolders, clearSelection]);
 
+  // Bumped whenever the library may have changed, so the cross-folder search runs again instead
+  // of showing where things used to be.
+  const [searchEpoch, setSearchEpoch] = useState(0);
+  const reloadLibrary = useCallback(async () => {
+    setSearchEpoch((epoch) => epoch + 1);
+    await fetchContents();
+    await fetchAllFolders();
+  }, [fetchContents, fetchAllFolders]);
+
   // Re-fetch when the page becomes visible again (e.g. returning from TextDisplay/BookDetail)
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
-        fetchContents();
-        fetchAllFolders();
+        reloadLibrary();
       }
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-  }, [fetchContents, fetchAllFolders]);
+  }, [reloadLibrary]);
 
   // The store still holds the previous folder's items until this folder's response lands.
   const contentsReady = contentsFolderId === currentFolderId;
@@ -246,7 +254,7 @@ const Library = () => {
   const unfilteredTotal = countItems(items);
 
   // Cross-folder search. Results are kept with the query they answer, so a stale response (or
-  // one for text since edited) is never shown.
+  // one for text since edited) is never shown. It runs again after every change to the library.
   const trimmedSearch = searchQuery.trim();
   const [searchResult, setSearchResult] = useState<{ query: string; result: LibrarySearchResult } | null>(null);
   const searchSeq = useRef(0);
@@ -262,7 +270,7 @@ const Library = () => {
       }
     }, SEARCH_DEBOUNCE_MS);
     return () => clearTimeout(timer);
-  }, [trimmedSearch]);
+  }, [trimmedSearch, searchEpoch]);
   const elsewhere = useMemo(
     () => searchResult && searchResult.query === trimmedSearch
       ? elsewhereRows(searchResult.result, currentFolderId)
@@ -300,15 +308,13 @@ const Library = () => {
   // Handlers
   const handleCreateFolder = async (name: string, parentId: number | null, color: string | null) => {
     await createFolder(name, parentId, color);
-    await fetchContents();
-    await fetchAllFolders();
+    await reloadLibrary();
     // errors propagate to modal for display
   };
 
   const handleRenameFolder = async (folderId: number, data: { name: string; color: string }) => {
     await updateFolder(folderId, data);
-    await fetchContents();
-    await fetchAllFolders();
+    await reloadLibrary();
     // errors propagate to modal for display
   };
 
@@ -316,8 +322,7 @@ const Library = () => {
     if (!window.confirm(`Delete folder "${folder.name}"? Items inside will be moved to the parent folder.`)) return;
     try {
       await deleteFolderApi(folder.folderId as number);
-      await fetchContents();
-      await fetchAllFolders();
+      await reloadLibrary();
     } catch (err: unknown) {
       setError(`Failed to delete folder: ${(err as Error)?.message}`);
     }
@@ -325,8 +330,7 @@ const Library = () => {
 
   const handleChangeColor = async (folderId: number, color: string) => {
     await updateFolder(folderId, { color });
-    await fetchContents();
-    await fetchAllFolders();
+    await reloadLibrary();
   };
 
   const handleMoveFolderTo = (folder: LibraryFolder) => {
@@ -343,8 +347,7 @@ const Library = () => {
         targetFolderId
       );
       clearSelection();
-      await fetchContents();
-      await fetchAllFolders();
+      await reloadLibrary();
     } catch (err: unknown) {
       setError(`Failed to move items: ${(err as Error)?.message}`);
     }
@@ -368,12 +371,11 @@ const Library = () => {
         idsOf(selectedItems, 'folder')
       );
       clearSelection();
-      await fetchContents();
-      await fetchAllFolders();
+      await reloadLibrary();
     } catch (err: unknown) {
       setError(`Failed to delete items: ${(err as Error)?.message}`);
     }
-  }, [selectedItems, clearSelection, fetchContents, fetchAllFolders, setError]);
+  }, [selectedItems, clearSelection, reloadLibrary, setError]);
 
   // "Add Content" from inside a folder files the new item in that folder. LinkContainer needs the
   // query in `search`; it rejects a '?' inside the pathname.
@@ -434,7 +436,9 @@ const Library = () => {
     const intent = resolveDragIntent(active, toDragEndpoint(event.over?.data.current), selectedItems, canReorder);
     if (!intent) return;
 
+    // Failures are reported after the reload: fetchContents clears the error when it starts.
     if (intent.kind === 'move') {
+      let failure: string | null = null;
       try {
         await moveLibraryItems(
           idsOf(intent.items, 'text'),
@@ -444,27 +448,24 @@ const Library = () => {
         );
         clearSelection();
       } catch (err: unknown) {
-        setError(`Failed to move items: ${(err as Error)?.message}`);
+        failure = `Failed to move items: ${(err as Error)?.message}`;
       }
-      await fetchContents();
-      await fetchAllFolders();
+      await reloadLibrary();
+      if (failure) setError(failure);
       return;
     }
 
-    const sectionIds = intent.type === 'folder'
-      ? filteredFolders.map(f => f.folderId!)
-      : intent.type === 'book'
-        ? filteredBooks.map(b => b.bookId!)
-        : filteredTexts.map(t => t.textId!);
-    const order = reorderSection(sectionIds, intent.type, intent.activeId, intent.overId);
+    // The unfiltered section, so items a filter hides keep their place.
+    const order = reorderInSection(items, intent.type, intent.activeId, intent.overId);
     if (!order) return;
 
     setSectionOrder(intent.type, order.map(o => o.id));
     try {
       await reorderLibraryItems(currentFolderId, order);
     } catch (err: unknown) {
-      setError(`Failed to reorder items: ${(err as Error)?.message}`);
+      const failure = `Failed to reorder items: ${(err as Error)?.message}`;
       await fetchContents();
+      setError(failure);
     }
   };
 
@@ -663,9 +664,7 @@ const Library = () => {
         <div className="text-muted small mb-2" style={{ opacity: 0.7 }}>
           <i className="bi bi-info-circle me-1"></i>
           <kbd>Ctrl</kbd>+click to multi-select &middot; <kbd>Shift</kbd>+click for range &middot; <kbd>Ctrl</kbd>+<kbd>A</kbd> for all &middot; Drag empty space to lasso-select
-          {!canReorder && (
-            <> &middot; {sort !== 'manual' ? 'Switch to Manual order to reorder' : 'Clear filters to reorder'}</>
-          )}
+          {!canReorder && <> &middot; Switch to Manual order to reorder</>}
         </div>
       )}
 

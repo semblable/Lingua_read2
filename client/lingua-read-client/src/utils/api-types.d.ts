@@ -5235,7 +5235,7 @@ export interface components {
             folderId?: number | null;
         };
         CreateFolderDto: {
-            name?: string | null;
+            name: string;
             /** Format: int32 */
             parentFolderId?: number | null;
             color?: string | null;

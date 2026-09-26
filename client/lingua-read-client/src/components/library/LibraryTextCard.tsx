@@ -1,11 +1,12 @@
 import React from 'react';
 import { Card, Badge } from 'react-bootstrap';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { formatDate } from '../../utils/helpers';
 import type { LibraryText, SelectableType } from '../../utils/store';
 import ComprehensibilityBadge from '../shared/ComprehensibilityBadge';
+import { CARD_INTERACTIVE_SELECTOR } from './cardClicks';
 
 interface LibraryTextCardProps {
   text: LibraryText;
@@ -15,10 +16,12 @@ interface LibraryTextCardProps {
 }
 
 const LibraryTextCard = ({ text, isSelected, onSelect, onItemClick }: LibraryTextCardProps) => {
+  const navigate = useNavigate();
   const {
     attributes,
     listeners,
     setNodeRef,
+    setActivatorNodeRef,
     transform,
     transition,
     isDragging
@@ -34,21 +37,29 @@ const LibraryTextCard = ({ text, isSelected, onSelect, onItemClick }: LibraryTex
   };
 
   return (
-    <div ref={setNodeRef} style={style} {...attributes} data-selectable-id={text.textId} data-selectable-type="text">
+    <div ref={setNodeRef} style={style} data-selectable-id={text.textId} data-selectable-type="text">
       <Card
         className={`h-100 shadow-sm ${isSelected ? 'border-primary border-2' : ''}`}
+        style={{ cursor: 'pointer' }}
         onClick={(e) => {
           if ((e.ctrlKey || e.metaKey || e.shiftKey) && onItemClick) {
             e.preventDefault();
             onItemClick(text.textId!, 'text', e); // textId is always server-provided on rendered cards
+            return;
           }
+          if ((e.target as HTMLElement).closest(CARD_INTERACTIVE_SELECTOR)) return;
+          navigate(`/texts/${text.textId}`);
         }}
       >
         <Card.Body className="d-flex flex-column">
           <div className="d-flex align-items-start mb-1">
             <div
+              ref={setActivatorNodeRef}
               className="me-2 d-flex align-items-center"
+              data-drag-handle
+              {...attributes}
               {...listeners}
+              aria-label={`Move ${text.title ?? 'text'}`}
               style={{ cursor: 'grab', color: '#adb5bd' }}
             >
               <i className="bi bi-grip-vertical"></i>
@@ -66,6 +77,7 @@ const LibraryTextCard = ({ text, isSelected, onSelect, onItemClick }: LibraryTex
                 type="checkbox"
                 checked={isSelected}
                 onChange={() => onSelect(text.textId!, 'text')}
+                aria-label={`Select ${text.title ?? 'text'}`}
               />
             </div>
           </div>
@@ -75,6 +87,7 @@ const LibraryTextCard = ({ text, isSelected, onSelect, onItemClick }: LibraryTex
           </div>
           <small className="text-muted mt-auto">
             {formatDate(text.createdAt ?? '')}
+            {(text.totalWords ?? 0) > 0 && <> &middot; {text.totalWords!.toLocaleString()} words</>}
           </small>
           <div className="mt-1">
             <ComprehensibilityBadge

@@ -204,6 +204,123 @@ public class FoldersControllerLibraryTests
         Assert.Equal(new[] { "Alpha", "Child" }, contents.Breadcrumbs.Select(b => b.Name));
     }
 
+    [Fact]
+    public async Task MoveItems_PutsMovedFoldersAfterTheTargetsItems()
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        Seed(context, userId);
+
+        var result = await CreateController(context, userId).MoveItems(new MoveItemsDto
+        {
+            FolderIds = [FolderB],
+            TargetFolderId = FolderA
+        });
+
+        Assert.IsType<NoContentResult>(result);
+        context.ChangeTracker.Clear();
+        var moved = (await context.Folders.FindAsync(FolderB))!;
+        Assert.Equal(FolderA, moved.ParentFolderId);
+        // Folder A already holds items with sort order 3.
+        Assert.Equal(4, moved.SortOrder);
+    }
+
+    [Fact]
+    public async Task MoveItems_LeavesBookPartsInTheirBook()
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        Seed(context, userId);
+
+        await CreateController(context, userId).MoveItems(new MoveItemsDto
+        {
+            TextIds = [RootText, BookPart],
+            TargetFolderId = FolderB
+        });
+
+        context.ChangeTracker.Clear();
+        Assert.Equal(FolderB, (await context.Texts.FindAsync(RootText))!.FolderId);
+        Assert.Null((await context.Texts.FindAsync(BookPart))!.FolderId);
+    }
+
+    [Fact]
+    public async Task MoveItems_RejectsMovingAFolderIntoItsOwnDescendant()
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        Seed(context, userId);
+
+        var result = await CreateController(context, userId).MoveItems(new MoveItemsDto
+        {
+            FolderIds = [FolderA],
+            TargetFolderId = ChildOfA
+        });
+
+        Assert.IsType<BadRequestObjectResult>(result);
+        context.ChangeTracker.Clear();
+        Assert.Null((await context.Folders.FindAsync(FolderA))!.ParentFolderId);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task CreateFolder_RejectsABlankName(string name)
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        Seed(context, userId);
+
+        var result = await CreateController(context, userId).CreateFolder(new CreateFolderDto { Name = name });
+
+        Assert.IsType<BadRequestObjectResult>(result.Result);
+        Assert.Equal(3, await context.Folders.CountAsync());
+    }
+
+    [Fact]
+    public async Task CreateFolder_RejectsANameLongerThanTheColumn()
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        Seed(context, userId);
+
+        var result = await CreateController(context, userId).CreateFolder(new CreateFolderDto { Name = new string('x', 201) });
+
+        Assert.IsType<BadRequestObjectResult>(result.Result);
+    }
+
+    [Fact]
+    public async Task CreateFolder_TrimsTheName()
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        Seed(context, userId);
+
+        var result = await CreateController(context, userId).CreateFolder(new CreateFolderDto { Name = "  Novels  ", Color = "" });
+
+        var created = Assert.IsType<CreatedAtActionResult>(result.Result);
+        Assert.Equal("Novels", ((FolderDto)created.Value!).Name);
+        context.ChangeTracker.Clear();
+        var folder = await context.Folders.SingleAsync(f => f.Name == "Novels");
+        Assert.Null(folder.Color);
+    }
+
+    [Fact]
+    public async Task UpdateFolder_RejectsABlankNameOrAnOverlongColor()
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        Seed(context, userId);
+        var controller = CreateController(context, userId);
+
+        Assert.IsType<BadRequestObjectResult>(await controller.UpdateFolder(FolderA, new UpdateFolderDto { Name = " " }));
+        Assert.IsType<BadRequestObjectResult>(await controller.UpdateFolder(FolderA, new UpdateFolderDto { Color = new string('c', 21) }));
+
+        context.ChangeTracker.Clear();
+        var folder = (await context.Folders.FindAsync(FolderA))!;
+        Assert.Equal("Alpha", folder.Name);
+        Assert.Null(folder.Color);
+    }
+
     // ---- helpers ----
 
     internal static void Seed(AppDbContext context, Guid userId)

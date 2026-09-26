@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using System;
 using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations;
 using System.Linq;
 using System.Security.Claims;
 using System.Threading.Tasks;
@@ -254,6 +255,12 @@ namespace LinguaReadApi.Controllers
         {
             var userId = GetUserId();
 
+            var name = dto.Name?.Trim() ?? string.Empty;
+            if (FolderNameError(name) is { } nameError)
+                return BadRequest(nameError);
+            if (dto.Color?.Length > MaxFolderColorLength)
+                return BadRequest("Folder color is too long");
+
             // Validate parent folder belongs to user
             if (dto.ParentFolderId.HasValue && !await _context.UserOwnsFolderAsync(userId, dto.ParentFolderId.Value))
                 return BadRequest("Parent folder not found");
@@ -265,9 +272,9 @@ namespace LinguaReadApi.Controllers
 
             var folder = new Folder
             {
-                Name = dto.Name,
+                Name = name,
                 ParentFolderId = dto.ParentFolderId,
-                Color = dto.Color,
+                Color = string.IsNullOrEmpty(dto.Color) ? null : dto.Color,
                 LanguageId = dto.LanguageId,
                 UserId = userId,
                 SortOrder = maxSortOrder + 1,
@@ -302,7 +309,15 @@ namespace LinguaReadApi.Controllers
             if (folder == null)
                 return NotFound();
 
-            if (dto.Name != null) folder.Name = dto.Name;
+            if (dto.Name != null)
+            {
+                var name = dto.Name.Trim();
+                if (FolderNameError(name) is { } nameError)
+                    return BadRequest(nameError);
+                folder.Name = name;
+            }
+            if (dto.Color?.Length > MaxFolderColorLength)
+                return BadRequest("Folder color is too long");
             if (dto.Color != null) folder.Color = dto.Color == "" ? null : dto.Color;
             if (dto.ParentFolderId.HasValue)
             {
@@ -466,8 +481,9 @@ namespace LinguaReadApi.Controllers
             // Move texts
             if (dto.TextIds?.Any() == true)
             {
+                // Book parts live in their book, never directly in a folder.
                 var texts = await _context.Texts
-                    .Where(t => dto.TextIds.Contains(t.TextId) && t.UserId == userId)
+                    .Where(t => dto.TextIds.Contains(t.TextId) && t.UserId == userId && t.BookId == null)
                     .ToListAsync();
 
                 // Get max sort order in target
@@ -511,11 +527,15 @@ namespace LinguaReadApi.Controllers
                     .Where(f => dto.FolderIds.Contains(f.FolderId) && f.UserId == userId)
                     .ToListAsync();
 
+                // Moved folders go after what is already there, like moved books and texts, instead
+                // of keeping a sort order from their old parent that may clash with the new one's.
+                var maxSort = await GetMaxSortOrderInFolder(userId, dto.TargetFolderId);
                 foreach (var folder in folders)
                 {
                     // Prevent moving folder into itself
                     if (folder.FolderId == dto.TargetFolderId) continue;
                     folder.ParentFolderId = dto.TargetFolderId;
+                    folder.SortOrder = ++maxSort;
                 }
             }
 
@@ -577,6 +597,15 @@ namespace LinguaReadApi.Controllers
             await _context.SaveChangesAsync();
             return NoContent();
         }
+
+        private const int MaxFolderNameLength = 200;
+        private const int MaxFolderColorLength = 20;
+
+        // Folder names are trimmed first; the column is varchar(200).
+        private static string? FolderNameError(string name) =>
+            name.Length == 0 ? "Folder name is required"
+            : name.Length > MaxFolderNameLength ? $"Folder name must be at most {MaxFolderNameLength} characters"
+            : null;
 
         private sealed record FolderNode(int FolderId, string Name, int? ParentFolderId);
 
@@ -765,15 +794,20 @@ namespace LinguaReadApi.Controllers
 
     public class CreateFolderDto
     {
+        [Required]
+        [StringLength(200)]
         public string Name { get; set; } = string.Empty;
         public int? ParentFolderId { get; set; }
+        [StringLength(20)]
         public string? Color { get; set; }
         public int? LanguageId { get; set; }
     }
 
     public class UpdateFolderDto
     {
+        [StringLength(200)]
         public string? Name { get; set; }
+        [StringLength(20)]
         public string? Color { get; set; }
         // null = no change; 0 = move to root (library root); positive int = target folder ID
         public int? ParentFolderId { get; set; }

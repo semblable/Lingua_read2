@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
 import { Card, Dropdown } from 'react-bootstrap';
+import { Link } from 'react-router-dom';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import type { LibraryFolder, SelectableType } from '../../utils/store';
+import { CARD_INTERACTIVE_SELECTOR } from './cardClicks';
 
 export type FolderColor = 'blue' | 'green' | 'orange' | 'red' | 'purple' | 'teal' | 'pink' | 'yellow';
 
@@ -36,6 +38,7 @@ const FolderCard = ({ folder, onClick, onRename, onDelete, onChangeColor, onMove
     attributes,
     listeners,
     setNodeRef,
+    setActivatorNodeRef,
     transform,
     transition,
     isDragging,
@@ -59,14 +62,14 @@ const FolderCard = ({ folder, onClick, onRename, onDelete, onChangeColor, onMove
   const folderColor = folder.color ? (FOLDER_COLORS[folder.color as FolderColor] || folder.color) : '#6c757d';
 
   return (
-    <div ref={setNodeRef} style={style} {...attributes} data-selectable-id={folder.folderId} data-selectable-type="folder">
+    <div ref={setNodeRef} style={style} data-selectable-id={folder.folderId} data-selectable-type="folder">
       <Card
         className={`h-100 shadow-sm ${isDropTarget || isSelected ? 'border-primary border-2' : ''}`}
         onClick={(e) => {
           if ((e.ctrlKey || e.metaKey || e.shiftKey) && onItemClick) {
             e.preventDefault();
             onItemClick(folder.folderId!, 'folder', e); // folderId always set on rendered folders
-          } else {
+          } else if (!(e.target as HTMLElement).closest(CARD_INTERACTIVE_SELECTOR)) {
             onClick(folder.folderId!);
           }
         }}
@@ -74,8 +77,12 @@ const FolderCard = ({ folder, onClick, onRename, onDelete, onChangeColor, onMove
       >
         <Card.Body className="d-flex align-items-center py-3">
           <div
+            ref={setActivatorNodeRef}
             className="me-3 d-flex align-items-center justify-content-center"
+            data-drag-handle
+            {...attributes}
             {...listeners}
+            aria-label={`Move ${folder.name ?? 'folder'}`}
             onClick={(e) => e.stopPropagation()}
             style={{ cursor: 'grab', color: '#adb5bd' }}
           >
@@ -86,7 +93,13 @@ const FolderCard = ({ folder, onClick, onRename, onDelete, onChangeColor, onMove
             style={{ fontSize: '1.5rem', color: folderColor }}
           ></i>
           <div className="flex-grow-1 min-width-0">
-            <div className="fw-semibold text-truncate">{folder.name}</div>
+            {/* A real link so the folder can be opened from the keyboard too. */}
+            <Link
+              to={`/library/${folder.folderId}`}
+              className="fw-semibold text-truncate d-block text-reset text-decoration-none"
+            >
+              {folder.name}
+            </Link>
             {(folder.itemCount ?? 0) > 0 && (
               <small className="text-muted">{folder.itemCount} item{folder.itemCount !== 1 ? 's' : ''}</small>
             )}
@@ -97,6 +110,7 @@ const FolderCard = ({ folder, onClick, onRename, onDelete, onChangeColor, onMove
               type="checkbox"
               checked={isSelected}
               onChange={() => onSelect(folder.folderId!, 'folder')}
+              aria-label={`Select ${folder.name ?? 'folder'}`}
             />
           </div>
           <Dropdown

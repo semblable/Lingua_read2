@@ -1055,6 +1055,22 @@ html {
   z-index: 1000;
 }
 
+/* Library book covers share one height so a row of cards lines up; books without a cover get a
+   placeholder of the same size. The translucent grey reads on every theme. */
+.library-cover {
+  height: 180px;
+  object-fit: cover;
+}
+
+.library-cover-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2.5rem;
+  background-color: rgba(127, 127, 127, 0.12);
+  color: rgba(127, 127, 127, 0.7);
+}
+
 .library-grid-container.is-drag-selecting {
   user-select: none;
   -webkit-user-select: none;

@@ -8,7 +8,8 @@ import {
   getLibraryContents,
   getFolders,
   createFolder,
-  searchLibrary
+  searchLibrary,
+  deleteLibraryItems
 } from '../utils/api';
 
 vi.mock('../utils/api', () => ({
@@ -46,6 +47,8 @@ const renderLibrary = (path = '/library', extra = null) =>
       <Routes>
         <Route path="/library" element={<Library />} />
         <Route path="/library/:folderId" element={<Library />} />
+        <Route path="/books/:bookId" element={<div>Book page</div>} />
+        <Route path="/texts/:textId" element={<div>Text page</div>} />
       </Routes>
     </MemoryRouter>
   );
@@ -73,10 +76,10 @@ const sampleContents = {
     { folderId: 1, name: 'My Folder', color: null }
   ],
   books: [
-    { bookId: 10, title: 'Sample Book', languageName: 'French', tags: [] }
+    { bookId: 10, title: 'Sample Book', author: 'Sample Author', languageName: 'French', tags: [] }
   ],
   texts: [
-    { textId: 100, title: 'Sample Text', languageName: 'French', tag: null }
+    { textId: 100, title: 'Sample Text', languageName: 'French', tag: null, totalWords: 1234 }
   ]
 };
 
@@ -215,6 +218,84 @@ describe('Library', () => {
 
       expect(localStorage.getItem('librarySort')).toBe('title');
       expect(screen.getByText(/Switch to Manual order to reorder/)).toBeInTheDocument();
+    });
+  });
+
+  describe('cards', () => {
+    test('a book card shows its author, and a placeholder when it has no cover', async () => {
+      getLibraryContents.mockResolvedValue(sampleContents);
+      const { container } = renderLibrary();
+      await screen.findByText('Sample Book');
+
+      expect(screen.getByText('Sample Author')).toBeInTheDocument();
+      expect(container.querySelector('.library-cover-placeholder')).not.toBeNull();
+      expect(screen.getByText(/1,234 words/)).toBeInTheDocument();
+    });
+
+    test('clicking a card opens the item, clicking its checkbox only selects it', async () => {
+      getLibraryContents.mockResolvedValue(sampleContents);
+      renderLibrary();
+      await screen.findByText('Sample Book');
+
+      fireEvent.click(screen.getByLabelText('Select Sample Text'));
+      expect(screen.getByText(/item selected/)).toBeInTheDocument();
+      expect(screen.queryByText('Text page')).not.toBeInTheDocument();
+
+      fireEvent.click(screen.getByText('Sample Book'));
+      expect(await screen.findByText('Book page')).toBeInTheDocument();
+    });
+
+    test('a folder name is a link, so it opens from the keyboard too', async () => {
+      getLibraryContents.mockResolvedValue(sampleContents);
+      renderLibrary();
+      expect(await screen.findByRole('link', { name: 'My Folder' })).toHaveAttribute('href', '/library/1');
+    });
+
+    test('the drag handles are labelled buttons', async () => {
+      getLibraryContents.mockResolvedValue(sampleContents);
+      renderLibrary();
+      await screen.findByText('Sample Book');
+      expect(screen.getByRole('button', { name: 'Move Sample Book' })).toHaveAttribute('tabindex', '0');
+    });
+  });
+
+  describe('keyboard shortcuts', () => {
+    const selectedCount = () => screen.queryByText(/items? selected/)?.parentElement?.textContent ?? '';
+
+    test('Ctrl+A selects everything shown and Escape clears the selection', async () => {
+      getLibraryContents.mockResolvedValue(sampleContents);
+      renderLibrary();
+      await screen.findByText('Sample Book');
+
+      fireEvent.keyDown(document.body, { key: 'a', ctrlKey: true });
+      expect(selectedCount()).toMatch(/3\s*items selected/);
+
+      fireEvent.keyDown(document.body, { key: 'Escape' });
+      expect(screen.queryByText(/items? selected/)).not.toBeInTheDocument();
+    });
+
+    test('Delete deletes the selection after confirming', async () => {
+      getLibraryContents.mockResolvedValue(sampleContents);
+      deleteLibraryItems.mockResolvedValue(undefined);
+      const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+      renderLibrary();
+      await screen.findByText('Sample Book');
+
+      fireEvent.click(screen.getByLabelText('Select Sample Book'));
+      fireEvent.keyDown(document.body, { key: 'Delete' });
+
+      await waitFor(() => expect(deleteLibraryItems).toHaveBeenCalledWith(null, [10], null));
+      expect(confirmSpy).toHaveBeenCalled();
+      confirmSpy.mockRestore();
+    });
+
+    test('typing in the search box is not a shortcut', async () => {
+      getLibraryContents.mockResolvedValue(sampleContents);
+      renderLibrary();
+      await screen.findByText('Sample Book');
+
+      fireEvent.keyDown(screen.getByLabelText('Search library'), { key: 'a', ctrlKey: true });
+      expect(screen.queryByText(/items? selected/)).not.toBeInTheDocument();
     });
   });
 

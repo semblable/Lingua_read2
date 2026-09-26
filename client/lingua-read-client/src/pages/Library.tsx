@@ -7,6 +7,7 @@ import ComprehensibilityFilter, {
 } from '../components/shared/ComprehensibilityFilter';
 import {
   DndContext,
+  KeyboardSensor,
   PointerSensor,
   useSensor,
   useSensors,
@@ -16,7 +17,8 @@ import {
 } from '@dnd-kit/core';
 import {
   SortableContext,
-  rectSortingStrategy
+  rectSortingStrategy,
+  sortableKeyboardCoordinates
 } from '@dnd-kit/sortable';
 import { useLibraryStore } from '../utils/store';
 import type { LibraryFolder, SelectableType, SelectedItem } from '../utils/store';
@@ -173,7 +175,9 @@ const Library = () => {
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: { distance: isDragSelecting ? 99999 : 8 }
-    })
+    }),
+    // Focus a card's grip, then Space to pick it up, arrows to move, Space to drop.
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
 
   // Only the newest request may write the store: when the user switches folders quickly, an older
@@ -344,7 +348,7 @@ const Library = () => {
     }
   };
 
-  const handleDeleteSelected = async () => {
+  const handleDeleteSelected = useCallback(async () => {
     const count = selectedItems.length;
     const hasBooks = selectedItems.some(i => i.type === 'book');
     const hasFolders = selectedItems.some(i => i.type === 'folder');
@@ -367,7 +371,7 @@ const Library = () => {
     } catch (err: unknown) {
       setError(`Failed to delete items: ${(err as Error)?.message}`);
     }
-  };
+  }, [selectedItems, clearSelection, fetchContents, fetchAllFolders, setError]);
 
   // "Add Content" from inside a folder files the new item in that folder. LinkContainer needs the
   // query in `search`; it rejects a '?' inside the pathname.
@@ -463,6 +467,28 @@ const Library = () => {
   };
 
   const draggedCount = activeDrag ? dragCount(activeDrag, selectedItems) : 0;
+
+  // Keyboard shortcuts for the selection: Esc clears it, Ctrl/Cmd+A selects everything shown,
+  // Delete (or Cmd+Backspace) deletes it. Not while typing, dragging or in a dialog.
+  const modalOpen = showCreateFolder || showMoveModal || showRenameModal;
+  useEffect(() => {
+    if (!contentsReady || modalOpen || activeDrag) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target?.closest('input, textarea, select, [contenteditable="true"]')) return;
+      if (e.key === 'Escape' && selectedItems.length > 0) {
+        clearSelection();
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a' && flatItems.length > 0) {
+        e.preventDefault();
+        setSelectedItems(flatItems);
+      } else if ((e.key === 'Delete' || (e.key === 'Backspace' && e.metaKey)) && selectedItems.length > 0) {
+        e.preventDefault();
+        handleDeleteSelected();
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [contentsReady, modalOpen, activeDrag, selectedItems, flatItems, clearSelection, setSelectedItems, handleDeleteSelected]);
 
   return (
     <Container className="py-4 main-content-padding">
@@ -634,7 +660,7 @@ const Library = () => {
       {contentsReady && selectedItems.length === 0 && totalItems > 0 && (
         <div className="text-muted small mb-2" style={{ opacity: 0.7 }}>
           <i className="bi bi-info-circle me-1"></i>
-          <kbd>Ctrl</kbd>+click to multi-select &middot; <kbd>Shift</kbd>+click for range &middot; Drag empty space to lasso-select
+          <kbd>Ctrl</kbd>+click to multi-select &middot; <kbd>Shift</kbd>+click for range &middot; <kbd>Ctrl</kbd>+<kbd>A</kbd> for all &middot; Drag empty space to lasso-select
           {!canReorder && (
             <> &middot; {sort !== 'manual' ? 'Switch to Manual order to reorder' : 'Clear filters to reorder'}</>
           )}
@@ -756,7 +782,7 @@ const Library = () => {
         {contentsReady && totalItems === 0 && (
           unfilteredTotal > 0 ? (
             <div className="text-center py-5">
-              <i className="bi bi-funnel" style={{ fontSize: '3rem', color: '#ccc' }}></i>
+              <i className="bi bi-funnel text-muted" style={{ fontSize: '3rem', opacity: 0.5 }}></i>
               <h4 className="mt-3 text-muted">No items match the current filters</h4>
               <p className="text-muted">
                 {unfilteredTotal} item{unfilteredTotal !== 1 ? 's are' : ' is'} hidden in this folder.
@@ -767,7 +793,7 @@ const Library = () => {
             </div>
           ) : (
             <div className="text-center py-5">
-              <i className="bi bi-collection" style={{ fontSize: '3rem', color: '#ccc' }}></i>
+              <i className="bi bi-collection text-muted" style={{ fontSize: '3rem', opacity: 0.5 }}></i>
               <h4 className="mt-3 text-muted">
                 {currentFolderId ? 'This folder is empty' : 'Your library is empty'}
               </h4>

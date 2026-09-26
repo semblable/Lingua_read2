@@ -17,11 +17,9 @@ import { useReaderState } from '../hooks/useReaderState';
 
 const renderReaderStateHook = (overrides = {}) => {
   const onSentenceProgressApplied = vi.fn();
-  const setLeftPanelWidth = vi.fn();
   let fetchAllLanguageWords = vi.fn().mockResolvedValue(null);
   return {
     onSentenceProgressApplied,
-    setLeftPanelWidth,
     fetchAllLanguageWords,
     ...renderHook(
       (props) => {
@@ -38,8 +36,6 @@ const renderReaderStateHook = (overrides = {}) => {
       {
         initialProps: {
           textId: undefined,
-          leftPanelWidthFromSettings: 85,
-          setLeftPanelWidth,
           onSentenceProgressApplied,
           ...overrides
         }
@@ -239,12 +235,5 @@ describe('useReaderState', () => {
       expect(getBook).not.toHaveBeenCalled();
       expect(result.current.isLastBookPart).toBe(false);
     });
-  });
-
-  test('applies leftPanelWidth from settings on mount', () => {
-    const { setLeftPanelWidth } = renderReaderStateHook({
-      leftPanelWidthFromSettings: 70
-    });
-    expect(setLeftPanelWidth).toHaveBeenCalledWith(70);
   });
 });

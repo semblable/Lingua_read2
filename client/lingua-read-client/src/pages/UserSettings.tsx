@@ -65,7 +65,7 @@ const applyProviderKeyFlags = (saved: UserSettingsResponse): Partial<Settings> =
 const EDITABLE_KEYS: readonly SettingKey[] = [
   'theme', 'textSize', 'textFont', 'readingUiMode', 'readerContentWidth',
   'readingDensity', 'showWordInfoPanel', 'readerParagraphIndent', 'readerTextAlignment',
-  'leftPanelWidth', 'autoTranslateWords', 'autoTranslateOnOpen', 'pauseOnWordClick', 'highlightKnownWords',
+  'leftPanelWidth', 'autoTranslateWords', 'autoTranslateOnOpen', 'autoTranslateWordStatus', 'pauseOnWordClick', 'highlightKnownWords',
   'tooltipOnlyForSavedWords', 'sentenceTtsEnabled', 'defaultLanguageId', 'translationTargetLanguageCode',
   'wordTranslationProvider', 'wiktionaryRichDisplay',
   'azureTranslatorRegion',
@@ -86,7 +86,7 @@ const EDITABLE_KEYS: readonly SettingKey[] = [
 const LOCAL_ONLY_KEYS: ReadonlySet<SettingKey> = new Set<SettingKey>(['minimalHome']);
 
 const NUMERIC_FIELDS: ReadonlySet<string> = new Set([
-  'textSize', 'readerContentWidth', 'leftPanelWidth', 'lineSpacing',
+  'textSize', 'readerContentWidth', 'leftPanelWidth', 'lineSpacing', 'autoTranslateWordStatus',
   'defaultLanguageId', 'discordWeeklyReportHourLocal', 'discordTimezoneOffsetMinutes'
 ]);
 
@@ -179,6 +179,7 @@ const UserSettings = () => {
       leftPanelWidth: 85,
       autoTranslateWords: true,
       autoTranslateOnOpen: false,
+      autoTranslateWordStatus: 5,
       pauseOnWordClick: false,
       highlightKnownWords: true,
       tooltipOnlyForSavedWords: false,
@@ -287,6 +288,7 @@ const UserSettings = () => {
           leftPanelWidth: data.leftPanelWidth || 85,
           autoTranslateWords: data.autoTranslateWords ?? true,
           autoTranslateOnOpen: data.autoTranslateOnOpen ?? false,
+          autoTranslateWordStatus: data.autoTranslateWordStatus || 5,
           pauseOnWordClick: data.pauseOnWordClick ?? false,
           highlightKnownWords: data.highlightKnownWords ?? true,
           tooltipOnlyForSavedWords: data.tooltipOnlyForSavedWords ?? false,

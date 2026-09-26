@@ -32,6 +32,8 @@ public class UserSettingsControllerTests
         Assert.Equal("light", dto.Theme);
         Assert.Equal(16, dto.TextSize);
         Assert.Equal(1.5, dto.LineSpacing);
+        Assert.Equal(1.0, dto.ParagraphSpacing);
+        Assert.Equal(5, dto.AutoTranslateWordStatus);
         Assert.Equal("gemini", dto.AiProvider);
         Assert.Empty(dto.AiProviders);
         Assert.Empty(dto.AiProvidersWithApiKey);
@@ -79,6 +81,8 @@ public class UserSettingsControllerTests
             AutoTranslateOnOpen = true,
             PauseOnWordClick = true,
             LineSpacing = 1.75,
+            ParagraphSpacing = 1.6,
+            AutoTranslateWordStatus = 1,
             LeftPanelWidth = 72
         };
 
@@ -93,6 +97,8 @@ public class UserSettingsControllerTests
         Assert.True(dto.AutoTranslateOnOpen);
         Assert.True(dto.PauseOnWordClick);
         Assert.Equal(1.75, dto.LineSpacing);
+        Assert.Equal(1.6, dto.ParagraphSpacing);
+        Assert.Equal(1, dto.AutoTranslateWordStatus);
         Assert.Equal(72, dto.LeftPanelWidth);
 
         var row = await context.UserSettings.SingleAsync();
@@ -100,7 +106,28 @@ public class UserSettingsControllerTests
         Assert.Equal("openrouter", row.AiProvider);
         Assert.True(row.AutoTranslateOnOpen);
         Assert.Equal(1.75, row.LineSpacing);
+        Assert.Equal(1.6, row.ParagraphSpacing);
+        Assert.Equal(1, row.AutoTranslateWordStatus);
         Assert.Equal(72, row.LeftPanelWidth);
+    }
+
+    [Fact]
+    public async Task UpdateUserSettings_PatchWithoutParagraphSpacing_KeepsTheStoredValue()
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        context.Users.Add(new User { Id = userId, UserName = "u", Email = "u@test.com" });
+        await context.SaveChangesAsync();
+
+        var controller = CreateController(context, userId);
+        await controller.UpdateUserSettings(new UpdateUserSettingsDto { ParagraphSpacing = 0.6 });
+
+        // The reader sends one setting at a time; a later patch must not reset this one.
+        var result = await controller.UpdateUserSettings(new UpdateUserSettingsDto { LeftPanelWidth = 60 });
+
+        var dto = Assert.IsType<UserSettingsDto>(result.Value);
+        Assert.Equal(0.6, dto.ParagraphSpacing);
+        Assert.Equal(0.6, (await context.UserSettings.SingleAsync()).ParagraphSpacing);
     }
 
     [Fact]

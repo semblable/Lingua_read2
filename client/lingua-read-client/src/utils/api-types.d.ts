@@ -4938,6 +4938,7 @@ export interface components {
             /** Format: int32 */
             languageId: number;
             terms: components["schemas"]["NewTermDto"][];
+            keepExistingStatus?: boolean;
         };
         AiProviderConfigDto: {
             baseUrl?: string | null;
@@ -6404,6 +6405,8 @@ export interface components {
             readingDensity?: string | null;
             /** Format: double */
             lineSpacing?: number | null;
+            /** Format: double */
+            paragraphSpacing?: number | null;
             showWordInfoPanel?: boolean | null;
             tooltipOnlyForSavedWords?: boolean | null;
             readerParagraphIndent?: boolean | null;
@@ -6412,6 +6415,8 @@ export interface components {
             leftPanelWidth?: number | null;
             autoTranslateWords?: boolean | null;
             autoTranslateOnOpen?: boolean | null;
+            /** Format: int32 */
+            autoTranslateWordStatus?: number | null;
             pauseOnWordClick?: boolean | null;
             highlightKnownWords?: boolean | null;
             sentenceMode?: boolean | null;
@@ -6535,6 +6540,8 @@ export interface components {
             readingDensity?: string | null;
             /** Format: double */
             lineSpacing?: number;
+            /** Format: double */
+            paragraphSpacing?: number;
             showWordInfoPanel?: boolean;
             tooltipOnlyForSavedWords?: boolean;
             readerParagraphIndent?: boolean;
@@ -6543,6 +6550,8 @@ export interface components {
             leftPanelWidth?: number;
             autoTranslateWords?: boolean;
             autoTranslateOnOpen?: boolean;
+            /** Format: int32 */
+            autoTranslateWordStatus?: number;
             pauseOnWordClick?: boolean;
             highlightKnownWords?: boolean;
             sentenceMode?: boolean;
@@ -6647,6 +6656,8 @@ export interface components {
             readingDensity?: string | null;
             /** Format: double */
             lineSpacing?: number;
+            /** Format: double */
+            paragraphSpacing?: number;
             showWordInfoPanel?: boolean;
             tooltipOnlyForSavedWords?: boolean;
             readerParagraphIndent?: boolean;
@@ -6655,6 +6666,8 @@ export interface components {
             leftPanelWidth?: number;
             autoTranslateWords?: boolean;
             autoTranslateOnOpen?: boolean;
+            /** Format: int32 */
+            autoTranslateWordStatus?: number;
             pauseOnWordClick?: boolean;
             highlightKnownWords?: boolean;
             sentenceMode?: boolean;

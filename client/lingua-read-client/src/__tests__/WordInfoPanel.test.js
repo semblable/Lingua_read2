@@ -40,12 +40,53 @@ describe('WordInfoPanel', () => {
   test('renders a placeholder when no word is displayed', () => {
     render(<WordInfoPanel {...baseProps({ displayedWord: null })} />);
     expect(screen.getByText(/Click\/hover on a word/i)).toBeInTheDocument();
+    expect(screen.getByText(/press 1–5 to set its status/)).toBeInTheDocument();
   });
 
   test('renders the term and current status label', () => {
     render(<WordInfoPanel {...baseProps()} />);
-    expect(screen.getByText('gato')).toBeInTheDocument();
-    expect(screen.getByText(/Status: Learning/)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'gato' })).toBeInTheDocument();
+    expect(screen.getByText('Learning')).toBeInTheDocument();
+  });
+
+  test('marks the current status button as pressed', () => {
+    const { rerender } = render(<WordInfoPanel {...baseProps()} />);
+    const pressed = screen.getAllByRole('button', { pressed: true })
+      .filter(b => b.closest('[aria-label="Word status"]'));
+    expect(pressed.map(b => b.textContent)).toEqual(['2']);
+    expect(screen.getByRole('button', { name: /^Ignore$/ })).toHaveAttribute('aria-pressed', 'false');
+
+    rerender(<WordInfoPanel {...baseProps({ displayedWord: { term: 'gato', wordId: 11, status: 6 } })} />);
+    expect(screen.getByText('Ignored')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Ignore$/ })).toHaveAttribute('aria-pressed', 'true');
+
+    rerender(<WordInfoPanel {...baseProps({ displayedWord: { term: 'gato', status: 0, isNew: true } })} />);
+    expect(screen.getByText('Untracked')).toBeInTheDocument();
+    expect(screen.queryAllByRole('button', { pressed: true })
+      .filter(b => b.closest('[aria-label="Word status"]'))).toHaveLength(0);
+  });
+
+  test('warns about a translation edit that is not saved yet', () => {
+    const translation = (value, saved) => ({
+      value, saved, setValue: vi.fn(), onKeyDown: vi.fn(), isTranslating: false, error: null
+    });
+    const { rerender } = render(<WordInfoPanel {...baseProps({ translation: translation('cat', 'cat') })} />);
+    expect(screen.queryByText(/Translation not saved yet/)).not.toBeInTheDocument();
+
+    rerender(<WordInfoPanel {...baseProps({ translation: translation('kitten', 'cat') })} />);
+    expect(screen.getByText(/Translation not saved yet/)).toBeInTheDocument();
+
+    // An untracked word has nothing saved; the hint says how to save it instead.
+    rerender(
+      <WordInfoPanel
+        {...baseProps({
+          displayedWord: { term: 'gato', status: 0, isNew: true },
+          translation: translation('cat', undefined)
+        })}
+      />
+    );
+    expect(screen.queryByText(/Translation not saved yet/)).not.toBeInTheDocument();
+    expect(screen.getByText(/Not saved yet/)).toBeInTheDocument();
   });
 
   test('renders five status buttons and invokes onSaveWord with the chosen status', () => {
@@ -99,10 +140,10 @@ describe('WordInfoPanel', () => {
 
   test('shows a saved indicator when saveSuccess is true', () => {
     render(<WordInfoPanel {...baseProps({ saveSuccess: true })} />);
-    expect(screen.getByText('Saved!')).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent('Saved');
   });
 
-  test('Mine Sentence button calls onMineSentence and is disabled for isNew words', () => {
+  test('Mine Sentence button calls onMineSentence and is disabled for unsaved words', () => {
     const onMineSentence = vi.fn();
     const { rerender } = render(
       <WordInfoPanel
@@ -124,6 +165,44 @@ describe('WordInfoPanel', () => {
       />
     );
     expect(screen.getByRole('button', { name: /^Mine$/ })).toBeDisabled();
+  });
+
+  test('Mine is enabled for a saved word of status 1, which the API flags isNew', () => {
+    render(
+      <WordInfoPanel
+        {...baseProps({ displayedWord: { term: 'gato', wordId: 11, status: 1, isNew: true } })}
+      />
+    );
+    expect(screen.getByRole('button', { name: /^Mine$/ })).toBeEnabled();
+  });
+
+  test('lists active term dictionaries and hides the section when there are none', () => {
+    const withDictionaries = (dictionaries) => baseProps({
+      language: { languageConfig: { dictionaries }, setEmbeddedUrl: vi.fn() }
+    });
+    const { rerender } = render(
+      <WordInfoPanel
+        {...withDictionaries([
+          { dictionaryId: 2, isActive: true, purpose: 'terms', displayType: 'popup', urlTemplate: 'https://www.linguee.com/?q=###', sortOrder: 2 },
+          { dictionaryId: 1, isActive: true, purpose: 'terms', displayType: 'popup', urlTemplate: 'https://www.wordreference.com/es/###', sortOrder: 1 },
+          { dictionaryId: 3, isActive: false, purpose: 'terms', displayType: 'popup', urlTemplate: 'https://example.com/###', sortOrder: 3 },
+          { dictionaryId: 4, isActive: true, purpose: 'sentences', displayType: 'popup', urlTemplate: 'https://deepl.com/###', sortOrder: 4 }
+        ])}
+      />
+    );
+    expect(screen.getByText('Dictionaries')).toBeInTheDocument();
+    const names = screen.getAllByRole('button').map(b => b.textContent);
+    expect(names.filter(n => ['Wordreference', 'Linguee', 'Example', 'Deepl'].includes(n)))
+      .toEqual(['Wordreference', 'Linguee']);
+
+    rerender(
+      <WordInfoPanel
+        {...withDictionaries([
+          { dictionaryId: 4, isActive: true, purpose: 'sentences', displayType: 'popup', urlTemplate: 'https://deepl.com/###', sortOrder: 1 }
+        ])}
+      />
+    );
+    expect(screen.queryByText('Dictionaries')).not.toBeInTheDocument();
   });
 
   test('bookmark button toggles its variant via onToggleBookmark', () => {

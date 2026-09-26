@@ -27,6 +27,8 @@ export type Settings = {
   leftPanelWidth: number;
   autoTranslateWords: boolean;
   autoTranslateOnOpen: boolean;
+  // Status (1-5) of new words saved by translating a text's unknown words.
+  autoTranslateWordStatus: number;
   pauseOnWordClick: boolean;
   highlightKnownWords: boolean;
   tooltipOnlyForSavedWords: boolean;
@@ -120,6 +122,7 @@ const defaultSettings: Settings = {
   leftPanelWidth: 85,
   autoTranslateWords: true,
   autoTranslateOnOpen: false,
+  autoTranslateWordStatus: 5,
   pauseOnWordClick: false,
   highlightKnownWords: true,
   tooltipOnlyForSavedWords: false,
@@ -227,6 +230,7 @@ export const mergeSettings = (
     leftPanelWidth: d.leftPanelWidth || base.leftPanelWidth,
     autoTranslateWords: d.autoTranslateWords ?? base.autoTranslateWords,
     autoTranslateOnOpen: d.autoTranslateOnOpen ?? base.autoTranslateOnOpen,
+    autoTranslateWordStatus: d.autoTranslateWordStatus || base.autoTranslateWordStatus,
     pauseOnWordClick: d.pauseOnWordClick ?? base.pauseOnWordClick,
     highlightKnownWords: d.highlightKnownWords ?? base.highlightKnownWords,
     tooltipOnlyForSavedWords: d.tooltipOnlyForSavedWords ?? base.tooltipOnlyForSavedWords,

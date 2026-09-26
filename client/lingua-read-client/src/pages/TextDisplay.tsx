@@ -4,7 +4,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import type { ListImperativeAPI } from 'react-window';
 import {
   getText, getTextSrt, getWordLinkingStatus, createWord, updateWord, deleteWord, updateLastRead, completeLesson, getBook,
-  translateText, translateSentence, translateFullText, translateSelectionWithContext, updateUserSettings,
+  translateText, translateSentence, translateFullText, translateSelectionWithContext,
   explainSentence, mineSentence,
   batchTranslateWords, addTermsBatch, getLanguage, getAllLanguages, summarizeText,
   getSentenceProgress, logSentenceReadActivity,
@@ -22,6 +22,7 @@ import { useReaderKeyboard, type WordStatus } from '../hooks/useReaderKeyboard';
 import { useWordTranslation } from '../hooks/useWordTranslation';
 import { useReaderAudioSync } from '../hooks/useReaderAudioSync';
 import { useReaderState, type FetchAllLanguageWordsFn } from '../hooks/useReaderState';
+import { useSettingsSaver } from '../hooks/useSettingsSaver';
 import { extractTranslatedTextFromPairedTags } from '../utils/translationTags';
 import { cancelSpeech, isSpeechSynthesisSupported, speakText } from '../utils/browserTts';
 import { parseSrtContent, findSrtLineIndex } from '../utils/srtParser';
@@ -83,8 +84,6 @@ const TextDisplay = () => {
   const [summaryTargetLanguage, setSummaryTargetLanguage] = useState(translationTargetLanguageCode);
   const [summaryLanguages, setSummaryLanguages] = useState<Language[]>([]);
   const [isLoadingSummaryLanguages, setIsLoadingSummaryLanguages] = useState(false);
-  // Local state only for panel width, as it's specific to this component's layout control
-  const [leftPanelWidth, setLeftPanelWidth] = useState(globalSettings.leftPanelWidth || 85);
   // Local state for userSettings specific to TextDisplay (like textSize) if needed, or use globalSettings directly
   // For simplicity, let's assume textSize is also managed globally via context now.
   // If TextDisplay needs its own independent textSize, keep a local state for it.
@@ -233,8 +232,6 @@ const TextDisplay = () => {
   } = useReaderState({
     textId,
     fetchAllLanguageWordsRef,
-    leftPanelWidthFromSettings: globalSettings.leftPanelWidth || 85,
-    setLeftPanelWidth,
     onSentenceProgressApplied: handleSentenceProgressApplied,
     autoTranslateTriggeredRef,
     autoTranslateTextIdRef
@@ -455,106 +452,84 @@ const TextDisplay = () => {
 
   // --- Helper Functions & Memoized Values (Define BEFORE useEffects that use them) ---
 
+  // Reader toolbar settings apply at once and are saved to the server in the background.
+  const saveSettings = useSettingsSaver(updateSetting);
+
   const handleLineSpacingChange = (newSpacing: number | string) => {
     const numericSpacing = parseFloat(String(newSpacing));
     if (!isNaN(numericSpacing)) {
-      updateSetting('lineSpacing', numericSpacing); // Update context
-      localStorage.setItem('lineSpacing', numericSpacing.toString()); // Persist to localStorage
       document.body.style.setProperty('--reading-line-height', numericSpacing.toString()); // Apply immediately
-      updateUserSettings({ lineSpacing: numericSpacing })
-        .catch((err: unknown) => console.error('[Save Settings] Failed to save line spacing via API:', err));
+      saveSettings({ lineSpacing: numericSpacing });
     }
   };
 
   const handleParagraphSpacingChange = (newSpacing: number | string) => {
     const numeric = parseFloat(String(newSpacing));
     if (!isNaN(numeric)) {
-      updateSetting('paragraphSpacing', numeric);
-      localStorage.setItem('paragraphSpacing', numeric.toString());
       document.body.style.setProperty('--reader-paragraph-spacing', numeric + 'em');
+      saveSettings({ paragraphSpacing: numeric });
     }
   };
 
   const setReadingDensity = useCallback((nextValue: string) => {
-    updateSetting('readingDensity', nextValue);
-    localStorage.setItem('readingDensity', nextValue);
-    updateUserSettings({ readingDensity: nextValue })
-      .catch((err: unknown) => console.error('[Save Settings] Failed to save reading density via API:', err));
-  }, [updateSetting]);
+    saveSettings({ readingDensity: nextValue });
+  }, [saveSettings]);
 
   const setReaderContentWidth = useCallback((nextValue: number) => {
-    const clamped = Math.max(520, Math.min(980, nextValue));
-    updateSetting('readerContentWidth', clamped);
-    localStorage.setItem('readerContentWidth', clamped.toString());
-    updateUserSettings({ readerContentWidth: clamped })
-      .catch((err: unknown) => console.error('[Save Settings] Failed to save reader content width via API:', err));
-  }, [updateSetting]);
+    saveSettings({ readerContentWidth: Math.max(520, Math.min(980, nextValue)) });
+  }, [saveSettings]);
 
   const setShowWordInfoPanel = useCallback((nextValue: boolean) => {
-    updateSetting('showWordInfoPanel', nextValue);
-    localStorage.setItem('showWordInfoPanel', nextValue.toString());
-    updateUserSettings({ showWordInfoPanel: nextValue })
-      .catch((err: unknown) => console.error('[Save Settings] Failed to save word info panel visibility via API:', err));
-  }, [updateSetting]);
+    saveSettings({ showWordInfoPanel: nextValue });
+  }, [saveSettings]);
 
   const setShowDesktopLessonControls = useCallback((nextValue: boolean | ((prev: boolean) => boolean)) => {
     const val = typeof nextValue === 'function' ? nextValue(globalSettings.showDesktopLessonControls ?? true) : nextValue;
-    updateSetting('showDesktopLessonControls', val);
-    localStorage.setItem('showDesktopLessonControls', val.toString());
-    updateUserSettings({ showDesktopLessonControls: val })
-      .catch((err: unknown) => console.error('[Save Settings] Failed to save desktop lesson controls visibility via API:', err));
-  }, [updateSetting, globalSettings.showDesktopLessonControls]);
+    saveSettings({ showDesktopLessonControls: val });
+  }, [saveSettings, globalSettings.showDesktopLessonControls]);
 
   const setReaderParagraphIndent = useCallback((nextValue: boolean) => {
-    updateSetting('readerParagraphIndent', nextValue);
-    localStorage.setItem('readerParagraphIndent', nextValue.toString());
-    updateUserSettings({ readerParagraphIndent: nextValue })
-      .catch((err: unknown) => console.error('[Save Settings] Failed to save paragraph indent via API:', err));
-  }, [updateSetting]);
+    saveSettings({ readerParagraphIndent: nextValue });
+  }, [saveSettings]);
 
   const setReaderTextAlignment = useCallback((nextValue: string) => {
-    updateSetting('readerTextAlignment', nextValue);
-    localStorage.setItem('readerTextAlignment', nextValue);
-    updateUserSettings({ readerTextAlignment: nextValue })
-      .catch((err: unknown) => console.error('[Save Settings] Failed to save text alignment via API:', err));
-  }, [updateSetting]);
+    saveSettings({ readerTextAlignment: nextValue });
+  }, [saveSettings]);
 
   const setSentenceModeEnabled = useCallback((nextValue: boolean) => {
-    updateSetting('sentenceMode', nextValue);
-    updateUserSettings({ sentenceMode: nextValue })
-      .catch((err: unknown) => console.error('[Save Settings] Failed to save sentence mode via API:', err));
-  }, [updateSetting]);
+    saveSettings({ sentenceMode: nextValue });
+  }, [saveSettings]);
 
   const setSentenceAudioRepeats = useCallback((updater: number | ((prev: number) => number)) => {
     const nextValue = typeof updater === 'function'
       ? updater(sentenceAudioRepeats)
       : updater;
-    const clamped = Math.max(1, Math.min(10, nextValue));
-    updateSetting('sentenceAudioRepeats', clamped);
-    updateUserSettings({ sentenceAudioRepeats: clamped })
-      .catch((err: unknown) => console.error('[Save Settings] Failed to save sentence audio repeats via API:', err));
-  }, [sentenceAudioRepeats, updateSetting]);
+    saveSettings({ sentenceAudioRepeats: Math.max(1, Math.min(10, nextValue)) });
+  }, [sentenceAudioRepeats, saveSettings]);
 
   const setSentenceTtsEnabled = useCallback((nextValue: boolean) => {
-    updateSetting('sentenceTtsEnabled', nextValue);
-    updateUserSettings({ sentenceTtsEnabled: nextValue })
-      .catch((err: unknown) => console.error('[Save Settings] Failed to save sentence TTS enabled via API:', err));
+    saveSettings({ sentenceTtsEnabled: nextValue });
     if (!nextValue) {
       cancelSpeech();
       setIsSpeakingSentence(false);
       setIsSpeakingWord(false);
     }
-  }, [setIsSpeakingSentence, setIsSpeakingWord, updateSetting]);
+  }, [setIsSpeakingSentence, setIsSpeakingWord, saveSettings]);
 
   const setSentenceTtsRate = useCallback((updater: number | ((prev: number) => number)) => {
     const nextValue = typeof updater === 'function'
       ? updater(sentenceTtsRate)
       : updater;
-    const clamped = Math.max(0.5, Math.min(1.5, Number(nextValue.toFixed(1))));
-    updateSetting('sentenceTtsRate', clamped);
-    updateUserSettings({ sentenceTtsRate: clamped })
-      .catch((err: unknown) => console.error('[Save Settings] Failed to save sentence TTS rate via API:', err));
-  }, [sentenceTtsRate, updateSetting]);
+    saveSettings({ sentenceTtsRate: Math.max(0.5, Math.min(1.5, Number(nextValue.toFixed(1)))) });
+  }, [sentenceTtsRate, saveSettings]);
+
+  const setTextSize = useCallback((nextValue: number) => {
+    saveSettings({ textSize: Math.max(12, Math.min(32, nextValue)) });
+  }, [saveSettings]);
+
+  const setLeftPanelWidth = useCallback((nextValue: number) => {
+    saveSettings({ leftPanelWidth: Math.max(20, Math.min(85, nextValue)) });
+  }, [saveSettings]);
 
   const fetchAllLanguageWords = useCallback(async (
     languageId: number | string | null | undefined,
@@ -725,7 +700,9 @@ const TextDisplay = () => {
     const sentenceContext = readSentenceContextFromNode(event.target as Node);
     if (!isPhrase && globalSettings.tooltipOnlyForSavedWords) {
       const existing = getWordData(word);
-      if (existing && !existing.isNew) {
+      // By status, not `isNew`: the API sets that on every saved word of status 1, and linking
+      // stores unsaved words at status 0.
+      if (existing && (existing.status ?? 0) > 0) {
         clearPendingSelection();
         return;
       }
@@ -1549,6 +1526,8 @@ const TextDisplay = () => {
             setWords(prevWords => prevWords.map(w => w.wordId === wordData.wordId ? { ...w, status, translation: translationToUse } : w));
             if (selectedWord === term && displayedWord?.term === term) {
               setDisplayedWord((prev) => ({ ...(prev || {}), status, translation: translationToUse }));
+              // An empty box would make Enter save '' over the translation just stored.
+              setTranslation(prev => (prev.trim() ? prev : translationToUse));
             }
           })
           .catch((err: unknown) => console.error(`[Keyboard Shortcut] Failed update for ${term}:`, err));
@@ -1569,12 +1548,17 @@ const TextDisplay = () => {
             const typed = newWordData as { translation?: string } | null;
             const wordWithTranslation = { ...(typed || {}), translation: translationToUse || typed?.translation };
             setWords(prevWords => [...prevWords, wordWithTranslation]);
+            // The word is saved now; the panel showing it should say so (status, Mine, no hint).
+            if (selectedWord === term && displayedWord?.term === term) {
+              setDisplayedWord({ ...wordWithTranslation, isNew: false });
+              setTranslation(prev => (prev.trim() ? prev : wordWithTranslation.translation || ''));
+            }
             if (globalSettings.autoTranslateWords && !translationToUse) triggerAutoTranslation(term);
           })
           .catch(err => console.error(`[Keyboard Shortcut] Failed to create word ${term}:`, err));
       }
     },
-    [getWordData, text?.languageCode, text?.textId, translationTargetLanguageCode, setWords, selectedWord, displayedWord?.term, currentSentenceSegment?.text, globalSettings.autoTranslateWords, triggerAutoTranslation]
+    [getWordData, text?.languageCode, text?.textId, translationTargetLanguageCode, setWords, selectedWord, displayedWord?.term, currentSentenceSegment?.text, globalSettings.autoTranslateWords, triggerAutoTranslation, setTranslation]
   );
 
   useReaderKeyboard({
@@ -1794,16 +1778,20 @@ const TextDisplay = () => {
       if (silent && autoTranslateTextIdRef.current !== callingTextId) { setTranslatingUnknown(false); return; }
       const originalCaseMap = new Map<string, string>();
       allWords.forEach((w: string) => { const lower = w.toLowerCase(); if (!originalCaseMap.has(lower)) { originalCaseMap.set(lower, w); } });
+      // New words get the user's chosen status; words already tracked (Learning without a
+      // translation) keep theirs and only get the translation.
+      const newWordStatus = globalSettings.autoTranslateWordStatus || 5;
       const termsToAdd = unknownWords.map((word: string) => ({
         term: originalCaseMap.get(word) || word,
-        translation: translations?.[word.toLowerCase()] || ''
+        translation: translations?.[word.toLowerCase()] || '',
+        status: newWordStatus
       })).filter((t: { translation: string }) => t.translation);
 
       if (termsToAdd.length === 0) { if (!silent) alert("No translations received."); setTranslatingUnknown(false); return; } // Exit early
 
       // Two-step workflow: first fetch translations, then save terms+translations
       try {
-        await addTermsBatch(text.languageId, termsToAdd);
+        await addTermsBatch(text.languageId, termsToAdd, { keepExistingStatus: true });
       } catch (saveError: unknown) {
         console.error("Error saving translated terms:", saveError);
         setTranslateUnknownError(`Failed to save terms: ${(saveError as Error)?.message}`);
@@ -1837,11 +1825,12 @@ const TextDisplay = () => {
       });
       const uniqueWordsInText = [...new Set(allWords.map((w: string) => w.toLowerCase()))];
       const wordsMap = new Map(words.map(w => [w.term?.toLowerCase() ?? '', w]));
-      const unknownWords = uniqueWordsInText.filter((word: string) => !wordsMap.has(word));
+      // Linking a text stores its unsaved words at status 0; those are untracked too.
+      const unknownWords = uniqueWordsInText.filter((word: string) => (wordsMap.get(word)?.status ?? 0) === 0);
       if (unknownWords.length === 0) { alert("No untracked words found."); setIsMarkingAll(false); return; } // Exit early
       const originalCaseMap = new Map<string, string>();
       allWords.forEach((w: string) => { const lower = w.toLowerCase(); if (!originalCaseMap.has(lower)) { originalCaseMap.set(lower, w); } });
-      const termsToMark = unknownWords.map((word: string) => ({ term: originalCaseMap.get(word) || word, translation: '' }));
+      const termsToMark = unknownWords.map((word: string) => ({ term: originalCaseMap.get(word) || word, translation: '', status: 5 }));
       await addTermsBatch(text.languageId, termsToMark);
       await fetchAllLanguageWords(text.languageId);
       alert(`Attempted to mark ${unknownWords.length} words as Known.`);
@@ -1987,9 +1976,7 @@ const TextDisplay = () => {
       setShowWordInfoPanel={setShowWordInfoPanel}
       setReaderParagraphIndent={setReaderParagraphIndent}
       setReaderTextAlignment={setReaderTextAlignment}
-      updateSetting={updateSetting}
-      updateUserSettings={updateUserSettings}
-      leftPanelWidth={leftPanelWidth}
+      setTextSize={setTextSize}
       setLeftPanelWidth={setLeftPanelWidth}
       handleLineSpacingChange={handleLineSpacingChange}
       handleParagraphSpacingChange={handleParagraphSpacingChange}
@@ -2019,17 +2006,20 @@ const TextDisplay = () => {
   );
 
   // --- Main Return JSX ---
-  const effectiveLeftPanelWidth = !isMobile && showWordInfoPanel ? leftPanelWidth : 100;
+  const effectiveLeftPanelWidth = !isMobile && showWordInfoPanel ? (globalSettings.leftPanelWidth || 85) : 100;
 
   // Composite props built once and reused at both WordInfoPanel callsites
   // (desktop right-panel + mobile bottom-sheet). Phase E3 grouped the
   // pre-existing 25-prop interface into 5 named composites.
+  const savedWord = getWordData(selectedWord || displayedWord?.term || '');
   const wordInfoProps = {
     displayedWord,
     selectedWord,
     saveSuccess,
     translation: {
       value: translation,
+      // From the word list, which changes only on save; AI Translate updates displayedWord too.
+      saved: savedWord ? (savedWord.translation ?? '') : undefined,
       setValue: setTranslation,
       onKeyDown: handleTranslationKeyDown,
       isTranslating,
@@ -2255,8 +2245,8 @@ const TextDisplay = () => {
         {/* Right Panel (Word Info) - desktop only */}
         {!isMobile && showWordInfoPanel && (
           <div className={`right-panel right-panel-${readingUiMode}`} style={{ width: `${100 - effectiveLeftPanelWidth}%`, height: 'calc(100vh - 130px)', overflowY: 'auto', padding: 'var(--space-sm)', position: 'relative' }}>
-            <Card className="border-0 h-100"><Card.Body className="p-2 d-flex flex-column">
-              <h5 className="mb-2 flex-shrink-0">Word Info</h5>
+            <Card className="border-0 h-100"><Card.Body className="p-2 d-flex flex-column text-start">
+              <h5 className="mb-2 flex-shrink-0 word-info-title">Word Info</h5>
               <div className="flex-grow-1" style={{ overflowY: 'auto', paddingBottom: 'var(--space-xs)' }}>
                 <WordInfoPanel {...wordInfoProps} />
               </div>
@@ -2300,7 +2290,7 @@ const TextDisplay = () => {
           <div className="word-info-sheet" onClick={(event) => event.stopPropagation()} role="dialog" aria-label="Word information">
             <div className="word-info-sheet-handle" />
             <div className="word-info-sheet-content">
-              <h5 className="mb-2">Word Info</h5>
+              <h5 className="mb-2 word-info-title">Word Info</h5>
               <WordInfoPanel {...wordInfoProps} />
             </div>
           </div>

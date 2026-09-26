@@ -800,6 +800,87 @@
   text-align: left;
 }
 
+/* --- Word Info panel (desktop side panel and mobile sheet) --- */
+.word-info-title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  opacity: 0.7;
+}
+
+.word-info-term {
+  font-size: 1.4rem;
+  font-weight: 700;
+  line-height: 1.2;
+  margin-bottom: 0.25rem;
+  overflow-wrap: anywhere;
+}
+
+.word-info-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+  font-size: 0.8rem;
+}
+
+.word-info-saved {
+  color: var(--bs-success, #198754);
+  font-weight: 600;
+}
+
+.word-info-hint {
+  margin-top: 0.25rem;
+  font-size: 0.75rem;
+  opacity: 0.75;
+}
+
+.word-info-hint-unsaved {
+  color: var(--bs-warning, #ffc107);
+  font-weight: 600;
+}
+
+/* Status tints match the words in the text; Known and Ignored have none there, so they get a
+   neutral one here. */
+.word-info-panel [data-status] {
+  --word-status-tint: color-mix(in srgb, currentColor 18%, transparent);
+}
+.word-info-panel [data-status="0"] { --word-status-tint: var(--status-0-color); }
+.word-info-panel [data-status="1"] { --word-status-tint: var(--status-1-color); }
+.word-info-panel [data-status="2"] { --word-status-tint: var(--status-2-color); }
+.word-info-panel [data-status="3"] { --word-status-tint: var(--status-3-color); }
+.word-info-panel [data-status="4"] { --word-status-tint: var(--status-4-color); }
+
+.word-info-status-pill {
+  display: inline-block;
+  padding: 0.1rem 0.6rem;
+  border: 1px solid var(--theme-border-color, #dee2e6);
+  border-radius: 999px;
+  background-color: var(--word-status-tint);
+  color: var(--font-color, inherit);
+  font-weight: 600;
+}
+
+.word-info-panel .btn.word-status-btn {
+  --bs-btn-color: var(--font-color, inherit);
+  --bs-btn-border-color: var(--theme-border-color, #dee2e6);
+  --bs-btn-hover-color: var(--font-color, inherit);
+  --bs-btn-hover-bg: var(--word-status-tint);
+  --bs-btn-hover-border-color: var(--theme-border-color, #dee2e6);
+  --bs-btn-active-color: var(--font-color, inherit);
+  --bs-btn-active-bg: var(--word-status-tint);
+  --bs-btn-active-border-color: currentColor;
+  --bs-btn-disabled-color: var(--font-color, inherit);
+  --bs-btn-disabled-border-color: var(--theme-border-color, #dee2e6);
+  border-bottom: 3px solid var(--word-status-tint);
+}
+
+.word-info-panel .btn.word-status-btn.active {
+  font-weight: 700;
+  border-bottom-color: currentColor;
+}
+
 /* --- Bookmark Styles --- */
 .sentence {
   /* Base style for sentences if needed, e.g., for positioning context */

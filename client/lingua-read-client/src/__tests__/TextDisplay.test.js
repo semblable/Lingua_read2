@@ -289,6 +289,186 @@ describe('TextDisplay', () => {
     expect(screen.getByText(/Untracked/i)).toBeInTheDocument();
   });
 
+  test('the word panel takes its width from settings, also when they arrive after the text', async () => {
+    // On a reload the text can load before the settings request answers.
+    const tree = (settingOverrides) => (
+      <SettingsContext.Provider value={createSettingsValue(settingOverrides)}>
+        <MemoryRouter
+          initialEntries={['/texts/1']}
+          future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
+        >
+          <Routes>
+            <Route path="/texts/:textId" element={<TextDisplay />} />
+          </Routes>
+        </MemoryRouter>
+      </SettingsContext.Provider>
+    );
+    const { container, rerender } = render(tree({ leftPanelWidth: 85 }));
+    await screen.findByText('Hello');
+    expect(container.querySelector('.right-panel')).toHaveStyle({ width: '15%' });
+
+    rerender(tree({ leftPanelWidth: 60 }));
+
+    expect(container.querySelector('.right-panel')).toHaveStyle({ width: '40%' });
+  });
+
+  test('paragraph spacing from the toolbar is saved to the server', async () => {
+    updateUserSettings.mockResolvedValue({});
+    renderTextDisplay();
+    await screen.findByText('Hello');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Set relaxed paragraph spacing' }));
+    await act(async () => { vi.advanceTimersByTime(500); });
+
+    expect(updateUserSettings).toHaveBeenCalledWith({ paragraphSpacing: 1.6 }, { keepalive: false });
+  });
+
+  describe('saving a text\'s unknown words', () => {
+    // "world" has only the status-0 row that linking the text created: still untracked.
+    const trackedWords = [
+      { wordId: 1, term: 'Hello', status: 2, translation: '' },
+      { wordId: 2, term: 'world', status: 0, translation: '' }
+    ];
+    let originalAlert;
+
+    beforeEach(() => {
+      getText.mockResolvedValueOnce({
+        textId: 1,
+        title: 'Sample Text',
+        content: 'Hello world.',
+        languageId: 5,
+        languageCode: 'ES',
+        languageName: 'Spanish',
+        isAudioLesson: false,
+        words: trackedWords,
+        bookId: null
+      });
+      getLanguage.mockResolvedValue({ languageId: 5, name: 'Spanish', code: 'ES' });
+      global.fetch = vi.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve(trackedWords) }));
+      addTermsBatch.mockResolvedValue({});
+      // The reader reports the outcome with alert(), which jsdom doesn't provide.
+      originalAlert = window.alert;
+      window.alert = vi.fn();
+    });
+
+    afterEach(() => {
+      delete global.fetch;
+      window.alert = originalAlert;
+    });
+
+    test('Auto ? saves new words at the chosen status and keeps tracked words\' status', async () => {
+      batchTranslateWords.mockResolvedValue({ hello: 'hola', world: 'mundo' });
+      renderTextDisplay({ autoTranslateWordStatus: 1 });
+      await screen.findByText('Hello');
+      await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Auto ?' }));
+      });
+
+      await waitFor(() => expect(addTermsBatch).toHaveBeenCalled());
+      const [languageId, terms, options] = addTermsBatch.mock.calls[0];
+      expect(languageId).toBe(5);
+      expect(terms).toEqual(expect.arrayContaining([
+        { term: 'Hello', translation: 'hola', status: 1 },
+        { term: 'world', translation: 'mundo', status: 1 }
+      ]));
+      expect(options).toEqual({ keepExistingStatus: true });
+    });
+
+    test('All Known saves untracked words as Known, including ones linking stored at status 0', async () => {
+      renderTextDisplay();
+      await screen.findByText('Hello');
+      await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'All Known' }));
+      });
+
+      await waitFor(() => expect(addTermsBatch).toHaveBeenCalled());
+      expect(addTermsBatch).toHaveBeenCalledWith(5, [{ term: 'world', translation: '', status: 5 }]);
+    });
+  });
+
+  test('with tooltips only for saved words, a saved New word keeps the panel closed but a linked unsaved one opens it', async () => {
+    getText.mockResolvedValueOnce({
+      textId: 1,
+      title: 'Sample Text',
+      content: 'Hello world.',
+      languageId: null,
+      languageCode: 'ES',
+      languageName: 'Spanish',
+      isAudioLesson: false,
+      words: [
+        // The API flags every saved status-1 word isNew; linking stores unsaved words at status 0.
+        { wordId: 1, term: 'Hello', status: 1, translation: 'hola', isNew: true },
+        { wordId: 2, term: 'world', status: 0, translation: '', isNew: false }
+      ],
+      bookId: null
+    });
+
+    renderTextDisplay({ tooltipOnlyForSavedWords: true, autoTranslateWords: false });
+    fireEvent.click(await screen.findByText('Hello'));
+    expect(screen.queryByRole('heading', { name: 'Hello' })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByText('world'));
+    expect(screen.getByRole('heading', { name: 'world' })).toBeInTheDocument();
+  });
+
+  test('saving the word in the panel with a status key updates the panel', async () => {
+    translateText.mockResolvedValue({ translatedText: 'hola' });
+    createWord.mockResolvedValue({ wordId: 9, term: 'Hello', status: 3, translation: 'hola' });
+    renderTextDisplay({ autoTranslateWords: false });
+
+    const word = await screen.findByText('Hello');
+    fireEvent.click(word);
+    expect(screen.getByText('Untracked')).toBeInTheDocument();
+
+    fireEvent.mouseEnter(word);
+    await act(async () => {
+      fireEvent.keyDown(window, { key: '3' });
+    });
+
+    await waitFor(() => expect(createWord).toHaveBeenCalled());
+    await waitFor(() => expect(screen.getByRole('button', { name: '3' })).toHaveAttribute('aria-pressed', 'true'));
+    expect(screen.getByText('Familiar')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Mine$/ })).toBeEnabled();
+    expect(screen.getByRole('textbox', { name: 'Translation' })).toHaveValue('hola');
+    expect(screen.queryByText(/not saved yet/i)).not.toBeInTheDocument();
+  });
+
+  test('an edited translation shows as not saved until Enter saves it', async () => {
+    updateWord.mockResolvedValue({});
+    getText.mockResolvedValueOnce({
+      textId: 1,
+      title: 'Sample Text',
+      content: 'Hello world.',
+      languageId: null,
+      languageCode: 'ES',
+      languageName: 'Spanish',
+      isAudioLesson: false,
+      words: [
+        { wordId: 1, term: 'Hello', status: 2, translation: 'hola', isNew: false }
+      ],
+      bookId: null
+    });
+
+    renderTextDisplay({ autoTranslateWords: false });
+    fireEvent.click(await screen.findByText('Hello'));
+    expect(screen.getByRole('button', { name: '2' })).toHaveAttribute('aria-pressed', 'true');
+
+    const textarea = screen.getByRole('textbox', { name: 'Translation' });
+    fireEvent.change(textarea, { target: { value: 'hola, buenas' } });
+    expect(screen.getByText(/Translation not saved yet/)).toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.keyDown(textarea, { key: 'Enter' });
+    });
+
+    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(1, 2, 'hola, buenas'));
+    await waitFor(() => expect(screen.queryByText(/Translation not saved yet/)).not.toBeInTheDocument());
+  });
+
   test('soft-hyphenated European words render as single clickable words', async () => {
     // Ebooks put invisible soft hyphens (U+00AD) inside words; the reader used
     // to split "repa|rava" into two words and "contá-|las" into "contá" + "las".

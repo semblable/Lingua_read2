@@ -5,6 +5,7 @@ import type { SettingsChangeHandler } from './AppearanceSettings';
 import SecretKeyField from './SecretKeyField';
 import TtsVoiceSettings from './TtsVoiceSettings';
 import { isSpeechSynthesisSupported } from '../../utils/browserTts';
+import { WORD_STATUS_LABELS, WORD_STATUS_VALUES } from '../../types/wordStatus';
 
 interface LanguageOption {
   languageId: number;
@@ -52,6 +53,26 @@ const ReadingSettings = ({
           />
         </Form.Group>
 
+        <Form.Group className="mb-3" controlId="autoTranslateWordStatus">
+          <Form.Label>Save automatically translated words as</Form.Label>
+          <Form.Select
+            name="autoTranslateWordStatus"
+            value={settings.autoTranslateWordStatus}
+            onChange={handleChange}
+          >
+            {WORD_STATUS_VALUES.map(status => (
+              <option key={status} value={status}>
+                {status} – {WORD_STATUS_LABELS[status]}
+              </option>
+            ))}
+          </Form.Select>
+          <Form.Text className="text-muted">
+            For words you haven&apos;t saved yet, when the reader&apos;s Auto ? button or translating on open
+            saves them. Words you already track keep their status and only get the missing translation.
+            Statuses 1–4 also create flashcards when cards are created automatically.
+          </Form.Text>
+        </Form.Group>
+
         <Form.Group className="mb-3" controlId="pauseOnWordClick">
           <Form.Check
             type="switch"
@@ -91,7 +112,7 @@ const ReadingSettings = ({
             onChange={handleChange}
           />
           <Form.Text className="text-muted">
-            New (unsaved) words and multi-word phrases still open the Word Info panel.
+            Words you haven&apos;t saved yet and multi-word phrases still open the Word Info panel.
           </Form.Text>
         </Form.Group>
 

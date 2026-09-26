@@ -167,16 +167,25 @@ export const exportWordsCsv = (
 /**
  * Add a batch of terms and their translations to the database.
  */
-export type BatchTerm = { term: string; translation: string };
+// `status` (1-5, Known when left out) is for words not saved yet: new ones, and the status-0 rows
+// linking a text leaves.
+export type BatchTerm = { term: string; translation: string; status?: number };
+
+export type AddTermsBatchOptions = {
+  // Leave the status of saved words alone and only fill in their translation. Otherwise a saved
+  // word below Known is raised to Known.
+  keepExistingStatus?: boolean;
+};
 
 export const addTermsBatch = async (
   languageId: number | string,
-  terms: BatchTerm[]
+  terms: BatchTerm[],
+  options: AddTermsBatchOptions = {}
 ): Promise<unknown> => {
   try {
     return await fetchApi('/words/batch', {
       method: 'POST',
-      body: JSON.stringify({ languageId, terms })
+      body: JSON.stringify({ languageId, terms, ...options })
     });
   } catch (error) {
     console.error('Batch add terms failed:', error);

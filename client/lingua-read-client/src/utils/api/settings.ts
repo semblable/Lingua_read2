@@ -16,14 +16,17 @@ export const getUserSettings = async (): Promise<UserSettings> => {
 };
 
 export const updateUserSettings = async (
-  settings: UpdateUserSettingsInput
+  settings: UpdateUserSettingsInput,
+  // keepalive lets the request finish while the page unloads.
+  options: { keepalive?: boolean } = {}
 ): Promise<UserSettings> => {
   try {
     // A change to the SRS retention, maximum interval or weights reschedules the
     // user's cards, which fall due at the start of a local day.
     return await fetchApi<UserSettings>(`/usersettings?timezoneOffsetMinutes=${tzOffsetMinutes()}`, {
       method: 'PUT',
-      body: JSON.stringify(settings)
+      body: JSON.stringify(settings),
+      ...options
     });
   } catch (error) {
     console.error('Failed to update user settings:', error);

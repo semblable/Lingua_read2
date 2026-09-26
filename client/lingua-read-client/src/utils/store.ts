@@ -76,9 +76,9 @@ export const useAuthStore = create<AuthState>()((set) => ({
   }
 }));
 
-// --- Texts Store ---
+// --- Texts ---
 
-// Shape consumed by TextList pages. Fields are optional because endpoints
+// Shape consumed by text lists (e.g. the dashboard). Fields are optional because endpoints
 // like TextDto, TextListDto, and RecentTextDto each carry different subsets.
 // Backed structurally by api-types.d.ts so server shape drift surfaces here.
 export type StoredText = {
@@ -100,26 +100,6 @@ export type StoredText = {
   unknownWordPercentage?: number | null;
   createdAt?: string;
 };
-
-export type TextsState = {
-  texts: StoredText[];
-  loading: boolean;
-  error: string | null;
-  setTexts: (texts: StoredText[]) => void;
-  addText: (text: StoredText) => void;
-  setLoading: (loading: boolean) => void;
-  setError: (error: string | null) => void;
-};
-
-export const useTextsStore = create<TextsState>()((set) => ({
-  texts: [],
-  loading: false,
-  error: null,
-  setTexts: (texts) => set({ texts }),
-  addText: (text) => set((state) => ({ texts: [...state.texts, text] })),
-  setLoading: (loading) => set({ loading }),
-  setError: (error) => set({ error })
-}));
 
 // --- Current Text Store ---
 

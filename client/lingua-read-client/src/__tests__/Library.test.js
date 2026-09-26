@@ -130,6 +130,26 @@ describe('Library', () => {
     await waitFor(() => expect(getLibraryContents).toHaveBeenCalledWith(42));
   });
 
+  test('Add Content inside a folder files new items in that folder', async () => {
+    getLibraryContents.mockResolvedValue({ ...emptyContents, currentFolder: { folderId: 7, name: 'Seven' } });
+    renderLibrary('/library/7');
+
+    expect(await screen.findByText('This folder is empty')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Add Book/ }).closest('[href]'))
+      .toHaveAttribute('href', '/books/create?folderId=7');
+    expect(screen.getByRole('button', { name: /Add Text/ }).closest('[href]'))
+      .toHaveAttribute('href', '/texts/create?folderId=7');
+  });
+
+  test('Add Content at the root adds to the root', async () => {
+    getLibraryContents.mockResolvedValue(emptyContents);
+    renderLibrary();
+
+    expect(await screen.findByText('Your library is empty')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Add Book/ }).closest('[href]'))
+      .toHaveAttribute('href', '/books/create');
+  });
+
   describe('switching folders', () => {
     const deferContents = () => {
       const pending = {};

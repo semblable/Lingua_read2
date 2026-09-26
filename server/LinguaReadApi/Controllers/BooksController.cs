@@ -160,6 +160,7 @@ namespace LinguaReadApi.Controllers
                 PageCount = book.PageCount,
                 LanguageName = book.Language.Name,
                 LanguageId = book.LanguageId,
+                FolderId = book.FolderId,
                 CreatedAt = book.CreatedAt,
                 LastReadTextId = book.LastReadTextId,
                 CoverImagePath = book.CoverImagePath,
@@ -219,6 +220,11 @@ namespace LinguaReadApi.Controllers
                 return BadRequest("Invalid language ID");
             }
 
+            if (createBookDto.FolderId.HasValue && !await _context.UserOwnsFolderAsync(userId, createBookDto.FolderId.Value))
+            {
+                return BadRequest("Folder not found");
+            }
+
             // 1. Declare variables to be assigned and used outside the transaction block
             Book book = null!;
             var tagsToAssociate = new List<Tag>();
@@ -239,6 +245,7 @@ namespace LinguaReadApi.Controllers
                         Description = createBookDto.Description,
                         LanguageId = createBookDto.LanguageId,
                         UserId = userId,
+                        FolderId = createBookDto.FolderId,
                         CreatedAt = DateTime.UtcNow
                     };
 
@@ -418,6 +425,11 @@ namespace LinguaReadApi.Controllers
                 return BadRequest("Invalid language ID.");
             }
 
+            if (uploadDto.FolderId.HasValue && !await _context.UserOwnsFolderAsync(userId, uploadDto.FolderId.Value))
+            {
+                return BadRequest("Folder not found.");
+            }
+
             string bookTitle = uploadDto.TitleOverride ?? "Untitled Upload";
             string bookContent = string.Empty;
             string? bookDescription = null;
@@ -469,6 +481,7 @@ namespace LinguaReadApi.Controllers
                     : (bookDescription ?? $"Uploaded from {uploadDto.File.FileName}"),
                 LanguageId = uploadDto.LanguageId,
                 UserId = userId,
+                FolderId = uploadDto.FolderId,
                 CreatedAt = DateTime.UtcNow
             };
 
@@ -3161,6 +3174,7 @@ namespace LinguaReadApi.Controllers
     public class BookDetailDto
     {
         public int BookId { get; set; }
+        public int? FolderId { get; set; }
         public string Title { get; set; } = string.Empty;
         public string Description { get; set; } = string.Empty;
         public string? CoverImagePath { get; set; }
@@ -3239,6 +3253,8 @@ namespace LinguaReadApi.Controllers
         public List<string> Tags { get; set; } = new List<string>(); // Added Tags
         public List<string>? ChapterTitles { get; set; }
         public List<List<int>>? ChapterGroupings { get; set; }
+        // Library folder to file the new book in; null = library root.
+        public int? FolderId { get; set; }
     }
 
     public class UpdateLastReadDto
@@ -3312,6 +3328,8 @@ namespace LinguaReadApi.Controllers
         public bool SubSplitOversized { get; set; } = false;
         public List<string>? ChapterTitles { get; set; }
         public string? ChapterGroupingsJson { get; set; }
+        // Library folder to file the new book in; null = library root.
+        public int? FolderId { get; set; }
     }
 
     // DTO for Audiobook Upload

@@ -192,13 +192,8 @@ namespace LinguaReadApi.Controllers
             var userId = GetUserId();
 
             // Validate parent folder belongs to user
-            if (dto.ParentFolderId.HasValue)
-            {
-                var parentExists = await _context.Folders
-                    .AnyAsync(f => f.FolderId == dto.ParentFolderId.Value && f.UserId == userId);
-                if (!parentExists)
-                    return BadRequest("Parent folder not found");
-            }
+            if (dto.ParentFolderId.HasValue && !await _context.UserOwnsFolderAsync(userId, dto.ParentFolderId.Value))
+                return BadRequest("Parent folder not found");
 
             // Get max sort order in target location
             var maxSortOrder = await _context.Folders
@@ -254,9 +249,7 @@ namespace LinguaReadApi.Controllers
 
                 if (dto.ParentFolderId.Value != 0)
                 {
-                    var parentExists = await _context.Folders
-                        .AnyAsync(f => f.FolderId == dto.ParentFolderId.Value && f.UserId == userId);
-                    if (!parentExists)
+                    if (!await _context.UserOwnsFolderAsync(userId, dto.ParentFolderId.Value))
                         return BadRequest("Target parent folder not found");
 
                     if (await WouldCreateCycle(id, dto.ParentFolderId.Value, userId))
@@ -404,13 +397,8 @@ namespace LinguaReadApi.Controllers
             var userId = GetUserId();
 
             // Validate target folder if specified
-            if (dto.TargetFolderId.HasValue)
-            {
-                var folderExists = await _context.Folders
-                    .AnyAsync(f => f.FolderId == dto.TargetFolderId.Value && f.UserId == userId);
-                if (!folderExists)
-                    return BadRequest("Target folder not found");
-            }
+            if (dto.TargetFolderId.HasValue && !await _context.UserOwnsFolderAsync(userId, dto.TargetFolderId.Value))
+                return BadRequest("Target folder not found");
 
             // Move texts
             if (dto.TextIds?.Any() == true)

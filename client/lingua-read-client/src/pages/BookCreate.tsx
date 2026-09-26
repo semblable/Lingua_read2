@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useContext } from 'react';
 import { Container, Form, Button, Card, Alert, Spinner, Row, Col, Tabs, Tab, ProgressBar } from 'react-bootstrap';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { createBook, uploadBook, getAllLanguages, uploadAudiobookTracks, previewBookSplit, previewManualSplit } from '../utils/api';
+import { libraryPath, parseFolderIdParam } from '../utils/helpers';
 import { SettingsContext } from '../contexts/SettingsContext';
 import type { Language } from '../utils/api/languages';
 import SplitPreview from '../components/library/SplitPreview';
@@ -27,6 +28,9 @@ const BookCreate = () => {
   const [audioFiles, setAudioFiles] = useState<File[]>([]);
   const [audioUploadError, setAudioUploadError] = useState('');
   const navigate = useNavigate();
+  // Set when opened from a Library folder's "Add Content": the book is filed there.
+  const [searchParams] = useSearchParams();
+  const folderId = parseFolderIdParam(searchParams.get('folderId'));
   const { settings: userSettings } = useContext(SettingsContext);
   const [loadingText, setLoadingText] = useState('');
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -159,7 +163,8 @@ const BookCreate = () => {
           tagsArray,
           subSplitOversized,
           chapterTitles,
-          chapterGroupings
+          chapterGroupings,
+          folderId
         );
       } else {
         const formData = new FormData();
@@ -170,6 +175,7 @@ const BookCreate = () => {
         formData.append('SubSplitOversized', subSplitOversized.toString());
         tagsArray.forEach(tag => formData.append('Tags', tag));
         if (title) formData.append('TitleOverride', title);
+        if (folderId) formData.append('FolderId', String(folderId));
         chapterTitles.forEach(t => formData.append('ChapterTitles', t));
         if (chapterGroupings && chapterGroupings.length > 0) {
           formData.append('ChapterGroupingsJson', JSON.stringify(chapterGroupings));
@@ -459,7 +465,7 @@ const BookCreate = () => {
               )}
               <Button
                 variant="outline-secondary"
-                onClick={() => navigate('/books')}
+                onClick={() => navigate(libraryPath(folderId))}
                 disabled={loading || previewLoading}
               >
                 Cancel

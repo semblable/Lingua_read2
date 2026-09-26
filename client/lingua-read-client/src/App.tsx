@@ -18,10 +18,8 @@ import Login from './pages/Login';
 import Setup from './pages/Setup';
 
 // Pages loaded on-demand (lazy)
-const TextList = lazy(() => import('./pages/TextList'));
 const TextCreate = lazy(() => import('./pages/TextCreate'));
 const TextDisplay = lazy(() => import('./pages/TextDisplay'));
-const BookList = lazy(() => import('./pages/BookList'));
 const BookCreate = lazy(() => import('./pages/BookCreate'));
 const BookDetail = lazy(() => import('./pages/BookDetail'));
 const Statistics = lazy(() => import('./pages/Statistics'));
@@ -147,11 +145,12 @@ const AuthenticatedApp = () => {
               <Route path="/library" element={<Library />} />
               <Route path="/library/:folderId" element={<Library />} />
 
-              <Route path="/books" element={<BookList />} />
+              {/* The old book and text lists live on in the Library. */}
+              <Route path="/books" element={<Navigate to="/library" replace />} />
               <Route path="/books/create" element={<BookCreate />} />
               <Route path="/books/:bookId" element={<BookDetail />} />
 
-              <Route path="/texts" element={<TextList />} />
+              <Route path="/texts" element={<Navigate to="/library" replace />} />
               <Route path="/texts/create" element={<TextCreate />} />
               <Route path="/texts/:textId" element={<TextDisplay />} />
               <Route path="/texts/create-audio" element={<CreateAudioLesson />} />

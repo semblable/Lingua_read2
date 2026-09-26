@@ -679,6 +679,8 @@ export interface paths {
                         SubSplitOversized?: boolean;
                         ChapterTitles?: string[];
                         ChapterGroupingsJson?: string;
+                        /** Format: int32 */
+                        FolderId?: number;
                     };
                 };
             };
@@ -733,6 +735,8 @@ export interface paths {
                         SubSplitOversized?: boolean;
                         ChapterTitles?: string[];
                         ChapterGroupingsJson?: string;
+                        /** Format: int32 */
+                        FolderId?: number;
                     };
                 };
             };
@@ -3522,6 +3526,8 @@ export interface paths {
                         /** Format: binary */
                         SrtFile: string;
                         Tag?: string;
+                        /** Format: int32 */
+                        FolderId?: number;
                     };
                 };
             };
@@ -3567,6 +3573,8 @@ export interface paths {
                         /** Format: int32 */
                         LanguageId: number;
                         Tag?: string;
+                        /** Format: int32 */
+                        FolderId?: number;
                         files?: string[];
                     };
                 };
@@ -5020,6 +5028,8 @@ export interface components {
         BookDetailDto: {
             /** Format: int32 */
             bookId?: number;
+            /** Format: int32 */
+            folderId?: number | null;
             title?: string | null;
             description?: string | null;
             coverImagePath?: string | null;
@@ -5182,6 +5192,8 @@ export interface components {
             tags?: string[] | null;
             chapterTitles?: string[] | null;
             chapterGroupings?: number[][] | null;
+            /** Format: int32 */
+            folderId?: number | null;
         };
         CreateFolderDto: {
             name?: string | null;
@@ -5209,6 +5221,8 @@ export interface components {
             /** Format: int32 */
             languageId: number;
             tag?: string | null;
+            /** Format: int32 */
+            folderId?: number | null;
         };
         CreateWordDto: {
             /** Format: int32 */
@@ -6130,6 +6144,8 @@ export interface components {
             languageId?: number;
             /** Format: int32 */
             bookId?: number | null;
+            /** Format: int32 */
+            folderId?: number | null;
             bookTitle?: string | null;
             /** Format: date-time */
             createdAt?: string;

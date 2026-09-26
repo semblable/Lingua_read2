@@ -113,6 +113,7 @@ namespace LinguaReadApi.Controllers
                      LanguageCode = text.Language.Code,
                      LanguageName = text.Language.Name,
                      BookId = text.BookId,
+                     FolderId = text.FolderId,
                      BookTitle = text.Book != null ? text.Book.Title : null,
                      IsAudioLesson = text.IsAudioLesson,
                      AudioFilePath = text.AudioFilePath,
@@ -361,12 +362,18 @@ namespace LinguaReadApi.Controllers
                 return BadRequest("Invalid language ID");
             }
 
+            if (createTextDto.FolderId.HasValue && !await _context.UserOwnsFolderAsync(userId, createTextDto.FolderId.Value))
+            {
+                return BadRequest("Folder not found");
+            }
+
             var text = new Text
             {
                 Title = createTextDto.Title,
                 Content = createTextDto.Content,
                 LanguageId = createTextDto.LanguageId,
                 UserId = userId,
+                FolderId = createTextDto.FolderId,
                 Tag = createTextDto.Tag, // Assign the tag
                 CreatedAt = DateTime.UtcNow,
                 LastAccessedAt = null, // Explicitly null on creation
@@ -443,6 +450,12 @@ namespace LinguaReadApi.Controllers
                 return BadRequest("Invalid language ID");
             }
 
+            // Checked before the audio is written to disk, so a bad folder leaves no orphaned file.
+            if (createAudioLessonDto.FolderId.HasValue && !await _context.UserOwnsFolderAsync(userId, createAudioLessonDto.FolderId.Value))
+            {
+                return BadRequest("Folder not found");
+            }
+
             string? audioFilePath = null;
             string? srtContent = null;
             string? transcript = null;
@@ -482,6 +495,7 @@ namespace LinguaReadApi.Controllers
                     Content = transcript, // Use parsed transcript as main content
                     LanguageId = createAudioLessonDto.LanguageId,
                     UserId = userId,
+                    FolderId = createAudioLessonDto.FolderId,
                     CreatedAt = DateTime.UtcNow,
                     IsAudioLesson = true,
                     AudioFilePath = audioFilePath,
@@ -569,6 +583,11 @@ namespace LinguaReadApi.Controllers
                 return BadRequest("Invalid language ID provided for the batch.");
             }
 
+            if (dto.FolderId.HasValue && !await _context.UserOwnsFolderAsync(userId, dto.FolderId.Value))
+            {
+                return BadRequest("Folder not found.");
+            }
+
             var createdCount = 0;
             var skippedFiles = new List<string>();
             var createdLessons = new List<(Text text, string transcript)>();
@@ -642,6 +661,7 @@ namespace LinguaReadApi.Controllers
                             Content = transcript,
                             LanguageId = dto.LanguageId,
                             UserId = userId,
+                            FolderId = dto.FolderId,
                             CreatedAt = DateTime.UtcNow,
                             IsAudioLesson = true,
                             AudioFilePath = audioFilePath,
@@ -1184,6 +1204,7 @@ namespace LinguaReadApi.Controllers
         public string LanguageCode { get; set; } = string.Empty; // Added LanguageCode
         public int LanguageId { get; set; }
         public int? BookId { get; set; }
+        public int? FolderId { get; set; }
         public string? BookTitle { get; set; } // Added BookTitle
         public DateTime CreatedAt { get; set; }
         public bool IsAudioLesson { get; set; }
@@ -1224,6 +1245,8 @@ namespace LinguaReadApi.Controllers
         public int LanguageId { get; set; }
         [StringLength(100)]
         public string? Tag { get; set; } // Add Tag property
+        // Library folder to file the new text in; null = library root.
+        public int? FolderId { get; set; }
     }
 
     public class CreateAudioLessonDto
@@ -1239,6 +1262,8 @@ namespace LinguaReadApi.Controllers
         public IFormFile SrtFile { get; set; } = null!;
         [StringLength(100)]
         public string? Tag { get; set; } // Add Tag property
+        // Library folder to file the new lesson in; null = library root.
+        public int? FolderId { get; set; }
     }
 
     public class UpdateTextDto
@@ -1275,5 +1300,7 @@ namespace LinguaReadApi.Controllers
 
         [StringLength(100)]
         public string? Tag { get; set; } // Optional tag for the whole batch
+        // Library folder to file the new lessons in; null = library root.
+        public int? FolderId { get; set; }
     }
 }

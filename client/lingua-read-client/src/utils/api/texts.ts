@@ -47,11 +47,15 @@ export const createText = (
   title: string,
   content: string,
   languageId: number | string,
-  tag: string | null = null
+  tag: string | null = null,
+  folderId: number | null = null
 ): Promise<Text> => {
   const payload: Record<string, unknown> = { title, content, languageId };
   if (tag) {
     payload.tag = tag;
+  }
+  if (folderId) {
+    payload.folderId = folderId;
   }
   return fetchApi<Text>('/texts', {
     method: 'POST',
@@ -66,7 +70,8 @@ export const createAudioLesson = async (
   audioFile: File,
   srtFile: File,
   tag: string | null = null,
-  onProgress: UploadProgressCallback | null = null
+  onProgress: UploadProgressCallback | null = null,
+  folderId: number | null = null
 ): Promise<unknown> => {
   const endpoint = '/texts/audio';
 
@@ -78,6 +83,9 @@ export const createAudioLesson = async (
     formData.append('srtFile', srtFile);
     if (tag) {
       formData.append('tag', tag);
+    }
+    if (folderId) {
+      formData.append('folderId', String(folderId));
     }
 
     return await uploadWithProgress(endpoint, formData, onProgress);

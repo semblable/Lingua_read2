@@ -308,6 +308,13 @@ const Library = () => {
     }
   };
 
+  // "Add Content" from inside a folder files the new item in that folder. LinkContainer needs the
+  // query in `search`; it rejects a '?' inside the pathname.
+  const withFolder = (pathname: string) => ({
+    pathname,
+    search: currentFolderId ? `?folderId=${currentFolderId}` : ''
+  });
+
   const handleNavigateFolder = (id: number | null | undefined) => {
     if (id) {
       navigate(`/library/${id}`);
@@ -471,10 +478,10 @@ const Library = () => {
               <i className="bi bi-plus-lg me-1"></i>Add Content
             </Dropdown.Toggle>
             <Dropdown.Menu>
-              <LinkContainer to="/books/create"><Dropdown.Item>Add Book</Dropdown.Item></LinkContainer>
-              <LinkContainer to="/texts/create"><Dropdown.Item>Add Text</Dropdown.Item></LinkContainer>
-              <LinkContainer to="/texts/create-audio"><Dropdown.Item>Add Audio Lesson</Dropdown.Item></LinkContainer>
-              <LinkContainer to="/texts/create-batch-audio"><Dropdown.Item>Batch Audio</Dropdown.Item></LinkContainer>
+              <LinkContainer to={withFolder('/books/create')}><Dropdown.Item>Add Book</Dropdown.Item></LinkContainer>
+              <LinkContainer to={withFolder('/texts/create')}><Dropdown.Item>Add Text</Dropdown.Item></LinkContainer>
+              <LinkContainer to={withFolder('/texts/create-audio')}><Dropdown.Item>Add Audio Lesson</Dropdown.Item></LinkContainer>
+              <LinkContainer to={withFolder('/texts/create-batch-audio')}><Dropdown.Item>Batch Audio</Dropdown.Item></LinkContainer>
             </Dropdown.Menu>
           </Dropdown>
         </div>
@@ -670,10 +677,10 @@ const Library = () => {
                 <Button variant="outline-primary" onClick={() => setShowCreateFolder(true)}>
                   <i className="bi bi-folder-plus me-1"></i>Create Folder
                 </Button>
-                <LinkContainer to="/books/create">
+                <LinkContainer to={withFolder('/books/create')}>
                   <Button variant="primary"><i className="bi bi-plus-lg me-1"></i>Add Book</Button>
                 </LinkContainer>
-                <LinkContainer to="/texts/create">
+                <LinkContainer to={withFolder('/texts/create')}>
                   <Button variant="outline-success"><i className="bi bi-plus-lg me-1"></i>Add Text</Button>
                 </LinkContainer>
               </div>

@@ -5,7 +5,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import App from '../App';
 import { useAuthStore } from '../utils/store';
-import { authStatus, getUserSettings, getRecentTexts } from '../utils/api';
+import { authStatus, getUserSettings, getRecentTexts, getLibraryContents } from '../utils/api';
 
 vi.mock('../utils/api', () => ({
   authStatus: vi.fn(),
@@ -22,6 +22,8 @@ vi.mock('../utils/api', () => ({
   getGoals: vi.fn(() => Promise.resolve([])),
   getTexts: vi.fn(() => Promise.resolve([])),
   getText: vi.fn(() => Promise.resolve({})),
+  getLibraryContents: vi.fn(() => Promise.resolve({ folders: [], books: [], texts: [], breadcrumbs: [] })),
+  getFolders: vi.fn(() => Promise.resolve([])),
 }));
 
 // vi.hoisted gives a stable mock reference that both the module mock factory
@@ -89,5 +91,23 @@ describe('App', () => {
     );
 
     await waitFor(() => expect(registerServiceWorkerMock).toHaveBeenCalledTimes(1));
+  });
+
+  test.each(['/books', '/texts'])('the old %s list redirects to the Library', async (path) => {
+    authStatus.mockResolvedValue({
+      authenticated: true, needsSetup: false,
+      user: { id: 'user-1', email: 'user@example.com' }
+    });
+    getUserSettings.mockResolvedValue({});
+    getRecentTexts.mockResolvedValue([]);
+
+    render(
+      <MemoryRouter initialEntries={[path]} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+        <App />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => expect(getLibraryContents).toHaveBeenCalledWith(null));
+    expect(await screen.findByText('Your library is empty')).toBeInTheDocument();
   });
 });

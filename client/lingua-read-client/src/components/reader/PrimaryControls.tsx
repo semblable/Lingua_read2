@@ -1,6 +1,7 @@
 import React from 'react';
 import { Button, Spinner } from 'react-bootstrap';
 import type { NavigateFunction } from 'react-router-dom';
+import { libraryPath } from '../../utils/helpers';
 
 type DisplayMode = 'text' | 'audio';
 
@@ -12,7 +13,7 @@ interface PrimaryControlsProps {
   setDisplayMode: (updater: (prev: string) => string) => void;
   isSentenceMode: boolean;
   setSentenceModeEnabled: (enabled: boolean) => void;
-  text: { bookId?: number | null } | null | undefined;
+  text: { bookId?: number | null; folderId?: number | null } | null | undefined;
   handleCompleteLesson: () => void;
   handleCompleteLessonNoStats: () => void;
   completing: boolean;
@@ -76,10 +77,10 @@ const PrimaryControls = React.memo(({
       <Button
         variant="outline-secondary"
         size="sm"
-        onClick={() => navigate('/texts')}
+        onClick={() => navigate(libraryPath(text?.folderId))}
         className="ms-1"
       >
-        Back to Texts
+        Back to Library
       </Button>
     )}
   </>

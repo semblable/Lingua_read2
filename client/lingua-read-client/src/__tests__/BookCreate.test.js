@@ -24,12 +24,13 @@ const mockLanguages = [
   { languageId: 2, name: 'French' }
 ];
 
-const renderPage = () =>
+const renderPage = (path = '/books/create') =>
   render(
     <SettingsContext.Provider
       value={{ settings: mockSettings, loadingSettings: false }}
     >
       <MemoryRouter
+        initialEntries={[path]}
         future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
       >
         <BookCreate />
@@ -94,9 +95,27 @@ describe('BookCreate', () => {
         [],
         true,
         [],
-        []
+        [],
+        null
       );
     });
+  });
+
+  test('files the book in the Library folder it was opened from', async () => {
+    renderPage('/books/create?folderId=7');
+    await screen.findByText('Spanish');
+
+    fireEvent.change(screen.getByLabelText(/Book Title/i), {
+      target: { value: 'My Book' }
+    });
+    fireEvent.change(screen.getByLabelText(/Book Content/i), {
+      target: { value: 'The quick brown fox' }
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /Create Book from Text/i }));
+
+    await waitFor(() => expect(createBook).toHaveBeenCalled());
+    expect(createBook.mock.calls[0].at(-1)).toBe(7);
   });
 
   test('switches to the upload tab and uses uploadBook on submit', async () => {

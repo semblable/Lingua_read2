@@ -25,6 +25,7 @@ import { useReaderState, type FetchAllLanguageWordsFn } from '../hooks/useReader
 import { extractTranslatedTextFromPairedTags } from '../utils/translationTags';
 import { cancelSpeech, isSpeechSynthesisSupported, speakText } from '../utils/browserTts';
 import { parseSrtContent, findSrtLineIndex } from '../utils/srtParser';
+import { libraryPath } from '../utils/helpers';
 import { styles, splitTextIntoSentenceSegments, prepareLanguageContext, consumeWordAt, extractWords } from '../utils/readerText';
 import type { SentenceSegment } from '../utils/readerText';
 import PrimaryControls from '../components/reader/PrimaryControls';
@@ -1855,9 +1856,9 @@ const TextDisplay = () => {
       // Call the correct API endpoint using the imported completeLesson function
       // Pass bookId if available, otherwise null/undefined (handled by completeLesson in api.js)
       const textStats = await completeLesson(text?.bookId ?? null, text.textId);
-      // If standalone text, always go back to texts page after completion
+      // If standalone text, always go back to its Library folder after completion
       if (!text?.bookId) {
-        navigate('/texts');
+        navigate(libraryPath(text?.folderId));
       } else if (globalSettings.autoAdvanceToNextLesson && nextTextId) {
         navigate(`/texts/${nextTextId}`);
       } else if (globalSettings.showProgressStats) {
@@ -1875,7 +1876,7 @@ const TextDisplay = () => {
     setCompleting(true);
     try {
       await completeLesson(text?.bookId ?? null, text.textId, true);
-      navigate('/texts');
+      navigate(text?.bookId ? `/books/${text.bookId}` : libraryPath(text?.folderId));
     } catch (error: unknown) { alert(`Failed to complete lesson: ${(error as Error)?.message}`); }
     finally { setCompleting(false); }
   };
@@ -1956,7 +1957,7 @@ const TextDisplay = () => {
   // --- Loading/Error/NotFound States ---
   if (loading) { return <Container className="py-5 text-center"><Spinner animation="border" /></Container>; }
   if (error) { return <Container className="py-5"><Alert variant="danger">{error}<Button onClick={() => navigate(-1)}>Back</Button></Alert></Container>; }
-  if (!text) { return <Container className="py-5"><Alert variant="warning">Text not found<Button onClick={() => navigate('/texts')}>Back</Button></Alert></Container>; }
+  if (!text) { return <Container className="py-5"><Alert variant="warning">Text not found<Button onClick={() => navigate(libraryPath())}>Back</Button></Alert></Container>; }
   // --- End Loading/Error States ---
 
   // DEBUG: Log isAudioLesson state before rendering

@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useContext } from 'react'; // Added useContext
 import { Container, Form, Button, Card, Alert, Spinner, ListGroup, ProgressBar } from 'react-bootstrap';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { getAllLanguages, createAudioLessonsBatch } from '../utils/api';
+import { libraryPath, parseFolderIdParam } from '../utils/helpers';
 import { SettingsContext } from '../contexts/SettingsContext'; // Import SettingsContext
 import type { Language } from '../utils/api/languages';
 
@@ -21,6 +22,9 @@ const BatchAudioCreate = () => {
     const [uploadProgress, setUploadProgress] = useState(0); // Basic progress state (can be enhanced)
     const [results, setResults] = useState<BatchAudioResults | null>(null);
     const navigate = useNavigate();
+    // Set when opened from a Library folder's "Add Content": the lessons are filed there.
+    const [searchParams] = useSearchParams();
+    const folderId = parseFolderIdParam(searchParams.get('folderId'));
     const { settings: userSettings } = useContext(SettingsContext); // Get settings from context
 
     // Fetch languages on component mount
@@ -253,7 +257,7 @@ const BatchAudioCreate = () => {
         try {
             const resultData = await createAudioLessonsBatch(languageId, tag || null, fileList, (percent) => {
                 setUploadProgress(percent);
-            });
+            }, folderId);
 
             setUploadProgress(100);
             setResults(resultData as BatchAudioResults); // Store results { createdCount, skippedFiles }
@@ -377,7 +381,7 @@ const BatchAudioCreate = () => {
                                 </>
                             )}
                             <div className="d-flex justify-content-end mt-3">
-                                <Button onClick={() => navigate('/texts')} variant="outline-secondary" size="sm">Go to My Texts</Button>
+                                <Button onClick={() => navigate(libraryPath(folderId))} variant="outline-secondary" size="sm">Go to Library</Button>
                             </div>
                         </Alert>
                     )}

@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useContext } from 'react'; // Added useContext
 import { Container, Form, Button, Card, Alert, Spinner, Tab, Tabs, Row, Col } from 'react-bootstrap';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { createText, getAllLanguages, generateStory } from '../utils/api';
+import { parseFolderIdParam } from '../utils/helpers';
 import { SettingsContext } from '../contexts/SettingsContext'; // Import SettingsContext
 import type { Language } from '../utils/api/languages';
 
@@ -23,6 +24,9 @@ const TextCreate = () => {
   const [activeTab, setActiveTab] = useState('manual');
   
   const navigate = useNavigate();
+  // Set when opened from a Library folder's "Add Content": the text is filed there.
+  const [searchParams] = useSearchParams();
+  const folderId = parseFolderIdParam(searchParams.get('folderId'));
 
   const { settings: userSettings } = useContext(SettingsContext); // Get settings from context
 
@@ -79,7 +83,7 @@ const TextCreate = () => {
     
     try {
       // Pass the tag (or null if empty) to the createText function
-      const newText = await createText(title, content, parseInt(languageId, 10), tag || null);
+      const newText = await createText(title, content, parseInt(languageId, 10), tag || null, folderId);
       navigate(`/texts/${newText.textId}`);
     } catch (err: unknown) {
       setError((err as Error)?.message || 'Failed to create text. Please try again.');

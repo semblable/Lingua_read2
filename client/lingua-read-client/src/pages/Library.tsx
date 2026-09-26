@@ -1,14 +1,13 @@
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
-import { Container, Row, Col, Button, Spinner, Alert, Breadcrumb, Form, Badge, Dropdown } from 'react-bootstrap';
-import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { Container, Row, Col, Button, Spinner, Alert, Breadcrumb, Form, Badge, Dropdown, ListGroup } from 'react-bootstrap';
+import { Link, useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { LinkContainer } from 'react-router-bootstrap';
 import ComprehensibilityFilter, {
   type ComprehensibilityFilterValue,
 } from '../components/shared/ComprehensibilityFilter';
-import { comprehensionBand, comprehensionPercent } from '../utils/comprehensibility';
 import {
   DndContext,
-  closestCenter,
+  KeyboardSensor,
   PointerSensor,
   useSensor,
   useSensors,
@@ -18,10 +17,11 @@ import {
 } from '@dnd-kit/core';
 import {
   SortableContext,
-  rectSortingStrategy
+  rectSortingStrategy,
+  sortableKeyboardCoordinates
 } from '@dnd-kit/sortable';
 import { useLibraryStore } from '../utils/store';
-import type { LibraryFolder, SelectableType } from '../utils/store';
+import type { LibraryFolder, SelectableType, SelectedItem } from '../utils/store';
 import {
   getLibraryContents,
   getFolders,
@@ -30,8 +30,32 @@ import {
   deleteFolder as deleteFolderApi,
   moveLibraryItems,
   reorderLibraryItems,
-  deleteLibraryItems
+  deleteLibraryItems,
+  searchLibrary
 } from '../utils/api';
+import type { LibrarySearchResult } from '../utils/api/folders';
+import { libraryPath, parseFolderIdParam } from '../utils/helpers';
+import {
+  LIBRARY_SORTS,
+  countItems,
+  createLibraryCollisionDetection,
+  dragCount,
+  elsewhereRows,
+  filterLibrary,
+  hasActiveFilters,
+  isLibrarySort,
+  languageOptions,
+  reorderSection,
+  resolveDragIntent,
+  sortLibrary,
+  sortableId,
+  tagOptions,
+  type DragEndpoint,
+  type LibraryFilters,
+  type LibrarySort,
+  type LibraryStatusFilter,
+  type LibraryTypeFilter
+} from '../utils/libraryView';
 import FolderCard from '../components/library/FolderCard';
 import LibraryBookCard from '../components/library/LibraryBookCard';
 import LibraryTextCard from '../components/library/LibraryTextCard';
@@ -41,15 +65,40 @@ import RenameFolderModal from '../components/library/RenameFolderModal';
 import SelectionRectangle from '../components/library/SelectionRectangle';
 import { useDragSelect } from '../hooks/useDragSelect';
 
+// IDs of one type from a mixed selection, or null when there are none (the API's "not given").
+const idsOf = (items: SelectedItem[], type: SelectableType): number[] | null => {
+  const ids = items.filter(i => i.type === type).map(i => i.id);
+  return ids.length > 0 ? ids : null;
+};
+
+// The cross-folder search waits for this many characters and a short pause in typing.
+const MIN_SEARCH_LENGTH = 2;
+const SEARCH_DEBOUNCE_MS = 300;
+
+const ELSEWHERE_ICONS: Record<SelectableType, string> = {
+  folder: 'bi-folder',
+  book: 'bi-book',
+  text: 'bi-file-text',
+};
+
+// dnd-kit data set by the cards: { type, id, item }.
+const toDragEndpoint = (data: Record<string, unknown> | undefined): DragEndpoint | null => {
+  const type = data?.type as SelectableType | undefined;
+  const id = data?.id;
+  return type && typeof id === 'number' ? { type, id } : null;
+};
+
 const Library = () => {
   const { folderId } = useParams();
   const navigate = useNavigate();
-  const currentFolderId = folderId ? parseInt(folderId) : null;
+  // A malformed id (/library/abc) shows the root, as before; it must not become NaN, which never
+  // matches the loaded folder and would leave the page loading forever.
+  const currentFolderId = parseFolderIdParam(folderId ?? null);
 
   const {
-    currentFolder, breadcrumbs, folders, books, texts,
-    allFolders, loading, error, selectedItems, lastClickedItem,
-    setContents, setAllFolders, setLoading, setError,
+    contentsFolderId, currentFolder, breadcrumbs, folders, books, texts,
+    allFolders, error, selectedItems, lastClickedItem,
+    setContents, setSectionOrder, setAllFolders, setLoading, setError,
     setSelectedItems, setLastClickedItem, toggleSelectItem, clearSelection
   } = useLibraryStore();
 
@@ -58,17 +107,29 @@ const Library = () => {
   const [showRenameModal, setShowRenameModal] = useState(false);
   const [renameFolder, setRenameFolder] = useState<LibraryFolder | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeId, setActiveId] = useState<string | null>(null);
+  const [activeDrag, setActiveDrag] = useState<DragEndpoint | null>(null);
 
   // Persistent language filter
   const [languageFilter, setLanguageFilter] = useState(() => {
     return localStorage.getItem('libraryLanguageFilter') || '';
   });
   const [tagFilter, setTagFilter] = useState('');
+  const [typeFilter, setTypeFilter] = useState<LibraryTypeFilter>('all');
+  const [statusFilter, setStatusFilter] = useState<LibraryStatusFilter>('all');
+
+  // Persistent sort
+  const [sort, setSort] = useState<LibrarySort>(() => {
+    const saved = localStorage.getItem('librarySort');
+    return isLibrarySort(saved) ? saved : 'manual';
+  });
 
   useEffect(() => {
     localStorage.setItem('libraryLanguageFilter', languageFilter);
   }, [languageFilter]);
+
+  useEffect(() => {
+    localStorage.setItem('librarySort', sort);
+  }, [sort]);
 
   // Comprehension band filter — persisted to URL ?comp=…
   const [searchParams, setSearchParams] = useSearchParams();
@@ -82,25 +143,57 @@ const Library = () => {
     });
   };
 
+  const filters: LibraryFilters = useMemo(() => ({
+    search: searchQuery,
+    language: languageFilter,
+    tag: tagFilter,
+    type: typeFilter,
+    status: statusFilter,
+    comprehension: comprehensionFilter,
+  }), [searchQuery, languageFilter, tagFilter, typeFilter, statusFilter, comprehensionFilter]);
+  const filtersActive = hasActiveFilters(filters);
+
+  const clearFilters = () => {
+    setSearchQuery('');
+    setLanguageFilter('');
+    setTagFilter('');
+    setTypeFilter('all');
+    setStatusFilter('all');
+    setComprehensionFilter('all');
+  };
+
+  // Reordering edits the manual order, so it needs that order on screen with every item of a
+  // section visible; with a filter active the new positions would collide with hidden items' ones.
+  const canReorder = sort === 'manual' && !filtersActive;
+  const collisionDetection = useMemo(() => createLibraryCollisionDetection(canReorder), [canReorder]);
+
   // Drag-select
   const containerRef = useRef<HTMLDivElement | null>(null);
   const { selectionRect, isDragSelecting } = useDragSelect({
     containerRef,
-    enabled: !activeId
+    enabled: !activeDrag
   });
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: { distance: isDragSelecting ? 99999 : 8 }
-    })
+    }),
+    // Focus a card's grip, then Space to pick it up, arrows to move, Space to drop.
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
 
+  // Only the newest request may write the store: when the user switches folders quickly, an older
+  // response arriving last would otherwise replace the new folder's contents.
+  const requestSeq = useRef(0);
   const fetchContents = useCallback(async () => {
+    const seq = ++requestSeq.current;
     setLoading(true);
     setError(null);
     try {
       const data = await getLibraryContents(currentFolderId);
+      if (seq !== requestSeq.current) return;
       setContents({
+        folderId: currentFolderId,
         currentFolder: data.currentFolder ?? null,
         breadcrumbs: data.breadcrumbs ?? [],
         folders: data.folders ?? [],
@@ -108,10 +201,11 @@ const Library = () => {
         texts: data.texts ?? [],
       });
     } catch (err) {
+      if (seq !== requestSeq.current) return;
       const message = err instanceof Error ? err.message : '';
       setError(message || 'Failed to load library');
     } finally {
-      setLoading(false);
+      if (seq === requestSeq.current) setLoading(false);
     }
   }, [currentFolderId, setContents, setLoading, setError]);
 
@@ -142,73 +236,66 @@ const Library = () => {
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, [fetchContents, fetchAllFolders]);
 
-  // Get unique languages from current items
-  const uniqueLanguages = useMemo(() => {
-    const langs = new Set<string>();
-    books.forEach(b => b.languageName && langs.add(b.languageName));
-    texts.forEach(t => t.languageName && langs.add(t.languageName));
-    return [...langs].sort();
-  }, [books, texts]);
+  // The store still holds the previous folder's items until this folder's response lands.
+  const contentsReady = contentsFolderId === currentFolderId;
 
-  // Get unique tags from current items
-  const uniqueTags = useMemo(() => {
-    const tags = new Set<string>();
-    books.forEach(b => b.tags?.forEach((t) => tags.add(t)));
-    texts.forEach(t => t.tag && tags.add(t.tag));
-    return [...tags].sort();
-  }, [books, texts]);
+  const items = useMemo(() => ({ folders, books, texts }), [folders, books, texts]);
+  const visible = useMemo(() => sortLibrary(filterLibrary(items, filters), sort), [items, filters, sort]);
+  const { folders: filteredFolders, books: filteredBooks, texts: filteredTexts } = visible;
+  const totalItems = countItems(visible);
+  const unfilteredTotal = countItems(items);
 
-  // Filter items by search query and language
-  const filteredFolders = useMemo(() => {
-    let result = folders;
-    if (searchQuery) {
-      const q = searchQuery.toLowerCase();
-      result = result.filter(f => (f.name ?? '').toLowerCase().includes(q));
-    }
-    return result;
-  }, [folders, searchQuery]);
+  // Cross-folder search. Results are kept with the query they answer, so a stale response (or
+  // one for text since edited) is never shown.
+  const trimmedSearch = searchQuery.trim();
+  const [searchResult, setSearchResult] = useState<{ query: string; result: LibrarySearchResult } | null>(null);
+  const searchSeq = useRef(0);
+  useEffect(() => {
+    if (trimmedSearch.length < MIN_SEARCH_LENGTH) return;
+    const seq = ++searchSeq.current;
+    const timer = setTimeout(async () => {
+      try {
+        const result = await searchLibrary(trimmedSearch);
+        if (seq === searchSeq.current) setSearchResult({ query: trimmedSearch, result });
+      } catch {
+        // Best effort: the current folder's own filtering still works without it.
+      }
+    }, SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [trimmedSearch]);
+  const elsewhere = useMemo(
+    () => searchResult && searchResult.query === trimmedSearch
+      ? elsewhereRows(searchResult.result, currentFolderId)
+      : [],
+    [searchResult, trimmedSearch, currentFolderId]
+  );
 
-  const matchesComprehensionBand = useCallback((input: {
-    totalWords?: number | null;
-    unknownWords?: number | null;
-    unknownWordPercentage?: number | null;
-  }) => {
-    if (comprehensionFilter === 'all') return true;
-    return comprehensionBand(comprehensionPercent(input)) === comprehensionFilter;
-  }, [comprehensionFilter]);
+  const languages = useMemo(() => languageOptions(items, languageFilter), [items, languageFilter]);
+  const tags = useMemo(() => tagOptions(items, tagFilter), [items, tagFilter]);
 
-  const filteredBooks = useMemo(() => {
-    let result = books;
-    if (languageFilter) result = result.filter(b => b.languageName === languageFilter);
-    if (tagFilter) result = result.filter(b => b.tags?.includes(tagFilter));
-    if (searchQuery) {
-      const q = searchQuery.toLowerCase();
-      result = result.filter(b => (b.title ?? '').toLowerCase().includes(q));
-    }
-    result = result.filter(matchesComprehensionBand);
-    return result;
-  }, [books, searchQuery, languageFilter, tagFilter, matchesComprehensionBand]);
-
-  const filteredTexts = useMemo(() => {
-    let result = texts;
-    if (languageFilter) result = result.filter(t => t.languageName === languageFilter);
-    if (tagFilter) result = result.filter(t => t.tag === tagFilter);
-    if (searchQuery) {
-      const q = searchQuery.toLowerCase();
-      result = result.filter(t => (t.title ?? '').toLowerCase().includes(q));
-    }
-    result = result.filter(matchesComprehensionBand);
-    return result;
-  }, [texts, searchQuery, languageFilter, tagFilter, matchesComprehensionBand]);
-
-  // Build sortable IDs for dnd-kit
-  const sortableIds = useMemo(() => [
-    ...filteredFolders.map(f => `folder-${f.folderId}`),
-    ...filteredBooks.map(b => `book-${b.bookId}`),
-    ...filteredTexts.map(t => `text-${t.textId}`)
+  // Flat list of all visible items for shift-click range selection
+  const flatItems = useMemo<SelectedItem[]>(() => [
+    ...filteredFolders.map(f => ({ id: f.folderId!, type: 'folder' as SelectableType })),
+    ...filteredBooks.map(b => ({ id: b.bookId!, type: 'book' as SelectableType })),
+    ...filteredTexts.map(t => ({ id: t.textId!, type: 'text' as SelectableType })),
   ], [filteredFolders, filteredBooks, filteredTexts]);
 
-  const totalItems = filteredFolders.length + filteredBooks.length + filteredTexts.length;
+  // A filter change must not leave hidden items selected: Delete and Move act on the selection.
+  useEffect(() => {
+    const visibleKeys = new Set(flatItems.map(i => sortableId(i.type, i.id)));
+    const current = useLibraryStore.getState().selectedItems;
+    const kept = current.filter(i => visibleKeys.has(sortableId(i.type, i.id)));
+    if (kept.length !== current.length) setSelectedItems(kept);
+  }, [flatItems, setSelectedItems]);
+
+  const selectedKeys = useMemo(
+    () => new Set(selectedItems.map(i => sortableId(i.type, i.id))),
+    [selectedItems]
+  );
+
+  const folderSortIds = useMemo(() => filteredFolders.map(f => sortableId('folder', f.folderId!)), [filteredFolders]);
+  const bookSortIds = useMemo(() => filteredBooks.map(b => sortableId('book', b.bookId!)), [filteredBooks]);
+  const textSortIds = useMemo(() => filteredTexts.map(t => sortableId('text', t.textId!)), [filteredTexts]);
 
   // Handlers
   const handleCreateFolder = async (name: string, parentId: number | null, color: string | null) => {
@@ -242,15 +329,17 @@ const Library = () => {
     await fetchAllFolders();
   };
 
+  const handleMoveFolderTo = (folder: LibraryFolder) => {
+    setSelectedItems([{ id: folder.folderId!, type: 'folder' }]);
+    setShowMoveModal(true);
+  };
+
   const handleMoveSelected = async (targetFolderId: number | null) => {
-    const textIds = selectedItems.filter(i => i.type === 'text').map(i => i.id);
-    const bookIds = selectedItems.filter(i => i.type === 'book').map(i => i.id);
-    const folderIds = selectedItems.filter(i => i.type === 'folder').map(i => i.id);
     try {
       await moveLibraryItems(
-        textIds.length > 0 ? textIds : null,
-        bookIds.length > 0 ? bookIds : null,
-        folderIds.length > 0 ? folderIds : null,
+        idsOf(selectedItems, 'text'),
+        idsOf(selectedItems, 'book'),
+        idsOf(selectedItems, 'folder'),
         targetFolderId
       );
       clearSelection();
@@ -261,7 +350,7 @@ const Library = () => {
     }
   };
 
-  const handleDeleteSelected = async () => {
+  const handleDeleteSelected = useCallback(async () => {
     const count = selectedItems.length;
     const hasBooks = selectedItems.some(i => i.type === 'book');
     const hasFolders = selectedItems.some(i => i.type === 'folder');
@@ -272,15 +361,11 @@ const Library = () => {
 
     if (!window.confirm(msg)) return;
 
-    const textIds = selectedItems.filter(i => i.type === 'text').map(i => i.id);
-    const bookIds = selectedItems.filter(i => i.type === 'book').map(i => i.id);
-    const folderIds = selectedItems.filter(i => i.type === 'folder').map(i => i.id);
-
     try {
       await deleteLibraryItems(
-        textIds.length > 0 ? textIds : null,
-        bookIds.length > 0 ? bookIds : null,
-        folderIds.length > 0 ? folderIds : null
+        idsOf(selectedItems, 'text'),
+        idsOf(selectedItems, 'book'),
+        idsOf(selectedItems, 'folder')
       );
       clearSelection();
       await fetchContents();
@@ -288,7 +373,14 @@ const Library = () => {
     } catch (err: unknown) {
       setError(`Failed to delete items: ${(err as Error)?.message}`);
     }
-  };
+  }, [selectedItems, clearSelection, fetchContents, fetchAllFolders, setError]);
+
+  // "Add Content" from inside a folder files the new item in that folder. LinkContainer needs the
+  // query in `search`; it rejects a '?' inside the pathname.
+  const withFolder = (pathname: string) => ({
+    pathname,
+    search: currentFolderId ? `?folderId=${currentFolderId}` : ''
+  });
 
   const handleNavigateFolder = (id: number | null | undefined) => {
     if (id) {
@@ -297,13 +389,6 @@ const Library = () => {
       navigate('/library');
     }
   };
-
-  // Flat list of all visible items for shift-click range selection
-  const flatItems = useMemo(() => [
-    ...filteredFolders.map(f => ({ id: f.folderId!, type: 'folder' as SelectableType })),
-    ...filteredBooks.map(b => ({ id: b.bookId!, type: 'book' as SelectableType })),
-    ...filteredTexts.map(t => ({ id: t.textId!, type: 'text' as SelectableType })),
-  ], [filteredFolders, filteredBooks, filteredTexts]);
 
   // Ctrl+click / Shift+click handler for cards
   const handleItemClick = useCallback((id: number, type: SelectableType, event: React.MouseEvent) => {
@@ -339,71 +424,73 @@ const Library = () => {
 
   // Drag and drop handlers
   const handleDragStart = (event: DragStartEvent) => {
-    setActiveId(String(event.active.id));
+    setActiveDrag(toDragEndpoint(event.active.data.current));
   };
 
   const handleDragEnd = async (event: DragEndEvent) => {
-    setActiveId(null);
-    const { active, over } = event;
-    if (!over || active.id === over.id) return;
+    setActiveDrag(null);
+    const active = toDragEndpoint(event.active.data.current);
+    if (!active) return;
+    const intent = resolveDragIntent(active, toDragEndpoint(event.over?.data.current), selectedItems, canReorder);
+    if (!intent) return;
 
-    // Check if dropping onto a folder
-    const overData = over.data?.current;
-    if (overData?.type === 'folder') {
-      const targetFolderId = overData.item.folderId;
-      const activeData = active.data?.current;
-      if (!activeData) return;
-
-      const { type, item } = activeData;
-
-      // Don't drop folder into itself
-      if (type === 'folder' && item.folderId === targetFolderId) return;
-
-      if (type === 'text') {
-        await moveLibraryItems([item.textId], null, null, targetFolderId);
-      } else if (type === 'book') {
-        await moveLibraryItems(null, [item.bookId], null, targetFolderId);
-      } else if (type === 'folder') {
-        await moveLibraryItems(null, null, [item.folderId], targetFolderId);
+    if (intent.kind === 'move') {
+      try {
+        await moveLibraryItems(
+          idsOf(intent.items, 'text'),
+          idsOf(intent.items, 'book'),
+          idsOf(intent.items, 'folder'),
+          intent.targetFolderId
+        );
+        clearSelection();
+      } catch (err: unknown) {
+        setError(`Failed to move items: ${(err as Error)?.message}`);
       }
       await fetchContents();
       await fetchAllFolders();
       return;
     }
 
-    // Otherwise, reorder items within the same folder
-    const oldIndex = sortableIds.indexOf(String(active.id));
-    const newIndex = sortableIds.indexOf(String(over.id));
-    if (oldIndex === -1 || newIndex === -1) return;
+    const sectionIds = intent.type === 'folder'
+      ? filteredFolders.map(f => f.folderId!)
+      : intent.type === 'book'
+        ? filteredBooks.map(b => b.bookId!)
+        : filteredTexts.map(t => t.textId!);
+    const order = reorderSection(sectionIds, intent.type, intent.activeId, intent.overId);
+    if (!order) return;
 
-    // Build reorder payload
-    const reorderedIds = [...sortableIds];
-    const [moved] = reorderedIds.splice(oldIndex, 1);
-    reorderedIds.splice(newIndex, 0, moved);
-
-    const items = reorderedIds.map((id, idx) => {
-      const [type, idStr] = id.split('-');
-      return { id: parseInt(idStr), type, position: idx, sortOrder: idx };
-    });
-
+    setSectionOrder(intent.type, order.map(o => o.id));
     try {
-      await reorderLibraryItems(currentFolderId, items);
-      await fetchContents();
-    } catch (err) {
-      // Revert on error by refetching
+      await reorderLibraryItems(currentFolderId, order);
+    } catch (err: unknown) {
+      setError(`Failed to reorder items: ${(err as Error)?.message}`);
       await fetchContents();
     }
   };
 
-  if (loading && totalItems === 0) {
-    return (
-      <Container className="py-5 text-center">
-        <Spinner animation="border" role="status">
-          <span className="visually-hidden">Loading...</span>
-        </Spinner>
-      </Container>
-    );
-  }
+  const draggedCount = activeDrag ? dragCount(activeDrag, selectedItems) : 0;
+
+  // Keyboard shortcuts for the selection: Esc clears it, Ctrl/Cmd+A selects everything shown,
+  // Delete (or Cmd+Backspace) deletes it. Not while typing, dragging or in a dialog.
+  const modalOpen = showCreateFolder || showMoveModal || showRenameModal;
+  useEffect(() => {
+    if (!contentsReady || modalOpen || activeDrag) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target?.closest('input, textarea, select, [contenteditable="true"]')) return;
+      if (e.key === 'Escape' && selectedItems.length > 0) {
+        clearSelection();
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a' && flatItems.length > 0) {
+        e.preventDefault();
+        setSelectedItems(flatItems);
+      } else if ((e.key === 'Delete' || (e.key === 'Backspace' && e.metaKey)) && selectedItems.length > 0) {
+        e.preventDefault();
+        handleDeleteSelected();
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [contentsReady, modalOpen, activeDrag, selectedItems, flatItems, clearSelection, setSelectedItems, handleDeleteSelected]);
 
   return (
     <Container className="py-4 main-content-padding">
@@ -412,7 +499,7 @@ const Library = () => {
         <h2 className="mb-0 d-flex align-items-center gap-2">
           <i className="bi bi-collection"></i>
           Library
-          {currentFolder && (
+          {contentsReady && currentFolder && (
             <Button
               size="sm"
               variant="outline-secondary"
@@ -424,66 +511,111 @@ const Library = () => {
           )}
         </h2>
         <div className="d-flex align-items-center gap-2 flex-wrap">
-          {/* Search */}
-          <Form.Control
-            type="search"
-            placeholder="Search..."
-            size="sm"
-            style={{ width: '180px' }}
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
-          {/* Language filter */}
-          <Form.Select
-            size="sm"
-            value={languageFilter}
-            onChange={(e) => setLanguageFilter(e.target.value)}
-            style={{ width: '150px' }}
-          >
-            <option value="">All Languages</option>
-            {uniqueLanguages.map(lang => (
-              <option key={lang} value={lang}>{lang}</option>
-            ))}
-          </Form.Select>
-          {/* Tag filter */}
-          {uniqueTags.length > 0 && (
-            <Form.Select
-              size="sm"
-              value={tagFilter}
-              onChange={(e) => setTagFilter(e.target.value)}
-              style={{ width: '150px' }}
-            >
-              <option value="">All Tags</option>
-              {uniqueTags.map(tag => (
-                <option key={tag} value={tag}>{tag}</option>
-              ))}
-            </Form.Select>
-          )}
-          {/* Comprehension band filter */}
-          <ComprehensibilityFilter
-            value={comprehensionFilter}
-            onChange={setComprehensionFilter}
-          />
           {/* Actions */}
           <Button size="sm" variant="outline-primary" onClick={() => setShowCreateFolder(true)}>
             <i className="bi bi-folder-plus me-1"></i>New Folder
           </Button>
           <Dropdown>
-            <Dropdown.Toggle size="sm" variant="success" id="add-content-dropdown">
+            <Dropdown.Toggle size="sm" variant="success" id="library-add-content-dropdown">
               <i className="bi bi-plus-lg me-1"></i>Add Content
             </Dropdown.Toggle>
             <Dropdown.Menu>
-              <LinkContainer to="/books/create"><Dropdown.Item>Add Book</Dropdown.Item></LinkContainer>
-              <LinkContainer to="/texts/create"><Dropdown.Item>Add Text</Dropdown.Item></LinkContainer>
-              <LinkContainer to="/texts/create-audio"><Dropdown.Item>Add Audio Lesson</Dropdown.Item></LinkContainer>
-              <LinkContainer to="/texts/create-batch-audio"><Dropdown.Item>Batch Audio</Dropdown.Item></LinkContainer>
+              <LinkContainer to={withFolder('/books/create')}><Dropdown.Item>Add Book</Dropdown.Item></LinkContainer>
+              <LinkContainer to={withFolder('/texts/create')}><Dropdown.Item>Add Text</Dropdown.Item></LinkContainer>
+              <LinkContainer to={withFolder('/texts/create-audio')}><Dropdown.Item>Add Audio Lesson</Dropdown.Item></LinkContainer>
+              <LinkContainer to={withFolder('/texts/create-batch-audio')}><Dropdown.Item>Batch Audio</Dropdown.Item></LinkContainer>
             </Dropdown.Menu>
           </Dropdown>
         </div>
       </div>
 
+      {/* Search, sort and filters */}
+      <div className="d-flex align-items-center gap-2 flex-wrap mb-3">
+        <Form.Control
+          type="search"
+          placeholder="Search library..."
+          size="sm"
+          style={{ width: '200px' }}
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          aria-label="Search library"
+        />
+        <Form.Select
+          size="sm"
+          value={sort}
+          onChange={(e) => setSort(e.target.value as LibrarySort)}
+          style={{ width: '160px' }}
+          aria-label="Sort"
+        >
+          {LIBRARY_SORTS.map(s => (
+            <option key={s.value} value={s.value}>{s.label}</option>
+          ))}
+        </Form.Select>
+        {/* Language filter */}
+        <Form.Select
+          size="sm"
+          value={languageFilter}
+          onChange={(e) => setLanguageFilter(e.target.value)}
+          style={{ width: '150px' }}
+          aria-label="Language filter"
+        >
+          <option value="">All Languages</option>
+          {languages.map(lang => (
+            <option key={lang} value={lang}>{lang}</option>
+          ))}
+        </Form.Select>
+        {/* Tag filter */}
+        {tags.length > 0 && (
+          <Form.Select
+            size="sm"
+            value={tagFilter}
+            onChange={(e) => setTagFilter(e.target.value)}
+            style={{ width: '150px' }}
+            aria-label="Tag filter"
+          >
+            <option value="">All Tags</option>
+            {tags.map(tag => (
+              <option key={tag} value={tag}>{tag}</option>
+            ))}
+          </Form.Select>
+        )}
+        <Form.Select
+          size="sm"
+          value={typeFilter}
+          onChange={(e) => setTypeFilter(e.target.value as LibraryTypeFilter)}
+          style={{ width: '140px' }}
+          aria-label="Type filter"
+        >
+          <option value="all">All types</option>
+          <option value="books">Books</option>
+          <option value="texts">Texts</option>
+          <option value="audio">Audio lessons</option>
+        </Form.Select>
+        <Form.Select
+          size="sm"
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value as LibraryStatusFilter)}
+          style={{ width: '140px' }}
+          aria-label="Status filter"
+        >
+          <option value="all">Any status</option>
+          <option value="unfinished">Not finished</option>
+          <option value="finished">Finished</option>
+        </Form.Select>
+        {/* Comprehension band filter */}
+        <ComprehensibilityFilter
+          value={comprehensionFilter}
+          onChange={setComprehensionFilter}
+        />
+        {filtersActive && (
+          <Button size="sm" variant="link" className="px-1" onClick={clearFilters}>
+            Clear filters
+          </Button>
+        )}
+      </div>
+
       {/* Breadcrumbs */}
-      {(breadcrumbs.length > 0 || currentFolder) && (
+      {contentsReady && (breadcrumbs.length > 0 || currentFolder) && (
         <Breadcrumb className="mb-3">
           <Breadcrumb.Item onClick={() => handleNavigateFolder(null)} active={!currentFolder}>
             <i className="bi bi-house me-1"></i>Library
@@ -501,7 +633,7 @@ const Library = () => {
       )}
 
       {/* Selection toolbar */}
-      {selectedItems.length > 0 && (
+      {contentsReady && selectedItems.length > 0 && (
         <Alert variant="info" className="d-flex align-items-center justify-content-between py-2">
           <span>
             <Badge bg="primary" className="me-2">{selectedItems.length}</Badge>
@@ -527,27 +659,49 @@ const Library = () => {
       )}
 
       {/* Selection shortcuts hint */}
-      {selectedItems.length === 0 && totalItems > 0 && (
+      {contentsReady && selectedItems.length === 0 && totalItems > 0 && (
         <div className="text-muted small mb-2" style={{ opacity: 0.7 }}>
           <i className="bi bi-info-circle me-1"></i>
-          <kbd>Ctrl</kbd>+click to multi-select &middot; <kbd>Shift</kbd>+click for range &middot; Drag empty space to lasso-select
+          <kbd>Ctrl</kbd>+click to multi-select &middot; <kbd>Shift</kbd>+click for range &middot; <kbd>Ctrl</kbd>+<kbd>A</kbd> for all &middot; Drag empty space to lasso-select
+          {!canReorder && (
+            <> &middot; {sort !== 'manual' ? 'Switch to Manual order to reorder' : 'Clear filters to reorder'}</>
+          )}
+        </div>
+      )}
+
+      {/* Items hidden by filters */}
+      {contentsReady && filtersActive && totalItems > 0 && totalItems < unfilteredTotal && (
+        <div className="text-muted small mb-2" data-testid="library-filter-summary">
+          Showing {totalItems} of {unfilteredTotal} items
+          <Button size="sm" variant="link" className="p-0 ms-2 align-baseline" onClick={clearFilters}>
+            Clear filters
+          </Button>
         </div>
       )}
 
       {error && <Alert variant="danger" dismissible onClose={() => setError(null)}>{error}</Alert>}
 
-      {/* Content */}
+      {/* Content. The container stays mounted: useDragSelect attaches its listener to it once. */}
       <div ref={containerRef} className="library-grid-container">
-        <DndContext
-          sensors={sensors}
-          collisionDetection={closestCenter}
-          onDragStart={handleDragStart}
-          onDragEnd={handleDragEnd}
-        >
-          <SortableContext items={sortableIds} strategy={rectSortingStrategy}>
+        {!contentsReady ? (
+          !error && (
+            <div className="py-5 text-center">
+              <Spinner animation="border" role="status">
+                <span className="visually-hidden">Loading...</span>
+              </Spinner>
+            </div>
+          )
+        ) : (
+          <DndContext
+            sensors={sensors}
+            collisionDetection={collisionDetection}
+            onDragStart={handleDragStart}
+            onDragEnd={handleDragEnd}
+            onDragCancel={() => setActiveDrag(null)}
+          >
             {/* Folders section */}
             {filteredFolders.length > 0 && (
-              <>
+              <SortableContext items={folderSortIds} strategy={rectSortingStrategy}>
                 <h6 className="text-muted text-uppercase small mb-2 mt-3">
                   <i className="bi bi-folder me-1"></i>Folders
                 </h6>
@@ -560,20 +714,20 @@ const Library = () => {
                         onRename={(f) => { setRenameFolder(f); setShowRenameModal(true); }}
                         onDelete={handleDeleteFolder}
                         onChangeColor={handleChangeColor}
-                        isOver={!!(activeId && activeId !== `folder-${folder.folderId}`)}
-                        isSelected={!!selectedItems.find(i => i.id === folder.folderId && i.type === 'folder')}
+                        onMoveTo={handleMoveFolderTo}
+                        isSelected={selectedKeys.has(sortableId('folder', folder.folderId!))}
                         onSelect={toggleSelectItem}
                         onItemClick={handleItemClick}
                       />
                     </Col>
                   ))}
                 </Row>
-              </>
+              </SortableContext>
             )}
 
             {/* Books section */}
             {filteredBooks.length > 0 && (
-              <>
+              <SortableContext items={bookSortIds} strategy={rectSortingStrategy}>
                 <h6 className="text-muted text-uppercase small mb-2 mt-3">
                   <i className="bi bi-book me-1"></i>Books
                 </h6>
@@ -582,19 +736,19 @@ const Library = () => {
                     <Col key={book.bookId}>
                       <LibraryBookCard
                         book={book}
-                        isSelected={!!selectedItems.find(i => i.id === book.bookId && i.type === 'book')}
+                        isSelected={selectedKeys.has(sortableId('book', book.bookId!))}
                         onSelect={toggleSelectItem}
                         onItemClick={handleItemClick}
                       />
                     </Col>
                   ))}
                 </Row>
-              </>
+              </SortableContext>
             )}
 
             {/* Texts section */}
             {filteredTexts.length > 0 && (
-              <>
+              <SortableContext items={textSortIds} strategy={rectSortingStrategy}>
                 <h6 className="text-muted text-uppercase small mb-2 mt-3">
                   <i className="bi bi-file-text me-1"></i>Texts
                 </h6>
@@ -603,60 +757,88 @@ const Library = () => {
                     <Col key={text.textId}>
                       <LibraryTextCard
                         text={text}
-                        isSelected={!!selectedItems.find(i => i.id === text.textId && i.type === 'text')}
+                        isSelected={selectedKeys.has(sortableId('text', text.textId!))}
                         onSelect={toggleSelectItem}
                         onItemClick={handleItemClick}
                       />
                     </Col>
                   ))}
                 </Row>
-              </>
+              </SortableContext>
             )}
-          </SortableContext>
 
-          <DragOverlay>
-            {activeId ? (
-              <div style={{ opacity: 0.8, transform: 'scale(1.02)', boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }}>
-                <div className="bg-white rounded p-2 border">
-                  <i className="bi bi-arrows-move me-2"></i>Moving item...
+            <DragOverlay>
+              {activeDrag ? (
+                <div className="card shadow p-2" style={{ opacity: 0.9 }}>
+                  <span>
+                    <i className="bi bi-arrows-move me-2"></i>
+                    {draggedCount > 1 ? `Moving ${draggedCount} items` : 'Moving item'}
+                  </span>
                 </div>
-              </div>
-            ) : null}
-          </DragOverlay>
-        </DndContext>
-      </div>
-      <SelectionRectangle rect={selectionRect} />
+              ) : null}
+            </DragOverlay>
+          </DndContext>
+        )}
 
-      {/* Empty state */}
-      {!loading && totalItems === 0 && (
-        <div className="text-center py-5">
-          <i className="bi bi-collection" style={{ fontSize: '3rem', color: '#ccc' }}></i>
-          <h4 className="mt-3 text-muted">
-            {searchQuery ? 'No items match your search' : currentFolderId ? 'This folder is empty' : 'Your library is empty'}
-          </h4>
-          <p className="text-muted">
-            {!searchQuery && !currentFolderId && 'Start by adding a book, text, or creating a folder to organize your content.'}
-          </p>
-          <div className="d-flex gap-2 justify-content-center mt-3">
-            {!searchQuery && (
-              <>
+        {/* Empty states */}
+        {contentsReady && totalItems === 0 && (
+          unfilteredTotal > 0 ? (
+            <div className="text-center py-5">
+              <i className="bi bi-funnel text-muted" style={{ fontSize: '3rem', opacity: 0.5 }}></i>
+              <h4 className="mt-3 text-muted">No items match the current filters</h4>
+              <p className="text-muted">
+                {unfilteredTotal} item{unfilteredTotal !== 1 ? 's are' : ' is'} hidden in this folder.
+              </p>
+              <Button variant="outline-secondary" onClick={clearFilters}>
+                Clear filters
+              </Button>
+            </div>
+          ) : (
+            <div className="text-center py-5">
+              <i className="bi bi-collection text-muted" style={{ fontSize: '3rem', opacity: 0.5 }}></i>
+              <h4 className="mt-3 text-muted">
+                {currentFolderId ? 'This folder is empty' : 'Your library is empty'}
+              </h4>
+              <p className="text-muted">
+                {!currentFolderId && 'Start by adding a book, text, or creating a folder to organize your content.'}
+              </p>
+              <div className="d-flex gap-2 justify-content-center mt-3">
                 <Button variant="outline-primary" onClick={() => setShowCreateFolder(true)}>
                   <i className="bi bi-folder-plus me-1"></i>Create Folder
                 </Button>
-                <LinkContainer to="/books/create">
+                <LinkContainer to={withFolder('/books/create')}>
                   <Button variant="primary"><i className="bi bi-plus-lg me-1"></i>Add Book</Button>
                 </LinkContainer>
-                <LinkContainer to="/texts/create">
+                <LinkContainer to={withFolder('/texts/create')}>
                   <Button variant="outline-success"><i className="bi bi-plus-lg me-1"></i>Add Text</Button>
                 </LinkContainer>
-              </>
-            )}
-            {searchQuery && (
-              <Button variant="outline-secondary" onClick={() => setSearchQuery('')}>
-                Clear Search
-              </Button>
-            )}
-          </div>
+              </div>
+            </div>
+          )
+        )}
+      </div>
+      <SelectionRectangle rect={selectionRect} />
+
+      {/* Search matches in other folders */}
+      {contentsReady && elsewhere.length > 0 && (
+        <div className="mt-4" data-testid="library-search-elsewhere">
+          <h6 className="text-muted text-uppercase small mb-2">
+            <i className="bi bi-search me-1"></i>Elsewhere in your library
+          </h6>
+          <ListGroup>
+            {elsewhere.map(row => (
+              <ListGroup.Item key={row.key} className="d-flex align-items-center gap-2">
+                <i className={`bi ${row.isAudioLesson ? 'bi-headphones' : ELSEWHERE_ICONS[row.type]}`}></i>
+                <div className="flex-grow-1" style={{ minWidth: 0 }}>
+                  <Link to={row.href} className="d-block text-truncate">{row.title}</Link>
+                  <small className="text-muted">
+                    {row.detail && <>{row.detail} &middot; </>}
+                    in <Link to={libraryPath(row.folderId)}>{row.folderPath || 'Library'}</Link>
+                  </small>
+                </div>
+              </ListGroup.Item>
+            ))}
+          </ListGroup>
         </div>
       )}
 
@@ -673,6 +855,7 @@ const Library = () => {
         folders={allFolders}
         onMove={handleMoveSelected}
         itemCount={selectedItems.length}
+        excludeFolderIds={idsOf(selectedItems, 'folder') ?? []}
       />
       <RenameFolderModal
         show={showRenameModal}

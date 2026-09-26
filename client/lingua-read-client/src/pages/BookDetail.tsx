@@ -26,7 +26,7 @@ import {
   previewReSplitBook,
   reSplitBook
 } from '../utils/api'; // Import new API functions + uploadAudiobookTracks
-import { formatDate, /*calculateReadingTime*/ } from '../utils/helpers'; // Removed unused calculateReadingTime
+import { formatDate, libraryPath } from '../utils/helpers';
 // Removed AudiobookPlayer import
 import DownloadForOfflineButton from '../components/offline/DownloadForOfflineButton';
 import SplitPreview from '../components/library/SplitPreview';
@@ -239,7 +239,7 @@ const BookDetail = () => {
       setError('');
       try {
         await deleteBook(bookIdStr);
-        navigate('/books'); // Navigate back to book list after deletion
+        navigate(libraryPath(book.folderId)); // Back to the book's Library folder after deletion
       } catch (err: unknown) {
         setError(`Failed to delete book: ${(err as Error)?.message}. Ensure all parts are deleted first if necessary.`);
         setLoading(false);
@@ -455,8 +455,8 @@ const BookDetail = () => {
         <Alert variant="danger">
           {error}
           <div className="mt-3">
-            <Button variant="outline-primary" onClick={() => navigate('/books')}>
-              Back to Books
+            <Button variant="outline-primary" onClick={() => navigate(libraryPath(book?.folderId))}>
+              Back to Library
             </Button>
           </div>
         </Alert>
@@ -470,8 +470,8 @@ const BookDetail = () => {
         <Alert variant="warning">
           Book not found
           <div className="mt-3">
-            <Button variant="outline-primary" onClick={() => navigate('/books')}>
-              Back to Books
+            <Button variant="outline-primary" onClick={() => navigate(libraryPath())}>
+              Back to Library
             </Button>
           </div>
         </Alert>
@@ -531,9 +531,9 @@ const BookDetail = () => {
           )}
           <Button
             variant="outline-secondary"
-            onClick={() => navigate('/books')}
+            onClick={() => navigate(libraryPath(book.folderId))}
           >
-            Back to Books
+            Back to Library
           </Button>
           {/* Finish Book button — only shown when not finished */}
           {!book.isFinished && (

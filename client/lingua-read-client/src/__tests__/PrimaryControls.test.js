@@ -58,3 +58,35 @@ describe('PrimaryControls — Finish (no stats) button', () => {
     expect(screen.queryByRole('button', { name: /^complete lesson$/i })).toBeNull();
   });
 });
+
+describe('PrimaryControls — Back to Library', () => {
+  test("a standalone text goes back to its Library folder", () => {
+    const navigate = vi.fn();
+    render(
+      <PrimaryControls
+        {...baseProps}
+        navigate={navigate}
+        isAudioLesson={false}
+        text={{ textId: 1, bookId: null, folderId: 12 }}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /back to library/i }));
+    expect(navigate).toHaveBeenCalledWith('/library/12');
+  });
+
+  test('a text outside any folder goes back to the Library root', () => {
+    const navigate = vi.fn();
+    render(
+      <PrimaryControls
+        {...baseProps}
+        navigate={navigate}
+        isAudioLesson={false}
+        text={{ textId: 1, bookId: null, folderId: null }}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /back to library/i }));
+    expect(navigate).toHaveBeenCalledWith('/library');
+  });
+});

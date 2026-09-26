@@ -1,11 +1,12 @@
 import React from 'react';
 import { Card, ProgressBar, Badge } from 'react-bootstrap';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 
 import type { LibraryBook, SelectableType } from '../../utils/store';
 import ComprehensibilityBadge from '../shared/ComprehensibilityBadge';
+import { CARD_INTERACTIVE_SELECTOR } from './cardClicks';
 
 const normalizeCoverUrl = (value: string | null | undefined): string | null => {
   if (!value) return null;
@@ -21,16 +22,18 @@ interface LibraryBookCardProps {
 }
 
 const LibraryBookCard = ({ book, isSelected, onSelect, onItemClick }: LibraryBookCardProps) => {
+  const navigate = useNavigate();
   const {
     attributes,
     listeners,
     setNodeRef,
+    setActivatorNodeRef,
     transform,
     transition,
     isDragging
   } = useSortable({
     id: `book-${book.bookId}`,
-    data: { type: 'book', item: book }
+    data: { type: 'book', id: book.bookId, item: book }
   });
 
   const style = {
@@ -40,29 +43,42 @@ const LibraryBookCard = ({ book, isSelected, onSelect, onItemClick }: LibraryBoo
   };
 
   return (
-    <div ref={setNodeRef} style={style} {...attributes} data-selectable-id={book.bookId} data-selectable-type="book">
+    <div ref={setNodeRef} style={style} data-selectable-id={book.bookId} data-selectable-type="book">
       <Card
         className={`h-100 shadow-sm book-card ${isSelected ? 'border-primary border-2' : ''}`}
+        style={{ cursor: 'pointer' }}
         onClick={(e) => {
           if ((e.ctrlKey || e.metaKey || e.shiftKey) && onItemClick) {
             e.preventDefault();
             onItemClick(book.bookId!, 'book', e); // bookId is always server-provided on rendered cards
+            return;
           }
+          if ((e.target as HTMLElement).closest(CARD_INTERACTIVE_SELECTOR)) return;
+          navigate(`/books/${book.bookId}`);
         }}
       >
-        {book.coverImagePath && (
+        {book.coverImagePath ? (
           <Card.Img
             variant="top"
             src={normalizeCoverUrl(book.coverImagePath) ?? undefined}
             alt={`${book.title} cover`}
-            style={{ objectFit: 'cover', maxHeight: '180px' }}
+            loading="lazy"
+            className="library-cover"
           />
+        ) : (
+          <div className="card-img-top library-cover library-cover-placeholder" aria-hidden="true">
+            <i className="bi bi-book"></i>
+          </div>
         )}
         <Card.Body className="d-flex flex-column">
           <div className="d-flex align-items-start mb-1">
             <div
+              ref={setActivatorNodeRef}
               className="me-2 d-flex align-items-center"
+              data-drag-handle
+              {...attributes}
               {...listeners}
+              aria-label={`Move ${book.title ?? 'book'}`}
               style={{ cursor: 'grab', color: '#adb5bd' }}
             >
               <i className="bi bi-grip-vertical"></i>
@@ -73,6 +89,9 @@ const LibraryBookCard = ({ book, isSelected, onSelect, onItemClick }: LibraryBoo
                 {book.isFinished && <i className="bi bi-check-circle-fill text-success me-1" title="Completed"></i>}
                 {book.title}
               </Card.Title>
+              {book.author && (
+                <small className="text-muted d-block text-truncate" title={book.author}>{book.author}</small>
+              )}
             </div>
             <div className="form-check ms-1" onClick={(e) => e.stopPropagation()}>
               <input
@@ -80,6 +99,7 @@ const LibraryBookCard = ({ book, isSelected, onSelect, onItemClick }: LibraryBoo
                 type="checkbox"
                 checked={isSelected}
                 onChange={() => onSelect(book.bookId!, 'book')}
+                aria-label={`Select ${book.title ?? 'book'}`}
               />
             </div>
           </div>

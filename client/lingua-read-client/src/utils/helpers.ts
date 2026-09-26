@@ -1,3 +1,13 @@
+// Library page for a folder (null/undefined = library root).
+export const libraryPath = (folderId?: number | null): string =>
+  folderId ? `/library/${folderId}` : '/library';
+
+// ?folderId= as passed by the Library's "Add Content" links; null when absent or not a folder id.
+export const parseFolderIdParam = (value: string | null): number | null => {
+  const id = value ? parseInt(value, 10) : NaN;
+  return Number.isInteger(id) && id > 0 ? id : null;
+};
+
 // Format date to a user-friendly string
 export const formatDate = (dateString: string | number | Date): string => {
   const date = new Date(dateString);

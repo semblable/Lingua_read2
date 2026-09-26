@@ -4,12 +4,7 @@ import type { ResponseOf } from '../fetchApi';
 import { enqueueIfOffline } from '../offline/enqueueIfOffline';
 
 export type Book = ResponseOf<'/api/Books/{id}', 'get'>;
-export type BooksList = ResponseOf<'/api/Books', 'get'>;
 export type NextLesson = ResponseOf<'/api/Books/{id}/next-lesson', 'get'>;
-
-export const getBooks = (): Promise<BooksList> => {
-  return fetchApi<BooksList>('/books');
-};
 
 export const getBook = (bookId: number | string): Promise<Book> => {
   return fetchApi<Book>(`/books/${bookId}`);
@@ -25,7 +20,8 @@ export const createBook = (
   tags: string[] = [],
   subSplitOversized: boolean = false,
   chapterTitles: string[] = [],
-  chapterGroupings: number[][] = []
+  chapterGroupings: number[][] = [],
+  folderId: number | null = null
 ): Promise<Book> => {
   return fetchApi<Book>('/books', {
     method: 'POST',
@@ -39,7 +35,8 @@ export const createBook = (
       tags,
       subSplitOversized,
       chapterTitles,
-      chapterGroupings
+      chapterGroupings,
+      folderId
     })
   });
 };
@@ -98,7 +95,8 @@ export const createAudioLessonsBatch = async (
   languageId: number | string,
   tag: string | null,
   files: FileList | File[],
-  onProgress: UploadProgressCallback | null = null
+  onProgress: UploadProgressCallback | null = null,
+  folderId: number | null = null
 ): Promise<unknown> => {
   const endpoint = '/texts/audio/batch';
 
@@ -107,6 +105,9 @@ export const createAudioLessonsBatch = async (
     formData.append('languageId', String(languageId));
     if (tag) {
       formData.append('tag', tag);
+    }
+    if (folderId) {
+      formData.append('folderId', String(folderId));
     }
     for (let i = 0; i < files.length; i++) {
       formData.append('files', files[i]);

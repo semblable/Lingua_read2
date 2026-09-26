@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using System;
 using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations;
 using System.Linq;
 using System.Security.Claims;
 using System.Threading.Tasks;
@@ -84,23 +85,7 @@ namespace LinguaReadApi.Controllers
                     return NotFound("Folder not found");
 
                 currentFolder = folder;
-
-                // Build breadcrumb chain — load all user folders once to avoid N+1 queries
-                var allUserFolders = await _context.Folders
-                    .Where(f => f.UserId == userId)
-                    .Select(f => new { f.FolderId, f.Name, f.ParentFolderId })
-                    .ToListAsync();
-                var folderLookup = allUserFolders.ToDictionary(f => f.FolderId);
-
-                var visited = new HashSet<int>();
-                int? parentId = folderId;
-                while (parentId.HasValue)
-                {
-                    if (!visited.Add(parentId.Value)) break; // prevent infinite loop on corrupt data
-                    if (!folderLookup.TryGetValue(parentId.Value, out var parent)) break;
-                    breadcrumbs.Insert(0, new BreadcrumbDto { FolderId = parent.FolderId, Name = parent.Name });
-                    parentId = parent.ParentFolderId;
-                }
+                breadcrumbs = BuildFolderChain(await LoadFolderLookupAsync(userId), folderId);
             }
 
             // Get child folders
@@ -134,9 +119,11 @@ namespace LinguaReadApi.Controllers
                 {
                     BookId = b.BookId,
                     Title = b.Title,
+                    Author = b.Author,
                     Description = b.Description,
                     CoverImagePath = b.CoverImagePath,
                     LanguageName = b.Language.Name,
+                    CreatedAt = b.CreatedAt,
                     PartCount = b.Texts.Count,
                     FinishedPartCount = b.Texts.Count(t => t.IsFinished),
                     LastReadTextId = b.LastReadTextId,
@@ -164,6 +151,7 @@ namespace LinguaReadApi.Controllers
                     Title = t.Title,
                     LanguageName = t.Language.Name,
                     CreatedAt = t.CreatedAt,
+                    LastAccessedAt = t.LastAccessedAt,
                     Tag = t.Tag,
                     IsAudioLesson = t.IsAudioLesson,
                     IsFinished = t.IsFinished,
@@ -185,20 +173,97 @@ namespace LinguaReadApi.Controllers
             };
         }
 
+        private const int MinSearchLength = 2;
+        private const int SearchLimitPerType = 20;
+
+        // GET: api/folders/search?q=
+        // Finds folders, books (title or author) and standalone texts anywhere in the library, each
+        // with the path of the folder it lives in, so the Library can point at matches outside the
+        // folder being viewed.
+        [HttpGet("search")]
+        public async Task<ActionResult<LibrarySearchResultDto>> SearchLibrary([FromQuery] string? q = null)
+        {
+            var userId = GetUserId();
+            var query = q?.Trim() ?? string.Empty;
+            if (query.Length < MinSearchLength)
+                return new LibrarySearchResultDto();
+
+            // ToLower().Contains() rather than ILike: it translates on Npgsql (strpos, so % and _ are
+            // literal) and also runs on the InMemory provider the tests use.
+            var needle = query.ToLowerInvariant();
+
+            var folders = await _context.Folders
+                .Where(f => f.UserId == userId && f.Name.ToLower().Contains(needle))
+                .OrderBy(f => f.Name)
+                .Take(SearchLimitPerType)
+                .Select(f => new { f.FolderId, f.Name, f.ParentFolderId })
+                .ToListAsync();
+
+            var books = await _context.Books
+                .Where(b => b.UserId == userId &&
+                            (b.Title.ToLower().Contains(needle) ||
+                             (b.Author != null && b.Author.ToLower().Contains(needle))))
+                .OrderBy(b => b.Title)
+                .Take(SearchLimitPerType)
+                .Select(b => new { b.BookId, b.Title, b.Author, LanguageName = b.Language.Name, b.FolderId })
+                .ToListAsync();
+
+            var texts = await _context.Texts
+                .Where(t => t.UserId == userId && t.BookId == null && t.Tag != "srs-story" &&
+                            t.Title.ToLower().Contains(needle))
+                .OrderBy(t => t.Title)
+                .Take(SearchLimitPerType)
+                .Select(t => new { t.TextId, t.Title, LanguageName = t.Language.Name, t.IsAudioLesson, t.FolderId })
+                .ToListAsync();
+
+            var lookup = await LoadFolderLookupAsync(userId);
+            string PathOf(int? id) => string.Join(" / ", BuildFolderChain(lookup, id).Select(c => c.Name));
+
+            return new LibrarySearchResultDto
+            {
+                Folders = folders.Select(f => new LibrarySearchFolderDto
+                {
+                    FolderId = f.FolderId,
+                    Name = f.Name,
+                    ParentFolderId = f.ParentFolderId,
+                    FolderPath = PathOf(f.ParentFolderId)
+                }).ToList(),
+                Books = books.Select(b => new LibrarySearchBookDto
+                {
+                    BookId = b.BookId,
+                    Title = b.Title,
+                    Author = b.Author,
+                    LanguageName = b.LanguageName,
+                    FolderId = b.FolderId,
+                    FolderPath = PathOf(b.FolderId)
+                }).ToList(),
+                Texts = texts.Select(t => new LibrarySearchTextDto
+                {
+                    TextId = t.TextId,
+                    Title = t.Title,
+                    LanguageName = t.LanguageName,
+                    IsAudioLesson = t.IsAudioLesson,
+                    FolderId = t.FolderId,
+                    FolderPath = PathOf(t.FolderId)
+                }).ToList()
+            };
+        }
+
         // POST: api/folders
         [HttpPost]
         public async Task<ActionResult<FolderDto>> CreateFolder(CreateFolderDto dto)
         {
             var userId = GetUserId();
 
+            var name = dto.Name?.Trim() ?? string.Empty;
+            if (FolderNameError(name) is { } nameError)
+                return BadRequest(nameError);
+            if (dto.Color?.Length > MaxFolderColorLength)
+                return BadRequest("Folder color is too long");
+
             // Validate parent folder belongs to user
-            if (dto.ParentFolderId.HasValue)
-            {
-                var parentExists = await _context.Folders
-                    .AnyAsync(f => f.FolderId == dto.ParentFolderId.Value && f.UserId == userId);
-                if (!parentExists)
-                    return BadRequest("Parent folder not found");
-            }
+            if (dto.ParentFolderId.HasValue && !await _context.UserOwnsFolderAsync(userId, dto.ParentFolderId.Value))
+                return BadRequest("Parent folder not found");
 
             // Get max sort order in target location
             var maxSortOrder = await _context.Folders
@@ -207,9 +272,9 @@ namespace LinguaReadApi.Controllers
 
             var folder = new Folder
             {
-                Name = dto.Name,
+                Name = name,
                 ParentFolderId = dto.ParentFolderId,
-                Color = dto.Color,
+                Color = string.IsNullOrEmpty(dto.Color) ? null : dto.Color,
                 LanguageId = dto.LanguageId,
                 UserId = userId,
                 SortOrder = maxSortOrder + 1,
@@ -244,7 +309,15 @@ namespace LinguaReadApi.Controllers
             if (folder == null)
                 return NotFound();
 
-            if (dto.Name != null) folder.Name = dto.Name;
+            if (dto.Name != null)
+            {
+                var name = dto.Name.Trim();
+                if (FolderNameError(name) is { } nameError)
+                    return BadRequest(nameError);
+                folder.Name = name;
+            }
+            if (dto.Color?.Length > MaxFolderColorLength)
+                return BadRequest("Folder color is too long");
             if (dto.Color != null) folder.Color = dto.Color == "" ? null : dto.Color;
             if (dto.ParentFolderId.HasValue)
             {
@@ -254,9 +327,7 @@ namespace LinguaReadApi.Controllers
 
                 if (dto.ParentFolderId.Value != 0)
                 {
-                    var parentExists = await _context.Folders
-                        .AnyAsync(f => f.FolderId == dto.ParentFolderId.Value && f.UserId == userId);
-                    if (!parentExists)
+                    if (!await _context.UserOwnsFolderAsync(userId, dto.ParentFolderId.Value))
                         return BadRequest("Target parent folder not found");
 
                     if (await WouldCreateCycle(id, dto.ParentFolderId.Value, userId))
@@ -404,19 +475,15 @@ namespace LinguaReadApi.Controllers
             var userId = GetUserId();
 
             // Validate target folder if specified
-            if (dto.TargetFolderId.HasValue)
-            {
-                var folderExists = await _context.Folders
-                    .AnyAsync(f => f.FolderId == dto.TargetFolderId.Value && f.UserId == userId);
-                if (!folderExists)
-                    return BadRequest("Target folder not found");
-            }
+            if (dto.TargetFolderId.HasValue && !await _context.UserOwnsFolderAsync(userId, dto.TargetFolderId.Value))
+                return BadRequest("Target folder not found");
 
             // Move texts
             if (dto.TextIds?.Any() == true)
             {
+                // Book parts live in their book, never directly in a folder.
                 var texts = await _context.Texts
-                    .Where(t => dto.TextIds.Contains(t.TextId) && t.UserId == userId)
+                    .Where(t => dto.TextIds.Contains(t.TextId) && t.UserId == userId && t.BookId == null)
                     .ToListAsync();
 
                 // Get max sort order in target
@@ -460,11 +527,15 @@ namespace LinguaReadApi.Controllers
                     .Where(f => dto.FolderIds.Contains(f.FolderId) && f.UserId == userId)
                     .ToListAsync();
 
+                // Moved folders go after what is already there, like moved books and texts, instead
+                // of keeping a sort order from their old parent that may clash with the new one's.
+                var maxSort = await GetMaxSortOrderInFolder(userId, dto.TargetFolderId);
                 foreach (var folder in folders)
                 {
                     // Prevent moving folder into itself
                     if (folder.FolderId == dto.TargetFolderId) continue;
                     folder.ParentFolderId = dto.TargetFolderId;
+                    folder.SortOrder = ++maxSort;
                 }
             }
 
@@ -481,49 +552,86 @@ namespace LinguaReadApi.Controllers
             if (dto.Items == null || !dto.Items.Any())
                 return BadRequest("No items to reorder");
 
-            // Group by type and update sort orders
-            var folderIds = dto.Items.Where(i => i.Type == "folder").Select(i => i.Id).ToList();
-            var bookIds = dto.Items.Where(i => i.Type == "book").Select(i => i.Id).ToList();
-            var textIds = dto.Items.Where(i => i.Type == "text").Select(i => i.Id).ToList();
+            // Group by type and update sort orders. Only rows that really sit in dto.FolderId are
+            // touched: a reorder sent while the client still showed another folder's items must not
+            // rewrite that folder's order.
+            Dictionary<int, int> OrdersFor(string type) => dto.Items
+                .Where(i => i.Type == type)
+                .GroupBy(i => i.Id)
+                .ToDictionary(g => g.Key, g => g.Last().SortOrder);
 
-            if (folderIds.Any())
+            var folderOrders = OrdersFor("folder");
+            var bookOrders = OrdersFor("book");
+            var textOrders = OrdersFor("text");
+
+            if (folderOrders.Count > 0)
             {
+                var folderIds = folderOrders.Keys.ToList();
                 var folders = await _context.Folders
-                    .Where(f => folderIds.Contains(f.FolderId) && f.UserId == userId)
+                    .Where(f => folderIds.Contains(f.FolderId) && f.UserId == userId && f.ParentFolderId == dto.FolderId)
                     .ToListAsync();
                 foreach (var folder in folders)
-                {
-                    var item = dto.Items.First(i => i.Type == "folder" && i.Id == folder.FolderId);
-                    folder.SortOrder = item.SortOrder;
-                }
+                    folder.SortOrder = folderOrders[folder.FolderId];
             }
 
-            if (bookIds.Any())
+            if (bookOrders.Count > 0)
             {
+                var bookIds = bookOrders.Keys.ToList();
                 var books = await _context.Books
-                    .Where(b => bookIds.Contains(b.BookId) && b.UserId == userId)
+                    .Where(b => bookIds.Contains(b.BookId) && b.UserId == userId && b.FolderId == dto.FolderId)
                     .ToListAsync();
                 foreach (var book in books)
-                {
-                    var item = dto.Items.First(i => i.Type == "book" && i.Id == book.BookId);
-                    book.SortOrder = item.SortOrder;
-                }
+                    book.SortOrder = bookOrders[book.BookId];
             }
 
-            if (textIds.Any())
+            if (textOrders.Count > 0)
             {
+                var textIds = textOrders.Keys.ToList();
                 var texts = await _context.Texts
-                    .Where(t => textIds.Contains(t.TextId) && t.UserId == userId)
+                    .Where(t => textIds.Contains(t.TextId) && t.UserId == userId && t.FolderId == dto.FolderId && t.BookId == null)
                     .ToListAsync();
                 foreach (var text in texts)
-                {
-                    var item = dto.Items.First(i => i.Type == "text" && i.Id == text.TextId);
-                    text.SortOrder = item.SortOrder;
-                }
+                    text.SortOrder = textOrders[text.TextId];
             }
 
             await _context.SaveChangesAsync();
             return NoContent();
+        }
+
+        private const int MaxFolderNameLength = 200;
+        private const int MaxFolderColorLength = 20;
+
+        // Folder names are trimmed first; the column is varchar(200).
+        private static string? FolderNameError(string name) =>
+            name.Length == 0 ? "Folder name is required"
+            : name.Length > MaxFolderNameLength ? $"Folder name must be at most {MaxFolderNameLength} characters"
+            : null;
+
+        private sealed record FolderNode(int FolderId, string Name, int? ParentFolderId);
+
+        // All of the user's folders in one query, for walking parent chains without N+1 lookups.
+        private async Task<Dictionary<int, FolderNode>> LoadFolderLookupAsync(Guid userId)
+        {
+            return await _context.Folders
+                .Where(f => f.UserId == userId)
+                .Select(f => new FolderNode(f.FolderId, f.Name, f.ParentFolderId))
+                .ToDictionaryAsync(f => f.FolderId);
+        }
+
+        // Root-to-folder chain for folderId (empty for the library root).
+        private static List<BreadcrumbDto> BuildFolderChain(IReadOnlyDictionary<int, FolderNode> lookup, int? folderId)
+        {
+            var chain = new List<BreadcrumbDto>();
+            var visited = new HashSet<int>();
+            var current = folderId;
+            while (current.HasValue)
+            {
+                if (!visited.Add(current.Value)) break; // prevent infinite loop on corrupt data
+                if (!lookup.TryGetValue(current.Value, out var node)) break;
+                chain.Insert(0, new BreadcrumbDto { FolderId = node.FolderId, Name = node.Name });
+                current = node.ParentFolderId;
+            }
+            return chain;
         }
 
         private async Task<int> GetMaxSortOrderInFolder(Guid userId, int? folderId)
@@ -604,6 +712,8 @@ namespace LinguaReadApi.Controllers
     {
         public int BookId { get; set; }
         public string Title { get; set; } = string.Empty;
+        public string? Author { get; set; }
+        public DateTime CreatedAt { get; set; }
         public string Description { get; set; } = string.Empty;
         public string? CoverImagePath { get; set; }
         public string LanguageName { get; set; } = string.Empty;
@@ -632,6 +742,7 @@ namespace LinguaReadApi.Controllers
         public string Title { get; set; } = string.Empty;
         public string LanguageName { get; set; } = string.Empty;
         public DateTime CreatedAt { get; set; }
+        public DateTime? LastAccessedAt { get; set; }
         public string? Tag { get; set; }
         public bool IsAudioLesson { get; set; }
         public bool IsFinished { get; set; }
@@ -645,17 +756,58 @@ namespace LinguaReadApi.Controllers
             TotalWords > 0 ? Math.Round((double)(TotalWords - KnownWords) / TotalWords * 100, 1) : (double?)null;
     }
 
-    public class CreateFolderDto
+    public class LibrarySearchResultDto
     {
+        public List<LibrarySearchFolderDto> Folders { get; set; } = new();
+        public List<LibrarySearchBookDto> Books { get; set; } = new();
+        public List<LibrarySearchTextDto> Texts { get; set; } = new();
+    }
+
+    // FolderPath is the containing folder's path ("A / B"); empty = library root.
+    public class LibrarySearchFolderDto
+    {
+        public int FolderId { get; set; }
         public string Name { get; set; } = string.Empty;
         public int? ParentFolderId { get; set; }
+        public string FolderPath { get; set; } = string.Empty;
+    }
+
+    public class LibrarySearchBookDto
+    {
+        public int BookId { get; set; }
+        public string Title { get; set; } = string.Empty;
+        public string? Author { get; set; }
+        public string LanguageName { get; set; } = string.Empty;
+        public int? FolderId { get; set; }
+        public string FolderPath { get; set; } = string.Empty;
+    }
+
+    public class LibrarySearchTextDto
+    {
+        public int TextId { get; set; }
+        public string Title { get; set; } = string.Empty;
+        public string LanguageName { get; set; } = string.Empty;
+        public bool IsAudioLesson { get; set; }
+        public int? FolderId { get; set; }
+        public string FolderPath { get; set; } = string.Empty;
+    }
+
+    public class CreateFolderDto
+    {
+        [Required]
+        [StringLength(200)]
+        public string Name { get; set; } = string.Empty;
+        public int? ParentFolderId { get; set; }
+        [StringLength(20)]
         public string? Color { get; set; }
         public int? LanguageId { get; set; }
     }
 
     public class UpdateFolderDto
     {
+        [StringLength(200)]
         public string? Name { get; set; }
+        [StringLength(20)]
         public string? Color { get; set; }
         // null = no change; 0 = move to root (library root); positive int = target folder ID
         public int? ParentFolderId { get; set; }

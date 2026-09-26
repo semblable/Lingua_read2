@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useContext } from 'react'; // Added useContext
-// import { useNavigate } from 'react-router-dom'; // Keep commented if not used
+import { useSearchParams } from 'react-router-dom';
 import { Container, Form, Button, Alert, Spinner, Row, Col } from 'react-bootstrap';
 import { getAllLanguages, createAudioLesson } from '../utils/api'; // Changed getLanguages to getAllLanguages
 import { SettingsContext } from '../contexts/SettingsContext'; // Import SettingsContext
 import type { Language } from '../utils/api/languages';
+import { parseFolderIdParam } from '../utils/helpers';
 // import './CreateAudioLesson.css'; // Remove CSS file import
 
 function CreateAudioLesson() {
@@ -16,7 +17,9 @@ function CreateAudioLesson() {
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState('');
     const [successMessage, setSuccessMessage] = useState('');
-    // const navigate = useNavigate();
+    // Set when opened from a Library folder's "Add Content": the lesson is filed there.
+    const [searchParams] = useSearchParams();
+    const folderId = parseFolderIdParam(searchParams.get('folderId'));
     const { settings: userSettings } = useContext(SettingsContext); // Get settings from context
 
     // Fetch languages on component mount
@@ -77,7 +80,7 @@ function CreateAudioLesson() {
 
         setIsLoading(true);
         try {
-            const result = (await createAudioLesson(title, languageId, audioFile, srtFile, tag)) as { title?: string } | null;
+            const result = (await createAudioLesson(title, languageId, audioFile, srtFile, tag, null, folderId)) as { title?: string } | null;
             setSuccessMessage(`Audio lesson "${result?.title}" created successfully!`);
             setTitle('');
             setLanguageId(''); // Reset language selection

@@ -679,6 +679,8 @@ export interface paths {
                         SubSplitOversized?: boolean;
                         ChapterTitles?: string[];
                         ChapterGroupingsJson?: string;
+                        /** Format: int32 */
+                        FolderId?: number;
                     };
                 };
             };
@@ -733,6 +735,8 @@ export interface paths {
                         SubSplitOversized?: boolean;
                         ChapterTitles?: string[];
                         ChapterGroupingsJson?: string;
+                        /** Format: int32 */
+                        FolderId?: number;
                     };
                 };
             };
@@ -1258,6 +1262,45 @@ export interface paths {
                         "text/plain": components["schemas"]["LibraryContentsDto"];
                         "application/json": components["schemas"]["LibraryContentsDto"];
                         "text/json": components["schemas"]["LibraryContentsDto"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/Folders/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    q?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["LibrarySearchResultDto"];
+                        "application/json": components["schemas"]["LibrarySearchResultDto"];
+                        "text/json": components["schemas"]["LibrarySearchResultDto"];
                     };
                 };
             };
@@ -3522,6 +3565,8 @@ export interface paths {
                         /** Format: binary */
                         SrtFile: string;
                         Tag?: string;
+                        /** Format: int32 */
+                        FolderId?: number;
                     };
                 };
             };
@@ -3567,6 +3612,8 @@ export interface paths {
                         /** Format: int32 */
                         LanguageId: number;
                         Tag?: string;
+                        /** Format: int32 */
+                        FolderId?: number;
                         files?: string[];
                     };
                 };
@@ -5020,6 +5067,8 @@ export interface components {
         BookDetailDto: {
             /** Format: int32 */
             bookId?: number;
+            /** Format: int32 */
+            folderId?: number | null;
             title?: string | null;
             description?: string | null;
             coverImagePath?: string | null;
@@ -5182,9 +5231,11 @@ export interface components {
             tags?: string[] | null;
             chapterTitles?: string[] | null;
             chapterGroupings?: number[][] | null;
+            /** Format: int32 */
+            folderId?: number | null;
         };
         CreateFolderDto: {
-            name?: string | null;
+            name: string;
             /** Format: int32 */
             parentFolderId?: number | null;
             color?: string | null;
@@ -5209,6 +5260,8 @@ export interface components {
             /** Format: int32 */
             languageId: number;
             tag?: string | null;
+            /** Format: int32 */
+            folderId?: number | null;
         };
         CreateWordDto: {
             /** Format: int32 */
@@ -5568,6 +5621,9 @@ export interface components {
             /** Format: int32 */
             bookId?: number;
             title?: string | null;
+            author?: string | null;
+            /** Format: date-time */
+            createdAt?: string;
             description?: string | null;
             coverImagePath?: string | null;
             languageName?: string | null;
@@ -5607,6 +5663,39 @@ export interface components {
             books?: components["schemas"]["LibraryBookDto"][] | null;
             texts?: components["schemas"]["LibraryTextDto"][] | null;
         };
+        LibrarySearchBookDto: {
+            /** Format: int32 */
+            bookId?: number;
+            title?: string | null;
+            author?: string | null;
+            languageName?: string | null;
+            /** Format: int32 */
+            folderId?: number | null;
+            folderPath?: string | null;
+        };
+        LibrarySearchFolderDto: {
+            /** Format: int32 */
+            folderId?: number;
+            name?: string | null;
+            /** Format: int32 */
+            parentFolderId?: number | null;
+            folderPath?: string | null;
+        };
+        LibrarySearchResultDto: {
+            folders?: components["schemas"]["LibrarySearchFolderDto"][] | null;
+            books?: components["schemas"]["LibrarySearchBookDto"][] | null;
+            texts?: components["schemas"]["LibrarySearchTextDto"][] | null;
+        };
+        LibrarySearchTextDto: {
+            /** Format: int32 */
+            textId?: number;
+            title?: string | null;
+            languageName?: string | null;
+            isAudioLesson?: boolean;
+            /** Format: int32 */
+            folderId?: number | null;
+            folderPath?: string | null;
+        };
         LibraryTextDto: {
             /** Format: int32 */
             textId?: number;
@@ -5614,6 +5703,8 @@ export interface components {
             languageName?: string | null;
             /** Format: date-time */
             createdAt?: string;
+            /** Format: date-time */
+            lastAccessedAt?: string | null;
             tag?: string | null;
             isAudioLesson?: boolean;
             isFinished?: boolean;
@@ -6130,6 +6221,8 @@ export interface components {
             languageId?: number;
             /** Format: int32 */
             bookId?: number | null;
+            /** Format: int32 */
+            folderId?: number | null;
             bookTitle?: string | null;
             /** Format: date-time */
             createdAt?: string;

@@ -195,6 +195,7 @@ export type LibraryBook = {
   finishedPartCount?: number;
   completionPercentage?: number;
   totalWords?: number;
+  knownWords?: number;
   unknownWords?: number;
   unknownWordPercentage?: number | null;
   tags?: string[] | null;
@@ -210,12 +211,15 @@ export type LibraryText = {
   tag?: string | null;
   createdAt?: string;
   totalWords?: number;
+  knownWords?: number;
   unknownWords?: number;
   unknownWordPercentage?: number | null;
 };
 export type Breadcrumb = { folderId?: number | null; name?: string | null };
 
 export type LibraryContentsPayload = {
+  // The folder these contents were loaded for (null = library root).
+  folderId: number | null;
   currentFolder: LibraryFolder | null;
   breadcrumbs: Breadcrumb[];
   folders: LibraryFolder[];
@@ -224,6 +228,9 @@ export type LibraryContentsPayload = {
 };
 
 export type LibraryState = {
+  // Folder the current contents belong to; undefined until the first load. The page compares it
+  // with the URL so it never shows (or lets you act on) the previous folder's items.
+  contentsFolderId: number | null | undefined;
   currentFolder: LibraryFolder | null;
   breadcrumbs: Breadcrumb[];
   folders: LibraryFolder[];
@@ -235,6 +242,7 @@ export type LibraryState = {
   selectedItems: SelectedItem[];
   lastClickedItem: SelectedItem | null;
   setContents: (data: LibraryContentsPayload) => void;
+  setSectionOrder: (type: SelectableType, orderedIds: number[]) => void;
   setAllFolders: (folders: LibraryFolder[]) => void;
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
@@ -244,7 +252,15 @@ export type LibraryState = {
   clearSelection: () => void;
 };
 
+const orderBy = <T>(items: T[], idOf: (item: T) => number | undefined, orderedIds: number[]): T[] => {
+  const position = new Map(orderedIds.map((id, index) => [id, index]));
+  return [...items].sort(
+    (a, b) => (position.get(idOf(a) ?? -1) ?? Infinity) - (position.get(idOf(b) ?? -1) ?? Infinity)
+  );
+};
+
 export const useLibraryStore = create<LibraryState>()((set) => ({
+  contentsFolderId: undefined,
   currentFolder: null,
   breadcrumbs: [],
   folders: [],
@@ -257,11 +273,18 @@ export const useLibraryStore = create<LibraryState>()((set) => ({
   lastClickedItem: null,
   setContents: (data) =>
     set({
+      contentsFolderId: data.folderId,
       currentFolder: data.currentFolder,
       breadcrumbs: data.breadcrumbs,
       folders: data.folders,
       books: data.books,
       texts: data.texts
+    }),
+  setSectionOrder: (type, orderedIds) =>
+    set((state) => {
+      if (type === 'folder') return { folders: orderBy(state.folders, (f) => f.folderId, orderedIds) };
+      if (type === 'book') return { books: orderBy(state.books, (b) => b.bookId, orderedIds) };
+      return { texts: orderBy(state.texts, (t) => t.textId, orderedIds) };
     }),
   setAllFolders: (folders) => set({ allFolders: folders }),
   setLoading: (loading) => set({ loading }),

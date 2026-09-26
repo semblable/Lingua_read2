@@ -9,16 +9,31 @@ interface MoveToFolderModalProps {
   folders: LibraryFolder[];
   onMove: (folderId: number | null) => Promise<void> | void;
   itemCount: number;
+  // Folders being moved: neither they nor their subfolders are valid destinations.
+  excludeFolderIds?: number[];
 }
 
-const MoveToFolderModal = ({ show, onHide, folders, onMove, itemCount }: MoveToFolderModalProps) => {
+const MoveToFolderModal = ({ show, onHide, folders, onMove, itemCount, excludeFolderIds = [] }: MoveToFolderModalProps) => {
   const [selectedFolderId, setSelectedFolderId] = useState<number | null>(null); // null = root
   const [submitting, setSubmitting] = useState(false);
 
+  const excluded = new Set(excludeFolderIds);
+  let grew = excluded.size > 0;
+  while (grew) {
+    grew = false;
+    for (const f of folders) {
+      if (f.folderId != null && f.parentFolderId != null && excluded.has(f.parentFolderId) && !excluded.has(f.folderId)) {
+        excluded.add(f.folderId);
+        grew = true;
+      }
+    }
+  }
+  const targetFolders = folders.filter((f) => f.folderId == null || !excluded.has(f.folderId));
+
   // Build folder tree from flat list
-  const rootFolders = folders.filter((f: LibraryFolder) => !f.parentFolderId);
+  const rootFolders = targetFolders.filter((f: LibraryFolder) => !f.parentFolderId);
   const getChildren = (parentId: number | undefined): LibraryFolder[] =>
-    folders.filter((f: LibraryFolder) => f.parentFolderId === parentId);
+    targetFolders.filter((f: LibraryFolder) => f.parentFolderId === parentId);
 
   const handleMove = async () => {
     setSubmitting(true);
@@ -93,7 +108,7 @@ const MoveToFolderModal = ({ show, onHide, folders, onMove, itemCount }: MoveToF
           })()}
           {rootFolders.map((folder: LibraryFolder) => renderFolder(folder))}
         </ListGroup>
-        {folders.length === 0 && (
+        {targetFolders.length === 0 && (
           <p className="text-muted text-center py-3">
             No folders yet. Create one first.
           </p>

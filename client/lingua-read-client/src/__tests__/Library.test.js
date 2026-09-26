@@ -1,6 +1,6 @@
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { MemoryRouter, Routes, Route } from 'react-router-dom';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import { MemoryRouter, Routes, Route, useNavigate } from 'react-router-dom';
 import '@testing-library/jest-dom';
 import Library from '../pages/Library';
 import { useLibraryStore } from '../utils/store';
@@ -27,18 +27,34 @@ vi.mock('../hooks/useDragSelect', () => ({
   useDragSelect: () => ({ selectionRect: null, isDragSelecting: false })
 }));
 
-const renderLibrary = (path = '/library') =>
+// Lets a test switch folders the way the app does, without remounting Library.
+const GoTo = ({ path }) => {
+  const navigate = useNavigate();
+  return <button onClick={() => navigate(path)}>go to {path}</button>;
+};
+
+// Same routes as App.tsx.
+const renderLibrary = (path = '/library', extra = null) =>
   render(
     <MemoryRouter
       initialEntries={[path]}
       future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
     >
+      {extra}
       <Routes>
         <Route path="/library" element={<Library />} />
-        <Route path="/library/folder/:folderId" element={<Library />} />
+        <Route path="/library/:folderId" element={<Library />} />
       </Routes>
     </MemoryRouter>
   );
+
+const folderContents = (folderId, bookTitle) => ({
+  currentFolder: { folderId, name: `Folder ${folderId}` },
+  breadcrumbs: [{ folderId, name: `Folder ${folderId}` }],
+  folders: [],
+  books: [{ bookId: folderId * 10, title: bookTitle, languageName: 'French', tags: [] }],
+  texts: []
+});
 
 const emptyContents = {
   currentFolder: null,
@@ -66,6 +82,7 @@ describe('Library', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     useLibraryStore.setState({
+      contentsFolderId: undefined,
       currentFolder: null,
       breadcrumbs: [],
       folders: [],
@@ -107,10 +124,77 @@ describe('Library', () => {
     expect(await screen.findByText('library down')).toBeInTheDocument();
   });
 
-  test('fetches contents for a specific folder when navigating to /library/folder/:id', async () => {
+  test('fetches contents for a specific folder when navigating to /library/:id', async () => {
     getLibraryContents.mockResolvedValue(emptyContents);
-    renderLibrary('/library/folder/42');
+    renderLibrary('/library/42');
     await waitFor(() => expect(getLibraryContents).toHaveBeenCalledWith(42));
+  });
+
+  describe('switching folders', () => {
+    const deferContents = () => {
+      const pending = {};
+      getLibraryContents.mockImplementation((id) => new Promise((resolve) => { pending[id] = resolve; }));
+      return pending;
+    };
+
+    test('a slower response for the folder the user already left is ignored', async () => {
+      const pending = deferContents();
+      renderLibrary('/library/1', <GoTo path="/library/2" />);
+      await waitFor(() => expect(pending[1]).toBeDefined());
+
+      fireEvent.click(screen.getByText('go to /library/2'));
+      await waitFor(() => expect(pending[2]).toBeDefined());
+
+      await act(async () => { pending[2](folderContents(2, 'Book in two')); });
+      await act(async () => { pending[1](folderContents(1, 'Book in one')); });
+
+      expect(screen.getByText('Book in two')).toBeInTheDocument();
+      expect(screen.queryByText('Book in one')).not.toBeInTheDocument();
+    });
+
+    test("the previous folder's items are not shown while the next one loads", async () => {
+      const pending = deferContents();
+      renderLibrary('/library/1', <GoTo path="/library/2" />);
+      await waitFor(() => expect(pending[1]).toBeDefined());
+      await act(async () => { pending[1](folderContents(1, 'Book in one')); });
+      expect(screen.getByText('Book in one')).toBeInTheDocument();
+
+      fireEvent.click(screen.getByText('go to /library/2'));
+      await waitFor(() => expect(pending[2]).toBeDefined());
+
+      expect(screen.queryByText('Book in one')).not.toBeInTheDocument();
+      expect(screen.getByRole('status')).toBeInTheDocument();
+    });
+  });
+
+  describe('filters that hide everything', () => {
+    const germanOnly = {
+      ...emptyContents,
+      books: [{ bookId: 10, title: 'German Book', languageName: 'German', tags: [] }]
+    };
+
+    test('a saved language missing from this folder stays visible and can be cleared', async () => {
+      localStorage.setItem('libraryLanguageFilter', 'Spanish');
+      getLibraryContents.mockResolvedValue(germanOnly);
+      renderLibrary();
+
+      expect(await screen.findByText('No items match the current filters')).toBeInTheDocument();
+      expect(screen.queryByText('Your library is empty')).not.toBeInTheDocument();
+      // The select shows the filter that is really applied, not "All Languages".
+      expect(screen.getByLabelText('Language filter')).toHaveValue('Spanish');
+
+      fireEvent.click(screen.getAllByRole('button', { name: 'Clear filters' })[0]);
+
+      expect(await screen.findByText('German Book')).toBeInTheDocument();
+      expect(screen.getByLabelText('Language filter')).toHaveValue('');
+    });
+
+    test('a partial match says how many items are hidden', async () => {
+      getLibraryContents.mockResolvedValue(sampleContents);
+      renderLibrary('/library?comp=sweet-spot');
+      await screen.findByText('My Folder');
+      expect(screen.getByTestId('library-filter-summary')).toHaveTextContent('Showing 1 of 3 items');
+    });
   });
 
   describe('comprehensibility filter', () => {

@@ -23,13 +23,13 @@ interface FolderCardProps {
   onRename: (folder: LibraryFolder) => void;
   onDelete: (folder: LibraryFolder) => void;
   onChangeColor: (folderId: number, color: string) => void;
-  isOver?: boolean;
+  onMoveTo: (folder: LibraryFolder) => void;
   isSelected?: boolean;
   onSelect: (id: number, type: SelectableType) => void;
   onItemClick?: (id: number, type: SelectableType, e: React.MouseEvent) => void;
 }
 
-const FolderCard = ({ folder, onClick, onRename, onDelete, onChangeColor, isOver, isSelected, onSelect, onItemClick }: FolderCardProps) => {
+const FolderCard = ({ folder, onClick, onRename, onDelete, onChangeColor, onMoveTo, isSelected, onSelect, onItemClick }: FolderCardProps) => {
   const [showDropdown, setShowDropdown] = useState(false);
 
   const {
@@ -38,11 +38,16 @@ const FolderCard = ({ folder, onClick, onRename, onDelete, onChangeColor, isOver
     setNodeRef,
     transform,
     transition,
-    isDragging
+    isDragging,
+    isOver,
+    active
   } = useSortable({
     id: `folder-${folder.folderId}`,
-    data: { type: 'folder', item: folder }
+    data: { type: 'folder', id: folder.folderId, item: folder }
   });
+
+  // Only books and texts are dropped into a folder; a dragged folder reorders instead.
+  const isDropTarget = isOver && active?.data.current?.type !== 'folder';
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -56,7 +61,7 @@ const FolderCard = ({ folder, onClick, onRename, onDelete, onChangeColor, isOver
   return (
     <div ref={setNodeRef} style={style} {...attributes} data-selectable-id={folder.folderId} data-selectable-type="folder">
       <Card
-        className={`h-100 shadow-sm ${isOver ? 'border-primary border-2' : ''}`}
+        className={`h-100 shadow-sm ${isDropTarget || isSelected ? 'border-primary border-2' : ''}`}
         onClick={(e) => {
           if ((e.ctrlKey || e.metaKey || e.shiftKey) && onItemClick) {
             e.preventDefault();
@@ -109,6 +114,9 @@ const FolderCard = ({ folder, onClick, onRename, onDelete, onChangeColor, isOver
             <Dropdown.Menu align="end">
               <Dropdown.Item onClick={() => { setShowDropdown(false); onRename(folder); }}>
                 <i className="bi bi-pencil me-2"></i>Rename
+              </Dropdown.Item>
+              <Dropdown.Item onClick={() => { setShowDropdown(false); onMoveTo(folder); }}>
+                <i className="bi bi-folder-symlink me-2"></i>Move to…
               </Dropdown.Item>
               <Dropdown.Header>Color</Dropdown.Header>
               <Dropdown.Item className="d-flex gap-2 flex-wrap px-3">

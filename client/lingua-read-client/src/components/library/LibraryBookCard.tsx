@@ -30,7 +30,7 @@ const LibraryBookCard = ({ book, isSelected, onSelect, onItemClick }: LibraryBoo
     isDragging
   } = useSortable({
     id: `book-${book.bookId}`,
-    data: { type: 'book', item: book }
+    data: { type: 'book', id: book.bookId, item: book }
   });
 
   const style = {

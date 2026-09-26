@@ -77,11 +77,12 @@ export const moveLibraryItems = async (
 };
 
 export type ReorderItem = {
-  id: number | string;
-  type: string;
-  position: number;
+  id: number;
+  type: 'folder' | 'book' | 'text';
+  sortOrder: number;
 };
 
+// folderId is the folder the items are in; the server ignores items that are not.
 export const reorderLibraryItems = async (
   folderId: number | string | null,
   items: ReorderItem[]

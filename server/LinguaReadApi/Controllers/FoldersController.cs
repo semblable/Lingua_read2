@@ -481,45 +481,46 @@ namespace LinguaReadApi.Controllers
             if (dto.Items == null || !dto.Items.Any())
                 return BadRequest("No items to reorder");
 
-            // Group by type and update sort orders
-            var folderIds = dto.Items.Where(i => i.Type == "folder").Select(i => i.Id).ToList();
-            var bookIds = dto.Items.Where(i => i.Type == "book").Select(i => i.Id).ToList();
-            var textIds = dto.Items.Where(i => i.Type == "text").Select(i => i.Id).ToList();
+            // Group by type and update sort orders. Only rows that really sit in dto.FolderId are
+            // touched: a reorder sent while the client still showed another folder's items must not
+            // rewrite that folder's order.
+            Dictionary<int, int> OrdersFor(string type) => dto.Items
+                .Where(i => i.Type == type)
+                .GroupBy(i => i.Id)
+                .ToDictionary(g => g.Key, g => g.Last().SortOrder);
 
-            if (folderIds.Any())
+            var folderOrders = OrdersFor("folder");
+            var bookOrders = OrdersFor("book");
+            var textOrders = OrdersFor("text");
+
+            if (folderOrders.Count > 0)
             {
+                var folderIds = folderOrders.Keys.ToList();
                 var folders = await _context.Folders
-                    .Where(f => folderIds.Contains(f.FolderId) && f.UserId == userId)
+                    .Where(f => folderIds.Contains(f.FolderId) && f.UserId == userId && f.ParentFolderId == dto.FolderId)
                     .ToListAsync();
                 foreach (var folder in folders)
-                {
-                    var item = dto.Items.First(i => i.Type == "folder" && i.Id == folder.FolderId);
-                    folder.SortOrder = item.SortOrder;
-                }
+                    folder.SortOrder = folderOrders[folder.FolderId];
             }
 
-            if (bookIds.Any())
+            if (bookOrders.Count > 0)
             {
+                var bookIds = bookOrders.Keys.ToList();
                 var books = await _context.Books
-                    .Where(b => bookIds.Contains(b.BookId) && b.UserId == userId)
+                    .Where(b => bookIds.Contains(b.BookId) && b.UserId == userId && b.FolderId == dto.FolderId)
                     .ToListAsync();
                 foreach (var book in books)
-                {
-                    var item = dto.Items.First(i => i.Type == "book" && i.Id == book.BookId);
-                    book.SortOrder = item.SortOrder;
-                }
+                    book.SortOrder = bookOrders[book.BookId];
             }
 
-            if (textIds.Any())
+            if (textOrders.Count > 0)
             {
+                var textIds = textOrders.Keys.ToList();
                 var texts = await _context.Texts
-                    .Where(t => textIds.Contains(t.TextId) && t.UserId == userId)
+                    .Where(t => textIds.Contains(t.TextId) && t.UserId == userId && t.FolderId == dto.FolderId && t.BookId == null)
                     .ToListAsync();
                 foreach (var text in texts)
-                {
-                    var item = dto.Items.First(i => i.Type == "text" && i.Id == text.TextId);
-                    text.SortOrder = item.SortOrder;
-                }
+                    text.SortOrder = textOrders[text.TextId];
             }
 
             await _context.SaveChangesAsync();

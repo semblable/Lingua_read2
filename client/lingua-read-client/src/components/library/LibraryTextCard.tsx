@@ -24,7 +24,7 @@ const LibraryTextCard = ({ text, isSelected, onSelect, onItemClick }: LibraryTex
     isDragging
   } = useSortable({
     id: `text-${text.textId}`,
-    data: { type: 'text', item: text }
+    data: { type: 'text', id: text.textId, item: text }
   });
 
   const style = {

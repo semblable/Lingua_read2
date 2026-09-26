@@ -44,7 +44,7 @@ describe('useSettingsSaver', () => {
     await act(async () => { vi.advanceTimersByTime(SETTINGS_SAVE_DELAY_MS); });
 
     expect(updateUserSettings).toHaveBeenCalledTimes(1);
-    expect(updateUserSettings).toHaveBeenCalledWith({ textSize: 20, leftPanelWidth: 80 });
+    expect(updateUserSettings).toHaveBeenCalledWith({ textSize: 20, leftPanelWidth: 80 }, { keepalive: false });
   });
 
   test('sends one request at a time, the newest value last', async () => {
@@ -64,7 +64,7 @@ describe('useSettingsSaver', () => {
     await act(async () => { first.resolve({}); });
 
     expect(updateUserSettings).toHaveBeenCalledTimes(2);
-    expect(updateUserSettings).toHaveBeenLastCalledWith({ leftPanelWidth: 75 });
+    expect(updateUserSettings).toHaveBeenLastCalledWith({ leftPanelWidth: 75 }, { keepalive: false });
   });
 
   test('keeps a failed patch and sends it with the next change', async () => {
@@ -80,11 +80,11 @@ describe('useSettingsSaver', () => {
     await act(async () => { vi.advanceTimersByTime(SETTINGS_SAVE_DELAY_MS); });
 
     expect(updateUserSettings).toHaveBeenCalledTimes(2);
-    expect(updateUserSettings).toHaveBeenLastCalledWith({ paragraphSpacing: 1.6, textSize: 20 });
+    expect(updateUserSettings).toHaveBeenLastCalledWith({ paragraphSpacing: 1.6, textSize: 20 }, { keepalive: false });
     consoleError.mockRestore();
   });
 
-  test('sends a waiting change when the component unmounts', async () => {
+  test('sends a waiting change when the component unmounts, with keepalive', async () => {
     const { result, unmount } = renderHook(() => useSettingsSaver(vi.fn()));
 
     act(() => { result.current({ readingDensity: 'compact' }); });
@@ -92,6 +92,6 @@ describe('useSettingsSaver', () => {
 
     await act(async () => { unmount(); });
 
-    expect(updateUserSettings).toHaveBeenCalledWith({ readingDensity: 'compact' });
+    expect(updateUserSettings).toHaveBeenCalledWith({ readingDensity: 'compact' }, { keepalive: true });
   });
 });

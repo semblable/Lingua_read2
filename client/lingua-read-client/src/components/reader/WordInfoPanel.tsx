@@ -126,7 +126,7 @@ const WordInfoPanel = React.memo(({
   if (translation.isTranslating) {
     hint = <><Spinner size="sm" className="me-1" />Translating…</>;
   } else if (hasUnsavedTranslation) {
-    hint = <span className="word-info-hint-unsaved">Unsaved edit. Press Enter to save it.</span>;
+    hint = <span className="word-info-hint-unsaved">Translation not saved yet. Press Enter to save it.</span>;
   } else if (!isTracked && translation.value.trim()) {
     hint = 'Not saved yet. Pick a status, or press Enter to save it as New.';
   }

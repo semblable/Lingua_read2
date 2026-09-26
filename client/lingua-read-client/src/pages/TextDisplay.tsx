@@ -700,7 +700,9 @@ const TextDisplay = () => {
     const sentenceContext = readSentenceContextFromNode(event.target as Node);
     if (!isPhrase && globalSettings.tooltipOnlyForSavedWords) {
       const existing = getWordData(word);
-      if (existing && !existing.isNew) {
+      // By status, not `isNew`: the API sets that on every saved word of status 1, and linking
+      // stores unsaved words at status 0.
+      if (existing && (existing.status ?? 0) > 0) {
         clearPendingSelection();
         return;
       }
@@ -1524,6 +1526,8 @@ const TextDisplay = () => {
             setWords(prevWords => prevWords.map(w => w.wordId === wordData.wordId ? { ...w, status, translation: translationToUse } : w));
             if (selectedWord === term && displayedWord?.term === term) {
               setDisplayedWord((prev) => ({ ...(prev || {}), status, translation: translationToUse }));
+              // An empty box would make Enter save '' over the translation just stored.
+              setTranslation(prev => (prev.trim() ? prev : translationToUse));
             }
           })
           .catch((err: unknown) => console.error(`[Keyboard Shortcut] Failed update for ${term}:`, err));
@@ -1544,12 +1548,17 @@ const TextDisplay = () => {
             const typed = newWordData as { translation?: string } | null;
             const wordWithTranslation = { ...(typed || {}), translation: translationToUse || typed?.translation };
             setWords(prevWords => [...prevWords, wordWithTranslation]);
+            // The word is saved now; the panel showing it should say so (status, Mine, no hint).
+            if (selectedWord === term && displayedWord?.term === term) {
+              setDisplayedWord({ ...wordWithTranslation, isNew: false });
+              setTranslation(prev => (prev.trim() ? prev : wordWithTranslation.translation || ''));
+            }
             if (globalSettings.autoTranslateWords && !translationToUse) triggerAutoTranslation(term);
           })
           .catch(err => console.error(`[Keyboard Shortcut] Failed to create word ${term}:`, err));
       }
     },
-    [getWordData, text?.languageCode, text?.textId, translationTargetLanguageCode, setWords, selectedWord, displayedWord?.term, currentSentenceSegment?.text, globalSettings.autoTranslateWords, triggerAutoTranslation]
+    [getWordData, text?.languageCode, text?.textId, translationTargetLanguageCode, setWords, selectedWord, displayedWord?.term, currentSentenceSegment?.text, globalSettings.autoTranslateWords, triggerAutoTranslation, setTranslation]
   );
 
   useReaderKeyboard({

@@ -112,7 +112,7 @@ const ReadingSettings = ({
             onChange={handleChange}
           />
           <Form.Text className="text-muted">
-            New (unsaved) words and multi-word phrases still open the Word Info panel.
+            Words you haven&apos;t saved yet and multi-word phrases still open the Word Info panel.
           </Form.Text>
         </Form.Group>
 

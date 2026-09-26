@@ -14,14 +14,15 @@ export const SETTINGS_SAVE_DELAY_MS = 400;
  * at once through the settings context, which also keeps this browser's cached copy. The server
  * gets one patch per pause, one request at a time, so responses can't land out of order and leave
  * it on an older value. A patch that fails stays queued and goes out with the next change, or when
- * the page is hidden or the component unmounts.
+ * the page is hidden or the component unmounts; those last sends use keepalive, so closing the tab
+ * right after a change doesn't cancel them.
  */
 export function useSettingsSaver(updateSetting: UpdateSetting): (patch: Partial<Settings>) => void {
   const pendingRef = useRef<Partial<Settings>>({});
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const runningRef = useRef(false);
 
-  const flush = useCallback(async () => {
+  const flush = useCallback(async (keepalive = false) => {
     if (timerRef.current) {
       clearTimeout(timerRef.current);
       timerRef.current = null;
@@ -34,7 +35,7 @@ export function useSettingsSaver(updateSetting: UpdateSetting): (patch: Partial<
         const patch = pendingRef.current;
         pendingRef.current = {};
         try {
-          await updateUserSettings(patch as UpdateUserSettingsInput);
+          await updateUserSettings(patch as UpdateUserSettingsInput, { keepalive });
         } catch (err) {
           console.error('[Save Settings] Failed to save settings via API:', err);
           // Keep it for the next attempt, under anything changed since.
@@ -57,12 +58,12 @@ export function useSettingsSaver(updateSetting: UpdateSetting): (patch: Partial<
 
   useEffect(() => {
     const handleVisibilityChange = () => {
-      if (document.visibilityState === 'hidden') void flush();
+      if (document.visibilityState === 'hidden') void flush(true);
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
-      void flush();
+      void flush(true);
     };
   }, [flush]);
 

@@ -71,10 +71,10 @@ describe('WordInfoPanel', () => {
       value, saved, setValue: vi.fn(), onKeyDown: vi.fn(), isTranslating: false, error: null
     });
     const { rerender } = render(<WordInfoPanel {...baseProps({ translation: translation('cat', 'cat') })} />);
-    expect(screen.queryByText(/Unsaved edit/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Translation not saved yet/)).not.toBeInTheDocument();
 
     rerender(<WordInfoPanel {...baseProps({ translation: translation('kitten', 'cat') })} />);
-    expect(screen.getByText(/Unsaved edit/)).toBeInTheDocument();
+    expect(screen.getByText(/Translation not saved yet/)).toBeInTheDocument();
 
     // An untracked word has nothing saved; the hint says how to save it instead.
     rerender(
@@ -85,7 +85,7 @@ describe('WordInfoPanel', () => {
         })}
       />
     );
-    expect(screen.queryByText(/Unsaved edit/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Translation not saved yet/)).not.toBeInTheDocument();
     expect(screen.getByText(/Not saved yet/)).toBeInTheDocument();
   });
 

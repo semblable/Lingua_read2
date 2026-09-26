@@ -1,7 +1,7 @@
 // Pure helpers behind the Library grid: filtering, filter options, and turning a dnd-kit drag
 // into either "move into a folder" or "reorder within a section". Kept out of Library.tsx so the
 // rules can be unit-tested without staging pointer drags.
-import { closestCenter, pointerWithin, type CollisionDetection } from '@dnd-kit/core';
+import { closestCenter, pointerWithin, rectIntersection, type CollisionDetection } from '@dnd-kit/core';
 import { arrayMove } from '@dnd-kit/sortable';
 import { comprehensionBand, comprehensionPercent, type ComprehensionBand } from './comprehensibility';
 import { libraryPath } from './helpers';
@@ -49,14 +49,19 @@ export function hasActiveFilters(filters: LibraryFilters): boolean {
 const includesQuery = (query: string, ...fields: Array<string | null | undefined>): boolean =>
   fields.some((field) => (field ?? '').toLowerCase().includes(query));
 
-export function filterLibrary(items: LibraryItems, filters: LibraryFilters): LibraryItems {
+// Generic so the cross-folder search results, which carry the same fields plus their folder path,
+// go through the same rules.
+export function filterLibrary<F extends LibraryFolder, B extends LibraryBook, T extends LibraryText>(
+  items: { folders: F[]; books: B[]; texts: T[] },
+  filters: LibraryFilters
+): { folders: F[]; books: B[]; texts: T[] } {
   const query = filters.search.trim().toLowerCase();
   const inBand = (item: LibraryBook | LibraryText) =>
     filters.comprehension === 'all' ||
     comprehensionBand(comprehensionPercent(item)) === filters.comprehension;
   const hasStatus = (item: LibraryBook | LibraryText) =>
     filters.status === 'all' || (filters.status === 'finished') === !!item.isFinished;
-  const textTypeMatches = (t: LibraryText) =>
+  const textTypeMatches = (t: T) =>
     filters.type === 'all' ||
     (filters.type === 'texts' && !t.isAudioLesson) ||
     (filters.type === 'audio' && !!t.isAudioLesson);
@@ -164,11 +169,20 @@ export type ElsewhereRow = {
   folderPath: string;
 };
 
-// Matches from the whole library, minus the ones already on screen in this folder.
-export function elsewhereRows(result: LibrarySearchResult, currentFolderId: number | null): ElsewhereRow[] {
+// Matches from the whole library, minus the ones already on screen in this folder, narrowed by the
+// same filters as the folder's own items. The server did the text search, so it isn't repeated.
+export function elsewhereRows(
+  result: LibrarySearchResult,
+  currentFolderId: number | null,
+  filters: LibraryFilters = EMPTY_FILTERS
+): ElsewhereRow[] {
   const isHere = (folderId: number | null | undefined) => (folderId ?? null) === currentFolderId;
+  const matches = filterLibrary(
+    { folders: result.folders ?? [], books: result.books ?? [], texts: result.texts ?? [] },
+    { ...filters, search: '' }
+  );
   const rows: ElsewhereRow[] = [];
-  for (const f of result.folders ?? []) {
+  for (const f of matches.folders) {
     if (f.folderId == null || isHere(f.parentFolderId)) continue;
     rows.push({
       key: sortableId('folder', f.folderId), type: 'folder', title: f.name ?? '', detail: '',
@@ -176,7 +190,7 @@ export function elsewhereRows(result: LibrarySearchResult, currentFolderId: numb
       folderId: f.parentFolderId ?? null, folderPath: f.folderPath ?? '',
     });
   }
-  for (const b of result.books ?? []) {
+  for (const b of matches.books) {
     if (b.bookId == null || isHere(b.folderId)) continue;
     rows.push({
       key: sortableId('book', b.bookId), type: 'book', title: b.title ?? '',
@@ -185,7 +199,7 @@ export function elsewhereRows(result: LibrarySearchResult, currentFolderId: numb
       folderId: b.folderId ?? null, folderPath: b.folderPath ?? '',
     });
   }
-  for (const t of result.texts ?? []) {
+  for (const t of matches.texts) {
     if (t.textId == null || isHere(t.folderId)) continue;
     rows.push({
       key: sortableId('text', t.textId), type: 'text', title: t.title ?? '',
@@ -298,14 +312,16 @@ export function dragCount(active: DragEndpoint, selectedItems: SelectedItem[]): 
 
 // Collision rules matching resolveDragIntent: a book or text under the pointer of a folder card
 // targets that folder; otherwise only cards of the dragged item's own type are candidates, so a
-// drag never "lands" in another section.
+// drag never "lands" in another section. A keyboard drag has no pointer: there the card moved onto
+// a folder card (the arrow keys step from card to card, folders included) targets it.
 export const createLibraryCollisionDetection = (canReorder: boolean): CollisionDetection => (args) => {
   const activeType = args.active.data.current?.type as SelectableType | undefined;
   const ofType = (type: SelectableType) =>
     args.droppableContainers.filter((c) => c.data.current?.type === type);
 
   if (activeType !== 'folder') {
-    const folderHits = pointerWithin({ ...args, droppableContainers: ofType('folder') });
+    const folderArgs = { ...args, droppableContainers: ofType('folder') };
+    const folderHits = args.pointerCoordinates ? pointerWithin(folderArgs) : rectIntersection(folderArgs);
     if (folderHits.length > 0) return folderHits;
   }
 

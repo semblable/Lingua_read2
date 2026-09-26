@@ -255,28 +255,33 @@ const Library = () => {
 
   // Cross-folder search. Results are kept with the query they answer, so a stale response (or
   // one for text since edited) is never shown. It runs again after every change to the library.
+  // The server leaves out what sits in this folder, so those matches don't use up its per-type limit.
   const trimmedSearch = searchQuery.trim();
-  const [searchResult, setSearchResult] = useState<{ query: string; result: LibrarySearchResult } | null>(null);
+  const [searchResult, setSearchResult] = useState<
+    { query: string; folderId: number | null; result: LibrarySearchResult } | null
+  >(null);
   const searchSeq = useRef(0);
   useEffect(() => {
     if (trimmedSearch.length < MIN_SEARCH_LENGTH) return;
     const seq = ++searchSeq.current;
     const timer = setTimeout(async () => {
       try {
-        const result = await searchLibrary(trimmedSearch);
-        if (seq === searchSeq.current) setSearchResult({ query: trimmedSearch, result });
+        const result = await searchLibrary(trimmedSearch, currentFolderId);
+        if (seq === searchSeq.current) setSearchResult({ query: trimmedSearch, folderId: currentFolderId, result });
       } catch {
         // Best effort: the current folder's own filtering still works without it.
       }
     }, SEARCH_DEBOUNCE_MS);
     return () => clearTimeout(timer);
-  }, [trimmedSearch, searchEpoch]);
+  }, [trimmedSearch, currentFolderId, searchEpoch]);
+  const currentSearch = searchResult && searchResult.query === trimmedSearch && searchResult.folderId === currentFolderId
+    ? searchResult.result
+    : null;
   const elsewhere = useMemo(
-    () => searchResult && searchResult.query === trimmedSearch
-      ? elsewhereRows(searchResult.result, currentFolderId)
-      : [],
-    [searchResult, trimmedSearch, currentFolderId]
+    () => currentSearch ? elsewhereRows(currentSearch, currentFolderId, filters) : [],
+    [currentSearch, currentFolderId, filters]
   );
+  const elsewhereTruncated = !!currentSearch?.hasMore;
 
   const languages = useMemo(() => languageOptions(items, languageFilter), [items, languageFilter]);
   const tags = useMemo(() => tagOptions(items, tagFilter), [items, tagFilter]);
@@ -824,6 +829,11 @@ const Library = () => {
           <h6 className="text-muted text-uppercase small mb-2">
             <i className="bi bi-search me-1"></i>Elsewhere in your library
           </h6>
+          {elsewhereTruncated && (
+            <p className="text-muted small mb-2" data-testid="library-search-truncated">
+              Only the first matches are listed. Type more of the name to narrow the search.
+            </p>
+          )}
           <ListGroup>
             {elsewhere.map(row => (
               <ListGroup.Item key={row.key} className="d-flex align-items-center gap-2">

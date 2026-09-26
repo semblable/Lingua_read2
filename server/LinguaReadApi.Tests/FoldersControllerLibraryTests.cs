@@ -155,6 +155,85 @@ public class FoldersControllerLibraryTests
         Assert.Equal("Alpha", folder.FolderPath);
     }
 
+    [Fact]
+    public async Task SearchLibrary_LeavesOutWhatSitsInTheExcludedFolder()
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        Seed(context, userId);
+        var controller = CreateController(context, userId);
+
+        var everywhere = (await controller.SearchLibrary("book")).Value!;
+        Assert.Equal(new[] { FolderBook, RootBook }, everywhere.Books.Select(b => b.BookId));
+
+        // 0 is the library root.
+        var outsideRoot = (await controller.SearchLibrary("book", excludeFolderId: 0)).Value!;
+        Assert.Equal(new[] { FolderBook }, outsideRoot.Books.Select(b => b.BookId));
+        Assert.Equal(new[] { ChildOfA }, (await controller.SearchLibrary("chi", excludeFolderId: 0)).Value!.Folders.Select(f => f.FolderId));
+
+        var outsideA = (await controller.SearchLibrary("book", excludeFolderId: FolderA)).Value!;
+        Assert.Equal(new[] { RootBook }, outsideA.Books.Select(b => b.BookId));
+        Assert.Empty((await controller.SearchLibrary("chi", excludeFolderId: FolderA)).Value!.Folders);
+        Assert.Equal(new[] { RootText }, (await controller.SearchLibrary("text", excludeFolderId: FolderA)).Value!.Texts.Select(t => t.TextId));
+        // Nor the folder being viewed itself.
+        Assert.Empty((await controller.SearchLibrary("alpha", excludeFolderId: FolderA)).Value!.Folders);
+        // A negative id excludes nothing.
+        Assert.Equal(2, (await controller.SearchLibrary("book", excludeFolderId: -1)).Value!.Books.Count);
+    }
+
+    [Fact]
+    public async Task SearchLibrary_SaysWhenATypeHadMoreMatchesThanTheLimit()
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        Seed(context, userId);
+        for (var i = 0; i < 20; i++)
+            context.Texts.Add(new Text { TextId = 1000 + i, UserId = userId, LanguageId = 1, Title = $"Many {i:D2}", Content = "x" });
+        await context.SaveChangesAsync();
+        context.ChangeTracker.Clear();
+        var controller = CreateController(context, userId);
+
+        var exactlyTheLimit = (await controller.SearchLibrary("many")).Value!;
+        Assert.Equal(20, exactlyTheLimit.Texts.Count);
+        Assert.False(exactlyTheLimit.HasMore);
+
+        context.Texts.Add(new Text { TextId = 1020, UserId = userId, LanguageId = 1, Title = "Many 20", Content = "x" });
+        await context.SaveChangesAsync();
+        context.ChangeTracker.Clear();
+
+        var overTheLimit = (await controller.SearchLibrary("many")).Value!;
+        Assert.Equal(20, overTheLimit.Texts.Count);
+        Assert.True(overTheLimit.HasMore);
+    }
+
+    [Fact]
+    public async Task SearchLibrary_CarriesWhatTheLibraryFiltersOn()
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        Seed(context, userId);
+        context.Tags.Add(new Tag { TagId = 1, Name = "novel" });
+        context.BookTags.Add(new BookTag { BookId = RootBook, TagId = 1 });
+        var book = await context.Books.FindAsync(RootBook);
+        book!.IsFinished = true;
+        book.TotalWords = 100;
+        book.KnownWords = 90;
+        var text = await context.Texts.FindAsync(RootText);
+        text!.Tag = "news";
+        text.TotalWords = 50;
+        text.KnownWords = 10;
+        await context.SaveChangesAsync();
+        context.ChangeTracker.Clear();
+
+        var result = (await CreateController(context, userId).SearchLibrary("root")).Value!;
+
+        var foundBook = Assert.Single(result.Books);
+        Assert.Equal(new[] { "novel" }, foundBook.Tags);
+        Assert.Equal((true, 100, 90), (foundBook.IsFinished, foundBook.TotalWords, foundBook.KnownWords));
+        var foundText = Assert.Single(result.Texts);
+        Assert.Equal(("news", false, 50, 10), (foundText.Tag, foundText.IsFinished, foundText.TotalWords, foundText.KnownWords));
+    }
+
     [Theory]
     [InlineData(null)]
     [InlineData("")]
@@ -223,6 +302,28 @@ public class FoldersControllerLibraryTests
         Assert.Equal(FolderA, moved.ParentFolderId);
         // Folder A already holds items with sort order 3.
         Assert.Equal(4, moved.SortOrder);
+    }
+
+    [Fact]
+    public async Task MoveItems_GivesEverythingMovedItsOwnPlaceAfterTheTargetsItems()
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        Seed(context, userId);
+
+        await CreateController(context, userId).MoveItems(new MoveItemsDto
+        {
+            TextIds = [RootText],
+            BookIds = [RootBook],
+            FolderIds = [FolderB],
+            TargetFolderId = FolderA
+        });
+
+        context.ChangeTracker.Clear();
+        // Folder A already holds items with sort order 3; the moved ones follow, one order each.
+        Assert.Equal(4, (await context.Texts.FindAsync(RootText))!.SortOrder);
+        Assert.Equal(5, (await context.Books.FindAsync(RootBook))!.SortOrder);
+        Assert.Equal(6, (await context.Folders.FindAsync(FolderB))!.SortOrder);
     }
 
     [Fact]

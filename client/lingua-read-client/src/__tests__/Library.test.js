@@ -181,11 +181,35 @@ describe('Library', () => {
       fireEvent.change(screen.getByLabelText('Search library'), { target: { value: 'sample' } });
 
       const section = await screen.findByTestId('library-search-elsewhere', {}, { timeout: 2000 });
-      expect(searchLibrary).toHaveBeenCalledWith('sample');
+      // null: the library root, whose own items the server leaves out.
+      expect(searchLibrary).toHaveBeenCalledWith('sample', null);
       expect(section).toHaveTextContent('Sample Elsewhere');
       expect(section).not.toHaveTextContent('Sample Book');
       expect(screen.getByRole('link', { name: 'Sample Elsewhere' })).toHaveAttribute('href', '/books/55');
       expect(screen.getByRole('link', { name: 'Novels / French' })).toHaveAttribute('href', '/library/3');
+    });
+
+    test('matches elsewhere follow the filters, and a list cut off at the limit says so', async () => {
+      getLibraryContents.mockResolvedValue(sampleContents);
+      searchLibrary.mockResolvedValue({
+        hasMore: true,
+        folders: [],
+        books: [
+          { bookId: 55, title: 'Sample French', languageName: 'French', folderId: 3, folderPath: 'Novels' },
+          { bookId: 56, title: 'Sample German', languageName: 'German', folderId: 3, folderPath: 'Novels' }
+        ],
+        texts: []
+      });
+      renderLibrary();
+      await screen.findByText('Sample Book');
+
+      fireEvent.change(screen.getByLabelText('Language filter'), { target: { value: 'French' } });
+      fireEvent.change(screen.getByLabelText('Search library'), { target: { value: 'sample' } });
+
+      const section = await screen.findByTestId('library-search-elsewhere', {}, { timeout: 2000 });
+      expect(section).toHaveTextContent('Sample French');
+      expect(section).not.toHaveTextContent('Sample German');
+      expect(within(section).getByTestId('library-search-truncated')).toBeInTheDocument();
     });
 
     test('the search runs again after a move, so a moved match shows where it went', async () => {

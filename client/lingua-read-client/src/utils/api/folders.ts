@@ -16,9 +16,15 @@ export const getLibraryContents = async (
   );
 };
 
-// Folders, books (title or author) and standalone texts anywhere in the library.
-export const searchLibrary = async (query: string): Promise<LibrarySearchResult> => {
-  return await fetchApi<LibrarySearchResult>(`/folders/search?q=${encodeURIComponent(query)}`);
+// Folders, books (title or author) and standalone texts anywhere in the library, except what sits
+// directly in excludeFolderId (null = the library root), which the Library already shows.
+export const searchLibrary = async (
+  query: string,
+  excludeFolderId: number | null
+): Promise<LibrarySearchResult> => {
+  return await fetchApi<LibrarySearchResult>(
+    `/folders/search?q=${encodeURIComponent(query)}&excludeFolderId=${excludeFolderId ?? 0}`
+  );
 };
 
 export const deleteLibraryItems = async (

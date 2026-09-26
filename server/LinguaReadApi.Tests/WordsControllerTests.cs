@@ -190,6 +190,54 @@ public class WordsControllerTests
         Assert.Equal("perro", word.Term);
     }
 
+    // --- Terms page search: case- and accent-insensitive ---
+
+    private static Guid SeedSearchWords(AppDbContext context)
+    {
+        var userId = Guid.NewGuid();
+        context.Users.Add(new User { Id = userId, UserName = "tester", Email = "tester@example.com" });
+        context.Languages.Add(new Language { LanguageId = 1, Name = "Portuguese", Code = "pt" });
+        context.Words.Add(new Word { WordId = 1, UserId = userId, LanguageId = 1, Term = "sanção", Status = 1 });
+        context.Words.Add(new Word
+        {
+            WordId = 2, UserId = userId, LanguageId = 1, Term = "gatinho", Status = 2,
+            Translation = new WordTranslation { Translation = "Kätzchen" }
+        });
+        context.Words.Add(new Word { WordId = 3, UserId = userId, LanguageId = 1, Term = "casa", Status = 1 });
+        context.SaveChanges();
+        context.ChangeTracker.Clear();
+        return userId;
+    }
+
+    [Theory]
+    [InlineData("SANCAO", "sanção")]
+    [InlineData("sanção", "sanção")]
+    [InlineData("katzchen", "gatinho")]
+    public async Task GetWordsByLanguage_SearchIgnoresCaseAndAccents(string searchTerm, string expectedTerm)
+    {
+        using var context = CreateContext();
+        var userId = SeedSearchWords(context);
+
+        var words = (await CreateController(context, userId).GetWordsByLanguage(1, searchTerm: searchTerm)).Value!;
+
+        Assert.Equal(new[] { expectedTerm }, words.Select(w => w.Term));
+    }
+
+    [Theory]
+    [InlineData("SANCAO", "sanção")]
+    [InlineData("sanção", "sanção")]
+    [InlineData("katzchen", "gatinho")]
+    public async Task GetPaginatedWordsByLanguage_SearchIgnoresCaseAndAccents(string searchTerm, string expectedTerm)
+    {
+        using var context = CreateContext();
+        var userId = SeedSearchWords(context);
+
+        var page = (await CreateController(context, userId).GetPaginatedWordsByLanguage(1, searchTerm: searchTerm)).Value!;
+
+        Assert.Equal(new[] { expectedTerm }, page.Items.Select(w => w.Term));
+        Assert.Equal(1, page.TotalCount);
+    }
+
     private static readonly string Shy = ((char)0x00AD).ToString();
 
     private static Guid SeedPortugueseText(AppDbContext context)

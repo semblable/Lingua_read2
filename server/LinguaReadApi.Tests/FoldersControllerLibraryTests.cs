@@ -122,6 +122,30 @@ public class FoldersControllerLibraryTests
     }
 
     [Fact]
+    public async Task SearchLibrary_IgnoresAccents()
+    {
+        // Typed without a Portuguese, French or German keyboard.
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        Seed(context, userId);
+        context.Folders.Add(new Folder { FolderId = 300, UserId = userId, Name = "Músicas" });
+        context.Books.Add(new Book { BookId = 30, UserId = userId, LanguageId = 1, Title = "Sob sanção", Author = "José Saramago" });
+        context.Books.Add(new Book { BookId = 31, UserId = userId, LanguageId = 1, Title = "Straße der Ölsardinen" });
+        context.Texts.Add(new Text { TextId = 40, UserId = userId, LanguageId = 1, Title = "Être ou ne pas être", Content = "x" });
+        await context.SaveChangesAsync();
+        context.ChangeTracker.Clear();
+        var controller = CreateController(context, userId);
+
+        Assert.Equal(new[] { 30 }, (await controller.SearchLibrary("sob sancao")).Value!.Books.Select(b => b.BookId));
+        Assert.Equal(new[] { 30 }, (await controller.SearchLibrary("JOSE SARAMAGO")).Value!.Books.Select(b => b.BookId));
+        Assert.Equal(new[] { 31 }, (await controller.SearchLibrary("strasse")).Value!.Books.Select(b => b.BookId));
+        Assert.Equal(new[] { 300 }, (await controller.SearchLibrary("MUSICAS")).Value!.Folders.Select(f => f.FolderId));
+        Assert.Equal(new[] { 40 }, (await controller.SearchLibrary("etre")).Value!.Texts.Select(t => t.TextId));
+        // A query with the accents still finds them.
+        Assert.Equal(new[] { 30 }, (await controller.SearchLibrary("Sanção")).Value!.Books.Select(b => b.BookId));
+    }
+
+    [Fact]
     public async Task SearchLibrary_SkipsBookPartsSrsStoriesAndOtherUsers()
     {
         await using var context = CreateContext();

@@ -190,7 +190,7 @@ namespace LinguaReadApi.Controllers
 
             // ToLower().Contains() rather than ILike: it translates on Npgsql (strpos, so % and _ are
             // literal) and also runs on the InMemory provider the tests use.
-            var needle = query.ToLower();
+            var needle = query.ToLowerInvariant();
 
             var folders = await _context.Folders
                 .Where(f => f.UserId == userId && f.Name.ToLower().Contains(needle))

@@ -135,6 +135,13 @@ describe('Library', () => {
     await waitFor(() => expect(getLibraryContents).toHaveBeenCalledWith(42));
   });
 
+  test('a malformed folder id shows the library root instead of loading forever', async () => {
+    getLibraryContents.mockResolvedValue(sampleContents);
+    renderLibrary('/library/abc');
+    expect(await screen.findByText('Sample Book')).toBeInTheDocument();
+    expect(getLibraryContents).toHaveBeenCalledWith(null);
+  });
+
   test('Add Content inside a folder files new items in that folder', async () => {
     getLibraryContents.mockResolvedValue({ ...emptyContents, currentFolder: { folderId: 7, name: 'Seven' } });
     renderLibrary('/library/7');

@@ -34,7 +34,7 @@ import {
   searchLibrary
 } from '../utils/api';
 import type { LibrarySearchResult } from '../utils/api/folders';
-import { libraryPath } from '../utils/helpers';
+import { libraryPath, parseFolderIdParam } from '../utils/helpers';
 import {
   LIBRARY_SORTS,
   countItems,
@@ -91,7 +91,9 @@ const toDragEndpoint = (data: Record<string, unknown> | undefined): DragEndpoint
 const Library = () => {
   const { folderId } = useParams();
   const navigate = useNavigate();
-  const currentFolderId = folderId ? parseInt(folderId) : null;
+  // A malformed id (/library/abc) shows the root, as before; it must not become NaN, which never
+  // matches the loaded folder and would leave the page loading forever.
+  const currentFolderId = parseFolderIdParam(folderId ?? null);
 
   const {
     contentsFolderId, currentFolder, breadcrumbs, folders, books, texts,

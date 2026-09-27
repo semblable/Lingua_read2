@@ -57,6 +57,12 @@ namespace LinguaReadApi.Models
         [StringLength(NewsFeed.MaxUrlLength)]
         public string? SourceUrl { get; set; }
 
+        // The picture the Library shows on the text's card, relative to wwwroot like
+        // Book.CoverImagePath: a news article's lead photo (epub_assets/{userId}/news/{textId}.jpg).
+        // Kept when the text is edited: the file stays until the text is deleted.
+        [StringLength(500)]
+        public string? ImagePath { get; set; }
+
         // Navigation properties
         public virtual User User { get; set; } = null!;
         public virtual Language Language { get; set; } = null!;

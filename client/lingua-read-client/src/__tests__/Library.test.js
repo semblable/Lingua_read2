@@ -10,7 +10,8 @@ import {
   createFolder,
   searchLibrary,
   deleteLibraryItems,
-  moveLibraryItems
+  moveLibraryItems,
+  getNewsFeedEntries
 } from '../utils/api';
 
 vi.mock('../utils/api', () => ({
@@ -22,7 +23,9 @@ vi.mock('../utils/api', () => ({
   moveLibraryItems: vi.fn(),
   reorderLibraryItems: vi.fn(),
   deleteLibraryItems: vi.fn(),
-  searchLibrary: vi.fn()
+  searchLibrary: vi.fn(),
+  getNewsFeedEntries: vi.fn(),
+  importNewsFeedEntries: vi.fn()
 }));
 
 // useDragSelect uses Pointer events; stub it to a no-op so we don't need to
@@ -322,6 +325,42 @@ describe('Library', () => {
       expect(await screen.findByText('Book page')).toBeInTheDocument();
     });
 
+    test('a news article card shows its photo across the top; a text without one shows none', async () => {
+      getLibraryContents.mockResolvedValue({
+        ...sampleContents,
+        texts: [
+          ...sampleContents.texts,
+          { textId: 101, title: 'Por que o Japão tem tão poucas lixeiras nas ruas?', languageName: 'Portuguese', imagePath: 'epub_assets/u1/news/101.jpg' }
+        ]
+      });
+      const { container } = renderLibrary();
+      await screen.findByText('Sample Book');
+
+      const photos = container.querySelectorAll('img.library-text-photo');
+      expect(photos).toHaveLength(1);
+      expect(photos[0]).toHaveAttribute('src', '/epub_assets/u1/news/101.jpg');
+      // Decorative: the title below says what it shows.
+      expect(photos[0]).toHaveAttribute('alt', '');
+
+      // A photo that can't be loaded is left out rather than shown broken.
+      fireEvent.error(photos[0]);
+      expect(container.querySelector('img.library-text-photo')).toBeNull();
+    });
+
+    test('card titles wrap to two lines, with the whole title on hover', async () => {
+      const long = 'Por que o Japão tem tão poucas lixeiras nas ruas e ainda assim é tão limpo?';
+      getLibraryContents.mockResolvedValue({
+        ...sampleContents,
+        texts: [{ textId: 101, title: long, languageName: 'Portuguese' }]
+      });
+      renderLibrary();
+
+      const title = await screen.findByTitle(long);
+      expect(title).toHaveClass('library-card-title');
+      expect(title).not.toHaveClass('text-truncate');
+      expect(screen.getByTitle('Sample Book')).toHaveClass('library-card-title');
+    });
+
     test('a folder name is a link, so it opens from the keyboard too', async () => {
       getLibraryContents.mockResolvedValue(sampleContents);
       renderLibrary();
@@ -333,6 +372,33 @@ describe('Library', () => {
       renderLibrary();
       await screen.findByText('Sample Book');
       expect(screen.getByRole('button', { name: 'Move Sample Book' })).toHaveAttribute('tabindex', '0');
+    });
+  });
+
+  describe('news feed folders', () => {
+    test("a news feed's folder has Browse articles, which opens its article picker", async () => {
+      getLibraryContents.mockImplementation(async (folderId) => folderId === 7
+        ? { ...folderContents(7, 'Unused'), currentFolder: { folderId: 7, name: 'BBC News Brasil', newsFeedId: 3 }, books: [] }
+        : folderContents(folderId, 'A book'));
+      getNewsFeedEntries.mockResolvedValue({
+        feed: null,
+        entries: [{ key: 'k1', title: 'Um artigo novo', link: null, publishedAt: null, summary: null, status: 'new', textId: null }]
+      });
+      renderLibrary('/library/7');
+
+      fireEvent.click(await screen.findByRole('button', { name: /Browse articles/ }));
+
+      expect(await screen.findByText('Articles in BBC News Brasil')).toBeInTheDocument();
+      expect(await screen.findByText('Um artigo novo')).toBeInTheDocument();
+      expect(getNewsFeedEntries).toHaveBeenCalledWith(3);
+    });
+
+    test('other folders have no Browse articles', async () => {
+      getLibraryContents.mockResolvedValue(folderContents(8, 'A book'));
+      renderLibrary('/library/8');
+      await screen.findByText('A book');
+
+      expect(screen.queryByRole('button', { name: /Browse articles/ })).not.toBeInTheDocument();
     });
   });
 

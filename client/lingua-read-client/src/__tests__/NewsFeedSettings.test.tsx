@@ -6,14 +6,16 @@ import { MemoryRouter } from 'react-router-dom';
 import NewsFeedSettings from '../components/settings/NewsFeedSettings';
 import type { Settings } from '../contexts/SettingsContext';
 import type { NewsFeed } from '../utils/api';
-import { addNewsFeed, deleteNewsFeed, fetchNewsFeed, getNewsFeeds, updateNewsFeed } from '../utils/api';
+import { addNewsFeed, deleteNewsFeed, fetchNewsFeed, getNewsFeedEntries, getNewsFeeds, importNewsFeedEntries, updateNewsFeed } from '../utils/api';
 
 vi.mock('../utils/api', () => ({
   getNewsFeeds: vi.fn(),
   addNewsFeed: vi.fn(),
   updateNewsFeed: vi.fn(),
   deleteNewsFeed: vi.fn(),
-  fetchNewsFeed: vi.fn()
+  fetchNewsFeed: vi.fn(),
+  getNewsFeedEntries: vi.fn(),
+  importNewsFeedEntries: vi.fn()
 }));
 
 const languages = [
@@ -96,13 +98,14 @@ describe('NewsFeedSettings', () => {
     expect(within(bbc).getByText(/Checked 2h ago · 3 imported in the last 24 h · 12 in your Library/)).toBeInTheDocument();
     expect(within(bbc).getByRole('link', { name: 'feeds.bbci.co.uk' })).toHaveAttribute('href', 'https://feeds.bbci.co.uk/portuguese/rss.xml');
     expect(within(bbc).getByRole('link', { name: 'Open folder' })).toHaveAttribute('href', '/library/7');
-    expect(within(bbc).getByRole('button', { name: 'Pause' })).toBeInTheDocument();
+    expect(within(bbc).getByRole('checkbox', { name: 'Auto-import' })).toBeChecked();
+    expect(within(bbc).queryByText('Auto-import off')).not.toBeInTheDocument();
 
-    expect(within(lemonde).getByText('Paused')).toBeInTheDocument();
+    expect(within(lemonde).getByText('Auto-import off')).toBeInTheDocument();
     expect(within(lemonde).getByText(/Not checked yet/)).toBeInTheDocument();
     expect(within(lemonde).getByText('Last check failed: www.lemonde.fr answered 403 Forbidden.')).toBeInTheDocument();
     expect(within(lemonde).queryByRole('link', { name: 'Open folder' })).not.toBeInTheDocument();
-    expect(within(lemonde).getByRole('button', { name: 'Resume' })).toBeInTheDocument();
+    expect(within(lemonde).getByRole('checkbox', { name: 'Auto-import' })).not.toBeChecked();
   });
 
   test('adding a feed checks it right away and reports the result', async () => {
@@ -185,23 +188,53 @@ describe('NewsFeedSettings', () => {
     expect(within(itemB).getByRole('button', { name: 'Fetch now' })).toBeEnabled();
     // B finishing must not free A, which is still being checked.
     expect(within(itemA).getByRole('button', { name: 'Working...' })).toBeDisabled();
-    expect(within(itemA).getByRole('button', { name: 'Pause' })).toBeDisabled();
+    expect(within(itemA).getByRole('checkbox', { name: 'Auto-import' })).toBeDisabled();
 
     finishA({ success: true, imported: 0, skipped: 0, message: 'No new articles.', feed: a });
     expect(await within(itemA).findByText('No new articles.')).toBeInTheDocument();
     expect(within(itemA).getByRole('button', { name: 'Fetch now' })).toBeEnabled();
   });
 
-  test('Pause and Resume update the feed', async () => {
+  test("the Auto-import switch turns a feed's automatic import off and on", async () => {
     vi.mocked(getNewsFeeds).mockResolvedValue([feed()]);
-    vi.mocked(updateNewsFeed).mockResolvedValue(feed({ enabled: false }));
+    vi.mocked(updateNewsFeed)
+      .mockResolvedValueOnce(feed({ enabled: false }))
+      .mockResolvedValueOnce(feed({ enabled: true }));
     renderNews();
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Pause' }));
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'Auto-import' }));
 
     await waitFor(() => expect(updateNewsFeed).toHaveBeenCalledWith(1, { enabled: false }));
-    expect(await screen.findByRole('button', { name: 'Resume' })).toBeInTheDocument();
-    expect(screen.getByText('Paused')).toBeInTheDocument();
+    expect(await screen.findByText('Auto-import off')).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: 'Auto-import' })).not.toBeChecked();
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Auto-import' }));
+    await waitFor(() => expect(updateNewsFeed).toHaveBeenLastCalledWith(1, { enabled: true }));
+    await waitFor(() => expect(screen.queryByText('Auto-import off')).not.toBeInTheDocument());
+  });
+
+  test("Browse articles opens the picker, and an import there updates the feed's row", async () => {
+    vi.mocked(getNewsFeeds).mockResolvedValue([feed({ articleCount: 3 })]);
+    vi.mocked(getNewsFeedEntries).mockResolvedValue({
+      feed: null,
+      entries: [{ key: 'k1', title: 'Um artigo novo', link: null, publishedAt: null, summary: null, status: 'new', textId: null }]
+    });
+    vi.mocked(importNewsFeedEntries).mockResolvedValue({
+      success: true, imported: 1, skipped: 0, message: 'Imported 1 article.', feed: feed({ articleCount: 4, importedLast24Hours: 1 })
+    });
+    renderNews();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Browse articles' }));
+    expect(await screen.findByText('Articles in BBC News Brasil')).toBeInTheDocument();
+    expect(getNewsFeedEntries).toHaveBeenCalledWith(1);
+
+    fireEvent.click(await screen.findByLabelText('Select Um artigo novo'));
+    fireEvent.click(screen.getByRole('button', { name: 'Import 1 selected' }));
+
+    expect(await screen.findByText('Imported 1 article.')).toBeInTheDocument();
+    expect(importNewsFeedEntries).toHaveBeenCalledWith(1, ['k1']);
+    const list = screen.getByRole('list', { name: 'News feeds' });
+    expect(within(list).getByText(/1 imported in the last 24 h · 4 in your Library/)).toBeInTheDocument();
   });
 
   test('Remove asks first and keeps the feed when cancelled', async () => {

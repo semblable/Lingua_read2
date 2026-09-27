@@ -7,12 +7,7 @@ import { CSS } from '@dnd-kit/utilities';
 import type { LibraryBook, SelectableType } from '../../utils/store';
 import ComprehensibilityBadge from '../shared/ComprehensibilityBadge';
 import { CARD_INTERACTIVE_SELECTOR } from './cardClicks';
-
-const normalizeCoverUrl = (value: string | null | undefined): string | null => {
-  if (!value) return null;
-  if (/^(https?:)?\/\//i.test(value) || value.startsWith('/')) return value;
-  return `/${value.replace(/^\/+/, '')}`;
-};
+import { normalizeMediaUrl } from './mediaUrl';
 
 interface LibraryBookCardProps {
   book: LibraryBook;
@@ -60,7 +55,7 @@ const LibraryBookCard = ({ book, isSelected, onSelect, onItemClick }: LibraryBoo
         {book.coverImagePath ? (
           <Card.Img
             variant="top"
-            src={normalizeCoverUrl(book.coverImagePath) ?? undefined}
+            src={normalizeMediaUrl(book.coverImagePath) ?? undefined}
             alt={`${book.title} cover`}
             loading="lazy"
             className="library-cover"
@@ -84,7 +79,7 @@ const LibraryBookCard = ({ book, isSelected, onSelect, onItemClick }: LibraryBoo
               <i className="bi bi-grip-vertical"></i>
             </div>
             <div className="flex-grow-1" style={{ minWidth: 0 }}>
-              <Card.Title as="h6" className="text-truncate mb-0">
+              <Card.Title as="h6" className="library-card-title mb-0" title={book.title ?? undefined}>
                 <i className="bi bi-book me-1 text-primary"></i>
                 {book.isFinished && <i className="bi bi-check-circle-fill text-success me-1" title="Completed"></i>}
                 {book.title}

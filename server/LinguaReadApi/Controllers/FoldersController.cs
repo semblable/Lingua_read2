@@ -87,6 +87,13 @@ namespace LinguaReadApi.Controllers
                 if (folder == null)
                     return NotFound("Folder not found");
 
+                // A news feed's folder gets a "Browse articles" button in the Library.
+                folder.NewsFeedId = await _context.NewsFeeds
+                    .Where(f => f.FolderId == folder.FolderId && f.UserId == userId)
+                    .OrderBy(f => f.NewsFeedId)
+                    .Select(f => (int?)f.NewsFeedId)
+                    .FirstOrDefaultAsync();
+
                 currentFolder = folder;
                 breadcrumbs = BuildFolderChain(await LoadFolderLookupAsync(userId), folderId);
             }
@@ -162,7 +169,8 @@ namespace LinguaReadApi.Controllers
                     FolderId = t.FolderId,
                     TotalWords = t.TotalWords,
                     KnownWords = t.KnownWords,
-                    StatsUpdatedAt = t.StatsUpdatedAt
+                    StatsUpdatedAt = t.StatsUpdatedAt,
+                    ImagePath = t.ImagePath
                 })
                 .ToListAsync();
 
@@ -734,6 +742,8 @@ namespace LinguaReadApi.Controllers
         public int? LanguageId { get; set; }
         public DateTime CreatedAt { get; set; }
         public int ItemCount { get; set; }
+        // The news feed whose articles go here. Only filled for the Library's current folder.
+        public int? NewsFeedId { get; set; }
     }
 
     public class BreadcrumbDto
@@ -794,6 +804,8 @@ namespace LinguaReadApi.Controllers
         public int TotalWords { get; set; }
         public int KnownWords { get; set; }
         public DateTime? StatsUpdatedAt { get; set; }
+        // The card's picture (a news article's lead photo), relative to wwwroot.
+        public string? ImagePath { get; set; }
         public int UnknownWords => Math.Max(TotalWords - KnownWords, 0);
         public double? UnknownWordPercentage =>
             TotalWords > 0 ? Math.Round((double)(TotalWords - KnownWords) / TotalWords * 100, 1) : (double?)null;

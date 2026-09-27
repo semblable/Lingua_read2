@@ -163,6 +163,8 @@ export type LibraryFolder = {
   color?: string | null;
   itemCount?: number;
   parentFolderId?: number | null;
+  // The news feed whose articles go here; only set on the Library's current folder.
+  newsFeedId?: number | null;
 };
 
 export type LibraryBook = {
@@ -198,6 +200,8 @@ export type LibraryText = {
   knownWords?: number;
   unknownWords?: number;
   unknownWordPercentage?: number | null;
+  // The card's picture (a news article's lead photo), relative to the site root.
+  imagePath?: string | null;
 };
 export type Breadcrumb = { folderId?: number | null; name?: string | null };
 

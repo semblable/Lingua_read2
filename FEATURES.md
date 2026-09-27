@@ -27,7 +27,7 @@ You can select a single word or drag across several words to capture a **multi-w
 
 Import longer texts by **pasting content** or uploading **`.txt`** or **`.epub`** files. Books are automatically split into bite-sized **lessons**, and your reading progress is tracked per book and per lesson. Add multiple **tags** to organize your library by topic, difficulty, or source.
 
-**News feeds** bring in fresh reading every day: follow RSS or Atom feeds (or paste a news site's address) and LinguaRead imports a few new articles per feed each day into **Library › News**, as texts ready to read and word-link, with the article's lead photo on top when it has one. Articles you never open can be cleared out automatically. See [SETTINGS.md → News Feeds](SETTINGS.md#7-news-feeds).
+**News feeds** bring in fresh reading every day: follow RSS or Atom feeds (or paste a news site's address) and LinguaRead imports a few new articles per feed each day into **Library › News**, as texts ready to read and word-link, with the article's lead photo on top (and on its Library card) when it has one. Browse a feed's current articles to pick the ones you want, or switch a feed's automatic import off and only take your picks. Articles you never open can be cleared out automatically. See [SETTINGS.md → News Feeds](SETTINGS.md#7-news-feeds).
 
 As you finish lessons, LinguaRead can **auto-advance** to the next one and optionally **auto-archive** completed lessons into a "Finished" folder to keep your active list tidy. These behaviours are controlled in [SETTINGS.md → Reading Preferences](SETTINGS.md#2-reading-preferences).
 

@@ -274,4 +274,53 @@ public class NewsFeedParserTests
         Assert.Equal(new Uri("https://news.example.com/1"), entry.Link);
         Assert.Equal(new Uri("https://img.example.com/1.png"), entry.ImageUrl);
     }
+
+    [Fact]
+    public void Summary_IsTheDescriptionAsPlainText_ElseTheStartOfTheContent()
+    {
+        var longDescription = string.Join(" ", Enumerable.Repeat("palavra", 80));
+        var xml = $$"""
+            <rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/"><channel><title>N</title>
+              <item><title>Com resumo</title><link>https://news.example.com/1</link>
+                <description>&lt;p&gt;O governo &lt;b&gt;anunciou&lt;/b&gt; hoje   novas medidas &amp;amp; apoios.&lt;/p&gt;&lt;img src="x.jpg"&gt;</description></item>
+              <item><title>Só o título</title><link>https://news.example.com/2</link><description>Só o título</description>
+                <content:encoded><![CDATA[<h1>Só o título</h1><p>Primeiro parágrafo do artigo.</p><p>Segundo.</p>]]></content:encoded></item>
+              <item><title>Longo</title><link>https://news.example.com/3</link><description>{{longDescription}}</description></item>
+              <item><title>Nada</title><link>https://news.example.com/4</link></item>
+            </channel></rss>
+            """;
+
+        Assert.True(FeedParser.TryParse(Encoding.UTF8.GetBytes(xml), FeedUrl, out var feed));
+
+        var byTitle = feed.Entries.ToDictionary(e => e.Title, e => e.Summary);
+        Assert.Equal("O governo anunciou hoje novas medidas & apoios.", byTitle["Com resumo"]);
+        // A description that only repeats the headline gives way to the content.
+        Assert.Equal("Primeiro parágrafo do artigo.", byTitle["Só o título"]);
+        Assert.Equal(FeedParser.MaxSummaryLength, byTitle["Longo"]!.Length);
+        Assert.EndsWith("…", byTitle["Longo"]);
+        Assert.Null(byTitle["Nada"]);
+    }
+
+    [Fact]
+    public void Summary_ReadsAtomSummaryAndRdfDescription()
+    {
+        var atom = """
+            <feed xmlns="http://www.w3.org/2005/Atom"><title>A</title>
+              <entry><id>urn:1</id><title>Titre</title><link href="https://example.org/1"/><summary>Un résumé court.</summary></entry>
+            </feed>
+            """;
+        var rdf = """
+            <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns="http://purl.org/rss/1.0/">
+              <channel rdf:about="https://example.org/"><title>R</title></channel>
+              <item rdf:about="https://example.org/a"><title>Ein Artikel</title><link>https://example.org/a</link>
+                <description>Eine kurze Zusammenfassung.</description></item>
+            </rdf:RDF>
+            """;
+
+        Assert.True(FeedParser.TryParse(Encoding.UTF8.GetBytes(atom), FeedUrl, out var atomFeed));
+        Assert.True(FeedParser.TryParse(Encoding.UTF8.GetBytes(rdf), FeedUrl, out var rdfFeed));
+
+        Assert.Equal("Un résumé court.", Assert.Single(atomFeed.Entries).Summary);
+        Assert.Equal("Eine kurze Zusammenfassung.", Assert.Single(rdfFeed.Entries).Summary);
+    }
 }

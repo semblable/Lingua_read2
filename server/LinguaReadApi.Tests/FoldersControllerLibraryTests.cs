@@ -296,6 +296,33 @@ public class FoldersControllerLibraryTests
     }
 
     [Fact]
+    public async Task GetLibraryContents_GivesATextsCardPicture_AndMarksANewsFeedsFolder()
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        Seed(context, userId);
+        var article = (await context.Texts.FindAsync(FolderText))!;
+        article.ImagePath = $"epub_assets/{userId}/news/{FolderText}.jpg";
+        context.NewsFeeds.Add(new NewsFeed { NewsFeedId = 7, UserId = userId, Url = "https://news.example.com/rss", Title = "Alpha", LanguageId = 1, FolderId = FolderA });
+        // Another user's feed pointing at a folder id means nothing here.
+        context.NewsFeeds.Add(new NewsFeed { NewsFeedId = 8, UserId = Guid.NewGuid(), Url = "https://news.example.com/rss", Title = "Beta", LanguageId = 1, FolderId = FolderB });
+        await context.SaveChangesAsync();
+        context.ChangeTracker.Clear();
+        var controller = CreateController(context, userId);
+
+        var feedFolder = (await controller.GetLibraryContents(FolderA)).Value!;
+        var otherFolder = (await controller.GetLibraryContents(FolderB)).Value!;
+        var root = (await controller.GetLibraryContents()).Value!;
+
+        Assert.Equal(7, feedFolder.CurrentFolder!.NewsFeedId);
+        Assert.Equal($"epub_assets/{userId}/news/{FolderText}.jpg", Assert.Single(feedFolder.Texts).ImagePath);
+        Assert.Null(otherFolder.CurrentFolder!.NewsFeedId);
+        Assert.Null(Assert.Single(root.Texts).ImagePath);
+        // Child folders don't carry it; only the folder being shown does.
+        Assert.All(root.Folders, f => Assert.Null(f.NewsFeedId));
+    }
+
+    [Fact]
     public async Task GetLibraryContents_BuildsTheBreadcrumbChain()
     {
         await using var context = CreateContext();

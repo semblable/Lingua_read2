@@ -5,6 +5,8 @@ import type { Settings } from '../../contexts/SettingsContext';
 import type { SettingsChangeHandler } from './AppearanceSettings';
 import { addNewsFeed, deleteNewsFeed, fetchNewsFeed, getNewsFeeds, updateNewsFeed } from '../../utils/api';
 import type { NewsFeed } from '../../utils/api';
+import NewsFeedBrowser from '../news/NewsFeedBrowser';
+import { ago, errorText } from '../news/newsFormat';
 
 type LanguageOption = { languageId: number; name: string };
 
@@ -24,21 +26,6 @@ const DELETE_AFTER_OPTIONS = [
   { value: 14, label: '14 days' },
   { value: 30, label: '30 days' }
 ];
-
-const errorText = (e: unknown, fallback: string) => (e instanceof Error && e.message) || fallback;
-
-// "5m ago", "2h ago", "3d ago".
-const ago = (iso: string | null | undefined): string | null => {
-  if (!iso) return null;
-  const then = new Date(iso).getTime();
-  if (Number.isNaN(then)) return null;
-  const minutes = Math.round((Date.now() - then) / 60000);
-  if (minutes < 1) return 'just now';
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.round(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.round(hours / 24)}d ago`;
-};
 
 const hostOf = (url: string) => {
   try {
@@ -69,6 +56,8 @@ const NewsFeedSettings = ({ settings, handleChange, languages }: NewsFeedSetting
   // Feeds with a request in flight; each can be busy on its own (a slow check next to a pause).
   const [busyFeedIds, setBusyFeedIds] = useState<ReadonlySet<number>>(() => new Set());
   const [messages, setMessages] = useState<Record<number, FeedMessage>>({});
+  // The feed whose articles are being browsed, if any.
+  const [browseFeed, setBrowseFeed] = useState<NewsFeed | null>(null);
 
   // The add form starts on the default language, else the first one.
   const languageId = chosenLanguageId
@@ -155,7 +144,7 @@ const NewsFeedSettings = ({ settings, handleChange, languages }: NewsFeedSetting
     }
   };
 
-  const togglePaused = async (feed: NewsFeed) => {
+  const toggleAutoImport = async (feed: NewsFeed) => {
     setBusy(feed.newsFeedId, true);
     setMessage(feed.newsFeedId, null);
     try {
@@ -202,7 +191,8 @@ const NewsFeedSettings = ({ settings, handleChange, languages }: NewsFeedSetting
         />
         <Form.Text className="text-muted" style={{ fontSize: '0.8rem' }}>
           New articles from your feeds are added to the Library under News, a few per feed each day, as texts you
-          can read like any other. Feeds are checked every couple of hours.
+          can read like any other. Feeds are checked every couple of hours. You can also browse a feed&apos;s articles and
+          pick the ones to import; turn Auto-import off on a feed to get only the ones you pick.
         </Form.Text>
       </Form.Group>
 
@@ -261,7 +251,7 @@ const NewsFeedSettings = ({ settings, handleChange, languages }: NewsFeedSetting
                     <div className="d-flex flex-wrap align-items-center gap-2">
                       <strong className="me-1" style={{ overflowWrap: 'anywhere' }}>{feed.title}</strong>
                       <Badge bg="secondary">{feed.languageName}</Badge>
-                      {!feed.enabled && <Badge bg="warning" text="dark">Paused</Badge>}
+                      {!feed.enabled && <Badge bg="warning" text="dark">Auto-import off</Badge>}
                     </div>
                     <div className="small text-muted" style={{ overflowWrap: 'anywhere' }}>
                       <a href={feed.url} target="_blank" rel="noopener noreferrer">{hostOf(feed.url)}</a>
@@ -273,7 +263,7 @@ const NewsFeedSettings = ({ settings, handleChange, languages }: NewsFeedSetting
                     {message && (
                       <Alert variant={message.variant} className="py-1 px-2 my-2 small mb-0">{message.text}</Alert>
                     )}
-                    <div className="d-flex flex-wrap gap-2 mt-2">
+                    <div className="d-flex flex-wrap align-items-center gap-2 mt-2">
                       <Button
                         variant="outline-primary"
                         size="sm"
@@ -283,8 +273,8 @@ const NewsFeedSettings = ({ settings, handleChange, languages }: NewsFeedSetting
                       >
                         {busy ? 'Working...' : 'Fetch now'}
                       </Button>
-                      <Button variant="outline-secondary" size="sm" type="button" disabled={busy} onClick={() => void togglePaused(feed)}>
-                        {feed.enabled ? 'Pause' : 'Resume'}
+                      <Button variant="outline-primary" size="sm" type="button" disabled={busy} onClick={() => setBrowseFeed(feed)}>
+                        Browse articles
                       </Button>
                       {feed.folderId != null && (
                         <Link className="btn btn-outline-secondary btn-sm" to={`/library/${feed.folderId}`}>
@@ -294,6 +284,16 @@ const NewsFeedSettings = ({ settings, handleChange, languages }: NewsFeedSetting
                       <Button variant="outline-danger" size="sm" type="button" disabled={busy} onClick={() => void removeFeed(feed)}>
                         Remove
                       </Button>
+                      <Form.Check
+                        type="switch"
+                        id={`newsFeedAutoImport-${feed.newsFeedId}`}
+                        className="mb-0 ms-1"
+                        label="Auto-import"
+                        title="Import a few new articles a day by itself. Off: only the ones you pick."
+                        checked={feed.enabled}
+                        disabled={busy}
+                        onChange={() => void toggleAutoImport(feed)}
+                      />
                     </div>
                   </li>
                 );
@@ -339,6 +339,13 @@ const NewsFeedSettings = ({ settings, handleChange, languages }: NewsFeedSetting
           {addError && <Alert variant="danger" className="py-2 small">{addError}</Alert>}
         </>
       )}
+
+      <NewsFeedBrowser
+        feedId={browseFeed?.newsFeedId ?? null}
+        feedTitle={browseFeed?.title}
+        onHide={() => setBrowseFeed(null)}
+        onImported={result => { if (result.feed) replaceFeed(result.feed); }}
+      />
     </div>
   );
 };

@@ -308,6 +308,51 @@ public class NewsLeadPhotoTests
         Assert.Single(h.DrainLinkingQueue());
     }
 
+    [Fact]
+    public async Task Import_CancelledDuringThePhoto_LeavesTheArticleForTheNextCheck()
+    {
+        await using var h = await CreateAsync();
+        h.Web.ServeFeed(FeedUrl, Rss("Notícias", new Item("Interrompido", ArticleUrl, h.Time.GetUtcNow())));
+        h.Web.Serve(ArticleUrl, ArticlePage("Interrompido", head: """<meta property="og:image" content="https://img.example.com/lead.jpg">"""));
+        var feedId = await h.AddFeedAsync();
+        // The feed's first import makes its folder, which saves. The check is then cancelled while
+        // the photo downloads (an aborted "Fetch now", the app shutting down).
+        using var cts = new CancellationTokenSource();
+        h.Web.Throw("https://img.example.com/lead.jpg", new OperationCanceledException(cts.Token));
+        var cancelOnPhoto = new CancellingWeb(h.Web, "https://img.example.com/lead.jpg", cts);
+
+        await using (var context = h.NewContext())
+        {
+            var importer = new NewsFeedImporter(context, new NewsFetcher(new HttpClient(cancelOnPhoto)), h.Channel, h.Locks,
+                NullLogger<NewsFeedImporter>.Instance, h.Time) { WebRoot = h.WebRoot };
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => importer.ImportAsync(feedId, cts.Token));
+        }
+
+        await using (var check = h.NewContext())
+        {
+            Assert.Empty(await check.Texts.ToListAsync());
+            // Not marked imported without a text: it would be skipped for good and count toward the day's limit.
+            Assert.False(await check.NewsFeedItems.AnyAsync(i => i.Imported));
+        }
+
+        h.Web.ServeBytes("https://img.example.com/lead.jpg", Jpeg(), "image/jpeg");
+        var result = await h.ImportAsync(feedId);
+
+        Assert.Equal(1, result.Imported);
+        await using var after = h.NewContext();
+        Assert.Equal("Interrompido", (await after.Texts.SingleAsync()).Title);
+    }
+
+    // Cancels the check's token when the given address is requested, then answers as the fake web would.
+    private sealed class CancellingWeb(FakeWeb web, string url, CancellationTokenSource cts) : DelegatingHandler(web)
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            if (request.RequestUri!.AbsoluteUri == url) cts.Cancel();
+            return base.SendAsync(request, cancellationToken);
+        }
+    }
+
     // ---- deleting ----
 
     [Fact]

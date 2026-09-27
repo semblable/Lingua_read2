@@ -12,7 +12,7 @@ vi.mock('../utils/api', () => ({
   getSentenceProgress: vi.fn()
 }));
 
-import { getText, getLanguage, getSentenceProgress, getBook, updateLastRead } from '../utils/api';
+import { getText, getTextSrt, getWordLinkingStatus, getLanguage, getSentenceProgress, getBook, updateLastRead } from '../utils/api';
 import { useReaderState } from '../hooks/useReaderState';
 
 const renderReaderStateHook = (overrides = {}) => {
@@ -164,6 +164,46 @@ describe('useReaderState', () => {
     });
     expect(result.current.audioSrc).toBe('/media/foo.mp3');
     expect(result.current.displayMode).toBe('audio');
+  });
+
+  test('after word linking, adds the words the linker created to the language list without replacing it', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const lesson = {
+        textId: 30, languageId: 5, content: 'hola mundo', isAudioLesson: true,
+        audioFilePath: 'media/foo.mp3', hasSrtContent: true, wordLinkingStatus: 'processing',
+        words: [{ wordId: 1, term: 'hola', status: 0 }],
+      };
+      getText.mockResolvedValueOnce(lesson);
+      getTextSrt.mockResolvedValue('');
+      getLanguage.mockResolvedValue(null);
+      getSentenceProgress.mockResolvedValue(null);
+      getWordLinkingStatus.mockResolvedValue({ wordLinkingStatus: 'completed' });
+
+      const { result } = renderReaderStateHook({ textId: '30' });
+      await waitFor(() => expect(result.current.sentenceProgressLoaded).toBe(true));
+
+      // The language's list, with a save of "hola" merged in after the refresh below read it.
+      const languageWords = [
+        { wordId: 1, term: 'hola', status: 2 },
+        { wordId: 2, term: 'buenos dias', status: 3 },
+        { wordId: 3, term: 'casa', status: 5 },
+      ];
+      act(() => { result.current.setWords(languageWords); });
+      getText.mockResolvedValueOnce({
+        ...lesson,
+        wordLinkingStatus: 'completed',
+        words: [{ wordId: 1, term: 'hola', status: 0 }, { wordId: 4, term: 'mundo', status: 0 }],
+      });
+
+      await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+
+      await waitFor(() => expect(getText).toHaveBeenCalledTimes(2));
+      await waitFor(() => expect(result.current.words).toHaveLength(4));
+      expect(result.current.words.map((w) => [w.wordId, w.status])).toEqual([[1, 2], [2, 3], [3, 5], [4, 0]]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   describe('book navigation', () => {

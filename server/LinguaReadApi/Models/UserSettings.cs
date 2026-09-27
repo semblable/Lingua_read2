@@ -113,6 +113,17 @@ namespace LinguaReadApi.Models
 
         public DateTime? HardcoverLastSyncAt { get; set; }
 
+        // News feeds (see NewsFeed): import new articles from the user's feeds in the background.
+        public bool NewsImportEnabled { get; set; } = false;
+
+        // At most this many articles per feed in any 24 hours.
+        [Range(1, 20)]
+        public int NewsArticlesPerFeedPerDay { get; set; } = 3;
+
+        // Imported articles never opened are deleted after this many days; 0 keeps them.
+        [Range(0, 365)]
+        public int NewsDeleteUnreadAfterDays { get; set; } = 14;
+
         // AI provider for sentence translation, explanations, stories and summaries: "gemini" (the
         // server-configured Gemini) or a catalog id (see Services.Ai.AiProviderCatalog) whose key and
         // models live in UserAiProviders. A catalog provider without a usable key falls back to Gemini.

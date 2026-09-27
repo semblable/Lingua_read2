@@ -198,6 +198,16 @@ builder.Services.AddHostedService<LinguaReadApi.Services.Srs.SrsFsrsBackfillServ
 builder.Services.AddSingleton<StatsRecomputeService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<StatsRecomputeService>());
 
+// News feeds: RSS/Atom articles imported as texts in the background. The fetcher's handler only
+// connects to public addresses, since feed and article URLs come from users and feeds.
+builder.Services.Configure<LinguaReadApi.Services.News.NewsFeedOptions>(
+    builder.Configuration.GetSection(LinguaReadApi.Services.News.NewsFeedOptions.SectionName));
+builder.Services.AddHttpClient<LinguaReadApi.Services.News.NewsFetcher>(LinguaReadApi.Services.News.NewsFetcher.ConfigureClient)
+    .ConfigurePrimaryHttpMessageHandler(LinguaReadApi.Services.News.PublicAddressGuard.CreateHandler);
+builder.Services.AddSingleton<LinguaReadApi.Services.News.NewsFeedLocks>();
+builder.Services.AddScoped<LinguaReadApi.Services.News.NewsFeedImporter>();
+builder.Services.AddHostedService<LinguaReadApi.Services.News.NewsFeedBackgroundService>();
+
 // Register Language Service (New)
 builder.Services.AddScoped<ILanguageService, LanguageService>();
 builder.Services.AddScoped<IUserActivityService, UserActivityService>(); // Register UserActivityService

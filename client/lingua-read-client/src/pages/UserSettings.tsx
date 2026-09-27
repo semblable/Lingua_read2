@@ -34,6 +34,7 @@ type HardcoverStatus = {
 import AppearanceSettings from '../components/settings/AppearanceSettings';
 import ReadingSettings from '../components/settings/ReadingSettings';
 import NavigationSettings from '../components/settings/NavigationSettings';
+import NewsFeedSettings from '../components/settings/NewsFeedSettings';
 import AiProviderSettings from '../components/settings/AiProviderSettings';
 import type { AiProviderConfigField } from '../components/settings/AiProviderSettings';
 import DiscordSettings from '../components/settings/DiscordSettings';
@@ -46,6 +47,7 @@ const SECTIONS = [
   { id: 'appearance', label: 'Appearance', icon: '\uD83C\uDFA8' },
   { id: 'reading', label: 'Reading', icon: '\uD83D\uDCDA' },
   { id: 'navigation', label: 'Navigation', icon: '\u2699\uFE0F' },
+  { id: 'news', label: 'News feeds', icon: '\uD83D\uDCF0' },
   { id: 'ai', label: 'AI Provider', icon: '\uD83E\uDD16' },
   { id: 'discord', label: 'Discord', icon: '\uD83D\uDCE8' },
   { id: 'hardcover', label: 'Hardcover', icon: 'HC' },
@@ -73,6 +75,7 @@ const EDITABLE_KEYS: readonly SettingKey[] = [
   'discordWeeklyReportEnabled', 'discordWeeklyReportDayOfWeek',
   'discordWeeklyReportHourLocal', 'discordTimezoneOffsetMinutes',
   'hardcoverSyncEnabled',
+  'newsImportEnabled', 'newsArticlesPerFeedPerDay', 'newsDeleteUnreadAfterDays',
   'aiProvider', 'aiProviders',
   'openRouterReasoningEnabled', 'openRouterReasoningEffort',
   'openRouterStoryReasoningEnabled', 'openRouterStoryReasoningEffort',
@@ -87,7 +90,8 @@ const LOCAL_ONLY_KEYS: ReadonlySet<SettingKey> = new Set<SettingKey>(['minimalHo
 
 const NUMERIC_FIELDS: ReadonlySet<string> = new Set([
   'textSize', 'readerContentWidth', 'leftPanelWidth', 'lineSpacing', 'autoTranslateWordStatus',
-  'defaultLanguageId', 'discordWeeklyReportHourLocal', 'discordTimezoneOffsetMinutes'
+  'defaultLanguageId', 'discordWeeklyReportHourLocal', 'discordTimezoneOffsetMinutes',
+  'newsArticlesPerFeedPerDay', 'newsDeleteUnreadAfterDays'
 ]);
 
 // How long a change waits for the next one before it is saved. A switch or a dropdown saves at
@@ -205,6 +209,9 @@ const UserSettings = () => {
       hardcoverSyncEnabled: false,
       hasHardcoverApiToken: false,
       hardcoverLastSyncAt: null,
+      newsImportEnabled: false,
+      newsArticlesPerFeedPerDay: 3,
+      newsDeleteUnreadAfterDays: 14,
       aiProvider: 'gemini',
       aiProviders: {},
       aiProvidersWithApiKey: [],
@@ -314,6 +321,9 @@ const UserSettings = () => {
           hardcoverSyncEnabled: data.hardcoverSyncEnabled ?? false,
           hasHardcoverApiToken: data.hasHardcoverApiToken ?? false,
           hardcoverLastSyncAt: data.hardcoverLastSyncAt ?? null,
+          newsImportEnabled: data.newsImportEnabled ?? false,
+          newsArticlesPerFeedPerDay: data.newsArticlesPerFeedPerDay || 3,
+          newsDeleteUnreadAfterDays: data.newsDeleteUnreadAfterDays ?? 14,
           aiProvider: data.aiProvider || 'gemini',
           aiProviders: (data.aiProviders ?? {}) as Record<string, AiProviderConfig>,
           aiProvidersWithApiKey: data.aiProvidersWithApiKey ?? [],
@@ -727,6 +737,19 @@ const UserSettings = () => {
                 <span>Navigation</span>
               </div>
               <NavigationSettings settings={settings as Settings} handleChange={handleChange} />
+            </div>
+
+            {/* News feeds */}
+            <div ref={el => { sectionRefs.current.news = el; }} className="settings-section-card mb-4">
+              <div className="settings-section-header">
+                <span className="settings-section-header-icon">{'📰'}</span>
+                <span>News Feeds</span>
+              </div>
+              <NewsFeedSettings
+                settings={settings as Settings}
+                handleChange={handleChange}
+                languages={languages as Array<{ languageId: number; name: string }>}
+              />
             </div>
 
             {/* AI Provider */}

@@ -131,6 +131,34 @@ public class UserSettingsControllerTests
     }
 
     [Fact]
+    public async Task NewsSettings_DefaultOff_AndAPatchChangesOnlyWhatItSends()
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        context.Users.Add(new User { Id = userId, UserName = "u", Email = "u@test.com" });
+        await context.SaveChangesAsync();
+        var controller = CreateController(context, userId);
+
+        var defaults = (await controller.GetUserSettings()).Value!;
+        Assert.False(defaults.NewsImportEnabled);
+        Assert.Equal(3, defaults.NewsArticlesPerFeedPerDay);
+        Assert.Equal(14, defaults.NewsDeleteUnreadAfterDays);
+
+        var enabled = (await controller.UpdateUserSettings(new UpdateUserSettingsDto { NewsImportEnabled = true })).Value!;
+        Assert.True(enabled.NewsImportEnabled);
+        Assert.Equal(3, enabled.NewsArticlesPerFeedPerDay);
+
+        var changed = (await controller.UpdateUserSettings(new UpdateUserSettingsDto
+        {
+            NewsArticlesPerFeedPerDay = 5,
+            NewsDeleteUnreadAfterDays = 0
+        })).Value!;
+        Assert.True(changed.NewsImportEnabled);
+        Assert.Equal(5, changed.NewsArticlesPerFeedPerDay);
+        Assert.Equal(0, changed.NewsDeleteUnreadAfterDays);
+    }
+
+    [Fact]
     public async Task UpdateUserSettings_TrimsAiApiKeyAndDiscordWebhook_AndClearsWhenWhitespaceOnly()
     {
         await using var context = CreateContext();

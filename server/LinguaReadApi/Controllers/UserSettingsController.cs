@@ -148,6 +148,9 @@ namespace LinguaReadApi.Controllers
                 HardcoverSyncEnabled = settings.HardcoverSyncEnabled,
                 HasHardcoverApiToken = !string.IsNullOrWhiteSpace(settings.HardcoverApiToken),
                 HardcoverLastSyncAt = settings.HardcoverLastSyncAt,
+                NewsImportEnabled = settings.NewsImportEnabled,
+                NewsArticlesPerFeedPerDay = settings.NewsArticlesPerFeedPerDay,
+                NewsDeleteUnreadAfterDays = settings.NewsDeleteUnreadAfterDays,
                 AiProvider = AiProviderCatalog.NormalizeSelection(settings.AiProvider) ?? AiProviderCatalog.BuiltInGemini,
                 AiProviders = aiProviders.ToDictionary(p => p.Provider, AiProviderConfigDto.From),
                 AiProvidersWithApiKey = aiProviders.Where(p => !string.IsNullOrWhiteSpace(p.ApiKey)).Select(p => p.Provider).Order().ToList(),
@@ -343,6 +346,9 @@ namespace LinguaReadApi.Controllers
                     ? null
                     : updateDto.HardcoverApiToken.Trim();
             }
+            settings.NewsImportEnabled = updateDto.NewsImportEnabled ?? settings.NewsImportEnabled;
+            settings.NewsArticlesPerFeedPerDay = updateDto.NewsArticlesPerFeedPerDay ?? settings.NewsArticlesPerFeedPerDay;
+            settings.NewsDeleteUnreadAfterDays = updateDto.NewsDeleteUnreadAfterDays ?? settings.NewsDeleteUnreadAfterDays;
             if (updateDto.AiProvider != null)
             {
                 var selection = AiProviderCatalog.NormalizeSelection(updateDto.AiProvider);
@@ -556,6 +562,9 @@ namespace LinguaReadApi.Controllers
                 HardcoverSyncEnabled = settings.HardcoverSyncEnabled,
                 HasHardcoverApiToken = !string.IsNullOrWhiteSpace(settings.HardcoverApiToken),
                 HardcoverLastSyncAt = settings.HardcoverLastSyncAt,
+                NewsImportEnabled = settings.NewsImportEnabled,
+                NewsArticlesPerFeedPerDay = settings.NewsArticlesPerFeedPerDay,
+                NewsDeleteUnreadAfterDays = settings.NewsDeleteUnreadAfterDays,
                 AiProvider = AiProviderCatalog.NormalizeSelection(settings.AiProvider) ?? AiProviderCatalog.BuiltInGemini,
                 AiProviders = aiProviders.ToDictionary(p => p.Provider, AiProviderConfigDto.From),
                 AiProvidersWithApiKey = aiProviders.Where(p => !string.IsNullOrWhiteSpace(p.ApiKey)).Select(p => p.Provider).Order().ToList(),
@@ -951,6 +960,9 @@ namespace LinguaReadApi.Controllers
         public bool HardcoverSyncEnabled { get; set; } = false;
         public bool HasHardcoverApiToken { get; set; } = false;
         public DateTime? HardcoverLastSyncAt { get; set; }
+        public bool NewsImportEnabled { get; set; } = false;
+        public int NewsArticlesPerFeedPerDay { get; set; } = 3;
+        public int NewsDeleteUnreadAfterDays { get; set; } = 14;
         // "gemini" (built-in) or an AiProviderCatalog id.
         public string AiProvider { get; set; } = AiProviderCatalog.BuiltInGemini;
         // The settings of each provider the user has set up, by provider id.
@@ -1069,6 +1081,15 @@ namespace LinguaReadApi.Controllers
         public string? HardcoverApiToken { get; set; }
 
         public bool? ClearHardcoverApiToken { get; set; }
+
+        // News feeds
+        public bool? NewsImportEnabled { get; set; }
+
+        [Range(1, 20)]
+        public int? NewsArticlesPerFeedPerDay { get; set; }
+
+        [Range(0, 365)]
+        public int? NewsDeleteUnreadAfterDays { get; set; }
 
         // AI provider: "gemini" or an AiProviderCatalog id.
         [StringLength(32)]

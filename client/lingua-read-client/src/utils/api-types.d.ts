@@ -2207,6 +2207,173 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/NewsFeeds": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["NewsFeedDto"][];
+                        "application/json": components["schemas"]["NewsFeedDto"][];
+                        "text/json": components["schemas"]["NewsFeedDto"][];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": components["schemas"]["AddNewsFeedDto"];
+                    "text/json": components["schemas"]["AddNewsFeedDto"];
+                    "application/*+json": components["schemas"]["AddNewsFeedDto"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["NewsFeedDto"];
+                        "application/json": components["schemas"]["NewsFeedDto"];
+                        "text/json": components["schemas"]["NewsFeedDto"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/NewsFeeds/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": components["schemas"]["UpdateNewsFeedDto"];
+                    "text/json": components["schemas"]["UpdateNewsFeedDto"];
+                    "application/*+json": components["schemas"]["UpdateNewsFeedDto"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["NewsFeedDto"];
+                        "application/json": components["schemas"]["NewsFeedDto"];
+                        "text/json": components["schemas"]["NewsFeedDto"];
+                    };
+                };
+            };
+        };
+        post?: never;
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/NewsFeeds/{id}/fetch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["NewsFeedFetchResultDto"];
+                        "application/json": components["schemas"]["NewsFeedFetchResultDto"];
+                        "text/json": components["schemas"]["NewsFeedFetchResultDto"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/SentenceTranslation": {
         parameters: {
             query?: never;
@@ -4939,6 +5106,11 @@ export interface components {
             /** Format: double */
             retentionRate?: number;
         };
+        AddNewsFeedDto: {
+            url?: string | null;
+            /** Format: int32 */
+            languageId?: number;
+        };
         AddTermBatchDto: {
             /** Format: int32 */
             languageId: number;
@@ -5792,6 +5964,63 @@ export interface components {
             /** Format: int32 */
             status?: number | null;
         };
+        NewsFeed: {
+            /** Format: int32 */
+            newsFeedId?: number;
+            /** Format: uuid */
+            userId?: string;
+            url: string;
+            title: string;
+            /** Format: int32 */
+            languageId?: number;
+            /** Format: int32 */
+            folderId?: number | null;
+            enabled?: boolean;
+            /** Format: date-time */
+            createdAt?: string;
+            /** Format: date-time */
+            lastCheckedAt?: string | null;
+            /** Format: date-time */
+            lastSuccessAt?: string | null;
+            lastError?: string | null;
+            /** Format: int32 */
+            consecutiveFailures?: number;
+            user?: components["schemas"]["User"];
+            language?: components["schemas"]["Language"];
+            folder?: components["schemas"]["Folder"];
+        };
+        NewsFeedDto: {
+            /** Format: int32 */
+            newsFeedId?: number;
+            url?: string | null;
+            title?: string | null;
+            /** Format: int32 */
+            languageId?: number;
+            languageName?: string | null;
+            /** Format: int32 */
+            folderId?: number | null;
+            enabled?: boolean;
+            /** Format: date-time */
+            createdAt?: string;
+            /** Format: date-time */
+            lastCheckedAt?: string | null;
+            /** Format: date-time */
+            lastSuccessAt?: string | null;
+            lastError?: string | null;
+            /** Format: int32 */
+            importedLast24Hours?: number;
+            /** Format: int32 */
+            articleCount?: number;
+        };
+        NewsFeedFetchResultDto: {
+            success?: boolean;
+            /** Format: int32 */
+            imported?: number;
+            /** Format: int32 */
+            skipped?: number;
+            message?: string | null;
+            feed?: components["schemas"]["NewsFeedDto"];
+        };
         NextLessonDto: {
             /** Format: int32 */
             textId?: number | null;
@@ -6205,10 +6434,14 @@ export interface components {
             folderId?: number | null;
             /** Format: int32 */
             sortOrder?: number;
+            /** Format: int32 */
+            newsFeedId?: number | null;
+            sourceUrl?: string | null;
             user?: components["schemas"]["User"];
             language?: components["schemas"]["Language"];
             book?: components["schemas"]["Book"];
             folder?: components["schemas"]["Folder"];
+            newsFeed?: components["schemas"]["NewsFeed"];
             textWords?: components["schemas"]["TextWord"][] | null;
             isAudioLesson?: boolean;
             audioFilePath?: string | null;
@@ -6407,6 +6640,11 @@ export interface components {
             /** Format: date-time */
             clientUpdatedAt?: string | null;
         };
+        UpdateNewsFeedDto: {
+            enabled?: boolean | null;
+            /** Format: int32 */
+            languageId?: number | null;
+        };
         UpdateTextDto: {
             /** Format: int32 */
             textId: number;
@@ -6471,6 +6709,11 @@ export interface components {
             hardcoverSyncEnabled?: boolean | null;
             hardcoverApiToken?: string | null;
             clearHardcoverApiToken?: boolean | null;
+            newsImportEnabled?: boolean | null;
+            /** Format: int32 */
+            newsArticlesPerFeedPerDay?: number | null;
+            /** Format: int32 */
+            newsDeleteUnreadAfterDays?: number | null;
             aiProvider?: string | null;
             aiProviders?: {
                 [key: string]: components["schemas"]["AiProviderConfigDto"];
@@ -6613,6 +6856,11 @@ export interface components {
             hardcoverApiToken?: string | null;
             /** Format: date-time */
             hardcoverLastSyncAt?: string | null;
+            newsImportEnabled?: boolean;
+            /** Format: int32 */
+            newsArticlesPerFeedPerDay?: number;
+            /** Format: int32 */
+            newsDeleteUnreadAfterDays?: number;
             aiProvider?: string | null;
             openRouterReasoningEnabled?: boolean;
             openRouterReasoningEffort?: string | null;
@@ -6727,6 +6975,11 @@ export interface components {
             hasHardcoverApiToken?: boolean;
             /** Format: date-time */
             hardcoverLastSyncAt?: string | null;
+            newsImportEnabled?: boolean;
+            /** Format: int32 */
+            newsArticlesPerFeedPerDay?: number;
+            /** Format: int32 */
+            newsDeleteUnreadAfterDays?: number;
             aiProvider?: string | null;
             aiProviders?: {
                 [key: string]: components["schemas"]["AiProviderConfigDto"];

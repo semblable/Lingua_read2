@@ -49,11 +49,20 @@ namespace LinguaReadApi.Models
         // Position within folder for custom ordering
         public int SortOrder { get; set; } = 0;
 
+        // Set on articles imported from a news feed (see NewsFeedImporter): the feed, and the page
+        // the article came from. Removing the feed keeps its articles as ordinary texts (null feed).
+        [ForeignKey("NewsFeed")]
+        public int? NewsFeedId { get; set; }
+
+        [StringLength(NewsFeed.MaxUrlLength)]
+        public string? SourceUrl { get; set; }
+
         // Navigation properties
         public virtual User User { get; set; } = null!;
         public virtual Language Language { get; set; } = null!;
         public virtual Book? Book { get; set; } // Made nullable to match BookId
         public virtual Folder? Folder { get; set; }
+        public virtual NewsFeed? NewsFeed { get; set; }
         public virtual ICollection<TextWord> TextWords { get; set; } = new List<TextWord>();
 
         // Properties for Audio Lessons

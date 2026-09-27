@@ -99,16 +99,54 @@ namespace LinguaReadApi.Services.News
 
             foreach (var feed in feeds.Where(f => NewsFeedImporter.IsDue(f, now, interval)))
             {
-                // A scope per feed: each check's texts and entries leave the change tracker after it.
-                using var scope = _scopeFactory.CreateScope();
-                await scope.ServiceProvider.GetRequiredService<NewsFeedImporter>().ImportAsync(feed.NewsFeedId, cancellationToken);
+                // The importer reports feed and network problems in its result; anything else (a
+                // database error, say) is caught here so the other feeds and the cleanup still run.
+                try
+                {
+                    // A scope per feed: each check's texts and entries leave the change tracker after it.
+                    using var scope = _scopeFactory.CreateScope();
+                    await scope.ServiceProvider.GetRequiredService<NewsFeedImporter>().ImportAsync(feed.NewsFeedId, cancellationToken);
+                }
+                catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
+                {
+                    _logger.LogError(ex, "News feed {FeedId} check failed.", feed.NewsFeedId);
+                    await RecordFailureAsync(feed.NewsFeedId, now, cancellationToken);
+                }
             }
 
             foreach (var user in users.Where(u => u.NewsDeleteUnreadAfterDays > 0))
             {
+                try
+                {
+                    using var scope = _scopeFactory.CreateScope();
+                    await scope.ServiceProvider.GetRequiredService<NewsFeedImporter>()
+                        .DeleteUnopenedArticlesAsync(user.UserId, user.NewsDeleteUnreadAfterDays, cancellationToken);
+                }
+                catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
+                {
+                    _logger.LogError(ex, "Deleting unopened news articles failed for user {UserId}.", user.UserId);
+                }
+            }
+        }
+
+        // The failed check's own changes were never saved, so without this the feed would stay due
+        // and be retried every pass with no backoff.
+        private async Task RecordFailureAsync(int newsFeedId, DateTime now, CancellationToken cancellationToken)
+        {
+            try
+            {
                 using var scope = _scopeFactory.CreateScope();
-                await scope.ServiceProvider.GetRequiredService<NewsFeedImporter>()
-                    .DeleteUnopenedArticlesAsync(user.UserId, user.NewsDeleteUnreadAfterDays, cancellationToken);
+                var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                var feed = await context.NewsFeeds.FirstOrDefaultAsync(f => f.NewsFeedId == newsFeedId, cancellationToken);
+                if (feed == null) return;
+                feed.LastCheckedAt = now;
+                feed.LastError = "The check failed on the server. It will be tried again later.";
+                feed.ConsecutiveFailures++;
+                await context.SaveChangesAsync(cancellationToken);
+            }
+            catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
+            {
+                _logger.LogError(ex, "Recording the failed check of news feed {FeedId} failed.", newsFeedId);
             }
         }
     }

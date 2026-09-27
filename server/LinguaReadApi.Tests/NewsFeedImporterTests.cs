@@ -403,6 +403,38 @@ public class NewsFeedImporterTests
         Assert.Equal([items[0].Title], await check.Texts.Select(t => t.Title).ToListAsync());
     }
 
+    [Fact]
+    public async Task BackgroundPass_GoesOnAfterAFeedFailsUnexpectedly_AndBacksOffThatFeed()
+    {
+        await using var h = await CreateAsync();
+        var items = FiveArticles(h).Take(1).ToArray();
+        ServeAll(h, items);
+        h.Web.Throw("https://news.example.com/broken", new InvalidOperationException("boom"));
+        var brokenId = await h.AddFeedAsync("https://news.example.com/broken", "Broken");
+        var goodId = await h.AddFeedAsync();
+        await using (var context = h.NewContext())
+        {
+            // Both due; the broken feed first in the pass.
+            (await context.NewsFeeds.SingleAsync(f => f.NewsFeedId == brokenId)).LastCheckedAt = h.Now.AddHours(-5);
+            (await context.NewsFeeds.SingleAsync(f => f.NewsFeedId == goodId)).LastCheckedAt = h.Now.AddHours(-3);
+            await context.SaveChangesAsync();
+        }
+
+        await CreateService(h).RunOnceAsync(CancellationToken.None);
+
+        await using var check = h.NewContext();
+        Assert.Equal([items[0].Title], await check.Texts.Select(t => t.Title).ToListAsync());
+        var broken = await check.NewsFeeds.SingleAsync(f => f.NewsFeedId == brokenId);
+        Assert.Equal(h.Now, broken.LastCheckedAt);
+        Assert.Equal(1, broken.ConsecutiveFailures);
+        Assert.NotNull(broken.LastError);
+
+        // Backed off: not due again after the usual two hours.
+        h.Time.Advance(TimeSpan.FromHours(2.5));
+        await CreateService(h).RunOnceAsync(CancellationToken.None);
+        Assert.Equal(1, h.Web.RequestsTo("https://news.example.com/broken"));
+    }
+
     private static NewsFeedBackgroundService CreateService(NewsTestHarness h)
     {
         var services = new ServiceCollection();

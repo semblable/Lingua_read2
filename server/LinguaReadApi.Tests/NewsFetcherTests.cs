@@ -90,6 +90,33 @@ public class NewsFetcherTests
     }
 
     [Fact]
+    public async Task GetAsync_GivesUpOnABodyThatStallsAfterTheHeaders()
+    {
+        var fetcher = new NewsFetcher(
+            new HttpClient(new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StreamContent(new BodyStream(stall: true)) })),
+            TimeSpan.FromMilliseconds(200));
+
+        var ex = await Assert.ThrowsAsync<NewsFetchException>(() =>
+            fetcher.GetAsync(new Uri("https://news.example.com/slow"), CancellationToken.None));
+
+        Assert.Equal("news.example.com took too long to answer.", ex.Message);
+    }
+
+    [Fact]
+    public async Task GetAsync_ReportsABodyCutOffMidway()
+    {
+        var fetcher = new NewsFetcher(new HttpClient(new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StreamContent(new BodyStream(stall: false))
+        })));
+
+        var ex = await Assert.ThrowsAsync<NewsFetchException>(() =>
+            fetcher.GetAsync(new Uri("https://news.example.com/cut"), CancellationToken.None));
+
+        Assert.StartsWith("Couldn't read the answer from news.example.com", ex.Message);
+    }
+
+    [Fact]
     public void DecodeText_UsesTheHeaderCharsetThenTheMetaTagThenUtf8()
     {
         var latin1Page = Encoding.Latin1.GetBytes("<html><head><meta charset=\"iso-8859-1\"></head><body>Manhã</body></html>");
@@ -101,6 +128,39 @@ public class NewsFetcherTests
         Assert.Equal("Coração", new FetchedDocument(windows1252, "text/html", "windows-1252", url).DecodeText());
         Assert.Equal("Coração", new FetchedDocument(utf8, "text/html", null, url).DecodeText());
         Assert.Equal("Coração", new FetchedDocument([0xEF, 0xBB, 0xBF, .. utf8], "text/html", null, url).DecodeText());
+    }
+
+    // A response body that sends a few bytes and then either never sends more or breaks off.
+    private sealed class BodyStream(bool stall) : Stream
+    {
+        private bool _sentStart;
+
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            if (!_sentStart)
+            {
+                _sentStart = true;
+                buffer.Span[0] = (byte)'<';
+                return 1;
+            }
+            if (!stall) throw new IOException("The response ended prematurely.");
+            await Task.Delay(Timeout.Infinite, cancellationToken);
+            return 0;
+        }
+
+        public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken) =>
+            ReadAsync(buffer.AsMemory(offset, count), cancellationToken).AsTask();
+
+        public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+        public override void Flush() { }
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
     }
 
     internal sealed class StubHandler(Func<HttpRequestMessage, HttpResponseMessage> respond) : HttpMessageHandler

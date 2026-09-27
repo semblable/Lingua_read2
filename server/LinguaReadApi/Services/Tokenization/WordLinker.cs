@@ -61,7 +61,14 @@ namespace LinguaReadApi.Services.Tokenization
             Guid userId,
             CancellationToken cancellationToken = default)
         {
-            if (string.IsNullOrWhiteSpace(content)) return;
+            // An empty text (an SRS micro-story whose AI reply parsed into nothing) has nothing to
+            // link but is current all the same. Unstamped, WordLinkingMigrationService found it
+            // again on every pass and re-linked it forever.
+            if (string.IsNullOrWhiteSpace(content))
+            {
+                await StampVersion(context, textId, cancellationToken);
+                return;
+            }
 
             var language = await context.Languages
                 .AsNoTracking()

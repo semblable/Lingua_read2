@@ -165,6 +165,33 @@ describe('NewsFeedSettings', () => {
     expect(screen.getByText('Last check failed: feeds.bbci.co.uk took too long to answer.')).toBeInTheDocument();
   });
 
+  test('a feed stays busy while its check runs, whatever happens to another feed', async () => {
+    const a = feed();
+    const b = feed({ newsFeedId: 2, title: 'RTP Notícias', url: 'https://www.rtp.pt/noticias/rss' });
+    vi.mocked(getNewsFeeds).mockResolvedValue([a, b]);
+    let finishA: (value: Awaited<ReturnType<typeof fetchNewsFeed>>) => void = () => {};
+    vi.mocked(fetchNewsFeed)
+      .mockImplementationOnce(() => new Promise(resolve => { finishA = resolve; }))
+      .mockResolvedValueOnce({ success: true, imported: 1, skipped: 0, message: 'Imported 1 article.', feed: b });
+    renderNews();
+
+    const itemA = (await screen.findByText('BBC News Brasil')).closest('li') as HTMLElement;
+    const itemB = screen.getByText('RTP Notícias').closest('li') as HTMLElement;
+    fireEvent.click(within(itemA).getByRole('button', { name: 'Fetch now' }));
+    expect(within(itemA).getByRole('button', { name: 'Working...' })).toBeDisabled();
+
+    fireEvent.click(within(itemB).getByRole('button', { name: 'Fetch now' }));
+    expect(await within(itemB).findByText('Imported 1 article.')).toBeInTheDocument();
+    expect(within(itemB).getByRole('button', { name: 'Fetch now' })).toBeEnabled();
+    // B finishing must not free A, which is still being checked.
+    expect(within(itemA).getByRole('button', { name: 'Working...' })).toBeDisabled();
+    expect(within(itemA).getByRole('button', { name: 'Pause' })).toBeDisabled();
+
+    finishA({ success: true, imported: 0, skipped: 0, message: 'No new articles.', feed: a });
+    expect(await within(itemA).findByText('No new articles.')).toBeInTheDocument();
+    expect(within(itemA).getByRole('button', { name: 'Fetch now' })).toBeEnabled();
+  });
+
   test('Pause and Resume update the feed', async () => {
     vi.mocked(getNewsFeeds).mockResolvedValue([feed()]);
     vi.mocked(updateNewsFeed).mockResolvedValue(feed({ enabled: false }));

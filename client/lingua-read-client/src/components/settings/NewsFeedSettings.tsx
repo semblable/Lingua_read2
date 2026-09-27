@@ -66,7 +66,8 @@ const NewsFeedSettings = ({ settings, handleChange, languages }: NewsFeedSetting
   const [adding, setAdding] = useState(false);
   const [addError, setAddError] = useState('');
 
-  const [busyFeedId, setBusyFeedId] = useState<number | null>(null);
+  // Feeds with a request in flight; each can be busy on its own (a slow check next to a pause).
+  const [busyFeedIds, setBusyFeedIds] = useState<ReadonlySet<number>>(() => new Set());
   const [messages, setMessages] = useState<Record<number, FeedMessage>>({});
 
   // The add form starts on the default language, else the first one.
@@ -93,6 +94,14 @@ const NewsFeedSettings = ({ settings, handleChange, languages }: NewsFeedSetting
     setReloadKey(k => k + 1);
   };
 
+  const setBusy = (feedId: number, busy: boolean) =>
+    setBusyFeedIds(current => {
+      const next = new Set(current);
+      if (busy) next.add(feedId);
+      else next.delete(feedId);
+      return next;
+    });
+
   const replaceFeed = (feed: NewsFeed) =>
     setFeeds(list => list.map(f => (f.newsFeedId === feed.newsFeedId ? feed : f)));
 
@@ -105,7 +114,7 @@ const NewsFeedSettings = ({ settings, handleChange, languages }: NewsFeedSetting
     });
 
   const fetchNow = useCallback(async (feedId: number) => {
-    setBusyFeedId(feedId);
+    setBusy(feedId, true);
     setMessage(feedId, null);
     try {
       const result = await fetchNewsFeed(feedId);
@@ -117,7 +126,7 @@ const NewsFeedSettings = ({ settings, handleChange, languages }: NewsFeedSetting
     } catch (e) {
       setMessage(feedId, { variant: 'danger', text: errorText(e, 'The check failed.') });
     } finally {
-      setBusyFeedId(null);
+      setBusy(feedId, false);
     }
   }, []);
 
@@ -147,20 +156,20 @@ const NewsFeedSettings = ({ settings, handleChange, languages }: NewsFeedSetting
   };
 
   const togglePaused = async (feed: NewsFeed) => {
-    setBusyFeedId(feed.newsFeedId);
+    setBusy(feed.newsFeedId, true);
     setMessage(feed.newsFeedId, null);
     try {
       replaceFeed(await updateNewsFeed(feed.newsFeedId, { enabled: !feed.enabled }));
     } catch (e) {
       setMessage(feed.newsFeedId, { variant: 'danger', text: errorText(e, 'Failed to update the feed.') });
     } finally {
-      setBusyFeedId(null);
+      setBusy(feed.newsFeedId, false);
     }
   };
 
   const removeFeed = async (feed: NewsFeed) => {
     if (!window.confirm(`Stop following "${feed.title}"?\n\nArticles already imported stay in your Library.`)) return;
-    setBusyFeedId(feed.newsFeedId);
+    setBusy(feed.newsFeedId, true);
     try {
       await deleteNewsFeed(feed.newsFeedId);
       setFeeds(list => list.filter(f => f.newsFeedId !== feed.newsFeedId));
@@ -168,7 +177,7 @@ const NewsFeedSettings = ({ settings, handleChange, languages }: NewsFeedSetting
     } catch (e) {
       setMessage(feed.newsFeedId, { variant: 'danger', text: errorText(e, 'Failed to remove the feed.') });
     } finally {
-      setBusyFeedId(null);
+      setBusy(feed.newsFeedId, false);
     }
   };
 
@@ -245,7 +254,7 @@ const NewsFeedSettings = ({ settings, handleChange, languages }: NewsFeedSetting
           {feeds.length > 0 && (
             <ul className="list-unstyled mb-3" aria-label="News feeds">
               {feeds.map(feed => {
-                const busy = busyFeedId === feed.newsFeedId;
+                const busy = busyFeedIds.has(feed.newsFeedId);
                 const message = messages[feed.newsFeedId];
                 return (
                   <li key={feed.newsFeedId} className="border rounded p-2 mb-2" style={{ textAlign: 'left' }}>

@@ -212,15 +212,19 @@ namespace LinguaReadApi.Services.News
                 }
 
                 var item = new NewsFeedItem { NewsFeedId = feed.NewsFeedId, ItemKey = key, FirstSeenAt = now, LastSeenAt = now };
-                _context.NewsFeedItems.Add(item);
                 if (article == null || article.WordCount < MinArticleWords)
                 {
+                    _context.NewsFeedItems.Add(item);
                     skipped++;
                     continue;
                 }
 
-                item.Imported = true;
+                // The folder first: making it saves, and an imported entry saved before its text
+                // would be lost for good if the check were cancelled before the end (a photo
+                // download, an aborted "Fetch now"), while still counting toward the daily limit.
                 folderId ??= await EnsureFolderAsync(feed, now, cancellationToken);
+                item.Imported = true;
+                _context.NewsFeedItems.Add(item);
                 var text = new Text
                 {
                     Title = Truncate(

@@ -262,8 +262,35 @@ describe('SrsStoryReview (micro-contexts)', () => {
 
     fireEvent.click(await screen.findByRole('button', generateBtnQuery));
 
-    expect(await screen.findByText(/No micro-contexts generated/)).toBeInTheDocument();
+    expect(await screen.findByText(/No micro-contexts generated: no words are due/)).toBeInTheDocument();
     expect(screen.getByRole('button', generateBtnQuery)).toBeInTheDocument();
+  });
+
+  it("shows the server's message when the AI reply could not be used", async () => {
+    // Through the real API helper, so the server's 502 { message } body is what reaches the page.
+    const { generateSrsStory: realGenerateSrsStory } = await vi.importActual('../utils/api/srs');
+    generateSrsStory.mockImplementation(realGenerateSrsStory);
+    const message = "The AI reply couldn't be read as micro-contexts for your due words. Try again, or check your AI provider and its story generation prompt in Settings.";
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve({
+      ok: false,
+      status: 502,
+      statusText: 'Bad Gateway',
+      headers: { get: () => 'application/json; charset=utf-8' },
+      json: () => Promise.resolve({ message }),
+    })));
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      renderComponent();
+      await selectSpanish();
+
+      fireEvent.click(await screen.findByRole('button', generateBtnQuery));
+
+      expect(await screen.findByText(`Failed to generate micro-contexts: ${message}`)).toBeInTheDocument();
+      expect(screen.getByRole('button', generateBtnQuery)).toBeInTheDocument();
+    } finally {
+      vi.unstubAllGlobals();
+      consoleError.mockRestore();
+    }
   });
 
   it('does not send theme/style/tense/maxLength in the request payload', async () => {

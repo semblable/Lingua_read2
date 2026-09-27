@@ -108,8 +108,10 @@ const SrsStoryReview = () => {
         cardType: cardType !== 'all' ? cardType : undefined,
       });
 
+      // An AI reply the server couldn't use comes back as an error (caught below), so an
+      // empty list means no card was due for these filters and today's limits.
       if (!result.microContexts || result.microContexts.length === 0) {
-        setError('No micro-contexts generated. Either no due words or the AI returned an unparseable response — try again.');
+        setError("No micro-contexts generated: no words are due with these filters, or today's new/review limits are used up.");
         setPhase('setup');
         return;
       }

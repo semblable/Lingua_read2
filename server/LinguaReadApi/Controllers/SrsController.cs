@@ -1379,7 +1379,7 @@ Format (one object per provided word, in the same order):
             // CustomStoryPrompt may still be set from the old story-mode era; substitute the same
             // {language}, {level}, {wordList} placeholders so existing templates that ask for
             // micro-context output keep working. Templates written for narrative output will likely
-            // produce non-JSON responses and the parser will return an empty list.
+            // produce non-JSON responses, which parse to nothing and end in an error below.
             var settingsForPrompt = settings ?? new Models.UserSettings();
             var promptVars = new Dictionary<string, string?>
             {
@@ -1421,6 +1421,12 @@ Format (one object per provided word, in the same order):
                 });
             }
 
+            // Nothing usable: the reply wasn't a JSON array of contexts (a provider error, a custom
+            // prompt asking for prose), or none of its terms is a due word. Saving it anyway left an
+            // empty srs-story text behind, and the empty list didn't tell the user what went wrong.
+            if (microContexts.Count == 0)
+                return MicroContextFailure(rawResponse);
+
             // 7. Save concatenated contexts as a Text record so saved-from-lookup words have a TextId.
             var combined = string.Join("\n\n", microContexts.Select(m => $"**{m.Term}** — {m.Context}"));
             var storyTextRecord = new Text
@@ -1442,6 +1448,29 @@ Format (one object per provided word, in the same order):
                 LanguageCode = language?.Code ?? "",
                 RemainingNewBudget = remainingNew,
                 RemainingReviewBudget = remainingReviews
+            });
+        }
+
+        /// <summary>
+        /// The error for a micro-context reply with nothing usable in it. Story services return
+        /// provider failures as text ("Story generation error: ...") instead of throwing; those
+        /// map to 429/502 as in SummarizationController. Anything else is a reply we couldn't read.
+        /// </summary>
+        private ObjectResult MicroContextFailure(string? rawResponse)
+        {
+            var reply = rawResponse?.Trim() ?? "";
+            if (reply.StartsWith("Story generation error:", StringComparison.Ordinal)
+                || reply.StartsWith("Story generation failed:", StringComparison.Ordinal))
+            {
+                if (reply.Contains("TooManyRequests", StringComparison.Ordinal))
+                    return StatusCode(StatusCodes.Status429TooManyRequests, new { Message = "Provider rate limit reached. Try again in a few seconds." });
+                return StatusCode(StatusCodes.Status502BadGateway, new { Message = reply });
+            }
+
+            return StatusCode(StatusCodes.Status502BadGateway, new
+            {
+                Message = "The AI reply couldn't be read as micro-contexts for your due words. " +
+                          "Try again, or check your AI provider and its story generation prompt in Settings."
             });
         }
 

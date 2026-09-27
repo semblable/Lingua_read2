@@ -19,4 +19,5 @@ export * from './translation';
 export * from './folders';
 export * from './settings';
 export * from './aiProviders';
+export * from './newsFeeds';
 export * from './admin';

@@ -61,6 +61,12 @@ export type Settings = {
   hardcoverSyncEnabled: boolean;
   hasHardcoverApiToken: boolean;
   hardcoverLastSyncAt: string | null;
+  // Import articles from the user's news feeds in the background (feeds are managed separately).
+  newsImportEnabled: boolean;
+  // At most this many articles per feed in any 24 hours (1-20).
+  newsArticlesPerFeedPerDay: number;
+  // Imported articles never opened are deleted after this many days; 0 keeps them.
+  newsDeleteUnreadAfterDays: number;
   // 'gemini' (the built-in Gemini) or a provider id from GET /api/aiproviders.
   aiProvider: string;
   // Per-provider settings by provider id.
@@ -153,6 +159,9 @@ const defaultSettings: Settings = {
   hardcoverSyncEnabled: false,
   hasHardcoverApiToken: false,
   hardcoverLastSyncAt: null,
+  newsImportEnabled: false,
+  newsArticlesPerFeedPerDay: 3,
+  newsDeleteUnreadAfterDays: 14,
   aiProvider: 'gemini',
   aiProviders: {},
   aiProvidersWithApiKey: [],
@@ -269,6 +278,9 @@ export const mergeSettings = (
     hardcoverSyncEnabled: d.hardcoverSyncEnabled ?? base.hardcoverSyncEnabled,
     hasHardcoverApiToken: d.hasHardcoverApiToken ?? base.hasHardcoverApiToken,
     hardcoverLastSyncAt: d.hardcoverLastSyncAt ?? base.hardcoverLastSyncAt,
+    newsImportEnabled: d.newsImportEnabled ?? base.newsImportEnabled,
+    newsArticlesPerFeedPerDay: d.newsArticlesPerFeedPerDay || base.newsArticlesPerFeedPerDay,
+    newsDeleteUnreadAfterDays: d.newsDeleteUnreadAfterDays ?? base.newsDeleteUnreadAfterDays,
     aiProvider: d.aiProvider || base.aiProvider,
     aiProviders: d.aiProviders ?? base.aiProviders,
     aiProvidersWithApiKey: d.aiProvidersWithApiKey ?? base.aiProvidersWithApiKey,

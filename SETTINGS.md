@@ -20,6 +20,7 @@ This document provides a comprehensive reference for configuring **LinguaRead**.
     *   [Hardcover Integration](#4-hardcover-integration)
     *   [Advanced AI Translation & Overrides](#5-advanced-ai-translation--overrides)
     *   [Spaced Repetition System (SRS) / Anki Settings](#6-spaced-repetition-system-srs--anki-settings)
+    *   [News Feeds](#7-news-feeds)
 
 ---
 
@@ -233,3 +234,16 @@ Configure flashcard reviews. Cards are scheduled with **FSRS-6** (the algorithm 
 | `SrsKnownCardAction` | `"keep"` | `"keep"`, `"suspend"` | What happens to a card when its word becomes Known (from the reader, a batch import or auto-Known). Ignored words always have their card suspended. |
 | `SrsLeechThreshold` | `8` | `0` - `100` | Times forgotten that make a card a leech (and again every half as many after). `0` turns leech detection off. |
 | `SrsLeechAction` | `"tag"` | `"tag"`, `"suspend"` | Whether a leech is only tagged `leech` or also suspended. Suspended leeches are listed on the review page, where they can be unsuspended. |
+
+---
+
+### 7. News Feeds
+Import articles from RSS or Atom news feeds as texts. The feeds themselves are managed in the same Settings section (add, pause, **Fetch now**, remove); adding one checks it right away and imports its first articles. A web page can be given instead of a feed address if the page links to its feed.
+
+| Setting Field | Default Value | Allowed / Type | Description |
+| :--- | :---: | :--- | :--- |
+| `NewsImportEnabled` | `false` | `true` / `false` | Checks your feeds in the background, about every two hours (less often after failed checks), and imports new articles into **Library › News › *feed name***. |
+| `NewsArticlesPerFeedPerDay` | `3` | `1` - `20` | The newest articles, at most this many per feed in any 24 hours. **Fetch now** keeps to the same limit. |
+| `NewsDeleteUnreadAfterDays` | `14` | `0` - `365`, `0` = never | Imported articles you never opened are deleted after this many days. Opened or finished ones stay, and so do articles of a feed you removed. |
+
+Each article is fetched from the site and reduced to its text (no photos, captions, bylines or link lists). Articles shorter than about 120 words are skipped, which also skips most paywalled teasers and video pages, and an article you delete is not imported again. The server only fetches public internet addresses, so a feed can't point it at its own network.

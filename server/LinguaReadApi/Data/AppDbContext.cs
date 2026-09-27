@@ -61,6 +61,8 @@ namespace LinguaReadApi.Data
         public DbSet<Folder> Folders { get; set; }
         public DbSet<UserGoal> UserGoals { get; set; }
         public DbSet<UserGoalPeriod> UserGoalPeriods { get; set; }
+        public DbSet<NewsFeed> NewsFeeds { get; set; }
+        public DbSet<NewsFeedItem> NewsFeedItems { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -508,6 +510,48 @@ namespace LinguaReadApi.Data
 
             modelBuilder.Entity<UserGoalPeriod>()
                 .HasIndex(p => new { p.GoalId, p.PeriodEnd });
+
+            // News feeds (see NewsFeed). Deleting a feed keeps its articles as ordinary texts and
+            // forgets which entries it had seen; deleting its folder only unsets FolderId, and the
+            // importer makes a new one.
+            modelBuilder.Entity<NewsFeed>()
+                .HasOne(f => f.User)
+                .WithMany()
+                .HasForeignKey(f => f.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<NewsFeed>()
+                .HasOne(f => f.Language)
+                .WithMany()
+                .HasForeignKey(f => f.LanguageId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<NewsFeed>()
+                .HasOne(f => f.Folder)
+                .WithMany()
+                .HasForeignKey(f => f.FolderId)
+                .IsRequired(false)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            modelBuilder.Entity<NewsFeed>()
+                .HasIndex(f => f.UserId);
+
+            modelBuilder.Entity<NewsFeedItem>()
+                .HasOne(i => i.NewsFeed)
+                .WithMany()
+                .HasForeignKey(i => i.NewsFeedId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<NewsFeedItem>()
+                .HasIndex(i => new { i.NewsFeedId, i.ItemKey })
+                .IsUnique();
+
+            modelBuilder.Entity<Text>()
+                .HasOne(t => t.NewsFeed)
+                .WithMany()
+                .HasForeignKey(t => t.NewsFeedId)
+                .IsRequired(false)
+                .OnDelete(DeleteBehavior.SetNull);
 
             // Accent- and case-insensitive search (see SearchText): Fold(x) runs in the database as
             // unaccent(lower(x)), for the searched column and the query alike. Postgres only; on the

@@ -11,7 +11,8 @@ import {
   getAudioStorageSize,
   getAiProviders,
   testAiProvider,
-  getAiProviderModels
+  getAiProviderModels,
+  getNewsFeeds
 } from '../utils/api';
 
 vi.mock('../utils/api', () => ({
@@ -27,7 +28,12 @@ vi.mock('../utils/api', () => ({
   syncAllHardcover: vi.fn(),
   getAiProviders: vi.fn(),
   testAiProvider: vi.fn(),
-  getAiProviderModels: vi.fn()
+  getAiProviderModels: vi.fn(),
+  getNewsFeeds: vi.fn(),
+  addNewsFeed: vi.fn(),
+  updateNewsFeed: vi.fn(),
+  deleteNewsFeed: vi.fn(),
+  fetchNewsFeed: vi.fn()
 }));
 
 const mockSettings = {
@@ -167,6 +173,7 @@ describe('UserSettings', () => {
     });
     updateUserSettings.mockImplementation(echoSave);
     getAiProviders.mockResolvedValue(catalog);
+    getNewsFeeds.mockResolvedValue([]);
   });
 
   afterEach(() => {
@@ -225,6 +232,24 @@ describe('UserSettings', () => {
 
     expect(updateUserSettings).toHaveBeenCalledWith({ autoTranslateWordStatus: 1 });
     expect(updateSetting).toHaveBeenCalledWith('autoTranslateWordStatus', 1);
+  });
+
+  test('turning news import on saves it and shows the feeds, whose options save as numbers', async () => {
+    await renderLoaded();
+    useManualClock();
+    expect(screen.queryByText('Your feeds')).not.toBeInTheDocument();
+
+    fireEvent.click(field('newsImportEnabled'));
+    await advance(CHOICE_DELAY);
+
+    expect(updateUserSettings).toHaveBeenCalledWith({ newsImportEnabled: true });
+    expect(updateSetting).toHaveBeenCalledWith('newsImportEnabled', true);
+    expect(screen.getByText('Your feeds')).toBeInTheDocument();
+    expect(getNewsFeeds).toHaveBeenCalledTimes(1);
+
+    fireEvent.change(field('newsDeleteUnreadAfterDays'), { target: { value: '0' } });
+    await advance(CHOICE_DELAY);
+    expect(updateUserSettings).toHaveBeenLastCalledWith({ newsDeleteUnreadAfterDays: 0 });
   });
 
   test('sends nothing when a switch is flipped back before it saves', async () => {

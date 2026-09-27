@@ -60,6 +60,10 @@ namespace LinguaReadApi.Services.Srs
             int converted = 0;
             var failed = new HashSet<int>();
             var skipped = new HashSet<int>();
+            // Every card is tried once per run, converted, failed or skipped. Conversion fills both
+            // Stability and Difficulty today, but a card it left matching the query would come back
+            // in every batch and the run would never end (as WordLinkingMigrationService once did).
+            var attempted = new HashSet<int>();
 
             while (!cancellationToken.IsCancellationRequested)
             {
@@ -68,11 +72,12 @@ namespace LinguaReadApi.Services.Srs
 
                 var cards = await db.SrsCardReviews
                     .Where(c => c.LastReviewedAt != null && (c.Stability == null || c.Difficulty == null)
-                        && !failed.Contains(c.SrsCardReviewId) && !skipped.Contains(c.SrsCardReviewId))
+                        && !attempted.Contains(c.SrsCardReviewId))
                     .OrderBy(c => c.SrsCardReviewId)
                     .Take(BatchSize)
                     .ToListAsync(cancellationToken);
                 if (cards.Count == 0) break;
+                attempted.UnionWith(cards.Select(c => c.SrsCardReviewId));
 
                 var userIds = cards.Select(c => c.UserId).Distinct().ToList();
                 var settingsByUser = await db.UserSettings

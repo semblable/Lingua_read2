@@ -104,6 +104,11 @@ public class SrsControllerTests
         Assert.Contains(response.MicroContexts, m => m.Term == "gato" && m.Context.StartsWith("El gato"));
         Assert.Contains(response.MicroContexts, m => m.Term == "perro" && m.Context.Contains("parque"));
         Assert.NotEqual(0, response.TextId);
+        var saved = Assert.Single(context.Texts.AsNoTracking());
+        Assert.Equal(response.TextId, saved.TextId);
+        Assert.Equal("srs-story", saved.Tag);
+        Assert.StartsWith("**gato**", saved.Content);
+        Assert.Contains("Mi perro corre por el parque.", saved.Content);
     }
 
     [Fact]
@@ -171,31 +176,78 @@ public class SrsControllerTests
         Assert.Equal("perro", perroEntry.UsedForm);
     }
 
-    [Fact]
-    public async Task GenerateStoryFromDueWords_MalformedJson_ReturnsEmptyMicroContexts()
+    // A reply with nothing usable used to be saved as an empty srs-story text (which the startup
+    // relink then looped on) and answered with an empty list the user couldn't make sense of.
+    [Theory]
+    [InlineData("Sorry, I can't help with that.")]                          // prose, no JSON
+    [InlineData("[{\"term\": \"gato\", \"context\": ")]                      // truncated JSON
+    [InlineData("[{\"term\": \"elefante\", \"context\": \"Es grande.\"}]")] // no due word in it
+    [InlineData("")]
+    public async Task GenerateStoryFromDueWords_UnusableReply_Returns502_AndSavesNothing(string reply)
     {
-        using var context = CreateContext();
-        var userId = Guid.NewGuid();
-        int languageId = 1;
-        SeedData(context, userId, languageId);
+        var (context, controller, userId) = SetUpStoryReply(reply);
+        using var _ = context;
 
-        var mockService = new Mock<IStoryGenerationService>();
-        mockService.Setup(s => s.GenerateStoryAsync(It.IsAny<string>(), It.IsAny<int>()))
-                   .ReturnsAsync("Sorry, I can't help with that.");
+        var result = await controller.GenerateStoryFromDueWords(new SrsStoryGenerateRequest { LanguageId = 1 });
 
-        var mockFactory = new Mock<IStoryGenerationServiceFactory>();
-        mockFactory.Setup(f => f.GetServiceForUserAsync(userId)).ReturnsAsync(mockService.Object);
-
-        var controller = CreateController(context, userId, mockFactory.Object);
-
-        var request = new SrsStoryGenerateRequest { LanguageId = languageId };
-        var result = await controller.GenerateStoryFromDueWords(request);
-
-        var okResult = Assert.IsType<OkObjectResult>(result.Result);
-        var response = Assert.IsType<SrsStoryGenerateResponse>(okResult.Value);
-
-        Assert.Empty(response.MicroContexts);
+        var error = Assert.IsType<ObjectResult>(result.Result);
+        Assert.Equal(StatusCodes.Status502BadGateway, error.StatusCode);
+        Assert.StartsWith("The AI reply couldn't be read", MessageOf(error));
+        AssertNothingSaved(context, userId);
     }
+
+    [Theory]
+    [InlineData("Story generation error: TooManyRequests", StatusCodes.Status429TooManyRequests, "Provider rate limit reached. Try again in a few seconds.")]
+    [InlineData("Story generation error: Unauthorized (Invalid API key)", StatusCodes.Status502BadGateway, "Story generation error: Unauthorized (Invalid API key)")]
+    [InlineData("Story generation failed: Model returned empty response.", StatusCodes.Status502BadGateway, "Story generation failed: Model returned empty response.")]
+    public async Task GenerateStoryFromDueWords_ProviderError_IsPassedOn_AndSavesNothing(string reply, int status, string message)
+    {
+        var (context, controller, userId) = SetUpStoryReply(reply);
+        using var _ = context;
+
+        var result = await controller.GenerateStoryFromDueWords(new SrsStoryGenerateRequest { LanguageId = 1 });
+
+        var error = Assert.IsType<ObjectResult>(result.Result);
+        Assert.Equal(status, error.StatusCode);
+        Assert.Equal(message, MessageOf(error));
+        AssertNothingSaved(context, userId);
+    }
+
+    private static readonly DateTime StudyDate = DateTime.UtcNow.Date;
+
+    /// <summary>Two due cards, a day's study counters, and an AI service answering <paramref name="reply"/>.</summary>
+    private static (AppDbContext Context, SrsController Controller, Guid UserId) SetUpStoryReply(string reply)
+    {
+        var context = CreateContext();
+        var userId = Guid.NewGuid();
+        SeedData(context, userId, 1);
+        context.UserSettings.Add(new UserSettings
+        {
+            UserId = userId, SrsDailyStudyDate = StudyDate, SrsDailyNewCardsStudied = 3, SrsDailyReviewsStudied = 5,
+        });
+        context.SaveChanges();
+
+        var service = new Mock<IStoryGenerationService>();
+        service.Setup(s => s.GenerateStoryAsync(It.IsAny<string>(), It.IsAny<int>())).ReturnsAsync(reply);
+        var factory = new Mock<IStoryGenerationServiceFactory>();
+        factory.Setup(f => f.GetServiceForUserAsync(userId)).ReturnsAsync(service.Object);
+        return (context, CreateController(context, userId, factory.Object), userId);
+    }
+
+    // No text, no review, and the day's new/review counters as they were.
+    private static void AssertNothingSaved(AppDbContext context, Guid userId)
+    {
+        Assert.Empty(context.Texts.AsNoTracking());
+        Assert.Empty(context.SrsReviewLogs.AsNoTracking());
+        var settings = context.UserSettings.AsNoTracking().Single(s => s.UserId == userId);
+        Assert.Equal(StudyDate, settings.SrsDailyStudyDate);
+        Assert.Equal(3, settings.SrsDailyNewCardsStudied);
+        Assert.Equal(5, settings.SrsDailyReviewsStudied);
+        Assert.All(context.SrsCardReviews.AsNoTracking(), c => Assert.Null(c.LastReviewedAt));
+    }
+
+    private static string? MessageOf(ObjectResult result) =>
+        result.Value?.GetType().GetProperty("Message")?.GetValue(result.Value) as string;
 
     [Fact]
     public async Task MineSentence_ForIgnoredWord_DoesNotCreateSrsCard()

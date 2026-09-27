@@ -9,6 +9,7 @@ using LinguaReadApi.Services.Srs;
 using LinguaReadApi.Utilities;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
@@ -287,6 +288,73 @@ public class SrsBackfillTests
             var fresh = db.SrsCardReviews.AsNoTracking().Single(c => c.SrsCardReviewId == 8);
             Assert.Null(fresh.Stability);
             Assert.Equal(Start, fresh.NextReviewAt);
+        }
+    }
+
+    /// <summary>
+    /// A conversion that leaves a card still matching the backfill query (no Difficulty) must
+    /// not bring it back into the next batch: WordLinkingMigrationService looped for hours on
+    /// the same shape of bug. Conversion can't do that today, so an interceptor stands in for it.
+    /// </summary>
+    [Fact]
+    public async Task BackfillService_TriesACardOncePerRun_EvenIfItStaysUnconverted()
+    {
+        var services = new ServiceCollection();
+        var dbName = Guid.NewGuid().ToString();
+        services.AddDbContext<AppDbContext>(o => o.UseInMemoryDatabase(dbName).AddInterceptors(new DropDifficultyOnSave(7)));
+        using var provider = services.BuildServiceProvider();
+
+        var userId = Guid.NewGuid();
+        using (var scope = provider.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            db.UserSettings.Add(new UserSettings { UserId = userId });
+            foreach (var cardId in new[] { 7, 8 })
+            {
+                var (logs, final) = History((2, TimeSpan.Zero), (2, TimeSpan.FromMinutes(10)), (2, TimeSpan.FromDays(3)));
+                foreach (var log in logs)
+                {
+                    log.SrsReviewLogId += cardId * 10;
+                    log.UserId = userId;
+                    log.SrsCardReviewId = cardId;
+                }
+                db.SrsCardReviews.Add(new SrsCardReview
+                {
+                    SrsCardReviewId = cardId, WordId = cardId, UserId = userId, HasEverGraduated = true,
+                    Interval = final.IntervalDays, Repetitions = 2, LastReviewedAt = logs[^1].ReviewedAt, NextReviewAt = final.DueUtc,
+                });
+                db.SrsReviewLogs.AddRange(logs);
+            }
+            db.SaveChanges();
+        }
+
+        var service = new SrsFsrsBackfillService(provider, NullLogger<SrsFsrsBackfillService>.Instance);
+        // Before the guard this never returned; the timeout turns a regression into a failure.
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        await service.RunAsync(timeout.Token);
+
+        Assert.False(timeout.IsCancellationRequested, "The backfill run didn't end.");
+        using (var scope = provider.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            Assert.Null(db.SrsCardReviews.AsNoTracking().Single(c => c.SrsCardReviewId == 7).Difficulty); // left for a later run
+            var converted = db.SrsCardReviews.AsNoTracking().Single(c => c.SrsCardReviewId == 8);
+            Assert.NotNull(converted.Stability);
+            Assert.NotNull(converted.Difficulty);
+        }
+    }
+
+    /// <summary>Undoes one card's conversion as it is saved, leaving it without a Difficulty.</summary>
+    private sealed class DropDifficultyOnSave(int cardId) : SaveChangesInterceptor
+    {
+        public override ValueTask<InterceptionResult<int>> SavingChangesAsync(
+            DbContextEventData eventData, InterceptionResult<int> result, CancellationToken cancellationToken = default)
+        {
+            foreach (var entry in eventData.Context!.ChangeTracker.Entries<SrsCardReview>())
+            {
+                if (entry.Entity.SrsCardReviewId == cardId) entry.Entity.Difficulty = null;
+            }
+            return base.SavingChangesAsync(eventData, result, cancellationToken);
         }
     }
 }

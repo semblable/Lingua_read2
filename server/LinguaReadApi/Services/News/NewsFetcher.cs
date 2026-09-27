@@ -79,8 +79,22 @@ namespace LinguaReadApi.Services.News
             client.DefaultRequestHeaders.AcceptLanguage.ParseAdd("*");
         }
 
+        // Pictures only. AVIF isn't asked for, so sites that pick the format from this header (imgix's
+        // auto=format) send WebP or JPEG, which every browser shows; one sent anyway is still kept.
+        private const string ImageAccept = "image/webp, image/jpeg, image/png, image/gif;q=0.9, */*;q=0.5";
+
         /// <summary>Downloads <paramref name="url"/>; throws <see cref="NewsFetchException"/> on any failure.</summary>
-        public async Task<FetchedDocument> GetAsync(Uri url, CancellationToken cancellationToken)
+        public Task<FetchedDocument> GetAsync(Uri url, CancellationToken cancellationToken) =>
+            GetAsync(url, MaxBytes, accept: null, cancellationToken);
+
+        /// <summary>
+        /// Downloads a picture of at most <paramref name="maxBytes"/>, through the same guard and
+        /// timeout as pages. What it really is has to be checked from the bytes (see <see cref="LeadImage"/>).
+        /// </summary>
+        public Task<FetchedDocument> GetImageAsync(Uri url, int maxBytes, CancellationToken cancellationToken) =>
+            GetAsync(url, Math.Min(maxBytes, MaxBytes), ImageAccept, cancellationToken);
+
+        private async Task<FetchedDocument> GetAsync(Uri url, int maxBytes, string? accept, CancellationToken cancellationToken)
         {
             if (!IsWebUrl(url))
             {
@@ -89,14 +103,20 @@ namespace LinguaReadApi.Services.News
 
             try
             {
-                using var response = await _http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+                using var request = new HttpRequestMessage(HttpMethod.Get, url);
+                if (accept != null)
+                {
+                    // Replaces the client's default Accept (feeds and pages) for this request.
+                    request.Headers.Accept.ParseAdd(accept);
+                }
+                using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
                 if (!response.IsSuccessStatusCode)
                 {
                     throw new NewsFetchException($"{url.Host} answered {(int)response.StatusCode} {response.ReasonPhrase}.".Replace(" .", "."));
                 }
-                if (response.Content.Headers.ContentLength > MaxBytes)
+                if (response.Content.Headers.ContentLength > maxBytes)
                 {
-                    throw new NewsFetchException($"{url.Host} sent more than {MaxBytes / (1024 * 1024)} MB.");
+                    throw TooLarge(url, maxBytes);
                 }
 
                 await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
@@ -105,9 +125,9 @@ namespace LinguaReadApi.Services.News
                 int read;
                 while ((read = await stream.ReadAsync(chunk, cancellationToken)) > 0)
                 {
-                    if (buffer.Length + read > MaxBytes)
+                    if (buffer.Length + read > maxBytes)
                     {
-                        throw new NewsFetchException($"{url.Host} sent more than {MaxBytes / (1024 * 1024)} MB.");
+                        throw TooLarge(url, maxBytes);
                     }
                     buffer.Write(chunk, 0, read);
                 }
@@ -136,7 +156,15 @@ namespace LinguaReadApi.Services.News
                     reason.Contains(url.Host, StringComparison.OrdinalIgnoreCase) ? reason : $"Couldn't reach {url.Host}: {reason}",
                     ex);
             }
+            catch (IOException ex)
+            {
+                // The connection dropped while the body was being read (HttpIOException).
+                throw new NewsFetchException($"Couldn't read from {url.Host}: {ex.Message}", ex);
+            }
         }
+
+        private static NewsFetchException TooLarge(Uri url, int maxBytes) =>
+            new($"{url.Host} sent more than {maxBytes / (1024 * 1024)} MB.");
 
         public static bool IsWebUrl(Uri? url) =>
             url is { IsAbsoluteUri: true } && (url.Scheme == Uri.UriSchemeHttp || url.Scheme == Uri.UriSchemeHttps);

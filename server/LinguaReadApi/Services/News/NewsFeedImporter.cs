@@ -1,13 +1,16 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using LinguaReadApi.Data;
 using LinguaReadApi.Models;
+using LinguaReadApi.Utilities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -55,6 +58,17 @@ namespace LinguaReadApi.Services.News
         private readonly ILogger<NewsFeedImporter> _logger;
         private readonly TimeProvider _timeProvider;
 
+        // Same shape as the EPUB import writes (BooksController), so the reader treats both alike.
+        private static readonly JsonSerializerOptions StructuredContentJsonOptions = new(JsonSerializerDefaults.Web)
+        {
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+        };
+
+        private sealed record LeadPhoto(byte[] Bytes, string Extension, string? Caption);
+
+        // A downloaded photo waiting for its article's id.
+        private sealed record PendingPhoto(Text Text, IReadOnlyList<string> Paragraphs, LeadPhoto Photo);
+
         public NewsFeedImporter(
             AppDbContext context,
             NewsFetcher fetcher,
@@ -72,6 +86,9 @@ namespace LinguaReadApi.Services.News
         }
 
         private DateTime UtcNow => _timeProvider.GetUtcNow().UtcDateTime;
+
+        /// <summary>Where photos are stored; tests point it at a temp directory. Null is the app's wwwroot.</summary>
+        internal string? WebRoot { get; init; }
 
         /// <summary>
         /// Loads the feed at <paramref name="url"/>, or, for a web page, the first feed it links to.
@@ -139,10 +156,12 @@ namespace LinguaReadApi.Services.News
             feed.LastCheckedAt = now;
 
             ParsedFeed parsed;
+            Uri feedUrl;
             try
             {
                 var document = await _fetcher.GetAsync(new Uri(feed.Url), cancellationToken);
-                if (!FeedParser.TryParse(document.Body, document.FinalUrl, out parsed))
+                feedUrl = document.FinalUrl;
+                if (!FeedParser.TryParse(document.Body, feedUrl, out parsed))
                 {
                     throw new NewsFetchException("The address no longer returns an RSS or Atom feed.");
                 }
@@ -176,6 +195,7 @@ namespace LinguaReadApi.Services.News
             var room = perDay - importedLastDay;
 
             var imported = new List<Text>();
+            var photos = new List<PendingPhoto>();
             var skipped = 0;
             var pagesFetched = 0;
             int? folderId = null;
@@ -183,7 +203,7 @@ namespace LinguaReadApi.Services.News
             {
                 if (imported.Count >= room) break;
 
-                var article = ArticleFromFeed(entry);
+                var article = ArticleFromFeed(entry, feedUrl);
                 if (article == null && entry.Link != null)
                 {
                     if (pagesFetched >= MaxPagesPerCheck) break;
@@ -218,6 +238,14 @@ namespace LinguaReadApi.Services.News
                 };
                 _context.Texts.Add(text);
                 imported.Add(text);
+
+                // Downloaded now, before anything is saved, so the article appears with its photo:
+                // a text's ETag only changes with its stats, and a reader who opened it during a
+                // slow download would keep the copy without one.
+                if (await DownloadLeadPhotoAsync(LeadImage.Candidates(article, entry), cancellationToken) is { } photo)
+                {
+                    photos.Add(new PendingPhoto(text, article.Paragraphs, photo));
+                }
             }
 
             if (imported.Count > 0)
@@ -245,6 +273,9 @@ namespace LinguaReadApi.Services.News
                 .ToListAsync(cancellationToken));
 
             await _context.SaveChangesAsync(cancellationToken);
+
+            // The photo file is named after the text's id, so it's stored once the texts are saved.
+            await StoreLeadPhotosAsync(photos);
 
             foreach (var text in imported)
             {
@@ -276,11 +307,108 @@ namespace LinguaReadApi.Services.News
         }
 
         // Feeds that carry whole articles (content:encoded) spare fetching the page.
-        private static ExtractedArticle? ArticleFromFeed(FeedEntry entry)
+        private static ExtractedArticle? ArticleFromFeed(FeedEntry entry, Uri feedUrl)
         {
             if (entry.ContentHtml == null) return null;
-            var article = new ExtractedArticle(entry.Title, ArticleExtractor.ToParagraphs(entry.ContentHtml, entry.Title));
+            var article = new ExtractedArticle(entry.Title, ArticleExtractor.ToParagraphs(entry.ContentHtml, entry.Title))
+            {
+                FirstBodyImage = LeadImage.FirstInHtml(entry.ContentHtml, entry.Link ?? feedUrl, entry.Title)
+            };
             return article.WordCount >= MinArticleWords || entry.Link == null ? article : null;
+        }
+
+        /// <summary>
+        /// Stores the downloaded lead photos and shows each above its article: StructuredContent
+        /// becomes the photo followed by the article's paragraphs, while Content stays as it was, so
+        /// word linking and stats don't change. The reader gives a picture no sentence number, so
+        /// bookmarks count sentences as they would without it. Only local writes, so no cancellation:
+        /// the articles are saved already and still have to be queued for word linking. A photo
+        /// that can't be stored is dropped; its article stays.
+        /// </summary>
+        private async Task StoreLeadPhotosAsync(List<PendingPhoto> photos)
+        {
+            var written = new List<string>();
+            foreach (var (text, paragraphs, photo) in photos)
+            {
+                string? path = null;
+                try
+                {
+                    var directory = BookAssetStorage.NewsImageDirectory(text.UserId, WebRoot);
+                    Directory.CreateDirectory(directory);
+                    path = Path.Combine(directory, text.TextId + photo.Extension);
+                    await File.WriteAllBytesAsync(path, photo.Bytes);
+                    written.Add(path);
+
+                    var blocks = new List<ReaderContentBlock>
+                    {
+                        new()
+                        {
+                            Type = ReaderContentBlockTypes.Image,
+                            ImageUrl = BookAssetStorage.NewsImageUrl(text.UserId, text.TextId, photo.Extension),
+                            Caption = photo.Caption
+                        }
+                    };
+                    blocks.AddRange(paragraphs.Select(paragraph => new ReaderContentBlock
+                    {
+                        Type = ReaderContentBlockTypes.Paragraph,
+                        Text = paragraph
+                    }));
+                    text.StructuredContent = JsonSerializer.Serialize(blocks, StructuredContentJsonOptions);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Couldn't store the photo of news article {TextId}", text.TextId);
+                    if (path != null && !written.Contains(path)) TryDeleteFile(path);
+                }
+            }
+            if (written.Count == 0) return;
+
+            try
+            {
+                await _context.SaveChangesAsync();
+            }
+            catch (Exception ex)
+            {
+                // Photos their texts don't point to would never be shown.
+                _logger.LogWarning(ex, "Couldn't save the photos of {Count} news articles", written.Count);
+                foreach (var file in written) TryDeleteFile(file);
+            }
+        }
+
+        // The first candidate that downloads as a real picture of a sensible size.
+        private async Task<LeadPhoto?> DownloadLeadPhotoAsync(IReadOnlyList<ImageCandidate> candidates, CancellationToken cancellationToken)
+        {
+            foreach (var candidate in candidates)
+            {
+                try
+                {
+                    var image = await _fetcher.GetImageAsync(candidate.Url, LeadImage.MaxBytes, cancellationToken);
+                    var extension = LeadImage.ExtensionFor(image.Body);
+                    if (extension != null && image.Body.Length >= LeadImage.MinBytes)
+                    {
+                        return new LeadPhoto(image.Body, extension, candidate.Caption);
+                    }
+                    _logger.LogDebug("News photo {Url} skipped: not a JPEG, PNG, WebP, GIF or AVIF picture", candidate.Url);
+                }
+                catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
+                {
+                    // Whatever goes wrong with a picture, the article is imported without it.
+                    _logger.LogDebug("News photo {Url} skipped: {Reason}", candidate.Url, ex.Message);
+                }
+            }
+            return null;
+        }
+
+        private void TryDeleteFile(string path)
+        {
+            try
+            {
+                File.Delete(path);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Couldn't delete news photo {Path}", path);
+            }
         }
 
         private async Task<ExtractedArticle?> ReadPageAsync(Uri link, string title, CancellationToken cancellationToken)
@@ -374,6 +502,7 @@ namespace LinguaReadApi.Services.News
             if (stale.Count == 0) return 0;
             _context.Texts.RemoveRange(stale);
             await _context.SaveChangesAsync(cancellationToken);
+            BookAssetStorage.DeleteNewsImages(userId, stale.Select(t => t.TextId), _logger, WebRoot);
             _logger.LogInformation("Deleted {Count} unopened news articles older than {Days} days for user {UserId}", stale.Count, days, userId);
             return stale.Count;
         }

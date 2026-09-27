@@ -206,4 +206,72 @@ public class NewsFeedParserTests
     {
         Assert.Null(FeedParser.ParseDate(value));
     }
+
+    [Fact]
+    public void Rss_ReadsEachEntrysPicture_FromMediaRssAndImageEnclosures()
+    {
+        // Shapes from g1 (media:content medium="image"), Le Monde (media:content with only a size),
+        // BBC (a 240 px media:thumbnail) and Correio da Manhã (an image enclosure).
+        var xml = """
+            <rss version="2.0" xmlns:media="http://search.yahoo.com/mrss/" xmlns:m2="http://search.yahoo.com/mrss">
+              <channel>
+                <title>Pictures</title>
+                <item><guid>g1</guid><link>/g1</link>
+                  <media:content url="https://img.example.com/g1.jpg?a=1&amp;b=2" medium="image"/></item>
+                <item><guid>lemonde</guid><link>/lemonde</link>
+                  <media:content width="644" height="322" url="/img/lemonde.JPG"/></item>
+                <item><guid>bbc</guid><link>/bbc</link>
+                  <media:thumbnail width="240" height="135" url="https://img.example.com/bbc-240.jpg"/></item>
+                <item><guid>cm</guid><link>/cm</link>
+                  <enclosure url="https://img.example.com/cm.jpg" length="0" type="image/jpeg"/></item>
+                <item><guid>podcast</guid><link>/podcast</link>
+                  <enclosure url="https://img.example.com/episode.mp3" length="1000" type="audio/mpeg"/></item>
+                <item><guid>video</guid><link>/video</link>
+                  <media:content url="https://img.example.com/clip.mp4" medium="video"/>
+                  <media:content url="https://img.example.com/clip.m3u8" type="application/x-mpegURL"/>
+                  <media:thumbnail width="640" height="360" url="https://img.example.com/clip.jpg"/></item>
+                <item><guid>group</guid><link>/group</link>
+                  <media:group>
+                    <media:content url="https://img.example.com/small.jpg" width="320" medium="image"/>
+                    <media:content url="https://img.example.com/large.jpg" width="1280" medium="image"/>
+                  </media:group></item>
+                <item><guid>no-slash</guid><link>/no-slash</link>
+                  <m2:content url="https://img.example.com/no-slash.jpg" type="image/jpeg"/></item>
+              </channel>
+            </rss>
+            """;
+
+        Assert.True(FeedParser.TryParse(Encoding.UTF8.GetBytes(xml), FeedUrl, out var feed));
+
+        var images = feed.Entries.ToDictionary(e => e.Key, e => e.ImageUrl?.AbsoluteUri);
+        Assert.Equal("https://img.example.com/g1.jpg?a=1&b=2", images["g1"]);
+        Assert.Equal("https://news.example.com/img/lemonde.JPG", images["lemonde"]);
+        Assert.Null(images["bbc"]); // too small to show
+        Assert.Equal("https://img.example.com/cm.jpg", images["cm"]);
+        Assert.Null(images["podcast"]);
+        Assert.Equal("https://img.example.com/clip.jpg", images["video"]);
+        Assert.Equal("https://img.example.com/large.jpg", images["group"]);
+        Assert.Equal("https://img.example.com/no-slash.jpg", images["no-slash"]);
+    }
+
+    [Fact]
+    public void Atom_ReadsAnImageEnclosureLink()
+    {
+        var xml = """
+            <feed xmlns="http://www.w3.org/2005/Atom">
+              <title>Atom pictures</title>
+              <entry>
+                <id>tag:example.com,2026:1</id><title>One</title>
+                <link rel="alternate" href="https://news.example.com/1"/>
+                <link rel="enclosure" type="image/png" href="https://img.example.com/1.png"/>
+              </entry>
+            </feed>
+            """;
+
+        Assert.True(FeedParser.TryParse(Encoding.UTF8.GetBytes(xml), FeedUrl, out var feed));
+
+        var entry = Assert.Single(feed.Entries);
+        Assert.Equal(new Uri("https://news.example.com/1"), entry.Link);
+        Assert.Equal(new Uri("https://img.example.com/1.png"), entry.ImageUrl);
+    }
 }

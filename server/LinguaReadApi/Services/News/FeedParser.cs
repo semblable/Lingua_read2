@@ -11,8 +11,11 @@ using AngleSharp.Html.Parser;
 
 namespace LinguaReadApi.Services.News
 {
-    /// <summary>One entry of a feed. <see cref="Key"/> identifies it across fetches (guid/id, else link).</summary>
-    public sealed record FeedEntry(string Key, Uri? Link, string Title, DateTimeOffset? PublishedAt, string? ContentHtml);
+    /// <summary>
+    /// One entry of a feed. <see cref="Key"/> identifies it across fetches (guid/id, else link);
+    /// <see cref="ImageUrl"/> is the picture the feed gives for it, if any.
+    /// </summary>
+    public sealed record FeedEntry(string Key, Uri? Link, string Title, DateTimeOffset? PublishedAt, string? ContentHtml, Uri? ImageUrl = null);
 
     public sealed record ParsedFeed(string? Title, string? Language, IReadOnlyList<FeedEntry> Entries);
 
@@ -30,6 +33,8 @@ namespace LinguaReadApi.Services.News
         private static readonly XNamespace Rdf = "http://www.w3.org/1999/02/22-rdf-syntax-ns#";
         private static readonly XNamespace Content = "http://purl.org/rss/1.0/modules/content/";
         private static readonly XNamespace Dc = "http://purl.org/dc/elements/1.1/";
+        // Media RSS; some feeds declare it without the trailing slash.
+        private const string MediaNamespacePrefix = "http://search.yahoo.com/mrss";
 
         /// <summary>
         /// Parses <paramref name="body"/> as a feed. False when it isn't well-formed XML or its root
@@ -141,7 +146,8 @@ namespace LinguaReadApi.Services.News
                 link: link,
                 title: Text(item.Element("title")),
                 published: ParseDate(Text(item.Element("pubDate")) ?? Text(item.Element(Dc + "date"))),
-                content: Text(item.Element(Content + "encoded")));
+                content: Text(item.Element(Content + "encoded")),
+                image: EntryImage(item, baseUrl));
         }
 
         private static FeedEntry? RdfEntry(XElement item, Uri baseUrl)
@@ -153,7 +159,8 @@ namespace LinguaReadApi.Services.News
                 link: link,
                 title: Text(item.Element(Rss1 + "title")),
                 published: ParseDate(Text(item.Element(Dc + "date"))),
-                content: Text(item.Element(Content + "encoded")));
+                content: Text(item.Element(Content + "encoded")),
+                image: EntryImage(item, baseUrl));
         }
 
         private static FeedEntry? AtomEntry(XElement entry, Uri baseUrl)
@@ -169,17 +176,60 @@ namespace LinguaReadApi.Services.News
                 content: content == null ? null
                     : (string?)content.Attribute("type") == "xhtml" ? string.Concat(content.Nodes().Select(n => n.ToString()))
                     : (string?)content.Attribute("type") is null or "text" ? PlainTextToHtml(content.Value)
-                    : content.Value);
+                    : content.Value,
+                image: EntryImage(entry, baseUrl));
         }
 
-        private static FeedEntry? Entry(string? key, Uri? link, string? title, DateTimeOffset? published, string? content)
+        private static FeedEntry? Entry(string? key, Uri? link, string? title, DateTimeOffset? published, string? content, Uri? image)
         {
             if (string.IsNullOrWhiteSpace(key) || (link == null && string.IsNullOrWhiteSpace(content)))
             {
                 return null;
             }
-            return new FeedEntry(key.Trim(), link, CleanTitle(title) ?? "", published, string.IsNullOrWhiteSpace(content) ? null : content);
+            return new FeedEntry(key.Trim(), link, CleanTitle(title) ?? "", published, string.IsNullOrWhiteSpace(content) ? null : content, image);
         }
+
+        /// <summary>
+        /// The entry's picture: media:content, else an image enclosure, else media:thumbnail; the
+        /// widest of each kind, skipping ones whose declared size makes them thumbnails (Correio da
+        /// Manhã's enclosure is 100×100). Videos and audio enclosures are not pictures.
+        /// </summary>
+        private static Uri? EntryImage(XElement item, Uri baseUrl)
+        {
+            var media = item.Elements()
+                .Concat(item.Elements().Where(e => IsMedia(e, "group")).SelectMany(group => group.Elements()))
+                .ToList();
+
+            // Le Monde's media:content has neither medium nor type; the download checks the bytes anyway.
+            var contents = media.Where(e => IsMedia(e, "content")
+                && (string?)e.Attribute("medium") is null or "image"
+                && ((string?)e.Attribute("type") is not { } type || IsImageType(type)));
+            var enclosures = item.Elements("enclosure")
+                .Where(e => IsImageType((string?)e.Attribute("type")))
+                .Concat(item.Elements(Atom + "link")
+                    .Where(e => (string?)e.Attribute("rel") == "enclosure" && IsImageType((string?)e.Attribute("type"))));
+            var thumbnails = media.Where(e => IsMedia(e, "thumbnail"));
+
+            foreach (var kind in new[] { contents, enclosures, thumbnails })
+            {
+                var best = kind
+                    .Select(e => (
+                        Url: ResolveLink((string?)e.Attribute("url") ?? (string?)e.Attribute("href"), baseUrl),
+                        Width: LeadImage.Dimension((string?)e.Attribute("width")),
+                        Height: LeadImage.Dimension((string?)e.Attribute("height"))))
+                    .Where(x => x.Url != null && !LeadImage.IsTiny(x.Width, x.Height))
+                    .OrderByDescending(x => x.Width ?? 0)
+                    .FirstOrDefault();
+                if (best.Url != null) return best.Url;
+            }
+            return null;
+        }
+
+        private static bool IsMedia(XElement element, string localName) =>
+            element.Name.LocalName == localName && element.Name.NamespaceName.StartsWith(MediaNamespacePrefix, StringComparison.Ordinal);
+
+        private static bool IsImageType(string? type) =>
+            type != null && type.Trim().StartsWith("image/", StringComparison.OrdinalIgnoreCase);
 
         // Plain text as paragraphs, so the article keeps its paragraph breaks.
         private static string PlainTextToHtml(string text) =>

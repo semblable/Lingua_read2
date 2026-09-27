@@ -28,6 +28,9 @@ namespace LinguaReadApi.Controllers
             _logger = logger;
         }
 
+        /// <summary>Where uploaded media lives; tests point it at a temp directory. Null is the app's wwwroot.</summary>
+        internal string? WebRoot { get; init; }
+
         // GET: api/folders
         [HttpGet]
         public async Task<ActionResult<IEnumerable<FolderDto>>> GetFolders()
@@ -431,6 +434,7 @@ namespace LinguaReadApi.Controllers
             // deleted — leaves every EPUB image, audiobook track and cover on the volume forever.
             var audioFilePathsToDelete = new List<string>();
             var bookIdsToDelete = new List<int>();
+            var textIdsToDelete = new List<int>();
 
             // Delete texts (and their TextWords via cascade)
             if (textIdList.Any())
@@ -441,6 +445,7 @@ namespace LinguaReadApi.Controllers
                 audioFilePathsToDelete.AddRange(texts
                     .Where(t => t.IsAudioLesson && !string.IsNullOrEmpty(t.AudioFilePath))
                     .Select(t => t.AudioFilePath!));
+                textIdsToDelete.AddRange(texts.Select(t => t.TextId));
                 _context.Texts.RemoveRange(texts);
             }
 
@@ -491,14 +496,16 @@ namespace LinguaReadApi.Controllers
             // Best-effort, after the commit: a disk failure here must not undo the delete.
             foreach (var bookId in bookIdsToDelete)
             {
-                BookAssetStorage.DeleteBookAssets(userId, bookId, _logger);
+                BookAssetStorage.DeleteBookAssets(userId, bookId, _logger, WebRoot);
             }
             // A lesson can be listed both directly and via its book; deleting twice would log a
             // spurious "not found on disk" warning for the second pass.
             foreach (var audioPath in audioFilePathsToDelete.Distinct())
             {
-                BookAssetStorage.DeleteAudioLessonFile(audioPath, _logger);
+                BookAssetStorage.DeleteAudioLessonFile(audioPath, _logger, WebRoot);
             }
+            // News articles' lead photos. A book's own texts are never news articles.
+            BookAssetStorage.DeleteNewsImages(userId, textIdsToDelete, _logger, WebRoot);
 
             return NoContent();
         }

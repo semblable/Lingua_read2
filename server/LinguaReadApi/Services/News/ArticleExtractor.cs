@@ -14,6 +14,12 @@ namespace LinguaReadApi.Services.News
 
         /// <summary>The text as stored: paragraphs separated by blank lines, as the reader splits them.</summary>
         public string Content => string.Join("\n\n", Paragraphs);
+
+        /// <summary>The lead photo the page names in its metadata (og:image and the like), best first.</summary>
+        public IReadOnlyList<ImageCandidate> MetadataImages { get; init; } = Array.Empty<ImageCandidate>();
+
+        /// <summary>The first picture in the article itself, the last resort for a lead photo.</summary>
+        public ImageCandidate? FirstBodyImage { get; init; }
     }
 
     /// <summary>
@@ -66,7 +72,12 @@ namespace LinguaReadApi.Services.News
                 return new ExtractedArticle(null, Array.Empty<string>());
             }
             var title = FeedParser.CleanTitle(article.Title);
-            return new ExtractedArticle(title, ToParagraphs(article.Content, title, knownTitle));
+            return new ExtractedArticle(title, ToParagraphs(article.Content, title, knownTitle))
+            {
+                MetadataImages = LeadImage.FromMetadata(html, url, article.FeaturedImage, title, knownTitle),
+                // SmartReader's article HTML still has its pictures; only the text drops them.
+                FirstBodyImage = LeadImage.FirstInHtml(article.Content, url, title, knownTitle)
+            };
         }
 
         /// <summary>

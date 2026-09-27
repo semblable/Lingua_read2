@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Http.Headers;
 using System.Security;
 using System.Text;
 using LinguaReadApi.Data;
@@ -14,7 +15,8 @@ namespace LinguaReadApi.Tests;
 
 /// <summary>
 /// A SQLite database (real foreign keys: deleting a feed or folder must unset or cascade), a fake
-/// web the importer fetches from, and a clock the tests move.
+/// web the importer fetches from, a clock the tests move, and a temp directory standing in for
+/// wwwroot (never the real one: xunit runs test classes in parallel).
 /// </summary>
 internal sealed class NewsTestHarness : IAsyncDisposable
 {
@@ -32,10 +34,15 @@ internal sealed class NewsTestHarness : IAsyncDisposable
     public NewsFeedLocks Locks { get; } = new();
     public FakeTimeProvider Time { get; } = new(new DateTimeOffset(2026, 9, 27, 12, 0, 0, TimeSpan.Zero));
 
+    private readonly string _tempRoot = Path.Combine(Path.GetTempPath(), "lingua-news-tests", Guid.NewGuid().ToString("N"));
+
+    public string WebRoot => Path.Combine(_tempRoot, "wwwroot");
+
     private NewsTestHarness(SqliteConnection keepAlive, DbContextOptions<AppDbContext> options)
     {
         _keepAlive = keepAlive;
         Options = options;
+        Directory.CreateDirectory(WebRoot);
     }
 
     public static async Task<NewsTestHarness> CreateAsync()
@@ -71,7 +78,11 @@ internal sealed class NewsTestHarness : IAsyncDisposable
     public NewsFetcher Fetcher() => new(new HttpClient(Web));
 
     public NewsFeedImporter Importer(AppDbContext context) =>
-        new(context, Fetcher(), Channel, Locks, NullLogger<NewsFeedImporter>.Instance, Time);
+        new(context, Fetcher(), Channel, Locks, NullLogger<NewsFeedImporter>.Instance, Time) { WebRoot = WebRoot };
+
+    /// <summary>Where a text's lead photo is stored under the temp wwwroot.</summary>
+    public string NewsImagePath(int textId, string extension = ".jpg", Guid? userId = null) =>
+        Path.Combine(WebRoot, "epub_assets", (userId ?? UserId).ToString(), "news", textId + extension);
 
     public async Task<NewsImportResult> ImportAsync(int feedId)
     {
@@ -98,16 +109,18 @@ internal sealed class NewsTestHarness : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         await _keepAlive.DisposeAsync();
+        try { Directory.Delete(_tempRoot, recursive: true); } catch { /* temp cleanup is best effort */ }
     }
 
     // ---- content ----
 
-    public sealed record Item(string Title, string Link, DateTimeOffset Published, string? ContentHtml = null, string? Guid = null);
+    /// <summary>A feed entry. <paramref name="MediaXml"/> goes into the item as is (media:content, enclosure).</summary>
+    public sealed record Item(string Title, string Link, DateTimeOffset Published, string? ContentHtml = null, string? Guid = null, string? MediaXml = null);
 
     public static string Rss(string title, params Item[] items)
     {
         var body = new StringBuilder();
-        body.Append("""<?xml version="1.0" encoding="utf-8"?><rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/"><channel>""");
+        body.Append("""<?xml version="1.0" encoding="utf-8"?><rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/" xmlns:media="http://search.yahoo.com/mrss/"><channel>""");
         body.Append($"<title>{SecurityElement.Escape(title)}</title><link>https://news.example.com/</link>");
         foreach (var item in items)
         {
@@ -116,23 +129,37 @@ internal sealed class NewsTestHarness : IAsyncDisposable
             if (item.Guid != null) body.Append($"<guid isPermaLink=\"false\">{SecurityElement.Escape(item.Guid)}</guid>");
             body.Append($"<pubDate>{item.Published:R}</pubDate>");
             if (item.ContentHtml != null) body.Append($"<content:encoded><![CDATA[{item.ContentHtml}]]></content:encoded>");
+            if (item.MediaXml != null) body.Append(item.MediaXml);
             body.Append("</item>");
         }
         body.Append("</channel></rss>");
         return body.ToString();
     }
 
-    /// <summary>A news page whose article has <paramref name="paragraphs"/> paragraphs of about 20 words.</summary>
-    public static string ArticlePage(string headline, int paragraphs = 8) =>
+    /// <summary>
+    /// A news page whose article has <paramref name="paragraphs"/> paragraphs of about 20 words.
+    /// <paramref name="head"/> goes into &lt;head&gt; (og:image tags), <paramref name="lead"/> above
+    /// the first paragraph (a photo).
+    /// </summary>
+    public static string ArticlePage(string headline, int paragraphs = 8, string head = "", string lead = "") =>
         $"""
-        <!DOCTYPE html><html lang="pt"><head><title>{headline} | Jornal</title></head><body>
+        <!DOCTYPE html><html lang="pt"><head><title>{headline} | Jornal</title>{head}</head><body>
         <header><nav><a href="/">Início</a> <a href="/mundo">Mundo</a></nav></header>
         <main><article><h1>{headline}</h1>
+        {lead}
         {ArticleBody(headline, paragraphs)}
         </article></main>
         <footer><p>Todos os direitos reservados.</p></footer>
         </body></html>
         """;
+
+    /// <summary>Bytes that start like a JPEG (all the importer checks), <paramref name="size"/> long.</summary>
+    public static byte[] Jpeg(int size = 4096)
+    {
+        var bytes = new byte[size];
+        bytes[0] = 0xFF; bytes[1] = 0xD8; bytes[2] = 0xFF; bytes[3] = 0xE0;
+        return bytes;
+    }
 
     public static string ArticleBody(string headline, int paragraphs) =>
         string.Concat(Enumerable.Range(1, paragraphs).Select(i =>
@@ -153,6 +180,12 @@ internal sealed class FakeWeb : HttpMessageHandler
         };
 
     public void ServeFeed(string url, string xml) => Serve(url, xml, "application/rss+xml");
+
+    public void ServeBytes(string url, byte[] body, string mediaType) =>
+        _routes[url] = () => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new ByteArrayContent(body) { Headers = { ContentType = new MediaTypeHeaderValue(mediaType) } }
+        };
 
     public void Fail(string url, HttpStatusCode status) =>
         _routes[url] = () => new HttpResponseMessage(status);

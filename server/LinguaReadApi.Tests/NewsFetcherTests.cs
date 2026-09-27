@@ -93,7 +93,7 @@ public class NewsFetcherTests
     public async Task GetAsync_GivesUpOnABodyThatStallsAfterTheHeaders()
     {
         var fetcher = new NewsFetcher(
-            new HttpClient(new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StreamContent(new BodyStream(stall: true)) })),
+            new HttpClient(new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StreamContent(new StallingStream()) })),
             TimeSpan.FromMilliseconds(200));
 
         var ex = await Assert.ThrowsAsync<NewsFetchException>(() =>
@@ -102,18 +102,93 @@ public class NewsFetcherTests
         Assert.Equal("news.example.com took too long to answer.", ex.Message);
     }
 
+    // Sends a few bytes, then nothing more, like a server that hangs mid-body.
+    private sealed class StallingStream : MemoryStream
+    {
+        private bool _sent;
+
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            if (_sent)
+            {
+                await Task.Delay(Timeout.Infinite, cancellationToken);
+            }
+            _sent = true;
+            buffer.Span[0] = (byte)'<';
+            return 1;
+        }
+
+        public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken) =>
+            ReadAsync(buffer.AsMemory(offset, count), cancellationToken).AsTask();
+    }
+
     [Fact]
-    public async Task GetAsync_ReportsABodyCutOffMidway()
+    public async Task GetAsync_ReportsAConnectionDroppedMidBody()
     {
         var fetcher = new NewsFetcher(new HttpClient(new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
         {
-            Content = new StreamContent(new BodyStream(stall: false))
+            Content = new StreamContent(new DroppingStream())
         })));
 
         var ex = await Assert.ThrowsAsync<NewsFetchException>(() =>
-            fetcher.GetAsync(new Uri("https://news.example.com/cut"), CancellationToken.None));
+            fetcher.GetAsync(new Uri("https://news.example.com/page"), CancellationToken.None));
 
-        Assert.StartsWith("Couldn't read the answer from news.example.com", ex.Message);
+        Assert.StartsWith("Couldn't read from news.example.com", ex.Message);
+    }
+
+    // Sends a few bytes, then fails like a reset connection.
+    private sealed class DroppingStream : MemoryStream
+    {
+        private bool _sent;
+
+        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            if (_sent) throw new IOException("The response ended prematurely.");
+            _sent = true;
+            buffer.Span[0] = (byte)'<';
+            return ValueTask.FromResult(1);
+        }
+
+        public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken) =>
+            ReadAsync(buffer.AsMemory(offset, count), cancellationToken).AsTask();
+    }
+
+    [Fact]
+    public async Task GetImageAsync_KeepsToTheImageCap_EvenWithoutAContentLength()
+    {
+        var body = new byte[LeadImage.MaxBytes + 1];
+        var fetcher = new NewsFetcher(new HttpClient(new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StreamContent(new MemoryStream(body))
+        })));
+
+        var ex = await Assert.ThrowsAsync<NewsFetchException>(() =>
+            fetcher.GetImageAsync(new Uri("https://img.example.com/huge.jpg"), LeadImage.MaxBytes, CancellationToken.None));
+
+        Assert.Contains("more than 2 MB", ex.Message);
+    }
+
+    [Fact]
+    public async Task GetImageAsync_AsksForPicturesBrowsersShow_AndReturnsTheBytes()
+    {
+        string? accept = null;
+        var http = new HttpClient(new StubHandler(request =>
+        {
+            accept = request.Headers.Accept.ToString();
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent([0xFF, 0xD8, 0xFF, 0xE0]) };
+        }));
+        NewsFetcher.ConfigureClient(http);
+        var fetcher = new NewsFetcher(http);
+
+        var image = await fetcher.GetImageAsync(new Uri("https://img.example.com/a.jpg"), LeadImage.MaxBytes, CancellationToken.None);
+
+        Assert.Equal([0xFF, 0xD8, 0xFF, 0xE0], image.Body);
+        Assert.Contains("image/webp", accept);
+        Assert.Contains("image/jpeg", accept);
+        // The client's default Accept (feeds and pages) is replaced, not added to.
+        Assert.DoesNotContain("rss", accept);
+        // Sites that pick the format from Accept would otherwise send AVIF, which older Safari can't show.
+        Assert.DoesNotContain("avif", accept);
     }
 
     [Fact]
@@ -128,39 +203,6 @@ public class NewsFetcherTests
         Assert.Equal("Coração", new FetchedDocument(windows1252, "text/html", "windows-1252", url).DecodeText());
         Assert.Equal("Coração", new FetchedDocument(utf8, "text/html", null, url).DecodeText());
         Assert.Equal("Coração", new FetchedDocument([0xEF, 0xBB, 0xBF, .. utf8], "text/html", null, url).DecodeText());
-    }
-
-    // A response body that sends a few bytes and then either never sends more or breaks off.
-    private sealed class BodyStream(bool stall) : Stream
-    {
-        private bool _sentStart;
-
-        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
-        {
-            if (!_sentStart)
-            {
-                _sentStart = true;
-                buffer.Span[0] = (byte)'<';
-                return 1;
-            }
-            if (!stall) throw new IOException("The response ended prematurely.");
-            await Task.Delay(Timeout.Infinite, cancellationToken);
-            return 0;
-        }
-
-        public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken) =>
-            ReadAsync(buffer.AsMemory(offset, count), cancellationToken).AsTask();
-
-        public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
-        public override bool CanRead => true;
-        public override bool CanSeek => false;
-        public override bool CanWrite => false;
-        public override long Length => throw new NotSupportedException();
-        public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
-        public override void Flush() { }
-        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
-        public override void SetLength(long value) => throw new NotSupportedException();
-        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
     }
 
     internal sealed class StubHandler(Func<HttpRequestMessage, HttpResponseMessage> respond) : HttpMessageHandler

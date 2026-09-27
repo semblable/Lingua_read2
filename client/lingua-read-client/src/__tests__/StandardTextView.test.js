@@ -107,6 +107,40 @@ describe('StandardTextView', () => {
     expect(screen.getByText(/Rate: 1\.0x/)).toBeInTheDocument();
   });
 
+  test("shows a news article's lead photo above the text without numbering it as a sentence", () => {
+    // The shape the news import stores: the photo, then the paragraphs that make up content.
+    const renderProcessedContentAsSentences = vi.fn((processed, startIndex) => ({
+      sentenceElements: [processed],
+      nextSentenceIndex: startIndex + 1
+    }));
+    const props = baseProps({
+      text: {
+        textId: 7,
+        title: 'Notícia',
+        content: 'Primeiro parágrafo.\n\nSegundo parágrafo.',
+        bookId: null,
+        structuredContent: [
+          { type: 'image', imageUrl: 'epub_assets/u/news/7.jpg', caption: 'Moradores protestam em frente à câmara' },
+          { type: 'paragraph', text: 'Primeiro parágrafo.' },
+          { type: 'paragraph', text: 'Segundo parágrafo.' }
+        ]
+      },
+      renderProcessedContentAsSentences
+    });
+
+    const { container } = render(<StandardTextView {...props} />);
+
+    const photo = container.querySelector('figure.reader-image-block img');
+    expect(photo).toHaveAttribute('src', '/epub_assets/u/news/7.jpg');
+    expect(photo).toHaveAttribute('alt', 'Moradores protestam em frente à câmara');
+    expect(screen.getByText('Moradores protestam em frente à câmara').tagName).toBe('FIGCAPTION');
+    // Sentence numbering starts at the first paragraph, as it would without the photo.
+    expect(renderProcessedContentAsSentences.mock.calls.map(([text, start]) => [text, start])).toEqual([
+      ['Primeiro parágrafo.', 0],
+      ['Segundo parágrafo.', 1]
+    ]);
+  });
+
   test('clicking Speak Sentence invokes onSpeakSentence', () => {
     const onSpeakSentence = vi.fn();
     render(

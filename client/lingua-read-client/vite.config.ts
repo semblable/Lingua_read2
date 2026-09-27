@@ -171,6 +171,11 @@ export default defineConfig({
         target: process.env.VITE_DEV_API_TARGET || 'http://localhost:5000',
         changeOrigin: true,
       },
+      // Uploaded media (EPUB images, news photos, audio, covers), which nginx sends to the API too.
+      '^/(audio_lessons|audiobooks|epub_assets|hardcover-covers)/': {
+        target: process.env.VITE_DEV_API_TARGET || 'http://localhost:5000',
+        changeOrigin: true,
+      },
     },
   },
   build: {

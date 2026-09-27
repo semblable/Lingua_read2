@@ -445,7 +445,8 @@ public class NewsFeedImporterTests
         services.AddSingleton(h.Locks);
         services.AddScoped(_ => h.Fetcher());
         services.AddSingleton<TimeProvider>(h.Time);
-        services.AddScoped<NewsFeedImporter>();
+        // The harness's importer: photos go to its temp wwwroot.
+        services.AddScoped(sp => h.Importer(sp.GetRequiredService<AppDbContext>()));
         var provider = services.BuildServiceProvider();
         return new NewsFeedBackgroundService(
             provider.GetRequiredService<IServiceScopeFactory>(),

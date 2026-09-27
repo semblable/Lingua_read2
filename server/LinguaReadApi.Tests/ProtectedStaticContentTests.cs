@@ -81,6 +81,7 @@ public class ProtectedStaticContentTests : IClassFixture<WebApplicationFactory<P
     [InlineData("/audio_lessons/lesson.mp3")]
     [InlineData("/audiobooks/1/track_1.mp3")]
     [InlineData("/epub_assets/a1a1a1a1-b2b2-c3c3-d4d4-e5e5e5e5e5e5/1/cover.jpg")]
+    [InlineData("/epub_assets/a1a1a1a1-b2b2-c3c3-d4d4-e5e5e5e5e5e5/news/1.jpg")] // a news article's photo
     [InlineData("/hardcover-covers/" + UserIdNoDashes + "/1.jpg")]
     public async Task UploadedContent_WithoutAuth_Returns401(string path)
     {
@@ -97,6 +98,7 @@ public class ProtectedStaticContentTests : IClassFixture<WebApplicationFactory<P
     // paths are ones no real upload can have (a real book 1 cover would turn the 404 into a 200).
     [InlineData("/audio_lessons/" + UserId + "/does-not-exist.mp3")]
     [InlineData("/epub_assets/" + UserId + "/" + GateTestBookId + "/does-not-exist.jpg")]
+    [InlineData("/epub_assets/" + UserId + "/news/" + GateTestBookId + ".jpg")]
     [InlineData("/hardcover-covers/" + UserIdNoDashes + "/does-not-exist.jpg")]
     public async Task OwnedContent_WithAuthCookie_PassesTheGate(string path)
     {
@@ -129,6 +131,7 @@ public class ProtectedStaticContentTests : IClassFixture<WebApplicationFactory<P
     [Theory]
     [InlineData("/audio_lessons/" + OtherUserId + "/secret.mp3")]
     [InlineData("/epub_assets/" + OtherUserId + "/1/cover.jpg")]
+    [InlineData("/epub_assets/" + OtherUserId + "/news/1.jpg")]
     [InlineData("/hardcover-covers/b9b9b9b9c8c8d7d7e6e6f5f5f5f5f5f5/1.jpg")]
     [InlineData("/audiobooks/999999/track_1.mp3")] // no such book owned by the caller
     public async Task OtherUsersContent_WithAuthCookie_Returns403(string path)

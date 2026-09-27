@@ -1,17 +1,26 @@
 using System;
+using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
+using System.Linq;
 using Microsoft.Extensions.Logging;
 
 namespace LinguaReadApi.Utilities
 {
     /// <summary>
     /// Removes the on-disk media a book owns: extracted EPUB assets, uploaded audiobook tracks and
-    /// the downloaded Hardcover cover. Each of these lives on a persistent Docker volume that the
-    /// backup sidecar mirrors offsite, so a book deleted from the database without this cleanup
-    /// leaves its bytes behind permanently, in the volume and in every later backup.
+    /// the downloaded Hardcover cover; and the lead photo of an imported news article. Each of
+    /// these lives on a persistent Docker volume that the backup sidecar mirrors offsite, so a book
+    /// or text deleted from the database without this cleanup leaves its bytes behind permanently,
+    /// in the volume and in every later backup.
     /// </summary>
     public static class BookAssetStorage
     {
+        // News photos share the EPUB assets volume, so they are gated, backed up and copied to
+        // staging like EPUB images: epub_assets/{userId}/news/{textId}{ext}. Book folders there are
+        // named by the integer book id, so no book's folder can be "news".
+        public const string NewsImageFolder = "news";
+
         // The controllers resolve wwwroot this way rather than through IWebHostEnvironment; keep
         // the two in step so cleanup targets the same directories the upload paths wrote to.
         // `webRoot` exists so tests can point at a temp directory without mutating the process-wide
@@ -76,6 +85,54 @@ namespace LinguaReadApi.Utilities
             catch (Exception ex)
             {
                 logger?.LogWarning(ex, "Failed to delete audio file: {FilePath}", fullPath);
+            }
+        }
+
+        /// <summary>Where the news import stores a user's article photos.</summary>
+        public static string NewsImageDirectory(Guid userId, string? webRoot = null) =>
+            Path.Combine(ResolveWebRoot(webRoot), "epub_assets", userId.ToString(), NewsImageFolder);
+
+        /// <summary>The photo's address as the reader loads it (relative to wwwroot, like EPUB image URLs).</summary>
+        public static string NewsImageUrl(Guid userId, int textId, string extension) =>
+            $"epub_assets/{userId}/{NewsImageFolder}/{textId}{extension}";
+
+        /// <summary>
+        /// Deletes the lead photos of these texts. Best-effort and after the database delete has
+        /// committed, like <see cref="DeleteBookAssets"/>. Texts without a photo (most of them) are
+        /// simply not found, so callers pass every text they deleted rather than tracking which
+        /// ones were news articles: an article whose feed was removed is no longer marked as one.
+        /// </summary>
+        public static void DeleteNewsImages(Guid userId, IEnumerable<int> textIds, ILogger? logger = null, string? webRoot = null)
+        {
+            var directory = NewsImageDirectory(userId, webRoot);
+            List<string> files;
+            try
+            {
+                if (!Directory.Exists(directory)) return;
+                var ids = textIds.ToHashSet();
+                if (ids.Count == 0) return;
+                // The extension follows the downloaded image's type, so match on the name alone.
+                files = Directory.EnumerateFiles(directory)
+                    .Where(file => int.TryParse(Path.GetFileNameWithoutExtension(file), NumberStyles.None, CultureInfo.InvariantCulture, out var textId)
+                                   && ids.Contains(textId))
+                    .ToList();
+            }
+            catch (Exception ex)
+            {
+                logger?.LogWarning(ex, "Failed to list news photos in {Path}", directory);
+                return;
+            }
+
+            foreach (var file in files)
+            {
+                try
+                {
+                    File.Delete(file);
+                }
+                catch (Exception ex)
+                {
+                    logger?.LogWarning(ex, "Failed to delete news photo {Path}", file);
+                }
             }
         }
 

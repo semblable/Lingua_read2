@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Card, Badge } from 'react-bootstrap';
 import { Link, useNavigate } from 'react-router-dom';
 import { useSortable } from '@dnd-kit/sortable';
@@ -7,6 +7,7 @@ import { formatDate } from '../../utils/helpers';
 import type { LibraryText, SelectableType } from '../../utils/store';
 import ComprehensibilityBadge from '../shared/ComprehensibilityBadge';
 import { CARD_INTERACTIVE_SELECTOR } from './cardClicks';
+import { normalizeMediaUrl } from './mediaUrl';
 
 interface LibraryTextCardProps {
   text: LibraryText;
@@ -36,6 +37,10 @@ const LibraryTextCard = ({ text, isSelected, onSelect, onItemClick }: LibraryTex
     opacity: isDragging ? 0.5 : 1
   };
 
+  // A news article's lead photo; a file that can't be loaded is left out rather than shown broken.
+  const photo = normalizeMediaUrl(text.imagePath);
+  const [photoFailed, setPhotoFailed] = useState(false);
+
   return (
     <div ref={setNodeRef} style={style} data-selectable-id={text.textId} data-selectable-type="text">
       <Card
@@ -51,6 +56,17 @@ const LibraryTextCard = ({ text, isSelected, onSelect, onItemClick }: LibraryTex
           navigate(`/texts/${text.textId}`);
         }}
       >
+        {photo && !photoFailed && (
+          // Decorative: the title right below says what it shows.
+          <Card.Img
+            variant="top"
+            src={photo}
+            alt=""
+            loading="lazy"
+            className="library-cover library-text-photo"
+            onError={() => setPhotoFailed(true)}
+          />
+        )}
         <Card.Body className="d-flex flex-column">
           <div className="d-flex align-items-start mb-1">
             <div
@@ -65,7 +81,7 @@ const LibraryTextCard = ({ text, isSelected, onSelect, onItemClick }: LibraryTex
               <i className="bi bi-grip-vertical"></i>
             </div>
             <div className="flex-grow-1" style={{ minWidth: 0 }}>
-              <Card.Title as="h6" className="text-truncate mb-0">
+              <Card.Title as="h6" className="library-card-title mb-0" title={text.title ?? undefined}>
                 {text.isAudioLesson && <i className="bi bi-headphones me-1" title="Audio Lesson"></i>}
                 {text.isFinished && <i className="bi bi-check-circle-fill text-success me-1" title="Completed"></i>}
                 {text.title}

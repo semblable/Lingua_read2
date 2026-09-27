@@ -2374,6 +2374,90 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/NewsFeeds/{id}/entries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["NewsFeedEntriesDto"];
+                        "application/json": components["schemas"]["NewsFeedEntriesDto"];
+                        "text/json": components["schemas"]["NewsFeedEntriesDto"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/NewsFeeds/{id}/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": components["schemas"]["ImportNewsEntriesDto"];
+                    "text/json": components["schemas"]["ImportNewsEntriesDto"];
+                    "application/*+json": components["schemas"]["ImportNewsEntriesDto"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["NewsFeedFetchResultDto"];
+                        "application/json": components["schemas"]["NewsFeedFetchResultDto"];
+                        "text/json": components["schemas"]["NewsFeedFetchResultDto"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/SentenceTranslation": {
         parameters: {
             query?: never;
@@ -5545,6 +5629,8 @@ export interface components {
             createdAt?: string;
             /** Format: int32 */
             itemCount?: number;
+            /** Format: int32 */
+            newsFeedId?: number | null;
         };
         /**
          * Format: int32
@@ -5688,6 +5774,9 @@ export interface components {
             imported?: number;
             /** Format: int32 */
             skippedTexts?: number;
+        };
+        ImportNewsEntriesDto: {
+            keys?: string[] | null;
         };
         ImportedTextBookmarks: {
             /** Format: int32 */
@@ -5913,6 +6002,7 @@ export interface components {
             knownWords?: number;
             /** Format: date-time */
             statsUpdatedAt?: string | null;
+            imagePath?: string | null;
             /** Format: int32 */
             readonly unknownWords?: number;
             /** Format: double */
@@ -5964,6 +6054,12 @@ export interface components {
             /** Format: int32 */
             status?: number | null;
         };
+        NewsEntryOutcomeDto: {
+            key?: string | null;
+            status?: string | null;
+            /** Format: int32 */
+            textId?: number | null;
+        };
         NewsFeed: {
             /** Format: int32 */
             newsFeedId?: number;
@@ -6012,6 +6108,21 @@ export interface components {
             /** Format: int32 */
             articleCount?: number;
         };
+        NewsFeedEntriesDto: {
+            feed?: components["schemas"]["NewsFeedDto"];
+            entries?: components["schemas"]["NewsFeedEntryDto"][] | null;
+        };
+        NewsFeedEntryDto: {
+            key?: string | null;
+            title?: string | null;
+            link?: string | null;
+            /** Format: date-time */
+            publishedAt?: string | null;
+            summary?: string | null;
+            status?: string | null;
+            /** Format: int32 */
+            textId?: number | null;
+        };
         NewsFeedFetchResultDto: {
             success?: boolean;
             /** Format: int32 */
@@ -6020,6 +6131,7 @@ export interface components {
             skipped?: number;
             message?: string | null;
             feed?: components["schemas"]["NewsFeedDto"];
+            entries?: components["schemas"]["NewsEntryOutcomeDto"][] | null;
         };
         NextLessonDto: {
             /** Format: int32 */
@@ -6437,6 +6549,7 @@ export interface components {
             /** Format: int32 */
             newsFeedId?: number | null;
             sourceUrl?: string | null;
+            imagePath?: string | null;
             user?: components["schemas"]["User"];
             language?: components["schemas"]["Language"];
             book?: components["schemas"]["Book"];

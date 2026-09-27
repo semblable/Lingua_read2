@@ -184,6 +184,75 @@ namespace LinguaReadApi.Controllers
             };
         }
 
+        // GET: api/newsfeeds/5/entries
+        // The feed's current entries and what the import made of each, for choosing articles.
+        [HttpGet("{id}/entries")]
+        public async Task<ActionResult<NewsFeedEntriesDto>> GetEntries(int id, CancellationToken cancellationToken)
+        {
+            var userId = GetUserId();
+            if (!await _context.NewsFeeds.AnyAsync(f => f.NewsFeedId == id && f.UserId == userId, cancellationToken))
+            {
+                return NotFound(new { message = "Feed not found." });
+            }
+
+            IReadOnlyList<NewsFeedEntryInfo> entries;
+            try
+            {
+                entries = await _importer.BrowseAsync(id, cancellationToken);
+            }
+            catch (NewsFetchException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+
+            return new NewsFeedEntriesDto
+            {
+                Feed = (await ToDtosAsync(userId, new List<int> { id }))[0],
+                Entries = entries.Select(e => new NewsFeedEntryDto
+                {
+                    Key = e.Key,
+                    Title = e.Title,
+                    Link = e.Link,
+                    PublishedAt = e.PublishedAt?.UtcDateTime,
+                    Summary = e.Summary,
+                    Status = e.Status,
+                    TextId = e.TextId
+                }).ToList()
+            };
+        }
+
+        // POST: api/newsfeeds/5/import
+        // Imports the picked entries (keys from GET entries) now, whatever the daily limit.
+        [HttpPost("{id}/import")]
+        public async Task<ActionResult<NewsFeedFetchResultDto>> ImportEntries(int id, [FromBody] ImportNewsEntriesDto dto, CancellationToken cancellationToken)
+        {
+            var userId = GetUserId();
+            if (!await _context.NewsFeeds.AnyAsync(f => f.NewsFeedId == id && f.UserId == userId, cancellationToken))
+            {
+                return NotFound(new { message = "Feed not found." });
+            }
+            var keys = (dto.Keys ?? new List<string>()).Where(k => !string.IsNullOrWhiteSpace(k)).Distinct().ToList();
+            if (keys.Count == 0)
+            {
+                return BadRequest(new { message = "Choose the articles to import." });
+            }
+            if (keys.Count > NewsFeedImporter.MaxSelectedEntries)
+            {
+                return BadRequest(new { message = $"Import up to {NewsFeedImporter.MaxSelectedEntries} articles at a time." });
+            }
+
+            var result = await _importer.ImportSelectedAsync(id, keys, cancellationToken);
+            return new NewsFeedFetchResultDto
+            {
+                Success = result.Success,
+                Imported = result.Imported,
+                Skipped = result.Skipped,
+                Message = result.Message,
+                Feed = (await ToDtosAsync(userId, new List<int> { id }))[0],
+                Entries = result.Entries?.Select(e => new NewsEntryOutcomeDto { Key = e.Key, Status = e.Status, TextId = e.TextId }).ToList()
+            };
+        }
+
         private async Task<List<NewsFeedDto>> ToDtosAsync(Guid userId, List<int> feedIds)
         {
             var dayAgo = _timeProvider.GetUtcNow().UtcDateTime.AddDays(-1);
@@ -262,5 +331,40 @@ namespace LinguaReadApi.Controllers
         public int Skipped { get; set; }
         public string Message { get; set; } = string.Empty;
         public NewsFeedDto Feed { get; set; } = new();
+        // For picked entries only: what became of each.
+        public List<NewsEntryOutcomeDto>? Entries { get; set; }
+    }
+
+    public class NewsEntryOutcomeDto
+    {
+        public string Key { get; set; } = string.Empty;
+        // A NewsEntryStatus: imported, skipped, alreadyImported or notInFeed.
+        public string Status { get; set; } = string.Empty;
+        public int? TextId { get; set; }
+    }
+
+    public class NewsFeedEntriesDto
+    {
+        public NewsFeedDto Feed { get; set; } = new();
+        public List<NewsFeedEntryDto> Entries { get; set; } = new();
+    }
+
+    public class NewsFeedEntryDto
+    {
+        // Identifies the entry to POST {id}/import.
+        public string Key { get; set; } = string.Empty;
+        public string Title { get; set; } = string.Empty;
+        public string? Link { get; set; }
+        public DateTime? PublishedAt { get; set; }
+        public string? Summary { get; set; }
+        // A NewsEntryStatus: new, imported or skipped.
+        public string Status { get; set; } = string.Empty;
+        // The imported article, while it's still in the Library.
+        public int? TextId { get; set; }
+    }
+
+    public class ImportNewsEntriesDto
+    {
+        public List<string>? Keys { get; set; }
     }
 }

@@ -115,7 +115,7 @@ internal sealed class NewsTestHarness : IAsyncDisposable
     // ---- content ----
 
     /// <summary>A feed entry. <paramref name="MediaXml"/> goes into the item as is (media:content, enclosure).</summary>
-    public sealed record Item(string Title, string Link, DateTimeOffset Published, string? ContentHtml = null, string? Guid = null, string? MediaXml = null);
+    public sealed record Item(string Title, string Link, DateTimeOffset Published, string? ContentHtml = null, string? Guid = null, string? MediaXml = null, string? Description = null);
 
     public static string Rss(string title, params Item[] items)
     {
@@ -128,6 +128,7 @@ internal sealed class NewsTestHarness : IAsyncDisposable
             body.Append($"<title>{SecurityElement.Escape(item.Title)}</title><link>{SecurityElement.Escape(item.Link)}</link>");
             if (item.Guid != null) body.Append($"<guid isPermaLink=\"false\">{SecurityElement.Escape(item.Guid)}</guid>");
             body.Append($"<pubDate>{item.Published:R}</pubDate>");
+            if (item.Description != null) body.Append($"<description>{SecurityElement.Escape(item.Description)}</description>");
             if (item.ContentHtml != null) body.Append($"<content:encoded><![CDATA[{item.ContentHtml}]]></content:encoded>");
             if (item.MediaXml != null) body.Append(item.MediaXml);
             body.Append("</item>");

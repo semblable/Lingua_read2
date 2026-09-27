@@ -176,6 +176,8 @@ public class NewsLeadPhotoTests
         await using var context = h.NewContext();
         var text = await context.Texts.SingleAsync();
         Assert.Equal(photo, await File.ReadAllBytesAsync(h.NewsImagePath(text.TextId)));
+        // The Library card shows it too.
+        Assert.Equal($"epub_assets/{UserId}/news/{text.TextId}.jpg", text.ImagePath);
 
         // Content is what it would be without the photo: word linking and stats read it.
         Assert.Equal(ArticleExtractor.FromPage(ArticlePage("Com foto"), PageUrl, "Com foto").Content, text.Content);

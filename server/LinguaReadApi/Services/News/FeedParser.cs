@@ -13,9 +13,11 @@ namespace LinguaReadApi.Services.News
 {
     /// <summary>
     /// One entry of a feed. <see cref="Key"/> identifies it across fetches (guid/id, else link);
-    /// <see cref="ImageUrl"/> is the picture the feed gives for it, if any.
+    /// <see cref="ImageUrl"/> is the picture the feed gives for it, if any; <see cref="Summary"/>
+    /// a short plain-text teaser for choosing articles (the feed's description, else the start of
+    /// its content).
     /// </summary>
-    public sealed record FeedEntry(string Key, Uri? Link, string Title, DateTimeOffset? PublishedAt, string? ContentHtml, Uri? ImageUrl = null);
+    public sealed record FeedEntry(string Key, Uri? Link, string Title, DateTimeOffset? PublishedAt, string? ContentHtml, Uri? ImageUrl = null, string? Summary = null);
 
     public sealed record ParsedFeed(string? Title, string? Language, IReadOnlyList<FeedEntry> Entries);
 
@@ -27,6 +29,8 @@ namespace LinguaReadApi.Services.News
     public static class FeedParser
     {
         public const int MaxEntries = 200;
+
+        public const int MaxSummaryLength = 300;
 
         private static readonly XNamespace Atom = "http://www.w3.org/2005/Atom";
         private static readonly XNamespace Rss1 = "http://purl.org/rss/1.0/";
@@ -147,7 +151,8 @@ namespace LinguaReadApi.Services.News
                 title: Text(item.Element("title")),
                 published: ParseDate(Text(item.Element("pubDate")) ?? Text(item.Element(Dc + "date"))),
                 content: Text(item.Element(Content + "encoded")),
-                image: EntryImage(item, baseUrl));
+                image: EntryImage(item, baseUrl),
+                description: Text(item.Element("description")));
         }
 
         private static FeedEntry? RdfEntry(XElement item, Uri baseUrl)
@@ -160,7 +165,8 @@ namespace LinguaReadApi.Services.News
                 title: Text(item.Element(Rss1 + "title")),
                 published: ParseDate(Text(item.Element(Dc + "date"))),
                 content: Text(item.Element(Content + "encoded")),
-                image: EntryImage(item, baseUrl));
+                image: EntryImage(item, baseUrl),
+                description: Text(item.Element(Rss1 + "description")));
         }
 
         private static FeedEntry? AtomEntry(XElement entry, Uri baseUrl)
@@ -177,16 +183,35 @@ namespace LinguaReadApi.Services.News
                     : (string?)content.Attribute("type") == "xhtml" ? string.Concat(content.Nodes().Select(n => n.ToString()))
                     : (string?)content.Attribute("type") is null or "text" ? PlainTextToHtml(content.Value)
                     : content.Value,
-                image: EntryImage(entry, baseUrl));
+                image: EntryImage(entry, baseUrl),
+                description: Text(entry.Element(Atom + "summary")));
         }
 
-        private static FeedEntry? Entry(string? key, Uri? link, string? title, DateTimeOffset? published, string? content, Uri? image)
+        private static FeedEntry? Entry(string? key, Uri? link, string? title, DateTimeOffset? published, string? content, Uri? image, string? description)
         {
             if (string.IsNullOrWhiteSpace(key) || (link == null && string.IsNullOrWhiteSpace(content)))
             {
                 return null;
             }
-            return new FeedEntry(key.Trim(), link, CleanTitle(title) ?? "", published, string.IsNullOrWhiteSpace(content) ? null : content, image);
+            var cleanTitle = CleanTitle(title) ?? "";
+            content = string.IsNullOrWhiteSpace(content) ? null : content;
+            return new FeedEntry(key.Trim(), link, cleanTitle, published, content, image, Summary(description, content, cleanTitle));
+        }
+
+        /// <summary>
+        /// A teaser for the article list: the entry's description (often HTML, sometimes just the
+        /// headline again), else the first paragraph of its content; plain text, cut to
+        /// <see cref="MaxSummaryLength"/>.
+        /// </summary>
+        private static string? Summary(string? description, string? content, string title)
+        {
+            var summary = CleanTitle(description);
+            if (summary == null || string.Equals(summary, title, StringComparison.OrdinalIgnoreCase))
+            {
+                summary = content == null ? null : ArticleExtractor.ToParagraphs(content, title).FirstOrDefault();
+            }
+            if (summary == null) return null;
+            return summary.Length <= MaxSummaryLength ? summary : summary[..(MaxSummaryLength - 1)].TrimEnd() + "…";
         }
 
         /// <summary>

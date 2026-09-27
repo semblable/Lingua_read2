@@ -62,6 +62,7 @@ import LibraryTextCard from '../components/library/LibraryTextCard';
 import CreateFolderModal from '../components/library/CreateFolderModal';
 import MoveToFolderModal from '../components/library/MoveToFolderModal';
 import RenameFolderModal from '../components/library/RenameFolderModal';
+import NewsFeedBrowser from '../components/news/NewsFeedBrowser';
 import SelectionRectangle from '../components/library/SelectionRectangle';
 import { useDragSelect } from '../hooks/useDragSelect';
 
@@ -106,6 +107,7 @@ const Library = () => {
   const [showMoveModal, setShowMoveModal] = useState(false);
   const [showRenameModal, setShowRenameModal] = useState(false);
   const [renameFolder, setRenameFolder] = useState<LibraryFolder | null>(null);
+  const [showNewsBrowser, setShowNewsBrowser] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeDrag, setActiveDrag] = useState<DragEndpoint | null>(null);
 
@@ -478,7 +480,9 @@ const Library = () => {
 
   // Keyboard shortcuts for the selection: Esc clears it, Ctrl/Cmd+A selects everything shown,
   // Delete (or Cmd+Backspace) deletes it. Not while typing, dragging or in a dialog.
-  const modalOpen = showCreateFolder || showMoveModal || showRenameModal;
+  // The article picker of the folder's news feed, while it's open.
+  const newsBrowserFeedId = showNewsBrowser && contentsReady ? currentFolder?.newsFeedId ?? null : null;
+  const modalOpen = showCreateFolder || showMoveModal || showRenameModal || newsBrowserFeedId != null;
   useEffect(() => {
     if (!contentsReady || modalOpen || activeDrag) return;
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -502,17 +506,29 @@ const Library = () => {
     <Container className="py-4 main-content-padding">
       {/* Header */}
       <div className="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-        <h2 className="mb-0 d-flex align-items-center gap-2">
+        <h2 className="mb-0 d-flex align-items-center flex-wrap gap-2">
           <i className="bi bi-collection"></i>
           Library
           {contentsReady && currentFolder && (
             <Button
               size="sm"
               variant="outline-secondary"
+              className="text-nowrap"
               onClick={() => { setRenameFolder(currentFolder); setShowRenameModal(true); }}
               title="Edit folder"
             >
               <i className="bi bi-pencil me-1"></i>Edit Folder
+            </Button>
+          )}
+          {contentsReady && currentFolder?.newsFeedId != null && (
+            <Button
+              size="sm"
+              variant="outline-primary"
+              className="text-nowrap"
+              onClick={() => setShowNewsBrowser(true)}
+              title="Pick articles from this folder's news feed"
+            >
+              <i className="bi bi-newspaper me-1"></i>Browse articles
             </Button>
           )}
         </h2>
@@ -871,6 +887,12 @@ const Library = () => {
         onHide={() => { setShowRenameModal(false); setRenameFolder(null); }}
         folder={renameFolder}
         onSubmit={handleRenameFolder}
+      />
+      <NewsFeedBrowser
+        feedId={newsBrowserFeedId}
+        feedTitle={currentFolder?.name ?? undefined}
+        onHide={() => setShowNewsBrowser(false)}
+        onImported={() => { void reloadLibrary(); }}
       />
     </Container>
   );

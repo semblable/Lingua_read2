@@ -68,14 +68,57 @@ export const deleteNewsFeed = async (id: number): Promise<void> => {
   await fetchApi(`/newsfeeds/${id}`, { method: 'DELETE' });
 };
 
+const toFetchResult = (dto: NewsFeedFetchResultDto): NewsFeedFetchResult => ({
+  success: dto.success ?? false,
+  imported: dto.imported ?? 0,
+  skipped: dto.skipped ?? 0,
+  message: dto.message ?? '',
+  feed: dto.feed ? toNewsFeed(dto.feed) : null
+});
+
 /** Checks the feed now, within the same daily limit as the background import. */
 export const fetchNewsFeed = async (id: number): Promise<NewsFeedFetchResult> => {
-  const dto = await fetchApi<NewsFeedFetchResultDto>(`/newsfeeds/${id}/fetch`, { method: 'POST' });
+  return toFetchResult(await fetchApi<NewsFeedFetchResultDto>(`/newsfeeds/${id}/fetch`, { method: 'POST' }));
+};
+
+// What the import made of an entry: not tried yet, imported, or skipped (too short or unreadable).
+export type NewsEntryStatus = 'new' | 'imported' | 'skipped';
+
+export type NewsFeedEntry = {
+  // Identifies the entry to importNewsFeedEntries.
+  key: string;
+  title: string;
+  link: string | null;
+  publishedAt: string | null;
+  summary: string | null;
+  status: NewsEntryStatus;
+  // The imported article, while it's still in the Library.
+  textId: number | null;
+};
+
+type NewsFeedEntriesDto = ResponseOf<'/api/NewsFeeds/{id}/entries', 'get'>;
+
+/** The feed's current entries, newest first, with what the import made of each. */
+export const getNewsFeedEntries = async (id: number): Promise<{ feed: NewsFeed | null; entries: NewsFeedEntry[] }> => {
+  const dto = await fetchApi<NewsFeedEntriesDto>(`/newsfeeds/${id}/entries`);
   return {
-    success: dto.success ?? false,
-    imported: dto.imported ?? 0,
-    skipped: dto.skipped ?? 0,
-    message: dto.message ?? '',
-    feed: dto.feed ? toNewsFeed(dto.feed) : null
+    feed: dto.feed ? toNewsFeed(dto.feed) : null,
+    entries: (dto.entries ?? []).map((e) => ({
+      key: e.key ?? '',
+      title: e.title ?? '',
+      link: e.link ?? null,
+      publishedAt: e.publishedAt ?? null,
+      summary: e.summary ?? null,
+      status: (e.status === 'imported' || e.status === 'skipped' ? e.status : 'new') as NewsEntryStatus,
+      textId: e.textId ?? null
+    }))
   };
+};
+
+/** Imports the picked entries now, whatever the daily limit. */
+export const importNewsFeedEntries = async (id: number, keys: string[]): Promise<NewsFeedFetchResult> => {
+  return toFetchResult(await fetchApi<NewsFeedFetchResultDto>(`/newsfeeds/${id}/import`, {
+    method: 'POST',
+    body: JSON.stringify({ keys })
+  }));
 };

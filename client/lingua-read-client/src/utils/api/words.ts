@@ -206,3 +206,13 @@ export const mergeSavedWords = (words: Word[], saved: Word[]): Word[] => {
   const kept = words.filter((w) => !savedIds.has(w.wordId) && !(w.term && savedTerms.has(w.term.toLowerCase())));
   return [...kept, ...saved];
 };
+
+// A language's word list with the fetched rows it doesn't have yet, matched by id or by term like
+// mergeSavedWords. Rows it already has are kept: the fetch may have been read before a save that
+// has since been merged in, and the word linker only adds rows, it never changes existing ones.
+export const addMissingWords = (words: Word[], fetched: Word[]): Word[] => {
+  const ids = new Set(words.map((w) => w.wordId));
+  const terms = new Set(words.flatMap((w) => (w.term ? [w.term.toLowerCase()] : [])));
+  const missing = fetched.filter((w) => !ids.has(w.wordId) && !(w.term && terms.has(w.term.toLowerCase())));
+  return missing.length === 0 ? words : [...words, ...missing];
+};

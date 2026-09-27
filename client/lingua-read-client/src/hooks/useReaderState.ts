@@ -13,7 +13,7 @@ import type { SrtEntry } from '../utils/srtParser';
 import type { LanguageConfig } from '../utils/readerText';
 import type { Text as TextDto } from '../utils/api/texts';
 import type { Book as BookDto } from '../utils/api/books';
-import type { Word } from '../utils/api/words';
+import { addMissingWords, type Word } from '../utils/api/words';
 
 // Page state often overlays extra fields the OpenAPI spec omits. Keep the
 // types loose enough for the augmented runtime shape used by the reader.
@@ -134,7 +134,9 @@ export const useReaderState = ({
       try {
         const refreshed = await getText(textId);
         if (isCurrentRequest()) {
-          setWords(refreshed.words || []);
+          // Only the rows the linker created. The text's own words would replace the whole
+          // language (phrases included) and undo a save made while this request ran.
+          setWords(prev => addMissingWords(prev, refreshed.words || []));
         }
       } catch (refreshErr) {
         if (isCurrentRequest()) {

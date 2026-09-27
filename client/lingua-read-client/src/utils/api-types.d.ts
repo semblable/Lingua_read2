@@ -6122,6 +6122,8 @@ export interface components {
             status?: string | null;
             /** Format: int32 */
             textId?: number | null;
+            /** Format: int32 */
+            wordCount?: number | null;
         };
         NewsFeedFetchResultDto: {
             success?: boolean;

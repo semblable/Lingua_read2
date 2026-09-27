@@ -216,7 +216,8 @@ namespace LinguaReadApi.Controllers
                     PublishedAt = e.PublishedAt?.UtcDateTime,
                     Summary = e.Summary,
                     Status = e.Status,
-                    TextId = e.TextId
+                    TextId = e.TextId,
+                    WordCount = e.WordCount
                 }).ToList()
             };
         }
@@ -338,7 +339,7 @@ namespace LinguaReadApi.Controllers
     public class NewsEntryOutcomeDto
     {
         public string Key { get; set; } = string.Empty;
-        // A NewsEntryStatus: imported, skipped, alreadyImported or notInFeed.
+        // A NewsEntryStatus: imported, skipped, alreadyImported, notInFeed or unreachable.
         public string Status { get; set; } = string.Empty;
         public int? TextId { get; set; }
     }
@@ -361,6 +362,8 @@ namespace LinguaReadApi.Controllers
         public string Status { get; set; } = string.Empty;
         // The imported article, while it's still in the Library.
         public int? TextId { get; set; }
+        // The article's length, when the feed carries all of it (else it's only known once imported).
+        public int? WordCount { get; set; }
     }
 
     public class ImportNewsEntriesDto

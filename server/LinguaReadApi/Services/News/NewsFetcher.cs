@@ -41,10 +41,19 @@ namespace LinguaReadApi.Services.News
         }
     }
 
-    /// <summary>Why a feed or page couldn't be downloaded, worded for the user.</summary>
+    /// <summary>
+    /// Why a feed or page couldn't be downloaded, worded for the user. <see cref="IsTransient"/>:
+    /// the failure may pass (a timeout, a 503, a dropped connection), so the page is worth asking
+    /// for again later; otherwise (a 404, a paywall's 403, a refused address) it isn't.
+    /// </summary>
     public sealed class NewsFetchException : Exception
     {
-        public NewsFetchException(string message, Exception? inner = null) : base(message, inner) { }
+        public NewsFetchException(string message, Exception? inner = null, bool transient = false) : base(message, inner)
+        {
+            IsTransient = transient;
+        }
+
+        public bool IsTransient { get; }
     }
 
     /// <summary>
@@ -120,7 +129,9 @@ namespace LinguaReadApi.Services.News
                 using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token);
                 if (!response.IsSuccessStatusCode)
                 {
-                    throw new NewsFetchException($"{url.Host} answered {(int)response.StatusCode} {response.ReasonPhrase}.".Replace(" .", "."));
+                    throw new NewsFetchException(
+                        $"{url.Host} answered {(int)response.StatusCode} {response.ReasonPhrase}.".Replace(" .", "."),
+                        transient: IsTransientStatus(response.StatusCode));
                 }
                 if (response.Content.Headers.ContentLength > maxBytes)
                 {
@@ -153,24 +164,40 @@ namespace LinguaReadApi.Services.News
             }
             catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
             {
-                throw new NewsFetchException($"{url.Host} took too long to answer.");
+                throw new NewsFetchException($"{url.Host} took too long to answer.", transient: true);
             }
             catch (HttpRequestException ex)
             {
                 // The innermost error says what went wrong: the guard's refusal (already worded for
                 // the user) or a socket error ("No such host is known"), which gets the host added.
+                // Anything but the guard's refusal is the network (DNS, a refused or reset
+                // connection, TLS), which may work next time.
                 var reason = ex.GetBaseException().Message;
                 throw new NewsFetchException(
                     reason.Contains(url.Host, StringComparison.OrdinalIgnoreCase) ? reason : $"Couldn't reach {url.Host}: {reason}",
-                    ex);
+                    ex,
+                    transient: ex.GetBaseException() is not NotPublicAddressException);
             }
-            catch (Exception ex) when (ex is IOException or InvalidDataException)
+            catch (InvalidDataException ex)
             {
-                // The connection dropped while the body was being read (HttpIOException), or the
-                // compressed body was corrupt.
+                // The compressed body was corrupt: it would be again.
                 throw new NewsFetchException($"Couldn't read from {url.Host}: {ex.Message}", ex);
             }
+            catch (IOException ex)
+            {
+                // The connection dropped while the body was being read (HttpIOException).
+                throw new NewsFetchException($"Couldn't read from {url.Host}: {ex.Message}", ex, transient: true);
+            }
         }
+
+        /// <summary>
+        /// Statuses that say "not now" rather than "not this page": a timeout, too many requests,
+        /// the server or a gateway in front of it failing (Cloudflare's 52x included).
+        /// </summary>
+        internal static bool IsTransientStatus(HttpStatusCode status) =>
+            status is HttpStatusCode.RequestTimeout or HttpStatusCode.TooManyRequests
+            || ((int)status is >= 500 and <= 599
+                && status is not (HttpStatusCode.NotImplemented or HttpStatusCode.HttpVersionNotSupported));
 
         private static NewsFetchException TooLarge(Uri url, int maxBytes) =>
             new($"{url.Host} sent more than {maxBytes / (1024 * 1024)} MB.");

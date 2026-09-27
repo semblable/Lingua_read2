@@ -164,6 +164,109 @@ public class NewsFeedImporterTests
     }
 
     [Fact]
+    public async Task Import_LeavesAnArticleWhosePageFailedForNow_ForTheNextCheck()
+    {
+        await using var h = await CreateAsync();
+        var now = h.Time.GetUtcNow();
+        Item[] items =
+        [
+            new("Fora do ar", "https://news.example.com/a", now.AddHours(-1)),
+            new("Outro site", "https://other.example.org/b", now.AddHours(-2)),
+            new("Também fora", "https://news.example.com/c", now.AddHours(-3)),
+            new("Mesmo site", "https://news.example.com/d", now.AddHours(-4)),
+        ];
+        h.Web.ServeFeed(FeedUrl, Rss("Notícias", items));
+        h.Web.Fail("https://news.example.com/a", HttpStatusCode.ServiceUnavailable);
+        h.Web.Serve("https://other.example.org/b", ArticlePage("Outro site"));
+        h.Web.Fail("https://news.example.com/c", HttpStatusCode.ServiceUnavailable);
+        h.Web.Serve("https://news.example.com/d", ArticlePage("Mesmo site"));
+        var feedId = await h.AddFeedAsync();
+
+        var first = await h.ImportAsync(feedId);
+
+        Assert.True(first.Success);
+        Assert.Equal(1, first.Imported);
+        Assert.Equal(0, first.Skipped);
+        Assert.Equal(3, first.Unreachable);
+        Assert.Equal(
+            "Imported 1 article. 3 couldn't be loaded right now (news.example.com answered 503 Service Unavailable); the next check tries again.",
+            first.Message);
+        // Two of the site's pages failed in a row, so its third wasn't asked for.
+        Assert.Equal(0, h.Web.RequestsTo("https://news.example.com/d"));
+        await using (var context = h.NewContext())
+        {
+            // Only the imported entry is recorded; the other three are still new.
+            Assert.Equal(1, await context.NewsFeedItems.CountAsync());
+            var feed = await context.NewsFeeds.SingleAsync();
+            Assert.Null(feed.LastError);
+            Assert.Equal(0, feed.ConsecutiveFailures);
+        }
+
+        h.Web.Serve("https://news.example.com/a", ArticlePage("Fora do ar"));
+        h.Web.Serve("https://news.example.com/c", ArticlePage("Também fora"));
+        h.Time.Advance(TimeSpan.FromDays(1));
+        var second = await h.ImportAsync(feedId);
+
+        Assert.Equal("Imported 3 articles.", second.Message);
+        Assert.Equal(2, h.Web.RequestsTo("https://news.example.com/a"));
+        Assert.Equal(1, h.Web.RequestsTo("https://other.example.org/b"));
+        await using (var context = h.NewContext())
+        {
+            Assert.Equal(["Fora do ar", "Mesmo site", "Outro site", "Também fora"], (await context.Texts.Select(t => t.Title).ToListAsync()).Order());
+        }
+    }
+
+    [Fact]
+    public async Task Import_OneBrokenPage_DoesNotHoldBackTheSitesOthers()
+    {
+        await using var h = await CreateAsync();
+        var now = h.Time.GetUtcNow();
+        Item[] items =
+        [
+            new("Quebrada", "https://news.example.com/broken", now.AddHours(-1)),
+            new("Boa", "https://news.example.com/ok", now.AddHours(-2)),
+            new("Também boa", "https://news.example.com/ok2", now.AddHours(-3)),
+        ];
+        h.Web.ServeFeed(FeedUrl, Rss("Notícias", items));
+        h.Web.Fail("https://news.example.com/broken", HttpStatusCode.InternalServerError);
+        h.Web.Serve("https://news.example.com/ok", ArticlePage("Boa"));
+        h.Web.Serve("https://news.example.com/ok2", ArticlePage("Também boa"));
+        var feedId = await h.AddFeedAsync();
+
+        var first = await h.ImportAsync(feedId);
+
+        Assert.Equal(2, first.Imported);
+        Assert.Equal(1, first.Unreachable);
+
+        // Still broken at the next check: tried again, and still not in the way.
+        h.Time.Advance(TimeSpan.FromHours(2));
+        var second = await h.ImportAsync(feedId);
+
+        Assert.Equal(0, second.Imported);
+        Assert.Equal(2, h.Web.RequestsTo("https://news.example.com/broken"));
+        Assert.Equal(1, h.Web.RequestsTo("https://news.example.com/ok"));
+    }
+
+    [Fact]
+    public async Task Import_OnlyAnUnreachableSite_SaysNothingWasImported()
+    {
+        await using var h = await CreateAsync();
+        var items = FiveArticles(h);
+        h.Web.ServeFeed(FeedUrl, Rss("Notícias", items));
+        foreach (var item in items) h.Web.Fail(item.Link, HttpStatusCode.TooManyRequests);
+        var feedId = await h.AddFeedAsync();
+
+        var result = await h.ImportAsync(feedId);
+
+        Assert.Equal(0, result.Imported);
+        Assert.Equal(
+            "Nothing imported. 5 couldn't be loaded right now (news.example.com answered 429 Too Many Requests); the next check tries again.",
+            result.Message);
+        // Two tries, then the site is left alone until the next check.
+        Assert.Equal(NewsFeedImporter.MaxFailuresPerSite, h.Web.Requests.Count(r => r != FeedUrl));
+    }
+
+    [Fact]
     public async Task Import_DoesNotBringBackADeletedArticle()
     {
         await using var h = await CreateAsync();

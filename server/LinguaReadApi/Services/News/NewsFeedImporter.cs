@@ -23,7 +23,11 @@ namespace LinguaReadApi.Services.News
     /// What a check or an import of picked entries did. <see cref="Entries"/> is only set for picked
     /// entries: what became of each.
     /// </summary>
-    public sealed record NewsImportResult(bool Success, int Imported, int Skipped, string Message, IReadOnlyList<NewsEntryOutcome>? Entries = null);
+    public sealed record NewsImportResult(bool Success, int Imported, int Skipped, string Message, IReadOnlyList<NewsEntryOutcome>? Entries = null)
+    {
+        /// <summary>Entries whose page couldn't be loaded right now; left to be tried again.</summary>
+        public int Unreachable { get; init; }
+    }
 
     /// <summary>What the import made of a feed entry, as the article list shows it.</summary>
     public static class NewsEntryStatus
@@ -37,13 +41,17 @@ namespace LinguaReadApi.Services.News
         public const string AlreadyImported = "alreadyImported";
         // Picked, but gone from the feed by the time of the import.
         public const string NotInFeed = "notInFeed";
+        // Picked, but its page couldn't be loaded right now (a timeout, a 503). Not recorded, so
+        // it can be picked again.
+        public const string Unreachable = "unreachable";
     }
 
     /// <summary>
     /// A feed entry in the article list. <see cref="Key"/> is what <see cref="NewsFeedImporter.ImportSelectedAsync"/>
     /// takes; <see cref="TextId"/> is the imported article, while it's still in the Library.
+    /// <see cref="WordCount"/> is only known when the feed carries the whole article.
     /// </summary>
-    public sealed record NewsFeedEntryInfo(string Key, string Title, string? Link, DateTimeOffset? PublishedAt, string? Summary, string Status, int? TextId);
+    public sealed record NewsFeedEntryInfo(string Key, string Title, string? Link, DateTimeOffset? PublishedAt, string? Summary, string Status, int? TextId, int? WordCount = null);
 
     /// <summary>What became of one picked entry (a <see cref="NewsEntryStatus"/>), and its text if imported.</summary>
     public sealed record NewsEntryOutcome(string Key, string Status, int? TextId = null);
@@ -72,6 +80,11 @@ namespace LinguaReadApi.Services.News
         // Article pages fetched per check at most, so a feed full of paywalled or broken links
         // can't keep the importer busy.
         public const int MaxPagesPerCheck = 10;
+
+        // Pages of one site that may fail in a row for now (a timeout, a 503) before the rest of
+        // that site's pages wait for the next check or pick. One broken page doesn't hold back the
+        // others; a site that is down or rate-limiting costs two tries, not one per page.
+        public const int MaxFailuresPerSite = 2;
 
         // Entries shown in the article list, and picked entries imported in one go, at most.
         public const int MaxBrowseEntries = 100;
@@ -189,7 +202,7 @@ namespace LinguaReadApi.Services.News
         {
             var feed = await _context.NewsFeeds.AsNoTracking().FirstOrDefaultAsync(f => f.NewsFeedId == newsFeedId, cancellationToken)
                 ?? throw new NewsFetchException("Feed not found.");
-            var (parsed, _) = await LoadFeedAsync(feed, cancellationToken);
+            var (parsed, feedUrl) = await LoadFeedAsync(feed, cancellationToken);
 
             var entries = Keyed(parsed).Take(MaxBrowseEntries).ToList();
             var keys = entries.Select(x => x.Key).ToList();
@@ -220,7 +233,8 @@ namespace LinguaReadApi.Services.News
                     !importedByKey.TryGetValue(x.Key, out var imported) ? NewsEntryStatus.New
                         : imported ? NewsEntryStatus.Imported
                         : NewsEntryStatus.Skipped,
-                    x.Entry.Link != null && textIdByLink.TryGetValue(x.Entry.Link.AbsoluteUri, out var textId) ? textId : null))
+                    x.Entry.Link != null && textIdByLink.TryGetValue(x.Entry.Link.AbsoluteUri, out var textId) ? textId : null,
+                    ArticleFromFeed(x.Entry, feedUrl)?.WordCount))
                 .ToList();
         }
 
@@ -281,9 +295,16 @@ namespace LinguaReadApi.Services.News
                 var article = ArticleFromFeed(entry, feedUrl);
                 if (article == null && entry.Link != null)
                 {
-                    if (pagesFetched >= MaxPagesPerCheck) break;
-                    pagesFetched++;
-                    article = await ReadPageAsync(entry.Link, entry.Title, cancellationToken);
+                    // A page of a site given up on in this check isn't asked for, so it doesn't count.
+                    if (!batch.GivesUpOn(entry.Link.Host))
+                    {
+                        if (pagesFetched >= MaxPagesPerCheck) break;
+                        pagesFetched++;
+                    }
+                    var page = await ReadPageAsync(entry.Link, entry.Title, batch, cancellationToken);
+                    // Not recorded, so the next check tries it again.
+                    if (page.Retry) continue;
+                    article = page.Article;
                 }
 
                 var item = new NewsFeedItem { NewsFeedId = feed.NewsFeedId, ItemKey = key, FirstSeenAt = now, LastSeenAt = now };
@@ -303,11 +324,15 @@ namespace LinguaReadApi.Services.News
 
             await SaveBatchAsync(batch, cancellationToken);
 
-            if (batch.Imported.Count > 0 || batch.Skipped > 0)
+            if (batch.Imported.Count > 0 || batch.Skipped > 0 || batch.Unreachable > 0)
             {
-                _logger.LogInformation("News feed {FeedId}: imported {Imported}, skipped {Skipped}", feed.NewsFeedId, batch.Imported.Count, batch.Skipped);
+                _logger.LogInformation("News feed {FeedId}: imported {Imported}, skipped {Skipped}, left for the next check {Unreachable}",
+                    feed.NewsFeedId, batch.Imported.Count, batch.Skipped, batch.Unreachable);
             }
-            return new NewsImportResult(true, batch.Imported.Count, batch.Skipped, ResultMessage(batch.Imported.Count, batch.Skipped, room, perDay));
+            return new NewsImportResult(true, batch.Imported.Count, batch.Skipped, ResultMessage(batch, room, perDay))
+            {
+                Unreachable = batch.Unreachable
+            };
         }
 
         private async Task<NewsImportResult> ImportSelectedLockedAsync(int newsFeedId, IReadOnlyCollection<string> keys, CancellationToken cancellationToken)
@@ -353,7 +378,14 @@ namespace LinguaReadApi.Services.News
                 var article = ArticleFromFeed(entry, feedUrl);
                 if (article == null && entry.Link != null)
                 {
-                    article = await ReadPageAsync(entry.Link, entry.Title, cancellationToken);
+                    var page = await ReadPageAsync(entry.Link, entry.Title, batch, cancellationToken);
+                    if (page.Retry)
+                    {
+                        // Left as it was (new, or skipped before), to be picked again.
+                        outcomes.Add(new NewsEntryOutcome(key, NewsEntryStatus.Unreachable));
+                        continue;
+                    }
+                    article = page.Article;
                 }
 
                 if (item == null)
@@ -383,11 +415,15 @@ namespace LinguaReadApi.Services.News
             var gone = wanted.Where(key => entries.All(x => x.Key != key)).ToList();
             outcomes.AddRange(gone.Select(key => new NewsEntryOutcome(key, NewsEntryStatus.NotInFeed)));
 
-            if (batch.Imported.Count > 0 || batch.Skipped > 0)
+            if (batch.Imported.Count > 0 || batch.Skipped > 0 || batch.Unreachable > 0)
             {
-                _logger.LogInformation("News feed {FeedId}: imported {Imported} picked, skipped {Skipped}", feed.NewsFeedId, batch.Imported.Count, batch.Skipped);
+                _logger.LogInformation("News feed {FeedId}: imported {Imported} picked, skipped {Skipped}, couldn't load {Unreachable}",
+                    feed.NewsFeedId, batch.Imported.Count, batch.Skipped, batch.Unreachable);
             }
-            return new NewsImportResult(true, batch.Imported.Count, batch.Skipped, SelectedResultMessage(batch.Imported.Count, batch.Skipped, gone.Count), outcomes);
+            return new NewsImportResult(true, batch.Imported.Count, batch.Skipped, SelectedResultMessage(batch, gone.Count), outcomes)
+            {
+                Unreachable = batch.Unreachable
+            };
         }
 
         // The feed's document, parsed; throws NewsFetchException (with a message for the user) when it can't be.
@@ -431,7 +467,20 @@ namespace LinguaReadApi.Services.News
             public List<PendingPhoto> Photos { get; } = new();
             public int Skipped { get; set; }
             public int? FolderId { get; set; }
+
+            // Entries whose page couldn't be loaded right now, and why the first one couldn't.
+            public int Unreachable { get; set; }
+            public string? UnreachableReason { get; set; }
+
+            // Pages that failed that way in a row, per site (see MaxFailuresPerSite).
+            public Dictionary<string, int> FailuresInARow { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+            public bool GivesUpOn(string host) => FailuresInARow.GetValueOrDefault(host) >= MaxFailuresPerSite;
         }
+
+        // An article page as read: the article (null when there's none worth importing), or Retry
+        // when the page couldn't be loaded right now.
+        private readonly record struct PageRead(ExtractedArticle? Article, bool Retry);
 
         /// <summary>
         /// Adds <paramref name="article"/> as a text in the feed's folder, with its lead photo
@@ -515,33 +564,48 @@ namespace LinguaReadApi.Services.News
             }
         }
 
-        private static string ResultMessage(int imported, int skipped, int room, int perDay)
+        private static string ResultMessage(ImportBatch batch, int room, int perDay)
         {
+            var imported = batch.Imported.Count;
+            var retryNote = UnreachableNote(batch, "the next check tries again");
             if (imported > 0)
             {
-                return (imported == 1 ? "Imported 1 article." : $"Imported {imported} articles.") + SkippedNote(skipped);
+                return ImportedNote(imported) + SkippedNote(batch.Skipped) + retryNote;
             }
             if (room <= 0)
             {
                 return $"Already imported {perDay} {(perDay == 1 ? "article" : "articles")} from this feed in the last 24 hours, the daily limit.";
             }
-            return skipped > 0 ? "No new articles long enough to import." + SkippedNote(skipped) : "No new articles.";
+            if (batch.Skipped > 0)
+            {
+                return "No new articles long enough to import." + SkippedNote(batch.Skipped) + retryNote;
+            }
+            return batch.Unreachable > 0 ? "Nothing imported." + retryNote : "No new articles.";
         }
 
-        private static string SelectedResultMessage(int imported, int skipped, int gone)
+        private static string SelectedResultMessage(ImportBatch batch, int gone)
         {
-            var goneNote = gone == 0 ? ""
-                : gone == 1 ? " 1 is no longer in the feed."
-                : $" {gone} are no longer in the feed.";
-            if (imported > 0)
+            var notes = SkippedNote(batch.Skipped)
+                + UnreachableNote(batch, "try again later")
+                + (gone == 0 ? ""
+                    : gone == 1 ? " 1 is no longer in the feed."
+                    : $" {gone} are no longer in the feed.");
+            if (batch.Imported.Count > 0)
             {
-                return (imported == 1 ? "Imported 1 article." : $"Imported {imported} articles.") + SkippedNote(skipped) + goneNote;
+                return ImportedNote(batch.Imported.Count) + notes;
             }
-            if (skipped > 0)
-            {
-                return "Nothing imported." + SkippedNote(skipped) + goneNote;
-            }
-            return gone > 0 ? "Nothing imported." + goneNote : "Those articles are already imported.";
+            return notes.Length > 0 ? "Nothing imported." + notes : "Those articles are already imported.";
+        }
+
+        private static string ImportedNote(int imported) =>
+            imported == 1 ? "Imported 1 article." : $"Imported {imported} articles.";
+
+        // " 2 couldn't be loaded right now (g1.globo.com took too long to answer); the next check tries again."
+        private static string UnreachableNote(ImportBatch batch, string then)
+        {
+            if (batch.Unreachable == 0) return "";
+            var reason = batch.UnreachableReason is { } r ? $" ({r.TrimEnd('.')})" : "";
+            return $" {batch.Unreachable} couldn't be loaded right now{reason}; {then}.";
         }
 
         private static string SkippedNote(int skipped) =>
@@ -657,21 +721,42 @@ namespace LinguaReadApi.Services.News
             }
         }
 
-        private async Task<ExtractedArticle?> ReadPageAsync(Uri link, string title, CancellationToken cancellationToken)
+        /// <summary>
+        /// Downloads and extracts an article page. A failure that may pass (a timeout, a 503) is a
+        /// Retry, as is a page of a site given up on in this batch (not asked for); any other
+        /// failure is no article.
+        /// </summary>
+        private async Task<PageRead> ReadPageAsync(Uri link, string title, ImportBatch batch, CancellationToken cancellationToken)
         {
+            if (batch.GivesUpOn(link.Host))
+            {
+                batch.Unreachable++;
+                return new PageRead(null, Retry: true);
+            }
             try
             {
                 var page = await _fetcher.GetAsync(link, cancellationToken);
+                batch.FailuresInARow.Remove(link.Host);
                 if (page.MediaType != null && !page.MediaType.Contains("html", StringComparison.OrdinalIgnoreCase))
                 {
-                    return null;
+                    return new PageRead(null, Retry: false);
                 }
-                return ArticleExtractor.FromPage(page.DecodeText(), page.FinalUrl, title);
+                return new PageRead(ArticleExtractor.FromPage(page.DecodeText(), page.FinalUrl, title), Retry: false);
+            }
+            catch (NewsFetchException ex) when (ex.IsTransient)
+            {
+                batch.FailuresInARow[link.Host] = batch.FailuresInARow.GetValueOrDefault(link.Host) + 1;
+                batch.Unreachable++;
+                batch.UnreachableReason ??= ex.Message;
+                _logger.LogInformation("News article {Url} left for later: {Reason}", link, ex.Message);
+                return new PageRead(null, Retry: true);
             }
             catch (NewsFetchException ex)
             {
+                // The site answered, just not with this article.
+                batch.FailuresInARow.Remove(link.Host);
                 _logger.LogDebug("News article {Url} skipped: {Reason}", link, ex.Message);
-                return null;
+                return new PageRead(null, Retry: false);
             }
         }
 

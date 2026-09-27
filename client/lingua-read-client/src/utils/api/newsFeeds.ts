@@ -32,6 +32,16 @@ export type NewsFeedFetchResult = {
   skipped: number;
   message: string;
   feed: NewsFeed | null;
+  // Picked entries only: what became of each.
+  entries?: NewsEntryOutcome[];
+};
+
+// What became of a picked entry. Unreachable: its page couldn't be loaded right now (a timeout, a
+// 503), and it was left as it was, to be picked again.
+export type NewsEntryOutcome = {
+  key: string;
+  status: 'imported' | 'skipped' | 'alreadyImported' | 'notInFeed' | 'unreachable';
+  textId: number | null;
 };
 
 const toNewsFeed = (dto: NewsFeedDto): NewsFeed => ({
@@ -73,7 +83,12 @@ const toFetchResult = (dto: NewsFeedFetchResultDto): NewsFeedFetchResult => ({
   imported: dto.imported ?? 0,
   skipped: dto.skipped ?? 0,
   message: dto.message ?? '',
-  feed: dto.feed ? toNewsFeed(dto.feed) : null
+  feed: dto.feed ? toNewsFeed(dto.feed) : null,
+  entries: (dto.entries ?? []).map((e) => ({
+    key: e.key ?? '',
+    status: (e.status ?? 'skipped') as NewsEntryOutcome['status'],
+    textId: e.textId ?? null
+  }))
 });
 
 /** Checks the feed now, within the same daily limit as the background import. */
@@ -94,6 +109,8 @@ export type NewsFeedEntry = {
   status: NewsEntryStatus;
   // The imported article, while it's still in the Library.
   textId: number | null;
+  // The article's length, when the feed carries all of it.
+  wordCount: number | null;
 };
 
 type NewsFeedEntriesDto = ResponseOf<'/api/NewsFeeds/{id}/entries', 'get'>;
@@ -110,7 +127,8 @@ export const getNewsFeedEntries = async (id: number): Promise<{ feed: NewsFeed |
       publishedAt: e.publishedAt ?? null,
       summary: e.summary ?? null,
       status: (e.status === 'imported' || e.status === 'skipped' ? e.status : 'new') as NewsEntryStatus,
-      textId: e.textId ?? null
+      textId: e.textId ?? null,
+      wordCount: e.wordCount ?? null
     }))
   };
 };

@@ -90,6 +90,39 @@ public class NewsFetcherTests
     }
 
     [Fact]
+    public async Task GetAsync_GivesUpOnABodyThatStallsAfterTheHeaders()
+    {
+        var fetcher = new NewsFetcher(
+            new HttpClient(new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StreamContent(new StallingStream()) })),
+            TimeSpan.FromMilliseconds(200));
+
+        var ex = await Assert.ThrowsAsync<NewsFetchException>(() =>
+            fetcher.GetAsync(new Uri("https://news.example.com/slow"), CancellationToken.None));
+
+        Assert.Equal("news.example.com took too long to answer.", ex.Message);
+    }
+
+    // Sends a few bytes, then nothing more, like a server that hangs mid-body.
+    private sealed class StallingStream : MemoryStream
+    {
+        private bool _sent;
+
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            if (_sent)
+            {
+                await Task.Delay(Timeout.Infinite, cancellationToken);
+            }
+            _sent = true;
+            buffer.Span[0] = (byte)'<';
+            return 1;
+        }
+
+        public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken) =>
+            ReadAsync(buffer.AsMemory(offset, count), cancellationToken).AsTask();
+    }
+
+    [Fact]
     public async Task GetAsync_ReportsAConnectionDroppedMidBody()
     {
         var fetcher = new NewsFetcher(new HttpClient(new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)

@@ -190,6 +190,10 @@ internal sealed class FakeWeb : HttpMessageHandler
     public void Fail(string url, HttpStatusCode status) =>
         _routes[url] = () => new HttpResponseMessage(status);
 
+    // An error the importer doesn't expect, as opposed to a feed or network problem.
+    public void Throw(string url, Exception exception) =>
+        _routes[url] = () => throw exception;
+
     public int RequestsTo(string url) => Requests.Count(r => r == url);
 
     protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)

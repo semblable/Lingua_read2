@@ -65,10 +65,12 @@ namespace LinguaReadApi.Services.News
         }
 
         private readonly HttpClient _http;
+        private readonly TimeSpan _timeout;
 
-        public NewsFetcher(HttpClient http)
+        public NewsFetcher(HttpClient http, TimeSpan? timeout = null)
         {
             _http = http;
+            _timeout = timeout ?? Timeout;
         }
 
         public static void ConfigureClient(HttpClient client)
@@ -101,6 +103,12 @@ namespace LinguaReadApi.Services.News
                 throw new NewsFetchException("Only http:// and https:// addresses can be used.");
             }
 
+            // HttpClient.Timeout stops at the headers when the body is streamed, so this limit covers
+            // reading the body too: a server that stalls mid-body would otherwise hold the import
+            // (one feed at a time, for every user) until the API restarts.
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeout.CancelAfter(_timeout);
+            var token = timeout.Token;
             try
             {
                 using var request = new HttpRequestMessage(HttpMethod.Get, url);
@@ -109,7 +117,7 @@ namespace LinguaReadApi.Services.News
                     // Replaces the client's default Accept (feeds and pages) for this request.
                     request.Headers.Accept.ParseAdd(accept);
                 }
-                using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+                using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token);
                 if (!response.IsSuccessStatusCode)
                 {
                     throw new NewsFetchException($"{url.Host} answered {(int)response.StatusCode} {response.ReasonPhrase}.".Replace(" .", "."));
@@ -119,11 +127,11 @@ namespace LinguaReadApi.Services.News
                     throw TooLarge(url, maxBytes);
                 }
 
-                await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+                await using var stream = await response.Content.ReadAsStreamAsync(token);
                 using var buffer = new MemoryStream();
                 var chunk = new byte[81920];
                 int read;
-                while ((read = await stream.ReadAsync(chunk, cancellationToken)) > 0)
+                while ((read = await stream.ReadAsync(chunk, token)) > 0)
                 {
                     if (buffer.Length + read > maxBytes)
                     {
@@ -156,9 +164,10 @@ namespace LinguaReadApi.Services.News
                     reason.Contains(url.Host, StringComparison.OrdinalIgnoreCase) ? reason : $"Couldn't reach {url.Host}: {reason}",
                     ex);
             }
-            catch (IOException ex)
+            catch (Exception ex) when (ex is IOException or InvalidDataException)
             {
-                // The connection dropped while the body was being read (HttpIOException).
+                // The connection dropped while the body was being read (HttpIOException), or the
+                // compressed body was corrupt.
                 throw new NewsFetchException($"Couldn't read from {url.Host}: {ex.Message}", ex);
             }
         }

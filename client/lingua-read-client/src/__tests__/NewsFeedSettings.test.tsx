@@ -217,7 +217,7 @@ describe('NewsFeedSettings', () => {
     vi.mocked(getNewsFeeds).mockResolvedValue([feed({ articleCount: 3 })]);
     vi.mocked(getNewsFeedEntries).mockResolvedValue({
       feed: null,
-      entries: [{ key: 'k1', title: 'Um artigo novo', link: null, publishedAt: null, summary: null, status: 'new', textId: null }]
+      entries: [{ key: 'k1', title: 'Um artigo novo', link: null, publishedAt: null, summary: null, status: 'new', textId: null, wordCount: null }]
     });
     vi.mocked(importNewsFeedEntries).mockResolvedValue({
       success: true, imported: 1, skipped: 0, message: 'Imported 1 article.', feed: feed({ articleCount: 4, importedLast24Hours: 1 })
@@ -229,7 +229,7 @@ describe('NewsFeedSettings', () => {
     expect(getNewsFeedEntries).toHaveBeenCalledWith(1);
 
     fireEvent.click(await screen.findByLabelText('Select Um artigo novo'));
-    fireEvent.click(screen.getByRole('button', { name: 'Import 1 selected' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Import 1' }));
 
     expect(await screen.findByText('Imported 1 article.')).toBeInTheDocument();
     expect(importNewsFeedEntries).toHaveBeenCalledWith(1, ['k1']);

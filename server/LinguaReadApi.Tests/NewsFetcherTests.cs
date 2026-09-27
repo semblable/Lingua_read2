@@ -50,6 +50,7 @@ public class NewsFetcherTests
         var ex = await Assert.ThrowsAsync<NewsFetchException>(() => fetcher.GetAsync(new Uri(url), CancellationToken.None));
 
         Assert.Contains("is not a public internet address", ex.Message);
+        Assert.False(ex.IsTransient);
     }
 
     [Theory]
@@ -71,6 +72,40 @@ public class NewsFetcherTests
             fetcher.GetAsync(new Uri("https://news.example.com/rss"), CancellationToken.None));
 
         Assert.Equal("news.example.com answered 404 Not Found.", ex.Message);
+        Assert.False(ex.IsTransient);
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.RequestTimeout, true)]
+    [InlineData(HttpStatusCode.TooManyRequests, true)]
+    [InlineData(HttpStatusCode.InternalServerError, true)]
+    [InlineData(HttpStatusCode.BadGateway, true)]
+    [InlineData(HttpStatusCode.ServiceUnavailable, true)]
+    [InlineData(HttpStatusCode.GatewayTimeout, true)]
+    [InlineData((HttpStatusCode)522, true)]
+    [InlineData(HttpStatusCode.Forbidden, false)]
+    [InlineData(HttpStatusCode.Gone, false)]
+    [InlineData(HttpStatusCode.NotImplemented, false)]
+    public async Task GetAsync_TellsFailuresThatMayPass_FromLastingOnes(HttpStatusCode status, bool transient)
+    {
+        var fetcher = new NewsFetcher(new HttpClient(new StubHandler(_ => new HttpResponseMessage(status))));
+
+        var ex = await Assert.ThrowsAsync<NewsFetchException>(() =>
+            fetcher.GetAsync(new Uri("https://news.example.com/a"), CancellationToken.None));
+
+        Assert.Equal(transient, ex.IsTransient);
+    }
+
+    [Fact]
+    public async Task GetAsync_ANetworkError_MayPass()
+    {
+        var fetcher = new NewsFetcher(new HttpClient(new StubHandler(_ =>
+            throw new HttpRequestException("No such host is known.", new System.Net.Sockets.SocketException(11001)))));
+
+        var ex = await Assert.ThrowsAsync<NewsFetchException>(() =>
+            fetcher.GetAsync(new Uri("https://news.example.com/a"), CancellationToken.None));
+
+        Assert.True(ex.IsTransient);
     }
 
     [Fact]
@@ -100,6 +135,7 @@ public class NewsFetcherTests
             fetcher.GetAsync(new Uri("https://news.example.com/slow"), CancellationToken.None));
 
         Assert.Equal("news.example.com took too long to answer.", ex.Message);
+        Assert.True(ex.IsTransient);
     }
 
     // Sends a few bytes, then nothing more, like a server that hangs mid-body.

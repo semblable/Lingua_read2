@@ -38,7 +38,7 @@ namespace LinguaReadApi.Services.News
             var allowed = addresses.Where(IsPublic).ToArray();
             if (allowed.Length == 0)
             {
-                throw new HttpRequestException($"{host} is not a public internet address.");
+                throw new NotPublicAddressException($"{host} is not a public internet address.");
             }
 
             var socket = new Socket(SocketType.Stream, ProtocolType.Tcp) { NoDelay = true };
@@ -109,5 +109,11 @@ namespace LinguaReadApi.Services.News
 
             return false;
         }
+    }
+
+    /// <summary>The guard's refusal: the address isn't on the public internet, so it never will be fetched.</summary>
+    public sealed class NotPublicAddressException : HttpRequestException
+    {
+        public NotPublicAddressException(string message) : base(message) { }
     }
 }

@@ -185,6 +185,67 @@ public class NewsFeedBrowseTests
     }
 
     [Fact]
+    public async Task ImportSelected_APageThatFailedForNow_IsLeftAsItWas_ToBePickedAgain()
+    {
+        await using var h = await CreateAsync();
+        Serve(h, Articles(h));
+        var feedId = await h.AddFeedAsync();
+        await h.ImportAsync(feedId); // skips Curto
+        DateTime curtoSeen;
+        await using (var context = h.NewContext())
+        {
+            curtoSeen = (await context.NewsFeedItems.SingleAsync(i => i.ItemKey == Key("https://news.example.com/curto"))).FirstSeenAt;
+        }
+        h.Web.Fail("https://news.example.com/curto", HttpStatusCode.GatewayTimeout);
+        h.Web.Fail("https://news.example.com/4", HttpStatusCode.GatewayTimeout);
+        h.Web.Fail("https://news.example.com/5", HttpStatusCode.GatewayTimeout);
+        h.Time.Advance(TimeSpan.FromHours(1));
+
+        var result = await ImportSelectedAsync(h, feedId,
+            "https://news.example.com/curto", "https://news.example.com/4", "https://news.example.com/5");
+
+        Assert.True(result.Success);
+        Assert.Equal(0, result.Imported);
+        Assert.Equal(3, result.Unreachable);
+        Assert.Equal(
+            "Nothing imported. 3 couldn't be loaded right now (news.example.com answered 504 Gateway Timeout); try again later.",
+            result.Message);
+        Assert.All(result.Entries!, e => Assert.Equal(NewsEntryStatus.Unreachable, e.Status));
+        // Two failures in a row, so the third pick wasn't asked for.
+        Assert.Equal(0, h.Web.RequestsTo("https://news.example.com/5"));
+        await using (var context = h.NewContext())
+        {
+            // Curto is still the entry skipped before, and Quatro is still new.
+            var curto = await context.NewsFeedItems.SingleAsync(i => i.ItemKey == Key("https://news.example.com/curto"));
+            Assert.False(curto.Imported);
+            Assert.Equal(curtoSeen, curto.FirstSeenAt);
+            Assert.False(await context.NewsFeedItems.AnyAsync(i => i.ItemKey == Key("https://news.example.com/4")));
+        }
+
+        h.Web.Serve("https://news.example.com/4", ArticlePage("Quatro"));
+        var retry = await ImportSelectedAsync(h, feedId, "https://news.example.com/4");
+
+        Assert.Equal(1, retry.Imported);
+        Assert.Equal(NewsEntryStatus.Imported, Assert.Single(retry.Entries!).Status);
+    }
+
+    [Fact]
+    public async Task Browse_GivesTheLengthOfArticlesTheFeedCarriesWhole()
+    {
+        await using var h = await CreateAsync();
+        var now = h.Time.GetUtcNow();
+        h.Web.ServeFeed(FeedUrl, Rss("Notícias",
+            new Item("Inteiro", "https://news.example.com/inteiro", now.AddHours(-1), ContentHtml: ArticleBody("Inteiro", 8)),
+            new Item("Só o link", "https://news.example.com/link", now.AddHours(-2))));
+        var feedId = await h.AddFeedAsync();
+
+        var entries = await BrowseAsync(h, feedId);
+
+        Assert.InRange(entries[0].WordCount!.Value, NewsFeedImporter.MinArticleWords, 400);
+        Assert.Null(entries[1].WordCount);
+    }
+
+    [Fact]
     public async Task ImportSelected_OnlyAlreadyImportedPicks_SaysSo()
     {
         await using var h = await CreateAsync();

@@ -1085,6 +1085,65 @@ html {
   overflow: hidden;
 }
 
+/* Browse articles: rows are separated by a hairline; a whole row picks its article. */
+.news-entry {
+  border-bottom: 1px solid color-mix(in srgb, currentColor 15%, transparent);
+  border-radius: 0.375rem;
+}
+
+.news-entry-pick {
+  cursor: pointer;
+}
+
+.news-entry.news-entry-selected {
+  background: color-mix(in srgb, var(--accent-color) 16%, transparent);
+}
+
+/* Only where there's a pointer: on a touch screen a tapped row would keep its hover look. */
+@media (hover: hover) {
+  .news-entry:not(.news-entry-selected):has(.news-entry-pick):hover {
+    background: color-mix(in srgb, currentColor 6%, transparent);
+  }
+}
+
+/* The checkbox (or the imported tick) lines up with the title's first line, a bit larger to tap. */
+.news-entry-mark {
+  flex-shrink: 0;
+  width: 1.25rem;
+  margin-top: 0.15rem;
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
+.news-entry-mark .form-check-input {
+  width: 1.1rem;
+  height: 1.1rem;
+  margin: 0;
+  float: none;
+  cursor: pointer;
+}
+
+.news-entry-mark.form-check {
+  padding-left: 0;
+  min-height: 0;
+}
+
+.news-browser-search {
+  flex: 1 1 12rem;
+  max-width: 20rem;
+}
+
+/* The filters not shown, and the footer's Select all / Clear, in the theme's text and link colours
+   (Bootstrap's grey outline and blue link are hard to read on the dark themes). */
+.news-browser-filter.btn {
+  color: inherit;
+  border-color: color-mix(in srgb, currentColor 35%, transparent);
+}
+
+.news-browser-link.btn-link {
+  color: var(--link-color);
+}
+
 /* Library card titles: up to two lines, then an ellipsis (the full title is the tooltip). */
 .library-card-title {
   display: -webkit-box;

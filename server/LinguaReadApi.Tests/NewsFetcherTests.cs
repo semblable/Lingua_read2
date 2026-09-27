@@ -90,6 +90,75 @@ public class NewsFetcherTests
     }
 
     [Fact]
+    public async Task GetAsync_ReportsAConnectionDroppedMidBody()
+    {
+        var fetcher = new NewsFetcher(new HttpClient(new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StreamContent(new DroppingStream())
+        })));
+
+        var ex = await Assert.ThrowsAsync<NewsFetchException>(() =>
+            fetcher.GetAsync(new Uri("https://news.example.com/page"), CancellationToken.None));
+
+        Assert.StartsWith("Couldn't read from news.example.com", ex.Message);
+    }
+
+    // Sends a few bytes, then fails like a reset connection.
+    private sealed class DroppingStream : MemoryStream
+    {
+        private bool _sent;
+
+        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            if (_sent) throw new IOException("The response ended prematurely.");
+            _sent = true;
+            buffer.Span[0] = (byte)'<';
+            return ValueTask.FromResult(1);
+        }
+
+        public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken) =>
+            ReadAsync(buffer.AsMemory(offset, count), cancellationToken).AsTask();
+    }
+
+    [Fact]
+    public async Task GetImageAsync_KeepsToTheImageCap_EvenWithoutAContentLength()
+    {
+        var body = new byte[LeadImage.MaxBytes + 1];
+        var fetcher = new NewsFetcher(new HttpClient(new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StreamContent(new MemoryStream(body))
+        })));
+
+        var ex = await Assert.ThrowsAsync<NewsFetchException>(() =>
+            fetcher.GetImageAsync(new Uri("https://img.example.com/huge.jpg"), LeadImage.MaxBytes, CancellationToken.None));
+
+        Assert.Contains("more than 2 MB", ex.Message);
+    }
+
+    [Fact]
+    public async Task GetImageAsync_AsksForPicturesBrowsersShow_AndReturnsTheBytes()
+    {
+        string? accept = null;
+        var http = new HttpClient(new StubHandler(request =>
+        {
+            accept = request.Headers.Accept.ToString();
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent([0xFF, 0xD8, 0xFF, 0xE0]) };
+        }));
+        NewsFetcher.ConfigureClient(http);
+        var fetcher = new NewsFetcher(http);
+
+        var image = await fetcher.GetImageAsync(new Uri("https://img.example.com/a.jpg"), LeadImage.MaxBytes, CancellationToken.None);
+
+        Assert.Equal([0xFF, 0xD8, 0xFF, 0xE0], image.Body);
+        Assert.Contains("image/webp", accept);
+        Assert.Contains("image/jpeg", accept);
+        // The client's default Accept (feeds and pages) is replaced, not added to.
+        Assert.DoesNotContain("rss", accept);
+        // Sites that pick the format from Accept would otherwise send AVIF, which older Safari can't show.
+        Assert.DoesNotContain("avif", accept);
+    }
+
+    [Fact]
     public void DecodeText_UsesTheHeaderCharsetThenTheMetaTagThenUtf8()
     {
         var latin1Page = Encoding.Latin1.GetBytes("<html><head><meta charset=\"iso-8859-1\"></head><body>Manhã</body></html>");

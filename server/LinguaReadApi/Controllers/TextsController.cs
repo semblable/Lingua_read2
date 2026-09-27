@@ -46,6 +46,9 @@ namespace LinguaReadApi.Controllers
             _statsRecompute = statsRecompute;
         }
 
+        /// <summary>Where uploaded media lives; tests point it at a temp directory. Null is the app's wwwroot.</summary>
+        internal string? WebRoot { get; init; }
+
         // GET: api/texts
         [HttpGet]
         public async Task<ActionResult<IEnumerable<TextDto>>> GetTexts()
@@ -539,7 +542,7 @@ namespace LinguaReadApi.Controllers
         }
 
         private void TryDeleteAudioFile(string? relativeAudioPath)
-            => BookAssetStorage.DeleteAudioLessonFile(relativeAudioPath, _logger);
+            => BookAssetStorage.DeleteAudioLessonFile(relativeAudioPath, _logger, WebRoot);
 
         // Placeholder for SRT parsing logic
         private string ParseSrt(string srtContent)
@@ -999,6 +1002,9 @@ namespace LinguaReadApi.Controllers
 
             _context.Texts.Remove(text);
             await _context.SaveChangesAsync();
+
+            // A news article's lead photo; best-effort, after the commit.
+            BookAssetStorage.DeleteNewsImages(userId, [id], _logger, WebRoot);
 
             return NoContent(); // Standard response for successful DELETE
         }

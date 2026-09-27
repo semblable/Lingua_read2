@@ -30,6 +30,9 @@ namespace LinguaReadApi.Services
             _cache = cache;
         }
 
+        /// <summary>Where uploaded media lives; tests point it at a temp directory. Null is the app's wwwroot.</summary>
+        internal string? WebRoot { get; init; }
+
         private async Task<List<Language>> GetLanguagesCachedAsync()
         {
             var languages = await _cache.GetOrCreateAsync(LanguagesCacheKey, async entry =>
@@ -244,6 +247,12 @@ namespace LinguaReadApi.Services
                              && t.IsAudioLesson && t.AudioFilePath != null)
                     .Select(t => t.AudioFilePath!)
                     .ToListAsync();
+                // Candidates for a news article's lead photo: any text outside a book, since an
+                // article whose feed was removed is no longer marked as one.
+                var standaloneTextIds = await _context.Texts
+                    .Where(t => t.UserId == userId && t.LanguageId == languageId && t.BookId == null)
+                    .Select(t => t.TextId)
+                    .ToListAsync();
 
                 // SrsPhrase.WordId is Restrict, so remove phrases tied to this user's words in this language
                 // before deleting the words themselves.
@@ -283,12 +292,13 @@ namespace LinguaReadApi.Services
                 // Best-effort, after the commit: a disk failure must not undo the reset.
                 foreach (var bookId in bookIdsToDelete)
                 {
-                    BookAssetStorage.DeleteBookAssets(userId, bookId);
+                    BookAssetStorage.DeleteBookAssets(userId, bookId, webRoot: WebRoot);
                 }
                 foreach (var audioPath in audioFilePathsToDelete)
                 {
-                    BookAssetStorage.DeleteAudioLessonFile(audioPath);
+                    BookAssetStorage.DeleteAudioLessonFile(audioPath, webRoot: WebRoot);
                 }
+                BookAssetStorage.DeleteNewsImages(userId, standaloneTextIds, webRoot: WebRoot);
 
                 return true;
             });

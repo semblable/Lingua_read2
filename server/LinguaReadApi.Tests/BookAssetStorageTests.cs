@@ -144,4 +144,61 @@ public class BookAssetStorageTests : IDisposable
     {
         BookAssetStorage.DeleteBookAssets(Guid.NewGuid(), 99, webRoot: _webRoot);
     }
+
+    [Fact]
+    public void DeleteNewsImages_RemovesOnlyTheGivenTextsPhotos_WhateverTheirType()
+    {
+        var userId = Guid.NewGuid();
+        var newsDir = BookAssetStorage.NewsImageDirectory(userId, _webRoot);
+        Assert.Equal(Path.Combine(_webRoot, "epub_assets", userId.ToString(), "news"), newsDir);
+        Directory.CreateDirectory(newsDir);
+        foreach (var name in new[] { "1.jpg", "12.webp", "123.png", "7.avif" })
+        {
+            File.WriteAllText(Path.Combine(newsDir, name), "img");
+        }
+
+        BookAssetStorage.DeleteNewsImages(userId, [1, 7, 999], webRoot: _webRoot);
+
+        Assert.Equal(["12.webp", "123.png"], Directory.GetFiles(newsDir).Select(Path.GetFileName).Order());
+    }
+
+    [Fact]
+    public void BookAndNewsMedia_ShareTheUsersEpubFolderWithoutTouchingEachOther()
+    {
+        // Book folders are named by the integer book id, so deleting a book never reaches "news",
+        // and deleting a text's photo never reaches a book's images.
+        var userId = Guid.NewGuid();
+        var bookImage = Path.Combine(_webRoot, "epub_assets", userId.ToString(), "5", "img_0001.jpg");
+        Directory.CreateDirectory(Path.GetDirectoryName(bookImage)!);
+        File.WriteAllText(bookImage, "img");
+        var newsImage = Path.Combine(BookAssetStorage.NewsImageDirectory(userId, _webRoot), "5.jpg");
+        Directory.CreateDirectory(Path.GetDirectoryName(newsImage)!);
+        File.WriteAllText(newsImage, "img");
+
+        BookAssetStorage.DeleteBookAssets(userId, 5, webRoot: _webRoot);
+        Assert.False(File.Exists(bookImage));
+        Assert.True(File.Exists(newsImage));
+
+        var otherBookImage = Path.Combine(_webRoot, "epub_assets", userId.ToString(), "6", "img_0001.jpg");
+        Directory.CreateDirectory(Path.GetDirectoryName(otherBookImage)!);
+        File.WriteAllText(otherBookImage, "img");
+        BookAssetStorage.DeleteNewsImages(userId, [5, 6], webRoot: _webRoot);
+        Assert.False(File.Exists(newsImage));
+        Assert.True(File.Exists(otherBookImage));
+    }
+
+    [Fact]
+    public void DeleteNewsImages_IsSafe_WhenNothingWasEverWritten()
+    {
+        BookAssetStorage.DeleteNewsImages(Guid.NewGuid(), [1, 2], webRoot: _webRoot);
+        BookAssetStorage.DeleteNewsImages(Guid.NewGuid(), [], webRoot: _webRoot);
+    }
+
+    [Fact]
+    public void NewsImageUrl_IsRelativeToTheWebRoot_LikeEpubImages()
+    {
+        var userId = Guid.Parse("11111111-1111-1111-1111-111111111111");
+
+        Assert.Equal("epub_assets/11111111-1111-1111-1111-111111111111/news/42.webp", BookAssetStorage.NewsImageUrl(userId, 42, ".webp"));
+    }
 }

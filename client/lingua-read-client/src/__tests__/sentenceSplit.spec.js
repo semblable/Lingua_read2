@@ -101,6 +101,41 @@ describe('splitTextIntoSentenceSegments — paragraphs and titles', () => {
   });
 });
 
+describe('splitTextIntoSentenceSegments — a news article with a lead photo', () => {
+  // The news import keeps content as the paragraphs joined by blank lines and stores
+  // [image, paragraph, …] as structuredContent. Bookmarks and reading progress are keyed by
+  // segment index, so the photo must not take one.
+  const portugueseCfg = { code: 'pt', splitSentences: '.!?', sentenceSplitExceptions: [] };
+  const content = 'O governo anunciou medidas. A oposição criticou.\n\nOs moradores esperam respostas.';
+  const blocks = [
+    { type: 'image', imageUrl: 'epub_assets/u/news/7.jpg', altText: null, caption: 'Moradores em frente à câmara', meta: null },
+    { type: 'paragraph', text: 'O governo anunciou medidas. A oposição criticou.' },
+    { type: 'paragraph', text: 'Os moradores esperam respostas.' }
+  ];
+
+  test('numbers the sentences exactly as without the photo', () => {
+    const withPhoto = splitTextIntoSentenceSegments(content, blocks, portugueseCfg, 'pt');
+    const withoutPhoto = splitTextIntoSentenceSegments(content, [], portugueseCfg, 'pt');
+
+    const shape = (segments) => segments.map(s => [s.index, s.type, s.text]);
+    expect(shape(withPhoto)).toEqual(shape(withoutPhoto));
+    expect(sentenceTexts(withPhoto)).toEqual([
+      'O governo anunciou medidas.',
+      'A oposição criticou.',
+      'Os moradores esperam respostas.'
+    ]);
+  });
+
+  test('shows the photo with the first sentence (sentence mode)', () => {
+    const segments = splitTextIntoSentenceSegments(content, blocks, portugueseCfg, 'pt');
+
+    expect(segments[0].mediaBlocks).toEqual([
+      expect.objectContaining({ type: 'image', imageUrl: '/epub_assets/u/news/7.jpg', caption: 'Moradores em frente à câmara' })
+    ]);
+    expect(segments.slice(1).every(s => s.mediaBlocks.length === 0)).toBe(true);
+  });
+});
+
 describe('splitTextIntoSentenceSegments — backwards compatible call shape', () => {
   test('works with no language config (legacy callers)', () => {
     const segs = splitTextIntoSentenceSegments('Hello. World.');

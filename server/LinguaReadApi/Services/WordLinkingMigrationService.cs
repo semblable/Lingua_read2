@@ -70,13 +70,16 @@ namespace LinguaReadApi.Services
             }
         }
 
-        private async Task RunMigration(CancellationToken stoppingToken)
+        internal async Task RunMigration(CancellationToken stoppingToken)
         {
             int totalProcessed = 0;
             int totalErrors = 0;
             int reportedTotal = -1;
             var rekeyPending = false;
-            var failedIds = new HashSet<int>();
+            // Every text is tried once per pass, relinked or failed. A relink that leaves a text
+            // below the current version (as empty texts once did) must not bring it back into the
+            // next batch: the pass would never end, and StatsRecomputeService waits for it.
+            var attemptedIds = new HashSet<int>();
 
             while (!stoppingToken.IsCancellationRequested)
             {
@@ -115,7 +118,7 @@ namespace LinguaReadApi.Services
                     batch = await context.Texts
                         .AsNoTracking()
                         .Where(t =>
-                            !failedIds.Contains(t.TextId) &&
+                            !attemptedIds.Contains(t.TextId) &&
                             (t.WordLinkingTokenizerVersion == null ||
                             t.WordLinkingTokenizerVersion < WordLinker.CurrentTokenizerVersion))
                         .OrderBy(t => t.TextId)
@@ -139,6 +142,7 @@ namespace LinguaReadApi.Services
                 {
                     if (stoppingToken.IsCancellationRequested) return;
 
+                    attemptedIds.Add(textId);
                     try
                     {
                         // Each text gets its own scope/context to keep
@@ -152,7 +156,6 @@ namespace LinguaReadApi.Services
                     catch (Exception ex) when (ex is not OperationCanceledException)
                     {
                         totalErrors++;
-                        failedIds.Add(textId);
                         _logger.LogError(ex,
                             "WordLinkingMigrationService: failed to re-link TextId={TextId}", textId);
                     }

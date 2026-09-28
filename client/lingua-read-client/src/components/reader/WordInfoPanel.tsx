@@ -49,6 +49,8 @@ export type WordInfoSpeechState = {
 
 export type WordInfoActions = {
   onSaveWord: (status: number) => void | Promise<void>;
+  // Saves the box as it is, keeping the status (New for an untracked word); same as Enter.
+  onSaveTranslation?: () => void;
   onMineSentence: () => void;
   processingWord: boolean;
   onReadingCredit?: (wordId: number | string) => void;
@@ -122,14 +124,16 @@ const WordInfoPanel = React.memo(({
     .filter(dict => dict.isActive && dict.purpose === 'terms')
     .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
 
+  const hasUnsavedNewWord = !isTracked && !!translation.value.trim();
   let hint: React.ReactNode = null;
   if (translation.isTranslating) {
     hint = <><Spinner size="sm" className="me-1" />Translating…</>;
   } else if (hasUnsavedTranslation) {
-    hint = <span className="word-info-hint-unsaved">Translation not saved yet. Press Enter to save it.</span>;
-  } else if (!isTracked && translation.value.trim()) {
-    hint = 'Not saved yet. Pick a status, or press Enter to save it as New.';
+    hint = <span className="word-info-hint-unsaved">Translation not saved yet.</span>;
+  } else if (hasUnsavedNewWord) {
+    hint = 'Not saved yet. Pick a status, or Save to add it as New.';
   }
+  const showSaveButton = !!actions.onSaveTranslation && (hasUnsavedTranslation || hasUnsavedNewWord);
 
   return (
     <div className="word-info-panel">
@@ -151,7 +155,23 @@ const WordInfoPanel = React.memo(({
         disabled={translation.isTranslating}
         size="sm"
       />
-      {hint && <div className="word-info-hint" aria-live="polite">{hint}</div>}
+      {(hint || showSaveButton) && (
+        <div className="word-info-save-row">
+          <div className="word-info-hint" aria-live="polite">{hint}</div>
+          {showSaveButton && (
+            <Button
+              variant="primary"
+              size="sm"
+              className="py-0 px-2 ms-auto"
+              onClick={actions.onSaveTranslation}
+              disabled={statusButtonsDisabled}
+              title={isTracked ? 'Save this translation (Enter)' : 'Save this word as New (Enter)'}
+            >
+              Save
+            </Button>
+          )}
+        </div>
+      )}
       {translation.error && <Alert variant="danger" className="py-1 px-2 mt-1 mb-0 small">{translation.error}</Alert>}
       <div className="d-flex flex-wrap gap-1 mt-2 word-status-row" role="group" aria-label="Word status">
         {WORD_STATUS_VALUES.map(s => (

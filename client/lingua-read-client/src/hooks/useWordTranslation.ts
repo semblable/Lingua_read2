@@ -1,4 +1,4 @@
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { translateText, translateSelectionWithContext } from '../utils/api';
 import type { Settings } from '../contexts/SettingsContext';
 import type { Text as TextDto } from '../utils/api/texts';
@@ -25,10 +25,11 @@ export type UseWordTranslationResult = {
     term: string,
     options?: { sentenceContext?: string; force?: boolean }
   ) => Promise<void>;
+  // Resolves to the box text after the append, or null when nothing changed.
   appendAutoTranslation: (
     term: string,
     options?: { sentenceContext?: string }
-  ) => Promise<void>;
+  ) => Promise<string | null>;
   cancelInflight: () => void;
   clearCache: () => void;
 };
@@ -46,10 +47,18 @@ export const useWordTranslation = ({
   const [wordTranslationError, setWordTranslationError] = useState('');
   const translationAbortRef = useRef<AbortController | null>(null);
   const translationCacheRef = useRef<Map<string, string>>(new Map());
+  // The box can't be edited mid-request (it is disabled), so this is current when a request lands.
+  const translationRef = useRef(translation);
+
+  useEffect(() => {
+    translationRef.current = translation;
+  }, [translation]);
 
   const cancelInflight = useCallback(() => {
     translationAbortRef.current?.abort();
     translationAbortRef.current = null;
+    // The cancelled request's finally no longer owns the flag, so reset it here.
+    setIsTranslating(false);
   }, []);
 
   const clearCache = useCallback(() => {
@@ -92,6 +101,7 @@ export const useWordTranslation = ({
         const result = useContext
           ? await translateSelectionWithContext(termToTranslate, sentenceContext, text.languageCode, targetLanguageCode, { signal: controller.signal })
           : await translateText(termToTranslate, text.languageCode, targetLanguageCode, { signal: controller.signal });
+        if (controller.signal.aborted) return;
         if (result?.translatedText) {
           const cache = translationCacheRef.current;
           cache.set(cacheKey, result.translatedText);
@@ -129,9 +139,9 @@ export const useWordTranslation = ({
     async (
       termToTranslate: string,
       options: { sentenceContext?: string } = {}
-    ) => {
+    ): Promise<string | null> => {
       const { sentenceContext = '' } = options;
-      if (!termToTranslate || !text?.languageCode || !sentenceContext) return;
+      if (!termToTranslate || !text?.languageCode || !sentenceContext) return null;
 
       translationAbortRef.current?.abort();
       const controller = new AbortController();
@@ -147,10 +157,11 @@ export const useWordTranslation = ({
           targetLanguageCode,
           { signal: controller.signal }
         );
+        if (controller.signal.aborted) return null;
         const newTranslation = result?.translatedText?.trim();
         if (!newTranslation) {
           setWordTranslationError('Translation not found.');
-          return;
+          return null;
         }
 
         const cacheKey = `${text.languageCode}|${targetLanguageCode}|sel|${sentenceContext}|${termToTranslate}`;
@@ -161,25 +172,23 @@ export const useWordTranslation = ({
           if (oldestKey !== undefined) cache.delete(oldestKey);
         }
 
-        setTranslation(prev => {
-          const existing = (prev || '').trim();
-          if (!existing) {
-            applyTranslationToDisplayedWord(termToTranslate, newTranslation);
-            return newTranslation;
-          }
+        const existing = (translationRef.current || '').trim();
+        let combined = newTranslation;
+        if (existing) {
           const haystack = existing.toLowerCase();
           const needle = newTranslation.toLowerCase();
           if (haystack === needle || haystack.split(/\s*,\s*/).includes(needle)) {
-            return existing;
+            return null;
           }
-          const combined = `${existing}, ${newTranslation}`;
-          applyTranslationToDisplayedWord(termToTranslate, combined);
-          return combined;
-        });
+          combined = `${existing}, ${newTranslation}`;
+        }
+        setTranslation(combined);
+        applyTranslationToDisplayedWord(termToTranslate, combined);
+        return combined;
       } catch (err: unknown) {
         const e = err as ApiError;
         if (e?.name === 'AbortError' || controller.signal.aborted) {
-          return;
+          return null;
         }
         console.error('Append translation failed:', err);
         if (e?.status === 429) {
@@ -187,6 +196,7 @@ export const useWordTranslation = ({
         } else {
           setWordTranslationError(`Translation failed: ${e?.message}`);
         }
+        return null;
       } finally {
         if (translationAbortRef.current === controller) {
           translationAbortRef.current = null;

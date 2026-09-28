@@ -250,6 +250,9 @@ describe('DownloadForOfflineButton', () => {
         'data-download-state', 'cached'
       );
     });
+    // A readable status, not a greyed-out disabled button.
+    expect(screen.getByTestId('download-offline-button')).toHaveTextContent('Available offline');
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
   });
 
   test('is disabled when given an empty url list', async () => {

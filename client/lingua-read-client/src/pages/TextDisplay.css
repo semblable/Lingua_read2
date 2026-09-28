@@ -841,6 +841,18 @@
   font-weight: 600;
 }
 
+/* Hint and Save button share a row; the button sits outside the hint so it isn't dimmed. */
+.word-info-save-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+}
+
+.word-info-save-row .word-info-hint {
+  margin-top: 0;
+}
+
 /* Status tints match the words in the text; Known and Ignored have none there, so they get a
    neutral one here. */
 .word-info-panel [data-status] {

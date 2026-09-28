@@ -123,27 +123,62 @@ describe('useWordTranslation', () => {
     act(() => {
       result.current.setTranslation('fruit');
     });
+    let returned;
     await act(async () => {
-      await result.current.appendAutoTranslation('manzana', { sentenceContext: 'Una manzana roja' });
+      returned = await result.current.appendAutoTranslation('manzana', { sentenceContext: 'Una manzana roja' });
     });
     await waitFor(() => {
       expect(result.current.translation).toBe('fruit, apple');
     });
+    // The caller saves this text, so it must match what the box now shows.
+    expect(returned).toBe('fruit, apple');
     expect(applyTranslationToDisplayedWord).toHaveBeenCalledWith('manzana', 'fruit, apple');
   });
 
   test('appendAutoTranslation skips duplicate context translations', async () => {
     translateSelectionWithContext.mockResolvedValueOnce({ translatedText: 'apple' });
-    const { result } = renderTranslationHook();
+    const { result, applyTranslationToDisplayedWord } = renderTranslationHook();
     act(() => {
       result.current.setTranslation('apple');
     });
+    let returned;
     await act(async () => {
-      await result.current.appendAutoTranslation('manzana', { sentenceContext: 'Una manzana' });
+      returned = await result.current.appendAutoTranslation('manzana', { sentenceContext: 'Una manzana' });
     });
     await waitFor(() => {
       expect(result.current.translation).toBe('apple');
     });
+    expect(returned).toBeNull();
+    expect(applyTranslationToDisplayedWord).not.toHaveBeenCalled();
+  });
+
+  test('appendAutoTranslation ignores a response that lands after cancelInflight', async () => {
+    let resolveRequest;
+    translateSelectionWithContext.mockImplementation(() => new Promise(resolve => { resolveRequest = resolve; }));
+    const { result, applyTranslationToDisplayedWord } = renderTranslationHook();
+    act(() => {
+      result.current.setTranslation('fruit');
+    });
+    let pending;
+    act(() => {
+      pending = result.current.appendAutoTranslation('manzana', { sentenceContext: 'Una manzana' });
+    });
+    expect(result.current.isTranslating).toBe(true);
+
+    act(() => {
+      result.current.cancelInflight();
+    });
+    // Nothing else will clear the flag: the cancelled request no longer owns it.
+    expect(result.current.isTranslating).toBe(false);
+
+    let returned;
+    await act(async () => {
+      resolveRequest({ translatedText: 'apple' });
+      returned = await pending;
+    });
+    expect(returned).toBeNull();
+    expect(result.current.translation).toBe('fruit');
+    expect(applyTranslationToDisplayedWord).not.toHaveBeenCalled();
   });
 
   test('cancelInflight aborts the in-flight request', async () => {

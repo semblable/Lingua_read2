@@ -89,6 +89,50 @@ describe('WordInfoPanel', () => {
     expect(screen.getByText(/Not saved yet/)).toBeInTheDocument();
   });
 
+  test('offers a Save button only while the box holds something unsaved', () => {
+    const onSaveTranslation = vi.fn();
+    const translation = (value, saved, extra = {}) => ({
+      value, saved, setValue: vi.fn(), onKeyDown: vi.fn(), isTranslating: false, error: null, ...extra
+    });
+    const actions = (extra = {}) => ({
+      onSaveWord: vi.fn(), onSaveTranslation, onMineSentence: vi.fn(), processingWord: false, ...extra
+    });
+    const { rerender } = render(
+      <WordInfoPanel {...baseProps({ translation: translation('cat', 'cat'), actions: actions() })} />
+    );
+    expect(screen.queryByRole('button', { name: /^Save$/ })).not.toBeInTheDocument();
+
+    rerender(<WordInfoPanel {...baseProps({ translation: translation('cat, kitten', 'cat'), actions: actions() })} />);
+    fireEvent.click(screen.getByRole('button', { name: /^Save$/ }));
+    expect(onSaveTranslation).toHaveBeenCalledTimes(1);
+
+    rerender(
+      <WordInfoPanel
+        {...baseProps({ translation: translation('cat, kitten', 'cat'), actions: actions({ processingWord: true }) })}
+      />
+    );
+    expect(screen.getByRole('button', { name: /^Save$/ })).toBeDisabled();
+
+    rerender(
+      <WordInfoPanel
+        {...baseProps({ translation: translation('cat, kitten', 'cat', { isTranslating: true }), actions: actions() })}
+      />
+    );
+    expect(screen.getByRole('button', { name: /^Save$/ })).toBeDisabled();
+
+    // An untracked word with text saves as New.
+    rerender(
+      <WordInfoPanel
+        {...baseProps({
+          displayedWord: { term: 'gato', status: 0, isNew: true },
+          translation: translation('cat', undefined),
+          actions: actions()
+        })}
+      />
+    );
+    expect(screen.getByRole('button', { name: /^Save$/ })).toHaveAttribute('title', expect.stringMatching(/as New/));
+  });
+
   test('renders five status buttons and invokes onSaveWord with the chosen status', () => {
     const onSaveWord = vi.fn();
     render(

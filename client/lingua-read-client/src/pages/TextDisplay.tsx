@@ -615,6 +615,8 @@ const TextDisplay = () => {
   ) => {
     const { skipAutoTranslate = false, preserveLastHandledSelection = false, selectionContext = '' } = options;
     clearPendingSelection();
+    // A request still running for the previous word must not land in (or be saved from) this one.
+    cancelInflightTranslation();
     if (!preserveLastHandledSelection) {
       lastHandledSelectionRef.current = '';
     }
@@ -646,7 +648,7 @@ const TextDisplay = () => {
       setTranslation('');
       if (!skipAutoTranslate) triggerAutoTranslation(word);
     }
-  }, [clearPendingSelection, getWordData, globalSettings.pauseOnWordClick, isAudioLesson, triggerAutoTranslation, setSelectedWord, setTranslation, setWordTranslationError, setDisplayedWord, isMobile, pauseAudioPlayback, setSegmentPlaybackRequest]); // Dependencies using globalSettings don't need it listed if context handles updates
+  }, [clearPendingSelection, cancelInflightTranslation, getWordData, globalSettings.pauseOnWordClick, isAudioLesson, triggerAutoTranslation, setSelectedWord, setTranslation, setWordTranslationError, setDisplayedWord, isMobile, pauseAudioPlayback, setSegmentPlaybackRequest]); // Dependencies using globalSettings don't need it listed if context handles updates
 
   // Removed handleTextSelection as selection is now handled by onMouseUp on the container
 
@@ -1589,25 +1591,28 @@ const TextDisplay = () => {
 
   // --- Event Handlers ---
 
-  const handleSaveWord = useCallback(async (status: number | string) => {
+  // translationOverride: the text to store when the caller has one newer than this render's
+  // `translation` (the + AI auto-save runs after an await).
+  const handleSaveWord = useCallback(async (status: number | string, translationOverride?: string) => {
     // Ensure selectedWord is used here, as displayedWord might be slightly different if selection changed rapidly
     const termToSave = selectedWord || displayedWord?.term;
     if (!termToSave || processingWord || isTranslating) {
       return;
     }
+    const translationToSave = translationOverride ?? translation;
     setSaveSuccess(false); setProcessingWord(true);
     try {
       const numericStatus = parseInt(String(status), 10);
       if (isNaN(numericStatus) || numericStatus < 1 || numericStatus > 6) throw new Error(`Invalid status: ${status}.`);
       const existingWord = getWordData(selectedWord);
       if (existingWord) {
-        await updateWord(existingWord.wordId!, numericStatus, translation);
+        await updateWord(existingWord.wordId!, numericStatus, translationToSave);
         // From the list as it is now: a batch save may have merged rows in during the await.
-        setWords(prev => prev.map(w => w.wordId === existingWord.wordId ? { ...w, status: numericStatus, translation } : w));
-        setDisplayedWord((prev) => (prev?.term === selectedWord ? { ...prev, status: numericStatus, translation } : prev));
+        setWords(prev => prev.map(w => w.wordId === existingWord.wordId ? { ...w, status: numericStatus, translation: translationToSave } : w));
+        setDisplayedWord((prev) => (prev?.term === selectedWord ? { ...prev, status: numericStatus, translation: translationToSave } : prev));
       } else {
         if (text?.textId == null) return;
-        const newWordData = (await createWord(text.textId, selectedWord, numericStatus, translation, currentSentenceSegment?.text)) as Record<string, unknown> | null;
+        const newWordData = (await createWord(text.textId, selectedWord, numericStatus, translationToSave, currentSentenceSegment?.text)) as Record<string, unknown> | null;
         setWords((prevWords: any[]) => [...prevWords, newWordData]);
         setDisplayedWord({ ...(newWordData || {}), isNew: false });
       }
@@ -1666,24 +1671,31 @@ const TextDisplay = () => {
     });
   }, [displayedWord?.term, triggerAutoTranslation, wordInfoRetranslateContext]);
 
-  const handleAddTranslationWithContext = useCallback(() => {
+  const handleAddTranslationWithContext = useCallback(async () => {
     if (!displayedWord?.term) return;
-    appendAutoTranslation(displayedWord.term, {
+    const status = displayedWord.status ?? 0;
+    const isTracked = status > 0 && !!displayedWord.wordId;
+    const updated = await appendAutoTranslation(displayedWord.term, {
       sentenceContext: wordInfoRetranslateContext,
     });
-  }, [displayedWord?.term, appendAutoTranslation, wordInfoRetranslateContext]);
+    // A tracked word keeps the added sense without an Enter; an untracked one still waits for a status.
+    // Switching words cancels the request, so `updated` is null if the panel moved on.
+    if (updated !== null && isTracked) void handleSaveWord(status, updated);
+  }, [displayedWord, appendAutoTranslation, wordInfoRetranslateContext, handleSaveWord]);
 
-  // Handler for saving translation via Enter key (Moved after handleSaveWord)
+  // Enter in the translation box and the panel's Save button: keep the status, or save as New.
+  const handleSaveTranslation = useCallback(() => {
+    if (!displayedWord) return;
+    const statusToSave = (displayedWord.status ?? 0) > 0 ? displayedWord.status! : 1;
+    void handleSaveWord(statusToSave);
+  }, [displayedWord, handleSaveWord]);
+
   const handleTranslationKeyDown = useCallback((event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault(); // Prevent newline in textarea
-      if (displayedWord) {
-        // Determine the status to save (current status, or 1 if untracked)
-        const statusToSave = (displayedWord.status ?? 0) > 0 ? displayedWord.status! : 1;
-        handleSaveWord(statusToSave); // handleSaveWord is now defined before this
-      }
+      handleSaveTranslation();
     }
-  }, [displayedWord, handleSaveWord]); // handleSaveWord dependency is now safe
+  }, [handleSaveTranslation]);
 
   const handleFullTextTranslation = async () => {
     if (!text || !text.content) return;
@@ -1958,6 +1970,8 @@ const TextDisplay = () => {
 
   // --- End New Sentence Rendering Logic ---
 
+  // Stable, so the offline button's cache check doesn't re-run on every reader render.
+  const offlineAudioUrls = useMemo(() => (audioSrc ? [audioSrc] : []), [audioSrc]);
 
   // --- Rendering Logic ---
   // --- Loading/Error/NotFound States ---
@@ -2051,6 +2065,7 @@ const TextDisplay = () => {
     },
     actions: {
       onSaveWord: handleSaveWord,
+      onSaveTranslation: handleSaveTranslation,
       onMineSentence: handleMineSentence,
       processingWord,
       onReadingCredit: handleReadingCredit,
@@ -2075,6 +2090,16 @@ const TextDisplay = () => {
       sourceLanguageCode: text?.languageCode ?? '',
     },
   };
+  // Download-for-offline (audio lessons only): pre-caches the audio before going offline.
+  const offlineDownload = isAudioLesson && audioSrc ? (
+    <span className="d-inline-flex align-items-center" data-testid="textdisplay-offline-download">
+      <DownloadForOfflineButton
+        cacheName="lr-audio"
+        urls={offlineAudioUrls}
+        label="Save audio for offline"
+      />
+    </span>
+  ) : null;
   return (
     <div className={`text-display-wrapper lesson-page px-0 mx-0 w-100 reader-ui-${readingUiMode}`}>
       <MobileLessonHeader
@@ -2109,17 +2134,13 @@ const TextDisplay = () => {
         segmentPlaybackRequest={segmentPlaybackRequest}
         showDesktopLessonControls={showDesktopLessonControls}
         setShowDesktopLessonControls={setShowDesktopLessonControls}
+        offlineDownload={offlineDownload}
       />
 
-      {/* Download-for-offline (audio lessons only). Surfaces under the header
-          so users can pre-cache audio + text before going offline. */}
-      {isAudioLesson && audioSrc && (
-        <div className="px-3 py-1 d-flex justify-content-end" data-testid="textdisplay-offline-download">
-          <DownloadForOfflineButton
-            cacheName="lr-audio"
-            urls={[audioSrc]}
-            label="Save audio for offline"
-          />
+      {/* On mobile the header above isn't rendered, so the offline control gets its own row. */}
+      {isMobile && offlineDownload && (
+        <div className="px-3 py-1 d-flex justify-content-end">
+          {offlineDownload}
         </div>
       )}
 

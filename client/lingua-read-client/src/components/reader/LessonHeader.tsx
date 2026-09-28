@@ -23,6 +23,8 @@ interface LessonHeaderProps {
   segmentPlaybackRequest?: SegmentPlaybackRequest | null;
   showDesktopLessonControls: boolean;
   setShowDesktopLessonControls: (updater: (prev: boolean) => boolean) => void;
+  // Save-for-offline control, kept in the header row so it stays clear of the word panel.
+  offlineDownload?: React.ReactNode;
 }
 
 const LessonHeader = React.memo(({
@@ -42,7 +44,8 @@ const LessonHeader = React.memo(({
   onPlaybackStateChange,
   segmentPlaybackRequest,
   showDesktopLessonControls,
-  setShowDesktopLessonControls
+  setShowDesktopLessonControls,
+  offlineDownload
 }: LessonHeaderProps) => {
   if (isMobile || !text) return null;
 
@@ -74,7 +77,8 @@ const LessonHeader = React.memo(({
             <AudiobookPlayer type="book" book={book} />
           )}
 
-          <div className="d-flex align-items-center gap-1 ms-auto flex-shrink-0 lesson-header-actions">
+          <div className="d-flex align-items-center gap-2 ms-auto flex-shrink-0 lesson-header-actions">
+            {offlineDownload}
             <Button
               variant={showDesktopLessonControls ? 'outline-secondary' : 'primary'}
               size="sm"

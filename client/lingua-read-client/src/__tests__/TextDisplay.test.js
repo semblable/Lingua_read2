@@ -1892,7 +1892,8 @@ describe('TextDisplay', () => {
     delete global.fetch;
   });
 
-  test('+ AI button appends a context translation alongside the existing one', async () => {
+  test('+ AI button appends a context translation alongside the existing one and saves it', async () => {
+    updateWord.mockResolvedValue({});
     getText.mockResolvedValueOnce({
       textId: 1,
       title: 'Sample Text',
@@ -1938,6 +1939,10 @@ describe('TextDisplay', () => {
     await waitFor(() => {
       expect(textarea).toHaveValue('first, second');
     });
+    // A tracked word keeps the added sense without pressing Enter, at its current status.
+    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(1, 1, 'first, second'));
+    expect(await screen.findByText(/Saved/)).toBeInTheDocument();
+    expect(screen.queryByText(/Translation not saved yet/)).not.toBeInTheDocument();
 
     // Clicking again with the same translation must not duplicate.
     translateSelectionWithContext.mockResolvedValueOnce({ translatedText: 'second' });
@@ -1946,6 +1951,106 @@ describe('TextDisplay', () => {
     });
     await act(async () => { await Promise.resolve(); });
     expect(textarea).toHaveValue('first, second');
+    expect(updateWord).toHaveBeenCalledTimes(1);
+  });
+
+  test('+ AI on an untracked word fills the box but leaves saving to a status or Save', async () => {
+    getText.mockResolvedValueOnce({
+      textId: 1,
+      title: 'Sample Text',
+      content: 'Hello world.',
+      languageId: null,
+      languageCode: 'ES',
+      languageName: 'Spanish',
+      isAudioLesson: false,
+      words: [],
+      bookId: null
+    });
+
+    renderTextDisplay({ autoTranslateWords: false });
+    fireEvent.click(await screen.findByText('Hello'));
+    expect(screen.getByText('Untracked')).toBeInTheDocument();
+
+    translateSelectionWithContext.mockResolvedValueOnce({ translatedText: 'hola' });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Add AI translation/i }));
+    });
+
+    const textarea = screen.getByRole('textbox', { name: 'Translation' });
+    await waitFor(() => expect(textarea).toHaveValue('hola'));
+    expect(screen.getByText(/Pick a status, or Save to add it as New/)).toBeInTheDocument();
+    expect(createWord).not.toHaveBeenCalled();
+    expect(updateWord).not.toHaveBeenCalled();
+  });
+
+  test('switching words while + AI is running keeps its result out of the new word', async () => {
+    updateWord.mockResolvedValue({});
+    getText.mockResolvedValueOnce({
+      textId: 1,
+      title: 'Sample Text',
+      content: 'Hello world.',
+      languageId: null,
+      languageCode: 'ES',
+      languageName: 'Spanish',
+      isAudioLesson: false,
+      words: [
+        { wordId: 1, term: 'Hello', status: 1, translation: 'first', isNew: false },
+        { wordId: 2, term: 'world', status: 2, translation: 'mundo', isNew: false }
+      ],
+      bookId: null
+    });
+
+    renderTextDisplay({ autoTranslateWords: false });
+    fireEvent.click(await screen.findByText('Hello'));
+
+    let resolveRequest;
+    translateSelectionWithContext.mockImplementationOnce(() => new Promise(resolve => { resolveRequest = resolve; }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Add AI translation/i }));
+    });
+
+    fireEvent.click(screen.getByText('world'));
+    expect(screen.getByRole('heading', { name: 'world' })).toBeInTheDocument();
+
+    await act(async () => {
+      resolveRequest({ translatedText: 'second' });
+    });
+    await act(async () => { await Promise.resolve(); });
+
+    const textarea = screen.getByRole('textbox', { name: 'Translation' });
+    expect(textarea).toHaveValue('mundo');
+    // Not stuck in "Translating…" either.
+    expect(textarea).toBeEnabled();
+    expect(updateWord).not.toHaveBeenCalled();
+  });
+
+  test('the panel Save button saves an edited translation at the current status', async () => {
+    updateWord.mockResolvedValue({});
+    getText.mockResolvedValueOnce({
+      textId: 1,
+      title: 'Sample Text',
+      content: 'Hello world.',
+      languageId: null,
+      languageCode: 'ES',
+      languageName: 'Spanish',
+      isAudioLesson: false,
+      words: [
+        { wordId: 1, term: 'Hello', status: 4, translation: 'hola', isNew: false }
+      ],
+      bookId: null
+    });
+
+    renderTextDisplay({ autoTranslateWords: false });
+    fireEvent.click(await screen.findByText('Hello'));
+    expect(screen.queryByRole('button', { name: /^Save$/ })).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'Translation' }), { target: { value: 'hola, oi' } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /^Save$/ }));
+    });
+
+    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(1, 4, 'hola, oi'));
+    await waitFor(() => expect(screen.queryByRole('button', { name: /^Save$/ })).not.toBeInTheDocument());
   });
 
   test('parallel loading: handles getBook failure gracefully', async () => {

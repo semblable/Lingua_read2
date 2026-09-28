@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Button, ProgressBar, Spinner } from 'react-bootstrap';
+import './DownloadForOfflineButton.css';
 
 interface DownloadForOfflineButtonProps {
   /** Cache name to store the assets under. */
@@ -256,16 +257,16 @@ const DownloadForOfflineButton: React.FC<DownloadForOfflineButtonProps> = ({
   if (state === 'unavailable') return null;
 
   if (state === 'cached') {
+    // A status, not an action: plain text reads clearly where a disabled button looks faded.
     return (
-      <Button
-        variant="outline-success"
-        size="sm"
-        disabled
+      <span
+        className="offline-status"
+        title="Saved on this device — plays without a connection"
         data-testid="download-offline-button"
         data-download-state="cached"
       >
-        <i className="bi bi-check-circle me-1" /> Available offline
-      </Button>
+        <i className="bi bi-check-circle-fill" aria-hidden="true" /> Available offline
+      </span>
     );
   }
 

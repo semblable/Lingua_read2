@@ -1,0 +1,15 @@
+/* Cached state: readable status text in the theme's font colour; only the icon is green. */
+.offline-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  line-height: 1.2;
+  color: var(--font-color, inherit);
+  white-space: nowrap;
+}
+
+.offline-status .bi {
+  color: var(--color-success, #1f9d55);
+}

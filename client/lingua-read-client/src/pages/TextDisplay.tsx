@@ -2281,9 +2281,10 @@ const TextDisplay = () => {
 
         {/* Removed Resize Divider */}
 
-        {/* Right Panel (Word Info) - desktop only */}
+        {/* Right Panel (Word Info) - desktop only. No top padding: the header's bottom margin
+            already spaces it, so the card gets the same gap on every side. */}
         {!isMobile && showWordInfoPanel && (
-          <div className={`right-panel right-panel-${readingUiMode}`} style={{ width: `${100 - effectiveLeftPanelWidth}%`, height: 'calc(100vh - 130px)', overflowY: 'auto', padding: 'var(--space-sm)', position: 'relative' }}>
+          <div className={`right-panel right-panel-${readingUiMode}`} style={{ width: `${100 - effectiveLeftPanelWidth}%`, height: 'calc(100vh - 130px)', overflowY: 'auto', padding: '0 var(--space-sm) var(--space-sm)', position: 'relative' }}>
             <Card className="border-0 h-100"><Card.Body className="p-2 d-flex flex-column text-start">
               <h5 className="mb-2 flex-shrink-0 word-info-title">Word Info</h5>
               <div className="flex-grow-1" style={{ overflowY: 'auto', paddingBottom: 'var(--space-xs)' }}>

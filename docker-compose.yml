@@ -147,6 +147,7 @@ services:
       - HEALTHCHECK_URL
       # Staging only: 1 = refresh-from-prod.sh replaces staging's data with production's backup nightly.
       - REFRESH_FROM_PROD
+      - DOCKER_HOST=unix:///var/run/docker-host/docker.sock
     volumes:
       - backup_data:/backups
       - ./secrets/rclone.conf:/rclone/rclone.conf:ro
@@ -158,8 +159,11 @@ services:
       - api_epub_assets:/srv/media/epub_assets:${BACKUP_MEDIA_MOUNT:-ro}
       - api_hardcover_covers:/srv/media/hardcover-covers:${BACKUP_MEDIA_MOUNT:-ro}
       # No api_dp_keys: those keys decrypt secrets in the DB dump and must not go to Drive with it.
-      # :ro is hygiene only — socket access still grants full Docker API; used to read container logs.
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # Mount the parent /var/run directory rather than the single /var/run/docker.sock file:
+      # with live-restore on, an unattended docker-ce upgrade restarts docker.socket/dockerd
+      # (unlinking and recreating /run/docker.sock with a new inode) while leaving containers
+      # running, which would leave a single-file bind-mount pointing at the dead socket inode.
+      - /var/run:/var/run/docker-host:ro
 
 volumes:
   # Retired PostgreSQL 16 cluster — kept for rollback; prune once PG18 is confirmed stable.

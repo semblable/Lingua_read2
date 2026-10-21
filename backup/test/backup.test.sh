@@ -23,9 +23,14 @@ exit 1
 EOF
 cat > /stubs/docker <<'EOF'
 #!/bin/sh
-# `docker ps`: one compose container; `docker logs`: a line for logs/ and one for errors/.
+# `docker ps`: one compose container (scoped to lingua-read); `docker logs`: a line for logs/ and one for errors/.
 case "$1" in
-  ps) echo lingua-read-api-1 ;;
+  ps)
+    case "$*" in
+      *label=com.docker.compose.project=lingua-read*) echo lingua-read-api-1 ;;
+      *) echo "unscoped docker ps: $*" >&2; exit 1 ;;
+    esac
+    ;;
   logs) echo "info: started"; echo "fail: something broke" ;;
 esac
 EOF
@@ -103,6 +108,21 @@ check "the volume keeps a 3-day-old dump"              exists "$B/db/fixture/db-
 check "the volume keeps prod-refresh/"                 exists "$B/prod-refresh/prod.backup"
 check "the volume holds nothing over 7 days old"       none_found "$B/db" "$B/logs" "$B/errors" -type f -mtime +7
 check "the volume has no empty folders left"           none_found "$B/db" "$B/logs" "$B/errors" -mindepth 1 -type d -empty
+
+# A broken Docker socket (e.g. dockerd restarted under live-restore) must not prevent
+# the database dump and media from reaching Drive.
+cat > /stubs/docker <<'EOF'
+#!/bin/sh
+echo "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?" >&2
+exit 1
+EOF
+rm -rf "$DRIVE/db/$month"
+set +e
+BACKUP_ENV=test POSTGRES_USER=u POSTGRES_PASSWORD=p POSTGRES_DB=d /backup.sh > /tmp/backup-no-docker.log 2>&1
+no_docker_status=$?
+set -e
+check "backup.sh still exits 0 when docker ps fails"   [ "$no_docker_status" -eq 0 ]
+check "dump still uploads when docker ps fails"        found "$DRIVE/db/$month" -name 'db-*.backup'
 
 if [ "$failures" -gt 0 ]; then
   echo "--- backup.sh output"

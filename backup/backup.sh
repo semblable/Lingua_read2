@@ -34,9 +34,14 @@ PGPASSWORD="$POSTGRES_PASSWORD" pg_dump \
   -Fc -f "$BACKUP_DIR/db/$YEAR/$MONTH/db-$TIMESTAMP.backup"
 echo "[db] Saved: db/$YEAR/$MONTH/db-$TIMESTAMP.backup"
 
-# 2. Collect last 24h of logs from all compose containers + extract errors
+# 2. Collect last 24h of logs from this project's compose containers + extract errors.
+# Scoped to `lingua-read` so other compose stacks on the host (e.g. adguardhome) aren't swept up,
+# and non-fatal so a dead Docker socket never aborts the DB and media upload below.
 echo "[logs] Collecting..."
-CONTAINERS=$(docker ps --filter "label=com.docker.compose.project" --format "{{.Names}}")
+CONTAINERS=$(docker ps --filter "label=com.docker.compose.project=${COMPOSE_PROJECT_NAME:-lingua-read}" --format "{{.Names}}") || {
+  echo "[logs] WARNING: docker ps failed; skipping container log collection" >&2
+  CONTAINERS=""
+}
 for container in $CONTAINERS; do
   LOG_FILE="$BACKUP_DIR/logs/$YEAR/$MONTH/${container}-$TIMESTAMP.log"
   docker logs --since 24h --timestamps "$container" > "$LOG_FILE" 2>&1 || true

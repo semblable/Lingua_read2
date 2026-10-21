@@ -70,11 +70,12 @@ services:
     environment:
       LISTEN: /beszel_socket/beszel.sock
       HUB_URL: http://127.0.0.1:8090
+      DOCKER_HOST: unix:///var/run/docker-host/docker.sock
     volumes:
       - beszel_agent_data:/var/lib/beszel-agent
       - beszel_socket:/beszel_socket
-      # :ro is hygiene only — socket access still grants full Docker API; used for container stats.
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # Directory mount so live-restore across a dockerd restart doesn't strand the old socket inode.
+      - /var/run:/var/run/docker-host:ro
     deploy:
       resources:
         limits:
@@ -89,11 +90,12 @@ services:
       # Read-only log viewer: no start/stop buttons, no shell into containers (the defaults).
       DOZZLE_ENABLE_ACTIONS: "false"
       DOZZLE_ENABLE_SHELL: "false"
+      DOCKER_HOST: unix:///var/run/docker-host/docker.sock
     ports:
       - "127.0.0.1:8081:8080"
     volumes:
-      # :ro is hygiene only — socket access still grants full Docker API; used to read logs.
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # Directory mount so live-restore across a dockerd restart doesn't strand the old socket inode.
+      - /var/run:/var/run/docker-host:ro
     deploy:
       resources:
         limits:

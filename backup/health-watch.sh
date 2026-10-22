@@ -4,6 +4,7 @@
 #   - High disk usage on the host volume (/backups >= DISK_WARN_PCT, default 85%)
 #   - High memory pressure on the host (MemAvailable < MEM_WARN_PCT of MemTotal, default 10%)
 #   - Any container in this compose project that was OOM-killed, stopped/exited, or unhealthy
+#   - Optional external HTTPS endpoint (EXTERNAL_HEALTH_URL) non-200 status or TLS cert expiring (< SSL_WARN_DAYS, default 14d)
 #
 # Uses a two-check confirmation (/tmp/health-watch.pending) for non-OOM issues so a brief
 # container recreate during a deploy never triggers a false alarm, and deduplicates via
@@ -20,6 +21,8 @@ fi
 
 DISK_WARN_PCT="${DISK_WARN_PCT:-85}"
 MEM_WARN_PCT="${MEM_WARN_PCT:-10}"
+SSL_WARN_DAYS="${SSL_WARN_DAYS:-14}"
+EXTERNAL_HEALTH_URL="${EXTERNAL_HEALTH_URL:-}"
 MEMINFO_PATH="${MEMINFO_PATH:-/proc/meminfo}"
 DISK_PATH="${DISK_PATH:-/backups}"
 PENDING_FILE=/tmp/health-watch.pending
@@ -84,6 +87,37 @@ for id in $ids; do
     add_issue "$name is unhealthy"
   fi
 done
+
+# 4. Optional external HTTPS & TLS certificate expiry check (e.g. staging probing production).
+if [ -n "$EXTERNAL_HEALTH_URL" ]; then
+  probe_out=$(curl -sS -m 10 -o /dev/null -w "%{http_code}\n%{certs}" "$EXTERNAL_HEALTH_URL" 2>&1) && probe_rc=0 || probe_rc=$?
+  http_code=$(printf '%s\n' "$probe_out" | head -n 1)
+  if [ "$probe_rc" -ne 0 ] || [ "$http_code" != "200" ]; then
+    add_issue "external check $EXTERNAL_HEALTH_URL failed (HTTP ${http_code:-error})"
+  else
+    exp_fmt=$(printf '%s\n' "$probe_out" | awk '
+      BEGIN {
+        split("Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec", m, " ")
+        for (i = 1; i <= 12; i++) mon[m[i]] = sprintf("%02d", i)
+      }
+      /^Expire date:/ {
+        sub(/^Expire date:[[:space:]]*/, "")
+        printf "%s.%s.%02d-%s\n", $4, mon[$1], $2, $3
+        exit
+      }
+    ')
+    if [ -n "$exp_fmt" ]; then
+      exp_ts=$(date -u -d "$exp_fmt" +%s 2>/dev/null) || exp_ts=""
+      now_ts=$(date -u +%s)
+      if [ -n "$exp_ts" ]; then
+        days_left=$(( (exp_ts - now_ts) / 86400 ))
+        if [ "$days_left" -lt "$SSL_WARN_DAYS" ]; then
+          add_issue "TLS certificate for $EXTERNAL_HEALTH_URL expires in ${days_left}d (<${SSL_WARN_DAYS}d)"
+        fi
+      fi
+    fi
+  fi
+fi
 
 if [ -n "$issues" ]; then
   prev_alerted=""

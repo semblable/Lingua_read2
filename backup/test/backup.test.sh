@@ -37,9 +37,10 @@ esac
 EOF
 cat > /stubs/curl <<'EOF'
 #!/bin/sh
-# Captures JSON payloads sent to BACKUP_WEBHOOK_URL in /tmp/webhook.log.
+# Captures JSON payloads sent to BACKUP_WEBHOOK_URL in /tmp/webhook.log, or simulates external health probes (-w).
 while [ $# -gt 0 ]; do
   if [ "$1" = -d ]; then printf '%s\n' "$2" >> /tmp/webhook.log; shift 2; continue; fi
+  if [ "$1" = -w ]; then printf '%b\n' "${STUB_PROBE_OUT:-200}"; exit "${STUB_PROBE_RC:-0}"; fi
   shift
 done
 exit 0
@@ -189,6 +190,23 @@ check "health-watch alerts on recovery"                grep -qF 'recovered: all 
 STUB_INSPECT="/lingua-read-api-1|running|healthy|true" \
   BACKUP_ENV=test BACKUP_WEBHOOK_URL=http://webhook.test/report MEMINFO_PATH=/tmp/meminfo.ok DISK_WARN_PCT=99 /health-watch.sh
 check "health-watch alerts immediately on OOMKilled"   grep -qF 'was OOM-killed' /tmp/webhook.log
+
+# External HTTPS + TLS expiry check (staging probing production).
+: > /tmp/webhook.log
+rm -f /tmp/health-watch.pending /tmp/health-watch.alerted
+STUB_PROBE_OUT="503" \
+  EXTERNAL_HEALTH_URL=https://prod.test/api/Health/ready BACKUP_ENV=staging BACKUP_WEBHOOK_URL=http://webhook.test/report MEMINFO_PATH=/tmp/meminfo.ok DISK_WARN_PCT=99 /health-watch.sh
+STUB_PROBE_OUT="503" \
+  EXTERNAL_HEALTH_URL=https://prod.test/api/Health/ready BACKUP_ENV=staging BACKUP_WEBHOOK_URL=http://webhook.test/report MEMINFO_PATH=/tmp/meminfo.ok DISK_WARN_PCT=99 /health-watch.sh
+check "health-watch alerts when external URL fails"    grep -qF 'external check https://prod.test/api/Health/ready failed (HTTP 503)' /tmp/webhook.log
+
+: > /tmp/webhook.log
+rm -f /tmp/health-watch.pending /tmp/health-watch.alerted
+STUB_PROBE_OUT="200\nExpire date:Jan  1 00:00:00 2020 GMT" \
+  EXTERNAL_HEALTH_URL=https://prod.test/api/Health/ready BACKUP_ENV=staging BACKUP_WEBHOOK_URL=http://webhook.test/report MEMINFO_PATH=/tmp/meminfo.ok DISK_WARN_PCT=99 /health-watch.sh
+STUB_PROBE_OUT="200\nExpire date:Jan  1 00:00:00 2020 GMT" \
+  EXTERNAL_HEALTH_URL=https://prod.test/api/Health/ready BACKUP_ENV=staging BACKUP_WEBHOOK_URL=http://webhook.test/report MEMINFO_PATH=/tmp/meminfo.ok DISK_WARN_PCT=99 /health-watch.sh
+check "health-watch alerts when TLS cert is expiring"  grep -qF 'TLS certificate for https://prod.test/api/Health/ready expires in' /tmp/webhook.log
 
 if [ "$failures" -gt 0 ]; then
   echo "--- backup.sh output"

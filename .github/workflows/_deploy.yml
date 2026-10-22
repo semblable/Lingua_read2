@@ -114,6 +114,7 @@ jobs:
             ${{ inputs.environment == 'staging' && 'EXTERNAL_WRITES_DISABLED=true' || '' }}
             ${{ inputs.environment == 'staging' && vars.REFRESH_FROM_PROD == '1' && 'REFRESH_FROM_PROD=1' || '' }}
             ${{ inputs.environment == 'staging' && vars.REFRESH_FROM_PROD == '1' && 'BACKUP_MEDIA_MOUNT=rw' || '' }}
+            ${{ vars.EXTERNAL_HEALTH_URL && format('EXTERNAL_HEALTH_URL={0}', vars.EXTERNAL_HEALTH_URL) || '' }}
             EOF
             chmod 600 .env
 

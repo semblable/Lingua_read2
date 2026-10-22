@@ -149,6 +149,8 @@ services:
       - BACKUP_WEBHOOK_URL
       # Staging only: 1 = refresh-from-prod.sh replaces staging's data with production's backup nightly.
       - REFRESH_FROM_PROD
+      # Optional external HTTPS endpoint (e.g. production /api/Health/ready) probed by health-watch.sh from staging.
+      - EXTERNAL_HEALTH_URL
       - DOCKER_HOST=unix:///var/run/docker-host/docker.sock
     volumes:
       - backup_data:/backups

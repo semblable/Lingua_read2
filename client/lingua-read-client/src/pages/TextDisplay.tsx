@@ -1078,7 +1078,19 @@ const TextDisplay = () => {
       scheduleWordSelection(60);
     };
 
+    const isInteractiveUiTarget = (target: EventTarget | null): boolean => {
+      if (!(target instanceof Element)) return false;
+      return Boolean(
+        target.closest(
+          '.word-info-panel, .word-info-sheet, .modal, button, [role="button"], [role="dialog"], input, textarea, select'
+        )
+      );
+    };
+
     const handleTouchStart = (event: TouchEvent) => {
+      if (isInteractiveUiTarget(event.target)) {
+        return;
+      }
       const hadReaderSelection = Boolean(getSelectionDetails());
       const rawExisting = hadReaderSelection ? (window.getSelection()?.toString() || '') : '';
       const existingText = hadReaderSelection
@@ -1096,6 +1108,9 @@ const TextDisplay = () => {
     };
 
     const handleTouchMove = (event: TouchEvent) => {
+      if (isInteractiveUiTarget(event.target)) {
+        return;
+      }
       const startPoint = mobileTouchStartPointRef.current;
       const touch = event.touches?.[0];
       if (startPoint && touch) {
@@ -1114,6 +1129,10 @@ const TextDisplay = () => {
     };
 
     const handleTouchRelease = (event: TouchEvent) => {
+      if (isInteractiveUiTarget(event.target)) {
+        return;
+      }
+
       const container = textContentRef.current;
       if (container && event.target instanceof Node && container.contains(event.target)) {
         return;
@@ -1764,7 +1783,7 @@ const TextDisplay = () => {
 
   const handleExtendPhraseSelection = useCallback((direction: 'prev' | 'next') => {
     if (!activePhraseSelection) return;
-    const { startIndex, endIndex, words, sentenceContext } = activePhraseSelection;
+    const { startIndex, endIndex, words, sentenceContext, spans } = activePhraseSelection;
     let nextStart = startIndex;
     let nextEnd = endIndex;
     if (direction === 'prev') {
@@ -1783,6 +1802,45 @@ const TextDisplay = () => {
     const nextText = buildPhraseSelectionText(nextSelection, languageConfig);
     if (!nextText) return;
 
+    clearPendingSelection();
+    clearMobileSelectionPending();
+    clearMobileSelectionStability();
+    if (mobileSelectionRetryRef.current) {
+      clearTimeout(mobileSelectionRetryRef.current);
+      mobileSelectionRetryRef.current = null;
+    }
+
+    if (isMobile) {
+      mobileSelectionInitialTextRef.current = nextText;
+      mobileSelectionObservedRef.current = false;
+      mobileSelectionPendingRef.current = false;
+      mobileSelectionGrewRef.current = false;
+    }
+
+    if (spans && spans[nextStart] && spans[nextEnd]) {
+      try {
+        const selection = window.getSelection();
+        if (selection) {
+          const range = document.createRange();
+          range.setStartBefore(spans[nextStart]);
+          range.setEndAfter(spans[nextEnd]);
+          isAdjustingSelectionRef.current = true;
+          try {
+            if (typeof selection.removeAllRanges === 'function' && typeof selection.addRange === 'function') {
+              selection.removeAllRanges();
+              selection.addRange(range);
+            }
+          } finally {
+            Promise.resolve().then(() => {
+              isAdjustingSelectionRef.current = false;
+            });
+          }
+        }
+      } catch {
+        // ignore in environments without DOM selection
+      }
+    }
+
     const effectiveContext = sentenceContext || currentSentenceSegment?.text || '';
     setActivePhraseSelection(nextSelection);
     lastHandledSelectionRef.current = nextText;
@@ -1795,7 +1853,17 @@ const TextDisplay = () => {
     if (useAiContext) {
       triggerAutoTranslation(nextText, { sentenceContext: effectiveContext });
     }
-  }, [activePhraseSelection, languageConfig, currentSentenceSegment?.text, handleWordClick, triggerAutoTranslation]);
+  }, [
+    activePhraseSelection,
+    languageConfig,
+    currentSentenceSegment?.text,
+    handleWordClick,
+    triggerAutoTranslation,
+    clearPendingSelection,
+    clearMobileSelectionPending,
+    clearMobileSelectionStability,
+    isMobile
+  ]);
 
   const handleExtendPhrasePrev = useCallback(() => {
     handleExtendPhraseSelection('prev');

@@ -162,6 +162,9 @@ describe('TextDisplay', () => {
   });
 
   beforeEach(() => {
+    try {
+      window.getSelection()?.removeAllRanges?.();
+    } catch {}
     vi.useFakeTimers();
     mockAudiobookPlayer.mockClear();
     getText.mockReset();
@@ -237,6 +240,9 @@ describe('TextDisplay', () => {
     vi.useRealTimers();
     window.matchMedia = originalMatchMedia;
     window.getSelection = originalGetSelection;
+    try {
+      window.getSelection()?.removeAllRanges?.();
+    } catch {}
   });
 
   test('renders text content after load', async () => {
@@ -1561,6 +1567,13 @@ describe('TextDisplay', () => {
     });
 
     // 2. Click Mr and extend with + Next word
+    window.getSelection = vi.fn(() => ({
+      isCollapsed: true,
+      rangeCount: 0,
+      toString: () => '',
+      removeAllRanges: vi.fn(),
+      addRange: vi.fn()
+    }));
     await act(async () => {
       fireEvent.click(mrWord);
     });
@@ -1581,6 +1594,52 @@ describe('TextDisplay', () => {
         expect.objectContaining({ signal: expect.anything() })
       );
     });
+
+    expect(screen.getByRole('heading', { level: 5, name: 'Mr. Smith' })).toBeInTheDocument();
+
+    act(() => {
+      vi.advanceTimersByTime(2000);
+    });
+
+    expect(screen.getByRole('heading', { level: 5, name: 'Mr. Smith' })).toBeInTheDocument();
+  });
+
+  test('touch release on + Next word does not revert phrase selection on mobile', async () => {
+    getText.mockResolvedValueOnce({
+      textId: 1,
+      title: 'Sample Text',
+      content: 'I met Mr. Smith today. Next sentence.',
+      languageId: null,
+      languageCode: 'ES',
+      languageName: 'Spanish',
+      isAudioLesson: false,
+      words: [],
+      bookId: null
+    });
+
+    renderTextDisplay({ autoTranslateWords: true });
+
+    await waitFor(() => expect(getText).toHaveBeenCalled());
+    const mrWord = await screen.findByText('Mr');
+
+    await act(async () => {
+      fireEvent.click(mrWord);
+    });
+
+    const nextBtn = await screen.findByRole('button', { name: /\+ Next word/i });
+    expect(nextBtn).toBeEnabled();
+
+    await act(async () => {
+      fireEvent.touchStart(nextBtn);
+      fireEvent.click(nextBtn);
+      fireEvent.touchEnd(nextBtn);
+    });
+
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
+
+    expect(screen.getByRole('heading', { level: 5, name: 'Mr. Smith' })).toBeInTheDocument();
   });
 
   test('abbreviation followed by space and lowercase continuation keeps sentence intact', async () => {

@@ -771,6 +771,7 @@ export type PhraseSelectionState = {
   startIndex: number;
   endIndex: number;
   sentenceContext: string;
+  spans?: HTMLElement[];
 };
 
 const EXTRA_SENTENCE_STOP_CHARS = '।۔。！？\n\r';
@@ -1167,7 +1168,8 @@ export const buildPhraseSelectionFromSpans = (
     separators,
     startIndex,
     endIndex,
-    sentenceContext
+    sentenceContext,
+    spans: sentenceSpans
   };
 };
 

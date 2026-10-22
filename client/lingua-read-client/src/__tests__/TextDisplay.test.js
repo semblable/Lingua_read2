@@ -162,9 +162,10 @@ describe('TextDisplay', () => {
   });
 
   beforeEach(() => {
-    try {
-      window.getSelection()?.removeAllRanges?.();
-    } catch {}
+    const initialSelection = window.getSelection?.();
+    if (initialSelection && typeof initialSelection.removeAllRanges === 'function') {
+      initialSelection.removeAllRanges();
+    }
     vi.useFakeTimers();
     mockAudiobookPlayer.mockClear();
     getText.mockReset();
@@ -240,9 +241,10 @@ describe('TextDisplay', () => {
     vi.useRealTimers();
     window.matchMedia = originalMatchMedia;
     window.getSelection = originalGetSelection;
-    try {
-      window.getSelection()?.removeAllRanges?.();
-    } catch {}
+    const postSelection = window.getSelection?.();
+    if (postSelection && typeof postSelection.removeAllRanges === 'function') {
+      postSelection.removeAllRanges();
+    }
   });
 
   test('renders text content after load', async () => {

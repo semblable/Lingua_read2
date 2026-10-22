@@ -773,32 +773,50 @@ export type PhraseSelectionState = {
 
 const EXTRA_SENTENCE_STOP_CHARS = '।۔。！？\n\r';
 
-const SENTENCE_BLOCK_SELECTOR =
-  '.sentence, .srt-line, .reader-title-line, .sentence-mode-text, .reading-block, .reader-paragraph';
+/**
+ * Punctuation characters that must NEVER be considered sentence stops even if present
+ * in languageConfig.splitSentences (e.g. commas, colons, semicolons, dashes, quotes).
+ */
+export const FORBIDDEN_SENTENCE_STOP_CHARS = new Set([
+  ',', ';', ':', '-', '—', '–', '/', '\\', '(', ')', '[', ']', '{', '}',
+  '"', "'", '«', '»', '“', '”', '‘', '’', '`', '*', '&', '%', '$', '@', '#'
+]);
 
-const buildSentenceStopSet = (splitSentences: string | null | undefined): Set<string> => {
-  const raw = splitSentences && splitSentences.length > 0 ? splitSentences : DEFAULT_SENTENCE_TERMINATORS;
-  return new Set((raw + DEFAULT_SENTENCE_TERMINATORS + EXTRA_SENTENCE_STOP_CHARS).split(''));
-};
+/**
+ * Common abbreviations across supported European languages whose trailing period
+ * should NOT be treated as a sentence boundary.
+ */
+export const COMMON_ABBREVIATIONS = new Set([
+  // English titles & honorifics
+  'mr', 'mrs', 'ms', 'dr', 'prof', 'sr', 'jr', 'rev', 'st', 'fr', 'gen', 'gov', 'sgt', 'capt', 'col', 'rep', 'sen', 'pres',
+  // Common Latin / English abbreviations
+  'etc', 'eg', 'e.g', 'ie', 'i.e', 'vs', 'v', 'no', 'vol', 'pp', 'p', 'al', 'approx', 'dept', 'est', 'inc', 'ltd', 'corp', 'co', 'min', 'sec', 'hr', 'hrs',
+  'am', 'pm', 'a.m', 'p.m', 'bc', 'ad', 'bce', 'ce', 'phd', 'ba', 'ma', 'bs', 'ms',
+  // Spanish & Portuguese
+  'sra', 'srta', 'dra', 'profa', 'pag', 'pags', 'pág', 'págs', 'ej', 'num', 'núm', 'art', 'cap', 'atte', 'cia', 'dona', 'don', 'eng', 'engª',
+  // French
+  'm', 'mme', 'mlle', 'monsieur', 'madame', 'mademoiselle', 'ste', 'cie',
+  // German
+  'hr', 'fr', 'bzw', 'usw', 'ca', 'evtl', 'incl', 'inkl', 'zb', 'z.b', 'dh', 'd.h', 'ua', 'u.a', 'nr', 'abs', 'vgl', 'str',
+  // Polish & Slavic
+  'np', 'tzn', 'itd', 'itp', 'ul', 'godz', 'os', 'red', 'hab', 'mgr', 'inż'
+]);
 
-export const hasSentenceStopBetween = (
-  separatorText: string | null | undefined,
-  languageConfig: LanguageConfig = null,
-  precedingWord: string = ''
+export const isAbbreviationOrNonSentencePeriod = (
+  precedingWord: string | null | undefined,
+  separatorText: string = '',
+  followingWord: string = '',
+  languageConfig: LanguageConfig = null
 ): boolean => {
-  if (!separatorText) return false;
-  const stopChars = buildSentenceStopSet(languageConfig?.splitSentences);
-  let foundStop = false;
-  for (const ch of separatorText) {
-    if (stopChars.has(ch)) {
-      foundStop = true;
-      break;
-    }
-  }
-  if (!foundStop) return false;
+  if (!precedingWord) return false;
+  const wordClean = precedingWord.trim();
+  if (!wordClean) return false;
+  const wordLower = wordClean.toLowerCase();
+  const wordWithoutDots = wordLower.replace(/\./g, '');
 
+  // 1. Language-configured sentenceSplitExceptions
   const exceptions = languageConfig?.sentenceSplitExceptions;
-  if (precedingWord && exceptions) {
+  if (exceptions) {
     const rawList = typeof exceptions === 'string'
       ? (exceptions as string).split('|')
       : Array.isArray(exceptions)
@@ -808,8 +826,80 @@ export const hasSentenceStopBetween = (
       .map((e) => (typeof e === 'string' ? e.trim() : e?.exceptionString?.trim() || ''))
       .filter(Boolean);
     if (exceptionList.length > 0) {
-      const combined = `${precedingWord}${separatorText.trimEnd()}`;
-      if (exceptionList.some((ex) => combined.endsWith(ex))) {
+      const combined = `${wordClean}${separatorText.trimEnd()}`;
+      if (exceptionList.some((ex) => combined.endsWith(ex) || ex.toLowerCase() === `${wordLower}.`)) {
+        return true;
+      }
+    }
+  }
+
+  // 2. Built-in common abbreviations
+  if (COMMON_ABBREVIATIONS.has(wordLower) || COMMON_ABBREVIATIONS.has(wordWithoutDots)) {
+    return true;
+  }
+
+  // 3. Single-letter initial (e.g. "J." in "J. K. Rowling" or "A." in "A. Smith")
+  if (/^\p{Lu}$/u.test(wordClean)) {
+    return true;
+  }
+
+  // 4. Dotted acronym / abbreviation (e.g. "U.S.", "e.g.", "Ph.D.", "a.m.")
+  if (/^(\p{L}\.){1,}\p{L}?$/u.test(wordClean)) {
+    return true;
+  }
+
+  // 5. Number / decimal (e.g. "3.14", "1.5")
+  if (/\d$/.test(wordClean) && (/^\d/.test(followingWord) || !separatorText.includes(' '))) {
+    return true;
+  }
+
+  // 6. Lowercase continuation: if the following word starts with a lowercase letter,
+  // it is almost certainly a continuation of the same sentence (e.g. "etc. and so on", "example.com")
+  if (followingWord && /^\p{Ll}/u.test(followingWord.trim())) {
+    return true;
+  }
+
+  return false;
+};
+
+const buildSentenceStopSet = (splitSentences: string | null | undefined): Set<string> => {
+  const raw = splitSentences && splitSentences.length > 0 ? splitSentences : DEFAULT_SENTENCE_TERMINATORS;
+  const chars = (raw + DEFAULT_SENTENCE_TERMINATORS + EXTRA_SENTENCE_STOP_CHARS).split('');
+  const stopSet = new Set<string>();
+  for (const ch of chars) {
+    if (!FORBIDDEN_SENTENCE_STOP_CHARS.has(ch)) {
+      stopSet.add(ch);
+    }
+  }
+  return stopSet;
+};
+
+export const hasSentenceStopBetween = (
+  separatorText: string | null | undefined,
+  languageConfig: LanguageConfig = null,
+  precedingWord: string = '',
+  followingWord: string = ''
+): boolean => {
+  if (!separatorText) return false;
+  const stopChars = buildSentenceStopSet(languageConfig?.splitSentences);
+  let foundStop = false;
+  let hasPeriod = false;
+  for (const ch of separatorText) {
+    if (ch === '.') {
+      hasPeriod = true;
+    }
+    if (stopChars.has(ch)) {
+      foundStop = true;
+    }
+  }
+  if (!foundStop) return false;
+
+  // If a period is present, check whether it is an abbreviation, initial, or decimal rather than a sentence stop
+  if (hasPeriod && precedingWord) {
+    if (isAbbreviationOrNonSentencePeriod(precedingWord, separatorText, followingWord, languageConfig)) {
+      // Check if there are other true sentence stops in the separator (e.g. '!' or '?')
+      const hasOtherStop = separatorText.split('').some((ch) => ch !== '.' && stopChars.has(ch));
+      if (!hasOtherStop) {
         return false;
       }
     }
@@ -824,7 +914,7 @@ export const hasSentenceStopBetween = (
  * - Clamps at sentence stops (`.`, `!`, `?`, `…`, etc.) so selections do not
  *   include sentence-ending stops or spill across sentence boundaries.
  * - Preserves internal word connectors (apostrophes, hyphens) and intra-sentence
- *   separators (spaces, commas, etc.) between words in the same sentence.
+ *   separators (spaces, commas, colons, semicolons, etc.) between words in the same sentence.
  */
 export const cleanSelectedReaderText = (
   rawContent: string | null | undefined,
@@ -849,7 +939,8 @@ export const cleanSelectedReaderText = (
       }
       const currentSegment = segments[segments.length - 1];
       const prevWord = currentSegment[currentSegment.length - 1];
-      if (hasSentenceStopBetween(separatorBuffer, languageConfig, prevWord.text)) {
+      const followingWord = token.text;
+      if (hasSentenceStopBetween(separatorBuffer, languageConfig, prevWord.text, followingWord)) {
         segments.push([token]);
       } else {
         currentSegment.push(token);
@@ -876,6 +967,9 @@ export const cleanSelectedReaderText = (
     .trim();
 };
 
+const PARAGRAPH_OR_LINE_BLOCK_SELECTOR =
+  '.srt-line, .reader-title-line, .sentence-mode-text, .reading-block, .reader-paragraph, p';
+
 export const getTextBetweenWordSpans = (
   prevSpan: HTMLElement,
   nextSpan: HTMLElement
@@ -895,14 +989,20 @@ export const areWordSpansInSameSentence = (
   nextSpan: HTMLElement,
   languageConfig: LanguageConfig = null
 ): boolean => {
-  if (prevSpan.closest('.sentence') !== nextSpan.closest('.sentence')) {
-    return false;
+  if (!prevSpan || !nextSpan) return false;
+  if (prevSpan === nextSpan) return true;
+  if (prevSpan.compareDocumentPosition(nextSpan) & Node.DOCUMENT_POSITION_PRECEDING) {
+    return areWordSpansInSameSentence(nextSpan, prevSpan, languageConfig);
   }
-  if (prevSpan.closest(SENTENCE_BLOCK_SELECTOR) !== nextSpan.closest(SENTENCE_BLOCK_SELECTOR)) {
+  const blockA = prevSpan.closest(PARAGRAPH_OR_LINE_BLOCK_SELECTOR);
+  const blockB = nextSpan.closest(PARAGRAPH_OR_LINE_BLOCK_SELECTOR);
+  if (blockA && blockB && blockA !== blockB) {
     return false;
   }
   const betweenText = getTextBetweenWordSpans(prevSpan, nextSpan);
-  if (hasSentenceStopBetween(betweenText, languageConfig, (prevSpan.textContent || '').trim())) {
+  const prevWord = (prevSpan.textContent || '').trim();
+  const nextWord = (nextSpan.textContent || '').trim();
+  if (hasSentenceStopBetween(betweenText, languageConfig, prevWord, nextWord)) {
     return false;
   }
   return true;
@@ -1013,7 +1113,7 @@ export const buildPhraseSelectionFromSpans = (
   sentenceContext: string = ''
 ): PhraseSelectionState | null => {
   const scopeEl =
-    startSpan.closest(SENTENCE_BLOCK_SELECTOR) ||
+    startSpan.closest(PARAGRAPH_OR_LINE_BLOCK_SELECTOR) ||
     container ||
     startSpan.parentElement;
   if (!scopeEl) return null;
@@ -1075,7 +1175,7 @@ export const buildPhraseSelectionFromText = (
     } else if (token.type === 'word') {
       if (
         currentWords.length > 0 &&
-        hasSentenceStopBetween(sepBuffer, languageConfig, currentWords[currentWords.length - 1])
+        hasSentenceStopBetween(sepBuffer, languageConfig, currentWords[currentWords.length - 1], token.text)
       ) {
         sentenceWordGroups.push({ words: currentWords, separators: currentSeparators });
         currentWords = [token.text];

@@ -1456,6 +1456,133 @@ describe('TextDisplay', () => {
     });
   });
 
+  test('selection across commas, colons, and semicolons does not stop mid-sentence', async () => {
+    getText.mockResolvedValueOnce({
+      textId: 1,
+      title: 'Sample Text',
+      content: 'Apples, oranges: and bananas; all delicious. Next sentence.',
+      languageId: null,
+      languageCode: 'ES',
+      languageName: 'Spanish',
+      isAudioLesson: false,
+      words: [],
+      bookId: null
+    });
+
+    renderTextDisplay({ autoTranslateWords: true });
+
+    await waitFor(() => expect(getText).toHaveBeenCalled());
+    const applesWord = await screen.findByText('Apples');
+    const bananasWord = await screen.findByText('bananas');
+    const textContent = applesWord.closest('.text-content');
+
+    const range = document.createRange();
+    range.setStartBefore(applesWord);
+    range.setEndAfter(bananasWord);
+
+    const mockSelection = {
+      isCollapsed: false,
+      rangeCount: 1,
+      anchorNode: applesWord,
+      focusNode: bananasWord,
+      toString: () => 'Apples, oranges: and bananas',
+      getRangeAt: () => range,
+      removeAllRanges: vi.fn(),
+      addRange: vi.fn()
+    };
+    window.getSelection = vi.fn(() => mockSelection);
+
+    act(() => {
+      fireEvent.touchEnd(textContent);
+      vi.advanceTimersByTime(1000);
+    });
+
+    await waitFor(() => {
+      expect(translateSelectionWithContext).toHaveBeenCalledWith(
+        'Apples, oranges: and bananas',
+        'Apples, oranges: and bananas; all delicious.',
+        'ES',
+        'EN',
+        expect.objectContaining({ signal: expect.anything() })
+      );
+    });
+  });
+
+  test('selection and + Next word with Mr. Smith does not treat Mr. as a sentence stop', async () => {
+    getText.mockResolvedValueOnce({
+      textId: 1,
+      title: 'Sample Text',
+      content: 'I met Mr. Smith today. Next sentence.',
+      languageId: null,
+      languageCode: 'ES',
+      languageName: 'Spanish',
+      isAudioLesson: false,
+      words: [],
+      bookId: null
+    });
+
+    renderTextDisplay({ autoTranslateWords: true });
+
+    await waitFor(() => expect(getText).toHaveBeenCalled());
+    const mrWord = await screen.findByText('Mr');
+    const smithWord = await screen.findByText('Smith');
+    const textContent = mrWord.closest('.text-content');
+
+    // 1. Drag selection over Mr. Smith
+    const range = document.createRange();
+    range.setStartBefore(mrWord);
+    range.setEndAfter(smithWord);
+
+    const mockSelection = {
+      isCollapsed: false,
+      rangeCount: 1,
+      anchorNode: mrWord,
+      focusNode: smithWord,
+      toString: () => 'Mr. Smith',
+      getRangeAt: () => range,
+      removeAllRanges: vi.fn(),
+      addRange: vi.fn()
+    };
+    window.getSelection = vi.fn(() => mockSelection);
+
+    act(() => {
+      fireEvent.touchEnd(textContent);
+      vi.advanceTimersByTime(1000);
+    });
+
+    await waitFor(() => {
+      expect(translateSelectionWithContext).toHaveBeenCalledWith(
+        'Mr. Smith',
+        'I met Mr. Smith today.',
+        'ES',
+        'EN',
+        expect.objectContaining({ signal: expect.anything() })
+      );
+    });
+
+    // 2. Click Mr and extend with + Next word
+    await act(async () => {
+      fireEvent.click(mrWord);
+    });
+
+    const nextBtn = await screen.findByRole('button', { name: /\+ Next word/i });
+    expect(nextBtn).toBeEnabled();
+
+    await act(async () => {
+      fireEvent.click(nextBtn);
+    });
+
+    await waitFor(() => {
+      expect(translateSelectionWithContext).toHaveBeenCalledWith(
+        'Mr. Smith',
+        'I met Mr. Smith today.',
+        'ES',
+        'EN',
+        expect.objectContaining({ signal: expect.anything() })
+      );
+    });
+  });
+
   test('rapid word clicks abort the previous in-flight translation', async () => {
     renderTextDisplay({ autoTranslateWords: true });
 

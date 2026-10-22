@@ -34,6 +34,7 @@ import {
   consumeWordAt,
   extractWords,
   cleanSelectedReaderText,
+  isAbbreviationOrNonSentencePeriod,
   getOverlappedWordSpans,
   clampWordSpansToSingleSentence,
   buildPhraseSelectionFromSpans,
@@ -2075,6 +2076,22 @@ const TextDisplay = () => {
       return children == null ? null : String(children);
     };
 
+    const extractWordTextFromElement = (el: React.ReactNode): string => {
+      if (!el || !React.isValidElement(el)) return '';
+      const props = el.props as { children?: React.ReactNode };
+      if (props?.children != null) {
+        if (typeof props.children === 'string') return props.children;
+        if (React.isValidElement(props.children)) return extractWordTextFromElement(props.children);
+        if (Array.isArray(props.children)) {
+          for (const child of props.children) {
+            const w = extractWordTextFromElement(child);
+            if (w) return w;
+          }
+        }
+      }
+      return '';
+    };
+
     processedElements.forEach((element, idx) => {
       currentSentenceElements.push(element);
 
@@ -2086,7 +2103,31 @@ const TextDisplay = () => {
           const nextElement = processedElements[idx + 1];
           const nextFragmentText = fragmentChildrenString(nextElement);
           if (!nextElement || (nextFragmentText !== null && whitespaceRegex.test(nextFragmentText))) {
-            isEndOfSentence = true;
+            let isAbbrev = false;
+            if (content === '.') {
+              let precedingWord = '';
+              for (let j = idx - 1; j >= 0; j--) {
+                const w = extractWordTextFromElement(processedElements[j]);
+                if (w) {
+                  precedingWord = w;
+                  break;
+                }
+              }
+              let followingWord = '';
+              for (let j = idx + 1; j < processedElements.length; j++) {
+                const w = extractWordTextFromElement(processedElements[j]);
+                if (w) {
+                  followingWord = w;
+                  break;
+                }
+              }
+              if (isAbbreviationOrNonSentencePeriod(precedingWord, '.', followingWord, languageConfig)) {
+                isAbbrev = true;
+              }
+            }
+            if (!isAbbrev) {
+              isEndOfSentence = true;
+            }
           }
         }
       }
@@ -2119,7 +2160,7 @@ const TextDisplay = () => {
     });
 
     return { sentenceElements, nextSentenceIndex: sentenceIndex };
-  }, [focusSentenceIndexFromNode, handleSentenceContextMenu, isBookmarked]); // Dependencies
+  }, [focusSentenceIndexFromNode, handleSentenceContextMenu, isBookmarked, languageConfig]); // Dependencies
 
   // --- End New Sentence Rendering Logic ---
 

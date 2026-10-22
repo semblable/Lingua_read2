@@ -262,6 +262,34 @@ jobs:
             if [ -f "secrets/rclone.conf" ]; then
               dc --profile backup pull backup
               dc --profile backup up -d --force-recreate backup
+              # The sidecar reads container state, events and logs through the host's /var/run
+              # (bind-mounted non-recursively, see docker-compose.yml). Prove it reaches dockerd and
+              # that no mount below /run came along with it, rather than finding out from a silent
+              # health-watch or a backup without logs.
+              backup_ok=""
+              for i in $(seq 1 15); do
+                if dc --profile backup exec -T backup docker version --format '{{.Server.Version}}' >/dev/null 2>&1; then
+                  backup_ok="yes"
+                  break
+                fi
+                sleep 2
+              done
+              if [ -z "$backup_ok" ]; then
+                echo "::error::The backup container cannot reach dockerd through /var/run/docker-host/docker.sock"
+                dc --profile backup ps backup || true
+                dc --profile backup logs --no-color --tail=50 backup || true
+                exit 1
+              fi
+              # Alpine's /var/run is a symlink to /run, so the target shows up as /run/docker-host.
+              mounts=$(dc --profile backup exec -T backup awk '
+                $2 ~ "^(/var)?/run/docker-host$"  { top++ }
+                $2 ~ "^(/var)?/run/docker-host/" { sub_++ }
+                END { print top + 0, sub_ + 0 }' /proc/self/mounts)
+              if [ "$mounts" != "1 0" ]; then
+                echo "::error::Expected exactly one /var/run bind and no submounts in the backup container, got (bind, submounts) = ($mounts); the /var/run bind must be non-recursive"
+                exit 1
+              fi
+              echo "Backup sidecar reaches dockerd $($DOCKER version --format '{{.Server.Version}}') via a non-recursive /var/run bind"
             else
               echo "Skipping backup service: secrets/rclone.conf not found (run setup.sh to enable)"
             fi

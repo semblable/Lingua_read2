@@ -18,17 +18,10 @@
 # Everything else (users, texts, words, media) becomes production's.
 set -euo pipefail
 
-WEBHOOK_URL="${BACKUP_WEBHOOK_URL:-}"
+# notify MESSAGE: posts to BACKUP_WEBHOOK_URL (no-op while unset).
+# shellcheck source=backup/notify.sh
+. /notify.sh
 NOTIFIED=0
-notify() {
-  [ -n "$WEBHOOK_URL" ] || return 0
-  local payload
-  payload=$(awk -v s="$1" 'BEGIN {
-    gsub(/\\/, "\\\\", s); gsub(/"/, "\\\"", s); gsub(/\r/, "", s); gsub(/\n/, "\\n", s); gsub(/\t/, "\\t", s)
-    printf "{\"content\": \"%s\"}", s
-  }')
-  curl -fsS -m 10 --retry 3 -H "Content-Type: application/json" -d "$payload" "$WEBHOOK_URL" >/dev/null 2>&1 || true
-}
 log() { echo "[refresh $(date -u +%H:%M:%S)] $*"; }
 die() {
   log "FAILED: $*"

@@ -167,7 +167,17 @@ services:
       # with live-restore on, an unattended docker-ce upgrade restarts docker.socket/dockerd
       # (unlinking and recreating /run/docker.sock with a new inode) while leaving containers
       # running, which would leave a single-file bind-mount pointing at the dead socket inode.
-      - /var/run:/var/run/docker-host:ro
+      # Non-recursive: a plain bind would also copy every mount below /run into this container
+      # (each container's /run/docker/netns/* handle, /run/user/*, ...), pinning those network
+      # namespaces after their containers are removed and risking "device or resource busy" on
+      # deploys. read_only is hygiene only: a socket on a read-only mount still accepts connections,
+      # and Docker socket access is root-equivalent; used to read container state, events and logs.
+      - type: bind
+        source: /var/run
+        target: /var/run/docker-host
+        read_only: true
+        bind:
+          recursive: disabled
 
 volumes:
   # Retired PostgreSQL 16 cluster — kept for rollback; prune once PG18 is confirmed stable.

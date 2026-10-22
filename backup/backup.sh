@@ -6,17 +6,10 @@ set -e
 # /start marks the run begun; a bare ping marks success; /fail is sent by the EXIT trap
 # on any error. The monitor's grace period also catches this script never running at all.
 HC_URL="${HEALTHCHECK_URL:-}"
-WEBHOOK_URL="${BACKUP_WEBHOOK_URL:-}"
 hc() { [ -n "$HC_URL" ] && curl -fsS -m 10 --retry 3 "$HC_URL$1" >/dev/null 2>&1 || true; }
-notify() {
-  [ -n "$WEBHOOK_URL" ] || return 0
-  local payload
-  payload=$(awk -v s="$1" 'BEGIN {
-    gsub(/\\/, "\\\\", s); gsub(/"/, "\\\"", s); gsub(/\r/, "", s); gsub(/\n/, "\\n", s); gsub(/\t/, "\\t", s)
-    printf "{\"content\": \"%s\"}", s
-  }')
-  curl -fsS -m 10 --retry 3 -H "Content-Type: application/json" -d "$payload" "$WEBHOOK_URL" >/dev/null 2>&1 || true
-}
+# notify MESSAGE: posts to BACKUP_WEBHOOK_URL (no-op while unset).
+# shellcheck source=backup/notify.sh
+. /notify.sh
 on_exit() {
   code=$1
   if [ "$code" -ne 0 ]; then

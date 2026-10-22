@@ -107,7 +107,7 @@ jobs:
       # Host-side scripts run unattended (cron, first boot) where a typo only surfaces
       # as a missing backup or a half-provisioned host — lint them here instead.
       - name: Lint shell scripts
-        run: shellcheck -S warning backup/backup.sh backup/refresh-from-prod.sh backup/health-watch.sh backup/test/*.sh ops/bootstrap-host.sh setup.sh
+        run: shellcheck -S warning backup/backup.sh backup/refresh-from-prod.sh backup/health-watch.sh backup/notify.sh backup/test/*.sh ops/bootstrap-host.sh setup.sh
 
       # Runs backup.sh in a locally built backup image against a folder standing in for Drive:
       # what gets uploaded, what Drive retention removes, what the /backups volume keeps.

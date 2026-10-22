@@ -74,8 +74,15 @@ services:
     volumes:
       - beszel_agent_data:/var/lib/beszel-agent
       - beszel_socket:/beszel_socket
-      # Directory mount so live-restore across a dockerd restart doesn't strand the old socket inode.
-      - /var/run:/var/run/docker-host:ro
+      # Directory mount so live-restore across a dockerd restart doesn't strand the old socket inode;
+      # non-recursive so mounts below /run (other containers' netns handles) aren't copied in.
+      # See the backup service in docker-compose.yml.
+      - type: bind
+        source: /var/run
+        target: /var/run/docker-host
+        read_only: true
+        bind:
+          recursive: disabled
     deploy:
       resources:
         limits:
@@ -94,8 +101,15 @@ services:
     ports:
       - "127.0.0.1:8081:8080"
     volumes:
-      # Directory mount so live-restore across a dockerd restart doesn't strand the old socket inode.
-      - /var/run:/var/run/docker-host:ro
+      # Directory mount so live-restore across a dockerd restart doesn't strand the old socket inode;
+      # non-recursive so mounts below /run (other containers' netns handles) aren't copied in.
+      # See the backup service in docker-compose.yml.
+      - type: bind
+        source: /var/run
+        target: /var/run/docker-host
+        read_only: true
+        bind:
+          recursive: disabled
     deploy:
       resources:
         limits:

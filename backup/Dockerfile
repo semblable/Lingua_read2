@@ -12,6 +12,8 @@ RUN ARCH=$([ "$TARGETARCH" = "arm64" ] && echo "linux-arm64" || echo "linux-amd6
 COPY backup.sh /backup.sh
 COPY refresh-from-prod.sh /refresh-from-prod.sh
 COPY health-watch.sh /health-watch.sh
+# Shared webhook helper, sourced by the three scripts above (not run, so no chmod).
+COPY notify.sh /notify.sh
 COPY crontab /crontab
 RUN chmod +x /backup.sh /refresh-from-prod.sh /health-watch.sh
 

@@ -152,61 +152,138 @@ set -e
 check "backup.sh exits non-zero when pg_dump fails"    [ "$fail_status" -ne 0 ]
 check "webhook alerts when backup.sh fails"            grep -qF 'FAILED (exit' /tmp/webhook.log
 
+# --- notify.sh ------------------------------------------------------------------
+: > /tmp/webhook.log
+( export BACKUP_WEBHOOK_URL=http://webhook.test/report; . /notify.sh; notify 'a "quoted" back\slash' )
+check "notify JSON-escapes quotes and backslashes"     grep -qF '{"content": "a \"quoted\" back\\slash"}' /tmp/webhook.log
+: > /tmp/webhook.log
+( export BACKUP_WEBHOOK_URL=http://webhook.test/report; . /notify.sh; notify "$(printf '%3000s' '' | tr ' ' x)" )
+check "notify keeps a long message under Discord's 2000-char cap" [ "$(wc -c < /tmp/webhook.log)" -lt 2000 ]
+: > /tmp/webhook.log
+( unset BACKUP_WEBHOOK_URL; . /notify.sh; notify "nobody listening" )
+check "notify is a no-op without BACKUP_WEBHOOK_URL"   [ ! -s /tmp/webhook.log ]
+
 # --- health-watch.sh checks ---------------------------------------------------
+# docker: one compose container whose inspect line (id|name|status|health|oomkilled|restarts|exit code)
+# comes from STUB_INSPECT and whose OOM events come from STUB_EVENTS; STUB_DOCKER_DOWN=1 fails every call.
 cat > /stubs/docker <<'EOF'
 #!/bin/sh
+[ -z "$STUB_DOCKER_DOWN" ] || { echo "Cannot connect to the Docker daemon" >&2; exit 1; }
 case "$1" in
-  ps)      echo lingua-read-api-1 ;;
-  inspect) echo "${STUB_INSPECT:-/lingua-read-api-1|running|healthy|false}" ;;
+  ps)      echo abc123 ;;
+  inspect) echo "${STUB_INSPECT:-abc123|/lingua-read-api-1|running|healthy|false|0|0}" ;;
+  events)  [ -z "$STUB_EVENTS" ] || printf '%s\n' "$STUB_EVENTS" ;;
 esac
 EOF
 chmod +x /stubs/docker
-printf 'MemTotal:       4000000 kB\nMemAvailable:   2000000 kB\n' > /tmp/meminfo.ok
-: > /tmp/webhook.log
-rm -f /tmp/health-watch.pending /tmp/health-watch.alerted
+HW=/backups/.health-watch
+mem() { printf 'MemTotal:       4000000 kB\nMemAvailable:   %s kB\n' "$1" > /tmp/meminfo; }
+hw_reset() { rm -rf "$HW"; : > /tmp/webhook.log; mem 2000000; }
+# watch [VAR=value...]: one health-watch.sh run (a healthy host unless overridden).
+watch() {
+  if ! env BACKUP_ENV=test BACKUP_WEBHOOK_URL=http://webhook.test/report MEMINFO_PATH=/tmp/meminfo \
+       DISK_WARN_PCT=100 "$@" /health-watch.sh; then
+    echo "FAIL health-watch.sh exited non-zero ($*)"; failures=$((failures + 1))
+  fi
+}
+sent() { grep -qF "$1" /tmp/webhook.log; }
+not_sent() { ! grep -qF "$1" /tmp/webhook.log; }
+silent() { [ ! -s /tmp/webhook.log ]; }
+quiet() { : > /tmp/webhook.log; }
+API_OK="abc123|/lingua-read-api-1|running|healthy|false|0|0"
+API_EXITED="abc123|/lingua-read-api-1|exited|none|false|0|137"
 
-BACKUP_ENV=test BACKUP_WEBHOOK_URL=http://webhook.test/report MEMINFO_PATH=/tmp/meminfo.ok DISK_WARN_PCT=99 /health-watch.sh
-check "health-watch is silent when healthy"            [ ! -f /tmp/health-watch.pending ]
+hw_reset
+watch
+check "health-watch is silent when healthy"            silent
+check "health-watch keeps its state on the /backups volume" exists "$HW/pending"
 
-# Non-OOM failure requires 2 consecutive checks before alerting; deduplicates; then alerts on recovery.
-STUB_INSPECT="/lingua-read-api-1|exited|none|false" \
-  BACKUP_ENV=test BACKUP_WEBHOOK_URL=http://webhook.test/report MEMINFO_PATH=/tmp/meminfo.ok DISK_WARN_PCT=99 /health-watch.sh
-check "health-watch 1st non-OOM failure only stages pending" [ ! -s /tmp/webhook.log ]
+# A container condition alerts on the 2nd consecutive check, once, then recovers.
+hw_reset
+watch STUB_INSPECT="$API_EXITED"
+check "health-watch 1st sighting only stages pending"  silent
+watch STUB_INSPECT="$API_EXITED"
+check "health-watch 2nd consecutive failure alerts"    sent 'lingua-read-api-1 is exited (code 137)'
+quiet; watch STUB_INSPECT="$API_EXITED"
+check "health-watch deduplicates repeated failure"     silent
+watch
+check "health-watch alerts on recovery"                sent 'recovered, all checks passing. Cleared: lingua-read-api-1 is exited'
+quiet; watch
+check "health-watch is silent after recovery"          silent
 
-STUB_INSPECT="/lingua-read-api-1|exited|none|false" \
-  BACKUP_ENV=test BACKUP_WEBHOOK_URL=http://webhook.test/report MEMINFO_PATH=/tmp/meminfo.ok DISK_WARN_PCT=99 /health-watch.sh
-check "health-watch 2nd consecutive failure alerts"    grep -qF 'lingua-read-api-1 is exited' /tmp/webhook.log
+# Isolated blips (e.g. a deploy recreating a container) never alert.
+hw_reset
+watch STUB_INSPECT="$API_EXITED"; watch; watch STUB_INSPECT="abc123|/lingua-read-api-1|running|unhealthy|false|0|0"; watch
+check "health-watch ignores isolated one-check blips"  silent
 
-: > /tmp/webhook.log
-STUB_INSPECT="/lingua-read-api-1|exited|none|false" \
-  BACKUP_ENV=test BACKUP_WEBHOOK_URL=http://webhook.test/report MEMINFO_PATH=/tmp/meminfo.ok DISK_WARN_PCT=99 /health-watch.sh
-check "health-watch deduplicates repeated failure"     [ ! -s /tmp/webhook.log ]
+# RAM pressure alerts once while its numbers drift, and clears only past the hysteresis band.
+hw_reset
+mem 320000; watch; mem 300000; watch
+check "health-watch alerts on low RAM"                 sent 'available RAM at 7% (292 MiB free, alert below 10%)'
+quiet; mem 360000; watch
+check "health-watch doesn't re-alert as RAM numbers drift" silent
+mem 480000; watch
+check "health-watch holds a RAM alert inside the hysteresis band" silent
+mem 800000; watch
+check "health-watch clears RAM past the hysteresis band" sent 'Cleared: available RAM at 12%'
 
-BACKUP_ENV=test BACKUP_WEBHOOK_URL=http://webhook.test/report MEMINFO_PATH=/tmp/meminfo.ok DISK_WARN_PCT=99 /health-watch.sh
-check "health-watch alerts on recovery"                grep -qF 'recovered: all containers healthy' /tmp/webhook.log
+# Restarts: alert on the first check that sees one, once per crash loop; a recreated container
+# (new id) starting at a higher count is not a restart.
+hw_reset
+watch STUB_INSPECT="$API_OK"
+watch STUB_INSPECT="abc123|/lingua-read-api-1|running|healthy|false|2|0"
+check "health-watch alerts immediately on a restart"   sent 'lingua-read-api-1 restarted 2x since the last check (restart count 2)'
+quiet; watch STUB_INSPECT="abc123|/lingua-read-api-1|running|healthy|false|3|0"
+check "health-watch alerts once per ongoing crash loop" silent
+watch STUB_INSPECT="abc123|/lingua-read-api-1|running|healthy|false|3|0"
+check "health-watch sends no recovery for a restart event" silent
+watch STUB_INSPECT="abc123|/lingua-read-api-1|running|healthy|false|4|0"
+check "health-watch alerts on a new restart after a quiet check" sent 'restarted 1x since the last check'
+quiet; watch STUB_INSPECT="def456|/lingua-read-api-1|running|healthy|false|5|0"
+check "health-watch ignores a recreated container's count" silent
 
-# OOM-kill alerts immediately on the first check without waiting for a second strike.
-: > /tmp/webhook.log
-STUB_INSPECT="/lingua-read-api-1|running|healthy|true" \
-  BACKUP_ENV=test BACKUP_WEBHOOK_URL=http://webhook.test/report MEMINFO_PATH=/tmp/meminfo.ok DISK_WARN_PCT=99 /health-watch.sh
-check "health-watch alerts immediately on OOMKilled"   grep -qF 'was OOM-killed' /tmp/webhook.log
+# OOM kills come from docker events: the sticky .State.OOMKilled flag alone never alerts.
+hw_reset
+watch STUB_INSPECT="abc123|/lingua-read-api-1|running|healthy|true|0|0"
+check "health-watch ignores a stale OOMKilled flag"    silent
+watch STUB_INSPECT="abc123|/lingua-read-api-1|running|healthy|true|0|0" STUB_EVENTS="lingua-read-api-1"
+check "health-watch alerts immediately on an OOM event" sent 'lingua-read-api-1 had a process OOM-killed (1x since the last check)'
+quiet; watch STUB_INSPECT="abc123|/lingua-read-api-1|exited|none|true|0|137"; watch STUB_INSPECT="abc123|/lingua-read-api-1|exited|none|true|0|137"
+check "health-watch notes OOM on a stopped container"  sent 'lingua-read-api-1 is exited (code 137), OOM-killed'
+
+# Losing the Docker socket keeps open container alerts open (no recovery nobody observed).
+hw_reset
+watch STUB_INSPECT="$API_EXITED"; watch STUB_INSPECT="$API_EXITED"
+quiet; watch STUB_DOCKER_DOWN=1
+check "health-watch stages a docker socket failure"    silent
+watch STUB_DOCKER_DOWN=1
+check "health-watch alerts when the docker socket is unreachable" sent 'Docker socket unreachable'
+check "health-watch keeps container alerts open without docker" sent 'still open: lingua-read-api-1 is exited'
+check "health-watch announces no recovery without docker" not_sent 'Cleared'
 
 # External HTTPS + TLS expiry check (staging probing production).
-: > /tmp/webhook.log
-rm -f /tmp/health-watch.pending /tmp/health-watch.alerted
-STUB_PROBE_OUT="503" \
-  EXTERNAL_HEALTH_URL=https://prod.test/api/Health/ready BACKUP_ENV=staging BACKUP_WEBHOOK_URL=http://webhook.test/report MEMINFO_PATH=/tmp/meminfo.ok DISK_WARN_PCT=99 /health-watch.sh
-STUB_PROBE_OUT="503" \
-  EXTERNAL_HEALTH_URL=https://prod.test/api/Health/ready BACKUP_ENV=staging BACKUP_WEBHOOK_URL=http://webhook.test/report MEMINFO_PATH=/tmp/meminfo.ok DISK_WARN_PCT=99 /health-watch.sh
-check "health-watch alerts when external URL fails"    grep -qF 'external check https://prod.test/api/Health/ready failed (HTTP 503)' /tmp/webhook.log
+EXT=https://prod.test/api/Health/ready
+hw_reset
+watch EXTERNAL_HEALTH_URL=$EXT STUB_PROBE_OUT=503; watch EXTERNAL_HEALTH_URL=$EXT STUB_PROBE_OUT=503
+check "health-watch alerts when external URL fails"    sent "external check $EXT failed (HTTP 503)"
+quiet; watch EXTERNAL_HEALTH_URL=$EXT STUB_PROBE_OUT=000 STUB_PROBE_RC=28
+check "health-watch treats a different failure as the same issue" silent
+watch EXTERNAL_HEALTH_URL=$EXT STUB_PROBE_OUT="200\nExpire date:Jan  1 00:00:00 2099 GMT"
+check "health-watch clears the external check"         sent "Cleared: external check $EXT failed (HTTP 000, curl exit 28)"
+check "health-watch accepts a far-off certificate"     not_sent 'TLS certificate'
 
-: > /tmp/webhook.log
-rm -f /tmp/health-watch.pending /tmp/health-watch.alerted
-STUB_PROBE_OUT="200\nExpire date:Jan  1 00:00:00 2020 GMT" \
-  EXTERNAL_HEALTH_URL=https://prod.test/api/Health/ready BACKUP_ENV=staging BACKUP_WEBHOOK_URL=http://webhook.test/report MEMINFO_PATH=/tmp/meminfo.ok DISK_WARN_PCT=99 /health-watch.sh
-STUB_PROBE_OUT="200\nExpire date:Jan  1 00:00:00 2020 GMT" \
-  EXTERNAL_HEALTH_URL=https://prod.test/api/Health/ready BACKUP_ENV=staging BACKUP_WEBHOOK_URL=http://webhook.test/report MEMINFO_PATH=/tmp/meminfo.ok DISK_WARN_PCT=99 /health-watch.sh
-check "health-watch alerts when TLS cert is expiring"  grep -qF 'TLS certificate for https://prod.test/api/Health/ready expires in' /tmp/webhook.log
+hw_reset
+watch EXTERNAL_HEALTH_URL=$EXT STUB_PROBE_OUT="200\nExpire date:Jan  1 00:00:00 2020 GMT"
+watch EXTERNAL_HEALTH_URL=$EXT STUB_PROBE_OUT="200\nExpire date:Jan  1 00:00:00 2020 GMT"
+check "health-watch alerts when TLS cert is expiring"  sent "TLS certificate for $EXT expires in"
+
+# Staging's refresh stops the api on purpose; health-watch stays out of its way.
+hw_reset
+sh -c 'sleep 30 # refresh-from-prod.sh' & refresh_pid=$!
+sleep 1
+watch STUB_INSPECT="$API_EXITED"; watch STUB_INSPECT="$API_EXITED"
+kill "$refresh_pid" 2>/dev/null || true
+check "health-watch is silent during a staging refresh" silent
 
 if [ "$failures" -gt 0 ]; then
   echo "--- backup.sh output"

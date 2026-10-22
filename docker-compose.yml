@@ -145,6 +145,8 @@ services:
       - BACKUP_ENV
       # Optional healthchecks.io-style heartbeat URL pinged by backup.sh (empty = disabled).
       - HEALTHCHECK_URL
+      # Optional Discord/report webhook URL (POST {"content": "..."}) for backup/refresh failure alerts.
+      - BACKUP_WEBHOOK_URL
       # Staging only: 1 = refresh-from-prod.sh replaces staging's data with production's backup nightly.
       - REFRESH_FROM_PROD
       - DOCKER_HOST=unix:///var/run/docker-host/docker.sock

@@ -1,15 +1,27 @@
 #!/bin/bash
 set -e
 
-# Optional healthchecks.io-style heartbeat (set HEALTHCHECK_URL in .env; empty = disabled).
+# Optional healthchecks.io-style heartbeat (set HEALTHCHECK_URL in .env; empty = disabled) and
+# optional Discord/report webhook (set BACKUP_WEBHOOK_URL in .env; POSTs {"content": "..."} on failure).
 # /start marks the run begun; a bare ping marks success; /fail is sent by the EXIT trap
 # on any error. The monitor's grace period also catches this script never running at all.
 HC_URL="${HEALTHCHECK_URL:-}"
+WEBHOOK_URL="${BACKUP_WEBHOOK_URL:-}"
 hc() { [ -n "$HC_URL" ] && curl -fsS -m 10 --retry 3 "$HC_URL$1" >/dev/null 2>&1 || true; }
+notify() {
+  [ -n "$WEBHOOK_URL" ] || return 0
+  local payload
+  payload=$(awk -v s="$1" 'BEGIN {
+    gsub(/\\/, "\\\\", s); gsub(/"/, "\\\"", s); gsub(/\r/, "", s); gsub(/\n/, "\\n", s); gsub(/\t/, "\\t", s)
+    printf "{\"content\": \"%s\"}", s
+  }')
+  curl -fsS -m 10 --retry 3 -H "Content-Type: application/json" -d "$payload" "$WEBHOOK_URL" >/dev/null 2>&1 || true
+}
 on_exit() {
   code=$1
   if [ "$code" -ne 0 ]; then
     hc /fail
+    notify "❌ LinguaRead backup (${BACKUP_ENV:-unknown}) FAILED (exit $code) at $(date -u '+%Y-%m-%d %H:%M:%S UTC')."
   fi
 }
 trap 'on_exit $?' EXIT
@@ -40,6 +52,7 @@ echo "[db] Saved: db/$YEAR/$MONTH/db-$TIMESTAMP.backup"
 echo "[logs] Collecting..."
 CONTAINERS=$(docker ps --filter "label=com.docker.compose.project=${COMPOSE_PROJECT_NAME:-lingua-read}" --format "{{.Names}}") || {
   echo "[logs] WARNING: docker ps failed; skipping container log collection" >&2
+  notify "⚠️ LinguaRead backup (${BACKUP_ENV:-unknown}): docker ps failed; container logs were skipped (DB and media backup continuing)."
   CONTAINERS=""
 }
 for container in $CONTAINERS; do

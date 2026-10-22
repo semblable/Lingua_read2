@@ -34,6 +34,15 @@ case "$1" in
   logs) echo "info: started"; echo "fail: something broke" ;;
 esac
 EOF
+cat > /stubs/curl <<'EOF'
+#!/bin/sh
+# Captures JSON payloads sent to BACKUP_WEBHOOK_URL in /tmp/webhook.log.
+while [ $# -gt 0 ]; do
+  if [ "$1" = -d ]; then printf '%s\n' "$2" >> /tmp/webhook.log; shift 2; continue; fi
+  shift
+done
+exit 0
+EOF
 chmod +x /stubs/*
 export PATH="/stubs:$PATH"
 printf '[gdrive]\ntype = local\n' > /rclone/rclone.conf
@@ -62,8 +71,9 @@ seed "$DRIVE/logs/fixture/api-35d.log"     35
 
 # --- run ----------------------------------------------------------------------
 cd /drive
+: > /tmp/webhook.log
 set +e
-BACKUP_ENV=test POSTGRES_USER=u POSTGRES_PASSWORD=p POSTGRES_DB=d /backup.sh > /tmp/backup.log 2>&1
+BACKUP_ENV=test BACKUP_WEBHOOK_URL=http://webhook.test/report POSTGRES_USER=u POSTGRES_PASSWORD=p POSTGRES_DB=d /backup.sh > /tmp/backup.log 2>&1
 status=$?
 set -e
 
@@ -108,21 +118,37 @@ check "the volume keeps a 3-day-old dump"              exists "$B/db/fixture/db-
 check "the volume keeps prod-refresh/"                 exists "$B/prod-refresh/prod.backup"
 check "the volume holds nothing over 7 days old"       none_found "$B/db" "$B/logs" "$B/errors" -type f -mtime +7
 check "the volume has no empty folders left"           none_found "$B/db" "$B/logs" "$B/errors" -mindepth 1 -type d -empty
+check "a clean run sends no failure webhook"           [ ! -s /tmp/webhook.log ]
 
 # A broken Docker socket (e.g. dockerd restarted under live-restore) must not prevent
-# the database dump and media from reaching Drive.
+# the database dump and media from reaching Drive, and should notify the webhook.
 cat > /stubs/docker <<'EOF'
 #!/bin/sh
 echo "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?" >&2
 exit 1
 EOF
 rm -rf "$DRIVE/db/$month"
+: > /tmp/webhook.log
 set +e
-BACKUP_ENV=test POSTGRES_USER=u POSTGRES_PASSWORD=p POSTGRES_DB=d /backup.sh > /tmp/backup-no-docker.log 2>&1
+BACKUP_ENV=test BACKUP_WEBHOOK_URL=http://webhook.test/report POSTGRES_USER=u POSTGRES_PASSWORD=p POSTGRES_DB=d /backup.sh > /tmp/backup-no-docker.log 2>&1
 no_docker_status=$?
 set -e
 check "backup.sh still exits 0 when docker ps fails"   [ "$no_docker_status" -eq 0 ]
 check "dump still uploads when docker ps fails"        found "$DRIVE/db/$month" -name 'db-*.backup'
+check "webhook warns when docker ps fails"             grep -qF 'docker ps failed' /tmp/webhook.log
+
+# A fatal error (e.g. pg_dump failure) must exit non-zero and ping the failure webhook.
+cat > /stubs/pg_dump <<'EOF'
+#!/bin/sh
+exit 1
+EOF
+: > /tmp/webhook.log
+set +e
+BACKUP_ENV=test BACKUP_WEBHOOK_URL=http://webhook.test/report POSTGRES_USER=u POSTGRES_PASSWORD=p POSTGRES_DB=d /backup.sh > /tmp/backup-fail.log 2>&1
+fail_status=$?
+set -e
+check "backup.sh exits non-zero when pg_dump fails"    [ "$fail_status" -ne 0 ]
+check "webhook alerts when backup.sh fails"            grep -qF 'FAILED (exit' /tmp/webhook.log
 
 if [ "$failures" -gt 0 ]; then
   echo "--- backup.sh output"

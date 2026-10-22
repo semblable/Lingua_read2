@@ -18,8 +18,24 @@
 # Everything else (users, texts, words, media) becomes production's.
 set -euo pipefail
 
+WEBHOOK_URL="${BACKUP_WEBHOOK_URL:-}"
+NOTIFIED=0
+notify() {
+  [ -n "$WEBHOOK_URL" ] || return 0
+  local payload
+  payload=$(awk -v s="$1" 'BEGIN {
+    gsub(/\\/, "\\\\", s); gsub(/"/, "\\\"", s); gsub(/\r/, "", s); gsub(/\n/, "\\n", s); gsub(/\t/, "\\t", s)
+    printf "{\"content\": \"%s\"}", s
+  }')
+  curl -fsS -m 10 --retry 3 -H "Content-Type: application/json" -d "$payload" "$WEBHOOK_URL" >/dev/null 2>&1 || true
+}
 log() { echo "[refresh $(date -u +%H:%M:%S)] $*"; }
-die() { log "FAILED: $*"; exit 1; }
+die() {
+  log "FAILED: $*"
+  NOTIFIED=1
+  notify "❌ LinguaRead staging refresh-from-prod FAILED: $*"
+  exit 1
+}
 
 [ "${REFRESH_FROM_PROD:-0}" = "1" ] || exit 0
 [ "${BACKUP_ENV:-}" = "staging" ] \
@@ -50,6 +66,7 @@ flock -n 9 || die "another refresh is already running"
 API=""
 API_STOPPED=0
 on_exit() {
+  local code=$?
   # prod.backup too, also after a failure: a leftover copy of production's database that ever
   # reached staging's Drive folder would stay there, since no retention rule covers it (backup.sh
   # uploads only db/, logs/ and errors/ from /backups).
@@ -57,6 +74,9 @@ on_exit() {
   if [ "$API_STOPPED" = 1 ]; then
     log "restarting api after an interrupted refresh"
     docker start "$API" >/dev/null || true
+  fi
+  if [ "$code" -ne 0 ] && [ "$NOTIFIED" = 0 ]; then
+    notify "❌ LinguaRead staging refresh-from-prod FAILED (exit $code) at $(date -u '+%Y-%m-%d %H:%M:%S UTC')."
   fi
 }
 trap on_exit EXIT
@@ -80,7 +100,10 @@ stamp=${stamp#db-}
 dump_epoch=$(date -u -d "${stamp:0:4}-${stamp:4:2}-${stamp:6:2} ${stamp:9:2}:${stamp:11:2}:${stamp:13:2}" +%s 2>/dev/null || echo 0)
 age_h=$(( ($(date +%s) - dump_epoch) / 3600 ))
 log "latest production dump: $latest (${age_h} h old)"
-[ "$age_h" -le 36 ] || log "WARNING: the newest production dump is over 36 h old; is production's backup failing?"
+if [ "$age_h" -gt 36 ]; then
+  log "WARNING: the newest production dump is over 36 h old; is production's backup failing?"
+  notify "⚠️ LinguaRead production backup is stale: newest dump on Drive is $latest (${age_h} h old)."
+fi
 rc copyto "$SOURCE/db/$latest" "$WORK/prod.backup"
 pg_restore --list "$WORK/prod.backup" >/dev/null || die "downloaded dump is not a readable pg_dump archive"
 

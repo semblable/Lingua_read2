@@ -79,6 +79,7 @@ Adjust security bounds and Discord scheduler configurations.
 | `DISCORD_WEEKLY_REPORT_DRY_RUN` | `false` | If `true`, runs the background service without sending actual Discord HTTP calls. |
 | `DISCORD_WEEKLY_REPORT_POLL_MINUTES` | `30` | Interval in minutes for checking the scheduling queue. |
 | `HEALTHCHECK_URL` | *None* | **Optional.** healthchecks.io-style ping URL for the backup sidecar; `backup.sh` pings it on start/success/failure so silent backup failures raise an alert. |
+| `BACKUP_WEBHOOK_URL` | *None* | **Optional.** Discord/report webhook URL (`POST {"content": "..."}`) for the backup sidecar; `backup.sh` and staging's `refresh-from-prod.sh` ping it on failure, degraded log collection, or a stale production dump (>36 h). |
 | `BACKUP_ENV` | *None* | **Set by the deploy workflow** to the GitHub environment name. Selects the backup sidecar's Drive folder (`lingua-read-backups/<BACKUP_ENV>/`); `backup.sh` refuses to run without it so two environments can never share (and overwrite) one folder. |
 | `MONITORING` | *unset* | **GitHub environment variable**, not `.env`. `true` makes the deploy start the Beszel + Dozzle dashboard (production). |
 | `POSTGRES_SHARED_BUFFERS` | `1GB` | Postgres cache, sized for a ~4 GB host (about 25% of RAM). Deployed hosts set it as a GitHub environment variable, which the deploy appends to `.env`. |

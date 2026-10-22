@@ -11,7 +11,8 @@ RUN ARCH=$([ "$TARGETARCH" = "arm64" ] && echo "linux-arm64" || echo "linux-amd6
 
 COPY backup.sh /backup.sh
 COPY refresh-from-prod.sh /refresh-from-prod.sh
+COPY health-watch.sh /health-watch.sh
 COPY crontab /crontab
-RUN chmod +x /backup.sh /refresh-from-prod.sh
+RUN chmod +x /backup.sh /refresh-from-prod.sh /health-watch.sh
 
 CMD ["supercronic", "/crontab"]

@@ -31,6 +31,7 @@ case "$1" in
       *) echo "unscoped docker ps: $*" >&2; exit 1 ;;
     esac
     ;;
+  inspect) echo "${STUB_INSPECT:-/lingua-read-api-1|running|healthy|false}" ;;
   logs) echo "info: started"; echo "fail: something broke" ;;
 esac
 EOF
@@ -149,6 +150,45 @@ fail_status=$?
 set -e
 check "backup.sh exits non-zero when pg_dump fails"    [ "$fail_status" -ne 0 ]
 check "webhook alerts when backup.sh fails"            grep -qF 'FAILED (exit' /tmp/webhook.log
+
+# --- health-watch.sh checks ---------------------------------------------------
+cat > /stubs/docker <<'EOF'
+#!/bin/sh
+case "$1" in
+  ps)      echo lingua-read-api-1 ;;
+  inspect) echo "${STUB_INSPECT:-/lingua-read-api-1|running|healthy|false}" ;;
+esac
+EOF
+chmod +x /stubs/docker
+printf 'MemTotal:       4000000 kB\nMemAvailable:   2000000 kB\n' > /tmp/meminfo.ok
+: > /tmp/webhook.log
+rm -f /tmp/health-watch.pending /tmp/health-watch.alerted
+
+BACKUP_ENV=test BACKUP_WEBHOOK_URL=http://webhook.test/report MEMINFO_PATH=/tmp/meminfo.ok DISK_WARN_PCT=99 /health-watch.sh
+check "health-watch is silent when healthy"            [ ! -f /tmp/health-watch.pending ]
+
+# Non-OOM failure requires 2 consecutive checks before alerting; deduplicates; then alerts on recovery.
+STUB_INSPECT="/lingua-read-api-1|exited|none|false" \
+  BACKUP_ENV=test BACKUP_WEBHOOK_URL=http://webhook.test/report MEMINFO_PATH=/tmp/meminfo.ok DISK_WARN_PCT=99 /health-watch.sh
+check "health-watch 1st non-OOM failure only stages pending" [ ! -s /tmp/webhook.log ]
+
+STUB_INSPECT="/lingua-read-api-1|exited|none|false" \
+  BACKUP_ENV=test BACKUP_WEBHOOK_URL=http://webhook.test/report MEMINFO_PATH=/tmp/meminfo.ok DISK_WARN_PCT=99 /health-watch.sh
+check "health-watch 2nd consecutive failure alerts"    grep -qF 'lingua-read-api-1 is exited' /tmp/webhook.log
+
+: > /tmp/webhook.log
+STUB_INSPECT="/lingua-read-api-1|exited|none|false" \
+  BACKUP_ENV=test BACKUP_WEBHOOK_URL=http://webhook.test/report MEMINFO_PATH=/tmp/meminfo.ok DISK_WARN_PCT=99 /health-watch.sh
+check "health-watch deduplicates repeated failure"     [ ! -s /tmp/webhook.log ]
+
+BACKUP_ENV=test BACKUP_WEBHOOK_URL=http://webhook.test/report MEMINFO_PATH=/tmp/meminfo.ok DISK_WARN_PCT=99 /health-watch.sh
+check "health-watch alerts on recovery"                grep -qF 'recovered: all containers healthy' /tmp/webhook.log
+
+# OOM-kill alerts immediately on the first check without waiting for a second strike.
+: > /tmp/webhook.log
+STUB_INSPECT="/lingua-read-api-1|running|healthy|true" \
+  BACKUP_ENV=test BACKUP_WEBHOOK_URL=http://webhook.test/report MEMINFO_PATH=/tmp/meminfo.ok DISK_WARN_PCT=99 /health-watch.sh
+check "health-watch alerts immediately on OOMKilled"   grep -qF 'was OOM-killed' /tmp/webhook.log
 
 if [ "$failures" -gt 0 ]; then
   echo "--- backup.sh output"

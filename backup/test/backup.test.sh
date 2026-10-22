@@ -279,10 +279,7 @@ check "health-watch alerts when TLS cert is expiring"  sent "TLS certificate for
 
 # Staging's refresh stops the api on purpose; health-watch stays out of its way.
 hw_reset
-sh -c 'sleep 30 # refresh-from-prod.sh' & refresh_pid=$!
-sleep 1
-watch STUB_INSPECT="$API_EXITED"; watch STUB_INSPECT="$API_EXITED"
-kill "$refresh_pid" 2>/dev/null || true
+( exec 9>/tmp/refresh-from-prod.lock; flock -n 9; watch STUB_INSPECT="$API_EXITED"; watch STUB_INSPECT="$API_EXITED" )
 check "health-watch is silent during a staging refresh" silent
 
 if [ "$failures" -gt 0 ]; then

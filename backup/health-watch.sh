@@ -27,7 +27,7 @@ set -euo pipefail
 . /notify.sh
 
 # Skip while staging's nightly refresh is intentionally stopping the api container.
-if pgrep -f refresh-from-prod.sh >/dev/null 2>&1; then
+if pgrep -f refresh-from-prod.sh >/dev/null 2>&1 || ! ( exec 9>/tmp/refresh-from-prod.lock && flock -n 9 ) 2>/dev/null; then
   exit 0
 fi
 

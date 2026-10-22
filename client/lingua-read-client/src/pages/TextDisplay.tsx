@@ -2077,10 +2077,10 @@ const TextDisplay = () => {
     };
 
     const extractWordTextFromElement = (el: React.ReactNode): string => {
-      if (!el || !React.isValidElement(el)) return '';
+      if (!el || !React.isValidElement(el) || el.type === React.Fragment) return '';
       const props = el.props as { children?: React.ReactNode };
       if (props?.children != null) {
-        if (typeof props.children === 'string') return props.children;
+        if (typeof props.children === 'string') return props.children.trim();
         if (React.isValidElement(props.children)) return extractWordTextFromElement(props.children);
         if (Array.isArray(props.children)) {
           for (const child of props.children) {
@@ -2121,7 +2121,10 @@ const TextDisplay = () => {
                   break;
                 }
               }
-              if (isAbbreviationOrNonSentencePeriod(precedingWord, '.', followingWord, languageConfig)) {
+              const effectiveConfig = languageConfig
+                ? { ...languageConfig, languageCode: languageConfig.languageCode || text?.languageCode }
+                : (text?.languageCode ? { languageCode: text.languageCode } : null);
+              if (isAbbreviationOrNonSentencePeriod(precedingWord, '.', followingWord, effectiveConfig)) {
                 isAbbrev = true;
               }
             }
@@ -2160,7 +2163,7 @@ const TextDisplay = () => {
     });
 
     return { sentenceElements, nextSentenceIndex: sentenceIndex };
-  }, [focusSentenceIndexFromNode, handleSentenceContextMenu, isBookmarked, languageConfig]); // Dependencies
+  }, [focusSentenceIndexFromNode, handleSentenceContextMenu, isBookmarked, languageConfig, text?.languageCode]); // Dependencies
 
   // --- End New Sentence Rendering Logic ---
 

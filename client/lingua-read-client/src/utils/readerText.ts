@@ -4,6 +4,8 @@ export type LanguageConfig = {
   parserType?: string | null;
   splitSentences?: string | null;
   sentenceSplitExceptions?: Array<string | { exceptionString?: string } | null> | null;
+  languageCode?: string | null;
+  code?: string | null;
 } | null | undefined;
 
 export type CharSubstitution = { old: string; replacement: string };
@@ -840,6 +842,17 @@ export const isAbbreviationOrNonSentencePeriod = (
 
   // 3. Single-letter initial (e.g. "J." in "J. K. Rowling" or "A." in "A. Smith")
   if (/^\p{Lu}$/u.test(wordClean)) {
+    // English pronoun "I" at the end of a sentence (or before a sentence-starter) is not an initial
+    if (wordClean === 'I') {
+      const COMMON_SENTENCE_STARTERS = new Set([
+        'the', 'this', 'that', 'these', 'those', 'there', 'he', 'she', 'it', 'they', 'we', 'you',
+        'then', 'when', 'what', 'where', 'why', 'how', 'who', 'but', 'and', 'so', 'if', 'as'
+      ]);
+      const nextLower = followingWord.trim().toLowerCase();
+      if (!followingWord || COMMON_SENTENCE_STARTERS.has(nextLower)) {
+        return false;
+      }
+    }
     return true;
   }
 
@@ -862,11 +875,20 @@ export const isAbbreviationOrNonSentencePeriod = (
   return false;
 };
 
-const buildSentenceStopSet = (splitSentences: string | null | undefined): Set<string> => {
+const buildSentenceStopSet = (
+  splitSentences: string | null | undefined,
+  languageConfig?: LanguageConfig
+): Set<string> => {
   const raw = splitSentences && splitSentences.length > 0 ? splitSentences : DEFAULT_SENTENCE_TERMINATORS;
   const chars = (raw + DEFAULT_SENTENCE_TERMINATORS + EXTRA_SENTENCE_STOP_CHARS).split('');
   const stopSet = new Set<string>();
+  const lang = (languageConfig?.languageCode || languageConfig?.code || '').toLowerCase();
+  const isGreek = lang === 'el' || lang === 'gr';
   for (const ch of chars) {
+    if (isGreek && (ch === ';' || ch === '\u037E')) {
+      stopSet.add(ch);
+      continue;
+    }
     if (!FORBIDDEN_SENTENCE_STOP_CHARS.has(ch)) {
       stopSet.add(ch);
     }
@@ -881,7 +903,7 @@ export const hasSentenceStopBetween = (
   followingWord: string = ''
 ): boolean => {
   if (!separatorText) return false;
-  const stopChars = buildSentenceStopSet(languageConfig?.splitSentences);
+  const stopChars = buildSentenceStopSet(languageConfig?.splitSentences, languageConfig);
   let foundStop = false;
   let hasPeriod = false;
   for (const ch of separatorText) {

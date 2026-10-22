@@ -1583,6 +1583,58 @@ describe('TextDisplay', () => {
     });
   });
 
+  test('abbreviation followed by space and lowercase continuation keeps sentence intact', async () => {
+    getText.mockResolvedValueOnce({
+      textId: 1,
+      title: 'Sample Text',
+      content: 'We need books etc. and pens. Next sentence.',
+      languageId: null,
+      languageCode: 'ES',
+      languageName: 'Spanish',
+      isAudioLesson: false,
+      words: [],
+      bookId: null
+    });
+
+    renderTextDisplay({ autoTranslateWords: true });
+
+    await waitFor(() => expect(getText).toHaveBeenCalled());
+    const etcWord = await screen.findByText('etc');
+    const pensWord = await screen.findByText('pens');
+    const textContent = etcWord.closest('.text-content');
+
+    const range = document.createRange();
+    range.setStartBefore(etcWord);
+    range.setEndAfter(pensWord);
+
+    const mockSelection = {
+      isCollapsed: false,
+      rangeCount: 1,
+      anchorNode: etcWord,
+      focusNode: pensWord,
+      toString: () => 'etc. and pens',
+      getRangeAt: () => range,
+      removeAllRanges: vi.fn(),
+      addRange: vi.fn()
+    };
+    window.getSelection = vi.fn(() => mockSelection);
+
+    act(() => {
+      fireEvent.touchEnd(textContent);
+      vi.advanceTimersByTime(1000);
+    });
+
+    await waitFor(() => {
+      expect(translateSelectionWithContext).toHaveBeenCalledWith(
+        'etc. and pens',
+        'We need books etc. and pens.',
+        'ES',
+        'EN',
+        expect.objectContaining({ signal: expect.anything() })
+      );
+    });
+  });
+
   test('rapid word clicks abort the previous in-flight translation', async () => {
     renderTextDisplay({ autoTranslateWords: true });
 

@@ -96,6 +96,14 @@ describe('hasSentenceStopBetween', () => {
     expect(hasSentenceStopBetween('. ', null, 'Dr', 'Watson')).toBe(false);
     expect(hasSentenceStopBetween('. ', null, 'etc', 'and')).toBe(false);
     expect(hasSentenceStopBetween('. ', null, 'J', 'Rowling')).toBe(false);
+    expect(hasSentenceStopBetween('. ', null, 'I', 'Newton')).toBe(false);
+    expect(hasSentenceStopBetween('. ', null, 'I', 'The')).toBe(true);
+    expect(hasSentenceStopBetween('. ', null, 'I', '')).toBe(true);
     expect(hasSentenceStopBetween('. ', null, 'world', 'Next')).toBe(true);
+  });
+
+  test('allows Greek semicolon/erotimatiko as a sentence stop when language is Greek', () => {
+    expect(hasSentenceStopBetween('; ', { languageCode: 'el', splitSentences: ';.!' })).toBe(true);
+    expect(hasSentenceStopBetween('; ', { languageCode: 'en', splitSentences: ';.!' })).toBe(false);
   });
 });

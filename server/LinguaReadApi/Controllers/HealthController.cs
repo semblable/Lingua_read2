@@ -28,6 +28,7 @@ namespace LinguaReadApi.Controllers
         /// Use for deploy smoke tests and orchestration; returns 503 until the API can serve authenticated traffic.
         /// </summary>
         [HttpGet("ready")]
+        [HttpHead("ready")]
         public async Task<IActionResult> GetReady([FromServices] AppDbContext db)
         {
             try
@@ -59,6 +60,7 @@ namespace LinguaReadApi.Controllers
         /// Basic health check endpoint that returns server status
         /// </summary>
         [HttpGet]
+        [HttpHead]
         public IActionResult Get()
         {
             _logger.LogInformation("Health check requested at: {time}", DateTimeOffset.UtcNow); // Restore logging

@@ -296,6 +296,7 @@ jobs:
           echo "Smoke-checking ${{ vars.SMOKE_URL }} (-k tolerates self-signed staging certs)"
           curl -fskS --retry 3 --retry-all-errors --max-time 10 "${{ vars.SMOKE_URL }}/healthz" >/dev/null
           curl -fskS --retry 3 --retry-all-errors --max-time 10 "${{ vars.SMOKE_URL }}/api/Health/ready" >/dev/null
+          curl -fskSI --retry 3 --retry-all-errors --max-time 10 "${{ vars.SMOKE_URL }}/api/Health/ready" >/dev/null
 
           # Compression regression gates (see server ResponseCompression + nginx gzip_static):
           # API JSON must arrive Brotli/gzip-encoded through the edge…

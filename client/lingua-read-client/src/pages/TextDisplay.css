@@ -600,6 +600,13 @@
     flex: 1 1 auto;
   }
 
+  .word-info-sheet .word-extend-btn {
+    min-height: 36px;
+    padding: 0.35rem 0.65rem;
+    font-size: 0.85rem;
+    flex: 1 1 auto;
+  }
+
   .lesson-topbar {
     padding: var(--space-sm);
   }

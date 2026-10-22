@@ -78,6 +78,13 @@ export type WordInfoDefinitionState = {
   sourceLanguageCode: string;
 };
 
+export type WordInfoPhraseSelectionState = {
+  canExtendPrev: boolean;
+  canExtendNext: boolean;
+  onExtendPrev: () => void;
+  onExtendNext: () => void;
+};
+
 export type WordInfoPanelProps = {
   displayedWord: DisplayedWord | null;
   selectedWord: string;
@@ -88,6 +95,7 @@ export type WordInfoPanelProps = {
   bookmark: WordInfoBookmarkState;
   language: WordInfoLanguageState;
   definition?: WordInfoDefinitionState;
+  phraseSelection?: WordInfoPhraseSelectionState;
 };
 
 const statusLabel = (status: number | undefined): string =>
@@ -102,7 +110,8 @@ const WordInfoPanel = React.memo(({
   actions,
   bookmark,
   language,
-  definition
+  definition,
+  phraseSelection
 }: WordInfoPanelProps) => {
   if (!displayedWord) {
     return (
@@ -144,6 +153,30 @@ const WordInfoPanel = React.memo(({
           {saveSuccess && <span className="word-info-saved" role="status">✓ Saved</span>}
         </div>
       </div>
+      {phraseSelection && (phraseSelection.canExtendPrev || phraseSelection.canExtendNext) && (
+        <div className="d-flex gap-1 mb-2 word-info-extend-row" role="group" aria-label="Extend selection">
+          <Button
+            variant="outline-secondary"
+            size="sm"
+            className="py-0 px-2 word-extend-btn"
+            onClick={phraseSelection.onExtendPrev}
+            disabled={!phraseSelection.canExtendPrev || actions.processingWord}
+            title="Include the previous word in this sentence"
+          >
+            + Prev word
+          </Button>
+          <Button
+            variant="outline-secondary"
+            size="sm"
+            className="py-0 px-2 word-extend-btn"
+            onClick={phraseSelection.onExtendNext}
+            disabled={!phraseSelection.canExtendNext || actions.processingWord}
+            title="Include the next word in this sentence"
+          >
+            + Next word
+          </Button>
+        </div>
+      )}
       <Form.Control
         as="textarea"
         rows={translationRows}

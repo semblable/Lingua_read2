@@ -759,6 +759,379 @@ export const splitTextIntoSentenceSegments = (
 // and modifier letter apostrophe (U+02BC) — common in copy-pasted ebook/news text.
 export const WORD_PATTERN = /\p{L}|['’ʼ]/u;
 
+// =====================================================================
+// SELECTION SNAPPING, PUNCTUATION CLEANING & PHRASE EXTENSION
+// =====================================================================
+
+export type PhraseSelectionState = {
+  words: string[];
+  separators: string[];
+  startIndex: number;
+  endIndex: number;
+  sentenceContext: string;
+};
+
+const EXTRA_SENTENCE_STOP_CHARS = '।۔。！？\n\r';
+
+const SENTENCE_BLOCK_SELECTOR =
+  '.sentence, .srt-line, .reader-title-line, .sentence-mode-text, .reading-block, .reader-paragraph';
+
+const buildSentenceStopSet = (splitSentences: string | null | undefined): Set<string> => {
+  const raw = splitSentences && splitSentences.length > 0 ? splitSentences : DEFAULT_SENTENCE_TERMINATORS;
+  return new Set((raw + DEFAULT_SENTENCE_TERMINATORS + EXTRA_SENTENCE_STOP_CHARS).split(''));
+};
+
+export const hasSentenceStopBetween = (
+  separatorText: string | null | undefined,
+  languageConfig: LanguageConfig = null,
+  precedingWord: string = ''
+): boolean => {
+  if (!separatorText) return false;
+  const stopChars = buildSentenceStopSet(languageConfig?.splitSentences);
+  let foundStop = false;
+  for (const ch of separatorText) {
+    if (stopChars.has(ch)) {
+      foundStop = true;
+      break;
+    }
+  }
+  if (!foundStop) return false;
+
+  const exceptions = languageConfig?.sentenceSplitExceptions;
+  if (precedingWord && exceptions) {
+    const rawList = typeof exceptions === 'string'
+      ? (exceptions as string).split('|')
+      : Array.isArray(exceptions)
+        ? exceptions
+        : [];
+    const exceptionList = rawList
+      .map((e) => (typeof e === 'string' ? e.trim() : e?.exceptionString?.trim() || ''))
+      .filter(Boolean);
+    if (exceptionList.length > 0) {
+      const combined = `${precedingWord}${separatorText.trimEnd()}`;
+      if (exceptionList.some((ex) => combined.endsWith(ex))) {
+        return false;
+      }
+    }
+  }
+
+  return true;
+};
+
+/**
+ * Clean a raw reader selection string:
+ * - Strips leading and trailing non-word characters (punctuation, quotes, stops, whitespace).
+ * - Clamps at sentence stops (`.`, `!`, `?`, `…`, etc.) so selections do not
+ *   include sentence-ending stops or spill across sentence boundaries.
+ * - Preserves internal word connectors (apostrophes, hyphens) and intra-sentence
+ *   separators (spaces, commas, etc.) between words in the same sentence.
+ */
+export const cleanSelectedReaderText = (
+  rawContent: string | null | undefined,
+  languageConfig: LanguageConfig = null
+): string => {
+  if (!rawContent) return '';
+  const { processed, tokens } = tokenizeContent(rawContent, languageConfig);
+  const wordTokens = tokens.filter((t) => t.type === 'word');
+  if (wordTokens.length === 0) return '';
+
+  const segments: ReaderToken[][] = [[wordTokens[0]]];
+  let separatorBuffer = '';
+  let seenFirstWord = false;
+
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i];
+    if (token.type === 'word') {
+      if (!seenFirstWord) {
+        seenFirstWord = true;
+        separatorBuffer = '';
+        continue;
+      }
+      const currentSegment = segments[segments.length - 1];
+      const prevWord = currentSegment[currentSegment.length - 1];
+      if (hasSentenceStopBetween(separatorBuffer, languageConfig, prevWord.text)) {
+        segments.push([token]);
+      } else {
+        currentSegment.push(token);
+      }
+      separatorBuffer = '';
+    } else if (seenFirstWord) {
+      separatorBuffer += token.text;
+    }
+  }
+
+  let bestSegment = segments[0];
+  for (let i = 1; i < segments.length; i++) {
+    if (segments[i].length > bestSegment.length) {
+      bestSegment = segments[i];
+    }
+  }
+
+  const firstWord = bestSegment[0];
+  const lastWord = bestSegment[bestSegment.length - 1];
+
+  return processed
+    .slice(firstWord.start, lastWord.end)
+    .replace(/\s+/g, ' ')
+    .trim();
+};
+
+export const getTextBetweenWordSpans = (
+  prevSpan: HTMLElement,
+  nextSpan: HTMLElement
+): string => {
+  try {
+    const betweenRange = document.createRange();
+    betweenRange.setStartAfter(prevSpan);
+    betweenRange.setEndBefore(nextSpan);
+    return betweenRange.toString();
+  } catch {
+    return ' ';
+  }
+};
+
+export const areWordSpansInSameSentence = (
+  prevSpan: HTMLElement,
+  nextSpan: HTMLElement,
+  languageConfig: LanguageConfig = null
+): boolean => {
+  if (prevSpan.closest('.sentence') !== nextSpan.closest('.sentence')) {
+    return false;
+  }
+  if (prevSpan.closest(SENTENCE_BLOCK_SELECTOR) !== nextSpan.closest(SENTENCE_BLOCK_SELECTOR)) {
+    return false;
+  }
+  const betweenText = getTextBetweenWordSpans(prevSpan, nextSpan);
+  if (hasSentenceStopBetween(betweenText, languageConfig, (prevSpan.textContent || '').trim())) {
+    return false;
+  }
+  return true;
+};
+
+export const splitWordSpansBySentence = (
+  spans: HTMLElement[],
+  languageConfig: LanguageConfig = null
+): HTMLElement[][] => {
+  if (spans.length === 0) return [];
+  const groups: HTMLElement[][] = [[spans[0]]];
+  for (let i = 1; i < spans.length; i++) {
+    const prev = spans[i - 1];
+    const curr = spans[i];
+    if (areWordSpansInSameSentence(prev, curr, languageConfig)) {
+      groups[groups.length - 1].push(curr);
+    } else {
+      groups.push([curr]);
+    }
+  }
+  return groups;
+};
+
+export const getOverlappedWordSpans = (
+  range: Range,
+  container: HTMLElement
+): HTMLElement[] => {
+  if (
+    !range ||
+    !container ||
+    typeof range.compareBoundaryPoints !== 'function' ||
+    !range.startContainer ||
+    !range.endContainer ||
+    !container.contains(range.startContainer) ||
+    !container.contains(range.endContainer)
+  ) {
+    return [];
+  }
+
+  const candidates = container.querySelectorAll<HTMLElement>('.clickable-word');
+  if (candidates.length === 0) return [];
+
+  const wordRange = document.createRange();
+  const overlapped: HTMLElement[] = [];
+
+  candidates.forEach((wordEl) => {
+    try {
+      wordRange.selectNodeContents(wordEl);
+      if (
+        range.compareBoundaryPoints(Range.END_TO_START, wordRange) < 0 &&
+        range.compareBoundaryPoints(Range.START_TO_END, wordRange) > 0
+      ) {
+        overlapped.push(wordEl);
+      }
+    } catch {
+      // Ignore comparison errors for detached/unselectable nodes
+    }
+  });
+
+  return overlapped;
+};
+
+export const clampWordSpansToSingleSentence = (
+  overlappedSpans: HTMLElement[],
+  languageConfig: LanguageConfig = null,
+  options: { anchorNode?: Node | null; initialTextHint?: string } = {}
+): HTMLElement[] => {
+  const groups = splitWordSpansBySentence(overlappedSpans, languageConfig);
+  if (groups.length <= 1) return groups[0] || [];
+
+  const { anchorNode, initialTextHint } = options;
+  const normalizedHint = cleanSelectedReaderText(initialTextHint || '', languageConfig).toLowerCase();
+
+  if (normalizedHint) {
+    const hintGroup = groups.find((group) =>
+      group.some((span) => (span.textContent || '').trim().toLowerCase() === normalizedHint)
+    );
+    if (hintGroup) return hintGroup;
+  }
+
+  if (anchorNode) {
+    const anchorGroup = groups.find((group) =>
+      group.some((span) => span === anchorNode || span.contains(anchorNode))
+    );
+    if (anchorGroup) return anchorGroup;
+
+    const anchorEl =
+      anchorNode.nodeType === Node.ELEMENT_NODE
+        ? (anchorNode as HTMLElement)
+        : anchorNode.parentElement;
+    const anchorSentence = anchorEl?.closest('.sentence');
+    if (anchorSentence) {
+      const sentenceGroup = groups.find(
+        (group) => group[0]?.closest('.sentence') === anchorSentence
+      );
+      if (sentenceGroup) return sentenceGroup;
+    }
+  }
+
+  return groups[0];
+};
+
+export const buildPhraseSelectionFromSpans = (
+  startSpan: HTMLElement,
+  endSpan: HTMLElement,
+  container: HTMLElement | null,
+  languageConfig: LanguageConfig = null,
+  sentenceContext: string = ''
+): PhraseSelectionState | null => {
+  const scopeEl =
+    startSpan.closest(SENTENCE_BLOCK_SELECTOR) ||
+    container ||
+    startSpan.parentElement;
+  if (!scopeEl) return null;
+
+  const allSpans = Array.from(scopeEl.querySelectorAll<HTMLElement>('.clickable-word'));
+  if (allSpans.length === 0) return null;
+
+  const sentenceGroups = splitWordSpansBySentence(allSpans, languageConfig);
+  const sentenceSpans =
+    sentenceGroups.find((group) => group.includes(startSpan)) ||
+    sentenceGroups.find((group) => group.includes(endSpan));
+  if (!sentenceSpans || sentenceSpans.length === 0) return null;
+
+  const rawStartIdx = sentenceSpans.indexOf(startSpan);
+  const rawEndIdx = sentenceSpans.indexOf(endSpan);
+  if (rawStartIdx === -1 && rawEndIdx === -1) return null;
+
+  const startIndex = rawStartIdx !== -1 ? rawStartIdx : rawEndIdx;
+  const endIndex = rawEndIdx !== -1 ? Math.max(startIndex, rawEndIdx) : startIndex;
+
+  const words = sentenceSpans.map((span) => (span.textContent || '').trim());
+  const separators: string[] = [];
+  for (let i = 0; i < sentenceSpans.length - 1; i++) {
+    separators.push(getTextBetweenWordSpans(sentenceSpans[i], sentenceSpans[i + 1]));
+  }
+
+  return {
+    words,
+    separators,
+    startIndex,
+    endIndex,
+    sentenceContext
+  };
+};
+
+export const buildPhraseSelectionFromText = (
+  selectedText: string,
+  sentenceContext: string,
+  languageConfig: LanguageConfig = null
+): PhraseSelectionState | null => {
+  const cleanSelected = cleanSelectedReaderText(selectedText, languageConfig);
+  if (!cleanSelected || !sentenceContext) return null;
+
+  const { tokens: selectedTokens } = tokenizeContent(cleanSelected, languageConfig);
+  const selectedWords = selectedTokens.filter((t) => t.type === 'word').map((t) => t.text);
+  if (selectedWords.length === 0) return null;
+
+  const { tokens: contextTokens } = tokenizeContent(sentenceContext, languageConfig);
+  const sentenceWordGroups: { words: string[]; separators: string[] }[] = [];
+  let currentWords: string[] = [];
+  let currentSeparators: string[] = [];
+  let sepBuffer = '';
+
+  for (const token of contextTokens) {
+    if (token.type === 'separator') {
+      if (currentWords.length > 0) {
+        sepBuffer += token.text;
+      }
+    } else if (token.type === 'word') {
+      if (
+        currentWords.length > 0 &&
+        hasSentenceStopBetween(sepBuffer, languageConfig, currentWords[currentWords.length - 1])
+      ) {
+        sentenceWordGroups.push({ words: currentWords, separators: currentSeparators });
+        currentWords = [token.text];
+        currentSeparators = [];
+      } else {
+        if (currentWords.length > 0) {
+          currentSeparators.push(sepBuffer);
+        }
+        currentWords.push(token.text);
+      }
+      sepBuffer = '';
+    }
+  }
+  if (currentWords.length > 0) {
+    sentenceWordGroups.push({ words: currentWords, separators: currentSeparators });
+  }
+
+  for (const group of sentenceWordGroups) {
+    const { words, separators } = group;
+    for (let i = 0; i <= words.length - selectedWords.length; i++) {
+      let matches = true;
+      for (let j = 0; j < selectedWords.length; j++) {
+        if (words[i + j].toLowerCase() !== selectedWords[j].toLowerCase()) {
+          matches = false;
+          break;
+        }
+      }
+      if (matches) {
+        return {
+          words,
+          separators,
+          startIndex: i,
+          endIndex: i + selectedWords.length - 1,
+          sentenceContext
+        };
+      }
+    }
+  }
+
+  return null;
+};
+
+export const buildPhraseSelectionText = (
+  state: PhraseSelectionState,
+  languageConfig: LanguageConfig = null
+): string => {
+  if (!state || state.words.length === 0) return '';
+  const start = Math.max(0, Math.min(state.startIndex, state.words.length - 1));
+  const end = Math.max(start, Math.min(state.endIndex, state.words.length - 1));
+  let combined = state.words[start];
+  for (let i = start; i < end; i++) {
+    combined += (state.separators[i] ?? ' ') + state.words[i + 1];
+  }
+  return cleanSelectedReaderText(combined, languageConfig) || combined.replace(/\s+/g, ' ').trim();
+};
+
 export const styles: Record<string, React.CSSProperties> = {
   highlightedWord: {
     cursor: 'pointer',

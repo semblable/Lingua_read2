@@ -262,4 +262,44 @@ describe('WordInfoPanel', () => {
     fireEvent.click(btn);
     expect(onToggleBookmark).toHaveBeenCalledTimes(1);
   });
+
+  test('renders + Prev word and + Next word controls when phraseSelection can extend', () => {
+    const onExtendPrev = vi.fn();
+    const onExtendNext = vi.fn();
+    const { rerender } = render(
+      <WordInfoPanel
+        {...baseProps({
+          phraseSelection: {
+            canExtendPrev: false,
+            canExtendNext: true,
+            onExtendPrev,
+            onExtendNext
+          }
+        })}
+      />
+    );
+
+    const prevBtn = screen.getByRole('button', { name: /\+ Prev word/i });
+    const nextBtn = screen.getByRole('button', { name: /\+ Next word/i });
+    expect(prevBtn).toBeDisabled();
+    expect(nextBtn).toBeEnabled();
+
+    fireEvent.click(nextBtn);
+    expect(onExtendNext).toHaveBeenCalledTimes(1);
+
+    rerender(
+      <WordInfoPanel
+        {...baseProps({
+          phraseSelection: {
+            canExtendPrev: false,
+            canExtendNext: false,
+            onExtendPrev,
+            onExtendNext
+          }
+        })}
+      />
+    );
+    expect(screen.queryByRole('button', { name: /\+ Prev word/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /\+ Next word/i })).not.toBeInTheDocument();
+  });
 });

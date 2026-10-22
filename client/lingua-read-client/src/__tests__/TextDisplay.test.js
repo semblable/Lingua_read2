@@ -1216,6 +1216,246 @@ describe('TextDisplay', () => {
     expect(screen.getByRole('button', { name: /Open lesson controls/i })).toHaveTextContent('Lesson');
   });
 
+  test('mobile partial-word selection snaps to full words and strips trailing punctuation', async () => {
+    window.matchMedia = vi.fn().mockImplementation(() => ({
+      matches: true,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn()
+    }));
+
+    renderTextDisplay({ autoTranslateWords: true });
+
+    await waitFor(() => expect(getText).toHaveBeenCalled());
+    const helloWord = await screen.findByText('Hello');
+    const worldWord = await screen.findByText('world');
+    const textContent = helloWord.closest('.text-content');
+    expect(textContent).not.toBeNull();
+
+    // Build a real DOM Range that starts mid-word in "Hello" ("llo") and ends
+    // after the trailing period following "world" ("llo world.").
+    const range = document.createRange();
+    range.setStart(helloWord.firstChild, 2);
+    const sentenceEl = worldWord.closest('.sentence') || textContent;
+    range.setEnd(sentenceEl, sentenceEl.childNodes.length);
+
+    const mockSelection = {
+      isCollapsed: false,
+      rangeCount: 1,
+      anchorNode: helloWord.firstChild,
+      focusNode: sentenceEl,
+      toString: () => range.toString(),
+      getRangeAt: () => range,
+      removeAllRanges: vi.fn(),
+      addRange: vi.fn()
+    };
+    window.getSelection = vi.fn(() => mockSelection);
+
+    act(() => {
+      fireEvent.touchEnd(textContent);
+      vi.advanceTimersByTime(1000);
+    });
+
+    await waitFor(() => {
+      expect(translateSelectionWithContext).toHaveBeenCalledWith(
+        'Hello world',
+        'Hello world.',
+        'ES',
+        'EN',
+        expect.objectContaining({ signal: expect.anything() })
+      );
+    });
+    expect(mockSelection.removeAllRanges).toHaveBeenCalled();
+    expect(mockSelection.addRange).toHaveBeenCalled();
+  });
+
+  test('mobile selection across a sentence stop clamps to a single sentence', async () => {
+    window.matchMedia = vi.fn().mockImplementation(() => ({
+      matches: true,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn()
+    }));
+
+    getText.mockResolvedValueOnce({
+      textId: 1,
+      title: 'Sample Text',
+      content: 'Hello world. Another sentence here.',
+      languageId: null,
+      languageCode: 'ES',
+      languageName: 'Spanish',
+      isAudioLesson: false,
+      words: [],
+      bookId: null
+    });
+
+    renderTextDisplay({ autoTranslateWords: true });
+
+    await waitFor(() => expect(getText).toHaveBeenCalled());
+    const helloWord = await screen.findByText('Hello');
+    const anotherWord = await screen.findByText('Another');
+    const textContent = helloWord.closest('.text-content');
+
+    const range = document.createRange();
+    range.setStartBefore(helloWord);
+    range.setEndAfter(anotherWord);
+
+    const mockSelection = {
+      isCollapsed: false,
+      rangeCount: 1,
+      anchorNode: helloWord,
+      focusNode: anotherWord,
+      toString: () => 'Hello world. Another',
+      getRangeAt: () => range,
+      removeAllRanges: vi.fn(),
+      addRange: vi.fn()
+    };
+    window.getSelection = vi.fn(() => mockSelection);
+
+    act(() => {
+      fireEvent.touchEnd(textContent);
+      vi.advanceTimersByTime(1000);
+    });
+
+    await waitFor(() => {
+      expect(translateSelectionWithContext).toHaveBeenCalledWith(
+        'Hello world',
+        'Hello world.',
+        'ES',
+        'EN',
+        expect.objectContaining({ signal: expect.anything() })
+      );
+    });
+  });
+
+  test('mobile small finger tremor during initial long-press waits for handle drag before finalizing', async () => {
+    window.matchMedia = vi.fn().mockImplementation(() => ({
+      matches: true,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn()
+    }));
+
+    renderTextDisplay({ autoTranslateWords: true });
+
+    await waitFor(() => expect(getText).toHaveBeenCalled());
+    const word = await screen.findByText('Hello');
+    const textContent = word.closest('.text-content');
+
+    const noSelection = {
+      isCollapsed: true,
+      rangeCount: 0,
+      anchorNode: null,
+      focusNode: null,
+      toString: () => ''
+    };
+    const initialSelection = {
+      isCollapsed: false,
+      rangeCount: 1,
+      anchorNode: textContent,
+      focusNode: textContent,
+      toString: () => 'Hello',
+      getRangeAt: () => ({ commonAncestorContainer: textContent })
+    };
+    const handleDraggedSelection = {
+      isCollapsed: false,
+      rangeCount: 1,
+      anchorNode: textContent,
+      focusNode: textContent,
+      toString: () => 'Hello world',
+      getRangeAt: () => ({ commonAncestorContainer: textContent })
+    };
+    let currentSelection = noSelection;
+    window.getSelection = vi.fn(() => currentSelection);
+
+    // Long-press with a tiny (<10px) finger tremor and release
+    act(() => {
+      fireEvent.touchStart(textContent, { touches: [{ clientX: 100, clientY: 100 }] });
+      fireEvent.touchMove(textContent, { touches: [{ clientX: 103, clientY: 102 }] });
+      currentSelection = initialSelection;
+      document.dispatchEvent(new Event('selectionchange'));
+      fireEvent.touchEnd(textContent);
+      vi.advanceTimersByTime(1000);
+    });
+
+    // Must not pop open Word Info yet on the initial 1-word long-press
+    expect(translateSelectionWithContext).not.toHaveBeenCalled();
+
+    // Now the user drags the native OS handle by 1 word (no DOM touchstart fires)
+    currentSelection = handleDraggedSelection;
+    act(() => {
+      document.dispatchEvent(new Event('selectionchange'));
+      vi.advanceTimersByTime(700);
+    });
+
+    await waitFor(() => {
+      expect(translateSelectionWithContext).toHaveBeenCalledWith(
+        'Hello world',
+        'Hello world.',
+        'ES',
+        'EN',
+        expect.objectContaining({ signal: expect.anything() })
+      );
+    });
+  });
+
+  test('tapping + Next word and + Prev word in Word Info extends the phrase within the sentence', async () => {
+    getText.mockResolvedValueOnce({
+      textId: 1,
+      title: 'Sample Text',
+      content: 'Hello brave world. Next sentence.',
+      languageId: null,
+      languageCode: 'ES',
+      languageName: 'Spanish',
+      isAudioLesson: false,
+      words: [],
+      bookId: null
+    });
+
+    renderTextDisplay({ autoTranslateWords: true });
+
+    await waitFor(() => expect(getText).toHaveBeenCalled());
+    const braveWord = await screen.findByText('brave');
+
+    await act(async () => {
+      fireEvent.click(braveWord);
+    });
+
+    const prevBtn = await screen.findByRole('button', { name: /\+ Prev word/i });
+    const nextBtn = await screen.findByRole('button', { name: /\+ Next word/i });
+    expect(prevBtn).toBeEnabled();
+    expect(nextBtn).toBeEnabled();
+
+    await act(async () => {
+      fireEvent.click(nextBtn);
+    });
+
+    await waitFor(() => {
+      expect(translateSelectionWithContext).toHaveBeenCalledWith(
+        'brave world',
+        'Hello brave world.',
+        'ES',
+        'EN',
+        expect.objectContaining({ signal: expect.anything() })
+      );
+    });
+
+    // Now at the end of the first sentence ("world."), + Next word must be disabled
+    expect(screen.getByRole('button', { name: /\+ Next word/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /\+ Prev word/i })).toBeEnabled();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /\+ Prev word/i }));
+    });
+
+    await waitFor(() => {
+      expect(translateSelectionWithContext).toHaveBeenCalledWith(
+        'Hello brave world',
+        'Hello brave world.',
+        'ES',
+        'EN',
+        expect.objectContaining({ signal: expect.anything() })
+      );
+    });
+  });
+
   test('rapid word clicks abort the previous in-flight translation', async () => {
     renderTextDisplay({ autoTranslateWords: true });
 

@@ -27,8 +27,20 @@ import { extractTranslatedTextFromPairedTags } from '../utils/translationTags';
 import { cancelSpeech, isSpeechSynthesisSupported, speakText } from '../utils/browserTts';
 import { parseSrtContent, findSrtLineIndex } from '../utils/srtParser';
 import { libraryPath } from '../utils/helpers';
-import { styles, splitTextIntoSentenceSegments, prepareLanguageContext, consumeWordAt, extractWords } from '../utils/readerText';
-import type { SentenceSegment } from '../utils/readerText';
+import {
+  styles,
+  splitTextIntoSentenceSegments,
+  prepareLanguageContext,
+  consumeWordAt,
+  extractWords,
+  cleanSelectedReaderText,
+  getOverlappedWordSpans,
+  clampWordSpansToSingleSentence,
+  buildPhraseSelectionFromSpans,
+  buildPhraseSelectionFromText,
+  buildPhraseSelectionText
+} from '../utils/readerText';
+import type { SentenceSegment, PhraseSelectionState } from '../utils/readerText';
 import PrimaryControls from '../components/reader/PrimaryControls';
 import SecondaryControls from '../components/reader/SecondaryControls';
 import ReaderLessonActions from '../components/reader/ReaderLessonActions';
@@ -103,6 +115,7 @@ const TextDisplay = () => {
   const [visibleTranslationIndex, setVisibleTranslationIndex] = useState<number | null>(null);
   const [visibleExplanationIndex, setVisibleExplanationIndex] = useState<number | null>(null);
   const [creditedSegmentIndices, setCreditedSegmentIndices] = useState<number[]>([]);
+  const [activePhraseSelection, setActivePhraseSelection] = useState<PhraseSelectionState | null>(null);
   const selectionDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mobileSelectionRetryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mobileSelectionPendingRef = useRef(false);
@@ -110,9 +123,11 @@ const TextDisplay = () => {
   const mobileSelectionWasActiveAtTouchStartRef = useRef(false);
   const mobileTouchStartedRef = useRef(false);
   const mobileTouchMovedRef = useRef(false);
+  const mobileTouchStartPointRef = useRef<{ x: number; y: number } | null>(null);
   const mobileSelectionInitialTextRef = useRef('');
   const mobileSelectionGrewRef = useRef(false);
   const mobileSelectionStabilityRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isAdjustingSelectionRef = useRef(false);
   const lastHandledSelectionRef = useRef('');
   const suppressWordClickUntilRef = useRef(0);
   const selectableWordTouchStartRef = useRef(0);
@@ -340,6 +355,7 @@ const TextDisplay = () => {
     setVisibleTranslationIndex(null);
     setVisibleExplanationIndex(null);
     setCreditedSegmentIndices([]);
+    setActivePhraseSelection(null);
     setSegmentPlaybackRequest(null);
     lastAutoSegmentPlaybackKeyRef.current = '';
     skipInitialAudioLessonSegmentPlaybackRef.current = true;
@@ -714,7 +730,10 @@ const TextDisplay = () => {
       return;
     }
     focusSentenceIndexFromNode(event.target as Node);
-    const sentenceContext = readSentenceContextFromNode(event.target as Node);
+    const targetSpan = (event.target as HTMLElement | null)?.closest?.('.clickable-word') as HTMLElement | null;
+    const sentenceContext =
+      readSentenceContextFromNode(event.target as Node) ||
+      buildAiSelectionContext(null, targetSpan?.closest('.srt-line, .reader-title-line, .sentence-mode-text') as HTMLElement | null, word);
     if (!isPhrase && globalSettings.tooltipOnlyForSavedWords) {
       const existing = getWordData(word);
       // By status, not `isNew`: the API sets that on every saved word of status 1, and linking
@@ -724,8 +743,17 @@ const TextDisplay = () => {
         return;
       }
     }
+    if (targetSpan) {
+      setActivePhraseSelection(
+        buildPhraseSelectionFromSpans(targetSpan, targetSpan, textContentRef.current, languageConfig, sentenceContext)
+      );
+    } else {
+      setActivePhraseSelection(
+        buildPhraseSelectionFromText(word, sentenceContext, languageConfig)
+      );
+    }
     handleWordClick(word, { selectionContext: sentenceContext });
-  }, [clearPendingSelection, focusSentenceIndexFromNode, readSentenceContextFromNode, handleWordClick, hasActiveTextSelection, getWordData, globalSettings.tooltipOnlyForSavedWords]);
+  }, [clearPendingSelection, focusSentenceIndexFromNode, readSentenceContextFromNode, buildAiSelectionContext, handleWordClick, hasActiveTextSelection, getWordData, globalSettings.tooltipOnlyForSavedWords, languageConfig]);
 
   const handleSelectableWordTouchStart = useCallback(() => {
     selectableWordTouchStartRef.current = Date.now();
@@ -748,8 +776,7 @@ const TextDisplay = () => {
     }
 
     const { selection, range, container, selectedText } = selectionDetails;
-    const sentenceContext = buildAiSelectionContext(range, container, selectedText);
-    focusSentenceIndexFromNode(range.commonAncestorContainer);
+    const initialTextHint = mobileSelectionInitialTextRef.current;
     if (isMobile) {
       mobileSelectionPendingRef.current = false;
       mobileSelectionObservedRef.current = false;
@@ -760,7 +787,10 @@ const TextDisplay = () => {
       mobileSelectionGrewRef.current = false;
       clearMobileSelectionRetry();
       clearMobileSelectionStability();
-      handleSelectedText(selectedText, sentenceContext);
+    }
+
+    const cleanedRawText = cleanSelectedReaderText(selectedText, languageConfig);
+    if (!cleanedRawText) {
       return;
     }
 
@@ -821,45 +851,87 @@ const TextDisplay = () => {
       return null; // No word span found in traversal
     };
 
+    let candidateSpans = getOverlappedWordSpans(range, container);
+    if (candidateSpans.length === 0 && startNode && endNode) {
+      let startWordSpan = findWordSpan(startNode) || findWordSpanNearText(startNode, startOffset, true);
+      let endWordSpan = findWordSpan(endNode) || findWordSpanNearText(endNode, endOffset, false);
+      if (startWordSpan && endWordSpan) {
+        if (endWordSpan.compareDocumentPosition(startWordSpan) & Node.DOCUMENT_POSITION_FOLLOWING) {
+          [startWordSpan, endWordSpan] = [endWordSpan, startWordSpan];
+        }
+        const allSpans = Array.from(container.querySelectorAll<HTMLElement>('.clickable-word'));
+        const startIdx = allSpans.indexOf(startWordSpan);
+        const endIdx = allSpans.indexOf(endWordSpan);
+        if (startIdx !== -1 && endIdx !== -1 && startIdx <= endIdx) {
+          candidateSpans = allSpans.slice(startIdx, endIdx + 1);
+        } else {
+          candidateSpans = startWordSpan === endWordSpan ? [startWordSpan] : [startWordSpan, endWordSpan];
+        }
+      }
+    }
 
-    let startWordSpan = findWordSpan(startNode) || findWordSpanNearText(startNode, startOffset, true);
-    let endWordSpan = findWordSpan(endNode) || findWordSpanNearText(endNode, endOffset, false);
+    const clampedSpans = clampWordSpansToSingleSentence(candidateSpans, languageConfig, {
+      anchorNode: selection.anchorNode,
+      initialTextHint
+    });
 
-    // Large / multi-block selections may not map to word spans; still translate via AI with full context.
-    if (!startWordSpan || !endWordSpan) {
-      handleSelectedText(selectedText, sentenceContext);
+    // Large / multi-block or mocked selections without word spans still translate via AI with context.
+    if (clampedSpans.length === 0) {
+      const sentenceContext = buildAiSelectionContext(range, container, cleanedRawText);
+      focusSentenceIndexFromNode(range.commonAncestorContainer);
+      setActivePhraseSelection(buildPhraseSelectionFromText(cleanedRawText, sentenceContext, languageConfig));
+      if (isMobile) {
+        mobileSelectionInitialTextRef.current = cleanedRawText;
+      }
+      handleSelectedText(cleanedRawText, sentenceContext);
       return;
     }
 
-    // Ensure startWordSpan actually comes before endWordSpan in the DOM
-    if (startWordSpan.compareDocumentPosition(endWordSpan) & Node.DOCUMENT_POSITION_FOLLOWING) {
-      // Correct order
-    } else if (endWordSpan.compareDocumentPosition(startWordSpan) & Node.DOCUMENT_POSITION_FOLLOWING) {
-      // Swapped order, fix it
-      [startWordSpan, endWordSpan] = [endWordSpan, startWordSpan];
-    } else {
-      // Same node, which is fine
-    }
+    const startWordSpan = clampedSpans[0];
+    const endWordSpan = clampedSpans[clampedSpans.length - 1];
 
-
-    // Create a new range encompassing the start and end word spans
+    // Create a new range encompassing the start and end word spans within the same sentence
     const newRange = document.createRange();
     try {
       newRange.setStartBefore(startWordSpan);
       newRange.setEndAfter(endWordSpan);
 
-      // Update the selection visually
-      selection.removeAllRanges();
-      selection.addRange(newRange);
+      const snappedText = cleanSelectedReaderText(newRange.toString(), languageConfig) || newRange.toString().trim();
+      const sentenceContext = buildAiSelectionContext(newRange, container, snappedText);
+      focusSentenceIndexFromNode(startWordSpan);
+      setActivePhraseSelection(
+        buildPhraseSelectionFromSpans(startWordSpan, endWordSpan, container, languageConfig, sentenceContext)
+      );
 
-      handleSelectedText(newRange.toString().trim(), sentenceContext);
+      // Update the selection visually without re-triggering mobile selectionchange loops
+      if (typeof selection.removeAllRanges === 'function' && typeof selection.addRange === 'function') {
+        isAdjustingSelectionRef.current = true;
+        try {
+          selection.removeAllRanges();
+          selection.addRange(newRange);
+        } finally {
+          Promise.resolve().then(() => {
+            isAdjustingSelectionRef.current = false;
+          });
+        }
+      }
+
+      if (isMobile) {
+        mobileSelectionInitialTextRef.current = snappedText;
+      }
+      handleSelectedText(snappedText, sentenceContext);
     } catch (e) {
       console.warn("Error adjusting selection range:", e);
-      // Fallback: use original selection text if possible
-      handleSelectedText(selection.toString().trim(), sentenceContext);
+      const fallbackContext = buildAiSelectionContext(range, container, cleanedRawText);
+      focusSentenceIndexFromNode(range.commonAncestorContainer);
+      setActivePhraseSelection(buildPhraseSelectionFromText(cleanedRawText, fallbackContext, languageConfig));
+      if (isMobile) {
+        mobileSelectionInitialTextRef.current = cleanedRawText;
+      }
+      handleSelectedText(cleanedRawText, fallbackContext);
     }
 
-  }, [focusSentenceIndexFromNode, getSelectionDetails, buildAiSelectionContext, handleSelectedText, isMobile, clearMobileSelectionRetry, clearMobileSelectionStability]); // textContentRef is a stable ref
+  }, [focusSentenceIndexFromNode, getSelectionDetails, buildAiSelectionContext, handleSelectedText, isMobile, clearMobileSelectionRetry, clearMobileSelectionStability, languageConfig]); // textContentRef is a stable ref
 
   const scheduleWordSelection = useCallback((delayMs: number) => {
     clearPendingSelection();
@@ -869,21 +941,33 @@ const TextDisplay = () => {
     }, delayMs);
   }, [clearPendingSelection, processWordSelection]);
 
+  const isInitialSingleWordMobilePress = useCallback(() => {
+    if (
+      !mobileTouchStartedRef.current ||
+      !mobileSelectionObservedRef.current ||
+      mobileSelectionWasActiveAtTouchStartRef.current ||
+      mobileSelectionGrewRef.current
+    ) {
+      return false;
+    }
+    if (!mobileTouchMovedRef.current) {
+      return true;
+    }
+    const currentRaw = window.getSelection()?.toString() || '';
+    return extractWords(currentRaw, languageConfig).length <= 1;
+  }, [languageConfig]);
+
   const handleWordSelection = useCallback(() => {
     if (!isMobile) {
       scheduleWordSelection(120);
       return;
     }
 
-    if (
-      mobileTouchStartedRef.current &&
-      mobileSelectionObservedRef.current &&
-      !mobileSelectionWasActiveAtTouchStartRef.current &&
-      !mobileTouchMovedRef.current &&
-      !mobileSelectionGrewRef.current
-    ) {
+    if (isInitialSingleWordMobilePress()) {
       mobileTouchStartedRef.current = false;
-      clearMobileSelectionPending();
+      mobileSelectionPendingRef.current = false;
+      clearMobileSelectionRetry();
+      clearMobileSelectionStability();
       return;
     }
 
@@ -900,7 +984,7 @@ const TextDisplay = () => {
       }
       mobileSelectionRetryRef.current = null;
     }, 550);
-  }, [isMobile, scheduleWordSelection, clearMobileSelectionPending, clearMobileSelectionRetry, processWordSelection]);
+  }, [isMobile, scheduleWordSelection, isInitialSingleWordMobilePress, clearMobileSelectionRetry, clearMobileSelectionStability, processWordSelection]);
 
   useEffect(() => {
     return () => {
@@ -913,9 +997,26 @@ const TextDisplay = () => {
   useEffect(() => {
     if (!isMobile) return undefined;
 
+    const scheduleMobileStabilitySelection = () => {
+      if (!mobileSelectionGrewRef.current) return;
+      clearMobileSelectionStability();
+      mobileSelectionStabilityRef.current = setTimeout(() => {
+        mobileSelectionStabilityRef.current = null;
+        if (!mobileSelectionObservedRef.current) {
+          return;
+        }
+        mobileSelectionPendingRef.current = false;
+        processWordSelection();
+      }, 650);
+    };
+
     // Clear the dedupe ref when the user collapses the selection, so the same
     // phrase can be re-selected later and re-trigger a translation.
     const handleSelectionChange = () => {
+      if (isAdjustingSelectionRef.current) {
+        return;
+      }
+
       const selection = window.getSelection();
       if (!selection || selection.isCollapsed) {
         lastHandledSelectionRef.current = '';
@@ -951,7 +1052,11 @@ const TextDisplay = () => {
 
       mobileSelectionObservedRef.current = true;
 
-      const selectedText = selection.toString().trim();
+      const selectedText = cleanSelectedReaderText(selection.toString(), languageConfig) || selection.toString().trim();
+      if (selectedText && selectedText === lastHandledSelectionRef.current) {
+        return;
+      }
+
       if (!mobileSelectionInitialTextRef.current) {
         mobileSelectionInitialTextRef.current = selectedText;
       } else if (selectedText && selectedText !== mobileSelectionInitialTextRef.current) {
@@ -962,15 +1067,7 @@ const TextDisplay = () => {
       // Once we've seen the selection grow past its initial long-press word, run
       // a stability timer that fires shortly after the user stops adjusting.
       if (mobileSelectionGrewRef.current) {
-        clearMobileSelectionStability();
-        mobileSelectionStabilityRef.current = setTimeout(() => {
-          mobileSelectionStabilityRef.current = null;
-          if (!mobileSelectionObservedRef.current) {
-            return;
-          }
-          mobileSelectionPendingRef.current = false;
-          processWordSelection();
-        }, 500);
+        scheduleMobileStabilitySelection();
       }
 
       if (!mobileSelectionPendingRef.current) {
@@ -980,12 +1077,15 @@ const TextDisplay = () => {
       scheduleWordSelection(60);
     };
 
-    const handleTouchStart = () => {
+    const handleTouchStart = (event: TouchEvent) => {
       const hadReaderSelection = Boolean(getSelectionDetails());
+      const rawExisting = hadReaderSelection ? (window.getSelection()?.toString() || '') : '';
       const existingText = hadReaderSelection
-        ? (window.getSelection()?.toString().trim() || '')
+        ? (cleanSelectedReaderText(rawExisting, languageConfig) || rawExisting.trim())
         : '';
       clearMobileSelectionPending();
+      const touch = event.touches?.[0];
+      mobileTouchStartPointRef.current = touch ? { x: touch.clientX, y: touch.clientY } : null;
       mobileTouchStartedRef.current = true;
       mobileTouchMovedRef.current = false;
       mobileSelectionWasActiveAtTouchStartRef.current = hadReaderSelection;
@@ -994,8 +1094,22 @@ const TextDisplay = () => {
       mobileSelectionGrewRef.current = false;
     };
 
-    const handleTouchMove = () => {
-      mobileTouchMovedRef.current = true;
+    const handleTouchMove = (event: TouchEvent) => {
+      const startPoint = mobileTouchStartPointRef.current;
+      const touch = event.touches?.[0];
+      if (startPoint && touch) {
+        const dx = touch.clientX - startPoint.x;
+        const dy = touch.clientY - startPoint.y;
+        if (Math.hypot(dx, dy) >= 10) {
+          mobileTouchMovedRef.current = true;
+        }
+      } else {
+        mobileTouchMovedRef.current = true;
+      }
+      // Keep the stability timer deferred while the user is actively moving their finger.
+      if (mobileSelectionGrewRef.current) {
+        scheduleMobileStabilitySelection();
+      }
     };
 
     const handleTouchRelease = (event: TouchEvent) => {
@@ -1008,12 +1122,8 @@ const TextDisplay = () => {
         return;
       }
 
-      if (
-        mobileTouchStartedRef.current &&
-        !mobileSelectionWasActiveAtTouchStartRef.current &&
-        !mobileTouchMovedRef.current &&
-        !mobileSelectionGrewRef.current
-      ) {
+      if (isInitialSingleWordMobilePress()) {
+        mobileTouchStartedRef.current = false;
         return;
       }
 
@@ -1043,7 +1153,7 @@ const TextDisplay = () => {
       document.removeEventListener('touchend', handleTouchRelease, true);
       document.removeEventListener('touchcancel', handleTouchRelease, true);
     };
-  }, [isMobile, getSelectionDetails, scheduleWordSelection, clearMobileSelectionPending, clearMobileSelectionRetry, clearMobileSelectionStability, processWordSelection]);
+  }, [isMobile, getSelectionDetails, scheduleWordSelection, clearMobileSelectionPending, clearMobileSelectionRetry, clearMobileSelectionStability, processWordSelection, isInitialSingleWordMobilePress, languageConfig]);
   // --- End New Word-Granularity Selection Logic ---
 
 
@@ -1651,6 +1761,49 @@ const TextDisplay = () => {
 
   const wordInfoRetranslateContext = selectedWordAiContext || currentSentenceSegment?.text || '';
 
+  const handleExtendPhraseSelection = useCallback((direction: 'prev' | 'next') => {
+    if (!activePhraseSelection) return;
+    const { startIndex, endIndex, words, sentenceContext } = activePhraseSelection;
+    let nextStart = startIndex;
+    let nextEnd = endIndex;
+    if (direction === 'prev') {
+      if (startIndex <= 0) return;
+      nextStart = startIndex - 1;
+    } else {
+      if (endIndex >= words.length - 1) return;
+      nextEnd = endIndex + 1;
+    }
+
+    const nextSelection: PhraseSelectionState = {
+      ...activePhraseSelection,
+      startIndex: nextStart,
+      endIndex: nextEnd
+    };
+    const nextText = buildPhraseSelectionText(nextSelection, languageConfig);
+    if (!nextText) return;
+
+    const effectiveContext = sentenceContext || currentSentenceSegment?.text || '';
+    setActivePhraseSelection(nextSelection);
+    lastHandledSelectionRef.current = nextText;
+    const useAiContext = Boolean(effectiveContext && effectiveContext.trim());
+    handleWordClick(nextText, {
+      skipAutoTranslate: useAiContext,
+      preserveLastHandledSelection: true,
+      selectionContext: effectiveContext
+    });
+    if (useAiContext) {
+      triggerAutoTranslation(nextText, { sentenceContext: effectiveContext });
+    }
+  }, [activePhraseSelection, languageConfig, currentSentenceSegment?.text, handleWordClick, triggerAutoTranslation]);
+
+  const handleExtendPhrasePrev = useCallback(() => {
+    handleExtendPhraseSelection('prev');
+  }, [handleExtendPhraseSelection]);
+
+  const handleExtendPhraseNext = useCallback(() => {
+    handleExtendPhraseSelection('next');
+  }, [handleExtendPhraseSelection]);
+
   // WordInfoPanel handlers — hoisted from inline JSX arrows during Phase E3
   // so the panel's composite props remain referentially stable per render.
   const handleReadingCredit = useCallback(async (wordId: number | string) => {
@@ -2089,6 +2242,15 @@ const TextDisplay = () => {
         !!globalSettings.wiktionaryRichDisplay,
       sourceLanguageCode: text?.languageCode ?? '',
     },
+    phraseSelection:
+      activePhraseSelection && activePhraseSelection.words.length > 1
+        ? {
+            canExtendPrev: activePhraseSelection.startIndex > 0,
+            canExtendNext: activePhraseSelection.endIndex < activePhraseSelection.words.length - 1,
+            onExtendPrev: handleExtendPhrasePrev,
+            onExtendNext: handleExtendPhraseNext,
+          }
+        : undefined,
   };
   // Download-for-offline (audio lessons only): pre-caches the audio before going offline.
   const offlineDownload = isAudioLesson && audioSrc ? (

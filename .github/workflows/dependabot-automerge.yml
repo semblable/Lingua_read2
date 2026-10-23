@@ -14,6 +14,9 @@ permissions:
   pull-requests: write
   actions: write
 
+env:
+  GH_REPO: ${{ github.repository }}
+
 jobs:
   automerge:
     name: Enable auto-merge for Dependabot
@@ -33,7 +36,7 @@ jobs:
         id: metadata
         uses: dependabot/fetch-metadata@v3
         with:
-          github-token: "${{ secrets.GITHUB_TOKEN }}"
+          github-token: "${{ secrets.DEPENDABOT_AUTOMERGE_TOKEN || secrets.GITHUB_TOKEN }}"
 
       - name: Approve and enable auto-merge (patch & security)
         if: steps.metadata.outputs.update-type == 'version-update:semver-patch' || steps.metadata.outputs.contains-security-updates == 'true'
@@ -57,3 +60,4 @@ jobs:
           gh workflow run staging.yml --ref dev
         env:
           GH_TOKEN: ${{ secrets.DEPENDABOT_AUTOMERGE_TOKEN || secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}

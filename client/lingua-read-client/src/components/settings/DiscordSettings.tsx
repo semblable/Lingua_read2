@@ -107,6 +107,8 @@ const DiscordSettings = ({
           <Form.Control
             type="number"
             name="discordTimezoneOffsetMinutes"
+            step="any"
+            onWheel={(e) => e.currentTarget.blur()}
             value={offsetDraft ?? settings.discordTimezoneOffsetMinutes}
             onChange={(event) => {
               setOffsetDraft(event.target.value);
@@ -168,7 +170,7 @@ const DiscordSettings = ({
                     onChange={(e) => {
                       setReportDaysDraft(e.target.value);
                       const parsed = parseInt(e.target.value, 10);
-                      if (!isNaN(parsed) && parsed >= 1) {
+                      if (!isNaN(parsed) && parsed >= 1 && parsed <= 3650) {
                         setReportDays(parsed);
                       }
                     }}
@@ -185,7 +187,24 @@ const DiscordSettings = ({
                         setReportDaysDraft(null);
                       }
                     }}
-                    onWheel={(e) => (e.target as HTMLInputElement).blur()}
+                    onWheel={(e) => e.currentTarget.blur()}
+                    onKeyDown={(e) => {
+                      if (e.key === 'ArrowUp') {
+                        e.preventDefault();
+                        const val = reportDaysDraft !== null ? parseInt(reportDaysDraft, 10) : reportDays;
+                        const current = isNaN(val) || val < 1 ? 1 : val;
+                        const next = Math.min(3650, current + 1);
+                        setReportDaysDraft(String(next));
+                        setReportDays(next);
+                      } else if (e.key === 'ArrowDown') {
+                        e.preventDefault();
+                        const val = reportDaysDraft !== null ? parseInt(reportDaysDraft, 10) : reportDays;
+                        const current = isNaN(val) || val <= 1 ? 1 : val;
+                        const next = Math.max(1, current - 1);
+                        setReportDaysDraft(String(next));
+                        setReportDays(next);
+                      }
+                    }}
                   />
                 </Form.Group>
               </Col>

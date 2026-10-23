@@ -384,18 +384,24 @@ const BookCreate = () => {
                         setMaxSegmentSize(val);
                       }
                     }}
-                    onWheel={(e) => (e.target as HTMLInputElement).blur()}
+                    onWheel={(e) => e.currentTarget.blur()}
                     onKeyDown={(e) => {
                       if (e.key === 'ArrowUp') {
                         e.preventDefault();
-                        const current = parseInt(String(maxSegmentSize), 10) || 500;
-                        const next = Math.min(50000, current + 500);
-                        setMaxSegmentSize(next);
+                        const parsed = parseInt(String(maxSegmentSize), 10);
+                        if (isNaN(parsed) || parsed < 500) {
+                          setMaxSegmentSize(500);
+                        } else {
+                          setMaxSegmentSize(Math.min(50000, parsed + 500));
+                        }
                       } else if (e.key === 'ArrowDown') {
                         e.preventDefault();
-                        const current = parseInt(String(maxSegmentSize), 10) || 500;
-                        const next = Math.max(500, current - 500);
-                        setMaxSegmentSize(next);
+                        const parsed = parseInt(String(maxSegmentSize), 10);
+                        if (isNaN(parsed) || parsed <= 500) {
+                          setMaxSegmentSize(500);
+                        } else {
+                          setMaxSegmentSize(Math.max(500, parsed - 500));
+                        }
                       }
                     }}
                     required

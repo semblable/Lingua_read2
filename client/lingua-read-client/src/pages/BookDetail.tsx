@@ -1009,18 +1009,24 @@ const BookDetail = () => {
                     setReSplitMaxSegmentSize(val);
                   }
                 }}
-                onWheel={(e) => (e.target as HTMLInputElement).blur()}
+                onWheel={(e) => e.currentTarget.blur()}
                 onKeyDown={(e) => {
                   if (e.key === 'ArrowUp') {
                     e.preventDefault();
-                    const current = parseInt(String(reSplitMaxSegmentSize), 10) || 500;
-                    const next = Math.min(50000, current + 500);
-                    setReSplitMaxSegmentSize(next);
+                    const parsed = parseInt(String(reSplitMaxSegmentSize), 10);
+                    if (isNaN(parsed) || parsed < 500) {
+                      setReSplitMaxSegmentSize(500);
+                    } else {
+                      setReSplitMaxSegmentSize(Math.min(50000, parsed + 500));
+                    }
                   } else if (e.key === 'ArrowDown') {
                     e.preventDefault();
-                    const current = parseInt(String(reSplitMaxSegmentSize), 10) || 500;
-                    const next = Math.max(500, current - 500);
-                    setReSplitMaxSegmentSize(next);
+                    const parsed = parseInt(String(reSplitMaxSegmentSize), 10);
+                    if (isNaN(parsed) || parsed <= 500) {
+                      setReSplitMaxSegmentSize(500);
+                    } else {
+                      setReSplitMaxSegmentSize(Math.max(500, parsed - 500));
+                    }
                   }
                 }}
                 disabled={reSplitLoading || reSplitPreviewLoading}

@@ -114,7 +114,8 @@ const TextCreate = () => {
         throw new Error('Selected language not found');
       }
 
-      const effectiveMaxLength = Math.min(2000, Math.max(100, parseInt(String(maxLength), 10) || 500));
+      const parsedLength = parseInt(String(maxLength), 10);
+      const effectiveMaxLength = isNaN(parsedLength) ? 500 : Math.min(2000, Math.max(100, parsedLength));
       const result = await generateStory(
         storyPrompt,
         selectedLanguage.name,
@@ -281,7 +282,26 @@ const TextCreate = () => {
                             setMaxLength(val);
                           }
                         }}
-                        onWheel={(e) => (e.target as HTMLInputElement).blur()}
+                        onWheel={(e) => e.currentTarget.blur()}
+                        onKeyDown={(e) => {
+                          if (e.key === 'ArrowUp') {
+                            e.preventDefault();
+                            const val = parseInt(String(maxLength), 10);
+                            if (isNaN(val) || val < 100) {
+                              setMaxLength(100);
+                            } else {
+                              setMaxLength(Math.min(2000, val + 50));
+                            }
+                          } else if (e.key === 'ArrowDown') {
+                            e.preventDefault();
+                            const val = parseInt(String(maxLength), 10);
+                            if (isNaN(val) || val <= 100) {
+                              setMaxLength(100);
+                            } else {
+                              setMaxLength(Math.max(100, val - 50));
+                            }
+                          }
+                        }}
                       />
                       <Form.Text className="text-muted">
                         Choose between 100-2000 words.

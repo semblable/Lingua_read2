@@ -36,6 +36,7 @@ const DiscordSettings = ({
   // What is in the offset box while it has focus. The setting only takes whole numbers, so without
   // this a cleared box or a lone "-" would snap straight back to the saved value.
   const [offsetDraft, setOffsetDraft] = useState<string | null>(null);
+  const [reportDaysDraft, setReportDaysDraft] = useState<string | null>(null);
 
   return (
     <>
@@ -161,9 +162,30 @@ const DiscordSettings = ({
                     type="number"
                     min={1}
                     max={3650}
-                    value={reportDays}
+                    step="any"
+                    value={reportDaysDraft ?? reportDays}
                     disabled={reportPeriod !== 'days'}
-                    onChange={(e) => setReportDays(parseInt(e.target.value, 10) || 1)}
+                    onChange={(e) => {
+                      setReportDaysDraft(e.target.value);
+                      const parsed = parseInt(e.target.value, 10);
+                      if (!isNaN(parsed) && parsed >= 1) {
+                        setReportDays(parsed);
+                      }
+                    }}
+                    onBlur={() => {
+                      if (reportDaysDraft !== null) {
+                        const parsed = parseInt(reportDaysDraft, 10);
+                        if (isNaN(parsed) || parsed < 1) {
+                          setReportDays(1);
+                        } else if (parsed > 3650) {
+                          setReportDays(3650);
+                        } else {
+                          setReportDays(parsed);
+                        }
+                        setReportDaysDraft(null);
+                      }
+                    }}
+                    onWheel={(e) => (e.target as HTMLInputElement).blur()}
                   />
                 </Form.Group>
               </Col>

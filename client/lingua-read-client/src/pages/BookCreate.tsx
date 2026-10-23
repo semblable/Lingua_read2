@@ -16,7 +16,7 @@ const BookCreate = () => {
   const [file, setFile] = useState<File | null>(null);
   const [activeTab, setActiveTab] = useState('manual');
   const [splitMethod, setSplitMethod] = useState('chapter'); // Default to Chapter Splitting
-  const [maxSegmentSize, setMaxSegmentSize] = useState(3000);
+  const [maxSegmentSize, setMaxSegmentSize] = useState<number | string>(3000);
   const [subSplitOversized, setSubSplitOversized] = useState(true); // Default sub-split to true for better readability
   const [languages, setLanguages] = useState<Language[]>([]);
   const [loading, setLoading] = useState(false);
@@ -34,6 +34,13 @@ const BookCreate = () => {
   const { settings: userSettings } = useContext(SettingsContext);
   const [loadingText, setLoadingText] = useState('');
   const [uploadProgress, setUploadProgress] = useState(0);
+
+  const getEffectiveMaxSegmentSize = (): number => {
+    const val = parseInt(String(maxSegmentSize), 10);
+    if (isNaN(val) || val < 500) return 500;
+    if (val > 50000) return 50000;
+    return val;
+  };
 
   useEffect(() => {
     const fetchLanguages = async () => {
@@ -86,12 +93,13 @@ const BookCreate = () => {
 
     try {
       let preview;
+      const effectiveSegmentSize = getEffectiveMaxSegmentSize();
       if (activeTab === 'manual') {
         preview = await previewManualSplit(
           title,
           content,
           splitMethod,
-          maxSegmentSize,
+          effectiveSegmentSize,
           subSplitOversized
         );
       } else {
@@ -99,7 +107,7 @@ const BookCreate = () => {
         formData.append('File', file!);
         formData.append('LanguageId', languageId);
         formData.append('SplitMethod', splitMethod);
-        formData.append('MaxSegmentSize', maxSegmentSize.toString());
+        formData.append('MaxSegmentSize', effectiveSegmentSize.toString());
         formData.append('SubSplitOversized', subSplitOversized.toString());
         if (title) formData.append('TitleOverride', title);
         
@@ -149,6 +157,7 @@ const BookCreate = () => {
     setError('');
 
     const tagsArray = tags.split(',').map(tag => tag.trim()).filter(tag => tag);
+    const effectiveSegmentSize = getEffectiveMaxSegmentSize();
 
     try {
       let newBook;
@@ -159,7 +168,7 @@ const BookCreate = () => {
           parseInt(String(languageId), 10),
           content,
           splitMethod,
-          parseInt(String(maxSegmentSize), 10),
+          effectiveSegmentSize,
           tagsArray,
           subSplitOversized,
           chapterTitles,
@@ -171,7 +180,7 @@ const BookCreate = () => {
         formData.append('File', file!);
         formData.append('LanguageId', languageId);
         formData.append('SplitMethod', splitMethod);
-        formData.append('MaxSegmentSize', maxSegmentSize.toString());
+        formData.append('MaxSegmentSize', effectiveSegmentSize.toString());
         formData.append('SubSplitOversized', subSplitOversized.toString());
         tagsArray.forEach(tag => formData.append('Tags', tag));
         if (title) formData.append('TitleOverride', title);
@@ -362,8 +371,33 @@ const BookCreate = () => {
                     type="number"
                     min="500"
                     max="50000"
+                    step="any"
                     value={maxSegmentSize}
-                    onChange={(e) => setMaxSegmentSize(parseInt(e.target.value, 10) || 500)}
+                    onChange={(e) => setMaxSegmentSize(e.target.value)}
+                    onBlur={() => {
+                      const val = parseInt(String(maxSegmentSize), 10);
+                      if (isNaN(val) || val < 500) {
+                        setMaxSegmentSize(500);
+                      } else if (val > 50000) {
+                        setMaxSegmentSize(50000);
+                      } else {
+                        setMaxSegmentSize(val);
+                      }
+                    }}
+                    onWheel={(e) => (e.target as HTMLInputElement).blur()}
+                    onKeyDown={(e) => {
+                      if (e.key === 'ArrowUp') {
+                        e.preventDefault();
+                        const current = parseInt(String(maxSegmentSize), 10) || 500;
+                        const next = Math.min(50000, current + 500);
+                        setMaxSegmentSize(next);
+                      } else if (e.key === 'ArrowDown') {
+                        e.preventDefault();
+                        const current = parseInt(String(maxSegmentSize), 10) || 500;
+                        const next = Math.max(500, current - 500);
+                        setMaxSegmentSize(next);
+                      }
+                    }}
                     required
                   />
                   <Form.Text className="text-muted">

@@ -19,7 +19,7 @@ const TextCreate = () => {
   // For story generation
   const [storyPrompt, setStoryPrompt] = useState('');
   const [storyLevel, setStoryLevel] = useState('intermediate');
-  const [maxLength, setMaxLength] = useState(500);
+  const [maxLength, setMaxLength] = useState<number | string>(500);
   const [generatingStory, setGeneratingStory] = useState(false);
   const [activeTab, setActiveTab] = useState('manual');
   
@@ -114,11 +114,12 @@ const TextCreate = () => {
         throw new Error('Selected language not found');
       }
 
+      const effectiveMaxLength = Math.min(2000, Math.max(100, parseInt(String(maxLength), 10) || 500));
       const result = await generateStory(
         storyPrompt,
         selectedLanguage.name,
         storyLevel,
-        maxLength
+        effectiveMaxLength
       );
       
       if (result?.generatedStory) {
@@ -267,8 +268,20 @@ const TextCreate = () => {
                         type="number"
                         min={100}
                         max={2000}
+                        step="any"
                         value={maxLength}
-                        onChange={(e) => setMaxLength(parseInt(e.target.value, 10))}
+                        onChange={(e) => setMaxLength(e.target.value)}
+                        onBlur={() => {
+                          const val = parseInt(String(maxLength), 10);
+                          if (isNaN(val) || val < 100) {
+                            setMaxLength(100);
+                          } else if (val > 2000) {
+                            setMaxLength(2000);
+                          } else {
+                            setMaxLength(val);
+                          }
+                        }}
+                        onWheel={(e) => (e.target as HTMLInputElement).blur()}
                       />
                       <Form.Text className="text-muted">
                         Choose between 100-2000 words.

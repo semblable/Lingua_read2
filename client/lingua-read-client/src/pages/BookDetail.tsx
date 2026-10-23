@@ -90,7 +90,14 @@ const BookDetail = () => {
   // Re-split state
   const [showReSplitModal, setShowReSplitModal] = useState(false);
   const [reSplitMethod, setReSplitMethod] = useState('chapter');
-  const [reSplitMaxSegmentSize, setReSplitMaxSegmentSize] = useState(3000);
+  const [reSplitMaxSegmentSize, setReSplitMaxSegmentSize] = useState<number | string>(3000);
+
+  const getEffectiveReSplitMaxSegmentSize = (): number => {
+    const val = parseInt(String(reSplitMaxSegmentSize), 10);
+    if (isNaN(val) || val < 500) return 500;
+    if (val > 50000) return 50000;
+    return val;
+  };
   const [reSplitSubSplitOversized, setReSplitSubSplitOversized] = useState(true);
   const [reSplitLoading, setReSplitLoading] = useState(false);
   const [reSplitPreviewLoading, setReSplitPreviewLoading] = useState(false);
@@ -405,7 +412,7 @@ const BookDetail = () => {
     try {
       const preview = await previewReSplitBook(bookId, {
         splitMethod: reSplitMethod,
-        maxSegmentSize: reSplitMaxSegmentSize,
+        maxSegmentSize: getEffectiveReSplitMaxSegmentSize(),
         subSplitOversized: reSplitSubSplitOversized
       });
       setReSplitPreviewData(preview);
@@ -424,7 +431,7 @@ const BookDetail = () => {
     try {
       await reSplitBook(bookId, {
         splitMethod: reSplitMethod,
-        maxSegmentSize: reSplitMaxSegmentSize,
+        maxSegmentSize: getEffectiveReSplitMaxSegmentSize(),
         subSplitOversized: reSplitSubSplitOversized,
         chapterTitles,
         chapterGroupings
@@ -989,8 +996,33 @@ const BookDetail = () => {
                 type="number"
                 min="500"
                 max="50000"
+                step="any"
                 value={reSplitMaxSegmentSize}
-                onChange={(e) => setReSplitMaxSegmentSize(parseInt(e.target.value, 10) || 500)}
+                onChange={(e) => setReSplitMaxSegmentSize(e.target.value)}
+                onBlur={() => {
+                  const val = parseInt(String(reSplitMaxSegmentSize), 10);
+                  if (isNaN(val) || val < 500) {
+                    setReSplitMaxSegmentSize(500);
+                  } else if (val > 50000) {
+                    setReSplitMaxSegmentSize(50000);
+                  } else {
+                    setReSplitMaxSegmentSize(val);
+                  }
+                }}
+                onWheel={(e) => (e.target as HTMLInputElement).blur()}
+                onKeyDown={(e) => {
+                  if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    const current = parseInt(String(reSplitMaxSegmentSize), 10) || 500;
+                    const next = Math.min(50000, current + 500);
+                    setReSplitMaxSegmentSize(next);
+                  } else if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    const current = parseInt(String(reSplitMaxSegmentSize), 10) || 500;
+                    const next = Math.max(500, current - 500);
+                    setReSplitMaxSegmentSize(next);
+                  }
+                }}
                 disabled={reSplitLoading || reSplitPreviewLoading}
                 style={{ background: 'rgba(0, 0, 0, 0.2)', border: '1px solid rgba(255, 255, 255, 0.08)', color: '#fff' }}
               />

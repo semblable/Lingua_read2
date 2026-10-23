@@ -1,0 +1,44 @@
+name: Dependabot Auto-Merge
+
+# Automatically approves and enables auto-merge for Dependabot patch and security updates.
+# If a security alert PR targets `main`, it is retargeted to `dev` so it goes through Staging first.
+# The PR is only merged into `dev` AFTER all CI checks in pr.yml pass 100%.
+# Once merged into `dev`, staging.yml triggers automatically to deploy to staging.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  dependabot:
+    name: Enable auto-merge for Dependabot
+    runs-on: ubuntu-latest
+    if: github.actor == 'dependabot[bot]'
+    steps:
+      - name: Retarget to dev if needed
+        if: github.base_ref != 'dev'
+        run: |
+          echo "Dependabot PR opened against ${{ github.base_ref }}; retargeting to dev so it deploys to staging first."
+          gh pr edit "$PR_URL" --base dev
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Fetch Dependabot metadata
+        id: metadata
+        uses: dependabot/fetch-metadata@v2
+        with:
+          github-token: "${{ secrets.GITHUB_TOKEN }}"
+
+      - name: Approve and enable auto-merge (patch & security)
+        if: steps.metadata.outputs.update-type == 'version-update:semver-patch' || steps.metadata.outputs.contains-security-updates == 'true'
+        run: |
+          gh pr review --approve "$PR_URL"
+          gh pr merge --auto --squash "$PR_URL"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

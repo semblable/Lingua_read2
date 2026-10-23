@@ -71,6 +71,10 @@ jobs:
         run: npm ci --legacy-peer-deps
         working-directory: client/lingua-read-client
 
+      - name: Audit dependencies
+        run: npm audit --audit-level=high
+        working-directory: client/lingua-read-client
+
       - name: Lint
         run: npm run lint
         working-directory: client/lingua-read-client

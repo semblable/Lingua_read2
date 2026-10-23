@@ -1,6 +1,6 @@
 # LinguaRead Features Guide
 
-A concise tour of what LinguaRead can do. This is an overview — for every configurable knob behind these features, see the **[Configuration & Settings Guide](SETTINGS.md)**. For installation, see the **[README](README.md)**.
+A concise tour of what LinguaRead can do. This is an overview — for every configurable knob behind these features, see the **[Configuration & Settings Guide](SETTINGS.md)**. For language configuration and seeding, see the **[Adding Languages Guide](LANGUAGES_GUIDE.md)**. For installation, see the **[README](README.md)**.
 
 ---
 
@@ -59,7 +59,7 @@ Track your progress over time: words learned, reading activity, and listening ti
 
 ## Languages
 
-LinguaRead supports a wide range of languages, each with its own settings managed through the **Manage Languages** UI. Per-language options include the **parser type** (space-delimited; MeCab and Jieba can be chosen for Japanese and Chinese, but their word segmentation is not implemented yet, so those languages split only at spaces and punctuation), **right-to-left (RTL)** layout, **character sets** and substitutions for normalization, **sentence-splitting rules**, and **dictionary / translation sources**. These settings drive how text is parsed, how sentences are split, and how lookups behave. Words stay whole even when an ebook hides hyphenation points inside them or stores accents as separate characters, and a language you add accepts any letter with its accents by default (`\p{L}\p{M}`), so Polish, Czech, Greek and the like work without editing the character set. You can add, edit, enable, or disable languages at any time.
+LinguaRead supports a wide range of languages, each with its own settings managed through the **Manage Languages** UI. Per-language options include the **parser type** (space-delimited; MeCab and Jieba can be chosen for Japanese and Chinese, but their word segmentation is not implemented yet, so those languages split only at spaces and punctuation), **right-to-left (RTL)** layout, **character sets** and substitutions for normalization, **sentence-splitting rules**, and **dictionary / translation sources**. These settings drive how text is parsed, how sentences are split, and how lookups behave. Words stay whole even when an ebook hides hyphenation points inside them or stores accents as separate characters, and a language you add accepts any letter with its accents by default (`\p{L}\p{M}`), so Polish, Czech, Greek and the like work without editing the character set. You can add, edit, enable, or disable languages at any time. For step-by-step instructions on setting up or seeding languages, see the **[Adding Languages Guide](LANGUAGES_GUIDE.md)**.
 
 ## Integrations
 

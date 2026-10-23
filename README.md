@@ -4,7 +4,7 @@
 
 LinguaRead is a web application for contextual language learning, inspired by Learning With Texts (LWT). It enhances vocabulary and reading comprehension by allowing users to read texts where words are dynamically highlighted based on familiarity levels (New to Known). Features include easy tooltip/click translations and content integration via modern APIs, delivering an interactive learning environment focused on reading immersion.
 
-> 📚 **Documentation:** [Installation](#installation-docker) · [Features Guide](FEATURES.md) · [Configuration & Settings Guide](SETTINGS.md)
+> 📚 **Documentation:** [Installation](#installation-docker) · [Features Guide](FEATURES.md) · [Configuration & Settings Guide](SETTINGS.md) · [Adding Languages Guide](LANGUAGES_GUIDE.md)
 
 ## Important Notice
 

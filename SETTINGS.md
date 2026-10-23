@@ -1,6 +1,6 @@
 # LinguaRead Configuration & Settings Guide
 
-> 📖 Related: **[README](README.md)** (installation) · **[Features Guide](FEATURES.md)** (what each feature does)
+> 📖 Related: **[README](README.md)** (installation) · **[Features Guide](FEATURES.md)** (what each feature does) · **[Adding Languages Guide](LANGUAGES_GUIDE.md)** (language configuration)
 
 This document provides a comprehensive reference for configuring **LinguaRead**. It covers system environment variables (for Docker Compose and local hosting) and the in-app database-driven user preferences.
 

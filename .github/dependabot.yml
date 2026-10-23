@@ -12,7 +12,7 @@ updates:
       actions:
         patterns: ["*"]
 
-  # Client (React/Vite) — group minor+patch into one monthly PR to keep noise low
+  # Client (React/Vite) — separate patch updates (auto-merged) from minor updates (manual review)
   - package-ecosystem: npm
     directory: "/client/lingua-read-client"
     target-branch: dev
@@ -31,8 +31,10 @@ updates:
       - dependency-name: "eslint"
         update-types: ["version-update:semver-major"]
     groups:
-      npm-minor-patch:
-        update-types: ["minor", "patch"]
+      npm-patch:
+        update-types: ["patch"]
+      npm-minor:
+        update-types: ["minor"]
 
   # Backend (.NET) — solution at repo root covers API + Tests projects
   - package-ecosystem: nuget
@@ -41,8 +43,10 @@ updates:
     schedule:
       interval: monthly
     groups:
-      nuget-minor-patch:
-        update-types: ["minor", "patch"]
+      nuget-patch:
+        update-types: ["patch"]
+      nuget-minor:
+        update-types: ["minor"]
 
   # Images pinned in docker-compose*.yml: postgres, and the monitoring stack in the prod file.
   # Postgres majors are ignored: they need a dump/restore migration, not a tag bump.

@@ -5,6 +5,7 @@ name: PR Validation
 
 on:
   pull_request:
+    types: [ opened, synchronize, reopened, edited ]
     branches: [ dev, main ]
 
 concurrency:
@@ -18,6 +19,8 @@ permissions:
 jobs:
   ci:
     name: CI
+    # Run on open/synchronize/reopen, or if an edit changed the target base branch (e.g. retargeted from main to dev)
+    if: github.event.action != 'edited' || github.event.changes.base != null
     uses: ./.github/workflows/_ci-build.yml
     with:
       push_images: false

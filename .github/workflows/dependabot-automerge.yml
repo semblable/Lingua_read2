@@ -7,7 +7,7 @@ name: Dependabot Auto-Merge
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, closed]
+    types: [opened, synchronize, reopened, closed, labeled]
 
 permissions:
   contents: write
@@ -39,7 +39,7 @@ jobs:
           github-token: "${{ secrets.DEPENDABOT_AUTOMERGE_TOKEN || secrets.GITHUB_TOKEN }}"
 
       - name: Approve and enable auto-merge (patch & security)
-        if: steps.metadata.outputs.update-type == 'version-update:semver-patch' || steps.metadata.outputs.contains-security-updates == 'true'
+        if: steps.metadata.outputs.update-type == 'version-update:semver-patch' || contains(github.event.pull_request.labels.*.name, 'security')
         run: |
           gh pr review --approve "$PR_URL" || echo "Notice: Review approval skipped or already submitted."
           gh pr merge --auto --squash "$PR_URL" || echo "Notice: Auto-merge already enabled or not permitted."
@@ -56,8 +56,13 @@ jobs:
     steps:
       - name: Dispatch staging workflow
         run: |
-          echo "Dependabot PR #${{ github.event.pull_request.number }} merged into dev. Triggering staging deployment..."
-          gh workflow run staging.yml --ref dev
+          if [ -n "$HAS_CUSTOM_TOKEN" ]; then
+            echo "Custom token configured; push event already dispatched staging automatically."
+          else
+            echo "Dependabot PR #${{ github.event.pull_request.number }} merged into dev. Triggering staging deployment..."
+            gh workflow run staging.yml --ref dev
+          fi
         env:
+          HAS_CUSTOM_TOKEN: ${{ secrets.DEPENDABOT_AUTOMERGE_TOKEN }}
           GH_TOKEN: ${{ secrets.DEPENDABOT_AUTOMERGE_TOKEN || secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}

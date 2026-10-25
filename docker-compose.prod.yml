@@ -89,7 +89,7 @@ services:
           memory: 64M
 
   dozzle:
-    image: amir20/dozzle:v11.3.3
+    image: amir20/dozzle:v11.3.4
     profiles: ["monitoring"]
     restart: unless-stopped
     environment:

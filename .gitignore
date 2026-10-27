@@ -176,6 +176,12 @@ scripts/
 # End of .gitignore
 # ===================================================================
 
+# Static showcase output and optional local narration-authoring files.
+client/lingua-read-client/demo-dist/
+client/lingua-read-client/demo/node_modules/
+client/lingua-read-client/demo/.audio-work/
+client/lingua-read-client/demo/.whisper/
+
 # Local Claude worktree artifacts
 .claude/worktrees/
 

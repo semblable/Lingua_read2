@@ -117,6 +117,9 @@ jobs:
       - name: Lint shell scripts
         run: shellcheck -S warning backup/backup.sh backup/refresh-from-prod.sh backup/health-watch.sh backup/notify.sh backup/test/*.sh ops/bootstrap-host.sh setup.sh
 
+      - name: Test Dependabot staging handoff
+        run: node --test .github/scripts/dependabot-staging.test.mjs
+
       # Runs backup.sh in a locally built backup image against a folder standing in for Drive:
       # what gets uploaded, what Drive retention removes, what the /backups volume keeps.
       - name: Test backup.sh retention

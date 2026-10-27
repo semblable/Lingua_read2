@@ -6,6 +6,8 @@ LinguaRead is a web application for contextual language learning, inspired by Le
 
 > 📚 **Documentation:** [Installation](#installation-docker) · [Features Guide](FEATURES.md) · [Configuration & Settings Guide](SETTINGS.md) · [Adding Languages Guide](LANGUAGES_GUIDE.md)
 
+> **Interactive demo:** [Try the reader and audio player](https://semblable.github.io/Lingua_read2/) · [Run the demo locally](client/lingua-read-client/demo/README.md)
+
 ## Important Notice
 
 This is an early version of the application and is still under active development. As such:
@@ -213,6 +215,10 @@ For everyday use you **don't need any extra containers**. The app has built-in b
 ---
 
 ## License
+
+The application code uses MIT. The static demonstration's third-party human audio
+and captions have separate Creative Commons licenses; see its
+[media attribution](client/lingua-read-client/demo/public/audio/ATTRIBUTION.txt).
 
 MIT License
 

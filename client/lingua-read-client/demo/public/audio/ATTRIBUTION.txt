@@ -1,0 +1,39 @@
+The North Wind and the Sun — human-narrated English sample
+
+RECORDING
+Title: Recording of speaker of British English (Received Pronunciation)
+Copyright holder / attribution party: International Phonetic Association
+Recording contributed by P. Roach; recorded in 2003.
+The source does not identify the speaker by name.
+Source page:
+https://commons.wikimedia.org/wiki/File:Recording_of_speaker_of_British_English_(Received_Pronunciation).ogg
+Source revision:
+https://commons.wikimedia.org/w/index.php?title=File:Recording_of_speaker_of_British_English_(Received_Pronunciation).ogg&oldid=1067153391
+License selected from the offered licenses: CC BY-SA 3.0 Unported
+https://creativecommons.org/licenses/by-sa/3.0/
+
+north-wind-and-sun.source.ogg is the downloaded source recording.
+Source SHA-256: 96172d8feaed92119a0d400510dda44fd647173288c51369ee473ac524ecc981
+north-wind-and-sun.mp3 is a mono 96 kbps MP3 transcode for browser compatibility.
+No speech was synthesized, no content was cut, and the recording was not time-stretched.
+The transcoded recording remains available under CC BY-SA 3.0.
+No endorsement by the speaker, P. Roach, or the IPA is implied.
+
+CAPTIONS
+The bundled initial SRT is from Wikimedia Commons TimedText contributors:
+https://commons.wikimedia.org/wiki/TimedText:Recording_of_speaker_of_British_English_(Received_Pronunciation).ogg.en.srt
+Revision and contributor history:
+https://commons.wikimedia.org/w/index.php?title=TimedText:Recording_of_speaker_of_British_English_(Received_Pronunciation).ogg.en.srt&oldid=638045789
+https://commons.wikimedia.org/w/index.php?title=TimedText:Recording_of_speaker_of_British_English_(Received_Pronunciation).ogg.en.srt&action=history
+Text license: CC BY-SA 4.0 International
+https://creativecommons.org/licenses/by-sa/4.0/
+
+The initial caption text and timings are preserved; generated JSON collapses line
+breaks within each cue. Derived caption data in content/audio-script.json and
+content/audio-timing.json is also offered under CC BY-SA 4.0.
+These captions were not produced by Whisper. The import helper can replace the
+working cue data with a new SRT; document that change if you do so.
+
+These third-party media/caption licenses are separate from the application's MIT
+code license. The original Spanish demo text and prepared vocabulary glosses are
+provided under the repository's MIT terms.

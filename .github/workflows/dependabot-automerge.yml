@@ -3,16 +3,15 @@ name: Dependabot Auto-Merge
 # Automatically approves and enables auto-merge for Dependabot patch and security updates.
 # If a security alert PR targets `main`, it is retargeted to `dev` so it goes through Staging first.
 # The PR is only merged into `dev` AFTER all CI checks in pr.yml pass 100%.
-# When the PR merges, staging.yml is triggered to deploy the verified dependency to staging.
+# dependabot-staging.yml reconciles bot merges whose events GITHUB_TOKEN suppresses.
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, closed, labeled]
+    types: [opened, synchronize, reopened, labeled]
 
 permissions:
   contents: write
   pull-requests: write
-  actions: write
 
 env:
   GH_REPO: ${{ github.repository }}
@@ -21,48 +20,67 @@ jobs:
   automerge:
     name: Enable auto-merge for Dependabot
     runs-on: ubuntu-latest
-    if: github.event.action != 'closed' && github.event.pull_request.user.login == 'dependabot[bot]'
+    if: github.event.pull_request.user.login == 'dependabot[bot]' && (github.event.action != 'labeled' || github.event.label.name == 'security')
+    concurrency:
+      group: dependabot-pr-${{ github.event.pull_request.number }}
+      cancel-in-progress: false
     steps:
       - name: Retarget to dev if needed
-        if: github.base_ref != 'dev'
+        id: retarget
         run: |
-          echo "Dependabot PR opened against ${{ github.base_ref }}; retargeting to dev so it deploys to staging first."
-          gh pr edit "$PR_URL" --base dev
+          set -euo pipefail
+          read_pr() {
+            gh api "repos/$GH_REPO/pulls/$PR_NUMBER" \
+              --jq '[.state, .base.ref, any(.labels[]; .name == "security")] | @tsv'
+          }
+          pr_data="$(read_pr)"
+          IFS=$'\t' read -r pr_state current_base security <<< "$pr_data"
+          if [ "$pr_state" != "open" ]; then
+            echo "PR is already closed; nothing to update."
+            echo "open=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "$current_base" != "dev" ]; then
+            echo "Retargeting PR #$PR_NUMBER from $current_base to dev."
+            if ! gh pr edit "$PR_URL" --base dev; then
+              # A manual edit or another workflow can still race this job.
+              # Accept only an achieved target or a PR that has since closed.
+              pr_data="$(read_pr)"
+              IFS=$'\t' read -r pr_state current_base security <<< "$pr_data"
+              if [ "$pr_state" = "open" ] && [ "$current_base" != "dev" ]; then
+                echo "::error::Retargeting failed and the PR still targets $current_base."
+                exit 1
+              fi
+            fi
+          fi
+          pr_data="$(read_pr)"
+          IFS=$'\t' read -r pr_state current_base security <<< "$pr_data"
+          if [ "$pr_state" != "open" ]; then
+            echo "open=false" >> "$GITHUB_OUTPUT"
+          elif [ "$current_base" = "dev" ]; then
+            echo "open=true" >> "$GITHUB_OUTPUT"
+            echo "security=$security" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::PR target changed to $current_base; refusing to enable auto-merge."
+            exit 1
+          fi
         env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_URL: ${{ github.event.pull_request.html_url }}
           GH_TOKEN: ${{ secrets.DEPENDABOT_AUTOMERGE_TOKEN || secrets.GITHUB_TOKEN }}
 
       - name: Fetch Dependabot metadata
         id: metadata
+        if: steps.retarget.outputs.open == 'true'
         uses: dependabot/fetch-metadata@v3
         with:
           github-token: "${{ secrets.DEPENDABOT_AUTOMERGE_TOKEN || secrets.GITHUB_TOKEN }}"
 
       - name: Approve and enable auto-merge (patch & security)
-        if: steps.metadata.outputs.update-type == 'version-update:semver-patch' || contains(github.event.pull_request.labels.*.name, 'security')
+        if: steps.retarget.outputs.open == 'true' && (steps.metadata.outputs.update-type == 'version-update:semver-patch' || steps.retarget.outputs.security == 'true')
         run: |
           gh pr review --approve "$PR_URL" || echo "Notice: Review approval skipped or already submitted."
           gh pr merge --auto --squash "$PR_URL" || echo "Notice: Auto-merge already enabled or not permitted."
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}
           GH_TOKEN: ${{ secrets.DEPENDABOT_AUTOMERGE_TOKEN || secrets.GITHUB_TOKEN }}
-
-  trigger-staging:
-    name: Trigger Staging Deploy on Merge
-    runs-on: ubuntu-latest
-    # When auto-merged via GITHUB_TOKEN, GitHub Actions prevents recursive `on: push` events.
-    # This job explicitly dispatches staging.yml upon successful merge of a Dependabot PR into dev.
-    if: github.event.action == 'closed' && github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'dev' && github.event.pull_request.user.login == 'dependabot[bot]'
-    steps:
-      - name: Dispatch staging workflow
-        run: |
-          if [ -n "$HAS_CUSTOM_TOKEN" ]; then
-            echo "Custom token configured; push event already dispatched staging automatically."
-          else
-            echo "Dependabot PR #${{ github.event.pull_request.number }} merged into dev. Triggering staging deployment..."
-            gh workflow run staging.yml --ref dev
-          fi
-        env:
-          HAS_CUSTOM_TOKEN: ${{ secrets.DEPENDABOT_AUTOMERGE_TOKEN }}
-          GH_TOKEN: ${{ secrets.DEPENDABOT_AUTOMERGE_TOKEN || secrets.GITHUB_TOKEN }}
-          GH_REPO: ${{ github.repository }}

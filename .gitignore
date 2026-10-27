@@ -172,6 +172,12 @@ scripts/
 !client/lingua-read-client/scripts/
 !client/lingua-read-client/scripts/**
 
+# Trusted CI handoff code and its targeted tests.
+!/.github/scripts/
+/.github/scripts/*
+!/.github/scripts/dependabot-staging.mjs
+!/.github/scripts/dependabot-staging.test.mjs
+
 # ===================================================================
 # End of .gitignore
 # ===================================================================

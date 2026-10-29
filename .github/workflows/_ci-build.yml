@@ -93,6 +93,16 @@ jobs:
         env:
           CI: true
 
+      - name: Test static demo boundary
+        run: npm run demo:test
+        working-directory: client/lingua-read-client
+
+      - name: Build static demo (project path)
+        run: npm run demo:build
+        working-directory: client/lingua-read-client
+        env:
+          DEMO_BASE_PATH: /Lingua_read2/
+
   ci_infra:
     name: Check compose & scripts
     # Cheap structural gates: compose files must parse (base + prod overlay) so a

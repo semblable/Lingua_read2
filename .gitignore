@@ -3,12 +3,21 @@
 # ===================================================================
 # Ignore .env file at the root level. This is critical for sensitive keys.
 .env
+.env.*
+!.env.example
 secrets/
 certs/
 .cursor/
 !secrets/.gitkeep
 !certs/.gitkeep
 backups/
+# Database exports, private root uploads, and whole-repository bundles.
+*.backup
+*.dump
+*.sql.gz
+*.sql.zst
+/wwwroot/
+repomix-output*.txt
 # ASP.NET Data Protection key ring (decrypts stored user API keys) and local pg_dump output
 server/LinguaReadApi/keys/
 server/LinguaReadApi/temp_backups/

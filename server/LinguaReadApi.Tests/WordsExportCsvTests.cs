@@ -121,6 +121,32 @@ public class WordsExportCsvTests
     }
 
     [Theory]
+    [InlineData("context", null)]
+    [InlineData("context", "")]
+    [InlineData("context", "   ")]
+    [InlineData("anki", null)]
+    [InlineData("anki", "")]
+    [InlineData("anki", "   ")]
+    public async Task ContextExports_FallBackToOwnedLiveTitle_WhenSnapshotIsBlank(string format, string? savedTitle)
+    {
+        using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var context = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().UseSqlite(connection).Options);
+        await context.Database.EnsureCreatedAsync();
+        var userId = Seed(context);
+        context.Texts.Add(new Text { TextId = 31, UserId = userId, LanguageId = 2, Title = "Available source title", Content = "Original fixture." });
+        context.SrsPhrases.Add(new SrsPhrase { UserId = userId, WordId = 1, TextId = 31, Sentence = "Original fixture.", TextTitle = savedTitle });
+        await context.SaveChangesAsync();
+        context.ChangeTracker.Clear();
+
+        var output = Encoding.UTF8.GetString((await Export(context, userId, 2, "4", format)).FileContents);
+        if (format == "context")
+            Assert.Equal("Available source title", ParseCsv(output)[1][9]);
+        else
+            Assert.Contains("Available source title", System.Net.WebUtility.HtmlDecode(output));
+    }
+
+    [Theory]
     [InlineData("=1+1")]
     [InlineData(" +SUM(1,2)")]
     [InlineData("-1+2")]

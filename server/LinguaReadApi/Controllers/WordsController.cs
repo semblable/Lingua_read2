@@ -805,7 +805,7 @@ namespace LinguaReadApi.Controllers
                         Context = phrase != null ? phrase.Sentence : null,
                         ContextCreatedAtUtc = phrase != null ? phrase.CreatedAt : null,
                         TextId = text != null ? text.TextId : null,
-                        TextTitle = phrase != null && phrase.TextTitle != null ? phrase.TextTitle : text != null ? text.Title : null,
+                        TextTitle = phrase != null && !string.IsNullOrWhiteSpace(phrase.TextTitle) ? phrase.TextTitle : text != null ? text.Title : null,
                         BookId = book != null ? book.BookId : null,
                         BookTitle = book != null ? book.Title : null,
                         SourceUrl = text != null ? text.SourceUrl : null

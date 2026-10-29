@@ -1,0 +1,25 @@
+name: Learner feedback
+description: Describe friction you encountered during a real reading or listening session.
+body:
+  - type: markdown
+    attributes:
+      value: Please use original examples and omit private library material. See [CONTRIBUTING.md](https://github.com/semblable/Lingua_read2/blob/dev/CONTRIBUTING.md) for the project's support scope.
+  - type: textarea
+    id: workflow
+    attributes:
+      label: What were you trying to do?
+      description: Include your study language, device/browser, and whether you used the static demo or installed app.
+    validations:
+      required: true
+  - type: textarea
+    id: friction
+    attributes:
+      label: Where did you need help or stop?
+      description: Describe a concrete task and what you expected next.
+    validations:
+      required: true
+  - type: textarea
+    id: comparison
+    attributes:
+      label: What do you currently use for this task?
+      description: What would make you prefer or abandon LinguaRead?

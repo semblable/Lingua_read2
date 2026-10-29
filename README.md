@@ -1,248 +1,169 @@
 # LinguaRead
 
-## Overview
+A self-hosted reading and listening workspace with integrated FSRS, sentence
+mining, and your choice of AI provider. Bring your own books/articles, track words
+in context, save useful sentences, and review them later.
 
-LinguaRead is a web application for contextual language learning, inspired by Learning With Texts (LWT). It enhances vocabulary and reading comprehension by allowing users to read texts where words are dynamically highlighted based on familiarity levels (New to Known). Features include easy tooltip/click translations and content integration via modern APIs, delivering an interactive learning environment focused on reading immersion.
+Built for intermediate learners who already read in a language they study.
 
-> 📚 **Documentation:** [Installation](#installation-docker) · [Features Guide](FEATURES.md) · [Configuration & Settings Guide](SETTINGS.md) · [Adding Languages Guide](LANGUAGES_GUIDE.md)
+[Try the interactive demo](https://semblable.github.io/Lingua_read2/) ·
+[Install with Docker](#installation-docker) · [Features](FEATURES.md) ·
+[Settings](SETTINGS.md) · [Contribute](CONTRIBUTING.md)
 
-> **Interactive demo:** [Try the reader and audio player](https://semblable.github.io/Lingua_read2/) · [Run the demo locally](client/lingua-read-client/demo/README.md)
+The static demo uses the real reader/player with prepared responses and temporary
+sample data. It needs no account or API key. Imports, live AI, offline sync, and
+FSRS scheduling run in the full application. [Run the demo locally](client/lingua-read-client/demo/README.md).
 
-## Important Notice
+![Spanish reader with a prepared word lookup and familiarity controls](docs/images/reader-demo.jpg)
+*Real reader component in the static Spanish sample; translations are prepared.*
 
-This is an early version of the application and is still under active development. As such:
+![English audio lesson with synchronized transcript and player](docs/images/audio-demo.jpg)
+*Static listening sample: human recording from P. Roach / International Phonetic
+Association, CC BY-SA 3.0; caption-derived transcript CC BY-SA 4.0.
+[Media attribution and changes](client/lingua-read-client/demo/public/audio/ATTRIBUTION.txt).*
 
-*   The application may contain bugs or incomplete features
-*   Some functionality might not work as expected
-*   The user interface and features may change significantly in future versions
-*   It is not yet intended for use
-*   LinguaRead is free, open-source software provided under the MIT License. You're welcome to use it for any reason, make changes, share it, and incorporate it into other products without cost.
+## What you can do
 
-## Key Features
+- Import TXT/EPUB books, organize lessons, and track reading progress.
+- Look up words and phrases, set familiarity levels, and mine sentences for
+  configurable FSRS-6 review, including cloze cards and reading credit.
+- Play supplied audio with SRT transcripts, seek by cue, and resume audiobook
+  playlists. Download material for offline use and replay supported queued activity
+  when reconnected.
+- Choose translation and AI providers, including compatible local endpoints;
+  customize per-task models/prompts, reader appearance, and review settings.
+- Export vocabulary, view reading/listening statistics, and back up your data.
 
-*   **AI-Powered Lesson Generation:** Creates reading materials (lessons/stories) using Google Gemini Pro based on user prompts.
-*   **Advanced Translation:** Integrates with the DeepL API for accurate word and phrase translations.
-*   **Vocabulary Management:** Tracks the learning status of words.
-*   **Interactive Reading:** Displays text with words color-coded by learning status. Hovering/clicking shows translations.
-*   **Term Selection:** Allows selecting single words or multi-word phrases for translation and saving.
-*   **Book Management:** Import longer texts by pasting content or uploading `.txt` and `.epub` files. Books are automatically split into lessons, and reading progress is tracked. Supports adding multiple tags to books for organization.
-*   **Audio Lessons:** Upload audio (e.g., MP3) and corresponding SRT subtitles for synchronized listening/reading ("karaoke-style").
-*   **User Customization:** Settings for default font and translation behavior. (Theme, text size, and line spacing are now highly customizable with on-the-fly controls - see 'Recent Frontend Enhancements' for details).
-*   **Statistics:** Insights into reading activity, listening time (per language, per day), and vocabulary progress. Includes filtering by various time periods (Today, 7/30/90/180 Days, All Time).
-*   **Batch Operations:** Translate all words, mark all as known. Create audio lessons in batches by uploading corresponding audio and SRT files (e.g., `lesson1.mp3` and `lesson1_fr.srt`).
-*   **Listening Time Tracking:** Automatically tracks time spent actively listening to audio lessons and audiobooks.
-*   **Terms Management Page:**
-    *   View all saved terms by language.
-    *   Filter by learning status (1-5).
-    *   Search by term or translation.
-    *   Sort by term, status, or date added (default: newest first).
-    *   Export all terms or filtered terms as CSV.
-    *   Import terms via the UI by uploading a CSV file (Term, Translation[Optional], Status[Optional]).
-    *   Remembers last selected language.
-*   **Audiobook Player:** Upload MP3 files for a book to create a persistent audiobook playlist. Tracks playback progress per book and integrates listening time into statistics.
+See the [features guide](FEATURES.md) for details and [architecture and engineering
+notes](docs/ARCHITECTURE.md) for how the pieces fit together.
 
-## Language Management
+## Status and language limitations
 
-LinguaRead supports a wide range of languages with customizable settings, including:
+LinguaRead is **experimental and under active development**. Bugs, incomplete
+features, UI changes, and data migrations are possible. Back up before upgrading.
+It is a personal workspace using a shared default user, with no tenant-isolation
+promise for unrelated users. Support is best-effort from a solo maintainer with a
+full-time job; there are no response-time or availability commitments.
 
-*   Right-to-left (RTL) support
-*   Parser type (space-delimited; MeCab and Jieba segmentation not implemented yet)
-*   Character substitutions for normalization
-*   Sentence splitting rules
-*   Word character sets
-*   Dictionaries and translation sources
+The demo provides Spanish reading and English listening examples. Configurable
+language entries do not establish that every language works equally well.
+Space-delimited parsing, normalization, sentence rules, dictionaries, and RTL
+settings are configurable. **Japanese MeCab and Chinese Jieba segmentation are
+not implemented.** Verify a short passage in your own language before importing
+an entire library; see [adding languages](LANGUAGES_GUIDE.md).
 
-### Updating Language Data
-
-Languages can be configured and updated via the **Manage Languages** UI in the app. You can:
-
-*   Add new languages
-*   Edit existing language settings
-*   Configure dictionaries and parsing rules
-*   Enable or disable languages for translation and content creation
-
-### Impact on Features
-
-Language settings influence:
-
-*   Text parsing and sentence splitting
-*   Dictionary lookups
-*   Translation behavior
-
-
----
-
-## Technology Stack
-
-*   **Frontend:** React + TypeScript (built with Vite)
-*   **Backend:** .NET 10 (C#)
-*   **Database:** PostgreSQL
-*   **APIs:** Google Gemini DeepL
-
----
+The maintainer reports acceptable personal operation on an Oracle Cloud free-tier
+micro instance with swap enabled and good mobile performance in their own
+workflow. Actual host specifications and representative measurements remain to
+be [recorded](docs/DEPLOYMENT_EVIDENCE.md). These observations do not establish a
+minimum VM size, concurrent-user capacity, or broad device support. PostgreSQL's
+Compose defaults are tuned for roughly 4 GB hosts; smaller machines need reviewed
+configuration and measurement.
 
 ## Installation (Docker)
 
-LinguaRead runs entirely in Docker. A single command builds and launches the React frontend, the .NET backend, and the PostgreSQL database — there is **no need to install Node.js, the .NET SDK, or PostgreSQL** on your machine.
+Install Git and Docker with the Compose plugin (Docker Desktop on Windows/macOS),
+then start Docker. No host Node.js, .NET SDK, or PostgreSQL installation is needed.
 
-The steps below are written for **Windows** (PowerShell), but work the same on macOS and Linux.
-
-> 📖 For a full reference of every configuration option, see the **[Configuration & Settings Guide](SETTINGS.md)**.
-> ✨ For a concise tour of what the app can do, see the **[Features Guide](FEATURES.md)**.
-
-### 📋 Prerequisites
-
-Install these two tools first:
-
-1.  **[Git for Windows](https://git-scm.com/download/win)** — to download the code.
-2.  **[Docker Desktop](https://www.docker.com/products/docker-desktop/)** — runs everything else.
-    *   During/after install, enable the WSL 2 backend: **Docker Desktop → Settings → General → "Use the WSL 2 based engine."**
-    *   **Start Docker Desktop and wait until its whale icon goes green** before continuing. Docker must be running for every command below.
-
----
-
-### 🚀 Step-by-Step Installation
-
-#### Step 1 — Get the code
-Open **PowerShell** and clone the repository:
-
-```powershell
+```sh
 git clone https://github.com/semblable/Lingua_read2.git
 cd Lingua_read2
 ```
 
-All remaining commands are run from this folder (the one containing `docker-compose.yml`).
-
-#### Step 2 — Create the `.env` file
-Copy the provided template to a file named exactly `.env`:
+Copy `.env.example` to `.env`:
 
 ```powershell
+# Windows PowerShell
 Copy-Item .env.example .env
 notepad .env
 ```
 
-Then change at least `POSTGRES_PASSWORD` and `JWT_KEY` to your own secure values (everything else works with the defaults).
-
-Set `LINGUAREAD_PASSWORD` before first startup. Alternatively, configure a random
-`LINGUAREAD_SETUP_TOKEN` and enter that operator token on the setup page with
-your chosen password. Outside Development, setup requires this token. Remove
-the token after setup and keep the initial connection trusted and local.
-
-> [!TIP]
-> **Generate a secure `JWT_KEY`:**
-> *   **Windows (PowerShell):**
->     ```powershell
->     [System.Convert]::ToBase64String((1..32 | ForEach-Object { Get-Random -Minimum 0 -Maximum 256 }))
->     ```
-> *   **Linux / macOS / Git Bash:**
->     ```bash
->     openssl rand -base64 32
->     ```
-
-> [!NOTE]
-> The `.env` template above covers the essentials. Every available variable (CORS, Discord scheduler, image tags, etc.) is documented in the **[Configuration & Settings Guide](SETTINGS.md)**.
-
-#### Step 3 — Build and start
-From the same folder, run:
-
-```powershell
-docker compose up --build -d
+```sh
+# macOS / Linux
+cp .env.example .env
+# Open .env with your preferred editor.
 ```
 
-Docker pulls the required images, builds the containers, runs database migrations, and launches everything in the background. The first build can take several minutes.
-
-> If your Docker version is older and `docker compose` is not recognized, use the legacy command `docker-compose up --build -d` instead.
-
-#### Step 4 — Verify it's running
-Check that all services are up and healthy:
+Set `POSTGRES_PASSWORD` and a random `JWT_KEY` of at least 32 characters. Generate
+a key locally with PowerShell's cryptographic random generator:
 
 ```powershell
+$jwtBytes = New-Object byte[] 32
+$jwtRng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+$jwtRng.GetBytes($jwtBytes)
+[Convert]::ToBase64String($jwtBytes)
+$jwtRng.Dispose()
+```
+
+Or use `openssl rand -base64 32` on macOS/Linux. Keep `.env` private. Provider keys
+are optional; unconfigured provider features are unavailable. Set
+`LINGUAREAD_PASSWORD` before first startup. Alternatively, configure a random
+`LINGUAREAD_SETUP_TOKEN` and enter that operator token on the setup page along
+with your chosen password. Outside Development, setup requires this token.
+Remove the token after setup; keep the initial connection trusted and local.
+
+```sh
+docker compose up --build -d
 docker compose ps
 ```
 
-You should see three services running (with `db` and `api` reporting **healthy**):
-*   `db` — PostgreSQL 18
-*   `api` — .NET backend
-*   `nginx` — React frontend
+The first build can take several minutes. Open [http://localhost](http://localhost)
+and set up/sign in with your password. The normal stack has three services: `db`,
+`api`, and `nginx`. The optional backup service starts only with its profile.
 
-Then open the app in your browser: **[http://localhost](http://localhost)** — you'll be logged in automatically with the default local account.
+This plain-HTTP setup is for local evaluation. Authentication cookies are secure
+outside Development, so a plain-HTTP address on another device can prevent login.
+For a server/phone over a network, configure HTTPS using the production settings
+and complete setup before allowing untrusted access. See [settings](SETTINGS.md)
+and the [security policy](SECURITY.md).
 
----
+| Service | Local access |
+| --- | --- |
+| App | [http://localhost](http://localhost), port 80 |
+| API | [Readiness](http://localhost:5000/api/Health/ready), loopback port 5000 via the development override |
+| Database | Internal Compose service `db:5432`; not published to the host by default |
 
-### 🔗 Service Access Points
+## Manage, back up, and upgrade
 
-| Service | URL | Notes |
-| :--- | :--- | :--- |
-| 🌐 **Frontend** | [http://localhost](http://localhost) (port `80`) | The app. Auto-logs you into the default local account. |
-| 🔌 **Backend API** | [http://localhost:5000](http://localhost:5000) | Health check: `http://localhost:5000/api/Health/ready` |
-| 🗄️ **Database** | `localhost:5432` | Connect with the PostgreSQL credentials from your `.env`. |
+| Task | Command or guide |
+| --- | --- |
+| Stop, preserving volumes | `docker compose down` |
+| Restart | `docker compose restart` |
+| View logs | `docker compose logs -f` (Ctrl+C to exit) |
+| Upgrade and recover | [Backup and upgrade guide](docs/BACKUP_AND_UPGRADE.md) |
+| Advanced configuration | [Settings guide](SETTINGS.md) |
 
----
+**Settings → Data Management → Download Backup** saves a PostgreSQL `.backup`.
+It contains the database only. Preserve uploaded audio/EPUB assets and the
+`api_dp_keys` encryption-key volume separately. Restoring only the database is
+not a full-library recovery. Verify an isolated restore before relying on a
+backup or upgrading. **Restore from Backup overwrites its target database.**
 
-### 🛑 Management Commands
+For optional automated cloud backups, configure the remote privately with
+`bash setup.sh` in Git Bash/WSL/Linux, then start with
+`docker compose --profile backup up -d`. The sidecar backs up the database and
+media, but deliberately excludes the encryption keys; protect those separately.
+See [backup expectations](docs/BACKUP_AND_UPGRADE.md).
 
-Run these from the folder containing `docker-compose.yml`:
+## Troubleshooting
 
-| Action | Command | Description |
-| :--- | :--- | :--- |
-| **Stop** | `docker compose down` | Stops all services but **keeps** your database data. |
-| **Restart** | `docker compose restart` | Restarts all running containers. |
-| **View logs** | `docker compose logs -f` | Streams logs from all containers (`Ctrl+C` to exit). |
-| **Update** | `git pull` then `docker compose up --build -d` | Pull the latest code and rebuild. |
-| **Reset everything** | `docker compose down -v` | **⚠️ Destroys all containers and wipes the database.** |
+| Symptom | Next step |
+| --- | --- |
+| Cannot connect to Docker / commands hang | Start Docker Desktop or the Docker daemon and wait until ready. |
+| Port 80 is in use | Change nginx's host mapping from `80:8080` to `8080:8080`, then open `http://localhost:8080`. |
+| API stays unhealthy | Allow initial migrations to finish, then inspect `docker compose logs --tail 100 api`. |
+| Setup/login fails | Check `.env` naming, JWT key length, password, and HTTPS/cookie behavior. |
+| Missing provider feature | Configure that provider in Settings; no paid API is required to run the reader. |
+| Need to reset disposable test data | `docker compose down -v` deletes volumes, including the database, media, and keys. Never use it to troubleshoot data you want to retain. |
 
----
-
-### 💾 Backups
-
-For everyday use you **don't need any extra containers**. The app has built-in backup and restore: go to **Settings → Data Management** and click **Download Backup** to save a `.backup` file, or **Restore from Backup** to load one. This is the recommended option for most users.
-
-> The default `docker compose up -d` runs only `db`, `api`, and `nginx`. The automated-backup container below is opt-in and is **never started unless you explicitly ask for it**.
-
-**Advanced — automated cloud backups (optional):** the stack also includes an opt-in `backup` service that periodically snapshots the database and media to a cloud remote via [rclone](https://rclone.org/). It lives behind a Compose *profile*, so it stays out of normal commands until you enable it:
-
-1.  Configure the remote once (run in **Git Bash** or **WSL**, since it's a shell script): `bash setup.sh`
-2.  Start *only then* with the profile flag: `docker compose --profile backup up -d`
-
----
-
-### 🩺 Troubleshooting (Windows)
-
-| Symptom | Fix |
-| :--- | :--- |
-| `cannot connect to the Docker daemon` / commands hang | Docker Desktop isn't running — start it and wait for the whale icon to turn green. |
-| `Ports are not available` / port `80` already in use | Another app (IIS, Skype, a web server) holds port 80. Stop it, or change the `nginx` mapping `"80:80"` to e.g. `"8080:80"` in `docker-compose.yml` and open [http://localhost:8080](http://localhost:8080). |
-| `docker compose` not recognized | Update Docker Desktop, or use the legacy `docker-compose` command. |
-| App loads but settings/login look wrong | Make sure `.env` is in the repo root, named exactly `.env` (not `.env.txt`), and that `JWT_KEY` has no smart/curly quotes. |
-| `api` stays *unhealthy* right after starting | It waits for the database and runs migrations on first boot. Give it ~30 seconds, then check `docker compose logs -f api`. |
-| Want a clean slate | `docker compose down -v` removes containers **and** the database, then start again from Step 3. |
-
----
+[Report a bug](https://github.com/semblable/Lingua_read2/issues/new/choose) with your
+version, device/browser, language, and a small reproducible example. Sanitize logs
+and screenshots. Read [CONTRIBUTING.md](CONTRIBUTING.md) for development and support
+scope, and [SECURITY.md](SECURITY.md) for private vulnerability reporting.
 
 ## License
 
-The application code uses MIT. The static demonstration's third-party human audio
-and captions have separate Creative Commons licenses; see its
-[media attribution](client/lingua-read-client/demo/public/audio/ATTRIBUTION.txt).
-
-MIT License
-
-Copyright (c) 2025 LinguaRead
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+Application code and original demo text: [MIT](LICENSE), Copyright (c) 2025
+LinguaRead. Fonts, the FSRS port, and demo audio/captions retain their upstream
+terms in [third-party notices](THIRD_PARTY_NOTICES.md). The English listening
+screenshot contains CC BY-SA caption material; retain its attribution when reusing it.

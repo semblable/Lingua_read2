@@ -9,7 +9,7 @@ LinguaRead allows adding and customizing languages either directly via the **Web
    - [Step 1: Open Language Settings](#step-1-open-language-settings)
    - [Step 2: Basic Configuration](#step-2-basic-configuration)
    - [Step 3: Script & Parsing Rules](#step-3-script--parsing-rules)
-   - [Step 4: Translation Target Overrides](#step-4-translation-target-overrides)
+   - [Step 4: Translation Target Overrides](#step-4-translation-target-overrides-optional)
    - [Step 5: External Dictionaries](#step-5-external-dictionaries)
    - [Step 6: Sentence-Split Exceptions](#step-6-sentence-split-exceptions)
 2. [Method B: Seeding Languages in Code (Developers)](#method-b-seeding-languages-in-code-developers)

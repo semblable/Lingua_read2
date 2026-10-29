@@ -68,7 +68,8 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint src --max-warnings 46",
     "api:types": "node scripts/generate-api-types.mjs",
-    "postbuild": "node scripts/verify-build.mjs"
+    "postbuild": "node scripts/verify-build.mjs && node scripts/verify-notices.mjs build",
+    "postdemo:build": "node scripts/verify-notices.mjs demo-dist"
   },
   "browserslist": {
     "production": [

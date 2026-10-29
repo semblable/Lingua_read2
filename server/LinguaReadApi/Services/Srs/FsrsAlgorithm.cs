@@ -1,3 +1,5 @@
+// Adapted from py-fsrs, Copyright (c) 2022 Open Spaced Repetition (MIT).
+// Full upstream license: ThirdPartyNotices/py-fsrs.txt.
 using System;
 
 namespace LinguaReadApi.Services.Srs

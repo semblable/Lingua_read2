@@ -1,0 +1,56 @@
+name: Bug report
+description: Report a reproducible problem with reading, listening, review, or installation.
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For vulnerabilities, use [the security policy](https://github.com/semblable/Lingua_read2/blob/dev/SECURITY.md).
+        Remove keys, personal text, IP addresses, and private data from logs and screenshots.
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      description: Commit SHA or immutable image tag, and branch if known.
+    validations:
+      required: true
+  - type: dropdown
+    id: environment
+    attributes:
+      label: Installation
+      options:
+        - Docker Compose (local)
+        - Docker Compose (server)
+        - Development server
+        - Static demo
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: Device, OS, and browser
+      description: Include browser version and whether this is a physical phone.
+    validations:
+      required: true
+  - type: input
+    id: language
+    attributes:
+      label: Language and material type
+      description: For example, Spanish EPUB or English MP3 with SRT.
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Use a short original or public-domain passage if needed.
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Expected and actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Sanitized logs or screenshots
+      description: Include installation errors and relevant container logs; never attach a database backup or .env file.

@@ -5,6 +5,11 @@ import { saveAs } from 'file-saver';
 import Papa from 'papaparse';
 import type { Language } from '../utils/api/languages';
 import type { Word } from '../utils/api/words';
+import TermSentences from '../components/TermSentences';
+
+const statusLabels: Record<number, string> = {
+    1: 'New', 2: 'Learning', 3: 'Familiar', 4: 'Advanced', 5: 'Known', 6: 'Ignored'
+};
 
 const TermsPage = () => {
     const [languages, setLanguages] = useState<Language[]>([]);
@@ -20,6 +25,8 @@ const TermsPage = () => {
     const [searchTerm, setSearchTerm] = useState('');
     const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
     const [deletingWordId, setDeletingWordId] = useState<number | null>(null);
+    const [showSentences, setShowSentences] = useState(() => localStorage.getItem('termsShowSentences') === 'true');
+    const fetchVersion = useRef(0);
 
     // Pagination State
     const [currentPage, setCurrentPage] = useState(1);
@@ -63,10 +70,12 @@ const TermsPage = () => {
 
     // Fetch terms useCallback
     const fetchTerms = useCallback(async () => {
+        const version = ++fetchVersion.current;
         if (!selectedLanguage) {
             setTerms([]);
             setTotalItems(0);
             setTotalPages(0);
+            setLoading(false);
             return;
         }
         setLoading(true);
@@ -79,8 +88,11 @@ const TermsPage = () => {
                 pageSize,
                 statusFilter,
                 sortBy,
-                debouncedSearchTerm
+                debouncedSearchTerm,
+                showSentences
             );
+
+            if (version !== fetchVersion.current) return;
 
             // Access properties from PagedResult
             setTerms(data.items || []);
@@ -88,19 +100,21 @@ const TermsPage = () => {
             setTotalPages(data.totalPages || 0);
 
         } catch (err: unknown) {
+            if (version !== fetchVersion.current) return;
             setError(`Failed to fetch terms: ${(err as Error)?.message}`);
             console.error(err);
             setTerms([]);
             setTotalItems(0);
             setTotalPages(0);
         } finally {
-            setLoading(false);
+            if (version === fetchVersion.current) setLoading(false);
         }
-    }, [selectedLanguage, currentPage, pageSize, statusFilter, sortBy, debouncedSearchTerm]);
+    }, [selectedLanguage, currentPage, pageSize, statusFilter, sortBy, debouncedSearchTerm, showSentences]);
 
     // useEffect to trigger fetchTerms
     useEffect(() => {
         fetchTerms();
+        return () => { fetchVersion.current++; };
     }, [fetchTerms]);
 
     // Handle language selection change
@@ -278,10 +292,7 @@ const TermsPage = () => {
             5: 'success',  // Known (Green)
             6: 'secondary' // Ignored (Grey)
         };
-        const labels: Record<number, string> = {
-            1: 'New', 2: 'Learning', 3: 'Familiar', 4: 'Advanced', 5: 'Known', 6: 'Ignored'
-        };
-        return <Badge bg={variants[status] || 'secondary'}>{labels[status] || status}</Badge>;
+        return <Badge bg={variants[status] || 'secondary'}>{statusLabels[status] || status}</Badge>;
     };
 
     // Pagination Component
@@ -372,7 +383,7 @@ const TermsPage = () => {
                                     inline
                                     type="checkbox"
                                     id={`status-${status}`}
-                                    label={status === 6 ? 'Ignored' : `${status}`}
+                                    label={statusLabels[status]}
                                     value={status}
                                     checked={statusFilter.includes(status)}
                                     onChange={handleStatusFilterChange}
@@ -450,6 +461,14 @@ const TermsPage = () => {
                     {' '}Anki schedules new cards independently. This is a one-way export.</p>
             </details>}
 
+            <Form.Check type="switch" id="terms-show-sentences" className="mb-3"
+                label="Show sentences" checked={showSentences}
+                onChange={event => {
+                    const checked = event.target.checked;
+                    setShowSentences(checked);
+                    localStorage.setItem('termsShowSentences', String(checked));
+                }} />
+
             {loading && terms.length === 0 && ( /* Only show full spinner if no data yet or language switching */
                 <div className="text-center my-4">
                     <Spinner animation="border" role="status">
@@ -462,7 +481,7 @@ const TermsPage = () => {
             {importError && <Alert variant="danger" className="my-2">Import Error: {importError}</Alert>}
             {importSuccess && <Alert variant="success" className="my-2">{importSuccess}</Alert>}
 
-            {!loading && !error && selectedLanguage && (
+            {(!loading || terms.length > 0) && !error && selectedLanguage && (
                 <>
                     <div style={{ minHeight: '400px', position: 'relative' }}>
                         {loading && ( /* Overlay spinner for updates */
@@ -470,7 +489,7 @@ const TermsPage = () => {
                                 <Spinner animation="border" size="sm" />
                             </div>
                         )}
-                        <Table striped bordered hover responsive size="sm">
+                        <Table striped bordered hover responsive size="sm" aria-busy={loading}>
                             <thead>
                                 <tr>
                                     <th onClick={() => handleSort('term')} style={{ cursor: 'pointer' }}>
@@ -491,7 +510,11 @@ const TermsPage = () => {
                                     terms.map(term => (
                                         <tr key={term.wordId}>
                                             <td>{term.term}</td>
-                                            <td>{term.translation}</td>
+                                            <td>
+                                                {term.translation}
+                                                {showSentences && <TermSentences term={term}
+                                                    characterSubstitutions={languages.find(lang => String(lang.languageId) === selectedLanguage)?.characterSubstitutions} />}
+                                            </td>
                                             <td className="text-center">{getStatusBadge(term.status ?? 0)}</td>
                                             <td>{term.createdAt ? new Date(term.createdAt).toLocaleString() : ''}</td>
                                             <td className="text-center">
@@ -499,7 +522,7 @@ const TermsPage = () => {
                                                     variant="outline-danger"
                                                     size="sm"
                                                     onClick={() => handleDeleteTerm(term)}
-                                                    disabled={deletingWordId === term.wordId || importLoading}
+                                                    disabled={loading || deletingWordId === term.wordId || importLoading}
                                                 >
                                                     {deletingWordId === term.wordId ? 'Deleting...' : 'Delete'}
                                                 </Button>

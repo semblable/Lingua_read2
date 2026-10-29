@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import '@testing-library/jest-dom';
 import TermsPage from '../pages/TermsPage';
@@ -87,7 +87,8 @@ describe('TermsPage', () => {
       20,
       [],
       'created_desc',
-      ''
+      '',
+      false
     );
   });
 
@@ -149,7 +150,8 @@ describe('TermsPage', () => {
         20,
         [6],
         'created_desc',
-        ''
+        '',
+        false
       )
     );
   });
@@ -161,7 +163,7 @@ describe('TermsPage', () => {
     fireEvent.change(await screen.findByLabelText(/^Language$/i), { target: { value: '1' } });
     await screen.findByText('gato');
     fireEvent.click(screen.getByLabelText('Ignored'));
-    await waitFor(() => expect(getPaginatedWordsByLanguage).toHaveBeenLastCalledWith('1', 1, 20, [6], 'created_desc', ''));
+    await waitFor(() => expect(getPaginatedWordsByLanguage).toHaveBeenLastCalledWith('1', 1, 20, [6], 'created_desc', '', false));
     fireEvent.change(screen.getByLabelText('Export format'), { target: { value: format } });
     fireEvent.click(screen.getByRole('button', { name: format === 'anki' ? 'Export Anki' : 'Export CSV' }));
     fireEvent.click(screen.getByText('Export Filtered'));
@@ -179,5 +181,135 @@ describe('TermsPage', () => {
     fireEvent.click(screen.getByText('Export All for Language'));
     await screen.findByText('Failed to export vocabulary: Export unavailable');
     expect(exportWordsCsv).toHaveBeenCalledWith('1', [], 'context');
+  });
+
+  test('optionally shows highlighted sentences, expands examples, and remembers the preference', async () => {
+    getPaginatedWordsByLanguage.mockResolvedValue({
+      items: [{ ...mockTerms[0], sentences: [
+        { sentence: 'El Gato duerme.', textTitle: 'Animal stories', textId: 42 },
+        { sentence: 'Veo un gato.', textTitle: 'Deleted source', textId: null }
+      ] }, mockTerms[1]], totalCount: 2, totalPages: 1
+    });
+    const view = renderPage();
+    fireEvent.change(await screen.findByLabelText(/^Language$/i), { target: { value: '1' } });
+    await screen.findByText('gato');
+    expect(screen.getByLabelText('Show sentences')).not.toBeChecked();
+    expect(screen.queryByText('Animal stories')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByLabelText('Show sentences'));
+    const title = await screen.findByText('Animal stories');
+    expect(title).toBeInTheDocument();
+    expect(screen.getByText('Gato').tagName).toBe('MARK');
+    expect(screen.getByRole('link', { name: /Open in reader/ })).toHaveAttribute('href', '/texts/42');
+    expect(screen.queryByText('Deleted source')).not.toBeInTheDocument();
+    expect(screen.getByText('No saved sentence yet.')).toBeInTheDocument();
+    expect(getPaginatedWordsByLanguage).toHaveBeenLastCalledWith('1', 1, 20, [], 'created_desc', '', true);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Expand sentences for gato' }));
+    expect(screen.getByText('Deleted source')).toBeInTheDocument();
+    expect(screen.getAllByRole('link', { name: /Open in reader/ })).toHaveLength(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse sentences for gato' }));
+    expect(screen.queryByText('Deleted source')).not.toBeInTheDocument();
+
+    view.unmount();
+    renderPage();
+    expect(screen.getByLabelText('Show sentences')).toBeChecked();
+    await screen.findByText('Animal stories');
+    fireEvent.click(screen.getByLabelText('Show sentences'));
+    await waitFor(() => expect(screen.queryByText('Animal stories')).not.toBeInTheDocument());
+    expect(localStorage.getItem('termsShowSentences')).toBe('false');
+  });
+
+  test('a long sentence expands to its complete text', async () => {
+    localStorage.setItem('termsShowSentences', 'true');
+    localStorage.setItem('lastSelectedLanguage', '1');
+    const sentence = `Un gato ${'duerme tranquilamente. '.repeat(20)}Fin.`;
+    getPaginatedWordsByLanguage.mockResolvedValue({
+      items: [{ ...mockTerms[0], sentences: [{ sentence }] }], totalCount: 1, totalPages: 1
+    });
+    renderPage();
+    const expand = await screen.findByRole('button', { name: 'Expand sentences for gato' });
+    expect(screen.queryByText(/Fin\./)).not.toBeInTheDocument();
+    fireEvent.click(expand);
+    expect(screen.getByText(/Fin\./)).toBeInTheDocument();
+  });
+
+  test('uses named status filters', async () => {
+    renderPage();
+    await screen.findByText('Spanish');
+    for (const label of ['New', 'Learning', 'Familiar', 'Advanced', 'Known', 'Ignored']) {
+      expect(screen.getByRole('checkbox', { name: label })).toBeInTheDocument();
+    }
+  });
+
+  test('keeps the term visible when it appears late in a long sentence', async () => {
+    localStorage.setItem('termsShowSentences', 'true');
+    localStorage.setItem('lastSelectedLanguage', '1');
+    getPaginatedWordsByLanguage.mockResolvedValue({
+      items: [{ ...mockTerms[0], sentences: [{ sentence: `${'Mucho antes. '.repeat(30)}El Gato duerme.` }] }],
+      totalCount: 1, totalPages: 1
+    });
+    renderPage();
+    expect((await screen.findByText('Gato')).tagName).toBe('MARK');
+    expect(screen.getByRole('button', { name: 'Expand sentences for gato' })).toHaveTextContent('Show full sentence');
+  });
+
+  test('ignores a stale context request after the toggle changes again', async () => {
+    let resolveContext;
+    renderPage();
+    fireEvent.change(await screen.findByLabelText(/^Language$/i), { target: { value: '1' } });
+    await screen.findByText('gato');
+    getPaginatedWordsByLanguage.mockImplementationOnce(() => new Promise(resolve => { resolveContext = resolve; }));
+    fireEvent.click(screen.getByLabelText('Show sentences'));
+    await waitFor(() => expect(resolveContext).toBeTypeOf('function'));
+    // Existing rows remain visible while context loads.
+    expect(screen.getByText('gato')).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText('Show sentences'));
+    await waitFor(() => expect(screen.getByRole('table')).toHaveAttribute('aria-busy', 'false'));
+    await act(async () => {
+      resolveContext({ items: [{ ...mockTerms[0], term: 'stale result' }], totalCount: 1, totalPages: 1 });
+    });
+    expect(screen.getByText('gato')).toBeInTheDocument();
+    expect(screen.queryByText('stale result')).not.toBeInTheDocument();
+  });
+
+  test('allows expanding a sentence that becomes longer after language substitutions', async () => {
+    localStorage.setItem('termsShowSentences', 'true');
+    localStorage.setItem('lastSelectedLanguage', '1');
+    getAllLanguages.mockResolvedValue([{ ...mockLanguages[0], characterSubstitutions: 'x=elefante' }]);
+    getPaginatedWordsByLanguage.mockResolvedValue({
+      items: [{ ...mockTerms[0], term: 'elefante', sentences: [{ sentence: `${'x '.repeat(30)}Fin.` }] }],
+      totalCount: 1, totalPages: 1
+    });
+    renderPage();
+    const expand = await screen.findByRole('button', { name: 'Expand sentences for elefante' });
+    expect(screen.queryByText(/Fin\./)).not.toBeInTheDocument();
+    fireEvent.click(expand);
+    expect(screen.getByText(/Fin\./)).toBeInTheDocument();
+    expect(screen.getAllByText('elefante', { selector: 'mark' })).toHaveLength(30);
+  });
+
+  test('ignores a stale request failure while the current request is still loading', async () => {
+    let rejectContext;
+    let resolveCurrent;
+    renderPage();
+    fireEvent.change(await screen.findByLabelText(/^Language$/i), { target: { value: '1' } });
+    await screen.findByText('gato');
+    getPaginatedWordsByLanguage
+      .mockImplementationOnce(() => new Promise((resolve, reject) => { rejectContext = reject; }))
+      .mockImplementationOnce(() => new Promise(resolve => { resolveCurrent = resolve; }));
+    fireEvent.click(screen.getByLabelText('Show sentences'));
+    await waitFor(() => expect(rejectContext).toBeTypeOf('function'));
+    fireEvent.click(screen.getByLabelText('Show sentences'));
+    await waitFor(() => expect(resolveCurrent).toBeTypeOf('function'));
+
+    await act(async () => { rejectContext(new Error('stale failure')); });
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.getByRole('table')).toHaveAttribute('aria-busy', 'true');
+    expect(screen.getAllByRole('button', { name: 'Delete' })[0]).toBeDisabled();
+
+    await act(async () => { resolveCurrent({ items: mockTerms, totalCount: 2, totalPages: 1 }); });
+    expect(screen.getByRole('table')).toHaveAttribute('aria-busy', 'false');
+    expect(screen.getByText('gato')).toBeInTheDocument();
   });
 });

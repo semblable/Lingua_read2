@@ -345,7 +345,8 @@ namespace LinguaReadApi.Controllers
             [FromQuery] int pageSize = 20,
             [FromQuery] string? status = null, // Comma-separated list of statuses (e.g., "1,2,5")
             [FromQuery] string? sortBy = null, // Sort criteria (e.g., "term_asc", "status_desc")
-            [FromQuery] string? searchTerm = null) // Search term
+            [FromQuery] string? searchTerm = null,
+            [FromQuery] bool includeSentences = false)
         {
             var userId = GetUserId();
 
@@ -419,6 +420,32 @@ namespace LinguaReadApi.Controllers
                     CreatedAt = w.CreatedAt
                 })
                 .ToListAsync();
+
+            if (includeSentences && items.Count > 0)
+            {
+                // Batch context for this page, rather than making a query per term.
+                var wordIds = items.Select(w => w.WordId).ToList();
+                var phrases = await _context.SrsPhrases.AsNoTracking()
+                    .Where(p => p.UserId == userId && wordIds.Contains(p.WordId))
+                    .OrderByDescending(p => p.CreatedAt).ThenByDescending(p => p.SrsPhraseId)
+                    .Select(p => new
+                    {
+                        p.WordId,
+                        Context = new TermSentenceDto
+                        {
+                            Sentence = p.Sentence,
+                            // A deleted or inaccessible source keeps its saved title, without a link.
+                            TextId = p.Text != null && p.Text.UserId == userId ? p.TextId : null,
+                            TextTitle = p.Text != null && p.Text.UserId == userId ? p.Text.Title : p.TextTitle
+                        }
+                    })
+                    .ToListAsync();
+                // Database TRIM functions differ on tabs/newlines; filter the scoped results in .NET.
+                var byWord = phrases.Where(p => !string.IsNullOrWhiteSpace(p.Context.Sentence))
+                    .ToLookup(p => p.WordId, p => p.Context);
+                foreach (var item in items)
+                    item.Sentences = byWord[item.WordId].ToList();
+            }
 
             var totalPages = (int)Math.Ceiling(totalCount / (double)pageSize);
 
@@ -984,5 +1011,13 @@ SET ""Translation"" = EXCLUDED.""Translation"",
         public string Translation { get; set; } = string.Empty;
         public bool IsNew { get; set; }
         public DateTime CreatedAt { get; set; }
+        public List<TermSentenceDto> Sentences { get; set; } = new();
+    }
+
+    public class TermSentenceDto
+    {
+        public string Sentence { get; set; } = string.Empty;
+        public int? TextId { get; set; }
+        public string? TextTitle { get; set; }
     }
 } // End of namespace

@@ -127,11 +127,13 @@ export const getPaginatedWordsByLanguage = (
   pageSize: number = 20,
   statusFilter: Array<number | string> = [],
   sortBy: string = 'term_asc',
-  searchTerm: string = ''
+  searchTerm: string = '',
+  includeSentences: boolean = false
 ): Promise<PaginatedWordsByLanguage> => {
   const params = new URLSearchParams();
   params.append('page', String(page));
   params.append('pageSize', String(pageSize));
+  if (includeSentences) params.append('includeSentences', 'true');
 
   if (statusFilter && statusFilter.length > 0) {
     params.append('status', statusFilter.join(','));

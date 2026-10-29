@@ -5141,6 +5141,7 @@ export interface paths {
                     status?: string;
                     sortBy?: string;
                     searchTerm?: string;
+                    includeSentences?: boolean;
                 };
                 header?: never;
                 path: {
@@ -6604,6 +6605,12 @@ export interface components {
             tagId?: number;
             name?: string | null;
         };
+        TermSentenceDto: {
+            sentence?: string | null;
+            /** Format: int32 */
+            textId?: number | null;
+            textTitle?: string | null;
+        };
         Text: {
             /** Format: int32 */
             textId?: number;
@@ -7279,6 +7286,7 @@ export interface components {
             isNew?: boolean;
             /** Format: date-time */
             createdAt?: string;
+            sentences?: components["schemas"]["TermSentenceDto"][] | null;
         };
         WordResponseDtoPagedResult: {
             items: components["schemas"]["WordResponseDto"][] | null;

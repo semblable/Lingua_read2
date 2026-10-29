@@ -7,6 +7,7 @@ using LinguaReadApi.Data;
 using LinguaReadApi.Models;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
@@ -239,6 +240,93 @@ public class WordsControllerTests
     }
 
     private static readonly string Shy = ((char)0x00AD).ToString();
+
+    [Fact]
+    public async Task GetPaginatedWords_SentencesAreOptionalOrderedAndScopedToUserAndPage()
+    {
+        using var context = CreateContext();
+        var (userId, wordId) = SeedWord(context, status: 2);
+        var otherUser = Guid.NewGuid();
+        context.Texts.AddRange(
+            new Text { TextId = 10, UserId = userId, LanguageId = 1, Title = "Current title", Content = "El gato duerme." },
+            new Text { TextId = 20, UserId = otherUser, LanguageId = 1, Title = "Private title", Content = "Private" });
+        context.Words.Add(new Word { WordId = 2, UserId = userId, LanguageId = 1, Term = "perro", Status = 2 });
+        var now = DateTime.UtcNow;
+        context.SrsPhrases.AddRange(
+            new SrsPhrase { SrsPhraseId = 1, WordId = wordId, UserId = userId, Sentence = "El gato duerme.", TextId = 10, TextTitle = "Old title", CreatedAt = now },
+            new SrsPhrase { SrsPhraseId = 2, WordId = wordId, UserId = userId, Sentence = "Un gato.", TextTitle = "Deleted source", CreatedAt = now.AddDays(-1) },
+            new SrsPhrase { SrsPhraseId = 3, WordId = wordId, UserId = otherUser, Sentence = "Private sentence", CreatedAt = now.AddDays(1) },
+            new SrsPhrase { SrsPhraseId = 4, WordId = 2, UserId = userId, Sentence = "Un perro.", CreatedAt = now },
+            new SrsPhrase { SrsPhraseId = 5, WordId = wordId, UserId = userId, Sentence = "Gato sin enlace.", TextId = 20, TextTitle = "Saved title", CreatedAt = now.AddDays(-2) },
+            new SrsPhrase { SrsPhraseId = 6, WordId = wordId, UserId = userId, Sentence = "   ", CreatedAt = now });
+        await context.SaveChangesAsync();
+        context.ChangeTracker.Clear();
+
+        var controller = CreateController(context, userId);
+        var compact = (await controller.GetPaginatedWordsByLanguage(1, pageSize: 1)).Value!;
+        Assert.Empty(Assert.Single(compact.Items).Sentences);
+
+        var page = (await controller.GetPaginatedWordsByLanguage(1, pageSize: 1, includeSentences: true)).Value!;
+        Assert.Equal(2, page.TotalCount);
+        var sentences = Assert.Single(page.Items).Sentences;
+        Assert.Equal(new[] { "El gato duerme.", "Un gato.", "Gato sin enlace." }, sentences.Select(p => p.Sentence));
+        Assert.Equal(10, sentences[0].TextId);
+        Assert.Equal("Current title", sentences[0].TextTitle);
+        Assert.Null(sentences[1].TextId);
+        Assert.Equal("Deleted source", sentences[1].TextTitle);
+        Assert.Null(sentences[2].TextId);
+        Assert.Equal("Saved title", sentences[2].TextTitle);
+
+        var next = (await controller.GetPaginatedWordsByLanguage(1, page: 2, pageSize: 1, includeSentences: true)).Value!;
+        Assert.Equal("Un perro.", Assert.Single(Assert.Single(next.Items).Sentences).Sentence);
+        var empty = (await controller.GetPaginatedWordsByLanguage(1, searchTerm: "missing", includeSentences: true)).Value!;
+        Assert.Empty(empty.Items);
+    }
+
+    [Fact]
+    public async Task GetPaginatedWords_SentencesKeepDeletedSourcesAndEmptyWords_InRelationalDatabase()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<AppDbContext>().UseSqlite(connection).Options;
+        await using var context = new AppDbContext(options);
+        await context.Database.EnsureCreatedAsync();
+        var (userId, wordId) = SeedWord(context, status: 2);
+        var otherUserId = Guid.NewGuid();
+        context.Users.Add(new User { Id = otherUserId, UserName = "other", Email = "other@example.com" });
+        context.Languages.Add(new Language { LanguageId = 2, Name = "French", Code = "fr" });
+        context.Words.AddRange(
+            new Word { WordId = 2, UserId = userId, LanguageId = 1, Term = "perro", Status = 2 },
+            new Word { WordId = 3, UserId = otherUserId, LanguageId = 1, Term = "ajeno", Status = 2 },
+            new Word { WordId = 4, UserId = userId, LanguageId = 2, Term = "chat", Status = 2 });
+        context.Texts.AddRange(
+            new Text { TextId = 10, UserId = userId, LanguageId = 1, Title = "Current source", Content = "El gato." },
+            new Text { TextId = 20, UserId = userId, LanguageId = 1, Title = "Deleted source", Content = "Un gato." });
+        var now = DateTime.UtcNow;
+        context.SrsPhrases.AddRange(
+            new SrsPhrase { SrsPhraseId = 1, WordId = wordId, UserId = userId, Sentence = "Un gato.", TextId = 20, TextTitle = "Deleted source", CreatedAt = now },
+            new SrsPhrase { SrsPhraseId = 2, WordId = wordId, UserId = userId, Sentence = "El gato.", TextId = 10, TextTitle = "Previous title", CreatedAt = now },
+            new SrsPhrase { SrsPhraseId = 3, WordId = wordId, UserId = otherUserId, Sentence = "Another user's context.", CreatedAt = now },
+            new SrsPhrase { SrsPhraseId = 4, WordId = wordId, UserId = userId, Sentence = " \n\t ", CreatedAt = now });
+        await context.SaveChangesAsync();
+        // Exercise the real SET NULL foreign key behavior, without EF relationship fix-up.
+        await context.Texts.Where(t => t.TextId == 20).ExecuteDeleteAsync();
+        context.ChangeTracker.Clear();
+
+        var controller = CreateController(context, userId);
+        var page = (await controller.GetPaginatedWordsByLanguage(1, pageSize: 1, status: "2", includeSentences: true)).Value!;
+        Assert.Equal(2, page.TotalCount);
+        var sentences = Assert.Single(page.Items).Sentences;
+        Assert.Equal(new[] { "El gato.", "Un gato." }, sentences.Select(p => p.Sentence));
+        Assert.Equal(10, sentences[0].TextId);
+        Assert.Equal("Current source", sentences[0].TextTitle);
+        Assert.Null(sentences[1].TextId);
+        Assert.Equal("Deleted source", sentences[1].TextTitle);
+
+        var next = (await controller.GetPaginatedWordsByLanguage(1, page: 2, pageSize: 1, includeSentences: true)).Value!;
+        Assert.Equal("perro", Assert.Single(next.Items).Term);
+        Assert.Empty(Assert.Single(next.Items).Sentences);
+    }
 
     private static Guid SeedPortugueseText(AppDbContext context)
     {

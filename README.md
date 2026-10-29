@@ -26,7 +26,8 @@ Association, CC BY-SA 3.0; caption-derived transcript CC BY-SA 4.0.
 
 - Import TXT/EPUB books, organize lessons, and track reading progress.
 - Look up words and phrases, set familiarity levels, and mine sentences for
-  configurable FSRS-6 review, including cloze cards and reading credit.
+  configurable FSRS-6 translation review and reading credit. Cloze review is paused
+  pending less ambiguous prompts.
 - Play supplied audio with SRT transcripts, seek by cue, and resume audiobook
   playlists. Download material for offline use and replay supported queued activity
   when reconnected.

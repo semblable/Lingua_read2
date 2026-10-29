@@ -228,7 +228,7 @@ Configure flashcard reviews. Cards are scheduled with **FSRS-6** (the algorithm 
 | `SrsMaxIntervalDays` | `36500` | Positive Integer | Maximum possible spacing interval between card reviews (defaults to ~100 years). |
 | `SrsLapseMinimumIntervalDays`| `1` | Positive Integer | Minimum interval in days a forgotten card returns to review with. |
 | `SrsFsrsWeights` | *None* | 21 comma-separated numbers | Custom FSRS model weights (e.g. from an FSRS optimizer). Empty uses the FSRS-6 defaults. |
-| `SrsCardType` | `"translation"` | `"translation"`, `"cloze"`, `"mixed"` | Review formats: **translation** (term -> translation), **cloze** (sentence fill-in-the-blank), or **mixed**. |
+| `SrsCardType` | `"translation"` | Translation review currently active | Cloze/mixed review is paused because blanks can have several valid answers. Existing preferences are retained, but reviews use translation until redesigned. |
 | `SrsAutoCreateCards` | `"always"` | `"always"`, `"with_sentence"`, `"never"` | When saving a word at status 1-4 creates its SRS card. With `"never"`, cards come only from *Mine sentence*. |
 | `SrsStatusSyncMode` | `"promote"` | `"off"`, `"promote"`, `"promote_demote"` | Whether reviews change the word's reader status: raise it as the card gets stronger, and with `"promote_demote"` also lower it when the card is forgotten. |
 | `SrsStatusLevel3Days` / `SrsStatusLevel4Days` | `7` / `21` | Days of stability | Card stability at which the word reaches status 3 and 4. A card that leaves the learning steps makes the word at least status 2. |

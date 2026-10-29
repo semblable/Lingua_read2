@@ -41,6 +41,7 @@ public class AuthSessionEndpointTests
             Assert.Equal(HttpStatusCode.Unauthorized, (await Get(client, "/api/Words/export?format=" + format, cookie)).StatusCode);
         var freshCookie = Cookie(await Post(client, "login", new { password = Password }));
         Assert.Equal(HttpStatusCode.OK, (await Get(client, "/api/Words/export", freshCookie)).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await Get(client, "/api/Words/export?format=unsupported", freshCookie)).StatusCode);
     }
 
     [Fact]

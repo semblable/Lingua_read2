@@ -13,6 +13,7 @@ const TermsPage = () => {
     });
     const [terms, setTerms] = useState<Word[]>([]);
     const [statusFilter, setStatusFilter] = useState<number[]>([]);
+    const [exportFormat, setExportFormat] = useState<'simple' | 'context' | 'anki'>('simple');
     const [sortBy, setSortBy] = useState('created_desc');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -137,10 +138,10 @@ const TermsPage = () => {
         setError(null);
         try {
             const filtersToApply = applyFilters ? statusFilter : [];
-            const { blob, filename } = await exportWordsCsv(selectedLanguage, filtersToApply);
+            const { blob, filename } = await exportWordsCsv(selectedLanguage, filtersToApply, exportFormat);
             saveAs(blob, filename);
         } catch (err: unknown) {
-            setError(`Failed to export CSV: ${(err as Error)?.message}`);
+            setError(`Failed to export vocabulary: ${(err as Error)?.message}`);
             console.error(err);
         } finally {
             setLoading(false);
@@ -393,7 +394,7 @@ const TermsPage = () => {
                         />
                     </Form.Group>
                 </Col>
-                <Col md={4} xs={12} sm={6} className="text-sm-end mt-2 mt-sm-0 d-flex justify-content-start justify-content-sm-end align-items-end gap-2">
+                <Col md={4} xs={12} sm={6} className="text-sm-end mt-2 mt-sm-0 d-flex flex-wrap justify-content-start justify-content-sm-end align-items-end gap-2">
                     <input
                         type="file"
                         ref={fileInputRef}
@@ -409,9 +410,16 @@ const TermsPage = () => {
                     >
                         {importLoading ? <Spinner as="span" animation="border" size="sm" role="status" aria-hidden="true" /> : 'Import CSV'}
                     </Button>
+                    <Form.Select aria-label="Export format" value={exportFormat}
+                        onChange={e => setExportFormat(e.target.value as typeof exportFormat)}
+                        disabled={loading || importLoading} style={{ width: 'auto', maxWidth: '100%' }}>
+                        <option value="simple">Simple CSV</option>
+                        <option value="context">Context CSV</option>
+                        <option value="anki">Anki notes (.txt)</option>
+                    </Form.Select>
                     <DropdownButton
                         id="export-dropdown"
-                        title="Export CSV"
+                        title={exportFormat === 'anki' ? 'Export Anki' : 'Export CSV'}
                         variant="secondary"
                         disabled={loading || !selectedLanguage || terms.length === 0 || importLoading}
                     >
@@ -422,8 +430,25 @@ const TermsPage = () => {
                             Export All for Language
                         </Dropdown.Item>
                     </DropdownButton>
+
                 </Col>
             </Row>
+
+            <Form.Text className="d-block text-muted mt-2 mb-2">
+                {exportFormat === 'context' && 'One row per mined context; terms without context are included. '}
+                {exportFormat === 'anki' && 'One note per term with all mined contexts. Create the LinguaRead Context note type using the instructions below. '}
+                Exports use language and status choices, across all pages; search does not limit exports.
+            </Form.Text>
+            {exportFormat === 'anki' && <details className="small mb-3">
+                <summary>Anki import instructions</summary>
+                <p>Create a note type named <strong>LinguaRead Context</strong> with fields in this order:
+                    {' '}LinguaReadId, Term, Translation, Language, Status, Contexts.
+                    {' '}Use Term and Language on the front, Translation and Contexts on the back.
+                    {' '}Keep LinguaReadId as the first field for duplicate matching; it does not need to appear on the card.</p>
+                <p>Import the UTF-8 text file with Tab separation and HTML enabled. Map all six fields in order.
+                    {' '}Update existing notes when importing again. Media and LinguaRead review scheduling are not exported;
+                    {' '}Anki schedules new cards independently. This is a one-way export.</p>
+            </details>}
 
             {loading && terms.length === 0 && ( /* Only show full spinner if no data yet or language switching */
                 <div className="text-center my-4">

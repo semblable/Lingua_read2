@@ -1,0 +1,57 @@
+# Synthetic fixtures only. Always invoke this file explicitly; never merge with
+# the normal stack or use its .env. See README.md in this directory.
+name: linguaread-verification
+services:
+  db:
+    image: postgres:18.6
+    environment:
+      POSTGRES_DB: fixture
+      POSTGRES_USER: fixture
+      POSTGRES_PASSWORD: synthetic-database-password
+    volumes:
+      - database:/var/lib/postgresql
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U fixture -d fixture"]
+      interval: 2s
+      timeout: 5s
+      retries: 40
+  api:
+    build: ../server/LinguaReadApi
+    environment:
+      ConnectionStrings__DefaultConnection: Host=db;Database=fixture;Username=fixture;Password=synthetic-database-password
+      PGHOST: db
+      PGDATABASE: fixture
+      PGUSER: fixture
+      PGPASSWORD: synthetic-database-password
+      Jwt__Key: synthetic-verification-signing-key-at-least-32-bytes
+      Jwt__Issuer: fixture
+      Jwt__Audience: fixture
+      Auth__SetupToken: synthetic-operator-token
+      ExternalWrites__Disabled: "true"
+      DeepL__ApiKey: ""
+      Gemini__ApiKey: ""
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - keys:/app/keys
+      - lessons:/app/wwwroot/audio_lessons
+      - audiobooks:/app/wwwroot/audiobooks
+      - assets:/app/wwwroot/epub_assets
+      - covers:/app/wwwroot/hardcover-covers
+  web:
+    build: ../client/lingua-read-client
+    ports: ["127.0.0.1:${VERIFY_PORT:-18080}:8080"]
+    depends_on: [api]
+    networks: [default, ingress]
+networks:
+  default:
+    internal: true
+  ingress: {}
+volumes:
+  database:
+  keys:
+  lessons:
+  audiobooks:
+  assets:
+  covers:

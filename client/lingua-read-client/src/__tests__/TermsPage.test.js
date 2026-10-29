@@ -3,6 +3,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import '@testing-library/jest-dom';
 import TermsPage from '../pages/TermsPage';
+import { saveAs } from 'file-saver';
 import {
   getAllLanguages,
   getPaginatedWordsByLanguage,
@@ -151,5 +152,32 @@ describe('TermsPage', () => {
         ''
       )
     );
+  });
+
+  test.each(['simple', 'context', 'anki'])('exports %s with selected language/status and downloads server filename', async format => {
+    const blob = new Blob(['fixture']);
+    exportWordsCsv.mockResolvedValue({ blob, filename: `fixture-${format}.txt` });
+    renderPage();
+    fireEvent.change(await screen.findByLabelText(/^Language$/i), { target: { value: '1' } });
+    await screen.findByText('gato');
+    fireEvent.click(screen.getByLabelText('Ignored'));
+    await waitFor(() => expect(getPaginatedWordsByLanguage).toHaveBeenLastCalledWith('1', 1, 20, [6], 'created_desc', ''));
+    fireEvent.change(screen.getByLabelText('Export format'), { target: { value: format } });
+    fireEvent.click(screen.getByRole('button', { name: format === 'anki' ? 'Export Anki' : 'Export CSV' }));
+    fireEvent.click(screen.getByText('Export Filtered'));
+    await waitFor(() => expect(exportWordsCsv).toHaveBeenLastCalledWith('1', [6], format));
+    expect(saveAs).toHaveBeenCalledWith(blob, `fixture-${format}.txt`);
+  });
+
+  test('all-for-language export intentionally ignores status filters and shows failures', async () => {
+    exportWordsCsv.mockRejectedValue(new Error('Export unavailable'));
+    renderPage();
+    fireEvent.change(await screen.findByLabelText(/^Language$/i), { target: { value: '1' } });
+    await screen.findByText('gato');
+    fireEvent.change(screen.getByLabelText('Export format'), { target: { value: 'context' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Export CSV' }));
+    fireEvent.click(screen.getByText('Export All for Language'));
+    await screen.findByText('Failed to export vocabulary: Export unavailable');
+    expect(exportWordsCsv).toHaveBeenCalledWith('1', [], 'context');
   });
 });

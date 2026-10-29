@@ -373,6 +373,45 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/Auth/change-password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": components["schemas"]["ChangePasswordRequest"];
+                    "text/json": components["schemas"]["ChangePasswordRequest"];
+                    "application/*+json": components["schemas"]["ChangePasswordRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/bookmarks/{textId}": {
         parameters: {
             query?: never;
@@ -1988,7 +2027,24 @@ export interface paths {
         post?: never;
         delete?: never;
         options?: never;
-        head?: never;
+        head: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
         patch?: never;
         trace?: never;
     };
@@ -2021,7 +2077,24 @@ export interface paths {
         post?: never;
         delete?: never;
         options?: never;
-        head?: never;
+        head: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
         patch?: never;
         trace?: never;
     };
@@ -5153,6 +5226,7 @@ export interface paths {
                 query?: {
                     languageId?: number;
                     status?: string;
+                    format?: string;
                 };
                 header?: never;
                 path?: never;
@@ -5458,6 +5532,10 @@ export interface components {
             /** Format: int32 */
             folderId?: number;
             name?: string | null;
+        };
+        ChangePasswordRequest: {
+            currentPassword?: string | null;
+            newPassword?: string | null;
         };
         ChapterPreviewDto: {
             /** Format: int32 */
@@ -6257,6 +6335,7 @@ export interface components {
         };
         SetupRequest: {
             password?: string | null;
+            setupToken?: string | null;
         };
         SplitPreviewDto: {
             chapters?: components["schemas"]["ChapterPreviewDto"][] | null;

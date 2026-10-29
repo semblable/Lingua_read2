@@ -749,9 +749,12 @@ namespace LinguaReadApi.Controllers
         [HttpGet("export")]
         public async Task<IActionResult> ExportWordsCsv(
             [FromQuery] int? languageId = null,
-            [FromQuery] string? status = null) // Comma-separated list of statuses (e.g., "1,2,5")
+            [FromQuery] string? status = null,
+            [FromQuery] string format = "simple")
         {
             var userId = GetUserId();
+            if (format is not ("simple" or "context" or "anki"))
+                return BadRequest(new { message = "Export format must be simple, context, or anki." });
 
             var query = _context.Words
                 .AsNoTracking()
@@ -775,6 +778,41 @@ namespace LinguaReadApi.Controllers
                 {
                     query = query.Where(w => statusList.Contains(w.Status));
                 }
+            }
+
+            if (format != "simple")
+            {
+                // Scope every relationship, including source metadata. Terms without a
+                // sentence survive the left join; another user's context never joins.
+                var rows = await (
+                    from word in query
+                    join phrase in _context.SrsPhrases.AsNoTracking().Where(p => p.UserId == userId)
+                        on word.WordId equals phrase.WordId into phrases
+                    from phrase in phrases.DefaultIfEmpty()
+                    join text in _context.Texts.AsNoTracking().Where(t => t.UserId == userId)
+                        on phrase.TextId equals (int?)text.TextId into texts
+                    from text in texts.DefaultIfEmpty()
+                    join book in _context.Books.AsNoTracking().Where(b => b.UserId == userId)
+                        on text.BookId equals (int?)book.BookId into books
+                    from book in books.DefaultIfEmpty()
+                    orderby word.Language.Name, word.Term, word.WordId, phrase.SrsPhraseId
+                    select new VocabularyExportRow
+                    {
+                        WordId = word.WordId, LanguageId = word.LanguageId,
+                        Term = word.Term, Translation = word.Translation != null ? word.Translation.Translation : null,
+                        Status = word.Status, Language = word.Language.Name,
+                        ContextId = phrase != null ? phrase.SrsPhraseId : null,
+                        Context = phrase != null ? phrase.Sentence : null,
+                        ContextCreatedAtUtc = phrase != null ? phrase.CreatedAt : null,
+                        TextId = text != null ? text.TextId : null,
+                        TextTitle = phrase != null && phrase.TextTitle != null ? phrase.TextTitle : text != null ? text.Title : null,
+                        BookId = book != null ? book.BookId : null,
+                        BookTitle = book != null ? book.Title : null,
+                        SourceUrl = text != null ? text.SourceUrl : null
+                    }).ToListAsync();
+                var output = format == "anki" ? VocabularyExport.Anki(rows, userId) : VocabularyExport.ContextCsv(rows);
+                return File(System.Text.Encoding.UTF8.GetBytes(output), format == "anki" ? "text/plain" : "text/csv",
+                    $"linguaread_{format}_{DateTime.UtcNow:yyyyMMddHHmmss}.{(format == "anki" ? "txt" : "csv")}");
             }
 
             // Default sort by Language then Term for consistent export.

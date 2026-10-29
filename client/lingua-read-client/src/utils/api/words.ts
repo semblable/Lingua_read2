@@ -150,9 +150,11 @@ export const getPaginatedWordsByLanguage = (
 // Triggers CSV export for words, with optional filtering
 export const exportWordsCsv = (
   languageId: number | string | null = null,
-  statusFilter: Array<number | string> = []
+  statusFilter: Array<number | string> = [],
+  format: 'simple' | 'context' | 'anki' = 'simple'
 ): Promise<{ blob: Blob; filename: string }> => {
   const params = new URLSearchParams();
+  if (format !== 'simple') params.set('format', format);
   if (languageId) {
     params.append('languageId', String(languageId));
   }

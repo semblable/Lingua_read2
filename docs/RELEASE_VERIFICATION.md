@@ -36,6 +36,13 @@ checks passed. Lint passed with zero errors and 45 existing warnings.
 No new claim of physical-phone, network-disconnect/replay, or Anki UI verification
 is made.
 
+Follow-up: the maintainer requested removing the cloze-pause notice from review
+options to avoid confusing users. The UI now describes only the active translation
+style; the rationale remains in the docs. Cloze/mixed guards and saved data are
+unchanged. The existing options/preserved-preference test was adjusted accordingly.
+Fresh frontend checks passed: 1,141 tests/89 files, typecheck, build/notice guards,
+and lint (zero errors, 45 existing warnings); docs/YAML/whitespace checks passed.
+
 ## Earlier preparation evidence
 
 Repository preparation is implemented; the real-world validation and release

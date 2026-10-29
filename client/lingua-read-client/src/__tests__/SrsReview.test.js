@@ -701,7 +701,7 @@ describe('SrsReview', () => {
       }
     });
 
-    it('explains the cloze pause without overwriting a saved preference when saving options', async () => {
+    it('shows the active review style without overwriting a saved preference when saving options', async () => {
       const updateSetting = vi.fn();
       render(
         <SettingsContext.Provider
@@ -717,7 +717,7 @@ describe('SrsReview', () => {
       fireEvent.click(await screen.findByRole('button', { name: /Options/i }));
 
       const group = await screen.findByTestId('srs-card-type-group');
-      expect(group).toHaveTextContent('Cloze and mixed review are temporarily unavailable');
+      expect(group).toHaveTextContent('Translation — see the word in context and recall its meaning.');
       expect(within(group).queryByRole('radio')).not.toBeInTheDocument();
 
       // Save

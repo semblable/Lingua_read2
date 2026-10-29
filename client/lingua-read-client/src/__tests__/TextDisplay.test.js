@@ -260,6 +260,44 @@ describe('TextDisplay', () => {
     expect(await screen.findByText('Hello')).toBeInTheDocument();
   });
 
+  test.each(['ar', 'he', 'fa', 'ur', 'ms-Arab'])('honors stored RTL configuration for %s', async (code) => {
+    getText.mockResolvedValue({ textId: 1, title: 'RTL fixture', content: 'Hello مرحبا 2026.', languageId: 12, languageCode: code, words: [] });
+    getLanguage.mockResolvedValue({ languageId: 12, code, rightToLeft: true });
+    const fetchMock = vi.spyOn(global, 'fetch').mockResolvedValue({ ok: true, json: async () => [] });
+    try {
+      const { container } = renderTextDisplay();
+      await waitFor(() => expect(container.querySelector('.text-content')).toHaveAttribute('dir', 'rtl'));
+      expect(container.querySelector('.text-content')).toHaveAttribute('lang', code);
+    } finally {
+      fetchMock.mockRestore();
+    }
+  });
+
+  test('Turkish uppercase words find existing vocabulary after reload and edit the same row', async () => {
+    getText.mockResolvedValue({ textId: 1, title: 'Turkish fixture', content: 'IŞIK İZMİR.', languageId: 12, languageCode: 'tr-TR', words: [] });
+    getLanguage.mockResolvedValue({ languageId: 12, code: 'tr-TR' });
+    const fetchMock = vi.spyOn(global, 'fetch').mockResolvedValue({ ok: true, json: async () => [
+      { wordId: 91, term: 'ışık', status: 3, translation: 'light' },
+      { wordId: 92, term: 'izmir', status: 5, translation: '' }
+    ] });
+    updateWord.mockResolvedValue({ wordId: 91, term: 'ışık', status: 4, translation: 'light' });
+    try {
+      const first = renderTextDisplay();
+      await waitFor(() => expect(screen.getByText('IŞIK')).toHaveClass('word-status-3'));
+      expect(screen.getByText('İZMİR')).toHaveClass('word-status-5');
+      first.unmount();
+      renderTextDisplay();
+      await waitFor(() => expect(screen.getByText('IŞIK')).toHaveClass('word-status-3'));
+      fireEvent.click(screen.getByText('IŞIK'));
+      expect(screen.getByRole('textbox')).toHaveValue('light');
+      fireEvent.click(screen.getByRole('button', { name: '4' }));
+      await waitFor(() => expect(updateWord).toHaveBeenCalledWith(91, 4, 'light'));
+      expect(createWord).not.toHaveBeenCalled();
+    } finally {
+      fetchMock.mockRestore();
+    }
+  });
+
   test('summarizes the current text in the selected language', async () => {
     renderTextDisplay();
 

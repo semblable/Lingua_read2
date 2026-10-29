@@ -51,6 +51,51 @@ public class WiktionaryTranslationServiceTests
         Assert.Equal("dog", result);
     }
 
+    [Theory]
+    [InlineData("de")]
+    [InlineData("de-DE")]
+    public async Task MissingSourceLanguage_NeverReturnsAnotherLanguagesDefinitions(string sourceLang)
+    {
+        var handler = new StubHandler(_ => Ok(ChienJson));
+        using var httpClient = new HttpClient(handler, disposeHandler: false);
+        var service = CreateService(httpClient);
+
+        Assert.Equal(string.Empty, await service.TranslateTextAsync("chien", sourceLang, "EN"));
+        Assert.Empty(await service.GetDefinitionsAsync("chien", sourceLang));
+        var batch = await service.TranslateBatchAsync(new List<string> { "chien" }, "EN", sourceLang);
+        Assert.Equal(string.Empty, batch["chien"]);
+    }
+
+    [Fact]
+    public async Task TranslateText_AcceptsUnderscoredRegionalCode()
+    {
+        var handler = new StubHandler(_ => Ok(ChienJson));
+        using var httpClient = new HttpClient(handler, disposeHandler: false);
+
+        Assert.Equal("dog", await CreateService(httpClient).TranslateTextAsync("chien", "fr_CA", "EN"));
+    }
+
+    [Fact]
+    public async Task MissingSourceLanguage_DoesNotUseOtherBucket()
+    {
+        var handler = new StubHandler(_ => Ok("{\"other\":[{\"definitions\":[{\"definition\":\"ambiguous\"}]}]}"));
+        using var httpClient = new HttpClient(handler, disposeHandler: false);
+
+        Assert.Empty(await CreateService(httpClient).GetDefinitionsAsync("word", "de"));
+    }
+
+    [Theory]
+    [InlineData("iw-IL", "he")]
+    [InlineData("in_ID", "id")]
+    [InlineData("ji", "yi")]
+    public async Task TranslateText_DeprecatedLanguageCodeUsesItsOwnModernBucket(string requested, string bucket)
+    {
+        var json = "{\"fr\":[{\"definitions\":[{\"definition\":\"wrong language\"}]}],\"" + bucket + "\":[{\"definitions\":[{\"definition\":\"expected gloss\"}]}]}";
+        var handler = new StubHandler(_ => Ok(json));
+        using var httpClient = new HttpClient(handler, disposeHandler: false);
+        Assert.Equal("expected gloss", await CreateService(httpClient).TranslateTextAsync("word", requested, "EN"));
+    }
+
     [Fact]
     public async Task TranslateText_NotFound_ReturnsEmpty()
     {

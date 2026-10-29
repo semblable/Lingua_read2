@@ -1,6 +1,7 @@
 import { fetchApi, fetchApiDownload } from './client';
 import type { ResponseOf } from '../fetchApi';
 import { enqueueIfOffline } from '../offline/enqueueIfOffline';
+import { lowercaseLookupTerm } from '../readerText';
 
 export type Word = ResponseOf<'/api/Words/{id}', 'get'>;
 export type WordsByLanguage = ResponseOf<'/api/Words/language/{languageId}', 'get'>;
@@ -203,20 +204,20 @@ export const addTermsBatch = async (
 // A language's word list (GET words/language) with the rows a batch save returned put in place of
 // the ones they supersede, matched by id or by term the way the reader looks words up, so the
 // reader need not download the whole language again after saving a few words.
-export const mergeSavedWords = (words: Word[], saved: Word[]): Word[] => {
+export const mergeSavedWords = (words: Word[], saved: Word[], languageCode?: string | null): Word[] => {
   if (saved.length === 0) return words;
   const savedIds = new Set(saved.map((w) => w.wordId));
-  const savedTerms = new Set(saved.flatMap((w) => (w.term ? [w.term.toLowerCase()] : [])));
-  const kept = words.filter((w) => !savedIds.has(w.wordId) && !(w.term && savedTerms.has(w.term.toLowerCase())));
+  const savedTerms = new Set(saved.flatMap((w) => (w.term ? [lowercaseLookupTerm(w.term, languageCode)] : [])));
+  const kept = words.filter((w) => !savedIds.has(w.wordId) && !(w.term && savedTerms.has(lowercaseLookupTerm(w.term, languageCode))));
   return [...kept, ...saved];
 };
 
 // A language's word list with the fetched rows it doesn't have yet, matched by id or by term like
 // mergeSavedWords. Rows it already has are kept: the fetch may have been read before a save that
 // has since been merged in, and the word linker only adds rows, it never changes existing ones.
-export const addMissingWords = (words: Word[], fetched: Word[]): Word[] => {
+export const addMissingWords = (words: Word[], fetched: Word[], languageCode?: string | null): Word[] => {
   const ids = new Set(words.map((w) => w.wordId));
-  const terms = new Set(words.flatMap((w) => (w.term ? [w.term.toLowerCase()] : [])));
-  const missing = fetched.filter((w) => !ids.has(w.wordId) && !(w.term && terms.has(w.term.toLowerCase())));
+  const terms = new Set(words.flatMap((w) => (w.term ? [lowercaseLookupTerm(w.term, languageCode)] : [])));
+  const missing = fetched.filter((w) => !ids.has(w.wordId) && !(w.term && terms.has(lowercaseLookupTerm(w.term, languageCode))));
   return missing.length === 0 ? words : [...words, ...missing];
 };

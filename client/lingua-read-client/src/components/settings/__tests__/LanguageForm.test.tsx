@@ -1,5 +1,5 @@
 import { describe, test, expect, afterEach, vi } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
 
 vi.mock('../../../utils/api', () => ({
   createLanguage: vi.fn(),
@@ -10,6 +10,7 @@ vi.mock('../../../utils/api', () => ({
 
 import LanguageForm from '../LanguageForm';
 import type { Language } from '../../../utils/api/languages';
+import { updateLanguage } from '../../../utils/api';
 
 const noop = () => {};
 
@@ -65,5 +66,19 @@ describe('LanguageForm parser type', () => {
 
     render(<LanguageForm language={chinese} onSave={noop} onCancel={noop} onDelete={noop} />);
     expect(screen.getByTestId('parser-not-implemented').textContent).toMatch(/isn.t implemented yet/);
+  });
+});
+
+describe('LanguageForm unavailable romanization', () => {
+  afterEach(cleanup);
+
+  test('hides the ineffective switch and preserves an existing true preference on save', async () => {
+    const language = { languageId: 42, name: 'Russian', code: 'ru', showRomanization: true,
+      rightToLeft: false, parserType: 'spacedel', wordCharacters: String.raw`\p{L}\p{M}`,
+      splitSentences: '.!?', dictionaries: [], sentenceSplitExceptions: [] } as unknown as Language;
+    render(<LanguageForm language={language} onSave={noop} onCancel={noop} onDelete={noop} />);
+    expect(screen.queryByLabelText('Show Romanization')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Update Language' }));
+    await waitFor(() => expect(updateLanguage).toHaveBeenCalledWith(42, expect.objectContaining({ showRomanization: true })));
   });
 });

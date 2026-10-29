@@ -16,7 +16,19 @@
     "lt": { "code": "lt", "wordCharacters": "\\p{L}\\p{M}", "characterSubstitutions": "" },
     "nl": { "code": "nl", "wordCharacters": "\\p{L}\\p{M}", "characterSubstitutions": "" },
     "hu": { "code": "hu", "wordCharacters": "\\p{L}\\p{M}", "characterSubstitutions": "" },
-    "is": { "code": "is", "wordCharacters": "\\p{L}\\p{M}", "characterSubstitutions": "" }
+    "is": { "code": "is", "wordCharacters": "\\p{L}\\p{M}", "characterSubstitutions": "" },
+    "ar": { "code": "ar", "wordCharacters": "\\p{L}\\p{M}", "characterSubstitutions": "" },
+    "he": { "code": "he", "wordCharacters": "\\p{L}\\p{M}", "characterSubstitutions": "" },
+    "fa": { "code": "fa", "wordCharacters": "\\p{L}\\p{M}\\u200C\\u200D", "characterSubstitutions": "" },
+    "ur": { "code": "ur", "wordCharacters": "\\p{L}\\p{M}\\u200C\\u200D", "characterSubstitutions": "" },
+    "hi": { "code": "hi", "wordCharacters": "\\p{L}\\p{M}", "characterSubstitutions": "" },
+    "bn": { "code": "bn", "wordCharacters": "\\p{L}\\p{M}", "characterSubstitutions": "" },
+    "ta": { "code": "ta", "wordCharacters": "\\p{L}\\p{M}", "characterSubstitutions": "" },
+    "ko": { "code": "ko", "wordCharacters": "\\p{L}\\p{M}", "characterSubstitutions": "" },
+    "tr": { "code": "tr", "wordCharacters": "\\p{L}\\p{M}", "characterSubstitutions": "" },
+    "vi": { "code": "vi", "wordCharacters": "\\p{L}\\p{M}", "characterSubstitutions": "" },
+    "sr": { "code": "sr", "wordCharacters": "\\p{L}\\p{M}", "characterSubstitutions": "" },
+    "uk": { "code": "uk", "wordCharacters": "\\p{L}\\p{M}", "characterSubstitutions": "" }
   },
   "cases": [
     { "lang": "fr", "input": "l'eau coule", "expectedWords": ["l'eau", "coule"] },
@@ -96,6 +108,19 @@
     { "lang": null, "input": "молоко\u0301", "expectedWords": ["молоко\u0301"] },
     { "lang": "el", "input": "κ\u1f79σμος", "expectedWords": ["κ\u03ccσμος"] },
     { "lang": "el", "input": "\u1f00λλ\u1f70 τ\u1f77", "expectedWords": ["\u1f00λλ\u1f70", "τ\u03af"] },
-    { "lang": "el", "input": "λέξη\u0387άλλη\u037e", "expectedWords": ["λέξη", "άλλη"] }
+    { "lang": "el", "input": "λέξη\u0387άλλη\u037e", "expectedWords": ["λέξη", "άλλη"] },
+
+    { "lang": "ar", "input": "عَرَبِيّ واضح؟", "expectedWords": ["عَرَبِيّ", "واضح"] },
+    { "lang": "he", "input": "שָׁלוֹם עולם!", "expectedWords": ["שָׁלוֹם", "עולם"] },
+    { "lang": "fa", "input": "من می\u200cروم.", "expectedWords": ["من", "می\u200cروم"] },
+    { "lang": "ur", "input": "اردو زبان۔", "expectedWords": ["اردو", "زبان"] },
+    { "lang": "hi", "input": "हिन्दी भाषा।", "expectedWords": ["हिन्दी", "भाषा"] },
+    { "lang": "bn", "input": "বাংলা ভাষা।", "expectedWords": ["বাংলা", "ভাষা"] },
+    { "lang": "ta", "input": "தமிழ் மொழி.", "expectedWords": ["தமிழ்", "மொழி"] },
+    { "lang": "ko", "input": "한글 문장.", "expectedWords": ["한글", "문장"] },
+    { "lang": "tr", "input": "IŞIK İZMİR ışık izmir", "expectedWords": ["IŞIK", "İZMİR", "ışık", "izmir"] },
+    { "lang": "vi", "input": "Tiếng Việt.", "expectedWords": ["Tiếng", "Việt"] },
+    { "lang": "sr", "input": "Добар дан. Dobar dan.", "expectedWords": ["Добар", "дан", "Dobar", "dan"] },
+    { "lang": "uk", "input": "пам’ять", "expectedWords": ["пам'ять"] }
   ]
 }

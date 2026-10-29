@@ -324,8 +324,9 @@ namespace LinguaReadApi.Services
         }
 
         /// <summary>
-        /// Picks the response key matching the source language (e.g. "fr"), falling back to the
-        /// first concrete language, then Wiktionary's "other" bucket.
+        /// An explicitly requested language must match its own bucket. A homograph in another
+        /// language (or the unclassified "other" bucket) is not a definition of the source word.
+        /// Retain automatic selection only for callers that supplied no source language.
         /// </summary>
         private static string? ResolveLanguageKey(Dictionary<string, List<WiktionaryEntry>> response, string? sourceLang)
         {
@@ -337,12 +338,11 @@ namespace LinguaReadApi.Services
             if (!string.IsNullOrWhiteSpace(sourceLang))
             {
                 // App codes can carry a region (e.g. "fr-CA"); Wiktionary keys are bare ISO codes.
-                var normalized = sourceLang.Trim().ToLowerInvariant().Split('-')[0];
-                var match = response.Keys.FirstOrDefault(k => k.Equals(normalized, StringComparison.OrdinalIgnoreCase));
-                if (match != null)
-                {
-                    return match;
-                }
+                var normalized = sourceLang.Trim().Replace('_', '-').ToLowerInvariant().Split('-')[0];
+                // True deprecated ISO synonyms only. Regional variants use their
+                // source language; distinct written forms such as nb/nn stay distinct.
+                normalized = normalized switch { "iw" => "he", "in" => "id", "ji" => "yi", _ => normalized };
+                return response.Keys.FirstOrDefault(k => k.Equals(normalized, StringComparison.OrdinalIgnoreCase));
             }
 
             return response.Keys.FirstOrDefault(k => !k.Equals("other", StringComparison.OrdinalIgnoreCase))

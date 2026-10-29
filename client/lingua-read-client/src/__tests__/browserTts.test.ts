@@ -23,6 +23,21 @@ const VOICES = [
 ];
 
 describe('rankVoices', () => {
+  test('matches script and region even when installed voices omit a script subtag', () => {
+    const voices = [voice('Google Mandarin', 'zh-CN'), voice('Taiwan', 'zh-TW')];
+    expect(rankVoices(voices, 'zh-Hant-TW')[0].lang).toBe('zh-TW');
+    expect(rankVoices(voices, 'zh-Hant')[0].lang).toBe('zh-TW');
+  });
+
+  test('ignores locale extensions when matching an installed regional voice', () => {
+    const voices = [voice('Google Deutsch Austria', 'de-AT'), voice('German', 'de-DE')];
+    expect(rankVoices(voices, 'de-DE-u-co-phonebk')[0].lang).toBe('de-DE');
+  });
+
+  test('canonicalizes deprecated and underscored voice tags', () => {
+    expect(rankVoices([voice('Hebrew', 'iw_IL')], 'he-IL')).toHaveLength(1);
+  });
+
   test('puts natural voices of the exact tag first, then plain ones, then other regions', () => {
     expect(rankVoices(VOICES, 'fr-FR').map((v) => v.name)).toEqual([
       'Microsoft Denise Online (Natural) - French (France)',
@@ -47,6 +62,9 @@ describe('rankVoices', () => {
 });
 
 describe('pickVoice', () => {
+  test('ignores a stale preferred URI for another language', () => {
+    expect(pickVoice(VOICES, 'fr-FR', 'uri:Microsoft David - English (United States)')?.lang).toBe('fr-FR');
+  });
   test('uses the chosen voice while it is installed', () => {
     expect(pickVoice(VOICES, 'fr-FR', 'uri:Microsoft Hortense - French (France)')?.name)
       .toBe('Microsoft Hortense - French (France)');
@@ -158,6 +176,17 @@ describe('getVoicesForLanguage', () => {
 describe('voice preference', () => {
   beforeEach(() => localStorage.clear());
 
+  test('works on browsers without Object.hasOwn', () => {
+    const hasOwn = Object.hasOwn;
+    try {
+      Object.defineProperty(Object, 'hasOwn', { configurable: true, writable: true, value: undefined });
+      setPreferredVoiceURI('FR', 'uri:legacy-browser');
+      expect(getPreferredVoiceURI('FR')).toBe('uri:legacy-browser');
+    } finally {
+      Object.defineProperty(Object, 'hasOwn', { configurable: true, writable: true, value: hasOwn });
+    }
+  });
+
   test('is stored per speech tag, so "FR" and "fr-FR" share it', () => {
     setPreferredVoiceURI('FR', 'uri:x');
 
@@ -168,11 +197,42 @@ describe('voice preference', () => {
     expect(getPreferredVoiceURI('FR')).toBeNull();
   });
 
-  test('toSpeechLanguageTag is unchanged', () => {
+  test('keeps existing defaults except for region-neutral Portuguese', () => {
     expect(toSpeechLanguageTag('FR')).toBe('fr-FR');
-    expect(toSpeechLanguageTag('pt')).toBe('pt-BR');
+    expect(toSpeechLanguageTag('pt')).toBe('pt');
     expect(toSpeechLanguageTag('en_gb')).toBe('en-GB');
     expect(toSpeechLanguageTag(null)).toBe('en-US');
+  });
+
+  test.each(['zh-Hant-TW', 'sr-Latn-RS', 'de-DE-u-co-phonebk', 'sl-rozaj'])('preserves the complete tag %s', (tag) => {
+    expect(toSpeechLanguageTag(tag)).toBe(Intl.getCanonicalLocales(tag)[0]);
+  });
+
+  test('normalizes every underscore and keeps explicit Portuguese regions', () => {
+    expect(toSpeechLanguageTag('zh_hant_tw')).toBe('zh-Hant-TW');
+    expect(toSpeechLanguageTag('pt-br')).toBe('pt-BR');
+    expect(toSpeechLanguageTag('pt-pt')).toBe('pt-PT');
+  });
+
+  test('retains a legacy Portuguese preference without overwriting regional choices', () => {
+    localStorage.setItem('linguaReadTtsVoices', JSON.stringify({ 'pt-BR': 'uri:legacy', 'pt-PT': 'uri:european' }));
+    expect(getPreferredVoiceURI('pt')).toBe('uri:legacy');
+    setPreferredVoiceURI('pt', 'uri:new');
+    expect(getPreferredVoiceURI('pt')).toBe('uri:new');
+    expect(getPreferredVoiceURI('pt-BR')).toBe('uri:legacy');
+    expect(getPreferredVoiceURI('pt-PT')).toBe('uri:european');
+    setPreferredVoiceURI('pt', null);
+    expect(getPreferredVoiceURI('pt')).toBeNull();
+    expect(getPreferredVoiceURI('pt-BR')).toBe('uri:legacy');
+  });
+
+  test('reads old multipart-tag preferences and keeps new script and region choices separate', () => {
+    localStorage.setItem('linguaReadTtsVoices', JSON.stringify({ 'zh-HANT': 'uri:legacy' }));
+    expect(getPreferredVoiceURI('zh-Hant-TW')).toBe('uri:legacy');
+    setPreferredVoiceURI('zh-Hant-TW', 'uri:taiwan');
+    setPreferredVoiceURI('zh-Hant-HK', 'uri:hongkong');
+    expect(getPreferredVoiceURI('zh-Hant-TW')).toBe('uri:taiwan');
+    expect(getPreferredVoiceURI('zh-Hant-HK')).toBe('uri:hongkong');
   });
 });
 

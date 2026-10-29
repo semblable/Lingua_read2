@@ -44,6 +44,14 @@ const baseProps = (overrides = {}) => ({
 });
 
 describe('StandardTextView', () => {
+  test('applies the saved script direction to content without reversing controls', () => {
+    const { container, rerender } = render(<StandardTextView {...baseProps({ rightToLeft: true })} />);
+    expect(container.querySelector('.text-content')).toHaveAttribute('dir', 'rtl');
+    expect(screen.getByRole('button', { name: /Complete Lesson/i }).closest('[dir="rtl"]')).toBeNull();
+    rerender(<StandardTextView {...baseProps({ rightToLeft: false })} />);
+    expect(container.querySelector('.text-content')).toHaveAttribute('dir', 'ltr');
+  });
+
   test('returns null when text content is null', () => {
     const { container } = render(<StandardTextView {...baseProps({ text: null })} />);
     expect(container.firstChild).toBeNull();

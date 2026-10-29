@@ -37,6 +37,8 @@ interface SentenceModeViewProps {
   currentSegmentExplanation: string;
   // BCP-47 code of the text, for the browser's hyphenation and screen readers.
   languageCode?: string | null;
+  rightToLeft?: boolean;
+  translationLanguageCode?: string | null;
 }
 
 const SentenceModeView = React.memo(({
@@ -70,7 +72,9 @@ const SentenceModeView = React.memo(({
   isExplanationVisible,
   currentSegmentTranslation,
   currentSegmentExplanation,
-  languageCode
+  languageCode,
+  rightToLeft,
+  translationLanguageCode
 }: SentenceModeViewProps) => {
   const explanationParsed = useMemo(
     () => parseSentenceExplanation(currentSegmentExplanation), [currentSegmentExplanation]
@@ -199,6 +203,7 @@ const SentenceModeView = React.memo(({
             className={`sentence-mode-text${isTitleSegment ? ' sentence-mode-title-text' : ''}`}
             ref={textContentRef}
             lang={languageCode || undefined}
+            dir={rightToLeft === undefined ? 'auto' : rightToLeft ? 'rtl' : 'ltr'}
             style={fontStyle}
             onMouseUp={handleWordSelection}
             onTouchEnd={handleWordSelection}
@@ -222,7 +227,7 @@ const SentenceModeView = React.memo(({
             {isTitleSegment ? renderSentenceModeTitle() : processTextContent(currentSegment.text)}
           </div>
           {isTranslationVisible && (
-            <div className="sentence-mode-translation">
+            <div className="sentence-mode-translation" dir="auto" lang={translationLanguageCode || undefined}>
               {currentSegmentTranslation || 'No translation available.'}
             </div>
           )}

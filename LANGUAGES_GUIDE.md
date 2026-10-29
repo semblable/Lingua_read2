@@ -30,7 +30,25 @@ This is the standard approach. Any changes take effect immediately across the ap
 1. Launch LinguaRead and log in.
 2. In the navigation bar, click on **Settings** (`/settings`).
 3. In the left navigation menu, select **Languages**.
-4. Click the blue **Add New Language** button below the language list.
+4. Browse the **Add a language** catalog. Search by language, native name, or country,
+   then click **Add**. The 44 presets are optional: opening the catalog does not add
+   them or change the installation's starter languages.
+5. Added languages appear under **Your languages** and become available when
+   importing or creating texts. Select one to edit its configuration.
+6. Choose regional speech voices inside the existing language's voice settings;
+   Portuguese, for example, needs only one language entry for Brazilian and European
+   voices. Select an existing language to adjust its code or script settings.
+   For a language absent from the catalog, click **Set up a custom language**.
+
+Presets include Unicode word characters, combining marks and joiners, sentence
+punctuation, and right-to-left layout where applicable. They do not override your
+translation target or add dictionaries. Existing regional codes such as `pt-BR`
+count as already added for their base language. Translation and speech availability
+still depend on your provider and installed voices.
+
+Chinese, Japanese and Thai are labeled **Basic word splitting**: the current
+tokenizer splits at spaces and punctuation, so an unspaced run is one word.
+Selecting MeCab or Jieba does not enable dictionary-based segmentation yet.
 
 ---
 
@@ -46,7 +64,9 @@ This is the standard approach. Any changes take effect immediately across the ap
 
 ### Step 3: Script & Parsing Rules
 
-LinguaRead's tokenizers (frontend and backend) rely on these settings to split words and sentences accurately:
+LinguaRead's tokenizers use these settings for word and sentence splitting.
+See [the language support status](docs/LANGUAGE_SUPPORT_STATUS.md) for tested scope
+and unresolved Unicode, segmentation and sentence-boundary limitations.
 
 1. **Parser Type**:
    - `Space Delimited` (`spacedel`): **Recommended for most languages** (Latin, Cyrillic, Greek, Arabic, Hebrew, etc.) where words are separated by spaces or punctuation.
@@ -61,9 +81,9 @@ LinguaRead's tokenizers (frontend and backend) rely on these settings to split w
 
 3. **Sentence Splitting Characters**:
    - Characters marking end-of-sentence boundaries.
-   - European scripts: `.!?,` or `.!?`
-   - CJK scripts: `。！？`
-   - Arabic / Persian: `؟!`
+   - European scripts: `.!?` (commas ordinarily do not end sentences)
+   - CJK scripts: `.!?。！？`
+   - Arabic / Persian: `.!?؟`
 
 4. **Character Substitutions**:
    - Pipe-separated list of replacements: `old=new|old2=new2`.
@@ -71,11 +91,14 @@ LinguaRead's tokenizers (frontend and backend) rely on these settings to split w
    - *(Built-in rules already convert curly single quotes `’`, `‘`, `ʼ` → `'` and Unicode hyphens → `-`).*
    - Example: `´='|`='|’='|‘='|...=…|..=‥`
 
-5. **Show Romanization**:
-   - Enable for non-Latin writing systems if you want phonetic transcription / romanized hints displayed.
+5. **Romanization**:
+   - Currently unavailable. The ineffective switch is hidden; an existing stored
+     preference is preserved when editing a language.
 
 6. **Right-to-Left Script (RTL)**:
    - Enable for languages written right-to-left (Arabic, Hebrew, Persian, Urdu). Adjusts text alignment and layout direction in the reader.
+   - This does not establish full support for font shaping, mixed-direction
+     selection, cards or physical devices; those checks remain in the support plan.
 
 ---
 
@@ -162,9 +185,11 @@ Once a language has been added:
 
 ### 1. Text-to-Speech (TTS) Voice Selection
 1. Go to **Settings** → **Reading**.
-2. Scroll to **TTS Voice Settings**.
-3. Select your newly added language from the language dropdown.
-4. Choose an installed browser voice (e.g., Microsoft Natural or Google voices matching your language's BCP-47 code).
+2. Enable browser text-to-speech and scroll to **Voices on this device**.
+3. Find your language's row and choose an installed voice. The list can include
+   regional varieties of the same language.
+4. Preview it with the play button. Choices are saved on this device; available
+   voices vary by browser/device, and cloud voices need an internet connection.
 
 ### 2. Default Reading Language
 If you primarily study this language, set it as default:
@@ -177,14 +202,25 @@ Ensure your translation API keys (DeepL, Google Cloud Translate, Azure Translato
 
 ## Language Presets Reference
 
-| Setting | English / Western European | Polish / Slavic (Latin) | Russian / Cyrillic | Arabic / Hebrew | Japanese / Chinese |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **Code** | `en`, `es`, `fr`, `de`, `it`, `pt` | `pl`, `cs`, `sk` | `ru`, `uk`, `bg` | `ar`, `he` | `ja`, `zh` |
-| **Parser Type** | `spacedel` | `spacedel` | `spacedel` | `spacedel` | `spacedel` / `mecab` / `jieba` |
-| **Word Characters** | `Language.LatinWordCharacters` or `\p{L}\p{M}` | `\p{L}\p{M}` | `\p{L}\p{M}` | `\p{L}\p{M}` | `\p{L}\p{M}` |
-| **Split Sentences** | `.!?,` | `.!?` | `.!?` | `؟!` | `。！？` |
-| **RTL** | `false` | `false` | `false` | `true` | `false` |
-| **Romanization**| `false` | `false` | `true` (optional) | `true` (optional) | `true` |
+The optional catalog is defined in
+`client/lingua-read-client/src/utils/languagePresets.ts`. All catalog presets use
+`\p{L}\p{M}\u200C\u200D` for letters, combining marks and joiners. Romanization
+starts off, and translation availability starts on. Existing configurations and
+database seed defaults retain their own settings.
+
+| Languages | Direction | Sentence boundaries | Parser setting |
+| :--- | :--- | :--- | :--- |
+| Most catalog languages | Left to right | `.!?` | `spacedel` |
+| Arabic, Persian | Right to left | `.!?؟` | `spacedel` |
+| Hebrew | Right to left | `.!?` | `spacedel` |
+| Urdu | Right to left | `.!?؟۔` | `spacedel` |
+| Hindi | Left to right | `.!?।॥` | `spacedel` |
+| Bengali, Tamil | Left to right | `.!?।` | `spacedel` |
+| Greek | Left to right | `.!?;` plus the Greek question mark | `spacedel` |
+| Korean | Left to right | `.!?。！？` | `spacedel` |
+| Chinese | Left to right | `.!?。！？` | `jieba` (basic splitting only) |
+| Japanese | Left to right | `.!?。！？` | `mecab` (basic splitting only) |
+| Thai | Left to right | `.!?` | `spacedel` (basic splitting only) |
 
 ---
 

@@ -21,7 +21,7 @@ const LANGUAGE_TAG_OVERRIDES: Record<string, string> = {
   NL: 'nl-NL',
   NO: 'nb-NO',
   PL: 'pl-PL',
-  PT: 'pt-BR',
+  PT: 'pt',
   RO: 'ro-RO',
   RU: 'ru-RU',
   SK: 'sk-SK',
@@ -69,15 +69,15 @@ export function toSpeechLanguageTag(languageCode: string | null | undefined): st
     return 'en-US';
   }
 
-  const normalized = trimmed.replace('_', '-');
-  if (normalized.includes('-')) {
-    const [baseLanguage, region] = normalized.split('-');
-    if (baseLanguage && region) {
-      return `${baseLanguage.toLowerCase()}-${region.toUpperCase()}`;
-    }
+  const normalized = trimmed.replace(/_/g, '-');
+  try {
+    // Canonicalize the whole tag: the second subtag can be a script, and later
+    // subtags can carry a region or variant. Never discard them by destructuring.
+    return Intl.getCanonicalLocales(LANGUAGE_TAG_OVERRIDES[normalized.toUpperCase()] || normalized)[0];
+  } catch {
+    // Custom/legacy language codes should not crash the reader or settings.
+    return normalized.toLowerCase();
   }
-
-  return LANGUAGE_TAG_OVERRIDES[normalized.toUpperCase()] || normalized.toLowerCase();
 }
 
 // Neural/cloud-backed voices sound far better than the default robotic ones,
@@ -102,17 +102,28 @@ export function rankVoices(
     return [];
   }
 
-  const normalizedLang = speechLang.toLowerCase();
-  const baseLanguage = normalizedLang.split('-')[0];
+  const parseLocale = (tag: string): Intl.Locale | null => {
+    try { return new Intl.Locale(tag.replace(/_/g, '-')); } catch { return null; }
+  };
+  const requested = parseLocale(speechLang);
+  if (!requested) return [];
+  const requestedScript = requested.maximize().script;
   const score = (voice: SpeechSynthesisVoice): number => {
-    const voiceLang = (voice.lang || '').toLowerCase().replace('_', '-');
+    const locale = parseLocale(voice.lang || '');
+    if (!locale || locale.language !== requested.language) return -1;
+    const sameScript = locale.maximize().script === requestedScript;
     let value;
-    if (voiceLang === normalizedLang || voiceLang.startsWith(`${normalizedLang}-`)) {
+    // Ignore extensions (e.g. a collation preference) when comparing speech
+    // locales. Installed voices often omit the script: zh-TW still matches
+    // zh-Hant-TW more closely than a natural-sounding zh-CN voice.
+    if (locale.baseName === requested.baseName) {
+      value = 8;
+    } else if (requested.region && locale.region === requested.region && sameScript) {
+      value = 6;
+    } else if (requested.script && sameScript) {
       value = 4;
-    } else if (voiceLang === baseLanguage || voiceLang.startsWith(`${baseLanguage}-`)) {
-      value = 2;
     } else {
-      return -1;
+      value = 2;
     }
     return isNaturalVoice(voice) ? value + 1 : value;
   };
@@ -146,13 +157,14 @@ export function pickVoice(
   offline: boolean = isOffline()
 ): SpeechSynthesisVoice | null {
   const usable = offline ? voices?.filter((voice) => !needsInternet(voice)) : voices;
-  if (preferredVoiceURI && usable) {
-    const preferred = usable.find((voice) => voice.voiceURI === preferredVoiceURI);
+  const ranked = rankVoices(usable, speechLang);
+  if (preferredVoiceURI) {
+    const preferred = ranked.find((voice) => voice.voiceURI === preferredVoiceURI);
     if (preferred) {
       return preferred;
     }
   }
-  return rankVoices(usable, speechLang)[0] ?? null;
+  return ranked[0] ?? null;
 }
 
 // Voice choice per speech tag. Deliberately device-local (never synced to the
@@ -160,17 +172,33 @@ export function pickVoice(
 // chosen on the desktop usually doesn't exist on the phone.
 const VOICE_PREFS_STORAGE_KEY = 'linguaReadTtsVoices';
 
-const readVoicePrefs = (): Record<string, string> => {
+const readVoicePrefs = (): Record<string, string | null> => {
   try {
     const stored = localStorage.getItem(VOICE_PREFS_STORAGE_KEY);
-    return stored ? JSON.parse(stored) : {};
+    const parsed: unknown = stored ? JSON.parse(stored) : null;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    return Object.fromEntries(Object.entries(parsed).filter(([, value]) => value === null || typeof value === 'string'));
   } catch {
     return {};
   }
 };
 
 export function getPreferredVoiceURI(languageCode: string | null | undefined): string | null {
-  return readVoicePrefs()[toSpeechLanguageTag(languageCode)] ?? null;
+  const prefs = readVoicePrefs();
+  const tag = toSpeechLanguageTag(languageCode);
+  if (Object.prototype.hasOwnProperty.call(prefs, tag)) return prefs[tag];
+  // Read preferences saved by the previous tag mapper without moving/deleting
+  // them: a separate regional language record may still use the same key.
+  const legacyTag = legacyVoicePreferenceTag(languageCode);
+  return prefs[legacyTag] ?? null;
+}
+
+function legacyVoicePreferenceTag(languageCode: string | null | undefined): string {
+  const normalized = (languageCode || '').trim().replace('_', '-');
+  const [base, second] = normalized.split('-');
+  if (base && second) return `${base.toLowerCase()}-${second.toUpperCase()}`;
+  if (normalized.toUpperCase() === 'PT') return 'pt-BR';
+  return LANGUAGE_TAG_OVERRIDES[normalized.toUpperCase()] || normalized.toLowerCase();
 }
 
 export function setPreferredVoiceURI(
@@ -179,11 +207,9 @@ export function setPreferredVoiceURI(
 ): void {
   const prefs = readVoicePrefs();
   const tag = toSpeechLanguageTag(languageCode);
-  if (voiceURI) {
-    prefs[tag] = voiceURI;
-  } else {
-    delete prefs[tag];
-  }
+  // Null records an explicit Automatic choice, so the legacy fallback does not
+  // resurrect a cleared preference. Other regional/script preferences survive.
+  prefs[tag] = voiceURI || null;
   try {
     localStorage.setItem(VOICE_PREFS_STORAGE_KEY, JSON.stringify(prefs));
   } catch (error) {

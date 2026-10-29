@@ -120,7 +120,7 @@ const AppearanceSettings = ({ settings, handleChange }: AppearanceSettingsProps)
         <Form.Group className="mb-3" controlId="readerTextAlignment">
           <Form.Label>Body Text Alignment</Form.Label>
           <Form.Select name="readerTextAlignment" value={settings.readerTextAlignment} onChange={handleChange}>
-            <option value="left">Ragged Right</option>
+            <option value="left">Start of line (follows reading direction)</option>
             <option value="justify">Justified</option>
           </Form.Select>
         </Form.Group>

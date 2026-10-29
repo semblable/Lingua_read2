@@ -255,7 +255,7 @@
   line-height: var(--reading-line-height);
   padding-left: var(--space-sm);
   padding-right: var(--space-sm);
-  text-align: left;
+  text-align: start;
   width: 100%;
   max-width: var(--reader-content-max-width, 740px);
   margin-left: auto;
@@ -276,7 +276,12 @@
 }
 
 .reader-align-left .reader-paragraph {
-  text-align: left;
+  text-align: start;
+}
+
+.sentence-mode-text,
+.audio-transcript-container .srt-line {
+  text-align: start;
 }
 
 .reader-paragraph:last-child {

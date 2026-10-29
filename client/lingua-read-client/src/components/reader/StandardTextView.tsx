@@ -39,6 +39,7 @@ interface StandardTextViewProps {
   completing: boolean;
   /** Offer "Finish Book" instead of "Complete Lesson" (see useReaderState). */
   isLastBookPart?: boolean;
+  rightToLeft?: boolean;
 }
 
 const StandardTextView = React.memo(({
@@ -61,7 +62,8 @@ const StandardTextView = React.memo(({
   onSpeakSentence,
   handleCompleteLesson,
   completing,
-  isLastBookPart = false
+  isLastBookPart = false,
+  rightToLeft
 }: StandardTextViewProps) => {
   if (!text?.content) return null;
   const displayBlocks = buildDisplayBlocks(text.content, text.structuredContent ?? undefined);
@@ -153,6 +155,7 @@ const StandardTextView = React.memo(({
         className={`text-content text-content-${modeClass} reader-align-${globalSettings.readerTextAlignment || 'left'} ${globalSettings.readerParagraphIndent ? 'reader-indent-on' : 'reader-indent-off'}`}
         ref={textContentRef}
         lang={text?.languageCode || undefined}
+        dir={rightToLeft === undefined ? 'auto' : rightToLeft ? 'rtl' : 'ltr'}
         style={{
           fontSize: `${globalSettings.textSize}px`,
           lineHeight: isMobile ? mobileReadingConfig.lineSpacing : 'var(--reading-line-height)',

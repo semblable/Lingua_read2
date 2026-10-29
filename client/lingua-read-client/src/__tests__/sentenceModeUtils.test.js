@@ -27,7 +27,7 @@ describe('parseSentenceExplanation', () => {
 
 describe('browserTts helpers', () => {
   test('maps language codes to speech-friendly BCP 47 tags', () => {
-    expect(toSpeechLanguageTag('PT')).toBe('pt-BR');
+    expect(toSpeechLanguageTag('PT')).toBe('pt');
     expect(toSpeechLanguageTag('es')).toBe('es-ES');
     expect(toSpeechLanguageTag('pt-pt')).toBe('pt-PT');
   });

@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 const clientRoot = fileURLToPath(new URL('../', import.meta.url));
 const output = resolve(clientRoot, process.argv[2] || 'build');
 const notices = [
-  'README.txt', 'bootstrap.txt', 'bootstrap-icons.txt',
+  'README.txt', 'bootstrap.txt', 'bootstrap-icons.txt', 'flag-icons.txt',
   ...['atkinson-hyperlegible', 'inter', 'lato', 'lora', 'merriweather',
     'open-sans', 'roboto-slab'].map((font) => `font-${font}.txt`),
 ];

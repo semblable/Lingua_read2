@@ -136,7 +136,7 @@ export const useReaderState = ({
         if (isCurrentRequest()) {
           // Only the rows the linker created. The text's own words would replace the whole
           // language (phrases included) and undo a save made while this request ran.
-          setWords(prev => addMissingWords(prev, refreshed.words || []));
+          setWords(prev => addMissingWords(prev, refreshed.words || [], refreshed.languageCode || textRef.current?.languageCode));
         }
       } catch (refreshErr) {
         if (isCurrentRequest()) {

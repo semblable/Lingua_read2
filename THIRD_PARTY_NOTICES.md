@@ -40,6 +40,7 @@ installed packages are retained under
 | Roboto Slab | Apache 2.0 (as supplied in the installed Fontsource package) | [Roboto Slab](https://github.com/googlefonts/robotoslab) |
 | Bootstrap Icons | MIT, Copyright (c) 2019–2024 The Bootstrap Authors | [Bootstrap Icons](https://github.com/twbs/icons) |
 | Bootstrap CSS | MIT, Copyright (c) 2011–2025 The Bootstrap Authors | [Bootstrap](https://github.com/twbs/bootstrap) |
+| Language catalog flags (flag-icons 7.5.0, selected 4:3 SVGs) | MIT, Copyright (c) 2013 Panayiotis Lipiridis | [flag-icons](https://github.com/lipis/flag-icons/tree/v7.5.0) |
 
 The application copies these notices through Vite's public directory; the demo
 build emits the same `licenses/` directory. When upgrading a font/icon package,

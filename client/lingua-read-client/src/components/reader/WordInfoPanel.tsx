@@ -147,7 +147,7 @@ const WordInfoPanel = React.memo(({
   return (
     <div className="word-info-panel">
       <div className="word-info-header">
-        <h5 className="word-info-term">{displayedWord.term}</h5>
+        <h5 className="word-info-term" dir={language.languageConfig?.rightToLeft === undefined ? 'auto' : language.languageConfig.rightToLeft ? 'rtl' : 'ltr'} lang={language.languageConfig?.code || undefined}>{displayedWord.term}</h5>
         <div className="word-info-meta">
           <span className="word-info-status-pill" data-status={status}>{statusLabel(status)}</span>
           {saveSuccess && <span className="word-info-saved" role="status">✓ Saved</span>}
@@ -178,6 +178,7 @@ const WordInfoPanel = React.memo(({
         </div>
       )}
       <Form.Control
+        dir="auto"
         as="textarea"
         rows={translationRows}
         value={translation.value}

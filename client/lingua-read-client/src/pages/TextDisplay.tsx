@@ -33,6 +33,7 @@ import {
   prepareLanguageContext,
   consumeWordAt,
   extractWords,
+  lowercaseLookupTerm,
   cleanSelectedReaderText,
   isAbbreviationOrNonSentencePeriod,
   getOverlappedWordSpans,
@@ -581,21 +582,24 @@ const TextDisplay = () => {
   ) => {
     const savedWords = saved?.words;
     if (Array.isArray(savedWords)) {
-      setWords(prev => mergeSavedWords(prev, savedWords));
+      setWords(prev => mergeSavedWords(prev, savedWords, languageConfig?.code || languageConfig?.languageCode || text?.languageCode));
     } else {
       await fetchAllLanguageWords(languageId);
     }
-  }, [setWords, fetchAllLanguageWords]);
+  }, [setWords, fetchAllLanguageWords, languageConfig?.code, languageConfig?.languageCode, text?.languageCode]);
 
   // --- Optimized Data Structures ---
+  const lookupTerm = useCallback((term: string) => lowercaseLookupTerm(
+    term, languageConfig?.code || languageConfig?.languageCode || text?.languageCode
+  ), [languageConfig?.code, languageConfig?.languageCode, text?.languageCode]);
   // 1. Create a Map for O(1) word lookups
   const wordMap = useMemo<Map<string, Word>>(() => {
     const map = new Map<string, Word>();
     words.forEach(w => {
-      if (w.term) map.set(w.term.toLowerCase(), w);
+      if (w.term) map.set(lookupTerm(w.term), w);
     });
     return map;
-  }, [words]);
+  }, [words, lookupTerm]);
 
   // 2. Pre-calculate and sort phrases once
   const knownPhrases = useMemo(() => {
@@ -606,8 +610,8 @@ const TextDisplay = () => {
 
   const getWordData = useCallback((word: string | null | undefined) => {
     if (!word) return null;
-    return wordMap.get(word.toLowerCase()) || null;
-  }, [wordMap]);
+    return wordMap.get(lookupTerm(word)) || null;
+  }, [wordMap, lookupTerm]);
 
   const getWordStyle = useCallback((wordStatus: number | null | undefined) => {
     const baseStyle = { cursor: 'pointer', padding: '2px 0', margin: '0 2px', borderRadius: '3px', transition: 'all 0.2s' };
@@ -2023,7 +2027,7 @@ const TextDisplay = () => {
           w.split('-').forEach((part: string) => { if (part) allWords.push(part); });
         }
       });
-      const uniqueWordsInText = [...new Set(allWords.map((w: string) => w.toLowerCase()))];
+      const uniqueWordsInText = [...new Set(allWords.map(lookupTerm))];
       const wordsMap = wordMap; // Reuse the memoized map
       const unknownWords = uniqueWordsInText.filter((word: string) => {
         const w = wordsMap.get(word);
@@ -2034,13 +2038,13 @@ const TextDisplay = () => {
       // Bail out if user navigated away during the API call
       if (silent && autoTranslateTextIdRef.current !== callingTextId) { setTranslatingUnknown(false); return; }
       const originalCaseMap = new Map<string, string>();
-      allWords.forEach((w: string) => { const lower = w.toLowerCase(); if (!originalCaseMap.has(lower)) { originalCaseMap.set(lower, w); } });
+      allWords.forEach((w: string) => { const lower = lookupTerm(w); if (!originalCaseMap.has(lower)) { originalCaseMap.set(lower, w); } });
       // New words get the user's chosen status; words already tracked (Learning without a
       // translation) keep theirs and only get the translation.
       const newWordStatus = globalSettings.autoTranslateWordStatus || 5;
       const termsToAdd = unknownWords.map((word: string) => ({
         term: originalCaseMap.get(word) || word,
-        translation: translations?.[word.toLowerCase()] || '',
+        translation: translations?.[word] || '',
         status: newWordStatus
       })).filter((t: { translation: string }) => t.translation);
 
@@ -2081,13 +2085,13 @@ const TextDisplay = () => {
           w.split('-').forEach((part: string) => { if (part) allWords.push(part); });
         }
       });
-      const uniqueWordsInText = [...new Set(allWords.map((w: string) => w.toLowerCase()))];
-      const wordsMap = new Map(words.map(w => [w.term?.toLowerCase() ?? '', w]));
+      const uniqueWordsInText = [...new Set(allWords.map(lookupTerm))];
+      const wordsMap = wordMap;
       // Linking a text stores its unsaved words at status 0; those are untracked too.
       const unknownWords = uniqueWordsInText.filter((word: string) => (wordsMap.get(word)?.status ?? 0) === 0);
       if (unknownWords.length === 0) { alert("No untracked words found."); setIsMarkingAll(false); return; } // Exit early
       const originalCaseMap = new Map<string, string>();
-      allWords.forEach((w: string) => { const lower = w.toLowerCase(); if (!originalCaseMap.has(lower)) { originalCaseMap.set(lower, w); } });
+      allWords.forEach((w: string) => { const lower = lookupTerm(w); if (!originalCaseMap.has(lower)) { originalCaseMap.set(lower, w); } });
       const termsToMark = unknownWords.map((word: string) => ({ term: originalCaseMap.get(word) || word, translation: '', status: 5 }));
       await applySavedWords(await addTermsBatch(text.languageId, termsToMark), text.languageId);
       alert(`Attempted to mark ${unknownWords.length} words as Known.`);
@@ -2512,6 +2516,8 @@ const TextDisplay = () => {
                     currentSegmentTranslation={currentSentenceSegment ? segmentTranslations[currentSentenceSegment.index] : ''}
                     currentSegmentExplanation={currentSentenceSegment ? segmentExplanations[currentSentenceSegment.index] : ''}
                     languageCode={text?.languageCode}
+                    rightToLeft={languageConfig?.rightToLeft}
+                    translationLanguageCode={translationTargetLanguageCode}
                   />
                 ) : isAudioLesson && displayMode === 'audio' ? (
                   <AudioTranscriptView
@@ -2529,6 +2535,7 @@ const TextDisplay = () => {
                     itemData={itemData}
                     listRef={listRef}
                     languageCode={text?.languageCode}
+                    rightToLeft={languageConfig?.rightToLeft}
                   />
                 ) : (
                   <StandardTextView
@@ -2552,6 +2559,7 @@ const TextDisplay = () => {
                     handleCompleteLesson={handleCompleteLesson}
                     completing={completing}
                     isLastBookPart={isLastBookPart}
+                    rightToLeft={languageConfig?.rightToLeft}
                   />
                 )}
               </div>

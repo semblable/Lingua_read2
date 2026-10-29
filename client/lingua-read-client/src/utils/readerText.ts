@@ -6,6 +6,7 @@ export type LanguageConfig = {
   sentenceSplitExceptions?: Array<string | { exceptionString?: string } | null> | null;
   languageCode?: string | null;
   code?: string | null;
+  rightToLeft?: boolean;
 } | null | undefined;
 
 export type CharSubstitution = { old: string; replacement: string };
@@ -441,6 +442,17 @@ export const applyCharacterSubstitutions = (
 };
 
 const DEFAULT_WORD_CLASS = DEFAULT_LANGUAGE_WORD_CHARACTERS;
+
+/**
+ * Match the server's existing Turkish casing for reader vocabulary probes.
+ * Other languages keep their current behavior until the versioned key migration
+ * exists; this is not a universal Unicode normalization/case-folding contract.
+ * Both inputs are already display tokens or stored terms, so do not alter spelling.
+ */
+export const lowercaseLookupTerm = (term: string, languageCode?: string | null): string => {
+  const base = (languageCode || '').trim().toLowerCase().replace(/_/g, '-').split('-')[0];
+  return base === 'tr' ? term.toLocaleLowerCase('tr') : term.toLowerCase();
+};
 
 const wordRegexCache = new Map<string, RegExp>();
 

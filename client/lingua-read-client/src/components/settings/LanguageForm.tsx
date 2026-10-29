@@ -308,16 +308,8 @@ function LanguageForm({ language, onSave, onCancel, onDelete, onResetContent }: 
             </Row>
 
             <Row className="mb-3">
-                <Col>
-                    <Form.Check
-                        type="switch"
-                        id="showRomanizationSwitch"
-                        label="Show Romanization"
-                        name="showRomanization"
-                        checked={formData.showRomanization}
-                        onChange={handleChange}
-                    />
-                </Col>
+                {/* Keep the stored preference in formData for compatibility. No reader or
+                    provider currently implements romanization, so do not offer a no-op switch. */}
                  <Col>
                     <Form.Check
                         type="switch"

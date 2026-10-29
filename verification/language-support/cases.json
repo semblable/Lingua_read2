@@ -1,0 +1,25 @@
+{
+  "provenance": "Original synthetic examples written for this audit. Candidate boundaries are engineering hypotheses, not native-reviewed linguistic ground truth.",
+  "segmentation": [
+    { "id": "zh-basic", "code": "zh", "text": "我喜欢学习中文。", "candidateWords": ["我", "喜欢", "学习", "中文"] },
+    { "id": "zh-mixed", "code": "zh", "text": "我在2026年使用OpenAI。", "candidateWords": ["我", "在", "2026", "年", "使用", "OpenAI"] },
+    { "id": "ja-basic", "code": "ja", "text": "猫は魚を食べます。", "candidateWords": ["猫", "は", "魚", "を", "食べ", "ます"] },
+    { "id": "ja-rare-han", "code": "ja", "text": "𠮷野家で食べる。", "candidateWords": ["𠮷野家", "で", "食べる"] },
+    { "id": "th-basic", "code": "th", "text": "ฉันชอบอ่านหนังสือ", "candidateWords": ["ฉัน", "ชอบ", "อ่าน", "หนังสือ"] },
+    { "id": "th-mixed", "code": "th", "text": "ภาษาไทยกับOpenAI 2026", "candidateWords": ["ภาษา", "ไทย", "กับ", "OpenAI", "2026"] }
+  ],
+  "identity": [
+    { "id": "turkish-i", "code": "tr", "forms": ["IŞIK", "ışık"], "expectedEquivalent": true },
+    { "id": "turkish-dotted-i", "code": "tr", "forms": ["İZMİR", "izmir"], "expectedEquivalent": true },
+    { "id": "greek-sigma", "code": "el", "forms": ["ΟΣ", "ος", "οσ"], "expectedEquivalent": true },
+    { "id": "hindi-nukta", "code": "hi", "forms": ["क़", "क़"], "expectedEquivalent": true },
+    { "id": "bengali-rra", "code": "bn", "forms": ["ড়", "ড়"], "expectedEquivalent": true },
+    { "id": "hangul-jamo", "code": "ko", "forms": ["한글", "한글"], "expectedEquivalent": true },
+    { "id": "greek-stop", "code": "el", "forms": ["ένα·δύο", "ένα·δύο"], "candidateWords": ["ένα", "δύο"] },
+    { "id": "apostrophe-afrikaans", "code": "af", "forms": ["'n boek"], "candidateWords": ["'n", "boek"] },
+    { "id": "apostrophe-italian", "code": "it", "forms": ["un po'"], "candidateWords": ["un", "po'"] },
+    { "id": "hebrew-punctuation", "code": "he", "forms": ["צה״ל"], "candidateWords": ["צה״ל"] },
+    { "id": "arabic-marks", "code": "ar", "forms": ["عَرَبِيّ"], "candidateWords": ["عَرَبِيّ"] },
+    { "id": "persian-joiner", "code": "fa", "forms": ["می‌روم"], "candidateWords": ["می‌روم"] }
+  ]
+}

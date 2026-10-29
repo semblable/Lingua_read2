@@ -1,6 +1,12 @@
 import { addMissingWords, mergeSavedWords } from '../utils/api/words';
 
 describe('mergeSavedWords', () => {
+  test('keeps distinct Turkish dotted and dotless words when merging a batch', () => {
+    const old = { wordId: 1, term: 'IŞIK', status: 3, translation: 'old meaning' };
+    const saved = { wordId: 2, term: 'işik', status: 2, translation: 'different spelling' };
+    expect(mergeSavedWords([old], [saved], 'tr-TR')).toEqual([old, saved]);
+    expect(mergeSavedWords([old], [{ ...saved, term: 'ışık' }], 'tr-TR')).toEqual([{ ...saved, term: 'ışık' }]);
+  });
   const words = [
     { wordId: 1, term: 'gato', status: 0, translation: '' },
     { wordId: 2, term: 'Perro', status: 2, translation: 'dog' },
@@ -29,6 +35,11 @@ describe('mergeSavedWords', () => {
 });
 
 describe('addMissingWords', () => {
+  test('keeps distinct Turkish words when linking finishes', () => {
+    const old = { wordId: 1, term: 'IŞIK', status: 3 };
+    const fetched = { wordId: 2, term: 'işik', status: 0 };
+    expect(addMissingWords([old], [fetched], 'tr')).toEqual([old, fetched]);
+  });
   const words = [
     { wordId: 1, term: 'Gato', status: 2, translation: 'cat' },
     { wordId: 2, term: 'buenos dias', status: 3, translation: 'good morning' },

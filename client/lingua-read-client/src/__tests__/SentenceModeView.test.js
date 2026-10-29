@@ -38,6 +38,18 @@ const baseProps = (overrides = {}) => ({
 });
 
 describe('SentenceModeView', () => {
+  test('isolates source direction from translation and navigation', () => {
+    const { container } = render(<SentenceModeView {...baseProps({
+      rightToLeft: true, languageCode: 'ar', translationLanguageCode: 'en',
+      isTranslationVisible: true, currentSegmentTranslation: 'English translation.'
+    })} />);
+    expect(container.querySelector('.sentence-mode-text')).toHaveAttribute('dir', 'rtl');
+    expect(container.querySelector('.sentence-mode-text')).toHaveAttribute('lang', 'ar');
+    expect(container.querySelector('.sentence-mode-translation')).toHaveAttribute('dir', 'auto');
+    expect(container.querySelector('.sentence-mode-translation')).toHaveAttribute('lang', 'en');
+    expect(screen.getByRole('button', { name: /Next/i }).closest('[dir="rtl"]')).toBeNull();
+  });
+
   test('renders a fallback message when currentSegment is null', () => {
     render(<SentenceModeView {...baseProps({ currentSegment: null })} />);
     expect(screen.getByText(/No sentence available/i)).toBeInTheDocument();

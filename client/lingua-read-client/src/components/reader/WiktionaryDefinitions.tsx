@@ -62,8 +62,8 @@ const WiktionaryDefinitions = ({ term, sourceLanguageCode, enabled }: Wiktionary
   if (entries.length === 0) return null;
 
   return (
-    <div className="mt-3 pt-2 border-top">
-      <h6 className="mb-2 small text-muted">Wiktionary</h6>
+    <div className="mt-3 pt-2 border-top" lang="en" dir="ltr">
+      <h6 className="mb-2 small text-muted">Wiktionary · English definitions</h6>
       {entries.map((entry, i) => (
         <div key={`${entry.partOfSpeech}-${i}`} className="mb-2">
           {entry.partOfSpeech && (

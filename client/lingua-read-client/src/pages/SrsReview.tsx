@@ -1072,9 +1072,6 @@ const SrsReview = () => {
             <Form.Group className="mb-3" data-testid="srs-card-type-group">
               <Form.Label>Card Style</Form.Label>
               <p className="mb-1">Translation — see the word in context and recall its meaning.</p>
-              <Form.Text className="text-body-secondary">
-                Cloze and mixed review are temporarily unavailable because the blanks can have several valid answers.
-              </Form.Text>
             </Form.Group>
             <fieldset className="border-top pt-3 mb-3" data-testid="srs-status-sync-group">
               <legend className="fs-6">Word status sync</legend>

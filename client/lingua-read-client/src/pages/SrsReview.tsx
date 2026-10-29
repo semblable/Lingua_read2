@@ -49,6 +49,10 @@ const learningDueAt = (card: DueCard): number | null =>
 const FLAG_COLORS = ['', '🟥', '🟧', '🟨', '🟩'];
 const FLAG_LABELS = ['None', 'Red', 'Orange', 'Yellow', 'Green'];
 
+// Also guard cached/older API payloads during the cloze pause. Preserve the
+// stored preference for a future redesign with less ambiguous prompts.
+const CLOZE_REVIEW_ENABLED = false;
+
 const GRADE_LABELS = [
   { grade: 0, label: 'Again', variant: 'danger', key: '1' },
   { grade: 1, label: 'Hard', variant: 'warning', key: '2' },
@@ -1067,35 +1071,9 @@ const SrsReview = () => {
             </Form.Group>
             <Form.Group className="mb-3" data-testid="srs-card-type-group">
               <Form.Label>Card Style</Form.Label>
-              <Form.Check
-                type="radio"
-                name="srsCardType"
-                id="srs-card-type-translation"
-                label="Translation — show the word, recall its meaning (recognition)"
-                value="translation"
-                checked={localSettings.srsCardType === 'translation'}
-                onChange={() => setLocalSettings(p => ({ ...p, srsCardType: 'translation' }))}
-              />
-              <Form.Check
-                type="radio"
-                name="srsCardType"
-                id="srs-card-type-cloze"
-                label="Cloze — hide the word in its sentence, type or recall it (active recall)"
-                value="cloze"
-                checked={localSettings.srsCardType === 'cloze'}
-                onChange={() => setLocalSettings(p => ({ ...p, srsCardType: 'cloze' }))}
-              />
-              <Form.Check
-                type="radio"
-                name="srsCardType"
-                id="srs-card-type-mixed"
-                label="Mixed — alternate between translation and cloze per card"
-                value="mixed"
-                checked={localSettings.srsCardType === 'mixed'}
-                onChange={() => setLocalSettings(p => ({ ...p, srsCardType: 'mixed' }))}
-              />
-              <Form.Text className="text-muted">
-                Cloze cards require a mined sentence. Cards without one fall back to the translation style.
+              <p className="mb-1">Translation — see the word in context and recall its meaning.</p>
+              <Form.Text className="text-body-secondary">
+                Cloze and mixed review are temporarily unavailable because the blanks can have several valid answers.
               </Form.Text>
             </Form.Group>
             <fieldset className="border-top pt-3 mb-3" data-testid="srs-status-sync-group">
@@ -1390,7 +1368,7 @@ const SrsReview = () => {
                     currentCard.srsCardReviewId ?? 0,
                     mixedModeSessionSeed
                   ));
-              const renderCloze = wantCloze && !!currentCard.clozeSentence;
+              const renderCloze = CLOZE_REVIEW_ENABLED && wantCloze && !!currentCard.clozeSentence;
 
               if (renderCloze) {
                 return (

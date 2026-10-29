@@ -463,7 +463,7 @@ public class SrsControllerTests
     }
 
     [Fact]
-    public async Task GetDueCards_WithClozeSetting_ReturnsClozeSentence()
+    public async Task GetDueCards_WithSavedClozeSetting_ReturnsTranslationWithoutChangingSavedData()
     {
         using var context = CreateContext();
         var userId = Guid.NewGuid();
@@ -474,12 +474,15 @@ public class SrsControllerTests
 
         var cards = result.Value ?? Assert.IsType<List<SrsDueCardDto>>(((OkObjectResult)result.Result!).Value);
         var card = Assert.Single(cards);
-        Assert.Equal("The ___ sat on the mat.", card.ClozeSentence);
+        Assert.Null(card.ClozeSentence);
         Assert.Equal("cat", card.Term);
+        Assert.Equal("The cat sat on the mat.", Assert.Single(card.Phrases).Sentence);
+        Assert.Equal("cloze", context.UserSettings.Single().SrsCardType);
+        Assert.Equal("The cat sat on the mat.", context.SrsPhrases.Single().Sentence);
     }
 
     [Fact]
-    public async Task GetDueCards_ClozeMatchesInTheCardLanguagesNormalizedForm()
+    public async Task GetDueCards_PausedCloze_PreservesLanguageSpecificSentence()
     {
         using var context = CreateContext();
         var userId = Guid.NewGuid();
@@ -492,11 +495,13 @@ public class SrsControllerTests
         var result = await controller.GetDueCards();
 
         var cards = result.Value ?? Assert.IsType<List<SrsDueCardDto>>(((OkObjectResult)result.Result!).Value);
-        Assert.Equal("Voltou das terras ___.", Assert.Single(cards).ClozeSentence);
+        var card = Assert.Single(cards);
+        Assert.Null(card.ClozeSentence);
+        Assert.Equal("Voltou das terras d´África.", Assert.Single(card.Phrases).Sentence);
     }
 
     [Fact]
-    public async Task GetDueCards_WithMixedSetting_ReturnsClozeSentenceForAllCards()
+    public async Task GetDueCards_WithSavedMixedSetting_ReturnsTranslationWithoutChangingPreference()
     {
         using var context = CreateContext();
         var userId = Guid.NewGuid();
@@ -507,9 +512,9 @@ public class SrsControllerTests
 
         var cards = result.Value ?? Assert.IsType<List<SrsDueCardDto>>(((OkObjectResult)result.Result!).Value);
         var card = Assert.Single(cards);
-        // Client decides per-card whether to render translation or cloze, so the server
-        // always populates ClozeSentence in mixed mode.
-        Assert.Equal("Mi ___ corre.", card.ClozeSentence);
+        Assert.Null(card.ClozeSentence);
+        Assert.Equal("Mi perro corre.", Assert.Single(card.Phrases).Sentence);
+        Assert.Equal("mixed", context.UserSettings.Single().SrsCardType);
     }
 
     [Fact]

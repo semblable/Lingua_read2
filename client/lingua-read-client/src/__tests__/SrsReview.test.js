@@ -651,15 +651,15 @@ describe('SrsReview', () => {
       expect(card.querySelector('.srs-term-highlight')).toHaveTextContent(/^reparava$/);
     });
 
-    it('renders the cloze card when srsCardType is "cloze" and the card has a clozeSentence', async () => {
+    it('uses translation with a saved cloze preference and a cached cloze payload', async () => {
       getSrsDueCards.mockResolvedValue([clozeCard]);
       renderWithCardType('cloze');
       await selectSpanish();
       fireEvent.click(await screen.findByRole('button', { name: /Start Review/i }));
 
-      expect(await screen.findByTestId('cloze-review-card')).toBeInTheDocument();
-      expect(screen.getByTestId('cloze-sentence')).toHaveTextContent('El ___ duerme.');
-      expect(screen.queryByTestId('translation-review-card')).not.toBeInTheDocument();
+      expect(await screen.findByTestId('translation-review-card')).toHaveTextContent('El gato duerme.');
+      expect(screen.queryByTestId('cloze-review-card')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('cloze-input')).not.toBeInTheDocument();
     });
 
     it('falls back to the translation card when srsCardType is "cloze" but the card lacks a clozeSentence', async () => {
@@ -673,17 +673,8 @@ describe('SrsReview', () => {
       expect(screen.queryByTestId('cloze-review-card')).not.toBeInTheDocument();
     });
 
-    it('in mixed mode, the card type is not derivable from cardId parity', async () => {
-      // Mixed mode uses a per-session random seed XOR'd with the card id and
-      // hashed (high bit). The crucial property is that a single observation
-      // must NOT let the user predict the other cards via parity — i.e. two
-      // adjacent IDs (one even, one odd) must be able to land on the same
-      // type. The old `id % 2` and the buggy low-bit hash both split adjacent
-      // IDs across cloze/translation deterministically.
-      //
-      // Pin Math.random to 0.99 — under the high-bit hash this yields the
-      // outcome (card 100 → cloze, card 101 → cloze), which is impossible
-      // under any parity-derived rule on adjacent IDs.
+    it('keeps mixed-mode cards in translation style through reveal and grading', async () => {
+      // This seed previously selected cloze for both adjacent card IDs.
       const restoreRandom = vi.spyOn(Math, 'random').mockReturnValue(0.99);
       try {
         const first  = { ...mockCards[0], srsCardReviewId: 100, clozeSentence: 'El ___ duerme.' };
@@ -693,27 +684,28 @@ describe('SrsReview', () => {
         renderWithCardType('mixed');
         await selectSpanish();
         fireEvent.click(await screen.findByRole('button', { name: /Start Review/i }));
-        // First card (even id 100) → cloze under seed≈0.99*2^32.
-        expect(await screen.findByTestId('cloze-review-card')).toBeInTheDocument();
+        // A seed that previously selected cloze must not bypass the pause.
+        expect(await screen.findByTestId('translation-review-card')).toHaveTextContent('El gato duerme.');
+        expect(screen.queryByTestId('cloze-input')).not.toBeInTheDocument();
 
         // Grade through to the second card.
-        fireEvent.change(screen.getByTestId('cloze-input'), { target: { value: 'gato' } });
-        fireEvent.keyDown(screen.getByTestId('cloze-input'), { key: 'Enter' });
+        fireEvent.click(screen.getByTestId('translation-review-card'));
+        expect(await screen.findByText('cat')).toBeInTheDocument();
         fireEvent.click(await screen.findByRole('button', { name: /^Good/ }));
 
-        // Second card (odd id 101) → also cloze. A parity-derived rule would
-        // be forced to split these; the high-bit hash can map them the same.
-        expect(await screen.findByTestId('cloze-review-card')).toBeInTheDocument();
+        await waitFor(() => expect(screen.getByTestId('translation-review-card')).toHaveTextContent('El perro corre.'));
+        expect(submitSrsReview).toHaveBeenCalledWith(100, 2);
+        expect(screen.queryByTestId('cloze-review-card')).not.toBeInTheDocument();
       } finally {
         restoreRandom.mockRestore();
       }
     });
 
-    it('settings modal exposes the card-style radio group and persists the choice', async () => {
+    it('explains the cloze pause without overwriting a saved preference when saving options', async () => {
       const updateSetting = vi.fn();
       render(
         <SettingsContext.Provider
-          value={{ settings: mockSettings, updateSetting, loadingSettings: false }}
+          value={{ settings: { ...mockSettings, srsCardType: 'cloze' }, updateSetting, loadingSettings: false }}
         >
           <BrowserRouter>
             <SrsReview />
@@ -725,11 +717,8 @@ describe('SrsReview', () => {
       fireEvent.click(await screen.findByRole('button', { name: /Options/i }));
 
       const group = await screen.findByTestId('srs-card-type-group');
-      expect(group).toBeInTheDocument();
-
-      // Switch to cloze
-      const clozeRadio = document.getElementById('srs-card-type-cloze');
-      fireEvent.click(clozeRadio);
+      expect(group).toHaveTextContent('Cloze and mixed review are temporarily unavailable');
+      expect(within(group).queryByRole('radio')).not.toBeInTheDocument();
 
       // Save
       fireEvent.click(screen.getByRole('button', { name: /Save Changes/i }));

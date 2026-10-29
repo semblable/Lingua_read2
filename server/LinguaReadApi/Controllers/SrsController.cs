@@ -26,6 +26,9 @@ namespace LinguaReadApi.Controllers
     [Authorize]
     public class SrsController : ControllerBase
     {
+        // Paused until prompts can constrain the intended meaning. Keep saved
+        // preferences and mined sentences intact; legacy clients fall back when null.
+        private static readonly bool ClozeReviewEnabled = false;
         private readonly AppDbContext _context;
         private readonly IStoryGenerationServiceFactory _storyGenerationServiceFactory;
 
@@ -60,11 +63,10 @@ namespace LinguaReadApi.Controllers
                 ? "mix"
                 : settings!.SrsReviewOrder;
 
-            // Card style: translation (default), cloze (mask term in mined sentence), or mixed.
-            // Cloze/mixed populate the new ClozeSentence DTO field; translation leaves it null
-            // so existing clients keep working unchanged.
+            // Stored cloze/mixed preferences remain valid for a future redesign,
+            // but the pause leaves ClozeSentence null for every current review.
             string cardType = NormalizeCardType(settings?.SrsCardType);
-            bool emitClozeSentence = cardType is "cloze" or "mixed";
+            bool emitClozeSentence = ClozeReviewEnabled && (cardType is "cloze" or "mixed");
 
             var (studiedNew, studiedReviews) = StudiedOn(settings, day.Today);
             int remainingNew = Math.Max(0, maxNew - studiedNew);

@@ -1,5 +1,43 @@
 # Release verification
 
+## Day summary and cloze pause (2026-10-29)
+
+- Completed reliability/export verification and independent correction of blank
+  source titles. Earlier sections retain the Docker, restore, FSRS, and Anki
+  importer evidence without treating it as new phone or offline-browser testing.
+- Committed release preparation in three focused commits, merged
+  [PR #130](https://github.com/semblable/Lingua_read2/pull/130), and deployed
+  `fa3578fb1eb157a588f866537636994ed9d20736` to staging. The
+  [workflow](https://github.com/semblable/Lingua_read2/actions/runs/40879590756)
+  passed tests, image builds, deployment, readiness, and compression checks.
+  A live bundled license file matched its source. Production and release tags
+  were unchanged.
+- The maintainer reports that reading/listening work and supplied a raw Anki
+  export excerpt consistent with the format. This is feedback, not a verified
+  Anki desktop/mobile import or a documented physical-device session.
+- Shortened both plans and paused cloze/mixed review. The prototype blanks the
+  saved term and compares exact text, although other answers can fit the sentence.
+  Both server output and client rendering now use translation review, including
+  saved cloze/mixed preferences and cached cloze payloads. No data migration,
+  sentence deletion, preference reset, or FSRS schedule change is involved.
+- Removed cloze/mixed choices from review options and updated README, features,
+  and settings guidance. The prototype and its masking tests remain for a future
+  redesign; re-enabling needs clearer cues, treatment of valid alternatives,
+  and learner validation. Vocabulary/Anki export is unaffected.
+
+Regression checks first failed in three server and three UI cases. Updated tests
+cover fallback with saved preferences/cached payloads, sentence preservation,
+reveal → grade → next card, and saving unrelated options without resetting the
+stored preference. The full Release backend suite passed **1,151 tests** with
+zero skips/failures; the frontend suite passed **1,141 tests in 89 files** with
+two thread workers and 10-second test/hook timeouts. Typecheck, production build,
+build-output/notice guards, local Markdown links/anchors, YAML, and whitespace
+checks passed. Lint passed with zero errors and 45 existing warnings.
+No new claim of physical-phone, network-disconnect/replay, or Anki UI verification
+is made.
+
+## Earlier preparation evidence
+
 Repository preparation is implemented; the real-world validation and release
 gates below are still explicit. No release tag, production deployment, repository
 setting change, or learner invitation was made in this work.

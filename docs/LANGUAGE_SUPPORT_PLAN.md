@@ -119,6 +119,32 @@ romanization switch, regional-entry and voice-picker instructions. The reviewer
 confirmed the six-case probe results but did not establish linguistic readiness.
 Final full-suite/build results are recorded in the status document after fixes.
 
+### Post-push statistics follow-up
+
+The [CI and staging run for `c00ce187`](https://github.com/semblable/Lingua_read2/actions/runs/40933654143)
+completed successfully. A further 85 targeted statistics/activity/completion,
+vocabulary-linking and goal checks passed (33 + 52). Coverage includes occurrence-
+weighted chapter/book aggregation, ignored-word exclusion, duplicate reading
+credit, sentence-mode completion credit and repeat completions. No new breaking
+statistics regression was found in these paths; passing tests do not prove the
+absence of every regression.
+
+There is a **pre-existing unresolved counting inconsistency**: text/book coverage
+uses linked token occurrences, while reading activity's `CountTotalWords` splits
+on ASCII spaces, tabs and line endings. Unspaced Chinese/Japanese/Thai passages can
+therefore receive very low reading-volume credit, and punctuation or Unicode
+spacing can make activity counts disagree with tokenizer units. Vocabulary size
+is a third measure (stored terms), not the running-token count. None of these
+counting algorithms, the tokenizer version or historical-activity logic changed
+in `c00ce187`; this does not establish accurate statistics for all 44 languages.
+
+Before changing counting semantics, reproduce these discrepancies with fixtures,
+define the units for each metric and run a bounded compatibility experiment.
+Distinguish recomputable coverage caches from historical reading credit. Do not
+retroactively recredit activity, reset goals, or reinterpret pending offline
+actions without an explicit versioned transition and preservation evidence.
+Keep this work alongside the Phase 1/4 experiments and Phase 6 acceptance gates.
+
 ## Product decisions
 
 - Keep one catalog entry per language. Portuguese remains **Portuguese**, with one vocabulary collection and shared reading statistics. The same principle applies to English, Spanish and other regional varieties.

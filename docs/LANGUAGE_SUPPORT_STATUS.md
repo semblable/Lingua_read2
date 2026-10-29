@@ -181,3 +181,31 @@ Final validation after the review fixes:
   checks remain unperformed; missing `Object.hasOwn` was simulated in a regression.
 - No schema, tokenizer version, sentence-index or learner-data migration is part
   of this commit. The experimental ICU loader remains outside the application.
+
+## Statistics follow-up after the push
+
+[CI, image builds, staging deployment and smoke checks for `c00ce187` succeeded](https://github.com/semblable/Lingua_read2/actions/runs/40933654143).
+An additional **85 targeted tests passed**: 33 for statistics recomputation,
+sentence-mode activity, activity APIs and word linking; 52 for text/book completion,
+user statistics and goal progress. These verify existing counting/credit contracts,
+including repeated occurrences, chapter/book aggregation, ignored words, duplicate
+credit prevention, remaining credit after sentence mode and repeat completions.
+No new breaking statistics regression was found in those tested paths.
+
+Source comparison confirms this update did not change the server tokenizer,
+linking version (still 3), word-count utility, stats recomputation or activity/text/
+book completion implementations. Existing vocabulary IDs, schema and historical
+activity are not migrated by this update. This is preservation evidence, not a
+claim that the existing counting definitions are correct for every language.
+
+| Metric | Current counting unit | Remaining limitation |
+| --- | --- | --- |
+| Vocabulary size | Stored vocabulary terms | Surface forms/phrases and unresolved legacy identity collisions are not validated lexical or lemma counts. |
+| Text/book known-word coverage | Sum of linked `OccurrenceCount`; ignored words excluded | Accuracy depends on current word segmentation, which remains inadequate for unspaced scripts. |
+| Reading-volume credit | Chunks split on ASCII space, tab, CR and LF by `WordCountUtility.CountTotalWords` | Unspaced passages are undercounted; punctuation and Unicode spaces can disagree with tokenizer units. |
+
+These limitations predate `c00ce187` and remain unresolved. Future fixes must define
+and version the counting contract, test compatibility with completion/sentence
+credit and offline replay, and preserve historical activity instead of silently
+recalculating previously earned reading credit. All-44-language statistics readiness
+remains unverified.

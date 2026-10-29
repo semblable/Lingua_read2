@@ -144,13 +144,13 @@ public class AuthControllerTests
     // --- Logout Tests ---
 
     [Fact]
-    public void Logout_ReturnsOkAndDeletesCookie()
+    public async Task Logout_ReturnsOkAndDeletesCookie()
     {
         using var context = CreateContext();
         var httpContext = new DefaultHttpContext();
         var controller = CreateController(context, httpContext: httpContext);
 
-        var result = controller.Logout();
+        var result = await controller.Logout();
 
         Assert.IsType<OkObjectResult>(result);
         var setCookie = httpContext.Response.Headers["Set-Cookie"].ToString();

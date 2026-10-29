@@ -22,6 +22,19 @@ public class DeepLTranslationServiceTests
     private const string SingleTranslationJson =
         "{\"translations\":[{\"text\":\"bonjour\",\"detected_source_language\":\"EN\"}]}";
 
+    [Theory]
+    [InlineData("")]
+    [InlineData("SET_IN_DOTENV")]
+    public async Task MissingKey_IsActionable_WithoutSendingText(string key)
+    {
+        var handler = new CapturingHandler(SingleTranslationJson);
+        using var http = new HttpClient(handler);
+        var service = CreateService(http, key);
+        var error = await Assert.ThrowsAsync<TranslationProviderNotConfiguredException>(() => service.TranslateTextAsync("fixture", "ES", "EN"));
+        Assert.Contains("Wiktionary", error.Message);
+        Assert.Empty(handler.AuthorizationHeaders);
+    }
+
     [Fact]
     public async Task TranslateBatch_AttachesAuthorizationHeader_OnEveryRequest()
     {

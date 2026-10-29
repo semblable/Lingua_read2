@@ -10,10 +10,11 @@ export type AuthState = {
   user: AuthUser | null;
   isLoading: boolean;
   needsSetup: boolean;
+  logoutWarning: string | null;
   checkAuth: () => Promise<void>;
   login: (password: string) => Promise<void>;
   logout: () => Promise<void>;
-  setup: (password: string) => Promise<void>;
+  setup: (password: string, setupToken?: string) => Promise<void>;
 };
 
 export const useAuthStore = create<AuthState>()((set) => ({
@@ -21,6 +22,7 @@ export const useAuthStore = create<AuthState>()((set) => ({
   user: null,
   isLoading: true,
   needsSetup: false,
+  logoutWarning: null,
   checkAuth: async () => {
     set({ isLoading: true });
     try {
@@ -46,23 +48,26 @@ export const useAuthStore = create<AuthState>()((set) => ({
     set({
       isAuthenticated: status.authenticated,
       user: status.user || null,
-      needsSetup: false
+      needsSetup: false,
+      logoutWarning: null
     });
   },
   logout: async () => {
+    let logoutWarning: string | null = null;
     try {
-      await authLogout();
+      const response = await authLogout();
+      if (!response.ok) throw new Error('Logout failed');
     } catch {
-      /* ignore */
+      logoutWarning = 'Server logout could not be confirmed. Local offline data was cleared, but sessions may still be valid. Reconnect, sign in, and log out again to revoke them.';
     }
     // Wipe SW caches + offline queue so the next user on this browser
     // can't read User A's cached texts/audio or replay their queued
     // mutations under a new auth context.
     await clearOfflineState();
-    set({ isAuthenticated: false, user: null });
+    set({ isAuthenticated: false, user: null, logoutWarning });
   },
-  setup: async (password) => {
-    const res = await authSetup(password);
+  setup: async (password, setupToken) => {
+    const res = await authSetup(password, setupToken);
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
       throw new Error(data.message || 'Setup failed.');

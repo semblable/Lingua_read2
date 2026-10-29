@@ -73,7 +73,7 @@ const DataManagementSettings = ({
 
       <div className="settings-control-group">
         <h6 className="fw-semibold mb-2">Backup</h6>
-        <p className="text-muted small mb-2">Download a full backup of the application database.</p>
+        <p className="text-muted small mb-2">Download a database-only backup. Uploaded audio, EPUB assets, cover images, server configuration, and encryption keys are not included. Preserve media and the Data Protection key ring separately; the keys are needed to recover saved provider credentials.</p>
         {backupMessage.text && <Alert variant={backupMessage.type} className="mt-2">{backupMessage.text}</Alert>}
         <Button variant="secondary" size="sm" onClick={onBackupClick} disabled={isBackingUp}>
           {isBackingUp ? (
@@ -88,8 +88,9 @@ const DataManagementSettings = ({
       <div className="settings-control-group">
         <h6 className="fw-semibold mb-2">Restore</h6>
         <p className="text-danger small fw-bold mb-2">
-          WARNING: Restoring from a backup will overwrite ALL current data. This action is irreversible.
+          WARNING: Restoring from a backup will overwrite ALL current database data. This action is irreversible.
         </p>
+        <p className="text-muted small mb-2">Restore replaces the target database only. It does not restore uploaded media or encryption keys. Keep a current backup and restore matching media and keys separately.</p>
         <Form.Group controlId="restoreFile" className="mb-3">
           <Form.Label className="small">Select Backup File (.backup)</Form.Label>
           <Form.Control

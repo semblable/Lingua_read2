@@ -17,5 +17,10 @@ namespace LinguaReadApi.Services
         }
 
         public string ProviderName { get; }
+
+        public TranslationProviderNotConfiguredException(string providerName, string message) : base(message)
+        {
+            ProviderName = providerName;
+        }
     }
 }

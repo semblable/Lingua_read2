@@ -301,13 +301,23 @@ public class ProtectedStaticContentTests : IClassFixture<WebApplicationFactory<P
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
-    private static string CreateJwt()
+    private string CreateJwt()
     {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var id = Guid.Parse(UserId.ToString());
+        var user = db.Users.Find(id);
+        if (user == null)
+        {
+            user = new User { Id = id, UserName = "fixture", SecurityStamp = "fixture-session" };
+            db.Users.Add(user);
+            db.SaveChanges();
+        }
         var securityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(JwtKey));
         var token = new JwtSecurityToken(
             issuer: JwtIssuer,
             audience: JwtAudience,
-            claims: new[] { new Claim(ClaimTypes.NameIdentifier, UserId) },
+            claims: new[] { new Claim(ClaimTypes.NameIdentifier, UserId), new Claim("security_stamp", user.SecurityStamp!) },
             expires: DateTime.UtcNow.AddMinutes(5),
             signingCredentials: new SigningCredentials(securityKey, SecurityAlgorithms.HmacSha256));
         return new JwtSecurityTokenHandler().WriteToken(token);

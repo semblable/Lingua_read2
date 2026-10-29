@@ -22,6 +22,13 @@ namespace LinguaReadApi.Controllers
     public class SetupRequest
     {
         public string Password { get; set; } = string.Empty;
+        public string? SetupToken { get; set; }
+    }
+
+    public class ChangePasswordRequest
+    {
+        public string CurrentPassword { get; set; } = string.Empty;
+        public string NewPassword { get; set; } = string.Empty;
     }
 
     [Route("api/[controller]")]
@@ -85,6 +92,7 @@ namespace LinguaReadApi.Controllers
             }
 
             // Update last login
+            if (string.IsNullOrEmpty(user.SecurityStamp)) user.SecurityStamp = Guid.NewGuid().ToString("D");
             user.LastLogin = DateTime.UtcNow;
             await _context.SaveChangesAsync();
 
@@ -97,8 +105,23 @@ namespace LinguaReadApi.Controllers
 
         [AllowAnonymous]
         [HttpPost("logout")]
-        public IActionResult Logout()
+        public async Task<IActionResult> Logout()
         {
+            // This single-account app signs out every device. Rotating the persisted stamp
+            // also rejects copied cookies after a restart, rather than merely deleting one.
+            if (User.Identity?.IsAuthenticated == true)
+            {
+                var id = User.FindFirstValue(ClaimTypes.NameIdentifier);
+                if (Guid.TryParse(id, out var userId))
+                {
+                    var user = await _context.Users.FindAsync(userId);
+                    if (user != null)
+                    {
+                        user.SecurityStamp = Guid.NewGuid().ToString("D");
+                        await _context.SaveChangesAsync();
+                    }
+                }
+            }
             Response.Cookies.Delete(".LinguaRead.Auth", new CookieOptions
             {
                 Path = "/",
@@ -106,7 +129,7 @@ namespace LinguaReadApi.Controllers
                 Secure = !_env.IsDevelopment(),
                 SameSite = SameSiteMode.Lax
             });
-            return Ok(new { message = "Logged out." });
+            return Ok(new { message = "Logged out on all devices." });
         }
 
         [AllowAnonymous]
@@ -131,6 +154,14 @@ namespace LinguaReadApi.Controllers
         [HttpPost("setup")]
         public async Task<IActionResult> Setup([FromBody] SetupRequest request)
         {
+            // A fresh Internet-facing install must not be claimable by its first visitor.
+            var setupToken = _configuration["Auth:SetupToken"];
+            if (!_env.IsDevelopment() && (string.IsNullOrWhiteSpace(setupToken) ||
+                !System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(
+                    Encoding.UTF8.GetBytes(setupToken), Encoding.UTF8.GetBytes(request?.SetupToken ?? ""))))
+            {
+                return StatusCode(403, new { message = "Setup requires the operator's setup token. Configure Auth__SetupToken or set LINGUAREAD_PASSWORD before starting the server." });
+            }
             if (string.IsNullOrWhiteSpace(request?.Password))
             {
                 return BadRequest(new { message = "Password is required." });
@@ -153,9 +184,25 @@ namespace LinguaReadApi.Controllers
                 return BadRequest(new { message = "Password is already set. Use login instead." });
             }
 
+            user.SecurityStamp = Guid.NewGuid().ToString("D");
             user.PasswordHash = _passwordHasher.HashPassword(user, request.Password);
             user.LastLogin = DateTime.UtcNow;
-            await _context.SaveChangesAsync();
+            if (_context.Database.IsRelational())
+            {
+                // Only one simultaneous first visitor may claim setup.
+                var changed = await _context.Users
+                    .Where(u => u.Id == DefaultUserId && (u.PasswordHash == null || u.PasswordHash == ""))
+                    .ExecuteUpdateAsync(update => update
+                        .SetProperty(u => u.PasswordHash, user.PasswordHash)
+                        .SetProperty(u => u.SecurityStamp, user.SecurityStamp)
+                        .SetProperty(u => u.LastLogin, user.LastLogin));
+                if (changed != 1)
+                    return BadRequest(new { message = "Password is already set. Use login instead." });
+            }
+            else
+            {
+                await _context.SaveChangesAsync();
+            }
 
             // Auto-login after setup
             var token = GenerateJwtToken(user);
@@ -163,6 +210,28 @@ namespace LinguaReadApi.Controllers
 
             _logger.LogInformation("[AuthController] Password set and user {UserId} logged in via setup.", user.Id);
             return Ok(new { message = "Password set successfully." });
+        }
+
+        [Authorize]
+        [HttpPost("change-password")]
+        public async Task<IActionResult> ChangePassword([FromBody] ChangePasswordRequest request)
+        {
+            if (string.IsNullOrWhiteSpace(request.NewPassword) || request.NewPassword.Length < 6)
+                return BadRequest(new { message = "Password must be at least 6 characters." });
+
+            if (!Guid.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var userId))
+                return Unauthorized();
+            var user = await _context.Users.FindAsync(userId);
+            if (user == null) return Unauthorized();
+            if (string.IsNullOrEmpty(user.PasswordHash) ||
+                _passwordHasher.VerifyHashedPassword(user, user.PasswordHash, request.CurrentPassword) == PasswordVerificationResult.Failed)
+                return BadRequest(new { message = "Current password is incorrect." });
+
+            user.PasswordHash = _passwordHasher.HashPassword(user, request.NewPassword);
+            user.SecurityStamp = Guid.NewGuid().ToString("D");
+            await _context.SaveChangesAsync();
+            SetAuthCookie(GenerateJwtToken(user));
+            return Ok(new { message = "Password changed. Other sessions have been signed out." });
         }
 
         private void SetAuthCookie(string token)
@@ -208,6 +277,7 @@ namespace LinguaReadApi.Controllers
             var claims = new[]
             {
                 new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
+                new Claim("security_stamp", user.SecurityStamp ?? string.Empty),
                 new Claim(JwtRegisteredClaimNames.Email, user.Email ?? string.Empty),
                 new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
                 new Claim(JwtRegisteredClaimNames.Iat, DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString(), ClaimValueTypes.Integer64)

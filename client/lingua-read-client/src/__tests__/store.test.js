@@ -17,7 +17,8 @@ const initialState = {
   isAuthenticated: false,
   user: null,
   isLoading: true,
-  needsSetup: false
+  needsSetup: false,
+  logoutWarning: null
 };
 
 describe('useAuthStore', () => {
@@ -160,6 +161,7 @@ describe('useAuthStore', () => {
 
     expect(clearOfflineState).toHaveBeenCalledTimes(1);
     expect(useAuthStore.getState().isAuthenticated).toBe(false);
+    expect(useAuthStore.getState().logoutWarning).toContain('could not be confirmed');
   });
 
   // --- setup ---
@@ -174,7 +176,7 @@ describe('useAuthStore', () => {
 
     await useAuthStore.getState().setup('newpassword');
 
-    expect(authSetup).toHaveBeenCalledWith('newpassword');
+    expect(authSetup).toHaveBeenCalledWith('newpassword', undefined);
     expect(authStatus).toHaveBeenCalled();
     const state = useAuthStore.getState();
     expect(state.isAuthenticated).toBe(true);

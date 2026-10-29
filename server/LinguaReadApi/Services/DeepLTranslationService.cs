@@ -45,7 +45,7 @@ namespace LinguaReadApi.Services
             _languageService = languageService; // Store injected service
 
             // Read API key and throw if missing
-            _apiKey = _configuration["DeepL:ApiKey"] ?? throw new InvalidOperationException("DeepL API Key (DeepL:ApiKey) is not configured. Check .env (DeepL__ApiKey) or appsettings.json.");
+            _apiKey = _configuration["DeepL:ApiKey"] ?? string.Empty;
             // Use a specific config key for the translate endpoint to avoid conflicts. Default to free API translate endpoint.
             _apiUrl = _configuration["DeepL:TranslateUrl"] ?? "https://api-free.deepl.com/v2/translate";
 
@@ -72,6 +72,9 @@ namespace LinguaReadApi.Services
             {
                 return translations;
             }
+
+            if (string.IsNullOrWhiteSpace(_apiKey) || _apiKey == "SET_IN_DOTENV")
+                throw new TranslationProviderNotConfiguredException("DeepL", "DeepL is not configured. The server operator can set DEEPL_API_KEY, or you can choose Wiktionary in Settings for key-free word lookup. Reading and manual vocabulary saving remain available.");
 
             try
             {

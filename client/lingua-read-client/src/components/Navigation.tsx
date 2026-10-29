@@ -50,7 +50,7 @@ const Navigation = () => {
                 <LinkContainer to="/settings"><NavDropdown.Item>User Settings</NavDropdown.Item></LinkContainer>
                 <LinkContainer to="/settings/languages"><NavDropdown.Item>Languages</NavDropdown.Item></LinkContainer>
                 <NavDropdown.Divider />
-                <NavDropdown.Item onClick={handleLogout}>Logout</NavDropdown.Item>
+                <NavDropdown.Item onClick={handleLogout}>Logout on all devices</NavDropdown.Item>
               </NavDropdown>
             )}
           </Nav>

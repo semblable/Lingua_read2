@@ -76,6 +76,10 @@ namespace LinguaReadApi.Controllers
                     TargetLanguageCode = request.TargetLanguageCode
                 });
             }
+            catch (TranslationProviderNotConfiguredException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error during sentence translation");
@@ -128,6 +132,10 @@ namespace LinguaReadApi.Controllers
                     TargetLanguageCode = request.TargetLanguageCode
                 });
             }
+            catch (TranslationProviderNotConfiguredException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error during full text translation");
@@ -172,6 +180,10 @@ namespace LinguaReadApi.Controllers
                     SourceLanguageCode = request.SourceLanguageCode,
                     TargetLanguageCode = request.TargetLanguageCode
                 });
+            }
+            catch (TranslationProviderNotConfiguredException ex)
+            {
+                return BadRequest(new { message = ex.Message });
             }
             catch (Exception ex)
             {
@@ -224,6 +236,10 @@ namespace LinguaReadApi.Controllers
                     SourceLanguageCode = request.SourceLanguageCode,
                     TargetLanguageCode = request.TargetLanguageCode
                 });
+            }
+            catch (TranslationProviderNotConfiguredException ex)
+            {
+                return BadRequest(new { message = ex.Message });
             }
             catch (Exception ex)
             {

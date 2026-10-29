@@ -155,7 +155,7 @@ public class BookmarksEndpointTests : IClassFixture<WebApplicationFactory<Progra
         return textId;
     }
 
-    private static HttpRequestMessage Authed(HttpMethod method, string path, object? body = null, bool csrfHeader = true)
+    private HttpRequestMessage Authed(HttpMethod method, string path, object? body = null, bool csrfHeader = true)
     {
         var request = new HttpRequestMessage(method, path);
         request.Headers.Add("Cookie", $".LinguaRead.Auth={CreateJwt()}");
@@ -167,13 +167,23 @@ public class BookmarksEndpointTests : IClassFixture<WebApplicationFactory<Progra
     private static async Task<JsonElement> ReadJson(HttpResponseMessage response) =>
         JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
 
-    private static string CreateJwt()
+    private string CreateJwt()
     {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var id = Guid.Parse(UserId.ToString());
+        var user = db.Users.Find(id);
+        if (user == null)
+        {
+            user = new User { Id = id, UserName = "fixture", SecurityStamp = "fixture-session" };
+            db.Users.Add(user);
+            db.SaveChanges();
+        }
         var securityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(JwtKey));
         var token = new JwtSecurityToken(
             issuer: JwtIssuer,
             audience: JwtAudience,
-            claims: new[] { new Claim(ClaimTypes.NameIdentifier, UserId.ToString()) },
+            claims: new[] { new Claim(ClaimTypes.NameIdentifier, UserId.ToString()), new Claim("security_stamp", user.SecurityStamp!) },
             expires: DateTime.UtcNow.AddMinutes(5),
             signingCredentials: new SigningCredentials(securityKey, SecurityAlgorithms.HmacSha256));
         return new JwtSecurityTokenHandler().WriteToken(token);

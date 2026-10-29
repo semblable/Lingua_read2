@@ -7,6 +7,7 @@ const Login = () => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const login = useAuthStore((s) => s.login);
+  const logoutWarning = useAuthStore((s) => s.logoutWarning);
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -27,6 +28,7 @@ const Login = () => {
         <Card.Body>
           <h2 className="text-center mb-4">LinguaRead</h2>
           {error && <Alert variant="danger">{error}</Alert>}
+          {logoutWarning && <Alert variant="warning">{logoutWarning}</Alert>}
           <Form onSubmit={handleSubmit}>
             <Form.Group className="mb-3" controlId="password">
               <Form.Label>Password</Form.Label>

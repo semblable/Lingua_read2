@@ -40,19 +40,22 @@ namespace LinguaReadApi.Services
         private readonly ILogger<DiscordReportService> _logger;
         private readonly IDatabaseAdminService _databaseAdminService;
         private readonly bool _externalWritesDisabled;
+        private readonly HashSet<string> _allowedRelayHosts;
 
         public DiscordReportService(
             AppDbContext context,
             IHttpClientFactory httpClientFactory,
             ILogger<DiscordReportService> logger,
             IDatabaseAdminService databaseAdminService,
-            IOptions<ExternalWritesOptions>? externalWrites = null)
+            IOptions<ExternalWritesOptions>? externalWrites = null,
+            IOptions<DiscordReportOptions>? reportOptions = null)
         {
             _context = context;
             _httpClientFactory = httpClientFactory;
             _logger = logger;
             _databaseAdminService = databaseAdminService;
             _externalWritesDisabled = externalWrites?.Value.Disabled ?? false;
+            _allowedRelayHosts = new HashSet<string>(reportOptions?.Value.AllowedReportRelayHosts ?? [], StringComparer.OrdinalIgnoreCase);
         }
 
         public async Task<DiscordReportResult> SendDueWeeklyReportsAsync(
@@ -365,7 +368,7 @@ namespace LinguaReadApi.Services
 
             try
             {
-                using var client = _httpClientFactory.CreateClient();
+                using var client = _httpClientFactory.CreateClient("ReportWebhook");
                 using var content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
                 using var response = await client.PostAsync(webhookUrl, content, cancellationToken);
 
@@ -426,7 +429,7 @@ namespace LinguaReadApi.Services
             return FormatDuration(averageSeconds);
         }
 
-        private static bool TryNormalizeWebhookUrl(
+        private bool TryNormalizeWebhookUrl(
             string url,
             out string normalizedUrl,
             out WebhookEndpointKind endpointKind)
@@ -438,7 +441,8 @@ namespace LinguaReadApi.Services
                 return false;
             }
 
-            if (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps)
+            if (uri.Scheme != Uri.UriSchemeHttps || !uri.IsDefaultPort ||
+                !string.IsNullOrEmpty(uri.UserInfo) || !string.IsNullOrEmpty(uri.Fragment))
             {
                 return false;
             }
@@ -450,7 +454,7 @@ namespace LinguaReadApi.Services
                 return true;
             }
 
-            if (IsReportRelayWebhookUri(uri))
+            if (_allowedRelayHosts.Contains(uri.IdnHost) && IsReportRelayWebhookUri(uri))
             {
                 endpointKind = WebhookEndpointKind.ReportRelay;
                 normalizedUrl = uri.ToString();

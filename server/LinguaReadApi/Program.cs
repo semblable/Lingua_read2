@@ -135,6 +135,15 @@ builder.Services.AddIdentity<LinguaReadApi.Models.User, IdentityRole<Guid>>(opti
 // --- Remove the two duplicate AddIdentity blocks ---
 // Register HttpClient
 builder.Services.AddHttpClient();
+// Reports carry learner data: refuse redirects and private/reserved destination IPs,
+// including DNS rebinding. Relay host names also require an operator allowlist.
+builder.Services.AddHttpClient("ReportWebhook", client => client.Timeout = TimeSpan.FromSeconds(20))
+    .ConfigurePrimaryHttpMessageHandler(() =>
+    {
+        var handler = LinguaReadApi.Services.News.PublicAddressGuard.CreateHandler();
+        handler.AllowAutoRedirect = false;
+        return handler;
+    });
 
 // Discord weekly report configuration and services
 builder.Services.Configure<DiscordReportOptions>(builder.Configuration.GetSection("Discord"));
@@ -247,6 +256,17 @@ builder.Services.AddAuthentication(options =>
                 context.Token = cookieToken;
             }
             return Task.CompletedTask;
+        },
+        OnTokenValidated = async context =>
+        {
+            var id = context.Principal?.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+            var stamp = context.Principal?.FindFirst("security_stamp")?.Value;
+            var db = context.HttpContext.RequestServices.GetRequiredService<AppDbContext>();
+            var user = Guid.TryParse(id, out var userId) ? await db.Users.FindAsync(userId) : null;
+            if (user == null || string.IsNullOrEmpty(stamp) || stamp != user.SecurityStamp)
+            {
+                context.Fail("Session revoked. Please sign in again.");
+            }
         }
     };
 });

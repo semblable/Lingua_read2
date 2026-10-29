@@ -40,6 +40,7 @@ import type { AiProviderConfigField } from '../components/settings/AiProviderSet
 import DiscordSettings from '../components/settings/DiscordSettings';
 import HardcoverSettings from '../components/settings/HardcoverSettings';
 import DataManagementSettings from '../components/settings/DataManagementSettings';
+import PasswordSettings from '../components/settings/PasswordSettings';
 import SaveStatus from '../components/settings/SaveStatus';
 import './UserSettings.css';
 
@@ -822,6 +823,7 @@ const UserSettings = () => {
               <span className="settings-section-header-icon">{'\uD83D\uDDC4\uFE0F'}</span>
               <span>Data Management</span>
             </div>
+            <PasswordSettings />
             <DataManagementSettings
               audioStorage={audioStorage}
               loadingStorage={loadingStorage}

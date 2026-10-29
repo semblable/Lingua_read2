@@ -123,6 +123,11 @@ notepad .env
 
 Then change at least `POSTGRES_PASSWORD` and `JWT_KEY` to your own secure values (everything else works with the defaults).
 
+Set `LINGUAREAD_PASSWORD` before first startup. Alternatively, configure a random
+`LINGUAREAD_SETUP_TOKEN` and enter that operator token on the setup page with
+your chosen password. Outside Development, setup requires this token. Remove
+the token after setup and keep the initial connection trusted and local.
+
 > [!TIP]
 > **Generate a secure `JWT_KEY`:**
 > *   **Windows (PowerShell):**

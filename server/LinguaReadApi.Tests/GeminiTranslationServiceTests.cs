@@ -15,6 +15,19 @@ namespace LinguaReadApi.Tests;
 /// </summary>
 public class GeminiTranslationServiceTests
 {
+    [Theory]
+    [InlineData("")]
+    [InlineData("SET_IN_DOTENV")]
+    public async Task MissingKey_IsActionable_WithoutSendingText(string key)
+    {
+        var handler = new RecordingHandler();
+        using var http = new HttpClient(handler);
+        var service = CreateService(http, key);
+        var error = await Assert.ThrowsAsync<TranslationProviderNotConfiguredException>(() => service.TranslateSentenceAsync("fixture", "ES", "EN"));
+        Assert.Contains("Settings", error.Message);
+        Assert.Equal(0, handler.RequestCount);
+    }
+
     [Fact]
     public async Task Translate_SendsApiKeyHeader_AndOmitsKeyFromUrl()
     {

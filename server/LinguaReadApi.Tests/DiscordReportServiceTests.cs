@@ -470,8 +470,15 @@ public class DiscordReportServiceTests
         Assert.True(embed.TryGetProperty("timestamp", out _));
     }
 
-    [Fact]
-    public async Task SendReportForUserAsync_RejectsUnsupportedWebhookUrls()
+    [Theory]
+    [InlineData("https://example.com/not-a-webhook")]
+    [InlineData("http://discord.com/api/webhooks/test/test")]
+    [InlineData("https://discord.com:8443/api/webhooks/test/test")]
+    [InlineData("https://name:password@discord.com/api/webhooks/test/test")]
+    [InlineData("https://discord.com/api/webhooks/test/test#fragment")]
+    [InlineData("https://127.0.0.1/webhook/report/token")]
+    [InlineData("https://relay.example/webhook/report/token")]
+    public async Task SendReportForUserAsync_RejectsUnsupportedWebhookUrls(string url)
     {
         using var context = CreateDbContext();
         var service = new DiscordReportService(
@@ -484,7 +491,7 @@ public class DiscordReportServiceTests
         {
             UserId = Guid.NewGuid(),
             DiscordWeeklyReportEnabled = true,
-            DiscordWebhookUrl = "https://example.com/not-a-webhook",
+            DiscordWebhookUrl = url,
             DiscordWeeklyReportDayOfWeek = "Monday",
             DiscordWeeklyReportHourLocal = 8,
             DiscordTimezoneOffsetMinutes = 0
@@ -498,6 +505,24 @@ public class DiscordReportServiceTests
         Assert.False(result.Sent);
         Assert.False(result.Skipped);
         Assert.Equal("Discord webhook URL is invalid.", result.Reason);
+    }
+
+    [Fact]
+    public async Task SendReportForUserAsync_OnlyExplicitRelayHostAllowed()
+    {
+        using var context = CreateDbContext();
+        var handler = new CapturingHttpMessageHandler();
+        var service = new DiscordReportService(context, new StubHttpClientFactory(handler),
+            NullLogger<DiscordReportService>.Instance, new StubDatabaseAdminService(),
+            reportOptions: Microsoft.Extensions.Options.Options.Create(new DiscordReportOptions
+            { AllowedReportRelayHosts = ["relay.example"] }));
+        var settings = new UserSettings { UserId = Guid.NewGuid(), DiscordWebhookUrl = "https://relay.example/webhook/report/token" };
+        var result = await service.SendReportForUserAsync(settings, DateTime.UtcNow.AddDays(-7), DateTime.UtcNow, false, CancellationToken.None);
+        Assert.True(result.Sent);
+        Assert.Single(handler.Requests);
+        settings.DiscordWebhookUrl = "https://relay.example.attacker.test/webhook/report/token";
+        Assert.False((await service.SendReportForUserAsync(settings, DateTime.UtcNow.AddDays(-7), DateTime.UtcNow, false, CancellationToken.None)).Sent);
+        Assert.Single(handler.Requests);
     }
 
     [Fact]

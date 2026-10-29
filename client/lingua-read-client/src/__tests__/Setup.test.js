@@ -73,7 +73,7 @@ describe('Setup', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: /set password/i }));
 
-    await waitFor(() => expect(mockSetup).toHaveBeenCalledWith('SecurePass123'));
+    await waitFor(() => expect(mockSetup).toHaveBeenCalledWith('SecurePass123', undefined));
   });
 
   test('displays error on setup failure', async () => {

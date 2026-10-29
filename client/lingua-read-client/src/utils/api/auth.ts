@@ -46,7 +46,7 @@ export const authLogout = (): Promise<Response> => {
   });
 };
 
-export const authSetup = (password: string): Promise<Response> => {
+export const authSetup = (password: string, setupToken?: string): Promise<Response> => {
   return fetch(API_URL + '/auth/setup', {
     method: 'POST',
     credentials: 'include',
@@ -54,6 +54,6 @@ export const authSetup = (password: string): Promise<Response> => {
       'Content-Type': 'application/json',
       'X-Requested-With': 'XMLHttpRequest'
     },
-    body: JSON.stringify({ password })
+    body: JSON.stringify({ password, setupToken })
   });
 };

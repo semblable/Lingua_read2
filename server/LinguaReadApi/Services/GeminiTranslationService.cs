@@ -25,6 +25,7 @@ namespace LinguaReadApi.Services
         private static readonly TimeSpan RequestTimeout = TimeSpan.FromMinutes(5);
 
         private readonly HttpClient _httpClient;
+        private readonly bool _hasApiKey;
         private readonly string _baseUrl;
         private readonly string _primaryModel;
         private readonly string _fallbackModel;
@@ -33,7 +34,8 @@ namespace LinguaReadApi.Services
 
         public GeminiTranslationService(IConfiguration configuration, ILogger<GeminiTranslationService> logger, ILanguageService languageService, IHttpClientFactory httpClientFactory)
         {
-            var apiKey = configuration["Gemini:ApiKey"] ?? throw new ArgumentNullException("Gemini:ApiKey is missing in configuration");
+            var apiKey = configuration["Gemini:ApiKey"] ?? string.Empty;
+            _hasApiKey = !string.IsNullOrWhiteSpace(apiKey) && apiKey != "SET_IN_DOTENV";
             _httpClient = httpClientFactory.CreateClient();
             _httpClient.Timeout = RequestTimeout;
             // Authenticate via header instead of ?key= in the URL so the key can't leak
@@ -51,22 +53,32 @@ namespace LinguaReadApi.Services
 
         public Task<string> TranslateSentenceAsync(string text, string sourceLanguage, string targetLanguage)
         {
+            RequireApiKey();
             return TranslateAsync(text, sourceLanguage, targetLanguage, includeSentenceTags: false);
         }
 
         public Task<string> TranslateFullTextAsync(string text, string sourceLanguage, string targetLanguage)
         {
+            RequireApiKey();
             return TranslateAsync(text, sourceLanguage, targetLanguage, includeSentenceTags: true);
         }
 
         public Task<string> ExplainSentenceAsync(string text, string sourceLanguage, string targetLanguage)
         {
+            RequireApiKey();
             return ExplainAsync(text, sourceLanguage, targetLanguage);
         }
 
         public Task<string> TranslateSelectionWithContextAsync(string selectedText, string sentenceContext, string sourceLanguage, string targetLanguage)
         {
+            RequireApiKey();
             return TranslateSelectionWithContextInternalAsync(selectedText, sentenceContext, sourceLanguage, targetLanguage);
+        }
+
+        private void RequireApiKey()
+        {
+            if (!_hasApiKey)
+                throw new TranslationProviderNotConfiguredException("Gemini", "Sentence AI is not configured. Add an AI provider in Settings, or ask the server operator to set GEMINI_API_KEY. Reading, manual vocabulary saving, mining, and review remain available.");
         }
 
         private async Task<string> TranslateAsync(string text, string sourceLanguage, string targetLanguage, bool includeSentenceTags)
@@ -467,4 +479,4 @@ Strict instructions:
             }
         }
     }
-} 
+}

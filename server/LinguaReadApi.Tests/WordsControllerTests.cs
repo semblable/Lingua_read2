@@ -338,6 +338,60 @@ public class WordsControllerTests
         return userId;
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task GetPaginatedWords_SourceSummaryIsBoundedOwnedAndAvailableWithoutSentences(bool relational)
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        if (relational) await connection.OpenAsync();
+        var builder = new DbContextOptionsBuilder<AppDbContext>();
+        if (relational) builder.UseSqlite(connection);
+        else builder.UseInMemoryDatabase(Guid.NewGuid().ToString());
+        await using var context = new AppDbContext(builder.Options);
+        await context.Database.EnsureCreatedAsync();
+        var (userId, wordId) = SeedWord(context, status: 2);
+        var otherUserId = Guid.NewGuid();
+        context.Users.Add(new User { Id = otherUserId, UserName = "other", Email = "other@example.com" });
+        context.Words.Add(new Word { WordId = 2, UserId = userId, LanguageId = 1, Term = "perro", Status = 2 });
+        for (var id = 100; id < 120; id++)
+        {
+            context.Texts.Add(new Text { TextId = id, UserId = userId, LanguageId = 1, Title = $"Chapter {id}", Content = "El gato." });
+            context.TextWords.Add(new TextWord { WordId = wordId, TextId = id });
+        }
+        context.Texts.AddRange(
+            new Text { TextId = 120, UserId = userId, LanguageId = 1, Title = "Dog story", Content = "El perro." },
+            new Text { TextId = 999, UserId = otherUserId, LanguageId = 1, Title = "Private source", Content = "Private" });
+        context.TextWords.AddRange(
+            new TextWord { WordId = 2, TextId = 120 },
+            new TextWord { WordId = wordId, TextId = 999 });
+        var now = DateTime.UtcNow;
+        context.SrsPhrases.AddRange(
+            new SrsPhrase { WordId = wordId, UserId = userId, Sentence = "Un gato antiguo.", TextId = 100, TextTitle = "Old title", CreatedAt = now.AddDays(-2) },
+            new SrsPhrase { WordId = wordId, UserId = userId, Sentence = "Un gato.", TextTitle = "Deleted source", CreatedAt = now.AddDays(-1) },
+            new SrsPhrase { WordId = wordId, UserId = userId, Sentence = "Otro gato sin fuente.", CreatedAt = now },
+            new SrsPhrase { WordId = wordId, UserId = otherUserId, Sentence = "Private context", TextId = 999, TextTitle = "Private source", CreatedAt = now.AddDays(1) });
+        await context.SaveChangesAsync();
+        context.ChangeTracker.Clear();
+
+        var controller = CreateController(context, userId);
+        var compact = (await controller.GetPaginatedWordsByLanguage(1)).Value!;
+        Assert.Equal(2, compact.TotalCount);
+        var cat = compact.Items.Single(w => w.WordId == wordId);
+        Assert.Empty(cat.Sentences);
+        Assert.Equal(new[] { "Deleted source", "Chapter 119" }, cat.Sources.Select(s => s.TextTitle));
+        Assert.Null(cat.Sources[0].TextId);
+        Assert.Equal(119, cat.Sources[1].TextId);
+        var dog = compact.Items.Single(w => w.WordId == 2);
+        Assert.Empty(dog.Sentences);
+        Assert.Equal("Dog story", Assert.Single(dog.Sources).TextTitle);
+
+        var expanded = (await controller.GetPaginatedWordsByLanguage(1, includeSentences: true)).Value!;
+        var expandedCat = expanded.Items.Single(w => w.WordId == wordId);
+        Assert.Equal(3, expandedCat.Sentences.Count);
+        Assert.Equal(cat.Sources.Select(s => (s.TextId, s.TextTitle)), expandedCat.Sources.Select(s => (s.TextId, s.TextTitle)));
+    }
+
     [Fact]
     public async Task CreateWord_TermThatNormalizesToNothing_IsRejected()
     {

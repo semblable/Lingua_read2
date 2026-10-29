@@ -403,6 +403,13 @@ export const sentenceContainsTerm = (
   characterSubstitutions?: string | null
 ): boolean => splitSentenceAroundTerm(sentence, term, characterSubstitutions).some(part => part.isTerm);
 
+/** Choose context for the saved selection, rather than an unrelated sentence the reader has advanced to. */
+export const pickSentenceForTerm = (
+  term: string,
+  candidates: Array<string | null | undefined>,
+  characterSubstitutions?: string | null
+): string | null => candidates.find(sentence => sentence && sentenceContainsTerm(sentence, term, characterSubstitutions)) ?? null;
+
 export const parseCharacterSubstitutions = (
   str: string | null | undefined
 ): CharSubstitution[] => {

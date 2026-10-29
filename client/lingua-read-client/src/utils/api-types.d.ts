@@ -6606,7 +6606,12 @@ export interface components {
             name?: string | null;
         };
         TermSentenceDto: {
+            /** Format: int32 */
+            textId?: number | null;
+            textTitle?: string | null;
             sentence?: string | null;
+        };
+        TermSourceDto: {
             /** Format: int32 */
             textId?: number | null;
             textTitle?: string | null;
@@ -7287,6 +7292,7 @@ export interface components {
             /** Format: date-time */
             createdAt?: string;
             sentences?: components["schemas"]["TermSentenceDto"][] | null;
+            sources?: components["schemas"]["TermSourceDto"][] | null;
         };
         WordResponseDtoPagedResult: {
             items: components["schemas"]["WordResponseDto"][] | null;

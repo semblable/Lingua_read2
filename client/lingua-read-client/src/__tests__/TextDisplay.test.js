@@ -16,6 +16,7 @@ import {
   getTextSrt,
   getWordLinkingStatus,
   createWord,
+  mineSentence,
   updateWord,
   deleteWord,
   updateLastRead,
@@ -41,6 +42,7 @@ vi.mock('../utils/api', () => ({
   getTextSrt: vi.fn(),
   getWordLinkingStatus: vi.fn(),
   createWord: vi.fn(),
+  mineSentence: vi.fn(),
   updateWord: vi.fn(),
   deleteWord: vi.fn(),
   updateLastRead: vi.fn(),
@@ -187,6 +189,8 @@ describe('TextDisplay', () => {
     setTextBookmark.mockReset();
     setTextBookmark.mockResolvedValue({ textId: 1, sentenceIndices: [], lastSentenceIndex: null });
     createWord.mockReset();
+    mineSentence.mockReset();
+    mineSentence.mockResolvedValue({});
     updateWord.mockReset();
     deleteWord.mockReset();
     updateLastRead.mockReset();
@@ -237,6 +241,7 @@ describe('TextDisplay', () => {
   });
 
   afterEach(() => {
+    vi.unstubAllGlobals();
     vi.runOnlyPendingTimers();
     vi.useRealTimers();
     window.matchMedia = originalMatchMedia;
@@ -536,6 +541,29 @@ describe('TextDisplay', () => {
 
     await waitFor(() => expect(updateWord).toHaveBeenCalledWith(1, 2, 'hola, buenas'));
     await waitFor(() => expect(screen.queryByText(/Translation not saved yet/)).not.toBeInTheDocument());
+  });
+
+  test.each(['save', 'mine'])('%s uses the selected word context after the reader advances', async action => {
+    vi.stubGlobal('alert', vi.fn());
+    getText.mockResolvedValueOnce({
+      textId: 1, title: 'Sample Text', content: 'Hello world. Next sentence.',
+      languageId: null, languageCode: 'ES', languageName: 'Spanish', isAudioLesson: false, bookId: null,
+      words: action === 'mine' ? [{ wordId: 9, term: 'Hello', status: 2, translation: 'hola' }] : []
+    });
+    createWord.mockResolvedValue({ wordId: 9, term: 'Hello', status: 3, translation: '' });
+    renderTextDisplay({ sentenceMode: true, sentenceTtsEnabled: false, autoTranslateWords: false });
+    fireEvent.click(await screen.findByText('Hello'));
+    expect(screen.getByRole('heading', { name: 'Hello' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Next', exact: true }));
+    await screen.findByText('sentence');
+
+    if (action === 'mine') {
+      fireEvent.click(screen.getByRole('button', { name: 'Mine', exact: true }));
+      await waitFor(() => expect(mineSentence).toHaveBeenCalledWith(9, 'Hello world.', 1, 'Sample Text'));
+    } else {
+      fireEvent.click(screen.getByRole('button', { name: '3', exact: true }));
+      await waitFor(() => expect(createWord).toHaveBeenCalledWith(1, 'Hello', 3, expect.any(String), 'Hello world.'));
+    }
   });
 
   test('soft-hyphenated European words render as single clickable words', async () => {

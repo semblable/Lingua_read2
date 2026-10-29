@@ -6,6 +6,8 @@ import Papa from 'papaparse';
 import type { Language } from '../utils/api/languages';
 import type { Word } from '../utils/api/words';
 import TermSentences from '../components/TermSentences';
+import TermSources from '../components/TermSources';
+import './TermsPage.css';
 
 const statusLabels: Record<number, string> = {
     1: 'New', 2: 'Learning', 3: 'Familiar', 4: 'Advanced', 5: 'Known', 6: 'Ignored'
@@ -297,8 +299,6 @@ const TermsPage = () => {
 
     // Pagination Component
     const renderPagination = () => {
-        if (totalPages <= 1) return null;
-
         let items = [];
         const maxPagesToShow = 5;
         let startPage = Math.max(1, currentPage - Math.floor(maxPagesToShow / 2));
@@ -340,20 +340,19 @@ const TermsPage = () => {
         }
 
         return (
-            <div className="d-flex justify-content-between align-items-center mt-3">
+            <div className="terms-pagination">
                 <div>
                     Showing {Math.min((currentPage - 1) * pageSize + 1, totalItems)} to {Math.min(currentPage * pageSize, totalItems)} of {totalItems} terms
                 </div>
-                <Pagination size="sm" className="mb-0">{items}</Pagination>
+                {totalPages > 1 && <Pagination size="sm" className="mb-0">{items}</Pagination>}
             </div>
         );
     };
 
 
     return (
-        <Container fluid className="mt-4">
+        <Container fluid className="terms-page mt-4">
             <h2>My Terms</h2>
-            <hr />
 
             <Row className="mb-3 align-items-end g-2">
                 <Col md={3} xs={12} sm={6}>
@@ -373,10 +372,10 @@ const TermsPage = () => {
                         </Form.Select>
                     </Form.Group>
                 </Col>
-                <Col md={3} xs={12} sm={6}>
+                <Col md={5} xs={12} sm={6}>
                     <Form.Group>
                         <Form.Label>Status Filter</Form.Label>
-                        <div>
+                        <div className="terms-status-filters">
                             {[1, 2, 3, 4, 5, 6].map(status => (
                                 <Form.Check
                                     key={status}
@@ -393,7 +392,7 @@ const TermsPage = () => {
                         </div>
                     </Form.Group>
                 </Col>
-                <Col md={2} xs={12} sm={6}>
+                <Col md={4} xs={12} sm={6}>
                     <Form.Group controlId="searchTerm">
                         <Form.Label>Search</Form.Label>
                         <Form.Control
@@ -405,7 +404,17 @@ const TermsPage = () => {
                         />
                     </Form.Group>
                 </Col>
-                <Col md={4} xs={12} sm={6} className="text-sm-end mt-2 mt-sm-0 d-flex flex-wrap justify-content-start justify-content-sm-end align-items-end gap-2">
+                <Col xs={12} className="mt-3 d-flex flex-wrap align-items-center gap-3">
+                    <div className="terms-display-options">
+                        <Form.Check type="switch" id="terms-show-sentences"
+                            label="Show sentences" checked={showSentences}
+                            onChange={event => {
+                                const checked = event.target.checked;
+                                setShowSentences(checked);
+                                localStorage.setItem('termsShowSentences', String(checked));
+                            }} />
+                    </div>
+                    <div className="terms-file-actions">
                     <input
                         type="file"
                         ref={fileInputRef}
@@ -441,15 +450,15 @@ const TermsPage = () => {
                             Export All for Language
                         </Dropdown.Item>
                     </DropdownButton>
-
+                    </div>
                 </Col>
             </Row>
 
-            <Form.Text className="d-block text-muted mt-2 mb-2">
+            <div className="terms-export-help">
                 {exportFormat === 'context' && 'One row per mined context; terms without context are included. '}
                 {exportFormat === 'anki' && 'One note per term with all mined contexts. Create the LinguaRead Context note type using the instructions below. '}
                 Exports use language and status choices, across all pages; search does not limit exports.
-            </Form.Text>
+            </div>
             {exportFormat === 'anki' && <details className="small mb-3">
                 <summary>Anki import instructions</summary>
                 <p>Create a note type named <strong>LinguaRead Context</strong> with fields in this order:
@@ -460,14 +469,6 @@ const TermsPage = () => {
                     {' '}Update existing notes when importing again. Media and LinguaRead review scheduling are not exported;
                     {' '}Anki schedules new cards independently. This is a one-way export.</p>
             </details>}
-
-            <Form.Check type="switch" id="terms-show-sentences" className="mb-3"
-                label="Show sentences" checked={showSentences}
-                onChange={event => {
-                    const checked = event.target.checked;
-                    setShowSentences(checked);
-                    localStorage.setItem('termsShowSentences', String(checked));
-                }} />
 
             {loading && terms.length === 0 && ( /* Only show full spinner if no data yet or language switching */
                 <div className="text-center my-4">
@@ -483,55 +484,71 @@ const TermsPage = () => {
 
             {(!loading || terms.length > 0) && !error && selectedLanguage && (
                 <>
-                    <div style={{ minHeight: '400px', position: 'relative' }}>
+                    <div className="terms-table-wrap">
                         {loading && ( /* Overlay spinner for updates */
-                            <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(255,255,255,0.6)', zIndex: 10, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+                            <div className="terms-loading" role="status" aria-label="Updating terms">
                                 <Spinner animation="border" size="sm" />
                             </div>
                         )}
-                        <Table striped bordered hover responsive size="sm" aria-busy={loading}>
+                        <Table hover responsive className={`terms-table${showSentences ? ' with-sentences' : ''}`} aria-busy={loading}>
+                            <colgroup>
+                                <col style={{ width: showSentences ? '15%' : '22%' }} />
+                                <col style={{ width: showSentences ? '16%' : '24%' }} />
+                                {showSentences && <col />}
+                                <col style={showSentences ? { width: '18%' } : undefined} />
+                                <col style={{ width: '6rem' }} />
+                                <col style={{ width: '8rem' }} />
+                                <col style={{ width: '3.5rem' }} />
+                            </colgroup>
                             <thead>
                                 <tr>
-                                    <th onClick={() => handleSort('term')} style={{ cursor: 'pointer' }}>
-                                        Term{renderSortIndicator('term')}
+                                    <th scope="col" aria-sort={sortBy.startsWith('term_') ? (sortBy.endsWith('_asc') ? 'ascending' : 'descending') : 'none'}>
+                                        <button className="terms-sort-button" onClick={() => handleSort('term')}>Term<span aria-hidden="true">{renderSortIndicator('term')}</span></button>
                                     </th>
-                                    <th>Translation</th>
-                                    <th onClick={() => handleSort('status')} style={{ cursor: 'pointer', width: '120px' }}>
-                                        Status{renderSortIndicator('status')}
+                                    <th scope="col">Translation</th>
+                                    {showSentences && <th scope="col">Sentence</th>}
+                                    <th scope="col">Source</th>
+                                    <th scope="col" aria-sort={sortBy.startsWith('status_') ? (sortBy.endsWith('_asc') ? 'ascending' : 'descending') : 'none'}>
+                                        <button className="terms-sort-button" onClick={() => handleSort('status')}>Status<span aria-hidden="true">{renderSortIndicator('status')}</span></button>
                                     </th>
-                                    <th onClick={() => handleSort('created')} style={{ cursor: 'pointer', width: '180px' }}>
-                                        Date Added{renderSortIndicator('created')}
+                                    <th scope="col" aria-sort={sortBy.startsWith('created_') ? (sortBy.endsWith('_asc') ? 'ascending' : 'descending') : 'none'}>
+                                        <button className="terms-sort-button" onClick={() => handleSort('created')}>Added<span aria-hidden="true">{renderSortIndicator('created')}</span></button>
                                     </th>
-                                    <th style={{ width: '100px' }}>Actions</th>
+                                    <th scope="col"><span className="visually-hidden">Actions</span></th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {terms.length > 0 ? (
                                     terms.map(term => (
                                         <tr key={term.wordId}>
-                                            <td>{term.term}</td>
+                                            <th scope="row">{term.term}</th>
+                                            <td>{term.translation || <span className="terms-empty">—</span>}</td>
+                                            {showSentences && <td><TermSentences term={term}
+                                                characterSubstitutions={languages.find(lang => String(lang.languageId) === selectedLanguage)?.characterSubstitutions} /></td>}
+                                            <td><TermSources sources={term.sources} /></td>
+                                            <td>{getStatusBadge(term.status ?? 0)}</td>
+                                            <td className="terms-date">{term.createdAt && <time dateTime={term.createdAt} title={new Date(term.createdAt).toLocaleString()}>
+                                                {new Date(term.createdAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}
+                                            </time>}</td>
                                             <td>
-                                                {term.translation}
-                                                {showSentences && <TermSentences term={term}
-                                                    characterSubstitutions={languages.find(lang => String(lang.languageId) === selectedLanguage)?.characterSubstitutions} />}
-                                            </td>
-                                            <td className="text-center">{getStatusBadge(term.status ?? 0)}</td>
-                                            <td>{term.createdAt ? new Date(term.createdAt).toLocaleString() : ''}</td>
-                                            <td className="text-center">
-                                                <Button
-                                                    variant="outline-danger"
-                                                    size="sm"
-                                                    onClick={() => handleDeleteTerm(term)}
-                                                    disabled={loading || deletingWordId === term.wordId || importLoading}
-                                                >
-                                                    {deletingWordId === term.wordId ? 'Deleting...' : 'Delete'}
-                                                </Button>
+                                                <Dropdown>
+                                                    <Dropdown.Toggle id={`term-actions-${term.wordId}`} variant="link"
+                                                        className="terms-actions-toggle" aria-label={`Actions for ${term.term}`}
+                                                        disabled={loading || deletingWordId === term.wordId || importLoading}>
+                                                        {deletingWordId === term.wordId ? <Spinner size="sm" animation="border" /> : <span aria-hidden="true">⋯</span>}
+                                                    </Dropdown.Toggle>
+                                                    <Dropdown.Menu align="end" popperConfig={{ strategy: 'fixed' }}>
+                                                        <Dropdown.Item as="button" className="text-danger"
+                                                            disabled={loading || deletingWordId === term.wordId || importLoading}
+                                                            onClick={() => handleDeleteTerm(term)}>Delete term</Dropdown.Item>
+                                                    </Dropdown.Menu>
+                                                </Dropdown>
                                             </td>
                                         </tr>
                                     ))
                                 ) : (
                                     <tr>
-                                        <td colSpan={5} className="text-center">No terms found for the selected criteria.</td>
+                                        <td colSpan={showSentences ? 7 : 6} className="text-center">No terms found for the selected criteria.</td>
                                     </tr>
                                 )}
                             </tbody>

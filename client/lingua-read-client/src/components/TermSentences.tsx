@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Button } from 'react-bootstrap';
 import { Link } from 'react-router-dom';
 import type { Word } from '../utils/api/words';
-import { splitSentenceAroundTerm } from '../utils/readerText';
+import { sentenceContainsTerm, splitSentenceAroundTerm } from '../utils/readerText';
 
 type Props = {
     term: Word;
@@ -11,9 +11,10 @@ type Props = {
 
 export default function TermSentences({ term, characterSubstitutions }: Props) {
     const [expanded, setExpanded] = useState(false);
-    const sentences = term.sentences ?? [];
+    const sentences = (term.sentences ?? []).filter(context =>
+        sentenceContainsTerm(context.sentence ?? '', term.term ?? '', characterSubstitutions));
     if (sentences.length === 0) {
-        return <div className="small text-body-secondary mt-2">No saved sentence yet.</div>;
+        return <span className="terms-empty" aria-label="No matching saved sentence">—</span>;
     }
 
     const firstParts = splitSentenceAroundTerm(sentences[0].sentence ?? '', term.term ?? '', characterSubstitutions);
@@ -33,20 +34,20 @@ export default function TermSentences({ term, characterSubstitutions }: Props) {
             .map((part, i) => part.isTerm ? <mark key={i}>{part.text}</mark> : part.text);
     };
     return (
-        <div className="small mt-2" style={{ maxWidth: '48rem', overflowWrap: 'anywhere' }}>
+        <div className="terms-sentences">
             {(expanded ? sentences : sentences.slice(0, 1)).map((context, index) => (
-                <div key={index} className="border-start ps-2 mb-2">
+                <div key={index} className="terms-sentence">
                     <p className="mb-1">
                         {renderSentence(context.sentence ?? '')}
                     </p>
-                    <div className="text-body-secondary">
+                    {(context.textTitle || context.textId != null) && <div className="terms-sentence-source">
                         {context.textTitle && <span>{context.textTitle}</span>}
                         {context.textId != null && (
                             <Link className={context.textTitle ? 'ms-2' : undefined} to={`/texts/${context.textId}`}>
                                 Open in reader<span className="visually-hidden">: {context.textTitle || term.term}</span>
                             </Link>
                         )}
-                    </div>
+                    </div>}
                 </div>
             ))}
             {canExpand && (

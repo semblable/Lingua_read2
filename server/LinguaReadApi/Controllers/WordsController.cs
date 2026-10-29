@@ -421,30 +421,59 @@ namespace LinguaReadApi.Controllers
                 })
                 .ToListAsync();
 
-            if (includeSentences && items.Count > 0)
+            if (items.Count > 0)
             {
                 // Batch context for this page, rather than making a query per term.
                 var wordIds = items.Select(w => w.WordId).ToList();
-                var phrases = await _context.SrsPhrases.AsNoTracking()
-                    .Where(p => p.UserId == userId && wordIds.Contains(p.WordId))
+                var phraseQuery = _context.SrsPhrases.AsNoTracking()
+                    .Where(p => p.UserId == userId && wordIds.Contains(p.WordId));
+                var sourcePhrases = phraseQuery.Where(p => (p.Text != null && p.Text.UserId == userId)
+                    || (p.TextTitle != null && p.TextTitle.Trim() != ""));
+                if (!includeSentences)
+                {
+                    // One source summary per term; sentence bodies and older examples stay opt-in.
+                    phraseQuery = sourcePhrases.Where(p => p.SrsPhraseId == sourcePhrases
+                        .Where(other => other.WordId == p.WordId)
+                        .OrderByDescending(other => other.CreatedAt).ThenByDescending(other => other.SrsPhraseId)
+                        .Select(other => other.SrsPhraseId).FirstOrDefault());
+                }
+                var phrases = await phraseQuery
                     .OrderByDescending(p => p.CreatedAt).ThenByDescending(p => p.SrsPhraseId)
                     .Select(p => new
                     {
                         p.WordId,
-                        Context = new TermSentenceDto
-                        {
-                            Sentence = p.Sentence,
-                            // A deleted or inaccessible source keeps its saved title, without a link.
-                            TextId = p.Text != null && p.Text.UserId == userId ? p.TextId : null,
-                            TextTitle = p.Text != null && p.Text.UserId == userId ? p.Text.Title : p.TextTitle
-                        }
+                        // Avoid returning sentence bodies when only source information is needed.
+                        Sentence = includeSentences ? p.Sentence : null,
+                        // A deleted or inaccessible source keeps its saved title, without a link.
+                        TextId = p.Text != null && p.Text.UserId == userId ? p.TextId : null,
+                        TextTitle = p.Text != null && p.Text.UserId == userId ? p.Text.Title : p.TextTitle
                     })
                     .ToListAsync();
                 // Database TRIM functions differ on tabs/newlines; filter the scoped results in .NET.
-                var byWord = phrases.Where(p => !string.IsNullOrWhiteSpace(p.Context.Sentence))
-                    .ToLookup(p => p.WordId, p => p.Context);
+                var byWord = phrases.Where(p => !string.IsNullOrWhiteSpace(p.Sentence))
+                    .ToLookup(p => p.WordId, p => new TermSentenceDto
+                    {
+                        Sentence = p.Sentence!, TextId = p.TextId, TextTitle = p.TextTitle
+                    });
+
+                // Terms without a mined sentence can still have a source in the reader's word links.
+                var latestTextIds = _context.TextWords.AsNoTracking()
+                    .Where(tw => wordIds.Contains(tw.WordId) && tw.Word.UserId == userId && tw.Text.UserId == userId)
+                    .GroupBy(tw => tw.WordId)
+                    .Select(group => new { WordId = group.Key, TextId = group.Max(tw => tw.TextId) });
+                var linkedSources = await (from latest in latestTextIds
+                    join text in _context.Texts.AsNoTracking().Where(t => t.UserId == userId) on latest.TextId equals text.TextId
+                    select new { latest.WordId, TextId = (int?)text.TextId, TextTitle = (string?)text.Title }).ToListAsync();
+                var sourcesByWord = phrases.Where(p => p.TextId.HasValue || !string.IsNullOrWhiteSpace(p.TextTitle))
+                    .GroupBy(p => p.WordId).Select(group => group.First())
+                    .Select(p => new { p.WordId, p.TextId, p.TextTitle })
+                    .Concat(linkedSources)
+                    .ToLookup(p => p.WordId, p => new TermSourceDto { TextId = p.TextId, TextTitle = p.TextTitle });
                 foreach (var item in items)
+                {
                     item.Sentences = byWord[item.WordId].ToList();
+                    item.Sources = sourcesByWord[item.WordId].DistinctBy(s => (s.TextId, s.TextTitle)).ToList();
+                }
             }
 
             var totalPages = (int)Math.Ceiling(totalCount / (double)pageSize);
@@ -1012,12 +1041,17 @@ SET ""Translation"" = EXCLUDED.""Translation"",
         public bool IsNew { get; set; }
         public DateTime CreatedAt { get; set; }
         public List<TermSentenceDto> Sentences { get; set; } = new();
+        public List<TermSourceDto> Sources { get; set; } = new();
     }
 
-    public class TermSentenceDto
+    public class TermSourceDto
     {
-        public string Sentence { get; set; } = string.Empty;
         public int? TextId { get; set; }
         public string? TextTitle { get; set; }
+    }
+
+    public class TermSentenceDto : TermSourceDto
+    {
+        public string Sentence { get; set; } = string.Empty;
     }
 } // End of namespace

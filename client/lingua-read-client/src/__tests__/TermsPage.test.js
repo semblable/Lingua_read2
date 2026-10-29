@@ -1,5 +1,5 @@
 import React from 'react';
-import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import '@testing-library/jest-dom';
 import TermsPage from '../pages/TermsPage';
@@ -114,8 +114,9 @@ describe('TermsPage', () => {
     fireEvent.change(select, { target: { value: '1' } });
     await screen.findByText('gato');
 
-    const deleteButtons = screen.getAllByRole('button', { name: /^Delete$/i });
-    fireEvent.click(deleteButtons[0]);
+    expect(screen.queryByRole('button', { name: 'Delete term' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Actions for gato' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Delete term' }));
 
     await waitFor(() => expect(deleteWord).toHaveBeenCalledWith(11));
     // Initial fetch + refetch after delete
@@ -185,7 +186,7 @@ describe('TermsPage', () => {
 
   test('optionally shows highlighted sentences, expands examples, and remembers the preference', async () => {
     getPaginatedWordsByLanguage.mockResolvedValue({
-      items: [{ ...mockTerms[0], sentences: [
+      items: [{ ...mockTerms[0], sources: [{ textTitle: 'Animal stories', textId: 42 }], sentences: [
         { sentence: 'El Gato duerme.', textTitle: 'Animal stories', textId: 42 },
         { sentence: 'Veo un gato.', textTitle: 'Deleted source', textId: null }
       ] }, mockTerms[1]], totalCount: 2, totalPages: 1
@@ -194,15 +195,16 @@ describe('TermsPage', () => {
     fireEvent.change(await screen.findByLabelText(/^Language$/i), { target: { value: '1' } });
     await screen.findByText('gato');
     expect(screen.getByLabelText('Show sentences')).not.toBeChecked();
-    expect(screen.queryByText('Animal stories')).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Animal stories' })).toHaveAttribute('href', '/texts/42');
+    expect(screen.queryByRole('columnheader', { name: 'Sentence' })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByLabelText('Show sentences'));
-    const title = await screen.findByText('Animal stories');
+    const title = await screen.findByRole('link', { name: 'Animal stories' });
     expect(title).toBeInTheDocument();
     expect(screen.getByText('Gato').tagName).toBe('MARK');
-    expect(screen.getByRole('link', { name: /Open in reader/ })).toHaveAttribute('href', '/texts/42');
+    expect(screen.getByRole('columnheader', { name: 'Sentence' })).toBeInTheDocument();
     expect(screen.queryByText('Deleted source')).not.toBeInTheDocument();
-    expect(screen.getByText('No saved sentence yet.')).toBeInTheDocument();
+    expect(screen.getByLabelText('No matching saved sentence')).toHaveTextContent('—');
     expect(getPaginatedWordsByLanguage).toHaveBeenLastCalledWith('1', 1, 20, [], 'created_desc', '', true);
 
     fireEvent.click(screen.getByRole('button', { name: 'Expand sentences for gato' }));
@@ -214,9 +216,10 @@ describe('TermsPage', () => {
     view.unmount();
     renderPage();
     expect(screen.getByLabelText('Show sentences')).toBeChecked();
-    await screen.findByText('Animal stories');
+    await screen.findByRole('link', { name: 'Animal stories' });
     fireEvent.click(screen.getByLabelText('Show sentences'));
-    await waitFor(() => expect(screen.queryByText('Animal stories')).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByRole('columnheader', { name: 'Sentence' })).not.toBeInTheDocument());
+    expect(screen.getByRole('link', { name: 'Animal stories' })).toBeInTheDocument();
     expect(localStorage.getItem('termsShowSentences')).toBe('false');
   });
 
@@ -306,10 +309,72 @@ describe('TermsPage', () => {
     await act(async () => { rejectContext(new Error('stale failure')); });
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     expect(screen.getByRole('table')).toHaveAttribute('aria-busy', 'true');
-    expect(screen.getAllByRole('button', { name: 'Delete' })[0]).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Actions for gato' })).toBeDisabled();
 
     await act(async () => { resolveCurrent({ items: mockTerms, totalCount: 2, totalPages: 1 }); });
     expect(screen.getByRole('table')).toHaveAttribute('aria-busy', 'false');
     expect(screen.getByText('gato')).toBeInTheDocument();
+  });
+
+  test('prefers matching saved sentences and keeps unrelated context out of the examples', async () => {
+    localStorage.setItem('lastSelectedLanguage', '1');
+    localStorage.setItem('termsShowSentences', 'true');
+    getPaginatedWordsByLanguage.mockResolvedValue({
+      items: [{ ...mockTerms[0], sources: [{ textTitle: 'Newest source B', textId: 2 }], sentences: [
+        { sentence: 'Una frase sin este animal.', textTitle: 'Newest source B', textId: 2 },
+        { sentence: 'El Gato duerme.', textTitle: 'Matching source A', textId: 1 }
+      ] }, { ...mockTerms[1], sentences: [{ sentence: 'Otra frase sin relación.' }] }], totalCount: 2, totalPages: 1
+    });
+    renderPage();
+    expect((await screen.findByText('Gato')).tagName).toBe('MARK');
+    expect(screen.queryByText('Una frase sin este animal.')).not.toBeInTheDocument();
+    expect(screen.queryByText('Otra frase sin relación.')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('No matching saved sentence')).toBeInTheDocument();
+    const sentenceCell = screen.getByText('Gato').closest('td');
+    expect(within(sentenceCell).getByText('Matching source A')).toBeInTheDocument();
+    expect(within(sentenceCell).queryByText('Newest source B')).not.toBeInTheDocument();
+    expect(within(sentenceCell).getByRole('link', { name: /Open in reader/ })).toHaveAttribute('href', '/texts/1');
+  });
+
+  test('shows source links and deleted source titles with sentences hidden', async () => {
+    localStorage.setItem('lastSelectedLanguage', '1');
+    getPaginatedWordsByLanguage.mockResolvedValue({
+      items: [{ ...mockTerms[0], sources: [
+        { textId: 42, textTitle: 'Animal stories' },
+        { textId: null, textTitle: 'Deleted source' }
+      ] }, mockTerms[1]], totalCount: 2, totalPages: 1
+    });
+    renderPage();
+    expect(await screen.findByRole('columnheader', { name: 'Source' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Animal stories' })).toHaveAttribute('href', '/texts/42');
+    fireEvent.click(screen.getByText('1 more source'));
+    expect(screen.getByText('Deleted source').closest('a')).toBeNull();
+    expect(screen.getByLabelText('No source')).toHaveTextContent('—');
+    expect(screen.queryByRole('columnheader', { name: 'Sentence' })).not.toBeInTheDocument();
+  });
+
+  test('uses compact dates with precise timestamps and accessible sorting', async () => {
+    localStorage.setItem('lastSelectedLanguage', '1');
+    renderPage();
+    const row = (await screen.findByText('gato')).closest('tr');
+    const date = row.querySelector('time');
+    expect(date).toHaveAttribute('datetime', mockTerms[0].createdAt);
+    expect(date).toHaveAttribute('title', new Date(mockTerms[0].createdAt).toLocaleString());
+    expect(date.textContent).not.toMatch(/\d+:\d+/);
+    expect(within(row).getAllByRole('cell')).toHaveLength(5);
+    fireEvent.click(screen.getByRole('button', { name: 'Term' }));
+    await waitFor(() => expect(getPaginatedWordsByLanguage).toHaveBeenLastCalledWith('1', 1, 20, [], 'term_asc', '', false));
+    expect(screen.getByRole('columnheader', { name: 'Term' })).toHaveAttribute('aria-sort', 'ascending');
+    expect(screen.getByText('Showing 1 to 2 of 2 terms')).toBeInTheDocument();
+  });
+
+  test.each([false, true])('empty table spans every visible column (sentences: %s)', async show => {
+    localStorage.setItem('lastSelectedLanguage', '1');
+    localStorage.setItem('termsShowSentences', String(show));
+    getPaginatedWordsByLanguage.mockResolvedValue({ items: [], totalCount: 0, totalPages: 0 });
+    renderPage();
+    const emptyCell = await screen.findByText('No terms found for the selected criteria.');
+    expect(emptyCell).toHaveAttribute('colspan', show ? '7' : '6');
+    expect(screen.getByText('Showing 0 to 0 of 0 terms')).toBeInTheDocument();
   });
 });

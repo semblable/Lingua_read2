@@ -39,6 +39,7 @@ import {
   clampWordSpansToSingleSentence,
   buildPhraseSelectionFromSpans,
   buildPhraseSelectionFromText,
+  pickSentenceForTerm,
   buildPhraseSelectionText
 } from '../utils/readerText';
 import type { SentenceSegment, PhraseSelectionState } from '../utils/readerText';
@@ -400,14 +401,15 @@ const TextDisplay = () => {
   const readSentenceContextFromNode = useCallback((node: Node | null) => {
     const container = textContentRef.current;
     let currentNode: Node | null = node;
-    while (currentNode && currentNode !== container) {
+    while (currentNode) {
       if (
         currentNode.nodeType === Node.ELEMENT_NODE &&
-        (currentNode as HTMLElement).classList?.contains('sentence')
+        (currentNode as HTMLElement).matches?.('.sentence, .sentence-mode-text, .srt-line, .reader-title-line')
       ) {
         const text = normalizeReaderText(currentNode.textContent);
         return text ? clampContext(text) : '';
       }
+      if (currentNode === container) break;
       currentNode = currentNode.parentNode;
     }
     return '';
@@ -1688,7 +1690,8 @@ const TextDisplay = () => {
             console.error(`[Keyboard Shortcut] Failed to fetch translation for ${term}:`, err);
           }
         }
-        const sentenceToMine = currentSentenceSegment?.text;
+        const sentenceToMine = pickSentenceForTerm(term,
+          [selectedWordAiContext, activePhraseSelection?.sentenceContext, currentSentenceSegment?.text], languageConfig?.characterSubstitutions);
         if (text?.textId == null) return;
         createWord(text.textId, term, status, translationToUse, sentenceToMine)
           .then(newWordData => {
@@ -1705,7 +1708,7 @@ const TextDisplay = () => {
           .catch(err => console.error(`[Keyboard Shortcut] Failed to create word ${term}:`, err));
       }
     },
-    [getWordData, text?.languageCode, text?.textId, translationTargetLanguageCode, setWords, selectedWord, displayedWord?.term, currentSentenceSegment?.text, globalSettings.autoTranslateWords, triggerAutoTranslation, setTranslation]
+    [getWordData, text?.languageCode, text?.textId, translationTargetLanguageCode, setWords, selectedWord, displayedWord?.term, currentSentenceSegment?.text, selectedWordAiContext, activePhraseSelection?.sentenceContext, languageConfig?.characterSubstitutions, globalSettings.autoTranslateWords, triggerAutoTranslation, setTranslation]
   );
 
   useReaderKeyboard({
@@ -1742,14 +1745,16 @@ const TextDisplay = () => {
         setDisplayedWord((prev) => (prev?.term === selectedWord ? { ...prev, status: numericStatus, translation: translationToSave } : prev));
       } else {
         if (text?.textId == null) return;
-        const newWordData = (await createWord(text.textId, selectedWord, numericStatus, translationToSave, currentSentenceSegment?.text)) as Record<string, unknown> | null;
+        const sentenceToMine = pickSentenceForTerm(termToSave,
+          [selectedWordAiContext, activePhraseSelection?.sentenceContext, currentSentenceSegment?.text], languageConfig?.characterSubstitutions);
+        const newWordData = (await createWord(text.textId, termToSave, numericStatus, translationToSave, sentenceToMine)) as Record<string, unknown> | null;
         setWords((prevWords: any[]) => [...prevWords, newWordData]);
         setDisplayedWord({ ...(newWordData || {}), isNew: false });
       }
       setSaveSuccess(true); setTimeout(() => setSaveSuccess(false), 2000);
     } catch (error) { console.error('Error saving word:', error); alert(`Failed to save word: ${error instanceof Error ? error.message : ''}`); }
     finally { setProcessingWord(false); }
-  }, [selectedWord, displayedWord, processingWord, isTranslating, translation, text?.textId, currentSentenceSegment?.text, getWordData, setWords, setDisplayedWord, setSaveSuccess, setProcessingWord]); // createWord/updateWord are module imports (stable); omit to satisfy exhaustive-deps
+  }, [selectedWord, displayedWord, processingWord, isTranslating, translation, text?.textId, currentSentenceSegment?.text, selectedWordAiContext, activePhraseSelection?.sentenceContext, languageConfig?.characterSubstitutions, getWordData, setWords, setDisplayedWord, setSaveSuccess, setProcessingWord]); // createWord/updateWord are module imports (stable); omit to satisfy exhaustive-deps
 
   const handleDeleteWord = useCallback(async () => {
     const wordToDelete = displayedWord?.wordId ? displayedWord : getWordData(selectedWord);
@@ -1980,11 +1985,12 @@ const TextDisplay = () => {
   }, [summaryTargetLanguage, text?.content, text?.languageCode, text?.textId]);
 
   const handleMineSentence = useCallback(async () => {
-    const sentenceToMine = currentSentenceSegment?.text;
+    const sentenceToMine = pickSentenceForTerm(selectedWord || displayedWord?.term || '',
+      [selectedWordAiContext, activePhraseSelection?.sentenceContext, currentSentenceSegment?.text], languageConfig?.characterSubstitutions);
     const wordId = displayedWord?.wordId;
 
     if (!wordId || !sentenceToMine) {
-      alert("Please select an existing tracked word and ensure a sentence is focused.");
+      alert("Please select an existing tracked word with a matching sentence.");
       return;
     }
 
@@ -1997,7 +2003,7 @@ const TextDisplay = () => {
       console.error("Failed to mine sentence:", err);
       alert(`Failed to mine sentence: ${(err as Error)?.message}`);
     }
-  }, [displayedWord, currentSentenceSegment, text]);
+  }, [displayedWord, selectedWord, selectedWordAiContext, activePhraseSelection?.sentenceContext, currentSentenceSegment?.text, languageConfig?.characterSubstitutions, text]);
 
   const handleTranslateUnknownWords = async ({ silent = false } = {}) => {
     // Saved rows are merged into the word list; the list's own load, if still running, would

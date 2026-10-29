@@ -9,6 +9,7 @@ import {
   normalizeTokenizerInput,
   splitSentenceAroundTerm,
   sentenceContainsTerm,
+  pickSentenceForTerm,
   splitTextIntoSentenceSegments,
   LATIN_WORD_CHARACTERS,
   DEFAULT_LANGUAGE_WORD_CHARACTERS
@@ -18,6 +19,17 @@ import {
 // stays readable (a literal soft hyphen is indistinguishable from nothing).
 const SHY = String.fromCharCode(0x00ad);
 const ACUTE = String.fromCharCode(0x0301);
+
+describe('pickSentenceForTerm', () => {
+  test('uses the selected phrase context even after playback moves to another sentence', () => {
+    expect(pickSentenceForTerm('brave world', ['Hello brave world.', 'Next sentence.'])).toBe('Hello brave world.');
+  });
+  test('skips unrelated contexts, normalizes matching, and omits context when no candidate matches', () => {
+    expect(pickSentenceForTerm('reparava', [null, 'Outra frase.', `Ele repa${SHY}rava.`])).toBe(`Ele repa${SHY}rava.`);
+    expect(pickSentenceForTerm("d'áfrica", ['Vinha d´África.'], "´='")).toBe('Vinha d´África.');
+    expect(pickSentenceForTerm('gato', ['Outra frase.', undefined, ''])).toBeNull();
+  });
+});
 const DIAERESIS = String.fromCharCode(0x0308);
 const BACKSLASH = String.fromCharCode(92);
 

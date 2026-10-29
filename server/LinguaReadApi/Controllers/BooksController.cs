@@ -2195,8 +2195,14 @@ namespace LinguaReadApi.Controllers
                     // counter and credits reading volume/activity — not TotalTextsCompleted.
                     bool isFirstCompletion = !text.IsFinished;
 
-                    // Count all words in the text (not just unique words)
+                    // Preserve the legacy activity unit, independently of coverage.
+                    // As on the standalone route, initial sentence credit is already
+                    // earned. Only a later intentional reread earns the full volume.
                     int totalWordCount = WordCountUtility.CountTotalWords(text.Content);
+                    var sentenceProgress = await _context.UserSentenceProgresses.FindAsync(userId, text.TextId);
+                    int completionWordCredit = isFirstCompletion
+                        ? Math.Max(totalWordCount - (sentenceProgress?.CreditedWordCount ?? 0), 0)
+                        : totalWordCount;
 
                     // book.Language was eager-loaded above; mutate it in place rather than refetching.
                     var language = book.Language;
@@ -2209,7 +2215,7 @@ namespace LinguaReadApi.Controllers
                             UserId = userId,
                             LanguageId = language.LanguageId,
                             ActivityType = "TextCompleted",
-                            WordCount = totalWordCount,
+                            WordCount = completionWordCredit,
                             Timestamp = now
                         });
                     }
@@ -2223,7 +2229,7 @@ namespace LinguaReadApi.Controllers
                         {
                             UserId = userId,
                             LanguageId = book.LanguageId,
-                            TotalWordsRead = totalWordCount,
+                            TotalWordsRead = completionWordCredit,
                             TotalTextsCompleted = isFirstCompletion ? 1 : 0,
                             TotalTextCompletions = 1,
                             LastUpdatedAt = now
@@ -2232,7 +2238,7 @@ namespace LinguaReadApi.Controllers
                     }
                     else
                     {
-                        stats.TotalWordsRead += totalWordCount;
+                        stats.TotalWordsRead += completionWordCredit;
                         if (isFirstCompletion)
                         {
                             stats.TotalTextsCompleted += 1;

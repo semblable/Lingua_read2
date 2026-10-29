@@ -34,3 +34,29 @@ native ICU word-break API. Native-library probing is deliberately confined here.
 does not choose an engine, pin deployment data, or establish native-reviewed quality.
 Source-span checks cover exact UTF-16 reconstruction; they do not establish stability
 between different ICU versions. Do not feed the resulting boundaries into live texts.
+
+## Reading-credit compatibility experiment
+
+[Contract, bounds, candidates and decisions](reading-credit-experiment.md) describe
+the separate units for saved vocabulary, coverage and earned reading activity.
+The experiment is `ReadingCreditCompatibilityTests` in the backend test project;
+it uses only synthetic learners and short strings in isolated SQLite in-memory
+databases. It does not run the ICU loader above or access a learner library.
+
+```powershell
+dotnet test server/LinguaReadApi.Tests/LinguaReadApi.Tests.csproj --no-restore --filter FullyQualifiedName~ReadingCreditCompatibilityTests --logger 'trx;LogFileName=reading-credit.trx' --results-directory verification/language-support/test-results
+./verification/language-support/summarize-credit-results.ps1 -TrxPath verification/language-support/test-results/reading-credit.trx -OutputPath verification/language-support/reading-credit-after.json
+```
+
+Reports: [initial failures](reading-credit-before.json), [review reset reproduction](reading-credit-review-before.json),
+[final observations](reading-credit-after.json). Raw TRX is locally ignored. The
+initial report predates the reset/extra preservation cases and initially asserted
+the desired late-replay invariant; that assertion failed. The final suite keeps
+that scenario as an explicitly named diagnostic, checking same-index dedup without
+claiming the unseen-index overcredit was fixed. Passing the diagnostics means the
+documented discrepancy is reproduced, not that its linguistic/compatibility gate
+passes. The Thai counting input deliberately uses CJK stops to isolate counting
+from sentence-boundary quality; it is not a native Thai acceptance fixture.
+
+The test host needs a permitted local connection in restricted environments.
+Use the existing cached dependencies; the experiment adds no package/model.

@@ -10,6 +10,26 @@ vi.mock('../utils/api/client', () => ({
 import { fetchApi } from '../utils/api/client';
 import { productionSyncHandlers } from '../utils/offline/handlers';
 
+describe('productionSyncHandlers.sentenceRead', () => {
+  test('preserves stored Unicode text and indices without recounting on replay', async () => {
+    vi.clearAllMocks();
+    const payload = {
+      textId: 44,
+      currentSegmentIndex: 2,
+      segments: [
+        { segmentIndex: 0, segmentText: '我爱读书。你呢？' },
+        { segmentIndex: 1, segmentText: 'one\u00a0two\u202fthree\u3000four' },
+        { segmentIndex: 2, segmentText: '... !!!' },
+      ],
+    };
+    await productionSyncHandlers.sentenceRead({ type: 'sentenceRead', payload });
+    const [url, options] = vi.mocked(fetchApi).mock.calls[0];
+    expect(url).toBe('/activity/logSentenceRead');
+    expect(options?.method).toBe('POST');
+    expect(JSON.parse(String(options?.body))).toEqual(payload);
+  });
+});
+
 describe('productionSyncHandlers.wordStatusUpdate', () => {
   beforeEach(() => {
     vi.clearAllMocks();

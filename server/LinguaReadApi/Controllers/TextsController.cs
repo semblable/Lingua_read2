@@ -1067,11 +1067,15 @@ namespace LinguaReadApi.Controllers
                 var knownWordsRunning = statusCounts.Where(s => s.Status >= 4 && s.Status <= 5).Sum(s => s.Count);
                 var learningWordsRunning = statusCounts.Where(s => s.Status >= 2 && s.Status < 4).Sum(s => s.Count);
 
-                // 'totalActualWordCount' is used for daily activity tracking (total tokens read)
+                // Activity retains its legacy ASCII-whitespace unit, independently
+                // of coverage occurrences. Sentence credit belongs to the initial
+                // reading only; a later whole-text reread earns its full volume.
                 var totalActualWordCount = LinguaReadApi.Utilities.WordCountUtility.CountTotalWords(text.Content);
                 var sentenceProgress = await _context.UserSentenceProgresses.FindAsync(userId, textId);
                 var alreadyCreditedWordCount = sentenceProgress?.CreditedWordCount ?? 0;
-                var completionWordCredit = Math.Max(totalActualWordCount - alreadyCreditedWordCount, 0);
+                var completionWordCredit = text.IsFinished
+                    ? totalActualWordCount
+                    : Math.Max(totalActualWordCount - alreadyCreditedWordCount, 0);
 
                 var stats = new TextStatsDto
                 {
@@ -1098,7 +1102,7 @@ namespace LinguaReadApi.Controllers
                 // concurrent double-click) gets retried, where the dedup check above answers it.
                 if (!skipStats)
                 {
-                    // Only credit the remaining unread words so sentence-mode progress does not double count.
+                    // Reconcile initial sentence credit; intentional rereads earn full volume.
                     await _userActivityService.LogTextCompletedActivity(
                         userId,
                         text.LanguageId,

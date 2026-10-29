@@ -835,7 +835,19 @@ namespace LinguaReadApi.Controllers
                     _logger.LogInformation("No UserLanguageStatistics records found for user {UserId}", userId);
                 }
 
-                // 3. Save changes
+                // Sentence credit removed by this explicit reset must no longer
+                // reduce a future completion. Retain indices for replay dedup and
+                // LastSegmentIndex for resume; resetting statistics is not a
+                // request to replay old offline events or reset reading position.
+                var sentenceProgresses = await _context.UserSentenceProgresses
+                    .Where(progress => progress.UserId == userId)
+                    .ToListAsync();
+                foreach (var progress in sentenceProgresses)
+                {
+                    progress.CreditedWordCount = 0;
+                }
+
+                // 3. Save activity deletion, counters and credit reset atomically.
                 await _context.SaveChangesAsync();
                 _logger.LogInformation("Successfully reset statistics for user {UserId}", userId);
 
@@ -943,4 +955,4 @@ namespace LinguaReadApi.Controllers
         public string Date { get; set; } = string.Empty;
         public int Count { get; set; }
     }
-} 
+}

@@ -209,3 +209,67 @@ and version the counting contract, test compatibility with completion/sentence
 credit and offline replay, and preserve historical activity instead of silently
 recalculating previously earned reading credit. All-44-language statistics readiness
 remains unverified.
+
+## Second batch: reading-credit compatibility — 2026-10-29
+
+The [bounded experiment](../verification/language-support/reading-credit-experiment.md)
+and [before/review/after reports](../verification/language-support/README.md#reading-credit-compatibility-experiment)
+separate **saved term records**, **linked nonignored occurrences for coverage**,
+and **earned event volume for activity**. Four synthetic saved records (including
+an ignored phrase and a legacy case collision) coexist with three coverage
+occurrences and 100 historical activity units. No metric requires matching totals.
+
+Nine short counting fixtures reproduce unspaced Chinese/Japanese/Thai, punctuation
+and Unicode-space discrepancies. For example, `one\u00a0two\u202fthree\u3000four`
+earns one legacy activity unit versus four current tokens, and `... !!!` earns two
+versus zero. Current CJK/Thai tokens are still unsplit runs; changing to them would
+not establish usable linguistic counting. Even unchanged activity counts are not
+additive across all sentence splits: `one.two` counts once as a whole and twice as
+two sentence events. Preserve earned excess; do not silently recalculate history.
+
+The initial 15-case experiment produced **10 passes and 5 failures**. Implemented:
+
+- Initial book completion reconciles already earned sentence credit. Two sentence
+  units plus a three-unit completion previously gave five; now their sum is three.
+- A later standalone reread earns the full three units. It previously earned only
+  one when the original two sentence units were subtracted again. Both routes keep
+  unique-completion counts separate from repeat completions and dedup immediate retries.
+- Independent review found explicit statistics reset retaining stale deductible
+  sentence credit. Two added checks failed before repair. The reset now clears only
+  that amount in the same atomic save as activity deletion/counter reset, retaining
+  segment-index dedup and reading position. It leaves goal baselines, vocabulary,
+  meanings, mined sentences and SRS state unchanged. This runs only on the explicit
+  user reset operation, never automatically during upgrade/startup.
+
+Verification after review:
+
+- **1,200 backend tests passed**, none skipped, including **26 experiment cases**
+  using relational SQLite and real controllers/services. Scalar snapshots preserve
+  historical activity and vocabulary IDs/terms/statuses, edited meanings, mined
+  source sentences, SRS scheduling/review logs, and active/completed goals.
+- Interruption after standalone's activity write and before its second save rolls
+  the whole completion back. Book-save interruption also rolls back and retries.
+  A SQL trigger interrupts explicit reset inside its save; activity/totals/credit
+  remain intact. Another learner's rows survive failed and successful resets.
+- Full/excess prior sentence credit is preserved; coverage cache recomputation
+  leaves earned activity unchanged. `skipStats`/`FinishBook` earn no completion
+  activity, while later intentional rereads earn full volume. The legacy global
+  `Language.WordsRead` completion accumulator remains separate and unchanged.
+- **31 focused frontend offline tests passed** across three files, including a new
+  production-handler regression proving stored Unicode sentence text/indices replay
+  verbatim. TypeScript checking and ESLint on the changed test passed.
+
+Remaining material limitations: unseen sentence replay after completion still adds
+one extra unit in the diagnostic; same-index retries remain deduplicated. No durable
+completion identity exists beyond the ten-second window. Concurrent reading/reset/
+completion, PostgreSQL serialization/retry behavior, real browser reconnect and
+production migration/rollback were not established by this sequential experiment.
+Explicit reset retains old goal baselines and segment dedup; unseen queued actions
+have no reset/cycle identity. These are documented gaps, not passing readiness gates.
+
+Decision: ship the bounded reconciliation/reset fixes with the legacy unit intact.
+Accept segmentation/layouts and a versioned credit checkpoint before new reading
+units; pursue indexed Unicode identities with separate conflict-preservation
+experiments. No schema, tokenizer version, sentence layout, vocabulary migration,
+offline payload reinterpretation, historical recredit or new catalog split ships.
+All-44-language practical readiness, native review and physical-device gates remain open.

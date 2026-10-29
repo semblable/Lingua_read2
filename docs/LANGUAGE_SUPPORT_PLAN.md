@@ -145,6 +145,46 @@ retroactively recredit activity, reset goals, or reinterpret pending offline
 actions without an explicit versioned transition and preservation evidence.
 Keep this work alongside the Phase 1/4 experiments and Phase 6 acceptance gates.
 
+### Second batch — bounded reading-credit compatibility
+
+The [synthetic SQLite experiment](../verification/language-support/reading-credit-experiment.md)
+reproduces the ASCII-whitespace, punctuation and Unicode-space discrepancies and
+compares legacy activity, Unicode-whitespace and current-tokenizer candidates.
+It defines vocabulary size as saved term records, coverage as linked nonignored
+occurrences, and activity as earned event volume in its recorded counting unit.
+These metrics are intentionally separate; equal totals are not an acceptance goal.
+
+**Decision: preserve counting semantics in this batch.** Unicode whitespace alone
+does not handle punctuation or unspaced text, and current tokenizer runs are not
+accepted CJK/Thai lexical boundaries. Useful unspaced-script counting depends on
+accepted segmentation and stable layouts. Both whole-text/sentence additivity and
+versioned replay/credit checkpoints need evidence before a new unit can roll out.
+Unicode identity work remains necessary for vocabulary, but is not a prerequisite
+for the demonstrated credit lifecycle fixes. The ICU probe stays experimental.
+
+Implement only the verified reconciliation fixes: initial book completion deducts
+already earned sentence credit; later standalone rereads earn their full volume
+without repeatedly deducting the original sentence credit. Preserve the existing
+retry window and unique-versus-total completion behavior. Historical excess credit
+is never clawed back. Coverage recomputation repairs caches and leaves earned
+activity, goals and vocabulary/SRS rows untouched. The separate legacy global
+`Language.WordsRead` accumulator keeps its existing book-completion-only behavior.
+
+Independent review found stale sentence credit surviving explicit **Reset
+statistics**, which would make the new book deduction undercredit a later lesson.
+Reproduce it on both routes, then zero only the deductible sentence amount within
+that explicit reset's atomic save. Retain credited indices for pending replay dedup
+and retain reading position; do not reset goals or learner content. A SQL-trigger
+failure checks rollback, and another learner's records check reset isolation.
+
+The final verification counts are in the status record. No schema/key/tokenizer
+version or offline payload changes, automatic history recalculation, catalog split
+or readiness promotion is introduced. A previously unseen sentence replay **after**
+completion still overcredits; a ten-second completion window is not durable event
+identity. Do not suppress sentence credit based solely on `IsFinished`: `skipStats`
+and `FinishBook` can set it without earning completion credit. Design a versioned
+per-text credit checkpoint/reading-cycle contract before fixing those orderings.
+
 ## Product decisions
 
 - Keep one catalog entry per language. Portuguese remains **Portuguese**, with one vocabulary collection and shared reading statistics. The same principle applies to English, Spanish and other regional varieties.
@@ -253,7 +293,7 @@ Implementation:
 Acceptance:
 
 - Representative passages expose useful individual word lookups instead of paragraph-sized tokens; boundary quality is accepted on a native-reviewed fixture set.
-- Offsets, selection, mining, linking and statistics all use the same units. Very long passages cannot fail because a whole sentence was inserted as one vocabulary word.
+- Offsets, selection, mining and linking use the accepted word layout; coverage uses its occurrence units. Reading activity keeps its explicitly versioned event-volume contract rather than assuming its totals equal coverage or vocabulary size. Very long passages cannot fail because a whole sentence was inserted as one vocabulary word.
 - Failed/missing engines show a recoverable processing state; they never silently fall back to reporting an unspaced paragraph as one supported word.
 
 References: [Unicode text segmentation](https://www.unicode.org/reports/tr29/), [ICU boundary analysis](https://unicode-org.github.io/icu/userguide/boundaryanalysis/).
@@ -305,6 +345,7 @@ Exit gate: all mandatory core cases pass, migrations are recoverable, each langu
 | Batch | Deliverable | Dependency |
 | --- | --- | --- |
 | 1 | Reproduce failures; independent Turkish reader, dictionary, speech and direction fixes; support matrix, fixtures and initial ICU probe | First batch implemented; full Phase 0 gate and engine choice remain open. |
+| 1b | Define separate metric units; bounded synthetic credit experiment; initial book/repeat standalone reconciliation and explicit-reset compatibility | Implemented without changing counting semantics; unseen offline replay and versioned credit checkpoint remain prerequisites for a new unit. |
 | 2 | Prototype indexed keys and conflict-preserving upgrade on synthetic learner data, then Unicode iteration/normalization changes supported by that experiment | Phase 1; do not replace stored identities before upgrade evidence passes. |
 | 3 | Remaining RTL surfaces, wrapped transcripts, fonts and mixed-direction selection | Phase 2; presentation work can proceed independently of key migration; use the shared fixtures. |
 | 4 | Sentence layouts, anchor migration and import fixes | Phase 3, before changing persisted sentence boundaries. |

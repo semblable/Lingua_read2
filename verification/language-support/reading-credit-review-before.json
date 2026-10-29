@@ -1,0 +1,30 @@
+{
+  "runtime": "net10.0",
+  "database": "SQLite in-memory; synthetic data only",
+  "results": [
+    {
+      "test": "LinguaReadApi.Tests.ReadingCreditCompatibilityTests.CompletionWithoutCredit_DoesNotMakeLaterRereadSubtractOldSentenceCredit(book: False)",
+      "outcome": "Passed",
+      "failure": null,
+      "observation": null
+    },
+    {
+      "test": "LinguaReadApi.Tests.ReadingCreditCompatibilityTests.CompletionWithoutCredit_DoesNotMakeLaterRereadSubtractOldSentenceCredit(book: True)",
+      "outcome": "Passed",
+      "failure": null,
+      "observation": null
+    },
+    {
+      "test": "LinguaReadApi.Tests.ReadingCreditCompatibilityTests.ExplicitStatisticsReset_ClearsDeductibleCredit_PreservingReplayDedupAndPosition(book: False)",
+      "outcome": "Failed",
+      "failure": "Assert.Equal() Failure: Values differ\r\nExpected: 0\r\nActual:   2",
+      "observation": null
+    },
+    {
+      "test": "LinguaReadApi.Tests.ReadingCreditCompatibilityTests.ExplicitStatisticsReset_ClearsDeductibleCredit_PreservingReplayDedupAndPosition(book: True)",
+      "outcome": "Failed",
+      "failure": "Assert.Equal() Failure: Values differ\r\nExpected: 0\r\nActual:   2",
+      "observation": null
+    }
+  ]
+}

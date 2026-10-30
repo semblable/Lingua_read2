@@ -7,7 +7,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import TextDisplay from '../pages/TextDisplay';
 import { SettingsContext } from '../contexts/SettingsContext';
-import { createWord, getLanguage, getText, getTextSrt, mineSentence, updateWord } from '../utils/api';
+import { createWord, getBook, getLanguage, getText, getTextSrt, mineSentence, updateWord } from '../utils/api';
 
 vi.mock('../utils/api', () => ({
   getText: vi.fn(), getTextSrt: vi.fn(async () => ''),
@@ -157,5 +157,46 @@ describe('opt-in Chinese reader workflow', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Next' }));
     await waitFor(() => expect(screen.getByText('自然语言')).toHaveClass('word-status-2'));
     expect(sentenceRender.container.querySelector('.sentence-mode-text').textContent).toBe('自然语言处理很有趣。');
+  });
+  test('EPUB structuredContent blocks segment Chinese words in standard and sentence modes and preserve sentence mining', async () => {
+    const rows = [
+      { wordId: 91, term: '图书馆', status: 3, translation: 'library' },
+      { wordId: 92, term: '自然语言', status: 2, translation: 'natural language' }
+    ];
+    const structuredContent = [
+      { type: 'title', text: '第一章 自然语言' },
+      { type: 'paragraph', text: '我今天在图书馆学习中文。' }
+    ];
+    getText.mockResolvedValue({
+      textId: 1,
+      bookId: 5,
+      title: '第一章 自然语言',
+      content: '第一章 自然语言\n\n我今天在图书馆学习中文。',
+      structuredContent,
+      languageId: 12,
+      languageCode: 'zh',
+      segmentationProfile: 'jieba-v1',
+      words: rows
+    });
+    getBook.mockResolvedValue({ bookId: 5, title: 'Chinese EPUB', parts: [{ textId: 1, partNumber: 1 }] });
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true, json: async () => structuredClone(rows) });
+    vi.stubGlobal('alert', vi.fn());
+
+    const standardRender = renderReader();
+    await waitFor(() => expect(screen.getByText('图书馆')).toHaveClass('word-status-3'));
+    expect(screen.getByText('自然语言')).toHaveClass('word-status-2');
+    fireEvent.click(screen.getByText('图书馆'));
+    fireEvent.click(screen.getByRole('button', { name: 'Mine', exact: true }));
+    await waitFor(() =>
+      expect(mineSentence).toHaveBeenCalledWith(91, '我今天在图书馆学习中文。', 1, '第一章 自然语言')
+    );
+    standardRender.unmount();
+
+    const sentenceRender = renderReader({ ...settings, sentenceMode: true });
+    await waitFor(() => expect(screen.getByText('自然语言')).toHaveClass('word-status-2'));
+    expect(sentenceRender.container.querySelector('.sentence-mode-text').textContent).toBe('第一章 自然语言');
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+    await waitFor(() => expect(screen.getByText('图书馆')).toHaveClass('word-status-3'));
+    expect(sentenceRender.container.querySelector('.sentence-mode-text').textContent).toBe('我今天在图书馆学习中文。');
   });
 });

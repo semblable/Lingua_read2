@@ -755,7 +755,10 @@ namespace LinguaReadApi.Controllers
             catch (Exception ex)
             {
                  _logger.LogError(ex, "Failed to save batch created audio lessons to database for user {UserId}.", userId);
-                 // Note: At this point, files might be saved but DB entries failed. Manual cleanup might be needed.
+                 foreach (var (t, _) in createdLessons)
+                 {
+                     TryDeleteAudioFile(t.AudioFilePath);
+                 }
                  return StatusCode(500, "Failed to save created lessons to the database.");
             }
 

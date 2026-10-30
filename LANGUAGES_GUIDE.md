@@ -48,12 +48,12 @@ still depend on your provider and installed voices.
 
 Chinese, Japanese and Thai are labeled **Basic word splitting**: the legacy
 tokenizer splits at spaces and punctuation, so an unspaced run is one word.
-Selecting MeCab or Jieba in language settings does not change existing texts. For **new Chinese texts, book imports (`.txt`, `.epub`, or pasted), and audio/transcript imports**,
+Selecting MeCab or Jieba does not change existing texts. For **new Chinese texts, book imports (`.txt`, `.epub`, or pasted), and audio/transcript imports**,
 **Chinese word segmentation (experimental)** is enabled by default;
-you can uncheck it when creating or importing that item. It uses a pinned
+you can uncheck it for that import. It uses a pinned
 8.6 MB dictionary (`jieba-v1`) downloaded once and cached for offline reopening. HTTPS or
-localhost is required to verify the download. Existing texts, books, and audio lessons
-keep their existing splitting (and re-splitting a book preserves its profile); there is no automatic relinking or script conversion.
+localhost is required to verify the download. Existing content and unprofiled imports
+keep their splitting (and re-splitting a book preserves its profile); there is no automatic relinking or script conversion.
 Unknown names may split into characters; native review is still outstanding.
 
 Korean keeps space-separated surface forms. Saved composed/decomposed Hangul

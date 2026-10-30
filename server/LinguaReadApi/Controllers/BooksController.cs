@@ -712,6 +712,10 @@ namespace LinguaReadApi.Controllers
             {
                  _logger.LogError(ex, "Error splitting or saving text parts during upload");
                  CleanupBookAssets(userId, book.BookId);
+                 foreach (var createdText in createdTexts)
+                 {
+                     _context.Entry(createdText).State = EntityState.Detached;
+                 }
                  _context.Books.Remove(book); // Attempt to clean up book if text splitting fails
                  await _context.SaveChangesAsync();
                  return StatusCode(StatusCodes.Status500InternalServerError, "Book metadata created, but failed to process and save text content.");

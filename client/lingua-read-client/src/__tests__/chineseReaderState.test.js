@@ -78,4 +78,87 @@ describe('Chinese reader profile initialization', () => {
     await waitFor(() => expect(result.current.error).toContain('newer word segmenter'));
     expect(ensureChineseSegmentation).not.toHaveBeenCalled();
   });
+  test('polls word-linking status for a processing Chinese audio lesson and merges linked words without losing in-session saves', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      ensureChineseSegmentation.mockResolvedValue();
+      getText
+        .mockResolvedValueOnce({
+          textId: 7,
+          languageId: 12,
+          languageCode: 'zh',
+          content: '我今天在图书馆学习中文。',
+          segmentationProfile: 'jieba-v1',
+          isAudioLesson: true,
+          audioFilePath: 'audio_lessons/u/7.mp3',
+          hasSrtContent: true,
+          wordLinkingStatus: 'processing',
+          words: []
+        })
+        .mockResolvedValueOnce({
+          textId: 7,
+          languageId: 12,
+          languageCode: 'zh',
+          content: '我今天在图书馆学习中文。',
+          segmentationProfile: 'jieba-v1',
+          isAudioLesson: true,
+          audioFilePath: 'audio_lessons/u/7.mp3',
+          hasSrtContent: true,
+          wordLinkingStatus: 'completed',
+          words: [
+            { wordId: 101, term: '图书馆', status: 1, translation: null },
+            { wordId: 102, term: '学习', status: 1, translation: null }
+          ]
+        });
+      getTextSrt.mockResolvedValue('1\n00:00:00,000 --> 00:00:02,500\n我今天在图书馆学习中文。\n');
+      getWordLinkingStatus.mockResolvedValue({ wordLinkingStatus: 'completed' });
+
+      const { result } = renderReaderStateHook({ textId: '7' });
+      await waitFor(() => expect(result.current.loading).toBe(false));
+      expect(result.current.languageConfig.parserType).toBe('jieba-v1');
+      await waitFor(() => expect(result.current.srtLines).toHaveLength(1));
+      expect(result.current.srtLines[0].text).toBe('我今天在图书馆学习中文。');
+
+      // Simulate user saving a word before background linking finishes
+      act(() => {
+        result.current.setWords([{ wordId: 101, term: '图书馆', status: 3, translation: 'library' }]);
+      });
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5000);
+      });
+
+      await waitFor(() => expect(getWordLinkingStatus).toHaveBeenCalledWith('7'));
+      await waitFor(() => expect(result.current.words).toHaveLength(2));
+      expect(result.current.words.find(w => w.term === '图书馆')).toMatchObject({ wordId: 101, status: 3, translation: 'library' });
+      expect(result.current.words.find(w => w.term === '学习')).toMatchObject({ wordId: 102, status: 1 });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  test('reopens a profiled Chinese book part and audio lesson with cached dependencies', async () => {
+    ensureChineseSegmentation.mockResolvedValue();
+    getText.mockResolvedValue({
+      textId: 11,
+      bookId: 9,
+      languageId: 12,
+      languageCode: 'zh',
+      content: '第一章 我爱读书。',
+      segmentationProfile: 'jieba-v1',
+      words: [{ wordId: 55, term: '读书', status: 4, translation: 'read' }]
+    });
+    getBook.mockResolvedValue({
+      bookId: 9,
+      title: 'Cached Chinese Book',
+      parts: [{ textId: 10, partNumber: 1 }, { textId: 11, partNumber: 2 }, { textId: 12, partNumber: 3 }]
+    });
+    updateLastRead.mockResolvedValue({});
+
+    const { result } = renderReaderStateHook({ textId: '11' });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.languageConfig.parserType).toBe('jieba-v1');
+    await waitFor(() => expect(result.current.previousTextId).toBe(10));
+    expect(result.current.nextTextId).toBe(12);
+    expect(result.current.words).toEqual([{ wordId: 55, term: '读书', status: 4, translation: 'read' }]);
+  });
 });

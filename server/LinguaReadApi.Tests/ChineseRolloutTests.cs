@@ -720,6 +720,85 @@ public class ChineseRolloutTests
             (await h.Context.TextWords.Where(tw => tw.TextId == audioId).Select(tw => tw.Word.Term).ToListAsync()).OrderBy(x => x));
     }
 
+    [Fact]
+    public async Task FailedSaveDuringBookOrAudioImport_CleansUpFilesAndEntitiesWithoutQueueing_AndRetrySucceeds()
+    {
+        var failure = new FailSave();
+        await using var h = await Harness.Create(failure: failure);
+        const string rawSrt = "1\n00:00:00,000 --> 00:00:02,000\n我爱读书。\n";
+
+        // 1. UploadBook (.epub) fails when saving Text parts (2nd SaveChanges after Book row)
+        failure.FailOnSave = 2;
+        var failedEpub = Assert.IsType<ObjectResult>((await h.Books().UploadBook(new UploadBookDto
+        {
+            LanguageId = 1,
+            File = CreateSyntheticEpub("第一章", "我爱读书。", "第二章", "今天学习中文。"),
+            SplitMethod = "chapter",
+            MaxSegmentSize = 500,
+            SegmentationProfile = ChineseSegmenter.Profile
+        })).Result);
+        Assert.Equal(500, failedEpub.StatusCode);
+        h.Context.ChangeTracker.Clear();
+        Assert.Empty(await h.Context.Books.ToArrayAsync());
+        Assert.Empty(await h.Context.Texts.ToArrayAsync());
+        Assert.False(h.Channel.Reader.TryRead(out _));
+        Assert.Empty(Directory.GetFiles(h.WebRoot, "*", SearchOption.AllDirectories));
+
+        // 2. CreateAudioLesson fails on SaveChanges -> cleans up written audio file and queues nothing
+        failure.FailOnSave = 1;
+        var failedSingleAudio = Assert.IsType<ObjectResult>((await h.Controller().CreateAudioLesson(new CreateAudioLessonDto
+        {
+            Title = "Failed Audio",
+            LanguageId = 1,
+            AudioFile = FormFileFromBytes([1, 2, 3, 4], "failed_single.mp3", "audio/mpeg"),
+            SrtFile = FormFileFromBytes(Encoding.UTF8.GetBytes(rawSrt), "failed_single.srt", "text/plain"),
+            SegmentationProfile = ChineseSegmenter.Profile
+        })).Result);
+        Assert.Equal(500, failedSingleAudio.StatusCode);
+        h.Context.ChangeTracker.Clear();
+        Assert.Empty(await h.Context.Texts.ToArrayAsync());
+        Assert.False(h.Channel.Reader.TryRead(out _));
+        Assert.Empty(Directory.GetFiles(h.WebRoot, "*", SearchOption.AllDirectories));
+
+        // 3. CreateAudioLessonsBatch fails on SaveChanges -> cleans up written batch audio files and queues nothing
+        failure.FailOnSave = 1;
+        var failedBatchAudio = Assert.IsType<ObjectResult>(await h.Controller().CreateAudioLessonsBatch(
+            new CreateAudioLessonsBatchDto { LanguageId = 1, SegmentationProfile = ChineseSegmenter.Profile },
+            [
+                FormFileFromBytes([5, 6, 7], "batch_01.mp3", "audio/mpeg"),
+                FormFileFromBytes(Encoding.UTF8.GetBytes(rawSrt), "batch_01.srt", "text/plain")
+            ]));
+        Assert.Equal(500, failedBatchAudio.StatusCode);
+        h.Context.ChangeTracker.Clear();
+        Assert.Empty(await h.Context.Texts.ToArrayAsync());
+        Assert.False(h.Channel.Reader.TryRead(out _));
+        Assert.Empty(Directory.GetFiles(h.WebRoot, "*", SearchOption.AllDirectories));
+
+        // 4. Retry after transient failure succeeds and links segmented Chinese tokens
+        failure.FailOnSave = 0;
+        var retryAudio = Assert.IsType<CreatedAtActionResult>((await h.Controller().CreateAudioLesson(new CreateAudioLessonDto
+        {
+            Title = "Retried Audio",
+            LanguageId = 1,
+            AudioFile = FormFileFromBytes([1, 2, 3, 4], "retried.mp3", "audio/mpeg"),
+            SrtFile = FormFileFromBytes(Encoding.UTF8.GetBytes(rawSrt), "retried.srt", "text/plain"),
+            SegmentationProfile = ChineseSegmenter.Profile
+        })).Result);
+        var retryId = Assert.IsType<TextDto>(retryAudio.Value).TextId;
+        await h.DrainAndLinkAsync();
+
+        // Repeated worker LinkAsync (simulating worker retry) is idempotent on occurrence counts and TotalWords
+        await WordLinker.LinkAsync(h.Context, retryId, "我爱读书。", 1, h.UserId);
+        await h.Stats().RecomputeAllAsync(CancellationToken.None);
+        h.Context.ChangeTracker.Clear();
+        var retriedText = await h.Context.Texts.SingleAsync(t => t.TextId == retryId);
+        Assert.Equal(ChineseSegmenter.Profile, retriedText.SegmentationProfile);
+        Assert.Equal(3, retriedText.TotalWords);
+        var links = await h.Context.TextWords.Where(tw => tw.TextId == retryId).Include(tw => tw.Word).ToListAsync();
+        Assert.Equal(new[] { "我", "爱", "读书" }.OrderBy(x => x), links.Select(l => l.Word.Term).OrderBy(x => x));
+        Assert.All(links, l => Assert.Equal(1, l.OccurrenceCount));
+    }
+
     private static CreateTextDto Request(string? profile = null) => new() {
         Title = "Synthetic Chinese text", Content = "我爱读书。", LanguageId = 1, SegmentationProfile = profile };
 

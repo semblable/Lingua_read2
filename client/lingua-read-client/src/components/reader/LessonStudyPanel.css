@@ -1,12 +1,23 @@
 .lesson-study {
-  background: var(--theme-surface-bg, var(--bs-tertiary-bg));
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  min-width: 0;
   color: var(--theme-text, var(--bs-body-color));
-  border-bottom-color: var(--theme-border-color, var(--bs-border-color)) !important;
 }
-.lesson-study__count { display: inline-flex; align-items: center; gap: 0.35rem; }
+.lesson-study__count { display: inline-flex; align-items: center; gap: 0.35rem; white-space: nowrap; }
 .lesson-study__count strong { font-variant-numeric: tabular-nums; }
-.lesson-study__scope { font-size: 0.75rem; opacity: 0.85; }
-.lesson-study__status { font-weight: 500; }
+.lesson-study > .alert { flex-basis: 100%; }
+.lesson-study .dropdown-menu {
+  background: var(--theme-surface-bg, var(--bs-body-bg));
+  color: inherit;
+  border-color: var(--theme-border-color, var(--bs-border-color));
+}
+.lesson-study .dropdown-item,
+.lesson-study .dropdown-item-text { color: inherit; }
+.lesson-study .dropdown-item:hover,
+.lesson-study .dropdown-item:focus { background: var(--background-color, var(--bs-secondary-bg)); }
 .lesson-study-dialog__hint { color: var(--theme-text, var(--bs-body-color)); opacity: 0.85; }
 .lesson-study .btn {
   min-height: 36px;
@@ -23,6 +34,7 @@
 .lesson-study-dialog .btn-primary:hover { background-color: #0f5b4e; border-color: #0f5b4e; }
 @media (max-width: 600px) {
   .lesson-study .btn,
+  .lesson-study .dropdown-item,
   .lesson-study-dialog .btn,
   .lesson-study-dialog .form-control { min-height: 44px; }
 }

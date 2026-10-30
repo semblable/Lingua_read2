@@ -201,6 +201,9 @@ Ensure your translation API keys (DeepL, Google Cloud Translate, Azure Translato
 ### 4. Reading and listening repeats
 
 The reader shows **Read ×** and **Listened ×** for newly recorded complete passes.
+Open the counter beside the lesson title to record another pass. On mobile, the
+counters are inside the **Lesson** header; **Listened** appears only when lesson
+audio or a book audiobook is attached.
 Completing a lesson records a read; **Record a read** logs a deliberate pass without
 leaving the reader. **Record a listen** records one completed listen. Leave additional
 minutes at zero when the player already tracked that time, or enter time for a
@@ -210,6 +213,10 @@ These pass actions require a connection. If a response is lost, retry the same a
 in the browser session. Earlier aggregate activity is preserved; past per-lesson
 repeat counts are not reconstructed. Sentence navigation alone is not a complete
 pass, and completing a lesson without statistics does not add one.
+Partial playback already earns listening minutes, based on time spent playing
+rather than the audio's original duration. The current pass counters are whole
+numbers; fractional listens and automatic transcript reading credit are not yet
+implemented.
 
 ---
 

@@ -61,6 +61,7 @@ vi.mock('../utils/api', () => ({
   summarizeText: vi.fn(),
   getSentenceProgress: vi.fn(),
   logSentenceReadActivity: vi.fn(),
+  getLessonStudy: vi.fn(async () => ({ readCount: 3, listenCount: 2 })),
   API_URL: 'http://test.local'
 }));
 
@@ -2910,6 +2911,7 @@ describe('TextDisplay', () => {
 
       // FAB Play button is rendered (because hasAudio is true via audiobookTracks).
       expect(screen.getByRole('button', { name: /Play audio/i })).toBeInTheDocument();
+      expect(await screen.findByRole('button', { name: /Listened passes: 2/ })).toBeInTheDocument();
     });
 
     test('mobile + audio lesson renders lesson-mode player (and not book-mode)', async () => {
@@ -2940,6 +2942,7 @@ describe('TextDisplay', () => {
       // The book-mode mobile branch must NOT fire for a pure audio lesson.
       const bookCalls = findAudiobookCalls((props) => props.type === 'book');
       expect(bookCalls.length).toBe(0);
+      expect(await screen.findByRole('button', { name: /Listened passes: 2/ })).toBeInTheDocument();
     });
 
     test('mobile + plain text renders no audio player at all', async () => {
@@ -2951,6 +2954,8 @@ describe('TextDisplay', () => {
       expect(await screen.findByText('Sample Text')).toBeInTheDocument();
 
       expect(mockAudiobookPlayer).not.toHaveBeenCalled();
+      expect(await screen.findByRole('button', { name: /Read passes: 3/ })).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /Listened passes/ })).not.toBeInTheDocument();
     });
 
     test('desktop + audiobook does not trigger the mobile book-mode branch', async () => {

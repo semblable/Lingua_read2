@@ -1,8 +1,11 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Lesson practice · synthetic visual check</title></head><body>
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Lesson header · synthetic visual check</title></head><body>
 <div id="root"></div><script type="module">
 import React from 'react'; import { createRoot } from 'react-dom/client';
 import 'bootstrap/dist/css/bootstrap.min.css'; import 'bootstrap-icons/font/bootstrap-icons.css';
 import '@fontsource/inter/400.css'; import '@fontsource/inter/600.css'; import '/src/index.css';
+import '/src/pages/TextDisplay.css';
+import LessonHeader from '/src/components/reader/LessonHeader.tsx';
+import MobileLessonHeader from '/src/components/reader/MobileLessonHeader.tsx';
 import LessonStudyPanel from '/src/components/reader/LessonStudyPanel.tsx';
 import { useAuthStore } from '/src/utils/store.ts';
 useAuthStore.setState({user:{id:'synthetic-preview'}});
@@ -17,12 +20,22 @@ window.fetch=async (url, options={})=>{
   return new Response('{}',{headers:{'content-type':'application/json'}});
 };
 const h=React.createElement;
-function Demo(){const [theme,setTheme]=React.useState(0);return h('main',{className:'container py-4'},
- h('div',{className:'d-flex justify-content-between align-items-center mb-4'},h('div',{},h('small',{className:'text-muted'},'SYNTHETIC UI VERIFICATION'),h('h1',{className:'h4 mb-0'},'Lesson practice')),
- h('div',{className:'d-flex gap-2'},h('button',{className:'btn btn-sm btn-outline-secondary','aria-label':'Change preview theme',onClick:()=>{const next=(theme+1)%3;setTheme(next);document.body.className=['light-theme','dark-theme','classic-dark-theme'][next]}},['Light theme','Dark theme','Classic dark'][theme]),h('button',{className:'btn btn-sm btn-outline-secondary',onClick:()=>{fail=true}},'Simulate lost response'))),
- h('div',{className:'row g-4'},h('div',{className:'col-lg-8'},h('div',{className:'card overflow-hidden'},h('header',{className:'p-3 border-bottom'},h('div',{className:'text-muted small'},'English · Short stories'),h('h2',{className:'h5 mb-0 mt-1'},'A quiet morning')),
- h(LessonStudyPanel,{textId:44,sourceRevision:'preview-revision'}),h('article',{className:'p-4',style:{fontFamily:'Georgia,serif',fontSize:'1.1rem',lineHeight:1.9}},'The morning was quiet. I opened the window and listened to the birds. Some days, returning to a familiar story reveals something new.'))),
- h('div',{className:'col-lg-4'},h('div',{className:'small text-muted mb-2'},'390 px responsive width'),h('div',{className:'card overflow-hidden',style:{maxWidth:390}},h('header',{className:'p-3 border-bottom'},h('h2',{className:'h6 mb-0'},'A quiet morning')),h(LessonStudyPanel,{textId:44,sourceRevision:'preview-revision'}),h('div',{className:'p-3 text-muted small'},'The same controls wrap without hiding the counter scope.')))));
+function Demo(){
+ const [theme,setTheme]=React.useState(0),[hasAudio,setHasAudio]=React.useState(true),[mobile,setMobile]=React.useState(window.innerWidth<768);
+ const [showMobile,setShowMobile]=React.useState(true),[more,setMore]=React.useState(false),[expanded,setExpanded]=React.useState(false);
+ React.useEffect(()=>{const resize=()=>setMobile(window.innerWidth<768);window.addEventListener('resize',resize);return()=>window.removeEventListener('resize',resize)},[]);
+ const text={title:'1. A quiet morning – Part 3: returning to a familiar story',languageName:'English',languageId:1};
+ const study=h(LessonStudyPanel,{textId:44,sourceRevision:'preview-revision',hasAudio});
+ const common={text,primaryControls:h('button',{className:'btn btn-sm btn-outline-secondary'},'Complete lesson'),secondaryControls:null,readerLessonActions:null,studyControls:study};
+ return h('main',{className:'container-fluid py-4',style:{maxWidth:1280}},
+ h('div',{className:'d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4'},h('div',{},h('small',{className:'text-muted'},'SYNTHETIC HEADER VERIFICATION'),h('h1',{className:'h4 mb-0'},'Lesson practice')),
+ h('div',{className:'d-flex gap-2 flex-wrap'},h('button',{className:'btn btn-sm btn-outline-secondary','aria-label':'Change preview theme',onClick:()=>{const next=(theme+1)%3;setTheme(next);document.body.className=['light-theme','dark-theme','classic-dark-theme'][next]}},['Light theme','Dark theme','Classic dark'][theme]),
+ h('button',{className:'btn btn-sm btn-outline-secondary',onClick:()=>setHasAudio(!hasAudio)},hasAudio?'Audio attached':'Text only'),
+ h('button',{className:'btn btn-sm btn-outline-secondary',onClick:()=>{fail=true}},'Simulate lost response'))),
+ h('div',{className:'text-display-wrapper lesson-page',style:{minHeight:500}},
+ h(MobileLessonHeader,{...common,isMobile:mobile,showMobileHeader:showMobile,setShowMobileHeader:setShowMobile,showMoreControls:more,setShowMoreControls:setMore,hasAudio:false,isAudioPlaying:false,toggleAudioPlayback:()=>{}}),
+ h(LessonHeader,{...common,isMobile:mobile,words:new Array(6104),isAudioLesson:false,book:null,showDesktopLessonControls:expanded,setShowDesktopLessonControls:setExpanded}),
+ h('article',{className:'card p-4',style:{fontFamily:'Georgia,serif',fontSize:'1.1rem',lineHeight:1.9,marginTop:mobile?110:0}},'The morning was quiet. I opened the window and listened to the birds. Some days, returning to a familiar story reveals something new.')));
 }
 createRoot(document.getElementById('root')).render(h(Demo));
 </script></body></html>

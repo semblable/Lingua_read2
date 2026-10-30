@@ -15,6 +15,7 @@ interface MobileLessonHeaderProps {
   hasAudio: boolean;
   isAudioPlaying: boolean;
   toggleAudioPlayback: () => void;
+  studyControls?: React.ReactNode;
 }
 
 const MobileLessonHeader = React.memo(({
@@ -29,7 +30,8 @@ const MobileLessonHeader = React.memo(({
   readerLessonActions,
   hasAudio,
   isAudioPlaying,
-  toggleAudioPlayback
+  toggleAudioPlayback,
+  studyControls
 }: MobileLessonHeaderProps) => {
   if (!isMobile) return null;
 
@@ -69,7 +71,9 @@ const MobileLessonHeader = React.memo(({
       </div>
       <div className={`lesson-topbar navbar-custom-bg ${showMobileHeader ? 'lesson-topbar-open' : 'lesson-topbar-closed'}`}>
         <div className="lesson-topbar-content">
-          <div className="lesson-topbar-title">{text?.title}</div>
+          <div className="lesson-topbar-heading">
+            <div className="lesson-topbar-title" title={text?.title}>{text?.title}</div>
+          </div>
           <div className="lesson-topbar-actions">
             <Button
               variant={showMoreControls ? 'light' : 'outline-light'}
@@ -89,6 +93,7 @@ const MobileLessonHeader = React.memo(({
               Close
             </Button>
           </div>
+          {studyControls}
         </div>
         <Collapse in={showMoreControls}>
           <div id="lesson-more-controls" className="lesson-controls-collapse lesson-controls-menu">

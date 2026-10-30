@@ -2388,6 +2388,10 @@ const TextDisplay = () => {
       />
     </span>
   ) : null;
+  const studyControls = text?.textId ? (
+    <LessonStudyPanel textId={text.textId} bookId={text.bookId} sourceRevision={text.studyRevision}
+      hasAudio={!!audioSrc || (book?.audiobookTracks?.length ?? 0) > 0} />
+  ) : null;
   return (
     <div className={`text-display-wrapper lesson-page px-0 mx-0 w-100 reader-ui-${readingUiMode}`}>
       <MobileLessonHeader
@@ -2400,6 +2404,7 @@ const TextDisplay = () => {
         primaryControls={primaryControls}
         secondaryControls={secondaryControls}
         readerLessonActions={readerLessonActions}
+        studyControls={studyControls}
         hasAudio={isAudioLesson || (book?.audiobookTracks?.length ?? 0) > 0}
         isAudioPlaying={isAudioPlaying}
         toggleAudioPlayback={toggleAudioPlayback}
@@ -2423,11 +2428,10 @@ const TextDisplay = () => {
         showDesktopLessonControls={showDesktopLessonControls}
         setShowDesktopLessonControls={setShowDesktopLessonControls}
         offlineDownload={offlineDownload}
+        studyControls={studyControls}
       />
 
       {/* On mobile the header above isn't rendered, so the offline control gets its own row. */}
-      {text?.textId && <LessonStudyPanel key={text.textId} textId={text.textId} bookId={text.bookId}
-        sourceRevision={text.studyRevision} />}
       {isMobile && offlineDownload && (
         <div className="px-3 py-1 d-flex justify-content-end">
           {offlineDownload}

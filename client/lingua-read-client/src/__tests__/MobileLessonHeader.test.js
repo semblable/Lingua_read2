@@ -26,9 +26,10 @@ describe('MobileLessonHeader', () => {
   });
 
   test('renders the FAB and topbar with the lesson title', () => {
-    render(<MobileLessonHeader {...baseProps()} />);
+    render(<MobileLessonHeader {...baseProps({ studyControls: <div data-testid="study-controls">Read 3×</div> })} />);
     expect(screen.getByRole('button', { name: /Open lesson controls/i })).toBeInTheDocument();
     expect(screen.getByText('Lesson Title')).toBeInTheDocument();
+    expect(screen.getByText('Lesson Title').closest('.lesson-topbar-content')).toContainElement(screen.getByTestId('study-controls'));
   });
 
   test('tapping the FAB toggles via setShowMobileHeader with an updater', () => {

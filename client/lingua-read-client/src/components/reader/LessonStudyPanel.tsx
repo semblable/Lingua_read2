@@ -1,15 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, Button, Form, Modal } from 'react-bootstrap';
+import { Alert, Button, Dropdown, Form, Modal } from 'react-bootstrap';
 import { completeLesson, getLessonStudy, recordLessonListen, type LessonStudyCounts } from '../../utils/api';
 import './LessonStudyPanel.css';
 
-type Props = { textId: number; bookId?: number | null; sourceRevision?: string };
+type Props = { textId: number; bookId?: number | null; sourceRevision?: string; hasAudio: boolean };
 
 export default function LessonStudyPanel(props: Props) {
   return <LessonStudyPanelBody key={`${props.textId}:${props.sourceRevision ?? ''}`} {...props} />;
 }
 
-function LessonStudyPanelBody({ textId, bookId, sourceRevision }: Props) {
+function LessonStudyPanelBody({ textId, bookId, sourceRevision, hasAudio }: Props) {
   const [counts, setCounts] = useState<LessonStudyCounts | null>(null);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -60,19 +60,28 @@ function LessonStudyPanelBody({ textId, bookId, sourceRevision }: Props) {
     finally { working.current = false; if (currentText.current === activeText) setBusy(false); }
   };
 
-  return <section className="lesson-study border-bottom px-3 py-2" aria-label="Lesson practice">
-    <div className="d-flex align-items-center justify-content-between flex-wrap gap-2">
-      <div className="d-flex align-items-center gap-3 small">
-        <span className="lesson-study__count"><i className="bi bi-book" aria-hidden="true" />Read <strong>{counts ? `${counts.readCount}×` : '—'}</strong></span>
-        <span className="lesson-study__count"><i className="bi bi-headphones" aria-hidden="true" />Listened <strong>{counts ? `${counts.listenCount}×` : '—'}</strong></span>
-      </div>
-      <div className="d-flex gap-2">
-        <Button size="sm" variant="outline-secondary" disabled={busy || !sourceRevision} onClick={() => void record('read')}>Record a read</Button>
-        <Button size="sm" variant="outline-secondary" disabled={busy || !sourceRevision} onClick={() => setShowListen(true)}>Record a listen</Button>
-      </div>
-    </div>
-    <div className="lesson-study__scope mt-1">Recorded passes since tracking began. Earlier activity totals are preserved.{!sourceRevision && ' Reload online to record a pass.'}</div>
-    <div role="status" aria-live="polite" className="lesson-study__status small">{notice}</div>
+  return <section className="lesson-study" aria-label="Lesson practice">
+    <Dropdown>
+      <Dropdown.Toggle size="sm" variant="outline-secondary" className="lesson-study__count" disabled={busy}
+        aria-label={`Read passes: ${counts?.readCount ?? 'unavailable'}`}>
+        <i className="bi bi-book" aria-hidden="true" />Read <strong>{counts ? `${counts.readCount}×` : '—'}</strong>
+      </Dropdown.Toggle>
+      <Dropdown.Menu>
+        <Dropdown.Item as="button" disabled={!sourceRevision} onClick={() => void record('read')}>Record a read</Dropdown.Item>
+        {!sourceRevision && <Dropdown.ItemText>Reload online to record a pass.</Dropdown.ItemText>}
+      </Dropdown.Menu>
+    </Dropdown>
+    {hasAudio && <Dropdown>
+      <Dropdown.Toggle size="sm" variant="outline-secondary" className="lesson-study__count" disabled={busy}
+        aria-label={`Listened passes: ${counts?.listenCount ?? 'unavailable'}`}>
+        <i className="bi bi-headphones" aria-hidden="true" />Listened <strong>{counts ? `${counts.listenCount}×` : '—'}</strong>
+      </Dropdown.Toggle>
+      <Dropdown.Menu>
+        <Dropdown.Item as="button" disabled={!sourceRevision} onClick={() => setShowListen(true)}>Record a listen</Dropdown.Item>
+        {!sourceRevision && <Dropdown.ItemText>Reload online to record a pass.</Dropdown.ItemText>}
+      </Dropdown.Menu>
+    </Dropdown>}
+    <span role="status" aria-live="polite" className="visually-hidden">{notice}</span>
     {error && <Alert variant="warning" className="py-1 mt-2 mb-0 small">{error}</Alert>}
     <Modal show={showListen} onHide={() => !busy && setShowListen(false)} contentClassName="lesson-study-dialog" centered>
       <Modal.Header closeButton={!busy}><Modal.Title>Record a completed listen</Modal.Title></Modal.Header>

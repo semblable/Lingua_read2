@@ -31,6 +31,30 @@ time. All pass buttons require an online request. Existing sentence/listening
 offline queues and payloads remain unchanged: older queue code discards unknown
 operation types, so adding new pass types there would lose data.
 
+## Header follow-up (2026-10-30)
+
+Counters are compact menus beside the desktop title and below the mobile title in
+the Lesson header. The Listened menu requires attached lesson or book audio. The
+scope explanation remains in documentation; successful saves update the counter
+and an assistive-technology live region, without a visible success banner. Errors
+remain visible. Existing whole-pass recording and credit semantics are unchanged.
+
+The updated [synthetic fixture](study-preview.html) renders both real headers,
+switches between audio/text-only presentation and simulates lost responses. It
+does not play audio or establish audiobook-to-transcript alignment. New evidence:
+[desktop header](visuals/study-header-desktop.jpg) and
+[390px mobile header/menu](visuals/study-header-mobile.jpg). Browser inspection also
+checked the 320px listening menu/dialog, no horizontal overflow, 44px counter/menu
+targets, text-only hiding and counter refresh after recording. The original panel
+screenshots below are historical evidence for the earlier layout.
+
+Focused reader/header/listening suites passed 119 tests across six files. The
+separate reviewer found no blocker; requested reader integration and narrow-menu
+coverage were added. TypeScript/production build and scoped ESLint passed; the
+build retained 402 static assets and all 11 license notices. Fractional listens and
+read-along credit remain a proposed
+next increment in the language-support plan, not behavior verified by this fixture.
+
 ## Identity, preservation and migration
 
 - `LessonStudyEvents` is additive and stores stable user/action identity, source

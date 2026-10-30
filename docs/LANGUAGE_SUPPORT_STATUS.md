@@ -351,3 +351,30 @@ Visual follow-up: bind the new panel/dialog to the app's actual theme variables,
 including classic-dark mode; the app does not use Bootstrap's `data-bs-theme`.
 Regenerate the fixture screenshots with the real theme CSS, keep status/scope text
 readable, and use contrasting dialog controls with 44px mobile targets.
+
+## Header refinement and partial-listening decision — 2026-10-30
+
+The counters now sit beside the desktop title, or in one row below the mobile
+title inside the Lesson header. Counter menus retain explicit recording actions.
+Lessons without attached audio omit both the Listened counter and its action;
+book audiobook tracks also qualify. The permanent tracking-scope note and visible
+success banner are removed; errors remain visible and success is announced to
+assistive technology. Counting, replay identity and historical totals are unchanged.
+
+Focused verification passed **119 tests in six files**, including reader integration
+for plain text, audio lessons and book audio; header placement, retry serialization,
+stale loads, duration validation and existing listening-time behavior are covered.
+Independent review found no blocker and requested the added reader integration and
+narrow-header checks. Chromium checks rendered the real header components with
+synthetic HTTP data: long title, open menus at 390/320px, 44px counter/menu targets,
+no horizontal document overflow, read counter refresh and the 320px listen dialog.
+An initial mobile layout stacked the counters; the revised header gives them a
+full-width row. Physical-device and full installed-reader checks remain open.
+TypeScript/production build and scoped ESLint checks passed; the production guard
+retained 402 static assets and all 11 license notices.
+
+The chosen next design is fractional listening exposure based on source duration,
+with actual elapsed listening minutes kept separate and transcript credit limited
+to explicit read-along. **Fractional counters/read-along are not implemented.** The
+[plan](LANGUAGE_SUPPORT_PLAN.md#header-refinement-and-fractional-listening-decision-2026-10-30)
+records the required compatibility experiment and seek/repeat/speed/offline cases.

@@ -40,10 +40,11 @@ describe('LessonHeader', () => {
   });
 
   test('renders the title and language meta line', () => {
-    render(<LessonHeader {...baseProps()} />);
+    render(<LessonHeader {...baseProps({ studyControls: <div data-testid="study-controls">Read 3×</div> })} />);
     expect(screen.getByText('My Lesson')).toBeInTheDocument();
     expect(screen.getByText(/Lang: Spanish/)).toBeInTheDocument();
     expect(screen.getByText(/2 words/)).toBeInTheDocument();
+    expect(screen.getByText('My Lesson').closest('.lesson-title-compact').nextElementSibling).toBe(screen.getByTestId('study-controls'));
   });
 
   test('Show/Hide toggle calls setShowDesktopLessonControls with an updater', () => {

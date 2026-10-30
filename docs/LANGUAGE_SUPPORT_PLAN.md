@@ -221,6 +221,34 @@ counter refresh races, dark-theme contrast, mobile wrapping and the listening-ti
 dialog. Final counts are recorded in the status document. All 44-language usability,
 linguistic segmentation, physical-device checks and production rollback remain open.
 
+### Header refinement and fractional-listening decision (2026-10-30)
+
+Move the counters into the lesson header, remove the permanent tracking-scope and
+visible success banner, and expose recording through the counter menus. Hide
+listening controls without attached lesson/book audio. Preserve visible failures
+and screen-reader success announcements. This refinement changes no earned units.
+
+The user clarified that `1.6×` means fractional listens and delegated the credit
+decision. The next increment should separate **listening exposure equivalents**
+(played source seconds / that source revision's duration) from **listening minutes**
+(actual elapsed playback). At 1.5×, half a 60-minute lesson earns 0.5 equivalent
+listens and 20 listening minutes. Repeated sections add exposure; the resulting
+number is not unique coverage or proof that every section was heard. Speed alone
+must not multiply exposure for the same content or inflate time spent.
+
+Keep audio-only listening separate from reading. An explicit read-along mode may
+credit transcript spans actually encountered, with deduplication against sentence
+and completion credit within the same reading cycle. Do not infer read-along from
+an open tab, auto-scrolling, playback position, or an unmapped audiobook track.
+
+This is a design decision, **not implemented fractional tracking**. Before changing
+semantics, run the bounded synthetic experiment across variable rates, seek versus
+play, loops/overlaps, pause/stall/background lifecycle, unknown/changed duration,
+edited/replaced audio, multiple tracks/devices, goals, reset, interrupted writes,
+offline replay and old-client coexistence. Establish durable playback identity,
+source snapshots, finite-duration rules, rounding and compatibility with existing
+manual whole-pass events. Preserve already earned activity; no guessed backfill.
+
 ## Product decisions
 
 - Keep one catalog entry per language. Portuguese remains **Portuguese**, with one vocabulary collection and shared reading statistics. The same principle applies to English, Spanish and other regional varieties.

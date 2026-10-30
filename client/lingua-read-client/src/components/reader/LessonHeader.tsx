@@ -25,6 +25,7 @@ interface LessonHeaderProps {
   setShowDesktopLessonControls: (updater: (prev: boolean) => boolean) => void;
   // Save-for-offline control, kept in the header row so it stays clear of the word panel.
   offlineDownload?: React.ReactNode;
+  studyControls?: React.ReactNode;
 }
 
 const LessonHeader = React.memo(({
@@ -45,7 +46,8 @@ const LessonHeader = React.memo(({
   segmentPlaybackRequest,
   showDesktopLessonControls,
   setShowDesktopLessonControls,
-  offlineDownload
+  offlineDownload,
+  studyControls
 }: LessonHeaderProps) => {
   if (isMobile || !text) return null;
 
@@ -58,6 +60,7 @@ const LessonHeader = React.memo(({
             <h5 className="mb-0 text-truncate" style={{ maxWidth: '250px' }} title={text.title ?? undefined}>{text.title}</h5>
             <small className="text-muted lesson-meta">Lang: {text.languageName || 'N/A'} | {words.length} words</small>
           </div>
+          {studyControls}
 
           {/* Audio Player - inline */}
           {isAudioLesson && audioSrc && (

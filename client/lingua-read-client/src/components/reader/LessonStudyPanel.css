@@ -1,0 +1,13 @@
+.lesson-study { background: var(--bs-tertiary-bg); }
+.lesson-study__count { display: inline-flex; align-items: center; gap: 0.35rem; }
+.lesson-study__count strong { font-variant-numeric: tabular-nums; }
+.lesson-study .btn {
+  min-height: 36px;
+  color: var(--bs-body-color);
+  border-color: var(--bs-border-color);
+  background: var(--bs-body-bg);
+}
+.lesson-study .btn:hover:enabled { background: var(--bs-secondary-bg); }
+@media (max-width: 600px) {
+  .lesson-study .btn { min-height: 44px; }
+}

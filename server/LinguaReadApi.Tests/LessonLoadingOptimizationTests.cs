@@ -304,7 +304,7 @@ public class LessonLoadingOptimizationTests
         Assert.NotNull(result.Value);
         var etag = controller.Response.Headers.ETag.ToString();
         Assert.False(string.IsNullOrWhiteSpace(etag));
-        Assert.StartsWith("\"text-1-", etag);
+        Assert.StartsWith("\"text-v2-1-", etag);
         var lastModified = controller.Response.Headers.LastModified.ToString();
         Assert.False(string.IsNullOrWhiteSpace(lastModified));
         // RFC 1123 ("Fri, 01 May 2026 10:30:00 GMT")
@@ -367,5 +367,39 @@ public class LessonLoadingOptimizationTests
         // Full body, not 304.
         Assert.NotNull(result.Value);
         Assert.Equal(3, result.Value!.TextId);
+    }
+
+    [Theory]
+    [InlineData("content")]
+    [InlineData("language")]
+    [InlineData("audio")]
+    public async Task GetText_RevalidatesLegacyResponseAndChangedStudySource(string change)
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        SeedUserAndLanguage(context, userId);
+        var timestamp = new DateTime(2026, 5, 1, 10, 30, 0, DateTimeKind.Utc);
+        context.Languages.Add(new Language { LanguageId = 2, Name = "French", Code = "fr" });
+        context.Texts.Add(new Text { TextId = 4, UserId = userId, LanguageId = 1, Content = "one two",
+            Title = "Synthetic", CreatedAt = timestamp, StatsUpdatedAt = timestamp });
+        await context.SaveChangesAsync();
+        context.ChangeTracker.Clear();
+        var first = CreateTextsController(context, userId);
+        first.Request.Headers.IfNoneMatch = $"\"text-4-{new DateTimeOffset(timestamp).ToUnixTimeSeconds()}\"";
+        var original = Assert.IsType<TextDetailDto>((await first.GetText(4)).Value);
+        Assert.Equal(64, original.StudyRevision.Length);
+        var etag = first.Response.Headers.ETag.ToString();
+        context.ChangeTracker.Clear();
+        var text = await context.Texts.SingleAsync(t => t.TextId == 4);
+        if (change == "content") text.Content = "new source";
+        if (change == "language") text.LanguageId = 2;
+        if (change == "audio") text.AudioFilePath = "synthetic-new.mp3";
+        await context.SaveChangesAsync(); // StatsUpdatedAt deliberately unchanged.
+        context.ChangeTracker.Clear();
+        var second = CreateTextsController(context, userId);
+        second.Request.Headers.IfNoneMatch = etag;
+        var updated = Assert.IsType<TextDetailDto>((await second.GetText(4)).Value);
+        Assert.NotEqual(original.StudyRevision, updated.StudyRevision);
+        Assert.NotEqual(etag, second.Response.Headers.ETag.ToString());
     }
 }

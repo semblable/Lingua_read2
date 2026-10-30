@@ -198,6 +198,19 @@ If you primarily study this language, set it as default:
 ### 3. Translation Providers
 Ensure your translation API keys (DeepL, Google Cloud Translate, Azure Translator, or Wiktionary) are configured in **Settings** → **Integrations** or **AI Providers** if you intend to use automated translations.
 
+### 4. Reading and listening repeats
+
+The reader shows **Read ×** and **Listened ×** for newly recorded complete passes.
+Completing a lesson records a read; **Record a read** logs a deliberate pass without
+leaving the reader. **Record a listen** records one completed listen. Leave additional
+minutes at zero when the player already tracked that time, or enter time for a
+listen outside the app. Repeated playback continues to add actual listening time.
+
+These pass actions require a connection. If a response is lost, retry the same action
+in the browser session. Earlier aggregate activity is preserved; past per-lesson
+repeat counts are not reconstructed. Sentence navigation alone is not a complete
+pass, and completing a lesson without statistics does not add one.
+
 ---
 
 ## Language Presets Reference

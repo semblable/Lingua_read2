@@ -12,6 +12,7 @@ using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 using Xunit.Abstractions;
@@ -200,20 +201,102 @@ public class ReadingCreditCompatibilityTests(ITestOutputHelper output)
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task OfflineSentenceReplay_ExposesMissingCompletionCheckpoint_ButDeduplicatesSameIndex(bool book)
+    public async Task OfflineSentenceReplay_AfterTrackedCompletion_DoesNotCreditTheInitialPassAgain(bool book)
     {
         await using var learner = await Learner.Create(book);
         await learner.Complete();
         await learner.ReadSentence(1, "one!");
         var firstReplay = await learner.Earned();
         await learner.ReadSentence(1, "one!");
-        // Audit evidence, not an accepted credit contract: a previously unseen
-        // index can still add credit after completion. IsFinished cannot repair
-        // this safely: FinishBook and skipStats set it without earning credit.
-        output.WriteLine($"KNOWN GAP: route={(book ? "book" : "text")}, lateReplay={firstReplay}, desired=103");
+        Assert.Equal(103, firstReplay); // The additive completion ledger supplies the missing checkpoint.
         Assert.Equal(firstReplay, await learner.Earned());
         Assert.Equal(firstReplay - 100, await learner.GoalProgress());
         Assert.Equal(1, (await learner.Context.UserSentenceProgresses.SingleAsync()).LastSegmentIndex);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task StudyPasses_CountExplicitRepeats_AndRetainIdentityAcrossLostResponsesAndReset(bool book)
+    {
+        await using var learner = await Learner.Create(book);
+        Assert.Equal(new LessonStudyDto(0, 0), await learner.Counts()); // No invented historical pass counts.
+        await learner.ReadSentence(0, "one two.");
+        await learner.ReadPass("read-1");
+        await learner.ExpireCompletionWindow();
+        await learner.ReadPass("read-1");
+        await learner.ReadPass("read-2"); // Explicit repeat may be inside the legacy window.
+        Assert.Equal(106, await learner.Earned());
+        Assert.IsType<OkResult>(await learner.ListenPass("listen-1", 60));
+        Assert.IsType<OkResult>(await learner.ListenPass("listen-1", 60));
+        Assert.IsType<OkResult>(await learner.ListenPass("listen-2", 0)); // Already tracked by player.
+        Assert.Equal(new LessonStudyDto(2, 2), await learner.Counts());
+        Assert.Equal(60, (await learner.Context.UserLanguageStatistics.SingleAsync()).TotalSecondsListened);
+        Assert.IsType<ConflictObjectResult>(await learner.ListenPass("listen-1", 120));
+        Assert.IsType<ConflictObjectResult>(await learner.ListenPass("listen-1", 60, new string('A', 64)));
+        Assert.IsType<ConflictObjectResult>(await learner.ListenPass("read-1", 0));
+        await learner.ResetStatistics();
+        await learner.ExpireCompletionWindow();
+        await learner.ReadPass("read-1"); // Must not resurrect reset totals/counts.
+        Assert.IsType<OkResult>(await learner.ListenPass("listen-1", 60));
+        Assert.Equal(0, await learner.Earned());
+        Assert.Equal(new LessonStudyDto(0, 0), await learner.Counts());
+        await learner.ReadSentence(1, "one!");
+        Assert.Equal(0, await learner.Earned()); // Checkpoint survives reset.
+        await learner.ReadPass("read-3");
+        Assert.Equal(3, await learner.Earned());
+        Assert.Equal(new LessonStudyDto(1, 0), await learner.Counts());
+    }
+
+    [Fact]
+    public async Task StudyPasses_RejectChangedSources_AndRetainHistoryAfterLessonDeletion()
+    {
+        await using var learner = await Learner.Create(false);
+        var original = await learner.Revision();
+        await learner.ReadPass("read-original");
+        var text = await learner.Context.Texts.SingleAsync();
+        text.Content = "changed source";
+        await learner.Context.SaveChangesAsync();
+        Assert.IsType<ConflictObjectResult>(await learner.ListenPass("new-listen", 10, original));
+        await learner.ReadPass("read-original", original); // Previously committed retry still succeeds.
+        learner.Context.ChangeTracker.Clear();
+        learner.Context.Texts.Remove(await learner.Context.Texts.SingleAsync());
+        await learner.Context.SaveChangesAsync();
+        Assert.Single(await learner.Context.LessonStudyEvents.ToArrayAsync());
+        Assert.Equal(103, await learner.Earned());
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task SuppressedCompletionAfterNoCreditFinish_DeduplicatesWithoutBlockingSentenceCredit(bool book)
+    {
+        await using var learner = await Learner.Create(book);
+        await learner.MarkFinishedWithoutCredit();
+        await learner.SuppressedRead("suppressed-1");
+        Assert.Equal(new LessonStudyDto(0, 0), await learner.Counts());
+        Assert.False((await learner.Context.LessonStudyEvents.SingleAsync()).IsCompletionCheckpoint);
+        await learner.ReadSentence(0, "one two.");
+        Assert.Equal(102, await learner.Earned());
+        await learner.ExpireCompletionWindow();
+        await learner.SuppressedRead("suppressed-1"); // Durable tombstone still prevents replay credit.
+        Assert.Equal(102, await learner.Earned());
+    }
+
+    [Fact]
+    public async Task ExplicitLanguageContentReset_DeletesStudyHistoryWithTheRequestedContent()
+    {
+        await using var learner = await Learner.Create(false);
+        await learner.ReadPass("read-before-content-reset");
+        using var cache = new MemoryCache(new MemoryCacheOptions());
+        var service = new LanguageService(learner.Context, cache) {
+            WebRoot = Path.Combine(Path.GetTempPath(), "study-reset-assets-" + Guid.NewGuid().ToString("N")) };
+        Assert.True(await service.ResetLanguageContentAsync(1, Guid.Parse("deadbeef-0000-0000-0000-000000000044")));
+        learner.Context.ChangeTracker.Clear();
+        Assert.Empty(await learner.Context.LessonStudyEvents.ToArrayAsync());
+        Assert.Empty(await learner.Context.UserActivities.ToArrayAsync());
+        Assert.Empty(await learner.Context.Texts.ToArrayAsync());
+        Assert.Single(await learner.Context.Languages.ToArrayAsync());
     }
 
     [Theory]
@@ -322,6 +405,51 @@ public class ReadingCreditCompatibilityTests(ITestOutputHelper output)
                 Assert.IsType<OkObjectResult>((await controller.CompleteText(1)).Result);
             }
         }
+
+        public async Task<string> Revision()
+        {
+            var text = await context.Texts.AsNoTracking().SingleAsync(t => t.TextId == 1);
+            return LessonStudyActivity.Revision(text.Content, text.LanguageId, text.AudioFilePath);
+        }
+
+        public async Task ReadPass(string id, string? revision = null)
+        {
+            revision ??= await Revision();
+            if (book)
+            {
+                var controller = new BooksController(context, NullLogger<BooksController>.Instance, new ChapterDetectionService()) { ControllerContext = Identity };
+                Assert.IsType<BookStatsDto>((await controller.CompleteLesson(1, new CompleteLessonDto {
+                    TextId = 1, ClientEventId = id, Repeat = true, SourceRevision = revision })).Value);
+            }
+            else
+            {
+                var controller = new TextsController(context, NullLogger<TextsController>.Instance,
+                    new UserActivityService(context, NullLogger<UserActivityService>.Instance), new WordLinkingChannel(), StatsService()) { ControllerContext = Identity };
+                Assert.IsType<OkObjectResult>((await controller.CompleteText(1, clientEventId: id, repeat: true, sourceRevision: revision)).Result);
+            }
+        }
+
+        public async Task SuppressedRead(string id)
+        {
+            if (book)
+            {
+                var controller = new BooksController(context, NullLogger<BooksController>.Instance, new ChapterDetectionService()) { ControllerContext = Identity };
+                Assert.IsType<BookStatsDto>((await controller.CompleteLesson(1, new CompleteLessonDto { TextId = 1, ClientEventId = id })).Value);
+            }
+            else
+            {
+                var controller = new TextsController(context, NullLogger<TextsController>.Instance,
+                    new UserActivityService(context, NullLogger<UserActivityService>.Instance), new WordLinkingChannel(), StatsService()) { ControllerContext = Identity };
+                Assert.IsType<OkObjectResult>((await controller.CompleteText(1, clientEventId: id)).Result);
+            }
+        }
+
+        public async Task<IActionResult> ListenPass(string id, int seconds, string? revision = null) =>
+            await new LessonStudyController(context) { ControllerContext = Identity }.Listen(1,
+                new LogLessonListenRequest { ClientEventId = id, SourceRevision = revision ?? await Revision(), DurationSeconds = seconds });
+
+        public async Task<LessonStudyDto> Counts() => Assert.IsType<LessonStudyDto>(
+            (await new LessonStudyController(context) { ControllerContext = Identity }.Get(1)).Value);
 
         public async Task MarkFinishedWithoutCredit()
         {

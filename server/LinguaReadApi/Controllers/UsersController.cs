@@ -7,6 +7,7 @@ using System.Linq;
 using System.Security.Claims;
 using System.Threading.Tasks;
 using LinguaReadApi.Data;
+using LinguaReadApi.Services;
 using LinguaReadApi.Models;
 using LinguaReadApi.Utilities;
 using Microsoft.Extensions.Logging;
@@ -796,6 +797,8 @@ namespace LinguaReadApi.Controllers
 
             try
             {
+                return await LessonStudyActivity.AtomicAsync<IActionResult>(_context, userId, async () =>
+                {
                 // 1. Find and remove UserActivities
                 var activities = await _context.UserActivities
                     .Where(a => a.UserId == userId)
@@ -846,12 +849,17 @@ namespace LinguaReadApi.Controllers
                 {
                     progress.CreditedWordCount = 0;
                 }
+                // Retain action IDs/checkpoints after reset. A lost-response retry
+                // must not resurrect erased statistics or another completed pass.
+                var studyEvents = await _context.LessonStudyEvents.Where(e => e.UserId == userId && e.CountsTowardStatistics).ToListAsync();
+                foreach (var studyEvent in studyEvents) studyEvent.CountsTowardStatistics = false;
 
                 // 3. Save activity deletion, counters and credit reset atomically.
                 await _context.SaveChangesAsync();
                 _logger.LogInformation("Successfully reset statistics for user {UserId}", userId);
 
                 return Ok(new { message = "Statistics reset successfully." });
+                });
             }
             catch (Exception ex)
             {

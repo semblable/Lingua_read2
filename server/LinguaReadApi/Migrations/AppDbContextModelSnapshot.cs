@@ -17,7 +17,7 @@ namespace LinguaReadApi.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "10.0.12")
+                .HasAnnotation("ProductVersion", "10.0.13")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.HasPostgresExtension(modelBuilder, "unaccent");
@@ -355,6 +355,71 @@ namespace LinguaReadApi.Migrations
                     b.HasIndex("LanguageId");
 
                     b.ToTable("LanguageSentenceSplitExceptions");
+                });
+
+            modelBuilder.Entity("LinguaReadApi.Models.LessonStudyEvent", b =>
+                {
+                    b.Property<long>("LessonStudyEventId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("LessonStudyEventId"));
+
+                    b.Property<string>("ClientEventId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<int>("CountingVersion")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("CountsTowardStatistics")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsCompletionCheckpoint")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("CreditedListeningSeconds")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("CreditedWords")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(8)
+                        .HasColumnType("character varying(8)");
+
+                    b.Property<int>("LanguageId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("SourceRevision")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<int>("SourceTextId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("SourceTitle")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("LessonStudyEventId");
+
+                    b.HasIndex("UserId", "ClientEventId")
+                        .IsUnique();
+
+                    b.HasIndex("UserId", "SourceTextId", "Kind");
+
+                    b.ToTable("LessonStudyEvents");
                 });
 
             modelBuilder.Entity("LinguaReadApi.Models.NewsFeed", b =>
@@ -1661,6 +1726,15 @@ namespace LinguaReadApi.Migrations
                         .IsRequired();
 
                     b.Navigation("Language");
+                });
+
+            modelBuilder.Entity("LinguaReadApi.Models.LessonStudyEvent", b =>
+                {
+                    b.HasOne("LinguaReadApi.Models.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("LinguaReadApi.Models.NewsFeed", b =>

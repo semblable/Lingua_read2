@@ -273,3 +273,64 @@ units; pursue indexed Unicode identities with separate conflict-preservation
 experiments. No schema, tokenizer version, sentence layout, vocabulary migration,
 offline payload reinterpretation, historical recredit or new catalog split ships.
 All-44-language practical readiness, native review and physical-device gates remain open.
+
+## Third batch: explicit repeats and stronger verification — 2026-10-30
+
+The [repeat-tracking record](../verification/language-support/repeat-tracking.md)
+defines the new complete-pass counts and preserves existing volume units. Reader
+controls show **Read × / Listened ×** from newly recorded events, record deliberate
+reads without navigation, and log a completed listen with optional external time.
+Listening defaults to zero extra time because playback already credits seconds,
+including repeated playback. Past per-lesson repeats cannot be reliably recovered
+from old aggregate history; no inferred backfill or historical recredit is performed.
+
+The additive `LessonStudyEvents` migration retains operation identity, source/credit
+snapshots and counting version 1. Matching retries remain deduplicated after ten
+seconds and after explicit statistics reset. New actual read events provide the
+missing checkpoint against late initial sentence credit. Suppressed retry records
+are explicitly not proof of earned completion. Old historical rows with only an
+`IsFinished` flag receive no guessed checkpoint.
+
+All activity writers now share a user-level PostgreSQL transaction lock. Manual
+activity's event and totals writes roll back together. Explicit statistics reset
+retains replay-protection records but excludes them from visible totals/counts;
+the reset UI discloses that. Explicit language-content reset deletes that scoped
+history. Ordinary lesson deletion preserves study history and earned activity.
+
+Independent review confirmed and repaired five integration defects before release:
+suppressed retries becoming credit checkpoints, normal/explicit-repeat intent
+collision, missing listen revision validation, stale ETags preventing revision
+refresh, and `URLSearchParams.size` dropping standalone query parameters on older
+Safari. Regressions also cover stale counter responses and late acknowledgements.
+
+Final local validation: **1,209 backend tests passed, 3 PostgreSQL facts skipped**
+after the local Docker engine became unavailable on resumption. The preceding
+PostgreSQL-enabled run passed **1,211/1,211**, including the three integration facts;
+the final scoped language-content-reset regression also passes locally. **1,229
+frontend tests** and **4 static-demo tests** passed. Production/demo builds and
+TypeScript checks passed; production asset verification retained 402 assets and
+11 license notices. ESLint passed the configured limit with **0 errors, 46 warnings**.
+CI supplies PostgreSQL to rerun all **1,212** backend checks on the pushed batch.
+
+PostgreSQL verification uses only a named disposable
+18.6 database and generated schemas, with no learner library or provider calls.
+Its three checks exercise concurrent different-lesson completions and old/new
+listening paths, sentence/completion/reset races, the actual prior-to-current
+migration, empty downgrade/re-upgrade, preservation of synthetic vocabulary/SRS
+history and refusal to drop a nonempty ledger. CI now runs those checks with its
+own PostgreSQL service. Sanitized results and screenshots are linked in the record.
+
+Desktop/390px Chromium inspection covers light/dark themes, wrapping, 44px mobile
+pass buttons and the count-only listening dialog. It renders the real component
+with synthetic HTTP data, not a production learner session. Automated UI checks
+cover repeated clicks, retry identity, stale loads and invalid external durations.
+Real Safari, physical devices, full reader visual QA and production rollback remain
+unperformed. Existing React `act`/Node timer warnings are not evidence of those gates.
+
+New completed-pass actions are **online-only**: older offline queue code can delete
+unknown operation types. Existing sentence/listening queues remain unchanged. Retry
+intents last for the browser session, not indefinitely after session storage loss.
+Sentence checkpoints remain lifetime per text, including after edits; explicit
+whole rereads earn volume, while new sentence cycles still require versioned IDs.
+Automatic completed-listen detection, native-reviewed unspaced-script counting,
+general offline reset/cycle identity and all-44-language readiness remain open.

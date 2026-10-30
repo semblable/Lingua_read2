@@ -60,3 +60,12 @@ from sentence-boundary quality; it is not a native Thai acceptance fixture.
 
 The test host needs a permitted local connection in restricted environments.
 Use the existing cached dependencies; the experiment adds no package/model.
+
+## Repeat tracking and PostgreSQL verification
+
+The [2026-10-30 repeat-tracking record](repeat-tracking.md) extends the compatibility
+work with visible per-lesson pass counts, durable retry identities, additive credit
+checkpoints and bounded PostgreSQL concurrency/migration checks. It includes the
+exact disposable-container command, scope, rollback limits and visual evidence.
+The earlier reports above remain the pre-ledger audit; they are not rewritten to
+pretend the newly protected cases already passed then.

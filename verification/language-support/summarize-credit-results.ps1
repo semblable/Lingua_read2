@@ -1,7 +1,8 @@
 param(
     [Parameter(Mandatory = $true)][string]$TrxPath,
     [Parameter(Mandatory = $true)][string]$OutputPath,
-    [string]$TestNameFilter = 'ReadingCreditCompatibilityTests'
+    [string]$TestNameFilter = 'ReadingCreditCompatibilityTests',
+    [string]$DatabaseLabel = 'SQLite in-memory; synthetic data only'
 )
 
 # Keep reproducible synthetic observations without machine paths or test-host logs.
@@ -17,6 +18,6 @@ $observations = @($creditRun.TestRun.Results.UnitTestResult |
 })
 [ordered]@{
     runtime = 'net10.0'
-    database = 'SQLite in-memory; synthetic data only'
+    database = $DatabaseLabel
     results = $observations
 } | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $OutputPath -Encoding utf8

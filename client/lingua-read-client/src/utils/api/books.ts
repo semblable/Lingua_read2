@@ -2,6 +2,7 @@ import { fetchApi, uploadWithProgress } from './client';
 import type { UploadProgressCallback } from './client';
 import type { ResponseOf } from '../fetchApi';
 import { enqueueIfOffline } from '../offline/enqueueIfOffline';
+import { studyIntent, notifyStudyChange } from '../studyIntent';
 
 export type Book = ResponseOf<'/api/Books/{id}', 'get'>;
 export type NextLesson = ResponseOf<'/api/Books/{id}/next-lesson', 'get'>;
@@ -141,25 +142,37 @@ export const updateLastRead = (
   );
 };
 
-export const completeLesson = (
+export const completeLesson = async (
   bookId: number | string | null,
   textId: number | string,
-  skipStats: boolean = false
+  skipStats: boolean = false,
+  study: { repeat?: boolean; sourceRevision?: string } = {}
 ): Promise<unknown> => {
+  if (!navigator.onLine) throw new Error('Connect to record a completed read. Sentence progress still uses the existing offline queue.');
+  const intent = skipStats ? null : studyIntent(textId, study.repeat ? 'read-repeat' : 'read-complete', study.sourceRevision);
+  let result: unknown;
   if (bookId) {
     if (skipStats) {
       throw new Error(
         'completeLesson: skipStats is only supported for standalone texts. Book lessons would silently still record stats.'
       );
     }
-    return fetchApi(`/books/${bookId}/complete-lesson`, {
+    result = await fetchApi(`/books/${bookId}/complete-lesson`, {
       method: 'PUT',
-      body: JSON.stringify({ textId })
+      body: JSON.stringify({ textId, clientEventId: intent?.id, ...study })
     });
+  } else {
+    const query = new URLSearchParams();
+    if (skipStats) query.set('skipStats', 'true');
+    if (intent) query.set('clientEventId', intent.id);
+    if (study.repeat) query.set('repeat', 'true');
+    if (study.sourceRevision) query.set('sourceRevision', study.sourceRevision);
+    const queryString = query.toString();
+    result = await fetchApi(`/texts/${textId}/complete${queryString ? `?${queryString}` : ''}`, { method: 'PUT' });
   }
-  return fetchApi(`/texts/${textId}/complete${skipStats ? '?skipStats=true' : ''}`, {
-    method: 'PUT'
-  });
+  intent?.done();
+  if (!skipStats) notifyStudyChange(textId);
+  return result;
 };
 
 export const finishBook = (

@@ -2,7 +2,7 @@ import { fetchApi, uploadWithProgress, API_URL, handleUnauthorized } from './cli
 import type { UploadProgressCallback } from './client';
 import type { ResponseOf } from '../fetchApi';
 
-export type Text = ResponseOf<'/api/Texts/{id}', 'get'>;
+export type Text = ResponseOf<'/api/Texts/{id}', 'get'> & { studyRevision?: string };
 export type TextsList = ResponseOf<'/api/Texts', 'get'>;
 export type RecentTexts = ResponseOf<'/api/Texts/recent', 'get'>;
 

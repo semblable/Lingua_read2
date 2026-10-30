@@ -43,6 +43,7 @@ namespace LinguaReadApi.Data
         public DbSet<TextWord> TextWords { get; set; }
         public DbSet<Book> Books { get; set; }
         public DbSet<UserActivity> UserActivities { get; set; }
+        public DbSet<LessonStudyEvent> LessonStudyEvents { get; set; }
         public DbSet<UserSettings> UserSettings { get; set; }
         public DbSet<UserAiProvider> UserAiProviders { get; set; }
         public DbSet<Tag> Tags { get; set; }
@@ -67,6 +68,11 @@ namespace LinguaReadApi.Data
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
+
+            modelBuilder.Entity<LessonStudyEvent>().HasIndex(e => new { e.UserId, e.ClientEventId }).IsUnique();
+            modelBuilder.Entity<LessonStudyEvent>().HasIndex(e => new { e.UserId, e.SourceTextId, e.Kind });
+            modelBuilder.Entity<LessonStudyEvent>().HasOne<User>().WithMany().HasForeignKey(e => e.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
             
             // Configure relationships
             

@@ -2120,6 +2120,8 @@ namespace LinguaReadApi.Controllers
         public async Task<ActionResult<BookStatsDto>> CompleteLesson(int id, [FromBody] CompleteLessonDto lessonDto)
         {
             var userId = GetUserId();
+            if (!LessonStudyActivity.ValidId(lessonDto.ClientEventId) || (lessonDto.Repeat && (lessonDto.ClientEventId == null || lessonDto.SourceRevision == null)))
+                return BadRequest("A repeat needs an action ID and lesson revision.");
 
             // Retry dedup: a completion of the same text within this window is treated as the
             // same logical action (double-click, connection retry, page reload on a flaky link)
@@ -2138,6 +2140,7 @@ namespace LinguaReadApi.Controllers
                     double completionPercentage;
 
                     await using var transaction = await _context.Database.BeginTransactionAsync(IsolationLevel.Serializable);
+                    await LessonStudyActivity.LockAsync(_context, userId);
 
                     var book = await _context.Books
                         .Where(b => b.BookId == id && b.UserId == userId)
@@ -2164,11 +2167,27 @@ namespace LinguaReadApi.Controllers
                         return NotFound("Text not found or does not belong to this book");
                     }
 
-                    bool isRetry = text.LastCompletedAt.HasValue
-                        && now - text.LastCompletedAt.Value < retryWindow;
+                    var previousEvent = lessonDto.ClientEventId == null ? null : await _context.LessonStudyEvents
+                        .SingleOrDefaultAsync(e => e.UserId == userId && e.ClientEventId == lessonDto.ClientEventId);
+                    if (previousEvent != null && (previousEvent.SourceTextId != text.TextId || previousEvent.Kind != "read"
+                        || (lessonDto.SourceRevision != null && previousEvent.SourceRevision != lessonDto.SourceRevision)))
+                        return Conflict(new { message = "This action ID belongs to a different study action." });
+                    if (previousEvent == null && lessonDto.SourceRevision != null && lessonDto.SourceRevision != LessonStudyActivity.Revision(text.Content, text.LanguageId, text.AudioFilePath))
+                        return Conflict(new { message = "This lesson changed. Reload it before recording another pass." });
+                    bool isRetry = previousEvent != null || (!lessonDto.Repeat && text.LastCompletedAt.HasValue
+                        && now - text.LastCompletedAt.Value < retryWindow);
 
                     if (isRetry)
                     {
+                        if (lessonDto.ClientEventId != null && previousEvent == null)
+                        {
+                            var suppressed = LessonStudyActivity.Record(_context, userId, text.TextId, text.Title, text.LanguageId,
+                                text.Content, text.AudioFilePath, lessonDto.ClientEventId, "read");
+                            suppressed.CountsTowardStatistics = false;
+                            suppressed.IsCompletionCheckpoint = false;
+                            await _context.SaveChangesAsync();
+                            await transaction.CommitAsync();
+                        }
                         var retryCounts = await _context.Texts
                             .Where(t => t.BookId == id)
                             .GroupBy(t => 1)
@@ -2203,6 +2222,8 @@ namespace LinguaReadApi.Controllers
                     int completionWordCredit = isFirstCompletion
                         ? Math.Max(totalWordCount - (sentenceProgress?.CreditedWordCount ?? 0), 0)
                         : totalWordCount;
+                    LessonStudyActivity.Record(_context, userId, text.TextId, text.Title, text.LanguageId,
+                        text.Content, text.AudioFilePath, lessonDto.ClientEventId, "read", words: completionWordCredit);
 
                     // book.Language was eager-loaded above; mutate it in place rather than refetching.
                     var language = book.Language;
@@ -3276,6 +3297,9 @@ namespace LinguaReadApi.Controllers
     {
         [Required]
         public int TextId { get; set; }
+        [StringLength(64)] public string? ClientEventId { get; set; }
+        public bool Repeat { get; set; }
+        [StringLength(64)] public string? SourceRevision { get; set; }
     }
 
     public class BookStatsDto

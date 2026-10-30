@@ -116,7 +116,7 @@ const DataManagementSettings = ({
       <div className="settings-control-group">
         <h6 className="fw-semibold mb-2">Reset Statistics</h6>
         <p className="text-warning small fw-bold mb-2">
-          Reset all reading/listening history and aggregate counts. Your learned words, books, and texts will remain. This action is irreversible.
+          Reset visible reading/listening history and aggregate counts. Your learned words, books, and texts will remain. Study pass records are retained for replay protection and excluded from statistics. This action is irreversible.
         </p>
         {resetStatsMessage.text && <Alert variant={resetStatsMessage.type} className="mt-2">{resetStatsMessage.text}</Alert>}
         <Button variant="warning" size="sm" onClick={onResetStatistics} disabled={isResettingStats}>

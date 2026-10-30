@@ -1985,7 +1985,7 @@ describe('TextDisplay', () => {
 
     await waitFor(() => expect(getText).toHaveBeenCalled());
 
-    expect(screen.queryByRole('button', { name: /Listen/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Listen$/i })).not.toBeInTheDocument();
     expect(screen.queryByText(/TTS On/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/TTS Off/i)).not.toBeInTheDocument();
   });

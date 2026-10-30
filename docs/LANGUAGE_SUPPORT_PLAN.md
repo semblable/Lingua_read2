@@ -185,6 +185,42 @@ identity. Do not suppress sentence credit based solely on `IsFinished`: `skipSta
 and `FinishBook` can set it without earning completion credit. Design a versioned
 per-text credit checkpoint/reading-cycle contract before fixing those orderings.
 
+### Third batch — explicit repeat counts and stronger checks (2026-10-30)
+
+The user requested both per-lesson **Read × / Listened ×** counts and credit for
+deliberate repeats. The [repeat-tracking record](../verification/language-support/repeat-tracking.md)
+defines complete passes separately from activity volume. Implement an additive
+study-event ledger with source revision, stable operation identity and legacy-unit
+credit snapshots; do not infer historical per-lesson counts from aggregate totals.
+The reader exposes explicit recording, and listening defaults to count-only when
+the player has already tracked the seconds. Current playback continues to credit
+repeated listening time; automatic completed-listen detection is deferred.
+
+New pass actions require a connection. Evidence showed that older offline drain
+code deletes unknown operation types, so putting new actions in that existing
+queue is unsafe. Session retry intents and server dedup protect lost responses;
+existing sentence/listening payloads keep their format and meaning. A separately
+versioned future queue is a prerequisite for offline completed-pass recording.
+
+New credited read events supply an immutable completion checkpoint, independently
+of statistical visibility. Suppressed retries are dedup tombstones, not checkpoints.
+Statistics reset retains replay proof while hiding counts; explicit language-content
+reset removes the requested history. Ordinary lesson deletion retains earned study
+records. No historical activity, vocabulary or SRS migration/recredit occurs.
+
+Use a common user-level PostgreSQL transaction lock across activity writers and
+reset paths; verify different-lesson/shared-total concurrency, old listening paths,
+sentence/completion/reset races and the real additive migration on synthetic data.
+Guard destructive schema downgrade when new study history exists. CI now supplies
+a PostgreSQL test service. Source revision and response-version ETags prevent stale
+cached readers from being permanently unable to record a pass after an edit/upgrade.
+
+Independent review and browser checks cover suppression versus earned credit,
+normal/repeat retry identity, listen payload reuse, older Safari query handling,
+counter refresh races, dark-theme contrast, mobile wrapping and the listening-time
+dialog. Final counts are recorded in the status document. All 44-language usability,
+linguistic segmentation, physical-device checks and production rollback remain open.
+
 ## Product decisions
 
 - Keep one catalog entry per language. Portuguese remains **Portuguese**, with one vocabulary collection and shared reading statistics. The same principle applies to English, Spanish and other regional varieties.
@@ -346,6 +382,7 @@ Exit gate: all mandatory core cases pass, migrations are recoverable, each langu
 | --- | --- | --- |
 | 1 | Reproduce failures; independent Turkish reader, dictionary, speech and direction fixes; support matrix, fixtures and initial ICU probe | First batch implemented; full Phase 0 gate and engine choice remain open. |
 | 1b | Define separate metric units; bounded synthetic credit experiment; initial book/repeat standalone reconciliation and explicit-reset compatibility | Implemented without changing counting semantics; unseen offline replay and versioned credit checkpoint remain prerequisites for a new unit. |
+| 1c | Explicit per-lesson repeat counters, retry identities/checkpoints, PostgreSQL concurrency/upgrade checks and responsive controls | Additive event ledger; existing activity units preserved. New pass actions online-only; native segmentation, historical-row checkpoints and offline reading-cycle identity remain open. |
 | 2 | Prototype indexed keys and conflict-preserving upgrade on synthetic learner data, then Unicode iteration/normalization changes supported by that experiment | Phase 1; do not replace stored identities before upgrade evidence passes. |
 | 3 | Remaining RTL surfaces, wrapped transcripts, fonts and mixed-direction selection | Phase 2; presentation work can proceed independently of key migration; use the shared fixtures. |
 | 4 | Sentence layouts, anchor migration and import fixes | Phase 3, before changing persisted sentence boundaries. |

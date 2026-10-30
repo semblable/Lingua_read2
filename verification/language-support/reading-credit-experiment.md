@@ -115,6 +115,11 @@ learner's activity/totals/credit remain unchanged by failed and successful reset
 
 ## Remaining gaps and next dependency
 
+This section records the `81bd4bb0` batch. The subsequent
+[repeat-tracking experiment](repeat-tracking.md) supplies checkpoints for newly
+processed completions and real PostgreSQL evidence; historical unversioned rows,
+new reading units and general offline-cycle identity remain separate issues.
+
 - A previously unseen sentence arriving after completion still raises 103 to
   104; duplicate delivery of that same index adds nothing further. It needs an
   authoritative, versioned per-text credit checkpoint and reading-cycle contract.

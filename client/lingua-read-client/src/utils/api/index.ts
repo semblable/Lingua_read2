@@ -8,6 +8,7 @@ export * from './auth';
 export * from './languages';
 export * from './texts';
 export * from './books';
+export * from './lessonStudy';
 export * from './audiobook';
 export * from './bookmarks';
 export * from './hardcover';

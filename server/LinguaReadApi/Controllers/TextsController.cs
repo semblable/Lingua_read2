@@ -149,15 +149,16 @@ namespace LinguaReadApi.Controllers
             // ETag + Last-Modified support so the PWA service worker cache can
             // revalidate cheaply (HEAD response with no body) when the text
             // content hasn't changed since the last successful fetch.
-            // We compose the ETag from TextId + StatsUpdatedAt + CreatedAt — any
-            // server-side change to the text body bumps StatsUpdatedAt.
+            // Include the source revision and response version: edits do not
+            // necessarily bump StatsUpdatedAt, and an old cached DTO has no
+            // study revision. Neither may be revalidated as the new response.
             var lastModified = (textDto.StatsUpdatedAt ?? textDto.CreatedAt).ToUniversalTime();
             // Trim sub-second precision so the value round-trips cleanly through HTTP date format.
             var lastModifiedHttp = new DateTimeOffset(
                 lastModified.Year, lastModified.Month, lastModified.Day,
                 lastModified.Hour, lastModified.Minute, lastModified.Second,
                 TimeSpan.Zero);
-            var etag = $"\"text-{textDto.TextId}-{lastModifiedHttp.ToUnixTimeSeconds()}\"";
+            var etag = $"\"text-v2-{textDto.TextId}-{lastModifiedHttp.ToUnixTimeSeconds()}-{textDto.StudyRevision}\"";
 
             var ifNoneMatch = Request.Headers.IfNoneMatch.ToString();
             if (!string.IsNullOrEmpty(ifNoneMatch) && ifNoneMatch.Contains(etag))
@@ -1026,9 +1027,13 @@ namespace LinguaReadApi.Controllers
 
         // PUT: api/texts/{textId}/complete
         [HttpPut("{textId}/complete")] // Corrected route: combines with controller route "/api/texts"
-        public async Task<ActionResult<TextStatsDto>> CompleteText(int textId, [FromQuery] bool skipStats = false)
+        public async Task<ActionResult<TextStatsDto>> CompleteText(int textId, [FromQuery] bool skipStats = false,
+            [FromQuery] string? clientEventId = null, [FromQuery] bool repeat = false, [FromQuery] string? sourceRevision = null)
         {
             var userId = GetUserId();
+
+            if (!LessonStudyActivity.ValidId(clientEventId) || (repeat && (clientEventId == null || sourceRevision == null)))
+                return BadRequest("A repeat needs an action ID and lesson revision.");
 
             // Retry dedup, same rule and window as the book path (BooksController.CompleteLesson):
             // a second completion of the same text inside this window is the same logical action
@@ -1044,18 +1049,27 @@ namespace LinguaReadApi.Controllers
                 var now = DateTime.UtcNow;
 
                 await using var transaction = await _context.Database.BeginTransactionAsync(IsolationLevel.Serializable);
+                await LessonStudyActivity.LockAsync(_context, userId);
 
                 // Only the columns used below: the full row would drag in StructuredContent/SrtContent.
                 var text = await _context.Texts
                     .AsNoTracking()
                     .Where(t => t.TextId == textId && t.UserId == userId)
-                    .Select(t => new { t.Content, t.LanguageId, t.IsAudioLesson, t.IsFinished, t.LastCompletedAt })
+                    .Select(t => new { t.Content, t.Title, t.AudioFilePath, t.LanguageId, t.IsAudioLesson, t.IsFinished, t.LastCompletedAt })
                     .FirstOrDefaultAsync();
 
                 if (text == null)
                 {
                     return NotFound("Text not found.");
                 }
+
+                var previousEvent = clientEventId == null ? null : await _context.LessonStudyEvents
+                    .SingleOrDefaultAsync(e => e.UserId == userId && e.ClientEventId == clientEventId);
+                if (previousEvent != null && (previousEvent.SourceTextId != textId || previousEvent.Kind != "read"
+                    || (sourceRevision != null && previousEvent.SourceRevision != sourceRevision)))
+                    return Conflict(new { message = "This action ID belongs to a different study action." });
+                if (previousEvent == null && sourceRevision != null && sourceRevision != LessonStudyActivity.Revision(text.Content, text.LanguageId, text.AudioFilePath))
+                    return Conflict(new { message = "This lesson changed. Reload it before recording another pass." });
 
                 // --- 1. Calculate Stats ---
                 // Running-word counts (sum of TextWord occurrences) so the
@@ -1086,10 +1100,19 @@ namespace LinguaReadApi.Controllers
                 };
 
                 // A duplicate of a completion we just processed: report the same stats and write nothing.
-                bool isRetry = text.LastCompletedAt.HasValue
-                    && now - text.LastCompletedAt.Value < retryWindow;
+                bool isRetry = previousEvent != null || (!repeat && text.LastCompletedAt.HasValue
+                    && now - text.LastCompletedAt.Value < retryWindow);
                 if (isRetry)
                 {
+                    if (clientEventId != null && previousEvent == null && !skipStats)
+                    {
+                        var suppressed = LessonStudyActivity.Record(_context, userId, textId, text.Title, text.LanguageId,
+                            text.Content, text.AudioFilePath, clientEventId, "read");
+                        suppressed.CountsTowardStatistics = false;
+                        suppressed.IsCompletionCheckpoint = false;
+                        await _context.SaveChangesAsync();
+                        await transaction.CommitAsync();
+                    }
                     _logger.LogInformation("Ignoring duplicate completion of TextId {TextId} within the retry window.", textId);
                     return Ok(stats);
                 }
@@ -1102,6 +1125,8 @@ namespace LinguaReadApi.Controllers
                 // concurrent double-click) gets retried, where the dedup check above answers it.
                 if (!skipStats)
                 {
+                    LessonStudyActivity.Record(_context, userId, textId, text.Title, text.LanguageId,
+                        text.Content, text.AudioFilePath, clientEventId, "read", words: completionWordCredit);
                     // Reconcile initial sentence credit; intentional rereads earn full volume.
                     await _userActivityService.LogTextCompletedActivity(
                         userId,
@@ -1213,6 +1238,7 @@ namespace LinguaReadApi.Controllers
         public string LanguageName { get; set; } = string.Empty;
         public string LanguageCode { get; set; } = string.Empty; // Added LanguageCode
         public int LanguageId { get; set; }
+        public string StudyRevision => LessonStudyActivity.Revision(Content, LanguageId, AudioFilePath);
         public int? BookId { get; set; }
         public int? FolderId { get; set; }
         public string? BookTitle { get; set; } // Added BookTitle

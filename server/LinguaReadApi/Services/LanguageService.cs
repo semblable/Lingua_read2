@@ -234,6 +234,7 @@ namespace LinguaReadApi.Services
                 }
 
                 await using var transaction = await _context.Database.BeginTransactionAsync();
+                await LessonStudyActivity.LockAsync(_context, userId);
 
                 // The ExecuteDeleteAsync calls below bypass the change tracker, so nothing can tell
                 // afterwards which rows existed. Capture the media identities now and clean the disk
@@ -285,6 +286,12 @@ namespace LinguaReadApi.Services
 
                 await _context.UserLanguageStatistics
                     .Where(uls => uls.UserId == userId && uls.LanguageId == languageId)
+                    .ExecuteDeleteAsync();
+
+                // Unlike ordinary lesson deletion, this explicit content reset
+                // requests deletion of the language's study history as well.
+                await _context.LessonStudyEvents
+                    .Where(e => e.UserId == userId && e.LanguageId == languageId)
                     .ExecuteDeleteAsync();
 
                 await transaction.CommitAsync();

@@ -13,6 +13,7 @@ using System.Collections.Generic; // For Dictionary, List
 using System.Linq; // For LINQ methods like GroupBy, Sum
 using System.Text.Json;
 using LinguaReadApi.Utilities;
+using LinguaReadApi.Services;
 
 namespace LinguaReadApi.Controllers
 {
@@ -88,6 +89,13 @@ public async Task<IActionResult> LogListeningActivity([FromBody] LogListeningReq
 
     try
     {
+        return await LessonStudyActivity.AtomicAsync<IActionResult>(_context, userId, async () =>
+        {
+        // Recheck after acquiring the shared activity lock (another request may
+        // have committed while the optimistic duplicate check ran).
+        if (!string.IsNullOrEmpty(request.ClientEventId) && await _context.UserActivities
+            .AnyAsync(a => a.UserId == userId && a.ClientEventId == request.ClientEventId))
+            return Ok(new { message = "Listening activity already logged (duplicate ignored)." });
         // Activity row + cumulative stats are committed in a single SaveChanges so
         // a partial commit can't leave the seconds counted without the dedup row
         // (or vice-versa).
@@ -119,6 +127,7 @@ public async Task<IActionResult> LogListeningActivity([FromBody] LogListeningReq
         await _context.SaveChangesAsync();
         _logger.LogInformation("Successfully saved listening activity for UserId: {UserId}, ActivityId: {ActivityId}", userId, activity.ActivityId);
         return Ok(new { message = "Listening activity logged successfully.", activityId = activity.ActivityId }); // Indicate success
+        });
     }
     catch (DbUpdateException dbEx) // Catch specific DB exceptions first
     {
@@ -233,11 +242,11 @@ public async Task<IActionResult> LogManualActivity([FromBody] LogManualActivityR
 
     try
     {
+        return await LessonStudyActivity.AtomicAsync<IActionResult>(_context, userId, async () =>
+        {
         _context.UserActivities.AddRange(activitiesToAdd);
         await _context.SaveChangesAsync();
         // Update UserLanguageStatistics after manual activity save
-        try
-        {
             var stats = await _context.UserLanguageStatistics
                 .Where(uls => uls.UserId == userId && uls.LanguageId == request.LanguageId)
                 .OrderBy(uls => uls.UserLanguageStatisticsId)
@@ -266,20 +275,10 @@ public async Task<IActionResult> LogManualActivity([FromBody] LogManualActivityR
 
             await _context.SaveChangesAsync();
             _logger.LogInformation("Updated UserLanguageStatistics for UserId: {UserId}, LanguageId: {LanguageId}", userId, request.LanguageId);
-        }
-        catch (DbUpdateException dbEx)
-        {
-            _logger.LogError(dbEx, "Database error updating UserLanguageStatistics for UserId: {UserId}. InnerException: {InnerMessage}", userId, dbEx.InnerException?.Message);
-            // Do not fail the request if stats update fails
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Unexpected error updating UserLanguageStatistics for UserId: {UserId}", userId);
-            // Do not fail the request if stats update fails
-        }
 
         _logger.LogInformation("Successfully saved {Count} manual activity record(s) for UserId: {UserId}", activitiesToAdd.Count, userId);
         return Ok(new { message = "Manual activity logged successfully." });
+        });
     }
     catch (DbUpdateException dbEx)
     {
@@ -364,6 +363,8 @@ public async Task<ActionResult<SentenceProgressDto>> LogSentenceRead([FromBody] 
         return Unauthorized("User ID not found in token.");
     }
 
+    return await LessonStudyActivity.AtomicAsync<ActionResult<SentenceProgressDto>>(_context, userId, async () =>
+    {
     var text = await _context.Texts
         .AsNoTracking()
         .FirstOrDefaultAsync(t => t.TextId == request.TextId && t.UserId == userId);
@@ -393,6 +394,10 @@ public async Task<ActionResult<SentenceProgressDto>> LogSentenceRead([FromBody] 
         .ToList();
 
     var newlyCreditedWords = 0;
+    // New completion events are authoritative credit checkpoints. Keep them
+    // after explicit statistics resets; sentence credit remains initial-pass only.
+    var completedReading = await _context.LessonStudyEvents.AnyAsync(e => e.UserId == userId
+        && e.SourceTextId == request.TextId && e.IsCompletionCheckpoint);
 
     foreach (var segment in distinctSegments)
     {
@@ -402,7 +407,7 @@ public async Task<ActionResult<SentenceProgressDto>> LogSentenceRead([FromBody] 
         }
 
         creditedIndices.Add(segment.SegmentIndex);
-        newlyCreditedWords += WordCountUtility.CountTotalWords(segment.SegmentText);
+        if (!completedReading) newlyCreditedWords += WordCountUtility.CountTotalWords(segment.SegmentText);
     }
 
     if (request.CurrentSegmentIndex.HasValue && request.CurrentSegmentIndex.Value >= 0)
@@ -451,6 +456,7 @@ public async Task<ActionResult<SentenceProgressDto>> LogSentenceRead([FromBody] 
     await _context.SaveChangesAsync();
 
     return Ok(ToSentenceProgressDto(progress));
+    });
 }
 
 // --- DTOs for Statistics Endpoints ---

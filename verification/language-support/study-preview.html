@@ -1,0 +1,26 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Lesson practice · synthetic visual check</title></head><body>
+<div id="root"></div><script type="module">
+import React from 'react'; import { createRoot } from 'react-dom/client';
+import 'bootstrap/dist/css/bootstrap.min.css'; import 'bootstrap-icons/font/bootstrap-icons.css';
+import LessonStudyPanel from '/src/components/reader/LessonStudyPanel.tsx';
+import { useAuthStore } from '/src/utils/store.ts';
+useAuthStore.setState({user:{id:'synthetic-preview'}});
+let counts={readCount:3,listenCount:2}; const ids=new Set(); let fail=false;
+window.fetch=async (url, options={})=>{
+  if(String(url).includes('/lesson-study/44') && !options.method) return new Response(JSON.stringify(counts),{headers:{'content-type':'application/json'}});
+  const body=options.body?JSON.parse(options.body):{};
+  const id=body.clientEventId || new URL(String(url),location.origin).searchParams.get('clientEventId');
+  if(!ids.has(id)){ ids.add(id); if(String(url).includes('/listen'))counts.listenCount++;else counts.readCount++; }
+  if(fail){fail=false;throw new TypeError('Synthetic lost response. Retry the same pass to confirm it without counting twice.');}
+  return new Response('{}',{headers:{'content-type':'application/json'}});
+};
+const h=React.createElement;
+function Demo(){return h('main',{className:'container py-4'},
+ h('div',{className:'d-flex justify-content-between align-items-center mb-4'},h('div',{},h('small',{className:'text-muted'},'SYNTHETIC UI VERIFICATION'),h('h1',{className:'h4 mb-0'},'Lesson practice')),
+ h('div',{className:'d-flex gap-2'},h('button',{className:'btn btn-sm btn-outline-secondary',onClick:()=>document.documentElement.dataset.bsTheme=document.documentElement.dataset.bsTheme==='dark'?'light':'dark'},'Light / dark'),h('button',{className:'btn btn-sm btn-outline-secondary',onClick:()=>{fail=true}},'Simulate lost response'))),
+ h('div',{className:'row g-4'},h('div',{className:'col-lg-8'},h('div',{className:'card overflow-hidden'},h('header',{className:'p-3 border-bottom'},h('div',{className:'text-muted small'},'English · Short stories'),h('h2',{className:'h5 mb-0 mt-1'},'A quiet morning')),
+ h(LessonStudyPanel,{textId:44,sourceRevision:'preview-revision'}),h('article',{className:'p-4',style:{fontFamily:'Georgia,serif',fontSize:'1.1rem',lineHeight:1.9}},'The morning was quiet. I opened the window and listened to the birds. Some days, returning to a familiar story reveals something new.'))),
+ h('div',{className:'col-lg-4'},h('div',{className:'small text-muted mb-2'},'390 px responsive width'),h('div',{className:'card overflow-hidden',style:{maxWidth:390}},h('header',{className:'p-3 border-bottom'},h('h2',{className:'h6 mb-0'},'A quiet morning')),h(LessonStudyPanel,{textId:44,sourceRevision:'preview-revision'}),h('div',{className:'p-3 text-muted small'},'The same controls wrap without hiding the counter scope.')))));
+}
+createRoot(document.getElementById('root')).render(h(Demo));
+</script></body></html>

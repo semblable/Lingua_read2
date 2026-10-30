@@ -13,6 +13,7 @@ import {
 import TranslationPopup from '../components/TranslationPopup';
 import SummaryPopup from '../components/SummaryPopup';
 import AudiobookPlayer from '../components/AudiobookPlayer';
+import LessonStudyPanel from '../components/reader/LessonStudyPanel';
 import DownloadForOfflineButton from '../components/offline/DownloadForOfflineButton';
 import './TextDisplay.css';
 import { SettingsContext } from '../contexts/SettingsContext';
@@ -2099,13 +2100,15 @@ const TextDisplay = () => {
     finally { setIsMarkingAll(false); }
   };
 
+  const completionIntentBusy = useRef(false);
   const handleCompleteLesson = async () => {
-    if (!text?.textId) return; // Require at least textId
+    if (!text?.textId || completionIntentBusy.current) return;
+    completionIntentBusy.current = true;
     setCompleting(true);
     try {
       // Call the correct API endpoint using the imported completeLesson function
       // Pass bookId if available, otherwise null/undefined (handled by completeLesson in api.js)
-      const textStats = await completeLesson(text?.bookId ?? null, text.textId);
+      const textStats = await completeLesson(text?.bookId ?? null, text.textId, false, { sourceRevision: text.studyRevision });
       // If standalone text, always go back to its Library folder after completion
       if (!text?.bookId) {
         navigate(libraryPath(text?.folderId));
@@ -2118,17 +2121,18 @@ const TextDisplay = () => {
         navigate(`/books/${text.bookId}`);
       }
     } catch (error: unknown) { alert(`Failed to complete lesson: ${(error as Error)?.message}`); }
-    finally { setCompleting(false); }
+    finally { completionIntentBusy.current = false; setCompleting(false); }
   };
 
   const handleCompleteLessonNoStats = async () => {
-    if (!text?.textId) return;
+    if (!text?.textId || completionIntentBusy.current) return;
+    completionIntentBusy.current = true;
     setCompleting(true);
     try {
       await completeLesson(text?.bookId ?? null, text.textId, true);
       navigate(text?.bookId ? `/books/${text.bookId}` : libraryPath(text?.folderId));
     } catch (error: unknown) { alert(`Failed to complete lesson: ${(error as Error)?.message}`); }
-    finally { setCompleting(false); }
+    finally { completionIntentBusy.current = false; setCompleting(false); }
   };
 
   // --- New Sentence Rendering Logic ---
@@ -2422,6 +2426,8 @@ const TextDisplay = () => {
       />
 
       {/* On mobile the header above isn't rendered, so the offline control gets its own row. */}
+      {text?.textId && <LessonStudyPanel key={text.textId} textId={text.textId} bookId={text.bookId}
+        sourceRevision={text.studyRevision} />}
       {isMobile && offlineDownload && (
         <div className="px-3 py-1 d-flex justify-content-end">
           {offlineDownload}

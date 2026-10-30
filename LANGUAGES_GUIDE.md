@@ -65,7 +65,7 @@ Selecting MeCab or Jieba does not enable dictionary-based segmentation yet.
 ### Step 3: Script & Parsing Rules
 
 LinguaRead's tokenizers use these settings for word and sentence splitting.
-See [the language support status](docs/LANGUAGE_SUPPORT_STATUS.md) for tested scope
+See [the language roadmap](docs/LANGUAGE_SUPPORT_PLAN.md) for tested scope
 and unresolved Unicode, segmentation and sentence-boundary limitations.
 
 1. **Parser Type**:

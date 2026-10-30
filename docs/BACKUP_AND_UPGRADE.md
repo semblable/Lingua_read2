@@ -80,7 +80,7 @@ The in-app **Restore from Backup** overwrites the target database and does not
 restore media or keys. Use it only against the intended recovery target. Never
 run `docker compose down -v` on an installation whose data you want to retain.
 The [isolated synthetic restore drill](RELEASE_VERIFICATION.md#full-app-reliability-and-export-pass-2026-10-29)
-passed on the current working tree. Repeat at the intended release checkpoint;
+passed on the 2026-10-29 working tree. Repeat at the intended release checkpoint;
 the drill does not verify every existing installation's backups.
 
 ## Passwords and session recovery

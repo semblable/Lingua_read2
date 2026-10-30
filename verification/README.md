@@ -4,6 +4,10 @@ Run from the repository root. These files are for original synthetic fixtures
 only. Do not merge this Compose file with production, mount a personal library,
 or replace its synthetic credentials with production credentials.
 
+For language, statistics and repeat-credit work, use the separate
+[focused checks](language-support/README.md). Release evidence is summarized in
+[one record](../docs/RELEASE_VERIFICATION.md); past implementation detail is in Git.
+
 ```powershell
 docker compose -f verification/compose.yml -p linguaread-verify-20261028 up --build -d
 python verification/smoke.py

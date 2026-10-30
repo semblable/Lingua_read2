@@ -6,6 +6,14 @@ For substantial features, open an issue describing the learner's problem before
 starting work. The priorities in [the release plan](docs/OPEN_SOURCE_PLAN.md) are
 subject to actual learner feedback.
 
+For language/activity work, start with the short [roadmap](docs/LANGUAGE_SUPPORT_PLAN.md),
+then inspect code and relevant tests. Open [verification details](verification/README.md)
+only when reproducing those checks; do not preload the documentation collection.
+When using agents for larger work, a coordinator should pass bounded task briefs,
+relevant constraints and file references to workers without inheriting the full chat
+or documentation. Review the diff and results separately. Keep plans focused on
+unresolved outcomes and constraints; use Git history for implementation chronology.
+
 ## Support scope
 
 This is an experimental, single-maintainer project developed alongside a full-time

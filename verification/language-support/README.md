@@ -1,19 +1,58 @@
-# Bounded language-support experiment
+# Language and activity verification
 
-This is an audit, not a production tokenizer or a passing language-readiness test.
-Inputs are original synthetic strings. `candidateWords` are provisional expectations;
-native review is still required. Reports expose unresolved bugs rather than asserting
-that today's incorrect behavior is the desired contract.
+Run from the repository root with synthetic data only. [The short roadmap](../../docs/LANGUAGE_SUPPORT_PLAN.md) defines future work; code/tests define current behavior. Old Markdown journals were consolidated here; detailed chronology remains in Git.
 
-Before running: limit the spike to the six Chinese/Japanese/Thai examples and
-10k/100k UTF-16-unit inputs per language, with no added package/model dependency.
-Exploratory budget on this desktop: one engine's 100k pass under 1 s after initialization,
-under 128 MiB total process working set, no database or private text, and no network in
-the Linux container. These are rejection thresholds for this spike, not production SLAs.
-Do not infer application import latency or dictionary download size from a standalone
-tokenizer measurement. Record cold/warm and runtime versions with results.
+## Scope and contracts
 
-From the repository root (Node 24+ supports the source's erasable TypeScript):
+Vocabulary counts saved terms; coverage counts linked nonignored occurrences; reading volume retains legacy ASCII-whitespace units. The metrics intentionally differ. Unicode whitespace alone does not fix unspaced scripts or punctuation. Whole-text and sentence totals can also disagree; preserve already earned excess rather than clawing it back.
+
+The additive study ledger deduplicates accepted actions and supplies earned-completion checkpoints. Suppressed retries are not checkpoints; old finished flags cannot be backfilled safely. Initial sentence credit is lifetime per text, not a new rereading cycle after edits. Explicit rereads earn volume; new sentence/offline cycles still need versioned identity.
+
+Statistics reset keeps replay/checkpoint proof while hiding pass totals. Lesson deletion retains earned history; explicit language-content reset deletes its scoped records. Nonempty-ledger schema downgrade refuses history loss. Old-binary production rollback remains untested.
+
+## Reading-credit checks
+
+These use isolated SQLite in-memory learners and cover sentence/completion/repeat/reset orderings, goal baselines, interruptions, ownership and vocabulary/SRS preservation:
+
+```powershell
+dotnet test server/LinguaReadApi.Tests/LinguaReadApi.Tests.csproj --no-restore --filter FullyQualifiedName~ReadingCreditCompatibilityTests --logger 'trx;LogFileName=reading-credit.trx' --results-directory verification/language-support/test-results
+./verification/language-support/summarize-credit-results.ps1 -TrxPath verification/language-support/test-results/reading-credit.trx -OutputPath verification/language-support/reading-credit-after.json
+```
+
+Observations: [initial](reading-credit-before.json), [reset reproduction](reading-credit-review-before.json), [pre-ledger follow-up](reading-credit-after.json), [ledger cases](study-credit-report.json). Earlier reports retain then-known gaps; a passing diagnostic may reproduce a discrepancy rather than prove it fixed. Thai counting input uses CJK stops to isolate counting and is not a native acceptance fixture.
+
+## PostgreSQL concurrency and upgrade
+
+The three optional `PostgresStudyActivityTests` exercise concurrent activity writers, sentence/completion/reset races, prior-schema upgrade, empty downgrade/re-upgrade, nonempty downgrade refusal and preservation of synthetic learner records. Without the explicit connection they skip; CI supplies a disposable database.
+
+Use only this named disposable container and the required `studycheck` database. Generate fresh credentials; never substitute learner credentials. Wait for PostgreSQL readiness before running tests.
+
+```powershell
+$studyPassword = [guid]::NewGuid().ToString('N')
+docker run --rm --detach --name lingua-study-check-20261029 --publish 127.0.0.1:55439:5432 --env "POSTGRES_PASSWORD=$studyPassword" --env POSTGRES_DB=studycheck --mount type=tmpfs,destination=/var/lib/postgresql postgres:18.6
+if ($LASTEXITCODE -ne 0) { throw 'Could not create the disposable container; check name/port conflicts.' }
+try {
+    $studyReady = $false
+    for ($studyAttempt = 0; $studyAttempt -lt 30; $studyAttempt++) {
+        docker exec lingua-study-check-20261029 pg_isready -h 127.0.0.1 -U postgres -d studycheck *> $null
+        if ($LASTEXITCODE -eq 0) { $studyReady = $true; break }
+        Start-Sleep -Seconds 1
+    }
+    if (-not $studyReady) { throw 'PostgreSQL did not become ready.' }
+    $env:LINGUA_STUDY_TEST_POSTGRES = "Host=127.0.0.1;Port=55439;Database=studycheck;Username=postgres;Password=$studyPassword"
+    dotnet test server/LinguaReadApi.Tests/LinguaReadApi.Tests.csproj --no-restore --filter FullyQualifiedName~PostgresStudyActivityTests
+    if ($LASTEXITCODE -ne 0) { throw 'PostgreSQL verification failed.' }
+} finally {
+    Remove-Item Env:LINGUA_STUDY_TEST_POSTGRES -ErrorAction SilentlyContinue
+    docker stop lingua-study-check-20261029
+}
+```
+
+[Saved PostgreSQL results](study-postgres-report.json) are bounded evidence, not a production upgrade/restore rehearsal. Test hosts may need a permitted local connection in restricted environments.
+
+## Segmentation probe
+
+Six original Chinese/Japanese/Thai examples plus 10k/100k UTF-16-unit inputs. Provisional word expectations require native review. Standalone rejection bounds were a warm 100k pass under one second and total process working set under 128 MiB; these are not application SLAs.
 
 ```powershell
 node verification/language-support/probe.mjs > verification/language-support/node-report.json
@@ -21,51 +60,17 @@ dotnet build verification/language-support/LanguageSupportProbe.csproj
 dotnet verification/language-support/bin/Debug/net10.0/LanguageSupportProbe.dll verification/language-support/cases.json > verification/language-support/dotnet-windows-report.json
 ```
 
-For Linux use a locally built API image containing the deployed .NET runtime and ICU;
-mount **only this experiment directory**, read-only, with no network:
+Linux comparison, using the locally built API image with ICU:
 
 ```powershell
 $probeRoot = (Resolve-Path verification/language-support).Path
 docker run --rm --network none --read-only --mount "type=bind,source=$probeRoot,target=/probe,readonly" --entrypoint dotnet linguaread-verify-20261028-api:latest /probe/bin/Debug/net10.0/LanguageSupportProbe.dll /probe/cases.json > verification/language-support/dotnet-linux-report.json
 ```
 
-The C# executable calls the actual application tokenizer and optionally the runtime's
-native ICU word-break API. Native-library probing is deliberately confined here. This
-does not choose an engine, pin deployment data, or establish native-reviewed quality.
-Source-span checks cover exact UTF-16 reconstruction; they do not establish stability
-between different ICU versions. Do not feed the resulting boundaries into live texts.
+Saved [Node](node-report.json), [Windows](dotnet-windows-report.json) and [Linux](dotnet-linux-report.json) reports include runtime versions and timings. Source spans reconstruct the samples, but only 2/6 provisional word expectations match. No production tokenizer change is justified; do not ship the probe's native-library loader.
 
-## Reading-credit compatibility experiment
+## Header visuals
 
-[Contract, bounds, candidates and decisions](reading-credit-experiment.md) describe
-the separate units for saved vocabulary, coverage and earned reading activity.
-The experiment is `ReadingCreditCompatibilityTests` in the backend test project;
-it uses only synthetic learners and short strings in isolated SQLite in-memory
-databases. It does not run the ICU loader above or access a learner library.
+Copy [study-preview.html](study-preview.html) temporarily into `client/lingua-read-client/`, run Vite and open that path. Remove the client copy afterwards. It renders real headers with synthetic HTTP data, not audio playback or an installed learner session.
 
-```powershell
-dotnet test server/LinguaReadApi.Tests/LinguaReadApi.Tests.csproj --no-restore --filter FullyQualifiedName~ReadingCreditCompatibilityTests --logger 'trx;LogFileName=reading-credit.trx' --results-directory verification/language-support/test-results
-./verification/language-support/summarize-credit-results.ps1 -TrxPath verification/language-support/test-results/reading-credit.trx -OutputPath verification/language-support/reading-credit-after.json
-```
-
-Reports: [initial failures](reading-credit-before.json), [review reset reproduction](reading-credit-review-before.json),
-[final observations](reading-credit-after.json). Raw TRX is locally ignored. The
-initial report predates the reset/extra preservation cases and initially asserted
-the desired late-replay invariant; that assertion failed. The final suite keeps
-that scenario as an explicitly named diagnostic, checking same-index dedup without
-claiming the unseen-index overcredit was fixed. Passing the diagnostics means the
-documented discrepancy is reproduced, not that its linguistic/compatibility gate
-passes. The Thai counting input deliberately uses CJK stops to isolate counting
-from sentence-boundary quality; it is not a native Thai acceptance fixture.
-
-The test host needs a permitted local connection in restricted environments.
-Use the existing cached dependencies; the experiment adds no package/model.
-
-## Repeat tracking and PostgreSQL verification
-
-The [2026-10-30 repeat-tracking record](repeat-tracking.md) extends the compatibility
-work with visible per-lesson pass counts, durable retry identities, additive credit
-checkpoints and bounded PostgreSQL concurrency/migration checks. It includes the
-exact disposable-container command, scope, rollback limits and visual evidence.
-The earlier reports above remain the pre-ledger audit; they are not rewritten to
-pretend the newly protected cases already passed then.
+[Desktop](visuals/study-header-desktop.jpg) and [390px mobile](visuals/study-header-mobile.jpg) show the current layout. Browser inspection also covered the 320px menu/dialog, 44px targets, text-only hiding and count refresh. Older panel screenshots are historical. Physical devices, real Safari, complete offline reconnect and native language quality remain separate checks.

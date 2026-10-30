@@ -71,6 +71,11 @@ Repeat at the final release commit and inspect historical private assets as well
 The [existing image scan](../.github/workflows/security-scan.yml) checks
 container vulnerabilities and does not replace this gate.
 
+A 2026-10-30 GitGuardian alert against `18e8d73` is consistent with the disposable
+PostgreSQL setup's invented credentials; `ba9eb449` switched to per-run credentials.
+Exact occurrence/classification still requires private dashboard access. Removing
+the literal does not close or erase the historical incident.
+
 ## Tag and announce after the gates pass
 
 Choose a release version deliberately; the frontend package's `0.1.0` is not

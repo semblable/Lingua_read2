@@ -24,6 +24,9 @@ export function createDemoBackend(basePath: string) {
   });
   const bookmarks = new Map<number, number[]>();
   const positions = new Map<number, number>();
+  const studyCounts = new Map<number, { readCount: number; listenCount: number }>();
+  const studyEvents = new Map<string, string>();
+  const studyRevision = (textId: number) => `demo-lesson-${textId}`.padEnd(64, '0');
   const mined: Array<{ wordId: number; sentence: string; textTitle: string }> = [];
 
   const notify = () => {
@@ -32,6 +35,22 @@ export function createDemoBackend(basePath: string) {
   const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), {
     status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
   });
+  const recordStudy = (textId: number, kind: 'read' | 'listen', eventId: string, revision: string, seconds = 0) => {
+    if (!lessons.some(l => l.textId === textId)) return json({ message: 'This sample does not exist.' }, 404);
+    if (!eventId.trim() || eventId.length > 64 || !Number.isInteger(seconds) || seconds < 0 || seconds > 86400) {
+      return json({ message: 'Invalid sample study action.' }, 400);
+    }
+    const action = JSON.stringify([textId, kind, revision, seconds]);
+    const existing = studyEvents.get(eventId);
+    if (existing) return existing === action ? json({ saved: true }) : json({ message: 'This action ID belongs to a different study action.' }, 409);
+    if (revision !== studyRevision(textId)) return json({ message: 'Reload this sample before recording another pass.' }, 409);
+    studyEvents.set(eventId, action);
+    const counts = studyCounts.get(textId) || { readCount: 0, listenCount: 0 };
+    if (kind === 'read') counts.readCount++;
+    else counts.listenCount++;
+    studyCounts.set(textId, counts);
+    return json({ saved: true });
+  };
   const saveWord = (languageId: number, term: string, status: number, translation: string, keepStatus = false) => {
     let word = words.find(w => w.languageId === languageId && normalizeTerm(w.term) === normalizeTerm(term));
     if (word) {
@@ -76,11 +95,25 @@ export function createDemoBackend(basePath: string) {
         languageId: lesson.languageId, languageName: lesson.languageName, languageCode: lesson.languageCode,
         bookId: null, folderId: null, isFinished: false, isAudioLesson: lesson.isAudioLesson,
         hasSrtContent: lesson.isAudioLesson, wordLinkingStatus: 'complete',
+        studyRevision: studyRevision(lesson.textId),
         audioFilePath: lesson.isAudioLesson ? `${base}audio/north-wind-and-sun.mp3`.slice(1) : null,
         words: words.filter(w => w.languageId === lesson.languageId),
       });
     }
-    if (match(/^\/texts\/\d+\/complete$/)) return json({ message: 'Sample completed. Your real library is available in the self-hosted app.' });
+    if ((found = match(/^\/lesson-study\/(\d+)$/)) && method === 'GET') {
+      const textId = Number(found[1]);
+      if (!lessons.some(l => l.textId === textId)) return json({ message: 'This sample does not exist.' }, 404);
+      return json(studyCounts.get(textId) || { readCount: 0, listenCount: 0 });
+    }
+    if ((found = match(/^\/lesson-study\/(\d+)\/listen$/)) && method === 'POST') {
+      return recordStudy(Number(found[1]), 'listen', String(body.clientEventId || ''), String(body.sourceRevision || ''), Number(body.durationSeconds));
+    }
+    if ((found = match(/^\/texts\/(\d+)\/complete$/)) && method === 'PUT') {
+      if (url.searchParams.get('skipStats') !== 'true') {
+        return recordStudy(Number(found[1]), 'read', url.searchParams.get('clientEventId') || '', url.searchParams.get('sourceRevision') || '');
+      }
+      return json({ message: 'Sample completed. Your real library is available in the self-hosted app.' });
+    }
 
     if ((found = match(/^\/words\/language\/(\d+)$/))) return json(words.filter(w => w.languageId === Number(found![1])));
     if (path === '/words' && method === 'POST') {
@@ -148,7 +181,7 @@ export function createDemoBackend(basePath: string) {
   return {
     respond,
     snapshot: () => ({ words: structuredClone(words), mined: structuredClone(mined) }),
-    reset: () => { words = initialWords(); nextWordId = 1000; bookmarks.clear(); positions.clear(); mined.length = 0; notify(); },
+    reset: () => { words = initialWords(); nextWordId = 1000; bookmarks.clear(); positions.clear(); studyCounts.clear(); studyEvents.clear(); mined.length = 0; notify(); },
   };
 }
 

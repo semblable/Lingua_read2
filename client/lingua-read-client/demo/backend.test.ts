@@ -9,6 +9,30 @@ const request = (path: string, method = 'GET', body?: unknown) => new Request(`h
 afterEach(() => vi.restoreAllMocks());
 
 describe('static demo boundary', () => {
+  it('records study passes locally, deduplicates retries, and resets counts with the sample', async () => {
+    const backend = createDemoBackend('/Lingua_read2/');
+    const other = createDemoBackend('/Lingua_read2/');
+    const lesson = await (await backend.respond(request('/texts/2'))).json();
+    expect(lesson.studyRevision).toHaveLength(64);
+    const counts = async (instance = backend) => (await instance.respond(request('/lesson-study/2'))).json();
+    expect(await counts()).toEqual({ readCount: 0, listenCount: 0 });
+    const read = `/texts/2/complete?clientEventId=read-1&repeat=true&sourceRevision=${lesson.studyRevision}`;
+    expect((await backend.respond(request(read, 'PUT'))).ok).toBe(true);
+    expect((await backend.respond(request(read, 'PUT'))).ok).toBe(true);
+    const listen = { clientEventId: 'listen-1', sourceRevision: lesson.studyRevision, durationSeconds: 60 };
+    expect((await backend.respond(request('/lesson-study/2/listen', 'POST', listen))).ok).toBe(true);
+    expect((await backend.respond(request('/lesson-study/2/listen', 'POST', listen))).ok).toBe(true);
+    expect((await backend.respond(request('/lesson-study/2/listen', 'POST', { ...listen, durationSeconds: 120 }))).status).toBe(409);
+    expect((await backend.respond(request('/lesson-study/2/listen', 'POST', { ...listen, clientEventId: 'stale', sourceRevision: 'stale' }))).status).toBe(409);
+    await backend.respond(request('/texts/2/complete?skipStats=true', 'PUT'));
+    expect(await counts()).toEqual({ readCount: 1, listenCount: 1 });
+    expect(await counts(other)).toEqual({ readCount: 0, listenCount: 0 });
+    backend.reset();
+    expect(await counts()).toEqual({ readCount: 0, listenCount: 0 });
+    expect((await backend.respond(request(read, 'PUT'))).ok).toBe(true);
+    expect(await counts()).toEqual({ readCount: 1, listenCount: 0 });
+  });
+
   it('keeps reader word edits in this instance and resets them without affecting another visitor', async () => {
     const first = createDemoBackend('/Lingua_read2/');
     const second = createDemoBackend('/Lingua_read2/');

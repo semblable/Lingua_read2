@@ -43,8 +43,9 @@ function LessonStudyPanelBody({ textId, bookId, sourceRevision, hasAudio }: Prop
 
   const record = async (kind: 'read' | 'listen') => {
     if (working.current || !sourceRevision) return;
-    const seconds = Math.round(Number(minutes) * 60);
-    if (kind === 'listen' && (!minutes.trim() || !Number.isFinite(seconds) || seconds < 0 || seconds > 86400)) {
+    const durationMinutes = Number(minutes);
+    const seconds = Math.round(durationMinutes * 60);
+    if (kind === 'listen' && (!minutes.trim() || !Number.isFinite(durationMinutes) || durationMinutes < 0 || durationMinutes > 1440)) {
       setError('Enter a duration between 0 and 1,440 minutes.'); return;
     }
     working.current = true; setBusy(true); setError(''); setNotice('');
@@ -54,6 +55,7 @@ function LessonStudyPanelBody({ textId, bookId, sourceRevision, hasAudio }: Prop
       else await recordLessonListen(textId, sourceRevision, seconds);
       if (currentText.current !== activeText) return;
       setShowListen(false);
+      if (kind === 'listen') setMinutes('0');
       setNotice(kind === 'read' ? 'Read recorded.' : seconds > 0 ? 'Listen and listening time recorded.' : 'Listen recorded. No extra time added.');
       await refresh();
     } catch (e) { if (currentText.current === activeText) setError((e as Error).message || 'Could not record this pass. Retry to check the same action.'); }

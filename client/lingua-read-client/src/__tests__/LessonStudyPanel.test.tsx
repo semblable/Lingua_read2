@@ -61,6 +61,30 @@ test('old cached lessons stay readable while pass recording requires a source re
   expect(completeLesson).not.toHaveBeenCalled();
   expect(screen.getByText(/Reload online/)).toBeInTheDocument();
 });
+
+test.each(['-0.001', '1440.001'])('rejects out-of-range minutes before rounding: %s', async minutes => {
+  render(<LessonStudyPanel textId={44} sourceRevision="revision" hasAudio />);
+  fireEvent.click(screen.getByRole('button', { name: /Listened passes/ }));
+  fireEvent.click(screen.getByRole('button', { name: 'Record a listen' }));
+  fireEvent.change(screen.getByLabelText('Additional listening time (minutes)'), { target: { value: minutes } });
+  fireEvent.click(screen.getByRole('button', { name: 'Record listen' }));
+  expect(recordLessonListen).not.toHaveBeenCalled();
+  expect(await screen.findAllByText('Enter a duration between 0 and 1,440 minutes.')).toHaveLength(2);
+});
+
+test('a new listen defaults to no extra time after recording external listening time', async () => {
+  render(<LessonStudyPanel textId={44} sourceRevision="revision" hasAudio />);
+  fireEvent.click(screen.getByRole('button', { name: /Listened passes/ }));
+  fireEvent.click(screen.getByRole('button', { name: 'Record a listen' }));
+  fireEvent.change(screen.getByLabelText('Additional listening time (minutes)'), { target: { value: '2.5' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Record listen' }));
+  await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Listen and listening time recorded.'));
+  fireEvent.click(screen.getByRole('button', { name: /Listened passes/ }));
+  fireEvent.click(screen.getByRole('button', { name: 'Record a listen' }));
+  expect(screen.getByLabelText('Additional listening time (minutes)')).toHaveValue(0);
+  fireEvent.click(screen.getByRole('button', { name: 'Record listen' }));
+  await waitFor(() => expect(recordLessonListen).toHaveBeenLastCalledWith(44, 'revision', 0));
+});
 test('header completion refreshes counters and an older response cannot overwrite them', async () => {
   let finishOld!: (value: { readCount: number; listenCount: number }) => void;
   vi.mocked(getLessonStudy).mockReturnValueOnce(new Promise(resolve => { finishOld = resolve; }))

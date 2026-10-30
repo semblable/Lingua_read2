@@ -99,6 +99,13 @@ describe('mediaSrc', () => {
       expect(getTrackDisplayName({ filePath: 'audio/track-01.mp3' })).toBe('track-01');
     });
 
+    test('keeps track labels stable for unique upload paths without changing custom names', () => {
+      const filePath = 'audiobooks/42/track_12_0123456789abcdef0123456789abcdef.mp3';
+      expect(getTrackDisplayName({ filePath })).toBe('track_12');
+      expect(getTrackDisplayName({ filePath, title: 'My chapter' })).toBe('My chapter');
+      expect(getTrackDisplayName({ filePath: 'audio/track_12_interview.mp3' })).toBe('track_12_interview');
+    });
+
     test('falls back to filename from url when filePath missing', () => {
       expect(getTrackDisplayName({ url: 'https://example.com/audio/song.ogg' })).toBe('song');
     });

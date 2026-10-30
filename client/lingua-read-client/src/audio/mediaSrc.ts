@@ -61,7 +61,9 @@ export const getTrackDisplayName = (track: TrackLike): string => {
 
   const path = track.filePath || track.url || '';
   const fileName = path.split(/[\\/]/).pop() || '';
-  return fileName.replace(/\.[^/.]+$/, '') || 'Untitled track';
+  const stem = fileName.replace(/\.[^/.]+$/, '');
+  // New uploads have unique storage names; keep the existing track label.
+  return stem.replace(/^(track_\d+)_[a-f0-9]{32}$/i, '$1') || 'Untitled track';
 };
 
 // --- Source-swap abort detection -------------------------------------------

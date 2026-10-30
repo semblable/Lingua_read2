@@ -120,6 +120,7 @@ export const useAudiobookPlayer = ({
     isPlaying: false
   });
   const wasPlayingRef = useRef(false);
+  const listeningSuspendedRef = useRef(false);
   const autoAdvanceRef = useRef(autoAdvanceTracks ?? true);
   const pendingAutoAdvanceRef = useRef(false);
 
@@ -456,6 +457,7 @@ export const useAudiobookPlayer = ({
   }, [audioRef, handleSegmentBoundary, requestAudioPlay]);
 
   const syncPlaybackState = useCallback((nextIsPlaying: boolean) => {
+    isPlayingRef.current = nextIsPlaying;
     setIsPlaying(nextIsPlaying);
     if (onPlaybackStateChangeRef.current) {
       onPlaybackStateChangeRef.current(nextIsPlaying);
@@ -514,19 +516,40 @@ export const useAudiobookPlayer = ({
 
     const tracker = listeningTrackerRef.current;
 
-    const onWaiting = () => {
-      setIsBuffering(true);
+    const suspendListening = () => {
+      listeningSuspendedRef.current = true;
       tracker.markStalling();
       flushListeningActivityRef.current?.(false);
       tracker.clearCheckpoint();
     };
+    const resumeListening = () => {
+      listeningSuspendedRef.current = false;
+      tracker.markPlaying();
+      tracker.ensureCheckpoint(Date.now());
+    };
+    const onWaiting = () => {
+      setIsBuffering(true);
+      suspendListening();
+    };
+    const onSeeking = () => {
+      suspendListening();
+    };
+    const onSeeked = () => {
+      if (!isPlayingRef.current || !getAudioPlaybackIntent(audio) ||
+        audio.paused || audio.seeking || audio.readyState < audio.HAVE_FUTURE_DATA) return;
+      setIsBuffering(false);
+      resumeListening();
+    };
+    const onStalled = () => {
+      // `stalled` describes network fetching; buffered audio can still play.
+      if (!audio.paused && !audio.seeking && audio.readyState >= audio.HAVE_FUTURE_DATA) return;
+      onWaiting();
+    };
     const onPlaying = () => {
       sourceSwapRef.current = createEmptySourceSwap();
       setIsBuffering(false);
-      tracker.markPlaying();
-      if (isPlayingRef.current) {
-        tracker.startCheckpoint(Date.now());
-      }
+      if (!isPlayingRef.current || !getAudioPlaybackIntent(audio) || audio.seeking) return;
+      resumeListening();
     };
     const onPlay = () => {
       if (!getAudioPlaybackIntent(audio)) {
@@ -535,9 +558,17 @@ export const useAudiobookPlayer = ({
         return;
       }
       playbackStartedContentKeyRef.current = contentKey;
+      // `play` confirms intent, but startup/resume can still be buffering.
+      if (!isPlayingRef.current) {
+        suspendListening();
+      }
       syncPlaybackState(true);
     };
     const onPause = () => {
+      // Close the checkpoint at the event, before a seeked/playing event or a
+      // React render can run. Repeated pauses then have no elapsed time to add.
+      flushListeningActivityRef.current?.(true);
+      tracker.clearCheckpoint();
       if (segmentPlaybackRef.current.active) {
         resetSegmentPlayback();
       }
@@ -550,6 +581,9 @@ export const useAudiobookPlayer = ({
     audio.addEventListener('ended', handleEnded);
     audio.addEventListener('error', handleError);
     audio.addEventListener('waiting', onWaiting);
+    audio.addEventListener('seeking', onSeeking);
+    audio.addEventListener('seeked', onSeeked);
+    audio.addEventListener('stalled', onStalled);
     audio.addEventListener('play', onPlay);
     audio.addEventListener('pause', onPause);
     audio.addEventListener('playing', onPlaying);
@@ -565,6 +599,9 @@ export const useAudiobookPlayer = ({
       audio.removeEventListener('ended', handleEnded);
       audio.removeEventListener('error', handleError);
       audio.removeEventListener('waiting', onWaiting);
+      audio.removeEventListener('seeking', onSeeking);
+      audio.removeEventListener('seeked', onSeeked);
+      audio.removeEventListener('stalled', onStalled);
       audio.removeEventListener('play', onPlay);
       audio.removeEventListener('pause', onPause);
       audio.removeEventListener('playing', onPlaying);
@@ -607,7 +644,9 @@ export const useAudiobookPlayer = ({
   useEffect(() => {
     const tracker = listeningTrackerRef.current;
     if (isPlaying) {
-      tracker.ensureCheckpoint(Date.now());
+      if (!listeningSuspendedRef.current) {
+        tracker.ensureCheckpoint(Date.now());
+      }
       wasPlayingRef.current = true;
     } else if (wasPlayingRef.current) {
       flushListeningActivity(true);

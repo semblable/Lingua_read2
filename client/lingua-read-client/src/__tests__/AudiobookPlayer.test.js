@@ -320,6 +320,7 @@ describe('AudiobookPlayer', () => {
     act(() => {
       audio.__lrAllowPlayback = true;
       fireEvent.play(audio);
+      fireEvent(audio, new Event('playing'));
     });
     await act(async () => {});
 
@@ -345,6 +346,7 @@ describe('AudiobookPlayer', () => {
     act(() => {
       audio.__lrAllowPlayback = true;
       fireEvent.play(audio);
+      fireEvent(audio, new Event('playing'));
     });
     await act(async () => {});
 
@@ -373,6 +375,7 @@ describe('AudiobookPlayer', () => {
     act(() => {
       audio.__lrAllowPlayback = true;
       fireEvent.play(audio);
+      fireEvent(audio, new Event('playing'));
     });
     await act(async () => {});
 
@@ -391,6 +394,7 @@ describe('AudiobookPlayer', () => {
     act(() => {
       audio.__lrAllowPlayback = true;
       fireEvent.play(audio);
+      fireEvent(audio, new Event('playing'));
     });
     await act(async () => {});
 
@@ -411,6 +415,7 @@ describe('AudiobookPlayer', () => {
     act(() => {
       audio.__lrAllowPlayback = true;
       fireEvent.play(audio);
+      fireEvent(audio, new Event('playing'));
     });
     await act(async () => {});
 
@@ -445,6 +450,7 @@ describe('AudiobookPlayer', () => {
     act(() => {
       audio.__lrAllowPlayback = true;
       fireEvent.play(audio);
+      fireEvent(audio, new Event('playing'));
     });
     await act(async () => {});
 
@@ -463,6 +469,7 @@ describe('AudiobookPlayer', () => {
     act(() => {
       audio.__lrAllowPlayback = true;
       fireEvent.play(audio);
+      fireEvent(audio, new Event('playing'));
     });
     await act(async () => {});
 
@@ -482,6 +489,7 @@ describe('AudiobookPlayer', () => {
     act(() => {
       audio.__lrAllowPlayback = true;
       fireEvent.play(audio);
+      fireEvent(audio, new Event('playing'));
     });
     await act(async () => {});
 

@@ -28,10 +28,20 @@ Use the same isolated learner harness for elapsed-time replay, manual pass separ
 ```powershell
 dotnet test server/LinguaReadApi.Tests/LinguaReadApi.Tests.csproj --no-restore --filter FullyQualifiedName~ListeningCompatibilityTests --logger 'trx;LogFileName=listening.trx' --results-directory verification/language-support/test-results
 cd client/lingua-read-client
-npm test -- --run src/__tests__/listeningCompatibility.test.js
+npm test -- --run src/__tests__/listeningCompatibility.test.js src/__tests__/audiobookListeningBoundaries.test.js
 ```
 
-The client checks synthetic speed, pause/buffer, seek/loop checkpoints and keyed offline replay. They do not reproduce real media event ordering or a physical disconnect. Playback payloads lack source duration/revision, and path-based lesson hashes cannot detect in-place audio replacement. Do not derive historical equivalents from elapsed seconds. Legacy unkeyed retries remain additive; older-server resets cannot recover deleted IDs. Retained reset receipts prevent keyed replay without becoming manual pass counts or reading credit.
+The client checks synthetic speed, pause/buffer, seek/loop checkpoints and keyed offline replay. Player event tests exercise seek suspension/resume and stalled fetching with and without buffered playback. They do not reproduce real media event ordering or a physical disconnect. Playback payloads lack source duration/revision, and path-based lesson hashes cannot detect in-place audio replacement. Do not derive historical equivalents from elapsed seconds. Legacy unkeyed retries remain additive; older-server resets cannot recover deleted IDs. Retained reset receipts prevent keyed replay without becoming manual pass counts or reading credit.
+
+## Audio upload isolation
+
+`AudiobookUploadStorageTests` uses tiny synthetic uploads, real temp files and isolated SQLite contexts to check overlapping uploads and failure cleanup:
+
+```powershell
+dotnet test server/LinguaReadApi.Tests/LinguaReadApi.Tests.csproj --no-restore --filter FullyQualifiedName~AudiobookUploadStorageTests
+```
+
+New uploads use unique creation-only paths; existing paths and track IDs remain unchanged. This prevents ordinary uploads from replacing another source, but does not prove legacy file immutability, media byte identity after out-of-band edits or authoritative duration. Concurrent track numbering/order remains separate work; no historical activity is recalculated.
 
 ## PostgreSQL concurrency and upgrade
 

@@ -32,6 +32,8 @@ namespace LinguaReadApi.Controllers
         private readonly IHardcoverService? _hardcoverService;
         private readonly WordLinkingChannel? _wordLinkingChannel;
         private readonly ChapterDetectionService _chapterDetectionService;
+        /// <summary>Where uploaded audiobook media lives; tests use an isolated temp directory.</summary>
+        internal string? WebRoot { get; init; }
         private static readonly JsonSerializerOptions StructuredContentJsonOptions = new(JsonSerializerDefaults.Web)
         {
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase
@@ -1041,12 +1043,9 @@ namespace LinguaReadApi.Controllers
                 return NotFound("Book not found or access denied.");
             }
 
-            // 2. Define storage path
-            // Use a subfolder within wwwroot, e.g., wwwroot/audiobooks/{bookId}
-            // Ensure IWebHostEnvironment is injected if needed for path resolution, or construct path manually.
-            // For simplicity here, assuming relative path from wwwroot. Needs refinement for production.
+            // 2. Store audiobook files under wwwroot/audiobooks/{bookId}.
             var relativeBookAudioPath = Path.Combine("audiobooks", bookId.ToString());
-            var absoluteBookAudioPath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", relativeBookAudioPath); // Adjust if wwwroot isn't the base
+            var absoluteBookAudioPath = Path.Combine(WebRoot ?? Path.Combine(Directory.GetCurrentDirectory(), "wwwroot"), relativeBookAudioPath);
 
             // Ensure the directory exists
             Directory.CreateDirectory(absoluteBookAudioPath);
@@ -1072,13 +1071,15 @@ namespace LinguaReadApi.Controllers
 
                     currentMaxTrackNumber++;
                     var trackNumber = currentMaxTrackNumber;
-                    var safeFileName = $"track_{trackNumber}{fileExtension}";
+                    // Unique, creation-only paths isolate overlapping uploads; TrackNumber still controls ordering.
+                    var safeFileName = $"track_{trackNumber}_{Guid.NewGuid():N}{fileExtension}";
                     var relativeFilePath = Path.Combine(relativeBookAudioPath, safeFileName);
                     var absoluteFilePath = Path.Combine(absoluteBookAudioPath, safeFileName);
 
-                    savedFilePaths.Add(absoluteFilePath);
-                    using (var stream = new FileStream(absoluteFilePath, FileMode.Create))
+                    using (var stream = new FileStream(absoluteFilePath, FileMode.CreateNew))
                     {
+                        // Cleanup owns a path only after this request has created it.
+                        savedFilePaths.Add(absoluteFilePath);
                         await file.CopyToAsync(stream);
                     }
 

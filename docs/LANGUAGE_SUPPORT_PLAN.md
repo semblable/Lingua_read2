@@ -1,53 +1,31 @@
-# Language support: next work
+# Language implementation roadmap
 
-Goal: make all 44 catalog languages practically usable while keeping existing learner data intact. Regional varieties share catalog entries; preserve existing custom/regional records and their IDs. A preset is not a readiness claim.
+Goal: practical support for all 44 catalog languages. Regional varieties share catalog entries; preserve existing custom/regional records and IDs. Presets are not proof of support.
 
-Use this as a short roadmap, not an implementation specification. Inspect current code and tests, reproduce the problem, and choose the smallest useful batch. Reorder work when evidence shows a dependency. Detailed implementation history is in Git; reproduction commands and observations are in [verification](../verification/language-support/README.md).
+## Next: language coverage
 
-## Current baseline
+Start language implementation now. Fractional listening and beta publication are independent, not prerequisites. Ship one usable language slice at a time; revise the order from results.
 
-The catalog, Turkish reader matching, dictionary source filtering, speech-tag handling and basic saved-direction propagation have focused fixes. Per-lesson Read/Listened menus record whole passes; pass actions require connectivity, and partial playback already earns elapsed listening minutes. Fractional passes and read-along credit are not implemented.
+1. **Chinese:** replace the `jieba` placeholder with real segmentation. Compare engines on Simplified/Traditional, mixed Latin/numbers and supplementary Han; check licenses, deployment size and runtime. Integrate consistent server/reader spans, then verify import, selection/lookup, saved terms/phrases, reload, mining/review and offline reading. No automatic script conversion or vocabulary merging.
+2. **Korean, alongside Chinese evaluation:** build Hangul/Jamo, punctuation, selection and saved-term lookup fixtures; fix demonstrated failures. Keep space-separated surface forms usable. Evaluate particle/ending analysis and dictionary-form lookup separately, preserving displayed text and existing vocabulary identities.
+3. **Japanese, then Thai:** implement actual Japanese segmentation behind the ineffective `mecab` option, preserving ruby/furigana and offsets; integrate a suitable Thai segmenter. Reuse the integration contract, not Chinese boundary assumptions.
+4. **Other languages:** prioritize reproduced sentence/import, Indic combining-mark, Vietnamese grouping and RTL/mixed-direction problems. Verify dictionaries, speech/provider mappings and offline use per language.
 
-No all-44-language acceptance pass exists. Chinese/Japanese parser names do not invoke their advertised engines; Thai and other unspaced text still lack useful segmentation. The ICU probe demonstrated feasibility, not acceptable linguistic boundaries: do not ship its experimental loader.
+## Rollout contracts
 
-## Next candidates
+- Use original fixtures and shared server/client expected spans. Preserve source text and selection offsets; the existing ICU probe is not a production engine.
+- Version boundary changes and enable a bounded scope first. Prove compatibility/recovery before relinking existing texts. Preserve saved phrases/statuses, mined sentences, SRS, bookmarks and offline/resume state; never spread paragraph status to every new word.
+- Keep vocabulary identity separate from segmentation. Reproduce canonical/case failures before normalization or rekeying; resolve collisions without losing records.
+- Coverage is recomputable; earned activity is history. Preserve recorded units, manual passes, goals and reset/retry proof. Never retokenize historical credit or infer it from finished flags.
 
-### Partial listening and reading activity
+## Listening follow-up
 
-Use fractional listening exposure: played source seconds divided by that source revision's duration. Keep listening minutes as actual elapsed playback time. Half a 60-minute lesson at 1.5× earns 0.5 equivalent listens and 20 listening minutes. Replayed sections add exposure; the count is not unique coverage. Seeking, pauses and buffering add none.
+First fix source/language attribution across switches and delayed retries; then establish audio revision/duration snapshots and compatible offline event identity. Old clients may discard unknown operations/fields. No historical fractional backfill.
 
-Keep audio-only listening separate from reading credit. An explicit read-along mode may credit transcript spans actually encountered. An open tab, auto-scroll or an unmapped audiobook track is insufficient evidence of reading.
-
-Extend the bounded synthetic listening checks before enabling fractional totals. The current payload carries elapsed seconds and language only: establish immutable audio revision/duration and playback identity before accepting source exposure. Keep manual pass declarations separate, retain unknown-duration time without inventing equivalents, and retain the original event ID through interrupted/offline retries. Close accounting at source/language boundaries so pending seconds and late failures keep their original attribution. Old clients may discard new queue types; choose a compatible rollout before adding one.
-
-Verify sentence/completion overlap, deliberate repeats, goals/reset, speed changes, seeks/loops, edited audio, track switches and multiple devices. Reset must preserve keyed replay proof; events without IDs and resets performed by older servers cannot be reconstructed safely. Do not guess historical fractions or change earned totals. Read-along still requires explicit mode and reliable transcript mapping.
-
-### Identity and useful segmentation
-
-Reproduce Unicode identity failures before choosing normalization or key changes: Greek sigma, Hindi/Bengali canonical pairs, composed/decomposed Hangul and supplementary Han. Audit leading/trailing apostrophes, Greek middle dot and Hebrew gershayim. Existing selective normalization and rekey/relink tests do not establish a general migration.
-
-Compare language-specific Chinese/Japanese/Thai engines on the existing corpus, then obtain native review and assess deployment size, runtime cost and licenses. Vietnamese lexical grouping and Korean particles also need learner validation. Preserve source spans, combining marks and browser selection offsets.
-
-Boundary changes must preserve saved phrases, known statuses, sentence mining, bookmarks and progress across reload/offline use. Prove migration and recovery before relinking existing texts; do not spread a saved paragraph's status to every newly split word.
-
-### Remaining usability
-
-- Check RTL and mixed-direction selection, fonts and wrapping on actual devices; saved direction alone does not prove usability.
-- Fix demonstrated sentence/import problems, including abbreviations, numbers, ruby/furigana and chunk joins, without losing source text or SRT timing.
-- Verify provider/voice mappings and clear unavailable states. Preserve complete language/script/region tags; stored language codes still have a ten-character limit.
-- Keep unavailable romanization hidden. Defer lemma grouping, cloze redesign and unrelated features until learner evidence justifies them.
-- Keep vocabulary/CEFR estimates approximate unless independently validated for that language; saved-term counts do not establish proficiency.
-
-## Non-negotiable contracts
-
-- Preserve vocabulary IDs, meanings, edited statuses, phrases, mined sentences, SRS history and earned reading/listening activity. Resolve identity collisions without silently discarding conflicting records.
-- Vocabulary size counts saved terms; coverage counts linked nonignored occurrences; reading activity counts earned events in their recorded unit. Totals need not match. Current activity uses ASCII-whitespace chunks, so unspaced text, punctuation and Unicode spaces remain inaccurate.
-- Coverage is a recomputable cache; earned activity is history. Do not globally replace the counting utility, silently recredit history or reset goal baselines.
-- Version semantic changes and prove compatibility, interrupted-operation recovery and rollback on synthetic data. Existing offline clients can discard unknown queue types.
-- The study ledger retains retry/checkpoint evidence through statistics reset; a nonempty ledger refuses destructive schema downgrade. An old finished flag does not prove earned credit.
+Equivalents = played source duration / revision duration; minutes = elapsed playback time. Half a 60-minute lesson at 1.5× earns 0.5 equivalents and 20 minutes. Replays add exposure; seeks, pauses and buffering add none. Unknown duration earns time only. Read-along requires explicit mode and reliable transcript mapping; audio alone earns no reading credit.
 
 ## Acceptance
 
-For each language: ordinary import, useful selection/lookup, saved status after reload, phrase saving, mining/review, resume, transcripts and downloaded offline reading must work together. Native review, physical devices and real disconnect/reconnect are separate evidence from automated fixtures. Promote readiness only for the scope actually verified.
+Verify the complete reader workflow plus transcripts/resume per language. Native review, physical devices and real disconnect/reconnect remain separate checks. Keep unsupported romanization hidden and proficiency estimates approximate.
 
-Keep [user guidance](../LANGUAGES_GUIDE.md) accurate and use the [release checklist](RELEASING.md) for publication.
+[Verification/fixtures](../verification/language-support/README.md) · [User guide](../LANGUAGES_GUIDE.md) · [Release checklist](RELEASING.md). Keep implementation history in Git.

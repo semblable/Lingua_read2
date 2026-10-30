@@ -71,17 +71,17 @@ function LessonStudyPanelBody({ textId, bookId, sourceRevision }: Props) {
         <Button size="sm" variant="outline-secondary" disabled={busy || !sourceRevision} onClick={() => setShowListen(true)}>Record a listen</Button>
       </div>
     </div>
-    <div className="text-muted mt-1" style={{ fontSize: '0.75rem' }}>Recorded passes since tracking began. Earlier activity totals are preserved.{!sourceRevision && ' Reload online to record a pass.'}</div>
-    <div role="status" aria-live="polite" className="small text-success-emphasis">{notice}</div>
+    <div className="lesson-study__scope mt-1">Recorded passes since tracking began. Earlier activity totals are preserved.{!sourceRevision && ' Reload online to record a pass.'}</div>
+    <div role="status" aria-live="polite" className="lesson-study__status small">{notice}</div>
     {error && <Alert variant="warning" className="py-1 mt-2 mb-0 small">{error}</Alert>}
-    <Modal show={showListen} onHide={() => !busy && setShowListen(false)} centered>
+    <Modal show={showListen} onHide={() => !busy && setShowListen(false)} contentClassName="lesson-study-dialog" centered>
       <Modal.Header closeButton={!busy}><Modal.Title>Record a completed listen</Modal.Title></Modal.Header>
       <Modal.Body>
         <p>This adds one listen to this lesson.</p>
         <Form.Group controlId="lesson-listen-minutes">
           <Form.Label>Additional listening time (minutes)</Form.Label>
           <Form.Control type="number" min="0" max="1440" step="0.1" value={minutes} onChange={e => setMinutes(e.target.value)} disabled={busy} />
-          <Form.Text>Leave at 0 if the player already tracked this time. Add time for a listen outside the app.</Form.Text>
+          <Form.Text className="lesson-study-dialog__hint">Leave at 0 if the player already tracked this time. Add time for a listen outside the app.</Form.Text>
         </Form.Group>
         {error && <Alert variant="warning" className="mt-2 mb-0">{error}</Alert>}
       </Modal.Body>

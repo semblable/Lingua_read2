@@ -1,13 +1,28 @@
-.lesson-study { background: var(--bs-tertiary-bg); }
+.lesson-study {
+  background: var(--theme-surface-bg, var(--bs-tertiary-bg));
+  color: var(--theme-text, var(--bs-body-color));
+  border-bottom-color: var(--theme-border-color, var(--bs-border-color)) !important;
+}
 .lesson-study__count { display: inline-flex; align-items: center; gap: 0.35rem; }
 .lesson-study__count strong { font-variant-numeric: tabular-nums; }
+.lesson-study__scope { font-size: 0.75rem; opacity: 0.85; }
+.lesson-study__status { font-weight: 500; }
+.lesson-study-dialog__hint { color: var(--theme-text, var(--bs-body-color)); opacity: 0.85; }
 .lesson-study .btn {
   min-height: 36px;
-  color: var(--bs-body-color);
-  border-color: var(--bs-border-color);
-  background: var(--bs-body-bg);
+  color: inherit;
+  border-color: var(--theme-border-color, var(--bs-border-color));
+  background: var(--background-color, var(--bs-body-bg));
 }
-.lesson-study .btn:hover:enabled { background: var(--bs-secondary-bg); }
+.lesson-study .btn:hover:enabled { background: var(--theme-surface-bg, var(--bs-secondary-bg)); }
+.lesson-study-dialog .btn-primary {
+  color: #fff;
+  background-color: #126b5b;
+  border-color: #126b5b;
+}
+.lesson-study-dialog .btn-primary:hover { background-color: #0f5b4e; border-color: #0f5b4e; }
 @media (max-width: 600px) {
-  .lesson-study .btn { min-height: 44px; }
+  .lesson-study .btn,
+  .lesson-study-dialog .btn,
+  .lesson-study-dialog .form-control { min-height: 44px; }
 }

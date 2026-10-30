@@ -105,7 +105,9 @@ Sanitized observations: [SQLite credit cases](study-credit-report.json),
 ## Visual and browser checks
 
 The real `LessonStudyPanel` was rendered with a synthetic HTTP fixture and inspected
-in Chromium at desktop and 390×844 viewport sizes, in light and dark themes. Controls
+in Chromium at desktop and 390×844 viewport sizes, in light and dark themes. A
+follow-up binds the controls to the app's actual light/dark/classic-dark variables
+rather than assuming Bootstrap's `data-bs-theme` toggle. Controls
 wrap, mobile pass buttons have 44px minimum height, the dialog explains count-only
 listening, and success/failure messages distinguish recorded activity. Automated
 tests cover repeated clicks, safe retry IDs, late acknowledgements, stale counter
@@ -119,6 +121,7 @@ and changed source text receive a fresh revision instead of endless 304 response
 
 Screenshots (synthetic component fixture, not production learner data):
 [desktop light](visuals/study-desktop-light.png), [desktop dark](visuals/study-desktop-dark.png),
+[classic dark](visuals/study-desktop-classic-dark.png),
 [mobile dark](visuals/study-mobile-dark.png), [listen dialog](visuals/study-mobile-listen-dialog.png).
 These do not establish physical-device behavior, actual Safari or full reader-layout QA.
 

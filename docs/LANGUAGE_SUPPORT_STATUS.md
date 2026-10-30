@@ -346,3 +346,8 @@ password, mask it in CI logs and bind the test database to loopback. No learner 
 production credential was copied into this setup. The private incident's exact
 occurrence requires dashboard access; removing the literal does not resolve or
 erase the historical incident automatically.
+
+Visual follow-up: bind the new panel/dialog to the app's actual theme variables,
+including classic-dark mode; the app does not use Bootstrap's `data-bs-theme`.
+Regenerate the fixture screenshots with the real theme CSS, keep status/scope text
+readable, and use contrasting dialog controls with 44px mobile targets.

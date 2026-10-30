@@ -26,19 +26,6 @@ jobs:
     name: Test server (.NET)
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    services:
-      study-postgres:
-        image: postgres:18.6
-        env:
-          POSTGRES_PASSWORD: synthetic-study-only
-          POSTGRES_DB: studycheck
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U postgres -d studycheck"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -62,10 +49,30 @@ jobs:
       - name: Build
         run: dotnet build Lingua_Read.sln -c Release --no-restore
 
+      - name: Start isolated study database
+        shell: bash
+        run: |
+          study_password="$(openssl rand -hex 32)"
+          echo "::add-mask::$study_password"
+          echo "LINGUA_STUDY_TEST_POSTGRES=Host=localhost;Port=5432;Database=studycheck;Username=postgres;Password=$study_password" >> "$GITHUB_ENV"
+          docker run --rm --detach --name lingua-study-ci \
+            --publish 127.0.0.1:5432:5432 \
+            --env POSTGRES_PASSWORD="$study_password" --env POSTGRES_DB=studycheck \
+            --mount type=tmpfs,destination=/var/lib/postgresql postgres:18.6
+          for attempt in {1..30}; do
+            if docker exec lingua-study-ci pg_isready -h 127.0.0.1 -U postgres -d studycheck; then
+              exit 0
+            fi
+            sleep 1
+          done
+          exit 1
+
       - name: Test
         run: dotnet test Lingua_Read.sln -c Release --no-build
-        env:
-          LINGUA_STUDY_TEST_POSTGRES: Host=localhost;Port=5432;Database=studycheck;Username=postgres;Password=synthetic-study-only
+
+      - name: Stop isolated study database
+        if: always()
+        run: docker stop lingua-study-ci || true
 
   ci_client:
     name: Test client

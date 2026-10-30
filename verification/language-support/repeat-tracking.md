@@ -87,14 +87,17 @@ PostgreSQL service so these checks are not silently omitted there. Without the
 explicit test connection, the three PostgreSQL facts report a skip.
 
 ```powershell
-docker run --rm --detach --name lingua-study-check-20261029 --publish 127.0.0.1:55439:5432 --env POSTGRES_PASSWORD=synthetic-study-only --env POSTGRES_DB=studycheck --mount type=tmpfs,destination=/var/lib/postgresql postgres:18.6
-$env:LINGUA_STUDY_TEST_POSTGRES = 'Host=127.0.0.1;Port=55439;Database=studycheck;Username=postgres;Password=synthetic-study-only'
+$studyPassword = [guid]::NewGuid().ToString('N')
+docker run --rm --detach --name lingua-study-check-20261029 --publish 127.0.0.1:55439:5432 --env "POSTGRES_PASSWORD=$studyPassword" --env POSTGRES_DB=studycheck --mount type=tmpfs,destination=/var/lib/postgresql postgres:18.6
+$env:LINGUA_STUDY_TEST_POSTGRES = "Host=127.0.0.1;Port=55439;Database=studycheck;Username=postgres;Password=$studyPassword"
 dotnet test server/LinguaReadApi.Tests/LinguaReadApi.Tests.csproj --no-restore --logger 'trx;LogFileName=study-final-suite.trx' --results-directory verification/language-support/test-results
 docker stop lingua-study-check-20261029
 ```
 
 Use only the named disposable container. Stop it after verification, including on
-test failure. The password is synthetic test configuration, not a learner credential.
+test failure. Generate a fresh password for each run; never copy a learner credential
+into this configuration. CI similarly generates a random password, masks it in logs,
+binds the database to runner loopback and stops it after verification.
 Sanitized observations: [SQLite credit cases](study-credit-report.json),
 [PostgreSQL cases](study-postgres-report.json). Final suite/build totals are in
 [the status record](../../docs/LANGUAGE_SUPPORT_STATUS.md).
@@ -142,3 +145,13 @@ the committed fixture stays outside application build inputs.
 - Synthetic concurrency/migration evidence is bounded. Production upgrade/restore,
   rollback with old binaries, physical devices, automatic media-pass detection and
   native-reviewed segmentation remain separate acceptance gates.
+
+## Test-credential scanner follow-up
+
+GitGuardian reported a `Username Password` incident against `18e8d73` on 2026-10-30.
+That commit contained a literal, invented password used only by the disposable
+PostgreSQL test setup. No application credential was copied into that setup. The
+test configuration and commands now generate per-run values rather than publishing
+a reusable literal. This change does not erase the previous commit or automatically
+resolve the private GitGuardian incident; verify its occurrence before classifying
+it as a test credential. The dashboard required login in the available browser.

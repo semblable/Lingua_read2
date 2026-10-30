@@ -312,6 +312,10 @@ TypeScript checks passed; production asset verification retained 402 assets and
 11 license notices. ESLint passed the configured limit with **0 errors, 46 warnings**.
 CI supplies PostgreSQL to rerun all **1,212** backend checks on the pushed batch.
 
+[The CI and staging run for `18e8d73`](https://github.com/semblable/Lingua_read2/actions/runs/41017440350)
+subsequently passed, including **1,212 backend tests with no skips**, client tests,
+image builds, deployment and smoke checks. This includes the fresh PostgreSQL run.
+
 PostgreSQL verification uses only a named disposable
 18.6 database and generated schemas, with no learner library or provider calls.
 Its three checks exercise concurrent different-lesson completions and old/new
@@ -334,3 +338,11 @@ Sentence checkpoints remain lifetime per text, including after edits; explicit
 whole rereads earn volume, while new sentence cycles still require versioned IDs.
 Automatic completed-listen detection, native-reviewed unspaced-script counting,
 general offline reset/cycle identity and all-44-language readiness remain open.
+
+Security-scanner follow-up: a `Username Password` GitGuardian alert against
+`18e8d73` matches the literal invented PostgreSQL test credentials in its workflow
+and verification commands. Replace that reusable literal with a fresh per-run
+password, mask it in CI logs and bind the test database to loopback. No learner or
+production credential was copied into this setup. The private incident's exact
+occurrence requires dashboard access; removing the literal does not resolve or
+erase the historical incident automatically.

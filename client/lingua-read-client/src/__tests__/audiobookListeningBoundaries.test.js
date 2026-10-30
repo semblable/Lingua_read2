@@ -11,7 +11,7 @@ vi.mock('../utils/api', () => ({
   logListeningActivity: vi.fn().mockResolvedValue(undefined)
 }));
 
-const renderPlayer = async () => {
+const renderPlayer = async (options = {}) => {
   const audio = document.createElement('audio');
   // Media state and event delivery are independent so tests can model browser
   // sequences without happy-dom synthesizing extra play/pause/seek events.
@@ -27,13 +27,19 @@ const renderPlayer = async () => {
   audio.pause = vi.fn();
   audio.load = vi.fn();
   const audioRef = { current: audio };
-  const rendered = renderHook(({ audioSrc }) => useAudiobookPlayer({
+  const initialProps = {
     type: 'lesson',
-    audioSrc,
+    audioSrc: 'https://example.com/lesson.mp3',
+    ...options
+  };
+  const rendered = renderHook((props) => useAudiobookPlayer({
+    type: props.type ?? 'lesson',
+    audioSrc: props.audioSrc,
+    book: props.book,
     textId: 42,
     languageId: 5,
     audioRef
-  }), { initialProps: { audioSrc: 'https://example.com/lesson.mp3' } });
+  }), { initialProps });
   await act(async () => {});
 
   const emit = (type, state = {}) => act(() => {
@@ -186,7 +192,30 @@ describe('audiobook listening playback boundaries', () => {
     const { rerender, emit, advance, play, pause } = await renderPlayer();
     play();
     advance(5);
-    act(() => rerender({ audioSrc: 'https://example.com/next.mp3' }));
+    await act(async () => { rerender({ audioSrc: 'https://example.com/next.mp3' }); });
+    advance(15, 0);
+    expect(logListeningActivity).not.toHaveBeenCalled();
+
+    emit('playing', { paused: false, readyState: 4 });
+    advance(5);
+    pause();
+    expect(loggedSeconds()).toBe(10);
+  });
+
+  test('an auto-advance track swap during playback does not credit the next track load time', async () => {
+    const { emit, advance, play, pause } = await renderPlayer({
+      type: 'book',
+      book: {
+        bookId: 10,
+        audiobookTracks: [
+          { trackId: 1, title: 'Track 1', filePath: 'https://example.com/t1.mp3' },
+          { trackId: 2, title: 'Track 2', filePath: 'https://example.com/t2.mp3' }
+        ]
+      }
+    });
+    play();
+    advance(5);
+    emit('ended');
     advance(15, 0);
     expect(logListeningActivity).not.toHaveBeenCalled();
 

@@ -44,7 +44,9 @@ public static class LessonStudyActivity
                     SourceRevision = receiptKey, ClientEventId = Guid.NewGuid().ToString(), Kind = "time",
                     CountingVersion = 1, CountsTowardStatistics = false,
                     CreditedListeningSeconds = activity.ListeningDurationSeconds ?? 0,
-                    CreatedAt = activity.Timestamp
+                    CreatedAt = activity.Timestamp.Kind == DateTimeKind.Local
+                        ? activity.Timestamp.ToUniversalTime()
+                        : DateTime.SpecifyKind(activity.Timestamp, DateTimeKind.Utc)
                 });
         }
     }

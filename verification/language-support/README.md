@@ -21,6 +21,20 @@ dotnet test server/LinguaReadApi.Tests/LinguaReadApi.Tests.csproj --no-restore -
 
 Assertions and synthetic learner fixtures live in the test suite. A passing diagnostic can reproduce a discrepancy rather than prove it fixed. Thai counting input uses CJK stops to isolate counting and is not a native acceptance fixture.
 
+## Chinese and Korean
+
+Shared original fixtures are [Chinese](chinese-cases.json) and [Korean](korean-cases.json). `Chinese*Tests` cover the pinned dictionary, core spans, explicit text profile, edits and legacy preservation; `Korean*Tests` cover canonical lookup, collisions and relational learner-history preservation.
+
+```powershell
+dotnet test server/LinguaReadApi.Tests/LinguaReadApi.Tests.csproj --no-restore --filter 'FullyQualifiedName~Chinese|FullyQualifiedName~Korean'
+cd client/lingua-read-client
+npm test -- --run src/__tests__/chineseSegmenter.test.ts src/__tests__/chineseIntegration.test.ts src/__tests__/chineseReader.test.jsx src/__tests__/chineseTextCreate.test.jsx src/__tests__/koreanLookup.test.ts src/__tests__/koreanReader.test.jsx
+```
+
+Only explicit new pasted Chinese texts use `jieba-v1`. The dictionary is pinned to upstream bytes and hash ([notice](../../THIRD_PARTY_NOTICES.md#chinese-dictionary)); the client verifies and caches it separately from learner data before rendering. Synthetic offline loader tests are not a physical browser disconnect. Non-Han tokens retain configured word-character rules; unknown Han uses scalar fallback, with no HMM or script conversion. `台灣` currently splits as `台|灣` (the dictionary contains `臺灣`). Native review and mobile performance remain unverified.
+
+The additive profile migration leaves old rows null. Downgrade refuses to discard nonnull profiles; old-binary/old-browser rendering of profiled texts is not a supported rollback rehearsal. Back up database/media before deployment and retain the column if rolling application code back. No earned totals or goal baselines are recalculated.
+
 ## Listening compatibility
 
 Use the same isolated learner harness for elapsed-time replay, manual pass separation, sentence/completion overlap, goals, reset and interrupted transactions. Candidate formula assertions are test-only; passing them does not implement fractional credit.

@@ -524,6 +524,7 @@ const TermsPage = () => {
                                             <th scope="row">{term.term}</th>
                                             <td>{term.translation || <span className="terms-empty">—</span>}</td>
                                             {showSentences && <td><TermSentences term={term}
+                                                languageCode={languages.find(lang => String(lang.languageId) === selectedLanguage)?.code}
                                                 characterSubstitutions={languages.find(lang => String(lang.languageId) === selectedLanguage)?.characterSubstitutions} /></td>}
                                             <td><TermSources sources={term.sources} /></td>
                                             <td>{getStatusBadge(term.status ?? 0)}</td>

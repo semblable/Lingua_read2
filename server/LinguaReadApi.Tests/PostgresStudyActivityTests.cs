@@ -110,7 +110,7 @@ public class PostgresStudyActivityTests
         var migrator = c.GetService<IMigrator>();
         const string before = "20260927181306_AddTextImagePath";
         await migrator.MigrateAsync(before);
-        await Seed(c);
+        await Seed(c, legacyTextSchema: true);
         c.UserActivities.Add(new UserActivity { UserId = UserId, LanguageId = 1, ActivityType = "Reading",
             WordCount = 123, Timestamp = DateTime.UtcNow.AddYears(-1) });
         c.WordTranslations.Add(new WordTranslation { WordId = 1, Translation = "edited meaning" });
@@ -153,14 +153,25 @@ public class PostgresStudyActivityTests
     }
     private static DbContextOptions<AppDbContext> Options(string connection) => new DbContextOptionsBuilder<AppDbContext>()
         .UseNpgsql(connection, o => o.EnableRetryOnFailure(5, TimeSpan.FromMilliseconds(100), null)).Options;
-    private static async Task Seed(AppDbContext c)
+    private static async Task Seed(AppDbContext c, bool legacyTextSchema = false)
     {
         c.Users.Add(new User { Id = UserId, UserName = "synthetic" });
         c.Languages.Add(new Language { LanguageId = 1, Code = "en", Name = "English" });
-        c.Texts.AddRange(Enumerable.Range(1, 2).Select(id => new Text { TextId = id, UserId = UserId, LanguageId = 1,
-            Title = "Synthetic", Content = "one two. one!" }));
+        if (!legacyTextSchema)
+            c.Texts.AddRange(Enumerable.Range(1, 2).Select(id => new Text { TextId = id, UserId = UserId, LanguageId = 1,
+                Title = "Synthetic", Content = "one two. one!" }));
         c.Words.Add(new Word { WordId = 1, UserId = UserId, LanguageId = 1, Term = "one", Status = 5 });
         await c.SaveChangesAsync();
+        if (legacyTextSchema)
+        {
+            // Seed the historical table shape without projecting new optional columns.
+            foreach (var id in Enumerable.Range(1, 2))
+                await c.Database.ExecuteSqlInterpolatedAsync($"""
+                    INSERT INTO "Texts" ("TextId", "UserId", "LanguageId", "Title", "Content", "CreatedAt",
+                        "SortOrder", "IsAudioLesson", "IsFinished", "TotalWords", "KnownWords")
+                    VALUES ({id}, {UserId}, 1, 'Synthetic', 'one two. one!', {DateTime.UtcNow}, 0, FALSE, FALSE, 0, 0)
+                    """);
+        }
         c.ChangeTracker.Clear();
     }
     private static async Task<string> Snapshot(AppDbContext c)

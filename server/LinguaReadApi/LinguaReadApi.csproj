@@ -12,6 +12,8 @@
 
   <ItemGroup>
     <None Update="ThirdPartyNotices/**/*.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <EmbeddedResource Include="Resources/Segmentation/jieba-big-v1.txt" LogicalName="LinguaReadApi.ChineseDictionaryV1" />
+    <None Update="Resources/Segmentation/LICENSE.jieba.txt" TargetPath="ThirdPartyNotices/jieba.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

@@ -1,0 +1,61 @@
+{
+  "provenance": "Original synthetic Korean lookup/selection fixtures. Space-separated surface forms are retained; these are not morphology or native-language quality claims.",
+  "contract": "Lookup-only modern Hangul canonical aliases; exact stored spelling wins, ambiguous aliases have no winner. Preserve raw UTF-16 spans and compatibility Jamo. No vocabulary rekey or historical activity changes.",
+  "canonical": [
+    { "id": "composed", "source": "한글", "key": "한글" },
+    { "id": "decomposed", "source": "한글", "key": "한글" },
+    { "id": "lv-plus-final", "source": "각", "key": "각" },
+    { "id": "compound-final", "source": "값", "key": "값" },
+    { "id": "double-initial", "source": "꿩", "key": "꿩" },
+    { "id": "compatibility-jamo", "source": "ㄱㅏ ㄱㅏㄱ", "key": "ㄱㅏ ㄱㅏㄱ" },
+    { "id": "incomplete-jamo", "source": "ᄀ ᅡ ᆨ ᄀ가", "key": "ᄀ ᅡ ᆨ ᄀ가" },
+    { "id": "other-scripts-untouched", "source": "Ａ é ά ·", "key": "Ａ é ά ·" },
+    { "id": "do-not-cross-boundary", "source": "가,ᆨ ᄀ ᅡᆨ", "key": "가,ᆨ ᄀ ᅡᆨ" }
+  ],
+  "surfaces": [
+    {
+      "id": "surface-endings-are-not-stemmed", "text": "한국어를 읽어요.",
+      "words": [
+        { "text": "한국어를", "start": 0, "end": 4, "key": "한국어를" },
+        { "text": "읽어요", "start": 5, "end": 8, "key": "읽어요" }
+      ]
+    },
+    {
+      "id": "jamo-punctuation", "text": "한글, 각! ㄱㅏ?",
+      "words": [
+        { "text": "한글", "start": 0, "end": 6, "key": "한글" },
+        { "text": "각", "start": 8, "end": 10, "key": "각" },
+        { "text": "ㄱㅏ", "start": 12, "end": 14, "key": "ㄱㅏ" }
+      ]
+    },
+    {
+      "id": "mixed-text", "text": "한글 ABC 2026 中文🙂끝.",
+      "words": [
+        { "text": "한글", "start": 0, "end": 2, "key": "한글" },
+        { "text": "ABC", "start": 3, "end": 6, "key": "abc" },
+        { "text": "中文", "start": 12, "end": 14, "key": "中文" },
+        { "text": "끝", "start": 16, "end": 17, "key": "끝" }
+      ]
+    },
+    {
+      "id": "final-consonants", "text": "값 꿩 읽어요",
+      "words": [
+        { "text": "값", "start": 0, "end": 3, "key": "값" },
+        { "text": "꿩", "start": 4, "end": 7, "key": "꿩" },
+        { "text": "읽어요", "start": 8, "end": 13, "key": "읽어요" }
+      ]
+    }
+  ],
+  "matches": [
+    {
+      "id": "phrase-and-surrogate-offsets", "source": "🙂 한글 테스트, 한글 테스트!", "term": "한글 테스트",
+      "spans": [{ "start": 3, "end": 16 }, { "start": 18, "end": 24 }]
+    },
+    {
+      "id": "partial-composition-final", "source": "“각!” 각?", "term": "각",
+      "spans": [{ "start": 1, "end": 3 }, { "start": 6, "end": 7 }]
+    },
+    { "id": "compatibility-does-not-match-syllable", "source": "ㄱㅏ ㄱㅏㄱ", "term": "가", "spans": [] },
+    { "id": "do-not-select-part-of-syllable", "source": "각", "term": "ᄀ", "spans": [] }
+  ]
+}

@@ -1,4 +1,5 @@
 /// <reference types="vitest/config" />
+import { readerTextUrlPattern, readerLanguageUrlPattern } from './src/utils/readerOfflineRoutes.mjs';
 import { defineConfig, transformWithOxc, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
@@ -90,15 +91,26 @@ export default defineConfig({
             },
           },
           {
-            // GET /api/texts/{id}/content — heaviest reads, served fresh when
+            // Text DTO/content reads are served fresh when
             // online and from cache (up to a week old) when offline.
-            urlPattern: /^.*\/api\/texts\/\d+\/content.*$/,
+            urlPattern: readerTextUrlPattern,
             handler: 'NetworkFirst',
             options: {
               cacheName: 'lr-text-content',
               networkTimeoutSeconds: 4,
               expiration: { maxEntries: 200, maxAgeSeconds: 60 * 60 * 24 * 7 },
               cacheableResponse: { statuses: [0, 200] },
+            },
+          },
+          {
+            // Reader settings and saved vocabulary are needed with cached text DTOs.
+            urlPattern: readerLanguageUrlPattern,
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'lr-reader-language',
+              networkTimeoutSeconds: 4,
+              expiration: { maxEntries: 100, maxAgeSeconds: 60 * 60 * 24 * 7 },
+              cacheableResponse: { statuses: [200] },
             },
           },
           {

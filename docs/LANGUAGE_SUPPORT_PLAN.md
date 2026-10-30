@@ -6,8 +6,8 @@ Goal: practical support for all 44 catalog languages. Regional varieties share c
 
 Start language implementation now. Fractional listening and beta publication are independent, not prerequisites. Ship one usable language slice at a time; revise the order from results.
 
-1. **Chinese:** replace the `jieba` placeholder with real segmentation. Compare engines on Simplified/Traditional, mixed Latin/numbers and supplementary Han; check licenses, deployment size and runtime. Integrate consistent server/reader spans, then verify import, selection/lookup, saved terms/phrases, reload, mining/review and offline reading. No automatic script conversion or vocabulary merging.
-2. **Korean, alongside Chinese evaluation:** build Hangul/Jamo, punctuation, selection and saved-term lookup fixtures; fix demonstrated failures. Keep space-separated surface forms usable. Evaluate particle/ending analysis and dictionary-form lookup separately, preserving displayed text and existing vocabulary identities.
+1. **Chinese:** validate the opt-in dictionary segmenter on new pasted texts, then extend it to book/audio imports with the same per-text profile. Preserve legacy boundaries; test selection, saving/mining, offline reopening and unknown names with native review before broader enablement. No automatic script conversion or vocabulary merging.
+2. **Korean:** validate the exact-first Hangul alias lookup and raw phrase spans with learner material. Keep space-separated surface forms and existing identities. Particle/ending analysis and dictionary-form lookup remain separate work.
 3. **Japanese, then Thai:** implement actual Japanese segmentation behind the ineffective `mecab` option, preserving ruby/furigana and offsets; integrate a suitable Thai segmenter. Reuse the integration contract, not Chinese boundary assumptions.
 4. **Other languages:** prioritize reproduced sentence/import, Indic combining-mark, Vietnamese grouping and RTL/mixed-direction problems. Verify dictionaries, speech/provider mappings and offline use per language.
 

@@ -1,3 +1,6 @@
+import { findKoreanLookupMatches, isKoreanLanguageCode } from './koreanLookup';
+import { CHINESE_SEGMENTER_PROFILE, isChineseHanAt, findChineseHanRunEnd } from './chineseSegmenter';
+import { getChineseSegmentation } from './chineseRuntime';
 export type LanguageConfig = {
   wordCharacters?: string | null;
   characterSubstitutions?: string | null;
@@ -274,8 +277,8 @@ export const buildDisplayBlocks = (
 //      Tokens preserve original casing for display; lookups normalize
 //      via JS `toLowerCase()` (BE uses locale-aware `ToLower`).
 //
-// CJK parserType (`mecab`/`jieba`) is out of scope: tokenization falls
-// back to the default spacedel algorithm.
+// Legacy mecab/jieba keep their boundaries. Explicit jieba-v1 text profiles
+// use the pinned Chinese dictionary after its offline-capable loader completes.
 // =====================================================================
 
 const APOSTROPHE = "'";
@@ -376,7 +379,8 @@ const splitAtMatches = (
 export const splitSentenceAroundTerm = (
   sentence: string,
   term: string,
-  characterSubstitutions?: string | null
+  characterSubstitutions?: string | null,
+  languageCode?: string | null
 ): { text: string; isTerm: boolean }[] => {
   const display = normalizeTokenizerInput(sentence || '');
   const needle = applyCharacterSubstitutions(normalizeTokenizerInput(term || ''), BUILT_IN_SUBSTITUTIONS).trim();
@@ -385,8 +389,22 @@ export const splitSentenceAroundTerm = (
 
   const haystack = applyCharacterSubstitutions(display, BUILT_IN_SUBSTITUTIONS);
   const parts = splitAtMatches(display, haystack, needle);
-  if (parts) return parts;
+  if (isKoreanLanguageCode(languageCode)) {
+    const spans = findKoreanLookupMatches(haystack, needle);
+    if (spans.length) {
+      const result: { text: string; isTerm: boolean }[] = [];
+      let previous = 0;
+      for (const span of spans) {
+        if (span.start > previous) result.push({ text: display.slice(previous, span.start), isTerm: false });
+        result.push({ text: display.slice(span.start, span.end), isTerm: true });
+        previous = span.end;
+      }
+      if (previous < display.length) result.push({ text: display.slice(previous), isTerm: false });
+      return result;
+    }
+  }
 
+  if (parts) return parts;
   const userSubs = parseCharacterSubstitutions(characterSubstitutions);
   if (userSubs.length > 0) {
     const processed = applyCharacterSubstitutions(haystack, userSubs);
@@ -401,15 +419,17 @@ export const splitSentenceAroundTerm = (
 export const sentenceContainsTerm = (
   sentence: string,
   term: string,
-  characterSubstitutions?: string | null
-): boolean => splitSentenceAroundTerm(sentence, term, characterSubstitutions).some(part => part.isTerm);
+  characterSubstitutions?: string | null,
+  languageCode?: string | null
+): boolean => splitSentenceAroundTerm(sentence, term, characterSubstitutions, languageCode).some(part => part.isTerm);
 
 /** Choose context for the saved selection, rather than an unrelated sentence the reader has advanced to. */
 export const pickSentenceForTerm = (
   term: string,
   candidates: Array<string | null | undefined>,
-  characterSubstitutions?: string | null
-): string | null => candidates.find(sentence => sentence && sentenceContainsTerm(sentence, term, characterSubstitutions)) ?? null;
+  characterSubstitutions?: string | null,
+  languageCode?: string | null
+): string | null => candidates.find(sentence => sentence && sentenceContainsTerm(sentence, term, characterSubstitutions, languageCode)) ?? null;
 
 export const parseCharacterSubstitutions = (
   str: string | null | undefined
@@ -503,13 +523,24 @@ const isConnector = (ch: string): boolean =>
 export const prepareLanguageContext = (
   rawContent: string | null | undefined,
   languageConfig: LanguageConfig
-): { processed: string; coreRegex: RegExp } => {
+): { processed: string; coreRegex: RegExp; wordEnds?: ReadonlyMap<number, number> } => {
   const userSubs = parseCharacterSubstitutions(languageConfig?.characterSubstitutions);
   const processed = applyCharacterSubstitutions(
     applyCharacterSubstitutions(normalizeTokenizerInput(rawContent || ''), BUILT_IN_SUBSTITUTIONS),
     userSubs
   );
   const coreRegex = buildCoreWordRegex(languageConfig?.wordCharacters);
+  if (languageConfig?.parserType === CHINESE_SEGMENTER_PROFILE) {
+    const segmenter = getChineseSegmentation();
+    const wordEnds = new Map<number, number>();
+    for (let i = 0; i < processed.length;) {
+      if (!isChineseHanAt(processed, i)) { i += processed.codePointAt(i)! > 0xffff ? 2 : 1; continue; }
+      const end = findChineseHanRunEnd(processed, i);
+      for (const span of segmenter.segmentHanRun(processed, i, end)) wordEnds.set(span.start, span.end);
+      i = end;
+    }
+    return { processed, coreRegex, wordEnds };
+  }
   return { processed, coreRegex };
 };
 
@@ -521,9 +552,14 @@ export const prepareLanguageContext = (
 export const consumeWordAt = (
   processed: string,
   index: number,
-  coreRegex: RegExp
+  coreRegex: RegExp,
+  wordEnds?: ReadonlyMap<number, number>
 ): { text: string; end: number } | null => {
   if (!processed || index < 0 || index >= processed.length) return null;
+  if (wordEnds && isChineseHanAt(processed, index)) {
+    const end = wordEnds.get(index) ?? getChineseSegmentation().segmentHanRun(processed, index, findChineseHanRunEnd(processed, index))[0].end;
+    return { text: processed.slice(index, end), end };
+  }
   if (!canStartWord(coreRegex, processed[index])) return null;
 
   let i = index + 1;
@@ -532,6 +568,7 @@ export const consumeWordAt = (
 
   while (i < len) {
     const next = processed[i];
+    if (wordEnds && isChineseHanAt(processed, i)) break;
     if (isCoreWordChar(coreRegex, next)) {
       word += next;
       i++;
@@ -540,7 +577,8 @@ export const consumeWordAt = (
     if (
       isConnector(next) &&
       i + 1 < len &&
-      isCoreWordChar(coreRegex, processed[i + 1])
+      isCoreWordChar(coreRegex, processed[i + 1]) &&
+      !(wordEnds && isChineseHanAt(processed, i + 1))
     ) {
       word += next;
       i++;
@@ -562,19 +600,20 @@ export const tokenizeContent = (
 ): { processed: string; tokens: ReaderToken[] } => {
   if (!rawContent) return { processed: '', tokens: [] };
 
-  const { processed, coreRegex } = prepareLanguageContext(rawContent, languageConfig);
+  const { processed, coreRegex, wordEnds } = prepareLanguageContext(rawContent, languageConfig);
   const tokens: ReaderToken[] = [];
   let i = 0;
   const len = processed.length;
 
   while (i < len) {
-    const word = consumeWordAt(processed, i, coreRegex);
+    const word = consumeWordAt(processed, i, coreRegex, wordEnds);
     if (word) {
       tokens.push({ type: 'word', text: word.text, start: i, end: word.end });
       i = word.end;
     } else {
-      tokens.push({ type: 'separator', text: processed[i], start: i, end: i + 1 });
-      i++;
+      const width = wordEnds && processed.codePointAt(i)! > 0xffff ? 2 : 1;
+      tokens.push({ type: 'separator', text: processed.slice(i, i + width), start: i, end: i + width });
+      i += width;
     }
   }
 

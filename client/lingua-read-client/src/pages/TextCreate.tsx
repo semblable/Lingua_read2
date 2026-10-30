@@ -10,6 +10,7 @@ const TextCreate = () => {
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [languageId, setLanguageId] = useState('');
+  const [chineseSegmentation, setChineseSegmentation] = useState(false);
   const [tag, setTag] = useState(''); // Add state for tag
   const [languages, setLanguages] = useState<Language[]>([]);
   const [loading, setLoading] = useState(false);
@@ -23,6 +24,7 @@ const TextCreate = () => {
   const [generatingStory, setGeneratingStory] = useState(false);
   const [activeTab, setActiveTab] = useState('manual');
   
+  const isChinese = languages.find(lang => String(lang.languageId) === languageId)?.code?.toLowerCase().replace(/_/g, '-').split('-')[0] === 'zh';
   const navigate = useNavigate();
   // Set when opened from a Library folder's "Add Content": the text is filed there.
   const [searchParams] = useSearchParams();
@@ -83,7 +85,7 @@ const TextCreate = () => {
     
     try {
       // Pass the tag (or null if empty) to the createText function
-      const newText = await createText(title, content, parseInt(languageId, 10), tag || null, folderId);
+      const newText = await createText(title, content, parseInt(languageId, 10), tag || null, folderId, isChinese && chineseSegmentation ? 'jieba-v1' : null);
       navigate(`/texts/${newText.textId}`);
     } catch (err: unknown) {
       setError((err as Error)?.message || 'Failed to create text. Please try again.');
@@ -186,6 +188,12 @@ const TextCreate = () => {
               )}
             </Form.Select>
           </Form.Group>
+
+          {isChinese && <Form.Group className="mb-3">
+            <Form.Check id="chinese-segmentation" label="Chinese word segmentation (experimental)"
+              checked={chineseSegmentation} onChange={event => setChineseSegmentation(event.target.checked)} />
+            <Form.Text>Applies to this new text only. Downloads an 8.6 MB dictionary for online and offline reading.</Form.Text>
+          </Form.Group>}
 
           <Form.Group className="mb-3" controlId="tag">
             <Form.Label>Tag (Optional)</Form.Label>

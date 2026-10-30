@@ -54,25 +54,53 @@ namespace LinguaReadApi.Services.Tokenization
         /// a tokenizer change) should call <see cref="RelinkAsync"/>.
         /// </summary>
         public static async Task LinkAsync(
-            AppDbContext context,
-            int textId,
-            string content,
-            int languageId,
-            Guid userId,
+            AppDbContext context, int textId, string content, int languageId, Guid userId,
             CancellationToken cancellationToken = default)
         {
-            // An empty text (an SRS micro-story whose AI reply parsed into nothing) has nothing to
-            // link but is current all the same. Unstamped, WordLinkingMigrationService found it
-            // again on every pass and re-linked it forever.
+            if (await NeedsTokenizationTransaction(context, textId, userId, cancellationToken))
+                await LessonStudyActivity.AtomicAsync(context, userId, async () => {
+                    await LinkCoreAsync(context, textId, content, languageId, userId, cancellationToken);
+                    return true;
+                });
+            else await LinkCoreAsync(context, textId, content, languageId, userId, cancellationToken);
+        }
+
+        private static async Task<bool> NeedsTokenizationTransaction(AppDbContext context, int textId, Guid userId,
+            CancellationToken cancellationToken)
+        {
+            var source = await context.Texts.AsNoTracking().Where(t => t.TextId == textId && t.UserId == userId)
+                .Select(t => new { t.SegmentationProfile, t.Language.Code }).FirstOrDefaultAsync(cancellationToken);
+            var profile = source?.SegmentationProfile;
+            if (profile != null && profile != ChineseSegmenter.Profile)
+                throw new NotSupportedException("This text uses an unsupported segmentation profile; retain its links and upgrade the app.");
+            return (profile == ChineseSegmenter.Profile || KoreanLookup.IsKoreanLanguageCode(source?.Code))
+                && context.Database.IsRelational() && context.Database.CurrentTransaction == null;
+        }
+
+        private static async Task LinkCoreAsync(
+            AppDbContext context, int textId, string content, int languageId, Guid userId,
+            CancellationToken cancellationToken)
+        {
+            var snapshot = await context.Texts.AsNoTracking().Where(t => t.TextId == textId && t.UserId == userId)
+                .Select(t => new { t.SegmentationProfile, t.Content, t.LanguageId }).FirstOrDefaultAsync(cancellationToken);
+            var profile = snapshot?.SegmentationProfile;
+            if (profile != null && profile != ChineseSegmenter.Profile)
+                throw new NotSupportedException("This text uses an unsupported segmentation profile; retain its links and upgrade the app.");
+            if (profile == ChineseSegmenter.Profile) { content = snapshot!.Content; languageId = snapshot.LanguageId; }
+            var language = await context.Languages.AsNoTracking()
+                .FirstOrDefaultAsync(l => l.LanguageId == languageId, cancellationToken);
+            if (language != null)
+                language = new Language { Code = language.Code, WordCharacters = language.WordCharacters,
+                    CharacterSubstitutions = language.CharacterSubstitutions,
+                    ParserType = profile == ChineseSegmenter.Profile ? ChineseSegmenter.Profile
+                        : language.ParserType == ChineseSegmenter.Profile ? "jieba" : language.ParserType };
+
+            // Empty texts are current without creating vocabulary or replaying old content.
             if (string.IsNullOrWhiteSpace(content))
             {
                 await StampVersion(context, textId, cancellationToken);
                 return;
             }
-
-            var language = await context.Languages
-                .AsNoTracking()
-                .FirstOrDefaultAsync(l => l.LanguageId == languageId, cancellationToken);
 
             var wordsInText = Tokenizer.ExtractLookupKeys(content, language)
                                        .Where(w => !string.IsNullOrWhiteSpace(w))
@@ -99,13 +127,30 @@ namespace LinguaReadApi.Services.Tokenization
             Dictionary<string, Word> existingWords;
             for (var attempt = 1; ; attempt++)
             {
-                existingWords = await LoadWordsAsync(context, uniqueWords, language, languageId, userId, cancellationToken);
+                KoreanLookup.Index<Word>? korean = null;
+                if (KoreanLookup.IsKoreanLanguageCode(language?.Code))
+                {
+                    var rows = await context.Words.AsNoTracking().Where(w => w.UserId == userId && w.LanguageId == languageId)
+                        .ToListAsync(cancellationToken);
+                    korean = KoreanLookup.CreateIndex(rows, row => Tokenizer.NormalizeKey(row.Term, language));
+                    existingWords = new Dictionary<string, Word>();
+                    foreach (var term in uniqueWords)
+                    {
+                        var resolved = korean.Resolve(term);
+                        if (resolved != null) existingWords[term] = resolved;
+                    }
+                }
+                else existingWords = await LoadWordsAsync(context, uniqueWords, language, languageId, userId, cancellationToken);
 
                 var newWords = new List<Word>();
                 foreach (var wordTerm in uniqueWords)
                 {
                     if (!existingWords.ContainsKey(wordTerm))
                     {
+                        var pendingAlias = korean?.Resolve(wordTerm);
+                        if (pendingAlias != null) { existingWords[wordTerm] = pendingAlias; continue; }
+                        if (korean?.ContainsExact(wordTerm) == true)
+                            throw new InvalidOperationException("Ambiguous saved Korean terms share this lookup key. Preserve and resolve the records before linking this text.");
                         var newWord = new Word
                         {
                             UserId = userId,
@@ -116,6 +161,7 @@ namespace LinguaReadApi.Services.Tokenization
                         };
                         newWords.Add(newWord);
                         existingWords[wordTerm] = newWord;
+                        korean?.Add(newWord, row => Tokenizer.NormalizeKey(row.Term, language));
                     }
                 }
 
@@ -144,16 +190,16 @@ namespace LinguaReadApi.Services.Tokenization
                 .ToHashSet();
 
             var textWordsToAdd = new List<TextWord>();
-            foreach (var wordTerm in uniqueWords)
+            foreach (var group in uniqueWords.Where(existingWords.ContainsKey).GroupBy(term => existingWords[term].WordId))
             {
-                if (existingWords.TryGetValue(wordTerm, out var word)
-                    && alreadyLinkedWordIds.Add(word.WordId))
+                var word = existingWords[group.First()];
+                if (alreadyLinkedWordIds.Add(word.WordId))
                 {
                     textWordsToAdd.Add(new TextWord
                     {
                         TextId = textId,
                         WordId = word.WordId,
-                        OccurrenceCount = occurrenceByTerm.TryGetValue(wordTerm, out var occ) ? occ : 1,
+                        OccurrenceCount = group.Sum(term => occurrenceByTerm[term]),
                         CreatedAt = DateTime.UtcNow
                     });
                 }
@@ -205,12 +251,20 @@ namespace LinguaReadApi.Services.Tokenization
         /// <see cref="Services.WordLinkingMigrationService"/>.
         /// </summary>
         public static async Task RelinkAsync(
-            AppDbContext context,
-            int textId,
-            string content,
-            int languageId,
-            Guid userId,
+            AppDbContext context, int textId, string content, int languageId, Guid userId,
             CancellationToken cancellationToken = default)
+        {
+            if (await NeedsTokenizationTransaction(context, textId, userId, cancellationToken))
+                await LessonStudyActivity.AtomicAsync(context, userId, async () => {
+                    await RelinkCoreAsync(context, textId, content, languageId, userId, cancellationToken);
+                    return true;
+                });
+            else await RelinkCoreAsync(context, textId, content, languageId, userId, cancellationToken);
+        }
+
+        private static async Task RelinkCoreAsync(
+            AppDbContext context, int textId, string content, int languageId, Guid userId,
+            CancellationToken cancellationToken)
         {
             var existingLinks = await context.TextWords
                 .Where(tw => tw.TextId == textId)

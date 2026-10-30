@@ -2,7 +2,7 @@ import { fetchApi, uploadWithProgress, API_URL, handleUnauthorized } from './cli
 import type { UploadProgressCallback } from './client';
 import type { ResponseOf } from '../fetchApi';
 
-export type Text = ResponseOf<'/api/Texts/{id}', 'get'> & { studyRevision?: string };
+export type Text = ResponseOf<'/api/Texts/{id}', 'get'> & { studyRevision?: string; segmentationProfile?: string | null };
 export type TextsList = ResponseOf<'/api/Texts', 'get'>;
 export type RecentTexts = ResponseOf<'/api/Texts/recent', 'get'>;
 
@@ -48,9 +48,11 @@ export const createText = (
   content: string,
   languageId: number | string,
   tag: string | null = null,
-  folderId: number | null = null
+  folderId: number | null = null,
+  segmentationProfile: string | null = null
 ): Promise<Text> => {
   const payload: Record<string, unknown> = { title, content, languageId };
+  if (segmentationProfile) payload.segmentationProfile = segmentationProfile;
   if (tag) {
     payload.tag = tag;
   }

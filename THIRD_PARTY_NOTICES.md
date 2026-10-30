@@ -22,6 +22,17 @@ is retained with the port and copied into server build/publish output. The
 was checked during release preparation. LinguaRead adapts ratings, day boundaries,
 stored state, and fuzzing; it does not claim an unchanged upstream scheduler.
 
+## Chinese dictionary
+
+The opt-in `jieba-v1` segmenter uses the unmodified `extra_dict/dict.txt.big` from
+[jieba](https://github.com/fxsjy/jieba), commit
+`67fa2e36e72f69d9134b8a1037b83fbb070b9775`, under the MIT license (Sun Junyi).
+The [full license](server/LinguaReadApi/Resources/Segmentation/LICENSE.jieba.txt)
+is copied into server publish output and [browser notices](client/lingua-read-client/public/licenses/jieba.txt).
+The pinned dictionary SHA-256 is `b16011275c42955ccd81fc1adecc93a59dbb7926af69d93fc95d4943d40f6aad`.
+C#/TypeScript implementations use dictionary-frequency DAG scoring, without HMM or
+script conversion; this is not a claim of full upstream behavior or native-reviewed quality.
+
 ## Self-hosted fonts and icons
 
 The application imports fonts through Fontsource; the demo currently imports Inter

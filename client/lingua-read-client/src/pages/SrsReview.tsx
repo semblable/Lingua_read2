@@ -365,6 +365,7 @@ const SrsReview = () => {
 
   // The due cards are all in the selected language; its substitutions are part of
   // how terms are keyed, so sentence matching needs them too.
+  const matchingLanguageCode = languages.find(lang => String(lang.languageId) === selectedLanguage)?.code;
   const languageSubstitutions = useMemo(
     () => languages.find((lang) => String(lang.languageId) === selectedLanguage)?.characterSubstitutions ?? null,
     [languages, selectedLanguage]
@@ -377,9 +378,9 @@ const SrsReview = () => {
     const term = currentCard.term;
     return currentCard.phrases.find(
       (phrase) => typeof phrase?.sentence === 'string'
-        && sentenceContainsTerm(phrase.sentence, term, languageSubstitutions)
+        && sentenceContainsTerm(phrase.sentence, term, languageSubstitutions, matchingLanguageCode)
     ) || null;
-  }, [currentCard, languageSubstitutions]);
+  }, [currentCard, languageSubstitutions, matchingLanguageCode]);
 
   const otherPhrases = useMemo(() => {
     if (!currentCard?.phrases?.length) return [];
@@ -533,7 +534,7 @@ const SrsReview = () => {
   // Highlight target word in sentence (both normalized, see splitSentenceAroundTerm)
   const renderSentenceWithHighlight = (sentence: string | null | undefined, term: string | null | undefined): React.ReactNode => {
     if (!sentence || !term) return sentence;
-    return splitSentenceAroundTerm(sentence, term, languageSubstitutions).map((part, i: number) =>
+    return splitSentenceAroundTerm(sentence, term, languageSubstitutions, matchingLanguageCode).map((part, i: number) =>
       part.isTerm
         ? <span key={i} className="srs-term-highlight">{part.text}</span>
         : part.text

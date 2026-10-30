@@ -36,8 +36,8 @@ namespace LinguaReadApi.Services.Tokenization
     /// 5. Lookup keys are produced via locale-aware <see cref="TextInfo.ToLower(string)"/>
     ///    using the language's BCP-47 code, falling back to invariant.
     ///
-    /// CJK parser types (mecab/jieba) currently fall back to the default
-    /// algorithm; full CJK support is out of scope for this pass.
+    /// Legacy mecab/jieba retain their boundaries. Explicit jieba-v1 text profiles
+    /// use the pinned Chinese dictionary; no stored text is automatically upgraded.
     /// </summary>
     public static class Tokenizer
     {
@@ -219,6 +219,7 @@ namespace LinguaReadApi.Services.Tokenization
             var processed = NormalizeText(rawContent, language);
             var coreRegex = BuildCoreWordRegex(language?.WordCharacters);
 
+            var chinese = language?.ParserType == ChineseSegmenter.Profile;
             var tokens = new List<Token>();
             var i = 0;
             var len = processed.Length;
@@ -227,12 +228,20 @@ namespace LinguaReadApi.Services.Tokenization
 
             while (i < len)
             {
-                if (CanStartWord(coreRegex, span, i))
+                if (chinese && ChineseSegmenter.IsHanAt(processed, i))
+                {
+                    var end = ChineseSegmenter.FindHanRunEnd(processed, i);
+                    tokens.AddRange(ChineseSegmenter.Default.SegmentHanRun(processed, i, end)
+                        .Select(word => new Token(word.Text, word.Start, word.End, true)));
+                    i = end;
+                }
+                else if (CanStartWord(coreRegex, span, i))
                 {
                     var start = i;
                     i++;
                     while (i < len)
                     {
+                        if (chinese && ChineseSegmenter.IsHanAt(processed, i)) break;
                         if (IsCoreWordChar(coreRegex, span, i))
                         {
                             i++;
@@ -240,7 +249,8 @@ namespace LinguaReadApi.Services.Tokenization
                         }
                         if (IsConnector(processed[i])
                             && i + 1 < len
-                            && IsCoreWordChar(coreRegex, span, i + 1))
+                            && IsCoreWordChar(coreRegex, span, i + 1)
+                            && !(chinese && ChineseSegmenter.IsHanAt(processed, i + 1)))
                         {
                             i++;
                             continue;
@@ -251,8 +261,9 @@ namespace LinguaReadApi.Services.Tokenization
                 }
                 else
                 {
-                    tokens.Add(new Token(processed.Substring(i, 1), i, i + 1, IsWord: false));
-                    i++;
+                    var width = chinese && char.IsHighSurrogate(processed[i]) && i + 1 < len && char.IsLowSurrogate(processed[i + 1]) ? 2 : 1;
+                    tokens.Add(new Token(processed.Substring(i, width), i, i + width, IsWord: false));
+                    i += width;
                 }
             }
 

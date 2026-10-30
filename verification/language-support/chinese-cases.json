@@ -1,0 +1,360 @@
+{
+  "description": "Original short synthetic fixtures for pinned dictionary segmentation. Spans reference unchanged UTF-16 input; only Han spans are specified. Non-Han tokens use the reader tokenizer policy. Native review remains outstanding.",
+  "profile": "jieba-v1",
+  "dictionarySha256": "b16011275c42955ccd81fc1adecc93a59dbb7926af69d93fc95d4943d40f6aad",
+  "cases": [
+    {
+      "id": "simplified-reading",
+      "text": "我今天在图书馆学习中文。",
+      "hanSpans": [
+        {
+          "text": "我",
+          "start": 0,
+          "end": 1
+        },
+        {
+          "text": "今天",
+          "start": 1,
+          "end": 3
+        },
+        {
+          "text": "在",
+          "start": 3,
+          "end": 4
+        },
+        {
+          "text": "图书馆",
+          "start": 4,
+          "end": 7
+        },
+        {
+          "text": "学习",
+          "start": 7,
+          "end": 9
+        },
+        {
+          "text": "中文",
+          "start": 9,
+          "end": 11
+        }
+      ]
+    },
+    {
+      "id": "traditional-reading",
+      "text": "我今天在圖書館學習中文。",
+      "hanSpans": [
+        {
+          "text": "我",
+          "start": 0,
+          "end": 1
+        },
+        {
+          "text": "今天",
+          "start": 1,
+          "end": 3
+        },
+        {
+          "text": "在",
+          "start": 3,
+          "end": 4
+        },
+        {
+          "text": "圖書館",
+          "start": 4,
+          "end": 7
+        },
+        {
+          "text": "學習",
+          "start": 7,
+          "end": 9
+        },
+        {
+          "text": "中文",
+          "start": 9,
+          "end": 11
+        }
+      ]
+    },
+    {
+      "id": "traditional-vocabulary",
+      "text": "學生喜歡閱讀中文小說。",
+      "hanSpans": [
+        {
+          "text": "學生",
+          "start": 0,
+          "end": 2
+        },
+        {
+          "text": "喜歡",
+          "start": 2,
+          "end": 4
+        },
+        {
+          "text": "閱讀",
+          "start": 4,
+          "end": 6
+        },
+        {
+          "text": "中文",
+          "start": 6,
+          "end": 8
+        },
+        {
+          "text": "小說",
+          "start": 8,
+          "end": 10
+        }
+      ]
+    },
+    {
+      "id": "simplified-vocabulary",
+      "text": "学生喜欢阅读中文小说。",
+      "hanSpans": [
+        {
+          "text": "学生",
+          "start": 0,
+          "end": 2
+        },
+        {
+          "text": "喜欢",
+          "start": 2,
+          "end": 4
+        },
+        {
+          "text": "阅读",
+          "start": 4,
+          "end": 6
+        },
+        {
+          "text": "中文",
+          "start": 6,
+          "end": 8
+        },
+        {
+          "text": "小说",
+          "start": 8,
+          "end": 10
+        }
+      ]
+    },
+    {
+      "id": "ambiguous-student-life",
+      "text": "研究生命的起源。",
+      "hanSpans": [
+        {
+          "text": "研究",
+          "start": 0,
+          "end": 2
+        },
+        {
+          "text": "生命",
+          "start": 2,
+          "end": 4
+        },
+        {
+          "text": "的",
+          "start": 4,
+          "end": 5
+        },
+        {
+          "text": "起源",
+          "start": 5,
+          "end": 7
+        }
+      ]
+    },
+    {
+      "id": "ambiguous-place-bridge",
+      "text": "南京市长江大桥。",
+      "hanSpans": [
+        {
+          "text": "南京市",
+          "start": 0,
+          "end": 3
+        },
+        {
+          "text": "长江大桥",
+          "start": 3,
+          "end": 7
+        }
+      ]
+    },
+    {
+      "id": "mixed-latin-decimal",
+      "text": "图书馆OpenAI2026学习Python3，价格12.5元。",
+      "hanSpans": [
+        {
+          "text": "图书馆",
+          "start": 0,
+          "end": 3
+        },
+        {
+          "text": "学习",
+          "start": 13,
+          "end": 15
+        },
+        {
+          "text": "价格",
+          "start": 23,
+          "end": 25
+        },
+        {
+          "text": "元",
+          "start": 29,
+          "end": 30
+        }
+      ]
+    },
+    {
+      "id": "supplementary-han-emoji",
+      "text": "讀者𠀀今天買了3本書🙂。",
+      "hanSpans": [
+        {
+          "text": "讀者",
+          "start": 0,
+          "end": 2
+        },
+        {
+          "text": "𠀀",
+          "start": 2,
+          "end": 4
+        },
+        {
+          "text": "今天",
+          "start": 4,
+          "end": 6
+        },
+        {
+          "text": "買",
+          "start": 6,
+          "end": 7
+        },
+        {
+          "text": "了",
+          "start": 7,
+          "end": 8
+        },
+        {
+          "text": "本書",
+          "start": 9,
+          "end": 11
+        }
+      ]
+    },
+    {
+      "id": "supplementary-variation-selector",
+      "text": "𠀀󠄀今天讀者",
+      "hanSpans": [
+        {
+          "text": "𠀀󠄀",
+          "start": 0,
+          "end": 4
+        },
+        {
+          "text": "今天",
+          "start": 4,
+          "end": 6
+        },
+        {
+          "text": "讀者",
+          "start": 6,
+          "end": 8
+        }
+      ]
+    },
+    {
+      "id": "bmp-variation-selector",
+      "text": "字︀今天",
+      "hanSpans": [
+        {
+          "text": "字︀",
+          "start": 0,
+          "end": 2
+        },
+        {
+          "text": "今天",
+          "start": 2,
+          "end": 4
+        }
+      ]
+    },
+    {
+      "id": "punctuation-lines",
+      "text": "「中文」，\n圖書館。 学习！",
+      "hanSpans": [
+        {
+          "text": "中文",
+          "start": 1,
+          "end": 3
+        },
+        {
+          "text": "圖書館",
+          "start": 6,
+          "end": 9
+        },
+        {
+          "text": "学习",
+          "start": 11,
+          "end": 13
+        }
+      ]
+    },
+    {
+      "id": "repeated-words",
+      "text": "中文中文，中文。",
+      "hanSpans": [
+        {
+          "text": "中文",
+          "start": 0,
+          "end": 2
+        },
+        {
+          "text": "中文",
+          "start": 2,
+          "end": 4
+        },
+        {
+          "text": "中文",
+          "start": 5,
+          "end": 7
+        }
+      ]
+    },
+    {
+      "id": "dictionary-traditional-limit",
+      "text": "台灣學生閱讀。",
+      "hanSpans": [
+        {
+          "text": "台",
+          "start": 0,
+          "end": 1
+        },
+        {
+          "text": "灣",
+          "start": 1,
+          "end": 2
+        },
+        {
+          "text": "學生",
+          "start": 2,
+          "end": 4
+        },
+        {
+          "text": "閱讀",
+          "start": 4,
+          "end": 6
+        }
+      ]
+    },
+    {
+      "id": "only-non-han",
+      "text": "OpenAI 12.5 🙂",
+      "hanSpans": []
+    },
+    {
+      "id": "empty",
+      "text": "",
+      "hanSpans": []
+    }
+  ]
+}

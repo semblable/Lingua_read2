@@ -376,9 +376,6 @@ namespace LinguaReadApi.Migrations
                     b.Property<bool>("CountsTowardStatistics")
                         .HasColumnType("boolean");
 
-                    b.Property<bool>("IsCompletionCheckpoint")
-                        .HasColumnType("boolean");
-
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -387,6 +384,9 @@ namespace LinguaReadApi.Migrations
 
                     b.Property<int>("CreditedWords")
                         .HasColumnType("integer");
+
+                    b.Property<bool>("IsCompletionCheckpoint")
+                        .HasColumnType("boolean");
 
                     b.Property<string>("Kind")
                         .IsRequired()
@@ -779,6 +779,10 @@ namespace LinguaReadApi.Migrations
 
                     b.Property<int?>("PartNumber")
                         .HasColumnType("integer");
+
+                    b.Property<string>("SegmentationProfile")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
 
                     b.Property<int>("SortOrder")
                         .HasColumnType("integer");

@@ -45,6 +45,7 @@ import {
   buildPhraseSelectionText
 } from '../utils/readerText';
 import type { SentenceSegment, PhraseSelectionState } from '../utils/readerText';
+import { composeKoreanLookupText, createKoreanLookup, findKoreanLookupMatches, isKoreanLanguageCode, resolveKoreanLookup } from '../utils/koreanLookup';
 import PrimaryControls from '../components/reader/PrimaryControls';
 import SecondaryControls from '../components/reader/SecondaryControls';
 import ReaderLessonActions from '../components/reader/ReaderLessonActions';
@@ -602,17 +603,48 @@ const TextDisplay = () => {
     return map;
   }, [words, lookupTerm]);
 
+  const koreanWordLookup = useMemo(() => isKoreanLanguageCode(
+    languageConfig?.code || languageConfig?.languageCode || text?.languageCode
+  ) ? createKoreanLookup(words.filter(word => word.term), word => lookupTerm(word.term!)) : null,
+  [words, lookupTerm, languageConfig?.code, languageConfig?.languageCode, text?.languageCode]);
+
   // 2. Pre-calculate and sort phrases once
   const knownPhrases = useMemo(() => {
     return words
-      .filter(w => w.term && w.term.includes(' '))
+      .filter(w => w.term && (w.term.includes(' ') || (languageConfig?.parserType === 'jieba-v1' &&
+        ((w.status ?? 0) > 0 || !!w.translation) && extractWords(w.term, languageConfig).length > 1)))
       .sort((a, b) => (b.term?.length ?? 0) - (a.term?.length ?? 0));
-  }, [words]);
+  }, [words, languageConfig]);
 
   const getWordData = useCallback((word: string | null | undefined) => {
     if (!word) return null;
-    return wordMap.get(lookupTerm(word)) || null;
-  }, [wordMap, lookupTerm]);
+    const exactKey = lookupTerm(word);
+    // A legacy spelling owns its saved row; only an unambiguous Korean alias
+    // may answer an exact miss. The rendered word and its offsets stay intact.
+    return koreanWordLookup ? resolveKoreanLookup(koreanWordLookup, exactKey) : wordMap.get(exactKey) || null;
+  }, [wordMap, lookupTerm, koreanWordLookup]);
+
+  const getBulkWordCandidates = useCallback((rawWords: string[]) => {
+    const seenSavedRows = new Set<Word>();
+    const seenNewKoreanForms = new Set<string>();
+    return [...new Set(rawWords.map(lookupTerm))].flatMap(key => {
+      const saved = getWordData(key);
+      if (koreanWordLookup) {
+        if (!saved && (koreanWordLookup.exact.has(key) || koreanWordLookup.canonical.has(composeKoreanLookupText(key)))) {
+          throw new Error(`Ambiguous Korean vocabulary for "${key}". Resolve the conflicting saved entries before using bulk actions.`);
+        }
+        if (saved) {
+          if (seenSavedRows.has(saved)) return [];
+          seenSavedRows.add(saved);
+        } else {
+          const canonical = composeKoreanLookupText(key);
+          if (seenNewKoreanForms.has(canonical)) return [];
+          seenNewKoreanForms.add(canonical);
+        }
+      }
+      return [{ key, saved }];
+    });
+  }, [getWordData, koreanWordLookup, lookupTerm]);
 
   const getWordStyle = useCallback((wordStatus: number | null | undefined) => {
     const baseStyle = { cursor: 'pointer', padding: '2px 0', margin: '0 2px', borderRadius: '3px', transition: 'all 0.2s' };
@@ -1194,7 +1226,28 @@ const TextDisplay = () => {
     // We re-consume words at each position rather than pre-tokenizing
     // so that a phrase ending mid-word still tokenizes the remainder
     // correctly. See `client/.../utils/readerText.js` for the spec.
-    const { processed, coreRegex } = prepareLanguageContext(content, languageConfig);
+    const { processed, coreRegex, wordEnds } = prepareLanguageContext(content, languageConfig);
+
+    // Find Korean phrase aliases once per content. Each candidate keeps the
+    // source span; a conflicting saved spelling must resolve to its own row.
+    const koreanPhraseMatches = koreanWordLookup
+      ? new Map<number, { phrase: Word; surface: string; end: number; exact: boolean }>()
+      : null;
+    if (koreanPhraseMatches) {
+      for (const phrase of knownPhrases) {
+        if (!phrase.term) continue;
+        for (const span of findKoreanLookupMatches(processed, phrase.term)) {
+          const surface = processed.slice(span.start, span.end);
+          const exact = surface === phrase.term;
+          const resolved = getWordData(surface);
+          if (resolved?.wordId == null || resolved.wordId !== phrase.wordId) continue;
+          const previous = koreanPhraseMatches.get(span.start);
+          if (!previous || span.end > previous.end || (span.end === previous.end && exact && !previous.exact)) {
+            koreanPhraseMatches.set(span.start, { phrase, surface, end: span.end, exact });
+          }
+        }
+      }
+    }
 
     const elements = [];
     let currentIndex = 0;
@@ -1204,10 +1257,13 @@ const TextDisplay = () => {
       let phraseMatched = false;
 
       // 1. Check for known phrase matches at the current position
-      for (const phrase of knownPhrases) {
+      const koreanPhraseMatch = koreanPhraseMatches?.get(currentIndex);
+      const candidates = koreanPhraseMatches ? (koreanPhraseMatch ? [koreanPhraseMatch.phrase] : []) : knownPhrases;
+      for (const phrase of candidates) {
         const phraseTerm = phrase.term;
         if (!phraseTerm) continue;
-        if (processed.substring(currentIndex).startsWith(phraseTerm)) {
+        if (koreanPhraseMatch || processed.substring(currentIndex).startsWith(phraseTerm)) {
+          const sourceSurface = koreanPhraseMatch?.surface ?? phraseTerm;
           const phraseData = phrase;
           const phraseStatus = phraseData.status;
           const phraseTranslation = phraseData.translation;
@@ -1219,11 +1275,11 @@ const TextDisplay = () => {
               className={`clickable-word${languageWordsLoaded ? ` word-status-${phraseStatus}` : ''}`}
               onTouchStart={handleSelectableWordTouchStart}
               onTouchEnd={handleSelectableWordTouchEnd}
-              onClick={(e) => handleSelectableWordClick(e, phraseTerm, true)}
-              onMouseEnter={() => setHoveredWordTerm(phraseTerm)}
+              onClick={(e) => handleSelectableWordClick(e, sourceSurface, true)}
+              onMouseEnter={() => setHoveredWordTerm(sourceSurface)}
               onMouseLeave={() => setHoveredWordTerm(null)}
             >
-              {phraseTerm}
+              {sourceSurface}
             </span>
           );
 
@@ -1235,7 +1291,7 @@ const TextDisplay = () => {
             ) : phraseSpan
           );
 
-          currentIndex += phraseTerm.length;
+          currentIndex = koreanPhraseMatch?.end ?? currentIndex + phraseTerm.length;
           phraseMatched = true;
           break;
         }
@@ -1246,7 +1302,7 @@ const TextDisplay = () => {
       }
 
       // 2. Try to consume a word at this position.
-      const consumed = consumeWordAt(processed, currentIndex, coreRegex);
+      const consumed = consumeWordAt(processed, currentIndex, coreRegex, wordEnds);
       if (consumed) {
         const currentWord = consumed.text;
         const wordData = getWordData(currentWord);
@@ -1279,15 +1335,16 @@ const TextDisplay = () => {
         currentIndex = consumed.end;
       } else {
         // Non-word character (punctuation, whitespace, etc.)
-        const ch = processed[currentIndex];
+        const width = wordEnds && processed.codePointAt(currentIndex)! > 0xffff ? 2 : 1;
+        const ch = processed.slice(currentIndex, currentIndex + width);
         elements.push(<React.Fragment key={`sep-${currentKeyIndex++}`}>{ch}</React.Fragment>);
-        currentIndex++;
+        currentIndex += width;
       }
     }
 
     return elements;
 
-  }, [knownPhrases, getWordData, getWordStyle, languageWordsLoaded, handleSelectableWordClick, handleSelectableWordTouchEnd, handleSelectableWordTouchStart, setHoveredWordTerm, languageConfig]);
+  }, [knownPhrases, koreanWordLookup, getWordData, getWordStyle, languageWordsLoaded, handleSelectableWordClick, handleSelectableWordTouchEnd, handleSelectableWordTouchStart, setHoveredWordTerm, languageConfig]);
 
 
   const getFontFamilyForList = useCallback(() => {
@@ -1696,7 +1753,8 @@ const TextDisplay = () => {
           }
         }
         const sentenceToMine = pickSentenceForTerm(term,
-          [selectedWordAiContext, activePhraseSelection?.sentenceContext, currentSentenceSegment?.text], languageConfig?.characterSubstitutions);
+          [selectedWordAiContext, activePhraseSelection?.sentenceContext, currentSentenceSegment?.text], languageConfig?.characterSubstitutions,
+          languageConfig?.code || languageConfig?.languageCode || text?.languageCode);
         if (text?.textId == null) return;
         createWord(text.textId, term, status, translationToUse, sentenceToMine)
           .then(newWordData => {
@@ -1713,7 +1771,7 @@ const TextDisplay = () => {
           .catch(err => console.error(`[Keyboard Shortcut] Failed to create word ${term}:`, err));
       }
     },
-    [getWordData, text?.languageCode, text?.textId, translationTargetLanguageCode, setWords, selectedWord, displayedWord?.term, currentSentenceSegment?.text, selectedWordAiContext, activePhraseSelection?.sentenceContext, languageConfig?.characterSubstitutions, globalSettings.autoTranslateWords, triggerAutoTranslation, setTranslation]
+    [getWordData, text?.languageCode, text?.textId, translationTargetLanguageCode, setWords, selectedWord, displayedWord?.term, currentSentenceSegment?.text, selectedWordAiContext, activePhraseSelection?.sentenceContext, languageConfig?.characterSubstitutions, languageConfig?.code, languageConfig?.languageCode, globalSettings.autoTranslateWords, triggerAutoTranslation, setTranslation]
   );
 
   useReaderKeyboard({
@@ -1751,7 +1809,8 @@ const TextDisplay = () => {
       } else {
         if (text?.textId == null) return;
         const sentenceToMine = pickSentenceForTerm(termToSave,
-          [selectedWordAiContext, activePhraseSelection?.sentenceContext, currentSentenceSegment?.text], languageConfig?.characterSubstitutions);
+          [selectedWordAiContext, activePhraseSelection?.sentenceContext, currentSentenceSegment?.text], languageConfig?.characterSubstitutions,
+          languageConfig?.code || languageConfig?.languageCode || text?.languageCode);
         const newWordData = (await createWord(text.textId, termToSave, numericStatus, translationToSave, sentenceToMine)) as Record<string, unknown> | null;
         setWords((prevWords: any[]) => [...prevWords, newWordData]);
         setDisplayedWord({ ...(newWordData || {}), isNew: false });
@@ -1759,7 +1818,7 @@ const TextDisplay = () => {
       setSaveSuccess(true); setTimeout(() => setSaveSuccess(false), 2000);
     } catch (error) { console.error('Error saving word:', error); alert(`Failed to save word: ${error instanceof Error ? error.message : ''}`); }
     finally { setProcessingWord(false); }
-  }, [selectedWord, displayedWord, processingWord, isTranslating, translation, text?.textId, currentSentenceSegment?.text, selectedWordAiContext, activePhraseSelection?.sentenceContext, languageConfig?.characterSubstitutions, getWordData, setWords, setDisplayedWord, setSaveSuccess, setProcessingWord]); // createWord/updateWord are module imports (stable); omit to satisfy exhaustive-deps
+  }, [selectedWord, displayedWord, processingWord, isTranslating, translation, text?.textId, text?.languageCode, currentSentenceSegment?.text, selectedWordAiContext, activePhraseSelection?.sentenceContext, languageConfig?.characterSubstitutions, languageConfig?.code, languageConfig?.languageCode, getWordData, setWords, setDisplayedWord, setSaveSuccess, setProcessingWord]); // createWord/updateWord are module imports (stable); omit to satisfy exhaustive-deps
 
   const handleDeleteWord = useCallback(async () => {
     const wordToDelete = displayedWord?.wordId ? displayedWord : getWordData(selectedWord);
@@ -1991,7 +2050,8 @@ const TextDisplay = () => {
 
   const handleMineSentence = useCallback(async () => {
     const sentenceToMine = pickSentenceForTerm(selectedWord || displayedWord?.term || '',
-      [selectedWordAiContext, activePhraseSelection?.sentenceContext, currentSentenceSegment?.text], languageConfig?.characterSubstitutions);
+      [selectedWordAiContext, activePhraseSelection?.sentenceContext, currentSentenceSegment?.text], languageConfig?.characterSubstitutions,
+      languageConfig?.code || languageConfig?.languageCode || text?.languageCode);
     const wordId = displayedWord?.wordId;
 
     if (!wordId || !sentenceToMine) {
@@ -2008,7 +2068,7 @@ const TextDisplay = () => {
       console.error("Failed to mine sentence:", err);
       alert(`Failed to mine sentence: ${(err as Error)?.message}`);
     }
-  }, [displayedWord, selectedWord, selectedWordAiContext, activePhraseSelection?.sentenceContext, currentSentenceSegment?.text, languageConfig?.characterSubstitutions, text]);
+  }, [displayedWord, selectedWord, selectedWordAiContext, activePhraseSelection?.sentenceContext, currentSentenceSegment?.text, languageConfig?.characterSubstitutions, languageConfig?.code, languageConfig?.languageCode, text]);
 
   const handleTranslateUnknownWords = async ({ silent = false } = {}) => {
     // Saved rows are merged into the word list; the list's own load, if still running, would
@@ -2028,12 +2088,9 @@ const TextDisplay = () => {
           w.split('-').forEach((part: string) => { if (part) allWords.push(part); });
         }
       });
-      const uniqueWordsInText = [...new Set(allWords.map(lookupTerm))];
-      const wordsMap = wordMap; // Reuse the memoized map
-      const unknownWords = uniqueWordsInText.filter((word: string) => {
-        const w = wordsMap.get(word);
-        return !w || ((w.status ?? 0) <= 2 && !w.translation);
-      });
+      const unknownCandidates = getBulkWordCandidates(allWords)
+        .filter(({ saved }) => !saved || ((saved.status ?? 0) <= 2 && !saved.translation));
+      const unknownWords = unknownCandidates.map(({ key }) => key);
       if (unknownWords.length === 0) { if (!silent) alert("No words found needing translation."); setTranslatingUnknown(false); return; } // Exit early
       const translations = (await batchTranslateWords(unknownWords, translationTargetLanguageCode, text.languageCode)) as Record<string, string>;
       // Bail out if user navigated away during the API call
@@ -2043,9 +2100,9 @@ const TextDisplay = () => {
       // New words get the user's chosen status; words already tracked (Learning without a
       // translation) keep theirs and only get the translation.
       const newWordStatus = globalSettings.autoTranslateWordStatus || 5;
-      const termsToAdd = unknownWords.map((word: string) => ({
-        term: originalCaseMap.get(word) || word,
-        translation: translations?.[word] || '',
+      const termsToAdd = unknownCandidates.map(({ key, saved }) => ({
+        term: (koreanWordLookup ? saved?.term : null) || originalCaseMap.get(key) || key,
+        translation: translations?.[key] || '',
         status: newWordStatus
       })).filter((t: { translation: string }) => t.translation);
 
@@ -2086,16 +2143,16 @@ const TextDisplay = () => {
           w.split('-').forEach((part: string) => { if (part) allWords.push(part); });
         }
       });
-      const uniqueWordsInText = [...new Set(allWords.map(lookupTerm))];
-      const wordsMap = wordMap;
       // Linking a text stores its unsaved words at status 0; those are untracked too.
-      const unknownWords = uniqueWordsInText.filter((word: string) => (wordsMap.get(word)?.status ?? 0) === 0);
-      if (unknownWords.length === 0) { alert("No untracked words found."); setIsMarkingAll(false); return; } // Exit early
+      const unknownCandidates = getBulkWordCandidates(allWords).filter(({ saved }) => (saved?.status ?? 0) === 0);
+      if (unknownCandidates.length === 0) { alert("No untracked words found."); setIsMarkingAll(false); return; } // Exit early
       const originalCaseMap = new Map<string, string>();
       allWords.forEach((w: string) => { const lower = lookupTerm(w); if (!originalCaseMap.has(lower)) { originalCaseMap.set(lower, w); } });
-      const termsToMark = unknownWords.map((word: string) => ({ term: originalCaseMap.get(word) || word, translation: '', status: 5 }));
+      const termsToMark = unknownCandidates.map(({ key, saved }) => ({
+        term: (koreanWordLookup ? saved?.term : null) || originalCaseMap.get(key) || key, translation: '', status: 5
+      }));
       await applySavedWords(await addTermsBatch(text.languageId, termsToMark), text.languageId);
-      alert(`Attempted to mark ${unknownWords.length} words as Known.`);
+      alert(`Attempted to mark ${unknownCandidates.length} words as Known.`);
     } catch (err: unknown) { console.error("Error marking all unknown as known:", err); setError(`Failed: ${(err as Error)?.message}`); alert(`Error: ${(err as Error)?.message}`); }
     finally { setIsMarkingAll(false); }
   };

@@ -3,3 +3,6 @@
 *.sh text eol=lf
 # Copied into the backup image; supercronic would run "/backup.sh\r" from a CRLF line.
 backup/crontab text eol=lf
+
+# The pinned dictionary hash must survive Windows checkouts unchanged.
+server/LinguaReadApi/Resources/Segmentation/jieba-big-v1.txt -text

@@ -7,20 +7,21 @@ import { sentenceContainsTerm, splitSentenceAroundTerm } from '../utils/readerTe
 type Props = {
     term: Word;
     characterSubstitutions?: string | null;
+    languageCode?: string | null;
 };
 
-export default function TermSentences({ term, characterSubstitutions }: Props) {
+export default function TermSentences({ term, characterSubstitutions, languageCode }: Props) {
     const [expanded, setExpanded] = useState(false);
     const sentences = (term.sentences ?? []).filter(context =>
-        sentenceContainsTerm(context.sentence ?? '', term.term ?? '', characterSubstitutions));
+        sentenceContainsTerm(context.sentence ?? '', term.term ?? '', characterSubstitutions, languageCode));
     if (sentences.length === 0) {
         return <span className="terms-empty" aria-label="No matching saved sentence">—</span>;
     }
 
-    const firstParts = splitSentenceAroundTerm(sentences[0].sentence ?? '', term.term ?? '', characterSubstitutions);
+    const firstParts = splitSentenceAroundTerm(sentences[0].sentence ?? '', term.term ?? '', characterSubstitutions, languageCode);
     const canExpand = sentences.length > 1 || firstParts.reduce((length, part) => length + part.text.length, 0) > 200;
     const renderSentence = (sentence: string) => {
-        const parts = splitSentenceAroundTerm(sentence, term.term ?? '', characterSubstitutions);
+        const parts = splitSentenceAroundTerm(sentence, term.term ?? '', characterSubstitutions, languageCode);
         const text = parts.map(part => part.text).join('');
         let preview = text;
         if (!expanded && text.length > 200) {
@@ -30,7 +31,7 @@ export default function TermSentences({ term, characterSubstitutions }: Props) {
             const start = Math.min(Math.max(0, termOffset - 80), text.length - 200);
             preview = `${start > 0 ? '…' : ''}${text.slice(start, start + 200)}${start + 200 < text.length ? '…' : ''}`;
         }
-        return splitSentenceAroundTerm(preview, term.term ?? '', characterSubstitutions)
+        return splitSentenceAroundTerm(preview, term.term ?? '', characterSubstitutions, languageCode)
             .map((part, i) => part.isTerm ? <mark key={i}>{part.text}</mark> : part.text);
     };
     return (

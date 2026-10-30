@@ -1,3 +1,4 @@
+import { ensureChineseSegmentation } from '../utils/chineseDictionary';
 import { useEffect, useRef, useState } from 'react';
 import {
   getText,
@@ -173,6 +174,7 @@ export const useReaderState = ({
       if (!isSameText) {
         setLoading(true);
         setLanguageWordsLoaded(false);
+        setLanguageConfig(null);
         autoTranslateTriggeredRef.current = false;
         autoTranslateTextIdRef.current = null;
         setError('');
@@ -185,8 +187,20 @@ export const useReaderState = ({
       try {
         const data = await getText(textId);
         if (!isCurrentRequest()) return;
+        if (data.segmentationProfile && data.segmentationProfile !== 'jieba-v1')
+          throw new Error('This text uses a newer word segmenter. Update the app before opening it.');
+        let profileConfig: NonNullable<LanguageConfig> | null = null;
+        if (data.segmentationProfile === 'jieba-v1') {
+          if (!data.languageId) throw new Error('Chinese text has no language settings.');
+          const [config] = await Promise.all([getLanguage(data.languageId), ensureChineseSegmentation()]);
+          if (!isCurrentRequest()) return;
+          if (!config) throw new Error('Chinese language settings could not be loaded. Reconnect and reopen this text.');
+          profileConfig = { ...config, parserType: 'jieba-v1' };
+          setLanguageConfig(profileConfig);
+        }
         setText(data);
         setWords(data.words || []);
+        if (data.wordLinkingStatus === 'processing') startWordLinkingPoll();
         if (data.isAudioLesson && data.audioFilePath && data.hasSrtContent) {
           if (!isAudioLessonRef.current) setIsAudioLesson(true);
 
@@ -225,7 +239,7 @@ export const useReaderState = ({
         );
 
         promises.push(
-          data.languageId ? (getLanguage(data.languageId) as Promise<unknown>) : Promise.resolve(null)
+          profileConfig ? Promise.resolve(profileConfig) : data.languageId ? (getLanguage(data.languageId) as Promise<unknown>) : Promise.resolve(null)
         );
 
         // Book navigation only needs the part list, so apply it as soon as it arrives rather than
@@ -272,7 +286,9 @@ export const useReaderState = ({
         if (!data.languageId) setLanguageWordsLoaded(true);
 
         if (results[1].status === 'fulfilled' && results[1].value) {
-          setLanguageConfig(results[1].value as LanguageConfig);
+          const config = results[1].value as NonNullable<LanguageConfig>;
+          setLanguageConfig({ ...config, parserType: data.segmentationProfile === 'jieba-v1'
+            ? 'jieba-v1' : config.parserType === 'jieba-v1' ? 'jieba' : config.parserType });
         } else {
           if (results[1].status === 'rejected') {
             console.error('Failed to fetch language configuration:', results[1].reason);

@@ -48,7 +48,17 @@ still depend on your provider and installed voices.
 
 Chinese, Japanese and Thai are labeled **Basic word splitting**: the current
 tokenizer splits at spaces and punctuation, so an unspaced run is one word.
-Selecting MeCab or Jieba does not enable dictionary-based segmentation yet.
+Selecting MeCab or Jieba does not change existing texts. For a **new pasted Chinese text**,
+Add New Text offers **Chinese word segmentation (experimental)**. It uses a pinned
+8.6 MB dictionary downloaded once and cached for offline reopening. HTTPS or
+localhost is required to verify the download. Book/audio imports and older texts
+keep their existing splitting; there is no automatic relinking or script conversion.
+Unknown names may split into characters; native review is still outstanding.
+
+Korean keeps space-separated surface forms. Saved composed/decomposed Hangul
+spellings can match when the saved record is unambiguous; existing exact spellings,
+IDs and conflicting meanings remain distinct. Particle analysis and dictionary-form
+lookup are not implemented.
 
 ---
 
@@ -70,7 +80,7 @@ and unresolved Unicode, segmentation and sentence-boundary limitations.
 
 1. **Parser Type**:
    - `Space Delimited` (`spacedel`): **Recommended for most languages** (Latin, Cyrillic, Greek, Arabic, Hebrew, etc.) where words are separated by spaces or punctuation.
-   - `MeCab` / `Jieba`: Selectable for Japanese / Chinese. *(Note: Dictionary-based tokenization engines are currently awaiting implementation; unspaced text currently splits on whitespace and punctuation).*
+   - `MeCab` / `Jieba`: Legacy language settings; they do not upgrade existing text boundaries. The new-text Chinese option above is the explicit dictionary-segmentation rollout. Japanese dictionary segmentation remains unfinished.
 
 2. **Word Characters (Regex)**:
    - A regular expression character class defining what constitutes a single word character.

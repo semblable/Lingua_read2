@@ -112,6 +112,7 @@ namespace LinguaReadApi.Controllers
                      TextId = text.TextId,
                      Title = text.Title,
                      Content = text.Content,
+                     SegmentationProfile = text.SegmentationProfile,
                      LanguageId = text.LanguageId,
                      LanguageCode = text.Language.Code,
                      LanguageName = text.Language.Name,
@@ -158,7 +159,7 @@ namespace LinguaReadApi.Controllers
                 lastModified.Year, lastModified.Month, lastModified.Day,
                 lastModified.Hour, lastModified.Minute, lastModified.Second,
                 TimeSpan.Zero);
-            var etag = $"\"text-v2-{textDto.TextId}-{lastModifiedHttp.ToUnixTimeSeconds()}-{textDto.StudyRevision}\"";
+            var etag = $"\"text-v2-{textDto.TextId}-{lastModifiedHttp.ToUnixTimeSeconds()}-{textDto.StudyRevision}-{textDto.SegmentationProfile ?? "legacy"}\"";
 
             var ifNoneMatch = Request.Headers.IfNoneMatch.ToString();
             if (!string.IsNullOrEmpty(ifNoneMatch) && ifNoneMatch.Contains(etag))
@@ -360,10 +361,16 @@ namespace LinguaReadApi.Controllers
             var userId = GetUserId();
 
             // Check if language exists
-            var languageExists = await _context.Languages.AnyAsync(l => l.LanguageId == createTextDto.LanguageId);
-            if (!languageExists)
+            var language = await _context.Languages.FindAsync(createTextDto.LanguageId);
+            if (language == null)
             {
                 return BadRequest("Invalid language ID");
+            }
+
+            if (createTextDto.SegmentationProfile != null &&
+                (createTextDto.SegmentationProfile != ChineseSegmenter.Profile || !IsChineseLanguage(language.Code)))
+            {
+                return BadRequest("SegmentationProfile must be jieba-v1 and is only supported for Chinese texts.");
             }
 
             if (createTextDto.FolderId.HasValue && !await _context.UserOwnsFolderAsync(userId, createTextDto.FolderId.Value))
@@ -375,6 +382,7 @@ namespace LinguaReadApi.Controllers
             {
                 Title = createTextDto.Title,
                 Content = createTextDto.Content,
+                SegmentationProfile = createTextDto.SegmentationProfile,
                 LanguageId = createTextDto.LanguageId,
                 UserId = userId,
                 FolderId = createTextDto.FolderId,
@@ -393,8 +401,6 @@ namespace LinguaReadApi.Controllers
             // once the background service marks the text "completed".
             await _wordLinkingChannel.Writer.WriteAsync(
                 new WordLinkingRequest(text.TextId, text.Content, text.LanguageId, userId));
-
-            var language = await _context.Languages.FindAsync(text.LanguageId);
 
             var textDto = new TextDto
             {
@@ -943,23 +949,61 @@ namespace LinguaReadApi.Controllers
                 return NotFound();
             }
 
-            // Update only allowed fields
-            text.Title = updateTextDto.Title;
-            text.Content = updateTextDto.Content;
-            text.StructuredContent = null;
-            text.Tag = updateTextDto.Tag; // Update tag
-
-            // If LanguageId is provided and different, update it
-            if (updateTextDto.LanguageId.HasValue && updateTextDto.LanguageId.Value != text.LanguageId)
+            var languageChanged = updateTextDto.LanguageId.HasValue && updateTextDto.LanguageId.Value != text.LanguageId;
+            // Validate before mutating the tracked entity, including the existing
+            // profile: changing language must never silently reinterpret its spans.
+            if (languageChanged)
             {
-                 var languageExists = await _context.Languages.AnyAsync(l => l.LanguageId == updateTextDto.LanguageId.Value);
-                 if (!languageExists)
+                 var language = await _context.Languages.FindAsync(updateTextDto.LanguageId!.Value);
+                 if (language == null)
                  {
                      return BadRequest("Invalid LanguageId provided for update.");
                  }
-                 text.LanguageId = updateTextDto.LanguageId.Value;
+                 if (text.SegmentationProfile != null && !IsChineseLanguage(language.Code))
+                 {
+                     return BadRequest("A text with a Chinese segmentation profile must keep a Chinese language.");
+                 }
             }
 
+            var relinkProfiledText = text.SegmentationProfile != null &&
+                (text.Content != updateTextDto.Content || languageChanged);
+            if (relinkProfiledText)
+            {
+                // Content and its boundary-dependent links form one revision.
+                // Refetch after AtomicAsync clears tracking, and roll everything
+                // back if relinking or any subsequent save fails.
+                return await LessonStudyActivity.AtomicAsync<IActionResult>(_context, userId, async () =>
+                {
+                    var current = await _context.Texts.FirstOrDefaultAsync(t => t.TextId == id && t.UserId == userId);
+                    if (current == null) return NotFound();
+                    current.Title = updateTextDto.Title;
+                    current.Content = updateTextDto.Content;
+                    current.StructuredContent = null;
+                    current.Tag = updateTextDto.Tag;
+                    if (updateTextDto.LanguageId.HasValue) current.LanguageId = updateTextDto.LanguageId.Value;
+                    current.WordLinkingStatus = "processing";
+                    await _context.SaveChangesAsync();
+
+                    await WordLinker.RelinkAsync(_context, id, current.Content, current.LanguageId, userId);
+
+                    // Relink may clear tracking when it removes the old links.
+                    var linked = await _context.Texts.SingleAsync(t => t.TextId == id && t.UserId == userId);
+                    var counts = await _context.TextWords.Where(tw => tw.TextId == id)
+                        .Select(tw => new { tw.OccurrenceCount, tw.Word.Status }).ToListAsync();
+                    linked.TotalWords = counts.Where(w => w.Status != 6).Sum(w => w.OccurrenceCount);
+                    linked.KnownWords = counts.Where(w => w.Status >= 4 && w.Status <= 5).Sum(w => w.OccurrenceCount);
+                    linked.StatsUpdatedAt = DateTime.UtcNow;
+                    linked.WordLinkingStatus = "completed";
+                    await _context.SaveChangesAsync();
+                    return NoContent();
+                });
+            }
+
+            text.Title = updateTextDto.Title;
+            text.Content = updateTextDto.Content;
+            text.StructuredContent = null;
+            text.Tag = updateTextDto.Tag;
+            if (languageChanged) text.LanguageId = updateTextDto.LanguageId!.Value;
 
             _context.Entry(text).State = EntityState.Modified;
 
@@ -1024,6 +1068,9 @@ namespace LinguaReadApi.Controllers
         {
             return await _context.Texts.AnyAsync(e => e.TextId == id && e.UserId == userId);
         }
+
+        private static bool IsChineseLanguage(string code) =>
+            string.Equals(code.Trim().Split('-', '_')[0], "zh", StringComparison.OrdinalIgnoreCase);
 
         // PUT: api/texts/{textId}/complete
         [HttpPut("{textId}/complete")] // Corrected route: combines with controller route "/api/texts"
@@ -1235,6 +1282,7 @@ namespace LinguaReadApi.Controllers
         public int TextId { get; set; }
         public string Title { get; set; } = string.Empty;
         public string Content { get; set; } = string.Empty;
+        public string? SegmentationProfile { get; set; }
         public string LanguageName { get; set; } = string.Empty;
         public string LanguageCode { get; set; } = string.Empty; // Added LanguageCode
         public int LanguageId { get; set; }
@@ -1277,6 +1325,8 @@ namespace LinguaReadApi.Controllers
         public string Title { get; set; } = string.Empty;
         [Required]
         public string Content { get; set; } = string.Empty;
+        [StringLength(32)]
+        public string? SegmentationProfile { get; set; }
         [Required]
         public int LanguageId { get; set; }
         [StringLength(100)]

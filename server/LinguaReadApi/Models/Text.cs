@@ -19,6 +19,11 @@ namespace LinguaReadApi.Models
 
         public string? StructuredContent { get; set; }
 
+        // Explicit boundary contract for this text. Null keeps the legacy tokenizer;
+        // language presets and future engine updates must not opt existing texts in.
+        [StringLength(32)]
+        public string? SegmentationProfile { get; set; }
+
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
         // New field to track last access time

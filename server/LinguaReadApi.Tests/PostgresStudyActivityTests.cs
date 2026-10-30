@@ -24,6 +24,12 @@ public class PostgresStudyFactAttribute : FactAttribute
     }
 }
 
+// Separate schemas do not isolate database-wide extension creation. Keep setup
+// sequential across classes; concurrency within each test remains unchanged.
+[CollectionDefinition("Postgres study database")]
+public class PostgresStudyDatabaseCollection { }
+
+[Collection("Postgres study database")]
 public class PostgresStudyActivityTests
 {
     private static readonly Guid UserId = Guid.Parse("deadbeef-0000-0000-0000-000000000044");

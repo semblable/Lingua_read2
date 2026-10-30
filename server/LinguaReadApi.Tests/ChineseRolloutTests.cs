@@ -23,6 +23,7 @@ using Xunit;
 
 namespace LinguaReadApi.Tests;
 
+[Collection("Postgres study database")]
 public class ChineseRolloutTests
 {
     [Fact]

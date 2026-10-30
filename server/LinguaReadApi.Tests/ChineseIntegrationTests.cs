@@ -11,6 +11,7 @@ using Xunit;
 
 namespace LinguaReadApi.Tests;
 
+[Collection("Postgres study database")]
 public class ChineseIntegrationTests
 {
     [Theory]

@@ -97,8 +97,7 @@ public async Task<IActionResult> LogListeningActivity([FromBody] LogListeningReq
         {
             var resetReceiptKey = LessonStudyActivity.ListeningResetReceiptKey(request.ClientEventId);
             if (await _context.UserActivities.AnyAsync(a => a.UserId == userId && a.ClientEventId == request.ClientEventId)
-                || await _context.LessonStudyEvents.AnyAsync(e => e.UserId == userId && e.SourceRevision == resetReceiptKey
-                    && e.Kind == "time" && e.SourceTextId == 0 && !e.CountsTowardStatistics))
+                || await LessonStudyActivity.ListeningResetReceipts(_context, userId).AnyAsync(e => e.SourceRevision == resetReceiptKey))
                 return Ok(new { message = "Listening activity already logged (duplicate ignored)." });
         }
         // Activity row + cumulative stats are committed in a single SaveChanges so

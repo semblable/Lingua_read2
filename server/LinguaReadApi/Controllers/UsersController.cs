@@ -808,22 +808,7 @@ namespace LinguaReadApi.Controllers
                 {
                     // Reset erases time credit, but must retain keyed playback
                     // identity so an old offline retry cannot restore that time.
-                    var receiptKeys = (await _context.LessonStudyEvents
-                        .Where(e => e.UserId == userId && e.Kind == "time" && e.SourceTextId == 0 && !e.CountsTowardStatistics)
-                        .Select(e => e.SourceRevision).ToListAsync()).ToHashSet();
-                    foreach (var activity in activities.Where(a => a.ActivityType == "Listening" && !string.IsNullOrEmpty(a.ClientEventId)))
-                    {
-                        var receiptKey = LessonStudyActivity.ListeningResetReceiptKey(activity.ClientEventId!);
-                        if (receiptKeys.Add(receiptKey))
-                            _context.LessonStudyEvents.Add(new LessonStudyEvent
-                            {
-                                UserId = userId, LanguageId = activity.LanguageId, SourceTextId = 0,
-                                SourceRevision = receiptKey, ClientEventId = Guid.NewGuid().ToString(), Kind = "time",
-                                CountingVersion = 1, CountsTowardStatistics = false,
-                                CreditedListeningSeconds = activity.ListeningDurationSeconds ?? 0,
-                                CreatedAt = activity.Timestamp
-                            });
-                    }
+                    await LessonStudyActivity.AddListeningResetReceiptsAsync(_context, userId, activities);
                     _logger.LogInformation("Found {ActivityCount} UserActivity records to remove for user {UserId}", activities.Count, userId);
                     _context.UserActivities.RemoveRange(activities);
                 }

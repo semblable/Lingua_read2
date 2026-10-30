@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
@@ -289,6 +290,29 @@ public class ListeningCompatibilityTests(ITestOutputHelper output)
         Assert.IsType<OkObjectResult>((await texts.CompleteText(1)).Result);
         Assert.Equal(103, await learner.Words()); // Only missing reading word; listening never supplies it.
         Assert.Equal(105, await learner.Seconds());
+    }
+
+    [Fact]
+    public async Task LanguageContentReset_KeepsPlaybackIdentitySoOldRetriesCannotRestoreTime()
+    {
+        await using var learner = await Learner.Create();
+        await learner.Playback("before-stats-reset", 15);
+        await learner.Reset(); // Writes a receipt the language reset must keep.
+        await learner.Playback("after-stats-reset", 20);
+        var userId = await learner.Context.Users.Select(u => u.Id).SingleAsync();
+        learner.Context.ChangeTracker.Clear();
+
+        var languages = new LanguageService(learner.Context, new MemoryCache(new MemoryCacheOptions()));
+        Assert.True(await languages.ResetLanguageContentAsync(1, userId));
+
+        await learner.Playback("before-stats-reset", 15);
+        await learner.Playback("after-stats-reset", 20);
+        learner.Context.ChangeTracker.Clear();
+        Assert.False(await learner.Context.UserActivities.AnyAsync());
+        Assert.False(await learner.Context.UserLanguageStatistics.AnyAsync());
+
+        await learner.Playback("new-after-language-reset", 7);
+        Assert.Equal(7, await learner.Seconds());
     }
 
     private sealed class Learner(SqliteConnection connection, AppDbContext context) : IAsyncDisposable

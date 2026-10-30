@@ -203,6 +203,16 @@ export const useAudiobookPlayer = ({
     lifecycleSaveRef
   });
 
+  // Stop accrual at a playback boundary (seek, buffering, source swap): credit
+  // the time played so far, then wait for `playing`/`seeked` evidence to resume.
+  const suspendListening = useCallback(() => {
+    const tracker = listeningTrackerRef.current;
+    listeningSuspendedRef.current = true;
+    tracker.markStalling();
+    flushListeningActivityRef.current?.(false);
+    tracker.clearCheckpoint();
+  }, [flushListeningActivityRef, listeningTrackerRef]);
+
   // --- Source tracks + playlist sync ---
   const sourceTracks = useMemo<AudiobookTrackLike[]>(() => {
     if (isBookMode && book?.audiobookTracks) {
@@ -408,6 +418,8 @@ export const useAudiobookPlayer = ({
       nextSrc
     };
 
+    // The next source has to load before it plays; don't credit that time.
+    suspendListening();
     setError('');
     audio.src = src;
     audio.load();
@@ -416,7 +428,7 @@ export const useAudiobookPlayer = ({
     if (isPlayingRef.current || hadPendingAutoAdvance) {
       requestAudioPlay('Auto-play on track change failed', { forceIntent: true });
     }
-  }, [currentTrack, audioRef, buildTrackSrc, requestAudioPlay, resetSegmentPlayback, segmentPlaybackRequest, segmentPlaybackRef]);
+  }, [currentTrack, audioRef, buildTrackSrc, requestAudioPlay, resetSegmentPlayback, segmentPlaybackRequest, segmentPlaybackRef, suspendListening]);
 
   // --- Audio event handlers ---
   const handleLoadedMetadata = useCallback(() => {
@@ -476,13 +488,16 @@ export const useAudiobookPlayer = ({
       const audio = audioRef.current;
       if (audio) setAudioPlaybackIntent(audio, true);
       pendingAutoAdvanceRef.current = true;
+      // Suspend before isPlaying flips back on so the next track's load time
+      // isn't credited; its `playing` event resumes accrual.
+      suspendListening();
       syncPlaybackState(true);
       setCurrentTrackIndex(prev => prev + 1);
     } else {
       pendingAutoAdvanceRef.current = false;
       syncPlaybackState(false);
     }
-  }, [isBookMode, currentTrackIndex, playlist.length, audioRef, syncPlaybackState]);
+  }, [isBookMode, currentTrackIndex, playlist.length, audioRef, syncPlaybackState, suspendListening]);
 
   const handleError = useCallback((e: Event) => {
     const audio = e?.target as HTMLAudioElement | null;
@@ -516,12 +531,6 @@ export const useAudiobookPlayer = ({
 
     const tracker = listeningTrackerRef.current;
 
-    const suspendListening = () => {
-      listeningSuspendedRef.current = true;
-      tracker.markStalling();
-      flushListeningActivityRef.current?.(false);
-      tracker.clearCheckpoint();
-    };
     const resumeListening = () => {
       listeningSuspendedRef.current = false;
       tracker.markPlaying();
@@ -541,8 +550,11 @@ export const useAudiobookPlayer = ({
       resumeListening();
     };
     const onStalled = () => {
+      // Paused media accrues nothing, and a preload stall must not leave a
+      // buffering indicator that only `playing`/`seeked` would clear.
+      if (audio.paused) return;
       // `stalled` describes network fetching; buffered audio can still play.
-      if (!audio.paused && !audio.seeking && audio.readyState >= audio.HAVE_FUTURE_DATA) return;
+      if (!audio.seeking && audio.readyState >= audio.HAVE_FUTURE_DATA) return;
       onWaiting();
     };
     const onPlaying = () => {
@@ -606,7 +618,7 @@ export const useAudiobookPlayer = ({
       audio.removeEventListener('pause', onPause);
       audio.removeEventListener('playing', onPlaying);
     };
-  }, [audioRef, contentKey, handleLoadedMetadata, handleTimeUpdate, handleEnded, handleError, resetSegmentPlayback, syncPlaybackState, flushListeningActivityRef, listeningTrackerRef, playbackStartedContentKeyRef, segmentPlaybackRef]);
+  }, [audioRef, contentKey, handleLoadedMetadata, handleTimeUpdate, handleEnded, handleError, resetSegmentPlayback, syncPlaybackState, suspendListening, flushListeningActivityRef, listeningTrackerRef, playbackStartedContentKeyRef, segmentPlaybackRef]);
 
   useEffect(() => {
     if (audioRef.current) {

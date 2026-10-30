@@ -27,13 +27,13 @@ const renderPlayer = async () => {
   audio.pause = vi.fn();
   audio.load = vi.fn();
   const audioRef = { current: audio };
-  const rendered = renderHook(() => useAudiobookPlayer({
+  const rendered = renderHook(({ audioSrc }) => useAudiobookPlayer({
     type: 'lesson',
-    audioSrc: 'https://example.com/lesson.mp3',
+    audioSrc,
     textId: 42,
     languageId: 5,
     audioRef
-  }));
+  }), { initialProps: { audioSrc: 'https://example.com/lesson.mp3' } });
   await act(async () => {});
 
   const emit = (type, state = {}) => act(() => {
@@ -168,6 +168,32 @@ describe('audiobook listening playback boundaries', () => {
     advance(10);
     pause();
     expect(loggedSeconds()).toBe(15);
+  });
+
+  test('a stall while paused does not show buffering or suspend the next play', async () => {
+    const { result, emit, advance, play, pause } = await renderPlayer();
+    emit('stalled', { readyState: 1 });
+    expect(result.current.isBuffering).toBe(false);
+
+    emit('canplay', { readyState: 4 });
+    play();
+    advance(5);
+    pause();
+    expect(loggedSeconds()).toBe(5);
+  });
+
+  test('a source swap during playback does not credit the next source load time', async () => {
+    const { rerender, emit, advance, play, pause } = await renderPlayer();
+    play();
+    advance(5);
+    act(() => rerender({ audioSrc: 'https://example.com/next.mp3' }));
+    advance(15, 0);
+    expect(logListeningActivity).not.toHaveBeenCalled();
+
+    emit('playing', { paused: false, readyState: 4 });
+    advance(5);
+    pause();
+    expect(loggedSeconds()).toBe(10);
   });
 
   test('pause during a seek prevents a late seeked or playing event from resuming credit', async () => {

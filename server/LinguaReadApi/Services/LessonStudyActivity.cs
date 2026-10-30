@@ -19,6 +19,36 @@ public static class LessonStudyActivity
     public static string ListeningResetReceiptKey(string clientEventId) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes($"listening-reset-receipt:v1\n{clientEventId}")));
 
+    // Reset receipts carry identity only: they never count toward statistics.
+    public static IQueryable<LessonStudyEvent> ListeningResetReceipts(AppDbContext context, Guid userId) =>
+        context.LessonStudyEvents.Where(e => e.UserId == userId && e.Kind == "time" && e.SourceTextId == 0 && !e.CountsTowardStatistics);
+
+    // Any reset that erases keyed listening activity must retain its playback
+    // identity, so an old offline or lost-response retry cannot restore the time.
+    public static async Task AddListeningResetReceiptsAsync(AppDbContext context, Guid userId, IEnumerable<UserActivity> removedActivities)
+    {
+        var keyed = removedActivities
+            .Where(a => a.UserId == userId && a.ActivityType == "Listening" && !string.IsNullOrEmpty(a.ClientEventId))
+            .ToList();
+        if (keyed.Count == 0) return;
+
+        var receiptKeys = (await ListeningResetReceipts(context, userId)
+            .Select(e => e.SourceRevision).ToListAsync()).ToHashSet();
+        foreach (var activity in keyed)
+        {
+            var receiptKey = ListeningResetReceiptKey(activity.ClientEventId!);
+            if (receiptKeys.Add(receiptKey))
+                context.LessonStudyEvents.Add(new LessonStudyEvent
+                {
+                    UserId = userId, LanguageId = activity.LanguageId, SourceTextId = 0,
+                    SourceRevision = receiptKey, ClientEventId = Guid.NewGuid().ToString(), Kind = "time",
+                    CountingVersion = 1, CountsTowardStatistics = false,
+                    CreditedListeningSeconds = activity.ListeningDurationSeconds ?? 0,
+                    CreatedAt = activity.Timestamp
+                });
+        }
+    }
+
     // A user-wide transaction lock also protects totals shared by different
     // lessons. The stable hash is evaluated by PostgreSQL, not .NET GetHashCode.
     public static async Task LockAsync(AppDbContext context, Guid userId)

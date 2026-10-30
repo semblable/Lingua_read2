@@ -280,6 +280,17 @@ namespace LinguaReadApi.Services
                     .Where(w => w.UserId == userId && w.LanguageId == languageId)
                     .ExecuteDeleteAsync();
 
+                // Erased listening time must stay erased: record keyed playback
+                // identities before the bulk delete so old offline retries are
+                // still recognised as duplicates (same as a statistics reset).
+                var removedListening = await _context.UserActivities
+                    .Where(ua => ua.UserId == userId && ua.LanguageId == languageId
+                                 && ua.ActivityType == "Listening" && ua.ClientEventId != null)
+                    .AsNoTracking()
+                    .ToListAsync();
+                await LessonStudyActivity.AddListeningResetReceiptsAsync(_context, userId, removedListening);
+                await _context.SaveChangesAsync();
+
                 await _context.UserActivities
                     .Where(ua => ua.UserId == userId && ua.LanguageId == languageId)
                     .ExecuteDeleteAsync();
@@ -290,8 +301,11 @@ namespace LinguaReadApi.Services
 
                 // Unlike ordinary lesson deletion, this explicit content reset
                 // requests deletion of the language's study history as well.
+                // Listening reset receipts are kept: they carry no credit, only
+                // the identity that blocks replaying erased time.
                 await _context.LessonStudyEvents
-                    .Where(e => e.UserId == userId && e.LanguageId == languageId)
+                    .Where(e => e.UserId == userId && e.LanguageId == languageId
+                                && !(e.Kind == "time" && e.SourceTextId == 0 && !e.CountsTowardStatistics))
                     .ExecuteDeleteAsync();
 
                 await transaction.CommitAsync();

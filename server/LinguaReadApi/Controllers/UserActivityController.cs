@@ -93,9 +93,14 @@ public async Task<IActionResult> LogListeningActivity([FromBody] LogListeningReq
         {
         // Recheck after acquiring the shared activity lock (another request may
         // have committed while the optimistic duplicate check ran).
-        if (!string.IsNullOrEmpty(request.ClientEventId) && await _context.UserActivities
-            .AnyAsync(a => a.UserId == userId && a.ClientEventId == request.ClientEventId))
-            return Ok(new { message = "Listening activity already logged (duplicate ignored)." });
+        if (!string.IsNullOrEmpty(request.ClientEventId))
+        {
+            var resetReceiptKey = LessonStudyActivity.ListeningResetReceiptKey(request.ClientEventId);
+            if (await _context.UserActivities.AnyAsync(a => a.UserId == userId && a.ClientEventId == request.ClientEventId)
+                || await _context.LessonStudyEvents.AnyAsync(e => e.UserId == userId && e.SourceRevision == resetReceiptKey
+                    && e.Kind == "time" && e.SourceTextId == 0 && !e.CountsTowardStatistics))
+                return Ok(new { message = "Listening activity already logged (duplicate ignored)." });
+        }
         // Activity row + cumulative stats are committed in a single SaveChanges so
         // a partial commit can't leave the seconds counted without the dedup row
         // (or vice-versa).

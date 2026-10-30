@@ -82,6 +82,27 @@ public class PostgresStudyActivityTests
     }
 
     [PostgresStudyFact]
+    public async Task ConcurrentListeningReplayAndReset_DoNotResurrectAcceptedSeconds()
+    {
+        await using var db = await Database.Create();
+        for (var i = 0; i < 5; i++)
+        {
+            var request = new UserActivityController.LogListeningRequest {
+                LanguageId = 1, DurationSeconds = 7, ClientEventId = $"reset-listening-{i}" };
+            await using (var first = db.Context())
+                Assert.IsType<OkObjectResult>(await Activity(first).LogListeningActivity(request));
+            await using var replay = db.Context();
+            await using var reset = db.Context();
+            await Task.WhenAll(Activity(replay).LogListeningActivity(request), Reset(reset));
+            await using var after = db.Context();
+            Assert.IsType<OkObjectResult>(await Activity(after).LogListeningActivity(request));
+            Assert.Equal(0, (await after.UserLanguageStatistics.SingleAsync()).TotalSecondsListened);
+            Assert.Empty(await after.UserActivities.ToListAsync());
+            Assert.Equal(i + 1, await after.LessonStudyEvents.CountAsync(e => e.Kind == "time"));
+        }
+    }
+
+    [PostgresStudyFact]
     public async Task AdditiveMigration_PreservesHistoricalData_AndRefusesToDropRecordedPasses()
     {
         await using var db = await Database.Create(createTables: false);

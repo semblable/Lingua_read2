@@ -68,7 +68,16 @@ jobs:
           exit 1
 
       - name: Test
-        run: dotnet test Lingua_Read.sln -c Release --no-build
+        run: dotnet test Lingua_Read.sln -c Release --no-build --logger "trx;LogFileName=server.trx" --results-directory verification/language-support/test-results
+
+      - name: Upload server verification results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: server-test-results
+          path: verification/language-support/test-results/*.trx
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: Stop isolated study database
         if: always()

@@ -14,6 +14,11 @@ public static class LessonStudyActivity
 
     public static bool ValidId(string? id) => id == null || (id.Length is > 0 and <= 64 && !string.IsNullOrWhiteSpace(id));
 
+    // Store this identity in a time receipt's SourceRevision, leaving ClientEventId
+    // independent so arbitrary explicit lesson-pass IDs cannot collide with it.
+    public static string ListeningResetReceiptKey(string clientEventId) =>
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes($"listening-reset-receipt:v1\n{clientEventId}")));
+
     // A user-wide transaction lock also protects totals shared by different
     // lessons. The stable hash is evaluated by PostgreSQL, not .NET GetHashCode.
     public static async Task LockAsync(AppDbContext context, Guid userId)

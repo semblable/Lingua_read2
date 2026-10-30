@@ -18,7 +18,9 @@ Use fractional listening exposure: played source seconds divided by that source 
 
 Keep audio-only listening separate from reading credit. An explicit read-along mode may credit transcript spans actually encountered. An open tab, auto-scroll or an unmapped audiobook track is insufficient evidence of reading.
 
-Before changing semantics, run a bounded synthetic learner experiment covering sentence credit/completion overlap, deliberate repeats, goals/reset, variable speeds, seeks/loops, unknown duration, audio edits, multiple tracks/devices, interrupted writes, old clients and offline replay. Establish source/playback/reading-cycle identity, deduplication and compatibility with existing manual pass events. Do not guess historical fractional counts.
+Extend the bounded synthetic listening checks before enabling fractional totals. The current payload carries elapsed seconds and language only: establish immutable audio revision/duration and playback identity before accepting source exposure. Keep manual pass declarations separate, retain unknown-duration time without inventing equivalents, and retain the original event ID through interrupted/offline retries. Old clients may discard new queue types; choose a compatible rollout before adding one.
+
+Verify sentence/completion overlap, deliberate repeats, goals/reset, speed changes, seeks/loops, edited audio, track switches and multiple devices. Reset must preserve keyed replay proof; events without IDs and resets performed by older servers cannot be reconstructed safely. Do not guess historical fractions or change earned totals. Read-along still requires explicit mode and reliable transcript mapping.
 
 ### Identity and useful segmentation
 

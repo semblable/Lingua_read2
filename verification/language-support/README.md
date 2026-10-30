@@ -1,6 +1,6 @@
 # Language and activity verification
 
-Run from the repository root with synthetic data only. [The short roadmap](../../docs/LANGUAGE_SUPPORT_PLAN.md) defines future work; code/tests define current behavior. Old Markdown journals were consolidated here; detailed chronology remains in Git.
+Run from the repository root with synthetic data only. [The short roadmap](../../docs/LANGUAGE_SUPPORT_PLAN.md) defines future work; code/tests define current behavior. Detailed chronology remains in Git. Generated reports belong in ignored `test-results/` or CI artifacts; keep fixtures and expected results in source control.
 
 ## Scope and contracts
 
@@ -16,14 +16,26 @@ These use isolated SQLite in-memory learners and cover sentence/completion/repea
 
 ```powershell
 dotnet test server/LinguaReadApi.Tests/LinguaReadApi.Tests.csproj --no-restore --filter FullyQualifiedName~ReadingCreditCompatibilityTests --logger 'trx;LogFileName=reading-credit.trx' --results-directory verification/language-support/test-results
-./verification/language-support/summarize-credit-results.ps1 -TrxPath verification/language-support/test-results/reading-credit.trx -OutputPath verification/language-support/reading-credit-after.json
+./verification/language-support/summarize-credit-results.ps1 -TrxPath verification/language-support/test-results/reading-credit.trx -OutputPath verification/language-support/test-results/reading-credit.json
 ```
 
-Observations: [initial](reading-credit-before.json), [reset reproduction](reading-credit-review-before.json), [pre-ledger follow-up](reading-credit-after.json), [ledger cases](study-credit-report.json). Earlier reports retain then-known gaps; a passing diagnostic may reproduce a discrepancy rather than prove it fixed. Thai counting input uses CJK stops to isolate counting and is not a native acceptance fixture.
+Assertions and synthetic learner fixtures live in the test suite. A passing diagnostic can reproduce a discrepancy rather than prove it fixed. Thai counting input uses CJK stops to isolate counting and is not a native acceptance fixture.
+
+## Listening compatibility
+
+Use the same isolated learner harness for elapsed-time replay, manual pass separation, sentence/completion overlap, goals, reset and interrupted transactions. Candidate formula assertions are test-only; passing them does not implement fractional credit.
+
+```powershell
+dotnet test server/LinguaReadApi.Tests/LinguaReadApi.Tests.csproj --no-restore --filter FullyQualifiedName~ListeningCompatibilityTests --logger 'trx;LogFileName=listening.trx' --results-directory verification/language-support/test-results
+cd client/lingua-read-client
+npm test -- --run src/__tests__/listeningCompatibility.test.js
+```
+
+The client checks synthetic speed, pause/buffer, seek/loop checkpoints and keyed offline replay. They do not reproduce real media event ordering or a physical disconnect. Playback payloads lack source duration/revision, and path-based lesson hashes cannot detect in-place audio replacement. Do not derive historical equivalents from elapsed seconds. Legacy unkeyed retries remain additive; older-server resets cannot recover deleted IDs. Retained reset receipts prevent keyed replay without becoming manual pass counts or reading credit.
 
 ## PostgreSQL concurrency and upgrade
 
-The three optional `PostgresStudyActivityTests` exercise concurrent activity writers, sentence/completion/reset races, prior-schema upgrade, empty downgrade/re-upgrade, nonempty downgrade refusal and preservation of synthetic learner records. Without the explicit connection they skip; CI supplies a disposable database.
+The optional `PostgresStudyActivityTests` exercise concurrent activity writers, sentence/completion/reset races, prior-schema upgrade, empty downgrade/re-upgrade, nonempty downgrade refusal and preservation of synthetic learner records. Without the explicit connection they skip; CI supplies a disposable database.
 
 Use only this named disposable container and the required `studycheck` database. Generate fresh credentials; never substitute learner credentials. Wait for PostgreSQL readiness before running tests.
 
@@ -48,29 +60,30 @@ try {
 }
 ```
 
-[Saved PostgreSQL results](study-postgres-report.json) are bounded evidence, not a production upgrade/restore rehearsal. Test hosts may need a permitted local connection in restricted environments.
+CI uploads server TRX results as run artifacts, including the PostgreSQL cases. These are bounded evidence, not a production upgrade/restore rehearsal. Test hosts may need a permitted local connection in restricted environments.
 
 ## Segmentation probe
 
 Six original Chinese/Japanese/Thai examples plus 10k/100k UTF-16-unit inputs. Provisional word expectations require native review. Standalone rejection bounds were a warm 100k pass under one second and total process working set under 128 MiB; these are not application SLAs.
 
 ```powershell
-node verification/language-support/probe.mjs > verification/language-support/node-report.json
+New-Item -ItemType Directory -Force verification/language-support/test-results | Out-Null
+node verification/language-support/probe.mjs > verification/language-support/test-results/node-report.json
 dotnet build verification/language-support/LanguageSupportProbe.csproj
-dotnet verification/language-support/bin/Debug/net10.0/LanguageSupportProbe.dll verification/language-support/cases.json > verification/language-support/dotnet-windows-report.json
+dotnet verification/language-support/bin/Debug/net10.0/LanguageSupportProbe.dll verification/language-support/cases.json > verification/language-support/test-results/dotnet-windows-report.json
 ```
 
 Linux comparison, using the locally built API image with ICU:
 
 ```powershell
 $probeRoot = (Resolve-Path verification/language-support).Path
-docker run --rm --network none --read-only --mount "type=bind,source=$probeRoot,target=/probe,readonly" --entrypoint dotnet linguaread-verify-20261028-api:latest /probe/bin/Debug/net10.0/LanguageSupportProbe.dll /probe/cases.json > verification/language-support/dotnet-linux-report.json
+docker run --rm --network none --read-only --mount "type=bind,source=$probeRoot,target=/probe,readonly" --entrypoint dotnet linguaread-verify-20261028-api:latest /probe/bin/Debug/net10.0/LanguageSupportProbe.dll /probe/cases.json > verification/language-support/test-results/dotnet-linux-report.json
 ```
 
-Saved [Node](node-report.json), [Windows](dotnet-windows-report.json) and [Linux](dotnet-linux-report.json) reports include runtime versions and timings. Source spans reconstruct the samples, but only 2/6 provisional word expectations match. No production tokenizer change is justified; do not ship the probe's native-library loader.
+Reports include runtime versions and timings; compare them per run. Source spans reconstruct the samples, but the prior probe matched only 2/6 provisional word expectations. No production tokenizer change is justified; do not ship the probe’s native-library loader.
 
 ## Header visuals
 
 Copy [study-preview.html](study-preview.html) temporarily into `client/lingua-read-client/`, run Vite and open that path. Remove the client copy afterwards. It renders real headers with synthetic HTTP data, not audio playback or an installed learner session.
 
-[Desktop](visuals/study-header-desktop.jpg) and [390px mobile](visuals/study-header-mobile.jpg) show the current layout. Browser inspection also covered the 320px menu/dialog, 44px targets, text-only hiding and count refresh. Older panel screenshots are historical. Physical devices, real Safari, complete offline reconnect and native language quality remain separate checks.
+[Desktop](visuals/study-header-desktop.jpg) and [390px mobile](visuals/study-header-mobile.jpg) show the current layout. Browser inspection also covered the 320px menu/dialog, 44px targets, text-only hiding and count refresh. Regenerate run screenshots when needed; obsolete panel captures are not retained. Physical devices, real Safari, complete offline reconnect and native language quality remain separate checks.

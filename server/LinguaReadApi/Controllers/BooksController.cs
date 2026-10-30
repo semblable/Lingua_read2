@@ -18,6 +18,7 @@ using VersOne.Epub; // Added for EPUB parsing
 using LinguaReadApi.Data;
 using LinguaReadApi.Models;
 using LinguaReadApi.Services;
+using LinguaReadApi.Services.Tokenization;
 using LinguaReadApi.Utilities;
 
 namespace LinguaReadApi.Controllers
@@ -216,10 +217,13 @@ namespace LinguaReadApi.Controllers
             var userId = GetUserId();
 
             // Check if language exists
-            var languageExists = await _context.Languages.AnyAsync(l => l.LanguageId == createBookDto.LanguageId);
-            if (!languageExists)
+            var language = await _context.Languages.FindAsync(createBookDto.LanguageId);
+            if (language == null) return BadRequest("Invalid language ID");
+            var segmentationProfile = createBookDto.SegmentationProfile;
+            if (segmentationProfile != null &&
+                (segmentationProfile != ChineseSegmenter.Profile || !IsChineseLanguage(language.Code)))
             {
-                return BadRequest("Invalid language ID");
+                return BadRequest("SegmentationProfile must be jieba-v1 and is only supported for Chinese texts.");
             }
 
             if (createBookDto.FolderId.HasValue && !await _context.UserOwnsFolderAsync(userId, createBookDto.FolderId.Value))
@@ -349,7 +353,8 @@ namespace LinguaReadApi.Controllers
                             {
                                 Title = chap.Title,
                                 Content = chap.Content,
-                                StructuredContent = null,
+                                SegmentationProfile = segmentationProfile,
+                            StructuredContent = null,
                                 LanguageId = book.LanguageId,
                                 UserId = userId,
                                 BookId = book.BookId,
@@ -378,7 +383,7 @@ namespace LinguaReadApi.Controllers
             }
 
             // 8. Prepare Response DTO
-            var language = await _context.Languages.FindAsync(book.LanguageId);
+            language ??= await _context.Languages.FindAsync(book.LanguageId);
             var bookDto = new BookDto
             {
                 BookId = book.BookId,
@@ -421,10 +426,13 @@ namespace LinguaReadApi.Controllers
             var userId = GetUserId();
 
             // Check if language exists
-            var languageExists = await _context.Languages.AnyAsync(l => l.LanguageId == uploadDto.LanguageId);
-            if (!languageExists)
+            var language = await _context.Languages.FindAsync(uploadDto.LanguageId);
+            if (language == null) return BadRequest("Invalid language ID.");
+            var segmentationProfile = uploadDto.SegmentationProfile;
+            if (segmentationProfile != null &&
+                (segmentationProfile != ChineseSegmenter.Profile || !IsChineseLanguage(language.Code)))
             {
-                return BadRequest("Invalid language ID.");
+                return BadRequest("SegmentationProfile must be jieba-v1 and is only supported for Chinese texts.");
             }
 
             if (uploadDto.FolderId.HasValue && !await _context.UserOwnsFolderAsync(userId, uploadDto.FolderId.Value))
@@ -588,7 +596,7 @@ namespace LinguaReadApi.Controllers
                 {
                     var artifactKeys = BuildEpubArtifactKeys(book.Title, sourceFileStem);
                     var relativeAssetRoot = Path.Combine("epub_assets", userId.ToString(), book.BookId.ToString()).Replace('\\', '/');
-                    var absoluteAssetRoot = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "epub_assets", userId.ToString(), book.BookId.ToString());
+                    var absoluteAssetRoot = Path.Combine(WebRoot ?? Path.Combine(Directory.GetCurrentDirectory(), "wwwroot"), "epub_assets", userId.ToString(), book.BookId.ToString());
                     Directory.CreateDirectory(absoluteAssetRoot);
 
                     var extractionContext = new EpubExtractionContext(epubBook, absoluteAssetRoot, relativeAssetRoot);
@@ -641,6 +649,7 @@ namespace LinguaReadApi.Controllers
                         {
                             Title = chap.Title,
                             Content = chap.Content,
+                            SegmentationProfile = segmentationProfile,
                             StructuredContent = chap.Blocks != null ? JsonSerializer.Serialize(chap.Blocks, StructuredContentJsonOptions) : null,
                             LanguageId = book.LanguageId,
                             UserId = userId,
@@ -679,6 +688,7 @@ namespace LinguaReadApi.Controllers
                         {
                             Title = chap.Title,
                             Content = chap.Content,
+                            SegmentationProfile = segmentationProfile,
                             StructuredContent = null,
                             LanguageId = book.LanguageId,
                             UserId = userId,
@@ -709,7 +719,7 @@ namespace LinguaReadApi.Controllers
 
 
             // --- Prepare Response ---
-            var language = await _context.Languages.FindAsync(book.LanguageId); // Re-fetch language just in case
+            language ??= await _context.Languages.FindAsync(book.LanguageId); // Re-fetch language just in case
             var bookDto = new BookDto
             {
                 BookId = book.BookId,
@@ -919,6 +929,10 @@ namespace LinguaReadApi.Controllers
             }
 
             var (content, epubBlocks) = ReconstructBookContent(bookForReconstruct);
+            var segmentationProfile = bookForReconstruct.Texts
+                .OrderBy(t => t.PartNumber)
+                .Select(t => t.SegmentationProfile)
+                .FirstOrDefault(p => p != null);
 
             // 2. Perform the split using reusable helper
             var chapters = SplitBookContent(content, epubBlocks, null, request.SplitMethod, request.MaxSegmentSize, request.SubSplitOversized);
@@ -985,6 +999,7 @@ namespace LinguaReadApi.Controllers
                         {
                             Title = chap.Title,
                             Content = chap.Content,
+                            SegmentationProfile = segmentationProfile,
                             StructuredContent = chap.Blocks != null ? JsonSerializer.Serialize(chap.Blocks, StructuredContentJsonOptions) : null,
                             LanguageId = book.LanguageId,
                             UserId = userId,
@@ -1849,9 +1864,9 @@ namespace LinguaReadApi.Controllers
             return NormalizeArchivePath(WebUtility.UrlDecode(path) ?? path).TrimStart('/');
         }
 
-        private static void CleanupBookAssets(Guid userId, int bookId)
+        private void CleanupBookAssets(Guid userId, int bookId)
         {
-            var assetDirectory = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "epub_assets", userId.ToString(), bookId.ToString());
+            var assetDirectory = Path.Combine(WebRoot ?? Path.Combine(Directory.GetCurrentDirectory(), "wwwroot"), "epub_assets", userId.ToString(), bookId.ToString());
             if (Directory.Exists(assetDirectory))
             {
                 Directory.Delete(assetDirectory, recursive: true);
@@ -2619,7 +2634,7 @@ namespace LinguaReadApi.Controllers
 
             // Clean up the book's media from disk — audiobook tracks, extracted EPUB assets and the
             // Hardcover cover. Runs after the DB delete committed and never fails the request.
-            BookAssetStorage.DeleteBookAssets(userId, id, _logger);
+            BookAssetStorage.DeleteBookAssets(userId, id, _logger, WebRoot);
 
             return NoContent();
         }
@@ -2634,6 +2649,9 @@ namespace LinguaReadApi.Controllers
 
             return userId;
         }
+
+        private static bool IsChineseLanguage(string code) =>
+            string.Equals(code.Trim().Split('-', '_')[0], "zh", StringComparison.OrdinalIgnoreCase);
 
         private async Task<bool> BookExists(int id, Guid userId)
         {
@@ -3270,6 +3288,9 @@ namespace LinguaReadApi.Controllers
         public int LanguageId { get; set; }
         
         public string Content { get; set; } = string.Empty;
+
+        [StringLength(32)]
+        public string? SegmentationProfile { get; set; }
         
         [Required]
         public string SplitMethod { get; set; } = "paragraph"; // paragraph, sentence, length, chapter
@@ -3344,6 +3365,9 @@ namespace LinguaReadApi.Controllers
 
         [Required]
         public IFormFile File { get; set; } = null!; // The uploaded file
+
+        [StringLength(32)]
+        public string? SegmentationProfile { get; set; }
 
         // Optional: Allow overriding title extracted from file
         [StringLength(200)]

@@ -10,6 +10,7 @@ import { parseFolderIdParam } from '../utils/helpers';
 function CreateAudioLesson() {
     const [title, setTitle] = useState('');
     const [languageId, setLanguageId] = useState('');
+    const [chineseSegmentation, setChineseSegmentation] = useState(true);
     const [audioFile, setAudioFile] = useState<File | null>(null);
     const [srtFile, setSrtFile] = useState<File | null>(null);
     const [tag, setTag] = useState('');
@@ -21,6 +22,7 @@ function CreateAudioLesson() {
     const [searchParams] = useSearchParams();
     const folderId = parseFolderIdParam(searchParams.get('folderId'));
     const { settings: userSettings } = useContext(SettingsContext); // Get settings from context
+    const isChinese = languages.find(lang => String(lang.languageId) === String(languageId))?.code?.toLowerCase().replace(/_/g, '-').split('-')[0] === 'zh';
 
     // Fetch languages on component mount
     useEffect(() => {
@@ -80,7 +82,7 @@ function CreateAudioLesson() {
 
         setIsLoading(true);
         try {
-            const result = (await createAudioLesson(title, languageId, audioFile, srtFile, tag, null, folderId)) as { title?: string } | null;
+            const result = (await createAudioLesson(title, languageId, audioFile, srtFile, tag, null, folderId, ...(isChinese && chineseSegmentation ? ['jieba-v1'] : []))) as { title?: string } | null;
             setSuccessMessage(`Audio lesson "${result?.title}" created successfully!`);
             setTitle('');
             setLanguageId(''); // Reset language selection
@@ -141,6 +143,12 @@ function CreateAudioLesson() {
                                 ))}
                             </Form.Select>
                         </Form.Group>
+
+                        {isChinese && <Form.Group className="mb-3">
+                            <Form.Check id="chinese-segmentation" label="Chinese word segmentation (experimental)"
+                                checked={chineseSegmentation} onChange={event => setChineseSegmentation(event.target.checked)} />
+                            <Form.Text>Applies to this new import only. Downloads an 8.6 MB dictionary once for online and offline reading; requires HTTPS or localhost.</Form.Text>
+                        </Form.Group>}
 
                         <Form.Group className="mb-3" controlId="formTag">
                             <Form.Label>Tag (Optional)</Form.Label>

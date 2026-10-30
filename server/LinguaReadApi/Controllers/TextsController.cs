@@ -454,10 +454,12 @@ namespace LinguaReadApi.Controllers
             var userId = GetUserId();
 
             // Check if language exists
-            var languageExists = await _context.Languages.AnyAsync(l => l.LanguageId == createAudioLessonDto.LanguageId);
-            if (!languageExists)
+            var language = await _context.Languages.FindAsync(createAudioLessonDto.LanguageId);
+            if (language == null) return BadRequest("Invalid language ID");
+            if (createAudioLessonDto.SegmentationProfile != null &&
+                (createAudioLessonDto.SegmentationProfile != ChineseSegmenter.Profile || !IsChineseLanguage(language.Code)))
             {
-                return BadRequest("Invalid language ID");
+                return BadRequest("SegmentationProfile must be jieba-v1 and is only supported for Chinese texts.");
             }
 
             // Checked before the audio is written to disk, so a bad folder leaves no orphaned file.
@@ -474,7 +476,7 @@ namespace LinguaReadApi.Controllers
             {
                 // --- 1. Save Audio File ---
                 var audioFileName = $"{Guid.NewGuid()}_{Path.GetFileName(createAudioLessonDto.AudioFile.FileName)}";
-                var userAudioDir = Path.Combine("wwwroot", "audio_lessons", userId.ToString()); // Consider configuration for base path
+                var userAudioDir = Path.Combine(WebRoot ?? "wwwroot", "audio_lessons", userId.ToString()); // Consider configuration for base path
                 Directory.CreateDirectory(userAudioDir); // Ensure directory exists
                 var fullAudioPath = Path.Combine(userAudioDir, audioFileName);
 
@@ -495,6 +497,7 @@ namespace LinguaReadApi.Controllers
 
                 if (string.IsNullOrWhiteSpace(transcript))
                 {
+                    TryDeleteAudioFile(audioFilePath);
                     return BadRequest("Could not parse transcript from SRT file.");
                 }
 
@@ -503,6 +506,7 @@ namespace LinguaReadApi.Controllers
                 {
                     Title = createAudioLessonDto.Title,
                     Content = transcript, // Use parsed transcript as main content
+                    SegmentationProfile = createAudioLessonDto.SegmentationProfile,
                     LanguageId = createAudioLessonDto.LanguageId,
                     UserId = userId,
                     FolderId = createAudioLessonDto.FolderId,
@@ -523,7 +527,7 @@ namespace LinguaReadApi.Controllers
                     new WordLinkingRequest(text.TextId, transcript, text.LanguageId, userId));
 
                 // --- 4. Return Response ---
-                var language = await _context.Languages.FindAsync(text.LanguageId);
+
                 var textDto = new TextDto
                 {
                     TextId = text.TextId,
@@ -587,10 +591,12 @@ namespace LinguaReadApi.Controllers
             _logger.LogInformation("Starting batch audio lesson creation for user {UserId}. Files received: {FileCount}", userId, files.Count);
 
             // Check language exists
-            var languageExists = await _context.Languages.AnyAsync(l => l.LanguageId == dto.LanguageId);
-            if (!languageExists)
+            var language = await _context.Languages.FindAsync(dto.LanguageId);
+            if (language == null) return BadRequest("Invalid language ID provided for the batch.");
+            if (dto.SegmentationProfile != null &&
+                (dto.SegmentationProfile != ChineseSegmenter.Profile || !IsChineseLanguage(language.Code)))
             {
-                return BadRequest("Invalid language ID provided for the batch.");
+                return BadRequest("SegmentationProfile must be jieba-v1 and is only supported for Chinese texts.");
             }
 
             if (dto.FolderId.HasValue && !await _context.UserOwnsFolderAsync(userId, dto.FolderId.Value))
@@ -638,7 +644,7 @@ namespace LinguaReadApi.Controllers
                     {
                         // --- 1. Save Audio File ---
                         var audioFileName = $"{Guid.NewGuid()}_{Path.GetFileName(mp3Info.File.FileName)}";
-                        var userAudioDir = Path.Combine("wwwroot", "audio_lessons", userId.ToString());
+                        var userAudioDir = Path.Combine(WebRoot ?? "wwwroot", "audio_lessons", userId.ToString());
                         Directory.CreateDirectory(userAudioDir);
                         var fullAudioPath = Path.Combine(userAudioDir, audioFileName);
 
@@ -668,6 +674,7 @@ namespace LinguaReadApi.Controllers
                         var text = new Text
                         {
                             Title = mp3Info.BaseName, // Use MP3's original base name for title
+                            SegmentationProfile = dto.SegmentationProfile,
                             Content = transcript,
                             LanguageId = dto.LanguageId,
                             UserId = userId,
@@ -1346,6 +1353,8 @@ namespace LinguaReadApi.Controllers
         public IFormFile AudioFile { get; set; } = null!;
         [Required]
         public IFormFile SrtFile { get; set; } = null!;
+        [StringLength(32)]
+        public string? SegmentationProfile { get; set; }
         [StringLength(100)]
         public string? Tag { get; set; } // Add Tag property
         // Library folder to file the new lesson in; null = library root.
@@ -1386,6 +1395,8 @@ namespace LinguaReadApi.Controllers
 
         [StringLength(100)]
         public string? Tag { get; set; } // Optional tag for the whole batch
+        [StringLength(32)]
+        public string? SegmentationProfile { get; set; }
         // Library folder to file the new lessons in; null = library root.
         public int? FolderId { get; set; }
     }

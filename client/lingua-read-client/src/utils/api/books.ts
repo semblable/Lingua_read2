@@ -22,7 +22,8 @@ export const createBook = (
   subSplitOversized: boolean = false,
   chapterTitles: string[] = [],
   chapterGroupings: number[][] = [],
-  folderId: number | null = null
+  folderId: number | null = null,
+  segmentationProfile: string | null = null
 ): Promise<Book> => {
   return fetchApi<Book>('/books', {
     method: 'POST',
@@ -37,7 +38,8 @@ export const createBook = (
       subSplitOversized,
       chapterTitles,
       chapterGroupings,
-      folderId
+      folderId,
+      ...(segmentationProfile ? { segmentationProfile } : {})
     })
   });
 };
@@ -97,7 +99,8 @@ export const createAudioLessonsBatch = async (
   tag: string | null,
   files: FileList | File[],
   onProgress: UploadProgressCallback | null = null,
-  folderId: number | null = null
+  folderId: number | null = null,
+  segmentationProfile: string | null = null
 ): Promise<unknown> => {
   const endpoint = '/texts/audio/batch';
 
@@ -109,6 +112,9 @@ export const createAudioLessonsBatch = async (
     }
     if (folderId) {
       formData.append('folderId', String(folderId));
+    }
+    if (segmentationProfile) {
+      formData.append('segmentationProfile', segmentationProfile);
     }
     for (let i = 0; i < files.length; i++) {
       formData.append('files', files[i]);

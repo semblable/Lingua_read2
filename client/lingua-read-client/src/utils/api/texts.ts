@@ -73,7 +73,8 @@ export const createAudioLesson = async (
   srtFile: File,
   tag: string | null = null,
   onProgress: UploadProgressCallback | null = null,
-  folderId: number | null = null
+  folderId: number | null = null,
+  segmentationProfile: string | null = null
 ): Promise<unknown> => {
   const endpoint = '/texts/audio';
 
@@ -88,6 +89,9 @@ export const createAudioLesson = async (
     }
     if (folderId) {
       formData.append('folderId', String(folderId));
+    }
+    if (segmentationProfile) {
+      formData.append('segmentationProfile', segmentationProfile);
     }
 
     return await uploadWithProgress(endpoint, formData, onProgress);

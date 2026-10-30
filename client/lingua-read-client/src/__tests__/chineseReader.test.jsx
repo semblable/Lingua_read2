@@ -7,7 +7,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import TextDisplay from '../pages/TextDisplay';
 import { SettingsContext } from '../contexts/SettingsContext';
-import { createWord, getLanguage, getText, mineSentence, updateWord } from '../utils/api';
+import { createWord, getLanguage, getText, getTextSrt, mineSentence, updateWord } from '../utils/api';
 
 vi.mock('../utils/api', () => ({
   getText: vi.fn(), getTextSrt: vi.fn(async () => ''),
@@ -19,7 +19,7 @@ vi.mock('../utils/api', () => ({
   batchTranslateWords: vi.fn(), addTermsBatch: vi.fn(), getLanguage: vi.fn(),
   getAllLanguages: vi.fn(async () => []), summarizeText: vi.fn(), updateUserSettings: vi.fn(),
   getSentenceProgress: vi.fn(async () => ({ creditedSegmentIndices: [], creditedWordCount: 0, lastSegmentIndex: 0 })),
-  logSentenceReadActivity: vi.fn(), applySrsReadingCredit: vi.fn(),
+  logSentenceReadActivity: vi.fn(async () => ({ creditedSegmentIndices: [0] })), applySrsReadingCredit: vi.fn(),
   getLessonStudy: vi.fn(async () => ({ readCount: 0, listenCount: 0 })),
   API_URL: 'http://test.local'
 }));
@@ -50,8 +50,8 @@ const settings = {
   autoAdvanceToNextLesson: false, showProgressStats: true, lineSpacing: 1.5
 };
 
-const renderReader = () => render(
-  <SettingsContext.Provider value={{ settings, updateSetting: vi.fn(), loadingSettings: false, errorSettings: null, refetchSettings: vi.fn() }}>
+const renderReader = (customSettings = settings) => render(
+  <SettingsContext.Provider value={{ settings: customSettings, updateSetting: vi.fn(), loadingSettings: false, errorSettings: null, refetchSettings: vi.fn() }}>
     <MemoryRouter initialEntries={['/texts/1']}>
       <Routes><Route path="/texts/:textId" element={<TextDisplay />} /></Routes>
     </MemoryRouter>
@@ -104,5 +104,58 @@ describe('opt-in Chinese reader workflow', () => {
     const { container } = renderReader();
     await screen.findByText('我今天在图书馆学习中文');
     expect(Array.from(container.querySelectorAll('.clickable-word')).map(span => span.textContent)).toEqual(['我今天在图书馆学习中文']);
+  });
+  test('audio lesson SRT transcript and sentence mode segment Chinese cues and preserve cue offsets and mining', async () => {
+    const rows = [
+      { wordId: 91, term: '图书馆', status: 3, translation: 'library' },
+      { wordId: 92, term: '自然语言', status: 2, translation: 'natural language' }
+    ];
+    const srtRaw = [
+      '1',
+      '00:00:00,000 --> 00:00:02,500',
+      '我今天在图书馆学习中文。',
+      '',
+      '2',
+      '00:00:02,500 --> 00:00:05,000',
+      '自然语言处理很有趣。',
+      ''
+    ].join('\n');
+    getText.mockResolvedValue({
+      textId: 1,
+      title: 'Chinese Audio',
+      content: '我今天在图书馆学习中文。\n自然语言处理很有趣。',
+      languageId: 12,
+      languageCode: 'zh',
+      segmentationProfile: 'jieba-v1',
+      isAudioLesson: true,
+      audioFilePath: 'audio_lessons/u/1.mp3',
+      hasSrtContent: true,
+      words: rows
+    });
+    getTextSrt.mockResolvedValue(srtRaw);
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true, json: async () => structuredClone(rows) });
+    vi.stubGlobal('alert', vi.fn());
+
+    const transcriptRender = renderReader();
+    await waitFor(() => expect(screen.getByText('图书馆')).toHaveClass('word-status-3'));
+    expect(screen.getByText('自然语言')).toHaveClass('word-status-2');
+    const srtLineNodes = Array.from(transcriptRender.container.querySelectorAll('.srt-line'));
+    expect(srtLineNodes.map(node => node.textContent)).toEqual([
+      '我今天在图书馆学习中文。',
+      '自然语言处理很有趣。'
+    ]);
+    fireEvent.click(screen.getByText('图书馆'));
+    fireEvent.click(screen.getByRole('button', { name: 'Mine', exact: true }));
+    await waitFor(() =>
+      expect(mineSentence).toHaveBeenCalledWith(91, '我今天在图书馆学习中文。', 1, 'Chinese Audio')
+    );
+    transcriptRender.unmount();
+
+    const sentenceRender = renderReader({ ...settings, sentenceMode: true });
+    await waitFor(() => expect(screen.getByText('图书馆')).toHaveClass('word-status-3'));
+    expect(sentenceRender.container.querySelector('.sentence-mode-text').textContent).toBe('我今天在图书馆学习中文。');
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+    await waitFor(() => expect(screen.getByText('自然语言')).toHaveClass('word-status-2'));
+    expect(sentenceRender.container.querySelector('.sentence-mode-text').textContent).toBe('自然语言处理很有趣。');
   });
 });

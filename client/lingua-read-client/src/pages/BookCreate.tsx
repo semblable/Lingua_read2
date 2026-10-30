@@ -12,6 +12,7 @@ const BookCreate = () => {
   const [description, setDescription] = useState('');
   const [content, setContent] = useState('');
   const [languageId, setLanguageId] = useState('');
+  const [chineseSegmentation, setChineseSegmentation] = useState(true);
   const [tags, setTags] = useState(''); // comma-separated string
   const [file, setFile] = useState<File | null>(null);
   const [activeTab, setActiveTab] = useState('manual');
@@ -34,6 +35,7 @@ const BookCreate = () => {
   const { settings: userSettings } = useContext(SettingsContext);
   const [loadingText, setLoadingText] = useState('');
   const [uploadProgress, setUploadProgress] = useState(0);
+  const isChinese = languages.find(lang => String(lang.languageId) === String(languageId))?.code?.toLowerCase().replace(/_/g, '-').split('-')[0] === 'zh';
 
   const getEffectiveMaxSegmentSize = (): number => {
     const val = parseInt(String(maxSegmentSize), 10);
@@ -173,7 +175,9 @@ const BookCreate = () => {
           subSplitOversized,
           chapterTitles,
           chapterGroupings,
-          folderId
+          folderId,
+          ...(isChinese && chineseSegmentation ? ['jieba-v1'] : [])
+
         );
       } else {
         const formData = new FormData();
@@ -185,6 +189,7 @@ const BookCreate = () => {
         tagsArray.forEach(tag => formData.append('Tags', tag));
         if (title) formData.append('TitleOverride', title);
         if (folderId) formData.append('FolderId', String(folderId));
+        if (isChinese && chineseSegmentation) formData.append('SegmentationProfile', 'jieba-v1');
         chapterTitles.forEach(t => formData.append('ChapterTitles', t));
         if (chapterGroupings && chapterGroupings.length > 0) {
           formData.append('ChapterGroupingsJson', JSON.stringify(chapterGroupings));
@@ -302,6 +307,12 @@ const BookCreate = () => {
                 </Form.Group>
               </Col>
             </Row>
+
+            {isChinese && <Form.Group className="mb-3">
+              <Form.Check id="chinese-segmentation" label="Chinese word segmentation (experimental)"
+                checked={chineseSegmentation} onChange={event => setChineseSegmentation(event.target.checked)} />
+              <Form.Text>Applies to this new import only. Downloads an 8.6 MB dictionary once for online and offline reading; requires HTTPS or localhost.</Form.Text>
+            </Form.Group>}
 
             <Form.Group className="mb-3" controlId="description">
               <Form.Label>Description (Optional)</Form.Label>

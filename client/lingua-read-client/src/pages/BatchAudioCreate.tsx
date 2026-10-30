@@ -13,6 +13,7 @@ type BatchAudioResults = {
 
 const BatchAudioCreate = () => {
     const [languageId, setLanguageId] = useState('');
+    const [chineseSegmentation, setChineseSegmentation] = useState(true);
     const [tag, setTag] = useState('');
     const [files, setFiles] = useState<FileList | null>(null); // Holds FileList object
     const [languages, setLanguages] = useState<Language[]>([]);
@@ -26,6 +27,7 @@ const BatchAudioCreate = () => {
     const [searchParams] = useSearchParams();
     const folderId = parseFolderIdParam(searchParams.get('folderId'));
     const { settings: userSettings } = useContext(SettingsContext); // Get settings from context
+    const isChinese = languages.find(lang => String(lang.languageId) === String(languageId))?.code?.toLowerCase().replace(/_/g, '-').split('-')[0] === 'zh';
 
     // Fetch languages on component mount
     useEffect(() => {
@@ -257,7 +259,7 @@ const BatchAudioCreate = () => {
         try {
             const resultData = await createAudioLessonsBatch(languageId, tag || null, fileList, (percent) => {
                 setUploadProgress(percent);
-            }, folderId);
+            }, folderId, ...(isChinese && chineseSegmentation ? ['jieba-v1'] : []));
 
             setUploadProgress(100);
             setResults(resultData as BatchAudioResults); // Store results { createdCount, skippedFiles }
@@ -309,6 +311,12 @@ const BatchAudioCreate = () => {
                                 ))}
                             </Form.Select>
                         </Form.Group>
+
+                        {isChinese && <Form.Group className="mb-3">
+                            <Form.Check id="chinese-segmentation" label="Chinese word segmentation (experimental)"
+                                checked={chineseSegmentation} onChange={event => setChineseSegmentation(event.target.checked)} />
+                            <Form.Text>Applies to this new import only. Downloads an 8.6 MB dictionary once for online and offline reading; requires HTTPS or localhost.</Form.Text>
+                        </Form.Group>}
 
                         <Form.Group className="mb-3" controlId="tag">
                             <Form.Label>Tag (Optional, for all lessons in batch)</Form.Label>

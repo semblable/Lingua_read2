@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest';
 import { readerTextUrlPattern, readerLanguageUrlPattern } from '../utils/readerOfflineRoutes.mjs';
 
-test.each(['/api/texts/12', '/api/Texts/12?refresh=true', '/api/texts/12/content'])('caches actual reader DTO URL %s', path => {
+test.each(['/api/texts/12', '/api/Texts/12?refresh=true', '/api/texts/12/content', '/api/texts/12/srt'])('caches actual reader DTO URL %s', path => {
   expect(readerTextUrlPattern.test(`https://reader.example${path}`)).toBe(true);
 });
 test.each(['/api/languages/3', '/api/words/language/3?skipSort=true'])('caches reader language dependency %s', path => {

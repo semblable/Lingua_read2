@@ -10,7 +10,7 @@ const TextCreate = () => {
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [languageId, setLanguageId] = useState('');
-  const [chineseSegmentation, setChineseSegmentation] = useState(false);
+  const [chineseSegmentation, setChineseSegmentation] = useState(true);
   const [tag, setTag] = useState(''); // Add state for tag
   const [languages, setLanguages] = useState<Language[]>([]);
   const [loading, setLoading] = useState(false);
@@ -192,7 +192,7 @@ const TextCreate = () => {
           {isChinese && <Form.Group className="mb-3">
             <Form.Check id="chinese-segmentation" label="Chinese word segmentation (experimental)"
               checked={chineseSegmentation} onChange={event => setChineseSegmentation(event.target.checked)} />
-            <Form.Text>Applies to this new text only. Downloads an 8.6 MB dictionary for online and offline reading.</Form.Text>
+            <Form.Text>Applies to this new text only. Downloads an 8.6 MB dictionary once for online and offline reading; requires HTTPS or localhost.</Form.Text>
           </Form.Group>}
 
           <Form.Group className="mb-3" controlId="tag">

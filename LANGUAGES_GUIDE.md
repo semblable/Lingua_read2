@@ -49,7 +49,8 @@ still depend on your provider and installed voices.
 Chinese, Japanese and Thai are labeled **Basic word splitting**: the current
 tokenizer splits at spaces and punctuation, so an unspaced run is one word.
 Selecting MeCab or Jieba does not change existing texts. For a **new pasted Chinese text**,
-Add New Text offers **Chinese word segmentation (experimental)**. It uses a pinned
+Add New Text enables **Chinese word segmentation (experimental)** by default;
+you can uncheck it for that new text. It uses a pinned
 8.6 MB dictionary downloaded once and cached for offline reopening. HTTPS or
 localhost is required to verify the download. Book/audio imports and older texts
 keep their existing splitting; there is no automatic relinking or script conversion.

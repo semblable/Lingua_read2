@@ -12,24 +12,32 @@ beforeEach(() => {
   createText.mockResolvedValue({ textId: 42 });
 });
 
-test('Chinese splitting is an explicit choice for each new text', async () => {
+test('Chinese splitting is enabled by default for a new Chinese text', async () => {
   render(<MemoryRouter><TextCreate /></MemoryRouter>);
   const choice = await screen.findByLabelText('Chinese word segmentation (experimental)');
-  expect(choice).not.toBeChecked();
+  expect(choice).toBeChecked();
   fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Synthetic Chinese' } });
   fireEvent.change(screen.getByLabelText('Text Content'), { target: { value: '我学习中文。' } });
-  fireEvent.click(choice);
   fireEvent.click(screen.getByRole('button', { name: 'Create Text', exact: true }));
   await waitFor(() => expect(createText).toHaveBeenCalledWith('Synthetic Chinese', '我学习中文。', 1, null, null, 'jieba-v1'));
 });
 
 test('switching to another language cannot submit a Chinese profile', async () => {
   render(<MemoryRouter><TextCreate /></MemoryRouter>);
-  fireEvent.click(await screen.findByLabelText('Chinese word segmentation (experimental)'));
+  expect(await screen.findByLabelText('Chinese word segmentation (experimental)')).toBeChecked();
   fireEvent.change(screen.getByLabelText('Language'), { target: { value: '2' } });
   expect(screen.queryByLabelText('Chinese word segmentation (experimental)')).not.toBeInTheDocument();
   fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Synthetic English' } });
   fireEvent.change(screen.getByLabelText('Text Content'), { target: { value: 'hello' } });
   fireEvent.click(screen.getByRole('button', { name: 'Create Text', exact: true }));
   await waitFor(() => expect(createText).toHaveBeenCalledWith('Synthetic English', 'hello', 2, null, null, null));
+});
+
+test('Chinese splitting can be disabled for this new text without changing the language', async () => {
+  render(<MemoryRouter><TextCreate /></MemoryRouter>);
+  fireEvent.click(await screen.findByLabelText('Chinese word segmentation (experimental)'));
+  fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Legacy splitting' } });
+  fireEvent.change(screen.getByLabelText('Text Content'), { target: { value: '我学习中文。' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Create Text', exact: true }));
+  await waitFor(() => expect(createText).toHaveBeenCalledWith('Legacy splitting', '我学习中文。', 1, null, null, null));
 });

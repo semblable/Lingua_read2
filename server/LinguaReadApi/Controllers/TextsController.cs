@@ -368,9 +368,9 @@ namespace LinguaReadApi.Controllers
             }
 
             if (createTextDto.SegmentationProfile != null &&
-                (createTextDto.SegmentationProfile != ChineseSegmenter.Profile || !IsChineseLanguage(language.Code)))
+                !IsValidSegmentationProfile(createTextDto.SegmentationProfile, language.Code))
             {
-                return BadRequest("SegmentationProfile must be jieba-v1 and is only supported for Chinese texts.");
+                return BadRequest("SegmentationProfile must match the selected language (jieba-v1 for Chinese, tinysegmenter-ja-v1 for Japanese).");
             }
 
             if (createTextDto.FolderId.HasValue && !await _context.UserOwnsFolderAsync(userId, createTextDto.FolderId.Value))
@@ -457,9 +457,9 @@ namespace LinguaReadApi.Controllers
             var language = await _context.Languages.FindAsync(createAudioLessonDto.LanguageId);
             if (language == null) return BadRequest("Invalid language ID");
             if (createAudioLessonDto.SegmentationProfile != null &&
-                (createAudioLessonDto.SegmentationProfile != ChineseSegmenter.Profile || !IsChineseLanguage(language.Code)))
+                !IsValidSegmentationProfile(createAudioLessonDto.SegmentationProfile, language.Code))
             {
-                return BadRequest("SegmentationProfile must be jieba-v1 and is only supported for Chinese texts.");
+                return BadRequest("SegmentationProfile must match the selected language (jieba-v1 for Chinese, tinysegmenter-ja-v1 for Japanese).");
             }
 
             // Checked before the audio is written to disk, so a bad folder leaves no orphaned file.
@@ -594,9 +594,9 @@ namespace LinguaReadApi.Controllers
             var language = await _context.Languages.FindAsync(dto.LanguageId);
             if (language == null) return BadRequest("Invalid language ID provided for the batch.");
             if (dto.SegmentationProfile != null &&
-                (dto.SegmentationProfile != ChineseSegmenter.Profile || !IsChineseLanguage(language.Code)))
+                !IsValidSegmentationProfile(dto.SegmentationProfile, language.Code))
             {
-                return BadRequest("SegmentationProfile must be jieba-v1 and is only supported for Chinese texts.");
+                return BadRequest("SegmentationProfile must match the selected language (jieba-v1 for Chinese, tinysegmenter-ja-v1 for Japanese).");
             }
 
             if (dto.FolderId.HasValue && !await _context.UserOwnsFolderAsync(userId, dto.FolderId.Value))
@@ -969,9 +969,9 @@ namespace LinguaReadApi.Controllers
                  {
                      return BadRequest("Invalid LanguageId provided for update.");
                  }
-                 if (text.SegmentationProfile != null && !IsChineseLanguage(language.Code))
+                 if (text.SegmentationProfile != null && !IsValidSegmentationProfile(text.SegmentationProfile, language.Code))
                  {
-                     return BadRequest("A text with a Chinese segmentation profile must keep a Chinese language.");
+                     return BadRequest("A profiled text must keep a language compatible with its segmentation profile.");
                  }
             }
 
@@ -1081,6 +1081,13 @@ namespace LinguaReadApi.Controllers
 
         private static bool IsChineseLanguage(string code) =>
             string.Equals(code.Trim().Split('-', '_')[0], "zh", StringComparison.OrdinalIgnoreCase);
+
+        private static bool IsJapaneseLanguage(string code) =>
+            string.Equals(code.Trim().Split('-', '_')[0], "ja", StringComparison.OrdinalIgnoreCase);
+
+        private static bool IsValidSegmentationProfile(string profile, string languageCode) =>
+            (profile == ChineseSegmenter.Profile && IsChineseLanguage(languageCode)) ||
+            (profile == JapaneseSegmenter.Profile && IsJapaneseLanguage(languageCode));
 
         // PUT: api/texts/{textId}/complete
         [HttpPut("{textId}/complete")] // Corrected route: combines with controller route "/api/texts"

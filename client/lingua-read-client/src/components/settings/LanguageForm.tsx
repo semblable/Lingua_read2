@@ -261,9 +261,11 @@ function LanguageForm({ language, onSave, onCancel, onDelete, onResetContent }: 
                     <Form.Text muted>Select the word tokenization strategy.</Form.Text>
                     {formData.parserType !== 'spacedel' && (
                         <Alert variant="warning" className="mt-2 mb-0 py-2 small" data-testid="parser-not-implemented">
-                            MeCab and Jieba segmentation isn&apos;t implemented yet: text is split at spaces and
-                            punctuation only, so with <code>{DEFAULT_LANGUAGE_WORD_CHARACTERS}</code> each unspaced run
-                            of Japanese or Chinese becomes one word.
+                            MeCab and Jieba segmentation isn&apos;t implemented yet as a language setting: existing
+                            text is split at spaces and punctuation only, so with <code>{DEFAULT_LANGUAGE_WORD_CHARACTERS}</code> each
+                            unspaced run of Japanese or Chinese becomes one word. New Chinese and Japanese texts, books and audio
+                            lessons can use built-in word segmentation instead; choose it when you add them (it stays on unless you
+                            untick it). Existing texts are not changed.
                         </Alert>
                     )}
                 </Form.Group>

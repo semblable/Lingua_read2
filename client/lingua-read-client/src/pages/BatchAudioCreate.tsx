@@ -14,6 +14,7 @@ type BatchAudioResults = {
 const BatchAudioCreate = () => {
     const [languageId, setLanguageId] = useState('');
     const [chineseSegmentation, setChineseSegmentation] = useState(true);
+    const [japaneseSegmentation, setJapaneseSegmentation] = useState(true);
     const [tag, setTag] = useState('');
     const [files, setFiles] = useState<FileList | null>(null); // Holds FileList object
     const [languages, setLanguages] = useState<Language[]>([]);
@@ -27,7 +28,9 @@ const BatchAudioCreate = () => {
     const [searchParams] = useSearchParams();
     const folderId = parseFolderIdParam(searchParams.get('folderId'));
     const { settings: userSettings } = useContext(SettingsContext); // Get settings from context
-    const isChinese = languages.find(lang => String(lang.languageId) === String(languageId))?.code?.toLowerCase().replace(/_/g, '-').split('-')[0] === 'zh';
+    const selectedLanguage = languages.find(lang => String(lang.languageId) === String(languageId));
+    const isChinese = selectedLanguage?.code?.trim().toLowerCase().replace(/_/g, '-').split('-')[0] === 'zh';
+    const isJapanese = selectedLanguage?.code?.trim().toLowerCase().replace(/_/g, '-').split('-')[0] === 'ja';
 
     // Fetch languages on component mount
     useEffect(() => {
@@ -257,9 +260,14 @@ const BatchAudioCreate = () => {
         setIsLoading(true);
 
         try {
+            const segmentationProfile = isChinese && chineseSegmentation
+                ? 'jieba-v1'
+                : isJapanese && japaneseSegmentation
+                    ? 'tinysegmenter-ja-v1'
+                    : null;
             const resultData = await createAudioLessonsBatch(languageId, tag || null, fileList, (percent) => {
                 setUploadProgress(percent);
-            }, folderId, ...(isChinese && chineseSegmentation ? ['jieba-v1'] : []));
+            }, folderId, ...(segmentationProfile ? [segmentationProfile] : []));
 
             setUploadProgress(100);
             setResults(resultData as BatchAudioResults); // Store results { createdCount, skippedFiles }
@@ -299,7 +307,11 @@ const BatchAudioCreate = () => {
                             <Form.Label>Language (for all lessons in batch)</Form.Label>
                             <Form.Select
                                 value={languageId}
-                                onChange={(e) => setLanguageId(e.target.value)}
+                                onChange={(e) => {
+                                    setLanguageId(e.target.value);
+                                    setChineseSegmentation(true);
+                                    setJapaneseSegmentation(true);
+                                }}
                                 required
                                 disabled={isLoading || loadingLanguages || languages.length === 0}
                             >
@@ -316,6 +328,12 @@ const BatchAudioCreate = () => {
                             <Form.Check id="chinese-segmentation" label="Chinese word segmentation (experimental)"
                                 checked={chineseSegmentation} onChange={event => setChineseSegmentation(event.target.checked)} />
                             <Form.Text>Applies to this new import only. Downloads an 8.6 MB dictionary once for online and offline reading; requires HTTPS or localhost.</Form.Text>
+                        </Form.Group>}
+
+                        {isJapanese && <Form.Group className="mb-3">
+                            <Form.Check id="japanese-segmentation" label="Japanese word segmentation (experimental)"
+                                checked={japaneseSegmentation} onChange={event => setJapaneseSegmentation(event.target.checked)} />
+                            <Form.Text>Applies to this new import only. Uses built-in TinySegmenter boundaries (tinysegmenter-ja-v1) without modifying existing texts.</Form.Text>
                         </Form.Group>}
 
                         <Form.Group className="mb-3" controlId="tag">

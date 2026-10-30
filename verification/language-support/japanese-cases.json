@@ -1,0 +1,437 @@
+{
+  "description": "Original short synthetic fixtures for TinySegmenter Japanese segmentation (tinysegmenter-ja-v1). Spans reference unchanged UTF-16 input; only Japanese script spans are specified. Non-Japanese tokens use the reader tokenizer policy. Native review remains outstanding.",
+  "profile": "tinysegmenter-ja-v1",
+  "cases": [
+    {
+      "id": "basic-sentence",
+      "text": "猫は魚を食べます。",
+      "japaneseSpans": [
+        {
+          "text": "猫",
+          "start": 0,
+          "end": 1
+        },
+        {
+          "text": "は",
+          "start": 1,
+          "end": 2
+        },
+        {
+          "text": "魚",
+          "start": 2,
+          "end": 3
+        },
+        {
+          "text": "を",
+          "start": 3,
+          "end": 4
+        },
+        {
+          "text": "食べ",
+          "start": 4,
+          "end": 6
+        },
+        {
+          "text": "ます",
+          "start": 6,
+          "end": 8
+        }
+      ]
+    },
+    {
+      "id": "supplementary-han-yoshinoya",
+      "text": "𠮷野家で食べる。",
+      "japaneseSpans": [
+        {
+          "text": "𠮷野家",
+          "start": 0,
+          "end": 4
+        },
+        {
+          "text": "で",
+          "start": 4,
+          "end": 5
+        },
+        {
+          "text": "食べる",
+          "start": 5,
+          "end": 8
+        }
+      ]
+    },
+    {
+      "id": "library-reading",
+      "text": "私は昨日図書館で日本語の本を読みました。",
+      "japaneseSpans": [
+        {
+          "text": "私",
+          "start": 0,
+          "end": 1
+        },
+        {
+          "text": "は",
+          "start": 1,
+          "end": 2
+        },
+        {
+          "text": "昨日",
+          "start": 2,
+          "end": 4
+        },
+        {
+          "text": "図書館",
+          "start": 4,
+          "end": 7
+        },
+        {
+          "text": "で",
+          "start": 7,
+          "end": 8
+        },
+        {
+          "text": "日本語",
+          "start": 8,
+          "end": 11
+        },
+        {
+          "text": "の",
+          "start": 11,
+          "end": 12
+        },
+        {
+          "text": "本",
+          "start": 12,
+          "end": 13
+        },
+        {
+          "text": "を",
+          "start": 13,
+          "end": 14
+        },
+        {
+          "text": "読み",
+          "start": 14,
+          "end": 16
+        },
+        {
+          "text": "まし",
+          "start": 16,
+          "end": 18
+        },
+        {
+          "text": "た",
+          "start": 18,
+          "end": 19
+        }
+      ]
+    },
+    {
+      "id": "katakana-prolonged-sound",
+      "text": "東京スカイツリーに行きたいです。",
+      "japaneseSpans": [
+        {
+          "text": "東京",
+          "start": 0,
+          "end": 2
+        },
+        {
+          "text": "スカイツリー",
+          "start": 2,
+          "end": 8
+        },
+        {
+          "text": "に",
+          "start": 8,
+          "end": 9
+        },
+        {
+          "text": "行き",
+          "start": 9,
+          "end": 11
+        },
+        {
+          "text": "たい",
+          "start": 11,
+          "end": 13
+        },
+        {
+          "text": "です",
+          "start": 13,
+          "end": 15
+        }
+      ]
+    },
+    {
+      "id": "kanji-numerals-counter",
+      "text": "一ヶ月後に三人で会う。",
+      "japaneseSpans": [
+        {
+          "text": "一ヶ月",
+          "start": 0,
+          "end": 3
+        },
+        {
+          "text": "後",
+          "start": 3,
+          "end": 4
+        },
+        {
+          "text": "に",
+          "start": 4,
+          "end": 5
+        },
+        {
+          "text": "三",
+          "start": 5,
+          "end": 6
+        },
+        {
+          "text": "人",
+          "start": 6,
+          "end": 7
+        },
+        {
+          "text": "で",
+          "start": 7,
+          "end": 8
+        },
+        {
+          "text": "会う",
+          "start": 8,
+          "end": 10
+        }
+      ]
+    },
+    {
+      "id": "iteration-marks",
+      "text": "人々が日々精進する。",
+      "japaneseSpans": [
+        {
+          "text": "人々",
+          "start": 0,
+          "end": 2
+        },
+        {
+          "text": "が",
+          "start": 2,
+          "end": 3
+        },
+        {
+          "text": "日々",
+          "start": 3,
+          "end": 5
+        },
+        {
+          "text": "精進",
+          "start": 5,
+          "end": 7
+        },
+        {
+          "text": "する",
+          "start": 7,
+          "end": 9
+        }
+      ]
+    },
+    {
+      "id": "mixed-latin-digits-emoji",
+      "text": "2026年にOpenAIを使う🙂。",
+      "japaneseSpans": [
+        {
+          "text": "年",
+          "start": 4,
+          "end": 5
+        },
+        {
+          "text": "に",
+          "start": 5,
+          "end": 6
+        },
+        {
+          "text": "を",
+          "start": 12,
+          "end": 13
+        },
+        {
+          "text": "使う",
+          "start": 13,
+          "end": 15
+        }
+      ]
+    },
+    {
+      "id": "supplementary-variation-selector",
+      "text": "葛󠄀城市で𠮷野家に行く。",
+      "japaneseSpans": [
+        {
+          "text": "葛󠄀城",
+          "start": 0,
+          "end": 4
+        },
+        {
+          "text": "市",
+          "start": 4,
+          "end": 5
+        },
+        {
+          "text": "で",
+          "start": 5,
+          "end": 6
+        },
+        {
+          "text": "𠮷野",
+          "start": 6,
+          "end": 9
+        },
+        {
+          "text": "家",
+          "start": 9,
+          "end": 10
+        },
+        {
+          "text": "に",
+          "start": 10,
+          "end": 11
+        },
+        {
+          "text": "行く",
+          "start": 11,
+          "end": 13
+        }
+      ]
+    },
+    {
+      "id": "bmp-variation-selector",
+      "text": "神︀戸と東京︀都に行く。",
+      "japaneseSpans": [
+        {
+          "text": "神︀戸",
+          "start": 0,
+          "end": 3
+        },
+        {
+          "text": "と",
+          "start": 3,
+          "end": 4
+        },
+        {
+          "text": "東京︀",
+          "start": 4,
+          "end": 7
+        },
+        {
+          "text": "都",
+          "start": 7,
+          "end": 8
+        },
+        {
+          "text": "に",
+          "start": 8,
+          "end": 9
+        },
+        {
+          "text": "行く",
+          "start": 9,
+          "end": 11
+        }
+      ]
+    },
+    {
+      "id": "kana-combining-voicing-mark",
+      "text": "ゔぁいおりんを弾く。",
+      "japaneseSpans": [
+        {
+          "text": "ゔぁい",
+          "start": 0,
+          "end": 4
+        },
+        {
+          "text": "おりん",
+          "start": 4,
+          "end": 7
+        },
+        {
+          "text": "を",
+          "start": 7,
+          "end": 8
+        },
+        {
+          "text": "弾く",
+          "start": 8,
+          "end": 10
+        }
+      ]
+    },
+    {
+      "id": "punctuation-and-quotes",
+      "text": "「こんにちは」と言った。\nいいえ、それは鉛筆です！",
+      "japaneseSpans": [
+        {
+          "text": "こん",
+          "start": 1,
+          "end": 3
+        },
+        {
+          "text": "にち",
+          "start": 3,
+          "end": 5
+        },
+        {
+          "text": "は",
+          "start": 5,
+          "end": 6
+        },
+        {
+          "text": "と",
+          "start": 7,
+          "end": 8
+        },
+        {
+          "text": "言っ",
+          "start": 8,
+          "end": 10
+        },
+        {
+          "text": "た",
+          "start": 10,
+          "end": 11
+        },
+        {
+          "text": "いいえ",
+          "start": 13,
+          "end": 16
+        },
+        {
+          "text": "それ",
+          "start": 17,
+          "end": 19
+        },
+        {
+          "text": "は",
+          "start": 19,
+          "end": 20
+        },
+        {
+          "text": "鉛筆",
+          "start": 20,
+          "end": 22
+        },
+        {
+          "text": "です",
+          "start": 22,
+          "end": 24
+        }
+      ]
+    },
+    {
+      "id": "only-non-japanese",
+      "text": "OpenAI 2026 🙂",
+      "japaneseSpans": []
+    },
+    {
+      "id": "empty",
+      "text": "",
+      "japaneseSpans": []
+    }
+  ]
+}

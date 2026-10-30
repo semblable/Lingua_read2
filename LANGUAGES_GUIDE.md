@@ -52,8 +52,11 @@ Selecting MeCab or Jieba does not change existing texts. For **new Chinese texts
 **Chinese word segmentation (experimental)** is enabled by default;
 you can uncheck it for that import. It uses a pinned
 8.6 MB dictionary (`jieba-v1`) downloaded once and cached for offline reopening. HTTPS or
-localhost is required to verify the download. Existing content and unprofiled imports
-keep their splitting (and re-splitting a book preserves its profile); there is no automatic relinking or script conversion.
+localhost is required to verify the download. For **new Japanese texts, book imports (`.txt`, `.epub`, or manual), and audio/SRT imports (single and batch)**,
+**Japanese word segmentation (experimental)** is enabled by default (with opt-out per import) using the built-in `tinysegmenter-ja-v1` segmentation profile.
+Japanese EPUB imports also strip `<rt>` and `<rp>` furigana/ruby reading annotations from extracted base text so words are not split by inline readings.
+Existing Chinese and Japanese content and unprofiled imports
+keep their legacy splitting (and re-splitting a book preserves its profile); there is no automatic relinking, lemmatization, or script conversion.
 Unknown names may split into characters; native review is still outstanding.
 
 Korean keeps space-separated surface forms. Saved composed/decomposed Hangul
@@ -81,7 +84,7 @@ and unresolved Unicode, segmentation and sentence-boundary limitations.
 
 1. **Parser Type**:
    - `Space Delimited` (`spacedel`): **Recommended for most languages** (Latin, Cyrillic, Greek, Arabic, Hebrew, etc.) where words are separated by spaces or punctuation.
-   - `MeCab` / `Jieba`: Legacy language settings; they do not upgrade existing text boundaries. The new-text Chinese option above is the explicit dictionary-segmentation rollout. Japanese dictionary segmentation remains unfinished.
+   - `MeCab` / `Jieba`: Legacy language settings; they do not upgrade existing text boundaries. The new-text Chinese (`jieba-v1`) and Japanese (`tinysegmenter-ja-v1`) options above are the explicit versioned-segmentation rollouts.
 
 2. **Word Characters (Regex)**:
    - A regular expression character class defining what constitutes a single word character.
@@ -249,8 +252,8 @@ database seed defaults retain their own settings.
 | Bengali, Tamil | Left to right | `.!?।` | `spacedel` |
 | Greek | Left to right | `.!?;` plus the Greek question mark | `spacedel` |
 | Korean | Left to right | `.!?。！？` | `spacedel` |
-| Chinese | Left to right | `.!?。！？` | `jieba` (basic splitting only) |
-| Japanese | Left to right | `.!?。！？` | `mecab` (basic splitting only) |
+| Chinese | Left to right | `.!?。！？` | `jieba` (legacy; new imports default to `jieba-v1` with opt-out) |
+| Japanese | Left to right | `.!?。！？` | `mecab` (legacy; new imports default to `tinysegmenter-ja-v1` with opt-out) |
 | Thai | Left to right | `.!?` | `spacedel` (basic splitting only) |
 
 ---

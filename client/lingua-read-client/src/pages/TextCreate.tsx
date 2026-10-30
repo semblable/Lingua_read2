@@ -11,6 +11,7 @@ const TextCreate = () => {
   const [content, setContent] = useState('');
   const [languageId, setLanguageId] = useState('');
   const [chineseSegmentation, setChineseSegmentation] = useState(true);
+  const [japaneseSegmentation, setJapaneseSegmentation] = useState(true);
   const [tag, setTag] = useState(''); // Add state for tag
   const [languages, setLanguages] = useState<Language[]>([]);
   const [loading, setLoading] = useState(false);
@@ -24,7 +25,9 @@ const TextCreate = () => {
   const [generatingStory, setGeneratingStory] = useState(false);
   const [activeTab, setActiveTab] = useState('manual');
   
-  const isChinese = languages.find(lang => String(lang.languageId) === languageId)?.code?.toLowerCase().replace(/_/g, '-').split('-')[0] === 'zh';
+  const selectedLanguage = languages.find(lang => String(lang.languageId) === String(languageId));
+  const isChinese = selectedLanguage?.code?.trim().toLowerCase().replace(/_/g, '-').split('-')[0] === 'zh';
+  const isJapanese = selectedLanguage?.code?.trim().toLowerCase().replace(/_/g, '-').split('-')[0] === 'ja';
   const navigate = useNavigate();
   // Set when opened from a Library folder's "Add Content": the text is filed there.
   const [searchParams] = useSearchParams();
@@ -85,7 +88,12 @@ const TextCreate = () => {
     
     try {
       // Pass the tag (or null if empty) to the createText function
-      const newText = await createText(title, content, parseInt(languageId, 10), tag || null, folderId, isChinese && chineseSegmentation ? 'jieba-v1' : null);
+      const segmentationProfile = isChinese && chineseSegmentation
+        ? 'jieba-v1'
+        : isJapanese && japaneseSegmentation
+          ? 'tinysegmenter-ja-v1'
+          : null;
+      const newText = await createText(title, content, parseInt(languageId, 10), tag || null, folderId, segmentationProfile);
       navigate(`/texts/${newText.textId}`);
     } catch (err: unknown) {
       setError((err as Error)?.message || 'Failed to create text. Please try again.');
@@ -174,7 +182,11 @@ const TextCreate = () => {
             <Form.Label>Language</Form.Label>
             <Form.Select
               value={languageId}
-              onChange={(e) => setLanguageId(e.target.value)}
+              onChange={(e) => {
+                setLanguageId(e.target.value);
+                setChineseSegmentation(true);
+                setJapaneseSegmentation(true);
+              }}
               required
             >
               {languages.length === 0 ? (
@@ -193,6 +205,12 @@ const TextCreate = () => {
             <Form.Check id="chinese-segmentation" label="Chinese word segmentation (experimental)"
               checked={chineseSegmentation} onChange={event => setChineseSegmentation(event.target.checked)} />
             <Form.Text>Applies to this new text only. Downloads an 8.6 MB dictionary once for online and offline reading; requires HTTPS or localhost.</Form.Text>
+          </Form.Group>}
+
+          {isJapanese && <Form.Group className="mb-3">
+            <Form.Check id="japanese-segmentation" label="Japanese word segmentation (experimental)"
+              checked={japaneseSegmentation} onChange={event => setJapaneseSegmentation(event.target.checked)} />
+            <Form.Text>Applies to this new text only. Uses built-in TinySegmenter boundaries (tinysegmenter-ja-v1) without modifying existing texts.</Form.Text>
           </Form.Group>}
 
           <Form.Group className="mb-3" controlId="tag">

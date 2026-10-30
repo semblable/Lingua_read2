@@ -43,6 +43,9 @@ namespace LinguaReadApi.Services.Tokenization
         // Tries at the Word insert when a reader save keeps winning the race.
         private const int MaxWordInsertAttempts = 3;
 
+        private static bool IsSupportedSegmentationProfile(string? profile) =>
+            profile == ChineseSegmenter.Profile || profile == JapaneseSegmenter.Profile;
+
         /// <summary>
         /// Tokenize <paramref name="content"/>, materialise any new
         /// Word rows, and link the text via TextWord rows. Stamps the
@@ -71,9 +74,9 @@ namespace LinguaReadApi.Services.Tokenization
             var source = await context.Texts.AsNoTracking().Where(t => t.TextId == textId && t.UserId == userId)
                 .Select(t => new { t.SegmentationProfile, t.Language.Code }).FirstOrDefaultAsync(cancellationToken);
             var profile = source?.SegmentationProfile;
-            if (profile != null && profile != ChineseSegmenter.Profile)
+            if (profile != null && !IsSupportedSegmentationProfile(profile))
                 throw new NotSupportedException("This text uses an unsupported segmentation profile; retain its links and upgrade the app.");
-            return (profile == ChineseSegmenter.Profile || KoreanLookup.IsKoreanLanguageCode(source?.Code))
+            return (IsSupportedSegmentationProfile(profile) || KoreanLookup.IsKoreanLanguageCode(source?.Code))
                 && context.Database.IsRelational() && context.Database.CurrentTransaction == null;
         }
 
@@ -84,16 +87,19 @@ namespace LinguaReadApi.Services.Tokenization
             var snapshot = await context.Texts.AsNoTracking().Where(t => t.TextId == textId && t.UserId == userId)
                 .Select(t => new { t.SegmentationProfile, t.Content, t.LanguageId }).FirstOrDefaultAsync(cancellationToken);
             var profile = snapshot?.SegmentationProfile;
-            if (profile != null && profile != ChineseSegmenter.Profile)
+            if (profile != null && !IsSupportedSegmentationProfile(profile))
                 throw new NotSupportedException("This text uses an unsupported segmentation profile; retain its links and upgrade the app.");
-            if (profile == ChineseSegmenter.Profile) { content = snapshot!.Content; languageId = snapshot.LanguageId; }
+            if (IsSupportedSegmentationProfile(profile)) { content = snapshot!.Content; languageId = snapshot.LanguageId; }
             var language = await context.Languages.AsNoTracking()
                 .FirstOrDefaultAsync(l => l.LanguageId == languageId, cancellationToken);
             if (language != null)
                 language = new Language { Code = language.Code, WordCharacters = language.WordCharacters,
                     CharacterSubstitutions = language.CharacterSubstitutions,
                     ParserType = profile == ChineseSegmenter.Profile ? ChineseSegmenter.Profile
-                        : language.ParserType == ChineseSegmenter.Profile ? "jieba" : language.ParserType };
+                        : profile == JapaneseSegmenter.Profile ? JapaneseSegmenter.Profile
+                        : language.ParserType == ChineseSegmenter.Profile ? "jieba"
+                        : language.ParserType == JapaneseSegmenter.Profile ? "mecab"
+                        : language.ParserType };
 
             // Empty texts are current without creating vocabulary or replaying old content.
             if (string.IsNullOrWhiteSpace(content))

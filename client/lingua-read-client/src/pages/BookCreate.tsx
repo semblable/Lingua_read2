@@ -13,6 +13,7 @@ const BookCreate = () => {
   const [content, setContent] = useState('');
   const [languageId, setLanguageId] = useState('');
   const [chineseSegmentation, setChineseSegmentation] = useState(true);
+  const [japaneseSegmentation, setJapaneseSegmentation] = useState(true);
   const [tags, setTags] = useState(''); // comma-separated string
   const [file, setFile] = useState<File | null>(null);
   const [activeTab, setActiveTab] = useState('manual');
@@ -35,7 +36,9 @@ const BookCreate = () => {
   const { settings: userSettings } = useContext(SettingsContext);
   const [loadingText, setLoadingText] = useState('');
   const [uploadProgress, setUploadProgress] = useState(0);
-  const isChinese = languages.find(lang => String(lang.languageId) === String(languageId))?.code?.toLowerCase().replace(/_/g, '-').split('-')[0] === 'zh';
+  const selectedLanguage = languages.find(lang => String(lang.languageId) === String(languageId));
+  const isChinese = selectedLanguage?.code?.trim().toLowerCase().replace(/_/g, '-').split('-')[0] === 'zh';
+  const isJapanese = selectedLanguage?.code?.trim().toLowerCase().replace(/_/g, '-').split('-')[0] === 'ja';
 
   const getEffectiveMaxSegmentSize = (): number => {
     const val = parseInt(String(maxSegmentSize), 10);
@@ -176,7 +179,11 @@ const BookCreate = () => {
           chapterTitles,
           chapterGroupings,
           folderId,
-          ...(isChinese && chineseSegmentation ? ['jieba-v1'] : [])
+          ...(isChinese && chineseSegmentation
+            ? ['jieba-v1']
+            : isJapanese && japaneseSegmentation
+              ? ['tinysegmenter-ja-v1']
+              : [])
 
         );
       } else {
@@ -190,6 +197,7 @@ const BookCreate = () => {
         if (title) formData.append('TitleOverride', title);
         if (folderId) formData.append('FolderId', String(folderId));
         if (isChinese && chineseSegmentation) formData.append('SegmentationProfile', 'jieba-v1');
+        else if (isJapanese && japaneseSegmentation) formData.append('SegmentationProfile', 'tinysegmenter-ja-v1');
         chapterTitles.forEach(t => formData.append('ChapterTitles', t));
         if (chapterGroupings && chapterGroupings.length > 0) {
           formData.append('ChapterGroupingsJson', JSON.stringify(chapterGroupings));
@@ -291,7 +299,11 @@ const BookCreate = () => {
                   <Form.Label>Language</Form.Label>
                   <Form.Select
                     value={languageId}
-                    onChange={(e) => setLanguageId(e.target.value)}
+                    onChange={(e) => {
+                      setLanguageId(e.target.value);
+                      setChineseSegmentation(true);
+                      setJapaneseSegmentation(true);
+                    }}
                     required
                   >
                     {languages.length === 0 ? (
@@ -312,6 +324,12 @@ const BookCreate = () => {
               <Form.Check id="chinese-segmentation" label="Chinese word segmentation (experimental)"
                 checked={chineseSegmentation} onChange={event => setChineseSegmentation(event.target.checked)} />
               <Form.Text>Applies to this new import only. Downloads an 8.6 MB dictionary once for online and offline reading; requires HTTPS or localhost.</Form.Text>
+            </Form.Group>}
+
+            {isJapanese && <Form.Group className="mb-3">
+              <Form.Check id="japanese-segmentation" label="Japanese word segmentation (experimental)"
+                checked={japaneseSegmentation} onChange={event => setJapaneseSegmentation(event.target.checked)} />
+              <Form.Text>Applies to this new import only. Uses built-in TinySegmenter boundaries (tinysegmenter-ja-v1) without modifying existing texts.</Form.Text>
             </Form.Group>}
 
             <Form.Group className="mb-3" controlId="description">

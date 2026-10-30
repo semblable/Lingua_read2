@@ -1,6 +1,7 @@
 import { findKoreanLookupMatches, isKoreanLanguageCode } from './koreanLookup';
 import { CHINESE_SEGMENTER_PROFILE, isChineseHanAt, findChineseHanRunEnd } from './chineseSegmenter';
 import { getChineseSegmentation } from './chineseRuntime';
+import { JAPANESE_SEGMENTER_PROFILE, isJapaneseScriptAt, findJapaneseRunEnd, segmentJapaneseRun } from './japaneseSegmenter';
 export type LanguageConfig = {
   wordCharacters?: string | null;
   characterSubstitutions?: string | null;
@@ -513,6 +514,9 @@ const canStartWord = (regex: RegExp, ch: string | undefined): boolean =>
 const isConnector = (ch: string): boolean =>
   ch === APOSTROPHE || ch === HYPHEN || ch === MIDDLE_DOT;
 
+type SegmenterWordEnds = ReadonlyMap<number, number> & { profile?: string };
+type MutableSegmenterWordEnds = Map<number, number> & { profile?: string };
+
 /**
  * Normalize the input (soft hyphens, decomposed accents), apply
  * built-in + user character substitutions, and return the
@@ -532,11 +536,23 @@ export const prepareLanguageContext = (
   const coreRegex = buildCoreWordRegex(languageConfig?.wordCharacters);
   if (languageConfig?.parserType === CHINESE_SEGMENTER_PROFILE) {
     const segmenter = getChineseSegmentation();
-    const wordEnds = new Map<number, number>();
+    const wordEnds: MutableSegmenterWordEnds = new Map<number, number>();
+    wordEnds.profile = CHINESE_SEGMENTER_PROFILE;
     for (let i = 0; i < processed.length;) {
       if (!isChineseHanAt(processed, i)) { i += processed.codePointAt(i)! > 0xffff ? 2 : 1; continue; }
       const end = findChineseHanRunEnd(processed, i);
       for (const span of segmenter.segmentHanRun(processed, i, end)) wordEnds.set(span.start, span.end);
+      i = end;
+    }
+    return { processed, coreRegex, wordEnds };
+  }
+  if (languageConfig?.parserType === JAPANESE_SEGMENTER_PROFILE) {
+    const wordEnds: MutableSegmenterWordEnds = new Map<number, number>();
+    wordEnds.profile = JAPANESE_SEGMENTER_PROFILE;
+    for (let i = 0; i < processed.length;) {
+      if (!isJapaneseScriptAt(processed, i)) { i += processed.codePointAt(i)! > 0xffff ? 2 : 1; continue; }
+      const end = findJapaneseRunEnd(processed, i);
+      for (const span of segmentJapaneseRun(processed, i, end)) wordEnds.set(span.start, span.end);
       i = end;
     }
     return { processed, coreRegex, wordEnds };
@@ -556,8 +572,14 @@ export const consumeWordAt = (
   wordEnds?: ReadonlyMap<number, number>
 ): { text: string; end: number } | null => {
   if (!processed || index < 0 || index >= processed.length) return null;
-  if (wordEnds && isChineseHanAt(processed, index)) {
-    const end = wordEnds.get(index) ?? getChineseSegmentation().segmentHanRun(processed, index, findChineseHanRunEnd(processed, index))[0].end;
+  const isJapaneseProfile = (wordEnds as SegmenterWordEnds | undefined)?.profile === JAPANESE_SEGMENTER_PROFILE;
+  const isSegmentedScriptAt = wordEnds ? (isJapaneseProfile ? isJapaneseScriptAt : isChineseHanAt) : null;
+  if (wordEnds && isSegmentedScriptAt && isSegmentedScriptAt(processed, index)) {
+    const end = wordEnds.get(index) ?? (
+      isJapaneseProfile
+        ? segmentJapaneseRun(processed, index, findJapaneseRunEnd(processed, index))[0].end
+        : getChineseSegmentation().segmentHanRun(processed, index, findChineseHanRunEnd(processed, index))[0].end
+    );
     return { text: processed.slice(index, end), end };
   }
   if (!canStartWord(coreRegex, processed[index])) return null;
@@ -568,7 +590,7 @@ export const consumeWordAt = (
 
   while (i < len) {
     const next = processed[i];
-    if (wordEnds && isChineseHanAt(processed, i)) break;
+    if (isSegmentedScriptAt && isSegmentedScriptAt(processed, i)) break;
     if (isCoreWordChar(coreRegex, next)) {
       word += next;
       i++;
@@ -578,7 +600,7 @@ export const consumeWordAt = (
       isConnector(next) &&
       i + 1 < len &&
       isCoreWordChar(coreRegex, processed[i + 1]) &&
-      !(wordEnds && isChineseHanAt(processed, i + 1))
+      !(isSegmentedScriptAt && isSegmentedScriptAt(processed, i + 1))
     ) {
       word += next;
       i++;

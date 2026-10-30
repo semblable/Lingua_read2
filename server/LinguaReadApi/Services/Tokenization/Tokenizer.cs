@@ -220,6 +220,7 @@ namespace LinguaReadApi.Services.Tokenization
             var coreRegex = BuildCoreWordRegex(language?.WordCharacters);
 
             var chinese = language?.ParserType == ChineseSegmenter.Profile;
+            var japanese = language?.ParserType == JapaneseSegmenter.Profile;
             var tokens = new List<Token>();
             var i = 0;
             var len = processed.Length;
@@ -235,13 +236,21 @@ namespace LinguaReadApi.Services.Tokenization
                         .Select(word => new Token(word.Text, word.Start, word.End, true)));
                     i = end;
                 }
+                else if (japanese && JapaneseSegmenter.IsJapaneseScriptAt(processed, i))
+                {
+                    var end = JapaneseSegmenter.FindJapaneseRunEnd(processed, i);
+                    tokens.AddRange(JapaneseSegmenter.Default.SegmentRun(processed, i, end)
+                        .Select(word => new Token(word.Text, word.Start, word.End, true)));
+                    i = end;
+                }
                 else if (CanStartWord(coreRegex, span, i))
                 {
                     var start = i;
                     i++;
                     while (i < len)
                     {
-                        if (chinese && ChineseSegmenter.IsHanAt(processed, i)) break;
+                        if ((chinese && ChineseSegmenter.IsHanAt(processed, i))
+                            || (japanese && JapaneseSegmenter.IsJapaneseScriptAt(processed, i))) break;
                         if (IsCoreWordChar(coreRegex, span, i))
                         {
                             i++;
@@ -250,7 +259,8 @@ namespace LinguaReadApi.Services.Tokenization
                         if (IsConnector(processed[i])
                             && i + 1 < len
                             && IsCoreWordChar(coreRegex, span, i + 1)
-                            && !(chinese && ChineseSegmenter.IsHanAt(processed, i + 1)))
+                            && !((chinese && ChineseSegmenter.IsHanAt(processed, i + 1))
+                                || (japanese && JapaneseSegmenter.IsJapaneseScriptAt(processed, i + 1))))
                         {
                             i++;
                             continue;
@@ -261,7 +271,7 @@ namespace LinguaReadApi.Services.Tokenization
                 }
                 else
                 {
-                    var width = chinese && char.IsHighSurrogate(processed[i]) && i + 1 < len && char.IsLowSurrogate(processed[i + 1]) ? 2 : 1;
+                    var width = (chinese || japanese) && char.IsHighSurrogate(processed[i]) && i + 1 < len && char.IsLowSurrogate(processed[i + 1]) ? 2 : 1;
                     tokens.Add(new Token(processed.Substring(i, width), i, i + width, IsWord: false));
                     i += width;
                 }

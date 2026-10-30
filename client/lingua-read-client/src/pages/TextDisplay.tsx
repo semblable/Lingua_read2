@@ -611,7 +611,7 @@ const TextDisplay = () => {
   // 2. Pre-calculate and sort phrases once
   const knownPhrases = useMemo(() => {
     return words
-      .filter(w => w.term && (w.term.includes(' ') || (languageConfig?.parserType === 'jieba-v1' &&
+      .filter(w => w.term && (w.term.includes(' ') || ((languageConfig?.parserType === 'jieba-v1' || languageConfig?.parserType === 'tinysegmenter-ja-v1') &&
         ((w.status ?? 0) > 0 || !!w.translation) && extractWords(w.term, languageConfig).length > 1)))
       .sort((a, b) => (b.term?.length ?? 0) - (a.term?.length ?? 0));
   }, [words, languageConfig]);

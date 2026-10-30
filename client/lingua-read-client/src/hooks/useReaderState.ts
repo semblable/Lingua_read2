@@ -187,7 +187,7 @@ export const useReaderState = ({
       try {
         const data = await getText(textId);
         if (!isCurrentRequest()) return;
-        if (data.segmentationProfile && data.segmentationProfile !== 'jieba-v1')
+        if (data.segmentationProfile && data.segmentationProfile !== 'jieba-v1' && data.segmentationProfile !== 'tinysegmenter-ja-v1')
           throw new Error('This text uses a newer word segmenter. Update the app before opening it.');
         let profileConfig: NonNullable<LanguageConfig> | null = null;
         if (data.segmentationProfile === 'jieba-v1') {
@@ -196,6 +196,13 @@ export const useReaderState = ({
           if (!isCurrentRequest()) return;
           if (!config) throw new Error('Chinese language settings could not be loaded. Reconnect and reopen this text.');
           profileConfig = { ...config, parserType: 'jieba-v1' };
+          setLanguageConfig(profileConfig);
+        } else if (data.segmentationProfile === 'tinysegmenter-ja-v1') {
+          if (!data.languageId) throw new Error('Japanese text has no language settings.');
+          const config = await getLanguage(data.languageId);
+          if (!isCurrentRequest()) return;
+          if (!config) throw new Error('Japanese language settings could not be loaded. Reconnect and reopen this text.');
+          profileConfig = { ...config, parserType: 'tinysegmenter-ja-v1' };
           setLanguageConfig(profileConfig);
         }
         setText(data);
@@ -287,8 +294,17 @@ export const useReaderState = ({
 
         if (results[1].status === 'fulfilled' && results[1].value) {
           const config = results[1].value as NonNullable<LanguageConfig>;
-          setLanguageConfig({ ...config, parserType: data.segmentationProfile === 'jieba-v1'
-            ? 'jieba-v1' : config.parserType === 'jieba-v1' ? 'jieba' : config.parserType });
+          const resolvedParserType =
+            data.segmentationProfile === 'jieba-v1'
+              ? 'jieba-v1'
+              : data.segmentationProfile === 'tinysegmenter-ja-v1'
+                ? 'tinysegmenter-ja-v1'
+                : config.parserType === 'jieba-v1'
+                  ? 'jieba'
+                  : config.parserType === 'tinysegmenter-ja-v1'
+                    ? 'mecab'
+                    : config.parserType;
+          setLanguageConfig({ ...config, parserType: resolvedParserType });
         } else {
           if (results[1].status === 'rejected') {
             console.error('Failed to fetch language configuration:', results[1].reason);

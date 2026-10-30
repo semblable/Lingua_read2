@@ -221,9 +221,9 @@ namespace LinguaReadApi.Controllers
             if (language == null) return BadRequest("Invalid language ID");
             var segmentationProfile = createBookDto.SegmentationProfile;
             if (segmentationProfile != null &&
-                (segmentationProfile != ChineseSegmenter.Profile || !IsChineseLanguage(language.Code)))
+                !IsValidSegmentationProfile(segmentationProfile, language.Code))
             {
-                return BadRequest("SegmentationProfile must be jieba-v1 and is only supported for Chinese texts.");
+                return BadRequest("SegmentationProfile must match the selected language (jieba-v1 for Chinese, tinysegmenter-ja-v1 for Japanese).");
             }
 
             if (createBookDto.FolderId.HasValue && !await _context.UserOwnsFolderAsync(userId, createBookDto.FolderId.Value))
@@ -430,9 +430,9 @@ namespace LinguaReadApi.Controllers
             if (language == null) return BadRequest("Invalid language ID.");
             var segmentationProfile = uploadDto.SegmentationProfile;
             if (segmentationProfile != null &&
-                (segmentationProfile != ChineseSegmenter.Profile || !IsChineseLanguage(language.Code)))
+                !IsValidSegmentationProfile(segmentationProfile, language.Code))
             {
-                return BadRequest("SegmentationProfile must be jieba-v1 and is only supported for Chinese texts.");
+                return BadRequest("SegmentationProfile must match the selected language (jieba-v1 for Chinese, tinysegmenter-ja-v1 for Japanese).");
             }
 
             if (uploadDto.FolderId.HasValue && !await _context.UserOwnsFolderAsync(userId, uploadDto.FolderId.Value))
@@ -1300,6 +1300,8 @@ namespace LinguaReadApi.Controllers
             var tokenMatches = ImportRegex.HtmlToken.Matches(normalizedHtml);
             bool inHeading = false;
             bool inCaption = false;
+            bool inRubyAnnotation = false;
+            bool inRubyContainer = false;
             bool pendingChapterBreak = false;
             var pageBreakClasses = extractionContext.PageBreakClasses;
 
@@ -1313,12 +1315,56 @@ namespace LinguaReadApi.Controllers
 
                 if (token[0] != '<')
                 {
+                    if (inRubyAnnotation || inRubyContainer)
+                    {
+                        continue;
+                    }
                     textBuffer.Append(WebUtility.HtmlDecode(token));
+                    continue;
+                }
+
+                if (ImportRegex.RubyAnnotationOpen.IsMatch(token))
+                {
+                    inRubyAnnotation = true;
+                    continue;
+                }
+
+                if (ImportRegex.RubyAnnotationClose.IsMatch(token))
+                {
+                    inRubyAnnotation = false;
+                    continue;
+                }
+
+                if (ImportRegex.RubyContainerOpen.IsMatch(token))
+                {
+                    inRubyContainer = true;
+                    continue;
+                }
+
+                if (ImportRegex.RubyContainerClose.IsMatch(token))
+                {
+                    inRubyContainer = false;
+                    inRubyAnnotation = false;
+                    continue;
+                }
+
+                if (ImportRegex.RubyBaseOrBoundaryTag.IsMatch(token))
+                {
+                    inRubyAnnotation = false;
+                    if (token.StartsWith("</ruby", StringComparison.OrdinalIgnoreCase) ||
+                        token.StartsWith("<ruby", StringComparison.OrdinalIgnoreCase))
+                    {
+                        inRubyContainer = false;
+                    }
                     continue;
                 }
 
                 if (ImportRegex.BrTag.IsMatch(token))
                 {
+                    if (inRubyAnnotation || inRubyContainer)
+                    {
+                        continue;
+                    }
                     textBuffer.Append('\n');
                     continue;
                 }
@@ -1326,6 +1372,8 @@ namespace LinguaReadApi.Controllers
                 if (ImportRegex.ImgTag.IsMatch(token))
                 {
                     FlushBufferedText(blocks, textBuffer, inHeading ? ReaderContentBlockTypes.Title : ReaderContentBlockTypes.Paragraph, ref pendingChapterBreak);
+                    inRubyAnnotation = false;
+                    inRubyContainer = false;
                     var imageBlock = TryCreateImageBlock(token, textFile, extractionContext);
                     if (imageBlock != null)
                     {
@@ -1342,6 +1390,8 @@ namespace LinguaReadApi.Controllers
 
                 if (ImportRegex.HeadingOpen.IsMatch(token))
                 {
+                    inRubyAnnotation = false;
+                    inRubyContainer = false;
                     FlushBufferedText(blocks, textBuffer, ReaderContentBlockTypes.Paragraph, ref pendingChapterBreak);
                     if (HasPageBreak(token, pageBreakClasses))
                     {
@@ -1353,6 +1403,8 @@ namespace LinguaReadApi.Controllers
 
                 if (ImportRegex.HeadingClose.IsMatch(token))
                 {
+                    inRubyAnnotation = false;
+                    inRubyContainer = false;
                     FlushBufferedText(blocks, textBuffer, ReaderContentBlockTypes.Title, ref pendingChapterBreak);
                     inHeading = false;
                     continue;
@@ -1361,12 +1413,16 @@ namespace LinguaReadApi.Controllers
                 if (ImportRegex.FigcaptionOpen.IsMatch(token))
                 {
                     FlushBufferedText(blocks, textBuffer, inHeading ? ReaderContentBlockTypes.Title : ReaderContentBlockTypes.Paragraph, ref pendingChapterBreak);
+                    inRubyAnnotation = false;
+                    inRubyContainer = false;
                     inCaption = true;
                     continue;
                 }
 
                 if (ImportRegex.FigcaptionClose.IsMatch(token))
                 {
+                    inRubyAnnotation = false;
+                    inRubyContainer = false;
                     var caption = NormalizeTextFragment(textBuffer.ToString());
                     textBuffer.Clear();
                     if (!string.IsNullOrWhiteSpace(caption))
@@ -1401,6 +1457,8 @@ namespace LinguaReadApi.Controllers
                     ImportRegex.HrTag.IsMatch(token))
                 {
                     FlushBufferedText(blocks, textBuffer, inHeading ? ReaderContentBlockTypes.Title : ReaderContentBlockTypes.Paragraph, ref pendingChapterBreak);
+                    inRubyAnnotation = false;
+                    inRubyContainer = false;
                     if (token[1] != '/' && HasPageBreak(token, pageBreakClasses))
                     {
                         pendingChapterBreak = true;
@@ -1411,6 +1469,8 @@ namespace LinguaReadApi.Controllers
                 if (ImportRegex.CellOpen.IsMatch(token) ||
                     ImportRegex.CellClose.IsMatch(token))
                 {
+                    inRubyAnnotation = false;
+                    inRubyContainer = false;
                     textBuffer.Append(' ');
                     continue;
                 }
@@ -1888,6 +1948,7 @@ namespace LinguaReadApi.Controllers
 
             normalizedHtml = ImportRegex.HtmlComment.Replace(normalizedHtml, string.Empty);
             normalizedHtml = ImportRegex.ScriptOrStyleElement.Replace(normalizedHtml, string.Empty);
+            normalizedHtml = ImportRegex.RubyAnnotationElement.Replace(normalizedHtml, string.Empty);
             normalizedHtml = ImportRegex.BrTagAnywhere.Replace(normalizedHtml, "\n");
             normalizedHtml = ImportRegex.DescriptionBlockClose.Replace(normalizedHtml, "\n\n");
             normalizedHtml = ImportRegex.TrClose.Replace(normalizedHtml, "\n");
@@ -2657,6 +2718,13 @@ namespace LinguaReadApi.Controllers
         private static bool IsChineseLanguage(string code) =>
             string.Equals(code.Trim().Split('-', '_')[0], "zh", StringComparison.OrdinalIgnoreCase);
 
+        private static bool IsJapaneseLanguage(string code) =>
+            string.Equals(code.Trim().Split('-', '_')[0], "ja", StringComparison.OrdinalIgnoreCase);
+
+        private static bool IsValidSegmentationProfile(string profile, string languageCode) =>
+            (profile == ChineseSegmenter.Profile && IsChineseLanguage(languageCode)) ||
+            (profile == JapaneseSegmenter.Profile && IsJapaneseLanguage(languageCode));
+
         private async Task<bool> BookExists(int id, Guid userId)
         {
             return await _context.Books.AnyAsync(e => e.BookId == id && e.UserId == userId);
@@ -2725,6 +2793,11 @@ namespace LinguaReadApi.Controllers
             // that document in the spine, and its link list is not reading material.
             public static readonly Regex NonContentElement = new(@"<(script|style|head|nav)\b[^>]*>.*?</\1\s*>", Hot | RegexOptions.Singleline | RegexOptions.IgnoreCase);
             public static readonly Regex HtmlToken = new(@"<img\b[^>]*>|</?[^>]+>|[^<]+", Hot | RegexOptions.IgnoreCase);
+            public static readonly Regex RubyAnnotationOpen = new(@"^<(rt|rp)\b(?![^>]*/>)", Hot | RegexOptions.IgnoreCase);
+            public static readonly Regex RubyAnnotationClose = new(@"^</(rt|rp)\s*>$", Hot | RegexOptions.IgnoreCase);
+            public static readonly Regex RubyContainerOpen = new(@"^<rtc\b(?![^>]*/>)", Hot | RegexOptions.IgnoreCase);
+            public static readonly Regex RubyContainerClose = new(@"^</rtc\s*>$", Hot | RegexOptions.IgnoreCase);
+            public static readonly Regex RubyBaseOrBoundaryTag = new(@"^(?:</?ruby\b|</?rb\b)", Hot | RegexOptions.IgnoreCase);
             public static readonly Regex BrTag = new(@"^<br\s*/?>$", Hot | RegexOptions.IgnoreCase);
             public static readonly Regex ImgTag = new(@"^<img\b", Hot | RegexOptions.IgnoreCase);
             public static readonly Regex HeadingOpen = new(@"^<h[1-6]\b", Hot | RegexOptions.IgnoreCase);
@@ -2746,6 +2819,7 @@ namespace LinguaReadApi.Controllers
             public static readonly Regex SentenceBreak = new(@"(?<=[.!?])\s+", Hot);
 
             // Book description (NormalizeEpubHtmlToText): once per upload.
+            public static readonly Regex RubyAnnotationElement = new(@"<(?:rtc\b[^>]*>.*?(?:</rtc\s*>|(?=</?(?:ruby|rb|rtc|p|div|h[1-6]|li|td|th|blockquote)\b))|(?:rt|rp)\b[^>]*>.*?(?:</(?:rt|rp)\s*>|(?=</?(?:ruby|rb|rt|rp|rtc|p|div|h[1-6]|li|td|th|blockquote)\b)))", Hot | RegexOptions.Singleline | RegexOptions.IgnoreCase);
             public static readonly Regex BrTagAnywhere = new(@"<br\s*/?>", RegexOptions.IgnoreCase);
             public static readonly Regex DescriptionBlockClose = new(@"</(p|div|section|article|aside|header|footer|nav|figure|figcaption|blockquote|pre|li|h[1-6])\s*>", RegexOptions.IgnoreCase);
             public static readonly Regex TrClose = new(@"</(tr)\s*>", RegexOptions.IgnoreCase);

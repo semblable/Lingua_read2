@@ -65,7 +65,9 @@ describe('LanguageForm parser type', () => {
     } as unknown as Language;
 
     render(<LanguageForm language={chinese} onSave={noop} onCancel={noop} onDelete={noop} />);
-    expect(screen.getByTestId('parser-not-implemented').textContent).toMatch(/isn.t implemented yet/);
+    const warning = screen.getByTestId('parser-not-implemented').textContent;
+    expect(warning).toMatch(/isn.t implemented yet as a language setting/);
+    expect(warning).toMatch(/New Chinese and Japanese texts, books and audio lessons can use built-in word segmentation/);
   });
 });
 

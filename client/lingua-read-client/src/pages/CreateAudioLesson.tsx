@@ -11,6 +11,7 @@ function CreateAudioLesson() {
     const [title, setTitle] = useState('');
     const [languageId, setLanguageId] = useState('');
     const [chineseSegmentation, setChineseSegmentation] = useState(true);
+    const [japaneseSegmentation, setJapaneseSegmentation] = useState(true);
     const [audioFile, setAudioFile] = useState<File | null>(null);
     const [srtFile, setSrtFile] = useState<File | null>(null);
     const [tag, setTag] = useState('');
@@ -22,7 +23,9 @@ function CreateAudioLesson() {
     const [searchParams] = useSearchParams();
     const folderId = parseFolderIdParam(searchParams.get('folderId'));
     const { settings: userSettings } = useContext(SettingsContext); // Get settings from context
-    const isChinese = languages.find(lang => String(lang.languageId) === String(languageId))?.code?.toLowerCase().replace(/_/g, '-').split('-')[0] === 'zh';
+    const selectedLanguage = languages.find(lang => String(lang.languageId) === String(languageId));
+    const isChinese = selectedLanguage?.code?.trim().toLowerCase().replace(/_/g, '-').split('-')[0] === 'zh';
+    const isJapanese = selectedLanguage?.code?.trim().toLowerCase().replace(/_/g, '-').split('-')[0] === 'ja';
 
     // Fetch languages on component mount
     useEffect(() => {
@@ -82,7 +85,12 @@ function CreateAudioLesson() {
 
         setIsLoading(true);
         try {
-            const result = (await createAudioLesson(title, languageId, audioFile, srtFile, tag, null, folderId, ...(isChinese && chineseSegmentation ? ['jieba-v1'] : []))) as { title?: string } | null;
+            const segmentationProfile = isChinese && chineseSegmentation
+                ? 'jieba-v1'
+                : isJapanese && japaneseSegmentation
+                    ? 'tinysegmenter-ja-v1'
+                    : null;
+            const result = (await createAudioLesson(title, languageId, audioFile, srtFile, tag, null, folderId, ...(segmentationProfile ? [segmentationProfile] : []))) as { title?: string } | null;
             setSuccessMessage(`Audio lesson "${result?.title}" created successfully!`);
             setTitle('');
             setLanguageId(''); // Reset language selection
@@ -129,7 +137,11 @@ function CreateAudioLesson() {
                             <Form.Label>Language <span className="text-danger">*</span></Form.Label>
                             <Form.Select
                                 value={languageId}
-                                onChange={(e) => setLanguageId(e.target.value)}
+                                onChange={(e) => {
+                                    setLanguageId(e.target.value);
+                                    setChineseSegmentation(true);
+                                    setJapaneseSegmentation(true);
+                                }}
                                 required
                                 disabled={isLoading || languages.length === 0}
                                 aria-label="Select language"
@@ -148,6 +160,12 @@ function CreateAudioLesson() {
                             <Form.Check id="chinese-segmentation" label="Chinese word segmentation (experimental)"
                                 checked={chineseSegmentation} onChange={event => setChineseSegmentation(event.target.checked)} />
                             <Form.Text>Applies to this new import only. Downloads an 8.6 MB dictionary once for online and offline reading; requires HTTPS or localhost.</Form.Text>
+                        </Form.Group>}
+
+                        {isJapanese && <Form.Group className="mb-3">
+                            <Form.Check id="japanese-segmentation" label="Japanese word segmentation (experimental)"
+                                checked={japaneseSegmentation} onChange={event => setJapaneseSegmentation(event.target.checked)} />
+                            <Form.Text>Applies to this new import only. Uses built-in TinySegmenter boundaries (tinysegmenter-ja-v1) without modifying existing texts.</Form.Text>
                         </Form.Group>}
 
                         <Form.Group className="mb-3" controlId="formTag">

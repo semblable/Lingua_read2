@@ -17,11 +17,11 @@ PR Validation for that PR's exact head. Existing queued/running/successful stagi
 for the current dev SHA prevents another dispatch. Custom-token or manual mergers
 keep using the ordinary push-triggered staging path.
 
-An hourly check covers auto-merges delayed beyond the brief observation window.
+A daily check covers auto-merges delayed beyond the brief observation window.
 Normally this performs only a few read-only API calls. Unsuccessful staging is
 not retried automatically: rerun Staging itself, or manually run Dependabot Staging
 with retry_failed enabled. This prevents a persistently failing commit from
-creating an hourly deployment loop.
+creating a daily deployment loop.
 
 The privileged handler checks out only the repository's trusted default branch,
 never the triggering PR head, merge ref, or PR artifacts. Permissions are read-only

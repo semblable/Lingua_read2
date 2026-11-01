@@ -134,7 +134,7 @@ test('a staging run for another SHA does not cover the missing current dev merge
   assert.equal((await reconcileStaging({ ...options, api: f.api })).dispatched, true);
 });
 
-test('failed staging is not silently retried hourly, but supports an explicit retry', async () => {
+test('failed staging is not silently retried automatically, but supports an explicit retry', async () => {
   const f = fixture({ staging: [{ head_sha: tip, status: 'completed', conclusion: 'failure' }] });
   assert.equal((await reconcileStaging({ ...options, api: f.api })).dispatched, false);
   assert.equal((await reconcileStaging({ ...options, api: f.api, retryFailed: true })).dispatched, true);

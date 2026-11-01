@@ -1,13 +1,13 @@
 name: Dependabot Staging
 
 # GITHUB_TOKEN merges suppress push AND pull_request.closed. CI completion is
-# independent of that merge event; the hourly check covers a delayed auto-merge.
+# independent of that merge event; the daily check covers a delayed auto-merge.
 on:
   workflow_run:
     workflows: ["PR Validation"]
     types: [completed]
   schedule:
-    - cron: '17 * * * *'
+    - cron: '17 3 * * *'
   workflow_dispatch:
     inputs:
       retry_failed:
@@ -52,7 +52,7 @@ jobs:
       pull-requests: read
       actions: write
     # Only dispatch is serialized. Replaced pending jobs are harmless because the
-    # next job reads current dev, and hourly reconciliation covers late merges.
+    # next job reads current dev, and daily reconciliation covers late merges.
     concurrency:
       group: dependabot-staging-reconcile
       cancel-in-progress: false

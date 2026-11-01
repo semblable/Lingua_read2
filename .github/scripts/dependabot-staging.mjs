@@ -42,7 +42,7 @@ export async function observeMerge({ api, repository, repositoryId, run, sleep =
     if (!waiting) return { ready: false, reason: 'No matching open or merged Dependabot PR.' };
     if (attempt + 1 < attempts) await sleep(5000);
   }
-  return { ready: false, reason: 'Merge is still pending; hourly reconciliation will check again.' };
+  return { ready: false, reason: 'Merge is still pending; daily reconciliation will check again.' };
 }
 
 // This is the only fallback dispatch path. Callers serialize this function

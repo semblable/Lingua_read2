@@ -1,6 +1,7 @@
 FROM alpine:3.24
 
-RUN apk add --no-cache postgresql18-client rclone docker-cli curl bash
+RUN apk upgrade --no-cache && \
+    apk add --no-cache postgresql18-client rclone docker-cli curl bash
 
 # supercronic — proper cron daemon for Docker (handles SIGTERM correctly)
 # Supports both amd64 and arm64 (Oracle Cloud Ampere A1)

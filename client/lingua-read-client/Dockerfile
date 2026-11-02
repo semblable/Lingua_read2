@@ -20,7 +20,7 @@ RUN npm run build
 # throwaway certs are generated for the check.
 FROM nginxinc/nginx-unprivileged:stable-alpine AS config-test
 USER root
-RUN apk add --no-cache openssl
+RUN apk upgrade --no-cache && apk add --no-cache openssl
 COPY nginx.conf /tmp/nginx-test/nginx.conf
 COPY nginx.ssl.conf /tmp/nginx-test/nginx.ssl.conf
 # The `upstream api:5000` hostname is resolved at config-parse time and the compose
@@ -42,7 +42,7 @@ WORKDIR /usr/share/nginx/html
 
 # The html dir is root-owned; switch to root for the asset swap, then drop back.
 USER root
-RUN rm -rf ./*
+RUN apk upgrade --no-cache && rm -rf ./*
 COPY --from=build /app/build ./
 # Pre-compress text assets once at build time; nginx serves them via gzip_static
 # instead of re-gzipping the same immutable files on every request. woff2/images

@@ -146,7 +146,50 @@ builder.Services.AddHttpClient("ReportWebhook", client => client.Timeout = TimeS
     });
 
 // Discord weekly report configuration and services
-builder.Services.Configure<DiscordReportOptions>(builder.Configuration.GetSection("Discord"));
+builder.Services.Configure<DiscordReportOptions>(options =>
+{
+    var discordSection = builder.Configuration.GetSection("Discord");
+    if (!string.IsNullOrWhiteSpace(discordSection["WeeklyReportDayOfWeek"]))
+    {
+        options.WeeklyReportDayOfWeek = discordSection["WeeklyReportDayOfWeek"]!;
+    }
+    if (int.TryParse(discordSection["WeeklyReportHourUtc"], out var hour))
+    {
+        options.WeeklyReportHourUtc = hour;
+    }
+    if (bool.TryParse(discordSection["DryRun"], out var dryRun))
+    {
+        options.DryRun = dryRun;
+    }
+    if (int.TryParse(discordSection["PollIntervalMinutes"], out var pollMinutes))
+    {
+        options.PollIntervalMinutes = pollMinutes;
+    }
+
+    var relayHosts = new List<string>();
+    foreach (var child in discordSection.GetSection("AllowedReportRelayHosts").GetChildren())
+    {
+        if (!string.IsNullOrWhiteSpace(child.Value))
+        {
+            relayHosts.Add(child.Value);
+        }
+    }
+
+    var rawString = discordSection["AllowedReportRelayHosts"] ??
+                    Environment.GetEnvironmentVariable("DISCORD_ALLOWED_REPORT_RELAY_HOSTS");
+    if (!string.IsNullOrWhiteSpace(rawString))
+    {
+        relayHosts.AddRange(rawString.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+    }
+
+    if (relayHosts.Count > 0)
+    {
+        options.AllowedReportRelayHosts = relayHosts
+            .Where(h => !string.IsNullOrWhiteSpace(h))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+});
 builder.Services.AddScoped<DiscordReportService>();
 builder.Services.Configure<ExternalWritesOptions>(builder.Configuration.GetSection(ExternalWritesOptions.SectionName));
 builder.Services.AddHostedService<WeeklyDiscordReportHostedService>();

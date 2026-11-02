@@ -55,7 +55,18 @@ namespace LinguaReadApi.Services
             _logger = logger;
             _databaseAdminService = databaseAdminService;
             _externalWritesDisabled = externalWrites?.Value.Disabled ?? false;
-            _allowedRelayHosts = new HashSet<string>(reportOptions?.Value.AllowedReportRelayHosts ?? [], StringComparer.OrdinalIgnoreCase);
+            var relayHosts = (reportOptions?.Value.AllowedReportRelayHosts ?? [])
+                .Select(h => h.Trim())
+                .Select(h =>
+                {
+                    if (Uri.TryCreate(h.StartsWith("http://", StringComparison.OrdinalIgnoreCase) || h.StartsWith("https://", StringComparison.OrdinalIgnoreCase) ? h : $"https://{h}", UriKind.Absolute, out var uri))
+                    {
+                        return uri.IdnHost;
+                    }
+                    return h;
+                })
+                .Where(h => !string.IsNullOrEmpty(h));
+            _allowedRelayHosts = new HashSet<string>(relayHosts, StringComparer.OrdinalIgnoreCase);
         }
 
         public async Task<DiscordReportResult> SendDueWeeklyReportsAsync(

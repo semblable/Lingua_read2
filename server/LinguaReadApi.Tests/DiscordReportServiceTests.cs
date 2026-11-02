@@ -526,6 +526,27 @@ public class DiscordReportServiceTests
     }
 
     [Fact]
+    public async Task SendReportForUserAsync_AllowsConfiguredCustomRelayHost()
+    {
+        using var context = CreateDbContext();
+        var handler = new CapturingHttpMessageHandler();
+        var service = new DiscordReportService(context, new StubHttpClientFactory(handler),
+            NullLogger<DiscordReportService>.Instance, new StubDatabaseAdminService(),
+            reportOptions: Microsoft.Extensions.Options.Options.Create(new DiscordReportOptions
+            { AllowedReportRelayHosts = ["relay.custom-bot.test"] }));
+        var settings = new UserSettings
+        {
+            UserId = Guid.NewGuid(),
+            DiscordWeeklyReportEnabled = true,
+            DiscordWebhookUrl = "https://relay.custom-bot.test/webhook/report/CNO2D7jljxbtVbO3dL6pMOBqgb29Yq6FNBC2KAx7W3Q"
+        };
+        var result = await service.SendReportForUserAsync(settings, DateTime.UtcNow.AddDays(-7), DateTime.UtcNow, false, CancellationToken.None);
+        Assert.True(result.Sent);
+        Assert.Single(handler.Requests);
+        Assert.Equal("https://relay.custom-bot.test/webhook/report/CNO2D7jljxbtVbO3dL6pMOBqgb29Yq6FNBC2KAx7W3Q", handler.Requests[0].RequestUri?.ToString());
+    }
+
+    [Fact]
     public async Task SendReportForUserAsync_ZeroActivity_ShowsStatusField()
     {
         using var context = CreateDbContext();

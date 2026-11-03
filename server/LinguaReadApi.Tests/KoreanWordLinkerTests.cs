@@ -139,6 +139,32 @@ public class KoreanWordLinkerTests
         Assert.Equal(before, await learner.Snapshot());
     }
 
+    [Fact]
+    public async Task SavedLemma_ResolvesInflectedTokens_AndAggregatesOccurrences_WithoutRewritingSavedTerm()
+    {
+        const string content = "책이 책은 책도 다 값비싼 책을.";
+        await using var learner = await Learner.Create(content,
+            (41, "책", 3, "book meaning"));
+        var before = await learner.Snapshot();
+
+        await WordLinker.LinkAsync(learner.Context, 1, content, 1, learner.UserId);
+
+        // The text contains:
+        // - "책이", "책은", "책도", "책을" -> all resolve to saved lemma "책" (id 41)
+        // - "다" -> new word (id 1 or next)
+        // - "값비싼" -> new word (id 2 or next)
+        var bookLink = await learner.Context.TextWords.SingleAsync(tw => tw.WordId == 41);
+        Assert.Equal(4, bookLink.OccurrenceCount); // 4 inflected occurrences of "책"
+        var savedBookWord = await learner.Context.Words.SingleAsync(w => w.WordId == 41);
+        Assert.Equal("책", savedBookWord.Term);
+        Assert.Equal(3, savedBookWord.Status);
+
+        // WordLinker version must remain 3
+        var text = await learner.Context.Texts.SingleAsync(t => t.TextId == 1);
+        Assert.Equal(WordLinker.CurrentTokenizerVersion, text.WordLinkingTokenizerVersion);
+        Assert.Equal(3, WordLinker.CurrentTokenizerVersion);
+    }
+
     private sealed class Learner(SqliteConnection connection, AppDbContext context, Guid userId, int[] protectedWordIds) : IAsyncDisposable
     {
         public AppDbContext Context => context;

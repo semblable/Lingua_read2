@@ -145,6 +145,14 @@ namespace LinguaReadApi.Services.Tokenization
                     foreach (var term in uniqueWords)
                     {
                         var resolved = korean.Resolve(term);
+                        if (resolved == null)
+                        {
+                            var analysis = KoreanLookup.AnalyzeKoreanToken(term);
+                            if (analysis != null)
+                            {
+                                resolved = korean.Resolve(analysis.Lemma);
+                            }
+                        }
                         if (resolved != null) existingWords[term] = resolved;
                     }
                 }
@@ -156,6 +164,14 @@ namespace LinguaReadApi.Services.Tokenization
                     if (!existingWords.ContainsKey(wordTerm))
                     {
                         var pendingAlias = korean?.Resolve(wordTerm);
+                        if (pendingAlias == null && korean != null)
+                        {
+                            var analysis = KoreanLookup.AnalyzeKoreanToken(wordTerm);
+                            if (analysis != null)
+                            {
+                                pendingAlias = korean.Resolve(analysis.Lemma);
+                            }
+                        }
                         if (pendingAlias != null) { existingWords[wordTerm] = pendingAlias; continue; }
                         if (korean?.ContainsExact(wordTerm) == true)
                             throw new InvalidOperationException("Ambiguous saved Korean terms share this lookup key. Preserve and resolve the records before linking this text.");

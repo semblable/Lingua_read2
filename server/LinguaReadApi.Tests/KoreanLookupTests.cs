@@ -148,4 +148,177 @@ public class KoreanLookupTests
     [InlineData(null, false)]
     public void LanguageGate_OnlyAcceptsKorean(string? code, bool expected) =>
         Assert.Equal(expected, KoreanLookup.IsKoreanLanguageCode(code));
+
+    [Fact]
+    public void Batchim_Calculation_And_Check()
+    {
+        Assert.True(KoreanLookup.HasBatchim('책'));
+        Assert.Equal(1, KoreanLookup.GetBatchim('책')); // ㄱ
+        Assert.False(KoreanLookup.HasBatchim('가'));
+        Assert.Equal(0, KoreanLookup.GetBatchim('가'));
+        Assert.True(KoreanLookup.HasBatchim('물'));
+        Assert.Equal(8, KoreanLookup.GetBatchim('물')); // ㄹ
+        Assert.False(KoreanLookup.HasBatchim('A'));
+        Assert.Equal(0, KoreanLookup.GetBatchim('A'));
+    }
+
+    [Fact]
+    public void Case_ko01_DecomposesJosa_AndLeavesVerbsIntact()
+    {
+        var teacher = KoreanLookup.AnalyzeKoreanToken("선생님께서");
+        Assert.NotNull(teacher);
+        Assert.Equal("선생님", teacher.Lemma);
+        Assert.Equal("께서", teacher.Particle);
+        Assert.Equal("Honorific Subject Marker", teacher.ParticleType);
+
+        var students = KoreanLookup.AnalyzeKoreanToken("학생들에게");
+        Assert.NotNull(students);
+        Assert.Equal("학생", students.Lemma);
+        Assert.Equal("들에게", students.Particle);
+        Assert.Equal("Plural + Dative Marker", students.ParticleType);
+
+        var book = KoreanLookup.AnalyzeKoreanToken("책을");
+        Assert.NotNull(book);
+        Assert.Equal("책", book.Lemma);
+        Assert.Equal("을", book.Particle);
+        Assert.Equal("Object Marker", book.ParticleType);
+
+        Assert.Null(KoreanLookup.AnalyzeKoreanToken("주셨습니다"));
+        Assert.Null(KoreanLookup.AnalyzeKoreanToken("한국어"));
+    }
+
+    [Fact]
+    public void Case_ko02_DecomposesMarkers_AndCopula()
+    {
+        var bookSubj = KoreanLookup.AnalyzeKoreanToken("책이");
+        Assert.NotNull(bookSubj);
+        Assert.Equal(("책", "이", "Subject Marker"), (bookSubj.Lemma, bookSubj.Particle, bookSubj.ParticleType));
+
+        var bookTopic = KoreanLookup.AnalyzeKoreanToken("책은");
+        Assert.NotNull(bookTopic);
+        Assert.Equal(("책", "은", "Topic Marker"), (bookTopic.Lemma, bookTopic.Particle, bookTopic.ParticleType));
+
+        var bookAdd = KoreanLookup.AnalyzeKoreanToken("책도");
+        Assert.NotNull(bookAdd);
+        Assert.Equal(("책", "도", "Additive Marker"), (bookAdd.Lemma, bookAdd.Particle, bookAdd.ParticleType));
+
+        var oldTextCopula = KoreanLookup.AnalyzeKoreanToken("옛글이다");
+        Assert.NotNull(oldTextCopula);
+        Assert.Equal(("옛글", "이다", "Copula"), (oldTextCopula.Lemma, oldTextCopula.Particle, oldTextCopula.ParticleType));
+
+        Assert.Null(KoreanLookup.AnalyzeKoreanToken("값비싼"));
+        Assert.Null(KoreanLookup.AnalyzeKoreanToken("다"));
+    }
+
+    [Fact]
+    public void StrictBatchimGating_EnforcesPhonotactics()
+    {
+        // -을 vs -를
+        Assert.Equal("책", KoreanLookup.AnalyzeKoreanToken("책을")?.Lemma);
+        Assert.Equal("사과", KoreanLookup.AnalyzeKoreanToken("사과를")?.Lemma);
+        Assert.Null(KoreanLookup.AnalyzeKoreanToken("책를"));
+        Assert.Null(KoreanLookup.AnalyzeKoreanToken("사과을"));
+
+        // -이 vs -가
+        Assert.Equal("책", KoreanLookup.AnalyzeKoreanToken("책이")?.Lemma);
+        Assert.Equal("사과", KoreanLookup.AnalyzeKoreanToken("사과가")?.Lemma);
+        Assert.Null(KoreanLookup.AnalyzeKoreanToken("책가"));
+        Assert.Null(KoreanLookup.AnalyzeKoreanToken("사과이"));
+
+        // -은 vs -는
+        Assert.Equal("책", KoreanLookup.AnalyzeKoreanToken("책은")?.Lemma);
+        Assert.Equal("사과", KoreanLookup.AnalyzeKoreanToken("사과는")?.Lemma);
+        Assert.Null(KoreanLookup.AnalyzeKoreanToken("책는"));
+        Assert.Null(KoreanLookup.AnalyzeKoreanToken("사과은"));
+
+        // -과 vs -와
+        Assert.Equal("책", KoreanLookup.AnalyzeKoreanToken("책과")?.Lemma);
+        Assert.Equal("사과", KoreanLookup.AnalyzeKoreanToken("사과와")?.Lemma);
+        Assert.Null(KoreanLookup.AnalyzeKoreanToken("책와"));
+        Assert.Null(KoreanLookup.AnalyzeKoreanToken("사과과"));
+
+        // -으로 vs -로
+        Assert.Equal(("책", "으로"), (KoreanLookup.AnalyzeKoreanToken("책으로")?.Lemma, KoreanLookup.AnalyzeKoreanToken("책으로")?.Particle));
+        Assert.Equal(("손", "으로"), (KoreanLookup.AnalyzeKoreanToken("손으로")?.Lemma, KoreanLookup.AnalyzeKoreanToken("손으로")?.Particle));
+        Assert.Equal(("물", "로"), (KoreanLookup.AnalyzeKoreanToken("물로")?.Lemma, KoreanLookup.AnalyzeKoreanToken("물로")?.Particle));
+        Assert.Equal(("사과", "로"), (KoreanLookup.AnalyzeKoreanToken("사과로")?.Lemma, KoreanLookup.AnalyzeKoreanToken("사과로")?.Particle));
+        Assert.Null(KoreanLookup.AnalyzeKoreanToken("책로"));
+        Assert.Null(KoreanLookup.AnalyzeKoreanToken("물으로"));
+
+        // -이에요 vs -예요
+        Assert.Equal(("책", "이에요"), (KoreanLookup.AnalyzeKoreanToken("책이에요")?.Lemma, KoreanLookup.AnalyzeKoreanToken("책이에요")?.Particle));
+        Assert.Equal(("사과", "예요"), (KoreanLookup.AnalyzeKoreanToken("사과예요")?.Lemma, KoreanLookup.AnalyzeKoreanToken("사과예요")?.Particle));
+        Assert.Null(KoreanLookup.AnalyzeKoreanToken("책예요"));
+        Assert.Null(KoreanLookup.AnalyzeKoreanToken("사과이에요"));
+    }
+
+    [Fact]
+    public void OneSyllableWhitelist_AllowsKnownNouns_AndProtectsFalsePositives()
+    {
+        foreach (var noun in new[] { "책", "집", "밥", "물", "눈", "손", "발", "꽃", "돈", "방", "문", "산", "강", "달", "별", "해", "돌", "새" })
+        {
+            var res = KoreanLookup.AnalyzeKoreanToken($"{noun}도");
+            Assert.NotNull(res);
+            Assert.Equal(noun, res.Lemma);
+            Assert.Equal("도", res.Particle);
+        }
+
+        Assert.Null(KoreanLookup.AnalyzeKoreanToken("오이"));
+        Assert.Null(KoreanLookup.AnalyzeKoreanToken("포도"));
+        Assert.Null(KoreanLookup.AnalyzeKoreanToken("사자"));
+        Assert.Null(KoreanLookup.AnalyzeKoreanToken("지도"));
+    }
+
+    [Fact]
+    public void ThreePlusSyllableGuards_ProtectBoundSuffixesAndLoanwords()
+    {
+        Assert.Null(KoreanLookup.AnalyzeKoreanToken("고속도로"));
+        Assert.Null(KoreanLookup.AnalyzeKoreanToken("민주주의"));
+        Assert.Null(KoreanLookup.AnalyzeKoreanToken("선거제도"));
+        Assert.Null(KoreanLookup.AnalyzeKoreanToken("한반도"));
+        Assert.Null(KoreanLookup.AnalyzeKoreanToken("바나나"));
+        Assert.Null(KoreanLookup.AnalyzeKoreanToken("코로나"));
+        Assert.Null(KoreanLookup.AnalyzeKoreanToken("정치가"));
+        Assert.Null(KoreanLookup.AnalyzeKoreanToken("만화가"));
+
+        var highway = KoreanLookup.AnalyzeKoreanToken("고속도로로");
+        Assert.NotNull(highway);
+        Assert.Equal(("고속도로", "로", "Instrumental Marker"), (highway.Lemma, highway.Particle, highway.ParticleType));
+
+        var democracy = KoreanLookup.AnalyzeKoreanToken("민주주의를");
+        Assert.NotNull(democracy);
+        Assert.Equal(("민주주의", "를", "Object Marker"), (democracy.Lemma, democracy.Particle, democracy.ParticleType));
+
+        var politician = KoreanLookup.AnalyzeKoreanToken("정치가가");
+        Assert.NotNull(politician);
+        Assert.Equal(("정치가", "가", "Subject Marker"), (politician.Lemma, politician.Particle, politician.ParticleType));
+
+        var banana = KoreanLookup.AnalyzeKoreanToken("바나나를");
+        Assert.NotNull(banana);
+        Assert.Equal(("바나나", "를", "Object Marker"), (banana.Lemma, banana.Particle, banana.ParticleType));
+    }
+
+    [Fact]
+    public void StackedParticles_DecomposeRightToLeft()
+    {
+        var school = KoreanLookup.AnalyzeKoreanToken("학교에서는");
+        Assert.NotNull(school);
+        Assert.Equal(("학교", "에서는", "Locative + Topic Marker"), (school.Lemma, school.Particle, school.ParticleType));
+
+        var teacher = KoreanLookup.AnalyzeKoreanToken("선생님께서는");
+        Assert.NotNull(teacher);
+        Assert.Equal(("선생님", "께서는", "Honorific Subject + Topic Marker"), (teacher.Lemma, teacher.Particle, teacher.ParticleType));
+
+        var friend = KoreanLookup.AnalyzeKoreanToken("친구에게도");
+        Assert.NotNull(friend);
+        Assert.Equal(("친구", "에게도", "Dative + Additive Marker"), (friend.Lemma, friend.Particle, friend.ParticleType));
+
+        var studentsCopula = KoreanLookup.AnalyzeKoreanToken("학생들입니다");
+        Assert.NotNull(studentsCopula);
+        Assert.Equal(("학생", "들입니다", "Plural + Copula"), (studentsCopula.Lemma, studentsCopula.Particle, studentsCopula.ParticleType));
+
+        var studentsPlural = KoreanLookup.AnalyzeKoreanToken("학생들");
+        Assert.NotNull(studentsPlural);
+        Assert.Equal(("학생", "들", "Plural Marker"), (studentsPlural.Lemma, studentsPlural.Particle, studentsPlural.ParticleType));
+    }
 }

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Button, Alert, Form, Spinner } from 'react-bootstrap';
+import { Button, Alert, Form, Spinner, Badge } from 'react-bootstrap';
 import type { LanguageConfig } from '../../utils/readerText';
 import type { DisplayedWord } from '../../types/displayedWord';
 import { WORD_STATUS_LABELS, WORD_STATUS_VALUES, type WordStatus } from '../../types/wordStatus';
@@ -51,6 +51,7 @@ export type WordInfoActions = {
   onSaveWord: (status: number) => void | Promise<void>;
   // Saves the box as it is, keeping the status (New for an untracked word); same as Enter.
   onSaveTranslation?: () => void;
+  onSaveExactForm?: () => void;
   onMineSentence: () => void;
   processingWord: boolean;
   onReadingCredit?: (wordId: number | string) => void;
@@ -147,7 +148,14 @@ const WordInfoPanel = React.memo(({
   return (
     <div className="word-info-panel">
       <div className="word-info-header">
-        <h5 className="word-info-term" dir={language.languageConfig?.rightToLeft === undefined ? 'auto' : language.languageConfig.rightToLeft ? 'rtl' : 'ltr'} lang={language.languageConfig?.code || undefined}>{displayedWord.term}</h5>
+        <div className="d-flex align-items-center flex-wrap gap-2">
+          <h5 className="word-info-term mb-0" dir={language.languageConfig?.rightToLeft === undefined ? 'auto' : language.languageConfig.rightToLeft ? 'rtl' : 'ltr'} lang={language.languageConfig?.code || undefined}>{displayedWord.term}</h5>
+          {displayedWord.particleBadge != null && typeof displayedWord.particleBadge === 'string' && (
+            <Badge bg="secondary" className="word-info-particle-badge" data-testid="korean-particle-badge">
+              {displayedWord.particleBadge}
+            </Badge>
+          )}
+        </div>
         <div className="word-info-meta">
           <span className="word-info-status-pill" data-status={status}>{statusLabel(status)}</span>
           {saveSuccess && <span className="word-info-saved" role="status">✓ Saved</span>}
@@ -238,6 +246,19 @@ const WordInfoPanel = React.memo(({
           Ignore
         </Button>
       </div>
+      {Boolean(displayedWord.surface && displayedWord.surface !== displayedWord.term && actions.onSaveExactForm) && (
+        <div className="mt-1 word-info-exact-row">
+          <Button
+            variant="link"
+            size="sm"
+            className="p-0 text-muted text-decoration-none word-info-save-exact-btn"
+            onClick={actions.onSaveExactForm}
+            disabled={statusButtonsDisabled}
+          >
+            Save exact form &apos;{String(displayedWord.surface)}&apos;
+          </Button>
+        </div>
+      )}
       <div className="d-flex flex-wrap gap-1 mt-2 word-info-actions">
         {actions.onRetranslateWithContext && (
           <Button

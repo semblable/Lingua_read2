@@ -4,6 +4,8 @@
 export type DisplayedWord = {
   wordId?: number | string;
   term?: string;
+  surface?: string;
+  particleBadge?: string;
   translation?: string;
   status?: number;
   isNew?: boolean;

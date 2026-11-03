@@ -307,4 +307,70 @@ describe('Korean reader saved vocabulary identity', () => {
     expect(createWord).not.toHaveBeenCalled();
     expect(rows).toEqual(preserved);
   });
+
+  test('saving base lemma propagates status highlight to inflected particle forms in the reader', async () => {
+    const rows = [{ wordId: 42, term: '책', status: 3, translation: 'book' }];
+    seedReader('책이, 책은, 책도, 책을.', rows);
+    renderReader();
+
+    // All inflected forms inherit status 3 from lemma '책'
+    await waitFor(() => expect(screen.getByText('책이')).toHaveClass('word-status-3'));
+    expect(screen.getByText('책은')).toHaveClass('word-status-3');
+    expect(screen.getByText('책도')).toHaveClass('word-status-3');
+    expect(screen.getByText('책을')).toHaveClass('word-status-3');
+
+    // Clicking an inflected form analyzes the particle and displays definition for base lemma
+    fireEvent.click(screen.getByText('책을'));
+    expect(screen.getByRole('textbox')).toHaveValue('book');
+    expect(screen.getByTestId('korean-particle-badge')).toHaveTextContent('+ 을 (Object Marker)');
+
+    // Saving Status 4 updates the base lemma row, not creating a duplicate
+    fireEvent.click(screen.getByRole('button', { name: '4' }));
+    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(42, 4, 'book'));
+    expect(createWord).not.toHaveBeenCalled();
+    expect(rows[0].status).toBe(4);
+  });
+
+  test('saving exact form creates a separate Word record for the inflected token', async () => {
+    const rows = [{ wordId: 42, term: '책', status: 3, translation: 'book' }];
+    createWord.mockImplementation(async (textId, term, status, translation) => {
+      const newRow = { wordId: 99, term, status, translation };
+      rows.push(newRow);
+      return structuredClone(newRow);
+    });
+    seedReader('책을.', rows);
+    renderReader();
+
+    await waitFor(() => expect(screen.getByText('책을')).toHaveClass('word-status-3'));
+    fireEvent.click(screen.getByText('책을'));
+
+    // Option to save exact form is available
+    const exactBtn = screen.getByRole('button', { name: /Save exact form '책을'/i });
+    expect(exactBtn).toBeInTheDocument();
+
+    fireEvent.click(exactBtn);
+    await waitFor(() => expect(createWord).toHaveBeenCalledWith(1, '책을', 3, 'book', expect.anything()));
+  });
+
+  test('clicking unseen inflected word analyzes particle and saves base lemma to deck', async () => {
+    const rows = [];
+    createWord.mockImplementation(async (textId, term, status, translation) => {
+      const newRow = { wordId: 99, term, status, translation };
+      rows.push(newRow);
+      return structuredClone(newRow);
+    });
+    seedReader('선생님께서 책을.', rows);
+    renderReader();
+
+    await waitFor(() => expect(screen.getByText('책을')).toHaveClass('word-status-0'));
+    fireEvent.click(screen.getByText('책을'));
+
+    expect(screen.getByTestId('korean-particle-badge')).toHaveTextContent('+ 을 (Object Marker)');
+    // Default save saves base lemma '책'
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'book' } });
+    fireEvent.click(screen.getByRole('button', { name: '2' }));
+
+    await waitFor(() => expect(createWord).toHaveBeenCalledWith(1, '책', 2, 'book', expect.anything()));
+    expect(rows.some(r => r.term === '책')).toBe(true);
+  });
 });

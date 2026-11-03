@@ -131,12 +131,34 @@ describe('Indic and RTL Script Normalization & Diacritic Insensitive Lookup', ()
       const input2 = 'הדו"ח של צה"ל';
       const words2 = wordsOf(input2, he);
       expect(words2).toEqual(['הדו"ח', 'של', 'צה"ל']);
-      expect(lookupKeysOf(input2, he)).toEqual(['הדו"ח', 'של', 'צה"ל']);
+      expect(lookupKeysOf(input2, he)).toEqual(['הדו״ח', 'של', 'צה״ל']);
+      expect(lowercaseLookupTerm('צה"ל', 'he')).toBe('צה״ל');
+      expect(lowercaseLookupTerm('צה״ל', 'he')).toBe('צה״ל');
+      expect(lowercaseLookupTerm("תנ'ך", 'he')).toBe('תנ׳ך');
+      expect(lowercaseLookupTerm('תנ׳ך', 'he')).toBe('תנ׳ך');
 
       // Hebrew Geresh inside acronym
       const input3 = 'תנ״ך וגב׳ כהן';
       const words3 = wordsOf(input3, he);
       expect(words3[0]).toBe('תנ״ך');
+    });
+
+    it('preserves Indic vowel marks (never strips Mn globally)', () => {
+      expect(stripLookupDiacritics('किताब', 'hi')).toBe('किताब');
+      expect(lowercaseLookupTerm('किताब', 'hi')).toBe('किताब');
+      expect(lowercaseLookupTerm('বই', 'bn')).toBe('বই');
+      expect(lowercaseLookupTerm('தமிழ்', 'ta')).toBe('தமிழ்');
+    });
+
+    it('trims leading and trailing ZWNJ/ZWJ while preserving internal joiners', () => {
+      expect(lowercaseLookupTerm('می\u200Cروم', 'fa')).toBe('می\u200Cروم');
+      expect(lowercaseLookupTerm('র\u200D্যাব', 'bn')).toBe('র\u200D্যাব');
+
+      expect(lowercaseLookupTerm('\u200Cکتاب\u200C', 'fa')).toBe('کتاب');
+      expect(lowercaseLookupTerm('\u200Dবই\u200D', 'bn')).toBe('বই');
+
+      const words = wordsOf('کتاب\u200C نو', { code: 'fa', wordCharacters: '\\p{L}\\p{M}\\u200C\\u200D', characterSubstitutions: '' });
+      expect(words[0]).toBe('کتاب');
     });
 
     it('ur-01: preserves ZWNJ', () => {

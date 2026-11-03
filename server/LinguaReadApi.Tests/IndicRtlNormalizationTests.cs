@@ -182,12 +182,38 @@ public class IndicRtlNormalizationTests
         const string input2 = "הדו\"ח של צה\"ל";
         var words2 = WordsOf(input2, He);
         Assert.Equal(new[] { "הדו\"ח", "של", "צה\"ל" }, words2);
-        Assert.Equal(new[] { "הדו\"ח", "של", "צה\"ל" }, LookupKeysOf(input2, He));
+        Assert.Equal(new[] { "הדו״ח", "של", "צה״ל" }, LookupKeysOf(input2, He));
+        Assert.Equal("צה״ל", Tokenizer.NormalizeKey("צה\"ל", He));
+        Assert.Equal("צה״ל", Tokenizer.NormalizeKey("צה״ל", He));
+        Assert.Equal("תנ׳ך", Tokenizer.NormalizeKey("תנ'ך", He));
+        Assert.Equal("תנ׳ך", Tokenizer.NormalizeKey("תנ׳ך", He));
 
         // Hebrew Geresh inside acronym
         const string input3 = "תנ״ך וגב׳ כהן";
         var words3 = WordsOf(input3, He);
         Assert.Equal("תנ״ך", words3[0]);
+    }
+
+    [Fact]
+    public void PreservesIndicVowelMarks_NeverStripsMnGlobally()
+    {
+        Assert.Equal("किताब", Tokenizer.StripLookupDiacritics("किताब", "hi"));
+        Assert.Equal("किताब", Tokenizer.NormalizeKey("किताब", Hi));
+        Assert.Equal("বই", Tokenizer.NormalizeKey("বই", Bn));
+        Assert.Equal("தமிழ்", Tokenizer.NormalizeKey("தமிழ்", Ta));
+    }
+
+    [Fact]
+    public void TrimsLeadingAndTrailingZwnjZwj_WhilePreservingInternal()
+    {
+        Assert.Equal("می\u200Cروم", Tokenizer.NormalizeKey("می\u200Cروم", Fa));
+        Assert.Equal("র\u200D্যাব", Tokenizer.NormalizeKey("র\u200D্যাব", Bn));
+
+        Assert.Equal("کتاب", Tokenizer.NormalizeKey("\u200Cکتاب\u200C", Fa));
+        Assert.Equal("বই", Tokenizer.NormalizeKey("\u200Dবই\u200D", Bn));
+
+        var words = WordsOf("کتاب\u200C نو", new Language { Code = "fa", WordCharacters = @"\p{L}\p{M}\u200C\u200D" });
+        Assert.Equal("کتاب", words[0]);
     }
 
     [Fact]

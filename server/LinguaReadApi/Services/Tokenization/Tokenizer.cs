@@ -70,7 +70,7 @@ namespace LinguaReadApi.Services.Tokenization
             @"(?:(?=\p{L})[\u0370-\u03FF\u1F00-\u1FFF])+\p{M}*|(?:[\uD800-\uDBFF][\uDC00-\uDFFF]|\P{M})\p{M}+",
             RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
-        private static readonly Regex ArabicDiacriticsRegex = new(@"[\u0640\u064B-\u065F\u0670]", RegexOptions.Compiled);
+        private static readonly Regex ArabicDiacriticsRegex = new(@"[\u0640\u064B-\u065F\u0670\u06D6-\u06ED]", RegexOptions.Compiled);
         private static readonly Regex HebrewDiacriticsRegex = new(@"[\u0591-\u05BD\u05BF\u05C1-\u05C2\u05C4-\u05C5\u05C7]", RegexOptions.Compiled);
         private static readonly Regex CyrillicStressRegex = new(@"\u0301", RegexOptions.Compiled);
         private static readonly Regex LithuanianAccentsRegex = new(@"[\u0300\u0301\u0303]", RegexOptions.Compiled);
@@ -282,6 +282,10 @@ namespace LinguaReadApi.Services.Tokenization
                         }
                         break;
                     }
+                    while (i > start + 1 && (processed[i - 1] is '\u200c' or '\u200d'))
+                    {
+                        i--;
+                    }
                     tokens.Add(new Token(processed.Substring(start, i - start), start, i, IsWord: true));
                 }
                 else
@@ -326,7 +330,7 @@ namespace LinguaReadApi.Services.Tokenization
         public static string NormalizeKey(string text, Language? language)
         {
             if (string.IsNullOrEmpty(text)) return text;
-            var normalized = NormalizeText(text, language).Trim();
+            var normalized = NormalizeText(text, language).Trim().Trim('\u200c', '\u200d');
             var stripped = StripLookupDiacritics(normalized, language?.Code);
             return LowercaseKey(stripped, language);
         }
@@ -346,7 +350,7 @@ namespace LinguaReadApi.Services.Tokenization
             return baseLang switch
             {
                 "ar" or "fa" or "ur" => ArabicDiacriticsRegex.Replace(text, string.Empty),
-                "he" => HebrewDiacriticsRegex.Replace(text, string.Empty),
+                "he" => HebrewDiacriticsRegex.Replace(text, string.Empty).Replace('"', '״').Replace('\'', '׳'),
                 "ru" or "uk" => CyrillicStressRegex.Replace(text, string.Empty),
                 "lt" => LithuanianAccentsRegex.Replace(text, string.Empty),
                 _ => text

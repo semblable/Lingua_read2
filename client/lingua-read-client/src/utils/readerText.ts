@@ -473,7 +473,7 @@ const DEFAULT_WORD_CLASS = DEFAULT_LANGUAGE_WORD_CHARACTERS;
  * Both inputs are already display tokens or stored terms, so do not alter spelling.
  */
 // eslint-disable-next-line no-misleading-character-class
-const ARABIC_DIACRITICS_REGEX = /[\u0640\u064B-\u065F\u0670]/g;
+const ARABIC_DIACRITICS_REGEX = /[\u0640\u064B-\u065F\u0670\u06D6-\u06ED]/g;
 const HEBREW_DIACRITICS_REGEX = /[\u0591-\u05BD\u05BF\u05C1-\u05C2\u05C4-\u05C5\u05C7]/g;
 const CYRILLIC_STRESS_REGEX = /\u0301/g;
 const LITHUANIAN_ACCENTS_REGEX = /[\u0300\u0301\u0303]/g;
@@ -495,7 +495,7 @@ export const stripLookupDiacritics = (text: string, languageCode?: string | null
     case 'ur':
       return text.replace(ARABIC_DIACRITICS_REGEX, '');
     case 'he':
-      return text.replace(HEBREW_DIACRITICS_REGEX, '');
+      return text.replace(HEBREW_DIACRITICS_REGEX, '').replace(/"/g, '״').replace(/'/g, '׳');
     case 'ru':
     case 'uk':
       return text.replace(CYRILLIC_STRESS_REGEX, '');
@@ -508,7 +508,8 @@ export const stripLookupDiacritics = (text: string, languageCode?: string | null
 
 export const lowercaseLookupTerm = (term: string, languageCode?: string | null): string => {
   const base = (languageCode || '').trim().toLowerCase().replace(/_/g, '-').split('-')[0];
-  const stripped = stripLookupDiacritics(term, languageCode);
+  const clean = (term || '').trim().replace(/^[\u200C\u200D]+|[\u200C\u200D]+$/g, '');
+  const stripped = stripLookupDiacritics(clean, languageCode);
   return base === 'tr' ? stripped.toLocaleLowerCase('tr') : stripped.toLowerCase();
 };
 
@@ -661,6 +662,10 @@ export const consumeWordAt = (
       continue;
     }
     break;
+  }
+  while (word.length > 1 && (word.endsWith('\u200C') || word.endsWith('\u200D'))) {
+    word = word.slice(0, -1);
+    i--;
   }
   return { text: word, end: i };
 };

@@ -70,6 +70,11 @@ namespace LinguaReadApi.Services.Tokenization
             @"(?:(?=\p{L})[\u0370-\u03FF\u1F00-\u1FFF])+\p{M}*|(?:[\uD800-\uDBFF][\uDC00-\uDFFF]|\P{M})\p{M}+",
             RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
+        private static readonly Regex ArabicDiacriticsRegex = new(@"[\u0640\u064B-\u065F\u0670]", RegexOptions.Compiled);
+        private static readonly Regex HebrewDiacriticsRegex = new(@"[\u0591-\u05BD\u05BF\u05C1-\u05C2\u05C4-\u05C5\u05C7]", RegexOptions.Compiled);
+        private static readonly Regex CyrillicStressRegex = new(@"\u0301", RegexOptions.Compiled);
+        private static readonly Regex LithuanianAccentsRegex = new(@"[\u0300\u0301\u0303]", RegexOptions.Compiled);
+
         private static readonly ConcurrentDictionary<string, Regex> _regexCache = new();
         private static readonly ConcurrentDictionary<string, TextInfo> _textInfoCache = new();
         private static readonly ConcurrentDictionary<string, IReadOnlyList<(string Old, string New)>> _substitutionCache = new();
@@ -299,13 +304,15 @@ namespace LinguaReadApi.Services.Tokenization
         public static IEnumerable<string> ExtractLookupKeys(string? rawContent, Language? language)
         {
             var result = Tokenize(rawContent, language);
-            var textInfo = GetTextInfo(language?.Code);
+
             foreach (var tok in result.Tokens)
             {
                 if (!tok.IsWord) continue;
                 var trimmed = tok.Text.Trim();
                 if (trimmed.Length == 0) continue;
-                yield return textInfo.ToLower(trimmed);
+                var key = NormalizeKey(trimmed, language);
+                if (key.Length == 0) continue;
+                yield return key;
             }
         }
 
@@ -319,7 +326,31 @@ namespace LinguaReadApi.Services.Tokenization
         public static string NormalizeKey(string text, Language? language)
         {
             if (string.IsNullOrEmpty(text)) return text;
-            return LowercaseKey(NormalizeText(text, language).Trim(), language);
+            var normalized = NormalizeText(text, language).Trim();
+            var stripped = StripLookupDiacritics(normalized, language?.Code);
+            return LowercaseKey(stripped, language);
+        }
+
+        /// <summary>
+        /// Strip language-specific diacritics, cantillation, or tatweel for dictionary lookup:
+        /// - Arabic (ar), Persian (fa), Urdu (ur): Tatweel (\u0640) and Tashkeel/Harakat/Quranic marks [\u064B-\u065F\u0670].
+        /// - Hebrew (he): Niqqud and cantillation [\u0591-\u05BD\u05BF\u05C1-\u05C2\u05C4-\u05C5\u05C7].
+        /// - Russian (ru) and Ukrainian (uk): combining acute stress mark \u0301.
+        /// - Lithuanian (lt): combining accents [\u0300\u0301\u0303].
+        /// </summary>
+        public static string StripLookupDiacritics(string text, string? languageCode)
+        {
+            if (string.IsNullOrEmpty(text) || string.IsNullOrEmpty(languageCode)) return text;
+            var baseLang = languageCode.Trim().ToLowerInvariant().Replace('_', '-').Split('-')[0];
+            if (baseLang == "iw") baseLang = "he";
+            return baseLang switch
+            {
+                "ar" or "fa" or "ur" => ArabicDiacriticsRegex.Replace(text, string.Empty),
+                "he" => HebrewDiacriticsRegex.Replace(text, string.Empty),
+                "ru" or "uk" => CyrillicStressRegex.Replace(text, string.Empty),
+                "lt" => LithuanianAccentsRegex.Replace(text, string.Empty),
+                _ => text
+            };
         }
 
         /// <summary>
@@ -341,10 +372,11 @@ namespace LinguaReadApi.Services.Tokenization
         {
             // Span-based IsMatch avoids per-character string allocations
             // in the hot tokenization loop. Available on .NET 7+.
-            return coreRegex.IsMatch(span.Slice(index, 1)) || ThaiSegmenter.IsThaiDigit(span[index]);
+            return coreRegex.IsMatch(span.Slice(index, 1)) || ThaiSegmenter.IsThaiDigit(span[index]) || span[index] is '\u200c' or '\u200d';
         }
 
-        private static bool IsConnector(char ch) => ch == Apostrophe || ch == Hyphen || ch == MiddleDot;
+        private static bool IsConnector(char ch) =>
+            ch == Apostrophe || ch == Hyphen || ch == MiddleDot || ch == '\u05f4' || ch == '\u05f3' || ch == '"';
 
         private static TextInfo GetTextInfo(string? code)
         {

@@ -472,9 +472,43 @@ const DEFAULT_WORD_CLASS = DEFAULT_LANGUAGE_WORD_CHARACTERS;
  * exists; this is not a universal Unicode normalization/case-folding contract.
  * Both inputs are already display tokens or stored terms, so do not alter spelling.
  */
+const ARABIC_DIACRITICS_REGEX = /[\u0640\u064B-\u065F\u0670]/g;
+const HEBREW_DIACRITICS_REGEX = /[\u0591-\u05BD\u05BF\u05C1-\u05C2\u05C4-\u05C5\u05C7]/g;
+const CYRILLIC_STRESS_REGEX = /\u0301/g;
+const LITHUANIAN_ACCENTS_REGEX = /[\u0300\u0301\u0303]/g;
+
+/**
+ * Strip language-specific diacritics, cantillation, or tatweel for dictionary lookup:
+ * - Arabic (ar), Persian (fa), Urdu (ur): Tatweel (\u0640) and Tashkeel/Harakat/Quranic marks [\u064B-\u065F\u0670].
+ * - Hebrew (he): Niqqud and cantillation [\u0591-\u05BD\u05BF\u05C1-\u05C2\u05C4-\u05C5\u05C7].
+ * - Russian (ru) and Ukrainian (uk): combining acute stress mark \u0301.
+ * - Lithuanian (lt): combining accents [\u0300\u0301\u0303].
+ */
+export const stripLookupDiacritics = (text: string, languageCode?: string | null): string => {
+  if (!text || !languageCode) return text || '';
+  const base = languageCode.trim().toLowerCase().replace(/_/g, '-').split('-')[0];
+  const lang = base === 'iw' ? 'he' : base;
+  switch (lang) {
+    case 'ar':
+    case 'fa':
+    case 'ur':
+      return text.replace(ARABIC_DIACRITICS_REGEX, '');
+    case 'he':
+      return text.replace(HEBREW_DIACRITICS_REGEX, '');
+    case 'ru':
+    case 'uk':
+      return text.replace(CYRILLIC_STRESS_REGEX, '');
+    case 'lt':
+      return text.replace(LITHUANIAN_ACCENTS_REGEX, '');
+    default:
+      return text;
+  }
+};
+
 export const lowercaseLookupTerm = (term: string, languageCode?: string | null): string => {
   const base = (languageCode || '').trim().toLowerCase().replace(/_/g, '-').split('-')[0];
-  return base === 'tr' ? term.toLocaleLowerCase('tr') : term.toLowerCase();
+  const stripped = stripLookupDiacritics(term, languageCode);
+  return base === 'tr' ? stripped.toLocaleLowerCase('tr') : stripped.toLowerCase();
 };
 
 const wordRegexCache = new Map<string, RegExp>();
@@ -505,7 +539,7 @@ export const buildCoreWordRegex = (wordCharacters: string | null | undefined): R
 };
 
 const isCoreWordChar = (regex: RegExp, ch: string | undefined): boolean =>
-  !!ch && (regex.test(ch) || isThaiDigit(ch));
+  !!ch && (regex.test(ch) || isThaiDigit(ch) || ch === '\u200C' || ch === '\u200D');
 
 // A combining mark or format character (an emoji's variation selector, a
 // zero-width joiner) may continue a word but never start one: on its own it
@@ -514,7 +548,7 @@ const MARK_OR_FORMAT = /[\p{M}\p{Cf}]/u;
 const canStartWord = (regex: RegExp, ch: string | undefined): boolean =>
   isCoreWordChar(regex, ch) && !MARK_OR_FORMAT.test(ch as string);
 const isConnector = (ch: string): boolean =>
-  ch === APOSTROPHE || ch === HYPHEN || ch === MIDDLE_DOT;
+  ch === APOSTROPHE || ch === HYPHEN || ch === MIDDLE_DOT || ch === '\u05F4' || ch === '\u05F3' || ch === '"';
 
 type SegmenterWordEnds = ReadonlyMap<number, number> & { profile?: string };
 type MutableSegmenterWordEnds = Map<number, number> & { profile?: string };

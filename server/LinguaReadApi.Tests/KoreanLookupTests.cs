@@ -183,7 +183,12 @@ public class KoreanLookupTests
         Assert.Equal("을", book.Particle);
         Assert.Equal("Object Marker", book.ParticleType);
 
-        Assert.Null(KoreanLookup.AnalyzeKoreanToken("주셨습니다"));
+        var given = KoreanLookup.AnalyzeKoreanToken("주셨습니다");
+        Assert.NotNull(given);
+        Assert.Equal("주다", given.Lemma);
+        Assert.Equal("셨습니다", given.Particle);
+        Assert.Equal("Honorific Past Polite", given.ParticleType);
+
         Assert.Null(KoreanLookup.AnalyzeKoreanToken("한국어"));
     }
 
@@ -206,7 +211,12 @@ public class KoreanLookupTests
         Assert.NotNull(oldTextCopula);
         Assert.Equal(("옛글", "이다", "Copula"), (oldTextCopula.Lemma, oldTextCopula.Particle, oldTextCopula.ParticleType));
 
-        Assert.Null(KoreanLookup.AnalyzeKoreanToken("값비싼"));
+        var expensive = KoreanLookup.AnalyzeKoreanToken("값비싼");
+        Assert.NotNull(expensive);
+        Assert.Equal("값비싸다", expensive.Lemma);
+        Assert.Equal("ㄴ", expensive.Particle);
+        Assert.Equal("Modifier Form", expensive.ParticleType);
+
         Assert.Null(KoreanLookup.AnalyzeKoreanToken("다"));
     }
 
@@ -320,5 +330,243 @@ public class KoreanLookupTests
         var studentsPlural = KoreanLookup.AnalyzeKoreanToken("학생들");
         Assert.NotNull(studentsPlural);
         Assert.Equal(("학생", "들", "Plural Marker"), (studentsPlural.Lemma, studentsPlural.Particle, studentsPlural.ParticleType));
+    }
+
+    [Fact]
+    public void VerbDeconjugation_HonorificEndings()
+    {
+        Assert.Equal(("주다", "셨습니다", "Honorific Past Polite"), 
+            (KoreanLookup.AnalyzeKoreanToken("주셨습니다")?.Lemma, KoreanLookup.AnalyzeKoreanToken("주셨습니다")?.Particle, KoreanLookup.AnalyzeKoreanToken("주셨습니다")?.ParticleType));
+        Assert.Equal(("하다", "셨습니다", "Honorific Past Polite"),
+            (KoreanLookup.AnalyzeKoreanToken("하셨습니다")?.Lemma, KoreanLookup.AnalyzeKoreanToken("하셨습니다")?.Particle, KoreanLookup.AnalyzeKoreanToken("하셨습니다")?.ParticleType));
+        Assert.Equal(("가다", "셨습니다", "Honorific Past Polite"),
+            (KoreanLookup.AnalyzeKoreanToken("가셨습니다")?.Lemma, KoreanLookup.AnalyzeKoreanToken("가셨습니다")?.Particle, KoreanLookup.AnalyzeKoreanToken("가셨습니다")?.ParticleType));
+        Assert.Equal(("보다", "셨습니다", "Honorific Past Polite"),
+            (KoreanLookup.AnalyzeKoreanToken("보셨습니다")?.Lemma, KoreanLookup.AnalyzeKoreanToken("보셨습니다")?.Particle, KoreanLookup.AnalyzeKoreanToken("보셨습니다")?.ParticleType));
+        Assert.Equal(("하다", "시었습니다", "Honorific Past Polite"),
+            (KoreanLookup.AnalyzeKoreanToken("하시었습니다")?.Lemma, KoreanLookup.AnalyzeKoreanToken("하시었습니다")?.Particle, KoreanLookup.AnalyzeKoreanToken("하시었습니다")?.ParticleType));
+        Assert.Equal(("주다", "셨어요", "Honorific Past Polite"),
+            (KoreanLookup.AnalyzeKoreanToken("주셨어요")?.Lemma, KoreanLookup.AnalyzeKoreanToken("주셨어요")?.Particle, KoreanLookup.AnalyzeKoreanToken("주셨어요")?.ParticleType));
+        Assert.Equal(("가다", "세요", "Honorific Polite"),
+            (KoreanLookup.AnalyzeKoreanToken("가세요")?.Lemma, KoreanLookup.AnalyzeKoreanToken("가세요")?.Particle, KoreanLookup.AnalyzeKoreanToken("가세요")?.ParticleType));
+        Assert.Equal(("주다", "세요", "Honorific Polite"),
+            (KoreanLookup.AnalyzeKoreanToken("주세요")?.Lemma, KoreanLookup.AnalyzeKoreanToken("주세요")?.Particle, KoreanLookup.AnalyzeKoreanToken("주세요")?.ParticleType));
+        Assert.Equal(("먹다", "으세요", "Honorific Polite"),
+            (KoreanLookup.AnalyzeKoreanToken("먹으세요")?.Lemma, KoreanLookup.AnalyzeKoreanToken("먹으세요")?.Particle, KoreanLookup.AnalyzeKoreanToken("먹으세요")?.ParticleType));
+        Assert.Equal(("가다", "셔요", "Honorific Polite"),
+            (KoreanLookup.AnalyzeKoreanToken("가셔요")?.Lemma, KoreanLookup.AnalyzeKoreanToken("가셔요")?.Particle, KoreanLookup.AnalyzeKoreanToken("가셔요")?.ParticleType));
+        Assert.Equal(("가다", "시지요", "Honorific Polite"),
+            (KoreanLookup.AnalyzeKoreanToken("가시지요")?.Lemma, KoreanLookup.AnalyzeKoreanToken("가시지요")?.Particle, KoreanLookup.AnalyzeKoreanToken("가시지요")?.ParticleType));
+        Assert.Equal(("가다", "시죠", "Honorific Polite"),
+            (KoreanLookup.AnalyzeKoreanToken("가시죠")?.Lemma, KoreanLookup.AnalyzeKoreanToken("가시죠")?.Particle, KoreanLookup.AnalyzeKoreanToken("가시죠")?.ParticleType));
+        Assert.Equal(("가다", "시어", "Honorific"),
+            (KoreanLookup.AnalyzeKoreanToken("가시어")?.Lemma, KoreanLookup.AnalyzeKoreanToken("가시어")?.Particle, KoreanLookup.AnalyzeKoreanToken("가시어")?.ParticleType));
+    }
+
+    [Fact]
+    public void VerbDeconjugation_FormalPoliteEndings()
+    {
+        Assert.Equal(("먹다", "습니다", "Formal Polite"),
+            (KoreanLookup.AnalyzeKoreanToken("먹습니다")?.Lemma, KoreanLookup.AnalyzeKoreanToken("먹습니다")?.Particle, KoreanLookup.AnalyzeKoreanToken("먹습니다")?.ParticleType));
+        Assert.Equal(("있다", "습니다", "Formal Polite"),
+            (KoreanLookup.AnalyzeKoreanToken("있습니다")?.Lemma, KoreanLookup.AnalyzeKoreanToken("있습니다")?.Particle, KoreanLookup.AnalyzeKoreanToken("있습니다")?.ParticleType));
+        Assert.Equal(("없다", "습니다", "Formal Polite"),
+            (KoreanLookup.AnalyzeKoreanToken("없습니다")?.Lemma, KoreanLookup.AnalyzeKoreanToken("없습니다")?.Particle, KoreanLookup.AnalyzeKoreanToken("없습니다")?.ParticleType));
+        Assert.Equal(("좋다", "습니다", "Formal Polite"),
+            (KoreanLookup.AnalyzeKoreanToken("좋습니다")?.Lemma, KoreanLookup.AnalyzeKoreanToken("좋습니다")?.Particle, KoreanLookup.AnalyzeKoreanToken("좋습니다")?.ParticleType));
+
+        Assert.Equal(("가다", "ㅂ니다", "Formal Polite"),
+            (KoreanLookup.AnalyzeKoreanToken("갑니다")?.Lemma, KoreanLookup.AnalyzeKoreanToken("갑니다")?.Particle, KoreanLookup.AnalyzeKoreanToken("갑니다")?.ParticleType));
+        Assert.Equal(("보다", "ㅂ니다", "Formal Polite"),
+            (KoreanLookup.AnalyzeKoreanToken("봅니다")?.Lemma, KoreanLookup.AnalyzeKoreanToken("봅니다")?.Particle, KoreanLookup.AnalyzeKoreanToken("봅니다")?.ParticleType));
+        Assert.Equal(("하다", "ㅂ니다", "Formal Polite"),
+            (KoreanLookup.AnalyzeKoreanToken("합니다")?.Lemma, KoreanLookup.AnalyzeKoreanToken("합니다")?.Particle, KoreanLookup.AnalyzeKoreanToken("합니다")?.ParticleType));
+        Assert.Equal(("주다", "ㅂ니다", "Formal Polite"),
+            (KoreanLookup.AnalyzeKoreanToken("줍니다")?.Lemma, KoreanLookup.AnalyzeKoreanToken("줍니다")?.Particle, KoreanLookup.AnalyzeKoreanToken("줍니다")?.ParticleType));
+        Assert.Equal(("값비싸다", "ㅂ니다", "Formal Polite"),
+            (KoreanLookup.AnalyzeKoreanToken("값비쌉니다")?.Lemma, KoreanLookup.AnalyzeKoreanToken("값비쌉니다")?.Particle, KoreanLookup.AnalyzeKoreanToken("값비쌉니다")?.ParticleType));
+
+        Assert.Equal(("먹다", "습니까", "Formal Polite Question"),
+            (KoreanLookup.AnalyzeKoreanToken("먹습니까")?.Lemma, KoreanLookup.AnalyzeKoreanToken("먹습니까")?.Particle, KoreanLookup.AnalyzeKoreanToken("먹습니까")?.ParticleType));
+        Assert.Equal(("가다", "ㅂ니까", "Formal Polite Question"),
+            (KoreanLookup.AnalyzeKoreanToken("갑니까")?.Lemma, KoreanLookup.AnalyzeKoreanToken("갑니까")?.Particle, KoreanLookup.AnalyzeKoreanToken("갑니까")?.ParticleType));
+        Assert.Equal(("하다", "ㅂ니까", "Formal Polite Question"),
+            (KoreanLookup.AnalyzeKoreanToken("합니까")?.Lemma, KoreanLookup.AnalyzeKoreanToken("합니까")?.Particle, KoreanLookup.AnalyzeKoreanToken("합니까")?.ParticleType));
+    }
+
+    [Fact]
+    public void VerbDeconjugation_PastTenseAndContractions()
+    {
+        Assert.Equal("가다", KoreanLookup.AnalyzeKoreanToken("갔어요")?.Lemma);
+        Assert.Equal("가다", KoreanLookup.AnalyzeKoreanToken("갔습니다")?.Lemma);
+        Assert.Equal("오다", KoreanLookup.AnalyzeKoreanToken("왔어요")?.Lemma);
+        Assert.Equal("오다", KoreanLookup.AnalyzeKoreanToken("왔습니다")?.Lemma);
+        Assert.Equal("보다", KoreanLookup.AnalyzeKoreanToken("봤어요")?.Lemma);
+        Assert.Equal("보다", KoreanLookup.AnalyzeKoreanToken("봤습니다")?.Lemma);
+        Assert.Equal("주다", KoreanLookup.AnalyzeKoreanToken("줬어요")?.Lemma);
+        Assert.Equal("주다", KoreanLookup.AnalyzeKoreanToken("줬습니다")?.Lemma);
+        Assert.Equal("하다", KoreanLookup.AnalyzeKoreanToken("했어요")?.Lemma);
+        Assert.Equal("하다", KoreanLookup.AnalyzeKoreanToken("했습니다")?.Lemma);
+        Assert.Equal("먹다", KoreanLookup.AnalyzeKoreanToken("먹었어요")?.Lemma);
+        Assert.Equal("먹다", KoreanLookup.AnalyzeKoreanToken("먹었습니다")?.Lemma);
+        Assert.Equal("예쁘다", KoreanLookup.AnalyzeKoreanToken("예뻤어요")?.Lemma);
+        Assert.Equal("예쁘다", KoreanLookup.AnalyzeKoreanToken("예뻤습니다")?.Lemma);
+        Assert.Equal("바쁘다", KoreanLookup.AnalyzeKoreanToken("바빴어요")?.Lemma);
+        Assert.Equal("바쁘다", KoreanLookup.AnalyzeKoreanToken("바빴습니다")?.Lemma);
+    }
+
+    [Fact]
+    public void VerbDeconjugation_PresentTensePolite()
+    {
+        Assert.Equal("가다", KoreanLookup.AnalyzeKoreanToken("가요")?.Lemma);
+        Assert.Equal("보다", KoreanLookup.AnalyzeKoreanToken("봐요")?.Lemma);
+        Assert.Equal("오다", KoreanLookup.AnalyzeKoreanToken("와요")?.Lemma);
+        Assert.Equal("주다", KoreanLookup.AnalyzeKoreanToken("줘요")?.Lemma);
+        Assert.Equal("하다", KoreanLookup.AnalyzeKoreanToken("해요")?.Lemma);
+        Assert.Equal("먹다", KoreanLookup.AnalyzeKoreanToken("먹어요")?.Lemma);
+        Assert.Equal("예쁘다", KoreanLookup.AnalyzeKoreanToken("예뻐요")?.Lemma);
+        Assert.Equal("바쁘다", KoreanLookup.AnalyzeKoreanToken("바빠요")?.Lemma);
+        Assert.Equal("마시다", KoreanLookup.AnalyzeKoreanToken("마셔요")?.Lemma);
+        Assert.Equal("쓰다", KoreanLookup.AnalyzeKoreanToken("써요")?.Lemma);
+        Assert.Equal("크다", KoreanLookup.AnalyzeKoreanToken("커요")?.Lemma);
+    }
+
+    [Fact]
+    public void VerbDeconjugation_ConnectiveAndConditional()
+    {
+        Assert.Equal(("먹다", "고", "Connective"), (KoreanLookup.AnalyzeKoreanToken("먹고")?.Lemma, KoreanLookup.AnalyzeKoreanToken("먹고")?.Particle, KoreanLookup.AnalyzeKoreanToken("먹고")?.ParticleType));
+        Assert.Equal(("가다", "고", "Connective"), (KoreanLookup.AnalyzeKoreanToken("가고")?.Lemma, KoreanLookup.AnalyzeKoreanToken("가고")?.Particle, KoreanLookup.AnalyzeKoreanToken("가고")?.ParticleType));
+        Assert.Equal(("하다", "고", "Connective"), (KoreanLookup.AnalyzeKoreanToken("하고")?.Lemma, KoreanLookup.AnalyzeKoreanToken("하고")?.Particle, KoreanLookup.AnalyzeKoreanToken("하고")?.ParticleType));
+
+        Assert.Equal(("먹다", "지만", "Contrastive"), (KoreanLookup.AnalyzeKoreanToken("먹지만")?.Lemma, KoreanLookup.AnalyzeKoreanToken("먹지만")?.Particle, KoreanLookup.AnalyzeKoreanToken("먹지만")?.ParticleType));
+        Assert.Equal(("하다", "지만", "Contrastive"), (KoreanLookup.AnalyzeKoreanToken("하지만")?.Lemma, KoreanLookup.AnalyzeKoreanToken("하지만")?.Particle, KoreanLookup.AnalyzeKoreanToken("하지만")?.ParticleType));
+        Assert.Equal(("있다", "지만", "Contrastive"), (KoreanLookup.AnalyzeKoreanToken("있지만")?.Lemma, KoreanLookup.AnalyzeKoreanToken("있지만")?.Particle, KoreanLookup.AnalyzeKoreanToken("있지만")?.ParticleType));
+
+        Assert.Equal(("가다", "아서", "Causal/Sequential"), (KoreanLookup.AnalyzeKoreanToken("가서")?.Lemma, KoreanLookup.AnalyzeKoreanToken("가서")?.Particle, KoreanLookup.AnalyzeKoreanToken("가서")?.ParticleType));
+        Assert.Equal(("오다", "아서", "Causal/Sequential"), (KoreanLookup.AnalyzeKoreanToken("와서")?.Lemma, KoreanLookup.AnalyzeKoreanToken("와서")?.Particle, KoreanLookup.AnalyzeKoreanToken("와서")?.ParticleType));
+        Assert.Equal(("보다", "아서", "Causal/Sequential"), (KoreanLookup.AnalyzeKoreanToken("봐서")?.Lemma, KoreanLookup.AnalyzeKoreanToken("봐서")?.Particle, KoreanLookup.AnalyzeKoreanToken("봐서")?.ParticleType));
+        Assert.Equal(("먹다", "어서", "Causal/Sequential"), (KoreanLookup.AnalyzeKoreanToken("먹어서")?.Lemma, KoreanLookup.AnalyzeKoreanToken("먹어서")?.Particle, KoreanLookup.AnalyzeKoreanToken("먹어서")?.ParticleType));
+        Assert.Equal(("하다", "해서", "Causal/Sequential"), (KoreanLookup.AnalyzeKoreanToken("해서")?.Lemma, KoreanLookup.AnalyzeKoreanToken("해서")?.Particle, KoreanLookup.AnalyzeKoreanToken("해서")?.ParticleType));
+
+        Assert.Equal(("먹다", "으면", "Conditional"), (KoreanLookup.AnalyzeKoreanToken("먹으면")?.Lemma, KoreanLookup.AnalyzeKoreanToken("먹으면")?.Particle, KoreanLookup.AnalyzeKoreanToken("먹으면")?.ParticleType));
+        Assert.Equal(("가다", "면", "Conditional"), (KoreanLookup.AnalyzeKoreanToken("가면")?.Lemma, KoreanLookup.AnalyzeKoreanToken("가면")?.Particle, KoreanLookup.AnalyzeKoreanToken("가면")?.ParticleType));
+        Assert.Equal(("하다", "면", "Conditional"), (KoreanLookup.AnalyzeKoreanToken("하면")?.Lemma, KoreanLookup.AnalyzeKoreanToken("하면")?.Particle, KoreanLookup.AnalyzeKoreanToken("하면")?.ParticleType));
+
+        Assert.Equal(("가다", "는데", "Connective/Background"), (KoreanLookup.AnalyzeKoreanToken("가는데")?.Lemma, KoreanLookup.AnalyzeKoreanToken("가는데")?.Particle, KoreanLookup.AnalyzeKoreanToken("가는데")?.ParticleType));
+        Assert.Equal(("먹다", "는데", "Connective/Background"), (KoreanLookup.AnalyzeKoreanToken("먹는데")?.Lemma, KoreanLookup.AnalyzeKoreanToken("먹는데")?.Particle, KoreanLookup.AnalyzeKoreanToken("먹는데")?.ParticleType));
+        Assert.Equal(("예쁘다", "ㄴ데", "Connective/Background"), (KoreanLookup.AnalyzeKoreanToken("예쁜데")?.Lemma, KoreanLookup.AnalyzeKoreanToken("예쁜데")?.Particle, KoreanLookup.AnalyzeKoreanToken("예쁜데")?.ParticleType));
+
+        Assert.Equal(("가다", "니까", "Causal"), (KoreanLookup.AnalyzeKoreanToken("가니까")?.Lemma, KoreanLookup.AnalyzeKoreanToken("가니까")?.Particle, KoreanLookup.AnalyzeKoreanToken("가니까")?.ParticleType));
+        Assert.Equal(("먹다", "으니까", "Causal"), (KoreanLookup.AnalyzeKoreanToken("먹으니까")?.Lemma, KoreanLookup.AnalyzeKoreanToken("먹으니까")?.Particle, KoreanLookup.AnalyzeKoreanToken("먹으니까")?.ParticleType));
+
+        Assert.Equal(("가다", "려고", "Intentional"), (KoreanLookup.AnalyzeKoreanToken("가려고")?.Lemma, KoreanLookup.AnalyzeKoreanToken("가려고")?.Particle, KoreanLookup.AnalyzeKoreanToken("가려고")?.ParticleType));
+        Assert.Equal(("먹다", "으려고", "Intentional"), (KoreanLookup.AnalyzeKoreanToken("먹으려고")?.Lemma, KoreanLookup.AnalyzeKoreanToken("먹으려고")?.Particle, KoreanLookup.AnalyzeKoreanToken("먹으려고")?.ParticleType));
+    }
+
+    [Fact]
+    public void VerbDeconjugation_AdnominalModifierForms()
+    {
+        Assert.Equal(("값비싸다", "ㄴ", "Modifier Form"), (KoreanLookup.AnalyzeKoreanToken("값비싼")?.Lemma, KoreanLookup.AnalyzeKoreanToken("값비싼")?.Particle, KoreanLookup.AnalyzeKoreanToken("값비싼")?.ParticleType));
+        Assert.Equal(("예쁘다", "ㄴ", "Modifier Form"), (KoreanLookup.AnalyzeKoreanToken("예쁜")?.Lemma, KoreanLookup.AnalyzeKoreanToken("예쁜")?.Particle, KoreanLookup.AnalyzeKoreanToken("예쁜")?.ParticleType));
+        Assert.Equal(("빠르다", "ㄴ", "Modifier Form"), (KoreanLookup.AnalyzeKoreanToken("빠른")?.Lemma, KoreanLookup.AnalyzeKoreanToken("빠른")?.Particle, KoreanLookup.AnalyzeKoreanToken("빠른")?.ParticleType));
+
+        Assert.Equal(("먹다", "은", "Modifier Form"), (KoreanLookup.AnalyzeKoreanToken("먹은")?.Lemma, KoreanLookup.AnalyzeKoreanToken("먹은")?.Particle, KoreanLookup.AnalyzeKoreanToken("먹은")?.ParticleType));
+        Assert.Equal(("좋다", "은", "Modifier Form"), (KoreanLookup.AnalyzeKoreanToken("좋은")?.Lemma, KoreanLookup.AnalyzeKoreanToken("좋은")?.Particle, KoreanLookup.AnalyzeKoreanToken("좋은")?.ParticleType));
+        Assert.Equal(("작다", "은", "Modifier Form"), (KoreanLookup.AnalyzeKoreanToken("작은")?.Lemma, KoreanLookup.AnalyzeKoreanToken("작은")?.Particle, KoreanLookup.AnalyzeKoreanToken("작은")?.ParticleType));
+
+        Assert.Equal(("가다", "는", "Modifier Form"), (KoreanLookup.AnalyzeKoreanToken("가는")?.Lemma, KoreanLookup.AnalyzeKoreanToken("가는")?.Particle, KoreanLookup.AnalyzeKoreanToken("가는")?.ParticleType));
+        Assert.Equal(("먹다", "는", "Modifier Form"), (KoreanLookup.AnalyzeKoreanToken("먹는")?.Lemma, KoreanLookup.AnalyzeKoreanToken("먹는")?.Particle, KoreanLookup.AnalyzeKoreanToken("먹는")?.ParticleType));
+        Assert.Equal(("보다", "는", "Modifier Form"), (KoreanLookup.AnalyzeKoreanToken("보는")?.Lemma, KoreanLookup.AnalyzeKoreanToken("보는")?.Particle, KoreanLookup.AnalyzeKoreanToken("보는")?.ParticleType));
+        Assert.Equal(("하다", "는", "Modifier Form"), (KoreanLookup.AnalyzeKoreanToken("하는")?.Lemma, KoreanLookup.AnalyzeKoreanToken("하는")?.Particle, KoreanLookup.AnalyzeKoreanToken("하는")?.ParticleType));
+
+        Assert.Equal(("먹다", "을", "Modifier Form"), (KoreanLookup.AnalyzeKoreanToken("먹을")?.Lemma, KoreanLookup.AnalyzeKoreanToken("먹을")?.Particle, KoreanLookup.AnalyzeKoreanToken("먹을")?.ParticleType));
+        Assert.Equal(("값비싸다", "ㄹ", "Modifier Form"), (KoreanLookup.AnalyzeKoreanToken("값비쌀")?.Lemma, KoreanLookup.AnalyzeKoreanToken("값비쌀")?.Particle, KoreanLookup.AnalyzeKoreanToken("값비쌀")?.ParticleType));
+        Assert.Equal(("예쁘다", "ㄹ", "Modifier Form"), (KoreanLookup.AnalyzeKoreanToken("예쁠")?.Lemma, KoreanLookup.AnalyzeKoreanToken("예쁠")?.Particle, KoreanLookup.AnalyzeKoreanToken("예쁠")?.ParticleType));
+
+        Assert.Equal(("가다", "던", "Modifier Form"), (KoreanLookup.AnalyzeKoreanToken("가던")?.Lemma, KoreanLookup.AnalyzeKoreanToken("가던")?.Particle, KoreanLookup.AnalyzeKoreanToken("가던")?.ParticleType));
+        Assert.Equal(("먹다", "던", "Modifier Form"), (KoreanLookup.AnalyzeKoreanToken("먹던")?.Lemma, KoreanLookup.AnalyzeKoreanToken("먹던")?.Particle, KoreanLookup.AnalyzeKoreanToken("먹던")?.ParticleType));
+        Assert.Equal(("하다", "던", "Modifier Form"), (KoreanLookup.AnalyzeKoreanToken("했던")?.Lemma, KoreanLookup.AnalyzeKoreanToken("했던")?.Particle, KoreanLookup.AnalyzeKoreanToken("했던")?.ParticleType));
+    }
+
+    [Fact]
+    public void VerbDeconjugation_CommonIrregulars()
+    {
+        // ㄷ irregular
+        Assert.Equal("듣다", KoreanLookup.AnalyzeKoreanToken("들어요")?.Lemma);
+        Assert.Equal("듣다", KoreanLookup.AnalyzeKoreanToken("들은")?.Lemma);
+        Assert.Equal("듣다", KoreanLookup.AnalyzeKoreanToken("들으면")?.Lemma);
+
+        // ㅂ irregular
+        Assert.Equal("돕다", KoreanLookup.AnalyzeKoreanToken("도와요")?.Lemma);
+        Assert.Equal("돕다", KoreanLookup.AnalyzeKoreanToken("도운")?.Lemma);
+        Assert.Equal("어렵다", KoreanLookup.AnalyzeKoreanToken("어려워요")?.Lemma);
+        Assert.Equal("어렵다", KoreanLookup.AnalyzeKoreanToken("어려운")?.Lemma);
+        Assert.Equal("춥다", KoreanLookup.AnalyzeKoreanToken("추워요")?.Lemma);
+        Assert.Equal("춥다", KoreanLookup.AnalyzeKoreanToken("추운")?.Lemma);
+        Assert.Equal("고맙다", KoreanLookup.AnalyzeKoreanToken("고마워요")?.Lemma);
+        Assert.Equal("고맙다", KoreanLookup.AnalyzeKoreanToken("고마운")?.Lemma);
+
+        // ㅅ irregular
+        Assert.Equal("낫다", KoreanLookup.AnalyzeKoreanToken("나아요")?.Lemma);
+        Assert.Equal("낫다", KoreanLookup.AnalyzeKoreanToken("나은")?.Lemma);
+        Assert.Equal("짓다", KoreanLookup.AnalyzeKoreanToken("지어요")?.Lemma);
+        Assert.Equal("짓다", KoreanLookup.AnalyzeKoreanToken("지은")?.Lemma);
+
+        // 르 irregular
+        Assert.Equal("모르다", KoreanLookup.AnalyzeKoreanToken("몰라요")?.Lemma);
+        Assert.Equal("모르다", KoreanLookup.AnalyzeKoreanToken("몰랐어요")?.Lemma);
+        Assert.Equal("빠르다", KoreanLookup.AnalyzeKoreanToken("빨라요")?.Lemma);
+        Assert.Equal("빠르다", KoreanLookup.AnalyzeKoreanToken("빨랐어요")?.Lemma);
+        Assert.Equal("부르다", KoreanLookup.AnalyzeKoreanToken("불러요")?.Lemma);
+        Assert.Equal("부르다", KoreanLookup.AnalyzeKoreanToken("불렀어요")?.Lemma);
+
+        // ㅎ irregular
+        Assert.Equal("하얗다", KoreanLookup.AnalyzeKoreanToken("하얘요")?.Lemma);
+        Assert.Equal("하얗다", KoreanLookup.AnalyzeKoreanToken("하얀")?.Lemma);
+        Assert.Equal("그렇다", KoreanLookup.AnalyzeKoreanToken("그래요")?.Lemma);
+        Assert.Equal("그렇다", KoreanLookup.AnalyzeKoreanToken("그런")?.Lemma);
+    }
+
+    [Fact]
+    public void DirectDeconjugateKoreanVerbApi()
+    {
+        var analysis1 = KoreanLookup.DeconjugateKoreanVerb("주셨습니다");
+        Assert.NotNull(analysis1);
+        Assert.Equal("주다", analysis1.Lemma);
+        Assert.Equal("셨습니다", analysis1.Particle);
+
+        var analysis2 = KoreanLookup.DeconjugateKoreanVerb("간");
+        Assert.NotNull(analysis2);
+        Assert.Equal("가다", analysis2.Lemma);
+        Assert.Equal("ㄴ", analysis2.Particle);
+
+        var analysis3 = KoreanLookup.DeconjugateKoreanVerb("본");
+        Assert.NotNull(analysis3);
+        Assert.Equal("보다", analysis3.Lemma);
+        Assert.Equal("ㄴ", analysis3.Particle);
+
+        var analysis4 = KoreanLookup.DeconjugateKoreanVerb("한");
+        Assert.NotNull(analysis4);
+        Assert.Equal("하다", analysis4.Lemma);
+        Assert.Equal("ㄴ", analysis4.Particle);
+
+        var analysis5 = KoreanLookup.DeconjugateKoreanVerb("갈");
+        Assert.NotNull(analysis5);
+        Assert.Equal("가다", analysis5.Lemma);
+        Assert.Equal("ㄹ", analysis5.Particle);
+
+        var analysis6 = KoreanLookup.DeconjugateKoreanVerb("볼");
+        Assert.NotNull(analysis6);
+        Assert.Equal("보다", analysis6.Lemma);
+        Assert.Equal("ㄹ", analysis6.Particle);
+
+        var analysis7 = KoreanLookup.DeconjugateKoreanVerb("할");
+        Assert.NotNull(analysis7);
+        Assert.Equal("하다", analysis7.Lemma);
+        Assert.Equal("ㄹ", analysis7.Particle);
+
+        Assert.Null(KoreanLookup.DeconjugateKoreanVerb("오이"));
+        Assert.Null(KoreanLookup.DeconjugateKoreanVerb("포도"));
+        Assert.Null(KoreanLookup.DeconjugateKoreanVerb("한국어"));
     }
 }

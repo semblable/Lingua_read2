@@ -2,6 +2,8 @@ import { findKoreanLookupMatches, isKoreanLanguageCode } from './koreanLookup';
 import { CHINESE_SEGMENTER_PROFILE, isChineseHanAt, findChineseHanRunEnd } from './chineseSegmenter';
 import { getChineseSegmentation } from './chineseRuntime';
 import { JAPANESE_SEGMENTER_PROFILE, isJapaneseScriptAt, findJapaneseRunEnd, segmentJapaneseRun } from './japaneseSegmenter';
+import { THAI_SEGMENTER_PROFILE, isThaiAt, findThaiRunEnd, isThaiDigit } from './thaiSegmenter';
+import { getThaiSegmentation } from './thaiRuntime';
 export type LanguageConfig = {
   wordCharacters?: string | null;
   characterSubstitutions?: string | null;
@@ -503,7 +505,7 @@ export const buildCoreWordRegex = (wordCharacters: string | null | undefined): R
 };
 
 const isCoreWordChar = (regex: RegExp, ch: string | undefined): boolean =>
-  !!ch && regex.test(ch);
+  !!ch && (regex.test(ch) || isThaiDigit(ch));
 
 // A combining mark or format character (an emoji's variation selector, a
 // zero-width joiner) may continue a word but never start one: on its own it
@@ -557,6 +559,18 @@ export const prepareLanguageContext = (
     }
     return { processed, coreRegex, wordEnds };
   }
+  if (languageConfig?.parserType === THAI_SEGMENTER_PROFILE) {
+    const segmenter = getThaiSegmentation();
+    const wordEnds: MutableSegmenterWordEnds = new Map<number, number>();
+    wordEnds.profile = THAI_SEGMENTER_PROFILE;
+    for (let i = 0; i < processed.length;) {
+      if (!isThaiAt(processed, i)) { i += processed.codePointAt(i)! > 0xffff ? 2 : 1; continue; }
+      const end = findThaiRunEnd(processed, i);
+      for (const span of segmenter.segmentThaiRun(processed, i, end)) wordEnds.set(span.start, span.end);
+      i = end;
+    }
+    return { processed, coreRegex, wordEnds };
+  }
   return { processed, coreRegex };
 };
 
@@ -573,12 +587,17 @@ export const consumeWordAt = (
 ): { text: string; end: number } | null => {
   if (!processed || index < 0 || index >= processed.length) return null;
   const isJapaneseProfile = (wordEnds as SegmenterWordEnds | undefined)?.profile === JAPANESE_SEGMENTER_PROFILE;
-  const isSegmentedScriptAt = wordEnds ? (isJapaneseProfile ? isJapaneseScriptAt : isChineseHanAt) : null;
+  const isThaiProfile = (wordEnds as SegmenterWordEnds | undefined)?.profile === THAI_SEGMENTER_PROFILE;
+  const isSegmentedScriptAt = wordEnds
+    ? (isJapaneseProfile ? isJapaneseScriptAt : isThaiProfile ? isThaiAt : isChineseHanAt)
+    : null;
   if (wordEnds && isSegmentedScriptAt && isSegmentedScriptAt(processed, index)) {
     const end = wordEnds.get(index) ?? (
       isJapaneseProfile
         ? segmentJapaneseRun(processed, index, findJapaneseRunEnd(processed, index))[0].end
-        : getChineseSegmentation().segmentHanRun(processed, index, findChineseHanRunEnd(processed, index))[0].end
+        : isThaiProfile
+          ? getThaiSegmentation().segmentThaiRun(processed, index, findThaiRunEnd(processed, index))[0].end
+          : getChineseSegmentation().segmentHanRun(processed, index, findChineseHanRunEnd(processed, index))[0].end
     );
     return { text: processed.slice(index, end), end };
   }

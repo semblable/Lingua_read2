@@ -221,6 +221,7 @@ namespace LinguaReadApi.Services.Tokenization
 
             var chinese = language?.ParserType == ChineseSegmenter.Profile;
             var japanese = language?.ParserType == JapaneseSegmenter.Profile;
+            var thai = language?.ParserType == ThaiSegmenter.Profile;
             var tokens = new List<Token>();
             var i = 0;
             var len = processed.Length;
@@ -243,6 +244,13 @@ namespace LinguaReadApi.Services.Tokenization
                         .Select(word => new Token(word.Text, word.Start, word.End, true)));
                     i = end;
                 }
+                else if (thai && ThaiSegmenter.IsThaiAt(processed, i))
+                {
+                    var end = ThaiSegmenter.FindThaiRunEnd(processed, i);
+                    tokens.AddRange(ThaiSegmenter.Default.SegmentThaiRun(processed, i, end)
+                        .Select(word => new Token(word.Text, word.Start, word.End, true)));
+                    i = end;
+                }
                 else if (CanStartWord(coreRegex, span, i))
                 {
                     var start = i;
@@ -250,7 +258,8 @@ namespace LinguaReadApi.Services.Tokenization
                     while (i < len)
                     {
                         if ((chinese && ChineseSegmenter.IsHanAt(processed, i))
-                            || (japanese && JapaneseSegmenter.IsJapaneseScriptAt(processed, i))) break;
+                            || (japanese && JapaneseSegmenter.IsJapaneseScriptAt(processed, i))
+                            || (thai && ThaiSegmenter.IsThaiAt(processed, i))) break;
                         if (IsCoreWordChar(coreRegex, span, i))
                         {
                             i++;
@@ -260,7 +269,8 @@ namespace LinguaReadApi.Services.Tokenization
                             && i + 1 < len
                             && IsCoreWordChar(coreRegex, span, i + 1)
                             && !((chinese && ChineseSegmenter.IsHanAt(processed, i + 1))
-                                || (japanese && JapaneseSegmenter.IsJapaneseScriptAt(processed, i + 1))))
+                                || (japanese && JapaneseSegmenter.IsJapaneseScriptAt(processed, i + 1))
+                                || (thai && ThaiSegmenter.IsThaiAt(processed, i + 1))))
                         {
                             i++;
                             continue;
@@ -331,7 +341,7 @@ namespace LinguaReadApi.Services.Tokenization
         {
             // Span-based IsMatch avoids per-character string allocations
             // in the hot tokenization loop. Available on .NET 7+.
-            return coreRegex.IsMatch(span.Slice(index, 1));
+            return coreRegex.IsMatch(span.Slice(index, 1)) || ThaiSegmenter.IsThaiDigit(span[index]);
         }
 
         private static bool IsConnector(char ch) => ch == Apostrophe || ch == Hyphen || ch == MiddleDot;

@@ -71,6 +71,21 @@ NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ```
 
+### Thai Word Segmentation Dictionary (PyThaiNLP)
+
+The `thai-dict-v1` Thai segmenter in `server/LinguaReadApi/Services/Tokenization/ThaiSegmenter.cs`
+and `client/lingua-read-client/src/utils/thaiSegmenter.ts` uses the Thai wordlist
+(`words_th.txt`) from [PyThaiNLP](https://github.com/PyThaiNLP/pythainlp)
+(excluding compound verb `อ่านหนังสือ` so `อ่าน` and `หนังสือ` segment separately).
+PyThaiNLP's corpus files and wordlists are dedicated to the public domain under
+**Creative Commons Zero 1.0 Universal (CC0 1.0)**.
+The [full notice](server/LinguaReadApi/Resources/Segmentation/LICENSE.words_th.txt)
+is copied into server build/publish output (`ThirdPartyNotices/words_th.txt`) and
+[browser notices](client/lingua-read-client/public/licenses/words_th.txt).
+The pinned dictionary SHA-256 is `b654af583aaa269275339b3400e12a62311dd2c4d1779fb461dd9442319ff2a9`.
+The segmenter applies Thai Character Cluster (TCC) constraints based on Theeramunkong et al. (2000)
+with backward dynamic programming and out-of-vocabulary cluster coalescing.
+
 ## Self-hosted fonts and icons
 
 The application imports fonts through Fontsource; the demo currently imports Inter

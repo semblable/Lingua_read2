@@ -12,6 +12,7 @@ const TextCreate = () => {
   const [languageId, setLanguageId] = useState('');
   const [chineseSegmentation, setChineseSegmentation] = useState(true);
   const [japaneseSegmentation, setJapaneseSegmentation] = useState(true);
+  const [thaiSegmentation, setThaiSegmentation] = useState(true);
   const [tag, setTag] = useState(''); // Add state for tag
   const [languages, setLanguages] = useState<Language[]>([]);
   const [loading, setLoading] = useState(false);
@@ -28,6 +29,7 @@ const TextCreate = () => {
   const selectedLanguage = languages.find(lang => String(lang.languageId) === String(languageId));
   const isChinese = selectedLanguage?.code?.trim().toLowerCase().replace(/_/g, '-').split('-')[0] === 'zh';
   const isJapanese = selectedLanguage?.code?.trim().toLowerCase().replace(/_/g, '-').split('-')[0] === 'ja';
+  const isThai = selectedLanguage?.code?.trim().toLowerCase().replace(/_/g, '-').split('-')[0] === 'th';
   const navigate = useNavigate();
   // Set when opened from a Library folder's "Add Content": the text is filed there.
   const [searchParams] = useSearchParams();
@@ -92,7 +94,9 @@ const TextCreate = () => {
         ? 'jieba-v1'
         : isJapanese && japaneseSegmentation
           ? 'tinysegmenter-ja-v1'
-          : null;
+          : isThai && thaiSegmentation
+            ? 'thai-dict-v1'
+            : null;
       const newText = await createText(title, content, parseInt(languageId, 10), tag || null, folderId, segmentationProfile);
       navigate(`/texts/${newText.textId}`);
     } catch (err: unknown) {
@@ -211,6 +215,12 @@ const TextCreate = () => {
             <Form.Check id="japanese-segmentation" label="Japanese word segmentation (experimental)"
               checked={japaneseSegmentation} onChange={event => setJapaneseSegmentation(event.target.checked)} />
             <Form.Text>Applies to this new text only. Uses built-in TinySegmenter boundaries (tinysegmenter-ja-v1) without modifying existing texts.</Form.Text>
+          </Form.Group>}
+
+          {isThai && <Form.Group className="mb-3">
+            <Form.Check id="thai-segmentation" label="Thai word segmentation (experimental)"
+              checked={thaiSegmentation} onChange={event => setThaiSegmentation(event.target.checked)} />
+            <Form.Text>Applies to this new text only. Uses built-in dictionary boundaries (thai-dict-v1) without modifying existing texts.</Form.Text>
           </Form.Group>}
 
           <Form.Group className="mb-3" controlId="tag">

@@ -9,7 +9,7 @@ const clientRoot = fileURLToPath(new URL('../', import.meta.url));
 const repoRoot = resolve(clientRoot, '../..');
 const output = resolve(clientRoot, process.argv[2] || 'build');
 const notices = [
-  'README.txt', 'jieba.txt', 'tinysegmenter.txt', 'bootstrap.txt', 'bootstrap-icons.txt', 'flag-icons.txt',
+  'README.txt', 'jieba.txt', 'tinysegmenter.txt', 'words_th.txt', 'bootstrap.txt', 'bootstrap-icons.txt', 'flag-icons.txt',
   ...['atkinson-hyperlegible', 'inter', 'lato', 'lora', 'merriweather',
     'open-sans', 'roboto-slab'].map((font) => `font-${font}.txt`),
 ];
@@ -21,6 +21,8 @@ const requiredTerms = [
   'tinysegmenter-ja-v1',
   'Copyright (c) 2008, Taku Kudo',
   'BSD-3-Clause',
+  'PyThaiNLP',
+  'thai-dict-v1',
 ];
 const noticesFile = resolve(repoRoot, 'THIRD_PARTY_NOTICES.md');
 const serverLicense = resolve(repoRoot, 'server/LinguaReadApi/Resources/Segmentation/LICENSE.tinysegmenter.txt');
@@ -50,6 +52,9 @@ if (fullCheckout) {
     const csproj = readFileSync(serverProject, 'utf8');
     if (!/ThirdPartyNotices[\\/]tinysegmenter\.txt/.test(csproj)) {
       throw new Error('LinguaReadApi.csproj missing ThirdPartyNotices/tinysegmenter.txt');
+    }
+    if (!/ThirdPartyNotices[\\/]words_th\.txt/.test(csproj)) {
+      throw new Error('LinguaReadApi.csproj missing ThirdPartyNotices/words_th.txt');
     }
   } catch (error) {
     console.error(`verify-notices: ${error.message}`);

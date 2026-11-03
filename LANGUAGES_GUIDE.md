@@ -55,7 +55,10 @@ you can uncheck it for that import. It uses a pinned
 localhost is required to verify the download. For **new Japanese texts, book imports (`.txt`, `.epub`, or manual), and audio/SRT imports (single and batch)**,
 **Japanese word segmentation (experimental)** is enabled by default (with opt-out per import) using the built-in `tinysegmenter-ja-v1` segmentation profile.
 Japanese EPUB imports also strip `<rt>` and `<rp>` furigana/ruby reading annotations from extracted base text so words are not split by inline readings.
-Existing Chinese and Japanese content and unprofiled imports
+For **new Thai texts, book imports (`.txt`, `.epub`, or manual), and audio/SRT imports (single and batch)**,
+**Thai word segmentation (experimental)** is enabled by default (with opt-out per import) using the built-in `thai-dict-v1` segmentation profile,
+downloading a pinned dictionary (~62,108 words, CC0 from PyThaiNLP) constrained by Thai Character Cluster (TCC) boundaries.
+Existing Chinese, Japanese, and Thai content and unprofiled imports
 keep their legacy splitting (and re-splitting a book preserves its profile); there is no automatic relinking, lemmatization, or script conversion.
 Unknown names may split into characters; native review is still outstanding.
 
@@ -254,7 +257,7 @@ database seed defaults retain their own settings.
 | Korean | Left to right | `.!?。！？` | `spacedel` |
 | Chinese | Left to right | `.!?。！？` | `jieba` (legacy; new imports default to `jieba-v1` with opt-out) |
 | Japanese | Left to right | `.!?。！？` | `mecab` (legacy; new imports default to `tinysegmenter-ja-v1` with opt-out) |
-| Thai | Left to right | `.!?` | `spacedel` (basic splitting only) |
+| Thai | Left to right | `.!?` | `spacedel` (legacy; new imports default to `thai-dict-v1` with opt-out) |
 
 ---
 

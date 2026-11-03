@@ -1,0 +1,84 @@
+{
+  "description": "Original short synthetic fixtures for Thai dictionary word segmentation (thai-dict-v1). Spans reference unchanged UTF-16 input; only Thai script spans are specified. Non-Thai tokens use the reader tokenizer policy. Native review remains outstanding.",
+  "profile": "thai-dict-v1",
+  "dictionarySha256": "b654af583aaa269275339b3400e12a62311dd2c4d1779fb461dd9442319ff2a9",
+  "cases": [
+    {
+      "id": "th-01",
+      "text": "ฉันชอบอ่านหนังสือที่กรุงเทพฯ",
+      "thaiSpans": [
+        {
+          "text": "ฉัน",
+          "start": 0,
+          "end": 3
+        },
+        {
+          "text": "ชอบ",
+          "start": 3,
+          "end": 6
+        },
+        {
+          "text": "อ่าน",
+          "start": 6,
+          "end": 10
+        },
+        {
+          "text": "หนังสือ",
+          "start": 10,
+          "end": 17
+        },
+        {
+          "text": "ที่",
+          "start": 17,
+          "end": 20
+        },
+        {
+          "text": "กรุงเทพฯ",
+          "start": 20,
+          "end": 28
+        }
+      ]
+    },
+    {
+      "id": "th-02",
+      "text": "น้ำดื่มสะอาดอยู่ที่ออฟฟิศชั้น ๒",
+      "thaiSpans": [
+        {
+          "text": "น้ำดื่ม",
+          "start": 0,
+          "end": 7
+        },
+        {
+          "text": "สะอาด",
+          "start": 7,
+          "end": 12
+        },
+        {
+          "text": "อยู่",
+          "start": 12,
+          "end": 16
+        },
+        {
+          "text": "ที่",
+          "start": 16,
+          "end": 19
+        },
+        {
+          "text": "ออฟฟิศ",
+          "start": 19,
+          "end": 25
+        },
+        {
+          "text": "ชั้น",
+          "start": 25,
+          "end": 29
+        },
+        {
+          "text": "๒",
+          "start": 30,
+          "end": 31
+        }
+      ]
+    }
+  ]
+}

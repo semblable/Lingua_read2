@@ -15,6 +15,7 @@ const BatchAudioCreate = () => {
     const [languageId, setLanguageId] = useState('');
     const [chineseSegmentation, setChineseSegmentation] = useState(true);
     const [japaneseSegmentation, setJapaneseSegmentation] = useState(true);
+    const [thaiSegmentation, setThaiSegmentation] = useState(true);
     const [tag, setTag] = useState('');
     const [files, setFiles] = useState<FileList | null>(null); // Holds FileList object
     const [languages, setLanguages] = useState<Language[]>([]);
@@ -31,6 +32,7 @@ const BatchAudioCreate = () => {
     const selectedLanguage = languages.find(lang => String(lang.languageId) === String(languageId));
     const isChinese = selectedLanguage?.code?.trim().toLowerCase().replace(/_/g, '-').split('-')[0] === 'zh';
     const isJapanese = selectedLanguage?.code?.trim().toLowerCase().replace(/_/g, '-').split('-')[0] === 'ja';
+    const isThai = selectedLanguage?.code?.trim().toLowerCase().replace(/_/g, '-').split('-')[0] === 'th';
 
     // Fetch languages on component mount
     useEffect(() => {
@@ -264,7 +266,9 @@ const BatchAudioCreate = () => {
                 ? 'jieba-v1'
                 : isJapanese && japaneseSegmentation
                     ? 'tinysegmenter-ja-v1'
-                    : null;
+                    : isThai && thaiSegmentation
+                        ? 'thai-dict-v1'
+                        : null;
             const resultData = await createAudioLessonsBatch(languageId, tag || null, fileList, (percent) => {
                 setUploadProgress(percent);
             }, folderId, ...(segmentationProfile ? [segmentationProfile] : []));
@@ -334,6 +338,12 @@ const BatchAudioCreate = () => {
                             <Form.Check id="japanese-segmentation" label="Japanese word segmentation (experimental)"
                                 checked={japaneseSegmentation} onChange={event => setJapaneseSegmentation(event.target.checked)} />
                             <Form.Text>Applies to this new import only. Uses built-in TinySegmenter boundaries (tinysegmenter-ja-v1) without modifying existing texts.</Form.Text>
+                        </Form.Group>}
+
+                        {isThai && <Form.Group className="mb-3">
+                            <Form.Check id="thai-segmentation" label="Thai word segmentation (experimental)"
+                                checked={thaiSegmentation} onChange={event => setThaiSegmentation(event.target.checked)} />
+                            <Form.Text>Applies to this new import only. Uses built-in dictionary boundaries (thai-dict-v1) without modifying existing texts.</Form.Text>
                         </Form.Group>}
 
                         <Form.Group className="mb-3" controlId="tag">

@@ -370,7 +370,7 @@ namespace LinguaReadApi.Controllers
             if (createTextDto.SegmentationProfile != null &&
                 !IsValidSegmentationProfile(createTextDto.SegmentationProfile, language.Code))
             {
-                return BadRequest("SegmentationProfile must match the selected language (jieba-v1 for Chinese, tinysegmenter-ja-v1 for Japanese).");
+                return BadRequest("SegmentationProfile must match the selected language (jieba-v1 for Chinese, tinysegmenter-ja-v1 for Japanese, thai-dict-v1 for Thai).");
             }
 
             if (createTextDto.FolderId.HasValue && !await _context.UserOwnsFolderAsync(userId, createTextDto.FolderId.Value))
@@ -459,7 +459,7 @@ namespace LinguaReadApi.Controllers
             if (createAudioLessonDto.SegmentationProfile != null &&
                 !IsValidSegmentationProfile(createAudioLessonDto.SegmentationProfile, language.Code))
             {
-                return BadRequest("SegmentationProfile must match the selected language (jieba-v1 for Chinese, tinysegmenter-ja-v1 for Japanese).");
+                return BadRequest("SegmentationProfile must match the selected language (jieba-v1 for Chinese, tinysegmenter-ja-v1 for Japanese, thai-dict-v1 for Thai).");
             }
 
             // Checked before the audio is written to disk, so a bad folder leaves no orphaned file.
@@ -596,7 +596,7 @@ namespace LinguaReadApi.Controllers
             if (dto.SegmentationProfile != null &&
                 !IsValidSegmentationProfile(dto.SegmentationProfile, language.Code))
             {
-                return BadRequest("SegmentationProfile must match the selected language (jieba-v1 for Chinese, tinysegmenter-ja-v1 for Japanese).");
+                return BadRequest("SegmentationProfile must match the selected language (jieba-v1 for Chinese, tinysegmenter-ja-v1 for Japanese, thai-dict-v1 for Thai).");
             }
 
             if (dto.FolderId.HasValue && !await _context.UserOwnsFolderAsync(userId, dto.FolderId.Value))
@@ -1085,9 +1085,13 @@ namespace LinguaReadApi.Controllers
         private static bool IsJapaneseLanguage(string code) =>
             string.Equals(code.Trim().Split('-', '_')[0], "ja", StringComparison.OrdinalIgnoreCase);
 
+        private static bool IsThaiLanguage(string code) =>
+            string.Equals(code.Trim().Split('-', '_')[0], "th", StringComparison.OrdinalIgnoreCase);
+
         private static bool IsValidSegmentationProfile(string profile, string languageCode) =>
             (profile == ChineseSegmenter.Profile && IsChineseLanguage(languageCode)) ||
-            (profile == JapaneseSegmenter.Profile && IsJapaneseLanguage(languageCode));
+            (profile == JapaneseSegmenter.Profile && IsJapaneseLanguage(languageCode)) ||
+            (profile == ThaiSegmenter.Profile && IsThaiLanguage(languageCode));
 
         // PUT: api/texts/{textId}/complete
         [HttpPut("{textId}/complete")] // Corrected route: combines with controller route "/api/texts"

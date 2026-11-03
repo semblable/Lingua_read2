@@ -1,4 +1,5 @@
 import { ensureChineseSegmentation } from '../utils/chineseDictionary';
+import { ensureThaiSegmentation } from '../utils/thaiDictionary';
 import { useEffect, useRef, useState } from 'react';
 import {
   getText,
@@ -187,7 +188,7 @@ export const useReaderState = ({
       try {
         const data = await getText(textId);
         if (!isCurrentRequest()) return;
-        if (data.segmentationProfile && data.segmentationProfile !== 'jieba-v1' && data.segmentationProfile !== 'tinysegmenter-ja-v1')
+        if (data.segmentationProfile && data.segmentationProfile !== 'jieba-v1' && data.segmentationProfile !== 'tinysegmenter-ja-v1' && data.segmentationProfile !== 'thai-dict-v1')
           throw new Error('This text uses a newer word segmenter. Update the app before opening it.');
         let profileConfig: NonNullable<LanguageConfig> | null = null;
         if (data.segmentationProfile === 'jieba-v1') {
@@ -203,6 +204,13 @@ export const useReaderState = ({
           if (!isCurrentRequest()) return;
           if (!config) throw new Error('Japanese language settings could not be loaded. Reconnect and reopen this text.');
           profileConfig = { ...config, parserType: 'tinysegmenter-ja-v1' };
+          setLanguageConfig(profileConfig);
+        } else if (data.segmentationProfile === 'thai-dict-v1') {
+          if (!data.languageId) throw new Error('Thai text has no language settings.');
+          const [config] = await Promise.all([getLanguage(data.languageId), ensureThaiSegmentation()]);
+          if (!isCurrentRequest()) return;
+          if (!config) throw new Error('Thai language settings could not be loaded. Reconnect and reopen this text.');
+          profileConfig = { ...config, parserType: 'thai-dict-v1' };
           setLanguageConfig(profileConfig);
         }
         setText(data);
@@ -299,11 +307,15 @@ export const useReaderState = ({
               ? 'jieba-v1'
               : data.segmentationProfile === 'tinysegmenter-ja-v1'
                 ? 'tinysegmenter-ja-v1'
-                : config.parserType === 'jieba-v1'
-                  ? 'jieba'
-                  : config.parserType === 'tinysegmenter-ja-v1'
-                    ? 'mecab'
-                    : config.parserType;
+                : data.segmentationProfile === 'thai-dict-v1'
+                  ? 'thai-dict-v1'
+                  : config.parserType === 'jieba-v1'
+                    ? 'jieba'
+                    : config.parserType === 'tinysegmenter-ja-v1'
+                      ? 'mecab'
+                      : config.parserType === 'thai-dict-v1'
+                        ? 'spacedel'
+                        : config.parserType;
           setLanguageConfig({ ...config, parserType: resolvedParserType });
         } else {
           if (results[1].status === 'rejected') {

@@ -6,3 +6,4 @@ backup/crontab text eol=lf
 
 # The pinned dictionary hash must survive Windows checkouts unchanged.
 server/LinguaReadApi/Resources/Segmentation/jieba-big-v1.txt -text
+server/LinguaReadApi/Resources/Segmentation/words_th.txt -text

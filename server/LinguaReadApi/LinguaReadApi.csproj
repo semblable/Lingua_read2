@@ -15,6 +15,8 @@
     <EmbeddedResource Include="Resources/Segmentation/jieba-big-v1.txt" LogicalName="LinguaReadApi.ChineseDictionaryV1" />
     <None Update="Resources/Segmentation/LICENSE.jieba.txt" TargetPath="ThirdPartyNotices/jieba.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <None Update="Resources/Segmentation/LICENSE.tinysegmenter.txt" TargetPath="ThirdPartyNotices/tinysegmenter.txt" Link="ThirdPartyNotices/tinysegmenter.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <EmbeddedResource Include="Resources/Segmentation/words_th.txt" LogicalName="LinguaReadApi.ThaiDictionaryV1" />
+    <None Update="Resources/Segmentation/LICENSE.words_th.txt" TargetPath="ThirdPartyNotices/words_th.txt" Link="ThirdPartyNotices/words_th.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

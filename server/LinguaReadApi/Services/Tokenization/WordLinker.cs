@@ -44,7 +44,7 @@ namespace LinguaReadApi.Services.Tokenization
         private const int MaxWordInsertAttempts = 3;
 
         private static bool IsSupportedSegmentationProfile(string? profile) =>
-            profile == ChineseSegmenter.Profile || profile == JapaneseSegmenter.Profile;
+            profile == ChineseSegmenter.Profile || profile == JapaneseSegmenter.Profile || profile == ThaiSegmenter.Profile;
 
         /// <summary>
         /// Tokenize <paramref name="content"/>, materialise any new
@@ -97,8 +97,10 @@ namespace LinguaReadApi.Services.Tokenization
                     CharacterSubstitutions = language.CharacterSubstitutions,
                     ParserType = profile == ChineseSegmenter.Profile ? ChineseSegmenter.Profile
                         : profile == JapaneseSegmenter.Profile ? JapaneseSegmenter.Profile
+                        : profile == ThaiSegmenter.Profile ? ThaiSegmenter.Profile
                         : language.ParserType == ChineseSegmenter.Profile ? "jieba"
                         : language.ParserType == JapaneseSegmenter.Profile ? "mecab"
+                        : language.ParserType == ThaiSegmenter.Profile ? "spacedel"
                         : language.ParserType };
 
             // Empty texts are current without creating vocabulary or replaying old content.

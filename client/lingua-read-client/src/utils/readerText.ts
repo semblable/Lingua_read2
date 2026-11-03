@@ -472,6 +472,7 @@ const DEFAULT_WORD_CLASS = DEFAULT_LANGUAGE_WORD_CHARACTERS;
  * exists; this is not a universal Unicode normalization/case-folding contract.
  * Both inputs are already display tokens or stored terms, so do not alter spelling.
  */
+// eslint-disable-next-line no-misleading-character-class
 const ARABIC_DIACRITICS_REGEX = /[\u0640\u064B-\u065F\u0670]/g;
 const HEBREW_DIACRITICS_REGEX = /[\u0591-\u05BD\u05BF\u05C1-\u05C2\u05C4-\u05C5\u05C7]/g;
 const CYRILLIC_STRESS_REGEX = /\u0301/g;

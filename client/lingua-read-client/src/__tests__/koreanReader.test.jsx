@@ -373,4 +373,31 @@ describe('Korean reader saved vocabulary identity', () => {
     await waitFor(() => expect(createWord).toHaveBeenCalledWith(1, '책', 2, 'book', expect.anything()));
     expect(rows.some(r => r.term === '책')).toBe(true);
   });
+
+  test('candidate chips select the lemma that is saved', async () => {
+    const rows = [];
+    createWord.mockImplementation(async (_textId, term, status, translation) => ({ wordId: 99, term, status, translation }));
+    seedReader('산다.', rows);
+    renderReader();
+    await waitFor(() => expect(screen.getByText('산다')).toHaveClass('word-status-0'));
+    fireEvent.click(screen.getByText('산다'));
+    expect(screen.getByRole('button', { name: '사다', exact: true })).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(screen.getByRole('button', { name: '살다', exact: true }));
+    expect(screen.getByRole('button', { name: '살다', exact: true })).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'to live' } });
+    fireEvent.click(screen.getByRole('button', { name: '2' }));
+    await waitFor(() => expect(createWord).toHaveBeenCalled());
+    expect(createWord.mock.calls[0].slice(0, 4)).toEqual([1, '살다', 2, 'to live']);
+  });
+
+  test('an existing saved reading takes precedence over ordinal candidate zero', async () => {
+    seedReader('산다.', [{ wordId: 42, term: '살다', status: 3, translation: 'to live' }]);
+    renderReader();
+    await waitFor(() => expect(screen.getByText('산다')).toHaveClass('word-status-3'));
+    fireEvent.click(screen.getByText('산다'));
+    expect(screen.getByRole('button', { name: '살다', exact: true })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('textbox')).toHaveValue('to live');
+    fireEvent.click(screen.getByRole('button', { name: '4' }));
+    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(42, 4, 'to live'));
+  });
 });

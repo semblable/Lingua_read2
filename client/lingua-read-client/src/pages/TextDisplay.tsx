@@ -35,6 +35,7 @@ import {
   consumeWordAt,
   extractWords,
   lowercaseLookupTerm,
+  resolveLookupTerm,
   cleanSelectedReaderText,
   isAbbreviationOrNonSentencePeriod,
   getOverlappedWordSpans,
@@ -45,7 +46,7 @@ import {
   buildPhraseSelectionText
 } from '../utils/readerText';
 import type { SentenceSegment, PhraseSelectionState } from '../utils/readerText';
-import { analyzeKoreanToken, composeKoreanLookupText, createKoreanLookup, findKoreanLookupMatches, isKoreanLanguageCode, resolveKoreanLookup } from '../utils/koreanLookup';
+import { analyzeKoreanCandidates, composeKoreanLookupText, createKoreanLookup, findKoreanLookupMatches, isKoreanLanguageCode, resolveKoreanLookup } from '../utils/koreanLookup';
 import PrimaryControls from '../components/reader/PrimaryControls';
 import SecondaryControls from '../components/reader/SecondaryControls';
 import ReaderLessonActions from '../components/reader/ReaderLessonActions';
@@ -621,20 +622,19 @@ const TextDisplay = () => {
     const exactKey = lookupTerm(word);
     // A legacy spelling owns its saved row; only an unambiguous Korean alias
     // may answer an exact miss. The rendered word and its offsets stay intact.
-    const exact = koreanWordLookup ? resolveKoreanLookup(koreanWordLookup, exactKey) : wordMap.get(exactKey) || null;
+    const exact = koreanWordLookup ? resolveKoreanLookup(koreanWordLookup, exactKey)
+      : resolveLookupTerm(exactKey, languageConfig?.code || languageConfig?.languageCode || text?.languageCode, wordMap);
     if (exact && (exact.status ?? 0) > 0) return exact;
 
     if (koreanWordLookup) {
-      const analysis = analyzeKoreanToken(exactKey);
-      if (analysis) {
-        const lemma = resolveKoreanLookup(koreanWordLookup, analysis.lemma);
-        if (lemma) {
-          if ((lemma.status ?? 0) > 0 || !exact) return lemma;
-        }
-      }
+      const matches = analyzeKoreanCandidates(exactKey)
+        .map(candidate => resolveKoreanLookup(koreanWordLookup, candidate.lemma)).filter((row): row is Word => row !== null);
+      const tracked = matches.find(row => (row.status ?? 0) > 0);
+      if (tracked) return tracked;
+      if (!exact && matches.length) return matches[0];
     }
     return exact;
-  }, [wordMap, lookupTerm, koreanWordLookup]);
+  }, [wordMap, lookupTerm, koreanWordLookup, languageConfig?.code, languageConfig?.languageCode, text?.languageCode]);
 
   const getBulkWordCandidates = useCallback((rawWords: string[]) => {
     const seenSavedRows = new Set<Word>();
@@ -642,8 +642,8 @@ const TextDisplay = () => {
     return [...new Set(rawWords.map(lookupTerm))].flatMap(key => {
       const saved = getWordData(key);
       if (koreanWordLookup) {
-        const analysis = analyzeKoreanToken(key);
-        const targetTerm = analysis?.lemma || key;
+        const analysis = analyzeKoreanCandidates(key)[0];
+        const targetTerm = analysis ? saved?.term || analysis.lemma : key;
         const canonical = composeKoreanLookupText(targetTerm);
         if (!saved && (koreanWordLookup.exact.has(targetTerm) || koreanWordLookup.canonical.has(canonical))) {
           throw new Error(`Ambiguous Korean vocabulary for "${targetTerm}". Resolve the conflicting saved entries before using bulk actions.`);
@@ -682,7 +682,7 @@ const TextDisplay = () => {
 
   const handleWordClick = useCallback((
     word: string,
-    options: { skipAutoTranslate?: boolean; preserveLastHandledSelection?: boolean; selectionContext?: string } = {}
+    options: { skipAutoTranslate?: boolean; preserveLastHandledSelection?: boolean; selectionContext?: string; candidateLemma?: string } = {}
   ) => {
     const { skipAutoTranslate = false, preserveLastHandledSelection = false, selectionContext = '' } = options;
     clearPendingSelection();
@@ -698,13 +698,13 @@ const TextDisplay = () => {
     const isKorean = isKoreanLanguageCode(
       languageConfig?.code || languageConfig?.languageCode || text?.languageCode
     );
-    const analysis = isKorean ? analyzeKoreanToken(word) : null;
-    const lemma = analysis ? analysis.lemma : word;
-    const particleBadge = analysis ? `+ ${analysis.particle} (${analysis.particleType})` : undefined;
-
-    const exactWord = getWordData(word);
-    const lemmaWord = analysis ? getWordData(lemma) : null;
-    const existingWord = (exactWord && (exactWord.status ?? 0) > 0) ? exactWord : (lemmaWord || exactWord);
+    const lemmaCandidates = isKorean ? analyzeKoreanCandidates(word) : [];
+    const exactWord = options.candidateLemma && koreanWordLookup
+      ? resolveKoreanLookup(koreanWordLookup, options.candidateLemma) : getWordData(word);
+    const analysis = lemmaCandidates.find(candidate => candidate.lemma === (options.candidateLemma || exactWord?.term)) || lemmaCandidates[0];
+    const lemma = options.candidateLemma || ((exactWord?.status ?? 0) > 0 ? exactWord!.term : analysis?.lemma) || word;
+    const particleBadge = analysis?.particle ? `+ ${analysis.particle} (${analysis.particleType})` : undefined;
+    const existingWord = exactWord;
 
     setSelectedWord(lemma);
     setSelectedWordAiContext(selectionContext);
@@ -721,6 +721,7 @@ const TextDisplay = () => {
         term: existingWord.term ?? lemma,
         surface: word,
         particleBadge,
+        lemmaCandidates,
         translation: existingWord.translation ?? undefined
       });
       setTranslation(existingWord.translation || '');
@@ -730,6 +731,7 @@ const TextDisplay = () => {
         term: lemma,
         surface: word,
         particleBadge,
+        lemmaCandidates,
         status: 0,
         translation: '',
         isNew: true
@@ -738,7 +740,7 @@ const TextDisplay = () => {
       setTranslation('');
       if (!skipAutoTranslate) triggerAutoTranslation(lemma);
     }
-  }, [clearPendingSelection, cancelInflightTranslation, getWordData, globalSettings.pauseOnWordClick, isAudioLesson, triggerAutoTranslation, setSelectedWord, setTranslation, setWordTranslationError, setDisplayedWord, isMobile, pauseAudioPlayback, setSegmentPlaybackRequest, languageConfig?.code, languageConfig?.languageCode, text?.languageCode]); // Dependencies using globalSettings don't need it listed if context handles updates
+  }, [clearPendingSelection, cancelInflightTranslation, getWordData, koreanWordLookup, globalSettings.pauseOnWordClick, isAudioLesson, triggerAutoTranslation, setSelectedWord, setTranslation, setWordTranslationError, setDisplayedWord, isMobile, pauseAudioPlayback, setSegmentPlaybackRequest, languageConfig?.code, languageConfig?.languageCode, text?.languageCode]); // Dependencies using globalSettings don't need it listed if context handles updates
 
   // Removed handleTextSelection as selection is now handled by onMouseUp on the container
 
@@ -1756,8 +1758,8 @@ const TextDisplay = () => {
   const handleSetWordStatusFromKeyboard = useCallback(
     async (term: string, status: WordStatus) => {
       const isKorean = isKoreanLanguageCode(languageConfig?.code || languageConfig?.languageCode || text?.languageCode);
-      const analysis = isKorean ? analyzeKoreanToken(term) : null;
-      const targetTerm = analysis?.lemma || term;
+      const analysis = isKorean ? analyzeKoreanCandidates(term)[0] : null;
+      const targetTerm = getWordData(term)?.term || analysis?.lemma || term;
       const wordData = getWordData(term) || (analysis ? getWordData(targetTerm) : null);
       if (wordData && wordData.wordId) {
         let translationToUse = wordData.translation || '';
@@ -1839,7 +1841,9 @@ const TextDisplay = () => {
       if (isNaN(numericStatus) || numericStatus < 1 || numericStatus > 6) throw new Error(`Invalid status: ${status}.`);
       const existingWord = exactTermOverride
         ? (koreanWordLookup ? koreanWordLookup.exact.get(exactTermOverride) : wordMap.get(lookupTerm(exactTermOverride)))
-        : (getWordData(termToSave) || getWordData(selectedWord));
+        : displayedWord?.lemmaCandidates?.some(candidate => candidate.lemma === termToSave) && koreanWordLookup
+          ? resolveKoreanLookup(koreanWordLookup, termToSave)
+          : (getWordData(termToSave) || getWordData(selectedWord));
       if (existingWord && existingWord.wordId && (!exactTermOverride || existingWord.term === exactTermOverride)) {
         await updateWord(existingWord.wordId!, numericStatus, translationToSave);
         // From the list as it is now: a batch save may have merged rows in during the await.
@@ -1856,7 +1860,8 @@ const TextDisplay = () => {
           ...(newWordData || {}),
           isNew: false,
           surface: exactTermOverride || displayedWord?.surface,
-          particleBadge: exactTermOverride ? undefined : displayedWord?.particleBadge
+          particleBadge: exactTermOverride ? undefined : displayedWord?.particleBadge,
+          lemmaCandidates: exactTermOverride ? undefined : displayedWord?.lemmaCandidates
         });
       }
       setSaveSuccess(true); setTimeout(() => setSaveSuccess(false), 2000);
@@ -2453,6 +2458,7 @@ const TextDisplay = () => {
       onSaveWord: handleSaveWord,
       onSaveTranslation: handleSaveTranslation,
       onSaveExactForm: handleSaveExactForm,
+      onSelectLemma: (lemma: string) => handleWordClick(displayedWord?.surface || selectedWord, { candidateLemma: lemma, selectionContext: selectedWordAiContext }),
       onMineSentence: handleMineSentence,
       processingWord,
       onReadingCredit: handleReadingCredit,

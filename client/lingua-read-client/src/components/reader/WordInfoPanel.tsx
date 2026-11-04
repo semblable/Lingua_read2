@@ -52,6 +52,7 @@ export type WordInfoActions = {
   // Saves the box as it is, keeping the status (New for an untracked word); same as Enter.
   onSaveTranslation?: () => void;
   onSaveExactForm?: () => void;
+  onSelectLemma?: (lemma: string) => void;
   onMineSentence: () => void;
   processingWord: boolean;
   onReadingCredit?: (wordId: number | string) => void;
@@ -161,6 +162,21 @@ const WordInfoPanel = React.memo(({
           {saveSuccess && <span className="word-info-saved" role="status">✓ Saved</span>}
         </div>
       </div>
+      {displayedWord.lemmaCandidates && displayedWord.lemmaCandidates.length > 1 && actions.onSelectLemma && (
+        <div className="d-flex flex-wrap gap-1 mb-2" role="group" aria-label="Korean readings">
+          {displayedWord.lemmaCandidates.map(candidate => (
+            <Button
+              key={candidate.lemma}
+              size="sm"
+              variant={selectedWord === candidate.lemma ? 'primary' : 'outline-secondary'}
+              aria-pressed={selectedWord === candidate.lemma}
+              title={candidate.particle ? `${candidate.particle} (${candidate.particleType})` : candidate.particleType}
+              onClick={() => actions.onSelectLemma?.(candidate.lemma)}
+              disabled={actions.processingWord}
+            >{candidate.lemma}</Button>
+          ))}
+        </div>
+      )}
       {phraseSelection && (phraseSelection.canExtendPrev || phraseSelection.canExtendNext) && (
         <div className="d-flex gap-1 mb-2 word-info-extend-row" role="group" aria-label="Extend selection">
           <Button

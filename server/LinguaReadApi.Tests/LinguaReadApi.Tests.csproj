@@ -22,6 +22,9 @@
   </ItemGroup>
 
   <ItemGroup>
+    <None Include="..\..\tests\golden\multilingual_tokenizer_and_lemmatizer_test_suite_v4.json" Link="multilingual_tokenizer_and_lemmatizer_test_suite_v4.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
     <!-- Shared tokenizer golden vectors (repo root), copied next to the test
          assembly so TokenizerTests can read it via AppContext.BaseDirectory.
          The same file drives the frontend tokenizer.spec.js. -->

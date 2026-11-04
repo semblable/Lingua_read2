@@ -36,7 +36,10 @@ namespace LinguaReadApi.Services.Tokenization
         // class falls back to letters plus marks. Re-linking replaces
         // fragments such as "repa" + "rava" with "reparava"; the orphan
         // cleanup then deletes the fragments nobody translated or marked.
-        public const int CurrentTokenizerVersion = 3;
+        // Bump to 4: explicit language-scoped folds, Hebrew quote boundaries,
+        // normalized RTL headwords and fallback lookup, and Korean candidate reuse.
+        // Relinking refreshes vocabulary coverage without replaying study credit.
+        public const int CurrentTokenizerVersion = 4;
 
         private const int WordBatchSize = 500;
 

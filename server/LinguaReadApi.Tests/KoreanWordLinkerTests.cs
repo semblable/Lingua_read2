@@ -172,10 +172,10 @@ public class KoreanWordLinkerTests
         Assert.Equal("책", savedBookWord.Term);
         Assert.Equal(3, savedBookWord.Status);
 
-        // WordLinker version must remain 3
+        // The current version is stamped without changing saved vocabulary.
         var text = await learner.Context.Texts.SingleAsync(t => t.TextId == 1);
         Assert.Equal(WordLinker.CurrentTokenizerVersion, text.WordLinkingTokenizerVersion);
-        Assert.Equal(3, WordLinker.CurrentTokenizerVersion);
+        Assert.Equal(4, WordLinker.CurrentTokenizerVersion);
     }
 
     private sealed class Learner(SqliteConnection connection, AppDbContext context, Guid userId, int[] protectedWordIds) : IAsyncDisposable

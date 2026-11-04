@@ -9,3 +9,7 @@ server/LinguaReadApi/Resources/Segmentation/jieba-big-v1.txt -text
 server/LinguaReadApi/Resources/Segmentation/words_th.txt -text
 # Shared golden fixtures must have identical bytes in both runtimes.
 tests/golden/*.json text eol=lf
+# KRDICT checksums are pinned across independent server/browser build contexts.
+resources/krdict_lemmas.txt -text
+server/LinguaReadApi/Resources/Korean/krdict_lemmas.txt -text
+client/lingua-read-client/src/resources/krdict_lemmas.txt -text

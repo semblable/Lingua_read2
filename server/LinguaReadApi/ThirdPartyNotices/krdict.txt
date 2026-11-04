@@ -1,0 +1,24 @@
+Korean Basic Dictionary (KRDICT) headwords
+Copyright: National Institute of Korean Language (국립국어원)
+Source: https://krdict.korean.go.kr/
+Copyright policy: https://krdict.korean.go.kr/kor/kboardPolicy/copyRightTermsInfo
+License: Creative Commons Attribution-ShareAlike 2.0 Korea (CC BY-SA 2.0 KR)
+https://creativecommons.org/licenses/by-sa/2.0/kr/
+Legal code: https://creativecommons.org/licenses/by-sa/2.0/kr/legalcode
+
+This work may be shared and adapted, including commercially, with attribution,
+a link to the license, indication of changes, and distribution of adaptations
+under the same license. The license applies to the headword data, independently
+of the application source code. No endorsement by NIKL is implied.
+
+Changes by LinguaRead: extracted only Lemma/writtenForm values from the public
+KRDICT XML export; NFC normalized, restricted to Hangul-only entries, deduplicated,
+sorted ordinally, encoded as UTF-8 with LF line endings. Definitions, examples,
+translations, pronunciations, and multimedia are not included.
+
+Pinned source mirror:
+https://github.com/spellcheck-ko/korean-dict-nikl-krdict/tree/e7249562dca526461a347eb2cc5a2e67a17c4488
+2019-08-02 export; files 5000.xml through 50000.xml and 51947.xml.
+43445 unique headwords.
+SHA-256: 0a9969de8b86597f947128ddb72fc7e17e686adc1e064ddb3fbf9ccde802e1e5
+Reproduce with scripts/generate-krdict-lemmas.py.

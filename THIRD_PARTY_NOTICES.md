@@ -86,6 +86,25 @@ The pinned dictionary SHA-256 is `b654af583aaa269275339b3400e12a62311dd2c4d1779f
 The segmenter applies Thai Character Cluster (TCC) constraints based on Theeramunkong et al. (2000)
 with backward dynamic programming and out-of-vocabulary cluster coalescing.
 
+### Korean Basic Dictionary (KRDICT) headwords
+
+Korean lookup candidates use 43,445 Hangul-only headwords extracted from the
+National Institute of Korean Language's [Korean Basic Dictionary](https://krdict.korean.go.kr/).
+The canonical list at `resources/krdict_lemmas.txt` has identical generated copies in
+`server/LinguaReadApi/Resources/Korean/krdict_lemmas.txt` and
+`client/lingua-read-client/src/resources/krdict_lemmas.txt` for independent Docker
+build contexts, embedded by C# and TypeScript. Parity tests pin all copies to the
+same SHA-256. It is **CC BY-SA 2.0 KR**, separately from application code,
+under the [official copyright policy](https://krdict.korean.go.kr/kor/kboardPolicy/copyRightTermsInfo).
+The derived list retains that license; changes are extraction, NFC normalization,
+Hangul-only filtering, deduplication, and ordinal sorting. No definitions or media
+are included. Its [attribution and source revision](client/lingua-read-client/public/licenses/krdict.txt)
+ship in browser `licenses/krdict.txt` and server `ThirdPartyNotices/krdict.txt`.
+The pinned 2019-08-02 XML export is mirrored at
+[spellcheck-ko/korean-dict-nikl-krdict, e7249562](https://github.com/spellcheck-ko/korean-dict-nikl-krdict/tree/e7249562dca526461a347eb2cc5a2e67a17c4488).
+Run `scripts/generate-krdict-lemmas.py` to reproduce the exact list
+(SHA-256 `0a9969de8b86597f947128ddb72fc7e17e686adc1e064ddb3fbf9ccde802e1e5`).
+
 ## Self-hosted fonts and icons
 
 The application imports fonts through Fontsource; the demo currently imports Inter

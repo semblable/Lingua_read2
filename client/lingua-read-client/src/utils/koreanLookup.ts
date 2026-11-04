@@ -3,6 +3,8 @@
  * modern conjoining Jamo compose, compatibility Jamo (ㄱ, ㅏ, …) do not.
  * Callers supply their existing trimmed/cased keys; do not persist these aliases.
  */
+import krdictHeadwords from '../resources/krdict_lemmas.txt?raw';
+
 export const isKoreanLanguageCode = (code?: string | null): boolean =>
   (code || '').trim().toLowerCase().replace(/_/g, '-').split('-')[0] === 'ko';
 
@@ -13,6 +15,74 @@ export interface KoreanTokenAnalysis {
 }
 
 export type KoreanVerbAnalysis = KoreanTokenAnalysis;
+
+export interface KoreanLemmaCandidate extends KoreanTokenAnalysis {
+  dictionaryValidated: boolean;
+  rank: number;
+}
+
+const KRDICT_HEADWORDS: ReadonlySet<string> = new Set(krdictHeadwords.trim().split(/\r?\n/));
+
+/** A dictionary miss is a ranking signal, never grounds to discard every hypothesis. */
+export const rankKoreanCandidates = (
+  candidates: readonly KoreanTokenAnalysis[],
+  headwords: ReadonlySet<string> = KRDICT_HEADWORDS,
+  frequencies: ReadonlyMap<string, number> = new Map()
+): KoreanLemmaCandidate[] => {
+  const unique = new Map<string, KoreanTokenAnalysis>();
+  for (const candidate of candidates) if (!unique.has(candidate.lemma)) unique.set(candidate.lemma, candidate);
+  const anyValidated = [...unique.keys()].some(lemma => headwords.has(lemma));
+  return [...unique.values()]
+    .filter(candidate => !anyValidated || headwords.has(candidate.lemma))
+    .sort((a, b) => (frequencies.get(b.lemma) || 0) - (frequencies.get(a.lemma) || 0)
+      || (a.lemma < b.lemma ? -1 : a.lemma > b.lemma ? 1 : 0))
+    .map(candidate => ({ ...candidate, dictionaryValidated: headwords.has(candidate.lemma), rank: anyValidated ? 0 : 1 }));
+};
+
+/** All plausible readings; spans and stored vocabulary rows remain unchanged. */
+export const analyzeKoreanCandidates = (surface: string): KoreanLemmaCandidate[] => {
+  const s = composeKoreanLookupText(surface || '');
+  if (!/^[가-힣]+$/.test(s)) return [];
+  const candidates: KoreanTokenAnalysis[] = [];
+  const primary = analyzeKoreanToken(s);
+  if (primary) candidates.push(primary);
+  const add = (lemma: string, particle: string, particleType: string) => candidates.push({ lemma, particle, particleType });
+  // Keep free nouns alongside fused verbal endings (산, 살, 알, …).
+  if (KRDICT_HEADWORDS.has(s) || ONE_SYLLABLE_NOUNS.has(s) || ['길이', '먹이', '놀이', '높이'].includes(s)) add(s, '', 'Noun');
+  if (['길이', '먹이'].includes(s)) add(s.slice(0, -1), '이', 'Subject Marker');
+  if (s === '놀이') add('놀다', '이', 'Nominalizer');
+  if (s === '높이') add('높다', '이', 'Nominalizer');
+
+  const openAndRieul = (stem: string, ending: string, type: string) => {
+    if (!stem) return;
+    const last = decomposeHangulSyllable(stem.at(-1)!);
+    if (last.cho < 0) return;
+    add(`${stem}다`, ending, type);
+    if (last.jong === 0) add(`${stem.slice(0, -1)}${composeHangulSyllable(last.cho, last.jung, 8)}다`, ending, type);
+  };
+  // ㄹ drops before ㄴ, ㅂ, ㅅ. Separate syllabic endings expose the open stem.
+  for (const ending of ['시었습니다', '셨습니다', '셨습니까', '십니다', '십니까', '시는데', '시네요', '시어요', '세요', '셔요', '시다', '시는', '신다', '시네', '시고', '시', '는다', '는데', 'ㄴ데', '는', '네']) {
+    if (s.endsWith(ending) && s.length > ending.length) {
+      openAndRieul(s.slice(0, -ending.length), ending, ending.startsWith('시') || ending.startsWith('십') || ending === '세요' ? 'Honorific Form' : 'Verb Ending');
+    }
+  }
+  // Fused final consonants: 산다, 간데, 삽니다, 만든, 갈.
+  for (const [tail, jong, marker, type] of [
+    ['다', 4, 'ㄴ다', 'Indicative Form'], ['데', 4, 'ㄴ데', 'Connective Form'],
+    ['니다', 17, 'ㅂ니다', 'Formal Polite'], ['니까', 17, 'ㅂ니까', 'Formal Polite'],
+    ['', 4, 'ㄴ', 'Modifier Form'], ['', 8, 'ㄹ', 'Modifier Form']
+  ] as const) {
+    if (tail && !s.endsWith(tail)) continue;
+    const stemWithFinal = tail ? s.slice(0, -tail.length) : s;
+    if (!stemWithFinal) continue;
+    const last = decomposeHangulSyllable(stemWithFinal.at(-1)!);
+    if (last.jong !== jong) continue;
+    const openStem = stemWithFinal.slice(0, -1) + composeHangulSyllable(last.cho, last.jung, 0);
+    openAndRieul(openStem, marker, type);
+  }
+  const ranked = rankKoreanCandidates(candidates);
+  return !primary && ranked.length === 1 && ranked[0].lemma === s ? [] : ranked;
+};
 
 export type BatchimCondition =
   | 'any'

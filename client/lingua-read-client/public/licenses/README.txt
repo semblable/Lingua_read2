@@ -11,5 +11,9 @@ see flag-icons.txt for the full upstream copyright and license.
 Sources and media attribution:
 https://github.com/semblable/Lingua_read2/blob/dev/THIRD_PARTY_NOTICES.md
 
+Korean dictionary headwords: National Institute of Korean Language's Korean
+Basic Dictionary (KRDICT), CC BY-SA 2.0 KR. See krdict.txt for source, changes,
+and license. This data retains its own license, separately from application code.
+
 Maintainers: after a font/icon upgrade, refresh its text from the installed
 package's LICENSE and review the changes before redistributing.

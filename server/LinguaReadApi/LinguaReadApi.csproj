@@ -16,6 +16,7 @@
     <None Update="Resources/Segmentation/LICENSE.jieba.txt" TargetPath="ThirdPartyNotices/jieba.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <None Update="Resources/Segmentation/LICENSE.tinysegmenter.txt" TargetPath="ThirdPartyNotices/tinysegmenter.txt" Link="ThirdPartyNotices/tinysegmenter.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <EmbeddedResource Include="Resources/Segmentation/words_th.txt" LogicalName="LinguaReadApi.ThaiDictionaryV1" />
+    <EmbeddedResource Include="Resources/Korean/krdict_lemmas.txt" LogicalName="LinguaReadApi.KrdictLemmas" />
     <None Update="Resources/Segmentation/LICENSE.words_th.txt" TargetPath="ThirdPartyNotices/words_th.txt" Link="ThirdPartyNotices/words_th.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 

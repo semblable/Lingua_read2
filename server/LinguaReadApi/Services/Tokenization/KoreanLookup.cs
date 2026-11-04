@@ -18,6 +18,71 @@ public static class KoreanLookup
 
     public sealed record KoreanTokenAnalysis(string Lemma, string Particle, string ParticleType);
     public sealed record KoreanVerbAnalysis(string Lemma, string Particle, string ParticleType);
+    public sealed record KoreanLemmaCandidate(string Lemma, string Particle, string ParticleType, bool DictionaryValidated, int Rank);
+
+    private static readonly Lazy<HashSet<string>> KrdictHeadwords = new(() =>
+    {
+        using var stream = typeof(KoreanLookup).Assembly.GetManifestResourceStream("LinguaReadApi.KrdictLemmas")
+            ?? throw new InvalidOperationException("Embedded KRDICT headwords are missing.");
+        using var reader = new StreamReader(stream, Encoding.UTF8);
+        return reader.ReadToEnd().Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToHashSet(StringComparer.Ordinal);
+    });
+
+    public static IReadOnlyList<KoreanLemmaCandidate> RankKoreanCandidates(
+        IEnumerable<KoreanTokenAnalysis> candidates, IReadOnlySet<string>? headwords = null,
+        IReadOnlyDictionary<string, int>? frequencies = null)
+    {
+        headwords ??= KrdictHeadwords.Value;
+        var unique = candidates.DistinctBy(candidate => candidate.Lemma, StringComparer.Ordinal).ToArray();
+        var anyValidated = unique.Any(candidate => headwords.Contains(candidate.Lemma));
+        return unique.Where(candidate => !anyValidated || headwords.Contains(candidate.Lemma))
+            .OrderByDescending(candidate => frequencies?.GetValueOrDefault(candidate.Lemma) ?? 0)
+            .ThenBy(candidate => candidate.Lemma, StringComparer.Ordinal)
+            .Select(candidate => new KoreanLemmaCandidate(candidate.Lemma, candidate.Particle, candidate.ParticleType,
+                headwords.Contains(candidate.Lemma), anyValidated ? 0 : 1)).ToArray();
+    }
+
+    /// <summary>Lookup-only ambiguity expansion, mirrored by analyzeKoreanCandidates.</summary>
+    public static IReadOnlyList<KoreanLemmaCandidate> AnalyzeKoreanCandidates(string surface)
+    {
+        var s = ComposeHangul(surface ?? "");
+        if (s.Length == 0 || s.Any(c => c is < '\uac00' or > '\ud7a3')) return [];
+        var candidates = new List<KoreanTokenAnalysis>();
+        var primary = AnalyzeKoreanToken(s);
+        if (primary != null) candidates.Add(primary);
+        void Add(string lemma, string particle, string type) => candidates.Add(new(lemma, particle, type));
+        if (KrdictHeadwords.Value.Contains(s) || OneSyllableNouns.Contains(s) || s is "길이" or "먹이" or "놀이" or "높이") Add(s, "", "Noun");
+        if (s is "길이" or "먹이") Add(s[..^1], "이", "Subject Marker");
+        if (s == "놀이") Add("놀다", "이", "Nominalizer");
+        if (s == "높이") Add("높다", "이", "Nominalizer");
+        void OpenAndRieul(string stem, string ending, string type)
+        {
+            if (stem.Length == 0) return;
+            var (cho, jung, jong) = DecomposeHangulSyllable(stem[^1]);
+            if (cho < 0) return;
+            Add(stem + "다", ending, type);
+            if (jong == 0) Add(stem[..^1] + ComposeHangulSyllable(cho, jung, 8) + "다", ending, type);
+        }
+        foreach (var ending in new[] { "시었습니다", "셨습니다", "셨습니까", "십니다", "십니까", "시는데", "시네요", "시어요", "세요", "셔요", "시다", "시는", "신다", "시네", "시고", "시", "는다", "는데", "ㄴ데", "는", "네" })
+        {
+            if (s.EndsWith(ending, StringComparison.Ordinal) && s.Length > ending.Length)
+                OpenAndRieul(s[..^ending.Length], ending, ending.StartsWith("시", StringComparison.Ordinal) || ending.StartsWith("십", StringComparison.Ordinal) || ending == "세요" ? "Honorific Form" : "Verb Ending");
+        }
+        foreach (var (tail, jong, marker, type) in new[] {
+            ("다", 4, "ㄴ다", "Indicative Form"), ("데", 4, "ㄴ데", "Connective Form"),
+            ("니다", 17, "ㅂ니다", "Formal Polite"), ("니까", 17, "ㅂ니까", "Formal Polite"),
+            ("", 4, "ㄴ", "Modifier Form"), ("", 8, "ㄹ", "Modifier Form") })
+        {
+            if (tail.Length > 0 && !s.EndsWith(tail, StringComparison.Ordinal)) continue;
+            var stem = tail.Length > 0 ? s[..^tail.Length] : s;
+            if (stem.Length == 0) continue;
+            var last = DecomposeHangulSyllable(stem[^1]);
+            if (last.Jong != jong) continue;
+            OpenAndRieul(stem[..^1] + ComposeHangulSyllable(last.Cho, last.Jung, 0), marker, type);
+        }
+        var ranked = RankKoreanCandidates(candidates);
+        return primary == null && ranked.Count == 1 && ranked[0].Lemma == s ? [] : ranked;
+    }
 
     private enum BatchimCondition
     {

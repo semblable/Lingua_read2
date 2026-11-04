@@ -102,7 +102,10 @@ public class MultilingualGoldenTests
     public void SharedKoreanCandidates(string id, JsonElement fixture)
     {
         var expected = fixture.GetProperty("expected_lemmas").EnumerateArray().Select(value => value.GetString()!).ToArray();
-        Assert.Equal(expected, KoreanLookup.AnalyzeKoreanCandidates(fixture.GetProperty("surface").GetString()!).Select(candidate => candidate.Lemma));
+        var actual = KoreanLookup.AnalyzeKoreanCandidates(fixture.GetProperty("surface").GetString()!)
+            .Select(candidate => candidate.Lemma).ToArray();
+        Assert.True(expected.SequenceEqual(actual, StringComparer.Ordinal),
+            $"{id}: expected lemma order [{string.Join(", ", expected)}]; got [{string.Join(", ", actual)}].");
     }
 
     [Theory]
@@ -116,7 +119,9 @@ public class MultilingualGoldenTests
         foreach (var order in new[] { lemmas, lemmas.Reverse().ToArray() })
         {
             var actual = KoreanLookup.RankKoreanCandidates(order.Select(lemma => new KoreanLookup.KoreanTokenAnalysis(lemma, "", "")), headwords, frequencies);
-            Assert.Equal(expected, actual.Select(candidate => candidate.Lemma));
+            var actualLemmas = actual.Select(candidate => candidate.Lemma).ToArray();
+            Assert.True(expected.SequenceEqual(actualLemmas, StringComparer.Ordinal),
+                $"{id}: expected lemma order [{string.Join(", ", expected)}]; got [{string.Join(", ", actualLemmas)}] for input [{string.Join(", ", order)}].");
             Assert.All(actual, candidate =>
             {
                 Assert.Equal(fixture.GetProperty("expected_validated").GetBoolean(), candidate.DictionaryValidated);

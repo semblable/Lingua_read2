@@ -12731,5 +12731,109 @@
       ],
       "expected": "كتاب"
     }
+  ],
+  "korean_candidate_cases": [
+    {
+      "id": "ko-road-or-length",
+      "surface": "길이",
+      "expected_lemmas": [
+        "길",
+        "길이"
+      ]
+    },
+    {
+      "id": "ko-live-or-buy",
+      "surface": "산다",
+      "expected_lemmas": [
+        "사다",
+        "살다"
+      ]
+    },
+    {
+      "id": "ko-grind-or-go",
+      "surface": "간다",
+      "expected_lemmas": [
+        "가다",
+        "갈다"
+      ]
+    }
+  ],
+  "korean_ranking_cases": [
+    {
+      "id": "ko-ordinal-vocabulary-fixture",
+      "lemmas": [
+        "살다",
+        "사다",
+        "가다"
+      ],
+      "headwords": [
+        "살다",
+        "사다",
+        "가다"
+      ],
+      "frequencies": {},
+      "expected_lemmas": [
+        "가다",
+        "사다",
+        "살다"
+      ],
+      "expected_validated": true,
+      "expected_rank": 0
+    },
+    {
+      "id": "ko-frequency-fixture",
+      "lemmas": [
+        "살다",
+        "사다",
+        "가다"
+      ],
+      "headwords": [
+        "살다",
+        "사다",
+        "가다"
+      ],
+      "frequencies": {
+        "살다": 20,
+        "사다": 10
+      },
+      "expected_lemmas": [
+        "살다",
+        "사다",
+        "가다"
+      ],
+      "expected_validated": true,
+      "expected_rank": 0
+    },
+    {
+      "id": "ko-validation-filters-only-with-a-hit",
+      "lemmas": [
+        "가다",
+        "갈다"
+      ],
+      "headwords": [
+        "갈다"
+      ],
+      "frequencies": {},
+      "expected_lemmas": [
+        "갈다"
+      ],
+      "expected_validated": true,
+      "expected_rank": 0
+    },
+    {
+      "id": "ko-no-hit-keeps-lower-ranked-options",
+      "lemmas": [
+        "갈다",
+        "가다"
+      ],
+      "headwords": [],
+      "frequencies": {},
+      "expected_lemmas": [
+        "가다",
+        "갈다"
+      ],
+      "expected_validated": false,
+      "expected_rank": 1
+    }
   ]
 }

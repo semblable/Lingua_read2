@@ -17,6 +17,10 @@ public class MultilingualGoldenTests
         .Select(fixture => new object[] { fixture.GetProperty("id").GetString()!, fixture.Clone() });
     public static IEnumerable<object[]> LookupCases => Suite.GetProperty("lookup_cases").EnumerateArray()
         .Select(fixture => new object[] { fixture.GetProperty("id").GetString()!, fixture.Clone() });
+    public static IEnumerable<object[]> KoreanCandidateCases => Suite.GetProperty("korean_candidate_cases").EnumerateArray()
+        .Select(fixture => new object[] { fixture.GetProperty("id").GetString()!, fixture.Clone() });
+    public static IEnumerable<object[]> KoreanRankingCases => Suite.GetProperty("korean_ranking_cases").EnumerateArray()
+        .Select(fixture => new object[] { fixture.GetProperty("id").GetString()!, fixture.Clone() });
 
     [Fact]
     public void CorpusPreservesAndExecutesEveryReferenceCase()
@@ -91,5 +95,33 @@ public class MultilingualGoldenTests
         var term = fixture.GetProperty("term").GetString()!;
         Assert.Equal(fixture.GetProperty("expected").GetString(), Tokenizer.ResolveLookupKey(term, language, vocabulary));
         Assert.Equal(fixture.GetProperty("expected").GetString(), Tokenizer.ResolveLookupKey(term, language, vocabulary.Reverse()));
+    }
+
+    [Theory]
+    [MemberData(nameof(KoreanCandidateCases))]
+    public void SharedKoreanCandidates(string id, JsonElement fixture)
+    {
+        var expected = fixture.GetProperty("expected_lemmas").EnumerateArray().Select(value => value.GetString()!).ToArray();
+        Assert.Equal(expected, KoreanLookup.AnalyzeKoreanCandidates(fixture.GetProperty("surface").GetString()!).Select(candidate => candidate.Lemma));
+    }
+
+    [Theory]
+    [MemberData(nameof(KoreanRankingCases))]
+    public void SharedKoreanRanking(string id, JsonElement fixture)
+    {
+        var lemmas = fixture.GetProperty("lemmas").EnumerateArray().Select(value => value.GetString()!).ToArray();
+        var headwords = fixture.GetProperty("headwords").EnumerateArray().Select(value => value.GetString()!).ToHashSet(StringComparer.Ordinal);
+        var frequencies = fixture.GetProperty("frequencies").EnumerateObject().ToDictionary(value => value.Name, value => value.Value.GetInt32(), StringComparer.Ordinal);
+        var expected = fixture.GetProperty("expected_lemmas").EnumerateArray().Select(value => value.GetString()!).ToArray();
+        foreach (var order in new[] { lemmas, lemmas.Reverse().ToArray() })
+        {
+            var actual = KoreanLookup.RankKoreanCandidates(order.Select(lemma => new KoreanLookup.KoreanTokenAnalysis(lemma, "", "")), headwords, frequencies);
+            Assert.Equal(expected, actual.Select(candidate => candidate.Lemma));
+            Assert.All(actual, candidate =>
+            {
+                Assert.Equal(fixture.GetProperty("expected_validated").GetBoolean(), candidate.DictionaryValidated);
+                Assert.Equal(fixture.GetProperty("expected_rank").GetInt32(), candidate.Rank);
+            });
+        }
     }
 }

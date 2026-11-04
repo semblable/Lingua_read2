@@ -4,6 +4,7 @@ import { describe, expect, test } from 'vitest';
 import { tokenizeContent, lowercaseLookupTerm, resolveLookupKey, type LanguageConfig } from '../utils/readerText';
 import { initializeThaiSegmentation } from '../utils/thaiRuntime';
 import { initializeChineseSegmentation } from '../utils/chineseRuntime';
+import { analyzeKoreanCandidates, rankKoreanCandidates } from '../utils/koreanLookup';
 
 type GoldenToken = { surface_span: string; start: number; end: number; lookup_key: string };
 type GoldenCase = { id: string; language: LanguageConfig; input: string; sentence: string; tokens: GoldenToken[] };
@@ -13,6 +14,9 @@ const goldenSuite = JSON.parse(readFileSync(resolve(root, 'tests/golden/multilin
   reference_suite: { languages: Array<{ code: string; tests: Array<{ id: string }> }> };
   normalization_cases: Array<{ id: string; lang: string; term: string; expected: string }>;
   lookup_cases: Array<{ id: string; lang: string; term: string; vocabulary: string[]; expected: string | null }>;
+  korean_candidate_cases: Array<{ id: string; surface: string; expected_lemmas: string[] }>;
+  korean_ranking_cases: Array<{ id: string; lemmas: string[]; headwords: string[]; frequencies: Record<string, number>;
+    expected_lemmas: string[]; expected_validated: boolean; expected_rank: number }>;
 };
 initializeThaiSegmentation(readFileSync(resolve(root, 'server/LinguaReadApi/Resources/Segmentation/words_th.txt'), 'utf8'));
 initializeChineseSegmentation(readFileSync(resolve(root, 'server/LinguaReadApi/Resources/Segmentation/jieba-big-v1.txt'), 'utf8'));
@@ -49,5 +53,16 @@ describe('shared multilingual UTF-16 runtime contract', () => {
   test.each(goldenSuite.lookup_cases)('$id', fixture => {
     expect(resolveLookupKey(fixture.term, fixture.lang, fixture.vocabulary)).toBe(fixture.expected);
     expect(resolveLookupKey(fixture.term, fixture.lang, [...fixture.vocabulary].reverse())).toBe(fixture.expected);
+  });
+  test.each(goldenSuite.korean_candidate_cases)('$id', fixture => {
+    expect(analyzeKoreanCandidates(fixture.surface).map(candidate => candidate.lemma)).toEqual(fixture.expected_lemmas);
+  });
+  test.each(goldenSuite.korean_ranking_cases)('$id', fixture => {
+    for (const lemmas of [fixture.lemmas, [...fixture.lemmas].reverse()]) {
+      const actual = rankKoreanCandidates(lemmas.map(lemma => ({ lemma, particle: '', particleType: '' })),
+        new Set(fixture.headwords), new Map(Object.entries(fixture.frequencies)));
+      expect(actual.map(candidate => candidate.lemma)).toEqual(fixture.expected_lemmas);
+      expect(actual.every(candidate => candidate.dictionaryValidated === fixture.expected_validated && candidate.rank === fixture.expected_rank)).toBe(true);
+    }
   });
 });

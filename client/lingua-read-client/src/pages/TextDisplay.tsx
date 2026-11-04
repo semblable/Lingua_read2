@@ -704,7 +704,9 @@ const TextDisplay = () => {
     const analysis = lemmaCandidates.find(candidate => candidate.lemma === (options.candidateLemma || exactWord?.term)) || lemmaCandidates[0];
     const lemma = options.candidateLemma || ((exactWord?.status ?? 0) > 0 ? exactWord!.term : analysis?.lemma) || word;
     const particleBadge = analysis?.particle ? `+ ${analysis.particle} (${analysis.particleType})` : undefined;
-    const existingWord = exactWord;
+    const existingWord = isKorean && analysis && exactWord?.term !== lemma && (exactWord?.status ?? 0) === 0
+      ? koreanWordLookup ? resolveKoreanLookup(koreanWordLookup, lemma) : null
+      : exactWord;
 
     setSelectedWord(lemma);
     setSelectedWordAiContext(selectionContext);

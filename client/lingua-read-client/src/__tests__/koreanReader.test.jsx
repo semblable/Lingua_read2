@@ -400,4 +400,18 @@ describe('Korean reader saved vocabulary identity', () => {
     fireEvent.click(screen.getByRole('button', { name: '4' }));
     await waitFor(() => expect(updateWord).toHaveBeenCalledWith(42, 4, 'to live'));
   });
+
+  test('an untracked surface placeholder does not replace the selected lemma', async () => {
+    seedReader('산다.', [{ wordId: 42, term: '산다', status: 0, translation: '' }]);
+    createWord.mockImplementation(async (_textId, term, status, translation) => ({ wordId: 99, term, status, translation }));
+    renderReader();
+    await waitFor(() => expect(screen.getByText('산다')).toHaveClass('word-status-0'));
+    fireEvent.click(screen.getByText('산다'));
+    expect(screen.getByRole('heading', { name: '사다' })).toBeInTheDocument();
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'to buy' } });
+    fireEvent.click(screen.getByRole('button', { name: '2' }));
+    await waitFor(() => expect(createWord).toHaveBeenCalled());
+    expect(createWord.mock.calls[0].slice(0, 4)).toEqual([1, '사다', 2, 'to buy']);
+    expect(updateWord).not.toHaveBeenCalled();
+  });
 });

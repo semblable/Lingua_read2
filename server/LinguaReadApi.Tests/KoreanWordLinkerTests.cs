@@ -12,6 +12,19 @@ namespace LinguaReadApi.Tests;
 public class KoreanWordLinkerTests
 {
     [Theory]
+    [InlineData("산다", "사다")]
+    [InlineData("산다", "살다")]
+    [InlineData("길이", "길")]
+    public async Task AnySavedCandidate_IsResolvedWithoutChangingLearnerHistory(string surface, string lemma)
+    {
+        await using var learner = await Learner.Create(surface, (41, lemma, 3, "saved reading"));
+        var before = await learner.Snapshot();
+        await WordLinker.LinkAsync(learner.Context, 1, surface, 1, learner.UserId);
+        Assert.Equal(41, (await learner.Context.TextWords.SingleAsync()).WordId);
+        Assert.Equal(before, await learner.Snapshot());
+    }
+
+    [Theory]
     [InlineData("한글", "한글 한글 한글.")]
     [InlineData("한글", "한글 한글 한글.")]
     public async Task UniqueCanonicalAlias_ReusesWordIdAndAggregatesOccurrences_WithoutRewritingHistory(string savedTerm, string content)

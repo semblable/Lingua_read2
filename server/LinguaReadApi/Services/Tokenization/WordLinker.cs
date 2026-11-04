@@ -147,10 +147,10 @@ namespace LinguaReadApi.Services.Tokenization
                         var resolved = korean.Resolve(term);
                         if (resolved == null)
                         {
-                            var analysis = KoreanLookup.AnalyzeKoreanToken(term);
-                            if (analysis != null)
+                            foreach (var candidate in KoreanLookup.AnalyzeKoreanCandidates(term))
                             {
-                                resolved = korean.Resolve(analysis.Lemma);
+                                resolved = korean.Resolve(candidate.Lemma);
+                                if (resolved != null) break;
                             }
                         }
                         if (resolved != null) existingWords[term] = resolved;
@@ -166,10 +166,10 @@ namespace LinguaReadApi.Services.Tokenization
                         var pendingAlias = korean?.Resolve(wordTerm);
                         if (pendingAlias == null && korean != null)
                         {
-                            var analysis = KoreanLookup.AnalyzeKoreanToken(wordTerm);
-                            if (analysis != null)
+                            foreach (var candidate in KoreanLookup.AnalyzeKoreanCandidates(wordTerm))
                             {
-                                pendingAlias = korean.Resolve(analysis.Lemma);
+                                pendingAlias = korean.Resolve(candidate.Lemma);
+                                if (pendingAlias != null) break;
                             }
                         }
                         if (pendingAlias != null) { existingWords[wordTerm] = pendingAlias; continue; }

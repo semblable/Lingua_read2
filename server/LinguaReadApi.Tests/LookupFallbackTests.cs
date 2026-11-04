@@ -48,6 +48,14 @@ public class LookupFallbackTests
             Assert.Equal(token.Text, result.Processed[token.Start..token.End]);
     }
 
+    [Fact]
+    public void GreekAccentFoldingPreservesMalformedUtf16AndFoldsValidRuns()
+    {
+        var input = "Ά" + (char)0xd800 + " Ώ" + (char)0xdc00;
+        var expected = "α" + (char)0xd800 + " ω" + (char)0xdc00;
+        Assert.Equal(expected, Tokenizer.NormalizeKey(input, new Language { Code = "el" }));
+    }
+
     [Theory]
     [InlineData("he", "והספר", "ספר")]
     [InlineData("he", "מס׳", "מס")]

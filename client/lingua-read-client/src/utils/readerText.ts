@@ -477,6 +477,7 @@ const ARABIC_DIACRITICS_REGEX = /[\u0640\u064B-\u065F\u0670\u06D6-\u06ED]/g;
 const HEBREW_DIACRITICS_REGEX = /[\u0591-\u05BD\u05BF\u05C1-\u05C2\u05C4-\u05C5\u05C7]/g;
 const CYRILLIC_STRESS_REGEX = /\u0301/g;
 const LITHUANIAN_ACCENTS_REGEX = /[\u0300\u0301\u0303]/g;
+const NORMALIZED_VOCABULARY_LANGUAGES = new Set(['tr', 'az', 'el', 'he', 'iw', 'ar', 'fa']);
 
 /**
  * Strip language-specific diacritics, cantillation, or tatweel for dictionary lookup:
@@ -514,11 +515,20 @@ export const stripLookupDiacritics = (text: string, languageCode?: string | null
 
 export const lowercaseLookupTerm = (term: string, languageCode?: string | null): string => {
   const base = (languageCode || '').trim().toLowerCase().replace(/_/g, '-').split('-')[0];
-  const clean = (term || '').trim().replace(/^[\u200C\u200D]+|[\u200C\u200D]+$/g, '');
+  const scoped = NORMALIZED_VOCABULARY_LANGUAGES.has(base);
+  const input = scoped
+    ? applyCharacterSubstitutions(normalizeTokenizerInput(term || ''), BUILT_IN_SUBSTITUTIONS)
+    : term || '';
+  const clean = input.trim().replace(/^[\u200C\u200D]+|[\u200C\u200D]+$/g, '');
   const stripped = stripLookupDiacritics(clean, languageCode);
-  if (base === 'tr' || base === 'az') return stripped.replace(/İ/g, 'i').replace(/I/g, 'ı').toLowerCase();
-  const lowered = stripped.toLowerCase();
-  return base === 'el' ? lowered.replace(/ς/g, 'σ') : lowered;
+  if (scoped) {
+    // Iterate Unicode scalars so supplementary letters fold without changing
+    // UTF-16 indexing. Simple casing matches the backend's explicit table.
+    const lowered = Array.from(stripped, ch => ch === 'İ' ? 'i'
+      : ch === 'I' ? (base === 'tr' || base === 'az' ? 'ı' : 'i') : ch.toLowerCase()).join('');
+    return base === 'el' ? lowered.replace(/ς/g, 'σ') : lowered;
+  }
+  return stripped.toLowerCase();
 };
 
 /** Direct key first. Fallbacks are useful only when a vocabulary/dictionary validates them. */

@@ -24,4 +24,8 @@ describe('language-gated normalized lookup and validated fallback', () => {
     const result = tokenizeContent("מס׳ וכו'", { code: 'he' });
     expect(result.tokens.filter(t => t.type === 'word').map(t => t.text)).toEqual(['מס׳', "וכו'"]);
   });
+
+  test('Greek accent folding preserves malformed UTF16 and folds valid runs', () => {
+    expect(lowercaseLookupTerm('Ά\uD800 Ώ\uDC00', 'el')).toBe('α\uD800 ω\uDC00');
+  });
 });

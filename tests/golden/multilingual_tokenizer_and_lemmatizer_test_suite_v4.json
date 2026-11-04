@@ -12625,6 +12625,120 @@
       "lang": "hi",
       "term": "किताब",
       "expected": "किताब"
+    },
+    {
+      "id": "he-simple-dotted-i",
+      "lang": "he",
+      "term": "İ",
+      "expected": "i"
+    },
+    {
+      "id": "ar-simple-dotted-i",
+      "lang": "ar",
+      "term": "İ",
+      "expected": "i"
+    },
+    {
+      "id": "fa-simple-dotted-i",
+      "lang": "fa",
+      "term": "İ",
+      "expected": "i"
+    },
+    {
+      "id": "el-simple-dotted-i",
+      "lang": "el",
+      "term": "İ",
+      "expected": "i"
+    },
+    {
+      "id": "tr-simple-mixed-greek",
+      "lang": "tr",
+      "term": "ΟΣ",
+      "expected": "οσ"
+    },
+    {
+      "id": "tr-supplementary-deseret",
+      "lang": "tr",
+      "term": "𐐀Iİ",
+      "expected": "𐐨ıi"
+    },
+    {
+      "id": "az-simple-mixed-greek",
+      "lang": "az",
+      "term": "ΟΣ",
+      "expected": "οσ"
+    },
+    {
+      "id": "az-supplementary-deseret",
+      "lang": "az",
+      "term": "𐐀Iİ",
+      "expected": "𐐨ıi"
+    },
+    {
+      "id": "he-simple-mixed-greek",
+      "lang": "he",
+      "term": "ΟΣ",
+      "expected": "οσ"
+    },
+    {
+      "id": "he-supplementary-deseret",
+      "lang": "he",
+      "term": "𐐀Iİ",
+      "expected": "𐐨ii"
+    },
+    {
+      "id": "ar-simple-mixed-greek",
+      "lang": "ar",
+      "term": "ΟΣ",
+      "expected": "οσ"
+    },
+    {
+      "id": "ar-supplementary-deseret",
+      "lang": "ar",
+      "term": "𐐀Iİ",
+      "expected": "𐐨ii"
+    },
+    {
+      "id": "fa-simple-mixed-greek",
+      "lang": "fa",
+      "term": "ΟΣ",
+      "expected": "οσ"
+    },
+    {
+      "id": "fa-supplementary-deseret",
+      "lang": "fa",
+      "term": "𐐀Iİ",
+      "expected": "𐐨ii"
+    },
+    {
+      "id": "el-simple-mixed-greek",
+      "lang": "el",
+      "term": "ΟΣ",
+      "expected": "οσ"
+    },
+    {
+      "id": "el-supplementary-deseret",
+      "lang": "el",
+      "term": "𐐀Iİ",
+      "expected": "𐐨ii"
+    },
+    {
+      "id": "tr-decomposed-dotted-i",
+      "lang": "tr",
+      "term": "İ",
+      "expected": "i"
+    },
+    {
+      "id": "az-decomposed-dotted-i",
+      "lang": "az",
+      "term": "İ",
+      "expected": "i"
+    },
+    {
+      "id": "he-curly-positional-quotes",
+      "lang": "he",
+      "term": "‘מס’",
+      "expected": "מס׳"
     }
   ],
   "lookup_cases": [

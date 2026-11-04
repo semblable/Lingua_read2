@@ -74,6 +74,9 @@ namespace LinguaReadApi.Services.Tokenization
         private static readonly Regex HebrewDiacriticsRegex = new(@"[\u0591-\u05BD\u05BF\u05C1-\u05C2\u05C4-\u05C5\u05C7]", RegexOptions.Compiled);
         private static readonly Regex CyrillicStressRegex = new(@"\u0301", RegexOptions.Compiled);
         private static readonly Regex LithuanianAccentsRegex = new(@"[\u0300\u0301\u0303]", RegexOptions.Compiled);
+        // Normalize valid UTF-16 runs independently; preserve unmatched surrogates
+        // like JavaScript String.normalize rather than throwing on malformed input.
+        private static readonly Regex WellFormedRuns = new(@"(?:[\uD800-\uDBFF][\uDC00-\uDFFF]|[^\uD800-\uDFFF])+", RegexOptions.Compiled);
 
         private static readonly ConcurrentDictionary<string, Regex> _regexCache = new();
         private static readonly ConcurrentDictionary<string, TextInfo> _textInfoCache = new();
@@ -357,8 +360,9 @@ namespace LinguaReadApi.Services.Tokenization
                     .TrimStart('"', '\'', '״', '׳').TrimEnd('"', '״').Replace('"', '״').Replace('\'', '׳'),
                 "ru" or "uk" => CyrillicStressRegex.Replace(text, string.Empty),
                 "lt" => LithuanianAccentsRegex.Replace(text, string.Empty),
-                "el" => text.Normalize(NormalizationForm.FormD).Replace("\u0300", string.Empty)
-                    .Replace("\u0301", string.Empty).Replace("\u0342", string.Empty).Normalize(NormalizationForm.FormC),
+                "el" => WellFormedRuns.Replace(text, run => run.Value.Normalize(NormalizationForm.FormD)
+                    .Replace("\u0300", string.Empty).Replace("\u0301", string.Empty)
+                    .Replace("\u0342", string.Empty).Normalize(NormalizationForm.FormC)),
                 _ => text
             };
         }
@@ -370,10 +374,24 @@ namespace LinguaReadApi.Services.Tokenization
         internal static string LowercaseKey(string normalized, Language? language)
         {
             var code = BaseLanguageCode(language?.Code);
-            if (code is "tr" or "az")
-                return normalized.Replace('İ', 'i').Replace('I', 'ı').ToLowerInvariant();
-            var lowered = GetTextInfo(language?.Code).ToLower(normalized);
-            return code == "el" ? lowered.Replace('ς', 'σ') : lowered;
+            if (RequiresNormalizedVocabularyLookup(code))
+            {
+                // Simple scalar casing is explicit on both runtimes: .NET and JS
+                // otherwise differ on dotted I and contextual Greek final sigma.
+                var lowered = new StringBuilder(normalized.Length);
+                for (var i = 0; i < normalized.Length; i++)
+                {
+                    var ch = normalized[i];
+                    if (ch == 'İ') lowered.Append('i');
+                    else if (ch == 'I') lowered.Append(code is "tr" or "az" ? 'ı' : 'i');
+                    else if (char.IsHighSurrogate(ch) && i + 1 < normalized.Length && char.IsLowSurrogate(normalized[i + 1]))
+                        lowered.Append(Rune.ToLowerInvariant(new Rune(ch, normalized[++i])).ToString());
+                    else lowered.Append(char.ToLowerInvariant(ch));
+                }
+                var result = lowered.ToString();
+                return code == "el" ? result.Replace('ς', 'σ') : result;
+            }
+            return GetTextInfo(language?.Code).ToLower(normalized);
         }
 
         private static string BaseLanguageCode(string? code)

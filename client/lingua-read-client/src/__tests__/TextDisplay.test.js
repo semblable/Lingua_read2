@@ -528,6 +528,68 @@ describe('TextDisplay', () => {
     expect(screen.getByRole('heading', { name: 'world' })).toBeInTheDocument();
   });
 
+  describe('French validated elision vocabulary', () => {
+    const configureFrench = (words, content = 'L’eau eau d’eau.') => {
+      getText.mockResolvedValueOnce({
+        textId: 1, title: 'French fixture', content, languageId: 5,
+        languageCode: 'fr-FR', languageName: 'French', words, bookId: null
+      });
+      getLanguage.mockResolvedValue({ languageId: 5, name: 'French', code: 'fr-FR' });
+      vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => words })));
+      vi.stubGlobal('alert', vi.fn());
+      addTermsBatch.mockResolvedValue({ words });
+    };
+
+    test('bulk translation reuses and deduplicates the validated saved suffix', async () => {
+      configureFrench([{ wordId: 73, term: 'Eau', status: 2, translation: '' }]);
+      batchTranslateWords.mockResolvedValue({ eau: 'water' });
+      renderTextDisplay({ autoTranslateWordStatus: 1 });
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Auto ?' })).toBeEnabled());
+      fireEvent.click(screen.getByRole('button', { name: 'Auto ?' }));
+      await waitFor(() => expect(addTermsBatch).toHaveBeenCalled());
+      expect(batchTranslateWords).toHaveBeenCalledWith(['eau'], expect.any(String), 'fr-FR');
+      expect(addTermsBatch).toHaveBeenCalledWith(5,
+        [{ term: 'Eau', translation: 'water', status: 1 }], { keepExistingStatus: true });
+    });
+
+    test('All Known reuses a status-zero suffix without creating surface rows', async () => {
+      configureFrench([{ wordId: 73, term: 'eau', status: 0, translation: '' }]);
+      renderTextDisplay();
+      await waitFor(() => expect(screen.getByRole('button', { name: 'All Known' })).toBeEnabled());
+      fireEvent.click(screen.getByRole('button', { name: 'All Known' }));
+      await waitFor(() => expect(addTermsBatch).toHaveBeenCalled());
+      expect(addTermsBatch).toHaveBeenCalledWith(5, [{ term: 'eau', translation: '', status: 5 }]);
+    });
+
+    test('saving and mining the whole elision preserve its validated suffix ID', async () => {
+      configureFrench([{ wordId: 73, term: 'eau', status: 2, translation: 'water' }], 'L’eau.');
+      updateWord.mockResolvedValue({});
+      renderTextDisplay();
+      await waitFor(() => expect(screen.getByRole('button', { name: 'All Known' })).toBeEnabled());
+      fireEvent.click(screen.getByText("L'eau"));
+      expect(screen.getByRole('heading', { name: 'eau', exact: true })).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: '3', exact: true }));
+      await waitFor(() => expect(updateWord).toHaveBeenCalledWith(73, 3, 'water'));
+      fireEvent.click(screen.getByRole('button', { name: 'Mine', exact: true }));
+      await waitFor(() => expect(mineSentence).toHaveBeenCalledWith(73, "L'eau.", 1, 'French fixture'));
+      expect(createWord).not.toHaveBeenCalled();
+    });
+
+    test('an exact status-zero elision retains its ID ahead of a tracked suffix', async () => {
+      configureFrench([
+        { wordId: 74, term: "l'eau", status: 0, translation: '' },
+        { wordId: 73, term: 'eau', status: 4, translation: 'water' }
+      ], 'L’eau.');
+      updateWord.mockResolvedValue({});
+      renderTextDisplay();
+      await waitFor(() => expect(screen.getByRole('button', { name: 'All Known' })).toBeEnabled());
+      fireEvent.click(screen.getByText("L'eau"));
+      fireEvent.click(screen.getByRole('button', { name: '3', exact: true }));
+      await waitFor(() => expect(updateWord).toHaveBeenCalledWith(74, 3, ''));
+      expect(createWord).not.toHaveBeenCalled();
+    });
+  });
+
   test('saving the word in the panel with a status key updates the panel', async () => {
     translateText.mockResolvedValue({ translatedText: 'hola' });
     createWord.mockResolvedValue({ wordId: 9, term: 'Hello', status: 3, translation: 'hola' });

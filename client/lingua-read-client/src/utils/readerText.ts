@@ -516,11 +516,16 @@ export const stripLookupDiacritics = (text: string, languageCode?: string | null
 export const lowercaseLookupTerm = (term: string, languageCode?: string | null): string => {
   const base = (languageCode || '').trim().toLowerCase().replace(/_/g, '-').split('-')[0];
   const scoped = NORMALIZED_VOCABULARY_LANGUAGES.has(base);
-  const input = scoped
+  const input = scoped || base === 'fr'
     ? applyCharacterSubstitutions(normalizeTokenizerInput(term || ''), BUILT_IN_SUBSTITUTIONS)
     : term || '';
   const clean = input.trim().replace(/^[\u200C\u200D]+|[\u200C\u200D]+$/g, '');
   const stripped = stripLookupDiacritics(clean, languageCode);
+  if (base === 'fr') {
+    // Match the server's existing French TextInfo simple casing, including
+    // dotted I and non-contextual sigma, without changing other languages.
+    return Array.from(stripped, ch => ch === 'İ' ? 'i' : ch.toLowerCase()).join('');
+  }
   if (scoped) {
     // Iterate Unicode scalars so supplementary letters fold without changing
     // UTF-16 indexing. Simple casing matches the backend's explicit table.
@@ -538,6 +543,14 @@ export const getLookupCandidates = (term: string, languageCode?: string | null):
   const code = base === 'iw' ? 'he' : base;
   const result = [key];
   const seen = new Set(result);
+  if (code === 'fr') {
+    // Lookup only: the reader keeps its glued elision span and exact entries win.
+    const remainder = key.slice(2);
+    if ((key.startsWith("l'") || key.startsWith("d'")) &&
+        /^\p{L}[\p{L}\p{M}]*$/u.test(remainder) &&
+        Array.from(remainder).filter(ch => /\p{L}/u.test(ch)).length >= 2) result.push(remainder);
+    return result;
+  }
   let frontier = [key];
   if (code === 'he' && key.endsWith('׳')) {
     const withoutGeresh = key.replace(/׳+$/, '');

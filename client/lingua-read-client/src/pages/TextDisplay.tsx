@@ -609,6 +609,9 @@ const TextDisplay = () => {
   ) ? createKoreanLookup(words.filter(word => word.term), word => lookupTerm(word.term!)) : null,
   [words, lookupTerm, languageConfig?.code, languageConfig?.languageCode, text?.languageCode]);
 
+  const isFrenchLookupLanguage = (languageConfig?.code || languageConfig?.languageCode || text?.languageCode || '')
+    .trim().toLowerCase().replace(/_/g, '-').split('-')[0] === 'fr';
+
   // 2. Pre-calculate and sort phrases once
   const knownPhrases = useMemo(() => {
     return words
@@ -657,9 +660,16 @@ const TextDisplay = () => {
         }
         return [{ key: targetTerm, saved }];
       }
+      if (isFrenchLookupLanguage && saved?.term) {
+        // Several whole elisions can resolve to one saved suffix. Bulk writes
+        // must keep that row's identity rather than recreate each surface form.
+        if (seenSavedRows.has(saved)) return [];
+        seenSavedRows.add(saved);
+        return [{ key: lookupTerm(saved.term), saved }];
+      }
       return [{ key, saved }];
     });
-  }, [getWordData, koreanWordLookup, lookupTerm]);
+  }, [getWordData, koreanWordLookup, lookupTerm, isFrenchLookupLanguage]);
 
   const getWordStyle = useCallback((wordStatus: number | null | undefined) => {
     const baseStyle = { cursor: 'pointer', padding: '2px 0', margin: '0 2px', borderRadius: '3px', transition: 'all 0.2s' };
@@ -2158,7 +2168,7 @@ const TextDisplay = () => {
       // translation) keep theirs and only get the translation.
       const newWordStatus = globalSettings.autoTranslateWordStatus || 5;
       const termsToAdd = unknownCandidates.map(({ key, saved }) => ({
-        term: (koreanWordLookup ? saved?.term : null) || originalCaseMap.get(key) || key,
+        term: (koreanWordLookup || isFrenchLookupLanguage ? saved?.term : null) || originalCaseMap.get(key) || key,
         translation: translations?.[key] || '',
         status: newWordStatus
       })).filter((t: { translation: string }) => t.translation);
@@ -2206,7 +2216,7 @@ const TextDisplay = () => {
       const originalCaseMap = new Map<string, string>();
       allWords.forEach((w: string) => { const lower = lookupTerm(w); if (!originalCaseMap.has(lower)) { originalCaseMap.set(lower, w); } });
       const termsToMark = unknownCandidates.map(({ key, saved }) => ({
-        term: (koreanWordLookup ? saved?.term : null) || originalCaseMap.get(key) || key, translation: '', status: 5
+        term: (koreanWordLookup || isFrenchLookupLanguage ? saved?.term : null) || originalCaseMap.get(key) || key, translation: '', status: 5
       }));
       await applySavedWords(await addTermsBatch(text.languageId, termsToMark), text.languageId);
       alert(`Attempted to mark ${unknownCandidates.length} words as Known.`);

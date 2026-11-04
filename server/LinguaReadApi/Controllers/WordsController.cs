@@ -791,9 +791,12 @@ namespace LinguaReadApi.Controllers
         private async Task<List<Word>> LoadMatchingWordsAsync(Guid userId, Language language, List<string> keys)
         {
             var query = _context.Words.Where(w => w.UserId == userId && w.LanguageId == language.LanguageId);
-            if (Tokenizer.RequiresNormalizedVocabularyLookup(language.Code))
+            if (Tokenizer.RequiresNormalizedVocabularyLookup(language.Code)
+                || Tokenizer.RequiresLookupFallback(language.Code))
             {
                 // Probe lightweight projections first, then track only matching words.
+                // Match normalized exact terms only, including French apostrophes.
+                // Writes never peel an elision to update a different headword.
                 // Keep the indexed lower(Term) path for unchanged Latin languages.
                 var rows = await query.AsNoTracking().Select(w => new
                     { w.WordId, w.Term, w.Status, HasTranslation = w.Translation != null }).ToListAsync();

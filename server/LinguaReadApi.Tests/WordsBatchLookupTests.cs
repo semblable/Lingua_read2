@@ -115,6 +115,7 @@ public class WordsBatchLookupTests : IDisposable
     [InlineData("tr", "IŞIK", "ışık")]
     [InlineData("az", "İL", "il")]
     [InlineData("el", "λόγος", "ΛΟΓΟΣ")]
+    [InlineData("fr", "l’eau", "l'eau")]
     public async Task ScopedNormalization_CreateAndBatchReuseLegacyHeadword(string code, string stored, string requested)
     {
         var wordId = await InsertWord(stored, status: 5);
@@ -147,6 +148,36 @@ public class WordsBatchLookupTests : IDisposable
         var saved = Assert.Single(await check.Words.ToArrayAsync());
         Assert.Equal((wordId, stored, 5), (saved.WordId, saved.Term, saved.Status));
         Assert.Equal("learner meaning", (await check.WordTranslations.SingleAsync()).Translation);
+    }
+
+    [Theory]
+    [InlineData("l'eau")]
+    [InlineData("l’eau")]
+    public async Task FrenchExplicitSurfaceWrite_DoesNotOverwriteLookupFallbackHeadword(string requested)
+    {
+        var headwordId = await InsertWord("eau", status: 3);
+        await using (var setup = new AppDbContext(_options))
+        {
+            (await setup.Languages.SingleAsync(l => l.LanguageId == 1)).Code = "fr";
+            setup.WordTranslations.Add(new WordTranslation { WordId = headwordId, Translation = "learner water" });
+            await setup.SaveChangesAsync();
+        }
+
+        await using var context = new AppDbContext(_options);
+        var result = await Controller(context).AddTermsBatch(new AddTermBatchDto
+        {
+            LanguageId = 1, KeepExistingStatus = true,
+            Terms = new List<NewTermDto> { new() { Term = requested, Translation = "whole elision", Status = 1 } }
+        });
+        var body = Assert.IsType<AddTermsBatchResultDto>(Assert.IsType<OkObjectResult>(result).Value);
+        var saved = Assert.Single(body.Words);
+        Assert.NotEqual(headwordId, saved.WordId);
+        Assert.Equal(("l'eau", 1, "whole elision"), (saved.Term, saved.Status, saved.Translation));
+
+        await using var check = new AppDbContext(_options);
+        Assert.Equal(2, await check.Words.CountAsync());
+        var headword = await check.Words.Include(w => w.Translation).SingleAsync(w => w.WordId == headwordId);
+        Assert.Equal(("eau", 3, "learner water"), (headword.Term, headword.Status, headword.Translation?.Translation));
     }
 
     private async Task<int> InsertWord(string term, int status, int languageId = 1)

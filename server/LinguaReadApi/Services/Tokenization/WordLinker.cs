@@ -250,7 +250,8 @@ namespace LinguaReadApi.Services.Tokenization
             Guid userId,
             CancellationToken cancellationToken)
         {
-            if (Tokenizer.RequiresNormalizedVocabularyLookup(language?.Code))
+            if (Tokenizer.RequiresNormalizedVocabularyLookup(language?.Code)
+                || Tokenizer.RequiresLookupFallback(language?.Code))
             {
                 // The database's lowercase collation cannot fold script variants,
                 // niqqud or Turkish I. Normalize stored headwords exactly like tokens.

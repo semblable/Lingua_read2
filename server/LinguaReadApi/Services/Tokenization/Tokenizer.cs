@@ -403,6 +403,10 @@ namespace LinguaReadApi.Services.Tokenization
         public static bool RequiresNormalizedVocabularyLookup(string? code) =>
             BaseLanguageCode(code) is "he" or "ar" or "fa" or "tr" or "az" or "el";
 
+        // Keep fallback eligibility separate from the language-specific casing table.
+        public static bool RequiresLookupFallback(string? code) =>
+            BaseLanguageCode(code) is "he" or "ar" or "fr";
+
         private static string UnifyArabicLetters(string text, string code)
         {
             var unified = text.Replace('أ', 'ا').Replace('إ', 'ا').Replace('آ', 'ا').Replace('ٱ', 'ا');
@@ -419,6 +423,14 @@ namespace LinguaReadApi.Services.Tokenization
             var result = new List<string> { key };
             var seen = new HashSet<string>(StringComparer.Ordinal) { key };
             var code = BaseLanguageCode(language?.Code);
+            if (code == "fr")
+            {
+                // A single elided article/preposition is a lookup alternative only:
+                // keep the glued display span and prefer its exact saved headword.
+                if (key.Length > 2 && key[0] is 'l' or 'd' && key[1] == '\''
+                    && IsElisionRemainder(key[2..])) result.Add(key[2..]);
+                return result;
+            }
             var frontier = new List<string> { key };
             if (code == "he" && key.EndsWith('׳'))
             {
@@ -452,6 +464,19 @@ namespace LinguaReadApi.Services.Tokenization
                 result.AddRange(frontier);
             }
             return result;
+        }
+
+        private static bool IsElisionRemainder(string value)
+        {
+            var letters = 0;
+            foreach (var rune in value.EnumerateRunes())
+            {
+                if (Rune.IsLetter(rune)) { letters++; continue; }
+                if (letters == 0 || Rune.GetUnicodeCategory(rune) is not
+                    (UnicodeCategory.NonSpacingMark or UnicodeCategory.SpacingCombiningMark or UnicodeCategory.EnclosingMark))
+                    return false;
+            }
+            return letters >= 2;
         }
 
         public static string? ResolveLookupKey(string term, Language? language, IEnumerable<string> headwords)

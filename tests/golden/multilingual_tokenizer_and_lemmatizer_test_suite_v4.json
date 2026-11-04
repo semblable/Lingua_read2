@@ -12739,6 +12739,18 @@
       "lang": "he",
       "term": "‘מס’",
       "expected": "מס׳"
+    },
+    {
+      "id": "fr-simple-dotted-i",
+      "lang": "fr",
+      "term": "İ",
+      "expected": "i"
+    },
+    {
+      "id": "fr-simple-sigma",
+      "lang": "fr",
+      "term": "ΟΣ",
+      "expected": "οσ"
     }
   ],
   "lookup_cases": [
@@ -12844,6 +12856,207 @@
         "كتاب"
       ],
       "expected": "كتاب"
+    },
+    {
+      "id": "fr-elision-l-validated",
+      "lang": "fr",
+      "term": "l'eau",
+      "vocabulary": [
+        "eau"
+      ],
+      "expected": "eau"
+    },
+    {
+      "id": "fr-elision-d-regional",
+      "lang": "fr-CA",
+      "term": "D’Anne",
+      "vocabulary": [
+        "Anne"
+      ],
+      "expected": "anne"
+    },
+    {
+      "id": "fr-elision-modifier-apostrophe",
+      "lang": "fr_FR",
+      "term": "lʼeau",
+      "vocabulary": [
+        "eau"
+      ],
+      "expected": "eau"
+    },
+    {
+      "id": "fr-elision-exact-curly-headword",
+      "lang": "fr",
+      "term": "l'eau",
+      "vocabulary": [
+        "eau",
+        "l’eau"
+      ],
+      "expected": "l'eau"
+    },
+    {
+      "id": "fr-elision-lexicalized-direct",
+      "lang": "fr",
+      "term": "d'accord",
+      "vocabulary": [
+        "accord",
+        "d'accord"
+      ],
+      "expected": "d'accord"
+    },
+    {
+      "id": "fr-elision-no-interior-split",
+      "lang": "fr",
+      "term": "aujourd'hui",
+      "vocabulary": [
+        "hui"
+      ],
+      "expected": null
+    },
+    {
+      "id": "fr-elision-only-l-and-d",
+      "lang": "fr",
+      "term": "qu'il",
+      "vocabulary": [
+        "il"
+      ],
+      "expected": null
+    },
+    {
+      "id": "fr-elision-minimum-two-letters",
+      "lang": "fr",
+      "term": "l'a",
+      "vocabulary": [
+        "a"
+      ],
+      "expected": null
+    },
+    {
+      "id": "fr-elision-no-phrase",
+      "lang": "fr",
+      "term": "l'ami fidèle",
+      "vocabulary": [
+        "ami fidèle"
+      ],
+      "expected": null
+    },
+    {
+      "id": "fr-elision-no-nested-apostrophe",
+      "lang": "fr",
+      "term": "d'l'eau",
+      "vocabulary": [
+        "l'eau",
+        "eau"
+      ],
+      "expected": null
+    },
+    {
+      "id": "fr-elision-no-hyphen",
+      "lang": "fr",
+      "term": "l'arc-en-ciel",
+      "vocabulary": [
+        "arc-en-ciel"
+      ],
+      "expected": null
+    },
+    {
+      "id": "fr-elision-no-digits",
+      "lang": "fr",
+      "term": "l'123",
+      "vocabulary": [
+        "123"
+      ],
+      "expected": null
+    },
+    {
+      "id": "fr-elision-missing-validation",
+      "lang": "fr",
+      "term": "l'inconnu",
+      "vocabulary": [
+        "eau"
+      ],
+      "expected": null
+    },
+    {
+      "id": "fr-elision-supplementary-letters",
+      "lang": "fr",
+      "term": "l'𐐨a",
+      "vocabulary": [
+        "𐐨a"
+      ],
+      "expected": "𐐨a"
+    },
+    {
+      "id": "fr-elision-mark-does-not-count-as-letter",
+      "lang": "fr",
+      "term": "l'á",
+      "vocabulary": [
+        "á"
+      ],
+      "expected": null
+    },
+    {
+      "id": "fr-elision-no-leading-mark",
+      "lang": "fr",
+      "term": "l'́ab",
+      "vocabulary": [
+        "́ab"
+      ],
+      "expected": null
+    },
+    {
+      "id": "en-no-french-elision",
+      "lang": "en",
+      "term": "l'eau",
+      "vocabulary": [
+        "eau"
+      ],
+      "expected": null
+    },
+    {
+      "id": "pt-no-french-elision",
+      "lang": "pt",
+      "term": "d'água",
+      "vocabulary": [
+        "água"
+      ],
+      "expected": null
+    },
+    {
+      "id": "fr-elision-simple-dotted-i",
+      "lang": "fr",
+      "term": "l'İa",
+      "vocabulary": [
+        "ia"
+      ],
+      "expected": "ia"
+    },
+    {
+      "id": "fr-elision-simple-sigma",
+      "lang": "fr",
+      "term": "l'ΟΣ",
+      "vocabulary": [
+        "οσ"
+      ],
+      "expected": "οσ"
+    },
+    {
+      "id": "fr-elision-compose-accent",
+      "lang": "fr",
+      "term": "l'âme",
+      "vocabulary": [
+        "âme"
+      ],
+      "expected": "âme"
+    },
+    {
+      "id": "fr-elision-preserve-medial-mark",
+      "lang": "fr",
+      "term": "l'ax́e",
+      "vocabulary": [
+        "ax́e"
+      ],
+      "expected": "ax́e"
     }
   ],
   "korean_candidate_cases": [

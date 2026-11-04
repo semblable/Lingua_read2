@@ -96,6 +96,8 @@ and unresolved Unicode, segmentation and sentence-boundary limitations.
    - **German:** `a-zA-ZÀ-ÖØ-öø-ɏḀ-ỿ\p{M}\u200C\u200D` (includes zero-width non-joiner/joiner).
    > **Note on Glued Words:** LinguaRead's tokenizer automatically glues internal apostrophes (`'`), hyphens (`-`), and middle dots (`·`) when sandwiched between word characters (e.g., *l'eau*, *don't*, *c'est-à-dire*, *interrompo-a*, *col·lecció*). You do not need to add hyphens or apostrophes to the regex class.
 
+   > **French lookup:** Whole terms take precedence. If a French `l'` or `d'` form has no matching entry, lookup can reuse the remaining headword only when saved vocabulary or Wiktionary validates it (for example, *l'eau* → *eau*). The clickable span stays whole. Other elisions, phrase discovery and general lemmatization remain outside this limited fallback.
+
 3. **Sentence Splitting Characters**:
    - Characters marking end-of-sentence boundaries.
    - European scripts: `.!?` (commas ordinarily do not end sentences)

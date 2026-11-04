@@ -9,6 +9,65 @@ namespace LinguaReadApi.Tests;
 public class LookupFallbackTests
 {
     [Theory]
+    [InlineData("fr", "l'eau", "eau", "eau")]
+    [InlineData("fr-CA", "D’Anne", "Anne", "anne")]
+    [InlineData("fr_FR", "lʼeau", "eau", "eau")]
+    [InlineData("fr", "l'eau", "eau|l’eau", "l'eau")]
+    [InlineData("fr", "d'accord", "accord|d'accord", "d'accord")]
+    [InlineData("fr", "aujourd'hui", "hui", null)]
+    [InlineData("fr", "qu'il", "il", null)]
+    [InlineData("fr", "l'a", "a", null)]
+    [InlineData("fr", "l'ami fidèle", "ami fidèle", null)]
+    [InlineData("fr", "d'l'eau", "l'eau|eau", null)]
+    [InlineData("fr", "l'arc-en-ciel", "arc-en-ciel", null)]
+    [InlineData("fr", "l'123", "123", null)]
+    [InlineData("fr", "l'inconnu", "eau", null)]
+    [InlineData("fr", "l'𐐨a", "𐐨a", "𐐨a")]
+    [InlineData("fr", "l'İa", "ia", "ia")]
+    [InlineData("fr", "l'ΟΣ", "οσ", "οσ")]
+    [InlineData("fr", "l'âme", "âme", "âme")]
+    [InlineData("fr", "l'ax́e", "ax́e", "ax́e")]
+    [InlineData("fr", "l'á", "á", null)]
+    [InlineData("fr", "l'́a", "́a", null)]
+    [InlineData("fr", "l'́ab", "́ab", null)]
+    [InlineData("en", "l'eau", "eau", null)]
+    [InlineData("pt", "d'água", "água", null)]
+    public void FrenchElisionFallbackIsBoundedAndExactFirst(string code, string term, string fixture, string? expected) =>
+        Assert.Equal(expected, Tokenizer.ResolveLookupKey(term, new Language { Code = code }, fixture.Split('|')));
+
+    [Theory]
+    [InlineData(false, 0)]
+    [InlineData(true, 0)]
+    [InlineData(true, 2)]
+    public async Task FrenchLinkerReusesValidatedWordAndKeepsTrackedIdentity(bool directExists, int directStatus)
+    {
+        var options = new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options;
+        await using var db = new AppDbContext(options);
+        var userId = Guid.NewGuid();
+        db.Users.Add(new User { Id = userId, UserName = "elision", Email = "elision@example.com" });
+        db.Languages.Add(new Language { LanguageId = 1, Code = "fr-CA", Name = "French" });
+        const string content = "l’eau eau d’eau";
+        db.Texts.Add(new Text { TextId = 1, UserId = userId, LanguageId = 1, Title = "Lookup", Content = content });
+        db.Words.Add(new Word { WordId = 1, UserId = userId, LanguageId = 1, Term = "eau", Status = 5,
+            Translation = new WordTranslation { WordId = 1, Translation = "water" } });
+        if (directExists) db.Words.Add(new Word { WordId = 2, UserId = userId, LanguageId = 1, Term = "l’eau", Status = directStatus });
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+        await WordLinker.LinkAsync(db, 1, content, 1, userId);
+        var rows = await db.Words.Include(w => w.Translation).OrderBy(w => w.WordId).ToListAsync();
+        Assert.Equal(directExists ? 2 : 1, rows.Count);
+        Assert.Equal("eau", rows[0].Term);
+        Assert.Equal(5, rows[0].Status);
+        Assert.Equal("water", rows[0].Translation.Translation);
+        if (directExists) { Assert.Equal("l’eau", rows[1].Term); Assert.Equal(directStatus, rows[1].Status); }
+        var links = await db.TextWords.OrderBy(link => link.WordId).ToListAsync();
+        Assert.Equal(directExists ? 2 : 1, links.Count);
+        Assert.Equal(1, links[0].WordId);
+        Assert.Equal(directExists ? 2 : 3, links[0].OccurrenceCount);
+        if (directExists) { Assert.Equal(2, links[1].WordId); Assert.Equal(1, links[1].OccurrenceCount); }
+    }
+
+    [Theory]
     [InlineData("he", "\"צה\"ל\"", "צה״ל")]
     [InlineData("he", "'מס'", "מס׳")]
     [InlineData("he", "וכו׳", "וכו׳")]

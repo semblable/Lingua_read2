@@ -15,6 +15,27 @@ namespace LinguaReadApi.Tests;
 /// </summary>
 public class WiktionaryTranslationServiceTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task FrenchElisionDictionaryTriesSurfaceBeforeValidatedHeadword(bool directExists)
+    {
+        var requested = new List<string>();
+        var handler = new StubHandler(request =>
+        {
+            var term = Uri.UnescapeDataString(request.RequestUri!.Segments.Last());
+            requested.Add(term);
+            return term == "eau" || (directExists && term == "L’eau")
+                ? Ok("{\"fr\":[{\"definitions\":[{\"definition\":\"fixture meaning\"}]}]}")
+                : new HttpResponseMessage(HttpStatusCode.NotFound);
+        });
+        using var http = new HttpClient(handler);
+        Assert.Equal("fixture meaning", await CreateService(http).TranslateTextAsync("L’eau", "fr-CA", "en"));
+        Assert.Equal("L’eau", requested[0]);
+        if (directExists) Assert.Single(requested);
+        else Assert.Equal("eau", requested[^1]);
+    }
+
     // Trimmed shape of GET /api/rest_v1/page/definition/chien — keyed by language code,
     // definitions contain HTML anchors that must be stripped.
     private const string ChienJson =

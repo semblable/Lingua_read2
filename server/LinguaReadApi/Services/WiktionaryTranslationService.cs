@@ -215,7 +215,8 @@ namespace LinguaReadApi.Services
             // so the controller can surface an HTTP 429.
             var language = new LinguaReadApi.Models.Language { Code = sourceLang ?? string.Empty };
             var scoped = Tokenization.Tokenizer.RequiresNormalizedVocabularyLookup(sourceLang);
-            var candidates = new[] { term, LowercaseDictionaryTitle(term, sourceLang) }.Concat(scoped
+            var candidates = new[] { term, LowercaseDictionaryTitle(term, sourceLang) }.Concat((scoped
+                || Tokenization.Tokenizer.RequiresLookupFallback(sourceLang))
                 ? Tokenization.Tokenizer.GetLookupCandidates(term, language)
                 : Array.Empty<string>()).Distinct(StringComparer.Ordinal);
             foreach (var candidate in candidates)

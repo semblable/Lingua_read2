@@ -80,16 +80,10 @@ namespace LinguaReadApi.Controllers
                 return BadRequest("The term has no characters left after normalization.");
             }
 
-            // Check if the word already exists for this user and language.
-            // Match case-insensitively so this resolves to the lowercase row the
-            // linker creates (and to any legacy capitalized row) instead of
-            // inserting a duplicate.
-            var existingWord = await _context.Words
-                .Include(w => w.Translation)
-                .FirstOrDefaultAsync(w =>
-                    w.Term.ToLower() == normalizedTerm &&
-                    w.UserId == userId &&
-                    w.LanguageId == text.LanguageId);
+            // Normalize legacy headwords through the same language-scoped table
+            // as new tokens; database lower() cannot fold script variants.
+            var existingWord = (await LoadMatchingWordsAsync(userId, text.Language, [normalizedTerm]))
+                .FirstOrDefault();
 
             if (existingWord != null)
             {
@@ -718,10 +712,7 @@ namespace LinguaReadApi.Controllers
                 .Where(k => !string.IsNullOrWhiteSpace(k))
                 .Distinct()
                 .ToList();
-            var existingWords = await _context.Words
-                .Include(w => w.Translation)
-                .Where(w => w.UserId == userId && w.LanguageId == languageId && keys.Contains(w.Term.ToLower()))
-                .ToListAsync();
+            var existingWords = await LoadMatchingWordsAsync(userId, language, keys);
 
             var wordsToCreate = new List<Word>();
             var wordsWithNewStatus = new List<Word>();
@@ -795,6 +786,26 @@ namespace LinguaReadApi.Controllers
                 .OfType<Word>()
                 .ToList();
             return new TermsBatchPlan(wordsToCreate, wordsWithNewStatus, translationsToUpsert, batchWords);
+        }
+
+        private async Task<List<Word>> LoadMatchingWordsAsync(Guid userId, Language language, List<string> keys)
+        {
+            var query = _context.Words.Where(w => w.UserId == userId && w.LanguageId == language.LanguageId);
+            if (Tokenizer.RequiresNormalizedVocabularyLookup(language.Code))
+            {
+                // Probe lightweight projections first, then track only matching words.
+                // Keep the indexed lower(Term) path for unchanged Latin languages.
+                var rows = await query.AsNoTracking().Select(w => new
+                    { w.WordId, w.Term, w.Status, HasTranslation = w.Translation != null }).ToListAsync();
+                var keySet = keys.ToHashSet(StringComparer.Ordinal);
+                var ids = rows.GroupBy(w => Tokenizer.NormalizeKey(w.Term, language), StringComparer.Ordinal)
+                    .Where(g => keySet.Contains(g.Key))
+                    .Select(g => g.OrderByDescending(w => w.Status > 0).ThenByDescending(w => w.HasTranslation)
+                        .ThenBy(w => w.Term, StringComparer.Ordinal).ThenBy(w => w.WordId).First().WordId).ToList();
+                query = query.Where(w => ids.Contains(w.WordId));
+            }
+            else query = query.Where(w => keys.Contains(w.Term.ToLower()));
+            return await query.Include(w => w.Translation).OrderBy(w => w.WordId).ToListAsync();
         }
 
         // The status a batch term asks for: 1-5, Known when left out.

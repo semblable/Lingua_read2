@@ -213,24 +213,33 @@ namespace LinguaReadApi.Services
             // lower-cased fallback (covers common nouns/verbs that are not capitalized).
             // A WiktionaryRateLimitException from TryFetchAsync propagates out (not swallowed)
             // so the controller can surface an HTTP 429.
-            var response = await TryFetchAsync(term, ct);
-            if (response == null && term != term.ToLowerInvariant())
+            var language = new LinguaReadApi.Models.Language { Code = sourceLang ?? string.Empty };
+            var scoped = Tokenization.Tokenizer.RequiresNormalizedVocabularyLookup(sourceLang);
+            var candidates = new[] { term, LowercaseDictionaryTitle(term, sourceLang) }.Concat(scoped
+                ? Tokenization.Tokenizer.GetLookupCandidates(term, language)
+                : Array.Empty<string>()).Distinct(StringComparer.Ordinal);
+            foreach (var candidate in candidates)
             {
-                response = await TryFetchAsync(term.ToLowerInvariant(), ct);
+                var response = await TryFetchAsync(candidate, ct);
+                if (response == null) continue;
+                var languageKey = ResolveLanguageKey(response, sourceLang);
+                if (languageKey != null && response.TryGetValue(languageKey, out var entries)
+                    && entries != null && entries.Any(e => e.Definitions?.Count > 0)) return entries;
             }
+            return Array.Empty<WiktionaryEntry>();
+        }
 
-            if (response == null)
-            {
-                return Array.Empty<WiktionaryEntry>();
-            }
-
-            var languageKey = ResolveLanguageKey(response, sourceLang);
-            if (languageKey == null || !response.TryGetValue(languageKey, out var entries) || entries == null)
-            {
-                return Array.Empty<WiktionaryEntry>();
-            }
-
-            return entries;
+        private static string LowercaseDictionaryTitle(string term, string? sourceLang)
+        {
+            var code = (sourceLang ?? string.Empty).Trim().Replace('_', '-').Split('-')[0].ToLowerInvariant();
+            // Page titles preserve orthography (tonos and final sigma), whereas
+            // normalized vocabulary keys intentionally discard those distinctions.
+            var lowered = code is "tr" or "az"
+                ? term.Replace('İ', 'i').Replace('I', 'ı').ToLowerInvariant()
+                : term.ToLowerInvariant();
+            if (code == "el")
+                lowered = Regex.Replace(lowered, @"(?<=[\p{L}\p{M}])σ(?![\p{L}\p{M}])", "ς");
+            return lowered;
         }
 
         // Returns the parsed response, null when the word is absent (404) or on a non-retryable

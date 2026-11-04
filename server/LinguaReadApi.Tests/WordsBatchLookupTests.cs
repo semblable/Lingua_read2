@@ -108,6 +108,47 @@ public class WordsBatchLookupTests : IDisposable
         Assert.Equal("tomcat", (await check.WordTranslations.SingleAsync()).Translation);
     }
 
+    [Theory]
+    [InlineData("ar", "کِتاب", "كتاب")]
+    [InlineData("fa", "كِتاب", "کتاب")]
+    [InlineData("he", "\"צה\"ל\"", "צה״ל")]
+    [InlineData("tr", "IŞIK", "ışık")]
+    [InlineData("az", "İL", "il")]
+    [InlineData("el", "λόγος", "ΛΟΓΟΣ")]
+    public async Task ScopedNormalization_CreateAndBatchReuseLegacyHeadword(string code, string stored, string requested)
+    {
+        var wordId = await InsertWord(stored, status: 5);
+        await using (var setup = new AppDbContext(_options))
+        {
+            (await setup.Languages.SingleAsync(l => l.LanguageId == 1)).Code = code;
+            setup.Texts.Add(new Text { TextId = 1, UserId = UserId, LanguageId = 1, Title = "Fixture", Content = requested });
+            setup.WordTranslations.Add(new WordTranslation { WordId = wordId, Translation = "learner meaning" });
+            await setup.SaveChangesAsync();
+        }
+
+        await using (var context = new AppDbContext(_options))
+        {
+            var created = await Controller(context).CreateWord(new CreateWordDto { TextId = 1, Term = requested, Status = 1 });
+            var body = Assert.IsType<WordResponseDto>(Assert.IsType<OkObjectResult>(created.Result).Value);
+            Assert.Equal(wordId, body.WordId);
+            Assert.Equal("learner meaning", body.Translation);
+        }
+        await using (var context = new AppDbContext(_options))
+        {
+            var result = await Controller(context).AddTermsBatch(new AddTermBatchDto
+            {
+                LanguageId = 1, KeepExistingStatus = true,
+                Terms = new List<NewTermDto> { new() { Term = requested, Status = 1 } }
+            });
+            var body = Assert.IsType<AddTermsBatchResultDto>(Assert.IsType<OkObjectResult>(result).Value);
+            Assert.Equal(wordId, Assert.Single(body.Words).WordId);
+        }
+        await using var check = new AppDbContext(_options);
+        var saved = Assert.Single(await check.Words.ToArrayAsync());
+        Assert.Equal((wordId, stored, 5), (saved.WordId, saved.Term, saved.Status));
+        Assert.Equal("learner meaning", (await check.WordTranslations.SingleAsync()).Translation);
+    }
+
     private async Task<int> InsertWord(string term, int status, int languageId = 1)
     {
         await using var context = new AppDbContext(_options);

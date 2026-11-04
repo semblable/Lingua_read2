@@ -247,6 +247,46 @@ public class WiktionaryTranslationServiceTests
         Assert.All(handler.AuthorizationHeaders, Assert.Null);
     }
 
+    [Theory]
+    [InlineData("he", "וכו׳", "וכו")]
+    [InlineData("he", "והבית", "בית")]
+    [InlineData("ar", "وللكتاب", "كتاب")]
+    [InlineData("ar", "کِتاب", "كتاب")]
+    [InlineData("fa", "كِتاب", "کتاب")]
+    [InlineData("el", "ΛΌΓΟΣ", "λόγος")]
+    [InlineData("tr", "IŞIK", "ışık")]
+    [InlineData("az", "İL", "il")]
+    public async Task MissingRtlEntry_TriesNormalizedAndValidatedFallbacks(string code, string surface, string headword)
+    {
+        var requested = new List<string>();
+        var handler = new StubHandler(request =>
+        {
+            var term = Uri.UnescapeDataString(request.RequestUri!.Segments.Last());
+            requested.Add(term);
+            return term == headword
+                ? Ok("{\"" + code + "\":[{\"definitions\":[{\"definition\":\"fixture meaning\"}]}]}")
+                : new HttpResponseMessage(HttpStatusCode.NotFound);
+        });
+        using var http = new HttpClient(handler);
+        Assert.Equal("fixture meaning", await CreateService(http).TranslateTextAsync(surface, code, "en"));
+        Assert.Equal(surface, requested[0]);
+        Assert.Equal(headword, requested[^1]);
+    }
+
+    [Fact]
+    public async Task ExistingGereshDictionaryEntry_StopsBeforePeeling()
+    {
+        var requested = new List<string>();
+        var handler = new StubHandler(request =>
+        {
+            requested.Add(Uri.UnescapeDataString(request.RequestUri!.Segments.Last()));
+            return Ok("{\"he\":[{\"definitions\":[{\"definition\":\"abbreviation meaning\"}]}]}");
+        });
+        using var http = new HttpClient(handler);
+        Assert.Equal("abbreviation meaning", await CreateService(http).TranslateTextAsync("וכו׳", "he", "en"));
+        Assert.Equal(new[] { "וכו׳" }, requested);
+    }
+
     private static HttpResponseMessage Ok(string json) => new(HttpStatusCode.OK)
     {
         Content = new StringContent(json, Encoding.UTF8, "application/json")

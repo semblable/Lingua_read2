@@ -247,6 +247,23 @@ namespace LinguaReadApi.Services.Tokenization
             Guid userId,
             CancellationToken cancellationToken)
         {
+            if (Tokenizer.RequiresNormalizedVocabularyLookup(language?.Code))
+            {
+                // The database's lowercase collation cannot fold script variants,
+                // niqqud or Turkish I. Normalize stored headwords exactly like tokens.
+                var rows = await context.Words.AsNoTracking().Include(w => w.Translation)
+                    .Where(w => w.UserId == userId && w.LanguageId == languageId)
+                    .ToListAsync(cancellationToken);
+                var index = rows.GroupBy(w => Tokenizer.NormalizeKey(w.Term, language), StringComparer.Ordinal)
+                    .ToDictionary(g => g.Key, g => g.OrderByDescending(w => w.Status > 0)
+                        .ThenByDescending(w => w.Translation != null)
+                        .ThenBy(w => w.Term, StringComparer.Ordinal).ThenBy(w => w.WordId).First(), StringComparer.Ordinal);
+                var resolved = new Dictionary<string, Word>(StringComparer.Ordinal);
+                foreach (var term in uniqueWords)
+                    foreach (var key in Tokenizer.GetLookupCandidates(term, language))
+                        if (index.TryGetValue(key, out var word)) { resolved[term] = word; break; }
+                return resolved;
+            }
             var existingWordsList = new List<Word>();
             foreach (var batch in uniqueWords.Chunk(WordBatchSize))
             {

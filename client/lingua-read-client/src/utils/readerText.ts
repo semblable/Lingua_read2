@@ -492,15 +492,21 @@ export const stripLookupDiacritics = (text: string, languageCode?: string | null
   switch (lang) {
     case 'ar':
     case 'fa':
+      return text.replace(ARABIC_DIACRITICS_REGEX, '').replace(/[أإآٱ]/g, 'ا')
+        .replace(lang === 'fa' ? /ي/g : /ی/g, lang === 'fa' ? 'ی' : 'ي')
+        .replace(lang === 'fa' ? /ك/g : /ک/g, lang === 'fa' ? 'ک' : 'ك');
     case 'ur':
       return text.replace(ARABIC_DIACRITICS_REGEX, '');
     case 'he':
-      return text.replace(HEBREW_DIACRITICS_REGEX, '').replace(/"/g, '״').replace(/'/g, '׳');
+      return text.replace(HEBREW_DIACRITICS_REGEX, '').replace(/^["'״׳]+/, '').replace(/["״]+$/, '')
+        .replace(/"/g, '״').replace(/'/g, '׳');
     case 'ru':
     case 'uk':
       return text.replace(CYRILLIC_STRESS_REGEX, '');
     case 'lt':
       return text.replace(LITHUANIAN_ACCENTS_REGEX, '');
+    case 'el':
+      return text.normalize('NFD').replace(/[\u0300\u0301\u0342]/g, '').normalize('NFC');
     default:
       return text;
   }
@@ -510,7 +516,56 @@ export const lowercaseLookupTerm = (term: string, languageCode?: string | null):
   const base = (languageCode || '').trim().toLowerCase().replace(/_/g, '-').split('-')[0];
   const clean = (term || '').trim().replace(/^[\u200C\u200D]+|[\u200C\u200D]+$/g, '');
   const stripped = stripLookupDiacritics(clean, languageCode);
-  return base === 'tr' ? stripped.toLocaleLowerCase('tr') : stripped.toLowerCase();
+  if (base === 'tr' || base === 'az') return stripped.replace(/İ/g, 'i').replace(/I/g, 'ı').toLowerCase();
+  const lowered = stripped.toLowerCase();
+  return base === 'el' ? lowered.replace(/ς/g, 'σ') : lowered;
+};
+
+/** Direct key first. Fallbacks are useful only when a vocabulary/dictionary validates them. */
+export const getLookupCandidates = (term: string, languageCode?: string | null): string[] => {
+  const key = lowercaseLookupTerm(term, languageCode);
+  const base = (languageCode || '').trim().toLowerCase().replace(/_/g, '-').split('-')[0];
+  const code = base === 'iw' ? 'he' : base;
+  const result = [key];
+  const seen = new Set(result);
+  let frontier = [key];
+  if (code === 'he' && key.endsWith('׳')) {
+    const withoutGeresh = key.replace(/׳+$/, '');
+    if (!seen.has(withoutGeresh)) { seen.add(withoutGeresh); result.push(withoutGeresh); frontier.push(withoutGeresh); }
+  }
+  if (code !== 'he' && code !== 'ar') return result;
+  const prefixes = code === 'he' ? ['ו', 'ב', 'ל', 'כ', 'מ', 'ש', 'ה'] : ['و', 'ف', 'ب', 'ل', 'ك', 'ال'];
+  for (let depth = 0; depth < 4 && frontier.length; depth++) {
+    const next: string[] = [];
+    const add = (candidate: string) => {
+      if (!seen.has(candidate)) { seen.add(candidate); next.push(candidate); }
+    };
+    for (const current of frontier) {
+      for (const prefix of prefixes) {
+        if (current.startsWith(prefix) && current.length - prefix.length >= 2) add(current.slice(prefix.length));
+      }
+      if (code === 'ar' && current.startsWith('لل') && current.length >= 4) add(current.slice(2));
+    }
+    frontier = next.sort((a, b) => a < b ? -1 : a > b ? 1 : 0);
+    result.push(...frontier);
+  }
+  return result;
+};
+
+export const resolveLookupKey = (
+  term: string, languageCode: string | null | undefined, headwords: Iterable<string>
+): string | null => {
+  const keys = new Set([...headwords].map(word => lowercaseLookupTerm(word, languageCode)));
+  return getLookupCandidates(term, languageCode).find(key => keys.has(key)) ?? null;
+};
+
+export const resolveLookupTerm = <T>(
+  term: string, languageCode: string | null | undefined, vocabulary: ReadonlyMap<string, T>
+): T | null => {
+  for (const key of getLookupCandidates(term, languageCode)) {
+    if (vocabulary.has(key)) return vocabulary.get(key)!;
+  }
+  return null;
 };
 
 const wordRegexCache = new Map<string, RegExp>();
@@ -666,6 +721,10 @@ export const consumeWordAt = (
   while (word.length > 1 && (word.endsWith('\u200C') || word.endsWith('\u200D'))) {
     word = word.slice(0, -1);
     i--;
+  }
+  if ((processed[i] === "'" || processed[i] === '׳') && /[א-ת]/.test(processed[i - 1])) {
+    word += processed[i];
+    i++;
   }
   return { text: word, end: i };
 };

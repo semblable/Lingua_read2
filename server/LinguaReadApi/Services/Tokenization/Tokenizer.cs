@@ -286,6 +286,8 @@ namespace LinguaReadApi.Services.Tokenization
                     {
                         i--;
                     }
+                    if (i < len && processed[i] is '\'' or '\u05f3'
+                        && processed[i - 1] is >= '\u05d0' and <= '\u05ea') i++;
                     tokens.Add(new Token(processed.Substring(start, i - start), start, i, IsWord: true));
                 }
                 else
@@ -349,10 +351,14 @@ namespace LinguaReadApi.Services.Tokenization
             if (baseLang == "iw") baseLang = "he";
             return baseLang switch
             {
-                "ar" or "fa" or "ur" => ArabicDiacriticsRegex.Replace(text, string.Empty),
-                "he" => HebrewDiacriticsRegex.Replace(text, string.Empty).Replace('"', '״').Replace('\'', '׳'),
+                "ar" or "fa" => UnifyArabicLetters(ArabicDiacriticsRegex.Replace(text, string.Empty), baseLang),
+                "ur" => ArabicDiacriticsRegex.Replace(text, string.Empty),
+                "he" => HebrewDiacriticsRegex.Replace(text, string.Empty)
+                    .TrimStart('"', '\'', '״', '׳').TrimEnd('"', '״').Replace('"', '״').Replace('\'', '׳'),
                 "ru" or "uk" => CyrillicStressRegex.Replace(text, string.Empty),
                 "lt" => LithuanianAccentsRegex.Replace(text, string.Empty),
+                "el" => text.Normalize(NormalizationForm.FormD).Replace("\u0300", string.Empty)
+                    .Replace("\u0301", string.Empty).Replace("\u0342", string.Empty).Normalize(NormalizationForm.FormC),
                 _ => text
             };
         }
@@ -361,8 +367,80 @@ namespace LinguaReadApi.Services.Tokenization
         /// The lookup key of a term already in <see cref="NormalizeText"/> form and
         /// trimmed: <see cref="NormalizeKey"/> without normalizing a second time.
         /// </summary>
-        internal static string LowercaseKey(string normalized, Language? language) =>
-            GetTextInfo(language?.Code).ToLower(normalized);
+        internal static string LowercaseKey(string normalized, Language? language)
+        {
+            var code = BaseLanguageCode(language?.Code);
+            if (code is "tr" or "az")
+                return normalized.Replace('İ', 'i').Replace('I', 'ı').ToLowerInvariant();
+            var lowered = GetTextInfo(language?.Code).ToLower(normalized);
+            return code == "el" ? lowered.Replace('ς', 'σ') : lowered;
+        }
+
+        private static string BaseLanguageCode(string? code)
+        {
+            var value = (code ?? string.Empty).Trim().ToLowerInvariant().Replace('_', '-').Split('-')[0];
+            return value == "iw" ? "he" : value;
+        }
+
+        public static bool RequiresNormalizedVocabularyLookup(string? code) =>
+            BaseLanguageCode(code) is "he" or "ar" or "fa" or "tr" or "az" or "el";
+
+        private static string UnifyArabicLetters(string text, string code)
+        {
+            var unified = text.Replace('أ', 'ا').Replace('إ', 'ا').Replace('آ', 'ا').Replace('ٱ', 'ا');
+            return code == "fa"
+                ? unified.Replace('ي', 'ی').Replace('ك', 'ک')
+                : unified.Replace('ی', 'ي').Replace('ک', 'ك');
+        }
+
+        /// <summary>Direct key first; fallback keys require a matching vocabulary/dictionary headword.
+        /// Each peeling depth is ordered ordinally, so dictionary insertion order cannot choose a lemma.</summary>
+        public static IReadOnlyList<string> GetLookupCandidates(string term, Language? language)
+        {
+            var key = NormalizeKey(term, language);
+            var result = new List<string> { key };
+            var seen = new HashSet<string>(StringComparer.Ordinal) { key };
+            var code = BaseLanguageCode(language?.Code);
+            var frontier = new List<string> { key };
+            if (code == "he" && key.EndsWith('׳'))
+            {
+                var withoutGeresh = key.TrimEnd('׳');
+                if (seen.Add(withoutGeresh)) { result.Add(withoutGeresh); frontier.Add(withoutGeresh); }
+            }
+            if (code is not ("he" or "ar")) return result;
+            // At most conjunction + relative + preposition + article. Peeling never
+            // changes display spans and never returns an unvalidated guess.
+            for (var depth = 0; depth < 4 && frontier.Count > 0; depth++)
+            {
+                var next = new SortedSet<string>(StringComparer.Ordinal);
+                foreach (var current in frontier)
+                {
+                    var prefixes = code == "he"
+                        ? new[] { "ו", "ב", "ל", "כ", "מ", "ש", "ה" }
+                        : new[] { "و", "ف", "ب", "ل", "ك", "ال" };
+                    foreach (var prefix in prefixes)
+                        if (current.StartsWith(prefix, StringComparison.Ordinal) && current.Length - prefix.Length >= 2)
+                        {
+                            var stripped = current[prefix.Length..];
+                            if (seen.Add(stripped)) next.Add(stripped);
+                        }
+                    if (code == "ar" && current.StartsWith("لل", StringComparison.Ordinal) && current.Length >= 4)
+                    {
+                        var stripped = current[2..];
+                        if (seen.Add(stripped)) next.Add(stripped);
+                    }
+                }
+                frontier = next.ToList();
+                result.AddRange(frontier);
+            }
+            return result;
+        }
+
+        public static string? ResolveLookupKey(string term, Language? language, IEnumerable<string> headwords)
+        {
+            var keys = headwords.Select(word => NormalizeKey(word, language)).ToHashSet(StringComparer.Ordinal);
+            return GetLookupCandidates(term, language).FirstOrDefault(keys.Contains);
+        }
 
         // A combining mark or format character (an emoji's variation selector, a
         // zero-width joiner) may continue a word but never start one: on its own

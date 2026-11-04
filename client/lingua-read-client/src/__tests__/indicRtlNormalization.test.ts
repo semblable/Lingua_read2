@@ -86,7 +86,7 @@ describe('Indic and RTL Script Normalization & Diacritic Insensitive Lookup', ()
 
     it('ar-02: BiDi RTL/LTR mixing and Tashkeel stripping', () => {
       const input = 'أَطْلَقَتْ شَرِكَةُ OpenAI نُسْخَةَ 2026 وَقَالَتْ: «مَرْحَبًا!»';
-      expect(lookupKeysOf(input, arWithDigits)).toEqual(['أطلقت', 'شركة', 'openai', 'نسخة', '2026', 'وقالت', 'مرحبا']);
+      expect(lookupKeysOf(input, arWithDigits)).toEqual(['اطلقت', 'شركة', 'openai', 'نسخة', '2026', 'وقالت', 'مرحبا']);
     });
 
     it('Arabic: strips Tatweel and Harakat for lookup keys', () => {

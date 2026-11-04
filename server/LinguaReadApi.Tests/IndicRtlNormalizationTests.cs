@@ -119,7 +119,7 @@ public class IndicRtlNormalizationTests
     {
         const string input = "أَطْلَقَتْ شَرِكَةُ OpenAI نُسْخَةَ 2026 وَقَالَتْ: «مَرْحَبًا!»";
         var keys = LookupKeysOf(input, ArWithDigits);
-        Assert.Equal(new[] { "أطلقت", "شركة", "openai", "نسخة", "2026", "وقالت", "مرحبا" }, keys);
+        Assert.Equal(new[] { "اطلقت", "شركة", "openai", "نسخة", "2026", "وقالت", "مرحبا" }, keys);
     }
 
     [Fact]

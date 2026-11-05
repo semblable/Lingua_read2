@@ -690,6 +690,35 @@ const isElisionRemainder = (remainder: string): boolean =>
   /^\p{L}[\p{L}\p{M}]*$/u.test(remainder) &&
   Array.from(remainder).filter(ch => /\p{L}/u.test(ch)).length >= 2;
 
+const catalanEnclitics = [
+  "-nos", "-vos", "-los", "-les", "-me", "-te", "-se", "-ne", "-en", "-hi", "-ho", "-li", "-la", "-el",
+  "'ns", "'us", "'ls", "'m", "'t", "'s", "'l", "'n"
+];
+
+const isCatalanRemainder = (s: string): boolean => {
+  const letters = Array.from(s).filter(ch => /\p{L}/u.test(ch)).length;
+  return letters >= 2 && /\p{L}$/u.test(s);
+};
+
+const peelCatalanEnclitics = (start: string, seen: Set<string>, result: string[]): void => {
+  let s = start;
+  for (let depth = 0; depth < 3; depth++) {
+    let matched = false;
+    for (const suffix of catalanEnclitics) {
+      if (s.endsWith(suffix) && s.length > suffix.length) {
+        s = s.slice(0, -suffix.length);
+        matched = true;
+        if (isCatalanRemainder(s) && !seen.has(s)) {
+          seen.add(s);
+          result.push(s);
+        }
+        break;
+      }
+    }
+    if (!matched) break;
+  }
+};
+
 /** Direct key first. Fallbacks are useful only when a vocabulary/dictionary validates them. */
 export const getLookupCandidates = (term: string, languageCode?: string | null): string[] => {
   const key = lowercaseLookupTerm(term, languageCode);
@@ -702,21 +731,108 @@ export const getLookupCandidates = (term: string, languageCode?: string | null):
     seen.add(foldedKey);
     result.push(foldedKey);
   }
-  if (code === 'fr' || code === 'it' || code === 'ca') {
+  if (code === 'fr' || code === 'it' || code === 'ca' || code === 'ro') {
     // Lookup only: the reader keeps its glued elision span and exact entries win.
-    if (code === 'it' && key === "po'") {
-      result.push('po');
+    if (code === 'it') {
+      if (key === "po'") {
+        result.push('po');
+        return result;
+      }
+      const prefixes = ["qualcos'", "quell'", "sant'", "quest'", "dall'", "nell'", "sull'", "coll'", "bell'", "all'", "un'", "l'", "d'"];
+      for (const prefix of prefixes) {
+        if (key.startsWith(prefix)) {
+          const remainder = key.slice(prefix.length);
+          if (isElisionRemainder(remainder) && !seen.has(remainder)) {
+            seen.add(remainder);
+            result.push(remainder);
+          }
+          break;
+        }
+      }
       return result;
     }
-    const prefixes = code === 'it' ? ["l'", "d'", "un'", "quell'"] : ["l'", "d'"];
-    for (const prefix of prefixes) {
-      if (key.startsWith(prefix)) {
-        const remainder = key.slice(prefix.length);
-        if (isElisionRemainder(remainder)) result.push(remainder);
-        break;
+
+    if (code === 'fr') {
+      if (key.endsWith('-là') || key.endsWith('-ci')) {
+        const stem = key.slice(0, -3);
+        if (isElisionRemainder(stem) && !seen.has(stem)) {
+          seen.add(stem);
+          result.push(stem);
+        }
       }
+      const prefixes = ["jusqu'", "puisqu'", "lorsqu'", "qu'", "c'", "j'", "m'", "n'", "s'", "t'", "l'", "d'"];
+      for (const prefix of prefixes) {
+        if (key.startsWith(prefix)) {
+          const remainder = key.slice(prefix.length);
+          if (isElisionRemainder(remainder) && !seen.has(remainder)) {
+            seen.add(remainder);
+            result.push(remainder);
+          } else if ((remainder.endsWith('-là') || remainder.endsWith('-ci') || remainder.endsWith('-ce')) && remainder.length > 3) {
+            if (remainder.endsWith('-ce') && !seen.has(remainder)) {
+              seen.add(remainder);
+              result.push(remainder);
+            }
+            const subStem = remainder.slice(0, -3);
+            if (isElisionRemainder(subStem) && !seen.has(subStem)) {
+              seen.add(subStem);
+              result.push(subStem);
+            }
+          }
+          break;
+        }
+      }
+      return result;
     }
-    return result;
+
+    if (code === 'ca') {
+      const prefixes = ["l'", "d'", "m'", "t'", "s'", "n'"];
+      let procliticRemainder: string | null = null;
+      for (const prefix of prefixes) {
+        if (key.startsWith(prefix)) {
+          const rem = key.slice(prefix.length);
+          if (isCatalanRemainder(rem)) {
+            procliticRemainder = rem;
+          }
+          break;
+        }
+      }
+      if (procliticRemainder !== null) {
+        if (!seen.has(procliticRemainder)) {
+          seen.add(procliticRemainder);
+          result.push(procliticRemainder);
+        }
+        peelCatalanEnclitics(procliticRemainder, seen, result);
+      } else {
+        peelCatalanEnclitics(key, seen, result);
+      }
+      return result;
+    }
+
+    if (code === 'ro') {
+      const prefixes = ["și-", "te-", "ne-", "ți-", "s-", "m-", "v-", "l-", "d-", "n-"];
+      for (const prefix of prefixes) {
+        if (key.startsWith(prefix)) {
+          const rem = key.slice(prefix.length);
+          if (isElisionRemainder(rem) && !seen.has(rem)) {
+            seen.add(rem);
+            result.push(rem);
+          }
+          break;
+        }
+      }
+      const suffixes = ["-au", "-am", "-ai", "-ați", "-ar", "-și", "-ne", "-vă", "-te", "-le", "-a", "-o", "-i", "-l"];
+      for (const suffix of suffixes) {
+        if (key.endsWith(suffix) && key.length > suffix.length) {
+          const rem = key.slice(0, -suffix.length);
+          if (isElisionRemainder(rem) && !seen.has(rem)) {
+            seen.add(rem);
+            result.push(rem);
+          }
+          break;
+        }
+      }
+      return result;
+    }
   }
   let frontier = [key];
   if (code === 'he' && key.endsWith('׳')) {

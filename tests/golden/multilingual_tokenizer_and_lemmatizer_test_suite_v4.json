@@ -13231,13 +13231,13 @@
       "expected": null
     },
     {
-      "id": "fr-elision-only-l-and-d",
+      "id": "fr-elision-qu-validated",
       "lang": "fr",
       "term": "qu'il",
       "vocabulary": [
         "il"
       ],
-      "expected": null
+      "expected": "il"
     },
     {
       "id": "fr-elision-minimum-two-letters",
@@ -13441,22 +13441,22 @@
       "expected": "d'accordo"
     },
     {
-      "id": "it-elision-no-nell",
+      "id": "it-elision-nell-validated",
       "lang": "it",
       "term": "nell'ombra",
       "vocabulary": [
         "ombra"
       ],
-      "expected": null
+      "expected": "ombra"
     },
     {
-      "id": "it-elision-no-qualcos",
+      "id": "it-elision-qualcos-validated",
       "lang": "it",
       "term": "qualcos'altro",
       "vocabulary": [
         "altro"
       ],
-      "expected": null
+      "expected": "altro"
     },
     {
       "id": "it-elision-no-ce",
@@ -13515,24 +13515,24 @@
       "expected": "l'església"
     },
     {
-      "id": "ca-elision-no-clitic-chain",
+      "id": "ca-elision-clitic-chain-validated",
       "lang": "ca",
       "term": "d'anar-te'n",
       "vocabulary": [
         "anar-te'n",
         "anar"
       ],
-      "expected": null
+      "expected": "anar-te'n"
     },
     {
-      "id": "ca-elision-no-enclitic",
+      "id": "ca-elision-enclitic-validated",
       "lang": "ca",
       "term": "Dona'm-ho",
       "vocabulary": [
         "dona",
         "donar"
       ],
-      "expected": null
+      "expected": "dona"
     },
     {
       "id": "ca-elision-missing-validation",
@@ -13542,6 +13542,34 @@
         "aigua"
       ],
       "expected": null
+    },
+    {
+      "id": "ro-clitic-enclitic-validated",
+      "lang": "ro",
+      "term": "și-au",
+      "vocabulary": [
+        "au"
+      ],
+      "expected": "au"
+    },
+    {
+      "id": "ro-clitic-proclitic-validated",
+      "lang": "ro",
+      "term": "și-au",
+      "vocabulary": [
+        "și"
+      ],
+      "expected": "și"
+    },
+    {
+      "id": "ro-clitic-exact-first",
+      "lang": "ro",
+      "term": "și-au",
+      "vocabulary": [
+        "și-au",
+        "au"
+      ],
+      "expected": "și-au"
     }
   ],
   "korean_candidate_cases": [

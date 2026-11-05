@@ -458,7 +458,7 @@ namespace LinguaReadApi.Services.Tokenization
 
         // Keep fallback eligibility separate from the language-specific casing table.
         public static bool RequiresLookupFallback(string? code) =>
-            BaseLanguageCode(code) is "he" or "ar" or "fr" or "it" or "ca";
+            BaseLanguageCode(code) is "he" or "ar" or "fr" or "it" or "ca" or "ro";
 
         private static string UnifyArabicLetters(string text, string code) =>
             code == "fa"
@@ -536,28 +536,118 @@ namespace LinguaReadApi.Services.Tokenization
             var code = BaseLanguageCode(language?.Code);
             var foldedKey = FoldNormalizedKey(key, code);
             if (seen.Add(foldedKey)) result.Add(foldedKey);
-            if (code is "fr" or "it" or "ca")
+            if (code is "fr" or "it" or "ca" or "ro")
             {
-                // Bounded Romance elisions are lookup alternatives only:
+                // Bounded Romance & Romanian elisions/clitics are lookup alternatives only:
                 // keep the whole display span and prefer its exact saved headword.
-                if (code == "it" && key == "po'")
+                if (code == "it")
                 {
-                    result.Add("po");
+                    if (key == "po'")
+                    {
+                        result.Add("po");
+                        return result;
+                    }
+                    var prefixes = new[] { "qualcos'", "quell'", "sant'", "quest'", "dall'", "nell'", "sull'", "coll'", "bell'", "all'", "un'", "l'", "d'" };
+                    foreach (var prefix in prefixes)
+                    {
+                        if (key.StartsWith(prefix, StringComparison.Ordinal)
+                            && IsElisionRemainder(key[prefix.Length..]))
+                        {
+                            result.Add(key[prefix.Length..]);
+                            break;
+                        }
+                    }
                     return result;
                 }
-                var prefixes = code == "it"
-                    ? new[] { "l'", "d'", "un'", "quell'" }
-                    : new[] { "l'", "d'" };
-                foreach (var prefix in prefixes)
+
+                if (code == "fr")
                 {
-                    if (key.StartsWith(prefix, StringComparison.Ordinal)
-                        && IsElisionRemainder(key[prefix.Length..]))
+                    if (key.EndsWith("-là", StringComparison.Ordinal) || key.EndsWith("-ci", StringComparison.Ordinal))
                     {
-                        result.Add(key[prefix.Length..]);
-                        break;
+                        var stem = key[..^3];
+                        if (IsElisionRemainder(stem) && seen.Add(stem))
+                            result.Add(stem);
                     }
+
+                    var prefixes = new[] { "jusqu'", "puisqu'", "lorsqu'", "qu'", "c'", "j'", "m'", "n'", "s'", "t'", "l'", "d'" };
+                    foreach (var prefix in prefixes)
+                    {
+                        if (key.StartsWith(prefix, StringComparison.Ordinal))
+                        {
+                            var remainder = key[prefix.Length..];
+                            if (IsElisionRemainder(remainder) && seen.Add(remainder))
+                                result.Add(remainder);
+                            else if ((remainder.EndsWith("-là", StringComparison.Ordinal) || remainder.EndsWith("-ci", StringComparison.Ordinal) || remainder.EndsWith("-ce", StringComparison.Ordinal)) && remainder.Length > 3)
+                            {
+                                if (remainder.EndsWith("-ce", StringComparison.Ordinal) && seen.Add(remainder))
+                                    result.Add(remainder);
+                                var subStem = remainder[..^3];
+                                if (IsElisionRemainder(subStem) && seen.Add(subStem))
+                                    result.Add(subStem);
+                            }
+                            break;
+                        }
+                    }
+                    return result;
                 }
-                return result;
+
+                if (code == "ca")
+                {
+                    var prefixes = new[] { "l'", "d'", "m'", "t'", "s'", "n'" };
+                    string? procliticRemainder = null;
+                    foreach (var prefix in prefixes)
+                    {
+                        if (key.StartsWith(prefix, StringComparison.Ordinal))
+                        {
+                            var rem = key[prefix.Length..];
+                            if (IsCatalanRemainder(rem))
+                            {
+                                procliticRemainder = rem;
+                            }
+                            break;
+                        }
+                    }
+
+                    if (procliticRemainder != null)
+                    {
+                        if (seen.Add(procliticRemainder))
+                            result.Add(procliticRemainder);
+                        PeelCatalanEnclitics(procliticRemainder, seen, result);
+                    }
+                    else
+                    {
+                        PeelCatalanEnclitics(key, seen, result);
+                    }
+                    return result;
+                }
+
+                if (code == "ro")
+                {
+                    var prefixes = new[] { "și-", "te-", "ne-", "ți-", "s-", "m-", "v-", "l-", "d-", "n-" };
+                    foreach (var prefix in prefixes)
+                    {
+                        if (key.StartsWith(prefix, StringComparison.Ordinal))
+                        {
+                            var rem = key[prefix.Length..];
+                            if (IsElisionRemainder(rem) && seen.Add(rem))
+                                result.Add(rem);
+                            break;
+                        }
+                    }
+
+                    var suffixes = new[] { "-au", "-am", "-ai", "-ați", "-ar", "-și", "-ne", "-vă", "-te", "-le", "-a", "-o", "-i", "-l" };
+                    foreach (var suffix in suffixes)
+                    {
+                        if (key.EndsWith(suffix, StringComparison.Ordinal) && key.Length > suffix.Length)
+                        {
+                            var rem = key[..^suffix.Length];
+                            if (IsElisionRemainder(rem) && seen.Add(rem))
+                                result.Add(rem);
+                            break;
+                        }
+                    }
+                    return result;
+                }
             }
             var frontier = new List<string> { key };
             if (code == "he" && key.EndsWith('׳'))
@@ -610,6 +700,45 @@ namespace LinguaReadApi.Services.Tokenization
                     return false;
             }
             return letters >= 2;
+        }
+
+        private static readonly string[] CatalanEnclitics =
+        [
+            "-nos", "-vos", "-los", "-les", "-me", "-te", "-se", "-ne", "-en", "-hi", "-ho", "-li", "-la", "-el",
+            "'ns", "'us", "'ls", "'m", "'t", "'s", "'l", "'n"
+        ];
+
+        private static bool IsCatalanRemainder(string s)
+        {
+            var letters = 0;
+            foreach (var rune in s.EnumerateRunes())
+            {
+                if (Rune.IsLetter(rune)) letters++;
+            }
+            return letters >= 2 && s.Length > 0 && char.IsLetter(s[^1]);
+        }
+
+        private static void PeelCatalanEnclitics(string start, HashSet<string> seen, List<string> result)
+        {
+            var s = start;
+            for (var depth = 0; depth < 3; depth++)
+            {
+                var matched = false;
+                foreach (var suffix in CatalanEnclitics)
+                {
+                    if (s.EndsWith(suffix, StringComparison.Ordinal) && s.Length > suffix.Length)
+                    {
+                        s = s[..^suffix.Length];
+                        matched = true;
+                        if (IsCatalanRemainder(s) && seen.Add(s))
+                        {
+                            result.Add(s);
+                        }
+                        break;
+                    }
+                }
+                if (!matched) break;
+            }
         }
 
         public static string? ResolveLookupKey(string term, Language? language, IEnumerable<string> headwords)

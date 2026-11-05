@@ -6,7 +6,7 @@ describe('language-gated normalized lookup and validated fallback', () => {
     ['fr', "l'eau", 'eau', 'eau'], ['fr-CA', 'D’Anne', 'Anne', 'anne'],
     ['fr_FR', 'lʼeau', 'eau', 'eau'], ['fr', "l'eau", 'eau|l’eau', "l'eau"],
     ['fr', "d'accord", "accord|d'accord", "d'accord"], ['fr', "aujourd'hui", 'hui', null],
-    ['fr', "qu'il", 'il', null], ['fr', "l'a", 'a', null],
+    ['fr', "qu'il", 'il', 'il'], ['fr', 'œuf-là', 'œuf', 'œuf'], ['fr', "C'est", 'est', 'est'], ['fr', "l'a", 'a', null],
     ['fr', "l'ami fidèle", 'ami fidèle', null], ['fr', "d'l'eau", "l'eau|eau", null],
     ['fr', "l'arc-en-ciel", 'arc-en-ciel', null], ['fr', "l'123", '123', null],
     ['fr', "l'inconnu", 'eau', null], ['fr', "l'𐐨a", '𐐨a', '𐐨a'],
@@ -17,12 +17,12 @@ describe('language-gated normalized lookup and validated fallback', () => {
     ['it', "l'acqua", 'acqua', 'acqua'], ['it-IT', 'd’acqua', 'acqua', 'acqua'],
     ['it', "un'occhiata", 'occhiata', 'occhiata'], ['it', "quell'albero", 'albero', 'albero'],
     ['it', "po'", 'po', 'po'], ['it', 'Po’', "po|po'", "po'"],
-    ['it', "d'accordo", "accordo|d'accordo", "d'accordo"], ['it', "nell'ombra", 'ombra', null],
-    ['it', "qualcos'altro", 'altro', null], ['it', "c'è", 'è|essere', null],
+    ['it', "d'accordo", "accordo|d'accordo", "d'accordo"], ['it', "nell'ombra", 'ombra', 'ombra'],
+    ['it', "qualcos'altro", 'altro', 'altro'], ['it', "c'è", 'è|essere', null],
     ['it', "un'idea", 'acqua', null], ['it', "l'İa", 'ia', 'ia'], ['it', "l'ΟΣ", 'οσ', 'οσ'],
     ['ca', "L'home", 'home', 'home'], ['ca-ES', 'd’aigua', 'aigua', 'aigua'],
     ['ca', "d'un", 'un', 'un'], ['ca', "l'església", 'església|l’església', "l'església"],
-    ['ca', "d'anar-te'n", "anar-te'n|anar", null], ['ca', "Dona'm-ho", 'dona|donar', null],
+    ['ca', "d'anar-te'n", "anar-te'n|anar", "anar-te'n"], ['ca', "Dona'm-ho", 'dona|donar', 'dona'], ['ca', 'anem-nos-en', 'anem', 'anem'], ['ro', 'și-au', 'au', 'au'], ['ro', 'și-au', 'și', 'și'], ['ro', 'și-au', 'și-au|au', 'și-au'],
     ['ca', "l'objecte", 'aigua', null], ['ca', "l'İa", 'ia', 'ia'], ['ca', "l'ΟΣ", 'οσ', 'οσ']
   ])('%s bounded elision %s preserves exact precedence', (code, term, fixture, expected) =>
     expect(resolveLookupKey(term!, code, fixture!.split('|'))).toBe(expected));

@@ -2,9 +2,9 @@
 
 All 89 original reference cases across 44 languages remain intact in `tests/golden/multilingual_tokenizer_and_lemmatizer_test_suite_v4.json`. Runtime surfaces address the **displayed processed sentence** using **UTF-16 code units**.
 
-This Tokenizer v5 slice closes `ar-01`, `ar-02`, `he-01`, `el-01`, `el-02`, and `uk-02`, reducing `cases_with_runtime_span_or_key_differences` from **24 to 18** (71 / 89 exact reference matches = 79.8%). Greek monotonic accents and contextual final sigma (`ς`/`σ`), Arabic hamza (`أ`, `إ`, `آ`, `ٱ`), bare integers (`2026`), and space-grouped integers with currency/unit context (`2 000 грн.`) now match the reference suite while preserving legacy v4 vocabulary via dual-key folded lookup and in-place DB promotion. All 89 original references remain unchanged; 100 runtime cases execute. Semantic markers remain **86**.
+This Tokenizer v5 slice expands Romance and Romanian clitic and elision lookup fallbacks across French, Italian, Catalan, and Romanian (`fr`, `it`, `ca`, `ro`), while keeping clickable display spans whole to protect learner bookmarks, saved phrases, and sentence mining. Romanian is now fully registered in `RequiresLookupFallback`. Validated lookup candidates now cover French demonstrative suffixes (`œuf-là` → `œuf`) and contractions (`qu'il` → `il`, `C'est` → `est`), Italian articulated prepositions and determiners (`nell'ombra` → `ombra`, `qualcos'altro` → `altro`), Catalan proclitics and chained enclitics (`Dona'm-ho` → `dona`, `anem-nos-en` → `anem`, `d'anar-te'n` → `anar-te'n`), and Romanian hyphenated clitics (`și-au` → `au` / `și`). All 89 original references remain unchanged; 100 runtime cases execute. Semantic markers remain **86**.
 
-Verification: server **1,733 passed, 7 PostgreSQL-only skipped**; client **1,766 passed across 114 files**. Solution build, typecheck, production build, and lint pass (46 existing lint warnings). Docker is unavailable locally. Tokenizer bumped to version **5** (`WordLinker.CurrentTokenizerVersion = 5`), verified by `TokenizerV5MigrationAcceptanceTests`.
+Verification: server **1,742 passed, 7 PostgreSQL-only skipped**; client **1,775 passed across 114 files**. Solution build, typecheck, production build, and lint pass (46 existing lint warnings). Docker is unavailable locally. Tokenizer is at version **5** (`WordLinker.CurrentTokenizerVersion = 5`), verified by `TokenizerV5MigrationAcceptanceTests`.
 
 ## Remaining 18 span/key gaps
 
@@ -13,11 +13,11 @@ Verification: server **1,733 passed, 7 PostgreSQL-only skipped**; client **1,766
 | `zh-01` | Contextual boundary disambiguation: source `乒乓球拍 / 卖`, pinned dictionary `乒乓球 / 拍卖`. |
 | `ja-01` | Segmentation granularity for repeated `すもも`/`もも`. |
 | `ja-02` | Mixed: pinned TinySegmenter boundaries versus larger inflected/grammatical units. |
-| `fr-01`, `fr-02` | Intentional glued Romance elision/clitic spans (`C'est`, `l'eau`, `d'Anne`, `qu'il`, `œuf-là`); `l'`/`d'` use validated lookup fallback. |
-| `it-01`, `it-02` | Intentional glued elision spans (`C'è`, `d'acqua`, `nell'ombra`, `qualcos'altro`, `un'occhiata`, `quell'albero`); `po'` span `[7:10]` matches reference and `l'`/`d'`/`un'`/`quell'`/`po'` use validated lookup fallback. |
-| `ca-01`, `ca-02` | Intentional glued elision/clitic spans (`L'home`, `d'aigua`, `d'objectes`, `d'un`, `Dona'm-ho`, `d'anar-te'n`, `l'església`); `l'`/`d'` use validated lookup fallback. |
+| `fr-01`, `fr-02` | Intentional glued Romance elision/clitic spans (`C'est`, `l'eau`, `d'Anne`, `qu'il`, `œuf-là`); `l'`/`d'`/`c'`/`qu'`/`-là`/`-ci` use validated lookup fallback. |
+| `it-01`, `it-02` | Intentional glued elision spans (`C'è`, `d'acqua`, `nell'ombra`, `qualcos'altro`, `un'occhiata`, `quell'albero`); `po'` span `[7:10]` matches reference and `l'`/`d'`/`un'`/`quell'`/`nell'`/`qualcos'`/`all'`/`dall'`/`sull'`/`coll'`/`bell'`/`sant'`/`quest'`/`po'` use validated lookup fallback. |
+| `ca-01`, `ca-02` | Intentional glued elision/clitic spans (`L'home`, `d'aigua`, `d'objectes`, `d'un`, `Dona'm-ho`, `d'anar-te'n`, `l'església`); `l'`/`d'`/`m'`/`t'`/`s'`/`n'` and chained enclitics (`-ho`, `-en`, `-nos`, `'m`, `'t`, etc.) use validated lookup fallback. |
 | `vi-01`, `vi-02` | Multiword lexical phrase grouping (`Việt Nam`, `Quốc ngữ`, `đặc biệt`). |
-| `ro-01` | Generic hyphen glue (`și-au`) versus clitic subtokens (`și / -au`). |
+| `ro-01` | Generic hyphen glue (`și-au`) versus clitic subtokens (`și / -au`); `și-` and `-au` use validated lookup fallback. |
 | `ko-01`, `ko-02` | Intentional full eojeol touch targets; Josa/stem decomposition is handled in lookup candidates. |
 | `nl-01` | Lexical phrase grouping of `'s Morgens`; the leading apostrophe matches. |
 | `ms-02` | Multiword phrase `Kuala Lumpur` (`RM` and `50.00` match). |

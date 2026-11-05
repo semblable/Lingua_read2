@@ -10,6 +10,7 @@ interface SentenceModeViewProps {
   currentSegmentIndex: number;
   creditedSegmentCount: number;
   fontStyle: React.CSSProperties;
+  textAlignment?: string;
   processTextContent: (text: string) => React.ReactNode;
   handleWordSelection: () => void;
   textContentRef: React.RefObject<HTMLDivElement | null>;
@@ -47,6 +48,7 @@ const SentenceModeView = React.memo(({
   currentSegmentIndex,
   creditedSegmentCount,
   fontStyle,
+  textAlignment = 'left',
   processTextContent,
   handleWordSelection,
   textContentRef,
@@ -107,7 +109,7 @@ const SentenceModeView = React.memo(({
   };
 
   return (
-    <div className="sentence-mode-view">
+    <div className={`sentence-mode-view reader-align-${textAlignment}`}>
       <div className="sentence-mode-toolbar">
         <div className="sentence-mode-toolbar-group">
           <Button variant="outline-secondary" size="sm" onClick={onPrev} disabled={!canGoPrev}>

@@ -130,6 +130,41 @@ public class UserSettingsControllerTests
         Assert.Equal(0.6, (await context.UserSettings.SingleAsync()).ParagraphSpacing);
     }
 
+    [Theory]
+    [InlineData("justify", false)]
+    [InlineData("left", true)]
+    public async Task ReaderSettings_SurviveUnrelatedPatchesAndReload(string alignment, bool indent)
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        context.Users.Add(new User { Id = userId, UserName = "u", Email = "u@test.com" });
+        await context.SaveChangesAsync();
+        var controller = CreateController(context, userId);
+
+        await controller.UpdateUserSettings(new UpdateUserSettingsDto
+        {
+            ReaderTextAlignment = alignment,
+            ReaderParagraphIndent = indent,
+            ReaderContentWidth = 620,
+            ReadingDensity = "compact",
+            ReadingUiMode = "modern",
+            LineSpacing = 1.75,
+            ParagraphSpacing = 1.6
+        });
+        await controller.UpdateUserSettings(new UpdateUserSettingsDto { TextSize = 20 });
+        context.ChangeTracker.Clear();
+
+        var reloaded = (await CreateController(context, userId).GetUserSettings()).Value!;
+        Assert.Equal(alignment, reloaded.ReaderTextAlignment);
+        Assert.Equal(indent, reloaded.ReaderParagraphIndent);
+        Assert.Equal(620, reloaded.ReaderContentWidth);
+        Assert.Equal("compact", reloaded.ReadingDensity);
+        Assert.Equal("modern", reloaded.ReadingUiMode);
+        Assert.Equal(1.75, reloaded.LineSpacing);
+        Assert.Equal(1.6, reloaded.ParagraphSpacing);
+        Assert.Equal(20, reloaded.TextSize);
+    }
+
     [Fact]
     public async Task NewsSettings_DefaultOff_AndAPatchChangesOnlyWhatItSends()
     {

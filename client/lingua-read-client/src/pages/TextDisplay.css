@@ -276,20 +276,30 @@
    words), which were the only break points inside long words. Justified text
    needs them to avoid wide gaps, so let the browser hyphenate by the text's
    `lang` instead; ragged-right text is left unhyphenated. */
-.reader-align-justify .reader-paragraph {
+.reader-align-justify .reader-paragraph,
+.reader-align-justify .reading-block,
+.reader-align-justify .sentence-mode-text:not(.sentence-mode-title-text),
+.audio-transcript-container.reader-align-justify .srt-line {
   text-align: justify;
   text-justify: inter-word;
   -webkit-hyphens: auto;
   hyphens: auto;
 }
 
-.reader-align-left .reader-paragraph {
+.reader-align-left .reader-paragraph,
+.reader-align-left .reading-block,
+.reader-align-left .sentence-mode-text:not(.sentence-mode-title-text) {
   text-align: start;
 }
 
 .sentence-mode-text,
 .audio-transcript-container .srt-line {
   text-align: start;
+}
+
+/* Collapse subtitle spaces so the browser can distribute them when justifying. */
+.audio-transcript-container.reader-align-justify .srt-line {
+  white-space: pre-line;
 }
 
 .reader-paragraph:last-child {

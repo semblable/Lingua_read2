@@ -21,8 +21,11 @@ export function useSettingsSaver(updateSetting: UpdateSetting): (patch: Partial<
   const pendingRef = useRef<Partial<Settings>>({});
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const runningRef = useRef(false);
+  const keepaliveRef = useRef(false);
 
   const flush = useCallback(async (keepalive = false) => {
+    // Unmount/visibility changes must also protect patches queued behind a request.
+    keepaliveRef.current ||= keepalive;
     if (timerRef.current) {
       clearTimeout(timerRef.current);
       timerRef.current = null;
@@ -35,16 +38,21 @@ export function useSettingsSaver(updateSetting: UpdateSetting): (patch: Partial<
         const patch = pendingRef.current;
         pendingRef.current = {};
         try {
-          await updateUserSettings(patch as UpdateUserSettingsInput, { keepalive });
+          await updateUserSettings(patch as UpdateUserSettingsInput, { keepalive: keepaliveRef.current });
         } catch (err) {
           console.error('[Save Settings] Failed to save settings via API:', err);
           // Keep it for the next attempt, under anything changed since.
+          const hasNewerChanges = Object.keys(pendingRef.current).length > 0;
           pendingRef.current = { ...patch, ...pendingRef.current };
+          // Its timer may have fired while this request was running. Give the
+          // newer change its save attempt; don't retry a lone failed patch in a loop.
+          if (hasNewerChanges) continue;
           return;
         }
       }
     } finally {
       runningRef.current = false;
+      keepaliveRef.current = false;
     }
   }, []);
 

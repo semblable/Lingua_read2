@@ -38,10 +38,8 @@ import {
   foldLookupTerm,
   isPureNumericToken,
   resolveLookupTerm,
-  cleanSelectedReaderText,
   isAbbreviationOrNonSentencePeriod,
   getOverlappedWordSpans,
-  clampWordSpansToSingleSentence,
   buildPhraseSelectionFromSpans,
   buildPhraseSelectionFromText,
   pickSentenceForTerm,
@@ -771,7 +769,7 @@ const TextDisplay = () => {
 
   // Removed handleTextSelection as selection is now handled by onMouseUp on the container
 
-  // --- New Word-Granularity Selection Logic ---
+  // --- Native Text Selection Logic ---
   const getSelectionDetails = useCallback(() => {
     const selection = window.getSelection();
     if (!selection || selection.isCollapsed || !textContentRef.current || selection.rangeCount === 0) {
@@ -869,6 +867,8 @@ const TextDisplay = () => {
     }
   }, [hasActiveTextSelection]);
 
+  const normalizeSelectedText = useCallback((rawText: string) => rawText.replace(/\s+/g, ' ').trim(), []);
+
   const processWordSelection = useCallback(() => {
     const selectionDetails = getSelectionDetails();
     if (!selectionDetails) {
@@ -878,8 +878,7 @@ const TextDisplay = () => {
       return;
     }
 
-    const { selection, range, container, selectedText } = selectionDetails;
-    const initialTextHint = mobileSelectionInitialTextRef.current;
+    const { range, container, selectedText } = selectionDetails;
     if (isMobile) {
       mobileSelectionPendingRef.current = false;
       mobileSelectionObservedRef.current = false;
@@ -892,168 +891,28 @@ const TextDisplay = () => {
       clearMobileSelectionStability();
     }
 
-    const cleanedRawText = cleanSelectedReaderText(selectedText, languageConfig);
+    const cleanedRawText = normalizeSelectedText(selectedText);
     if (!cleanedRawText) {
       return;
     }
 
-    let startNode = range.startContainer;
-    let endNode = range.endContainer;
-    let startOffset = range.startOffset;
-    let endOffset = range.endOffset;
-
-    // Helper function to find the nearest ancestor word span
-    const findWordSpan = (node: Node | null): HTMLElement | null => {
-      while (node && node !== container) {
-        if (node.nodeType === Node.ELEMENT_NODE && (node as HTMLElement).classList.contains('clickable-word')) {
-          return node as HTMLElement;
-        }
-        node = node.parentNode;
-      }
-      return null;
-    };
-
-    // Helper function to find the word span containing or immediately preceding/following a text node offset
-    const findWordSpanNearText = (node: Node, offset: number, lookForward: boolean): HTMLElement | null => {
-      if (node.nodeType === Node.ELEMENT_NODE) {
-        // If the node itself is a word span
-        if ((node as HTMLElement).classList.contains('clickable-word')) return node as HTMLElement;
-        // If offset points to a child node, check that child
-        const childNode = node.childNodes[offset];
-        if (childNode) return findWordSpan(childNode);
-      }
-
-      // If it's a text node or offset is within a text node
-      let current: Node | null = node;
-      while (current && current !== container) {
-        const node: Node = current;
-        if (node.nodeType === Node.ELEMENT_NODE && (node as HTMLElement).classList.contains('clickable-word')) {
-          return node as HTMLElement; // Found ancestor word span
-        }
-        // Move to sibling or parent
-        const sibling: ChildNode | null = lookForward ? node.nextSibling : node.previousSibling;
-        if (sibling) {
-          current = sibling;
-          // If moving to a sibling element, check its children (especially if looking backward)
-          if (sibling.nodeType === Node.ELEMENT_NODE) {
-            let innerNode: ChildNode | null = lookForward ? sibling.firstChild : sibling.lastChild;
-            while (innerNode) {
-              const word = findWordSpan(innerNode);
-              if (word) return word;
-              innerNode = lookForward ? innerNode.nextSibling : innerNode.previousSibling;
-            }
-          } else { // Text node sibling
-            const word = findWordSpan(sibling);
-            if (word) return word;
-          }
-
-        } else {
-          current = node.parentNode; // Move up if no more siblings
-        }
-      }
-      return null; // No word span found in traversal
-    };
-
-    let candidateSpans = getOverlappedWordSpans(range, container);
-    if (candidateSpans.length === 0 && startNode && endNode) {
-      let startWordSpan = findWordSpan(startNode) || findWordSpanNearText(startNode, startOffset, true);
-      let endWordSpan = findWordSpan(endNode) || findWordSpanNearText(endNode, endOffset, false);
-      if (startWordSpan && endWordSpan) {
-        if (endWordSpan.compareDocumentPosition(startWordSpan) & Node.DOCUMENT_POSITION_FOLLOWING) {
-          [startWordSpan, endWordSpan] = [endWordSpan, startWordSpan];
-        }
-        const allSpans = Array.from(container.querySelectorAll<HTMLElement>('.clickable-word'));
-        const startIdx = allSpans.indexOf(startWordSpan);
-        const endIdx = allSpans.indexOf(endWordSpan);
-        if (startIdx !== -1 && endIdx !== -1 && startIdx <= endIdx) {
-          candidateSpans = allSpans.slice(startIdx, endIdx + 1);
-        } else {
-          candidateSpans = startWordSpan === endWordSpan ? [startWordSpan] : [startWordSpan, endWordSpan];
-        }
-      }
+    // Keep the user's native range, including punctuation and sentence/block boundaries.
+    const sentenceContext = buildAiSelectionContext(range, container, cleanedRawText);
+    const selectedSpans = getOverlappedWordSpans(range, container);
+    const phraseSelection = selectedSpans.length > 0
+      ? buildPhraseSelectionFromSpans(selectedSpans[0], selectedSpans[selectedSpans.length - 1], container, languageConfig, sentenceContext)
+      : buildPhraseSelectionFromText(cleanedRawText, sentenceContext, languageConfig);
+    setActivePhraseSelection(
+      phraseSelection && buildPhraseSelectionText(phraseSelection, languageConfig) === cleanedRawText
+        ? phraseSelection
+        : null
+    );
+    focusSentenceIndexFromNode(range.startContainer);
+    if (isMobile) {
+      mobileSelectionInitialTextRef.current = cleanedRawText;
     }
-
-    const clampedSpans = clampWordSpansToSingleSentence(candidateSpans, languageConfig, {
-      anchorNode: selection.anchorNode,
-      initialTextHint
-    });
-
-    // Large / multi-block or mocked selections without word spans still translate via AI with context.
-    if (clampedSpans.length === 0) {
-      const sentenceContext = buildAiSelectionContext(range, container, cleanedRawText);
-      focusSentenceIndexFromNode(range.commonAncestorContainer);
-      setActivePhraseSelection(buildPhraseSelectionFromText(cleanedRawText, sentenceContext, languageConfig));
-      if (isMobile) {
-        mobileSelectionInitialTextRef.current = cleanedRawText;
-      }
-      handleSelectedText(cleanedRawText, sentenceContext);
-      return;
-    }
-
-    let startWordSpan = clampedSpans[0];
-    let endWordSpan = clampedSpans[clampedSpans.length - 1];
-
-    // Create a new range encompassing the start and end word spans within the same sentence
-    const newRange = document.createRange();
-    try {
-      newRange.setStartBefore(startWordSpan);
-      newRange.setEndAfter(endWordSpan);
-
-      let snappedText = cleanSelectedReaderText(newRange.toString(), languageConfig) || newRange.toString().trim();
-      const sentenceContext = buildAiSelectionContext(newRange, container, snappedText);
-      const phraseSelection = buildPhraseSelectionFromSpans(
-        startWordSpan,
-        endWordSpan,
-        container,
-        languageConfig,
-        sentenceContext
-      );
-      if (
-        phraseSelection?.spans &&
-        phraseSelection.spans[phraseSelection.startIndex] &&
-        phraseSelection.spans[phraseSelection.endIndex]
-      ) {
-        startWordSpan = phraseSelection.spans[phraseSelection.startIndex];
-        endWordSpan = phraseSelection.spans[phraseSelection.endIndex];
-        newRange.setStartBefore(startWordSpan);
-        newRange.setEndAfter(endWordSpan);
-        snappedText =
-          buildPhraseSelectionText(phraseSelection, languageConfig) ||
-          cleanSelectedReaderText(newRange.toString(), languageConfig) ||
-          newRange.toString().trim();
-      }
-      focusSentenceIndexFromNode(startWordSpan);
-      setActivePhraseSelection(phraseSelection);
-
-      // Update the selection visually without re-triggering mobile selectionchange loops
-      if (typeof selection.removeAllRanges === 'function' && typeof selection.addRange === 'function') {
-        isAdjustingSelectionRef.current = true;
-        try {
-          selection.removeAllRanges();
-          selection.addRange(newRange);
-        } finally {
-          Promise.resolve().then(() => {
-            isAdjustingSelectionRef.current = false;
-          });
-        }
-      }
-
-      if (isMobile) {
-        mobileSelectionInitialTextRef.current = snappedText;
-      }
-      handleSelectedText(snappedText, sentenceContext);
-    } catch (e) {
-      console.warn("Error adjusting selection range:", e);
-      const fallbackContext = buildAiSelectionContext(range, container, cleanedRawText);
-      focusSentenceIndexFromNode(range.commonAncestorContainer);
-      setActivePhraseSelection(buildPhraseSelectionFromText(cleanedRawText, fallbackContext, languageConfig));
-      if (isMobile) {
-        mobileSelectionInitialTextRef.current = cleanedRawText;
-      }
-      handleSelectedText(cleanedRawText, fallbackContext);
-    }
-
-  }, [focusSentenceIndexFromNode, getSelectionDetails, buildAiSelectionContext, handleSelectedText, isMobile, clearMobileSelectionRetry, clearMobileSelectionStability, languageConfig]); // textContentRef is a stable ref
+    handleSelectedText(cleanedRawText, sentenceContext);
+  }, [focusSentenceIndexFromNode, getSelectionDetails, buildAiSelectionContext, handleSelectedText, isMobile, normalizeSelectedText, clearMobileSelectionRetry, clearMobileSelectionStability, languageConfig]);
 
   const scheduleWordSelection = useCallback((delayMs: number) => {
     clearPendingSelection();
@@ -1174,7 +1033,7 @@ const TextDisplay = () => {
 
       mobileSelectionObservedRef.current = true;
 
-      const selectedText = cleanSelectedReaderText(selection.toString(), languageConfig) || selection.toString().trim();
+      const selectedText = normalizeSelectedText(selection.toString()) || selection.toString().trim();
       if (selectedText && selectedText === lastHandledSelectionRef.current) {
         return;
       }
@@ -1215,7 +1074,7 @@ const TextDisplay = () => {
       const hadReaderSelection = Boolean(getSelectionDetails());
       const rawExisting = hadReaderSelection ? (window.getSelection()?.toString() || '') : '';
       const existingText = hadReaderSelection
-        ? (cleanSelectedReaderText(rawExisting, languageConfig) || rawExisting.trim())
+        ? (normalizeSelectedText(rawExisting) || rawExisting.trim())
         : '';
       clearMobileSelectionPending();
       const touch = event.touches?.[0];
@@ -1294,8 +1153,8 @@ const TextDisplay = () => {
       document.removeEventListener('touchend', handleTouchRelease, true);
       document.removeEventListener('touchcancel', handleTouchRelease, true);
     };
-  }, [isMobile, getSelectionDetails, scheduleWordSelection, clearMobileSelectionPending, clearMobileSelectionRetry, clearMobileSelectionStability, processWordSelection, isInitialSingleWordMobilePress, languageConfig]);
-  // --- End New Word-Granularity Selection Logic ---
+  }, [isMobile, getSelectionDetails, scheduleWordSelection, clearMobileSelectionPending, clearMobileSelectionRetry, clearMobileSelectionStability, processWordSelection, isInitialSingleWordMobilePress, normalizeSelectedText]);
+  // --- End Native Text Selection Logic ---
 
 
   const processTextContent = useCallback((content: string | null | undefined): React.ReactNode[] => {
@@ -2670,6 +2529,7 @@ const TextDisplay = () => {
                     currentSegmentIndex={currentSegmentIndex}
                     creditedSegmentCount={creditedSegmentIndices.length}
                     fontStyle={getFontStyling(isMobile ? mobileReadingConfig.lineSpacing : globalSettings.lineSpacing)}
+                    textAlignment={globalSettings.readerTextAlignment}
                     processTextContent={processTextContent}
                     handleWordSelection={handleWordSelection}
                     textContentRef={textContentRef}

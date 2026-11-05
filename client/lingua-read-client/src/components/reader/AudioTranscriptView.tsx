@@ -46,6 +46,7 @@ const AudioTranscriptView = React.memo(({
   const touchMovedRef = useRef(false);
   if (!srtLines || srtLines.length === 0) return <p className="p-3">Loading transcript...</p>;
   const effectiveLineSpacing = isMobile ? mobileReadingConfig.lineSpacing : globalSettings.lineSpacing;
+  const containerClassName = `audio-transcript-container reader-align-${globalSettings.readerTextAlignment || 'left'}`;
   const listHeight = readingContainerRef.current ? readingContainerRef.current.clientHeight - 30 : 600;
 
   const hasSelection = () => {
@@ -73,7 +74,7 @@ const AudioTranscriptView = React.memo(({
 
     return (
       <div
-        className="audio-transcript-container"
+        className={containerClassName}
         ref={textContentRef}
         lang={languageCode || undefined}
         dir={rightToLeft === undefined ? 'auto' : rightToLeft ? 'rtl' : 'ltr'}
@@ -114,7 +115,7 @@ const AudioTranscriptView = React.memo(({
 
   return (
     <div
-      className="audio-transcript-container"
+      className={containerClassName}
       ref={textContentRef}
       lang={languageCode || undefined}
       dir={rightToLeft === undefined ? 'auto' : rightToLeft ? 'rtl' : 'ltr'}

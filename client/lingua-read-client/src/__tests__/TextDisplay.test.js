@@ -1,9 +1,11 @@
 import React, { act } from 'react';
+import { readFileSync } from 'node:fs';
 import '@testing-library/jest-dom';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, createMemoryRouter, RouterProvider } from 'react-router-dom';
 import TextDisplay from '../pages/TextDisplay';
 import { SettingsContext } from '../contexts/SettingsContext';
+import { SettingsProvider } from '../contexts/SettingsProvider';
 import {
   getBookmarkedSentences,
   getLastBookmarkedSentence,
@@ -28,6 +30,7 @@ import {
   explainSentence,
   translateFullText,
   updateUserSettings,
+  getUserSettings,
   batchTranslateWords,
   addTermsBatch,
   getLanguage,
@@ -54,6 +57,7 @@ vi.mock('../utils/api', () => ({
   explainSentence: vi.fn(),
   translateFullText: vi.fn(),
   updateUserSettings: vi.fn(),
+  getUserSettings: vi.fn(),
   batchTranslateWords: vi.fn(),
   addTermsBatch: vi.fn(),
   getLanguage: vi.fn(),
@@ -90,6 +94,7 @@ vi.mock('../utils/offline/syncQueue', async (importOriginal) => ({
 }));
 
 const mockAudiobookPlayer = vi.fn();
+const readerStyles = readFileSync('src/pages/TextDisplay.css', 'utf8');
 
 vi.mock('../components/AudiobookPlayer', () => ({
   default: (props) => {
@@ -203,6 +208,8 @@ describe('TextDisplay', () => {
     explainSentence.mockReset();
     translateFullText.mockReset();
     updateUserSettings.mockReset();
+    getUserSettings.mockReset();
+    getUserSettings.mockResolvedValue({});
     batchTranslateWords.mockReset();
     addTermsBatch.mockReset();
     getLanguage.mockReset();
@@ -1353,7 +1360,7 @@ describe('TextDisplay', () => {
     expect(screen.getByRole('button', { name: /Open lesson controls/i })).toHaveTextContent('Lesson');
   });
 
-  test('mobile partial-word selection snaps to full words and strips trailing punctuation', async () => {
+  test('mobile partial-word selection preserves the native range and trailing punctuation', async () => {
     window.matchMedia = vi.fn().mockImplementation(() => ({
       matches: true,
       addEventListener: vi.fn(),
@@ -1394,20 +1401,25 @@ describe('TextDisplay', () => {
 
     await waitFor(() => {
       expect(translateSelectionWithContext).toHaveBeenCalledWith(
-        'Hello world',
+        'llo world.',
         'Hello world.',
         'ES',
         'EN',
         expect.objectContaining({ signal: expect.anything() })
       );
     });
-    expect(mockSelection.removeAllRanges).toHaveBeenCalled();
-    expect(mockSelection.addRange).toHaveBeenCalled();
+    expect(mockSelection.removeAllRanges).not.toHaveBeenCalled();
+    expect(mockSelection.addRange).not.toHaveBeenCalled();
   });
 
-  test('mobile selection across a sentence stop clamps to a single sentence', async () => {
+  test.each([
+    { mobile: false, backwards: false },
+    { mobile: false, backwards: true },
+    { mobile: true, backwards: false },
+    { mobile: true, backwards: true }
+  ])('selection crosses sentence stops (mobile=$mobile, backwards=$backwards)', async ({ mobile, backwards }) => {
     window.matchMedia = vi.fn().mockImplementation(() => ({
-      matches: true,
+      matches: mobile,
       addEventListener: vi.fn(),
       removeEventListener: vi.fn()
     }));
@@ -1438,8 +1450,8 @@ describe('TextDisplay', () => {
     const mockSelection = {
       isCollapsed: false,
       rangeCount: 1,
-      anchorNode: helloWord,
-      focusNode: anotherWord,
+      anchorNode: backwards ? anotherWord : helloWord,
+      focusNode: backwards ? helloWord : anotherWord,
       toString: () => 'Hello world. Another',
       getRangeAt: () => range,
       removeAllRanges: vi.fn(),
@@ -1448,19 +1460,122 @@ describe('TextDisplay', () => {
     window.getSelection = vi.fn(() => mockSelection);
 
     act(() => {
-      fireEvent.touchEnd(textContent);
+      if (mobile) fireEvent.touchEnd(textContent);
+      else fireEvent.mouseUp(textContent);
       vi.advanceTimersByTime(1000);
     });
 
     await waitFor(() => {
       expect(translateSelectionWithContext).toHaveBeenCalledWith(
-        'Hello world',
-        'Hello world.',
+        'Hello world. Another',
+        expect.stringContaining('Hello world. Another'),
         'ES',
         'EN',
         expect.objectContaining({ signal: expect.anything() })
       );
     });
+    expect(mockSelection.removeAllRanges).not.toHaveBeenCalled();
+    expect(mockSelection.addRange).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    { uiMode: 'classic', backwards: false },
+    { uiMode: 'modern', backwards: true }
+  ])('mobile selection preserves punctuation across reading blocks ($uiMode, backwards=$backwards)', async ({ uiMode, backwards }) => {
+    window.matchMedia = vi.fn(() => ({
+      matches: true,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn()
+    }));
+    getText.mockResolvedValueOnce({
+      textId: 1,
+      title: 'Sample Text',
+      content: 'Hello, world; yes.\n\nAnother sentence here.',
+      languageId: null,
+      languageCode: 'ES',
+      words: []
+    });
+    renderTextDisplay({ readingUiMode: uiMode, autoTranslateWords: true });
+    const firstWord = await screen.findByText('Hello');
+    const lastWord = await screen.findByText('here');
+    const firstBlock = firstWord.closest('.reading-block');
+    const lastBlock = lastWord.closest('.reading-block');
+    expect(firstBlock).not.toBe(lastBlock);
+    const textContent = firstWord.closest('.text-content');
+    const range = document.createRange();
+    // Start on the comma after Hello and include the final period.
+    range.setStartAfter(firstWord);
+    range.setEnd(lastBlock, lastBlock.childNodes.length);
+    const selectedText = ', world; yes. Another sentence here.';
+    const selection = {
+      isCollapsed: false,
+      rangeCount: 1,
+      anchorNode: backwards ? lastWord : firstWord,
+      focusNode: backwards ? firstWord : lastWord,
+      toString: () => selectedText,
+      getRangeAt: () => range,
+      removeAllRanges: vi.fn(),
+      addRange: vi.fn()
+    };
+    window.getSelection = vi.fn(() => selection);
+    act(() => {
+      fireEvent.touchEnd(textContent);
+      vi.advanceTimersByTime(1000);
+    });
+    await waitFor(() => expect(translateSelectionWithContext).toHaveBeenCalledWith(
+      selectedText,
+      expect.stringContaining('Hello, world; yes.'),
+      'ES',
+      'EN',
+      expect.objectContaining({ signal: expect.anything() })
+    ));
+    expect(selection.removeAllRanges).not.toHaveBeenCalled();
+    expect(selection.addRange).not.toHaveBeenCalled();
+  });
+
+  test('mobile native handle extending only over punctuation finalizes without touchend', async () => {
+    window.matchMedia = vi.fn(() => ({
+      matches: true,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn()
+    }));
+    renderTextDisplay({ autoTranslateWords: true });
+    const word = await screen.findByText('world');
+    const textContent = word.closest('.text-content');
+    const range = document.createRange();
+    range.selectNodeContents(word);
+    const selection = {
+      isCollapsed: false,
+      rangeCount: 1,
+      anchorNode: word.firstChild,
+      focusNode: word.firstChild,
+      toString: () => range.toString(),
+      getRangeAt: () => range,
+      removeAllRanges: vi.fn(),
+      addRange: vi.fn()
+    };
+    act(() => fireEvent.touchStart(textContent));
+    window.getSelection = vi.fn(() => selection);
+    act(() => {
+      document.dispatchEvent(new Event('selectionchange'));
+      vi.advanceTimersByTime(50);
+    });
+    expect(translateSelectionWithContext).not.toHaveBeenCalled();
+    const sentence = word.closest('.sentence');
+    range.setEnd(sentence, sentence.childNodes.length);
+    act(() => {
+      document.dispatchEvent(new Event('selectionchange'));
+      vi.advanceTimersByTime(1000);
+    });
+    await waitFor(() => expect(translateSelectionWithContext).toHaveBeenCalledWith(
+      'world.',
+      'Hello world.',
+      'ES',
+      'EN',
+      expect.objectContaining({ signal: expect.anything() })
+    ));
+    expect(selection.removeAllRanges).not.toHaveBeenCalled();
+    expect(selection.addRange).not.toHaveBeenCalled();
   });
 
   test('mobile small finger tremor during initial long-press waits for handle drag before finalizing', async () => {
@@ -1591,6 +1706,42 @@ describe('TextDisplay', () => {
         expect.objectContaining({ signal: expect.anything() })
       );
     });
+  });
+
+  test.each([false, true])('dragged phrases still extend the native highlight with + Next word (mobile=%s)', async (mobile) => {
+    window.matchMedia = vi.fn(() => ({
+      matches: mobile,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn()
+    }));
+    getText.mockResolvedValueOnce({
+      textId: 1, title: 'Sample Text', content: 'Hello brave world.', languageId: null,
+      languageCode: 'ES', words: []
+    });
+    renderTextDisplay({ autoTranslateWords: true });
+    const word = await screen.findByText('brave');
+    const textContent = word.closest('.text-content');
+    const range = document.createRange();
+    range.selectNodeContents(word);
+    const selection = {
+      isCollapsed: false, rangeCount: 1, anchorNode: word.firstChild, focusNode: word.firstChild,
+      toString: () => 'brave', getRangeAt: () => range,
+      removeAllRanges: vi.fn(), addRange: vi.fn()
+    };
+    window.getSelection = vi.fn(() => selection);
+    act(() => {
+      if (mobile) fireEvent.touchEnd(textContent);
+      else fireEvent.mouseUp(textContent);
+      vi.advanceTimersByTime(1000);
+    });
+    const nextButton = await screen.findByRole('button', { name: /\+ Next word/i });
+    expect(selection.addRange).not.toHaveBeenCalled();
+    await act(async () => { fireEvent.click(nextButton); });
+    expect(selection.addRange).toHaveBeenCalled();
+    expect(selection.addRange.mock.lastCall[0].toString()).toBe('brave world');
+    expect(translateSelectionWithContext).toHaveBeenLastCalledWith(
+      'brave world', 'Hello brave world.', 'ES', 'EN', expect.objectContaining({ signal: expect.anything() })
+    );
   });
 
   test('selection across commas, colons, and semicolons does not stop mid-sentence', async () => {
@@ -2324,6 +2475,231 @@ describe('TextDisplay', () => {
         expect.objectContaining({ signal: expect.anything() })
       );
     });
+  });
+
+  test.each([
+    { mobile: false, backwards: false, acrossRows: false },
+    { mobile: false, backwards: true, acrossRows: true },
+    { mobile: true, backwards: false, acrossRows: true },
+    { mobile: true, backwards: true, acrossRows: false }
+  ])('audio selection preserves punctuation (mobile=$mobile, backwards=$backwards, acrossRows=$acrossRows)', async ({ mobile, backwards, acrossRows }) => {
+    window.matchMedia = vi.fn(() => ({
+      matches: mobile,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn()
+    }));
+    getText.mockResolvedValueOnce({
+      textId: 1,
+      title: 'Audio Lesson',
+      content: 'Hola, mundo; adiós. Otra frase.',
+      languageId: null,
+      languageCode: 'ES',
+      isAudioLesson: true,
+      audioFilePath: 'audio_lessons/1.mp3',
+      hasSrtContent: true,
+      words: []
+    });
+    getTextSrt.mockResolvedValueOnce(acrossRows
+      ? '1\n00:00:00,000 --> 00:00:02,000\nHola, mundo; adiós.\n\n2\n00:00:02,000 --> 00:00:04,000\nOtra frase.\n'
+      : '1\n00:00:00,000 --> 00:00:04,000\nHola, mundo; adiós. Otra frase.\n');
+
+    renderTextDisplay({ autoTranslateWords: true });
+    const firstWord = await screen.findByText('Hola');
+    const lastWord = await screen.findByText('frase');
+    const transcript = firstWord.closest('.audio-transcript-container');
+    const lastLine = lastWord.closest('.srt-line');
+    const audio = document.createElement('audio');
+    audio.currentTime = 1;
+    mockAudiobookPlayer.mock.lastCall[0].audioRef.current = audio;
+    const range = document.createRange();
+    range.setStartBefore(firstWord);
+    range.setEnd(lastLine, lastLine.childNodes.length);
+    const selectedText = 'Hola, mundo; adiós. Otra frase.';
+    const selection = {
+      isCollapsed: false,
+      rangeCount: 1,
+      anchorNode: backwards ? lastWord.firstChild : firstWord.firstChild,
+      focusNode: backwards ? firstWord.firstChild : lastWord.firstChild,
+      toString: () => selectedText,
+      getRangeAt: () => range,
+      removeAllRanges: vi.fn(),
+      addRange: vi.fn()
+    };
+    window.getSelection = vi.fn(() => selection);
+
+    act(() => {
+      if (mobile) fireEvent.touchEnd(transcript);
+      else fireEvent.mouseUp(transcript);
+      fireEvent.click(lastLine);
+      vi.advanceTimersByTime(1000);
+    });
+
+    await waitFor(() => expect(translateSelectionWithContext).toHaveBeenCalledWith(
+      selectedText,
+      expect.stringContaining('Hola, mundo; adiós.'),
+      'ES',
+      'EN',
+      expect.objectContaining({ signal: expect.anything() })
+    ));
+    expect(selection.removeAllRanges).not.toHaveBeenCalled();
+    expect(selection.addRange).not.toHaveBeenCalled();
+    expect(range.endContainer).toBe(lastLine);
+    expect(audio.currentTime).toBe(1);
+  });
+
+  test.each([
+    { mobile: false, audio: true, uiMode: 'classic' },
+    { mobile: false, audio: false, uiMode: 'classic' },
+    { mobile: false, audio: false, uiMode: 'modern' },
+    { mobile: true, audio: true, uiMode: 'classic' },
+    { mobile: true, audio: false, uiMode: 'classic' },
+    { mobile: true, audio: false, uiMode: 'modern' },
+    { mobile: false, audio: false, uiMode: 'classic', sentenceMode: true },
+    { mobile: true, audio: false, uiMode: 'modern', sentenceMode: true },
+    { mobile: false, audio: true, uiMode: 'classic', sentenceMode: true },
+    { mobile: true, audio: true, uiMode: 'classic', sentenceMode: true }
+  ])('alignment buttons update reader text (mobile=$mobile, audio=$audio, uiMode=$uiMode, sentenceMode=$sentenceMode)', async ({ mobile, audio, uiMode, sentenceMode = false }) => {
+    window.matchMedia = vi.fn(() => ({
+      matches: mobile,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn()
+    }));
+    getText.mockResolvedValueOnce({
+      textId: 1,
+      title: 'Audio Lesson',
+      content: 'Hola mundo.',
+      languageId: null,
+      languageCode: 'ES',
+      isAudioLesson: audio,
+      audioFilePath: 'audio_lessons/1.mp3',
+      hasSrtContent: true,
+      words: []
+    });
+    getTextSrt.mockResolvedValueOnce('1\n00:00:00,000 --> 00:00:02,000\nHola mundo.\n');
+
+    const LiveSettings = () => {
+      const [settings, setSettings] = React.useState(createSettingsValue({ readerTextAlignment: 'left', readingUiMode: uiMode, sentenceMode }).settings);
+      return (
+        <SettingsContext.Provider value={{
+          ...createSettingsValue(),
+          settings,
+          updateSetting: (key, value) => setSettings(previous => ({ ...previous, [key]: value }))
+        }}>
+          <MemoryRouter initialEntries={['/texts/1']}>
+            <Routes><Route path="/texts/:textId" element={<TextDisplay />} /></Routes>
+          </MemoryRouter>
+        </SettingsContext.Provider>
+      );
+    };
+    render(<LiveSettings />);
+    const word = await screen.findByText('Hola');
+    const textContainer = word.closest(sentenceMode ? '.sentence-mode-view' : audio ? '.audio-transcript-container' : '.text-content');
+    const paragraphSelector = sentenceMode ? '.sentence-mode-text' : audio ? '.srt-line' : mobile ? '.reading-block' : '.reader-paragraph';
+    // Happy DOM caches descendant selector matches after an ancestor class changes.
+    // Read the current rendered markup in a fresh subtree to check the real CSS.
+    const getTextAlignment = () => {
+      const snapshot = document.createElement('div');
+      snapshot.innerHTML = textContainer.outerHTML;
+      document.body.appendChild(snapshot);
+      try {
+        return window.getComputedStyle(snapshot.querySelector(paragraphSelector)).textAlign;
+      } finally {
+        snapshot.remove();
+      }
+    };
+    expect(textContainer).toHaveClass('reader-align-left');
+    if (mobile) {
+      act(() => {
+        fireEvent.click(screen.getByRole('button', { name: 'Open lesson controls' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Menu' }));
+        vi.advanceTimersByTime(1000);
+      });
+    }
+    const stylesheet = document.createElement('style');
+    stylesheet.textContent = readerStyles;
+    document.head.appendChild(stylesheet);
+    try {
+      expect(getTextAlignment()).toBe('start');
+      fireEvent.click(screen.getByTitle('Justified text'));
+      expect(textContainer).toHaveClass('reader-align-justify');
+      expect(getTextAlignment()).toBe('justify');
+      fireEvent.click(screen.getByTitle('Ragged-right text'));
+      expect(textContainer).toHaveClass('reader-align-left');
+      expect(getTextAlignment()).toBe('start');
+    } finally {
+      stylesheet.remove();
+    }
+  });
+
+  test.each([false, true])('reader toolbar settings save and reload through the settings provider (mobile=%s)', async (mobile) => {
+    window.matchMedia = vi.fn(() => ({
+      matches: mobile,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn()
+    }));
+    localStorage.removeItem('cachedSettings');
+    let serverSettings = { readerTextAlignment: 'left', textSize: 16, readerParagraphIndent: true };
+    getUserSettings.mockImplementation(async () => ({ ...serverSettings }));
+    updateUserSettings.mockImplementation(async patch => {
+      serverSettings = { ...serverSettings, ...patch };
+      return { ...serverSettings };
+    });
+    const mountReader = () => render(
+      <SettingsProvider>
+        <MemoryRouter initialEntries={['/texts/1']}>
+          <Routes><Route path="/texts/:textId" element={<TextDisplay />} /></Routes>
+        </MemoryRouter>
+      </SettingsProvider>
+    );
+    const first = mountReader();
+    try {
+      const word = await screen.findByText('Hello');
+      const textContent = word.closest('.text-content');
+      if (mobile) {
+        act(() => {
+          fireEvent.click(screen.getByRole('button', { name: 'Open lesson controls' }));
+          fireEvent.click(screen.getByRole('button', { name: 'Menu' }));
+          vi.advanceTimersByTime(1000);
+        });
+      }
+      fireEvent.click(screen.getByTitle('Justified text'));
+      fireEvent.click(screen.getByTitle('Increase text size'));
+      fireEvent.click(screen.getByTitle('Toggle paragraph indent'));
+      if (!mobile) {
+        fireEvent.click(screen.getByLabelText('Set line spacing to relaxed'));
+        fireEvent.click(screen.getByLabelText('Set relaxed paragraph spacing'));
+      }
+      expect(textContent).toHaveClass('reader-align-justify', 'reader-indent-off');
+      expect(textContent).toHaveStyle({ fontSize: '18px' });
+      expect(JSON.parse(localStorage.getItem('cachedSettings'))).toEqual(expect.objectContaining({
+        readerTextAlignment: 'justify', textSize: 18, readerParagraphIndent: false
+      }));
+      await act(async () => { vi.advanceTimersByTime(500); });
+      expect(serverSettings).toEqual(expect.objectContaining({
+        readerTextAlignment: 'justify', textSize: 18, readerParagraphIndent: false,
+        ...(!mobile && { lineSpacing: 1.75, paragraphSpacing: 1.6 })
+      }));
+      first.unmount();
+      // Discard the cache so this reload has to restore the saved API response.
+      localStorage.removeItem('cachedSettings');
+      const second = mountReader();
+      try {
+        await waitFor(() => {
+          const reloadedText = screen.getByText('Hello').closest('.text-content');
+          expect(reloadedText).toHaveClass('reader-align-justify', 'reader-indent-off');
+          expect(reloadedText).toHaveStyle({ fontSize: '18px' });
+        });
+        if (!mobile) {
+          expect(document.body.style.getPropertyValue('--reading-line-height')).toBe('1.75');
+          expect(document.body.style.getPropertyValue('--reader-paragraph-spacing')).toBe('1.6em');
+        }
+      } finally {
+        second.unmount();
+      }
+    } finally {
+      first.unmount();
+      localStorage.removeItem('cachedSettings');
+    }
   });
 
   test('auto-translate triggers on word click when enabled', async () => {

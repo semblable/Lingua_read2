@@ -94,4 +94,33 @@ describe('useSettingsSaver', () => {
 
     expect(updateUserSettings).toHaveBeenCalledWith({ readingDensity: 'compact' }, { keepalive: true });
   });
+
+  test('a queued change uses keepalive when unmount happens during an earlier save', async () => {
+    const first = deferred();
+    updateUserSettings.mockReturnValueOnce(first.promise);
+    const { result, unmount } = renderHook(() => useSettingsSaver(vi.fn()));
+    act(() => { result.current({ readerTextAlignment: 'justify' }); });
+    await act(async () => { vi.advanceTimersByTime(SETTINGS_SAVE_DELAY_MS); });
+    act(() => { result.current({ readerTextAlignment: 'left' }); });
+    await act(async () => { unmount(); });
+    await act(async () => { first.resolve({}); });
+    expect(updateUserSettings).toHaveBeenLastCalledWith({ readerTextAlignment: 'left' }, { keepalive: true });
+  });
+
+  test('a change queued during a failed request is still saved after its debounce has elapsed', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const first = deferred();
+      updateUserSettings.mockReturnValueOnce(first.promise);
+      const { result } = renderHook(() => useSettingsSaver(vi.fn()));
+      act(() => { result.current({ readerTextAlignment: 'justify', textSize: 18 }); });
+      await act(async () => { vi.advanceTimersByTime(SETTINGS_SAVE_DELAY_MS); });
+      act(() => { result.current({ readerTextAlignment: 'left' }); });
+      await act(async () => { vi.advanceTimersByTime(SETTINGS_SAVE_DELAY_MS); });
+      await act(async () => { first.reject(new Error('temporary failure')); });
+      expect(updateUserSettings).toHaveBeenLastCalledWith({ readerTextAlignment: 'left', textSize: 18 }, { keepalive: false });
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
 });

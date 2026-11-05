@@ -2,15 +2,19 @@
 
 All 89 original reference cases across 44 languages remain intact in `tests/golden/multilingual_tokenizer_and_lemmatizer_test_suite_v4.json`. Runtime surfaces address the **displayed processed sentence** using **UTF-16 code units**.
 
-This Tokenizer v5 slice expands Romance and Romanian clitic and elision lookup fallbacks across French, Italian, Catalan, and Romanian (`fr`, `it`, `ca`, `ro`), while keeping clickable display spans whole to protect learner bookmarks, saved phrases, and sentence mining. Romanian is now fully registered in `RequiresLookupFallback`. Validated lookup candidates now cover French demonstrative suffixes (`œuf-là` → `œuf`) and contractions (`qu'il` → `il`, `C'est` → `est`), Italian articulated prepositions and determiners (`nell'ombra` → `ombra`, `qualcos'altro` → `altro`), Catalan proclitics and chained enclitics (`Dona'm-ho` → `dona`, `anem-nos-en` → `anem`, `d'anar-te'n` → `anar-te'n`), and Romanian hyphenated clitics (`și-au` → `au` / `și`). All 89 original references remain unchanged; 100 runtime cases execute. Semantic markers remain **86**.
+This Tokenizer v5 slice expands support across Chinese contextual disambiguation (`zh-01`), Dutch proclitic noun phrases (`nl-01`), and English dual-apostrophe idiom contractions (`en-02`), bringing the remaining span/key gaps from **18 down to 15**:
+- `zh-01`: targeted compound weight override in `SegmentHanRun` for `乒乓球拍` and resultative verb-complement `卖` / `完` ensures standard disambiguation without modifying the pinned dictionary resource or its SHA-256 hash.
+- `nl-01`: recognized leading proclitics (`'s ` or `'t `) followed by a capitalized noun (e.g. `'s Morgens`, `'s Avonds`, `'s Winters`, `'t Kofschip`) as single lexical units matching the reference suite and Dutch orthography; added validated lookup fallback peeling (`'s Morgens` → `morgens`).
+- `en-02`: unified `<word> 'n' <word>` dual-apostrophe idiom contractions (e.g. `rock 'n' roll`) as coordinate compound tokens matching the reference suite specification.
+
+All 89 original references remain unchanged; 100 runtime cases execute. Semantic markers remain **86**.
 
 Verification: server **1,742 passed, 7 PostgreSQL-only skipped**; client **1,775 passed across 114 files**. Solution build, typecheck, production build, and lint pass (46 existing lint warnings). Docker is unavailable locally. Tokenizer is at version **5** (`WordLinker.CurrentTokenizerVersion = 5`), verified by `TokenizerV5MigrationAcceptanceTests`.
 
-## Remaining 18 span/key gaps
+## Remaining 15 span/key gaps
 
 | Cases | Classification and reason |
 | --- | --- |
-| `zh-01` | Contextual boundary disambiguation: source `乒乓球拍 / 卖`, pinned dictionary `乒乓球 / 拍卖`. |
 | `ja-01` | Segmentation granularity for repeated `すもも`/`もも`. |
 | `ja-02` | Mixed: pinned TinySegmenter boundaries versus larger inflected/grammatical units. |
 | `fr-01`, `fr-02` | Intentional glued Romance elision/clitic spans (`C'est`, `l'eau`, `d'Anne`, `qu'il`, `œuf-là`); `l'`/`d'`/`c'`/`qu'`/`-là`/`-ci` use validated lookup fallback. |
@@ -19,14 +23,12 @@ Verification: server **1,742 passed, 7 PostgreSQL-only skipped**; client **1,775
 | `vi-01`, `vi-02` | Multiword lexical phrase grouping (`Việt Nam`, `Quốc ngữ`, `đặc biệt`). |
 | `ro-01` | Generic hyphen glue (`și-au`) versus clitic subtokens (`și / -au`); `și-` and `-au` use validated lookup fallback. |
 | `ko-01`, `ko-02` | Intentional full eojeol touch targets; Josa/stem decomposition is handled in lookup candidates. |
-| `nl-01` | Lexical phrase grouping of `'s Morgens`; the leading apostrophe matches. |
 | `ms-02` | Multiword phrase `Kuala Lumpur` (`RM` and `50.00` match). |
 | `en-01` | Intentional ASCII apostrophe surface normalization; `Dr.` matches. |
-| `en-02` | Multiword `rock 'n' roll`; `U.S.A.` matches and quoted `'n'` retains separate quote tokens. |
 
 ## The 86 semantic markers
 
-Only `zh-01`, `af-02`, and `vi-02` have no semantic lemma difference. The 86 semantic markers represent broader dictionary lemmatization, morphology, or subtoken expansion outside the tokenizer span/key contract:
+Only `af-02` and `vi-02` have no semantic lemma difference. The 86 semantic markers represent broader dictionary lemmatization, morphology, or subtoken expansion outside the tokenizer span/key contract:
 
 | Cases/language groups | Count | Remaining expectations |
 | --- | ---: | --- |

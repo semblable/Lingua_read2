@@ -266,6 +266,11 @@ namespace LinguaReadApi.Services.Tokenization
                     tokens.Add(new Token(processed.Substring(i, numericEnd - i), i, numericEnd, IsWord: true));
                     i = numericEnd;
                 }
+                else if (TryConsumeDutchProcliticNoun(processed, span, coreRegex, i, code, out var dutchEnd))
+                {
+                    tokens.Add(new Token(processed.Substring(i, dutchEnd - i), i, dutchEnd, true));
+                    i = dutchEnd;
+                }
                 else if (TryConsumeLeadingApostrophe(processed, span, coreRegex, i, code, out var apostropheEnd))
                 {
                     tokens.Add(new Token(processed.Substring(i, apostropheEnd - i), i, apostropheEnd, true));
@@ -319,6 +324,10 @@ namespace LinguaReadApi.Services.Tokenization
                         && (i + 1 == len || !IsCoreWordChar(coreRegex, span, i + 1))
                         && ((code == "en" && processed[start..i].Equals("dr", StringComparison.OrdinalIgnoreCase))
                             || (code == "uk" && processed[start..i].Equals("грн", StringComparison.OrdinalIgnoreCase)))) i++;
+                    if (code == "en")
+                    {
+                        TryConsumeEnglishIdiomContraction(processed, span, coreRegex, ref i);
+                    }
                     tokens.Add(new Token(processed.Substring(start, i - start), start, i, IsWord: true));
                 }
                 else
@@ -458,7 +467,7 @@ namespace LinguaReadApi.Services.Tokenization
 
         // Keep fallback eligibility separate from the language-specific casing table.
         public static bool RequiresLookupFallback(string? code) =>
-            BaseLanguageCode(code) is "he" or "ar" or "fr" or "it" or "ca" or "ro";
+            BaseLanguageCode(code) is "he" or "ar" or "fr" or "it" or "ca" or "ro" or "nl";
 
         private static string UnifyArabicLetters(string text, string code) =>
             code == "fa"
@@ -536,8 +545,19 @@ namespace LinguaReadApi.Services.Tokenization
             var code = BaseLanguageCode(language?.Code);
             var foldedKey = FoldNormalizedKey(key, code);
             if (seen.Add(foldedKey)) result.Add(foldedKey);
-            if (code is "fr" or "it" or "ca" or "ro")
+            if (code is "fr" or "it" or "ca" or "ro" or "nl")
             {
+                if (code == "nl")
+                {
+                    if ((key.StartsWith("'s ", StringComparison.Ordinal) || key.StartsWith("'t ", StringComparison.Ordinal))
+                        && key.Length > 3)
+                    {
+                        var noun = key[3..];
+                        if (IsElisionRemainder(noun) && seen.Add(noun))
+                            result.Add(noun);
+                    }
+                    return result;
+                }
                 // Bounded Romance & Romanian elisions/clitics are lookup alternatives only:
                 // keep the whole display span and prefer its exact saved headword.
                 if (code == "it")
@@ -771,6 +791,42 @@ namespace LinguaReadApi.Services.Tokenization
 
         private static bool IsConnector(char ch) =>
             ch == Apostrophe || ch == Hyphen || ch == MiddleDot || ch == '\u05f4' || ch == '\u05f3' || ch == '"';
+
+        private static bool TryConsumeDutchProcliticNoun(string text, ReadOnlySpan<char> span, Regex core,
+            int start, string code, out int end)
+        {
+            end = start;
+            if (code != "nl" || text[start] != '\'' || start + 3 >= text.Length) return false;
+            if (start > 0 && (IsCoreWordChar(core, span, start - 1) || text[start - 1] == '\'')) return false;
+            var letter = text[start + 1];
+            if (letter is not ('s' or 'S' or 't' or 'T')) return false;
+            if (text[start + 2] != ' ') return false;
+            var nounStart = start + 3;
+            if (!char.IsUpper(text[nounStart]) || !CanStartWord(core, span, nounStart)) return false;
+            var p = nounStart + 1;
+            while (p < text.Length && IsCoreWordChar(core, span, p)) p++;
+            end = p;
+            return true;
+        }
+
+        private static bool TryConsumeEnglishIdiomContraction(
+            string text,
+            ReadOnlySpan<char> span,
+            Regex core,
+            ref int firstWordEnd)
+        {
+            var p = firstWordEnd;
+            if (p + 5 >= text.Length) return false;
+            if (text[p] != ' ' || text[p + 1] != '\'' || (text[p + 2] is not ('n' or 'N')) || text[p + 3] != '\'' || text[p + 4] != ' ')
+                return false;
+            var secondWordStart = p + 5;
+            if (!CanStartWord(core, span, secondWordStart)) return false;
+            var q = secondWordStart;
+            while (q < text.Length && IsCoreWordChar(core, span, q)) q++;
+            if (q == secondWordStart) return false;
+            firstWordEnd = q;
+            return true;
+        }
 
         // Only isolated language-specific proclitics; quoted letters remain separators.
         private static bool TryConsumeLeadingApostrophe(string text, ReadOnlySpan<char> span, Regex core,

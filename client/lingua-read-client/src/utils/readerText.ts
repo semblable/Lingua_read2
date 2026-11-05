@@ -731,7 +731,17 @@ export const getLookupCandidates = (term: string, languageCode?: string | null):
     seen.add(foldedKey);
     result.push(foldedKey);
   }
-  if (code === 'fr' || code === 'it' || code === 'ca' || code === 'ro') {
+  if (code === 'fr' || code === 'it' || code === 'ca' || code === 'ro' || code === 'nl') {
+    if (code === 'nl') {
+      if ((key.startsWith("'s ") || key.startsWith("'t ")) && key.length > 3) {
+        const noun = key.slice(3);
+        if (isElisionRemainder(noun) && !seen.has(noun)) {
+          seen.add(noun);
+          result.push(noun);
+        }
+      }
+      return result;
+    }
     // Lookup only: the reader keeps its glued elision span and exact entries win.
     if (code === 'it') {
       if (key === "po'") {
@@ -936,6 +946,42 @@ const isNumericSeparator = (ch: string | undefined): boolean =>
 const isHorizontalSpace = (ch: string | undefined): boolean =>
   ch === ' ' || ch === '\u00A0' || ch === '\u202F';
 const isCurrencySymbol = (ch: string | undefined): boolean => !!ch && CURRENCY_SYMBOL_REGEX.test(ch);
+
+const tryConsumeDutchProcliticNoun = (
+  text: string,
+  start: number,
+  core: RegExp,
+  code?: string
+): number | null => {
+  if (code !== 'nl' || text[start] !== "'" || start + 3 >= text.length) return null;
+  if (start > 0 && (isCoreWordChar(core, text[start - 1]) || text[start - 1] === "'")) return null;
+  const letter = text[start + 1];
+  if (letter !== 's' && letter !== 'S' && letter !== 't' && letter !== 'T') return null;
+  if (text[start + 2] !== ' ') return null;
+  const nounStart = start + 3;
+  if (!/\p{Lu}/u.test(text[nounStart]) || !canStartWord(core, text[nounStart])) return null;
+  let p = nounStart + 1;
+  while (p < text.length && isCoreWordChar(core, text[p])) p++;
+  return p;
+};
+
+const tryConsumeEnglishIdiomContraction = (
+  text: string,
+  firstWordEnd: number,
+  core: RegExp
+): number | null => {
+  const p = firstWordEnd;
+  if (p + 5 >= text.length) return null;
+  if (text[p] !== ' ' || text[p + 1] !== "'" || (text[p + 2] !== 'n' && text[p + 2] !== 'N') || text[p + 3] !== "'" || text[p + 4] !== ' ') {
+    return null;
+  }
+  const secondWordStart = p + 5;
+  if (!canStartWord(core, text[secondWordStart])) return null;
+  let q = secondWordStart;
+  while (q < text.length && isCoreWordChar(core, text[q])) q++;
+  if (q === secondWordStart) return null;
+  return q;
+};
 
 const tryConsumeLeadingApostrophe = (text: string, start: number, core: RegExp, code?: string): number | null => {
   const end = start + 2;
@@ -1160,6 +1206,8 @@ export const consumeWordAt = (
   const numericOrCurrency = tryConsumeNumericOrCurrencyAt(processed, index, coreRegex, isSegmentedScriptAt);
   if (numericOrCurrency) return numericOrCurrency;
   const code = (coreRegex as TaggedWordRegex).lang;
+  const dutchProcliticNoun = tryConsumeDutchProcliticNoun(processed, index, coreRegex, code);
+  if (dutchProcliticNoun !== null) return { text: processed.slice(index, dutchProcliticNoun), end: dutchProcliticNoun };
   const apostropheEnd = tryConsumeLeadingApostrophe(processed, index, coreRegex, code);
   if (apostropheEnd !== null) return { text: processed.slice(index, apostropheEnd), end: apostropheEnd };
   if (!canStartWord(coreRegex, processed[index])) return null;
@@ -1216,6 +1264,13 @@ export const consumeWordAt = (
       ((code === 'en' && word.toLowerCase() === 'dr') || (code === 'uk' && word.toLowerCase() === 'грн'))) {
     word += processed[i];
     i++;
+  }
+  if (code === 'en') {
+    const idiomEnd = tryConsumeEnglishIdiomContraction(processed, i, coreRegex);
+    if (idiomEnd !== null) {
+      word = processed.slice(index, idiomEnd);
+      i = idiomEnd;
+    }
   }
   return { text: word, end: i };
 };

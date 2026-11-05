@@ -60,6 +60,10 @@ public class LookupFallbackTests
     [InlineData("ca", "l'objecte", "aigua", null)]
     [InlineData("ca", "l'İa", "ia", "ia")]
     [InlineData("ca", "l'ΟΣ", "οσ", "οσ")]
+    [InlineData("nl", "'s Morgens", "morgens", "morgens")]
+    [InlineData("nl", "'s Morgens", "'s morgens|morgens", "'s morgens")]
+    [InlineData("nl", "'s Winters", "winters", "winters")]
+    [InlineData("en", "rock 'n' roll", "rock 'n' roll", "rock 'n' roll")]
     public void FrenchElisionFallbackIsBoundedAndExactFirst(string code, string term, string fixture, string? expected) =>
         Assert.Equal(expected, Tokenizer.ResolveLookupKey(term, new Language { Code = code }, fixture.Split('|')));
 
@@ -215,7 +219,8 @@ public class LookupFallbackTests
     [Theory]
     [InlineData("af-ZA", "'n 'N 'n' 'name 's", "'n|'N|n|name|s")]
     [InlineData("nl-NL", "'s 'S 't 'T 's' 't' 'test 'n", "'s|'S|'t|'T|s|t|test|n")]
-    [InlineData("en", "'hello' 'em 'tis don't dogs' rock 'n' roll", "hello|em|tis|don't|dogs|rock|n|roll")]
+    [InlineData("nl", "'s Morgens 's Avonds 's Winters 't Kofschip", "'s Morgens|'s Avonds|'s Winters|'t Kofschip")]
+    [InlineData("en", "'hello' 'em 'tis don't dogs' rock 'n' roll", "hello|em|tis|don't|dogs|rock 'n' roll")]
     [InlineData("fi", "EU:ssa EU: ssa EU:SSA EU:2 EU:! sana:ssa U.S.A.:ssa", "EU:ssa|EU|ssa|EU|SSA|EU|2|EU|sana:ssa|U.S.A.:ssa")]
     [InlineData("en", "EU:ssa Dr. U.S.A. A.B word. A.Beta A.", "EU|ssa|Dr.|U.S.A.|A.B|word|A|Beta|A")]
     [InlineData("fr", "M. Dupont arriva.", "M|Dupont|arriva")]

@@ -23,7 +23,9 @@ describe('language-gated normalized lookup and validated fallback', () => {
     ['ca', "L'home", 'home', 'home'], ['ca-ES', 'd’aigua', 'aigua', 'aigua'],
     ['ca', "d'un", 'un', 'un'], ['ca', "l'església", 'església|l’església', "l'església"],
     ['ca', "d'anar-te'n", "anar-te'n|anar", "anar-te'n"], ['ca', "Dona'm-ho", 'dona|donar', 'dona'], ['ca', 'anem-nos-en', 'anem', 'anem'], ['ro', 'și-au', 'au', 'au'], ['ro', 'și-au', 'și', 'și'], ['ro', 'și-au', 'și-au|au', 'și-au'],
-    ['ca', "l'objecte", 'aigua', null], ['ca', "l'İa", 'ia', 'ia'], ['ca', "l'ΟΣ", 'οσ', 'οσ']
+    ['ca', "l'objecte", 'aigua', null], ['ca', "l'İa", 'ia', 'ia'], ['ca', "l'ΟΣ", 'οσ', 'οσ'],
+    ['nl', "'s Morgens", 'morgens', 'morgens'], ['nl', "'s Morgens", "'s morgens|morgens", "'s morgens"],
+    ['nl', "'s Winters", 'winters', 'winters'], ['en', "rock 'n' roll", "rock 'n' roll", "rock 'n' roll"]
   ])('%s bounded elision %s preserves exact precedence', (code, term, fixture, expected) =>
     expect(resolveLookupKey(term!, code, fixture!.split('|'))).toBe(expected));
 
@@ -81,7 +83,8 @@ describe('language-gated normalized lookup and validated fallback', () => {
 test.each([
   ["af-ZA", "'n 'N 'n' 'name 's", "'n|'N|n|name|s"],
   ["nl-NL", "'s 'S 't 'T 's' 't' 'test 'n", "'s|'S|'t|'T|s|t|test|n"],
-  ["en", "'hello' 'em 'tis don't dogs' rock 'n' roll", "hello|em|tis|don't|dogs|rock|n|roll"],
+  ["nl", "'s Morgens 's Avonds 's Winters 't Kofschip", "'s Morgens|'s Avonds|'s Winters|'t Kofschip"],
+  ["en", "'hello' 'em 'tis don't dogs' rock 'n' roll", "hello|em|tis|don't|dogs|rock 'n' roll"],
   ["fi", "EU:ssa EU: ssa EU:SSA EU:2 EU:! sana:ssa U.S.A.:ssa", "EU:ssa|EU|ssa|EU|SSA|EU|2|EU|sana:ssa|U.S.A.:ssa"],
   ["en", "EU:ssa Dr. U.S.A. A.B word. A.Beta A.", "EU|ssa|Dr.|U.S.A.|A.B|word|A|Beta|A"],
   ["fr", "M. Dupont arriva.", "M|Dupont|arriva"],

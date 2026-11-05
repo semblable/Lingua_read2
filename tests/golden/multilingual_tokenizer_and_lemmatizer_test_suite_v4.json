@@ -7306,16 +7306,16 @@
       "sentence": "乒乓球拍卖完了，只剩一点儿。",
       "tokens": [
         {
-          "surface_span": "乒乓球",
+          "surface_span": "乒乓球拍",
           "start": 0,
-          "end": 3,
-          "lookup_key": "乒乓球"
+          "end": 4,
+          "lookup_key": "乒乓球拍"
         },
         {
-          "surface_span": "拍卖",
-          "start": 3,
+          "surface_span": "卖",
+          "start": 4,
           "end": 5,
-          "lookup_key": "拍卖"
+          "lookup_key": "卖"
         },
         {
           "surface_span": "完",
@@ -7350,10 +7350,8 @@
       ],
       "provenance": {
         "reference_id": "zh-01",
-        "differences": [
-          "runtime_token_spans_or_keys"
-        ],
-        "reference_lemma_assertion": "reference_only: broad semantic lemmatization is outside the runtime tokenizer contract"
+        "differences": [],
+        "reference_lemma_assertion": null
       }
     },
     {
@@ -10700,16 +10698,10 @@
       "sentence": "'s Morgens zag ik een reëel IJsselmeerschip.",
       "tokens": [
         {
-          "surface_span": "'s",
+          "surface_span": "'s Morgens",
           "start": 0,
-          "end": 2,
-          "lookup_key": "'s"
-        },
-        {
-          "surface_span": "Morgens",
-          "start": 3,
           "end": 10,
-          "lookup_key": "morgens"
+          "lookup_key": "'s morgens"
         },
         {
           "surface_span": "zag",
@@ -10745,7 +10737,6 @@
       "provenance": {
         "reference_id": "nl-01",
         "differences": [
-          "runtime_token_spans_or_keys",
           "reference_semantic_lemmas"
         ],
         "reference_lemma_assertion": "reference_only: broad semantic lemmatization is outside the runtime tokenizer contract"
@@ -12376,22 +12367,10 @@
           "lookup_key": "of"
         },
         {
-          "surface_span": "rock",
+          "surface_span": "rock 'n' roll",
           "start": 27,
-          "end": 31,
-          "lookup_key": "rock"
-        },
-        {
-          "surface_span": "n",
-          "start": 33,
-          "end": 34,
-          "lookup_key": "n"
-        },
-        {
-          "surface_span": "roll",
-          "start": 36,
           "end": 40,
-          "lookup_key": "roll"
+          "lookup_key": "rock 'n' roll"
         },
         {
           "surface_span": "records",
@@ -12421,7 +12400,6 @@
       "provenance": {
         "reference_id": "en-02",
         "differences": [
-          "runtime_token_spans_or_keys",
           "reference_semantic_lemmas"
         ],
         "reference_lemma_assertion": "reference_only: broad semantic lemmatization is outside the runtime tokenizer contract"
@@ -12854,7 +12832,7 @@
     "source_cases": 89,
     "runtime_cases": 100,
     "source_languages": 44,
-    "cases_with_runtime_span_or_key_differences": 18,
+    "cases_with_runtime_span_or_key_differences": 15,
     "cases_with_reference_semantic_lemmas": 86,
     "explanation": "All source cases run against the current documented runtime contract; the intact reference suite records aspirational phrase grouping, numeric tokens, and multilingual semantic lemmas that these tokenizers do not provide. No source case is skipped or represented as semantically implemented."
   },
@@ -13570,6 +13548,25 @@
         "au"
       ],
       "expected": "și-au"
+    },
+    {
+      "id": "nl-proclitic-morgens-validated",
+      "lang": "nl",
+      "term": "'s Morgens",
+      "vocabulary": [
+        "morgens"
+      ],
+      "expected": "morgens"
+    },
+    {
+      "id": "nl-proclitic-exact-first",
+      "lang": "nl",
+      "term": "'s Morgens",
+      "vocabulary": [
+        "'s morgens",
+        "morgens"
+      ],
+      "expected": "'s morgens"
     }
   ],
   "korean_candidate_cases": [

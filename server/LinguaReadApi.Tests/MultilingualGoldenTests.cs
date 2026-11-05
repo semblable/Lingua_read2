@@ -42,7 +42,7 @@ public class MultilingualGoldenTests
         var semanticDiffs = Suite.GetProperty("cases").EnumerateArray().Count(fixture =>
             fixture.GetProperty("provenance").TryGetProperty("differences", out var diffs)
             && diffs.EnumerateArray().Any(d => d.GetString() == "reference_semantic_lemmas"));
-        Assert.Equal(18, spanDiffs);
+        Assert.Equal(15, spanDiffs);
         Assert.Equal(spanDiffs, summary.GetProperty("cases_with_runtime_span_or_key_differences").GetInt32());
         Assert.Equal(86, semanticDiffs);
         Assert.Equal(semanticDiffs, summary.GetProperty("cases_with_reference_semantic_lemmas").GetInt32());

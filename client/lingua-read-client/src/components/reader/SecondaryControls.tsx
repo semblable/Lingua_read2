@@ -6,6 +6,7 @@ import { WORD_STATUS_LABELS, type WordStatus } from '../../types/wordStatus';
 interface SecondaryControlsProps {
   isMobile: boolean;
   showParagraphIndent?: boolean;
+  showTextAlignment?: boolean;
   globalSettings: Settings;
   setReadingDensity: (density: string) => void;
   setReaderContentWidth: (width: number) => void;
@@ -36,6 +37,7 @@ interface SecondaryControlsProps {
 const SecondaryControls = React.memo(({
   isMobile,
   showParagraphIndent = true,
+  showTextAlignment = true,
   globalSettings,
   setReadingDensity,
   setReaderContentWidth,
@@ -166,7 +168,7 @@ const SecondaryControls = React.memo(({
         Indent
       </Button>
     </ButtonGroup>}
-    <ButtonGroup size="sm" className="me-1" aria-label="Text alignment">
+    {showTextAlignment && <ButtonGroup size="sm" className="me-1" aria-label="Text alignment">
       <Button
         variant={globalSettings.readerTextAlignment !== 'justify' ? 'primary' : 'outline-secondary'}
         onClick={() => setReaderTextAlignment('left')}
@@ -181,7 +183,7 @@ const SecondaryControls = React.memo(({
       >
         Justify
       </Button>
-    </ButtonGroup>
+    </ButtonGroup>}
     {!isMobile && (
       <ButtonGroup size="sm" className="me-1">
         <OverlayTrigger placement="top" overlay={<Tooltip>Line Spacing: Default (1.5)</Tooltip>}>

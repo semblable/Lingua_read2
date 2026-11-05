@@ -1,10 +1,28 @@
 import type { SrtEntry } from './srtParser';
 import { hasSentenceStopBetween } from './readerText';
+import storage from './storage';
 
 export type TranscriptCue = { line: SrtEntry; text: string; separator: string };
 export type TranscriptParagraph = { cues: TranscriptCue[] };
 export type TranscriptLayout = 'cues' | 'flow';
 export const AUDIO_TRANSCRIPT_LAYOUT_STORAGE_KEY = 'linguaReadAudioTranscriptLayout';
+export const AUDIO_TRANSCRIPT_ALIGNMENT_STORAGE_KEY = 'linguaReadAudioTranscriptAlignment';
+export type TranscriptAlignment = 'left' | 'center' | 'justify';
+export type TranscriptAlignments = Record<TranscriptLayout, TranscriptAlignment>;
+
+export const readTranscriptAlignments = (): TranscriptAlignments => {
+  const defaults: TranscriptAlignments = { cues: 'center', flow: 'left' };
+  try {
+    const saved: unknown = JSON.parse(storage.getItem(AUDIO_TRANSCRIPT_ALIGNMENT_STORAGE_KEY) || 'null');
+    if (!saved || typeof saved !== 'object' || Array.isArray(saved)) return defaults;
+    const value = saved as Record<string, unknown>;
+    const valid = (candidate: unknown): candidate is TranscriptAlignment =>
+      candidate === 'left' || candidate === 'center' || candidate === 'justify';
+    return { cues: valid(value.cues) ? value.cues : defaults.cues, flow: valid(value.flow) ? value.flow : defaults.flow };
+  } catch {
+    return defaults;
+  }
+};
 type FlowLimits = { maxCharacters?: number; maxCues?: number };
 
 // Subtitle line breaks are timing boundaries, not paragraph boundaries.

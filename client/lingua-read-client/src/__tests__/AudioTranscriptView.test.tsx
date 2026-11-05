@@ -4,7 +4,7 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import AudioTranscriptView from '../components/reader/AudioTranscriptView';
 import { getInitialSettings, type Settings } from '../contexts/SettingsContext';
-import { AUDIO_TRANSCRIPT_LAYOUT_STORAGE_KEY } from '../utils/audioTranscript';
+import { AUDIO_TRANSCRIPT_ALIGNMENT_STORAGE_KEY, AUDIO_TRANSCRIPT_LAYOUT_STORAGE_KEY } from '../utils/audioTranscript';
 
 // Exercise react-window's real row measurement rather than mocking the List.
 class TestResizeObserver {
@@ -59,6 +59,7 @@ const renderTranscript = (settings: Settings, isMobile = false, overrides: Parti
 describe('audio transcript layout', () => {
   beforeEach(() => {
     localStorage.removeItem(AUDIO_TRANSCRIPT_LAYOUT_STORAGE_KEY);
+    localStorage.removeItem(AUDIO_TRANSCRIPT_ALIGNMENT_STORAGE_KEY);
     vi.stubGlobal('ResizeObserver', TestResizeObserver);
     stylesheet = document.createElement('style');
     stylesheet.textContent = stylesheetText;
@@ -71,6 +72,7 @@ describe('audio transcript layout', () => {
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
     localStorage.removeItem(AUDIO_TRANSCRIPT_LAYOUT_STORAGE_KEY);
+    localStorage.removeItem(AUDIO_TRANSCRIPT_ALIGNMENT_STORAGE_KEY);
   });
 
   test.each([false, true])('centers sentence-sized lines without indentation or automatic hyphenation (mobile=%s)', isMobile => {
@@ -86,6 +88,7 @@ describe('audio transcript layout', () => {
     expect(style.fontSize).toBe('24px');
     expect(style.overflowWrap).toBe('break-word');
     expect(style.hyphens).toBe('none');
+    expect(style.textAlign).toBe('center');
     expect(window.getComputedStyle(paragraph.parentElement!).paddingBottom).toBe('13.44px');
   });
 
@@ -164,6 +167,70 @@ describe('audio transcript layout', () => {
       { srtLines: continuousSpeech });
     expect(large.container.querySelectorAll('.transcript-paragraph').length).toBeGreaterThan(smallCount);
     expect(large.container.querySelectorAll('.srt-line')).toHaveLength(continuousSpeech.length);
+  });
+
+  test.each([false, true])('remembers alignment separately for cue and flow views (mobile=%s)', isMobile => {
+    const first = renderTranscript({ ...getInitialSettings(), readerTextAlignment: 'justify' }, isMobile);
+    expect(screen.getByRole('button', { name: 'Center' })).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(screen.getByRole('button', { name: 'Left' }));
+    fireEvent.click(screen.getByRole('switch', { name: 'Flowing text' }));
+    expect(screen.getByRole('button', { name: 'Left' })).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(screen.getByRole('button', { name: 'Justify' }));
+    // Use fresh markup: Happy DOM caches ancestor selector matches after class changes.
+    const snapshot = first.container.cloneNode(true) as HTMLElement;
+    document.body.appendChild(snapshot);
+    const style = window.getComputedStyle(snapshot.querySelector('.transcript-paragraph')!);
+    expect(style.textAlign).toBe('justify');
+    expect(style.hyphens).toBe('none');
+    snapshot.remove();
+    fireEvent.click(screen.getByRole('switch', { name: 'Flowing text' }));
+    expect(screen.getByRole('button', { name: 'Left' })).toHaveAttribute('aria-pressed', 'true');
+    first.unmount();
+    renderTranscript(getInitialSettings(), isMobile);
+    expect(screen.getByRole('button', { name: 'Left' })).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(screen.getByRole('switch', { name: 'Flowing text' }));
+    expect(screen.getByRole('button', { name: 'Justify' })).toHaveAttribute('aria-pressed', 'true');
+    expect(JSON.parse(localStorage.getItem(AUDIO_TRANSCRIPT_ALIGNMENT_STORAGE_KEY)!)).toEqual({ cues: 'left', flow: 'justify' });
+  });
+
+  test.each(['{broken', '[]', '{"cues":"invalid","flow":"center"}'])('recovers invalid saved alignment (%s)', saved => {
+    localStorage.setItem(AUDIO_TRANSCRIPT_ALIGNMENT_STORAGE_KEY, saved);
+    renderTranscript(getInitialSettings());
+    expect(screen.getByRole('button', { name: 'Center' })).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(screen.getByRole('switch', { name: 'Flowing text' }));
+    expect(screen.getByRole('button', { name: saved.includes('invalid') ? 'Center' : 'Left' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  test.each([false, true])('playback tint preserves vocabulary colours (flow=%s)', flow => {
+    if (flow) localStorage.setItem(AUDIO_TRANSCRIPT_LAYOUT_STORAGE_KEY, 'flow');
+    renderTranscript(getInitialSettings(), false, { currentSrtLineId: 1,
+      processTextContent: text => <span style={{ backgroundColor: 'rgb(128, 64, 32)', color: 'rgb(255, 255, 255)' }}>{text}</span> });
+    const word = screen.getByText(lines[0].text);
+    const activeCue = word.closest('.active-srt-line')!;
+    expect(window.getComputedStyle(activeCue).backgroundColor).toBe('rgba(250, 204, 72, 0.14)');
+    expect(window.getComputedStyle(activeCue).boxShadow).toBe('none');
+    expect(word).toHaveStyle({ backgroundColor: 'rgb(128, 64, 32)', color: 'rgb(255, 255, 255)' });
+  });
+
+  test('follows a rendered cue near the viewport centre without fighting text selection', () => {
+    const listRef: React.RefObject<import('react-window').ListImperativeAPI | null> = { current: null };
+    renderTranscript(getInitialSettings(), false, { listRef });
+    const viewport = listRef.current!.element!;
+    const cue = screen.getByText(lines[1].text);
+    vi.spyOn(viewport, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 100, 800, 600));
+    const position = vi.spyOn(cue, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 500, 600, 40));
+    viewport.scrollTop = 200;
+    const scroll = vi.spyOn(viewport, 'scrollTo').mockImplementation(() => {});
+    act(() => { listRef.current!.scrollToRow({ index: 1, align: 'center' }); });
+    expect(scroll).toHaveBeenLastCalledWith({ top: 320, behavior: 'smooth' });
+    scroll.mockClear();
+    position.mockReturnValue(new DOMRect(0, 380, 600, 40));
+    act(() => { listRef.current!.scrollToRow({ index: 1, align: 'center' }); });
+    expect(scroll).not.toHaveBeenCalled();
+    position.mockReturnValue(new DOMRect(0, 500, 600, 40));
+    vi.spyOn(window, 'getSelection').mockReturnValue({ isCollapsed: false, anchorNode: cue.firstChild } as Selection);
+    act(() => { listRef.current!.scrollToRow({ index: 1, align: 'center' }); });
+    expect(scroll).not.toHaveBeenCalled();
   });
 
   test('scrolling to a distant cue addresses its sentence group rather than its original cue index', () => {

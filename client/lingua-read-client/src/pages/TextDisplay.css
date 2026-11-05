@@ -278,8 +278,7 @@
    `lang` instead; ragged-right text is left unhyphenated. */
 .reader-align-justify .reader-paragraph,
 .reader-align-justify .reading-block,
-.reader-align-justify .sentence-mode-text:not(.sentence-mode-title-text),
-.audio-transcript-container.reader-align-justify .transcript-paragraph {
+.reader-align-justify .sentence-mode-text:not(.sentence-mode-title-text) {
   text-align: justify;
   text-justify: inter-word;
   -webkit-hyphens: auto;
@@ -451,8 +450,8 @@
 
 /* Style for the currently active SRT line */
 .srt-line.active-srt-line {
-  background-color: var(--active-srt-line-bg, rgba(255, 223, 186, 0.7));
-  box-shadow: 0 0 0 2px var(--active-srt-line-bg, rgba(255, 223, 186, 0.7));
+  background-color: rgba(250, 204, 72, 0.14);
+  box-shadow: none;
 }
 
 .srt-line {
@@ -471,12 +470,26 @@
 .audio-transcript-layout-controls {
   display: flex;
   justify-content: flex-end;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
   padding: 0.35rem clamp(0.75rem, 2vw, 2rem) 0;
   font-size: 0.85rem;
   color: var(--theme-text, var(--bs-body-color));
 }
 
 .audio-transcript-layout-controls .form-check { margin: 0; }
+.audio-transcript-layout-controls .btn { min-height: 36px; }
+
+@media (pointer: coarse) {
+  .audio-transcript-layout-controls .btn { min-height: 44px; }
+  .audio-transcript-layout-controls .form-check {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-height: 44px;
+  }
+}
 
 .audio-transcript-container .transcript-row {
   box-sizing: border-box;
@@ -506,6 +519,15 @@
   color: var(--theme-text, #212529);
 }
 
+.audio-transcript-container.reader-align-center .transcript-paragraph {
+  text-align: center;
+}
+
+.audio-transcript-container.reader-align-justify .transcript-paragraph {
+  text-align: justify;
+  text-justify: inter-word;
+}
+
 .dark-theme .theme-aware-audio-player-container {
   background-color: var(--ui-background-dark);
 }
@@ -514,15 +536,6 @@
   background-color: var(--ui-background-dark);
   border-radius: 10px;
   color-scheme: dark;
-}
-
-/* Dark theme adjustments */
-
-/* Dark theme adjustments for active SRT line */
-.dark-theme .srt-line.active-srt-line {
-  /* Brighter blue border */
-  background-color: rgba(80, 80, 80, 0.4);
-  /* Darker grey background for better contrast */
 }
 
 /* Flow mode needs visual landmarks even when speech has no punctuation. */
@@ -534,14 +547,12 @@
 
 .audio-transcript-container.audio-transcript-layout-flow .transcript-paragraph.has-active-cue {
   color: var(--theme-text, #212529);
-  border-inline-start-color: var(--accent-color, #1abc9c);
-  background-color: color-mix(in srgb, var(--accent-color, #1abc9c) 5%, transparent);
+  border-inline-start-color: rgba(234, 179, 8, 0.45);
+  background-color: rgba(250, 204, 72, 0.035);
 }
 
 .audio-transcript-container.audio-transcript-layout-flow .srt-line.active-srt-line {
   color: var(--theme-text, #212529);
-  background-color: color-mix(in srgb, var(--accent-color, #1abc9c) 18%, transparent);
-  box-shadow: none;
 }
 
 .sentence-mode-view {

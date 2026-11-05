@@ -174,6 +174,7 @@ describe('TextDisplay', () => {
 
   beforeEach(() => {
     localStorage.removeItem('linguaReadAudioTranscriptLayout');
+    localStorage.removeItem('linguaReadAudioTranscriptAlignment');
     const initialSelection = window.getSelection?.();
     if (initialSelection && typeof initialSelection.removeAllRanges === 'function') {
       initialSelection.removeAllRanges();
@@ -2767,7 +2768,7 @@ describe('TextDisplay', () => {
         snapshot.remove();
       }
     };
-    expect(textContainer).toHaveClass('reader-align-left');
+    expect(textContainer).toHaveClass(audio && !sentenceMode ? 'reader-align-center' : 'reader-align-left');
     if (mobile) {
       act(() => {
         fireEvent.click(screen.getByRole('button', { name: 'Open lesson controls' }));
@@ -2779,7 +2780,7 @@ describe('TextDisplay', () => {
     stylesheet.textContent = readerStyles;
     document.head.appendChild(stylesheet);
     try {
-      expect(getTextAlignment()).toBe('start');
+      expect(getTextAlignment()).toBe(audio && !sentenceMode ? 'center' : 'start');
       fireEvent.click(screen.getByTitle('Justified text'));
       expect(textContainer).toHaveClass('reader-align-justify');
       expect(getTextAlignment()).toBe('justify');
@@ -2852,17 +2853,18 @@ describe('TextDisplay', () => {
         expect(screen.queryByTitle('Toggle paragraph indent')).not.toBeInTheDocument();
       }
       expect(JSON.parse(localStorage.getItem('cachedSettings'))).toEqual(expect.objectContaining({
-        readerTextAlignment: 'justify', textSize: 18, readerParagraphIndent: audio,
+        readerTextAlignment: audio ? 'left' : 'justify', textSize: 18, readerParagraphIndent: audio,
         readerContentWidth: 620, readingDensity: 'compact'
       }));
       await act(async () => { vi.advanceTimersByTime(500); });
       expect(serverSettings).toEqual(expect.objectContaining({
-        readerTextAlignment: 'justify', textSize: 18, readerParagraphIndent: audio,
+        readerTextAlignment: audio ? 'left' : 'justify', textSize: 18, readerParagraphIndent: audio,
         readerContentWidth: 620, readingDensity: 'compact',
         ...(!mobile && { lineSpacing: 1.75, paragraphSpacing: 1.6 })
       }));
       first.unmount();
       // Discard the cache so this reload has to restore the saved API response.
+      if (audio) expect(JSON.parse(localStorage.getItem('linguaReadAudioTranscriptAlignment'))).toEqual({ cues: 'justify', flow: 'left' });
       localStorage.removeItem('cachedSettings');
       const second = mountReader();
       try {

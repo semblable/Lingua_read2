@@ -2335,6 +2335,7 @@ const TextDisplay = () => {
     <SecondaryControls
       isMobile={isMobile}
       showParagraphIndent={!(isAudioLesson && displayMode === 'audio' && !isSentenceMode)}
+      showTextAlignment={!(isAudioLesson && displayMode === 'audio' && !isSentenceMode)}
       globalSettings={globalSettings}
       setReadingDensity={setReadingDensity}
       setReaderContentWidth={setReaderContentWidth}

@@ -282,9 +282,8 @@ export const useReaderAudioSync = ({
           if (!lineElement) return;
           const rect = lineElement.getBoundingClientRect();
           const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
-          const upperBound = viewportHeight * 0.3;
-          const lowerBound = viewportHeight * 0.6;
-          if (rect.top < upperBound || rect.bottom > lowerBound) {
+          const center = rect.top + rect.height / 2;
+          if (Math.abs(center - viewportHeight / 2) > Math.max(12, viewportHeight * 0.05)) {
             lineElement.scrollIntoView({ block: 'center', behavior: 'smooth' });
           }
         }

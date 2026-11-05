@@ -167,6 +167,28 @@ describe('useReaderAudioSync', () => {
     expect(result.current.isSpeakingSentence).toBe(false);
   });
 
+  test.each([350, 480])('mobile playback centres cues outside a small middle band (top=%s)', top => {
+    const cue = document.createElement('span');
+    cue.id = 'srt-line-1';
+    cue.scrollIntoView = vi.fn();
+    document.body.appendChild(cue);
+    const position = vi.spyOn(cue, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, top, 300, 40));
+    const height = vi.spyOn(window, 'innerHeight', 'get').mockReturnValue(1000);
+    const raf = vi.spyOn(window, 'requestAnimationFrame').mockImplementation(callback => { callback(0); return 1; });
+    try {
+      const { result } = renderAudioSyncHook({ isAudioLesson: true, isMobile: true,
+        srtLines: [{ id: 1, startTime: 0, endTime: 2, text: 'A phrase' }] });
+      act(() => { result.current.handleAudioTimeUpdate(1); });
+      if (top === 350) expect(cue.scrollIntoView).toHaveBeenCalledWith({ block: 'center', behavior: 'smooth' });
+      else expect(cue.scrollIntoView).not.toHaveBeenCalled();
+    } finally {
+      position.mockRestore();
+      height.mockRestore();
+      raf.mockRestore();
+      cue.remove();
+    }
+  });
+
   test('following playback does not scroll away from an active transcript selection', () => {
     const container = document.createElement('div');
     container.className = 'audio-transcript-container';

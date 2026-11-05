@@ -1,8 +1,9 @@
 import React, { useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { List, useDynamicRowHeight, type ListImperativeAPI } from 'react-window';
-import { Form } from 'react-bootstrap';
+import { Button, ButtonGroup, Form } from 'react-bootstrap';
 import TranscriptLine, { TranscriptParagraph } from './TranscriptLine';
-import { AUDIO_TRANSCRIPT_LAYOUT_STORAGE_KEY, groupTranscriptCues, type TranscriptLayout } from '../../utils/audioTranscript';
+import { AUDIO_TRANSCRIPT_ALIGNMENT_STORAGE_KEY, AUDIO_TRANSCRIPT_LAYOUT_STORAGE_KEY, groupTranscriptCues,
+  readTranscriptAlignments, type TranscriptLayout } from '../../utils/audioTranscript';
 import storage from '../../utils/storage';
 import type { Settings } from '../../contexts/SettingsContext';
 import type { SrtEntry } from '../../utils/srtParser';
@@ -47,6 +48,8 @@ const AudioTranscriptView = React.memo(({
   const [listWidth, setListWidth] = useState(0);
   const [layout, setLayout] = useState<TranscriptLayout>(() =>
     storage.getItem(AUDIO_TRANSCRIPT_LAYOUT_STORAGE_KEY) === 'flow' ? 'flow' : 'cues');
+  const [alignments, setAlignments] = useState(readTranscriptAlignments);
+  const followingCueRef = useRef<number | null>(null);
   const followAfterSwitchRef = useRef<number | string | null>(null);
   const paragraphListRef = useRef<ListImperativeAPI | null>(null);
   const contentWidth = Math.min(globalSettings.readerContentWidth || 740, (listWidth || (isMobile ? 360 : 740)) - 32);
@@ -59,7 +62,8 @@ const AudioTranscriptView = React.memo(({
   const transcriptKey = useMemo(() => paragraphs.map(paragraph =>
     paragraph.cues.map(cue => cue.separator + cue.text).join('')).join('\n\n'), [paragraphs]);
   const effectiveLineSpacing = isMobile ? mobileReadingConfig.lineSpacing : globalSettings.lineSpacing;
-  const containerClassName = `audio-transcript-container audio-transcript-layout-${layout} reader-align-${globalSettings.readerTextAlignment || 'left'}`;
+  const alignment = alignments[layout];
+  const containerClassName = `audio-transcript-container audio-transcript-layout-${layout} reader-align-${alignment}`;
   const fontStyle = getFontStyling(effectiveLineSpacing);
   const transcriptStyle = {
     ...fontStyle,
@@ -72,7 +76,7 @@ const AudioTranscriptView = React.memo(({
     defaultRowHeight: Math.ceil(globalSettings.textSize * (effectiveLineSpacing + (globalSettings.paragraphSpacing ?? 1)) + 24),
     key: [listWidth, globalSettings.readerContentWidth, globalSettings.textSize, globalSettings.textFont,
       effectiveLineSpacing, globalSettings.paragraphSpacing, globalSettings.readingDensity,
-      globalSettings.readerTextAlignment, languageCode, layout, transcriptKey].join(':')
+      alignment, languageCode, layout, transcriptKey].join(':')
   });
 
   // The reader addresses original cue indices; the virtual list now renders groups.
@@ -82,7 +86,9 @@ const AudioTranscriptView = React.memo(({
       const paragraphIndex = paragraphByCue[index];
       const line = srtLines[index];
       if (paragraphIndex === undefined || !line || !paragraphs[paragraphIndex]) return;
+      followingCueRef.current = line.id;
       const followCue = () => {
+        if (followingCueRef.current !== line.id) return true;
         const viewport = paragraphListRef.current?.element;
         const cue = document.getElementById(`srt-line-${line.id}`);
         if (!viewport || !cue || !viewport.contains(cue)) return false;
@@ -91,8 +97,9 @@ const AudioTranscriptView = React.memo(({
         const bounds = viewport.getBoundingClientRect();
         const position = cue.getBoundingClientRect();
         const center = position.top + position.height / 2;
-        if (center < bounds.top + bounds.height * 0.25 || center > bounds.top + bounds.height * 0.75) {
-          viewport.scrollTo({ top: viewport.scrollTop + center - bounds.top - bounds.height / 2, behavior: 'smooth' });
+        const delta = center - bounds.top - bounds.height / 2;
+        if (Math.abs(delta) > Math.max(12, bounds.height * 0.05)) {
+          viewport.scrollTo({ top: Math.max(0, viewport.scrollTop + delta), behavior: 'smooth' });
         }
         return true;
       };
@@ -139,6 +146,20 @@ const AudioTranscriptView = React.memo(({
 
   const layoutSwitch = (
     <div className="audio-transcript-layout-controls">
+      <ButtonGroup size="sm" aria-label="Transcript alignment">
+        {([
+          ['left', 'Left', 'Ragged-right text'],
+          ['center', 'Center', 'Centered text'],
+          ['justify', 'Justify', 'Justified text']
+        ] as const).map(([value, label, title]) => (
+          <Button key={value} variant={alignment === value ? 'primary' : 'outline-secondary'} title={title}
+            aria-pressed={alignment === value} onClick={() => {
+              const next = { ...alignments, [layout]: value };
+              setAlignments(next);
+              storage.setItem(AUDIO_TRANSCRIPT_ALIGNMENT_STORAGE_KEY, JSON.stringify(next));
+            }}>{label}</Button>
+        ))}
+      </ButtonGroup>
       <Form.Check type="switch" role="switch" id="audio-transcript-flow" label="Flowing text"
         checked={layout === 'flow'} onChange={event => {
           const next = event.target.checked ? 'flow' : 'cues';

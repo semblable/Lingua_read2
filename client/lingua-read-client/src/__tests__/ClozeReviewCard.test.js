@@ -111,4 +111,137 @@ describe('ClozeReviewCard', () => {
     rerender(<ClozeReviewCard {...baseProps} isFlipped={true} />);
     expect(screen.getByTestId('cloze-user-answer')).toHaveAttribute('data-cloze-match', 'true');
   });
+
+  test('renders the meaning cue on the front face when translation is provided', () => {
+    render(<ClozeReviewCard {...baseProps} translation="gato" />);
+    expect(screen.getByTestId('cloze-meaning-cue')).toHaveTextContent('Meaning:gato');
+  });
+
+  test('hides the meaning cue on the front face when translation is empty', () => {
+    render(<ClozeReviewCard {...baseProps} translation="" />);
+    expect(screen.queryByTestId('cloze-meaning-cue')).not.toBeInTheDocument();
+  });
+
+  test('renders scaffold slots matching the target word length', () => {
+    render(<ClozeReviewCard {...baseProps} term="cat" />);
+    const slots = screen.getAllByTestId('cloze-letter-slot');
+    expect(slots).toHaveLength(3);
+    slots.forEach((slot) => {
+      expect(slot).toHaveTextContent('_');
+      expect(slot).toHaveAttribute('data-revealed', 'false');
+      expect(slot).toHaveAttribute('data-is-letter', 'true');
+    });
+  });
+
+  test('preserves spaces and punctuation in the scaffold while masking letters', () => {
+    render(<ClozeReviewCard {...baseProps} term="l'eau" />);
+    const slots = screen.getAllByTestId('cloze-letter-slot');
+    expect(slots).toHaveLength(5);
+    // slot 0: 'l' -> unrevealed
+    expect(slots[0]).toHaveTextContent('_');
+    expect(slots[0]).toHaveAttribute('data-is-letter', 'true');
+    // slot 1: '\'' -> literal punctuation
+    expect(slots[1]).toHaveTextContent("'");
+    expect(slots[1]).toHaveAttribute('data-is-letter', 'false');
+    expect(slots[1]).toHaveAttribute('data-revealed', 'true');
+    // slots 2, 3, 4: 'e', 'a', 'u' -> unrevealed
+    expect(slots[2]).toHaveTextContent('_');
+    expect(slots[3]).toHaveTextContent('_');
+    expect(slots[4]).toHaveTextContent('_');
+  });
+
+  test('reveals letters progressively when clicking the Hint button and updates the input', () => {
+    const onHintUsed = vi.fn();
+    render(<ClozeReviewCard {...baseProps} term="cat" onHintUsed={onHintUsed} />);
+    const hintButton = screen.getByTestId('cloze-hint-button');
+    const input = screen.getByTestId('cloze-input');
+
+    // Hint 1: reveals 'c'
+    fireEvent.click(hintButton);
+    expect(input).toHaveValue('c');
+    expect(screen.getByTestId('cloze-hint-counter')).toHaveTextContent('1/3 hints');
+    expect(onHintUsed).toHaveBeenCalledWith(1, 3);
+
+    const slotsAfter1 = screen.getAllByTestId('cloze-letter-slot');
+    expect(slotsAfter1[0]).toHaveTextContent('c');
+    expect(slotsAfter1[0]).toHaveAttribute('data-revealed', 'true');
+    expect(slotsAfter1[1]).toHaveTextContent('_');
+    expect(slotsAfter1[2]).toHaveTextContent('_');
+
+    // Hint 2: reveals 'a'
+    fireEvent.click(hintButton);
+    expect(input).toHaveValue('ca');
+    expect(screen.getByTestId('cloze-hint-counter')).toHaveTextContent('2/3 hints');
+    expect(onHintUsed).toHaveBeenCalledWith(2, 3);
+
+    // Hint 3: reveals 't'
+    fireEvent.click(hintButton);
+    expect(input).toHaveValue('cat');
+    expect(screen.getByTestId('cloze-hint-counter')).toHaveTextContent('3/3 hints');
+    expect(onHintUsed).toHaveBeenCalledWith(3, 3);
+
+    // Once all letters are revealed, Hint button is disabled
+    expect(hintButton).toBeDisabled();
+  });
+
+  test('Alt+H shortcut triggers letter reveal', () => {
+    render(<ClozeReviewCard {...baseProps} term="dog" />);
+    const input = screen.getByTestId('cloze-input');
+
+    fireEvent.keyDown(input, { key: 'h', altKey: true });
+    expect(input).toHaveValue('d');
+    expect(screen.getByTestId('cloze-hint-counter')).toHaveTextContent('1/3 hints');
+  });
+
+  test('supports diacritic-tolerant matching (e.g. cafe matches café)', () => {
+    const { rerender } = render(<ClozeReviewCard {...baseProps} term="café" />);
+    const input = screen.getByTestId('cloze-input');
+    fireEvent.change(input, { target: { value: 'cafe' } });
+    rerender(<ClozeReviewCard {...baseProps} term="café" isFlipped={true} />);
+
+    const userAnswer = screen.getByTestId('cloze-user-answer');
+    expect(userAnswer).toHaveTextContent('cafe');
+    expect(userAnswer).toHaveAttribute('data-cloze-match', 'true');
+    expect(screen.getByText(/accent difference from café/i)).toBeInTheDocument();
+  });
+
+  test('displays hint usage badge and recommended grade advice on the back face', () => {
+    const { rerender } = render(<ClozeReviewCard {...baseProps} term="cat" />);
+    const hintButton = screen.getByTestId('cloze-hint-button');
+
+    // Use 1 hint
+    fireEvent.click(hintButton);
+    rerender(<ClozeReviewCard {...baseProps} term="cat" isFlipped={true} />);
+
+    const hintUsage = screen.getByTestId('cloze-hint-usage');
+    expect(hintUsage).toHaveTextContent('1 of 3 letters revealed');
+    expect(screen.getByTestId('cloze-grade-advice')).toHaveTextContent(/Scaffolded recall/i);
+  });
+
+  test('full reveal suggests Again on the back face', () => {
+    const { rerender } = render(<ClozeReviewCard {...baseProps} term="cat" />);
+    const hintButton = screen.getByTestId('cloze-hint-button');
+
+    // Use all 3 hints
+    fireEvent.click(hintButton);
+    fireEvent.click(hintButton);
+    fireEvent.click(hintButton);
+    rerender(<ClozeReviewCard {...baseProps} term="cat" isFlipped={true} />);
+
+    expect(screen.getByTestId('cloze-hint-usage')).toHaveTextContent('3 of 3 letters revealed');
+    expect(screen.getByTestId('cloze-grade-advice')).toHaveTextContent(/Full reveal — Recommended grade: Again/i);
+  });
+
+  test('resets hint state when cardId changes', () => {
+    const { rerender } = render(<ClozeReviewCard {...baseProps} cardId={1} term="cat" />);
+    const hintButton = screen.getByTestId('cloze-hint-button');
+    fireEvent.click(hintButton);
+    expect(screen.getByTestId('cloze-input')).toHaveValue('c');
+
+    rerender(<ClozeReviewCard {...baseProps} cardId={2} term="dog" />);
+    expect(screen.getByTestId('cloze-input')).toHaveValue('');
+    expect(screen.getByTestId('cloze-hint-counter')).toHaveTextContent(/Alt\+H for hint/i);
+    const slots = screen.getAllByTestId('cloze-letter-slot');
+    expect(slots[0]).toHaveTextContent('_');
+  });
 });

@@ -1,8 +1,8 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { Form } from 'react-bootstrap';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Button, Form } from 'react-bootstrap';
 
 export interface ClozeReviewCardProps {
-  /** Stable identity used to reset the typed answer when the card changes. */
+  /** Stable identity used to reset the typed answer and hints when the card changes. */
   cardId: number | string;
   clozeSentence: string;
   term: string;
@@ -11,7 +11,11 @@ export interface ClozeReviewCardProps {
   onReveal: () => void;
   /** Optional extra mined sentences shown on the back face. */
   otherPhrases?: ReadonlyArray<{ srsPhraseId?: number; sentence?: string | null }>;
+  /** Optional callback reporting hint usage when card is flipped or hint is taken. */
+  onHintUsed?: (revealedLetters: number, totalLetters: number) => void;
 }
+
+const isMaskableLetter = (ch: string): boolean => /\p{L}|\p{N}/u.test(ch);
 
 const ClozeReviewCard: React.FC<ClozeReviewCardProps> = ({
   cardId,
@@ -21,13 +25,22 @@ const ClozeReviewCard: React.FC<ClozeReviewCardProps> = ({
   isFlipped,
   onReveal,
   otherPhrases = [],
+  onHintUsed,
 }) => {
+  const characters = useMemo(() => [...term], [term]);
+  const totalLetters = useMemo(
+    () => characters.filter(isMaskableLetter).length,
+    [characters]
+  );
+
+  const [revealedCount, setRevealedCount] = useState(0);
   const [typedAnswer, setTypedAnswer] = useState('');
   const inputRef = useRef<HTMLInputElement | null>(null);
 
-  // Reset the answer when navigating to a different card.
+  // Reset answer and hints when navigating to a different card.
   useEffect(() => {
     setTypedAnswer('');
+    setRevealedCount(0);
   }, [cardId]);
 
   // Autofocus the input on the front face so the user can start typing right away.
@@ -37,39 +50,172 @@ const ClozeReviewCard: React.FC<ClozeReviewCardProps> = ({
     }
   }, [isFlipped, cardId]);
 
+  const handleRevealLetter = useCallback(() => {
+    if (revealedCount >= totalLetters) return;
+    const nextCount = revealedCount + 1;
+    setRevealedCount(nextCount);
+
+    // Compute revealed prefix up to nextCount letters
+    let lettersSeen = 0;
+    let lastRevIdx = -1;
+    for (let i = 0; i < characters.length; i++) {
+      if (isMaskableLetter(characters[i])) {
+        if (lettersSeen < nextCount) {
+          lettersSeen++;
+          lastRevIdx = i;
+        } else {
+          break;
+        }
+      }
+    }
+
+    if (lastRevIdx >= 0) {
+      let endIdx = lastRevIdx + 1;
+      while (endIdx < characters.length && !isMaskableLetter(characters[endIdx])) {
+        endIdx++;
+      }
+      const revealedPrefix = characters.slice(0, endIdx).join('');
+      setTypedAnswer(revealedPrefix);
+    }
+
+    onHintUsed?.(nextCount, totalLetters);
+
+    // Re-focus the input and place cursor at the end
+    setTimeout(() => {
+      if (inputRef.current) {
+        inputRef.current.focus();
+        const len = inputRef.current.value.length;
+        inputRef.current.setSelectionRange(len, len);
+      }
+    }, 0);
+  }, [revealedCount, totalLetters, characters, onHintUsed]);
+
+  // Global Alt+H / Ctrl+H keyboard shortcut while front face is active
+  useEffect(() => {
+    if (isFlipped) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.altKey || e.ctrlKey) && (e.key === 'h' || e.key === 'H')) {
+        e.preventDefault();
+        handleRevealLetter();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isFlipped, handleRevealLetter]);
+
   const handleInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
       e.preventDefault();
       onReveal();
+    } else if ((e.altKey || e.ctrlKey) && (e.key === 'h' || e.key === 'H')) {
+      e.preventDefault();
+      handleRevealLetter();
     }
   };
 
+  // Build the progressive scaffold slots
+  let lettersCounted = 0;
+  const scaffoldSlots = characters.map((ch, idx) => {
+    const maskable = isMaskableLetter(ch);
+    if (!maskable) {
+      return { char: ch, isLetter: false, isRevealed: true, key: idx };
+    }
+    const isRevealed = lettersCounted < revealedCount;
+    lettersCounted++;
+    return { char: ch, isLetter: true, isRevealed, key: idx };
+  });
+
+  // Matching evaluation: exact match or diacritic-tolerant match
   const normalizedTyped = typedAnswer.trim().toLowerCase();
   const normalizedTerm = term.trim().toLowerCase();
-  const matched = normalizedTyped.length > 0 && normalizedTyped === normalizedTerm;
+  const exactMatch = normalizedTyped.length > 0 && normalizedTyped === normalizedTerm;
+
+  const stripDiacritics = (s: string) =>
+    s.normalize('NFD').replace(/\p{Diacritic}/gu, '');
+  const diacriticTyped = stripDiacritics(normalizedTyped);
+  const diacriticTerm = stripDiacritics(normalizedTerm);
+  const diacriticMatch = diacriticTyped.length > 0 && diacriticTyped === diacriticTerm;
+
+  const matched = exactMatch || diacriticMatch;
+  const hasAccentDiff = !exactMatch && diacriticMatch;
 
   return (
     <div data-testid="cloze-review-card" className="text-center w-100">
-      <p className="srs-sentence mb-3" data-testid="cloze-sentence">
+      <p className="srs-sentence mb-2" data-testid="cloze-sentence">
         {clozeSentence}
       </p>
 
       {!isFlipped ? (
         <div className="d-flex flex-column align-items-center">
-          <Form.Control
-            ref={inputRef}
-            type="text"
-            value={typedAnswer}
-            onChange={(e) => setTypedAnswer(e.target.value)}
-            onKeyDown={handleInputKeyDown}
-            placeholder="Type the missing word…"
-            data-testid="cloze-input"
-            style={{ maxWidth: '320px' }}
-            autoComplete="off"
-            spellCheck={false}
-          />
-          <div className="mt-3 srs-reveal-hint">
-            Press <kbd>Enter</kbd> to reveal
+          {translation && (
+            <div className="srs-cloze-cue mb-3 text-muted" data-testid="cloze-meaning-cue">
+              <small className="text-uppercase fw-semibold text-secondary me-1">Meaning:</small>
+              <span className="fst-italic">{translation}</span>
+            </div>
+          )}
+
+          {totalLetters > 0 && (
+            <div
+              data-testid="cloze-scaffold"
+              className="srs-cloze-scaffold mb-3"
+              aria-label={`Target word length ${totalLetters} letters`}
+            >
+              {scaffoldSlots.map((slot) => (
+                <span
+                  key={slot.key}
+                  data-testid="cloze-letter-slot"
+                  data-revealed={slot.isRevealed ? 'true' : 'false'}
+                  data-is-letter={slot.isLetter ? 'true' : 'false'}
+                  className={`srs-cloze-slot ${
+                    !slot.isLetter
+                      ? 'srs-cloze-slot-literal'
+                      : slot.isRevealed
+                      ? 'srs-cloze-slot-revealed'
+                      : 'srs-cloze-slot-unrevealed'
+                  }`}
+                >
+                  {slot.isRevealed ? slot.char : '_'}
+                </span>
+              ))}
+            </div>
+          )}
+
+          <div className="d-flex flex-column align-items-center w-100" style={{ maxWidth: '340px' }}>
+            <div className="d-flex gap-2 w-100">
+              <Form.Control
+                ref={inputRef}
+                type="text"
+                value={typedAnswer}
+                onChange={(e) => setTypedAnswer(e.target.value)}
+                onKeyDown={handleInputKeyDown}
+                placeholder="Type the missing word…"
+                data-testid="cloze-input"
+                autoComplete="off"
+                spellCheck={false}
+              />
+              <Button
+                variant="outline-primary"
+                onClick={handleRevealLetter}
+                disabled={revealedCount >= totalLetters}
+                data-testid="cloze-hint-button"
+                title="Reveal the next letter (Alt+H)"
+                className="text-nowrap"
+              >
+                💡 Hint
+              </Button>
+            </div>
+            <div className="mt-2 srs-reveal-hint text-muted d-flex justify-content-between w-100 small">
+              <span>Press <kbd>Enter</kbd> to reveal</span>
+              <span data-testid="cloze-hint-counter">
+                {revealedCount > 0 ? (
+                  <span className="text-primary fw-medium">
+                    {revealedCount}/{totalLetters} hints
+                  </span>
+                ) : (
+                  <span><kbd>Alt+H</kbd> for hint</span>
+                )}
+              </span>
+            </div>
           </div>
         </div>
       ) : (
@@ -84,13 +230,18 @@ const ClozeReviewCard: React.FC<ClozeReviewCardProps> = ({
               >
                 {typedAnswer}
               </span>
+              {matched && !hasAccentDiff && (
+                <span className="text-success ms-2" aria-label="correct">✓</span>
+              )}
+              {matched && hasAccentDiff && (
+                <span className="text-success ms-2 small" aria-label="correct with accent difference">
+                  ✓ <span className="text-muted">(accent difference from {term})</span>
+                </span>
+              )}
               {!matched && (
                 <span className="text-muted ms-2">
                   → expected <strong data-testid="cloze-expected">{term}</strong>
                 </span>
-              )}
-              {matched && (
-                <span className="text-success ms-2" aria-label="correct">✓</span>
               )}
             </div>
           )}
@@ -100,6 +251,20 @@ const ClozeReviewCard: React.FC<ClozeReviewCardProps> = ({
               <strong data-testid="cloze-expected">{term}</strong>
             </div>
           )}
+
+          {revealedCount > 0 && (
+            <div className="mb-2" data-testid="cloze-hint-usage">
+              <span className="badge bg-warning text-dark me-2">
+                💡 {revealedCount} of {totalLetters} letters revealed
+              </span>
+              <small className="text-muted" data-testid="cloze-grade-advice">
+                {revealedCount >= totalLetters
+                  ? 'Full reveal — Recommended grade: Again'
+                  : 'Scaffolded recall — Recommended grade: Hard or Again'}
+              </small>
+            </div>
+          )}
+
           <p className="srs-translation mb-2">
             {translation || <em className="text-muted">No translation</em>}
           </p>

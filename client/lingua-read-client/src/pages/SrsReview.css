@@ -81,6 +81,52 @@
   font-size: 0.85rem;
 }
 
+/* Cloze review cues and progressive letter scaffold */
+.srs-cloze-cue {
+  font-size: 1rem;
+}
+
+.srs-cloze-scaffold {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: center;
+  align-items: center;
+  font-family: monospace;
+}
+
+.srs-cloze-slot {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  min-width: 32px;
+  height: 38px;
+  padding: 0 6px;
+  border-radius: 6px;
+  font-weight: 700;
+  font-size: 1.25rem;
+  transition: all 0.15s ease;
+}
+
+.srs-cloze-slot-unrevealed {
+  background: var(--theme-surface-bg, #f8f9fa);
+  border: 2px dashed var(--bs-secondary, #adb5bd);
+  color: var(--bs-secondary, #adb5bd);
+}
+
+.srs-cloze-slot-revealed {
+  background: rgba(13, 110, 253, 0.12);
+  border: 2px solid var(--bs-primary, #0d6efd);
+  color: var(--bs-primary, #0d6efd);
+}
+
+.srs-cloze-slot-literal {
+  background: transparent;
+  border: none;
+  min-width: 14px;
+  color: var(--theme-text, #333);
+}
+
 /* Card back: answer area */
 .srs-answer-area {
   animation: srs-fade-in 0.2s ease-out;

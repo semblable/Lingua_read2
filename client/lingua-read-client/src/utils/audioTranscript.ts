@@ -26,10 +26,10 @@ export const readTranscriptAlignments = (): TranscriptAlignments => {
 type FlowLimits = { maxCharacters?: number; maxCues?: number };
 
 // Subtitle line breaks are timing boundaries, not paragraph boundaries.
-// Keep short sentence-sized groups so the active phrase is easy to follow.
+// Flow groups several sentences into compact paragraphs; timed cues stay intact.
 export const groupTranscriptCues = (
   lines: SrtEntry[], languageCode?: string | null, layout: TranscriptLayout = 'flow',
-  { maxCharacters = 220, maxCues = 3 }: FlowLimits = {}
+  { maxCharacters = 420, maxCues = 8 }: FlowLimits = {}
 ) => {
   const paragraphs: TranscriptParagraph[] = [];
   const paragraphByCue: number[] = [];
@@ -50,8 +50,10 @@ export const groupTranscriptCues = (
     const limitReached = currentParagraph && (
       currentParagraph.cues.length >= maxCues || length + separator.length + text.length > maxCharacters
     );
+    const sentenceBoundary = sentenceEnd || (previous && /[؟।॥][\p{Pe}\p{Pf}"']*\s*$/u.test(previous.text));
+    const paragraphReady = length >= maxCharacters * 0.55 || (currentParagraph?.cues.length ?? 0) >= 4;
     if (!paragraphs.length || layout === 'cues' || (previous && (
-      sentenceEnd || /[؟।॥][\p{Pe}\p{Pf}"']*\s*$/u.test(previous.text) || line.startTime - previous.endTime >= 2 || limitReached
+      (sentenceBoundary && paragraphReady) || line.startTime - previous.endTime >= 2 || limitReached
     ))) {
       paragraphs.push({ cues: [] });
       length = 0;

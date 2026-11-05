@@ -95,7 +95,7 @@ const LessonHeader = React.memo(({
           </div>
         </div>
         {showDesktopLessonControls && (
-          <div className="lesson-controls-expanded-panel d-flex flex-wrap align-items-center gap-2 pt-2 mt-2 border-top">
+          <div className="lesson-controls-expanded-panel reader-quiet-controls d-flex flex-wrap align-items-center gap-2 pt-2 mt-2 border-top">
             <div className="d-flex flex-wrap align-items-center gap-1">
               {primaryControls}
             </div>

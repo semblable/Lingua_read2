@@ -2593,6 +2593,7 @@ const TextDisplay = () => {
                     isMobile={isMobile}
                     srtLines={srtLines}
                     currentSrtLineId={currentSrtLineId}
+                    isAudioPlaying={isAudioPlaying}
                     getFontStyling={getFontStyling}
                     handleLineClick={handleLineClick}
                     handleWordSelection={handleWordSelection}

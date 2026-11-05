@@ -3,7 +3,7 @@ import { groupTranscriptCues, transcriptCueSeparator } from '../utils/audioTrans
 
 const cues = (...texts: string[]) => texts.map((text, index) => ({ id: index + 1, startTime: index * 2, endTime: index * 2 + 2, text }));
 
-describe('transcript sentence grouping', () => {
+describe('transcript paragraph grouping', () => {
   test('cue layout keeps each nonempty cue on its own row', () => {
     const result = groupTranscriptCues(cues('Uma história que', 'continua aqui.', '', 'Outra frase.'), 'pt', 'cues');
     expect(result.paragraphs.map(paragraph => paragraph.cues.map(cue => cue.text)))
@@ -13,12 +13,20 @@ describe('transcript sentence grouping', () => {
   test('joins subtitle chunks and line breaks while retaining cue ids and row mapping', () => {
     const result = groupTranscriptCues(cues('Uma história\nque', 'continua aqui.', 'Outra frase', 'mais longa.'), 'pt');
     expect(result.paragraphs.map(paragraph => paragraph.cues.map(cue => cue.separator + cue.text).join('')))
-      .toEqual(['Uma história que continua aqui.', 'Outra frase mais longa.']);
-    expect(result.paragraphByCue).toEqual([0, 0, 1, 1]);
+      .toEqual(['Uma história que continua aqui. Outra frase mais longa.']);
+    expect(result.paragraphByCue).toEqual([0, 0, 0, 0]);
     expect(result.paragraphs.flatMap(paragraph => paragraph.cues.map(cue => cue.line.id))).toEqual([1, 2, 3, 4]);
   });
   test('does not split at an abbreviation', () => {
-    expect(groupTranscriptCues(cues('Mr.', 'Smith arrived.'), 'en').paragraphByCue).toEqual([0, 0]);
+    expect(groupTranscriptCues(cues(`${'A long report '.repeat(4)}Mr.`, 'Smith arrived.'), 'en', 'flow',
+      { maxCharacters: 90 }).paragraphByCue).toEqual([0, 0]);
+  });
+  test.each([
+    ['pt', 'Uma frase.'], ['ja', 'これは文です。'], ['ar', 'هل هذا صحيح؟'], ['hi', 'यह एक वाक्य है।']
+  ])('flow keeps multiple sentences together before a paragraph break (%s)', (language, sentence) => {
+    const lines = cues(...Array.from({ length: 5 }, () => sentence));
+    expect(groupTranscriptCues(lines, language, 'flow').paragraphByCue).toEqual([0, 0, 0, 0, 1]);
+    expect(groupTranscriptCues(lines, language, 'cues').paragraphByCue).toEqual([0, 1, 2, 3, 4]);
   });
   test('starts another group after a pause or a long uninterrupted passage', () => {
     const lines = cues('First phrase', 'after a pause');
@@ -30,7 +38,7 @@ describe('transcript sentence grouping', () => {
     const lines = cues(...Array.from({ length: 12 }, (_, index) => `${index} ${'palavra '.repeat(8)}`));
     const result = groupTranscriptCues(lines, 'pt', 'flow', { maxCharacters: 150 });
     for (const paragraph of result.paragraphs) {
-      expect(paragraph.cues.length).toBeLessThanOrEqual(3);
+      expect(paragraph.cues.length).toBeLessThanOrEqual(8);
       expect(paragraph.cues.map(cue => cue.separator + cue.text).join('').length).toBeLessThanOrEqual(150);
     }
     expect(result.paragraphs.flatMap(paragraph => paragraph.cues.map(cue => cue.line))).toEqual(lines);

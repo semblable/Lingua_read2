@@ -96,7 +96,7 @@ const MobileLessonHeader = React.memo(({
           {studyControls}
         </div>
         <Collapse in={showMoreControls}>
-          <div id="lesson-more-controls" className="lesson-controls-collapse lesson-controls-menu">
+          <div id="lesson-more-controls" className="lesson-controls-collapse lesson-controls-menu reader-quiet-controls">
             <div className="lesson-controls-section">
               {primaryControls}
             </div>

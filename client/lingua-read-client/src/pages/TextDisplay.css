@@ -57,6 +57,47 @@
   display: none;
 }
 
+/* Keep reading controls quiet without fading their labels or focus indicators. */
+.reader-quiet-controls {
+  --reader-control-ink: var(--theme-text, #333);
+  --reader-control-border: color-mix(in srgb, var(--reader-control-ink) 20%, transparent);
+  --reader-control-accent: color-mix(in srgb, var(--accent-color, #1abc9c) 65%, var(--reader-control-ink));
+}
+
+.reader-quiet-controls .btn {
+  color: var(--reader-control-ink);
+  background-color: transparent;
+  border-color: var(--reader-control-border);
+  box-shadow: none;
+}
+
+.reader-quiet-controls .btn:is(.btn-primary, .btn-success, .btn-info, .btn-secondary, .btn-light, .btn-warning, .active, [aria-pressed="true"]) {
+  background-color: color-mix(in srgb, var(--accent-color, #1abc9c) 12%, transparent);
+  border-color: color-mix(in srgb, var(--reader-control-accent) 50%, transparent);
+  box-shadow: inset 0 -2px 0 var(--reader-control-accent);
+}
+
+.reader-quiet-controls .btn:not(:disabled):not(.disabled):hover {
+  color: var(--reader-control-ink);
+  background-color: color-mix(in srgb, var(--reader-control-ink) 10%, transparent);
+  border-color: color-mix(in srgb, var(--reader-control-ink) 40%, transparent);
+}
+
+.reader-quiet-controls .btn:not(:disabled):not(.disabled):active {
+  background-color: color-mix(in srgb, var(--reader-control-ink) 16%, transparent);
+}
+
+.reader-quiet-controls .btn:focus-visible,
+.reader-quiet-controls .form-check-input:focus-visible {
+  outline: 2px solid var(--reader-control-accent);
+  outline-offset: 2px;
+}
+
+.reader-quiet-controls .form-check-input:checked {
+  background-color: var(--reader-control-accent);
+  border-color: var(--reader-control-accent);
+}
+
 .lesson-topbar {
   position: sticky;
   top: 0;
@@ -455,10 +496,11 @@
 }
 
 .srt-line {
+  opacity: 1;
   border-radius: 0.15em;
   box-decoration-break: clone;
   -webkit-box-decoration-break: clone;
-  transition: background-color 0.2s ease, box-shadow 0.2s ease;
+  transition: background-color 0.2s ease, opacity 0.2s ease;
   cursor: pointer;
 }
 
@@ -538,17 +580,17 @@
   color-scheme: dark;
 }
 
-/* Flow mode needs visual landmarks even when speech has no punctuation. */
+/* Flow reads as continuous paragraphs; only the timed phrase takes emphasis. */
 .audio-transcript-container.audio-transcript-layout-flow .transcript-paragraph {
-  border-inline-start: 3px solid transparent;
-  border-radius: 0.25rem;
   color: color-mix(in srgb, var(--theme-text, #212529) 90%, transparent);
 }
 
-.audio-transcript-container.audio-transcript-layout-flow .transcript-paragraph.has-active-cue {
-  color: var(--theme-text, #212529);
-  border-inline-start-color: rgba(234, 179, 8, 0.45);
-  background-color: rgba(250, 204, 72, 0.035);
+.audio-transcript-container.audio-transcript-layout-flow.is-following-cue:not(.has-native-selection) .srt-line:not(.active-srt-line) {
+  opacity: 0.5;
+}
+
+.audio-transcript-container.audio-transcript-layout-flow.is-following-cue:not(.has-native-selection) .srt-line:not(.active-srt-line):is(:hover, :focus-within) {
+  opacity: 1;
 }
 
 .audio-transcript-container.audio-transcript-layout-flow .srt-line.active-srt-line {

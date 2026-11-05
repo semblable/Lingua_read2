@@ -12,6 +12,7 @@ interface AudioTranscriptViewProps {
   isMobile: boolean;
   srtLines: SrtEntry[];
   currentSrtLineId: number | string | null;
+  isAudioPlaying?: boolean;
   getFontStyling: (lineSpacing: number) => React.CSSProperties;
   handleLineClick: (startTime: number) => void;
   handleWordSelection: () => void;
@@ -30,6 +31,7 @@ const AudioTranscriptView = React.memo(({
   isMobile,
   srtLines,
   currentSrtLineId,
+  isAudioPlaying = false,
   getFontStyling,
   handleLineClick,
   handleWordSelection,
@@ -49,28 +51,30 @@ const AudioTranscriptView = React.memo(({
   const [layout, setLayout] = useState<TranscriptLayout>(() =>
     storage.getItem(AUDIO_TRANSCRIPT_LAYOUT_STORAGE_KEY) === 'flow' ? 'flow' : 'cues');
   const [alignments, setAlignments] = useState(readTranscriptAlignments);
+  const [hasNativeSelection, setHasNativeSelection] = useState(false);
   const followingCueRef = useRef<number | null>(null);
   const followAfterSwitchRef = useRef<number | string | null>(null);
   const paragraphListRef = useRef<ListImperativeAPI | null>(null);
   const contentWidth = Math.min(globalSettings.readerContentWidth || 740, (listWidth || (isMobile ? 360 : 740)) - 32);
   const wideScript = /^(?:zh|ja)(?:[-_]|$)/iu.test(languageCode ?? '');
-  // Estimate roughly three lines, with an upper cap for unpunctuated speech.
+  // Aim for about six lines in flow mode, with a cap for unpunctuated speech.
   // Keep each timed cue intact even when an individual cue is unusually long.
-  const flowCharacters = Math.max(72, Math.min(240, Math.floor(contentWidth / (globalSettings.textSize * (wideScript ? 0.95 : 0.55))) * 3));
+  const flowCharacters = Math.max(72, Math.min(480, Math.floor(contentWidth / (globalSettings.textSize * (wideScript ? 0.95 : 0.55))) * 6));
   const { paragraphs, paragraphByCue } = useMemo(() => groupTranscriptCues(srtLines, languageCode, layout,
     { maxCharacters: flowCharacters }), [srtLines, languageCode, layout, flowCharacters]);
   const transcriptKey = useMemo(() => paragraphs.map(paragraph =>
     paragraph.cues.map(cue => cue.separator + cue.text).join('')).join('\n\n'), [paragraphs]);
   const effectiveLineSpacing = isMobile ? mobileReadingConfig.lineSpacing : globalSettings.lineSpacing;
   const alignment = alignments[layout];
-  const containerClassName = `audio-transcript-container audio-transcript-layout-${layout} reader-align-${alignment}`;
+  const hasCurrentCue = currentSrtLineId !== null && srtLines.some(line => line.id === currentSrtLineId);
+  const containerClassName = `audio-transcript-container audio-transcript-layout-${layout} reader-align-${alignment}${hasCurrentCue || isAudioPlaying ? ' is-following-cue' : ''}${hasNativeSelection ? ' has-native-selection' : ''}`;
   const fontStyle = getFontStyling(effectiveLineSpacing);
   const transcriptStyle = {
     ...fontStyle,
     '--reader-content-max-width': `${globalSettings.readerContentWidth || 740}px`,
     '--audio-transcript-row-padding': globalSettings.readingDensity === 'compact' ? '0.08em 0.65rem'
       : globalSettings.readingDensity === 'spacious' ? '0.24em 0.9rem' : '0.16em 0.75rem',
-    '--audio-transcript-row-gap': `${Math.round((globalSettings.paragraphSpacing ?? 1) * (layout === 'flow' ? 65 : 35)) / 100}em`
+    '--audio-transcript-row-gap': `${Math.round((globalSettings.paragraphSpacing ?? 1) * (layout === 'flow' ? 20 : 35)) / 100}em`
   } as React.CSSProperties;
   const rowHeight = useDynamicRowHeight({
     defaultRowHeight: Math.ceil(globalSettings.textSize * (effectiveLineSpacing + (globalSettings.paragraphSpacing ?? 1)) + 24),
@@ -111,6 +115,18 @@ const AudioTranscriptView = React.memo(({
   }), [paragraphByCue, paragraphs, srtLines]);
 
   useEffect(() => {
+    const updateSelection = () => {
+      const selection = window.getSelection();
+      const container = textContentRef.current;
+      setHasNativeSelection(Boolean(selection && !selection.isCollapsed && container &&
+        ((selection.anchorNode && container.contains(selection.anchorNode)) ||
+          (selection.focusNode && container.contains(selection.focusNode)))));
+    };
+    document.addEventListener('selectionchange', updateSelection);
+    return () => document.removeEventListener('selectionchange', updateSelection);
+  }, [textContentRef]);
+
+  useEffect(() => {
     const cueId = followAfterSwitchRef.current;
     followAfterSwitchRef.current = null;
     if (cueId === null) return;
@@ -145,7 +161,7 @@ const AudioTranscriptView = React.memo(({
   if (paragraphs.length === 0) return <p className="p-3">No transcript text available.</p>;
 
   const layoutSwitch = (
-    <div className="audio-transcript-layout-controls">
+    <div className="audio-transcript-layout-controls reader-quiet-controls">
       <ButtonGroup size="sm" aria-label="Transcript alignment">
         {([
           ['left', 'Left', 'Ragged-right text'],

@@ -103,7 +103,7 @@ describe('audio transcript layout', () => {
     expect(second.style.transform).toBe('translateY(260px)');
   });
 
-  test.each([false, true])('joins cues into a sentence and highlights/seeks the original timed phrase (mobile=%s)', isMobile => {
+  test.each([false, true])('flow joins sentences into paragraphs and highlights/seeks the original timed phrase (mobile=%s)', isMobile => {
     const seek = vi.fn();
     const groupedLines = [
       { id: 1, startTime: 0, endTime: 2, text: 'A sentence' },
@@ -117,14 +117,19 @@ describe('audio transcript layout', () => {
     expect(container.querySelectorAll('.transcript-paragraph')).toHaveLength(3);
     fireEvent.click(screen.getByRole('switch', { name: 'Flowing text' }));
     const paragraphs = container.querySelectorAll('.transcript-paragraph');
-    expect(paragraphs).toHaveLength(2);
-    expect(paragraphs[0].textContent).toBe('A sentence continues here.');
+    expect(paragraphs).toHaveLength(1);
+    expect(paragraphs[0].textContent).toBe('A sentence continues here. The next sentence.');
     const activeCue = screen.getByText('continues here.');
     expect(activeCue.tagName).toBe('SPAN');
     expect(activeCue).toHaveClass('active-srt-line');
     expect(activeCue).toHaveAttribute('aria-current', 'true');
     expect(window.getComputedStyle(activeCue).boxShadow).toBe('none');
     expect(container.querySelectorAll('.active-srt-line')).toHaveLength(1);
+    expect(window.getComputedStyle(screen.getByText('A sentence')).opacity).toBe('0.5');
+    expect(window.getComputedStyle(activeCue).opacity).toBe('1');
+    const transcript = activeCue.closest('.audio-transcript-container')!;
+    expect(parseFloat((transcript as HTMLElement).style.getPropertyValue('--audio-transcript-row-gap')))
+      .toBeLessThan(getInitialSettings().paragraphSpacing * 0.35);
     fireEvent.click(activeCue);
     expect(seek).toHaveBeenCalledWith(2);
     const selection = window.getSelection()!;
@@ -132,9 +137,16 @@ describe('audio transcript layout', () => {
     range.selectNodeContents(activeCue);
     selection.removeAllRanges();
     selection.addRange(range);
+    fireEvent(document, new Event('selectionchange'));
+    expect(transcript).toHaveClass('has-native-selection');
+    const snapshot = container.cloneNode(true) as HTMLElement;
+    document.body.appendChild(snapshot);
+    expect(window.getComputedStyle(snapshot.querySelector('.srt-line')!).opacity).toBe('1');
+    snapshot.remove();
     fireEvent.click(activeCue);
     expect(seek).toHaveBeenCalledTimes(1);
     selection.removeAllRanges();
+    fireEvent(document, new Event('selectionchange'));
     fireEvent.click(screen.getByRole('switch', { name: 'Flowing text' }));
     expect(container.querySelectorAll('.transcript-paragraph')).toHaveLength(3);
     expect(screen.getByText('continues here.')).toHaveAttribute('aria-current', 'true');
@@ -167,6 +179,18 @@ describe('audio transcript layout', () => {
       { srtLines: continuousSpeech });
     expect(large.container.querySelectorAll('.transcript-paragraph').length).toBeGreaterThan(smallCount);
     expect(large.container.querySelectorAll('.srt-line')).toHaveLength(continuousSpeech.length);
+  });
+
+  test.each([null, 999])('flow keeps text readable when no cue is active (id=%s)', currentSrtLineId => {
+    localStorage.setItem(AUDIO_TRANSCRIPT_LAYOUT_STORAGE_KEY, 'flow');
+    renderTranscript(getInitialSettings(), false, { currentSrtLineId });
+    expect(window.getComputedStyle(screen.getByText(lines[0].text)).opacity).toBe('1');
+  });
+
+  test('flow context stays subdued between timed cues while playback continues', () => {
+    localStorage.setItem(AUDIO_TRANSCRIPT_LAYOUT_STORAGE_KEY, 'flow');
+    renderTranscript(getInitialSettings(), false, { currentSrtLineId: null, isAudioPlaying: true });
+    expect(window.getComputedStyle(screen.getByText(lines[0].text)).opacity).toBe('0.5');
   });
 
   test.each([false, true])('remembers alignment separately for cue and flow views (mobile=%s)', isMobile => {

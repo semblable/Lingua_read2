@@ -1,7 +1,9 @@
 import React, { useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { List, useDynamicRowHeight, type ListImperativeAPI } from 'react-window';
+import { Form } from 'react-bootstrap';
 import TranscriptLine, { TranscriptParagraph } from './TranscriptLine';
-import { groupTranscriptCues } from '../../utils/audioTranscript';
+import { AUDIO_TRANSCRIPT_LAYOUT_STORAGE_KEY, groupTranscriptCues, type TranscriptLayout } from '../../utils/audioTranscript';
+import storage from '../../utils/storage';
 import type { Settings } from '../../contexts/SettingsContext';
 import type { SrtEntry } from '../../utils/srtParser';
 
@@ -43,25 +45,34 @@ const AudioTranscriptView = React.memo(({
   const touchMovedRef = useRef(false);
   const [listHeight, setListHeight] = useState(600);
   const [listWidth, setListWidth] = useState(0);
+  const [layout, setLayout] = useState<TranscriptLayout>(() =>
+    storage.getItem(AUDIO_TRANSCRIPT_LAYOUT_STORAGE_KEY) === 'flow' ? 'flow' : 'cues');
+  const followAfterSwitchRef = useRef<number | string | null>(null);
   const paragraphListRef = useRef<ListImperativeAPI | null>(null);
-  const { paragraphs, paragraphByCue } = useMemo(() => groupTranscriptCues(srtLines, languageCode), [srtLines, languageCode]);
+  const contentWidth = Math.min(globalSettings.readerContentWidth || 740, (listWidth || (isMobile ? 360 : 740)) - 32);
+  const wideScript = /^(?:zh|ja)(?:[-_]|$)/iu.test(languageCode ?? '');
+  // Estimate roughly three lines, with an upper cap for unpunctuated speech.
+  // Keep each timed cue intact even when an individual cue is unusually long.
+  const flowCharacters = Math.max(72, Math.min(240, Math.floor(contentWidth / (globalSettings.textSize * (wideScript ? 0.95 : 0.55))) * 3));
+  const { paragraphs, paragraphByCue } = useMemo(() => groupTranscriptCues(srtLines, languageCode, layout,
+    { maxCharacters: flowCharacters }), [srtLines, languageCode, layout, flowCharacters]);
   const transcriptKey = useMemo(() => paragraphs.map(paragraph =>
     paragraph.cues.map(cue => cue.separator + cue.text).join('')).join('\n\n'), [paragraphs]);
   const effectiveLineSpacing = isMobile ? mobileReadingConfig.lineSpacing : globalSettings.lineSpacing;
-  const containerClassName = `audio-transcript-container reader-align-${globalSettings.readerTextAlignment || 'left'}`;
+  const containerClassName = `audio-transcript-container audio-transcript-layout-${layout} reader-align-${globalSettings.readerTextAlignment || 'left'}`;
   const fontStyle = getFontStyling(effectiveLineSpacing);
   const transcriptStyle = {
     ...fontStyle,
     '--reader-content-max-width': `${globalSettings.readerContentWidth || 740}px`,
     '--audio-transcript-row-padding': globalSettings.readingDensity === 'compact' ? '0.08em 0.65rem'
       : globalSettings.readingDensity === 'spacious' ? '0.24em 0.9rem' : '0.16em 0.75rem',
-    '--audio-transcript-row-gap': `${Math.round((globalSettings.paragraphSpacing ?? 1) * 35) / 100}em`
+    '--audio-transcript-row-gap': `${Math.round((globalSettings.paragraphSpacing ?? 1) * (layout === 'flow' ? 65 : 35)) / 100}em`
   } as React.CSSProperties;
   const rowHeight = useDynamicRowHeight({
     defaultRowHeight: Math.ceil(globalSettings.textSize * (effectiveLineSpacing + (globalSettings.paragraphSpacing ?? 1)) + 24),
     key: [listWidth, globalSettings.readerContentWidth, globalSettings.textSize, globalSettings.textFont,
       effectiveLineSpacing, globalSettings.paragraphSpacing, globalSettings.readingDensity,
-      globalSettings.readerTextAlignment, languageCode, transcriptKey].join(':')
+      globalSettings.readerTextAlignment, languageCode, layout, transcriptKey].join(':')
   });
 
   // The reader addresses original cue indices; the virtual list now renders groups.
@@ -93,10 +104,26 @@ const AudioTranscriptView = React.memo(({
   }), [paragraphByCue, paragraphs, srtLines]);
 
   useEffect(() => {
-    if (isMobile) return;
+    const cueId = followAfterSwitchRef.current;
+    followAfterSwitchRef.current = null;
+    if (cueId === null) return;
+    const index = srtLines.findIndex(line => line.id === cueId);
+    if (index < 0) return;
+    if (isMobile) document.getElementById(`srt-line-${cueId}`)?.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
+    else listRef.current?.scrollToRow({ index, align: 'center' });
+  }, [layout, isMobile, listRef, srtLines]);
+
+  useEffect(() => {
     const container = readingContainerRef.current;
     if (!container) return;
-    const updateHeight = () => setListHeight(Math.max(200, window.innerHeight - container.getBoundingClientRect().top - 24));
+    const updateHeight = () => {
+      if (isMobile) {
+        setListWidth(container.getBoundingClientRect().width || window.innerWidth);
+        return;
+      }
+      const top = paragraphListRef.current?.element?.getBoundingClientRect().top ?? container.getBoundingClientRect().top;
+      setListHeight(Math.max(200, window.innerHeight - top - 16));
+    };
     const observer = new ResizeObserver(updateHeight);
     observer.observe(container);
     window.addEventListener('resize', updateHeight);
@@ -109,6 +136,18 @@ const AudioTranscriptView = React.memo(({
 
   if (!srtLines || srtLines.length === 0) return <p className="p-3">Loading transcript...</p>;
   if (paragraphs.length === 0) return <p className="p-3">No transcript text available.</p>;
+
+  const layoutSwitch = (
+    <div className="audio-transcript-layout-controls">
+      <Form.Check type="switch" role="switch" id="audio-transcript-flow" label="Flowing text"
+        checked={layout === 'flow'} onChange={event => {
+          const next = event.target.checked ? 'flow' : 'cues';
+          followAfterSwitchRef.current = currentSrtLineId;
+          setLayout(next);
+          storage.setItem(AUDIO_TRANSCRIPT_LAYOUT_STORAGE_KEY, next);
+        }} />
+    </div>
+  );
 
   const hasSelection = () => {
     const selection = window.getSelection();
@@ -134,26 +173,29 @@ const AudioTranscriptView = React.memo(({
     };
 
     return (
-      <div
-        className={containerClassName}
-        ref={textContentRef}
-        style={transcriptStyle}
-        lang={languageCode || undefined}
-        dir={rightToLeft === undefined ? 'auto' : rightToLeft ? 'rtl' : 'ltr'}
-        onMouseUp={handleWordSelection}
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
-      >
-        {paragraphs.map((paragraph, index) => (
-          <div className="transcript-row" key={index}>
-            <TranscriptParagraph paragraph={paragraph} currentLineId={currentSrtLineId}
-              processLineContent={processTextContent} hasSelection={hasSelection}
-              handleLineClick={startTime => {
-                if (Date.now() >= suppressLineClickUntilRef.current) handleLineClick(startTime);
-              }} />
-          </div>
-        ))}
+      <div className="audio-transcript-view">
+        {layoutSwitch}
+        <div
+          className={containerClassName}
+          ref={textContentRef}
+          style={transcriptStyle}
+          lang={languageCode || undefined}
+          dir={rightToLeft === undefined ? 'auto' : rightToLeft ? 'rtl' : 'ltr'}
+          onMouseUp={handleWordSelection}
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+        >
+          {paragraphs.map((paragraph, index) => (
+            <div className="transcript-row" key={index}>
+              <TranscriptParagraph paragraph={paragraph} currentLineId={currentSrtLineId}
+                processLineContent={processTextContent} hasSelection={hasSelection}
+                handleLineClick={startTime => {
+                  if (Date.now() >= suppressLineClickUntilRef.current) handleLineClick(startTime);
+                }} />
+            </div>
+          ))}
+        </div>
       </div>
     );
   }
@@ -167,24 +209,27 @@ const AudioTranscriptView = React.memo(({
   };
 
   return (
-    <div
-      className={containerClassName}
-      ref={textContentRef}
-      lang={languageCode || undefined}
-      dir={rightToLeft === undefined ? 'auto' : rightToLeft ? 'rtl' : 'ltr'}
-      style={transcriptStyle}
-      onMouseUp={handleWordSelection}
-    >
-      <List
-        rowComponent={TranscriptLine}
-        rowCount={paragraphs.length}
-        rowHeight={rowHeight}
-        rowProps={desktopItemData}
-        overscanCount={5}
-        listRef={paragraphListRef}
-        onResize={({ width }) => setListWidth(width)}
-        style={{ height: listHeight }}
-      />
+    <div className="audio-transcript-view">
+      {layoutSwitch}
+      <div
+        className={containerClassName}
+        ref={textContentRef}
+        lang={languageCode || undefined}
+        dir={rightToLeft === undefined ? 'auto' : rightToLeft ? 'rtl' : 'ltr'}
+        style={transcriptStyle}
+        onMouseUp={handleWordSelection}
+      >
+        <List
+          rowComponent={TranscriptLine}
+          rowCount={paragraphs.length}
+          rowHeight={rowHeight}
+          rowProps={desktopItemData}
+          overscanCount={5}
+          listRef={paragraphListRef}
+          onResize={({ width }) => setListWidth(width)}
+          style={{ height: listHeight }}
+        />
+      </div>
     </div>
   );
 });

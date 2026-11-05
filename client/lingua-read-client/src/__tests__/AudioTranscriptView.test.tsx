@@ -4,6 +4,7 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import AudioTranscriptView from '../components/reader/AudioTranscriptView';
 import { getInitialSettings, type Settings } from '../contexts/SettingsContext';
+import { AUDIO_TRANSCRIPT_LAYOUT_STORAGE_KEY } from '../utils/audioTranscript';
 
 // Exercise react-window's real row measurement rather than mocking the List.
 class TestResizeObserver {
@@ -57,6 +58,7 @@ const renderTranscript = (settings: Settings, isMobile = false, overrides: Parti
 
 describe('audio transcript layout', () => {
   beforeEach(() => {
+    localStorage.removeItem(AUDIO_TRANSCRIPT_LAYOUT_STORAGE_KEY);
     vi.stubGlobal('ResizeObserver', TestResizeObserver);
     stylesheet = document.createElement('style');
     stylesheet.textContent = stylesheetText;
@@ -68,6 +70,7 @@ describe('audio transcript layout', () => {
     TestResizeObserver.instances.clear();
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
+    localStorage.removeItem(AUDIO_TRANSCRIPT_LAYOUT_STORAGE_KEY);
   });
 
   test.each([false, true])('centers sentence-sized lines without indentation or automatic hyphenation (mobile=%s)', isMobile => {
@@ -107,6 +110,9 @@ describe('audio transcript layout', () => {
     const { container } = renderTranscript(getInitialSettings(), isMobile, {
       srtLines: groupedLines, currentSrtLineId: 2, handleLineClick: seek
     });
+    expect(screen.getByRole('switch', { name: 'Flowing text' })).not.toBeChecked();
+    expect(container.querySelectorAll('.transcript-paragraph')).toHaveLength(3);
+    fireEvent.click(screen.getByRole('switch', { name: 'Flowing text' }));
     const paragraphs = container.querySelectorAll('.transcript-paragraph');
     expect(paragraphs).toHaveLength(2);
     expect(paragraphs[0].textContent).toBe('A sentence continues here.');
@@ -114,6 +120,7 @@ describe('audio transcript layout', () => {
     expect(activeCue.tagName).toBe('SPAN');
     expect(activeCue).toHaveClass('active-srt-line');
     expect(activeCue).toHaveAttribute('aria-current', 'true');
+    expect(window.getComputedStyle(activeCue).boxShadow).toBe('none');
     expect(container.querySelectorAll('.active-srt-line')).toHaveLength(1);
     fireEvent.click(activeCue);
     expect(seek).toHaveBeenCalledWith(2);
@@ -125,6 +132,38 @@ describe('audio transcript layout', () => {
     fireEvent.click(activeCue);
     expect(seek).toHaveBeenCalledTimes(1);
     selection.removeAllRanges();
+    fireEvent.click(screen.getByRole('switch', { name: 'Flowing text' }));
+    expect(container.querySelectorAll('.transcript-paragraph')).toHaveLength(3);
+    expect(screen.getByText('continues here.')).toHaveAttribute('aria-current', 'true');
+  });
+
+  test('remembers the selected layout when another lesson opens', () => {
+    const first = renderTranscript(getInitialSettings());
+    fireEvent.click(screen.getByRole('switch', { name: 'Flowing text' }));
+    expect(localStorage.getItem(AUDIO_TRANSCRIPT_LAYOUT_STORAGE_KEY)).toBe('flow');
+    first.unmount();
+    const second = renderTranscript(getInitialSettings());
+    expect(screen.getByRole('switch', { name: 'Flowing text' })).toBeChecked();
+    fireEvent.click(screen.getByRole('switch', { name: 'Flowing text' }));
+    second.unmount();
+    renderTranscript(getInitialSettings());
+    expect(screen.getByRole('switch', { name: 'Flowing text' })).not.toBeChecked();
+  });
+
+  test('flow blocks get shorter at a larger reading size', () => {
+    localStorage.setItem(AUDIO_TRANSCRIPT_LAYOUT_STORAGE_KEY, 'flow');
+    const continuousSpeech = Array.from({ length: 6 }, (_, index) => ({
+      id: index + 1, startTime: index * 2, endTime: index * 2 + 2,
+      text: `${index} ${'palavra '.repeat(8)}`.trim()
+    }));
+    const small = renderTranscript({ ...getInitialSettings(), textSize: 16, readerContentWidth: 620 }, false,
+      { srtLines: continuousSpeech });
+    const smallCount = small.container.querySelectorAll('.transcript-paragraph').length;
+    small.unmount();
+    const large = renderTranscript({ ...getInitialSettings(), textSize: 32, readerContentWidth: 620 }, false,
+      { srtLines: continuousSpeech });
+    expect(large.container.querySelectorAll('.transcript-paragraph').length).toBeGreaterThan(smallCount);
+    expect(large.container.querySelectorAll('.srt-line')).toHaveLength(continuousSpeech.length);
   });
 
   test('scrolling to a distant cue addresses its sentence group rather than its original cue index', () => {
@@ -134,6 +173,7 @@ describe('audio transcript layout', () => {
     }));
     const listRef: React.RefObject<import('react-window').ListImperativeAPI | null> = { current: null };
     renderTranscript(getInitialSettings(), false, { srtLines: manyLines, listRef });
+    fireEvent.click(screen.getByRole('switch', { name: 'Flowing text' }));
     const scroll = vi.spyOn(listRef.current!.element!, 'scrollTo').mockImplementation(() => {});
     act(() => { listRef.current!.scrollToRow({ index: 79, align: 'center' }); });
     expect(scroll).toHaveBeenCalledWith(expect.objectContaining({ top: expect.any(Number) }));

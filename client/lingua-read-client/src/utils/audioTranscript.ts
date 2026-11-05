@@ -3,10 +3,16 @@ import { hasSentenceStopBetween } from './readerText';
 
 export type TranscriptCue = { line: SrtEntry; text: string; separator: string };
 export type TranscriptParagraph = { cues: TranscriptCue[] };
+export type TranscriptLayout = 'cues' | 'flow';
+export const AUDIO_TRANSCRIPT_LAYOUT_STORAGE_KEY = 'linguaReadAudioTranscriptLayout';
+type FlowLimits = { maxCharacters?: number; maxCues?: number };
 
 // Subtitle line breaks are timing boundaries, not paragraph boundaries.
 // Keep short sentence-sized groups so the active phrase is easy to follow.
-export const groupTranscriptCues = (lines: SrtEntry[], languageCode?: string | null) => {
+export const groupTranscriptCues = (
+  lines: SrtEntry[], languageCode?: string | null, layout: TranscriptLayout = 'flow',
+  { maxCharacters = 220, maxCues = 3 }: FlowLimits = {}
+) => {
   const paragraphs: TranscriptParagraph[] = [];
   const paragraphByCue: number[] = [];
   let previous: SrtEntry | undefined;
@@ -20,17 +26,23 @@ export const groupTranscriptCues = (lines: SrtEntry[], languageCode?: string | n
     const lastWord = previous?.text.match(/([\p{L}\p{M}\p{N}]+)([^\p{L}\p{M}\p{N}]*)$/u);
     const firstWord = text.match(/[\p{L}\p{M}\p{N}]+/u)?.[0];
     const sentenceEnd = lastWord && hasSentenceStopBetween(lastWord[2], { code: languageCode ?? undefined }, lastWord[1], firstWord);
-    if (!paragraphs.length || (previous && (
-      sentenceEnd || /[؟।॥][\p{Pe}\p{Pf}"']*\s*$/u.test(previous.text) || line.startTime - previous.endTime >= 2 || length >= 420
+    const currentParagraph = paragraphs.at(-1);
+    const previousText = currentParagraph?.cues.at(-1)?.text;
+    const separator = previousText ? transcriptCueSeparator(previousText, text, languageCode) : '';
+    const limitReached = currentParagraph && (
+      currentParagraph.cues.length >= maxCues || length + separator.length + text.length > maxCharacters
+    );
+    if (!paragraphs.length || layout === 'cues' || (previous && (
+      sentenceEnd || /[؟।॥][\p{Pe}\p{Pf}"']*\s*$/u.test(previous.text) || line.startTime - previous.endTime >= 2 || limitReached
     ))) {
       paragraphs.push({ cues: [] });
       length = 0;
     }
     const paragraph = paragraphs[paragraphs.length - 1];
-    const previousText = paragraph.cues.at(-1)?.text;
-    paragraph.cues.push({ line, text, separator: previousText ? transcriptCueSeparator(previousText, text, languageCode) : '' });
+    const joinedSeparator = paragraph.cues.length ? separator : '';
+    paragraph.cues.push({ line, text, separator: joinedSeparator });
     paragraphByCue[index] = paragraphs.length - 1;
-    length += text.length;
+    length += joinedSeparator.length + text.length;
     previous = line;
   }
   return { paragraphs, paragraphByCue };

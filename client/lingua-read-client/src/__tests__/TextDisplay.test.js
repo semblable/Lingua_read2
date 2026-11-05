@@ -173,6 +173,7 @@ describe('TextDisplay', () => {
   });
 
   beforeEach(() => {
+    localStorage.removeItem('linguaReadAudioTranscriptLayout');
     const initialSelection = window.getSelection?.();
     if (initialSelection && typeof initialSelection.removeAllRanges === 'function') {
       initialSelection.removeAllRanges();
@@ -2557,6 +2558,7 @@ describe('TextDisplay', () => {
     getTextSrt.mockResolvedValueOnce('1\n00:00:00,000 --> 00:00:02,000\nHello brave\n\n2\n00:00:02,000 --> 00:00:04,000\nworld.\n');
     renderTextDisplay({ autoTranslateWords: true });
     const word = await screen.findByText('brave');
+    fireEvent.click(screen.getByRole('switch', { name: 'Flowing text' }));
     const range = document.createRange();
     range.selectNodeContents(word);
     const selection = {

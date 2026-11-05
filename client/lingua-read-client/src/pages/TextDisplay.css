@@ -468,6 +468,16 @@
   scroll-behavior: smooth;
 }
 
+.audio-transcript-layout-controls {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0.35rem clamp(0.75rem, 2vw, 2rem) 0;
+  font-size: 0.85rem;
+  color: var(--theme-text, var(--bs-body-color));
+}
+
+.audio-transcript-layout-controls .form-check { margin: 0; }
+
 .audio-transcript-container .transcript-row {
   box-sizing: border-box;
   padding: 0;
@@ -513,6 +523,25 @@
   /* Brighter blue border */
   background-color: rgba(80, 80, 80, 0.4);
   /* Darker grey background for better contrast */
+}
+
+/* Flow mode needs visual landmarks even when speech has no punctuation. */
+.audio-transcript-container.audio-transcript-layout-flow .transcript-paragraph {
+  border-inline-start: 3px solid transparent;
+  border-radius: 0.25rem;
+  color: color-mix(in srgb, var(--theme-text, #212529) 90%, transparent);
+}
+
+.audio-transcript-container.audio-transcript-layout-flow .transcript-paragraph.has-active-cue {
+  color: var(--theme-text, #212529);
+  border-inline-start-color: var(--accent-color, #1abc9c);
+  background-color: color-mix(in srgb, var(--accent-color, #1abc9c) 5%, transparent);
+}
+
+.audio-transcript-container.audio-transcript-layout-flow .srt-line.active-srt-line {
+  color: var(--theme-text, #212529);
+  background-color: color-mix(in srgb, var(--accent-color, #1abc9c) 18%, transparent);
+  box-shadow: none;
 }
 
 .sentence-mode-view {

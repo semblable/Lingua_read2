@@ -4,10 +4,10 @@ Use synthetic learners only. Read [CONTRIBUTING](../../CONTRIBUTING.md) for full
 
 ## Verified checkpoint — 2026-11-05
 
-Tokenizer v5 slice (Greek monotonic accents & contextual final sigma, Arabic hamza preservation, dual-key folded lookup with in-place canonical DB promotion, space-grouped integers, and bare numbers with pure-numeric status-0 filtering):
-- **Server (`dotnet test -c Release`):** 1,733 passed, 0 failed, 7 PostgreSQL-only skipped locally (Docker daemon unavailable).
-- **Client (`npm test -- --run`):** 1,766 passed across 114 test files; `npm run typecheck`, `npm run build`, and `npm run lint` (46 existing warnings) passed.
-- **Gap summary:** `reference_gap_summary` in `multilingual_tokenizer_and_lemmatizer_test_suite_v4.json` is mechanically asserted by both `MultilingualGoldenTests` and `multilingualGolden.test.ts`: **89** source cases across **44** languages, **100** runtime cases, **11** cases with runtime span/key differences (down from 14 after closing `vi-01`, `vi-02`, and `ms-02`), and **86** cases with reference semantic lemmas. Tokenizer version is **5**.
+Tokenizer v5 slice (Greek monotonic accents & contextual final sigma, Arabic hamza preservation, dual-key folded lookup with in-place canonical DB promotion, space-grouped integers, bare numbers with pure-numeric status-0 filtering, Romance/Romanian clitic fallbacks, Dutch/English idioms, CJK disambiguation, and Vietnamese/Malay multiword compounds):
+- **Server (`dotnet test -c Release`):** 1,750 passed, 0 failed, 7 PostgreSQL-only skipped locally (Docker daemon unavailable).
+- **Client (`npm test -- --run`):** 1,783 passed across 114 test files; `npm run typecheck`, `npm run build`, and `npm run lint` (46 existing warnings) passed.
+- **Gap summary:** `reference_gap_summary` in `multilingual_tokenizer_and_lemmatizer_test_suite_v4.json` is mechanically asserted by both `MultilingualGoldenTests` and `multilingualGolden.test.ts`: **89** source cases across **44** languages, **100** runtime cases, **11** cases with runtime span/key differences (78 / 89 = 87.6% exact reference matches), and **86** cases with reference semantic lemmas. Tokenizer version is **5**.
 
 Greek canonical keys preserve monotonic accents and contextual final sigma (`ς`/`σ`), and Arabic/Persian canonical keys preserve hamza (`أ`, `إ`, `آ`, `ٱ`), while `FoldLookupKey`/`foldLookupTerm` provides secondary diacritic/sigma/hamza folding and in-place DB promotion on relink. Space-grouped integers (`2 000 грн.`) and bare integers (`2026`) are emitted as word tokens without creating `Status = 0` vocabulary clutter (`IsPureNumericToken` / `isPureNumericToken`). Sentence highlighting, Cloze blanking, and sentence mining (`splitSentenceAroundTerm`, `sentenceContainsTerm`, `pickSentenceForTerm`) match normalized, folded, and proclitic/elision tokens while preserving raw UTF-16 display slices.
 

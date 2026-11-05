@@ -4,10 +4,10 @@ Goal: practical support for all 44 catalog languages while preserving learner ID
 
 ## Verified checkpoint — 2026-11-05
 
-Tokenizer v5 slice (Greek monotonic accents & contextual final sigma, Arabic hamza preservation, dual-key folded lookup with in-place canonical DB promotion, space-grouped integers, and bare numbers with pure-numeric status-0 filtering):
-- **Server (`dotnet test -c Release`):** 1,733 passed, 0 failed, 7 PostgreSQL-only skipped locally (1,740 total).
-- **Client (`npm test -- --run`):** 1,766 passed across 114 files; `tsc --noEmit`, production build, and `eslint` (46 existing warnings) passed.
-- **Shared golden corpus:** 89 source cases across 44 languages retained intact; 100 runtime cases, 35 normalization cases, and 51 lookup cases execute with 100% C#/TypeScript parity. Remaining reference gaps: **18** span/key cases (down from 24 after closing `ar-01`, `ar-02`, `he-01`, `el-01`, `el-02`, and `uk-02`) and **86** semantic lemma cases.
+Tokenizer v5 slice (Greek monotonic accents & contextual final sigma, Arabic hamza preservation, dual-key folded lookup with in-place canonical DB promotion, space-grouped integers, bare numbers with pure-numeric status-0 filtering, Romance/Romanian clitic fallbacks, Dutch/English idioms, CJK disambiguation, and Vietnamese/Malay multiword compounds):
+- **Server (`dotnet test -c Release`):** 1,750 passed, 0 failed, 7 PostgreSQL-only skipped locally (1,757 total).
+- **Client (`npm test -- --run`):** 1,783 passed across 114 files; `tsc --noEmit`, production build, and `eslint` (46 existing warnings) passed.
+- **Shared golden corpus:** 89 source cases across 44 languages retained intact; 100 runtime cases, 35 normalization cases, and 54 lookup cases execute with 100% C#/TypeScript parity. Remaining reference gaps: **11** span/key cases (down from 24; exact matches 78 / 89 = 87.6%) and **86** semantic lemma cases.
 
 ## Implemented scope
 
@@ -20,10 +20,10 @@ Tokenizer v5 slice (Greek monotonic accents & contextual final sigma, Arabic ham
 
 ## Next priorities
 
-1. **Remaining [18 span/key gaps](../verification/language-support/reference-gap-audit.md):**
-   - Multiword lexical phrases (5 cases: `vi-01`, `vi-02`, `nl-01`, `ms-02`, `en-02`).
-   - Intentional design differences (glued Romance/Romanian clitics, Korean full eojeols, English ASCII apostrophe normalization, pinned CJK segmentation).
-2. **Language quality & device verification:** native review for CJK/Thai/Korean ambiguity and RTL fallback false positives; physical phone testing for touch targets, chips, mining, and offline/reconnect flows.
+1. **Remaining [11 span/key gaps](../verification/language-support/reference-gap-audit.md):**
+   - Intentional product UI/UX contracts (glued Romance/Romanian clitics, Korean full eojeols, English ASCII apostrophe normalization, and Japanese morphemic segmentation).
+2. **Wiktionary lemma candidate chips:** extract base lemmas from inflection definitions for European languages to provide alternative lemma chips similar to Korean KRDICT.
+3. **Language quality & device verification:** native review for CJK/Thai/Korean ambiguity and RTL fallback false positives; physical phone testing for touch targets, chips, mining, and offline/reconnect flows.
 
 ## Preservation contracts
 

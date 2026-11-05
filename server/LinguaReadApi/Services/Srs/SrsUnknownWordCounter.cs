@@ -24,7 +24,7 @@ namespace LinguaReadApi.Services.Srs
         /// Returns unknown-word counts by <see cref="Sentence.Key"/>. A word counts as
         /// unknown if it is the card's own word, if the user's highest-status row for it is
         /// below Known (5), or if it isn't in the vocabulary at all and is longer than one
-        /// character. Known (5) and Ignored (6) words don't count.
+        /// character. Known (5), Ignored (6), and unsaved numeric tokens don't count.
         /// </summary>
         /// <param name="languages">The sentences' languages by id when the caller has
         /// already loaded them; looked up otherwise.</param>
@@ -60,14 +60,22 @@ namespace LinguaReadApi.Services.Srs
                     continue;
                 }
 
-                var vocab = await db.Words.AsNoTracking()
-                    .Where(w => w.UserId == userId && w.LanguageId == group.Key && allKeys.Contains(w.Term.ToLower()))
+                var query = db.Words.AsNoTracking()
+                    .Where(w => w.UserId == userId && w.LanguageId == group.Key);
+                // Scoped normalization and fallback headwords cannot be found with
+                // lower(Term) alone. Keep the indexed path for other languages.
+                if (!Tokenizer.RequiresNormalizedVocabularyLookup(language?.Code)
+                    && !Tokenizer.RequiresLookupFallback(language?.Code)
+                    && !allKeys.Any(key => key.StartsWith("'", StringComparison.Ordinal)))
+                    query = query.Where(w => allKeys.Contains(w.Term.ToLower()));
+                var vocab = await query
                     .Select(w => new { w.WordId, w.Term, w.Status })
                     .ToListAsync(cancellationToken);
 
                 // A lookup, not a dictionary: vocab can hold duplicate rows for one term
                 // (see GetDueCards_DoesNotCrash_WhenVocabHasDuplicateTermRows).
                 var byKey = vocab.ToLookup(w => Tokenizer.NormalizeKey(w.Term, language));
+                var byFoldedKey = vocab.ToLookup(w => Tokenizer.FoldLookupKey(w.Term, language));
 
                 foreach (var sentence in group)
                 {
@@ -77,7 +85,16 @@ namespace LinguaReadApi.Services.Srs
                         var matches = byKey[key].ToList();
                         if (matches.Count == 0)
                         {
-                            if (key.Length > 1) unknown++;
+                            foreach (var candidate in Tokenizer.GetLookupCandidates(key, language))
+                            {
+                                matches = byKey[candidate].ToList();
+                                if (matches.Count == 0) matches = byFoldedKey[candidate].ToList();
+                                if (matches.Count > 0) break;
+                            }
+                        }
+                        if (matches.Count == 0)
+                        {
+                            if (key.Length > 1 && !Tokenizer.IsPureNumericToken(key)) unknown++;
                         }
                         else if (matches.Any(m => m.WordId == sentence.TargetWordId) || matches.Max(m => m.Status) < 5)
                         {

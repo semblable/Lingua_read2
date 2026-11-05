@@ -114,7 +114,7 @@ public class WordsBatchLookupTests : IDisposable
     [InlineData("he", "\"צה\"ל\"", "צה״ל")]
     [InlineData("tr", "IŞIK", "ışık")]
     [InlineData("az", "İL", "il")]
-    [InlineData("el", "λόγος", "ΛΟΓΟΣ")]
+    [InlineData("el", "λόγος", "ΛΌΓΟΣ")]
     [InlineData("fr", "l’eau", "l'eau")]
     public async Task ScopedNormalization_CreateAndBatchReuseLegacyHeadword(string code, string stored, string requested)
     {
@@ -178,6 +178,77 @@ public class WordsBatchLookupTests : IDisposable
         Assert.Equal(2, await check.Words.CountAsync());
         var headword = await check.Words.Include(w => w.Translation).SingleAsync(w => w.WordId == headwordId);
         Assert.Equal(("eau", 3, "learner water"), (headword.Term, headword.Status, headword.Translation?.Translation));
+    }
+
+    [Theory]
+    [InlineData("el", "πού", "που", false)]
+    [InlineData("el", "που", "πού", false)]
+    [InlineData("el", "πού", "που", true)]
+    [InlineData("el", "που", "πού", true)]
+    [InlineData("ar", "إن", "أن", false)]
+    [InlineData("ar", "إن", "أن", true)]
+    public async Task ExplicitWrites_PreserveDistinctHeadwordsWithTheSameFoldedKey(
+        string code, string first, string second, bool firstAlreadySaved)
+    {
+        await using (var setup = new AppDbContext(_options))
+        {
+            (await setup.Languages.SingleAsync(l => l.LanguageId == 1)).Code = code;
+            await setup.SaveChangesAsync();
+        }
+        if (firstAlreadySaved)
+        {
+            var id = await InsertWord(first, status: 3);
+            await using var setup = new AppDbContext(_options);
+            setup.WordTranslations.Add(new WordTranslation { WordId = id, Translation = "first meaning" });
+            await setup.SaveChangesAsync();
+        }
+
+        await using var context = new AppDbContext(_options);
+        var terms = new List<NewTermDto>();
+        if (!firstAlreadySaved) terms.Add(new() { Term = first, Translation = "first meaning", Status = 3 });
+        terms.Add(new() { Term = second, Translation = "second meaning", Status = 1 });
+        var result = await Controller(context).AddTermsBatch(new AddTermBatchDto
+        {
+            LanguageId = 1, KeepExistingStatus = true, Terms = terms
+        });
+        Assert.IsType<OkObjectResult>(result);
+
+        await using var check = new AppDbContext(_options);
+        var words = await check.Words.Include(w => w.Translation).Where(w => w.LanguageId == 1).ToListAsync();
+        Assert.Equal(2, words.Count);
+        var firstWord = Assert.Single(words, w => w.Term == first);
+        var secondWord = Assert.Single(words, w => w.Term == second);
+        Assert.Equal((3, "first meaning"), (firstWord.Status, firstWord.Translation?.Translation));
+        Assert.Equal((1, "second meaning"), (secondWord.Status, secondWord.Translation?.Translation));
+    }
+
+    [Theory]
+    [InlineData("el", "πού", "που")]
+    [InlineData("ar", "إن", "أن")]
+    public async Task CreateWord_DoesNotOverwriteADifferentCanonicalHeadword(string code, string stored, string requested)
+    {
+        var wordId = await InsertWord(stored, status: 3);
+        await using (var setup = new AppDbContext(_options))
+        {
+            (await setup.Languages.SingleAsync(l => l.LanguageId == 1)).Code = code;
+            setup.Texts.Add(new Text { TextId = 1, UserId = UserId, LanguageId = 1, Title = "Fixture", Content = requested });
+            setup.WordTranslations.Add(new WordTranslation { WordId = wordId, Translation = "first meaning" });
+            await setup.SaveChangesAsync();
+        }
+
+        await using var context = new AppDbContext(_options);
+        var result = await Controller(context).CreateWord(new CreateWordDto
+        {
+            TextId = 1, Term = requested, Translation = "second meaning", Status = 1
+        });
+        var saved = Assert.IsType<WordResponseDto>(Assert.IsType<CreatedAtActionResult>(result.Result).Value);
+        Assert.NotEqual(wordId, saved.WordId);
+        Assert.Equal(requested, saved.Term);
+
+        await using var check = new AppDbContext(_options);
+        Assert.Equal(2, await check.Words.CountAsync());
+        var original = await check.Words.Include(w => w.Translation).SingleAsync(w => w.WordId == wordId);
+        Assert.Equal((stored, 3, "first meaning"), (original.Term, original.Status, original.Translation?.Translation));
     }
 
     private async Task<int> InsertWord(string term, int status, int languageId = 1)

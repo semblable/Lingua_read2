@@ -205,6 +205,27 @@ describe('ClozeReviewCard', () => {
     expect(screen.getByText(/accent difference from café/i)).toBeInTheDocument();
   });
 
+  test.each([
+    ['ば', 'は'],
+    ['ぱ', 'ば'],
+    ['ガ', 'カ'],
+    ['أمل', 'امل'],
+    ['क़', 'क'],
+  ])('preserves meaningful non-Latin marks when matching %s against %s', (term, answer) => {
+    const { rerender } = render(<ClozeReviewCard {...baseProps} term={term} />);
+    fireEvent.change(screen.getByTestId('cloze-input'), { target: { value: answer } });
+    rerender(<ClozeReviewCard {...baseProps} term={term} isFlipped={true} />);
+    expect(screen.getByTestId('cloze-user-answer')).toHaveAttribute('data-cloze-match', 'false');
+  });
+
+  test('accepts canonically equivalent Japanese voicing marks', () => {
+    const { rerender } = render(<ClozeReviewCard {...baseProps} term="ば" />);
+    fireEvent.change(screen.getByTestId('cloze-input'), { target: { value: 'は\u3099' } });
+    rerender(<ClozeReviewCard {...baseProps} term="ば" isFlipped={true} />);
+    expect(screen.getByTestId('cloze-user-answer')).toHaveAttribute('data-cloze-match', 'true');
+    expect(screen.getByLabelText('correct')).toBeInTheDocument();
+  });
+
   test('displays hint usage badge and recommended grade advice on the back face', () => {
     const { rerender } = render(<ClozeReviewCard {...baseProps} term="cat" />);
     const hintButton = screen.getByTestId('cloze-hint-button');

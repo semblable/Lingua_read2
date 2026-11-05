@@ -141,12 +141,15 @@ const ClozeReviewCard: React.FC<ClozeReviewCardProps> = ({
   });
 
   // Matching evaluation: exact match or diacritic-tolerant match
-  const normalizedTyped = typedAnswer.trim().toLowerCase();
-  const normalizedTerm = term.trim().toLowerCase();
+  const normalizedTyped = typedAnswer.trim().normalize('NFC').toLowerCase();
+  const normalizedTerm = term.trim().normalize('NFC').toLowerCase();
   const exactMatch = normalizedTyped.length > 0 && normalizedTyped === normalizedTerm;
 
+  // Tolerate accents on Latin letters, preserving phonemic marks in other
+  // scripts (e.g. Japanese dakuten and Indic vowel signs).
   const stripDiacritics = (s: string) =>
-    s.normalize('NFD').replace(/\p{Diacritic}/gu, '');
+    s.normalize('NFD').replace(/(\p{Script=Latin})(\p{M}+)/gu,
+      (_match, base: string, marks: string) => base + marks.replace(/\p{Diacritic}/gu, ''));
   const diacriticTyped = stripDiacritics(normalizedTyped);
   const diacriticTerm = stripDiacritics(normalizedTerm);
   const diacriticMatch = diacriticTyped.length > 0 && diacriticTyped === diacriticTerm;

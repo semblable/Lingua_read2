@@ -187,7 +187,9 @@ public class PostgresStudyActivityTests
         LessonStudyActivity.Record(c, UserId, 1, "Synthetic", 1, "one two. one!", null, "migration-pass", "read", words: 3);
         await c.SaveChangesAsync();
         await Assert.ThrowsAsync<PostgresException>(() => migrator.MigrateAsync(before));
-        Assert.Single(await c.LessonStudyEvents.ToListAsync());
+        // Earlier successful downgrade steps may already have removed additive
+        // columns. Inspect history through a column present in both schemas.
+        Assert.Single(await c.LessonStudyEvents.Select(e => e.LessonStudyEventId).ToListAsync());
         Assert.Equal(beforeData, await Snapshot(c));
     }
 

@@ -25,6 +25,8 @@ You can select a single word or drag across several words to capture a **multi-w
 
 The reader's **Read** and **Listened** totals support partial passes and rereads. Open either total to enter a value such as **2.5×** or use the **−0.1× / +0.1×** buttons, then press Enter or **Save total**. Reading edits adjust words-read statistics and goals; corrections are recorded on the day you save them and preserve separately earned sentence credit. Changing a total does not finish or reopen the lesson. Listening totals do not alter tracked playback time; **Record a listen** can separately add time spent listening outside the app. Editing requires an online connection, and a total changed elsewhere must be refreshed before saving.
 
+See [fractional lesson totals](docs/FRACTIONAL_STUDY_TOTALS.md) for examples, sentence-credit rules, corrections after content/language changes, and upgrade requirements.
+
 ## Books & Import
 
 Import longer texts by **pasting content** or uploading **`.txt`** or **`.epub`** files. Books are automatically split into bite-sized **lessons**, and your reading progress is tracked per book and per lesson. Add multiple **tags** to organize your library by topic, difficulty, or source.

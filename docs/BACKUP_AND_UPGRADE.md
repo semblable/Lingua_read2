@@ -68,6 +68,22 @@ test word, review a card, and play/seek audio. Confirm media and secrets still
 work. Major PostgreSQL upgrades require their own tested dump/restore procedure;
 changing the image version over an old data volume is not a migration.
 
+### Fractional lesson totals
+
+The [fractional Read/Listened controls](FRACTIONAL_STUDY_TOTALS.md) require
+`20261105122010_FractionalLessonStudyPasses`, applied when the upgraded API starts.
+Deploy the matching client and server together. Existing study events become
+1.0× passes; older activity without pass events is not converted into invented
+counts. Reading edits affect words-read statistics and goals, while listening
+time remains separate.
+
+Verify an existing lesson's totals and use a disposable lesson to save 2.5×,
+reduce to 0.3×, and record another whole pass. Check words-read totals and confirm
+that listening-count edits do not change tracked seconds. The schema downgrade
+refuses to discard fractional corrections. Older binaries do not interpret those
+corrections; restoring the compatible checkpoint is required for an old-version
+recovery rather than simply switching images.
+
 ## Recovery
 
 Stop writers and preserve the failed state for diagnosis. Restore the pre-upgrade

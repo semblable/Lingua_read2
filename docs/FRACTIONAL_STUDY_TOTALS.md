@@ -26,6 +26,9 @@ keystroke or accidentally recording a partly typed value.
 - Content changes do not revalue all old passes. Added volume uses the current
   lesson; reductions proportionally correct the retained historical credit when
   multiple content revisions are represented.
+  Consecutive reductions after a content edit use the same historical starting
+  basis, so stepping from 1× to 0.5× gives the same rounded credit as entering
+  0.5× directly. Saving an unchanged total does not rewrite historical credit.
   If the lesson has changed language, editing its Read total is rejected so
   historical credit cannot be deducted from the new language.
 - Listened edits change passes independently of listening time. Playback still
@@ -53,3 +56,20 @@ static demo implements fractional counters locally without simulating real goals
 or earned statistics. PostgreSQL concurrency and migration tests require the
 isolated `LINGUA_STUDY_TEST_POSTGRES` database. Browser/physical phone verification
 is separate from the automated component tests.
+
+## Review and verification (2026-11-05)
+
+Independent review of commit `82077565` identified cross-language deductions and
+rounding drift across consecutive reductions after content changes. Both were
+fixed and re-reviewed before the push to `dev`, with dedicated regression tests.
+
+Local implementation checks passed 1,810 client tests and 1,767 server tests;
+nine PostgreSQL-specific tests were skipped locally. Type checking, lint (42
+existing warnings), application/demo builds, and six demo tests passed. These
+working-tree runs included unrelated local edits excluded from the feature commit.
+The commit-specific [staging run](https://github.com/semblable/Lingua_read2/actions/runs/42029272598)
+passed 1,774 server tests but failed one historical downgrade assertion because
+it projected newly removed columns; the assertion now inspects the surviving
+event ID. That run did not deploy the feature. Confirm a successful subsequent
+staging run before promotion. Visual verification was blocked by browser access;
+physical-phone and real disconnect/reconnect checks remain open.

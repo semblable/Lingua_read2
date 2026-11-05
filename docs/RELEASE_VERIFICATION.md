@@ -22,6 +22,22 @@ No personal library, production database or real provider credentials were used.
 
 This supports bounded data-preservation/replay behavior, not linguistic readiness for all 44 languages. See the [short roadmap](LANGUAGE_SUPPORT_PLAN.md) for remaining work and counting constraints.
 
+## Fractional lesson totals (2026-11-05)
+
+[Behavior, accounting rules, review findings, and local verification](FRACTIONAL_STUDY_TOTALS.md)
+cover direct input, 0.1× steps, sentence-credit reconciliation, retry/reset
+protection, and migration compatibility. Feature commit `82077565` received an
+independent review; both accounting findings were fixed and re-reviewed.
+
+Local checks passed 1,810 client tests and 1,767 server tests, with nine
+PostgreSQL-specific tests skipped, plus type checking, lint, builds and six demo
+tests. These working-tree results included unrelated edits excluded from the
+commit. The [commit-specific staging run](https://github.com/semblable/Lingua_read2/actions/runs/42029272598)
+ran PostgreSQL checks: 1,774 server tests passed and one historical downgrade
+assertion failed after projecting removed columns. A follow-up corrects that
+assertion to inspect the surviving event ID. Deployment/promotion evidence needs
+a successful subsequent run; browser access prevented visual verification.
+
 ## Still open
 
 Physical-phone/touch and iOS/Android audio lifecycle; real browser disconnect/reconnect; independent cold install; Anki desktop/mobile import UI; live-provider success; large-library performance; and production upgrade/old-binary rollback.

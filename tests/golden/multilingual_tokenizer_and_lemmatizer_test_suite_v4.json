@@ -8080,6 +8080,12 @@
           "lookup_key": "او"
         },
         {
+          "surface_span": "۴۵٬۰۰۰",
+          "start": 3,
+          "end": 9,
+          "lookup_key": "۴۵٬۰۰۰"
+        },
+        {
           "surface_span": "ریال",
           "start": 10,
           "end": 14,
@@ -8113,7 +8119,6 @@
       "provenance": {
         "reference_id": "fa-02",
         "differences": [
-          "runtime_token_spans_or_keys",
           "reference_semantic_lemmas"
         ],
         "reference_lemma_assertion": "reference_only: broad semantic lemmatization is outside the runtime tokenizer contract"
@@ -8212,6 +8217,12 @@
           "lookup_key": "מכרה"
         },
         {
+          "surface_span": "1,500",
+          "start": 16,
+          "end": 21,
+          "lookup_key": "1,500"
+        },
+        {
           "surface_span": "מכשירים",
           "start": 22,
           "end": 29,
@@ -8227,7 +8238,6 @@
       "provenance": {
         "reference_id": "he-02",
         "differences": [
-          "runtime_token_spans_or_keys",
           "reference_semantic_lemmas"
         ],
         "reference_lemma_assertion": "reference_only: broad semantic lemmatization is outside the runtime tokenizer contract"
@@ -8483,6 +8493,18 @@
           "lookup_key": "payé"
         },
         {
+          "surface_span": "12 500,75",
+          "start": 10,
+          "end": 19,
+          "lookup_key": "12 500,75"
+        },
+        {
+          "surface_span": "€",
+          "start": 20,
+          "end": 21,
+          "lookup_key": "€"
+        },
+        {
           "surface_span": "hier",
           "start": 22,
           "end": 26,
@@ -8492,7 +8514,6 @@
       "provenance": {
         "reference_id": "fr-03",
         "differences": [
-          "runtime_token_spans_or_keys",
           "reference_semantic_lemmas"
         ],
         "reference_lemma_assertion": "reference_only: broad semantic lemmatization is outside the runtime tokenizer contract"
@@ -8522,10 +8543,10 @@
           "lookup_key": "un"
         },
         {
-          "surface_span": "po",
+          "surface_span": "po'",
           "start": 7,
-          "end": 9,
-          "lookup_key": "po"
+          "end": 10,
+          "lookup_key": "po'"
         },
         {
           "surface_span": "d'acqua",
@@ -8744,10 +8765,10 @@
       "sentence": "'n Man het 'n boek oor Suid-Afrikaanse voëls gelees.",
       "tokens": [
         {
-          "surface_span": "n",
-          "start": 1,
+          "surface_span": "'n",
+          "start": 0,
           "end": 2,
-          "lookup_key": "n"
+          "lookup_key": "'n"
         },
         {
           "surface_span": "Man",
@@ -8762,10 +8783,10 @@
           "lookup_key": "het"
         },
         {
-          "surface_span": "n",
-          "start": 12,
+          "surface_span": "'n",
+          "start": 11,
           "end": 13,
-          "lookup_key": "n"
+          "lookup_key": "'n"
         },
         {
           "surface_span": "boek",
@@ -8801,7 +8822,6 @@
       "provenance": {
         "reference_id": "af-01",
         "differences": [
-          "runtime_token_spans_or_keys",
           "reference_semantic_lemmas"
         ],
         "reference_lemma_assertion": "reference_only: broad semantic lemmatization is outside the runtime tokenizer contract"
@@ -8837,10 +8857,10 @@
           "lookup_key": "môreoggend"
         },
         {
-          "surface_span": "n",
-          "start": 20,
+          "surface_span": "'n",
+          "start": 19,
           "end": 21,
-          "lookup_key": "n"
+          "lookup_key": "'n"
         },
         {
           "surface_span": "bietjie",
@@ -8857,9 +8877,7 @@
       ],
       "provenance": {
         "reference_id": "af-02",
-        "differences": [
-          "runtime_token_spans_or_keys"
-        ],
+        "differences": [],
         "reference_lemma_assertion": "reference_only: broad semantic lemmatization is outside the runtime tokenizer contract"
       }
     },
@@ -9460,6 +9478,12 @@
           "lookup_key": "za"
         },
         {
+          "surface_span": "29,99",
+          "start": 37,
+          "end": 42,
+          "lookup_key": "29,99"
+        },
+        {
           "surface_span": "zł",
           "start": 43,
           "end": 45,
@@ -9469,7 +9493,6 @@
       "provenance": {
         "reference_id": "pl-02",
         "differences": [
-          "runtime_token_spans_or_keys",
           "reference_semantic_lemmas"
         ],
         "reference_lemma_assertion": "reference_only: broad semantic lemmatization is outside the runtime tokenizer contract"
@@ -10220,12 +10243,23 @@
           "start": 35,
           "end": 41,
           "lookup_key": "cuesta"
+        },
+        {
+          "surface_span": "10.000,50",
+          "start": 42,
+          "end": 51,
+          "lookup_key": "10.000,50"
+        },
+        {
+          "surface_span": "€",
+          "start": 52,
+          "end": 53,
+          "lookup_key": "€"
         }
       ],
       "provenance": {
         "reference_id": "es-01",
         "differences": [
-          "runtime_token_spans_or_keys",
           "reference_semantic_lemmas"
         ],
         "reference_lemma_assertion": "reference_only: broad semantic lemmatization is outside the runtime tokenizer contract"
@@ -10379,6 +10413,18 @@
           "lookup_key": "custou"
         },
         {
+          "surface_span": "1250,99",
+          "start": 22,
+          "end": 29,
+          "lookup_key": "1250,99"
+        },
+        {
+          "surface_span": "€",
+          "start": 30,
+          "end": 31,
+          "lookup_key": "€"
+        },
+        {
           "surface_span": "na",
           "start": 32,
           "end": 34,
@@ -10394,7 +10440,6 @@
       "provenance": {
         "reference_id": "pt-02",
         "differences": [
-          "runtime_token_spans_or_keys",
           "reference_semantic_lemmas"
         ],
         "reference_lemma_assertion": "reference_only: broad semantic lemmatization is outside the runtime tokenizer contract"
@@ -10492,6 +10537,18 @@
           "lookup_key": "стоит"
         },
         {
+          "surface_span": "1 500,50",
+          "start": 12,
+          "end": 20,
+          "lookup_key": "1 500,50"
+        },
+        {
+          "surface_span": "₽",
+          "start": 21,
+          "end": 22,
+          "lookup_key": "₽"
+        },
+        {
           "surface_span": "в",
           "start": 23,
           "end": 24,
@@ -10507,7 +10564,6 @@
       "provenance": {
         "reference_id": "ru-02",
         "differences": [
-          "runtime_token_spans_or_keys",
           "reference_semantic_lemmas"
         ],
         "reference_lemma_assertion": "reference_only: broad semantic lemmatization is outside the runtime tokenizer contract"
@@ -10605,10 +10661,10 @@
           "lookup_key": "коштує"
         },
         {
-          "surface_span": "грн",
+          "surface_span": "грн.",
           "start": 32,
-          "end": 35,
-          "lookup_key": "грн"
+          "end": 36,
+          "lookup_key": "грн."
         }
       ],
       "provenance": {
@@ -10632,10 +10688,10 @@
       "sentence": "'s Morgens zag ik een reëel IJsselmeerschip.",
       "tokens": [
         {
-          "surface_span": "s",
-          "start": 1,
+          "surface_span": "'s",
+          "start": 0,
           "end": 2,
-          "lookup_key": "s"
+          "lookup_key": "'s"
         },
         {
           "surface_span": "Morgens",
@@ -10713,6 +10769,18 @@
           "lookup_key": "kost"
         },
         {
+          "surface_span": "€",
+          "start": 15,
+          "end": 16,
+          "lookup_key": "€"
+        },
+        {
+          "surface_span": "25.000,-",
+          "start": 17,
+          "end": 25,
+          "lookup_key": "25.000,-"
+        },
+        {
           "surface_span": "in",
           "start": 26,
           "end": 28,
@@ -10728,7 +10796,6 @@
       "provenance": {
         "reference_id": "nl-02",
         "differences": [
-          "runtime_token_spans_or_keys",
           "reference_semantic_lemmas"
         ],
         "reference_lemma_assertion": "reference_only: broad semantic lemmatization is outside the runtime tokenizer contract"
@@ -10808,16 +10875,16 @@
       "sentence": "2026-ban 10%-os növekedés várható.",
       "tokens": [
         {
-          "surface_span": "ban",
-          "start": 5,
+          "surface_span": "2026-ban",
+          "start": 0,
           "end": 8,
-          "lookup_key": "ban"
+          "lookup_key": "2026-ban"
         },
         {
-          "surface_span": "os",
-          "start": 13,
+          "surface_span": "10%-os",
+          "start": 9,
           "end": 15,
-          "lookup_key": "os"
+          "lookup_key": "10%-os"
         },
         {
           "surface_span": "növekedés",
@@ -10835,7 +10902,6 @@
       "provenance": {
         "reference_id": "hu-02",
         "differences": [
-          "runtime_token_spans_or_keys",
           "reference_semantic_lemmas"
         ],
         "reference_lemma_assertion": "reference_only: broad semantic lemmatization is outside the runtime tokenizer contract"
@@ -10889,22 +10955,15 @@
           "lookup_key": "käy"
         },
         {
-          "surface_span": "EU",
+          "surface_span": "EU:ssa",
           "start": 33,
-          "end": 35,
-          "lookup_key": "eu"
-        },
-        {
-          "surface_span": "ssa",
-          "start": 36,
           "end": 39,
-          "lookup_key": "ssa"
+          "lookup_key": "eu:ssa"
         }
       ],
       "provenance": {
         "reference_id": "fi-01",
         "differences": [
-          "runtime_token_spans_or_keys",
           "reference_semantic_lemmas"
         ],
         "reference_lemma_assertion": "reference_only: broad semantic lemmatization is outside the runtime tokenizer contract"
@@ -11122,6 +11181,18 @@
           "lookup_key": "turi"
         },
         {
+          "surface_span": "1 000,00",
+          "start": 9,
+          "end": 17,
+          "lookup_key": "1 000,00"
+        },
+        {
+          "surface_span": "€",
+          "start": 18,
+          "end": 19,
+          "lookup_key": "€"
+        },
+        {
           "surface_span": "sąskaitoje",
           "start": 20,
           "end": 30,
@@ -11131,7 +11202,6 @@
       "provenance": {
         "reference_id": "lt-02",
         "differences": [
-          "runtime_token_spans_or_keys",
           "reference_semantic_lemmas"
         ],
         "reference_lemma_assertion": "reference_only: broad semantic lemmatization is outside the runtime tokenizer contract"
@@ -11323,6 +11393,18 @@
           "lookup_key": "košta"
         },
         {
+          "surface_span": "19,99",
+          "start": 13,
+          "end": 18,
+          "lookup_key": "19,99"
+        },
+        {
+          "surface_span": "€",
+          "start": 19,
+          "end": 20,
+          "lookup_key": "€"
+        },
+        {
           "surface_span": "u",
           "start": 21,
           "end": 22,
@@ -11338,7 +11420,6 @@
       "provenance": {
         "reference_id": "hr-02",
         "differences": [
-          "runtime_token_spans_or_keys",
           "reference_semantic_lemmas"
         ],
         "reference_lemma_assertion": "reference_only: broad semantic lemmatization is outside the runtime tokenizer contract"
@@ -11676,12 +11757,17 @@
           "start": 22,
           "end": 24,
           "lookup_key": "ob"
+        },
+        {
+          "surface_span": "14.30",
+          "start": 25,
+          "end": 30,
+          "lookup_key": "14.30"
         }
       ],
       "provenance": {
         "reference_id": "sl-02",
         "differences": [
-          "runtime_token_spans_or_keys",
           "reference_semantic_lemmas"
         ],
         "reference_lemma_assertion": "reference_only: broad semantic lemmatization is outside the runtime tokenizer contract"
@@ -11907,12 +11993,17 @@
           "start": 28,
           "end": 30,
           "lookup_key": "rp"
+        },
+        {
+          "surface_span": "150.000,00",
+          "start": 30,
+          "end": 40,
+          "lookup_key": "150.000,00"
         }
       ],
       "provenance": {
         "reference_id": "id-02",
         "differences": [
-          "runtime_token_spans_or_keys",
           "reference_semantic_lemmas"
         ],
         "reference_lemma_assertion": "reference_only: broad semantic lemmatization is outside the runtime tokenizer contract"
@@ -12026,6 +12117,12 @@
           "start": 33,
           "end": 35,
           "lookup_key": "rm"
+        },
+        {
+          "surface_span": "50.00",
+          "start": 35,
+          "end": 40,
+          "lookup_key": "50.00"
         }
       ],
       "provenance": {
@@ -12173,6 +12270,18 @@
           "lookup_key": "state-of-the-art"
         },
         {
+          "surface_span": "$",
+          "start": 32,
+          "end": 33,
+          "lookup_key": "$"
+        },
+        {
+          "surface_span": "10,000.50",
+          "start": 33,
+          "end": 42,
+          "lookup_key": "10,000.50"
+        },
+        {
           "surface_span": "system",
           "start": 43,
           "end": 49,
@@ -12185,10 +12294,10 @@
           "lookup_key": "asked"
         },
         {
-          "surface_span": "Dr",
+          "surface_span": "Dr.",
           "start": 58,
-          "end": 60,
-          "lookup_key": "dr"
+          "end": 61,
+          "lookup_key": "dr."
         },
         {
           "surface_span": "O'Connor",
@@ -12235,6 +12344,12 @@
           "start": 10,
           "end": 16,
           "lookup_key": "bought"
+        },
+        {
+          "surface_span": "3.5",
+          "start": 17,
+          "end": 20,
+          "lookup_key": "3.5"
         },
         {
           "surface_span": "kg",
@@ -12285,22 +12400,10 @@
           "lookup_key": "the"
         },
         {
-          "surface_span": "U",
+          "surface_span": "U.S.A.",
           "start": 56,
-          "end": 57,
-          "lookup_key": "u"
-        },
-        {
-          "surface_span": "S",
-          "start": 58,
-          "end": 59,
-          "lookup_key": "s"
-        },
-        {
-          "surface_span": "A",
-          "start": 60,
-          "end": 61,
-          "lookup_key": "a"
+          "end": 62,
+          "lookup_key": "u.s.a."
         }
       ],
       "provenance": {
@@ -12555,13 +12658,191 @@
       "provenance": {
         "kind": "explicit_session_regression"
       }
+    },
+    {
+      "id": "pl-decimal-comma",
+      "language": {
+        "code": "pl",
+        "wordCharacters": "\\p{L}\\p{M}",
+        "characterSubstitutions": "",
+        "parserType": "spacedel"
+      },
+      "input": "To kosztuje 12,5 zł.",
+      "sentence": "To kosztuje 12,5 zł.",
+      "tokens": [
+        {
+          "surface_span": "To",
+          "start": 0,
+          "end": 2,
+          "lookup_key": "to"
+        },
+        {
+          "surface_span": "kosztuje",
+          "start": 3,
+          "end": 11,
+          "lookup_key": "kosztuje"
+        },
+        {
+          "surface_span": "12,5",
+          "start": 12,
+          "end": 16,
+          "lookup_key": "12,5"
+        },
+        {
+          "surface_span": "zł",
+          "start": 17,
+          "end": 19,
+          "lookup_key": "zł"
+        }
+      ],
+      "provenance": {
+        "kind": "explicit_session_regression"
+      }
+    },
+    {
+      "id": "en-decimal-and-elision-preservation",
+      "language": {
+        "code": "en",
+        "wordCharacters": "a-zA-ZÀ-ÖØ-öø-ɏḀ-ỿ\\p{M}",
+        "characterSubstitutions": "´='|`='|’='|‘='|...=…|..=‥",
+        "parserType": "spacedel"
+      },
+      "input": "don't chase the dogs' 'em 'tis 3.14.",
+      "sentence": "don't chase the dogs' 'em 'tis 3.14.",
+      "tokens": [
+        {
+          "surface_span": "don't",
+          "start": 0,
+          "end": 5,
+          "lookup_key": "don't"
+        },
+        {
+          "surface_span": "chase",
+          "start": 6,
+          "end": 11,
+          "lookup_key": "chase"
+        },
+        {
+          "surface_span": "the",
+          "start": 12,
+          "end": 15,
+          "lookup_key": "the"
+        },
+        {
+          "surface_span": "dogs",
+          "start": 16,
+          "end": 20,
+          "lookup_key": "dogs"
+        },
+        {
+          "surface_span": "em",
+          "start": 23,
+          "end": 25,
+          "lookup_key": "em"
+        },
+        {
+          "surface_span": "tis",
+          "start": 27,
+          "end": 30,
+          "lookup_key": "tis"
+        },
+        {
+          "surface_span": "3.14",
+          "start": 31,
+          "end": 35,
+          "lookup_key": "3.14"
+        }
+      ],
+      "provenance": {
+        "kind": "explicit_session_regression"
+      }
+    },
+    {
+      "id": "pt-elision-preservation",
+      "language": {
+        "code": "pt",
+        "wordCharacters": "a-zA-ZÀ-ÖØ-öø-ɏḀ-ỿ\\p{M}",
+        "characterSubstitutions": "´='|`='|’='|‘='|...=…|..=‥",
+        "parserType": "spacedel"
+      },
+      "input": "Um copo d'água em Sant'Ana.",
+      "sentence": "Um copo d'água em Sant'Ana.",
+      "tokens": [
+        {
+          "surface_span": "Um",
+          "start": 0,
+          "end": 2,
+          "lookup_key": "um"
+        },
+        {
+          "surface_span": "copo",
+          "start": 3,
+          "end": 7,
+          "lookup_key": "copo"
+        },
+        {
+          "surface_span": "d'água",
+          "start": 8,
+          "end": 14,
+          "lookup_key": "d'água"
+        },
+        {
+          "surface_span": "em",
+          "start": 15,
+          "end": 17,
+          "lookup_key": "em"
+        },
+        {
+          "surface_span": "Sant'Ana",
+          "start": 18,
+          "end": 26,
+          "lookup_key": "sant'ana"
+        }
+      ],
+      "provenance": {
+        "kind": "explicit_session_regression"
+      }
+    },
+    {
+      "id": "uk-space-decimal",
+      "language": {
+        "code": "uk",
+        "wordCharacters": "\\p{L}\\p{M}",
+        "characterSubstitutions": "",
+        "parserType": "spacedel"
+      },
+      "input": "😀 Ціна 1 250,00 грн.",
+      "sentence": "😀 Ціна 1 250,00 грн.",
+      "tokens": [
+        {
+          "surface_span": "Ціна",
+          "start": 3,
+          "end": 7,
+          "lookup_key": "ціна"
+        },
+        {
+          "surface_span": "1 250,00",
+          "start": 8,
+          "end": 16,
+          "lookup_key": "1 250,00"
+        },
+        {
+          "surface_span": "грн.",
+          "start": 17,
+          "end": 21,
+          "lookup_key": "грн."
+        }
+      ],
+      "provenance": {
+        "differences": []
+      }
     }
   ],
   "reference_gap_summary": {
     "source_cases": 89,
-    "runtime_cases": 96,
+    "runtime_cases": 100,
     "source_languages": 44,
-    "cases_with_runtime_span_or_key_differences": 40,
+    "cases_with_runtime_span_or_key_differences": 24,
     "cases_with_reference_semantic_lemmas": 86,
     "explanation": "All source cases run against the current documented runtime contract; the intact reference suite records aspirational phrase grouping, numeric tokens, and multilingual semantic lemmas that these tokenizers do not provide. No source case is skipped or represented as semantically implemented."
   },
@@ -12749,6 +13030,30 @@
     {
       "id": "fr-simple-sigma",
       "lang": "fr",
+      "term": "ΟΣ",
+      "expected": "οσ"
+    },
+    {
+      "id": "it-simple-dotted-i",
+      "lang": "it",
+      "term": "İ",
+      "expected": "i"
+    },
+    {
+      "id": "it-simple-sigma",
+      "lang": "it",
+      "term": "ΟΣ",
+      "expected": "οσ"
+    },
+    {
+      "id": "ca-simple-dotted-i",
+      "lang": "ca",
+      "term": "İ",
+      "expected": "i"
+    },
+    {
+      "id": "ca-simple-sigma",
+      "lang": "ca",
       "term": "ΟΣ",
       "expected": "οσ"
     }
@@ -13057,6 +13362,174 @@
         "ax́e"
       ],
       "expected": "ax́e"
+    },
+    {
+      "id": "it-elision-l-validated",
+      "lang": "it",
+      "term": "l'acqua",
+      "vocabulary": [
+        "acqua"
+      ],
+      "expected": "acqua"
+    },
+    {
+      "id": "it-elision-d-validated",
+      "lang": "it",
+      "term": "d'acqua",
+      "vocabulary": [
+        "acqua"
+      ],
+      "expected": "acqua"
+    },
+    {
+      "id": "it-elision-un-validated",
+      "lang": "it",
+      "term": "un'occhiata",
+      "vocabulary": [
+        "occhiata"
+      ],
+      "expected": "occhiata"
+    },
+    {
+      "id": "it-elision-quell-validated",
+      "lang": "it",
+      "term": "quell'albero",
+      "vocabulary": [
+        "albero"
+      ],
+      "expected": "albero"
+    },
+    {
+      "id": "it-elision-po-validated",
+      "lang": "it",
+      "term": "po'",
+      "vocabulary": [
+        "po"
+      ],
+      "expected": "po"
+    },
+    {
+      "id": "it-elision-po-curly-exact-first",
+      "lang": "it",
+      "term": "Po’",
+      "vocabulary": [
+        "po",
+        "po'"
+      ],
+      "expected": "po'"
+    },
+    {
+      "id": "it-elision-exact-first",
+      "lang": "it",
+      "term": "d'accordo",
+      "vocabulary": [
+        "accordo",
+        "d'accordo"
+      ],
+      "expected": "d'accordo"
+    },
+    {
+      "id": "it-elision-no-nell",
+      "lang": "it",
+      "term": "nell'ombra",
+      "vocabulary": [
+        "ombra"
+      ],
+      "expected": null
+    },
+    {
+      "id": "it-elision-no-qualcos",
+      "lang": "it",
+      "term": "qualcos'altro",
+      "vocabulary": [
+        "altro"
+      ],
+      "expected": null
+    },
+    {
+      "id": "it-elision-no-ce",
+      "lang": "it",
+      "term": "c'è",
+      "vocabulary": [
+        "è",
+        "essere"
+      ],
+      "expected": null
+    },
+    {
+      "id": "it-elision-missing-validation",
+      "lang": "it",
+      "term": "un'idea",
+      "vocabulary": [
+        "acqua"
+      ],
+      "expected": null
+    },
+    {
+      "id": "ca-elision-l-validated",
+      "lang": "ca",
+      "term": "L'home",
+      "vocabulary": [
+        "home"
+      ],
+      "expected": "home"
+    },
+    {
+      "id": "ca-elision-d-validated",
+      "lang": "ca",
+      "term": "d'aigua",
+      "vocabulary": [
+        "aigua"
+      ],
+      "expected": "aigua"
+    },
+    {
+      "id": "ca-elision-d-un-validated",
+      "lang": "ca",
+      "term": "d'un",
+      "vocabulary": [
+        "un"
+      ],
+      "expected": "un"
+    },
+    {
+      "id": "ca-elision-exact-first",
+      "lang": "ca",
+      "term": "l'església",
+      "vocabulary": [
+        "església",
+        "l’església"
+      ],
+      "expected": "l'església"
+    },
+    {
+      "id": "ca-elision-no-clitic-chain",
+      "lang": "ca",
+      "term": "d'anar-te'n",
+      "vocabulary": [
+        "anar-te'n",
+        "anar"
+      ],
+      "expected": null
+    },
+    {
+      "id": "ca-elision-no-enclitic",
+      "lang": "ca",
+      "term": "Dona'm-ho",
+      "vocabulary": [
+        "dona",
+        "donar"
+      ],
+      "expected": null
+    },
+    {
+      "id": "ca-elision-missing-validation",
+      "lang": "ca",
+      "term": "l'objecte",
+      "vocabulary": [
+        "aigua"
+      ],
+      "expected": null
     }
   ],
   "korean_candidate_cases": [

@@ -230,6 +230,8 @@ namespace LinguaReadApi.Services.Tokenization
             var chinese = language?.ParserType == ChineseSegmenter.Profile;
             var japanese = language?.ParserType == JapaneseSegmenter.Profile;
             var thai = language?.ParserType == ThaiSegmenter.Profile;
+            var code = BaseLanguageCode(language?.Code);
+            var italian = code == "it";
             var tokens = new List<Token>();
             var i = 0;
             var len = processed.Length;
@@ -259,16 +261,33 @@ namespace LinguaReadApi.Services.Tokenization
                         .Select(word => new Token(word.Text, word.Start, word.End, true)));
                     i = end;
                 }
+                else if (TryConsumeNumericOrCurrencyToken(processed, span, coreRegex, i, chinese, japanese, thai, out var numericEnd))
+                {
+                    tokens.Add(new Token(processed.Substring(i, numericEnd - i), i, numericEnd, IsWord: true));
+                    i = numericEnd;
+                }
+                else if (TryConsumeLeadingApostrophe(processed, span, coreRegex, i, code, out var apostropheEnd))
+                {
+                    tokens.Add(new Token(processed.Substring(i, apostropheEnd - i), i, apostropheEnd, true));
+                    i = apostropheEnd;
+                }
                 else if (CanStartWord(coreRegex, span, i))
                 {
                     var start = i;
-                    i++;
+                    i = FindDottedInitialismEnd(processed, span, coreRegex, start);
                     while (i < len)
                     {
                         if ((chinese && ChineseSegmenter.IsHanAt(processed, i))
                             || (japanese && JapaneseSegmenter.IsJapaneseScriptAt(processed, i))
                             || (thai && ThaiSegmenter.IsThaiAt(processed, i))) break;
                         if (IsCoreWordChar(coreRegex, span, i))
+                        {
+                            i++;
+                            continue;
+                        }
+                        if (code == "fi" && processed[i] == ':' && i > start
+                            && (char.IsLetter(processed[i - 1]) || processed[i - 1] == '.') && i + 1 < len
+                            && char.IsLower(processed[i + 1]) && IsCoreWordChar(coreRegex, span, i + 1))
                         {
                             i++;
                             continue;
@@ -291,6 +310,15 @@ namespace LinguaReadApi.Services.Tokenization
                     }
                     if (i < len && processed[i] is '\'' or '\u05f3'
                         && processed[i - 1] is >= '\u05d0' and <= '\u05ea') i++;
+                    else if (italian && i < len && processed[i] == '\''
+                        && i - start == 2
+                        && (processed[start] is 'p' or 'P')
+                        && (processed[start + 1] is 'o' or 'O')
+                        && !(start > 0 && processed[start - 1] == '\'')) i++;
+                    if (i < len && processed[i] == '.'
+                        && (i + 1 == len || !IsCoreWordChar(coreRegex, span, i + 1))
+                        && ((code == "en" && processed[start..i].Equals("dr", StringComparison.OrdinalIgnoreCase))
+                            || (code == "uk" && processed[start..i].Equals("грн", StringComparison.OrdinalIgnoreCase)))) i++;
                     tokens.Add(new Token(processed.Substring(start, i - start), start, i, IsWord: true));
                 }
                 else
@@ -405,7 +433,7 @@ namespace LinguaReadApi.Services.Tokenization
 
         // Keep fallback eligibility separate from the language-specific casing table.
         public static bool RequiresLookupFallback(string? code) =>
-            BaseLanguageCode(code) is "he" or "ar" or "fr";
+            BaseLanguageCode(code) is "he" or "ar" or "fr" or "it" or "ca";
 
         private static string UnifyArabicLetters(string text, string code)
         {
@@ -423,12 +451,27 @@ namespace LinguaReadApi.Services.Tokenization
             var result = new List<string> { key };
             var seen = new HashSet<string>(StringComparer.Ordinal) { key };
             var code = BaseLanguageCode(language?.Code);
-            if (code == "fr")
+            if (code is "fr" or "it" or "ca")
             {
-                // A single elided article/preposition is a lookup alternative only:
-                // keep the glued display span and prefer its exact saved headword.
-                if (key.Length > 2 && key[0] is 'l' or 'd' && key[1] == '\''
-                    && IsElisionRemainder(key[2..])) result.Add(key[2..]);
+                // Bounded Romance elisions are lookup alternatives only:
+                // keep the whole display span and prefer its exact saved headword.
+                if (code == "it" && key == "po'")
+                {
+                    result.Add("po");
+                    return result;
+                }
+                var prefixes = code == "it"
+                    ? new[] { "l'", "d'", "un'", "quell'" }
+                    : new[] { "l'", "d'" };
+                foreach (var prefix in prefixes)
+                {
+                    if (key.StartsWith(prefix, StringComparison.Ordinal)
+                        && IsElisionRemainder(key[prefix.Length..]))
+                    {
+                        result.Add(key[prefix.Length..]);
+                        break;
+                    }
+                }
                 return result;
             }
             var frontier = new List<string> { key };
@@ -502,6 +545,185 @@ namespace LinguaReadApi.Services.Tokenization
 
         private static bool IsConnector(char ch) =>
             ch == Apostrophe || ch == Hyphen || ch == MiddleDot || ch == '\u05f4' || ch == '\u05f3' || ch == '"';
+
+        // Only isolated language-specific proclitics; quoted letters remain separators.
+        private static bool TryConsumeLeadingApostrophe(string text, ReadOnlySpan<char> span, Regex core,
+            int start, string code, out int end)
+        {
+            end = start + 2;
+            if (text[start] != '\'' || start + 1 >= text.Length
+                || (start > 0 && (IsCoreWordChar(core, span, start - 1) || text[start - 1] == '\''))) return false;
+            var letter = char.ToLowerInvariant(text[start + 1]);
+            return ((code == "af" && letter == 'n') || (code == "nl" && letter is 's' or 't'))
+                && IsCoreWordChar(core, span, start + 1)
+                && (end == text.Length || (text[end] != '\'' && !IsCoreWordChar(core, span, end)));
+        }
+
+        private static int FindDottedInitialismEnd(string text, ReadOnlySpan<char> span, Regex core, int start)
+        {
+            var end = start;
+            var letters = 0;
+            while (end < text.Length && char.IsLetter(text[end]) && IsCoreWordChar(core, span, end))
+            {
+                letters++;
+                end++;
+                if (end == text.Length || text[end] != '.') break;
+                end++;
+            }
+            return letters >= 2 && (end == text.Length || !IsCoreWordChar(core, span, end)) ? end : start + 1;
+        }
+
+        // ASCII grouping is deliberately narrower than the existing NBSP/decimal rules.
+        private static int FindSpaceGroupedDecimalEnd(string text, ReadOnlySpan<char> span, Regex core, int start, int digitsEnd)
+        {
+            if (digitsEnd - start > 3) return digitsEnd;
+            var end = digitsEnd;
+            var groups = 0;
+            while (end < text.Length && text[end] == ' ')
+            {
+                var next = end + 1;
+                while (next < text.Length && IsNumericDigit(text[next])) next++;
+                if (next - end != 4) break;
+                groups++;
+                end = next;
+            }
+            if (groups == 0 || end + 1 >= text.Length || text[end] != ',' || !IsNumericDigit(text[end + 1])) return digitsEnd;
+            end += 2;
+            while (end < text.Length && IsNumericDigit(text[end])) end++;
+            var nextContext = end;
+            while (nextContext < text.Length && IsHorizontalSpace(text[nextContext])) nextContext++;
+            var previous = start - 1;
+            while (previous >= 0 && IsHorizontalSpace(text[previous])) previous--;
+            var hasContext = (nextContext < text.Length && (IsCurrencySymbol(text[nextContext]) || text[nextContext] == '%'
+                || (char.IsLetter(text[nextContext]) && IsCoreWordChar(core, span, nextContext))))
+                || (previous >= 0 && IsCurrencySymbol(text[previous]));
+            return hasContext ? end : digitsEnd;
+        }
+
+        private static bool IsNumericDigit(char ch) =>
+            char.GetUnicodeCategory(ch) == UnicodeCategory.DecimalDigitNumber;
+
+        private static bool IsPersianDigit(char ch) =>
+            ch is >= '\u06f0' and <= '\u06f9';
+
+        private static bool IsNumericSeparator(char ch) =>
+            ch is '.' or ',' or '\u00a0' or '\u202f' or '\u066c' or '\u066b';
+
+        private static bool IsHorizontalSpace(char ch) =>
+            ch is ' ' or '\u00a0' or '\u202f';
+
+        private static bool IsCurrencySymbol(char ch) =>
+            char.GetUnicodeCategory(ch) == UnicodeCategory.CurrencySymbol;
+
+        private static bool TryConsumeNumericOrCurrencyToken(
+            string processed,
+            ReadOnlySpan<char> span,
+            Regex coreRegex,
+            int start,
+            bool chinese,
+            bool japanese,
+            bool thai,
+            out int numericEnd)
+        {
+            numericEnd = start;
+            var len = processed.Length;
+            if (start < 0 || start >= len) return false;
+            var ch = processed[start];
+
+            if (IsCurrencySymbol(ch))
+            {
+                var k = start + 1;
+                while (k < len && IsHorizontalSpace(processed[k])) k++;
+                if (k < len && IsNumericDigit(processed[k]))
+                {
+                    numericEnd = start + 1;
+                    return true;
+                }
+
+                var p = start - 1;
+                while (p >= 0 && IsHorizontalSpace(processed[p])) p--;
+                if (p >= 0 && (IsNumericDigit(processed[p])
+                    || (p >= 2 && processed[p] == '-' && processed[p - 1] == ',' && IsNumericDigit(processed[p - 2]))))
+                {
+                    numericEnd = start + 1;
+                    return true;
+                }
+                return false;
+            }
+
+            if (!IsNumericDigit(ch)) return false;
+
+            var end = start + 1;
+            var hasPersianDigit = IsPersianDigit(ch);
+            while (end < len && IsNumericDigit(processed[end]))
+            {
+                if (IsPersianDigit(processed[end])) hasPersianDigit = true;
+                end++;
+            }
+
+            var groupedEnd = FindSpaceGroupedDecimalEnd(processed, span, coreRegex, start, end);
+            var hasGroupedOrDecimalDigits = groupedEnd != end;
+            end = groupedEnd;
+            while (end + 1 < len && IsNumericSeparator(processed[end]) && IsNumericDigit(processed[end + 1]))
+            {
+                hasGroupedOrDecimalDigits = true;
+                end++;
+                while (end < len && IsNumericDigit(processed[end]))
+                {
+                    if (IsPersianDigit(processed[end])) hasPersianDigit = true;
+                    end++;
+                }
+            }
+
+            var hasAffix = false;
+            if (end + 1 < len && processed[end] == ',' && processed[end + 1] == '-'
+                && (end + 2 >= len || (!IsNumericDigit(processed[end + 2]) && !IsCoreWordChar(coreRegex, span, end + 2))))
+            {
+                hasAffix = true;
+                end += 2;
+            }
+            else
+            {
+                if (end < len && processed[end] == '%')
+                {
+                    hasAffix = true;
+                    end++;
+                }
+                if (end + 1 < len && processed[end] == '-'
+                    && IsCoreWordChar(coreRegex, span, end + 1)
+                    && !((chinese && ChineseSegmenter.IsHanAt(processed, end + 1))
+                        || (japanese && JapaneseSegmenter.IsJapaneseScriptAt(processed, end + 1))
+                        || (thai && ThaiSegmenter.IsThaiAt(processed, end + 1))))
+                {
+                    hasAffix = true;
+                    end++;
+                    while (end < len)
+                    {
+                        if ((chinese && ChineseSegmenter.IsHanAt(processed, end))
+                            || (japanese && JapaneseSegmenter.IsJapaneseScriptAt(processed, end))
+                            || (thai && ThaiSegmenter.IsThaiAt(processed, end))) break;
+                        if (IsCoreWordChar(coreRegex, span, end))
+                        {
+                            end++;
+                            continue;
+                        }
+                        break;
+                    }
+                    while (end > start + 1 && (processed[end - 1] is '\u200c' or '\u200d'))
+                    {
+                        end--;
+                    }
+                }
+            }
+
+            if (hasGroupedOrDecimalDigits || hasAffix || hasPersianDigit)
+            {
+                numericEnd = end;
+                return true;
+            }
+
+            return false;
+        }
 
         private static TextInfo GetTextInfo(string? code)
         {

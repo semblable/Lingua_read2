@@ -1,113 +1,56 @@
-# Language and activity verification
+# Language/activity verification
 
-Run from the repository root with synthetic data only. [The short roadmap](../../docs/LANGUAGE_SUPPORT_PLAN.md) defines future work; code/tests define current behavior. Detailed chronology remains in Git. Generated reports belong in ignored `test-results/` or CI artifacts; keep fixtures and expected results in source control.
+Use synthetic learners only. Read [CONTRIBUTING](../../CONTRIBUTING.md) for full checks and the [roadmap](../../docs/LANGUAGE_SUPPORT_PLAN.md) for priorities. Store generated reports/screenshots in ignored `test-results/` or CI artifacts, not Git.
 
-## Scope and contracts
+## Verified checkpoint — 2026-11-05
 
-Vocabulary counts saved terms; coverage counts linked nonignored occurrences; reading volume retains legacy ASCII-whitespace units. The metrics intentionally differ. Unicode whitespace alone does not fix unspaced scripts or punctuation. Whole-text and sentence totals can also disagree; preserve already earned excess rather than clawing it back.
+Leading apostrophes, Finnish suffixes, dotted initialisms/abbreviations, and space-grouped decimals on tokenizer v4:
+- **Server (`dotnet test -c Release`):** 1,732 passed, 0 failed, 7 PostgreSQL-only skipped locally (Docker daemon unavailable).
+- **Client (`npm test -- --run`):** 1,746 passed across 114 test files; `npm run typecheck`, `npm run build`, and `npm run lint` (46 existing warnings) passed.
+- **TDD evidence:** Updated the seven requested corpus cases and added mirrored span regressions before implementation. The focused Vitest run failed 15 tests, then passed after implementation. The initial xUnit run could not connect to its test host inside the sandbox; the focused run outside it passed 293 tests. Full results above include saved-ID/status/translation reuse and idempotent linking tests.
+- **Gap summary:** `reference_gap_summary` in `multilingual_tokenizer_and_lemmatizer_test_suite_v4.json` is mechanically asserted by both `MultilingualGoldenTests` and `multilingualGolden.test.ts`: **89** source cases across **44** languages, **100** runtime cases, **24** cases with runtime span/key differences (down from 27 after closing `af-01`, `af-02`, and `fi-01`), and **86** cases with reference semantic lemmas. Tokenizer version stays **4**.
 
-The additive study ledger deduplicates accepted actions and supplies earned-completion checkpoints. Suppressed retries are not checkpoints; old finished flags cannot be backfilled safely. Initial sentence credit is lifetime per text, not a new rereading cycle after edits. Explicit rereads earn volume; new sentence/offline cycles still need versioned identity.
+Afrikaans `'n` and Dutch `'s`/`'t` are language-gated and exclude closed quotes. Finnish lowercase colon suffixes, contiguous dotted initialisms, `en` `Dr.`, and `uk` `грн.` retain their punctuation. ASCII-space decimal groups require three-digit groups, comma digits, and currency/unit context. The original `uk-02` uses `2 000 грн.`; its integer gap remains. A new `uk-space-decimal` case covers `1 250,00` and supplementary-character UTF-16 offsets. English quotes, Romance elisions, bare-year exclusions, and tokenizer version 4 remain covered.
 
-Statistics reset keeps replay/checkpoint proof while hiding pass totals. Lesson deletion retains earned history; explicit language-content reset deletes its scoped records. Nonempty-ledger schema downgrade refuses history loss. Old-binary production rollback remains untested.
-
-## Reading-credit checks
-
-These use isolated SQLite in-memory learners and cover sentence/completion/repeat/reset orderings, goal baselines, interruptions, ownership and vocabulary/SRS preservation:
-
-```powershell
-dotnet test server/LinguaReadApi.Tests/LinguaReadApi.Tests.csproj --no-restore --filter FullyQualifiedName~ReadingCreditCompatibilityTests --logger 'trx;LogFileName=reading-credit.trx' --results-directory verification/language-support/test-results
-./verification/language-support/summarize-credit-results.ps1 -TrxPath verification/language-support/test-results/reading-credit.trx -OutputPath verification/language-support/test-results/reading-credit.json
-```
-
-Assertions and synthetic learner fixtures live in the test suite. A passing diagnostic can reproduce a discrepancy rather than prove it fixed. Thai counting input uses CJK stops to isolate counting and is not a native acceptance fixture.
-
-## Chinese and Korean
-
-Shared original fixtures are [Chinese](chinese-cases.json) and [Korean](korean-cases.json). `Chinese*Tests` cover the pinned dictionary, core spans, explicit text profile, edits and legacy preservation; `Korean*Tests` cover canonical lookup, collisions and relational learner-history preservation.
+## Focused language checks
 
 ```powershell
-dotnet test server/LinguaReadApi.Tests/LinguaReadApi.Tests.csproj --no-restore --filter 'FullyQualifiedName~Chinese|FullyQualifiedName~Korean'
-cd client/lingua-read-client
-npm test -- --run src/__tests__/chineseSegmenter.test.ts src/__tests__/chineseIntegration.test.ts src/__tests__/chineseReader.test.jsx src/__tests__/chineseTextCreate.test.jsx src/__tests__/koreanLookup.test.ts src/__tests__/koreanReader.test.jsx
+dotnet test server/LinguaReadApi.Tests/LinguaReadApi.Tests.csproj -c Release --filter "FullyQualifiedName~MultilingualGolden|FullyQualifiedName~Korean|FullyQualifiedName~LookupFallback|FullyQualifiedName~WordsBatchLookup|FullyQualifiedName~WiktionaryTranslationService|FullyQualifiedName~TokenizerV4MigrationAcceptance"
+npm --prefix client/lingua-read-client test -- --run multilingualGolden korean lookupFallback indicRtlNormalization TextDisplay
 ```
 
-Only explicit new pasted Chinese texts use `jieba-v1`. The dictionary is pinned to upstream bytes and hash ([notice](../../THIRD_PARTY_NOTICES.md#chinese-dictionary)); the client verifies and caches it separately from learner data before rendering. Synthetic offline loader tests are not a physical browser disconnect. Non-Han tokens retain configured word-character rules; unknown Han uses scalar fallback, with no HMM or script conversion. `台灣` currently splits as `台|灣` (the dictionary contains `臺灣`). Native review and mobile performance remain unverified.
+- [Chinese (`chinese-cases.json`)](chinese-cases.json), [Japanese (`japanese-cases.json`)](japanese-cases.json), [Korean (`korean-cases.json`)](korean-cases.json): verify opt-out profiled segmentation (`jieba-v1`, `tinysegmenter-ja-v1`), EPUB ruby stripping, supplementary Han, and Korean Hangul/KRDICT candidate ranking while keeping legacy unprofiled texts unchanged.
+- [Shared v4 corpus](../../tests/golden/multilingual_tokenizer_and_lemmatizer_test_suite_v4.json): xUnit `MultilingualGoldenTests` and Vitest `multilingualGolden.test.ts` assert processed surfaces, UTF-16 spans, lookup keys, normalization, validated lookup fallbacks, and Korean candidate/ranking parity. See the [reference gap audit](reference-gap-audit.md) for the 24 remaining span/key differences and 86 semantic markers.
+- [KRDICT canonical headwords](../../resources/krdict_lemmas.txt): 43,445 entries verified by client/server checksum tests (`python scripts/generate-krdict-lemmas.py`).
+- Core files: server `Services/Tokenization/{ChineseSegmenter,JapaneseSegmenter,ThaiSegmenter,KoreanLookup,Tokenizer,WordLinker}.cs`; client `utils/{chineseSegmenter,chineseDictionary,japaneseSegmenter,thaiSegmenter,koreanLookup,readerText}.ts` and `pages/TextDisplay.tsx`.
 
-The additive profile migration leaves old rows null. Downgrade refuses to discard nonnull profiles; old-binary/old-browser rendering of profiled texts is not a supported rollback rehearsal. Back up database/media before deployment and retain the column if rolling application code back. No earned totals or goal baselines are recalculated.
+## Other regression suites
 
-## Listening compatibility
+| Scope | Tests |
+| --- | --- |
+| Tokenizer v3→v4 relinking, learner data/credit/SRS snapshots, idempotency | `TokenizerV4MigrationAcceptanceTests` |
+| Sentence/completion/manual passes, reset, goals, rollback | `ReadingCreditCompatibilityTests`, `ListeningCompatibilityTests` |
+| PostgreSQL upgrade, downgrade, and concurrent writers | `PostgresStudyActivityTests`, PostgreSQL cases in `ChineseRolloutTests`/`ChineseIntegrationTests`/`JapaneseRolloutTests` |
+| Upload file ownership and failed-copy/save cleanup | `AudiobookUploadStorageTests` |
+| Playback timing and offline queue replay | `listeningCompatibility.test.js`, `audiobookListeningBoundaries.test.js`, `syncQueue.test.js` |
 
-Use the same isolated learner harness for elapsed-time replay, manual pass separation, sentence/completion overlap, goals, reset and interrupted transactions. Candidate formula assertions are test-only; passing them does not implement fractional credit.
+## Disposable PostgreSQL
 
-```powershell
-dotnet test server/LinguaReadApi.Tests/LinguaReadApi.Tests.csproj --no-restore --filter FullyQualifiedName~ListeningCompatibilityTests --logger 'trx;LogFileName=listening.trx' --results-directory verification/language-support/test-results
-cd client/lingua-read-client
-npm test -- --run src/__tests__/listeningCompatibility.test.js src/__tests__/audiobookListeningBoundaries.test.js
-```
-
-The client checks synthetic speed, pause/buffer, seek/loop checkpoints and keyed offline replay. Player event tests exercise seek suspension/resume and stalled fetching with and without buffered playback. They do not reproduce real media event ordering or a physical disconnect. Playback payloads lack source duration/revision, and path-based lesson hashes cannot detect in-place audio replacement. Do not derive historical equivalents from elapsed seconds. Legacy unkeyed retries remain additive; older-server resets cannot recover deleted IDs. Retained reset receipts prevent keyed replay without becoming manual pass counts or reading credit.
-
-## Audio upload isolation
-
-`AudiobookUploadStorageTests` uses tiny synthetic uploads, real temp files and isolated SQLite contexts to check overlapping uploads and failure cleanup:
-
-```powershell
-dotnet test server/LinguaReadApi.Tests/LinguaReadApi.Tests.csproj --no-restore --filter FullyQualifiedName~AudiobookUploadStorageTests
-```
-
-New uploads use unique creation-only paths; existing paths and track IDs remain unchanged. This prevents ordinary uploads from replacing another source, but does not prove legacy file immutability, media byte identity after out-of-band edits or authoritative duration. Concurrent track numbering/order remains separate work; no historical activity is recalculated.
-
-## PostgreSQL concurrency and upgrade
-
-The optional `PostgresStudyActivityTests` exercise concurrent activity writers, sentence/completion/reset races, prior-schema upgrade, empty downgrade/re-upgrade, nonempty downgrade refusal and preservation of synthetic learner records. Without the explicit connection they skip; CI supplies a disposable database.
-
-Use only this named disposable container and the required `studycheck` database. Generate fresh credentials; never substitute learner credentials. Wait for PostgreSQL readiness before running tests.
+Without `LINGUA_STUDY_TEST_POSTGRES`, PostgreSQL-specific concurrency/migration cases skip locally and run in CI. To run them locally against a disposable container:
 
 ```powershell
 $studyPassword = [guid]::NewGuid().ToString('N')
-docker run --rm --detach --name lingua-study-check-20261029 --publish 127.0.0.1:55439:5432 --env "POSTGRES_PASSWORD=$studyPassword" --env POSTGRES_DB=studycheck --mount type=tmpfs,destination=/var/lib/postgresql postgres:18.6
-if ($LASTEXITCODE -ne 0) { throw 'Could not create the disposable container; check name/port conflicts.' }
+docker run --rm --detach --name lingua-study-check --publish 127.0.0.1:55439:5432 --env "POSTGRES_PASSWORD=$studyPassword" --env POSTGRES_DB=studycheck --mount type=tmpfs,destination=/var/lib/postgresql postgres:18.6
 try {
-    $studyReady = $false
-    for ($studyAttempt = 0; $studyAttempt -lt 30; $studyAttempt++) {
-        docker exec lingua-study-check-20261029 pg_isready -h 127.0.0.1 -U postgres -d studycheck *> $null
-        if ($LASTEXITCODE -eq 0) { $studyReady = $true; break }
+    for ($i = 0; $i -lt 30; $i++) {
+        docker exec lingua-study-check pg_isready -h 127.0.0.1 -U postgres -d studycheck *> $null
+        if ($LASTEXITCODE -eq 0) { break }
         Start-Sleep -Seconds 1
     }
-    if (-not $studyReady) { throw 'PostgreSQL did not become ready.' }
     $env:LINGUA_STUDY_TEST_POSTGRES = "Host=127.0.0.1;Port=55439;Database=studycheck;Username=postgres;Password=$studyPassword"
-    dotnet test server/LinguaReadApi.Tests/LinguaReadApi.Tests.csproj --no-restore --filter FullyQualifiedName~PostgresStudyActivityTests
-    if ($LASTEXITCODE -ne 0) { throw 'PostgreSQL verification failed.' }
+    dotnet test server/LinguaReadApi.Tests/LinguaReadApi.Tests.csproj --no-restore -c Release
 } finally {
     Remove-Item Env:LINGUA_STUDY_TEST_POSTGRES -ErrorAction SilentlyContinue
-    docker stop lingua-study-check-20261029
+    docker stop lingua-study-check
 }
 ```
-
-CI uploads server TRX results as run artifacts, including the PostgreSQL cases. These are bounded evidence, not a production upgrade/restore rehearsal. Test hosts may need a permitted local connection in restricted environments.
-
-## Segmentation probe
-
-Six original Chinese/Japanese/Thai examples plus 10k/100k UTF-16-unit inputs. Provisional word expectations require native review. Standalone rejection bounds were a warm 100k pass under one second and total process working set under 128 MiB; these are not application SLAs.
-
-```powershell
-New-Item -ItemType Directory -Force verification/language-support/test-results | Out-Null
-node verification/language-support/probe.mjs > verification/language-support/test-results/node-report.json
-dotnet build verification/language-support/LanguageSupportProbe.csproj
-dotnet verification/language-support/bin/Debug/net10.0/LanguageSupportProbe.dll verification/language-support/cases.json > verification/language-support/test-results/dotnet-windows-report.json
-```
-
-Linux comparison, using the locally built API image with ICU:
-
-```powershell
-$probeRoot = (Resolve-Path verification/language-support).Path
-docker run --rm --network none --read-only --mount "type=bind,source=$probeRoot,target=/probe,readonly" --entrypoint dotnet linguaread-verify-20261028-api:latest /probe/bin/Debug/net10.0/LanguageSupportProbe.dll /probe/cases.json > verification/language-support/test-results/dotnet-linux-report.json
-```
-
-Reports include runtime versions and timings; compare them per run. Source spans reconstruct the samples, but the prior probe matched only 2/6 provisional word expectations. No production tokenizer change is justified; do not ship the probe’s native-library loader.
-
-## Header visuals
-
-Copy [study-preview.html](study-preview.html) temporarily into `client/lingua-read-client/`, run Vite and open that path. Remove the client copy afterwards. It renders real headers with synthetic HTTP data, not audio playback or an installed learner session.
-
-[Desktop](visuals/study-header-desktop.jpg) and [390px mobile](visuals/study-header-mobile.jpg) show the current layout. Browser inspection also covered the 320px menu/dialog, 44px targets, text-only hiding and count refresh. Regenerate run screenshots when needed; obsolete panel captures are not retained. Physical devices, real Safari, complete offline reconnect and native language quality remain separate checks.

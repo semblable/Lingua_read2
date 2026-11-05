@@ -516,13 +516,14 @@ export const stripLookupDiacritics = (text: string, languageCode?: string | null
 export const lowercaseLookupTerm = (term: string, languageCode?: string | null): string => {
   const base = (languageCode || '').trim().toLowerCase().replace(/_/g, '-').split('-')[0];
   const scoped = NORMALIZED_VOCABULARY_LANGUAGES.has(base);
-  const input = scoped || base === 'fr'
+  const isRomanceElision = base === 'fr' || base === 'it' || base === 'ca';
+  const input = scoped || isRomanceElision || base === 'af' || base === 'nl'
     ? applyCharacterSubstitutions(normalizeTokenizerInput(term || ''), BUILT_IN_SUBSTITUTIONS)
     : term || '';
   const clean = input.trim().replace(/^[\u200C\u200D]+|[\u200C\u200D]+$/g, '');
   const stripped = stripLookupDiacritics(clean, languageCode);
-  if (base === 'fr') {
-    // Match the server's existing French TextInfo simple casing, including
+  if (isRomanceElision) {
+    // Match the server's existing TextInfo simple casing, including
     // dotted I and non-contextual sigma, without changing other languages.
     return Array.from(stripped, ch => ch === 'İ' ? 'i' : ch.toLowerCase()).join('');
   }
@@ -536,6 +537,10 @@ export const lowercaseLookupTerm = (term: string, languageCode?: string | null):
   return stripped.toLowerCase();
 };
 
+const isElisionRemainder = (remainder: string): boolean =>
+  /^\p{L}[\p{L}\p{M}]*$/u.test(remainder) &&
+  Array.from(remainder).filter(ch => /\p{L}/u.test(ch)).length >= 2;
+
 /** Direct key first. Fallbacks are useful only when a vocabulary/dictionary validates them. */
 export const getLookupCandidates = (term: string, languageCode?: string | null): string[] => {
   const key = lowercaseLookupTerm(term, languageCode);
@@ -543,12 +548,20 @@ export const getLookupCandidates = (term: string, languageCode?: string | null):
   const code = base === 'iw' ? 'he' : base;
   const result = [key];
   const seen = new Set(result);
-  if (code === 'fr') {
+  if (code === 'fr' || code === 'it' || code === 'ca') {
     // Lookup only: the reader keeps its glued elision span and exact entries win.
-    const remainder = key.slice(2);
-    if ((key.startsWith("l'") || key.startsWith("d'")) &&
-        /^\p{L}[\p{L}\p{M}]*$/u.test(remainder) &&
-        Array.from(remainder).filter(ch => /\p{L}/u.test(ch)).length >= 2) result.push(remainder);
+    if (code === 'it' && key === "po'") {
+      result.push('po');
+      return result;
+    }
+    const prefixes = code === 'it' ? ["l'", "d'", "un'", "quell'"] : ["l'", "d'"];
+    for (const prefix of prefixes) {
+      if (key.startsWith(prefix)) {
+        const remainder = key.slice(prefix.length);
+        if (isElisionRemainder(remainder)) result.push(remainder);
+        break;
+      }
+    }
     return result;
   }
   let frontier = [key];
@@ -591,7 +604,8 @@ export const resolveLookupTerm = <T>(
   return null;
 };
 
-const wordRegexCache = new Map<string, RegExp>();
+type TaggedWordRegex = RegExp & { lang?: string };
+const wordRegexCache = new Map<string, TaggedWordRegex>();
 
 // Build a per-character matcher from the language's `wordCharacters`
 // regex character-class fragment. The fragment may contain ranges
@@ -599,21 +613,26 @@ const wordRegexCache = new Map<string, RegExp>();
 // (`\p{L}`). We use it as-is; no seed lists ASCII `'` or `-`, so the
 // universal connector rule below adds glued apostrophe / hyphen /
 // middle-dot behaviour on top of this regex.
-export const buildCoreWordRegex = (wordCharacters: string | null | undefined): RegExp => {
+export const buildCoreWordRegex = (
+  wordCharacters: string | null | undefined,
+  languageCode?: string | null
+): RegExp => {
   const raw = (wordCharacters || '').trim();
-  const key = raw || '__default__';
+  const baseLang = (languageCode || '').trim().toLowerCase().replace(/_/g, '-').split('-')[0];
+  const key = `${raw || '__default__'}::${baseLang}`;
   const cached = wordRegexCache.get(key);
   if (cached) return cached;
 
   const cls = raw || DEFAULT_WORD_CLASS;
 
-  let regex: RegExp;
+  let regex: TaggedWordRegex;
   try {
     regex = new RegExp(`^[${cls}]$`, 'u');
   } catch {
     // Invalid wordCharacters → fall back to Unicode letters and marks.
     regex = new RegExp(`^[${DEFAULT_WORD_CLASS}]$`, 'u');
   }
+  regex.lang = baseLang;
   wordRegexCache.set(key, regex);
   return regex;
 };
@@ -629,6 +648,156 @@ const canStartWord = (regex: RegExp, ch: string | undefined): boolean =>
   isCoreWordChar(regex, ch) && !MARK_OR_FORMAT.test(ch as string);
 const isConnector = (ch: string): boolean =>
   ch === APOSTROPHE || ch === HYPHEN || ch === MIDDLE_DOT || ch === '\u05F4' || ch === '\u05F3' || ch === '"';
+
+const DECIMAL_DIGIT_REGEX = /^\p{Nd}$/u;
+const CURRENCY_SYMBOL_REGEX = /^\p{Sc}$/u;
+const isNumericDigit = (ch: string | undefined): boolean => !!ch && DECIMAL_DIGIT_REGEX.test(ch);
+const isPersianDigit = (ch: string | undefined): boolean => !!ch && ch >= '\u06F0' && ch <= '\u06F9';
+const isNumericSeparator = (ch: string | undefined): boolean =>
+  ch === '.' || ch === ',' || ch === '\u00A0' || ch === '\u202F' || ch === '\u066C' || ch === '\u066B';
+const isHorizontalSpace = (ch: string | undefined): boolean =>
+  ch === ' ' || ch === '\u00A0' || ch === '\u202F';
+const isCurrencySymbol = (ch: string | undefined): boolean => !!ch && CURRENCY_SYMBOL_REGEX.test(ch);
+
+const tryConsumeLeadingApostrophe = (text: string, start: number, core: RegExp, code?: string): number | null => {
+  const end = start + 2;
+  if (text[start] !== "'" || start + 1 >= text.length ||
+      (start > 0 && (isCoreWordChar(core, text[start - 1]) || text[start - 1] === "'"))) return null;
+  const letter = text[start + 1].toLowerCase();
+  return ((code === 'af' && letter === 'n') || (code === 'nl' && (letter === 's' || letter === 't'))) &&
+    isCoreWordChar(core, text[start + 1]) &&
+    (end === text.length || (text[end] !== "'" && !isCoreWordChar(core, text[end]))) ? end : null;
+};
+
+const findDottedInitialismEnd = (text: string, start: number, core: RegExp): number => {
+  let end = start;
+  let letters = 0;
+  while (end < text.length && /\p{L}/u.test(text[end]) && isCoreWordChar(core, text[end])) {
+    letters++;
+    end++;
+    if (end === text.length || text[end] !== '.') break;
+    end++;
+  }
+  return letters >= 2 && (end === text.length || !isCoreWordChar(core, text[end])) ? end : start + 1;
+};
+
+// Require three-digit ASCII groups, a comma decimal and currency/unit context.
+const findSpaceGroupedDecimalEnd = (text: string, start: number, digitsEnd: number, core: RegExp): number => {
+  if (digitsEnd - start > 3) return digitsEnd;
+  let end = digitsEnd;
+  let groups = 0;
+  while (end < text.length && text[end] === ' ') {
+    let next = end + 1;
+    while (next < text.length && isNumericDigit(text[next])) next++;
+    if (next - end !== 4) break;
+    groups++;
+    end = next;
+  }
+  if (!groups || text[end] !== ',' || !isNumericDigit(text[end + 1])) return digitsEnd;
+  end += 2;
+  while (end < text.length && isNumericDigit(text[end])) end++;
+  let nextContext = end;
+  while (nextContext < text.length && isHorizontalSpace(text[nextContext])) nextContext++;
+  let previous = start - 1;
+  while (previous >= 0 && isHorizontalSpace(text[previous])) previous--;
+  const hasContext = (nextContext < text.length && (isCurrencySymbol(text[nextContext]) || text[nextContext] === '%' ||
+    (/\p{L}/u.test(text[nextContext]) && isCoreWordChar(core, text[nextContext])))) ||
+    (previous >= 0 && isCurrencySymbol(text[previous]));
+  return hasContext ? end : digitsEnd;
+};
+
+const tryConsumeNumericOrCurrencyAt = (
+  processed: string,
+  start: number,
+  coreRegex: RegExp,
+  isSegmentedScriptAt: ((text: string, idx: number) => boolean) | null
+): { text: string; end: number } | null => {
+  const len = processed.length;
+  if (start < 0 || start >= len) return null;
+  const ch = processed[start];
+
+  if (isCurrencySymbol(ch)) {
+    let k = start + 1;
+    while (k < len && isHorizontalSpace(processed[k])) k++;
+    if (k < len && isNumericDigit(processed[k])) {
+      return { text: ch, end: start + 1 };
+    }
+
+    let p = start - 1;
+    while (p >= 0 && isHorizontalSpace(processed[p])) p--;
+    if (
+      p >= 0 &&
+      (isNumericDigit(processed[p]) ||
+        (p >= 2 && processed[p] === '-' && processed[p - 1] === ',' && isNumericDigit(processed[p - 2])))
+    ) {
+      return { text: ch, end: start + 1 };
+    }
+    return null;
+  }
+
+  if (!isNumericDigit(ch)) return null;
+
+  let end = start + 1;
+  let hasPersianDigit = isPersianDigit(ch);
+  while (end < len && isNumericDigit(processed[end])) {
+    if (isPersianDigit(processed[end])) hasPersianDigit = true;
+    end++;
+  }
+
+  const groupedEnd = findSpaceGroupedDecimalEnd(processed, start, end, coreRegex);
+  let hasGroupedOrDecimalDigits = groupedEnd !== end;
+  end = groupedEnd;
+  while (end + 1 < len && isNumericSeparator(processed[end]) && isNumericDigit(processed[end + 1])) {
+    hasGroupedOrDecimalDigits = true;
+    end++;
+    while (end < len && isNumericDigit(processed[end])) {
+      if (isPersianDigit(processed[end])) hasPersianDigit = true;
+      end++;
+    }
+  }
+
+  let hasAffix = false;
+  if (
+    end + 1 < len &&
+    processed[end] === ',' &&
+    processed[end + 1] === '-' &&
+    (end + 2 >= len || (!isNumericDigit(processed[end + 2]) && !isCoreWordChar(coreRegex, processed[end + 2])))
+  ) {
+    hasAffix = true;
+    end += 2;
+  } else {
+    if (end < len && processed[end] === '%') {
+      hasAffix = true;
+      end++;
+    }
+    if (
+      end + 1 < len &&
+      processed[end] === '-' &&
+      isCoreWordChar(coreRegex, processed[end + 1]) &&
+      !(isSegmentedScriptAt && isSegmentedScriptAt(processed, end + 1))
+    ) {
+      hasAffix = true;
+      end++;
+      while (end < len) {
+        if (isSegmentedScriptAt && isSegmentedScriptAt(processed, end)) break;
+        if (isCoreWordChar(coreRegex, processed[end])) {
+          end++;
+          continue;
+        }
+        break;
+      }
+      while (end > start + 1 && (processed[end - 1] === '\u200C' || processed[end - 1] === '\u200D')) {
+        end--;
+      }
+    }
+  }
+
+  if (hasGroupedOrDecimalDigits || hasAffix || hasPersianDigit) {
+    return { text: processed.slice(start, end), end };
+  }
+
+  return null;
+};
 
 type SegmenterWordEnds = ReadonlyMap<number, number> & { profile?: string };
 type MutableSegmenterWordEnds = Map<number, number> & { profile?: string };
@@ -649,7 +818,10 @@ export const prepareLanguageContext = (
     applyCharacterSubstitutions(normalizeTokenizerInput(rawContent || ''), BUILT_IN_SUBSTITUTIONS),
     userSubs
   );
-  const coreRegex = buildCoreWordRegex(languageConfig?.wordCharacters);
+  const coreRegex = buildCoreWordRegex(
+    languageConfig?.wordCharacters,
+    languageConfig?.code || languageConfig?.languageCode
+  );
   if (languageConfig?.parserType === CHINESE_SEGMENTER_PROFILE) {
     const segmenter = getChineseSegmentation();
     const wordEnds: MutableSegmenterWordEnds = new Map<number, number>();
@@ -715,16 +887,28 @@ export const consumeWordAt = (
     );
     return { text: processed.slice(index, end), end };
   }
+  const numericOrCurrency = tryConsumeNumericOrCurrencyAt(processed, index, coreRegex, isSegmentedScriptAt);
+  if (numericOrCurrency) return numericOrCurrency;
+  const code = (coreRegex as TaggedWordRegex).lang;
+  const apostropheEnd = tryConsumeLeadingApostrophe(processed, index, coreRegex, code);
+  if (apostropheEnd !== null) return { text: processed.slice(index, apostropheEnd), end: apostropheEnd };
   if (!canStartWord(coreRegex, processed[index])) return null;
 
-  let i = index + 1;
-  let word = processed[index];
+  let i = findDottedInitialismEnd(processed, index, coreRegex);
+  let word = processed.slice(index, i);
   const len = processed.length;
 
   while (i < len) {
     const next = processed[i];
     if (isSegmentedScriptAt && isSegmentedScriptAt(processed, i)) break;
     if (isCoreWordChar(coreRegex, next)) {
+      word += next;
+      i++;
+      continue;
+    }
+    if (code === 'fi' && next === ':' && i > index &&
+        (/\p{L}/u.test(processed[i - 1]) || processed[i - 1] === '.') && i + 1 < len &&
+        /\p{Ll}/u.test(processed[i + 1]) && isCoreWordChar(coreRegex, processed[i + 1])) {
       word += next;
       i++;
       continue;
@@ -746,6 +930,20 @@ export const consumeWordAt = (
     i--;
   }
   if ((processed[i] === "'" || processed[i] === '׳') && /[א-ת]/.test(processed[i - 1])) {
+    word += processed[i];
+    i++;
+  } else if (
+    (coreRegex as TaggedWordRegex).lang === 'it' &&
+    processed[i] === "'" &&
+    word.length === 2 &&
+    word.toLowerCase() === 'po' &&
+    !(index > 0 && processed[index - 1] === "'")
+  ) {
+    word += processed[i];
+    i++;
+  }
+  if (processed[i] === '.' && (i + 1 === len || !isCoreWordChar(coreRegex, processed[i + 1])) &&
+      ((code === 'en' && word.toLowerCase() === 'dr') || (code === 'uk' && word.toLowerCase() === 'грн'))) {
     word += processed[i];
     i++;
   }

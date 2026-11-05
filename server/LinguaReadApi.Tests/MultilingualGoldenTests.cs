@@ -34,6 +34,18 @@ public class MultilingualGoldenTests
             .Select(fixture => fixture.GetProperty("id").GetString()!).ToArray();
         Assert.Equal(runtimeIds.Length, runtimeIds.Distinct(StringComparer.Ordinal).Count());
         Assert.All(referenceIds, id => Assert.Contains(id, runtimeIds));
+        var summary = Suite.GetProperty("reference_gap_summary");
+        Assert.Equal(runtimeIds.Length, summary.GetProperty("runtime_cases").GetInt32());
+        var spanDiffs = Suite.GetProperty("cases").EnumerateArray().Count(fixture =>
+            fixture.GetProperty("provenance").TryGetProperty("differences", out var diffs)
+            && diffs.EnumerateArray().Any(d => d.GetString() == "runtime_token_spans_or_keys"));
+        var semanticDiffs = Suite.GetProperty("cases").EnumerateArray().Count(fixture =>
+            fixture.GetProperty("provenance").TryGetProperty("differences", out var diffs)
+            && diffs.EnumerateArray().Any(d => d.GetString() == "reference_semantic_lemmas"));
+        Assert.Equal(24, spanDiffs);
+        Assert.Equal(spanDiffs, summary.GetProperty("cases_with_runtime_span_or_key_differences").GetInt32());
+        Assert.Equal(86, semanticDiffs);
+        Assert.Equal(semanticDiffs, summary.GetProperty("cases_with_reference_semantic_lemmas").GetInt32());
     }
 
     [Fact]

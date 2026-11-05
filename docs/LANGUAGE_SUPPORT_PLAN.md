@@ -1,31 +1,31 @@
 # Language implementation roadmap
 
-Goal: practical support for all 44 catalog languages. Regional varieties share catalog entries; preserve existing custom/regional records and IDs. Presets are not proof of support.
+Goal: practical support for all 44 catalog languages while preserving learner IDs and history. Read [CONTRIBUTING](../CONTRIBUTING.md), inspect local changes, then use [focused verification](../verification/language-support/README.md). Native quality, mobile cost, and physical offline/reconnect behavior remain unverified.
 
-## Next: language coverage
+## Verified checkpoint — 2026-11-05
 
-Start language implementation now. Fractional listening and beta publication are independent, not prerequisites. Ship one usable language slice at a time; revise the order from results.
+Leading apostrophes, Finnish suffixes, dotted initialisms/abbreviations, and space-grouped decimals on tokenizer v4:
+- **Server (`dotnet test -c Release`):** 1,732 passed, 0 failed, 7 PostgreSQL-only skipped locally (1,739 total).
+- **Client (`npm test -- --run`):** 1,746 passed across 114 files; `tsc --noEmit`, production build, and `eslint` (46 existing warnings) passed.
+- **Shared golden v4 corpus:** 89 source cases across 44 languages retained intact; 100 runtime cases, 35 normalization cases, and 51 lookup cases execute with 100% C#/TypeScript parity. Remaining reference gaps: **24** span/key cases (down from 27) and **86** semantic lemma cases.
 
-1. **Chinese:** validate the opt-in dictionary segmenter on new pasted texts, then extend it to book/audio imports with the same per-text profile. Preserve legacy boundaries; test selection, saving/mining, offline reopening and unknown names with native review before broader enablement. No automatic script conversion or vocabulary merging.
-2. **Korean:** validate the exact-first Hangul alias lookup and raw phrase spans with learner material. Keep space-separated surface forms and existing identities. Particle/ending analysis and dictionary-form lookup remain separate work.
-3. **Japanese, then Thai:** implement actual Japanese segmentation behind the ineffective `mecab` option, preserving ruby/furigana and offsets; integrate a suitable Thai segmenter. Reuse the integration contract, not Chinese boundary assumptions.
-4. **Other languages:** prioritize reproduced sentence/import, Indic combining-mark, Vietnamese grouping and RTL/mixed-direction problems. Verify dictionaries, speech/provider mappings and offline use per language.
+## Implemented scope
 
-## Rollout contracts
+- **Chinese/Japanese/Thai:** opt-out defaults for new text, book, and audio/SRT imports using `jieba-v1`, `tinysegmenter-ja-v1`, and `thai-dict-v1`. Existing unprofiled items stay legacy. Japanese strips EPUB `<rt>`/`<rp>` ruby and handles supplementary Han; Thai uses TCC-bounded dictionary DP with OOV coalescing.
+- **Korean:** full eojeol touch targets, Josa/copula decomposition, verb/adjective candidates, and `ㄹ` restoration against the pinned 43,445-headword KRDICT dataset ([notices](../THIRD_PARTY_NOTICES.md)). Validated alternatives appear as selectable chips; tracked vocabulary takes precedence.
+- **Normalization & validated lookup:** Indic marks and medial joiners are preserved. Language-scoped Turkish/Azerbaijani `İ`/`I` folds, Greek accent/final-sigma folds, Arabic/Persian `Yeh`/`Kaf`/`Alef` unification (preserving `Ta Marbuta`), and Hebrew positional quote rules share normalization across tokens and stored headwords. Validated exact-first lookup fallbacks cover Hebrew trailing Geresh, Hebrew/Arabic proclitics, French (`l'`, `d'`), Catalan (`l'`, `d'`), and Italian (`l'`, `d'`, `un'`, `quell'`, and trailing `po'`).
+- **Spans & numeric/currency grouping:** Clickable Romance elision spans stay whole, and Italian trailing `po'` stays a single span (`po'`). Contiguous decimals (`.`, `,`, `٫`), grouped numbers (`NBSP`, `NNBSP`, standard `.`/`,`/`٬` separators), Persian digits (`fa-02`), adjacent currency symbols (`€`, `$`, `₽`), Dutch `,-`, and Hungarian numeric/percent suffixes (`2026-ban`, `10%-os`) tokenize as words while preserving sentence-ending periods and leaving bare integers governed by `WordCharacters`.
+- **Bounded spans:** Afrikaans `'n` and Dutch `'s`/`'t` retain leading apostrophes case-insensitively unless closed by a quote. Finnish lowercase colon suffixes (`EU:ssa`), dotted single-letter initialisms (`U.S.A.`), English `Dr.`, and Ukrainian `грн.` stay whole. ASCII-space three-digit groups require a comma decimal and adjacent currency/unit context (`1 250,00 грн.`). Single initials and sentence periods remain separators.
+- **Tokenizer v4:** startup relinking is versioned (`CurrentTokenizerVersion = 4`) and idempotent, verified by disposable relational snapshot tests.
 
-- Use original fixtures and shared server/client expected spans. Preserve source text and selection offsets; the existing ICU probe is not a production engine.
-- Version boundary changes and enable a bounded scope first. Prove compatibility/recovery before relinking existing texts. Preserve saved phrases/statuses, mined sentences, SRS, bookmarks and offline/resume state; never spread paragraph status to every new word.
-- Keep vocabulary identity separate from segmentation. Reproduce canonical/case failures before normalization or rekeying; resolve collisions without losing records.
-- Coverage is recomputable; earned activity is history. Preserve recorded units, manual passes, goals and reset/retry proof. Never retokenize historical credit or infer it from finished flags.
+## Next priorities
 
-## Listening follow-up
+1. **Remaining [24 span/key gaps](../verification/language-support/reference-gap-audit.md):**
+   - Multiword lexical phrases (5 cases: `vi-01`, `vi-02`, `nl-01`, `ms-02`, `en-02`).
+   - ASCII-space grouped integers (`uk-02` `2 000`; decimal grouping is supported) and bare years (`ar-02`, `he-01` when `\p{N}` is excluded from default `WordCharacters`).
+   - Intentional design differences (glued Romance/Romanian clitics, Korean full eojeols, Arabic Alef folding, Greek accent/sigma folding, pinned CJK segmentation).
+2. **Language quality & device verification:** native review for CJK/Thai/Korean ambiguity and RTL fallback false positives; physical phone testing for touch targets, chips, mining, and offline/reconnect flows.
 
-First fix source/language attribution across switches and delayed retries; then establish audio revision/duration snapshots and compatible offline event identity. Old clients may discard unknown operations/fields. No historical fractional backfill.
+## Preservation contracts
 
-Equivalents = played source duration / revision duration; minutes = elapsed playback time. Half a 60-minute lesson at 1.5× earns 0.5 equivalents and 20 minutes. Replays add exposure; seeks, pauses and buffering add none. Unknown duration earns time only. Read-along requires explicit mode and reliable transcript mapping; audio alone earns no reading credit.
-
-## Acceptance
-
-Verify the complete reader workflow plus transcripts/resume per language. Native review, physical devices and real disconnect/reconnect remain separate checks. Keep unsupported romanization hidden and proficiency estimates approximate.
-
-[Verification/fixtures](../verification/language-support/README.md) · [User guide](../LANGUAGES_GUIDE.md) · [Release checklist](RELEASING.md). Keep implementation history in Git.
+Keep C# (`Tokenizer.cs`, `WordLinker.cs`) and TypeScript (`readerText.ts`) UTF-16 offsets and ordinal tie-breaks identical. Preserve vocabulary IDs, meanings/statuses, phrases, mined sentences, SRS, bookmarks, study history, and tokenizer version **4**. Keep [user guidance](../LANGUAGES_GUIDE.md) aligned with verified behavior and leave test timing JSON files untracked.

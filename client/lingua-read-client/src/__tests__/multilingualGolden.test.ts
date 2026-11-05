@@ -7,11 +7,23 @@ import { initializeChineseSegmentation } from '../utils/chineseRuntime';
 import { analyzeKoreanCandidates, rankKoreanCandidates } from '../utils/koreanLookup';
 
 type GoldenToken = { surface_span: string; start: number; end: number; lookup_key: string };
-type GoldenCase = { id: string; language: LanguageConfig; input: string; sentence: string; tokens: GoldenToken[] };
+type GoldenCase = {
+  id: string;
+  language: LanguageConfig;
+  input: string;
+  sentence: string;
+  tokens: GoldenToken[];
+  provenance: { differences?: string[] };
+};
 const root = resolve(process.cwd(), '../..');
 const goldenSuite = JSON.parse(readFileSync(resolve(root, 'tests/golden/multilingual_tokenizer_and_lemmatizer_test_suite_v4.json'), 'utf8')) as {
   offset_unit: string; cases: GoldenCase[];
   reference_suite: { languages: Array<{ code: string; tests: Array<{ id: string }> }> };
+  reference_gap_summary: {
+    runtime_cases: number;
+    cases_with_runtime_span_or_key_differences: number;
+    cases_with_reference_semantic_lemmas: number;
+  };
   normalization_cases: Array<{ id: string; lang: string; term: string; expected: string }>;
   lookup_cases: Array<{ id: string; lang: string; term: string; vocabulary: string[]; expected: string | null }>;
   korean_candidate_cases: Array<{ id: string; surface: string; expected_lemmas: string[] }>;
@@ -29,6 +41,13 @@ describe('shared multilingual UTF-16 runtime contract', () => {
     expect(referenceIds).toHaveLength(89);
     expect(new Set(goldenSuite.cases.map(fixture => fixture.id)).size).toBe(goldenSuite.cases.length);
     for (const id of referenceIds) expect(goldenSuite.cases.some(fixture => fixture.id === id)).toBe(true);
+    const spanDiffs = goldenSuite.cases.filter(fixture => fixture.provenance.differences?.includes('runtime_token_spans_or_keys')).length;
+    const semanticDiffs = goldenSuite.cases.filter(fixture => fixture.provenance.differences?.includes('reference_semantic_lemmas')).length;
+    expect(goldenSuite.reference_gap_summary.runtime_cases).toBe(goldenSuite.cases.length);
+    expect(spanDiffs).toBe(24);
+    expect(goldenSuite.reference_gap_summary.cases_with_runtime_span_or_key_differences).toBe(spanDiffs);
+    expect(semanticDiffs).toBe(86);
+    expect(goldenSuite.reference_gap_summary.cases_with_reference_semantic_lemmas).toBe(semanticDiffs);
   });
   test('fixture bytes are UTF-8 without BOM and LF only', () => {
     const bytes = readFileSync(resolve(root, 'tests/golden/multilingual_tokenizer_and_lemmatizer_test_suite_v4.json'));

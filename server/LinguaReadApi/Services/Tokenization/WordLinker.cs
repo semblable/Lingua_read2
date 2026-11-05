@@ -39,6 +39,7 @@ namespace LinguaReadApi.Services.Tokenization
         // Bump to 4: explicit language-scoped folds, Hebrew quote boundaries,
         // normalized RTL headwords and fallback lookup, and Korean candidate reuse.
         // Relinking refreshes vocabulary coverage without replaying study credit.
+        // Bounded v4 span refinements do not trigger historical relinking.
         public const int CurrentTokenizerVersion = 4;
 
         private const int WordBatchSize = 500;
@@ -251,7 +252,9 @@ namespace LinguaReadApi.Services.Tokenization
             CancellationToken cancellationToken)
         {
             if (Tokenizer.RequiresNormalizedVocabularyLookup(language?.Code)
-                || Tokenizer.RequiresLookupFallback(language?.Code))
+                || Tokenizer.RequiresLookupFallback(language?.Code)
+                // Leading apostrophes can be stored as curly quotes; reuse the saved ID.
+                || uniqueWords.Any(term => term.StartsWith("'", StringComparison.Ordinal)))
             {
                 // The database's lowercase collation cannot fold script variants,
                 // niqqud or Turkish I. Normalize stored headwords exactly like tokens.

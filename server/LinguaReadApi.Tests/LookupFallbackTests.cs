@@ -32,8 +32,73 @@ public class LookupFallbackTests
     [InlineData("fr", "l'́ab", "́ab", null)]
     [InlineData("en", "l'eau", "eau", null)]
     [InlineData("pt", "d'água", "água", null)]
+    [InlineData("it", "l'acqua", "acqua", "acqua")]
+    [InlineData("it-IT", "d’acqua", "acqua", "acqua")]
+    [InlineData("it", "un'occhiata", "occhiata", "occhiata")]
+    [InlineData("it", "quell'albero", "albero", "albero")]
+    [InlineData("it", "po'", "po", "po")]
+    [InlineData("it", "Po’", "po|po'", "po'")]
+    [InlineData("it", "d'accordo", "accordo|d'accordo", "d'accordo")]
+    [InlineData("it", "nell'ombra", "ombra", null)]
+    [InlineData("it", "qualcos'altro", "altro", null)]
+    [InlineData("it", "c'è", "è|essere", null)]
+    [InlineData("it", "un'idea", "acqua", null)]
+    [InlineData("it", "l'İa", "ia", "ia")]
+    [InlineData("it", "l'ΟΣ", "οσ", "οσ")]
+    [InlineData("ca", "L'home", "home", "home")]
+    [InlineData("ca-ES", "d’aigua", "aigua", "aigua")]
+    [InlineData("ca", "d'un", "un", "un")]
+    [InlineData("ca", "l'església", "església|l’església", "l'església")]
+    [InlineData("ca", "d'anar-te'n", "anar-te'n|anar", null)]
+    [InlineData("ca", "Dona'm-ho", "dona|donar", null)]
+    [InlineData("ca", "l'objecte", "aigua", null)]
+    [InlineData("ca", "l'İa", "ia", "ia")]
+    [InlineData("ca", "l'ΟΣ", "οσ", "οσ")]
     public void FrenchElisionFallbackIsBoundedAndExactFirst(string code, string term, string fixture, string? expected) =>
         Assert.Equal(expected, Tokenizer.ResolveLookupKey(term, new Language { Code = code }, fixture.Split('|')));
+
+    [Theory]
+    [InlineData("it-IT", "un po’ l’acqua d’acqua un’acqua quell’acqua", "acqua", "po", 4, 1)]
+    [InlineData("ca-ES", "l’aigua d’aigua aigua", "aigua", "home", 3, 0)]
+    public async Task ItalianAndCatalanLinkerReusesValidatedWordsAndPreservesLearnerRecords(
+        string code, string content, string primaryHeadword, string secondaryHeadword, int expectedPrimaryCount, int expectedSecondaryCount)
+    {
+        var options = new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options;
+        await using var db = new AppDbContext(options);
+        var userId = Guid.NewGuid();
+        db.Users.Add(new User { Id = userId, UserName = "romance", Email = "romance@example.com" });
+        db.Languages.Add(new Language { LanguageId = 1, Code = code, Name = code });
+        db.Texts.Add(new Text { TextId = 1, UserId = userId, LanguageId = 1, Title = "Romance", Content = content });
+        db.Words.Add(new Word { WordId = 1, UserId = userId, LanguageId = 1, Term = primaryHeadword, Status = 5 });
+        db.Words.Add(new Word { WordId = 2, UserId = userId, LanguageId = 1, Term = secondaryHeadword, Status = 4 });
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        await WordLinker.LinkAsync(db, 1, content, 1, userId);
+
+        var links = await db.TextWords.OrderBy(link => link.WordId).ToListAsync();
+        var primaryLink = Assert.Single(links, link => link.WordId == 1);
+        Assert.Equal(expectedPrimaryCount, primaryLink.OccurrenceCount);
+        if (expectedSecondaryCount > 0)
+        {
+            var secondaryLink = Assert.Single(links, link => link.WordId == 2);
+            Assert.Equal(expectedSecondaryCount, secondaryLink.OccurrenceCount);
+        }
+    }
+
+    [Fact]
+    public void ItalianTrailingPoAndNumericCurrencySpansPreserveBoundaries()
+    {
+        var itResult = Tokenizer.Tokenize("C'è un po' d'acqua e 'po'!", new Language { Code = "it" });
+        Assert.Equal(new[] { "C'è", "un", "po'", "d'acqua", "e", "po" },
+            itResult.Tokens.Where(t => t.IsWord).Select(t => t.Text));
+
+        var numResult = Tokenizer.Tokenize("Koszt 12,5 zł, pi 3.14. Цена 1\u00A0500,50 ₽, 12\u202F500,75 €, € 25.000,-, 10%-os, ۴۵٬۰۰۰.", new Language { Code = "pl" });
+        Assert.Equal(
+            new[] { "Koszt", "12,5", "zł", "pi", "3.14", "Цена", "1\u00A0500,50", "₽", "12\u202F500,75", "€", "€", "25.000,-", "10%-os", "۴۵٬۰۰۰" },
+            numResult.Tokens.Where(t => t.IsWord).Select(t => t.Text));
+        Assert.Contains(numResult.Tokens, t => !t.IsWord && t.Text == ".");
+    }
 
     [Theory]
     [InlineData(false, 0)]
@@ -138,5 +203,52 @@ public class LookupFallbackTests
         Assert.Equal(stored, row.Term);
         Assert.Equal(5, row.Status);
         Assert.Equal(1, Assert.Single(await db.TextWords.ToListAsync()).WordId);
+    }
+    [Theory]
+    [InlineData("af-ZA", "'n 'N 'n' 'name 's", "'n|'N|n|name|s")]
+    [InlineData("nl-NL", "'s 'S 't 'T 's' 't' 'test 'n", "'s|'S|'t|'T|s|t|test|n")]
+    [InlineData("en", "'hello' 'em 'tis don't dogs' rock 'n' roll", "hello|em|tis|don't|dogs|rock|n|roll")]
+    [InlineData("fi", "EU:ssa EU: ssa EU:SSA EU:2 EU:! sana:ssa U.S.A.:ssa", "EU:ssa|EU|ssa|EU|SSA|EU|EU|sana:ssa|U.S.A.:ssa")]
+    [InlineData("en", "EU:ssa Dr. U.S.A. A.B word. A.Beta A.", "EU|ssa|Dr.|U.S.A.|A.B|word|A|Beta|A")]
+    [InlineData("fr", "M. Dupont arriva.", "M|Dupont|arriva")]
+    [InlineData("uk", "1 250,00 грн. 12 345 678,90 kg 2026 2 000 грн.", "1 250,00|грн.|12 345 678,90|kg|грн.")]
+    [InlineData("uk", "1 250,00! 12 34,50 грн. 1 250 грн.", "250,00|34,50|грн.|грн.")]
+    [InlineData("uk", "€ 1 250,00. 1 250,00 %", "€|1 250,00|1 250,00")]
+    public void BoundedSpansPreserveUtf16(string code, string input, string expected)
+    {
+        var result = Tokenizer.Tokenize(input, new Language { Code = code });
+        Assert.Equal(expected.Split('|'), result.Tokens.Where(t => t.IsWord).Select(t => t.Text));
+        foreach (var token in result.Tokens) Assert.Equal(token.Text, result.Processed[token.Start..token.End]);
+    }
+
+    [Theory]
+    [InlineData("af", "’N", "’N")]
+    [InlineData("nl", "’S", "’S")]
+    [InlineData("fi", "EU:ssa", "eu:ssa")]
+    [InlineData("en", "U.S.A.", "u.s.a.")]
+    [InlineData("en", "Dr.", "dr.")]
+    [InlineData("uk", "грн.", "грн.")]
+    [InlineData("uk", "1 250,00", "1 250,00")]
+    public async Task BoundedLinkerPreservesSavedIdentity(string code, string content, string stored)
+    {
+        var options = new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options;
+        await using var db = new AppDbContext(options);
+        var userId = Guid.NewGuid();
+        db.Users.Add(new User { Id = userId, UserName = "bounded", Email = "bounded@example.com" });
+        db.Languages.Add(new Language { LanguageId = 1, Code = code, Name = code });
+        content = code == "uk" && content.StartsWith("1") ? content + " kg" : content;
+        db.Texts.Add(new Text { TextId = 1, UserId = userId, LanguageId = 1, Title = "Bounded", Content = content });
+        db.Words.Add(new Word { WordId = 42, UserId = userId, LanguageId = 1, Term = stored, Status = 5,
+            Translation = new WordTranslation { WordId = 42, Translation = "saved" } });
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+        await WordLinker.LinkAsync(db, 1, content, 1, userId);
+        await WordLinker.LinkAsync(db, 1, content, 1, userId);
+        var row = await db.Words.Include(w => w.Translation).SingleAsync(w => w.WordId == 42);
+        Assert.Equal(stored, row.Term);
+        Assert.Equal(5, row.Status);
+        Assert.Equal("saved", row.Translation.Translation);
+        Assert.Equal(1, (await db.TextWords.SingleAsync(w => w.WordId == 42)).OccurrenceCount);
+        Assert.Equal(4, (await db.Texts.SingleAsync()).WordLinkingTokenizerVersion);
     }
 }

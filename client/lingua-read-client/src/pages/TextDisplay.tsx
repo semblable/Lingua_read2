@@ -609,8 +609,10 @@ const TextDisplay = () => {
   ) ? createKoreanLookup(words.filter(word => word.term), word => lookupTerm(word.term!)) : null,
   [words, lookupTerm, languageConfig?.code, languageConfig?.languageCode, text?.languageCode]);
 
-  const isFrenchLookupLanguage = (languageConfig?.code || languageConfig?.languageCode || text?.languageCode || '')
-    .trim().toLowerCase().replace(/_/g, '-').split('-')[0] === 'fr';
+  const isFrenchLookupLanguage = ['fr', 'it', 'ca'].includes(
+    (languageConfig?.code || languageConfig?.languageCode || text?.languageCode || '')
+      .trim().toLowerCase().replace(/_/g, '-').split('-')[0]
+  );
 
   // 2. Pre-calculate and sort phrases once
   const knownPhrases = useMemo(() => {

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Overlay, Popover, Button, Badge, Spinner } from 'react-bootstrap';
 import { translateSelectionWithContext } from '../utils/api';
 import {
@@ -40,35 +40,46 @@ const WordLookupPopover = ({
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  const doTranslate = useCallback(async () => {
-    if (!word || !sourceLanguageCode || !targetLanguageCode) return;
-    setLoading(true);
-    try {
-      const result = await translateSelectionWithContext(
-        word, sentenceContext || '', sourceLanguageCode, targetLanguageCode
-      );
-      // Defensive fallback to `.translation` for legacy responses — cast
-      // because the typed shape only exposes `translatedText`.
-      const legacy = result as { translation?: string };
-      setTranslation(result.translatedText || legacy.translation || '');
-    } catch (err) {
-      console.error('Translation failed:', err);
-      setTranslation('');
-    } finally {
-      setLoading(false);
+  const lookupSessionKey = show && word ? `${word}::${existingWord?.translation ?? ''}` : null;
+  const [prevLookupSessionKey, setPrevLookupSessionKey] = useState<string | null>(null);
+  if (lookupSessionKey !== prevLookupSessionKey) {
+    setPrevLookupSessionKey(lookupSessionKey);
+    if (lookupSessionKey !== null) {
+      setSaved(false);
+      if (existingWord?.translation) {
+        setTranslation(existingWord.translation);
+        setLoading(false);
+      } else {
+        setTranslation('');
+        setLoading(Boolean(sourceLanguageCode && targetLanguageCode));
+      }
     }
-  }, [word, sentenceContext, sourceLanguageCode, targetLanguageCode]);
+  }
 
   useEffect(() => {
-    if (!show || !word) return;
-    setSaved(false);
-    if (existingWord?.translation) {
-      setTranslation(existingWord.translation);
-    } else {
-      setTranslation('');
-      doTranslate();
-    }
-  }, [show, word, existingWord, doTranslate]);
+    if (!show || !word || existingWord?.translation || !sourceLanguageCode || !targetLanguageCode) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const result = await translateSelectionWithContext(
+          word, sentenceContext || '', sourceLanguageCode, targetLanguageCode
+        );
+        if (cancelled) return;
+        // Defensive fallback to `.translation` for legacy responses — cast
+        // because the typed shape only exposes `translatedText`.
+        const legacy = result as { translation?: string };
+        setTranslation(result.translatedText || legacy.translation || '');
+      } catch (err) {
+        if (!cancelled) {
+          console.error('Translation failed:', err);
+          setTranslation('');
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [show, word, existingWord?.translation, sentenceContext, sourceLanguageCode, targetLanguageCode]);
 
   const handleSave = async () => {
     if (!word || !onSave) return;

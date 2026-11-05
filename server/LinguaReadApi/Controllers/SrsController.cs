@@ -26,9 +26,8 @@ namespace LinguaReadApi.Controllers
     [Authorize]
     public class SrsController : ControllerBase
     {
-        // Paused until prompts can constrain the intended meaning. Keep saved
-        // preferences and mined sentences intact; legacy clients fall back when null.
-        private static readonly bool ClozeReviewEnabled = false;
+        // Controls whether cloze and mixed review modes populate ClozeSentence on due cards.
+        private static readonly bool ClozeReviewEnabled = true;
         private readonly AppDbContext _context;
         private readonly IStoryGenerationServiceFactory _storyGenerationServiceFactory;
 
@@ -63,8 +62,8 @@ namespace LinguaReadApi.Controllers
                 ? "mix"
                 : settings!.SrsReviewOrder;
 
-            // Stored cloze/mixed preferences remain valid for a future redesign,
-            // but the pause leaves ClozeSentence null for every current review.
+            // Card style: translation (default), cloze (mask term in mined sentence), or mixed.
+            // Cloze/mixed populate ClozeSentence; translation leaves it null.
             string cardType = NormalizeCardType(settings?.SrsCardType);
             bool emitClozeSentence = ClozeReviewEnabled && (cardType is "cloze" or "mixed");
 
@@ -173,10 +172,14 @@ namespace LinguaReadApi.Controllers
                 if (onlyOneTarget && (bestPhrase == null || unknownWordsInBestPhrase != 1)) continue;
 
                 string? clozeSentence = null;
-                if (emitClozeSentence && bestPhrase != null)
+                if (emitClozeSentence && cardPhrases.Count > 0)
                 {
-                    clozeSentence = BuildClozeSentence(
-                        bestPhrase.Sentence, card.Word.Term, cardLanguages.GetValueOrDefault(card.Word.LanguageId));
+                    var cardLanguage = cardLanguages.GetValueOrDefault(card.Word.LanguageId);
+                    foreach (var phrase in cardPhrases)
+                    {
+                        clozeSentence = BuildClozeSentence(phrase.Sentence, card.Word.Term, cardLanguage);
+                        if (clozeSentence != null) break;
+                    }
                 }
 
                 var dto = ToDueCardDto(card, cardPhrases, unknownWordsInBestPhrase, clozeSentence, scheduler, now);

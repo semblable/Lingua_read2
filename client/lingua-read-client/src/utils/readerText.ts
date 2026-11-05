@@ -1917,6 +1917,106 @@ export const clampWordSpansToSingleSentence = (
   return groups[0];
 };
 
+const ALL_TARGETED_COMPOUND_SET = new Set<string>(
+  Object.values(TARGETED_COMPOUNDS).flat()
+);
+
+const isCompoundWordPair = (
+  first: string,
+  second: string,
+  sep: string,
+  languageConfig: LanguageConfig = null
+): boolean => {
+  if ((sep ?? ' ').trim() !== '') return false;
+  const w1 = (first || '').trim();
+  const w2 = (second || '').trim();
+  if (!w1 || !w2) return false;
+
+  const combined = `${w1} ${w2}`;
+  if (ALL_TARGETED_COMPOUND_SET.has(combined.toLowerCase())) {
+    return true;
+  }
+
+  // Dutch proclitic compounds ('s Morgens, 't Huis)
+  if (/^'[stST]$/.test(w1) && /^\p{Lu}/u.test(w2)) {
+    return true;
+  }
+
+  const { tokens } = tokenizeContent(combined, languageConfig);
+  const wordTokens = tokens.filter((t) => t.type === 'word');
+  return wordTokens.length === 1 && wordTokens[0].text.toLowerCase() === combined.toLowerCase();
+};
+
+const isCompoundWordTriplet = (
+  first: string,
+  middle: string,
+  third: string,
+  sep1: string,
+  sep2: string,
+  languageConfig: LanguageConfig = null
+): boolean => {
+  if ((sep1 ?? ' ').trim() !== '' || (sep2 ?? ' ').trim() !== '') return false;
+  const w1 = (first || '').trim();
+  const w2 = (middle || '').trim();
+  const w3 = (third || '').trim();
+  if (!w1 || !w2 || !w3) return false;
+
+  if (/^'[nN]'$/.test(w2)) {
+    return true;
+  }
+
+  const combined = `${w1} ${w2} ${w3}`;
+  const { tokens } = tokenizeContent(combined, languageConfig);
+  const wordTokens = tokens.filter((t) => t.type === 'word');
+  return wordTokens.length === 1 && wordTokens[0].text.toLowerCase() === combined.toLowerCase();
+};
+
+export const snapPhraseCompoundBounds = (
+  words: string[],
+  separators: string[],
+  startIndex: number,
+  endIndex: number,
+  languageConfig: LanguageConfig = null
+): { startIndex: number; endIndex: number } => {
+  if (!words || words.length < 2) {
+    return { startIndex, endIndex };
+  }
+
+  let nextStart = Math.max(0, Math.min(startIndex, words.length - 1));
+  let nextEnd = Math.max(nextStart, Math.min(endIndex, words.length - 1));
+
+  // Scan 3-word compounds first (e.g., rock 'n' roll)
+  for (let i = 0; i <= words.length - 3; i++) {
+    if (
+      isCompoundWordTriplet(
+        words[i],
+        words[i + 1],
+        words[i + 2],
+        separators[i] ?? ' ',
+        separators[i + 1] ?? ' ',
+        languageConfig
+      )
+    ) {
+      if (nextStart <= i + 2 && nextEnd >= i) {
+        nextStart = Math.min(nextStart, i);
+        nextEnd = Math.max(nextEnd, i + 2);
+      }
+    }
+  }
+
+  // Scan 2-word compounds (e.g., Việt Nam, Quốc ngữ, đặc biệt, Kuala Lumpur, 's Morgens)
+  for (let i = 0; i <= words.length - 2; i++) {
+    if (isCompoundWordPair(words[i], words[i + 1], separators[i] ?? ' ', languageConfig)) {
+      if (nextStart <= i + 1 && nextEnd >= i) {
+        nextStart = Math.min(nextStart, i);
+        nextEnd = Math.max(nextEnd, i + 1);
+      }
+    }
+  }
+
+  return { startIndex: nextStart, endIndex: nextEnd };
+};
+
 export const buildPhraseSelectionFromSpans = (
   startSpan: HTMLElement,
   endSpan: HTMLElement,
@@ -1943,14 +2043,22 @@ export const buildPhraseSelectionFromSpans = (
   const rawEndIdx = sentenceSpans.indexOf(endSpan);
   if (rawStartIdx === -1 && rawEndIdx === -1) return null;
 
-  const startIndex = rawStartIdx !== -1 ? rawStartIdx : rawEndIdx;
-  const endIndex = rawEndIdx !== -1 ? Math.max(startIndex, rawEndIdx) : startIndex;
+  const rawStart = rawStartIdx !== -1 ? rawStartIdx : rawEndIdx;
+  const rawEnd = rawEndIdx !== -1 ? Math.max(rawStart, rawEndIdx) : rawStart;
 
   const words = sentenceSpans.map((span) => (span.textContent || '').trim());
   const separators: string[] = [];
   for (let i = 0; i < sentenceSpans.length - 1; i++) {
     separators.push(getTextBetweenWordSpans(sentenceSpans[i], sentenceSpans[i + 1]));
   }
+
+  const { startIndex, endIndex } = snapPhraseCompoundBounds(
+    words,
+    separators,
+    rawStart,
+    rawEnd,
+    languageConfig
+  );
 
   return {
     words,
@@ -2017,13 +2125,76 @@ export const buildPhraseSelectionFromText = (
         }
       }
       if (matches) {
+        const snapped = snapPhraseCompoundBounds(
+          words,
+          separators,
+          i,
+          i + selectedWords.length - 1,
+          languageConfig
+        );
         return {
           words,
           separators,
-          startIndex: i,
-          endIndex: i + selectedWords.length - 1,
+          startIndex: snapped.startIndex,
+          endIndex: snapped.endIndex,
           sentenceContext
         };
+      }
+    }
+  }
+
+  // Fallback for partial selections that start or end mid-compound (e.g., selecting "Việt"
+  // in "Việt Nam", "Lumpur" in "Kuala Lumpur", or "Morgens" in "'s Morgens").
+  const stripLeadingCliticApostrophe = (s: string) => s.replace(/^['’]/u, '').toLowerCase();
+  const selectedSubWords = selectedWords
+    .flatMap((w) => w.split(/\s+/))
+    .map((w) => w.trim())
+    .filter(Boolean);
+
+  if (selectedSubWords.length > 0) {
+    for (const group of sentenceWordGroups) {
+      const { words, separators } = group;
+      const subWords: { text: string; wordIndex: number }[] = [];
+      words.forEach((word, wordIndex) => {
+        for (const part of word.split(/\s+/)) {
+          const trimmed = part.trim();
+          if (trimmed) {
+            subWords.push({ text: trimmed, wordIndex });
+          }
+        }
+      });
+
+      for (let i = 0; i <= subWords.length - selectedSubWords.length; i++) {
+        let matches = true;
+        for (let j = 0; j < selectedSubWords.length; j++) {
+          const candidate = subWords[i + j].text.toLowerCase();
+          const target = selectedSubWords[j].toLowerCase();
+          if (
+            candidate !== target &&
+            stripLeadingCliticApostrophe(candidate) !== stripLeadingCliticApostrophe(target)
+          ) {
+            matches = false;
+            break;
+          }
+        }
+        if (matches) {
+          const rawStart = subWords[i].wordIndex;
+          const rawEnd = subWords[i + selectedSubWords.length - 1].wordIndex;
+          const snapped = snapPhraseCompoundBounds(
+            words,
+            separators,
+            rawStart,
+            rawEnd,
+            languageConfig
+          );
+          return {
+            words,
+            separators,
+            startIndex: snapped.startIndex,
+            endIndex: snapped.endIndex,
+            sentenceContext
+          };
+        }
       }
     }
   }

@@ -17,6 +17,14 @@ export interface ClozeReviewCardProps {
 
 const isMaskableLetter = (ch: string): boolean => /\p{L}|\p{N}/u.test(ch);
 
+const splitGraphemes = (text: string): string[] => {
+  if (typeof Intl !== 'undefined' && typeof Intl.Segmenter === 'function') {
+    const segmenter = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
+    return Array.from(segmenter.segment(text), (s) => s.segment);
+  }
+  return [...text];
+};
+
 const ClozeReviewCard: React.FC<ClozeReviewCardProps> = ({
   cardId,
   clozeSentence,
@@ -27,21 +35,28 @@ const ClozeReviewCard: React.FC<ClozeReviewCardProps> = ({
   otherPhrases = [],
   onHintUsed,
 }) => {
-  const characters = useMemo(() => [...term], [term]);
+  const characters = useMemo(() => splitGraphemes(term), [term]);
   const totalLetters = useMemo(
     () => characters.filter(isMaskableLetter).length,
     [characters]
   );
 
+  const [prevCardId, setPrevCardId] = useState(cardId);
+  const [prevIsFlipped, setPrevIsFlipped] = useState(isFlipped);
   const [revealedCount, setRevealedCount] = useState(0);
   const [typedAnswer, setTypedAnswer] = useState('');
   const inputRef = useRef<HTMLInputElement | null>(null);
 
-  // Reset answer and hints when navigating to a different card.
-  useEffect(() => {
+  // Reset answer and hints when navigating to a different card or re-presenting
+  // the same card unflipped (e.g., when a learning-step card is immediately requeued).
+  if (prevCardId !== cardId || (prevIsFlipped && !isFlipped)) {
+    setPrevCardId(cardId);
+    setPrevIsFlipped(isFlipped);
     setTypedAnswer('');
     setRevealedCount(0);
-  }, [cardId]);
+  } else if (prevIsFlipped !== isFlipped) {
+    setPrevIsFlipped(isFlipped);
+  }
 
   // Autofocus the input on the front face so the user can start typing right away.
   useEffect(() => {

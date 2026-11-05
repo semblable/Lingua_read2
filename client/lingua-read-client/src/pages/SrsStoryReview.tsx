@@ -81,7 +81,23 @@ const SrsStoryReview = () => {
     }
   }, [selectedLanguage]);
 
-  useEffect(() => { loadStats(); }, [loadStats]);
+  useEffect(() => {
+    if (!selectedLanguage) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const nextStats = await getSrsStats(selectedLanguage);
+        const nextStories = await getSrsStories(selectedLanguage);
+        if (!cancelled) {
+          setStats(nextStats);
+          setPastStories(nextStories);
+        }
+      } catch (err) {
+        console.error('Failed to load stats:', err);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [selectedLanguage]);
 
   const handleLanguageChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const langId = e.target.value;

@@ -474,7 +474,7 @@ public class SrsControllerTests
 
         var cards = result.Value ?? Assert.IsType<List<SrsDueCardDto>>(((OkObjectResult)result.Result!).Value);
         var card = Assert.Single(cards);
-        Assert.Null(card.ClozeSentence);
+        Assert.Equal("The ___ sat on the mat.", card.ClozeSentence);
         Assert.Equal("cat", card.Term);
         Assert.Equal("The cat sat on the mat.", Assert.Single(card.Phrases).Sentence);
         Assert.Equal("cloze", context.UserSettings.Single().SrsCardType);
@@ -496,7 +496,7 @@ public class SrsControllerTests
 
         var cards = result.Value ?? Assert.IsType<List<SrsDueCardDto>>(((OkObjectResult)result.Result!).Value);
         var card = Assert.Single(cards);
-        Assert.Null(card.ClozeSentence);
+        Assert.Equal("Voltou das terras ___.", card.ClozeSentence);
         Assert.Equal("Voltou das terras d´África.", Assert.Single(card.Phrases).Sentence);
     }
 
@@ -512,7 +512,7 @@ public class SrsControllerTests
 
         var cards = result.Value ?? Assert.IsType<List<SrsDueCardDto>>(((OkObjectResult)result.Result!).Value);
         var card = Assert.Single(cards);
-        Assert.Null(card.ClozeSentence);
+        Assert.Equal("Mi ___ corre.", card.ClozeSentence);
         Assert.Equal("Mi perro corre.", Assert.Single(card.Phrases).Sentence);
         Assert.Equal("mixed", context.UserSettings.Single().SrsCardType);
     }
@@ -594,5 +594,30 @@ public class SrsControllerTests
         // fall back to translation rendering for this card.
         Assert.Null(card.ClozeSentence);
         Assert.Equal("gato", card.Term);
+    }
+
+    [Fact]
+    public async Task GetDueCards_WithClozeSetting_FallsBackToMatchingPhraseWhenNewestPhraseLacksTerm()
+    {
+        using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        SeedCardWithPhrase(context, userId, 410, "gato", "El gato duerme.", cardType: "cloze");
+        // Add a newer phrase that lacks the exact surface form (ordered first by CreatedAt DESC).
+        context.SrsPhrases.Add(new SrsPhrase
+        {
+            WordId = 410,
+            UserId = userId,
+            Sentence = "Los felinos duermen.",
+            TextTitle = "Newer source",
+            CreatedAt = DateTime.UtcNow.AddMinutes(5)
+        });
+        context.SaveChanges();
+
+        var controller = CreateController(context, userId);
+        var result = await controller.GetDueCards();
+
+        var cards = result.Value ?? Assert.IsType<List<SrsDueCardDto>>(((OkObjectResult)result.Result!).Value);
+        var card = Assert.Single(cards);
+        Assert.Equal("El ___ duerme.", card.ClozeSentence);
     }
 }

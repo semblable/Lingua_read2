@@ -244,4 +244,34 @@ describe('ClozeReviewCard', () => {
     const slots = screen.getAllByTestId('cloze-letter-slot');
     expect(slots[0]).toHaveTextContent('_');
   });
+
+  test('resets answer and hint state when the same cardId transitions from flipped back to unflipped', () => {
+    const { rerender } = render(<ClozeReviewCard {...baseProps} cardId={1} term="cat" isFlipped={false} />);
+    fireEvent.click(screen.getByTestId('cloze-hint-button'));
+    fireEvent.change(screen.getByTestId('cloze-input'), { target: { value: 'ca' } });
+    expect(screen.getByTestId('cloze-input')).toHaveValue('ca');
+
+    // Flip to back face
+    rerender(<ClozeReviewCard {...baseProps} cardId={1} term="cat" isFlipped={true} />);
+    expect(screen.getByTestId('cloze-user-answer')).toHaveTextContent('ca');
+
+    // Re-queue same card on a learning step (isFlipped returns to false with same cardId)
+    rerender(<ClozeReviewCard {...baseProps} cardId={1} term="cat" isFlipped={false} />);
+    expect(screen.getByTestId('cloze-input')).toHaveValue('');
+    expect(screen.getByTestId('cloze-hint-counter')).toHaveTextContent(/Alt\+H for hint/i);
+    const slots = screen.getAllByTestId('cloze-letter-slot');
+    expect(slots[0]).toHaveTextContent('_');
+  });
+
+  test('groups combining diacritics with their base letter into a single maskable grapheme slot', () => {
+    // Decomposed "café" (e + U+0301 combining acute accent) should have 4 slots, not 5
+    const decomposedCafe = 'cafe\u0301';
+    render(<ClozeReviewCard {...baseProps} term={decomposedCafe} />);
+    const slots = screen.getAllByTestId('cloze-letter-slot');
+    expect(slots).toHaveLength(4);
+    slots.forEach((slot) => {
+      expect(slot).toHaveTextContent('_');
+      expect(slot).toHaveAttribute('data-is-letter', 'true');
+    });
+  });
 });

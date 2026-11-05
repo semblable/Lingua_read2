@@ -657,9 +657,10 @@ describe('SrsReview', () => {
       await selectSpanish();
       fireEvent.click(await screen.findByRole('button', { name: /Start Review/i }));
 
-      expect(await screen.findByTestId('translation-review-card')).toHaveTextContent('El gato duerme.');
-      expect(screen.queryByTestId('cloze-review-card')).not.toBeInTheDocument();
-      expect(screen.queryByTestId('cloze-input')).not.toBeInTheDocument();
+      expect(await screen.findByTestId('cloze-review-card')).toBeInTheDocument();
+      expect(screen.getByTestId('cloze-sentence')).toHaveTextContent('El ___ duerme.');
+      expect(screen.getByTestId('cloze-input')).toBeInTheDocument();
+      expect(screen.queryByTestId('translation-review-card')).not.toBeInTheDocument();
     });
 
     it('falls back to the translation card when srsCardType is "cloze" but the card lacks a clozeSentence', async () => {
@@ -674,7 +675,42 @@ describe('SrsReview', () => {
     });
 
     it('keeps mixed-mode cards in translation style through reveal and grading', async () => {
-      // This seed previously selected cloze for both adjacent card IDs.
+      // With seed derived from Math.random() = 0.5:
+      // card 100 hashes to cloze (true) and card 101 hashes to translation (false),
+      // verifying mixed mode alternates between cloze and translation across cards.
+      const restoreRandom = vi.spyOn(Math, 'random').mockReturnValue(0.5);
+      try {
+        const first  = { ...mockCards[0], srsCardReviewId: 100, clozeSentence: 'El ___ duerme.' };
+        const second = { ...mockCards[1], srsCardReviewId: 101, clozeSentence: 'El ___ corre.' };
+        getSrsDueCards.mockResolvedValue([first, second]);
+
+        renderWithCardType('mixed');
+        await selectSpanish();
+        fireEvent.click(await screen.findByRole('button', { name: /Start Review/i }));
+
+        // Card 100 renders as cloze under seed 0.5.
+        expect(await screen.findByTestId('cloze-review-card')).toBeInTheDocument();
+        expect(screen.getByTestId('cloze-sentence')).toHaveTextContent('El ___ duerme.');
+        expect(screen.queryByTestId('translation-review-card')).not.toBeInTheDocument();
+
+        // Reveal and grade through to the second card.
+        fireEvent.change(screen.getByTestId('cloze-input'), { target: { value: 'gato' } });
+        fireEvent.keyDown(screen.getByTestId('cloze-input'), { key: 'Enter' });
+        expect(await screen.findByTestId('cloze-user-answer')).toHaveAttribute('data-cloze-match', 'true');
+        fireEvent.click(await screen.findByRole('button', { name: /^Good/ }));
+
+        // Card 101 renders as translation under seed 0.5.
+        await waitFor(() => expect(screen.getByTestId('translation-review-card')).toHaveTextContent('El perro corre.'));
+        expect(submitSrsReview).toHaveBeenCalledWith(100, 2);
+        expect(screen.queryByTestId('cloze-review-card')).not.toBeInTheDocument();
+      } finally {
+        restoreRandom.mockRestore();
+      }
+    });
+
+    it('in mixed mode, adjacent card IDs can both select cloze (not derivable from cardId parity)', async () => {
+      // Pin Math.random to 0.99 — under the high-bit Knuth hash, both adjacent
+      // IDs 100 and 101 map to cloze, proving the choice does not track id % 2.
       const restoreRandom = vi.spyOn(Math, 'random').mockReturnValue(0.99);
       try {
         const first  = { ...mockCards[0], srsCardReviewId: 100, clozeSentence: 'El ___ duerme.' };
@@ -684,18 +720,14 @@ describe('SrsReview', () => {
         renderWithCardType('mixed');
         await selectSpanish();
         fireEvent.click(await screen.findByRole('button', { name: /Start Review/i }));
-        // A seed that previously selected cloze must not bypass the pause.
-        expect(await screen.findByTestId('translation-review-card')).toHaveTextContent('El gato duerme.');
-        expect(screen.queryByTestId('cloze-input')).not.toBeInTheDocument();
+        expect(await screen.findByTestId('cloze-review-card')).toBeInTheDocument();
 
-        // Grade through to the second card.
-        fireEvent.click(screen.getByTestId('translation-review-card'));
-        expect(await screen.findByText('cat')).toBeInTheDocument();
+        fireEvent.change(screen.getByTestId('cloze-input'), { target: { value: 'gato' } });
+        fireEvent.keyDown(screen.getByTestId('cloze-input'), { key: 'Enter' });
         fireEvent.click(await screen.findByRole('button', { name: /^Good/ }));
 
-        await waitFor(() => expect(screen.getByTestId('translation-review-card')).toHaveTextContent('El perro corre.'));
-        expect(submitSrsReview).toHaveBeenCalledWith(100, 2);
-        expect(screen.queryByTestId('cloze-review-card')).not.toBeInTheDocument();
+        await waitFor(() => expect(screen.getByTestId('cloze-sentence')).toHaveTextContent('El ___ corre.'));
+        expect(screen.getByTestId('cloze-review-card')).toBeInTheDocument();
       } finally {
         restoreRandom.mockRestore();
       }
@@ -717,18 +749,21 @@ describe('SrsReview', () => {
       fireEvent.click(await screen.findByRole('button', { name: /Options/i }));
 
       const group = await screen.findByTestId('srs-card-type-group');
-      expect(group).toHaveTextContent('Translation — see the word in context and recall its meaning.');
-      expect(within(group).queryByRole('radio')).not.toBeInTheDocument();
+      const select = within(group).getByTestId('srs-card-type-select');
+      expect(select).toHaveValue('cloze');
 
-      // Save
+      // Switch to mixed and save
+      fireEvent.change(select, { target: { value: 'mixed' } });
+      expect(select).toHaveValue('mixed');
+
       fireEvent.click(screen.getByRole('button', { name: /Save Changes/i }));
 
       await waitFor(() => {
         expect(updateUserSettings).toHaveBeenCalledWith(
-          expect.objectContaining({ srsCardType: 'cloze' })
+          expect.objectContaining({ srsCardType: 'mixed' })
         );
       });
-      expect(updateSetting).toHaveBeenCalledWith('srsCardType', 'cloze');
+      expect(updateSetting).toHaveBeenCalledWith('srsCardType', 'mixed');
     });
   });
 });

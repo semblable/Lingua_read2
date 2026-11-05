@@ -113,11 +113,60 @@ const TermsPage = () => {
         }
     }, [selectedLanguage, currentPage, pageSize, statusFilter, sortBy, debouncedSearchTerm, showSentences]);
 
-    // useEffect to trigger fetchTerms
+    const termsQueryKey = `${selectedLanguage}::${currentPage}::${pageSize}::${statusFilter.join(',')}::${sortBy}::${debouncedSearchTerm}::${showSentences}`;
+    const [prevTermsQueryKey, setPrevTermsQueryKey] = useState<string | null>(null);
+    if (termsQueryKey !== prevTermsQueryKey) {
+        setPrevTermsQueryKey(termsQueryKey);
+        if (!selectedLanguage) {
+            setTerms([]);
+            setTotalItems(0);
+            setTotalPages(0);
+            setLoading(false);
+        } else {
+            setLoading(true);
+            setError(null);
+        }
+    }
+
+    // useEffect to trigger initial/reactive term fetches
     useEffect(() => {
-        fetchTerms();
-        return () => { fetchVersion.current++; };
-    }, [fetchTerms]);
+        const version = ++fetchVersion.current;
+        if (!selectedLanguage) {
+            return;
+        }
+        let cancelled = false;
+        (async () => {
+            try {
+                const data = await getPaginatedWordsByLanguage(
+                    selectedLanguage,
+                    currentPage,
+                    pageSize,
+                    statusFilter,
+                    sortBy,
+                    debouncedSearchTerm,
+                    showSentences
+                );
+
+                if (cancelled || version !== fetchVersion.current) return;
+
+                setTerms(data.items || []);
+                setTotalItems(data.totalCount || 0);
+                setTotalPages(data.totalPages || 0);
+            } catch (err: unknown) {
+                if (cancelled || version !== fetchVersion.current) return;
+                setError(`Failed to fetch terms: ${(err as Error)?.message}`);
+                console.error(err);
+                setTerms([]);
+                setTotalItems(0);
+                setTotalPages(0);
+            } finally {
+                if (!cancelled && version === fetchVersion.current) setLoading(false);
+            }
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, [selectedLanguage, currentPage, pageSize, statusFilter, sortBy, debouncedSearchTerm, showSentences]);
 
     // Handle language selection change
     const handleLanguageChange = (e: React.ChangeEvent<HTMLSelectElement>) => {

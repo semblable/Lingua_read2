@@ -45,7 +45,8 @@ import {
   buildPhraseSelectionFromSpans,
   buildPhraseSelectionFromText,
   pickSentenceForTerm,
-  buildPhraseSelectionText
+  buildPhraseSelectionText,
+  snapPhraseCompoundBounds
 } from '../utils/readerText';
 import type { SentenceSegment, PhraseSelectionState } from '../utils/readerText';
 import { analyzeKoreanCandidates, composeKoreanLookupText, createKoreanLookup, findKoreanLookupMatches, isKoreanLanguageCode, resolveKoreanLookup } from '../utils/koreanLookup';
@@ -989,8 +990,8 @@ const TextDisplay = () => {
       return;
     }
 
-    const startWordSpan = clampedSpans[0];
-    const endWordSpan = clampedSpans[clampedSpans.length - 1];
+    let startWordSpan = clampedSpans[0];
+    let endWordSpan = clampedSpans[clampedSpans.length - 1];
 
     // Create a new range encompassing the start and end word spans within the same sentence
     const newRange = document.createRange();
@@ -998,12 +999,31 @@ const TextDisplay = () => {
       newRange.setStartBefore(startWordSpan);
       newRange.setEndAfter(endWordSpan);
 
-      const snappedText = cleanSelectedReaderText(newRange.toString(), languageConfig) || newRange.toString().trim();
+      let snappedText = cleanSelectedReaderText(newRange.toString(), languageConfig) || newRange.toString().trim();
       const sentenceContext = buildAiSelectionContext(newRange, container, snappedText);
-      focusSentenceIndexFromNode(startWordSpan);
-      setActivePhraseSelection(
-        buildPhraseSelectionFromSpans(startWordSpan, endWordSpan, container, languageConfig, sentenceContext)
+      const phraseSelection = buildPhraseSelectionFromSpans(
+        startWordSpan,
+        endWordSpan,
+        container,
+        languageConfig,
+        sentenceContext
       );
+      if (
+        phraseSelection?.spans &&
+        phraseSelection.spans[phraseSelection.startIndex] &&
+        phraseSelection.spans[phraseSelection.endIndex]
+      ) {
+        startWordSpan = phraseSelection.spans[phraseSelection.startIndex];
+        endWordSpan = phraseSelection.spans[phraseSelection.endIndex];
+        newRange.setStartBefore(startWordSpan);
+        newRange.setEndAfter(endWordSpan);
+        snappedText =
+          buildPhraseSelectionText(phraseSelection, languageConfig) ||
+          cleanSelectedReaderText(newRange.toString(), languageConfig) ||
+          newRange.toString().trim();
+      }
+      focusSentenceIndexFromNode(startWordSpan);
+      setActivePhraseSelection(phraseSelection);
 
       // Update the selection visually without re-triggering mobile selectionchange loops
       if (typeof selection.removeAllRanges === 'function' && typeof selection.addRange === 'function') {
@@ -1933,7 +1953,7 @@ const TextDisplay = () => {
 
   const handleExtendPhraseSelection = useCallback((direction: 'prev' | 'next') => {
     if (!activePhraseSelection) return;
-    const { startIndex, endIndex, words, sentenceContext, spans } = activePhraseSelection;
+    const { startIndex, endIndex, words, separators, sentenceContext, spans } = activePhraseSelection;
     let nextStart = startIndex;
     let nextEnd = endIndex;
     if (direction === 'prev') {
@@ -1943,6 +1963,16 @@ const TextDisplay = () => {
       if (endIndex >= words.length - 1) return;
       nextEnd = endIndex + 1;
     }
+
+    const snappedBounds = snapPhraseCompoundBounds(
+      words,
+      separators,
+      nextStart,
+      nextEnd,
+      languageConfig
+    );
+    nextStart = snappedBounds.startIndex;
+    nextEnd = snappedBounds.endIndex;
 
     const nextSelection: PhraseSelectionState = {
       ...activePhraseSelection,

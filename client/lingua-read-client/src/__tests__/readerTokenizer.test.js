@@ -1,7 +1,11 @@
 import {
   WORD_PATTERN,
   cleanSelectedReaderText,
-  hasSentenceStopBetween
+  hasSentenceStopBetween,
+  buildPhraseSelectionFromSpans,
+  buildPhraseSelectionFromText,
+  buildPhraseSelectionText,
+  snapPhraseCompoundBounds
 } from '../utils/readerText';
 
 describe('WORD_PATTERN', () => {
@@ -105,5 +109,80 @@ describe('hasSentenceStopBetween', () => {
   test('allows Greek semicolon/erotimatiko as a sentence stop when language is Greek', () => {
     expect(hasSentenceStopBetween('; ', { languageCode: 'el', splitSentences: ';.!' })).toBe(true);
     expect(hasSentenceStopBetween('; ', { languageCode: 'en', splitSentences: ';.!' })).toBe(false);
+  });
+});
+
+describe('multiword compound selection snapping', () => {
+  const createSentenceContainer = (wordTexts) => {
+    const container = document.createElement('p');
+    const spans = wordTexts.map((text, idx) => {
+      if (idx > 0) {
+        container.appendChild(document.createTextNode(' '));
+      }
+      const span = document.createElement('span');
+      span.className = 'clickable-word';
+      span.textContent = text;
+      container.appendChild(span);
+      return span;
+    });
+    return { container, spans };
+  };
+
+  test('snaps Vietnamese compound spans (Việt Nam, Quốc ngữ, đặc biệt) when selection touches either boundary', () => {
+    const { container, spans } = createSentenceContainer(['Tôi', 'đến', 'từ', 'Việt', 'Nam', 'hôm', 'nay']);
+    const viConfig = { code: 'vi' };
+
+    // Selecting "từ" -> "Việt" snaps endIndex to include "Nam"
+    const endTouch = buildPhraseSelectionFromSpans(spans[2], spans[3], container, viConfig, 'Tôi đến từ Việt Nam hôm nay.');
+    expect(endTouch.startIndex).toBe(2);
+    expect(endTouch.endIndex).toBe(4);
+    expect(buildPhraseSelectionText(endTouch, viConfig)).toBe('từ Việt Nam');
+
+    // Selecting "Nam" -> "hôm" snaps startIndex to include "Việt"
+    const startTouch = buildPhraseSelectionFromSpans(spans[4], spans[5], container, viConfig, 'Tôi đến từ Việt Nam hôm nay.');
+    expect(startTouch.startIndex).toBe(3);
+    expect(startTouch.endIndex).toBe(5);
+    expect(buildPhraseSelectionText(startTouch, viConfig)).toBe('Việt Nam hôm');
+  });
+
+  test('snaps Malay compound spans (Kuala Lumpur) and Dutch proclitic compounds (\'s Morgens)', () => {
+    const msDom = createSentenceContainer(['Di', 'Kuala', 'Lumpur', 'ada', 'menara']);
+    const msSelection = buildPhraseSelectionFromSpans(msDom.spans[0], msDom.spans[1], msDom.container, { code: 'ms' });
+    expect(msSelection.startIndex).toBe(0);
+    expect(msSelection.endIndex).toBe(2);
+    expect(buildPhraseSelectionText(msSelection, { code: 'ms' })).toBe('Di Kuala Lumpur');
+
+    const nlDom = createSentenceContainer(["'s", 'Morgens', 'drink', 'ik', 'koffie']);
+    const nlSelection = buildPhraseSelectionFromSpans(nlDom.spans[1], nlDom.spans[2], nlDom.container, { code: 'nl' });
+    expect(nlSelection.startIndex).toBe(0);
+    expect(nlSelection.endIndex).toBe(2);
+    expect(buildPhraseSelectionText(nlSelection, { code: 'nl' })).toBe("'s Morgens drink");
+  });
+
+  test('snaps English contraction idioms (rock \'n\' roll) across 3 spans and via snapPhraseCompoundBounds', () => {
+    const enDom = createSentenceContainer(['They', 'love', 'rock', "'n'", 'roll', 'music']);
+    const enSelection = buildPhraseSelectionFromSpans(enDom.spans[1], enDom.spans[2], enDom.container, { code: 'en' });
+    expect(enSelection.startIndex).toBe(1);
+    expect(enSelection.endIndex).toBe(4);
+    expect(buildPhraseSelectionText(enSelection, { code: 'en' })).toBe("love rock 'n' roll");
+
+    // Stepping into the compound via snapPhraseCompoundBounds snaps across all 3 parts
+    const words = ['They', 'love', 'rock', "'n'", 'roll', 'music'];
+    const seps = [' ', ' ', ' ', ' ', ' '];
+    expect(snapPhraseCompoundBounds(words, seps, 3, 5, { code: 'en' })).toEqual({ startIndex: 2, endIndex: 5 });
+  });
+
+  test('buildPhraseSelectionFromText snaps partial text selections across Vietnamese, Malay, and Dutch compounds', () => {
+    const viState = buildPhraseSelectionFromText('từ Việt', 'Tôi đến từ Việt Nam hôm nay.', { code: 'vi' });
+    expect(viState).not.toBeNull();
+    expect(buildPhraseSelectionText(viState, { code: 'vi' })).toBe('từ Việt Nam');
+
+    const msState = buildPhraseSelectionFromText('Lumpur ada', 'Di Kuala Lumpur ada menara.', { code: 'ms' });
+    expect(msState).not.toBeNull();
+    expect(buildPhraseSelectionText(msState, { code: 'ms' })).toBe('Kuala Lumpur ada');
+
+    const nlState = buildPhraseSelectionFromText('Morgens vroeg', "'s Morgens vroeg opstaan.", { code: 'nl' });
+    expect(nlState).not.toBeNull();
+    expect(buildPhraseSelectionText(nlState, { code: 'nl' })).toBe("'s Morgens vroeg");
   });
 });

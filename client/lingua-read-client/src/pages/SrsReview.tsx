@@ -49,9 +49,10 @@ const learningDueAt = (card: DueCard): number | null =>
 const FLAG_COLORS = ['', '🟥', '🟧', '🟨', '🟩'];
 const FLAG_LABELS = ['None', 'Red', 'Orange', 'Yellow', 'Green'];
 
-// Also guard cached/older API payloads during the cloze pause. Preserve the
-// stored preference for a future redesign with less ambiguous prompts.
-const CLOZE_REVIEW_ENABLED = false;
+// Controls whether cloze and mixed card styles render ClozeReviewCard on the client.
+const CLOZE_REVIEW_ENABLED = true;
+
+const nextMixedModeSeed = (): number => Math.floor(Math.random() * 0x100000000);
 
 const GRADE_LABELS = [
   { grade: 0, label: 'Again', variant: 'danger', key: '1' },
@@ -83,7 +84,7 @@ const SrsReview = () => {
   // Random seed for "mixed" SRS card type — see shouldRenderClozeForMixedMode.
   // Stable for the lifetime of this mounted component (one review session),
   // so card types don't flip mid-card on re-render.
-  const mixedModeSessionSeed = useMemo(() => Math.floor(Math.random() * 0x100000000), []);
+  const [mixedModeSessionSeed, setMixedModeSessionSeed] = useState(nextMixedModeSeed);
 
   // Setup state
   const [languages, setLanguages] = useState<Language[]>([]);
@@ -133,51 +134,34 @@ const SrsReview = () => {
     srsLeechThreshold: number | string;
     srsLeechAction: string;
   };
-  const [localSettings, setLocalSettings] = useState<SrsLocalSettings>({
-    srsMaxNewCards: 20,
-    srsMaxReviews: 200,
-    srsReviewOrder: 'mix',
-    srsLearningStepMinutes: '1,10',
-    srsMaxIntervalDays: 36500,
-    srsLapseMinimumIntervalDays: 1,
-    srsCardType: 'translation',
-    srsRelearningStepMinutes: '10',
-    srsDesiredRetention: 0.9,
-    srsDayStartHour: 4,
-    srsFsrsWeights: '',
-    srsAutoCreateCards: 'always',
-    srsStatusSyncMode: 'promote',
-    srsStatusLevel3Days: 7,
-    srsStatusLevel4Days: 21,
-    srsAutoKnownDays: 0,
-    srsKnownCardAction: 'keep',
-    srsLeechThreshold: 8,
-    srsLeechAction: 'tag'
+  const buildLocalSettings = (s: typeof settings): SrsLocalSettings => ({
+    srsMaxNewCards: s?.srsMaxNewCards ?? 20,
+    srsMaxReviews: s?.srsMaxReviews ?? 200,
+    srsReviewOrder: s?.srsReviewOrder ?? 'mix',
+    srsLearningStepMinutes: s?.srsLearningStepMinutes ?? '1,10',
+    srsMaxIntervalDays: s?.srsMaxIntervalDays ?? 36500,
+    srsLapseMinimumIntervalDays: s?.srsLapseMinimumIntervalDays ?? 1,
+    srsCardType: s?.srsCardType ?? 'translation',
+    srsRelearningStepMinutes: s?.srsRelearningStepMinutes ?? '10',
+    srsDesiredRetention: s?.srsDesiredRetention ?? 0.9,
+    srsDayStartHour: s?.srsDayStartHour ?? 4,
+    srsFsrsWeights: s?.srsFsrsWeights ?? '',
+    srsAutoCreateCards: s?.srsAutoCreateCards ?? 'always',
+    srsStatusSyncMode: s?.srsStatusSyncMode ?? 'promote',
+    srsStatusLevel3Days: s?.srsStatusLevel3Days ?? 7,
+    srsStatusLevel4Days: s?.srsStatusLevel4Days ?? 21,
+    srsAutoKnownDays: s?.srsAutoKnownDays ?? 0,
+    srsKnownCardAction: s?.srsKnownCardAction ?? 'keep',
+    srsLeechThreshold: s?.srsLeechThreshold ?? 8,
+    srsLeechAction: s?.srsLeechAction ?? 'tag'
   });
 
-  useEffect(() => {
-    setLocalSettings({
-      srsMaxNewCards: settings?.srsMaxNewCards ?? 20,
-      srsMaxReviews: settings?.srsMaxReviews ?? 200,
-      srsReviewOrder: settings?.srsReviewOrder ?? 'mix',
-      srsLearningStepMinutes: settings?.srsLearningStepMinutes ?? '1,10',
-      srsMaxIntervalDays: settings?.srsMaxIntervalDays ?? 36500,
-      srsLapseMinimumIntervalDays: settings?.srsLapseMinimumIntervalDays ?? 1,
-      srsCardType: settings?.srsCardType ?? 'translation',
-      srsRelearningStepMinutes: settings?.srsRelearningStepMinutes ?? '10',
-      srsDesiredRetention: settings?.srsDesiredRetention ?? 0.9,
-      srsDayStartHour: settings?.srsDayStartHour ?? 4,
-      srsFsrsWeights: settings?.srsFsrsWeights ?? '',
-      srsAutoCreateCards: settings?.srsAutoCreateCards ?? 'always',
-      srsStatusSyncMode: settings?.srsStatusSyncMode ?? 'promote',
-      srsStatusLevel3Days: settings?.srsStatusLevel3Days ?? 7,
-      srsStatusLevel4Days: settings?.srsStatusLevel4Days ?? 21,
-      srsAutoKnownDays: settings?.srsAutoKnownDays ?? 0,
-      srsKnownCardAction: settings?.srsKnownCardAction ?? 'keep',
-      srsLeechThreshold: settings?.srsLeechThreshold ?? 8,
-      srsLeechAction: settings?.srsLeechAction ?? 'tag'
-    });
-  }, [settings]);
+  const [prevSettings, setPrevSettings] = useState(settings);
+  const [localSettings, setLocalSettings] = useState<SrsLocalSettings>(() => buildLocalSettings(settings));
+  if (prevSettings !== settings) {
+    setPrevSettings(settings);
+    setLocalSettings(buildLocalSettings(settings));
+  }
 
   const handleSaveSettings = async () => {
     const maxNew = parseInt(String(localSettings.srsMaxNewCards), 10);
@@ -341,6 +325,9 @@ const SrsReview = () => {
   // Start review session
   const startSession = useCallback(async () => {
     if (!selectedLanguage) return;
+    if (sessionComplete) {
+      setMixedModeSessionSeed(nextMixedModeSeed());
+    }
     setLoading(true);
     setError(null);
     setSessionComplete(false);
@@ -361,7 +348,7 @@ const SrsReview = () => {
     } finally {
       setLoading(false);
     }
-  }, [selectedLanguage, statusFilter, onlyOneTarget, advance]);
+  }, [selectedLanguage, statusFilter, onlyOneTarget, advance, sessionComplete]);
 
   // The due cards are all in the selected language; its substitutions are part of
   // how terms are keyed, so sentence matching needs them too.
@@ -477,12 +464,17 @@ const SrsReview = () => {
   }, [statusNotice]);
 
   useEffect(() => {
-    if (undoTimer > 0 && undoVisible) {
-      const timer = setTimeout(() => setUndoTimer(t => t - 1), 1000);
-      return () => clearTimeout(timer);
-    } else if (undoTimer === 0) {
-      setUndoVisible(false);
-    }
+    if (!undoVisible || undoTimer <= 0) return;
+    const timer = setTimeout(() => {
+      setUndoTimer(t => {
+        if (t <= 1) {
+          setUndoVisible(false);
+          return 0;
+        }
+        return t - 1;
+      });
+    }, 1000);
+    return () => clearTimeout(timer);
   }, [undoTimer, undoVisible]);
 
   // Keyboard shortcuts
@@ -1072,7 +1064,18 @@ const SrsReview = () => {
             </Form.Group>
             <Form.Group className="mb-3" data-testid="srs-card-type-group">
               <Form.Label>Card Style</Form.Label>
-              <p className="mb-1">Translation — see the word in context and recall its meaning.</p>
+              <Form.Select
+                value={localSettings.srsCardType}
+                onChange={e => setLocalSettings(p => ({ ...p, srsCardType: e.target.value }))}
+                data-testid="srs-card-type-select"
+              >
+                <option value="translation">Translation — see the word in context and recall its meaning</option>
+                <option value="cloze">Cloze — fill in the missing word from the sentence</option>
+                <option value="mixed">Mixed — alternate between translation and cloze</option>
+              </Form.Select>
+              <Form.Text className="text-muted">
+                Cloze cards require a mined sentence containing the word; cards without one fall back to translation.
+              </Form.Text>
             </Form.Group>
             <fieldset className="border-top pt-3 mb-3" data-testid="srs-status-sync-group">
               <legend className="fs-6">Word status sync</legend>

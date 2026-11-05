@@ -76,41 +76,61 @@ function GoalModal({
     return () => { cancelled = true; };
   }, [show]);
 
-  // Pre-populate when editing an existing goal.
-  useEffect(() => {
-    if (!show) return;
-    if (isEdit && editing) {
-      setType(editing.goalType ?? GOAL_TYPE.WordsRead);
-      setScope(editing.languageId == null ? SCOPE_ALL : String(editing.languageId));
-      setRecurrence(editing.recurrence ?? GOAL_RECURRENCE.None);
-      setMode(editing.mode ?? GOAL_MODE.Delta);
-      setTarget(
-        editing.goalType === GOAL_TYPE.ListeningSeconds
-          ? secsToHours(editing.targetValue ?? 0)
-          : String(editing.targetValue ?? 0)
-      );
-      setHasDeadline(!!editing.deadline);
-      setDeadline(editing.deadline || '');
-      setTitle(editing.title || '');
-    } else {
-      setType(GOAL_TYPE.WordsRead);
-      setScope(defaultLanguageId ? String(defaultLanguageId) : SCOPE_ALL);
-      setRecurrence(GOAL_RECURRENCE.None);
-      setMode(GOAL_MODE.Delta);
-      setTarget('');
-      setHasDeadline(false);
-      setDeadline('');
-      setTitle('');
-      setShowAdvanced(false);
+  // Pre-populate when editing an existing goal or opening for creation.
+  const modalSessionKey = show
+    ? `${isEdit ? editing?.goalId ?? 'edit' : 'new'}::${defaultLanguageId ?? ''}`
+    : null;
+  const [prevModalSessionKey, setPrevModalSessionKey] = useState<string | null>(null);
+  if (modalSessionKey !== prevModalSessionKey) {
+    setPrevModalSessionKey(modalSessionKey);
+    if (show) {
+      if (isEdit && editing) {
+        setType(editing.goalType ?? GOAL_TYPE.WordsRead);
+        setScope(editing.languageId == null ? SCOPE_ALL : String(editing.languageId));
+        setRecurrence(editing.recurrence ?? GOAL_RECURRENCE.None);
+        setMode(editing.mode ?? GOAL_MODE.Delta);
+        setTarget(
+          editing.goalType === GOAL_TYPE.ListeningSeconds
+            ? secsToHours(editing.targetValue ?? 0)
+            : String(editing.targetValue ?? 0)
+        );
+        setHasDeadline(!!editing.deadline);
+        setDeadline(editing.deadline || '');
+        setTitle(editing.title || '');
+      } else {
+        setType(GOAL_TYPE.WordsRead);
+        setScope(defaultLanguageId ? String(defaultLanguageId) : SCOPE_ALL);
+        setRecurrence(GOAL_RECURRENCE.None);
+        setMode(GOAL_MODE.Delta);
+        setTarget('');
+        setHasDeadline(false);
+        setDeadline('');
+        setTitle('');
+        setShowAdvanced(false);
+      }
+      setError('');
     }
-    setError('');
-  }, [show, isEdit, editing, defaultLanguageId]);
+  }
+
+  // Recurring => Delta only, no deadline.
+  if (recurrence !== GOAL_RECURRENCE.None) {
+    if (mode !== GOAL_MODE.Delta) setMode(GOAL_MODE.Delta);
+    if (hasDeadline) setHasDeadline(false);
+  }
+
+  const suggestionQueryKey = show && !isEdit ? `${type}::${scope}::${recurrence}::${mode}` : null;
+  const [prevSuggestionQueryKey, setPrevSuggestionQueryKey] = useState<string | null>(null);
+  if (suggestionQueryKey !== prevSuggestionQueryKey) {
+    setPrevSuggestionQueryKey(suggestionQueryKey);
+    if (suggestionQueryKey !== null) {
+      setLoading(true);
+    }
+  }
 
   // Fetch a smart default whenever the inputs that drive it change (only when creating).
   useEffect(() => {
     if (!show || isEdit) return;
     let cancelled = false;
-    setLoading(true);
     (async () => {
       try {
         const langId = scope === SCOPE_ALL ? null : (scope ? parseInt(scope, 10) : null);
@@ -141,14 +161,6 @@ function GoalModal({
     // would re-fire after auto-fill and overwrite anything the user typed.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [show, isEdit, type, scope, recurrence, mode]);
-
-  // Recurring => Delta only, no deadline.
-  useEffect(() => {
-    if (recurrence !== GOAL_RECURRENCE.None) {
-      if (mode !== GOAL_MODE.Delta) setMode(GOAL_MODE.Delta);
-      if (hasDeadline) setHasDeadline(false);
-    }
-  }, [recurrence, mode, hasDeadline]);
 
   const targetSeconds = type === GOAL_TYPE.ListeningSeconds ? hoursToSecs(target) : null;
   const targetValue = type === GOAL_TYPE.ListeningSeconds ? targetSeconds : parseInt(target || '0', 10);

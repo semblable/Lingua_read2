@@ -87,6 +87,7 @@ const SecondaryControls = React.memo(({
         variant="outline-secondary"
         onClick={() => setTextSize(globalSettings.textSize - 2)}
         title="Decrease text size"
+        disabled={globalSettings.textSize <= 12}
       >
         A-
       </Button>
@@ -94,6 +95,7 @@ const SecondaryControls = React.memo(({
         variant="outline-secondary"
         onClick={() => setTextSize(globalSettings.textSize + 2)}
         title="Increase text size"
+        disabled={globalSettings.textSize >= 32}
       >
         A+
       </Button>
@@ -103,6 +105,7 @@ const SecondaryControls = React.memo(({
         variant="outline-secondary"
         onClick={() => setLeftPanelWidth(globalSettings.leftPanelWidth + 5)}
         title="Increase reading area (Wider)"
+        disabled={globalSettings.leftPanelWidth >= 85}
       >
         ◀
       </Button>
@@ -110,6 +113,7 @@ const SecondaryControls = React.memo(({
         variant="outline-secondary"
         onClick={() => setLeftPanelWidth(globalSettings.leftPanelWidth - 5)}
         title="Decrease reading area (Narrower)"
+        disabled={globalSettings.leftPanelWidth <= 20}
       >
         ▶
       </Button>

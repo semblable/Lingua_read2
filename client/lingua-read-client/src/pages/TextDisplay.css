@@ -481,6 +481,36 @@
   scroll-behavior: smooth;
 }
 
+.audio-transcript-container .transcript-row {
+  box-sizing: border-box;
+  padding: 0;
+  padding-inline: clamp(0.75rem, 2vw, 2rem);
+  padding-bottom: var(--audio-transcript-row-gap, 1em);
+}
+
+.audio-transcript-container .srt-line {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: var(--reader-content-max-width, 740px);
+  margin: 0 auto;
+  padding: var(--audio-transcript-row-padding, 0.65rem 0.75rem);
+  border-inline-start: 4px solid transparent;
+  border-radius: 6px;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.audio-transcript-container.reader-indent-on .srt-line {
+  text-indent: 1.5em;
+}
+
+.audio-transcript-container .srt-line.active-srt-line {
+  border-inline-start-color: var(--active-srt-line-border, #fd7e14);
+  border-left-width: 0;
+  border-inline-start-width: 4px;
+  transform: none;
+}
+
 .dark-theme .theme-aware-audio-player-container {
   background-color: var(--ui-background-dark);
 }

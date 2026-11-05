@@ -1,7 +1,7 @@
 import React, { act } from 'react';
 import { readFileSync } from 'node:fs';
 import '@testing-library/jest-dom';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, createMemoryRouter, RouterProvider } from 'react-router-dom';
 import TextDisplay from '../pages/TextDisplay';
 import { SettingsContext } from '../contexts/SettingsContext';
@@ -110,6 +110,9 @@ vi.mock('../utils/browserTts', () => ({
   cancelSpeech: vi.fn(),
   isSpeechSynthesisSupported: vi.fn(() => true)
 }));
+
+vi.mock('../utils/chineseDictionary', () => ({ ensureChineseSegmentation: vi.fn(async () => {}) }));
+vi.mock('../utils/thaiDictionary', () => ({ ensureThaiSegmentation: vi.fn(async () => {}) }));
 
 const createSettingsValue = (settingOverrides = {}) => ({
   settings: {
@@ -1360,19 +1363,30 @@ describe('TextDisplay', () => {
     expect(screen.getByRole('button', { name: /Open lesson controls/i })).toHaveTextContent('Lesson');
   });
 
-  test('mobile partial-word selection preserves the native range and trailing punctuation', async () => {
+  test.each([
+    { mobile: false, audio: false },
+    { mobile: true, audio: false },
+    { mobile: false, audio: true },
+    { mobile: true, audio: true }
+  ])('partial-word selection snaps to whole words and preserves punctuation (mobile=$mobile, audio=$audio)', async ({ mobile, audio }) => {
     window.matchMedia = vi.fn().mockImplementation(() => ({
-      matches: true,
+      matches: mobile,
       addEventListener: vi.fn(),
       removeEventListener: vi.fn()
     }));
 
+    if (audio) {
+      getText.mockResolvedValueOnce({ textId: 1, title: 'Audio fixture', content: 'Hello world.',
+        languageCode: 'ES', languageId: null, isAudioLesson: true,
+        audioFilePath: 'audio_lessons/1.mp3', hasSrtContent: true, words: [] });
+      getTextSrt.mockResolvedValueOnce('1\n00:00:00,000 --> 00:00:02,000\nHello world.\n');
+    }
     renderTextDisplay({ autoTranslateWords: true });
 
     await waitFor(() => expect(getText).toHaveBeenCalled());
     const helloWord = await screen.findByText('Hello');
     const worldWord = await screen.findByText('world');
-    const textContent = helloWord.closest('.text-content');
+    const textContent = helloWord.closest(audio ? '.audio-transcript-container' : '.text-content');
     expect(textContent).not.toBeNull();
 
     // Build a real DOM Range that starts mid-word in "Hello" ("llo") and ends
@@ -1395,21 +1409,136 @@ describe('TextDisplay', () => {
     window.getSelection = vi.fn(() => mockSelection);
 
     act(() => {
-      fireEvent.touchEnd(textContent);
+      if (mobile) fireEvent.touchEnd(textContent);
+      else fireEvent.mouseUp(textContent);
       vi.advanceTimersByTime(1000);
     });
 
     await waitFor(() => {
       expect(translateSelectionWithContext).toHaveBeenCalledWith(
-        'llo world.',
+        'Hello world.',
         'Hello world.',
         'ES',
         'EN',
         expect.objectContaining({ signal: expect.anything() })
       );
     });
-    expect(mockSelection.removeAllRanges).not.toHaveBeenCalled();
-    expect(mockSelection.addRange).not.toHaveBeenCalled();
+    expect(mockSelection.removeAllRanges).toHaveBeenCalled();
+    expect(mockSelection.addRange.mock.lastCall[0].toString()).toBe('Hello world.');
+  });
+
+  test.each([
+    { code: 'pt', source: 'guarda-chuva', word: 'guarda-chuva', backwards: false },
+    { code: 'pt', source: 'guarda‑chuva', word: 'guarda-chuva', backwards: true },
+    { code: 'fr', source: "c'est-à-dire", word: "c'est-à-dire", backwards: false },
+    { code: 'fr', source: 'l’homme', word: "l'homme", backwards: true },
+    { code: 'ru', source: 'по-русски', word: 'по-русски', backwards: false },
+    { code: 'ar', source: 'وَبَيْت', word: 'وَبَيْت', backwards: true },
+    { code: 'nl', source: "'s Morgens", word: "'s Morgens", backwards: false }
+  ])('partial selection snaps to the rendered language token ($code, $source)', async ({ code, source, word, backwards }) => {
+    getLanguage.mockResolvedValue({ languageId: 13, code, wordCharacters: '\\p{L}\\p{M}', parserType: 'spacedel' });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => [] }));
+    getText.mockResolvedValueOnce({
+      textId: 1, title: 'Token fixture', content: `${source}.`, languageId: 13,
+      languageCode: code, words: []
+    });
+    renderTextDisplay({ autoTranslateWords: true });
+    const span = await screen.findByText(word);
+    const textContent = span.closest('.text-content');
+    const range = document.createRange();
+    range.setStart(span.firstChild, 2);
+    range.setEnd(span.firstChild, word.length - 1);
+    const selection = {
+      isCollapsed: false, rangeCount: 1,
+      anchorNode: span.firstChild, focusNode: span.firstChild,
+      anchorOffset: backwards ? word.length - 1 : 2,
+      toString: () => range.toString(), getRangeAt: () => range,
+      removeAllRanges: vi.fn(), addRange: vi.fn(), setBaseAndExtent: vi.fn()
+    };
+    window.getSelection = vi.fn(() => selection);
+    act(() => {
+      fireEvent.mouseUp(textContent);
+      vi.advanceTimersByTime(1000);
+    });
+    await waitFor(() => expect(translateSelectionWithContext).toHaveBeenCalledWith(
+      word, expect.stringContaining(word), code, 'EN', expect.objectContaining({ signal: expect.anything() })
+    ));
+    if (backwards) {
+      expect(selection.setBaseAndExtent).toHaveBeenCalled();
+      const [endNode, endOffset, startNode, startOffset] = selection.setBaseAndExtent.mock.lastCall;
+      const snapped = document.createRange();
+      snapped.setStart(startNode, startOffset);
+      snapped.setEnd(endNode, endOffset);
+      expect(snapped.toString()).toBe(word);
+    } else {
+      expect(selection.addRange.mock.lastCall[0].toString()).toBe(word);
+    }
+  });
+
+  test.each([
+    { code: 'zh', profile: 'jieba-v1', content: '我今天在图书馆学习中文。', word: '图书馆' },
+    { code: 'ja', profile: 'tinysegmenter-ja-v1', content: '私は昨日図書館で本を読みました。', word: '図書館' },
+    { code: 'th', profile: 'thai-dict-v1', content: 'ฉันชอบอ่านหนังสือที่กรุงเทพฯ', word: 'หนังสือ' }
+  ])('mobile snapping uses lexical tokens without spaces ($code)', async ({ code, profile, content, word }) => {
+    if (code === 'zh') {
+      const { initializeChineseSegmentation } = await import('../utils/chineseRuntime');
+      initializeChineseSegmentation(readFileSync('../../server/LinguaReadApi/Resources/Segmentation/jieba-big-v1.txt', 'utf8'));
+    } else if (code === 'th') {
+      const { initializeThaiSegmentation } = await import('../utils/thaiRuntime');
+      initializeThaiSegmentation(readFileSync('../../server/LinguaReadApi/Resources/Segmentation/words_th.txt', 'utf8'));
+    }
+    window.matchMedia = vi.fn(() => ({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() }));
+    getLanguage.mockResolvedValue({ languageId: 13, code, wordCharacters: '\\p{L}\\p{M}', parserType: 'spacedel' });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => [] }));
+    getText.mockResolvedValueOnce({ textId: 1, title: 'Token fixture', content, languageId: 13,
+      languageCode: code, segmentationProfile: profile, words: [] });
+    renderTextDisplay({ autoTranslateWords: true });
+    const span = await screen.findByText(word);
+    const range = document.createRange();
+    range.setStart(span.firstChild, 1);
+    range.setEnd(span.firstChild, word.length - 1);
+    const selection = {
+      isCollapsed: false, rangeCount: 1, anchorNode: span.firstChild, focusNode: span.firstChild,
+      toString: () => range.toString(), getRangeAt: () => range,
+      removeAllRanges: vi.fn(), addRange: vi.fn()
+    };
+    window.getSelection = vi.fn(() => selection);
+    act(() => {
+      fireEvent.touchEnd(span.closest('.text-content'));
+      vi.advanceTimersByTime(1000);
+    });
+    await waitFor(() => expect(translateSelectionWithContext).toHaveBeenCalledWith(
+      word, expect.stringContaining(word), code, 'EN', expect.objectContaining({ signal: expect.anything() })
+    ));
+    expect(selection.addRange.mock.lastCall[0].toString()).toBe(word);
+  });
+
+  test.each(['-', '–', '—'])('whole-word snapping keeps standalone %s and sentence punctuation inside the selection', async dash => {
+    getText.mockResolvedValueOnce({
+      textId: 1, title: 'Dash fixture', content: `Hello ${dash} world; again. Another sentence.`,
+      languageId: null, languageCode: 'EN', words: []
+    });
+    renderTextDisplay({ autoTranslateWords: true });
+    const first = await screen.findByText('Hello');
+    const last = await screen.findByText('Another');
+    const range = document.createRange();
+    range.setStart(first.firstChild, 2);
+    range.setEnd(last.firstChild, 3);
+    const selection = {
+      isCollapsed: false, rangeCount: 1, anchorNode: first.firstChild, focusNode: last.firstChild,
+      toString: () => range.toString(), getRangeAt: () => range,
+      removeAllRanges: vi.fn(), addRange: vi.fn()
+    };
+    window.getSelection = vi.fn(() => selection);
+    act(() => {
+      fireEvent.mouseUp(first.closest('.text-content'));
+      vi.advanceTimersByTime(1000);
+    });
+    const expected = `Hello ${dash} world; again. Another`;
+    await waitFor(() => expect(translateSelectionWithContext).toHaveBeenCalledWith(
+      expected, expect.stringContaining(expected), 'EN', 'EN', expect.objectContaining({ signal: expect.anything() })
+    ));
+    expect(selection.addRange.mock.lastCall[0].toString()).toBe(expected);
   });
 
   test.each([
@@ -2631,13 +2760,24 @@ describe('TextDisplay', () => {
     }
   });
 
-  test.each([false, true])('reader toolbar settings save and reload through the settings provider (mobile=%s)', async (mobile) => {
+  test.each([
+    { mobile: false, audio: false },
+    { mobile: true, audio: false },
+    { mobile: false, audio: true },
+    { mobile: true, audio: true }
+  ])('reader toolbar settings save and reload through the settings provider (mobile=$mobile, audio=$audio)', async ({ mobile, audio }) => {
     window.matchMedia = vi.fn(() => ({
       matches: mobile,
       addEventListener: vi.fn(),
       removeEventListener: vi.fn()
     }));
     localStorage.removeItem('cachedSettings');
+    if (audio) {
+      getText.mockResolvedValue({ textId: 1, title: 'Audio fixture', content: 'Hello world.',
+        languageCode: 'ES', languageId: null, isAudioLesson: true,
+        audioFilePath: 'audio_lessons/1.mp3', hasSrtContent: true, words: [] });
+      getTextSrt.mockResolvedValue('1\n00:00:00,000 --> 00:00:02,000\nHello world.\n');
+    }
     let serverSettings = { readerTextAlignment: 'left', textSize: 16, readerParagraphIndent: true };
     getUserSettings.mockImplementation(async () => ({ ...serverSettings }));
     updateUserSettings.mockImplementation(async patch => {
@@ -2654,7 +2794,7 @@ describe('TextDisplay', () => {
     const first = mountReader();
     try {
       const word = await screen.findByText('Hello');
-      const textContent = word.closest('.text-content');
+      const textContent = word.closest(audio ? '.audio-transcript-container' : '.text-content');
       if (mobile) {
         act(() => {
           fireEvent.click(screen.getByRole('button', { name: 'Open lesson controls' }));
@@ -2665,18 +2805,27 @@ describe('TextDisplay', () => {
       fireEvent.click(screen.getByTitle('Justified text'));
       fireEvent.click(screen.getByTitle('Increase text size'));
       fireEvent.click(screen.getByTitle('Toggle paragraph indent'));
+      fireEvent.click(within(screen.getByRole('group', { name: 'Reader text width' })).getByRole('button', { name: 'N' }));
+      fireEvent.click(within(screen.getByRole('group', { name: 'Reading density' })).getByRole('button', { name: 'S' }));
       if (!mobile) {
         fireEvent.click(screen.getByLabelText('Set line spacing to relaxed'));
         fireEvent.click(screen.getByLabelText('Set relaxed paragraph spacing'));
       }
       expect(textContent).toHaveClass('reader-align-justify', 'reader-indent-off');
       expect(textContent).toHaveStyle({ fontSize: '18px' });
+      if (audio) {
+        expect(textContent.style.getPropertyValue('--reader-content-max-width')).toBe('620px');
+        expect(textContent.style.getPropertyValue('--audio-transcript-row-padding')).toBe('0.5rem 0.65rem');
+        expect(textContent.style.getPropertyValue('--audio-transcript-row-gap')).toBe(mobile ? '1em' : '1.6em');
+      }
       expect(JSON.parse(localStorage.getItem('cachedSettings'))).toEqual(expect.objectContaining({
-        readerTextAlignment: 'justify', textSize: 18, readerParagraphIndent: false
+        readerTextAlignment: 'justify', textSize: 18, readerParagraphIndent: false,
+        readerContentWidth: 620, readingDensity: 'compact'
       }));
       await act(async () => { vi.advanceTimersByTime(500); });
       expect(serverSettings).toEqual(expect.objectContaining({
         readerTextAlignment: 'justify', textSize: 18, readerParagraphIndent: false,
+        readerContentWidth: 620, readingDensity: 'compact',
         ...(!mobile && { lineSpacing: 1.75, paragraphSpacing: 1.6 })
       }));
       first.unmount();
@@ -2685,9 +2834,13 @@ describe('TextDisplay', () => {
       const second = mountReader();
       try {
         await waitFor(() => {
-          const reloadedText = screen.getByText('Hello').closest('.text-content');
+          const reloadedText = screen.getByText('Hello').closest(audio ? '.audio-transcript-container' : '.text-content');
           expect(reloadedText).toHaveClass('reader-align-justify', 'reader-indent-off');
           expect(reloadedText).toHaveStyle({ fontSize: '18px' });
+          if (audio) {
+            expect(reloadedText.style.getPropertyValue('--reader-content-max-width')).toBe('620px');
+            expect(reloadedText.style.getPropertyValue('--audio-transcript-row-padding')).toBe('0.5rem 0.65rem');
+          }
         });
         if (!mobile) {
           expect(document.body.style.getPropertyValue('--reading-line-height')).toBe('1.75');

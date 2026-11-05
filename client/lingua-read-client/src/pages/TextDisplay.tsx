@@ -795,8 +795,8 @@ const TextDisplay = () => {
       return null;
     }
 
-    const selectedText = selection.toString().trim();
-    if (!selectedText) {
+    const selectedText = selection.toString();
+    if (!selectedText.trim()) {
       return null;
     }
 
@@ -878,7 +878,43 @@ const TextDisplay = () => {
       return;
     }
 
-    const { range, container, selectedText } = selectionDetails;
+    const { selection, container } = selectionDetails;
+    let { range, selectedText } = selectionDetails;
+    const selectedSpans = getOverlappedWordSpans(range, container);
+    const firstWord = selectedSpans[0];
+    const lastWord = selectedSpans[selectedSpans.length - 1];
+    let prefix = '';
+    let suffix = '';
+    if (firstWord?.contains(range.startContainer)) {
+      const before = document.createRange();
+      before.selectNodeContents(firstWord);
+      before.setEnd(range.startContainer, range.startOffset);
+      prefix = before.toString();
+    }
+    if (lastWord?.contains(range.endContainer)) {
+      const after = document.createRange();
+      after.selectNodeContents(lastWord);
+      after.setStart(range.endContainer, range.endOffset);
+      suffix = after.toString();
+    }
+    if (prefix || suffix) {
+      const backwards = selection.anchorNode === range.endContainer && selection.anchorOffset === range.endOffset;
+      range = range.cloneRange();
+      if (prefix) range.setStartBefore(firstWord);
+      if (suffix) range.setEndAfter(lastWord);
+      selectedText = prefix + selectedText + suffix;
+      isAdjustingSelectionRef.current = true;
+      try {
+        if (backwards && typeof selection.setBaseAndExtent === 'function') {
+          selection.setBaseAndExtent(range.endContainer, range.endOffset, range.startContainer, range.startOffset);
+        } else {
+          selection.removeAllRanges();
+          selection.addRange(range);
+        }
+      } finally {
+        Promise.resolve().then(() => { isAdjustingSelectionRef.current = false; });
+      }
+    }
     if (isMobile) {
       mobileSelectionPendingRef.current = false;
       mobileSelectionObservedRef.current = false;
@@ -896,9 +932,8 @@ const TextDisplay = () => {
       return;
     }
 
-    // Keep the user's native range, including punctuation and sentence/block boundaries.
+    // Snap partial words without trimming punctuation or restricting sentence/block boundaries.
     const sentenceContext = buildAiSelectionContext(range, container, cleanedRawText);
-    const selectedSpans = getOverlappedWordSpans(range, container);
     const phraseSelection = selectedSpans.length > 0
       ? buildPhraseSelectionFromSpans(selectedSpans[0], selectedSpans[selectedSpans.length - 1], container, languageConfig, sentenceContext)
       : buildPhraseSelectionFromText(cleanedRawText, sentenceContext, languageConfig);
@@ -1608,18 +1643,12 @@ const TextDisplay = () => {
     lines: srtLines,
     currentLineId: currentSrtLineId,
     processLineContent: processTextContent,
-    handleLineClick: handleLineClick,
-    getFontStyling, // Pass the function as defined in step 1
-    currentLineSpacing: isMobile ? mobileReadingConfig.lineSpacing : globalSettings.lineSpacing // Pass the current lineSpacing value
+    handleLineClick
   }), [
     srtLines,
     currentSrtLineId,
     processTextContent,
-    handleLineClick,
-    getFontStyling,
-    globalSettings.lineSpacing,
-    isMobile,
-    mobileReadingConfig.lineSpacing // CRITICAL: itemData must update when lineSpacing changes
+    handleLineClick
   ]);
 
   const handleToggleBookmarkForCurrentSentence = useCallback(() => {

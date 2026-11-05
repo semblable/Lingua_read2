@@ -9,4 +9,4 @@ Use [the release plan](OPEN_SOURCE_PLAN.md) for publication priorities and [the 
 - Check context export in Anki desktop/mobile and observe a learner session using [the feedback protocol](LEARNER_FEEDBACK.md).
 - For language/activity implementation, start with the [short roadmap](LANGUAGE_SUPPORT_PLAN.md) and inspect current code.
 
-Cloze/mixed review remains paused. Re-enabling needs clearer meaning cues, handling of valid alternatives and learner validation, while preserving mined sentences and FSRS history. Related-word links, transcription and two-way Anki sync remain deferred.
+Cloze and mixed review are enabled with translation meaning cues, progressive letter-by-letter hint unlocking, and grapheme-aware answer slots; observe real learner sessions to validate prompt clarity and alternative answers. Related-word links, transcription and two-way Anki sync remain deferred.

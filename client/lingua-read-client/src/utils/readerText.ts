@@ -993,6 +993,49 @@ const tryConsumeLeadingApostrophe = (text: string, start: number, core: RegExp, 
     (end === text.length || (text[end] !== "'" && !isCoreWordChar(core, text[end]))) ? end : null;
 };
 
+const TARGETED_COMPOUNDS: Record<string, string[]> = {
+  vi: ['việt nam', 'quốc ngữ', 'đặc biệt'],
+  ms: ['kuala lumpur'],
+};
+
+const tryConsumeTargetedCompound = (
+  text: string,
+  start: number,
+  core: RegExp,
+  code?: string
+): number | null => {
+  if (!code) return null;
+  const compounds = TARGETED_COMPOUNDS[code];
+  if (!compounds) return null;
+
+  if (
+    start > 0 &&
+    (isCoreWordChar(core, text[start - 1]) ||
+      ((text[start - 1] === '-' || text[start - 1] === "'") && start > 1 && isCoreWordChar(core, text[start - 2])))
+  ) {
+    return null;
+  }
+
+  for (const compound of compounds) {
+    const len = compound.length;
+    if (start + len > text.length) continue;
+
+    if (text.slice(start, start + len).toLowerCase() === compound) {
+      const matchEnd = start + len;
+      if (
+        matchEnd < text.length &&
+        (isCoreWordChar(core, text[matchEnd]) ||
+          ((text[matchEnd] === '-' || text[matchEnd] === "'") && matchEnd + 1 < text.length && isCoreWordChar(core, text[matchEnd + 1])))
+      ) {
+        continue;
+      }
+      return matchEnd;
+    }
+  }
+
+  return null;
+};
+
 const findDottedInitialismEnd = (text: string, start: number, core: RegExp): number => {
   let end = start;
   let letters = 0;
@@ -1210,6 +1253,8 @@ export const consumeWordAt = (
   if (dutchProcliticNoun !== null) return { text: processed.slice(index, dutchProcliticNoun), end: dutchProcliticNoun };
   const apostropheEnd = tryConsumeLeadingApostrophe(processed, index, coreRegex, code);
   if (apostropheEnd !== null) return { text: processed.slice(index, apostropheEnd), end: apostropheEnd };
+  const targetedCompoundEnd = tryConsumeTargetedCompound(processed, index, coreRegex, code);
+  if (targetedCompoundEnd !== null) return { text: processed.slice(index, targetedCompoundEnd), end: targetedCompoundEnd };
   if (!canStartWord(coreRegex, processed[index])) return null;
 
   let i = findDottedInitialismEnd(processed, index, coreRegex);

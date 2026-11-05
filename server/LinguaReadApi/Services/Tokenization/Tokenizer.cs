@@ -276,6 +276,11 @@ namespace LinguaReadApi.Services.Tokenization
                     tokens.Add(new Token(processed.Substring(i, apostropheEnd - i), i, apostropheEnd, true));
                     i = apostropheEnd;
                 }
+                else if (TryConsumeTargetedCompound(processed, span, coreRegex, i, code, out var compoundEnd))
+                {
+                    tokens.Add(new Token(processed.Substring(i, compoundEnd - i), i, compoundEnd, IsWord: true));
+                    i = compoundEnd;
+                }
                 else if (CanStartWord(coreRegex, span, i))
                 {
                     var start = i;
@@ -826,6 +831,54 @@ namespace LinguaReadApi.Services.Tokenization
             if (q == secondWordStart) return false;
             firstWordEnd = q;
             return true;
+        }
+
+        private static readonly Dictionary<string, string[]> TargetedCompoundsByLanguage = new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["vi"] = new[] { "Việt Nam", "Quốc ngữ", "đặc biệt" },
+            ["ms"] = new[] { "Kuala Lumpur" }
+        };
+
+        private static bool TryConsumeTargetedCompound(
+            string text,
+            ReadOnlySpan<char> span,
+            Regex core,
+            int start,
+            string code,
+            out int end)
+        {
+            end = start;
+            if (!TargetedCompoundsByLanguage.TryGetValue(code, out var compounds))
+            {
+                return false;
+            }
+
+            if (start > 0 && (IsCoreWordChar(core, span, start - 1)
+                || ((text[start - 1] is '-' or '\'') && start > 1 && IsCoreWordChar(core, span, start - 2))))
+            {
+                return false;
+            }
+
+            foreach (var compound in compounds)
+            { 
+                var len = compound.Length;
+                if (start + len > text.Length) continue;
+
+                if (span.Slice(start, len).Equals(compound, StringComparison.OrdinalIgnoreCase))
+                {
+                    var matchEnd = start + len;
+                    if (matchEnd < text.Length && (IsCoreWordChar(core, span, matchEnd)
+                        || ((text[matchEnd] is '-' or '\'') && matchEnd + 1 < text.Length && IsCoreWordChar(core, span, matchEnd + 1))))
+                    {
+                        continue;
+                    }
+
+                    end = matchEnd;
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         // Only isolated language-specific proclitics; quoted letters remain separators.

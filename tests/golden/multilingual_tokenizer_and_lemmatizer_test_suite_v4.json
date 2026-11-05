@@ -9223,16 +9223,10 @@
           "lookup_key": "người"
         },
         {
-          "surface_span": "Việt",
+          "surface_span": "Việt Nam",
           "start": 6,
-          "end": 10,
-          "lookup_key": "việt"
-        },
-        {
-          "surface_span": "Nam",
-          "start": 11,
           "end": 14,
-          "lookup_key": "nam"
+          "lookup_key": "việt nam"
         },
         {
           "surface_span": "nói",
@@ -9268,7 +9262,6 @@
       "provenance": {
         "reference_id": "vi-01",
         "differences": [
-          "runtime_token_spans_or_keys",
           "reference_semantic_lemmas"
         ],
         "reference_lemma_assertion": "reference_only: broad semantic lemmatization is outside the runtime tokenizer contract"
@@ -9286,16 +9279,10 @@
       "sentence": "Quốc ngữ có chữ Đ và đ đặc biệt.",
       "tokens": [
         {
-          "surface_span": "Quốc",
+          "surface_span": "Quốc ngữ",
           "start": 0,
-          "end": 4,
-          "lookup_key": "quốc"
-        },
-        {
-          "surface_span": "ngữ",
-          "start": 5,
           "end": 8,
-          "lookup_key": "ngữ"
+          "lookup_key": "quốc ngữ"
         },
         {
           "surface_span": "có",
@@ -9328,23 +9315,15 @@
           "lookup_key": "đ"
         },
         {
-          "surface_span": "đặc",
+          "surface_span": "đặc biệt",
           "start": 23,
-          "end": 26,
-          "lookup_key": "đặc"
-        },
-        {
-          "surface_span": "biệt",
-          "start": 27,
           "end": 31,
-          "lookup_key": "biệt"
+          "lookup_key": "đặc biệt"
         }
       ],
       "provenance": {
         "reference_id": "vi-02",
-        "differences": [
-          "runtime_token_spans_or_keys"
-        ],
+        "differences": [],
         "reference_lemma_assertion": "reference_only: broad semantic lemmatization is outside the runtime tokenizer contract"
       }
     },
@@ -12085,16 +12064,10 @@
           "lookup_key": "di"
         },
         {
-          "surface_span": "Kuala",
+          "surface_span": "Kuala Lumpur",
           "start": 14,
-          "end": 19,
-          "lookup_key": "kuala"
-        },
-        {
-          "surface_span": "Lumpur",
-          "start": 20,
           "end": 26,
-          "lookup_key": "lumpur"
+          "lookup_key": "kuala lumpur"
         },
         {
           "surface_span": "ialah",
@@ -12118,7 +12091,6 @@
       "provenance": {
         "reference_id": "ms-02",
         "differences": [
-          "runtime_token_spans_or_keys",
           "reference_semantic_lemmas"
         ],
         "reference_lemma_assertion": "reference_only: broad semantic lemmatization is outside the runtime tokenizer contract"
@@ -12819,7 +12791,7 @@
     "source_cases": 89,
     "runtime_cases": 100,
     "source_languages": 44,
-    "cases_with_runtime_span_or_key_differences": 14,
+    "cases_with_runtime_span_or_key_differences": 11,
     "cases_with_reference_semantic_lemmas": 86,
     "explanation": "All source cases run against the current documented runtime contract; the intact reference suite records aspirational phrase grouping, numeric tokens, and multilingual semantic lemmas that these tokenizers do not provide. No source case is skipped or represented as semantically implemented."
   },

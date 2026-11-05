@@ -44,7 +44,7 @@ describe('shared multilingual UTF-16 runtime contract', () => {
     const spanDiffs = goldenSuite.cases.filter(fixture => fixture.provenance.differences?.includes('runtime_token_spans_or_keys')).length;
     const semanticDiffs = goldenSuite.cases.filter(fixture => fixture.provenance.differences?.includes('reference_semantic_lemmas')).length;
     expect(goldenSuite.reference_gap_summary.runtime_cases).toBe(goldenSuite.cases.length);
-    expect(spanDiffs).toBe(14);
+    expect(spanDiffs).toBe(11);
     expect(goldenSuite.reference_gap_summary.cases_with_runtime_span_or_key_differences).toBe(spanDiffs);
     expect(semanticDiffs).toBe(86);
     expect(goldenSuite.reference_gap_summary.cases_with_reference_semantic_lemmas).toBe(semanticDiffs);

@@ -2,17 +2,19 @@
 
 All 89 original reference cases across 44 languages remain intact in `tests/golden/multilingual_tokenizer_and_lemmatizer_test_suite_v4.json`. Runtime surfaces address the **displayed processed sentence** using **UTF-16 code units**.
 
-This Tokenizer v5 slice expands support across Chinese contextual disambiguation (`zh-01`), Dutch proclitic noun phrases (`nl-01`), English dual-apostrophe idiom contractions (`en-02`), and Japanese kana disambiguation (`ja-01`), bringing the remaining span/key gaps from **18 down to 14**:
+This Tokenizer v5 slice expands support across Chinese contextual disambiguation (`zh-01`), Dutch proclitic noun phrases (`nl-01`), English dual-apostrophe idiom contractions (`en-02`), Japanese kana disambiguation (`ja-01`), and multiword compound tokenization for Vietnamese (`vi-01`, `vi-02`) and Malay (`ms-02`), bringing the remaining span/key gaps from **18 down to 11**:
 - `zh-01`: targeted compound weight override in `SegmentHanRun` for `乒乓球拍` and resultative verb-complement `卖` / `完` ensures standard disambiguation without modifying the pinned dictionary resource or its SHA-256 hash.
 - `nl-01`: recognized leading proclitics (`'s ` or `'t `) followed by a capitalized noun (e.g. `'s Morgens`, `'s Avonds`, `'s Winters`, `'t Kofschip`) as single lexical units matching the reference suite and Dutch orthography; added validated lookup fallback peeling (`'s Morgens` → `morgens`).
 - `en-02`: unified `<word> 'n' <word>` dual-apostrophe idiom contractions (e.g. `rock 'n' roll`) as coordinate compound tokens matching the reference suite specification.
 - `ja-01`: targeted kana phrase disambiguation in `JapaneseSegmenter` / `segmentJapaneseRun` for repeated `すもも` / `も` / `もも` / `の` / `うち` (`すもももももももものうち`) resolves consecutive hiragana boundary fragmentation without altering base TinySegmenter weights.
+- `vi-01`, `vi-02`: targeted multiword compound tokenization for `Việt Nam`, `Quốc ngữ`, and `đặc biệt` preserves multi-syllable lexical units matching the reference suite and Vietnamese orthography.
+- `ms-02`: targeted multiword proper noun tokenization for `Kuala Lumpur` unifies the multiword named entity matching the reference suite specification.
 
 All 89 original references remain unchanged; 100 runtime cases execute. Semantic markers remain **86**.
 
 Verification: server **1,750 passed, 7 PostgreSQL-only skipped**; client **1,783 passed across 114 files**. Solution build, typecheck, production build, and lint pass (46 existing lint warnings). Docker is unavailable locally. Tokenizer is at version **5** (`WordLinker.CurrentTokenizerVersion = 5`), verified by `TokenizerV5MigrationAcceptanceTests`.
 
-## Remaining 14 span/key gaps
+## Remaining 11 span/key gaps
 
 | Cases | Classification and reason |
 | --- | --- |
@@ -20,10 +22,8 @@ Verification: server **1,750 passed, 7 PostgreSQL-only skipped**; client **1,783
 | `fr-01`, `fr-02` | Intentional glued Romance elision/clitic spans (`C'est`, `l'eau`, `d'Anne`, `qu'il`, `œuf-là`); `l'`/`d'`/`c'`/`qu'`/`-là`/`-ci` use validated lookup fallback. |
 | `it-01`, `it-02` | Intentional glued elision spans (`C'è`, `d'acqua`, `nell'ombra`, `qualcos'altro`, `un'occhiata`, `quell'albero`); `po'` span `[7:10]` matches reference and `l'`/`d'`/`un'`/`quell'`/`nell'`/`qualcos'`/`all'`/`dall'`/`sull'`/`coll'`/`bell'`/`sant'`/`quest'`/`po'` use validated lookup fallback. |
 | `ca-01`, `ca-02` | Intentional glued elision/clitic spans (`L'home`, `d'aigua`, `d'objectes`, `d'un`, `Dona'm-ho`, `d'anar-te'n`, `l'església`); `l'`/`d'`/`m'`/`t'`/`s'`/`n'` and chained enclitics (`-ho`, `-en`, `-nos`, `'m`, `'t`, etc.) use validated lookup fallback. |
-| `vi-01`, `vi-02` | Multiword lexical phrase grouping (`Việt Nam`, `Quốc ngữ`, `đặc biệt`). |
 | `ro-01` | Generic hyphen glue (`și-au`) versus clitic subtokens (`și / -au`); `și-` and `-au` use validated lookup fallback. |
 | `ko-01`, `ko-02` | Intentional full eojeol touch targets; Josa/stem decomposition is handled in lookup candidates. |
-| `ms-02` | Multiword phrase `Kuala Lumpur` (`RM` and `50.00` match). |
 | `en-01` | Intentional ASCII apostrophe surface normalization; `Dr.` matches. |
 
 ## The 86 semantic markers

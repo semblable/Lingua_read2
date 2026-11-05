@@ -2299,12 +2299,10 @@ namespace LinguaReadApi.Controllers
                     // As on the standalone route, initial sentence credit is already
                     // earned. Only a later intentional reread earns the full volume.
                     int totalWordCount = WordCountUtility.CountTotalWords(text.Content);
-                    var sentenceProgress = await _context.UserSentenceProgresses.FindAsync(userId, text.TextId);
-                    int completionWordCredit = isFirstCompletion
-                        ? Math.Max(totalWordCount - (sentenceProgress?.CreditedWordCount ?? 0), 0)
-                        : totalWordCount;
-                    LessonStudyActivity.Record(_context, userId, text.TextId, text.Title, text.LanguageId,
+                    int completionWordCredit = await LessonStudyActivity.CompletionWordsAsync(_context, userId, text.TextId, totalWordCount, text.IsFinished);
+                    var completedRead = LessonStudyActivity.Record(_context, userId, text.TextId, text.Title, text.LanguageId,
                         text.Content, text.AudioFilePath, lessonDto.ClientEventId, "read", words: completionWordCredit);
+                    completedRead.ReconcilesSentenceCredit = isFirstCompletion;
 
                     // book.Language was eager-loaded above; mutate it in place rather than refetching.
                     var language = book.Language;

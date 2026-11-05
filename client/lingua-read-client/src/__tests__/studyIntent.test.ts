@@ -2,12 +2,21 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { studyIntent } from '../utils/studyIntent';
 import { useAuthStore } from '../utils/store';
 import { completeLesson } from '../utils/api/books';
-import { recordLessonListen } from '../utils/api/lessonStudy';
+import { recordLessonListen, setLessonStudyCount } from '../utils/api/lessonStudy';
 import { fetchApi } from '../utils/api/client';
 vi.mock('../utils/api/client', () => ({ fetchApi: vi.fn(), API_URL: '/api' }));
 let learnerSequence = 0;
 beforeEach(() => { sessionStorage.clear(); vi.clearAllMocks(); useAuthStore.setState({ user: { id: `test-learner-${++learnerSequence}` } }); });
 afterEach(() => { vi.restoreAllMocks(); });
+
+test('fractional totals retain their exact target and expected count across lost-response retries', async () => {
+  vi.mocked(fetchApi).mockRejectedValueOnce(new TypeError('lost response')).mockResolvedValue({ readCount: 2.5, listenCount: 0 });
+  await expect(setLessonStudyCount(44, 'rev', 'read', 2.5, 1)).rejects.toThrow('lost response');
+  await setLessonStudyCount(44, 'rev', 'read', 2.5, 1);
+  expect(vi.mocked(fetchApi).mock.calls[0]).toEqual(vi.mocked(fetchApi).mock.calls[1]);
+  const body = JSON.parse(String(vi.mocked(fetchApi).mock.calls[1][1]?.body));
+  expect(body).toMatchObject({ count: 2.5, expectedCount: 1, kind: 'read' });
+});
 
 test('holds an action ID across retries and separates account, text, revision and kind', () => {
   const owner = useAuthStore.getState().user;

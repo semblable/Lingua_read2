@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, expect, test, vi } from 'vitest';
-vi.mock('../utils/api', () => ({ completeLesson: vi.fn(), getLessonStudy: vi.fn(), recordLessonListen: vi.fn() }));
-import { completeLesson, getLessonStudy, recordLessonListen } from '../utils/api';
+vi.mock('../utils/api', () => ({ completeLesson: vi.fn(), getLessonStudy: vi.fn(), recordLessonListen: vi.fn(), setLessonStudyCount: vi.fn() }));
+import { completeLesson, getLessonStudy, recordLessonListen, setLessonStudyCount } from '../utils/api';
 import LessonStudyPanel from '../components/reader/LessonStudyPanel';
 
 beforeEach(() => {
@@ -9,6 +9,115 @@ beforeEach(() => {
   vi.mocked(getLessonStudy).mockResolvedValue({ readCount: 3, listenCount: 2 });
   vi.mocked(completeLesson).mockResolvedValue({});
   vi.mocked(recordLessonListen).mockResolvedValue({});
+  vi.mocked(setLessonStudyCount).mockResolvedValue({ readCount: 2.5, listenCount: 2 });
+});
+
+test('sets a fractional read directly, updates its displayed count, and supports Enter', async () => {
+  render(<LessonStudyPanel textId={44} sourceRevision="revision" hasAudio />);
+  await screen.findByText('3×');
+  fireEvent.click(screen.getByRole('button', { name: /Read passes/ }));
+  fireEvent.change(screen.getByLabelText('Read total'), { target: { value: '2.5' } });
+  fireEvent.submit(screen.getByLabelText('Read total').closest('form')!);
+  await waitFor(() => expect(setLessonStudyCount).toHaveBeenCalledWith(44, 'revision', 'read', 2.5, 3));
+  expect(await screen.findByText('2.5×')).toBeInTheDocument();
+  expect(screen.getByRole('status')).toHaveTextContent('Reading statistics updated.');
+});
+
+test('steps in exact tenths, clamps at zero, and accepts decimal commas', async () => {
+  vi.mocked(getLessonStudy).mockResolvedValue({ readCount: 0.3, listenCount: 0 });
+  vi.mocked(setLessonStudyCount).mockResolvedValue({ readCount: 2.5, listenCount: 0 });
+  render(<LessonStudyPanel textId={44} sourceRevision="revision" hasAudio={false} />);
+  await screen.findByText('0.3×');
+  fireEvent.click(screen.getByRole('button', { name: /Read passes/ }));
+  const input = screen.getByLabelText('Read total');
+  fireEvent.click(screen.getByRole('button', { name: 'Increase read total by 0.1' }));
+  expect(input).toHaveValue('0.4');
+  const decrease = screen.getByRole('button', { name: 'Decrease read total by 0.1' });
+  for (let i = 0; i < 4; i++) fireEvent.click(decrease);
+  expect(input).toHaveValue('0');
+  expect(decrease).toBeDisabled();
+  fireEvent.change(input, { target: { value: '2,5' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save total' }));
+  await waitFor(() => expect(setLessonStudyCount).toHaveBeenCalledWith(44, 'revision', 'read', 2.5, 0.3));
+});
+
+test.each(['', '-0.1', '0.25', '10000.1', 'Infinity', 'abc', '0x10'])('rejects invalid totals: %s', async value => {
+  render(<LessonStudyPanel textId={44} sourceRevision="revision" hasAudio={false} />);
+  await screen.findByText('3×');
+  fireEvent.click(screen.getByRole('button', { name: /Read passes/ }));
+  fireEvent.change(screen.getByLabelText('Read total'), { target: { value } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save total' }));
+  expect(setLessonStudyCount).not.toHaveBeenCalled();
+  expect(screen.getByText('Enter a total between 0 and 10,000 in steps of 0.1.')).toBeInTheDocument();
+});
+
+test('steps correctly at the upper limit', async () => {
+  vi.mocked(getLessonStudy).mockResolvedValue({ readCount: 9999.9, listenCount: 0 });
+  render(<LessonStudyPanel textId={44} sourceRevision="revision" hasAudio={false} />);
+  await screen.findByText('9999.9×');
+  fireEvent.click(screen.getByRole('button', { name: /Read passes/ }));
+  fireEvent.click(screen.getByRole('button', { name: 'Increase read total by 0.1' }));
+  expect(screen.getByLabelText('Read total')).toHaveValue('10000');
+  expect(screen.getByRole('button', { name: 'Increase read total by 0.1' })).toBeDisabled();
+  fireEvent.click(screen.getByRole('button', { name: 'Decrease read total by 0.1' }));
+  expect(screen.getByLabelText('Read total')).toHaveValue('9999.9');
+});
+
+test('a failed save retains the edit for retry and duplicate clicks serialize', async () => {
+  let fail!: (error: Error) => void;
+  vi.mocked(setLessonStudyCount).mockReturnValueOnce(new Promise((_, reject) => { fail = reject; }));
+  render(<LessonStudyPanel textId={44} sourceRevision="revision" hasAudio={false} />);
+  await screen.findByText('3×');
+  fireEvent.click(screen.getByRole('button', { name: /Read passes/ }));
+  fireEvent.change(screen.getByLabelText('Read total'), { target: { value: '2.5' } });
+  const save = screen.getByRole('button', { name: 'Save total' });
+  fireEvent.click(save); fireEvent.click(save);
+  expect(setLessonStudyCount).toHaveBeenCalledTimes(1);
+  await act(async () => fail(new Error('Network unavailable')));
+  expect(screen.getByLabelText('Read total')).toHaveValue('2.5');
+  fireEvent.click(screen.getByRole('button', { name: 'Save total' }));
+  await waitFor(() => expect(setLessonStudyCount).toHaveBeenCalledTimes(2));
+  expect(vi.mocked(setLessonStudyCount).mock.calls[0]).toEqual(vi.mocked(setLessonStudyCount).mock.calls[1]);
+});
+
+test('late saves cannot overwrite a newly opened lesson', async () => {
+  let finish!: (value: { readCount: number; listenCount: number }) => void;
+  vi.mocked(setLessonStudyCount).mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
+  const view = render(<LessonStudyPanel textId={44} sourceRevision="revision" hasAudio={false} />);
+  await screen.findByText('3×');
+  fireEvent.click(screen.getByRole('button', { name: /Read passes/ }));
+  fireEvent.change(screen.getByLabelText('Read total'), { target: { value: '2.5' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save total' }));
+  vi.mocked(getLessonStudy).mockResolvedValue({ readCount: 0.3, listenCount: 0 });
+  view.rerender(<LessonStudyPanel textId={45} sourceRevision="other" hasAudio={false} />);
+  await screen.findByText('0.3×');
+  await act(async () => finish({ readCount: 2.5, listenCount: 0 }));
+  expect(screen.getByRole('button', { name: 'Read passes: 0.3' })).toBeInTheDocument();
+});
+
+test('listened totals do not add listening time', async () => {
+  vi.mocked(setLessonStudyCount).mockResolvedValue({ readCount: 3, listenCount: 0.3 });
+  render(<LessonStudyPanel textId={44} sourceRevision="revision" hasAudio />);
+  await screen.findByText('2×');
+  fireEvent.click(screen.getByRole('button', { name: /Listened passes/ }));
+  fireEvent.change(screen.getByLabelText('Listened total'), { target: { value: '0.3' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save total' }));
+  await waitFor(() => expect(setLessonStudyCount).toHaveBeenCalledWith(44, 'revision', 'listen', 0.3, 2));
+  expect(await screen.findByText('0.3×')).toBeInTheDocument();
+  expect(recordLessonListen).not.toHaveBeenCalled();
+});
+
+test('refreshes a conflicting count and requires a fresh edit', async () => {
+  vi.mocked(setLessonStudyCount).mockRejectedValue(Object.assign(new Error('This total changed elsewhere.'), { status: 409 }));
+  render(<LessonStudyPanel textId={44} sourceRevision="revision" hasAudio={false} />);
+  await screen.findByText('3×');
+  fireEvent.click(screen.getByRole('button', { name: /Read passes/ }));
+  fireEvent.change(screen.getByLabelText('Read total'), { target: { value: '2.5' } });
+  vi.mocked(getLessonStudy).mockResolvedValue({ readCount: 4, listenCount: 2 });
+  fireEvent.click(screen.getByRole('button', { name: 'Save total' }));
+  expect(await screen.findByText('4×')).toBeInTheDocument();
+  expect(screen.getByLabelText('Read total')).toHaveValue('4');
+  expect(screen.getByRole('button', { name: 'Save total' })).toBeDisabled();
 });
 test.each([true, false])('shows compact counts, hiding listening without audio: %s', async hasAudio => {
   render(<LessonStudyPanel textId={44} sourceRevision="revision" hasAudio={hasAudio} />);

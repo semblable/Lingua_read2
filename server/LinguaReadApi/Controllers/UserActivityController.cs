@@ -401,7 +401,15 @@ public async Task<ActionResult<SentenceProgressDto>> LogSentenceRead([FromBody] 
     // New completion events are authoritative credit checkpoints. Keep them
     // after explicit statistics resets; sentence credit remains initial-pass only.
     var completedReading = await _context.LessonStudyEvents.AnyAsync(e => e.UserId == userId
-        && e.SourceTextId == request.TextId && e.IsCompletionCheckpoint);
+        && e.SourceTextId == request.TextId && e.IsCompletionCheckpoint
+        && (e.Kind == "read" || !e.CountsTowardStatistics));
+    if (!completedReading)
+    {
+        // A corrected manual total below 1× can resume the initial sentence
+        // read. Actual completions and reset checkpoints remain authoritative.
+        var passCounts = await LessonStudyActivity.PassCountsAsync(_context, userId, request.TextId);
+        completedReading = passCounts.Read >= 10;
+    }
 
     foreach (var segment in distinctSegments)
     {
@@ -422,6 +430,26 @@ public async Task<ActionResult<SentenceProgressDto>> LogSentenceRead([FromBody] 
     progress.CreditedSegmentIndicesJson = SerializeCreditedIndices(creditedIndices);
     progress.CreditedWordCount += newlyCreditedWords;
     progress.UpdatedAt = DateTime.UtcNow;
+
+    var independentReread = await _context.LessonStudyEvents.AnyAsync(e => e.UserId == userId && e.SourceTextId == request.TextId
+        && e.CountsTowardStatistics && e.Kind == "read-set" && e.ReconcilesSentenceCredit == false);
+    if (newlyCreditedWords > 0 && !independentReread)
+    {
+        // Sentence reads can overtake a manually entered partial pass. Transfer
+        // the overlap to sentence progress without earning those words twice.
+        var passWords = await _context.LessonStudyEvents.Where(e => e.UserId == userId && e.SourceTextId == request.TextId
+            && e.CountsTowardStatistics && (e.Kind == "read" || e.Kind == "read-set"))
+            .SumAsync(e => (long)e.CreditedWords);
+        var overlap = (int)Math.Min(newlyCreditedWords, Math.Max(0L, passWords));
+        if (overlap > 0)
+        {
+            var reconciliation = LessonStudyActivity.Record(_context, userId, text.TextId, text.Title, text.LanguageId,
+                text.Content, text.AudioFilePath, null, "read-set", words: -overlap);
+            reconciliation.PassTenths = 0;
+            reconciliation.ReconcilesSentenceCredit = true;
+            newlyCreditedWords -= overlap;
+        }
+    }
 
     if (newlyCreditedWords > 0)
     {

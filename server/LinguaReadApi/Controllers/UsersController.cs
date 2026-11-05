@@ -715,7 +715,7 @@ namespace LinguaReadApi.Controllers
                     // Reading streak: walk back from today over days with ANY reading activity.
                     var readingDays = new HashSet<DateTime>(
                         langRows
-                            .Where(r => IsReading(r.ActivityType))
+                            .Where(r => IsReading(r.ActivityType) && r.WordCount > 0)
                             .Select(r => r.LocalDate));
                     int streak = 0;
                     var cursor = todayLocalDate;

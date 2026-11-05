@@ -9,6 +9,18 @@ const request = (path: string, method = 'GET', body?: unknown) => new Request(`h
 afterEach(() => vi.restoreAllMocks());
 
 describe('static demo boundary', () => {
+  it('edits fractional totals, rejects stale edits, and preserves whole-pass recording', async () => {
+    const backend = createDemoBackend('/');
+    const lesson = await (await backend.respond(request('/texts/2'))).json();
+    const payload = { clientEventId: 'set-1', sourceRevision: lesson.studyRevision, kind: 'read', count: 2.5, expectedCount: 0 };
+    expect((await backend.respond(request('/lesson-study/2/count', 'PUT', payload))).ok).toBe(true);
+    expect((await backend.respond(request('/lesson-study/2/count', 'PUT', payload))).ok).toBe(true);
+    expect((await backend.respond(request('/lesson-study/2/count', 'PUT', { ...payload, clientEventId: 'stale', count: 0.3 }))).status).toBe(409);
+    await backend.respond(request(`/texts/2/complete?clientEventId=read-1&repeat=true&sourceRevision=${lesson.studyRevision}`, 'PUT'));
+    expect(await (await backend.respond(request('/lesson-study/2'))).json()).toEqual({ readCount: 3.5, listenCount: 0 });
+    expect((await backend.respond(request('/lesson-study/2/count', 'PUT', { ...payload, clientEventId: 'set-2', expectedCount: 3.5, count: 0.3 }))).ok).toBe(true);
+    expect(await (await backend.respond(request('/lesson-study/2'))).json()).toEqual({ readCount: 0.3, listenCount: 0 });
+  });
   it('records study passes locally, deduplicates retries, and resets counts with the sample', async () => {
     const backend = createDemoBackend('/Lingua_read2/');
     const other = createDemoBackend('/Lingua_read2/');

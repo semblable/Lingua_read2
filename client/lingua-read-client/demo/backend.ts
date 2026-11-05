@@ -108,6 +108,30 @@ export function createDemoBackend(basePath: string) {
     if ((found = match(/^\/lesson-study\/(\d+)\/listen$/)) && method === 'POST') {
       return recordStudy(Number(found[1]), 'listen', String(body.clientEventId || ''), String(body.sourceRevision || ''), Number(body.durationSeconds));
     }
+    if ((found = match(/^\/lesson-study\/(\d+)\/count$/)) && method === 'PUT') {
+      const textId = Number(found[1]);
+      if (!lessons.some(l => l.textId === textId)) return json({ message: 'This sample does not exist.' }, 404);
+      const eventId = String(body.clientEventId || '');
+      const kind = body.kind;
+      const count = Number(body.count);
+      const expected = Number(body.expectedCount);
+      if (!eventId.trim() || eventId.length > 64 || (kind !== 'read' && kind !== 'listen')
+        || !Number.isFinite(count) || count < 0 || count > 10000 || !Number.isInteger(count * 10)
+        || !Number.isFinite(expected) || expected < 0 || !Number.isInteger(expected * 10)) {
+        return json({ message: 'Enter a total between 0 and 10,000 in steps of 0.1.' }, 400);
+      }
+      const counts = studyCounts.get(textId) || { readCount: 0, listenCount: 0 };
+      const action = JSON.stringify([textId, `set-${kind}`, body.sourceRevision, count, expected]);
+      const existing = studyEvents.get(eventId);
+      if (existing) return existing === action ? json(counts) : json({ message: 'This action ID belongs to a different study action.' }, 409);
+      if (body.sourceRevision !== studyRevision(textId)) return json({ message: 'Reload this sample before changing its total.' }, 409);
+      const key = kind === 'read' ? 'readCount' : 'listenCount';
+      if (counts[key] !== expected) return json({ message: 'This total changed elsewhere. Review the refreshed total and try again.' }, 409);
+      studyEvents.set(eventId, action);
+      counts[key] = count;
+      studyCounts.set(textId, counts);
+      return json(counts);
+    }
     if ((found = match(/^\/texts\/(\d+)\/complete$/)) && method === 'PUT') {
       if (url.searchParams.get('skipStats') !== 'true') {
         return recordStudy(Number(found[1]), 'read', url.searchParams.get('clientEventId') || '', url.searchParams.get('sourceRevision') || '');

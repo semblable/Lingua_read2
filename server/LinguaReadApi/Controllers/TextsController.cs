@@ -1153,11 +1153,7 @@ namespace LinguaReadApi.Controllers
                 // of coverage occurrences. Sentence credit belongs to the initial
                 // reading only; a later whole-text reread earns its full volume.
                 var totalActualWordCount = LinguaReadApi.Utilities.WordCountUtility.CountTotalWords(text.Content);
-                var sentenceProgress = await _context.UserSentenceProgresses.FindAsync(userId, textId);
-                var alreadyCreditedWordCount = sentenceProgress?.CreditedWordCount ?? 0;
-                var completionWordCredit = text.IsFinished
-                    ? totalActualWordCount
-                    : Math.Max(totalActualWordCount - alreadyCreditedWordCount, 0);
+                var completionWordCredit = await LessonStudyActivity.CompletionWordsAsync(_context, userId, textId, totalActualWordCount, text.IsFinished);
 
                 var stats = new TextStatsDto
                 {
@@ -1193,8 +1189,9 @@ namespace LinguaReadApi.Controllers
                 // concurrent double-click) gets retried, where the dedup check above answers it.
                 if (!skipStats)
                 {
-                    LessonStudyActivity.Record(_context, userId, textId, text.Title, text.LanguageId,
+                    var completedRead = LessonStudyActivity.Record(_context, userId, textId, text.Title, text.LanguageId,
                         text.Content, text.AudioFilePath, clientEventId, "read", words: completionWordCredit);
+                    completedRead.ReconcilesSentenceCredit = !text.IsFinished;
                     // Reconcile initial sentence credit; intentional rereads earn full volume.
                     await _userActivityService.LogTextCompletedActivity(
                         userId,

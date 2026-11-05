@@ -17,7 +17,7 @@ namespace LinguaReadApi.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "10.0.13")
+                .HasAnnotation("ProductVersion", "10.0.14")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.HasPostgresExtension(modelBuilder, "unaccent");
@@ -396,6 +396,12 @@ namespace LinguaReadApi.Migrations
                     b.Property<int>("LanguageId")
                         .HasColumnType("integer");
 
+                    b.Property<int>("PassTenths")
+                        .HasColumnType("integer");
+
+                    b.Property<bool?>("ReconcilesSentenceCredit")
+                        .HasColumnType("boolean");
+
                     b.Property<string>("SourceRevision")
                         .IsRequired()
                         .HasMaxLength(64)
@@ -408,6 +414,9 @@ namespace LinguaReadApi.Migrations
                         .IsRequired()
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
+
+                    b.Property<int?>("TargetPassTenths")
+                        .HasColumnType("integer");
 
                     b.Property<Guid>("UserId")
                         .HasColumnType("uuid");

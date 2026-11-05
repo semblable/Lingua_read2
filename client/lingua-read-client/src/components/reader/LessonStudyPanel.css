@@ -8,6 +8,9 @@
 }
 .lesson-study__count { display: inline-flex; align-items: center; gap: 0.35rem; white-space: nowrap; }
 .lesson-study__count strong { font-variant-numeric: tabular-nums; }
+.lesson-study__editor { width: min(21rem, calc(100vw - 2rem)); padding: 0.5rem 0.85rem; }
+.lesson-study__editor .form-control { min-width: 3.5rem; text-align: center; font-variant-numeric: tabular-nums; }
+.lesson-study__editor .input-group-text { color: inherit; background: var(--theme-surface-bg, var(--bs-body-bg)); border-color: var(--theme-border-color, var(--bs-border-color)); }
 .lesson-study > .alert { flex-basis: 100%; }
 .lesson-study .dropdown-menu {
   background: var(--theme-surface-bg, var(--bs-body-bg));

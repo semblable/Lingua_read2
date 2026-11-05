@@ -711,6 +711,7 @@ export interface paths {
                         Tags?: string[];
                         /** Format: binary */
                         File: string;
+                        SegmentationProfile?: string;
                         TitleOverride?: string;
                         SplitMethod: string;
                         /** Format: int32 */
@@ -767,6 +768,7 @@ export interface paths {
                         Tags?: string[];
                         /** Format: binary */
                         File: string;
+                        SegmentationProfile?: string;
                         TitleOverride?: string;
                         SplitMethod: string;
                         /** Format: int32 */
@@ -1126,6 +1128,39 @@ export interface paths {
                         "application/json": components["schemas"]["NextLessonDto"];
                         "text/json": components["schemas"]["NextLessonDto"];
                     };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/segmentation/jieba-v1/dictionary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
                 };
             };
         };
@@ -2264,6 +2299,127 @@ export interface paths {
                 cookie?: never;
             };
             requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/lesson-study/{textId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    textId: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["LessonStudyDto"];
+                        "application/json": components["schemas"]["LessonStudyDto"];
+                        "text/json": components["schemas"]["LessonStudyDto"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/lesson-study/{textId}/count": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    textId: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": components["schemas"]["SetLessonStudyCountRequest"];
+                    "text/json": components["schemas"]["SetLessonStudyCountRequest"];
+                    "application/*+json": components["schemas"]["SetLessonStudyCountRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/lesson-study/{textId}/listen": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    textId: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": components["schemas"]["LogLessonListenRequest"];
+                    "text/json": components["schemas"]["LogLessonListenRequest"];
+                    "application/*+json": components["schemas"]["LogLessonListenRequest"];
+                };
+            };
             responses: {
                 /** @description OK */
                 200: {
@@ -3889,6 +4045,7 @@ export interface paths {
                         AudioFile: string;
                         /** Format: binary */
                         SrtFile: string;
+                        SegmentationProfile?: string;
                         Tag?: string;
                         /** Format: int32 */
                         FolderId?: number;
@@ -3937,6 +4094,7 @@ export interface paths {
                         /** Format: int32 */
                         LanguageId: number;
                         Tag?: string;
+                        SegmentationProfile?: string;
                         /** Format: int32 */
                         FolderId?: number;
                         files?: string[];
@@ -3971,6 +4129,9 @@ export interface paths {
             parameters: {
                 query?: {
                     skipStats?: boolean;
+                    clientEventId?: string;
+                    repeat?: boolean;
+                    sourceRevision?: string;
                 };
                 header?: never;
                 path: {
@@ -3993,6 +4154,39 @@ export interface paths {
                 };
             };
         };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/segmentation/thai-dict-v1/dictionary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
         post?: never;
         delete?: never;
         options?: never;
@@ -5562,6 +5756,9 @@ export interface components {
         CompleteLessonDto: {
             /** Format: int32 */
             textId: number;
+            clientEventId?: string | null;
+            repeat?: boolean;
+            sourceRevision?: string | null;
         };
         CreateBookDto: {
             title: string;
@@ -5569,6 +5766,7 @@ export interface components {
             /** Format: int32 */
             languageId: number;
             content?: string | null;
+            segmentationProfile?: string | null;
             splitMethod: string;
             /** Format: int32 */
             maxSegmentSize: number;
@@ -5602,6 +5800,7 @@ export interface components {
         CreateTextDto: {
             title: string;
             content: string;
+            segmentationProfile?: string | null;
             /** Format: int32 */
             languageId: number;
             tag?: string | null;
@@ -5967,6 +6166,12 @@ export interface components {
             difficulty?: number | null;
             isSuspended?: boolean;
         };
+        LessonStudyDto: {
+            /** Format: double */
+            readCount?: number;
+            /** Format: double */
+            listenCount?: number;
+        };
         LibraryBookDto: {
             /** Format: int32 */
             bookId?: number;
@@ -6094,6 +6299,12 @@ export interface components {
                 [key: string]: number;
             } | null;
             listeningByLanguage?: components["schemas"]["LanguageListeningStat"][] | null;
+        };
+        LogLessonListenRequest: {
+            clientEventId: string;
+            sourceRevision: string;
+            /** Format: int32 */
+            durationSeconds?: number;
         };
         LogListeningRequest: {
             /** Format: int32 */
@@ -6333,6 +6544,15 @@ export interface components {
             bookmarked?: boolean;
             /** Format: date-time */
             clientUpdatedAt?: string | null;
+        };
+        SetLessonStudyCountRequest: {
+            clientEventId: string;
+            sourceRevision: string;
+            kind: string;
+            /** Format: double */
+            count?: number;
+            /** Format: double */
+            expectedCount?: number;
         };
         SetupRequest: {
             password?: string | null;
@@ -6622,6 +6842,7 @@ export interface components {
             title: string;
             content: string;
             structuredContent?: string | null;
+            segmentationProfile?: string | null;
             /** Format: date-time */
             createdAt?: string;
             /** Format: date-time */
@@ -6677,10 +6898,12 @@ export interface components {
             textId?: number;
             title?: string | null;
             content?: string | null;
+            segmentationProfile?: string | null;
             languageName?: string | null;
             languageCode?: string | null;
             /** Format: int32 */
             languageId?: number;
+            readonly studyRevision?: string | null;
             /** Format: int32 */
             bookId?: number | null;
             /** Format: int32 */

@@ -14,6 +14,10 @@ public class LessonStudyEvent
     [MaxLength(64)] public string SourceRevision { get; set; } = "";
     [MaxLength(64)] public string ClientEventId { get; set; } = "";
     [MaxLength(8)] public string Kind { get; set; } = "read";
+    // Integer tenths avoid floating-point drift; existing completed passes are 10.
+    public int PassTenths { get; set; } = 10;
+    public int? TargetPassTenths { get; set; }
+    public bool? ReconcilesSentenceCredit { get; set; }
     public int CreditedWords { get; set; }
     public int CreditedListeningSeconds { get; set; }
     public int CountingVersion { get; set; } = 1; // Legacy activity unit; no retokenization.

@@ -24,6 +24,176 @@ namespace LinguaReadApi.Tests;
 public class ReadingCreditCompatibilityTests(ITestOutputHelper output)
 {
     [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task FractionalTotals_AdjustWordsAndGoals_WithoutChangingCompletionStatus(bool book)
+    {
+        await using var learner = await Learner.Create(book);
+        var preserved = await learner.Snapshot();
+        Assert.IsType<OkObjectResult>(await learner.SetCount("read", 2.5m, 0, "set-1"));
+        Assert.Equal(2.5m, (await learner.Counts()).ReadCount);
+        Assert.Equal(108, await learner.Earned()); // 3 words * 2.5 rounds to 8.
+        Assert.Equal(8, await learner.GoalProgress());
+        Assert.False((await learner.Context.Texts.SingleAsync()).IsFinished);
+        Assert.Equal(2, (await learner.Context.UserLanguageStatistics.SingleAsync()).TotalTextCompletions);
+        Assert.Equal(0, (await learner.Context.UserLanguageStatistics.SingleAsync()).TotalTextsCompleted);
+        Assert.IsType<OkObjectResult>(await learner.SetCount("read", 0.3m, 2.5m, "set-2"));
+        Assert.Equal(101, await learner.Earned());
+        Assert.Equal(0.3m, (await learner.Counts()).ReadCount);
+        await learner.ReadPass("full-read");
+        Assert.Equal(1.3m, (await learner.Counts()).ReadCount);
+        Assert.Equal(104, await learner.Earned());
+        Assert.Equal(preserved, await learner.Snapshot());
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task FractionalTotals_ReconcileSentenceCreditBeforeAndAfter_AndNormalCompletion(bool book)
+    {
+        await using var learner = await Learner.Create(book);
+        await learner.ReadSentence(0, "one");
+        Assert.IsType<OkObjectResult>(await learner.SetCount("read", 0.7m, 0, "partial"));
+        Assert.Equal(102, await learner.Earned()); // Two words total, including the sentence.
+        await learner.ReadSentence(1, "two");
+        Assert.Equal(102, await learner.Earned()); // Existing fractional credit covers this word.
+        await learner.ReadSentence(2, "one");
+        Assert.Equal(103, await learner.Earned());
+        Assert.IsType<OkObjectResult>(await learner.SetCount("read", 0.3m, 0.7m, "reduce"));
+        Assert.Equal(103, await learner.Earned()); // Independent sentence credit is preserved.
+        await learner.ReadPass("full-read");
+        Assert.Equal(104, await learner.Earned()); // Round(1.3 * 3), without crediting initial sentences twice.
+        Assert.Equal(1.3m, (await learner.Counts()).ReadCount);
+    }
+
+    [Fact]
+    public async Task FractionalTotals_AreIdempotent_RejectStaleEdits_AndCannotResurrectResetCredit()
+    {
+        await using var learner = await Learner.Create(false);
+        Assert.IsType<OkObjectResult>(await learner.SetCount("read", 2.5m, 0, "set-1"));
+        Assert.IsType<OkObjectResult>(await learner.SetCount("read", 2.5m, 0, "set-1"));
+        Assert.Equal(108, await learner.Earned());
+        Assert.IsType<ConflictObjectResult>(await learner.SetCount("read", 2.5m, 1, "set-1"));
+        Assert.IsType<ConflictObjectResult>(await learner.SetCount("read", 0.3m, 0, "stale"));
+        Assert.IsType<ConflictObjectResult>(await learner.SetCount("read", 0.3m, 2.5m, "stale-revision", "STALE"));
+        await learner.ResetStatistics();
+        Assert.IsType<OkObjectResult>(await learner.SetCount("read", 2.5m, 0, "set-1"));
+        Assert.Equal(0, await learner.Earned());
+        Assert.Equal(0, (await learner.Counts()).ReadCount);
+        Assert.IsType<OkObjectResult>(await learner.SetCount("read", 0.3m, 0, "new-after-reset"));
+        Assert.Equal(1, await learner.Earned());
+    }
+
+    [Fact]
+    public async Task FractionalListens_PreservePlayerAndExternalTime()
+    {
+        await using var learner = await Learner.Create(false);
+        Assert.IsType<OkResult>(await learner.ListenPass("external", 60));
+        Assert.IsType<OkObjectResult>(await learner.SetCount("listen", 2.5m, 1, "listen-set"));
+        Assert.IsType<OkObjectResult>(await learner.SetCount("listen", 0.3m, 2.5m, "listen-reduce"));
+        Assert.Equal(0.3m, (await learner.Counts()).ListenCount);
+        Assert.Equal(60, (await learner.Context.UserLanguageStatistics.SingleAsync()).TotalSecondsListened);
+        Assert.IsType<OkResult>(await learner.ListenPass("count-only", 0));
+        Assert.Equal(1.3m, (await learner.Counts()).ListenCount);
+        Assert.Equal(100, await learner.Earned());
+    }
+
+    [Theory]
+    [InlineData("-0.1")]
+    [InlineData("0.25")]
+    [InlineData("10000.1")]
+    public async Task FractionalTotals_ValidateRangeAndPrecision(string count)
+    {
+        await using var learner = await Learner.Create(false);
+        Assert.IsType<BadRequestObjectResult>(await learner.SetCount("read", decimal.Parse(count, System.Globalization.CultureInfo.InvariantCulture), 0, "invalid"));
+        Assert.Equal(100, await learner.Earned());
+    }
+
+    [Fact]
+    public async Task FractionalTotals_DoNotRevalueOldPassesWhenLessonContentChanges()
+    {
+        await using var learner = await Learner.Create(false);
+        await learner.ReadPass("original");
+        var text = await learner.Context.Texts.SingleAsync();
+        text.Content = "one two three four five six";
+        await learner.Context.SaveChangesAsync();
+        Assert.IsType<OkObjectResult>(await learner.SetCount("read", 2, 1, "new-content"));
+        Assert.Equal(109, await learner.Earned()); // Original three, plus six for the new pass.
+        Assert.IsType<OkObjectResult>(await learner.SetCount("read", 1, 2, "reduce-content"));
+        Assert.Equal(105, await learner.Earned()); // Proportional correction retains the old counting basis.
+    }
+
+    [Fact]
+    public async Task FractionalTotals_InterruptedSaveRollsBackBothCounterAndStatistics()
+    {
+        await using var learner = await Learner.Create(false);
+        learner.Failure.FailOnSave = 1;
+        await Assert.ThrowsAsync<InvalidOperationException>(() => learner.SetCount("read", 2.5m, 0, "retry"));
+        Assert.Equal(100, await learner.Earned());
+        Assert.Equal(0, (await learner.Counts()).ReadCount);
+        Assert.IsType<OkObjectResult>(await learner.SetCount("read", 2.5m, 0, "retry"));
+        Assert.Equal(108, await learner.Earned());
+    }
+
+    [Fact]
+    public async Task CorrectingAnAccidentalWholeManualTotal_AllowsInitialSentenceReadingToContinue()
+    {
+        await using var learner = await Learner.Create(false);
+        Assert.IsType<OkObjectResult>(await learner.SetCount("read", 2.5m, 0, "accidental"));
+        Assert.IsType<OkObjectResult>(await learner.SetCount("read", 0.3m, 2.5m, "corrected"));
+        await learner.ReadSentence(0, "one");
+        Assert.Equal(101, await learner.Earned());
+        await learner.ReadSentence(1, "two");
+        Assert.Equal(102, await learner.Earned());
+        Assert.False((await learner.Context.Texts.SingleAsync()).IsFinished);
+    }
+
+    [Fact]
+    public async Task ChangingLessonLanguage_CannotSubtractHistoricalCreditFromTheNewLanguage()
+    {
+        await using var learner = await Learner.Create(false);
+        await learner.ReadPass("original-language");
+        learner.Context.Languages.Add(new Language { LanguageId = 2, Code = "pt", Name = "Portuguese" });
+        (await learner.Context.Texts.SingleAsync()).LanguageId = 2;
+        await learner.Context.SaveChangesAsync();
+        Assert.IsType<ConflictObjectResult>(await learner.SetCount("read", 0.3m, 1, "different-language"));
+        Assert.Equal(103, await learner.Earned());
+        Assert.Equal(1, (await learner.Counts()).ReadCount);
+        Assert.False(await learner.Context.UserLanguageStatistics.AnyAsync(s => s.LanguageId == 2));
+    }
+
+    [Fact]
+    public async Task MixedRevisionReductions_RoundFromTheOriginalBasisAcrossTenths()
+    {
+        await using var learner = await Learner.Create(false);
+        await learner.ReadPass("original");
+        (await learner.Context.Texts.SingleAsync()).Content = "one two three four five six";
+        await learner.Context.SaveChangesAsync();
+        for (var tenths = 9; tenths >= 5; tenths--)
+            Assert.IsType<OkObjectResult>(await learner.SetCount("read", tenths / 10m, (tenths + 1) / 10m, $"reduce-{tenths}"));
+        Assert.Equal(102, await learner.Earned());
+        Assert.Equal(0.5m, (await learner.Counts()).ReadCount);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task FractionalTotals_AfterFinishWithoutCredit_PreserveIndependentInitialSentenceReading(bool book)
+    {
+        await using var learner = await Learner.Create(book);
+        await learner.ReadSentence(0, "one two");
+        await learner.MarkFinishedWithoutCredit();
+        Assert.IsType<OkObjectResult>(await learner.SetCount("read", 0.3m, 0, "partial-reread"));
+        Assert.Equal(103, await learner.Earned());
+        Assert.IsType<OkObjectResult>(await learner.SetCount("read", 2.5m, 0.3m, "more-rereads"));
+        Assert.Equal(110, await learner.Earned());
+        Assert.IsType<OkObjectResult>(await learner.SetCount("read", 0.3m, 2.5m, "correct-rereads"));
+        Assert.Equal(103, await learner.Earned());
+        Assert.IsType<OkObjectResult>(await learner.SetCount("read", 0.3m, 0.3m, "no-change"));
+        Assert.Equal(103, await learner.Earned());
+    }
+
+    [Theory]
     [InlineData("ascii", "en", "one two. one!", 3, 3, 3)]
     [InlineData("chinese", "zh", "我爱读书。你呢？", 1, 1, 2)]
     [InlineData("japanese", "ja", "私は本を読む。猫も読む。", 1, 1, 2)]
@@ -447,6 +617,10 @@ public class ReadingCreditCompatibilityTests(ITestOutputHelper output)
         public async Task<IActionResult> ListenPass(string id, int seconds, string? revision = null) =>
             await new LessonStudyController(context) { ControllerContext = Identity }.Listen(1,
                 new LogLessonListenRequest { ClientEventId = id, SourceRevision = revision ?? await Revision(), DurationSeconds = seconds });
+
+        public async Task<IActionResult> SetCount(string kind, decimal count, decimal expected, string id, string? revision = null) =>
+            await new LessonStudyController(context) { ControllerContext = Identity }.SetCount(1,
+                new SetLessonStudyCountRequest { ClientEventId = id, SourceRevision = revision ?? await Revision(), Kind = kind, Count = count, ExpectedCount = expected });
 
         public async Task<LessonStudyDto> Counts() => Assert.IsType<LessonStudyDto>(
             (await new LessonStudyController(context) { ControllerContext = Identity }.Get(1)).Value);

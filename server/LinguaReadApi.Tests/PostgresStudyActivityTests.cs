@@ -37,6 +37,58 @@ public class PostgresStudyActivityTests
         User = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, UserId.ToString())], "test")) } };
 
     [PostgresStudyFact]
+    public async Task ConcurrentFractionalEdits_RejectStaleTotals_AndDeduplicateRetries()
+    {
+        await using var db = await Database.Create();
+        var first = new SetLessonStudyCountRequest { ClientEventId = "set-first", SourceRevision = Revision,
+            Kind = "read", Count = 2.5m, ExpectedCount = 0 };
+        var second = new SetLessonStudyCountRequest { ClientEventId = "set-second", SourceRevision = Revision,
+            Kind = "read", Count = 0.3m, ExpectedCount = 0 };
+        await using var a = db.Context();
+        await using var b = db.Context();
+        var results = await Task.WhenAll(
+            new LessonStudyController(a) { ControllerContext = Identity }.SetCount(1, first),
+            new LessonStudyController(b) { ControllerContext = Identity }.SetCount(1, second));
+        Assert.Single(results.OfType<OkObjectResult>());
+        Assert.Single(results.OfType<ConflictObjectResult>());
+        var accepted = results[0] is OkObjectResult ? first : second;
+        await using var verify = db.Context();
+        Assert.IsType<OkObjectResult>(await new LessonStudyController(verify) { ControllerContext = Identity }.SetCount(1, accepted));
+        Assert.Equal(accepted.Count * 10, (await LessonStudyActivity.PassCountsAsync(verify, UserId, 1)).Read);
+        Assert.Equal(LessonStudyActivity.RoundedWords((int)(accepted.Count * 10), 3),
+            (await verify.UserLanguageStatistics.SingleAsync()).TotalWordsRead);
+        Assert.Single(await verify.LessonStudyEvents.ToListAsync());
+    }
+
+    [PostgresStudyFact]
+    public async Task FractionalMigration_BackfillsExistingPasses_AndProtectsCorrectionsOnDowngrade()
+    {
+        await using var db = await Database.Create(createTables: false);
+        await using var c = db.Context();
+        var migrator = c.GetService<IMigrator>();
+        const string before = "20261030122947_AddTextSegmentationProfile";
+        await migrator.MigrateAsync(before);
+        await Seed(c);
+        // Simulate a row written by the previous server, without the new columns.
+        await c.Database.ExecuteSqlInterpolatedAsync($"""
+            INSERT INTO "LessonStudyEvents" ("UserId", "SourceTextId", "SourceTitle", "LanguageId", "SourceRevision",
+                "ClientEventId", "Kind", "CreditedWords", "CreditedListeningSeconds", "CountingVersion",
+                "CountsTowardStatistics", "IsCompletionCheckpoint", "CreatedAt")
+            VALUES ({UserId}, 1, 'Synthetic', 1, {Revision}, 'legacy-read', 'read', 3, 0, 1, TRUE, TRUE, {DateTime.UtcNow})
+            """);
+        c.UserLanguageStatistics.Add(new UserLanguageStatistics { UserId = UserId, LanguageId = 1, TotalWordsRead = 3 });
+        c.UserActivities.Add(new UserActivity { UserId = UserId, LanguageId = 1, ActivityType = "TextCompleted", WordCount = 3, Timestamp = DateTime.UtcNow });
+        await c.SaveChangesAsync();
+        await migrator.MigrateAsync();
+        Assert.Equal(10, (await c.LessonStudyEvents.SingleAsync()).PassTenths);
+        Assert.IsType<OkObjectResult>(await new LessonStudyController(c) { ControllerContext = Identity }.SetCount(1,
+            new SetLessonStudyCountRequest { ClientEventId = "fractional", SourceRevision = Revision, Kind = "read", Count = 0.3m, ExpectedCount = 1 }));
+        Assert.Equal(1, (await c.UserLanguageStatistics.SingleAsync()).TotalWordsRead);
+        await Assert.ThrowsAsync<PostgresException>(() => migrator.MigrateAsync(before));
+        Assert.Equal(2, await c.LessonStudyEvents.CountAsync());
+    }
+
+    [PostgresStudyFact]
     public async Task ConcurrentDifferentLessonsAndExistingListening_PreserveSharedTotalsAndDedup()
     {
         await using var db = await Database.Create();

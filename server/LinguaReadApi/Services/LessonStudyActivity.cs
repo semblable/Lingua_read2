@@ -9,6 +9,32 @@ namespace LinguaReadApi.Services;
 
 public static class LessonStudyActivity
 {
+    public static async Task<(long Read, long Listen)> PassCountsAsync(AppDbContext context, Guid userId, int textId)
+    {
+        var counts = await context.LessonStudyEvents
+            .Where(e => e.UserId == userId && e.SourceTextId == textId && e.CountsTowardStatistics)
+            .GroupBy(e => e.Kind).Select(g => new { Kind = g.Key, Tenths = g.Sum(e => (long)e.PassTenths) })
+            .ToDictionaryAsync(g => g.Kind, g => g.Tenths);
+        return (counts.GetValueOrDefault("read") + counts.GetValueOrDefault("read-set"),
+            counts.GetValueOrDefault("listen") + counts.GetValueOrDefault("list-set"));
+    }
+
+    public static long RoundedWords(long tenths, int words) =>
+        (long)Math.Round(tenths * (decimal)words / 10, MidpointRounding.AwayFromZero);
+
+    // Reconcile whole-pass and fractional credit with the initial sentence read.
+    // A normal completion always adds one pass, including after a partial read.
+    public static async Task<int> CompletionWordsAsync(AppDbContext context, Guid userId, int textId, int words, bool isFinished)
+    {
+        // Previously finished lessons (including Finish without credit) are
+        // deliberate rereads. Historical initial sentence units stay earned.
+        if (isFinished) return words;
+        var counts = await PassCountsAsync(context, userId, textId);
+        var sentence = await context.UserSentenceProgresses.FindAsync(userId, textId);
+        var outstandingSentenceCredit = Math.Max(0L, (sentence?.CreditedWordCount ?? 0) - RoundedWords(counts.Read, words));
+        return words - (int)Math.Min(words, outstandingSentenceCredit);
+    }
+
     public static string Revision(string content, int languageId, string? audioPath) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes($"{languageId}\n{audioPath}\n{content}")));
 

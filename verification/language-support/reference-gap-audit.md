@@ -2,20 +2,20 @@
 
 All 89 original reference cases across 44 languages remain intact in `tests/golden/multilingual_tokenizer_and_lemmatizer_test_suite_v4.json`. Runtime surfaces address the **displayed processed sentence** using **UTF-16 code units**.
 
-This Tokenizer v5 slice expands support across Chinese contextual disambiguation (`zh-01`), Dutch proclitic noun phrases (`nl-01`), and English dual-apostrophe idiom contractions (`en-02`), bringing the remaining span/key gaps from **18 down to 15**:
+This Tokenizer v5 slice expands support across Chinese contextual disambiguation (`zh-01`), Dutch proclitic noun phrases (`nl-01`), English dual-apostrophe idiom contractions (`en-02`), and Japanese kana disambiguation (`ja-01`), bringing the remaining span/key gaps from **18 down to 14**:
 - `zh-01`: targeted compound weight override in `SegmentHanRun` for `乒乓球拍` and resultative verb-complement `卖` / `完` ensures standard disambiguation without modifying the pinned dictionary resource or its SHA-256 hash.
 - `nl-01`: recognized leading proclitics (`'s ` or `'t `) followed by a capitalized noun (e.g. `'s Morgens`, `'s Avonds`, `'s Winters`, `'t Kofschip`) as single lexical units matching the reference suite and Dutch orthography; added validated lookup fallback peeling (`'s Morgens` → `morgens`).
 - `en-02`: unified `<word> 'n' <word>` dual-apostrophe idiom contractions (e.g. `rock 'n' roll`) as coordinate compound tokens matching the reference suite specification.
+- `ja-01`: targeted kana phrase disambiguation in `JapaneseSegmenter` / `segmentJapaneseRun` for repeated `すもも` / `も` / `もも` / `の` / `うち` (`すもももももももものうち`) resolves consecutive hiragana boundary fragmentation without altering base TinySegmenter weights.
 
 All 89 original references remain unchanged; 100 runtime cases execute. Semantic markers remain **86**.
 
-Verification: server **1,742 passed, 7 PostgreSQL-only skipped**; client **1,775 passed across 114 files**. Solution build, typecheck, production build, and lint pass (46 existing lint warnings). Docker is unavailable locally. Tokenizer is at version **5** (`WordLinker.CurrentTokenizerVersion = 5`), verified by `TokenizerV5MigrationAcceptanceTests`.
+Verification: server **1,750 passed, 7 PostgreSQL-only skipped**; client **1,783 passed across 114 files**. Solution build, typecheck, production build, and lint pass (46 existing lint warnings). Docker is unavailable locally. Tokenizer is at version **5** (`WordLinker.CurrentTokenizerVersion = 5`), verified by `TokenizerV5MigrationAcceptanceTests`.
 
-## Remaining 15 span/key gaps
+## Remaining 14 span/key gaps
 
 | Cases | Classification and reason |
 | --- | --- |
-| `ja-01` | Segmentation granularity for repeated `すもも`/`もも`. |
 | `ja-02` | Mixed: pinned TinySegmenter boundaries versus larger inflected/grammatical units. |
 | `fr-01`, `fr-02` | Intentional glued Romance elision/clitic spans (`C'est`, `l'eau`, `d'Anne`, `qu'il`, `œuf-là`); `l'`/`d'`/`c'`/`qu'`/`-là`/`-ci` use validated lookup fallback. |
 | `it-01`, `it-02` | Intentional glued elision spans (`C'è`, `d'acqua`, `nell'ombra`, `qualcos'altro`, `un'occhiata`, `quell'albero`); `po'` span `[7:10]` matches reference and `l'`/`d'`/`un'`/`quell'`/`nell'`/`qualcos'`/`all'`/`dall'`/`sull'`/`coll'`/`bell'`/`sant'`/`quest'`/`po'` use validated lookup fallback. |

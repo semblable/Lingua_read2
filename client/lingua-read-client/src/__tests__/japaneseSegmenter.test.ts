@@ -69,6 +69,20 @@ describe('versioned TinySegmenter Japanese segmentation', () => {
     ]);
   });
 
+  test('disambiguates targeted kana phrases such as sumomo', () => {
+    const text = 'すもももももももものうち。';
+    const actual = segmentRuns(text);
+    expect(actual).toEqual([
+      { text: 'すもも', start: 0, end: 3 },
+      { text: 'も', start: 3, end: 4 },
+      { text: 'もも', start: 4, end: 6 },
+      { text: 'も', start: 6, end: 7 },
+      { text: 'もも', start: 7, end: 9 },
+      { text: 'の', start: 9, end: 10 },
+      { text: 'うち', start: 10, end: 12 }
+    ]);
+  });
+
   test('rejects out-of-range bounds and invalid UTF-16 surrogate boundaries', () => {
     expect(segmentJapaneseRun('猫', 0, 0)).toEqual([]);
     expect(() => segmentJapaneseRun('猫', -1, 1)).toThrow(RangeError);

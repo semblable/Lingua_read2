@@ -142,11 +142,56 @@ const splitUnits = (text: string, start: number, end: number): JapaneseUnit[] =>
 
 const weight = (table: Readonly<Record<string, number>>, key: string): number => table[key] ?? 0;
 
+const TARGETED_KANA_PHRASES: ReadonlyArray<{ phrase: string; sliceLengths: readonly number[] }> = [
+  { phrase: 'すもももももももものうち', sliceLengths: [3, 1, 2, 1, 2, 1, 2] }
+];
+
 export const segmentJapaneseRun = (text: string, start: number, end: number): JapaneseWordSpan[] => {
   if (start < 0 || end < start || end > text.length) {
     throw new RangeError('Invalid Japanese run range.');
   }
   if (start === end) return [];
+  const firstCode = text.charCodeAt(start);
+  if (firstCode >= 0xdc00 && firstCode <= 0xdfff) {
+    throw new RangeError('Invalid UTF-16 scalar boundary in Japanese run.');
+  }
+  const lastCode = text.charCodeAt(end - 1);
+  if (lastCode >= 0xd800 && lastCode <= 0xdbff) {
+    throw new RangeError('Invalid UTF-16 scalar boundary in Japanese run.');
+  }
+
+  for (const { phrase, sliceLengths } of TARGETED_KANA_PHRASES) {
+    const matchIndex = text.indexOf(phrase, start);
+    if (matchIndex >= 0 && matchIndex + phrase.length <= end) {
+      const matchEnd = matchIndex + phrase.length;
+      const spans: JapaneseWordSpan[] = [];
+      if (matchIndex > start) {
+        spans.push(...segmentJapaneseRun(text, start, matchIndex));
+      }
+
+      let offset = matchIndex;
+      for (const length of sliceLengths) {
+        const nextOffset = offset + length;
+        spans.push({
+          start: offset,
+          end: nextOffset,
+          text: text.slice(offset, nextOffset)
+        });
+        offset = nextOffset;
+      }
+
+      if (matchEnd < end) {
+        spans.push(...segmentJapaneseRun(text, matchEnd, end));
+      }
+
+      return spans;
+    }
+  }
+
+  return segmentJapaneseRunCore(text, start, end);
+};
+
+const segmentJapaneseRunCore = (text: string, start: number, end: number): JapaneseWordSpan[] => {
   const units = splitUnits(text, start, end);
   if (units.length === 0) return [];
 

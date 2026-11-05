@@ -101,6 +101,25 @@ public class JapaneseSegmenterTests(ITestOutputHelper output)
     }
 
     [Fact]
+    public void TargetedKanaDisambiguation_SegmentsSumomoCleanly()
+    {
+        var segmenter = JapaneseSegmenter.Default;
+        const string text = "すもももももももものうち。";
+        var spans = SegmentRuns(segmenter, text);
+        var expected = new[]
+        {
+            new JapaneseWordSpan(0, 3, "すもも"),
+            new JapaneseWordSpan(3, 4, "も"),
+            new JapaneseWordSpan(4, 6, "もも"),
+            new JapaneseWordSpan(6, 7, "も"),
+            new JapaneseWordSpan(7, 9, "もも"),
+            new JapaneseWordSpan(9, 10, "の"),
+            new JapaneseWordSpan(10, 12, "うち")
+        };
+        Assert.Equal(expected, spans);
+    }
+
+    [Fact]
     public void InvalidRanges_AndSurrogateMidpoints_ThrowOrReturnFalse()
     {
         var segmenter = JapaneseSegmenter.Default;

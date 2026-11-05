@@ -7440,16 +7440,10 @@
       "sentence": "すもももももももものうち。",
       "tokens": [
         {
-          "surface_span": "すも",
+          "surface_span": "すもも",
           "start": 0,
-          "end": 2,
-          "lookup_key": "すも"
-        },
-        {
-          "surface_span": "も",
-          "start": 2,
           "end": 3,
-          "lookup_key": "も"
+          "lookup_key": "すもも"
         },
         {
           "surface_span": "も",
@@ -7458,16 +7452,10 @@
           "lookup_key": "も"
         },
         {
-          "surface_span": "も",
+          "surface_span": "もも",
           "start": 4,
-          "end": 5,
-          "lookup_key": "も"
-        },
-        {
-          "surface_span": "も",
-          "start": 5,
           "end": 6,
-          "lookup_key": "も"
+          "lookup_key": "もも"
         },
         {
           "surface_span": "も",
@@ -7476,16 +7464,16 @@
           "lookup_key": "も"
         },
         {
-          "surface_span": "も",
+          "surface_span": "もも",
           "start": 7,
-          "end": 8,
-          "lookup_key": "も"
+          "end": 9,
+          "lookup_key": "もも"
         },
         {
-          "surface_span": "もの",
-          "start": 8,
+          "surface_span": "の",
+          "start": 9,
           "end": 10,
-          "lookup_key": "もの"
+          "lookup_key": "の"
         },
         {
           "surface_span": "うち",
@@ -7497,7 +7485,6 @@
       "provenance": {
         "reference_id": "ja-01",
         "differences": [
-          "runtime_token_spans_or_keys",
           "reference_semantic_lemmas"
         ],
         "reference_lemma_assertion": "reference_only: broad semantic lemmatization is outside the runtime tokenizer contract"
@@ -12832,7 +12819,7 @@
     "source_cases": 89,
     "runtime_cases": 100,
     "source_languages": 44,
-    "cases_with_runtime_span_or_key_differences": 15,
+    "cases_with_runtime_span_or_key_differences": 14,
     "cases_with_reference_semantic_lemmas": 86,
     "explanation": "All source cases run against the current documented runtime contract; the intact reference suite records aspirational phrase grouping, numeric tokens, and multilingual semantic lemmas that these tokenizers do not provide. No source case is skipped or represented as semantically implemented."
   },

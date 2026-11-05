@@ -270,6 +270,9 @@ export const useReaderAudioSync = ({
         cancelAnimationFrame(autoScrollRafRef.current);
       }
       autoScrollRafRef.current = requestAnimationFrame(() => {
+        const selection = window.getSelection();
+        const anchor = selection?.anchorNode instanceof Element ? selection.anchorNode : selection?.anchorNode?.parentElement;
+        if (selection && !selection.isCollapsed && anchor?.closest('.audio-transcript-container')) return;
         if (!snapIsMobile && snapListRef?.current && currentLineIndex !== -1) {
           snapListRef.current.scrollToRow({ index: currentLineIndex, align: 'center' });
           return;

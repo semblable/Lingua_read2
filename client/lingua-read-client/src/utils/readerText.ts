@@ -1782,6 +1782,9 @@ export const cleanSelectedReaderText = (
 const PARAGRAPH_OR_LINE_BLOCK_SELECTOR =
   '.srt-line, .reader-title-line, .sentence-mode-text, .reading-block, .reader-paragraph, p';
 
+const getWordBlock = (span: HTMLElement) =>
+  span.closest('.transcript-paragraph') || span.closest(PARAGRAPH_OR_LINE_BLOCK_SELECTOR);
+
 export const getTextBetweenWordSpans = (
   prevSpan: HTMLElement,
   nextSpan: HTMLElement
@@ -1806,8 +1809,8 @@ export const areWordSpansInSameSentence = (
   if (prevSpan.compareDocumentPosition(nextSpan) & Node.DOCUMENT_POSITION_PRECEDING) {
     return areWordSpansInSameSentence(nextSpan, prevSpan, languageConfig);
   }
-  const blockA = prevSpan.closest(PARAGRAPH_OR_LINE_BLOCK_SELECTOR);
-  const blockB = nextSpan.closest(PARAGRAPH_OR_LINE_BLOCK_SELECTOR);
+  const blockA = getWordBlock(prevSpan);
+  const blockB = getWordBlock(nextSpan);
   if (blockA && blockB && blockA !== blockB) {
     return false;
   }
@@ -2025,7 +2028,7 @@ export const buildPhraseSelectionFromSpans = (
   sentenceContext: string = ''
 ): PhraseSelectionState | null => {
   const scopeEl =
-    startSpan.closest(PARAGRAPH_OR_LINE_BLOCK_SELECTOR) ||
+    getWordBlock(startSpan) ||
     container ||
     startSpan.parentElement;
   if (!scopeEl) return null;

@@ -279,7 +279,7 @@
 .reader-align-justify .reader-paragraph,
 .reader-align-justify .reading-block,
 .reader-align-justify .sentence-mode-text:not(.sentence-mode-title-text),
-.audio-transcript-container.reader-align-justify .srt-line {
+.audio-transcript-container.reader-align-justify .transcript-paragraph {
   text-align: justify;
   text-justify: inter-word;
   -webkit-hyphens: auto;
@@ -292,14 +292,8 @@
   text-align: start;
 }
 
-.sentence-mode-text,
-.audio-transcript-container .srt-line {
+.sentence-mode-text {
   text-align: start;
-}
-
-/* Collapse subtitle spaces so the browser can distribute them when justifying. */
-.audio-transcript-container.reader-align-justify .srt-line {
-  white-space: pre-line;
 }
 
 .reader-paragraph:last-child {
@@ -458,22 +452,15 @@
 /* Style for the currently active SRT line */
 .srt-line.active-srt-line {
   background-color: var(--active-srt-line-bg, rgba(255, 223, 186, 0.7));
-  /* Added background for light mode */
-  border-left: 4px solid var(--active-srt-line-border, #fd7e14);
-  /* Use a distinct left border (orange) */
-  padding-left: calc(0.5rem - 4px);
-  /* Adjust padding to account for border width */
-  font-weight: 500;
-  /* Slightly bolder */
-  box-shadow: 0 6px 12px rgba(0, 0, 0, 0.08);
-  transform: translateY(-1px);
+  box-shadow: 0 0 0 2px var(--active-srt-line-bg, rgba(255, 223, 186, 0.7));
 }
 
 .srt-line {
-  margin-bottom: 0.75rem;
-  transition: background-color 0.25s ease, box-shadow 0.25s ease, transform 0.25s ease;
-  white-space: pre-wrap;
-  /* Preserve newlines from SRT */
+  border-radius: 0.15em;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+  transition: background-color 0.2s ease, box-shadow 0.2s ease;
+  cursor: pointer;
 }
 
 .audio-transcript-container {
@@ -488,27 +475,25 @@
   padding-bottom: var(--audio-transcript-row-gap, 1em);
 }
 
-.audio-transcript-container .srt-line {
+.audio-transcript-container .transcript-paragraph {
   box-sizing: border-box;
   width: 100%;
   max-width: var(--reader-content-max-width, 740px);
   margin: 0 auto;
   padding: var(--audio-transcript-row-padding, 0.65rem 0.75rem);
-  border-inline-start: 4px solid transparent;
-  border-radius: 6px;
-  overflow-wrap: anywhere;
-  cursor: pointer;
+  text-align: start;
+  text-indent: 0;
+  white-space: normal;
+  overflow-wrap: break-word;
+  -webkit-hyphens: none;
+  hyphens: none;
+  color: color-mix(in srgb, var(--theme-text, #212529) 80%, transparent);
+  transition: color 0.2s ease;
 }
 
-.audio-transcript-container.reader-indent-on .srt-line {
-  text-indent: 1.5em;
-}
-
-.audio-transcript-container .srt-line.active-srt-line {
-  border-inline-start-color: var(--active-srt-line-border, #fd7e14);
-  border-left-width: 0;
-  border-inline-start-width: 4px;
-  transform: none;
+.audio-transcript-container .transcript-paragraph.has-active-cue,
+.audio-transcript-container .transcript-paragraph:hover {
+  color: var(--theme-text, #212529);
 }
 
 .dark-theme .theme-aware-audio-player-container {
@@ -525,7 +510,6 @@
 
 /* Dark theme adjustments for active SRT line */
 .dark-theme .srt-line.active-srt-line {
-  border-left-color: #61dafb;
   /* Brighter blue border */
   background-color: rgba(80, 80, 80, 0.4);
   /* Darker grey background for better contrast */
@@ -810,20 +794,6 @@
 
   .sentence-mode-text {
     min-height: 7rem;
-  }
-
-  .srt-line {
-    margin-bottom: 0.6rem;
-    padding: 0.6rem 0.75rem;
-    border-radius: 10px;
-    background: var(--theme-surface-bg, #fff);
-    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05);
-    scroll-margin-top: calc(var(--space-lg) + 3rem);
-  }
-
-  .srt-line.active-srt-line {
-    background-color: var(--active-srt-line-bg, rgba(255, 223, 186, 0.7));
-    border-left: 4px solid var(--active-srt-line-border, #fd7e14);
   }
 
 }

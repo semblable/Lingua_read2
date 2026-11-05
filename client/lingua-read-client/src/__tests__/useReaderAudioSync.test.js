@@ -166,4 +166,28 @@ describe('useReaderAudioSync', () => {
     expect(cancelSpeech).toHaveBeenCalled();
     expect(result.current.isSpeakingSentence).toBe(false);
   });
+
+  test('following playback does not scroll away from an active transcript selection', () => {
+    const container = document.createElement('div');
+    container.className = 'audio-transcript-container';
+    const cue = document.createElement('span');
+    cue.id = 'srt-line-1';
+    cue.textContent = 'Selected phrase';
+    cue.scrollIntoView = vi.fn();
+    container.appendChild(cue);
+    document.body.appendChild(container);
+    const selection = vi.spyOn(window, 'getSelection').mockReturnValue({ isCollapsed: false, anchorNode: cue.firstChild });
+    const raf = vi.spyOn(window, 'requestAnimationFrame').mockImplementation(callback => { callback(0); return 1; });
+    try {
+      const { result } = renderAudioSyncHook({ isAudioLesson: true, isMobile: true,
+        srtLines: [{ id: 1, startTime: 0, endTime: 2, text: 'Selected phrase' }] });
+      act(() => { result.current.handleAudioTimeUpdate(1); });
+      expect(result.current.currentSrtLineId).toBe(1);
+      expect(cue.scrollIntoView).not.toHaveBeenCalled();
+    } finally {
+      selection.mockRestore();
+      raf.mockRestore();
+      container.remove();
+    }
+  });
 });

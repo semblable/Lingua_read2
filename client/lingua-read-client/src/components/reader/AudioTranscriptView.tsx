@@ -1,10 +1,9 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { List, useDynamicRowHeight, type ListImperativeAPI } from 'react-window';
-import TranscriptLine, { type TranscriptRowProps } from './TranscriptLine';
+import TranscriptLine, { TranscriptParagraph } from './TranscriptLine';
+import { groupTranscriptCues } from '../../utils/audioTranscript';
 import type { Settings } from '../../contexts/SettingsContext';
 import type { SrtEntry } from '../../utils/srtParser';
-
-type TranscriptItemData = Omit<TranscriptRowProps, 'hasSelection'>;
 
 interface AudioTranscriptViewProps {
   isMobile: boolean;
@@ -18,7 +17,6 @@ interface AudioTranscriptViewProps {
   mobileReadingConfig: { lineSpacing: number; blockPadding: string | number };
   textContentRef: React.RefObject<HTMLDivElement | null>;
   readingContainerRef: React.RefObject<HTMLDivElement | null>;
-  itemData: TranscriptItemData;
   listRef: React.RefObject<ListImperativeAPI | null>;
   // BCP-47 code of the text, for the browser's hyphenation and screen readers.
   languageCode?: string | null;
@@ -37,7 +35,6 @@ const AudioTranscriptView = React.memo(({
   mobileReadingConfig,
   textContentRef,
   readingContainerRef,
-  itemData,
   listRef,
   languageCode,
   rightToLeft
@@ -46,22 +43,54 @@ const AudioTranscriptView = React.memo(({
   const touchMovedRef = useRef(false);
   const [listHeight, setListHeight] = useState(600);
   const [listWidth, setListWidth] = useState(0);
-  const transcriptKey = useMemo(() => srtLines.map(line => line.text).join('\n'), [srtLines]);
+  const paragraphListRef = useRef<ListImperativeAPI | null>(null);
+  const { paragraphs, paragraphByCue } = useMemo(() => groupTranscriptCues(srtLines, languageCode), [srtLines, languageCode]);
+  const transcriptKey = useMemo(() => paragraphs.map(paragraph =>
+    paragraph.cues.map(cue => cue.separator + cue.text).join('')).join('\n\n'), [paragraphs]);
   const effectiveLineSpacing = isMobile ? mobileReadingConfig.lineSpacing : globalSettings.lineSpacing;
-  const containerClassName = `audio-transcript-container reader-align-${globalSettings.readerTextAlignment || 'left'} ${globalSettings.readerParagraphIndent ? 'reader-indent-on' : 'reader-indent-off'}`;
+  const containerClassName = `audio-transcript-container reader-align-${globalSettings.readerTextAlignment || 'left'}`;
   const fontStyle = getFontStyling(effectiveLineSpacing);
   const transcriptStyle = {
     ...fontStyle,
     '--reader-content-max-width': `${globalSettings.readerContentWidth || 740}px`,
-    '--audio-transcript-row-padding': mobileReadingConfig.blockPadding,
-    '--audio-transcript-row-gap': `${globalSettings.paragraphSpacing ?? 1}em`
+    '--audio-transcript-row-padding': globalSettings.readingDensity === 'compact' ? '0.08em 0.65rem'
+      : globalSettings.readingDensity === 'spacious' ? '0.24em 0.9rem' : '0.16em 0.75rem',
+    '--audio-transcript-row-gap': `${Math.round((globalSettings.paragraphSpacing ?? 1) * 35) / 100}em`
   } as React.CSSProperties;
   const rowHeight = useDynamicRowHeight({
     defaultRowHeight: Math.ceil(globalSettings.textSize * (effectiveLineSpacing + (globalSettings.paragraphSpacing ?? 1)) + 24),
     key: [listWidth, globalSettings.readerContentWidth, globalSettings.textSize, globalSettings.textFont,
       effectiveLineSpacing, globalSettings.paragraphSpacing, globalSettings.readingDensity,
-      globalSettings.readerParagraphIndent, globalSettings.readerTextAlignment, transcriptKey].join(':')
+      globalSettings.readerTextAlignment, languageCode, transcriptKey].join(':')
   });
+
+  // The reader addresses original cue indices; the virtual list now renders groups.
+  useImperativeHandle(listRef, () => ({
+    get element() { return paragraphListRef.current?.element ?? null; },
+    scrollToRow: ({ index, ...options }) => {
+      const paragraphIndex = paragraphByCue[index];
+      const line = srtLines[index];
+      if (paragraphIndex === undefined || !line || !paragraphs[paragraphIndex]) return;
+      const followCue = () => {
+        const viewport = paragraphListRef.current?.element;
+        const cue = document.getElementById(`srt-line-${line.id}`);
+        if (!viewport || !cue || !viewport.contains(cue)) return false;
+        const selection = window.getSelection();
+        if (selection && !selection.isCollapsed && selection.anchorNode && viewport.contains(selection.anchorNode)) return true;
+        const bounds = viewport.getBoundingClientRect();
+        const position = cue.getBoundingClientRect();
+        const center = position.top + position.height / 2;
+        if (center < bounds.top + bounds.height * 0.25 || center > bounds.top + bounds.height * 0.75) {
+          viewport.scrollTo({ top: viewport.scrollTop + center - bounds.top - bounds.height / 2, behavior: 'smooth' });
+        }
+        return true;
+      };
+      if (!followCue()) {
+        paragraphListRef.current?.scrollToRow({ ...options, index: paragraphIndex });
+        requestAnimationFrame(followCue);
+      }
+    }
+  }), [paragraphByCue, paragraphs, srtLines]);
 
   useEffect(() => {
     if (isMobile) return;
@@ -79,6 +108,7 @@ const AudioTranscriptView = React.memo(({
   }, [isMobile, readingContainerRef]);
 
   if (!srtLines || srtLines.length === 0) return <p className="p-3">Loading transcript...</p>;
+  if (paragraphs.length === 0) return <p className="p-3">No transcript text available.</p>;
 
   const hasSelection = () => {
     const selection = window.getSelection();
@@ -115,18 +145,13 @@ const AudioTranscriptView = React.memo(({
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
       >
-        {srtLines.map((line: SrtEntry) => (
-          <div className="transcript-row" key={line.id}>
-            <p
-              id={`srt-line-${line.id}`}
-              className={`srt-line ${line.id === currentSrtLineId ? 'active-srt-line' : ''}`}
-              onClick={() => {
-                if (Date.now() < suppressLineClickUntilRef.current || hasSelection()) return;
-                handleLineClick(line.startTime);
-              }}
-            >
-              {processTextContent(line.text)}
-            </p>
+        {paragraphs.map((paragraph, index) => (
+          <div className="transcript-row" key={index}>
+            <TranscriptParagraph paragraph={paragraph} currentLineId={currentSrtLineId}
+              processLineContent={processTextContent} hasSelection={hasSelection}
+              handleLineClick={startTime => {
+                if (Date.now() >= suppressLineClickUntilRef.current) handleLineClick(startTime);
+              }} />
           </div>
         ))}
       </div>
@@ -134,7 +159,10 @@ const AudioTranscriptView = React.memo(({
   }
 
   const desktopItemData = {
-    ...itemData,
+    currentLineId: currentSrtLineId,
+    processLineContent: processTextContent,
+    handleLineClick,
+    paragraphs,
     hasSelection
   };
 
@@ -149,11 +177,11 @@ const AudioTranscriptView = React.memo(({
     >
       <List
         rowComponent={TranscriptLine}
-        rowCount={srtLines.length}
+        rowCount={paragraphs.length}
         rowHeight={rowHeight}
         rowProps={desktopItemData}
         overscanCount={5}
-        listRef={listRef}
+        listRef={paragraphListRef}
         onResize={({ width }) => setListWidth(width)}
         style={{ height: listHeight }}
       />

@@ -13,6 +13,7 @@ function LessonStudyPanelBody({ textId, bookId, sourceRevision, hasAudio }: Prop
   const [counts, setCounts] = useState<LessonStudyCounts | null>(null);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [noticeKind, setNoticeKind] = useState<'read' | 'listen' | null>(null);
   const [busy, setBusy] = useState(false);
   const [showListen, setShowListen] = useState(false);
   const [minutes, setMinutes] = useState('0');
@@ -58,6 +59,7 @@ function LessonStudyPanelBody({ textId, bookId, sourceRevision, hasAudio }: Prop
       setEditor(null);
       setShowListen(false);
       if (kind === 'listen') setMinutes('0');
+      setNoticeKind(kind);
       setNotice(kind === 'read' ? 'Read recorded.' : seconds > 0 ? 'Listen and listening time recorded.' : 'Listen recorded. No extra time added.');
       await refresh();
     } catch (e) { if (currentText.current === activeText) setError((e as Error).message || 'Could not record this pass. Retry to check the same action.'); }
@@ -83,6 +85,7 @@ function LessonStudyPanelBody({ textId, bookId, sourceRevision, hasAudio }: Prop
       setEditor(null);
       const savedCount = result[editor.kind === 'read' ? 'readCount' : 'listenCount'];
       const label = editor.kind === 'read' ? 'Read' : 'Listened';
+      setNoticeKind(editor.kind);
       setNotice(savedCount === count
         ? `${label} total set to ${savedCount}×.${editor.kind === 'read' ? ' Reading statistics updated.' : ' Listening time unchanged.'}`
         : `${label} total is now ${savedCount}×. A later change was preserved.`);
@@ -104,6 +107,7 @@ function LessonStudyPanelBody({ textId, bookId, sourceRevision, hasAudio }: Prop
     const disabled = busy || !sourceRevision || count === undefined;
     const change = (value: string) => {
       setError('');
+      setNotice('');
       setEditor({ kind, value, expected: active?.expected ?? count ?? 0 });
     };
     const step = (delta: number) => {
@@ -125,8 +129,9 @@ function LessonStudyPanelBody({ textId, bookId, sourceRevision, hasAudio }: Prop
         {kind === 'read' ? 'Updates words read, including rereads. Sentence credit is counted once. Lesson status stays unchanged.' : 'Changes passes only. Listening time is tracked separately.'}
       </Form.Text>
       {active && error && <Alert variant="warning" className="py-1 small">{error}</Alert>}
-      <Button type="submit" size="sm" disabled={disabled || !active}>{busy ? 'Saving…' : 'Save total'}</Button>
+      <Button type="submit" size="sm" disabled={disabled || !active}>{busy && active ? 'Saving…' : notice && noticeKind === kind && !active ? 'Saved' : 'Save total'}</Button>
       {active && <Button size="sm" variant="outline-secondary" className="ms-2" disabled={busy} onClick={() => { setEditor(null); setError(''); }}>Cancel</Button>}
+      {notice && noticeKind === kind && <p className="lesson-study__saved small mt-2 mb-0">{notice}</p>}
     </Form>;
   };
 
@@ -155,7 +160,11 @@ function LessonStudyPanelBody({ textId, bookId, sourceRevision, hasAudio }: Prop
         {!sourceRevision && <Dropdown.ItemText>Reload online to record a pass.</Dropdown.ItemText>}
       </Dropdown.Menu>
     </Dropdown>}
-    <span role="status" aria-live="polite" className="visually-hidden">{notice}</span>
+    <span role="status" aria-live="polite" className={notice ? 'lesson-study__notice' : 'visually-hidden'}>
+      {notice && <><i className="bi bi-check-circle" aria-hidden="true" />
+        <span aria-hidden="true">{noticeKind === 'read' ? 'Read saved' : 'Listen saved'}</span></>}
+      <span className="visually-hidden">{notice}</span>
+    </span>
     {error && !editor && <Alert variant="warning" className="py-1 mt-2 mb-0 small">{error}</Alert>}
     <Modal show={showListen} onHide={() => !busy && setShowListen(false)} contentClassName="lesson-study-dialog" centered>
       <Modal.Header closeButton={!busy}><Modal.Title>Record a completed listen</Modal.Title></Modal.Header>

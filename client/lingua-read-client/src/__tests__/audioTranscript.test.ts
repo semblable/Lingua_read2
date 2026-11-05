@@ -1,0 +1,44 @@
+import { describe, expect, test } from 'vitest';
+import { groupTranscriptCues, transcriptCueSeparator } from '../utils/audioTranscript';
+
+const cues = (...texts: string[]) => texts.map((text, index) => ({ id: index + 1, startTime: index * 2, endTime: index * 2 + 2, text }));
+
+describe('transcript sentence grouping', () => {
+  test('joins subtitle chunks and line breaks while retaining cue ids and row mapping', () => {
+    const result = groupTranscriptCues(cues('Uma história\nque', 'continua aqui.', 'Outra frase', 'mais longa.'), 'pt');
+    expect(result.paragraphs.map(paragraph => paragraph.cues.map(cue => cue.separator + cue.text).join('')))
+      .toEqual(['Uma história que continua aqui.', 'Outra frase mais longa.']);
+    expect(result.paragraphByCue).toEqual([0, 0, 1, 1]);
+    expect(result.paragraphs.flatMap(paragraph => paragraph.cues.map(cue => cue.line.id))).toEqual([1, 2, 3, 4]);
+  });
+  test('does not split at an abbreviation', () => {
+    expect(groupTranscriptCues(cues('Mr.', 'Smith arrived.'), 'en').paragraphByCue).toEqual([0, 0]);
+  });
+  test('starts another group after a pause or a long uninterrupted passage', () => {
+    const lines = cues('First phrase', 'after a pause');
+    lines[1].startTime = 4;
+    expect(groupTranscriptCues(lines).paragraphByCue).toEqual([0, 1]);
+    expect(groupTranscriptCues(cues('x'.repeat(420), 'another phrase')).paragraphByCue).toEqual([0, 1]);
+  });
+  test('handles empty cues without inserting empty visual lines', () => {
+    const result = groupTranscriptCues(cues('', 'A phrase', '', 'continues.'));
+    expect(result.paragraphs.flatMap(paragraph => paragraph.cues)).toHaveLength(2);
+    expect(groupTranscriptCues(cues('', ' ')).paragraphs).toEqual([]);
+  });
+});
+
+test.each([
+  ['hello', 'world', 'en', ' '],
+  ['Olá', ',', 'pt', ''],
+  ['guarda-', 'chuva', 'pt', ''],
+  ['l’', 'homme', 'fr', ''],
+  ["He said 'hello'", 'then left', 'en', ' '],
+  ['hello -', 'world', 'en', ' '],
+  ['hello —', 'world', 'en', ' '],
+  ['私は', '図書館で', 'ja', ''],
+  ['今天', '学习中文', 'zh', ''],
+  ['ฉันชอบ', 'อ่านหนังสือ', 'th', ''],
+  ['hello', 'world', 'zh', ' ']
+])('cue joining preserves word and punctuation spacing: %s / %s (%s)', (previous, next, code, separator) => {
+  expect(transcriptCueSeparator(previous, next, code)).toBe(separator);
+});

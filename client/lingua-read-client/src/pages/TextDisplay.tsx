@@ -405,6 +405,11 @@ const TextDisplay = () => {
 
   const readSentenceContextFromNode = useCallback((node: Node | null) => {
     const container = textContentRef.current;
+    const element = node instanceof Element ? node : node?.parentElement;
+    const transcriptParagraph = element?.closest('.transcript-paragraph');
+    if (transcriptParagraph && container?.contains(transcriptParagraph)) {
+      return clampContext(normalizeReaderText(transcriptParagraph.textContent));
+    }
     let currentNode: Node | null = node;
     while (currentNode) {
       if (
@@ -432,6 +437,11 @@ const TextDisplay = () => {
     let node: Node | null = range.commonAncestorContainer;
     if (node?.nodeType === Node.TEXT_NODE) {
       node = node.parentNode;
+    }
+
+    const transcriptParagraph = node instanceof Element ? node.closest('.transcript-paragraph') : null;
+    if (transcriptParagraph && container.contains(transcriptParagraph)) {
+      return clampContext(normalizeReaderText(transcriptParagraph.textContent));
     }
 
     let walk: Node | null = node;
@@ -1639,18 +1649,6 @@ const TextDisplay = () => {
     text?.textId
   ]);
 
-  const itemData = useMemo(() => ({
-    lines: srtLines,
-    currentLineId: currentSrtLineId,
-    processLineContent: processTextContent,
-    handleLineClick
-  }), [
-    srtLines,
-    currentSrtLineId,
-    processTextContent,
-    handleLineClick
-  ]);
-
   const handleToggleBookmarkForCurrentSentence = useCallback(() => {
     toggleBookmarkForIndex(currentSegmentIndex);
   }, [toggleBookmarkForIndex, currentSegmentIndex]);
@@ -2336,6 +2334,7 @@ const TextDisplay = () => {
   const secondaryControls = (
     <SecondaryControls
       isMobile={isMobile}
+      showParagraphIndent={!(isAudioLesson && displayMode === 'audio' && !isSentenceMode)}
       globalSettings={globalSettings}
       setReadingDensity={setReadingDensity}
       setReaderContentWidth={setReaderContentWidth}
@@ -2601,7 +2600,6 @@ const TextDisplay = () => {
                     mobileReadingConfig={mobileReadingConfig}
                     textContentRef={textContentRef}
                     readingContainerRef={readingContainerRef}
-                    itemData={itemData}
                     listRef={listRef}
                     languageCode={text?.languageCode}
                     rightToLeft={languageConfig?.rightToLeft}

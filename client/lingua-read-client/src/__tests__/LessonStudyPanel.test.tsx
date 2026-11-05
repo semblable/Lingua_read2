@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, expect, test, vi } from 'vitest';
 vi.mock('../utils/api', () => ({ completeLesson: vi.fn(), getLessonStudy: vi.fn(), recordLessonListen: vi.fn(), setLessonStudyCount: vi.fn() }));
 import { completeLesson, getLessonStudy, recordLessonListen, setLessonStudyCount } from '../utils/api';
@@ -21,6 +21,30 @@ test('sets a fractional read directly, updates its displayed count, and supports
   await waitFor(() => expect(setLessonStudyCount).toHaveBeenCalledWith(44, 'revision', 'read', 2.5, 3));
   expect(await screen.findByText('2.5×')).toBeInTheDocument();
   expect(screen.getByRole('status')).toHaveTextContent('Reading statistics updated.');
+});
+
+test.each(['read', 'listen'] as const)('shows visible saving and saved feedback for a %s total', async kind => {
+  let finish!: (value: { readCount: number; listenCount: number }) => void;
+  vi.mocked(setLessonStudyCount).mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
+  render(<LessonStudyPanel textId={44} sourceRevision="revision" hasAudio />);
+  await screen.findByText('3×');
+  const label = kind === 'read' ? 'Read' : 'Listened';
+  fireEvent.click(screen.getByRole('button', { name: new RegExp(`${label} passes`) }));
+  const input = screen.getByLabelText(`${label} total`);
+  const form = input.closest('form')!;
+  fireEvent.change(input, { target: { value: '0.6' } });
+  fireEvent.click(within(form).getByRole('button', { name: 'Save total' }));
+  expect(within(form).getByRole('button', { name: 'Saving…' })).toBeDisabled();
+  expect(input).toBeDisabled();
+  await act(async () => finish(kind === 'read' ? { readCount: 0.6, listenCount: 2 } : { readCount: 3, listenCount: 0.6 }));
+  expect(within(form).getByRole('button', { name: 'Saved' })).toBeVisible();
+  expect(within(form).getByText(new RegExp(`${label} total set to 0.6×`))).toBeVisible();
+  expect(screen.getByRole('status')).not.toHaveClass('visually-hidden');
+  expect(screen.getByText(kind === 'read' ? 'Read saved' : 'Listen saved')).toBeVisible();
+  fireEvent.change(input, { target: { value: '0.7' } });
+  expect(within(form).getByRole('button', { name: 'Save total' })).toBeEnabled();
+  expect(within(form).queryByText(/total set to/)).not.toBeInTheDocument();
+  expect(screen.getByRole('status')).toHaveClass('visually-hidden');
 });
 
 test('steps in exact tenths, clamps at zero, and accepts decimal commas', async () => {

@@ -2549,6 +2549,35 @@ describe('TextDisplay', () => {
     expect(screen.getByText('Word Info')).toBeInTheDocument();
   });
 
+  test.each([false, true])('audio phrase extension crosses a cue boundary within a sentence (mobile=%s)', async mobile => {
+    window.matchMedia = vi.fn(() => ({ matches: mobile, addEventListener: vi.fn(), removeEventListener: vi.fn() }));
+    getText.mockResolvedValueOnce({ textId: 1, title: 'Audio fixture', content: 'Hello brave world.',
+      languageCode: 'ES', languageId: null, isAudioLesson: true,
+      audioFilePath: 'audio_lessons/1.mp3', hasSrtContent: true, words: [] });
+    getTextSrt.mockResolvedValueOnce('1\n00:00:00,000 --> 00:00:02,000\nHello brave\n\n2\n00:00:02,000 --> 00:00:04,000\nworld.\n');
+    renderTextDisplay({ autoTranslateWords: true });
+    const word = await screen.findByText('brave');
+    const range = document.createRange();
+    range.selectNodeContents(word);
+    const selection = {
+      isCollapsed: false, rangeCount: 1, anchorNode: word.firstChild, focusNode: word.firstChild,
+      toString: () => 'brave', getRangeAt: () => range, removeAllRanges: vi.fn(), addRange: vi.fn()
+    };
+    window.getSelection = vi.fn(() => selection);
+    act(() => {
+      const transcript = word.closest('.audio-transcript-container');
+      if (mobile) fireEvent.touchEnd(transcript);
+      else fireEvent.mouseUp(transcript);
+      vi.advanceTimersByTime(1000);
+    });
+    const nextButton = await screen.findByRole('button', { name: /\+ Next word/i });
+    await act(async () => { fireEvent.click(nextButton); });
+    expect(selection.addRange.mock.lastCall[0].toString()).toBe('brave world');
+    expect(translateSelectionWithContext).toHaveBeenLastCalledWith(
+      'brave world', 'Hello brave world.', 'ES', 'EN', expect.objectContaining({ signal: expect.anything() })
+    );
+  });
+
   test('desktop audio transcript selection triggers contextual translation', async () => {
     getText.mockResolvedValueOnce({
       textId: 1,
@@ -2723,7 +2752,7 @@ describe('TextDisplay', () => {
     render(<LiveSettings />);
     const word = await screen.findByText('Hola');
     const textContainer = word.closest(sentenceMode ? '.sentence-mode-view' : audio ? '.audio-transcript-container' : '.text-content');
-    const paragraphSelector = sentenceMode ? '.sentence-mode-text' : audio ? '.srt-line' : mobile ? '.reading-block' : '.reader-paragraph';
+    const paragraphSelector = sentenceMode ? '.sentence-mode-text' : audio ? '.transcript-paragraph' : mobile ? '.reading-block' : '.reader-paragraph';
     // Happy DOM caches descendant selector matches after an ancestor class changes.
     // Read the current rendered markup in a fresh subtree to check the real CSS.
     const getTextAlignment = () => {
@@ -2804,27 +2833,29 @@ describe('TextDisplay', () => {
       }
       fireEvent.click(screen.getByTitle('Justified text'));
       fireEvent.click(screen.getByTitle('Increase text size'));
-      fireEvent.click(screen.getByTitle('Toggle paragraph indent'));
+      if (!audio) fireEvent.click(screen.getByTitle('Toggle paragraph indent'));
       fireEvent.click(within(screen.getByRole('group', { name: 'Reader text width' })).getByRole('button', { name: 'N' }));
       fireEvent.click(within(screen.getByRole('group', { name: 'Reading density' })).getByRole('button', { name: 'S' }));
       if (!mobile) {
         fireEvent.click(screen.getByLabelText('Set line spacing to relaxed'));
         fireEvent.click(screen.getByLabelText('Set relaxed paragraph spacing'));
       }
-      expect(textContent).toHaveClass('reader-align-justify', 'reader-indent-off');
+      expect(textContent).toHaveClass('reader-align-justify');
+      if (!audio) expect(textContent).toHaveClass('reader-indent-off');
       expect(textContent).toHaveStyle({ fontSize: '18px' });
       if (audio) {
         expect(textContent.style.getPropertyValue('--reader-content-max-width')).toBe('620px');
-        expect(textContent.style.getPropertyValue('--audio-transcript-row-padding')).toBe('0.5rem 0.65rem');
-        expect(textContent.style.getPropertyValue('--audio-transcript-row-gap')).toBe(mobile ? '1em' : '1.6em');
+        expect(textContent.style.getPropertyValue('--audio-transcript-row-padding')).toBe('0.08em 0.65rem');
+        expect(textContent.style.getPropertyValue('--audio-transcript-row-gap')).toBe(mobile ? '0.35em' : '0.56em');
+        expect(screen.queryByTitle('Toggle paragraph indent')).not.toBeInTheDocument();
       }
       expect(JSON.parse(localStorage.getItem('cachedSettings'))).toEqual(expect.objectContaining({
-        readerTextAlignment: 'justify', textSize: 18, readerParagraphIndent: false,
+        readerTextAlignment: 'justify', textSize: 18, readerParagraphIndent: audio,
         readerContentWidth: 620, readingDensity: 'compact'
       }));
       await act(async () => { vi.advanceTimersByTime(500); });
       expect(serverSettings).toEqual(expect.objectContaining({
-        readerTextAlignment: 'justify', textSize: 18, readerParagraphIndent: false,
+        readerTextAlignment: 'justify', textSize: 18, readerParagraphIndent: audio,
         readerContentWidth: 620, readingDensity: 'compact',
         ...(!mobile && { lineSpacing: 1.75, paragraphSpacing: 1.6 })
       }));
@@ -2835,11 +2866,12 @@ describe('TextDisplay', () => {
       try {
         await waitFor(() => {
           const reloadedText = screen.getByText('Hello').closest(audio ? '.audio-transcript-container' : '.text-content');
-          expect(reloadedText).toHaveClass('reader-align-justify', 'reader-indent-off');
+          expect(reloadedText).toHaveClass('reader-align-justify');
+          if (!audio) expect(reloadedText).toHaveClass('reader-indent-off');
           expect(reloadedText).toHaveStyle({ fontSize: '18px' });
           if (audio) {
             expect(reloadedText.style.getPropertyValue('--reader-content-max-width')).toBe('620px');
-            expect(reloadedText.style.getPropertyValue('--audio-transcript-row-padding')).toBe('0.5rem 0.65rem');
+            expect(reloadedText.style.getPropertyValue('--audio-transcript-row-padding')).toBe('0.08em 0.65rem');
           }
         });
         if (!mobile) {

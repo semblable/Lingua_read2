@@ -5,6 +5,7 @@ import { WORD_STATUS_LABELS, type WordStatus } from '../../types/wordStatus';
 
 interface SecondaryControlsProps {
   isMobile: boolean;
+  showParagraphIndent?: boolean;
   globalSettings: Settings;
   setReadingDensity: (density: string) => void;
   setReaderContentWidth: (width: number) => void;
@@ -34,6 +35,7 @@ interface SecondaryControlsProps {
 
 const SecondaryControls = React.memo(({
   isMobile,
+  showParagraphIndent = true,
   globalSettings,
   setReadingDensity,
   setReaderContentWidth,
@@ -155,7 +157,7 @@ const SecondaryControls = React.memo(({
         </Button>
       </ButtonGroup>
     )}
-    <ButtonGroup size="sm" className="me-1" aria-label="Paragraph indent">
+    {showParagraphIndent && <ButtonGroup size="sm" className="me-1" aria-label="Paragraph indent">
       <Button
         variant={globalSettings.readerParagraphIndent ? 'primary' : 'outline-secondary'}
         onClick={() => setReaderParagraphIndent(!globalSettings.readerParagraphIndent)}
@@ -163,7 +165,7 @@ const SecondaryControls = React.memo(({
       >
         Indent
       </Button>
-    </ButtonGroup>
+    </ButtonGroup>}
     <ButtonGroup size="sm" className="me-1" aria-label="Text alignment">
       <Button
         variant={globalSettings.readerTextAlignment !== 'justify' ? 'primary' : 'outline-secondary'}

@@ -138,7 +138,7 @@ public class JapaneseSegmenterTests(ITestOutputHelper output)
 
         var result = Tokenizer.Tokenize("2026年にOpenAI-APIを使う🙂。A-猫", language);
         var words = result.Tokens.Where(t => t.IsWord).Select(t => t.Text).ToArray();
-        Assert.Equal(new[] { "年", "に", "OpenAI-API", "を", "使う", "A", "猫" }, words);
+        Assert.Equal(new[] { "2026", "年", "に", "OpenAI-API", "を", "使う", "A", "猫" }, words);
 
         // Surrogate-pair emoji separator stays a single 2-code-unit separator token
         var emojiToken = Assert.Single(result.Tokens, t => t.Text == "🙂");

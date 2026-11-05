@@ -4,6 +4,9 @@ import {
   extractWords,
   lowercaseLookupTerm,
   stripLookupDiacritics,
+  splitSentenceAroundTerm,
+  sentenceContainsTerm,
+  pickSentenceForTerm,
   type LanguageConfig,
 } from '../utils/readerText';
 
@@ -77,8 +80,8 @@ describe('Indic and RTL Script Normalization & Diacritic Insensitive Lookup', ()
     it('ar-01: strips Tashkeel/Harakat for lookup keys', () => {
       const input = 'كَتَبَ الطَّالِبُ «كِتَابًا» فِي عَامِ 2026، وَقَالَتْ: «مَرْحَبًا!»';
 
-      expect(wordsOf(input, ar)).toEqual(['كَتَبَ', 'الطَّالِبُ', 'كِتَابًا', 'فِي', 'عَامِ', 'وَقَالَتْ', 'مَرْحَبًا']);
-      expect(lookupKeysOf(input, ar)).toEqual(['كتب', 'الطالب', 'كتابا', 'في', 'عام', 'وقالت', 'مرحبا']);
+      expect(wordsOf(input, ar)).toEqual(['كَتَبَ', 'الطَّالِبُ', 'كِتَابًا', 'فِي', 'عَامِ', '2026', 'وَقَالَتْ', 'مَرْحَبًا']);
+      expect(lookupKeysOf(input, ar)).toEqual(['كتب', 'الطالب', 'كتابا', 'في', 'عام', '2026', 'وقالت', 'مرحبا']);
 
       expect(wordsOf(input, arWithDigits)).toEqual(['كَتَبَ', 'الطَّالِبُ', 'كِتَابًا', 'فِي', 'عَامِ', '2026', 'وَقَالَتْ', 'مَرْحَبًا']);
       expect(lookupKeysOf(input, arWithDigits)).toEqual(['كتب', 'الطالب', 'كتابا', 'في', 'عام', '2026', 'وقالت', 'مرحبا']);
@@ -86,7 +89,7 @@ describe('Indic and RTL Script Normalization & Diacritic Insensitive Lookup', ()
 
     it('ar-02: BiDi RTL/LTR mixing and Tashkeel stripping', () => {
       const input = 'أَطْلَقَتْ شَرِكَةُ OpenAI نُسْخَةَ 2026 وَقَالَتْ: «مَرْحَبًا!»';
-      expect(lookupKeysOf(input, arWithDigits)).toEqual(['اطلقت', 'شركة', 'openai', 'نسخة', '2026', 'وقالت', 'مرحبا']);
+      expect(lookupKeysOf(input, arWithDigits)).toEqual(['أطلقت', 'شركة', 'openai', 'نسخة', '2026', 'وقالت', 'مرحبا']);
     });
 
     it('Arabic: strips Tatweel and Harakat for lookup keys', () => {
@@ -113,8 +116,8 @@ describe('Indic and RTL Script Normalization & Diacritic Insensitive Lookup', ()
     it('he-01: preserves Gershayim, Maqaf splits words, strips Niqqud for lookup keys', () => {
       const input = 'הַאִם קָרָאתָ אֶת הַדּוּ״חַ שֶׁל צה״ל בְּ־2026?';
 
-      expect(wordsOf(input, he)).toEqual(['הַאִם', 'קָרָאתָ', 'אֶת', 'הַדּוּ״חַ', 'שֶׁל', 'צה״ל', 'בְּ']);
-      expect(lookupKeysOf(input, he)).toEqual(['האם', 'קראת', 'את', 'הדו״ח', 'של', 'צה״ל', 'ב']);
+      expect(wordsOf(input, he)).toEqual(['הַאִם', 'קָרָאתָ', 'אֶת', 'הַדּוּ״חַ', 'שֶׁל', 'צה״ל', 'בְּ', '2026']);
+      expect(lookupKeysOf(input, he)).toEqual(['האם', 'קראת', 'את', 'הדו״ח', 'של', 'צה״ל', 'ב', '2026']);
 
       // With digits enabled, Maqaf ־ is not a connector, so בְּ and 2026 split cleanly
       expect(wordsOf(input, heWithDigits)).toEqual(['הַאִם', 'קָרָאתָ', 'אֶת', 'הַדּוּ״חַ', 'שֶׁל', 'צה״ל', 'בְּ', '2026']);
@@ -217,6 +220,128 @@ describe('Indic and RTL Script Normalization & Diacritic Insensitive Lookup', ()
 
     it.each(cases)('handles locale %s for %s -> %s', (langCode, input, expected) => {
       expect(stripLookupDiacritics(input, langCode)).toBe(expected);
+    });
+  });
+
+  describe('Sentence Highlighting, Cloze & Mining Parity (splitSentenceAroundTerm / sentenceContainsTerm / pickSentenceForTerm)', () => {
+    it('Arabic: matches vocalized words, hamza-folded legacy keys, tatweel, and multi-word phrases while preserving raw diacritics', () => {
+      const vocalizedSentence = 'هَلْ ذَهَبْتَ إِلَى الْمَكْتَبَةِ؟';
+      expect(splitSentenceAroundTerm(vocalizedSentence, 'إلى', null, 'ar')).toEqual([
+        { text: 'هَلْ ذَهَبْتَ ', isTerm: false },
+        { text: 'إِلَى', isTerm: true },
+        { text: ' الْمَكْتَبَةِ؟', isTerm: false },
+      ]);
+      expect(splitSentenceAroundTerm(vocalizedSentence, 'الى', null, 'ar')).toEqual([
+        { text: 'هَلْ ذَهَبْتَ ', isTerm: false },
+        { text: 'إِلَى', isTerm: true },
+        { text: ' الْمَكْتَبَةِ؟', isTerm: false },
+      ]);
+      expect(splitSentenceAroundTerm(vocalizedSentence, 'إلى المكتبة', null, 'ar')).toEqual([
+        { text: 'هَلْ ذَهَبْتَ ', isTerm: false },
+        { text: 'إِلَى الْمَكْتَبَةِ', isTerm: true },
+        { text: '؟', isTerm: false },
+      ]);
+
+      const tatweelSentence = 'ذَهَبْتُ إِلَى مَـكْـتَـبَـةِ الْمَدِينَةِ.';
+      expect(splitSentenceAroundTerm(tatweelSentence, 'مكتبة', null, 'ar')).toEqual([
+        { text: 'ذَهَبْتُ إِلَى ', isTerm: false },
+        { text: 'مَـكْـتَـبَـةِ', isTerm: true },
+        { text: ' الْمَدِينَةِ.', isTerm: false },
+      ]);
+      expect(sentenceContainsTerm(tatweelSentence, 'مكتبة', null, 'ar')).toBe(true);
+      expect(pickSentenceForTerm('إلى', ['جُمْلَةٌ أُخْرَى.', vocalizedSentence], null, 'ar')).toBe(vocalizedSentence);
+      expect(pickSentenceForTerm('الى', ['جُمْلَةٌ أُخْرَى.', vocalizedSentence], null, 'ar')).toBe(vocalizedSentence);
+    });
+
+    it('Persian & Urdu: matches vocalized words while preserving raw text', () => {
+      const faSentence = 'او ۴۵٬۰۰۰ ریال برایِ خانهٔ نو داد.';
+      expect(splitSentenceAroundTerm(faSentence, 'خانه', null, 'fa')).toEqual([
+        { text: 'او ۴۵٬۰۰۰ ریال برایِ ', isTerm: false },
+        { text: 'خانهٔ', isTerm: true },
+        { text: ' نو داد.', isTerm: false },
+      ]);
+      const urSentence = 'اُس نے کہا: ”پڑھائی مکمل ہوئی۔“';
+      expect(sentenceContainsTerm(urSentence, 'اس', null, 'ur')).toBe(true);
+      expect(pickSentenceForTerm('اس', [null, urSentence], null, 'ur')).toBe(urSentence);
+    });
+
+    it('Hebrew: matches vocalized words, ASCII-quote acronyms, and proclitics while preserving raw spans', () => {
+      const heSentence = 'הַאִם קָרָאתָ אֶת הַדּוּ״חַ שֶׁל צה"ל?';
+      expect(splitSentenceAroundTerm(heSentence, 'קראת', null, 'he')).toEqual([
+        { text: 'הַאִם ', isTerm: false },
+        { text: 'קָרָאתָ', isTerm: true },
+        { text: ' אֶת הַדּוּ״חַ שֶׁל צה"ל?', isTerm: false },
+      ]);
+      expect(splitSentenceAroundTerm(heSentence, 'צה״ל', null, 'he')).toEqual([
+        { text: 'הַאִם קָרָאתָ אֶת הַדּוּ״חַ שֶׁל ', isTerm: false },
+        { text: 'צה"ל', isTerm: true },
+        { text: '?', isTerm: false },
+      ]);
+      expect(splitSentenceAroundTerm('קָרָאתִי וְהַסֵּפֶר הָיָה טוֹב.', 'ספר', null, 'he')).toEqual([
+        { text: 'קָרָאתִי ', isTerm: false },
+        { text: 'וְהַסֵּפֶר', isTerm: true },
+        { text: ' הָיָה טוֹב.', isTerm: false },
+      ]);
+      expect(sentenceContainsTerm(heSentence, 'צה״ל', null, 'he')).toBe(true);
+      expect(pickSentenceForTerm('קראת', ['משפט אחר.', heSentence], null, 'he')).toBe(heSentence);
+    });
+
+    it('Russian, Ukrainian & Lithuanian: matches stressed and accented words without detaching combining marks', () => {
+      const ruSentence = 'Я пью молоко\u0301 каждый день.';
+      expect(splitSentenceAroundTerm(ruSentence, 'молоко', null, 'ru')).toEqual([
+        { text: 'Я пью ', isTerm: false },
+        { text: 'молоко\u0301', isTerm: true },
+        { text: ' каждый день.', isTerm: false },
+      ]);
+      expect(sentenceContainsTerm(ruSentence, 'молоко', null, 'ru')).toBe(true);
+      expect(pickSentenceForTerm('молоко', ['Другое предложение.', ruSentence], null, 'ru')).toBe(ruSentence);
+
+      const ukSentence = "У мене є п'я\u0301ть книг.";
+      expect(splitSentenceAroundTerm(ukSentence, "п'ять", null, 'uk')).toEqual([
+        { text: 'У мене є ', isTerm: false },
+        { text: "п'я\u0301ть", isTerm: true },
+        { text: ' книг.', isTerm: false },
+      ]);
+      expect(sentenceContainsTerm(ukSentence, "п'ять", null, 'uk')).toBe(true);
+      expect(pickSentenceForTerm("п'ять", ['Інше речення.', ukSentence], null, 'uk')).toBe(ukSentence);
+
+      const ltSentence = 'Jis ė\u0301jo namo.';
+      expect(splitSentenceAroundTerm(ltSentence, 'ėjo', null, 'lt')).toEqual([
+        { text: 'Jis ', isTerm: false },
+        { text: 'ė\u0301jo', isTerm: true },
+        { text: ' namo.', isTerm: false },
+      ]);
+      expect(sentenceContainsTerm(ltSentence, 'ėjo', null, 'lt')).toBe(true);
+      expect(pickSentenceForTerm('ėjo', ['Kitas sakinys.', ltSentence], null, 'lt')).toBe(ltSentence);
+    });
+
+    it('Turkish & Greek: matches dotted/dotless I, all-caps Greek, and legacy v4 folded terms', () => {
+      const trSentence = 'IŞIK ve İSTANBUL çok güzel.';
+      expect(splitSentenceAroundTerm(trSentence, 'ışık', null, 'tr')).toEqual([
+        { text: 'IŞIK', isTerm: true },
+        { text: ' ve İSTANBUL çok güzel.', isTerm: false },
+      ]);
+      expect(splitSentenceAroundTerm(trSentence, 'istanbul', null, 'tr')).toEqual([
+        { text: 'IŞIK ve ', isTerm: false },
+        { text: 'İSTANBUL', isTerm: true },
+        { text: ' çok güzel.', isTerm: false },
+      ]);
+      expect(pickSentenceForTerm('ışık', ['Başka cümle.', trSentence], null, 'tr')).toBe(trSentence);
+
+      const elCapsSentence = 'Ο ΛΟΓΟΣ είναι απλός.';
+      expect(splitSentenceAroundTerm(elCapsSentence, 'λόγος', null, 'el')).toEqual([
+        { text: 'Ο ', isTerm: false },
+        { text: 'ΛΟΓΟΣ', isTerm: true },
+        { text: ' είναι απλός.', isTerm: false },
+      ]);
+      const elAccentedSentence = 'Ο λόγος είναι απλός.';
+      expect(splitSentenceAroundTerm(elAccentedSentence, 'λογοσ', null, 'el')).toEqual([
+        { text: 'Ο ', isTerm: false },
+        { text: 'λόγος', isTerm: true },
+        { text: ' είναι απλός.', isTerm: false },
+      ]);
+      expect(pickSentenceForTerm('λόγος', ['Άλλη πρόταση.', elCapsSentence], null, 'el')).toBe(elCapsSentence);
+      expect(pickSentenceForTerm('λογοσ', ['Άλλη πρόταση.', elAccentedSentence], null, 'el')).toBe(elAccentedSentence);
     });
   });
 });

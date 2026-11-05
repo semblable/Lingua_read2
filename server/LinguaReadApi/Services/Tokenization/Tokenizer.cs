@@ -388,9 +388,6 @@ namespace LinguaReadApi.Services.Tokenization
                     .TrimStart('"', '\'', '״', '׳').TrimEnd('"', '״').Replace('"', '״').Replace('\'', '׳'),
                 "ru" or "uk" => CyrillicStressRegex.Replace(text, string.Empty),
                 "lt" => LithuanianAccentsRegex.Replace(text, string.Empty),
-                "el" => WellFormedRuns.Replace(text, run => run.Value.Normalize(NormalizationForm.FormD)
-                    .Replace("\u0300", string.Empty).Replace("\u0301", string.Empty)
-                    .Replace("\u0342", string.Empty).Normalize(NormalizationForm.FormC)),
                 _ => text
             };
         }
@@ -417,9 +414,37 @@ namespace LinguaReadApi.Services.Tokenization
                     else lowered.Append(char.ToLowerInvariant(ch));
                 }
                 var result = lowered.ToString();
-                return code == "el" ? result.Replace('ς', 'σ') : result;
+                return code == "el" ? NormalizeGreekSigma(result) : result;
             }
             return GetTextInfo(language?.Code).ToLower(normalized);
+        }
+
+        private static string NormalizeGreekSigma(string value)
+        {
+            if (string.IsNullOrEmpty(value)) return value;
+            StringBuilder? sb = null;
+            for (var i = 0; i < value.Length; i++)
+            {
+                var ch = value[i];
+                var replacement = ch;
+                if (ch == 'σ' && i > 0 && char.IsLetter(value[i - 1])
+                    && (i + 1 == value.Length || !char.IsLetter(value[i + 1])))
+                {
+                    replacement = 'ς';
+                }
+                else if (ch == 'ς' && i + 1 < value.Length && char.IsLetter(value[i + 1]))
+                {
+                    replacement = 'σ';
+                }
+
+                if (replacement != ch && sb == null)
+                {
+                    sb = new StringBuilder(value.Length);
+                    sb.Append(value, 0, i);
+                }
+                sb?.Append(replacement);
+            }
+            return sb?.ToString() ?? value;
         }
 
         private static string BaseLanguageCode(string? code)
@@ -435,12 +460,70 @@ namespace LinguaReadApi.Services.Tokenization
         public static bool RequiresLookupFallback(string? code) =>
             BaseLanguageCode(code) is "he" or "ar" or "fr" or "it" or "ca";
 
-        private static string UnifyArabicLetters(string text, string code)
+        private static string UnifyArabicLetters(string text, string code) =>
+            code == "fa"
+                ? text.Replace('ي', 'ی').Replace('ك', 'ک')
+                : text.Replace('ی', 'ي').Replace('ک', 'ك');
+
+        /// <summary>
+        /// Secondary diacritic/sigma/hamza-folded lookup key for matching legacy v4 stored
+        /// headwords or unaccented all-caps input against canonical v5 headwords.
+        /// </summary>
+        public static string FoldLookupKey(string text, Language? language)
         {
-            var unified = text.Replace('أ', 'ا').Replace('إ', 'ا').Replace('آ', 'ا').Replace('ٱ', 'ا');
-            return code == "fa"
-                ? unified.Replace('ي', 'ی').Replace('ك', 'ک')
-                : unified.Replace('ی', 'ي').Replace('ک', 'ك');
+            var key = NormalizeKey(text, language);
+            return FoldNormalizedKey(key, BaseLanguageCode(language?.Code));
+        }
+
+        internal static string FoldNormalizedKey(string key, string code) =>
+            code switch
+            {
+                "ar" or "fa" => key.Replace('أ', 'ا').Replace('إ', 'ا').Replace('آ', 'ا').Replace('ٱ', 'ا'),
+                "el" => WellFormedRuns.Replace(key, run => run.Value.Normalize(NormalizationForm.FormD)
+                        .Replace("\u0300", string.Empty).Replace("\u0301", string.Empty)
+                        .Replace("\u0342", string.Empty).Normalize(NormalizationForm.FormC))
+                    .Replace('ς', 'σ'),
+                _ => key
+            };
+
+        internal static string NormalizeLegacyTerm(string term, Language? language)
+        {
+            var normalized = NormalizeText(term, language).Trim();
+            return BaseLanguageCode(language?.Code) == "el"
+                ? NormalizeGreekSigma(normalized)
+                : normalized;
+        }
+
+        internal static bool ShouldPromoteFoldedTerm(string storedTerm, string canonicalTerm, Language? language)
+        {
+            var code = BaseLanguageCode(language?.Code);
+            var storedKey = NormalizeKey(storedTerm, language);
+            var canonicalKey = NormalizeKey(canonicalTerm, language);
+            if (storedKey == canonicalKey) return false;
+            var folded = FoldNormalizedKey(canonicalKey, code);
+            if (FoldNormalizedKey(storedKey, code) != folded) return false;
+            return code switch
+            {
+                "el" => storedKey.Replace('ς', 'σ') == folded && canonicalKey.Replace('ς', 'σ') != folded,
+                "ar" or "fa" => storedKey == folded && canonicalKey != folded,
+                _ => false
+            };
+        }
+
+        /// <summary>
+        /// True when <paramref name="term"/> contains at least one decimal digit and no letters
+        /// (e.g. "2026", "2 000", "12,5", "25.000,-", but not "2026-ban" or "10%-os").
+        /// </summary>
+        public static bool IsPureNumericToken(string? term)
+        {
+            if (string.IsNullOrEmpty(term)) return false;
+            var hasDigit = false;
+            foreach (var rune in term.EnumerateRunes())
+            {
+                if (Rune.IsLetter(rune)) return false;
+                if (Rune.GetUnicodeCategory(rune) == UnicodeCategory.DecimalDigitNumber) hasDigit = true;
+            }
+            return hasDigit;
         }
 
         /// <summary>Direct key first; fallback keys require a matching vocabulary/dictionary headword.
@@ -451,6 +534,8 @@ namespace LinguaReadApi.Services.Tokenization
             var result = new List<string> { key };
             var seen = new HashSet<string>(StringComparer.Ordinal) { key };
             var code = BaseLanguageCode(language?.Code);
+            var foldedKey = FoldNormalizedKey(key, code);
+            if (seen.Add(foldedKey)) result.Add(foldedKey);
             if (code is "fr" or "it" or "ca")
             {
                 // Bounded Romance elisions are lookup alternatives only:
@@ -504,7 +589,12 @@ namespace LinguaReadApi.Services.Tokenization
                     }
                 }
                 frontier = next.ToList();
-                result.AddRange(frontier);
+                foreach (var candidate in frontier)
+                {
+                    result.Add(candidate);
+                    var foldedCandidate = FoldNormalizedKey(candidate, code);
+                    if (seen.Add(foldedCandidate)) result.Add(foldedCandidate);
+                }
             }
             return result;
         }
@@ -524,8 +614,15 @@ namespace LinguaReadApi.Services.Tokenization
 
         public static string? ResolveLookupKey(string term, Language? language, IEnumerable<string> headwords)
         {
-            var keys = headwords.Select(word => NormalizeKey(word, language)).ToHashSet(StringComparer.Ordinal);
-            return GetLookupCandidates(term, language).FirstOrDefault(keys.Contains);
+            var headwordList = headwords as IReadOnlyCollection<string> ?? headwords.ToList();
+            var keys = headwordList.Select(word => NormalizeKey(word, language)).ToHashSet(StringComparer.Ordinal);
+            var foldedKeys = headwordList.Select(word => FoldLookupKey(word, language)).ToHashSet(StringComparer.Ordinal);
+            foreach (var candidate in GetLookupCandidates(term, language))
+            {
+                if (keys.Contains(candidate) || foldedKeys.Contains(candidate))
+                    return candidate;
+            }
+            return null;
         }
 
         // A combining mark or format character (an emoji's variation selector, a
@@ -587,9 +684,12 @@ namespace LinguaReadApi.Services.Tokenization
                 groups++;
                 end = next;
             }
-            if (groups == 0 || end + 1 >= text.Length || text[end] != ',' || !IsNumericDigit(text[end + 1])) return digitsEnd;
-            end += 2;
-            while (end < text.Length && IsNumericDigit(text[end])) end++;
+            if (groups == 0) return digitsEnd;
+            if (end + 1 < text.Length && text[end] == ',' && IsNumericDigit(text[end + 1]))
+            {
+                end += 2;
+                while (end < text.Length && IsNumericDigit(text[end])) end++;
+            }
             var nextContext = end;
             while (nextContext < text.Length && IsHorizontalSpace(text[nextContext])) nextContext++;
             var previous = start - 1;
@@ -602,9 +702,6 @@ namespace LinguaReadApi.Services.Tokenization
 
         private static bool IsNumericDigit(char ch) =>
             char.GetUnicodeCategory(ch) == UnicodeCategory.DecimalDigitNumber;
-
-        private static bool IsPersianDigit(char ch) =>
-            ch is >= '\u06f0' and <= '\u06f9';
 
         private static bool IsNumericSeparator(char ch) =>
             ch is '.' or ',' or '\u00a0' or '\u202f' or '\u066c' or '\u066b';
@@ -654,39 +751,30 @@ namespace LinguaReadApi.Services.Tokenization
             if (!IsNumericDigit(ch)) return false;
 
             var end = start + 1;
-            var hasPersianDigit = IsPersianDigit(ch);
             while (end < len && IsNumericDigit(processed[end]))
             {
-                if (IsPersianDigit(processed[end])) hasPersianDigit = true;
                 end++;
             }
 
-            var groupedEnd = FindSpaceGroupedDecimalEnd(processed, span, coreRegex, start, end);
-            var hasGroupedOrDecimalDigits = groupedEnd != end;
-            end = groupedEnd;
+            end = FindSpaceGroupedDecimalEnd(processed, span, coreRegex, start, end);
             while (end + 1 < len && IsNumericSeparator(processed[end]) && IsNumericDigit(processed[end + 1]))
             {
-                hasGroupedOrDecimalDigits = true;
                 end++;
                 while (end < len && IsNumericDigit(processed[end]))
                 {
-                    if (IsPersianDigit(processed[end])) hasPersianDigit = true;
                     end++;
                 }
             }
 
-            var hasAffix = false;
             if (end + 1 < len && processed[end] == ',' && processed[end + 1] == '-'
                 && (end + 2 >= len || (!IsNumericDigit(processed[end + 2]) && !IsCoreWordChar(coreRegex, span, end + 2))))
             {
-                hasAffix = true;
                 end += 2;
             }
             else
             {
                 if (end < len && processed[end] == '%')
                 {
-                    hasAffix = true;
                     end++;
                 }
                 if (end + 1 < len && processed[end] == '-'
@@ -695,7 +783,6 @@ namespace LinguaReadApi.Services.Tokenization
                         || (japanese && JapaneseSegmenter.IsJapaneseScriptAt(processed, end + 1))
                         || (thai && ThaiSegmenter.IsThaiAt(processed, end + 1))))
                 {
-                    hasAffix = true;
                     end++;
                     while (end < len)
                     {
@@ -716,13 +803,13 @@ namespace LinguaReadApi.Services.Tokenization
                 }
             }
 
-            if (hasGroupedOrDecimalDigits || hasAffix || hasPersianDigit)
+            if (end < len && processed[end] is '\u00aa' or '\u00ba')
             {
-                numericEnd = end;
-                return true;
+                return false;
             }
 
-            return false;
+            numericEnd = end;
+            return true;
         }
 
         private static TextInfo GetTextInfo(string? code)

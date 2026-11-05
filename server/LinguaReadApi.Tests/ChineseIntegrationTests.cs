@@ -24,7 +24,7 @@ public class ChineseIntegrationTests
         var text = "🙂我今天在图书馆学习中文。ABC2026";
         var result = Tokenizer.Tokenize(text, new Language { ParserType = ChineseSegmenter.Profile, WordCharacters = characters! });
         Assert.Equal(text, string.Concat(result.Tokens.Select(token => token.Text)));
-        Assert.Equal(new[] { "我", "今天", "在", "图书馆", "学习", "中文", "ABC" }, result.Tokens.Where(t => t.IsWord).Select(t => t.Text));
+        Assert.Equal(new[] { "我", "今天", "在", "图书馆", "学习", "中文", "ABC", "2026" }, result.Tokens.Where(t => t.IsWord).Select(t => t.Text));
         Assert.Equal(new Tokenizer.Token("🙂", 0, 2, false), result.Tokens[0]);
         var legacy = Tokenizer.Tokenize("图书馆学习中文", new Language { ParserType = "jieba" });
         Assert.Single(legacy.Tokens);

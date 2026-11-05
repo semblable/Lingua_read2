@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { lowercaseLookupTerm, resolveLookupKey, tokenizeContent } from '../utils/readerText';
+import { foldLookupTerm, isPureNumericToken, lowercaseLookupTerm, pickSentenceForTerm, resolveLookupKey, sentenceContainsTerm, splitSentenceAroundTerm, tokenizeContent } from '../utils/readerText';
 
 describe('language-gated normalized lookup and validated fallback', () => {
   test.each([
@@ -29,10 +29,10 @@ describe('language-gated normalized lookup and validated fallback', () => {
 
   test.each([
     ['he', '"צה"ל"', 'צה״ל'], ['he', "'מס'", 'מס׳'], ['he', 'וכו׳', 'וכו׳'],
-    ['ar', 'کِتاب يی أإآٱ ةه', 'كتاب يي اااا ةه'],
-    ['fa', 'كِتاب يی أإآٱ ةه', 'کتاب یی اااا ةه'],
+    ['ar', 'کِتاب يی أإآٱ ةه', 'كتاب يي أإآٱ ةه'],
+    ['fa', 'كِتاب يی أإآٱ ةه', 'کتاب یی أإآٱ ةه'],
     ['tr', 'İI', 'iı'], ['az-Latn', 'İI', 'iı'],
-    ['el', 'λόγος', 'λογοσ'], ['el', 'ΛΟΓΟΣ', 'λογοσ'], ['en', 'I', 'i'], ['en', 'ς', 'ς']
+    ['el', 'λόγος', 'λόγος'], ['el', 'ΛΟΓΟΣ', 'λογος'], ['en', 'I', 'i'], ['en', 'ς', 'ς']
   ])('%s normalizes %s', (code, term, expected) => expect(lowercaseLookupTerm(term, code)).toBe(expected));
 
   test.each([
@@ -51,7 +51,14 @@ describe('language-gated normalized lookup and validated fallback', () => {
   });
 
   test('Greek accent folding preserves malformed UTF16 and folds valid runs', () => {
-    expect(lowercaseLookupTerm('Ά\uD800 Ώ\uDC00', 'el')).toBe('α\uD800 ω\uDC00');
+    expect(lowercaseLookupTerm('Ά\uD800 Ώ\uDC00', 'el')).toBe('ά\uD800 ώ\uDC00');
+    expect(foldLookupTerm('Ά\uD800 Ώ\uDC00', 'el')).toBe('α\uD800 ω\uDC00');
+    expect(foldLookupTerm('λόγος', 'el')).toBe('λογοσ');
+    expect(foldLookupTerm('إلى أطلقت', 'ar')).toBe('الى اطلقت');
+    expect(isPureNumericToken('2026')).toBe(true);
+    expect(isPureNumericToken('2 000')).toBe(true);
+    expect(isPureNumericToken('2026-ban')).toBe(false);
+    expect(isPureNumericToken('10%-os')).toBe(false);
   });
 
   test('Italian trailing po and numeric/currency spans preserve boundaries', () => {
@@ -75,11 +82,11 @@ test.each([
   ["af-ZA", "'n 'N 'n' 'name 's", "'n|'N|n|name|s"],
   ["nl-NL", "'s 'S 't 'T 's' 't' 'test 'n", "'s|'S|'t|'T|s|t|test|n"],
   ["en", "'hello' 'em 'tis don't dogs' rock 'n' roll", "hello|em|tis|don't|dogs|rock|n|roll"],
-  ["fi", "EU:ssa EU: ssa EU:SSA EU:2 EU:! sana:ssa U.S.A.:ssa", "EU:ssa|EU|ssa|EU|SSA|EU|EU|sana:ssa|U.S.A.:ssa"],
+  ["fi", "EU:ssa EU: ssa EU:SSA EU:2 EU:! sana:ssa U.S.A.:ssa", "EU:ssa|EU|ssa|EU|SSA|EU|2|EU|sana:ssa|U.S.A.:ssa"],
   ["en", "EU:ssa Dr. U.S.A. A.B word. A.Beta A.", "EU|ssa|Dr.|U.S.A.|A.B|word|A|Beta|A"],
   ["fr", "M. Dupont arriva.", "M|Dupont|arriva"],
-  ["uk", "1 250,00 грн. 12 345 678,90 kg 2026 2 000 грн.", "1 250,00|грн.|12 345 678,90|kg|грн."],
-  ["uk", "1 250,00! 12 34,50 грн. 1 250 грн.", "250,00|34,50|грн.|грн."],
+  ["uk", "1 250,00 грн. 12 345 678,90 kg 2026 2 000 грн.", "1 250,00|грн.|12 345 678,90|kg|2026|2 000|грн."],
+  ["uk", "1 250,00! 12 34,50 грн. 1 250 грн.", "1|250,00|12|34,50|грн.|1 250|грн."],
   ["uk", "€ 1 250,00. 1 250,00 %", "€|1 250,00|1 250,00"]
 ])('bounded spans %s: %s', (code, input, expected) => {
   const result = tokenizeContent(input, { code });
@@ -100,4 +107,27 @@ test.each([
   expect(lowercaseLookupTerm(term, code)).toBe(expected);
   expect(resolveLookupKey(term, code, [term])).toBe(expected);
   expect(resolveLookupKey(term, code, ['unrelated'])).toBeNull();
+});
+
+test.each([
+  ['ar', 'هَلْ ذَهَبْتَ إِلَى الْمَكْتَبَةِ؟', 'إلى', 'إِلَى'],
+  ['ar', 'هَلْ ذَهَبْتَ إِلَى الْمَكْتَبَةِ؟', 'الى', 'إِلَى'],
+  ['ar', 'ذَهَبْتُ إِلَى مَـكْـتَـبَـةِ الْمَدِينَةِ.', 'مكتبة', 'مَـكْـتَـبَـةِ'],
+  ['he', 'הַאִם קָרָאתָ אֶת הַדּוּ״חַ שֶׁל צה"ל?', 'קראת', 'קָרָאתָ'],
+  ['he', 'הַאִם קָרָאתָ אֶת הַדּוּ״חַ שֶׁל צה"ל?', 'צה״ל', 'צה"ל'],
+  ['he', 'קָרָאתִי וְהַסֵּפֶר הָיָה טוֹב.', 'ספר', 'וְהַסֵּפֶר'],
+  ['ru', 'Я пью молоко\u0301 каждый день.', 'молоко', 'молоко\u0301'],
+  ['uk', "У мене є п'я\u0301ть книг.", "п'ять", "п'я\u0301ть"],
+  ['lt', 'Jis ė\u0301jo namo.', 'ėjo', 'ė\u0301jo'],
+  ['tr', 'IŞIK ve İSTANBUL çok güzel.', 'ışık', 'IŞIK'],
+  ['tr', 'IŞIK ve İSTANBUL çok güzel.', 'istanbul', 'İSTANBUL'],
+  ['az', 'IŞIQ və İSTANBUL çox gözəldir.', 'ışıq', 'IŞIQ'],
+  ['el', 'Ο ΛΟΓΟΣ είναι απλός.', 'λόγος', 'ΛΟΓΟΣ'],
+  ['el', 'Ο λόγος είναι απλός.', 'λογοσ', 'λόγος']
+])('%s sentence highlighting matches %s for %s -> %s', (code, sentence, term, expectedHighlight) => {
+  const parts = splitSentenceAroundTerm(sentence, term, null, code);
+  expect(parts.map(p => p.text).join('')).toBe(sentence);
+  expect(parts.filter(p => p.isTerm).map(p => p.text)).toEqual([expectedHighlight]);
+  expect(sentenceContainsTerm(sentence, term, null, code)).toBe(true);
+  expect(pickSentenceForTerm(term, ['Unrelated sentence.', sentence], null, code)).toBe(sentence);
 });

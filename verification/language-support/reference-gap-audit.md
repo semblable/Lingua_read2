@@ -2,31 +2,27 @@
 
 All 89 original reference cases across 44 languages remain intact in `tests/golden/multilingual_tokenizer_and_lemmatizer_test_suite_v4.json`. Runtime surfaces address the **displayed processed sentence** using **UTF-16 code units**.
 
-This slice closes `af-01`, `af-02`, and `fi-01`, reducing `cases_with_runtime_span_or_key_differences` from **27 to 24**. Dutch leading apostrophes, English dotted initialisms/`Dr.`, and Ukrainian `грн.` now match; other differences in those cases remain. The original `uk-02` contains the grouped integer `2 000`, so it remains a gap under the bounded decimal-only rule. The added `uk-space-decimal` regression covers `1 250,00 грн.` with UTF-16 offsets after an emoji. All 89 original references remain unchanged; 100 runtime cases execute. Semantic markers remain **86**.
+This Tokenizer v5 slice closes `ar-01`, `ar-02`, `he-01`, `el-01`, `el-02`, and `uk-02`, reducing `cases_with_runtime_span_or_key_differences` from **24 to 18** (71 / 89 exact reference matches = 79.8%). Greek monotonic accents and contextual final sigma (`ς`/`σ`), Arabic hamza (`أ`, `إ`, `آ`, `ٱ`), bare integers (`2026`), and space-grouped integers with currency/unit context (`2 000 грн.`) now match the reference suite while preserving legacy v4 vocabulary via dual-key folded lookup and in-place DB promotion. All 89 original references remain unchanged; 100 runtime cases execute. Semantic markers remain **86**.
 
-Verification: server **1,732 passed, 7 PostgreSQL-only skipped**; client **1,746 passed across 114 files**. Solution build, typecheck, production build, and lint pass (46 existing lint warnings). Docker is unavailable locally. Tokenizer stays at version **4**; no migration is added.
+Verification: server **1,733 passed, 7 PostgreSQL-only skipped**; client **1,766 passed across 114 files**. Solution build, typecheck, production build, and lint pass (46 existing lint warnings). Docker is unavailable locally. Tokenizer bumped to version **5** (`WordLinker.CurrentTokenizerVersion = 5`), verified by `TokenizerV5MigrationAcceptanceTests`.
 
-## Remaining 24 span/key gaps
+## Remaining 18 span/key gaps
 
 | Cases | Classification and reason |
 | --- | --- |
 | `zh-01` | Contextual boundary disambiguation: source `乒乓球拍 / 卖`, pinned dictionary `乒乓球 / 拍卖`. |
 | `ja-01` | Segmentation granularity for repeated `すもも`/`もも`. |
 | `ja-02` | Mixed: pinned TinySegmenter boundaries versus larger inflected/grammatical units. |
-| `ar-01` | Intentional Alef folding (`إلى → الى`); source preserves Hamza. |
-| `ar-02`, `he-01` | Bare 4-digit year `2026` excluded when `\p{N}` is omitted from default `WordCharacters` (`ar-02` also folds Alef). |
 | `fr-01`, `fr-02` | Intentional glued Romance elision/clitic spans (`C'est`, `l'eau`, `d'Anne`, `qu'il`, `œuf-là`); `l'`/`d'` use validated lookup fallback. |
-| `it-01`, `it-02` | Intentional glued elision spans (`C'è`, `d'acqua`, `nell'ombra`, `qualcos'altro`, `un'occhiata`, `quell'albero`); `po'` span `[7:10]` now matches reference and `l'`/`d'`/`un'`/`quell'`/`po'` use validated lookup fallback. |
+| `it-01`, `it-02` | Intentional glued elision spans (`C'è`, `d'acqua`, `nell'ombra`, `qualcos'altro`, `un'occhiata`, `quell'albero`); `po'` span `[7:10]` matches reference and `l'`/`d'`/`un'`/`quell'`/`po'` use validated lookup fallback. |
 | `ca-01`, `ca-02` | Intentional glued elision/clitic spans (`L'home`, `d'aigua`, `d'objectes`, `d'un`, `Dona'm-ho`, `d'anar-te'n`, `l'església`); `l'`/`d'` use validated lookup fallback. |
-| `el-01`, `el-02` | Intentional accent removal and final-sigma folding in lookup keys. |
 | `vi-01`, `vi-02` | Multiword lexical phrase grouping (`Việt Nam`, `Quốc ngữ`, `đặc biệt`). |
 | `ro-01` | Generic hyphen glue (`și-au`) versus clitic subtokens (`și / -au`). |
 | `ko-01`, `ko-02` | Intentional full eojeol touch targets; Josa/stem decomposition is handled in lookup candidates. |
-| `uk-02` | ASCII-space grouped integer `2 000` remains excluded; `грн.` now matches. Comma decimals with currency/unit context are supported separately. |
-| `nl-01` | Lexical phrase grouping of `'s Morgens`; the leading apostrophe now matches. |
-| `ms-02` | Multiword phrase `Kuala Lumpur` (`RM` and `50.00` now match). |
-| `en-01` | Intentional ASCII apostrophe surface normalization; `Dr.` now matches. |
-| `en-02` | Multiword `rock 'n' roll`; `U.S.A.` now matches and quoted `'n'` retains separate quote tokens. |
+| `nl-01` | Lexical phrase grouping of `'s Morgens`; the leading apostrophe matches. |
+| `ms-02` | Multiword phrase `Kuala Lumpur` (`RM` and `50.00` match). |
+| `en-01` | Intentional ASCII apostrophe surface normalization; `Dr.` matches. |
+| `en-02` | Multiword `rock 'n' roll`; `U.S.A.` matches and quoted `'n'` retains separate quote tokens. |
 
 ## The 86 semantic markers
 

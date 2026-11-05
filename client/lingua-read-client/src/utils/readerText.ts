@@ -379,6 +379,97 @@ const splitAtMatches = (
  * term only matches after them, the sentence is returned the way the reader
  * shows it, with the substitutions applied.
  */
+const NORMALIZED_SENTENCE_MATCH_LANGUAGES = new Set([
+  'ar', 'fa', 'ur', 'he', 'iw', 'ru', 'uk', 'lt', 'tr', 'az', 'el', 'fr', 'it', 'ca', 'af', 'nl'
+]);
+
+const splitTokenMatches = (
+  display: string,
+  needle: string,
+  languageCode: string
+): { text: string; isTerm: boolean }[] | null => {
+  const needleTokens = tokenizeContent(needle, { code: languageCode }).tokens.filter(t => t.type === 'word');
+  if (needleTokens.length === 0) return null;
+
+  const sentenceWords = tokenizeContent(display, { code: languageCode }).tokens.filter(t => t.type === 'word');
+  if (sentenceWords.length === 0) return null;
+
+  const spans: { start: number; end: number }[] = [];
+
+  if (needleTokens.length === 1) {
+    const needleKey = lowercaseLookupTerm(needle, languageCode);
+    const singleTokenKey = lowercaseLookupTerm(needleTokens[0].text, languageCode);
+    if (!needleKey || needleKey !== singleTokenKey) return null;
+    const needleFolded = foldLookupTerm(needle, languageCode);
+
+    for (const word of sentenceWords) {
+      const candidates = getLookupCandidates(word.text, languageCode);
+      if (candidates.includes(needleKey) || (needleFolded && candidates.includes(needleFolded))) {
+        spans.push({ start: word.start, end: word.end });
+      }
+    }
+  } else {
+    const leadingExtra = needle.slice(0, needleTokens[0].start);
+    const trailingExtra = needle.slice(needleTokens[needleTokens.length - 1].end);
+    if (
+      lowercaseLookupTerm(leadingExtra, languageCode) !== '' ||
+      lowercaseLookupTerm(trailingExtra, languageCode) !== ''
+    ) {
+      return null;
+    }
+
+    const needleKeys = needleTokens.map(t => lowercaseLookupTerm(t.text, languageCode));
+    const needleFoldedKeys = needleTokens.map(t => foldLookupTerm(t.text, languageCode));
+    const needleSeps: string[] = [];
+    for (let j = 1; j < needleTokens.length; j++) {
+      needleSeps.push(needle.slice(needleTokens[j - 1].end, needleTokens[j].start));
+    }
+
+    const k = needleTokens.length;
+    for (let i = 0; i <= sentenceWords.length - k; i++) {
+      let matched = true;
+      for (let j = 0; j < k; j++) {
+        const word = sentenceWords[i + j];
+        const wordKey = lowercaseLookupTerm(word.text, languageCode);
+        const wordFolded = foldLookupTerm(word.text, languageCode);
+        if (wordKey !== needleKeys[j] && wordFolded !== needleFoldedKeys[j]) {
+          matched = false;
+          break;
+        }
+        if (j > 0) {
+          const prevWord = sentenceWords[i + j - 1];
+          const displaySep = display.slice(prevWord.end, word.start);
+          const expectedSep = needleSeps[j - 1];
+          const bothWhitespace = displaySep.trim() === '' && expectedSep.trim() === '';
+          if (
+            !bothWhitespace &&
+            displaySep.replace(/\s+/g, ' ').trim().toLowerCase() !==
+              expectedSep.replace(/\s+/g, ' ').trim().toLowerCase()
+          ) {
+            matched = false;
+            break;
+          }
+        }
+      }
+      if (matched) {
+        spans.push({ start: sentenceWords[i].start, end: sentenceWords[i + k - 1].end });
+        i += k - 1;
+      }
+    }
+  }
+
+  if (spans.length === 0) return null;
+  const result: { text: string; isTerm: boolean }[] = [];
+  let previous = 0;
+  for (const span of spans) {
+    if (span.start > previous) result.push({ text: display.slice(previous, span.start), isTerm: false });
+    result.push({ text: display.slice(span.start, span.end), isTerm: true });
+    previous = span.end;
+  }
+  if (previous < display.length) result.push({ text: display.slice(previous), isTerm: false });
+  return result;
+};
+
 export const splitSentenceAroundTerm = (
   sentence: string,
   term: string,
@@ -391,7 +482,6 @@ export const splitSentenceAroundTerm = (
   if (!needle) return [{ text: display, isTerm: false }];
 
   const haystack = applyCharacterSubstitutions(display, BUILT_IN_SUBSTITUTIONS);
-  const parts = splitAtMatches(display, haystack, needle);
   if (isKoreanLanguageCode(languageCode)) {
     const spans = findKoreanLookupMatches(haystack, needle);
     if (spans.length) {
@@ -407,13 +497,26 @@ export const splitSentenceAroundTerm = (
     }
   }
 
+  const baseLang = (languageCode || '').trim().toLowerCase().replace(/_/g, '-').split('-')[0];
+  if (languageCode && NORMALIZED_SENTENCE_MATCH_LANGUAGES.has(baseLang)) {
+    const tokenParts = splitTokenMatches(display, needle, languageCode);
+    if (tokenParts) return tokenParts;
+  }
+
+  const parts = splitAtMatches(display, haystack, needle);
   if (parts) return parts;
   const userSubs = parseCharacterSubstitutions(characterSubstitutions);
   if (userSubs.length > 0) {
     const processed = applyCharacterSubstitutions(haystack, userSubs);
     const processedNeedle = applyCharacterSubstitutions(needle, userSubs).trim();
-    const processedParts = processedNeedle ? splitAtMatches(processed, processed, processedNeedle) : null;
-    if (processedParts) return processedParts;
+    if (processedNeedle) {
+      if (languageCode && NORMALIZED_SENTENCE_MATCH_LANGUAGES.has(baseLang)) {
+        const processedTokenParts = splitTokenMatches(processed, processedNeedle, languageCode);
+        if (processedTokenParts) return processedTokenParts;
+      }
+      const processedParts = splitAtMatches(processed, processed, processedNeedle);
+      if (processedParts) return processedParts;
+    }
   }
   return [{ text: display, isTerm: false }];
 };
@@ -493,7 +596,7 @@ export const stripLookupDiacritics = (text: string, languageCode?: string | null
   switch (lang) {
     case 'ar':
     case 'fa':
-      return text.replace(ARABIC_DIACRITICS_REGEX, '').replace(/[أإآٱ]/g, 'ا')
+      return text.replace(ARABIC_DIACRITICS_REGEX, '')
         .replace(lang === 'fa' ? /ي/g : /ی/g, lang === 'fa' ? 'ی' : 'ي')
         .replace(lang === 'fa' ? /ك/g : /ک/g, lang === 'fa' ? 'ک' : 'ك');
     case 'ur':
@@ -506,11 +609,29 @@ export const stripLookupDiacritics = (text: string, languageCode?: string | null
       return text.replace(CYRILLIC_STRESS_REGEX, '');
     case 'lt':
       return text.replace(LITHUANIAN_ACCENTS_REGEX, '');
-    case 'el':
-      return text.normalize('NFD').replace(/[\u0300\u0301\u0342]/g, '').normalize('NFC');
     default:
       return text;
   }
+};
+
+const GREEK_LETTER_CHECK = /\p{L}/u;
+
+const normalizeGreekSigma = (value: string): string => {
+  if (!value) return value;
+  const chars = Array.from(value);
+  let mutated = false;
+  for (let i = 0; i < chars.length; i++) {
+    const ch = chars[i];
+    if (ch === 'σ' && i > 0 && GREEK_LETTER_CHECK.test(chars[i - 1]) &&
+        (i + 1 === chars.length || !GREEK_LETTER_CHECK.test(chars[i + 1]))) {
+      chars[i] = 'ς';
+      mutated = true;
+    } else if (ch === 'ς' && i + 1 < chars.length && GREEK_LETTER_CHECK.test(chars[i + 1])) {
+      chars[i] = 'σ';
+      mutated = true;
+    }
+  }
+  return mutated ? chars.join('') : value;
 };
 
 export const lowercaseLookupTerm = (term: string, languageCode?: string | null): string => {
@@ -532,10 +653,38 @@ export const lowercaseLookupTerm = (term: string, languageCode?: string | null):
     // UTF-16 indexing. Simple casing matches the backend's explicit table.
     const lowered = Array.from(stripped, ch => ch === 'İ' ? 'i'
       : ch === 'I' ? (base === 'tr' || base === 'az' ? 'ı' : 'i') : ch.toLowerCase()).join('');
-    return base === 'el' ? lowered.replace(/ς/g, 'σ') : lowered;
+    return base === 'el' ? normalizeGreekSigma(lowered) : lowered;
   }
   return stripped.toLowerCase();
 };
+
+const foldNormalizedKey = (key: string, code: string): string => {
+  if (code === 'ar' || code === 'fa') {
+    return key.replace(/[أإآٱ]/g, 'ا');
+  }
+  if (code === 'el') {
+    return key.normalize('NFD').replace(/[\u0300\u0301\u0342]/g, '').normalize('NFC').replace(/ς/g, 'σ');
+  }
+  return key;
+};
+
+/**
+ * Secondary diacritic/sigma/hamza-folded lookup key for matching legacy v4 stored
+ * headwords or unaccented all-caps input against canonical v5 headwords.
+ */
+export const foldLookupTerm = (term: string, languageCode?: string | null): string => {
+  const key = lowercaseLookupTerm(term, languageCode);
+  const base = (languageCode || '').trim().toLowerCase().replace(/_/g, '-').split('-')[0];
+  const code = base === 'iw' ? 'he' : base;
+  return foldNormalizedKey(key, code);
+};
+
+/**
+ * True when `term` contains at least one decimal digit and no letters
+ * (e.g. "2026", "2 000", "12,5", "25.000,-", but not "2026-ban" or "10%-os").
+ */
+export const isPureNumericToken = (term: string | null | undefined): boolean =>
+  !!term && /\p{Nd}/u.test(term) && !/\p{L}/u.test(term);
 
 const isElisionRemainder = (remainder: string): boolean =>
   /^\p{L}[\p{L}\p{M}]*$/u.test(remainder) &&
@@ -548,6 +697,11 @@ export const getLookupCandidates = (term: string, languageCode?: string | null):
   const code = base === 'iw' ? 'he' : base;
   const result = [key];
   const seen = new Set(result);
+  const foldedKey = foldNormalizedKey(key, code);
+  if (!seen.has(foldedKey)) {
+    seen.add(foldedKey);
+    result.push(foldedKey);
+  }
   if (code === 'fr' || code === 'it' || code === 'ca') {
     // Lookup only: the reader keeps its glued elision span and exact entries win.
     if (code === 'it' && key === "po'") {
@@ -583,7 +737,14 @@ export const getLookupCandidates = (term: string, languageCode?: string | null):
       if (code === 'ar' && current.startsWith('لل') && current.length >= 4) add(current.slice(2));
     }
     frontier = next.sort((a, b) => a < b ? -1 : a > b ? 1 : 0);
-    result.push(...frontier);
+    for (const candidate of frontier) {
+      result.push(candidate);
+      const foldedCandidate = foldNormalizedKey(candidate, code);
+      if (!seen.has(foldedCandidate)) {
+        seen.add(foldedCandidate);
+        result.push(foldedCandidate);
+      }
+    }
   }
   return result;
 };
@@ -591,8 +752,10 @@ export const getLookupCandidates = (term: string, languageCode?: string | null):
 export const resolveLookupKey = (
   term: string, languageCode: string | null | undefined, headwords: Iterable<string>
 ): string | null => {
-  const keys = new Set([...headwords].map(word => lowercaseLookupTerm(word, languageCode)));
-  return getLookupCandidates(term, languageCode).find(key => keys.has(key)) ?? null;
+  const headwordList = [...headwords];
+  const keys = new Set(headwordList.map(word => lowercaseLookupTerm(word, languageCode)));
+  const foldedKeys = new Set(headwordList.map(word => foldLookupTerm(word, languageCode)));
+  return getLookupCandidates(term, languageCode).find(key => keys.has(key) || foldedKeys.has(key)) ?? null;
 };
 
 export const resolveLookupTerm = <T>(
@@ -652,7 +815,6 @@ const isConnector = (ch: string): boolean =>
 const DECIMAL_DIGIT_REGEX = /^\p{Nd}$/u;
 const CURRENCY_SYMBOL_REGEX = /^\p{Sc}$/u;
 const isNumericDigit = (ch: string | undefined): boolean => !!ch && DECIMAL_DIGIT_REGEX.test(ch);
-const isPersianDigit = (ch: string | undefined): boolean => !!ch && ch >= '\u06F0' && ch <= '\u06F9';
 const isNumericSeparator = (ch: string | undefined): boolean =>
   ch === '.' || ch === ',' || ch === '\u00A0' || ch === '\u202F' || ch === '\u066C' || ch === '\u066B';
 const isHorizontalSpace = (ch: string | undefined): boolean =>
@@ -681,7 +843,7 @@ const findDottedInitialismEnd = (text: string, start: number, core: RegExp): num
   return letters >= 2 && (end === text.length || !isCoreWordChar(core, text[end])) ? end : start + 1;
 };
 
-// Require three-digit ASCII groups, a comma decimal and currency/unit context.
+// Require three-digit ASCII groups and currency/unit context (comma decimal optional).
 const findSpaceGroupedDecimalEnd = (text: string, start: number, digitsEnd: number, core: RegExp): number => {
   if (digitsEnd - start > 3) return digitsEnd;
   let end = digitsEnd;
@@ -693,9 +855,11 @@ const findSpaceGroupedDecimalEnd = (text: string, start: number, digitsEnd: numb
     groups++;
     end = next;
   }
-  if (!groups || text[end] !== ',' || !isNumericDigit(text[end + 1])) return digitsEnd;
-  end += 2;
-  while (end < text.length && isNumericDigit(text[end])) end++;
+  if (!groups) return digitsEnd;
+  if (text[end] === ',' && isNumericDigit(text[end + 1])) {
+    end += 2;
+    while (end < text.length && isNumericDigit(text[end])) end++;
+  }
   let nextContext = end;
   while (nextContext < text.length && isHorizontalSpace(text[nextContext])) nextContext++;
   let previous = start - 1;
@@ -738,36 +902,27 @@ const tryConsumeNumericOrCurrencyAt = (
   if (!isNumericDigit(ch)) return null;
 
   let end = start + 1;
-  let hasPersianDigit = isPersianDigit(ch);
   while (end < len && isNumericDigit(processed[end])) {
-    if (isPersianDigit(processed[end])) hasPersianDigit = true;
     end++;
   }
 
-  const groupedEnd = findSpaceGroupedDecimalEnd(processed, start, end, coreRegex);
-  let hasGroupedOrDecimalDigits = groupedEnd !== end;
-  end = groupedEnd;
+  end = findSpaceGroupedDecimalEnd(processed, start, end, coreRegex);
   while (end + 1 < len && isNumericSeparator(processed[end]) && isNumericDigit(processed[end + 1])) {
-    hasGroupedOrDecimalDigits = true;
     end++;
     while (end < len && isNumericDigit(processed[end])) {
-      if (isPersianDigit(processed[end])) hasPersianDigit = true;
       end++;
     }
   }
 
-  let hasAffix = false;
   if (
     end + 1 < len &&
     processed[end] === ',' &&
     processed[end + 1] === '-' &&
     (end + 2 >= len || (!isNumericDigit(processed[end + 2]) && !isCoreWordChar(coreRegex, processed[end + 2])))
   ) {
-    hasAffix = true;
     end += 2;
   } else {
     if (end < len && processed[end] === '%') {
-      hasAffix = true;
       end++;
     }
     if (
@@ -776,7 +931,6 @@ const tryConsumeNumericOrCurrencyAt = (
       isCoreWordChar(coreRegex, processed[end + 1]) &&
       !(isSegmentedScriptAt && isSegmentedScriptAt(processed, end + 1))
     ) {
-      hasAffix = true;
       end++;
       while (end < len) {
         if (isSegmentedScriptAt && isSegmentedScriptAt(processed, end)) break;
@@ -792,11 +946,11 @@ const tryConsumeNumericOrCurrencyAt = (
     }
   }
 
-  if (hasGroupedOrDecimalDigits || hasAffix || hasPersianDigit) {
-    return { text: processed.slice(start, end), end };
+  if (end < len && (processed[end] === '\u00AA' || processed[end] === '\u00BA')) {
+    return null;
   }
 
-  return null;
+  return { text: processed.slice(start, end), end };
 };
 
 type SegmenterWordEnds = ReadonlyMap<number, number> & { profile?: string };

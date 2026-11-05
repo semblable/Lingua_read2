@@ -35,6 +35,8 @@ import {
   consumeWordAt,
   extractWords,
   lowercaseLookupTerm,
+  foldLookupTerm,
+  isPureNumericToken,
   resolveLookupTerm,
   cleanSelectedReaderText,
   isAbbreviationOrNonSentencePeriod,
@@ -595,14 +597,23 @@ const TextDisplay = () => {
   const lookupTerm = useCallback((term: string) => lowercaseLookupTerm(
     term, languageConfig?.code || languageConfig?.languageCode || text?.languageCode
   ), [languageConfig?.code, languageConfig?.languageCode, text?.languageCode]);
+  const foldTerm = useCallback((term: string) => foldLookupTerm(
+    term, languageConfig?.code || languageConfig?.languageCode || text?.languageCode
+  ), [languageConfig?.code, languageConfig?.languageCode, text?.languageCode]);
   // 1. Create a Map for O(1) word lookups
   const wordMap = useMemo<Map<string, Word>>(() => {
     const map = new Map<string, Word>();
     words.forEach(w => {
       if (w.term) map.set(lookupTerm(w.term), w);
     });
+    words.forEach(w => {
+      if (w.term) {
+        const folded = foldTerm(w.term);
+        if (!map.has(folded)) map.set(folded, w);
+      }
+    });
     return map;
-  }, [words, lookupTerm]);
+  }, [words, lookupTerm, foldTerm]);
 
   const koreanWordLookup = useMemo(() => isKoreanLanguageCode(
     languageConfig?.code || languageConfig?.languageCode || text?.languageCode
@@ -646,6 +657,7 @@ const TextDisplay = () => {
     const seenNewKoreanForms = new Set<string>();
     return [...new Set(rawWords.map(lookupTerm))].flatMap(key => {
       const saved = getWordData(key);
+      if (!saved && isPureNumericToken(key)) return [];
       if (koreanWordLookup) {
         const analysis = analyzeKoreanCandidates(key)[0];
         const targetTerm = analysis ? saved?.term || analysis.lemma : key;
@@ -1356,7 +1368,7 @@ const TextDisplay = () => {
       if (consumed) {
         const currentWord = consumed.text;
         const wordData = getWordData(currentWord);
-        const wordStatus = wordData ? wordData.status : 0;
+        const wordStatus = wordData ? wordData.status : (isPureNumericToken(currentWord) ? 6 : 0);
         const wordTranslation = wordData ? wordData.translation : null;
 
         const wordSpan = (

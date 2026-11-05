@@ -3072,5 +3072,32 @@ describe('TextDisplay', () => {
       expect(bookCallsWithAudioRef.length).toBe(0);
       expect(document.querySelector('.lesson-audio-bar')).toBeNull();
     });
+
+    test('renders unsaved pure numeric tokens with status 6 and matches folded legacy Greek headwords', async () => {
+      getText.mockResolvedValueOnce({
+        textId: 1,
+        title: 'Greek v5 Text',
+        content: 'Ο λόγος το 2026.',
+        languageId: null,
+        languageCode: 'el',
+        languageName: 'Greek',
+        isAudioLesson: false,
+        words: [
+          { wordId: 91, term: 'λογοσ', status: 4, translation: 'word' }
+        ],
+        bookId: null
+      });
+
+      renderTextDisplay();
+
+      await waitFor(() => expect(getText).toHaveBeenCalled());
+      const logosSpan = await screen.findByText('λόγος');
+      const yearSpan = await screen.findByText('2026');
+      const articleSpan = await screen.findByText('Ο');
+
+      expect(logosSpan).toHaveClass('word-status-4');
+      expect(yearSpan).toHaveClass('word-status-6');
+      expect(articleSpan).toHaveClass('word-status-0');
+    });
   });
 });

@@ -40,7 +40,11 @@ namespace LinguaReadApi.Services.Tokenization
         // normalized RTL headwords and fallback lookup, and Korean candidate reuse.
         // Relinking refreshes vocabulary coverage without replaying study credit.
         // Bounded v4 span refinements do not trigger historical relinking.
-        public const int CurrentTokenizerVersion = 4;
+        // Bump to 5: Greek monotonic accents and contextual final sigma preserved in
+        // canonical keys with folded lookup/promotion, Arabic hamza preserved in
+        // canonical keys with folded lookup/promotion, space-grouped integers and
+        // bare numbers tokenized with pure-numeric status-0 filtering.
+        public const int CurrentTokenizerVersion = 5;
 
         private const int WordBatchSize = 500;
 
@@ -179,6 +183,8 @@ namespace LinguaReadApi.Services.Tokenization
                         if (pendingAlias != null) { existingWords[wordTerm] = pendingAlias; continue; }
                         if (korean?.ContainsExact(wordTerm) == true)
                             throw new InvalidOperationException("Ambiguous saved Korean terms share this lookup key. Preserve and resolve the records before linking this text.");
+                        if (Tokenizer.IsPureNumericToken(wordTerm))
+                            continue;
                         var newWord = new Word
                         {
                             UserId = userId,
@@ -265,10 +271,39 @@ namespace LinguaReadApi.Services.Tokenization
                     .ToDictionary(g => g.Key, g => g.OrderByDescending(w => w.Status > 0)
                         .ThenByDescending(w => w.Translation != null)
                         .ThenBy(w => w.Term, StringComparer.Ordinal).ThenBy(w => w.WordId).First(), StringComparer.Ordinal);
+                var foldedIndex = rows.GroupBy(w => Tokenizer.FoldLookupKey(w.Term, language), StringComparer.Ordinal)
+                    .ToDictionary(g => g.Key, g => g.OrderByDescending(w => w.Status > 0)
+                        .ThenByDescending(w => w.Translation != null)
+                        .ThenBy(w => w.Term, StringComparer.Ordinal).ThenBy(w => w.WordId).First(), StringComparer.Ordinal);
+                var promotedWordIds = new HashSet<int>();
                 var resolved = new Dictionary<string, Word>(StringComparer.Ordinal);
                 foreach (var term in uniqueWords)
+                {
+                    var foldedTerm = Tokenizer.FoldLookupKey(term, language);
                     foreach (var key in Tokenizer.GetLookupCandidates(term, language))
-                        if (index.TryGetValue(key, out var word)) { resolved[term] = word; break; }
+                    {
+                        if (!index.TryGetValue(key, out var word)
+                            && !(key == foldedTerm && foldedIndex.TryGetValue(key, out word)))
+                        {
+                            continue;
+                        }
+
+                        if (key == foldedTerm
+                            && !index.ContainsKey(term)
+                            && Tokenizer.ShouldPromoteFoldedTerm(word.Term, term, language)
+                            && promotedWordIds.Add(word.WordId))
+                        {
+                            if (await RewriteTermAsync(context, word.WordId, term, cancellationToken) > 0)
+                            {
+                                word.Term = term;
+                                index[term] = word;
+                            }
+                        }
+
+                        resolved[term] = word;
+                        break;
+                    }
+                }
                 return resolved;
             }
             var existingWordsList = new List<Word>();
@@ -402,7 +437,7 @@ namespace LinguaReadApi.Services.Tokenization
                 var language = languages.GetValueOrDefault(group.Key.LanguageId);
                 var rows = group.Select(w =>
                 {
-                    var normalized = Tokenizer.NormalizeText(w.Term, language).Trim();
+                    var normalized = Tokenizer.NormalizeLegacyTerm(w.Term, language);
                     return new RekeyRow(w.WordId, w.Status, w.Term, normalized,
                         Tokenizer.LowercaseKey(normalized, language));
                 });
@@ -467,6 +502,21 @@ namespace LinguaReadApi.Services.Tokenization
         {
             try
             {
+                if (!context.Database.IsRelational())
+                {
+                    var tracked = await context.Words.FindAsync(new object[] { wordId }, cancellationToken);
+                    if (tracked == null) return 0;
+                    if (await context.Words.AnyAsync(
+                        w => w.UserId == tracked.UserId && w.LanguageId == tracked.LanguageId && w.Term == term && w.WordId != wordId,
+                        cancellationToken))
+                    {
+                        return 0;
+                    }
+                    tracked.Term = term;
+                    await context.SaveChangesAsync(cancellationToken);
+                    context.Entry(tracked).State = EntityState.Detached;
+                    return 1;
+                }
                 return await context.Words
                     .Where(w => w.WordId == wordId)
                     .ExecuteUpdateAsync(s => s.SetProperty(w => w.Term, term), cancellationToken);

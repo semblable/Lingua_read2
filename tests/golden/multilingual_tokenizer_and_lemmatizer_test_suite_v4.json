@@ -7931,7 +7931,7 @@
           "surface_span": "إِلَى",
           "start": 14,
           "end": 19,
-          "lookup_key": "الى"
+          "lookup_key": "إلى"
         },
         {
           "surface_span": "الْمَكْتَبَةِ",
@@ -7949,7 +7949,6 @@
       "provenance": {
         "reference_id": "ar-01",
         "differences": [
-          "runtime_token_spans_or_keys",
           "reference_semantic_lemmas"
         ],
         "reference_lemma_assertion": "reference_only: broad semantic lemmatization is outside the runtime tokenizer contract"
@@ -7970,7 +7969,7 @@
           "surface_span": "أَطْلَقَتْ",
           "start": 0,
           "end": 10,
-          "lookup_key": "اطلقت"
+          "lookup_key": "أطلقت"
         },
         {
           "surface_span": "شَرِكَةُ",
@@ -7991,6 +7990,12 @@
           "lookup_key": "نسخة"
         },
         {
+          "surface_span": "2026",
+          "start": 36,
+          "end": 40,
+          "lookup_key": "2026"
+        },
+        {
           "surface_span": "وَقَالَتْ",
           "start": 41,
           "end": 50,
@@ -8006,7 +8011,6 @@
       "provenance": {
         "reference_id": "ar-02",
         "differences": [
-          "runtime_token_spans_or_keys",
           "reference_semantic_lemmas"
         ],
         "reference_lemma_assertion": "reference_only: broad semantic lemmatization is outside the runtime tokenizer contract"
@@ -8176,12 +8180,17 @@
           "start": 38,
           "end": 41,
           "lookup_key": "ב"
+        },
+        {
+          "surface_span": "2026",
+          "start": 42,
+          "end": 46,
+          "lookup_key": "2026"
         }
       ],
       "provenance": {
         "reference_id": "he-01",
         "differences": [
-          "runtime_token_spans_or_keys",
           "reference_semantic_lemmas"
         ],
         "reference_lemma_assertion": "reference_only: broad semantic lemmatization is outside the runtime tokenizer contract"
@@ -9114,13 +9123,13 @@
           "surface_span": "Σωκράτης",
           "start": 2,
           "end": 10,
-          "lookup_key": "σωκρατησ"
+          "lookup_key": "σωκράτης"
         },
         {
           "surface_span": "είπε",
           "start": 11,
           "end": 15,
-          "lookup_key": "ειπε"
+          "lookup_key": "είπε"
         },
         {
           "surface_span": "Τι",
@@ -9132,19 +9141,18 @@
           "surface_span": "κάνεις",
           "start": 21,
           "end": 27,
-          "lookup_key": "κανεισ"
+          "lookup_key": "κάνεις"
         },
         {
           "surface_span": "σήμερα",
           "start": 28,
           "end": 34,
-          "lookup_key": "σημερα"
+          "lookup_key": "σήμερα"
         }
       ],
       "provenance": {
         "reference_id": "el-01",
         "differences": [
-          "runtime_token_spans_or_keys",
           "reference_semantic_lemmas"
         ],
         "reference_lemma_assertion": "reference_only: broad semantic lemmatization is outside the runtime tokenizer contract"
@@ -9171,13 +9179,13 @@
           "surface_span": "νεράιδα",
           "start": 2,
           "end": 9,
-          "lookup_key": "νεραιδα"
+          "lookup_key": "νεράιδα"
         },
         {
           "surface_span": "τάισε",
           "start": 10,
           "end": 15,
-          "lookup_key": "ταισε"
+          "lookup_key": "τάισε"
         },
         {
           "surface_span": "το",
@@ -9189,7 +9197,7 @@
           "surface_span": "παιδί",
           "start": 19,
           "end": 24,
-          "lookup_key": "παιδι"
+          "lookup_key": "παιδί"
         },
         {
           "surface_span": "με",
@@ -9201,13 +9209,12 @@
           "surface_span": "ρούχα",
           "start": 28,
           "end": 33,
-          "lookup_key": "ρουχα"
+          "lookup_key": "ρούχα"
         }
       ],
       "provenance": {
         "reference_id": "el-02",
         "differences": [
-          "runtime_token_spans_or_keys",
           "reference_semantic_lemmas"
         ],
         "reference_lemma_assertion": "reference_only: broad semantic lemmatization is outside the runtime tokenizer contract"
@@ -10661,6 +10668,12 @@
           "lookup_key": "коштує"
         },
         {
+          "surface_span": "2 000",
+          "start": 26,
+          "end": 31,
+          "lookup_key": "2 000"
+        },
+        {
           "surface_span": "грн.",
           "start": 32,
           "end": 36,
@@ -10670,7 +10683,6 @@
       "provenance": {
         "reference_id": "uk-02",
         "differences": [
-          "runtime_token_spans_or_keys",
           "reference_semantic_lemmas"
         ],
         "reference_lemma_assertion": "reference_only: broad semantic lemmatization is outside the runtime tokenizer contract"
@@ -12640,19 +12652,19 @@
           "surface_span": "λόγος",
           "start": 0,
           "end": 5,
-          "lookup_key": "λογοσ"
+          "lookup_key": "λόγος"
         },
         {
           "surface_span": "ΛΟΓΟΣ",
           "start": 6,
           "end": 11,
-          "lookup_key": "λογοσ"
+          "lookup_key": "λογος"
         },
         {
           "surface_span": "λογος",
           "start": 12,
           "end": 17,
-          "lookup_key": "λογοσ"
+          "lookup_key": "λογος"
         }
       ],
       "provenance": {
@@ -12842,7 +12854,7 @@
     "source_cases": 89,
     "runtime_cases": 100,
     "source_languages": 44,
-    "cases_with_runtime_span_or_key_differences": 24,
+    "cases_with_runtime_span_or_key_differences": 18,
     "cases_with_reference_semantic_lemmas": 86,
     "explanation": "All source cases run against the current documented runtime contract; the intact reference suite records aspirational phrase grouping, numeric tokens, and multilingual semantic lemmas that these tokenizers do not provide. No source case is skipped or represented as semantically implemented."
   },
@@ -12863,13 +12875,13 @@
       "id": "el-final-sigma",
       "lang": "el",
       "term": "λόγος",
-      "expected": "λογοσ"
+      "expected": "λόγος"
     },
     {
       "id": "el-capitals",
       "lang": "el",
       "term": "ΛΟΓΟΣ",
-      "expected": "λογοσ"
+      "expected": "λογος"
     },
     {
       "id": "he-leading-and-trailing-double-quotes",
@@ -12887,13 +12899,13 @@
       "id": "ar-letter-unification",
       "lang": "ar",
       "term": "أإآٱ کی",
-      "expected": "اااا كي"
+      "expected": "أإآٱ كي"
     },
     {
       "id": "fa-letter-unification",
       "lang": "fa",
       "term": "أإآٱ كي",
-      "expected": "اااا کی"
+      "expected": "أإآٱ کی"
     },
     {
       "id": "ar-preserve-ta-marbuta",
@@ -12995,7 +13007,7 @@
       "id": "el-simple-mixed-greek",
       "lang": "el",
       "term": "ΟΣ",
-      "expected": "οσ"
+      "expected": "ος"
     },
     {
       "id": "el-supplementary-deseret",

@@ -101,10 +101,10 @@ public class IndicRtlNormalizationTests
 
         // With standard letter/mark class
         var words = WordsOf(input, Ar);
-        Assert.Equal(new[] { "كَتَبَ", "الطَّالِبُ", "كِتَابًا", "فِي", "عَامِ", "وَقَالَتْ", "مَرْحَبًا" }, words);
+        Assert.Equal(new[] { "كَتَبَ", "الطَّالِبُ", "كِتَابًا", "فِي", "عَامِ", "2026", "وَقَالَتْ", "مَرْحَبًا" }, words);
 
         var keys = LookupKeysOf(input, Ar);
-        Assert.Equal(new[] { "كتب", "الطالب", "كتابا", "في", "عام", "وقالت", "مرحبا" }, keys);
+        Assert.Equal(new[] { "كتب", "الطالب", "كتابا", "في", "عام", "2026", "وقالت", "مرحبا" }, keys);
 
         // With digits class
         var wordsWithDigits = WordsOf(input, ArWithDigits);
@@ -119,7 +119,7 @@ public class IndicRtlNormalizationTests
     {
         const string input = "أَطْلَقَتْ شَرِكَةُ OpenAI نُسْخَةَ 2026 وَقَالَتْ: «مَرْحَبًا!»";
         var keys = LookupKeysOf(input, ArWithDigits);
-        Assert.Equal(new[] { "اطلقت", "شركة", "openai", "نسخة", "2026", "وقالت", "مرحبا" }, keys);
+        Assert.Equal(new[] { "أطلقت", "شركة", "openai", "نسخة", "2026", "وقالت", "مرحبا" }, keys);
     }
 
     [Fact]
@@ -157,10 +157,10 @@ public class IndicRtlNormalizationTests
         const string input = "הַאִם קָרָאתָ אֶת הַדּוּ״חַ שֶׁל צה״ל בְּ־2026?";
 
         var words = WordsOf(input, He);
-        Assert.Equal(new[] { "הַאִם", "קָרָאתָ", "אֶת", "הַדּוּ״חַ", "שֶׁל", "צה״ל", "בְּ" }, words);
+        Assert.Equal(new[] { "הַאִם", "קָרָאתָ", "אֶת", "הַדּוּ״חַ", "שֶׁל", "צה״ל", "בְּ", "2026" }, words);
 
         var keys = LookupKeysOf(input, He);
-        Assert.Equal(new[] { "האם", "קראת", "את", "הדו״ח", "של", "צה״ל", "ב" }, keys);
+        Assert.Equal(new[] { "האם", "קראת", "את", "הדו״ח", "של", "צה״ל", "ב", "2026" }, keys);
 
         // With digits enabled, 2026 is tokenized separately because Maqaf ־ is not a connector
         var wordsWithDigits = WordsOf(input, HeWithDigits);

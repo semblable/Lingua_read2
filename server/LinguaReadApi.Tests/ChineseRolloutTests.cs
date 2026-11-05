@@ -232,7 +232,7 @@ public class ChineseRolloutTests
         Assert.Equal(new[] { "我", "爱", "读书" }.OrderBy(x => x), newTerms.Select(w => w.Term).OrderBy(x => x));
         Assert.All(newTerms, word => Assert.Equal(0, word.Status)); // Existing linker default: unknown.
         Assert.Null((await h.Context.Texts.SingleAsync(t => t.TextId == 10)).SegmentationProfile);
-        Assert.Equal(4, WordLinker.CurrentTokenizerVersion);
+        Assert.Equal(5, WordLinker.CurrentTokenizerVersion);
     }
 
     [Fact]

@@ -33,6 +33,7 @@
       "words": [
         { "text": "한글", "start": 0, "end": 2, "key": "한글" },
         { "text": "ABC", "start": 3, "end": 6, "key": "abc" },
+        { "text": "2026", "start": 7, "end": 11, "key": "2026" },
         { "text": "中文", "start": 12, "end": 14, "key": "中文" },
         { "text": "끝", "start": 16, "end": 17, "key": "끝" }
       ]

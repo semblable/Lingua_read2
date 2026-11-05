@@ -719,10 +719,12 @@ namespace LinguaReadApi.Controllers
             var translationsToUpsert = new List<(Word Word, string Translation)>();
             // Build a lookup for existing words keyed by the normalized term so
             // mixed-case imports collapse onto a single row.
-            var existingWordsLookup = new Dictionary<string, Word>();
+            var existingWordsLookup = new Dictionary<string, Word>(StringComparer.Ordinal);
+            var existingFoldedLookup = new Dictionary<string, Word>(StringComparer.Ordinal);
             foreach (var w in existingWords)
             {
                 existingWordsLookup[Tokenizer.NormalizeKey(w.Term, language)] = w;
+                existingFoldedLookup.TryAdd(Tokenizer.FoldLookupKey(w.Term, language), w);
             }
 
             foreach (var termDto in termsToAdd)
@@ -730,8 +732,10 @@ namespace LinguaReadApi.Controllers
                 var trimmedTerm = Tokenizer.NormalizeKey(termDto.Term ?? string.Empty, language);
                 if (string.IsNullOrWhiteSpace(trimmedTerm)) continue;
 
-                if (existingWordsLookup.TryGetValue(trimmedTerm, out var existingWord))
+                if (existingWordsLookup.TryGetValue(trimmedTerm, out var existingWord)
+                    || existingFoldedLookup.TryGetValue(Tokenizer.FoldLookupKey(trimmedTerm, language), out existingWord))
                 {
+                    existingWordsLookup[trimmedTerm] = existingWord;
                     // Word exists - update status if needed
                     if (existingWord.Status == 0)
                     {
@@ -775,6 +779,7 @@ namespace LinguaReadApi.Controllers
                     }
                     // Add to lookup to prevent duplicate inserts in this batch
                     existingWordsLookup[trimmedTerm] = newWord;
+                    existingFoldedLookup.TryAdd(Tokenizer.FoldLookupKey(trimmedTerm, language), newWord);
                 }
             }
             if (wordsToCreate.Any())
@@ -800,11 +805,20 @@ namespace LinguaReadApi.Controllers
                 // Keep the indexed lower(Term) path for unchanged Latin languages.
                 var rows = await query.AsNoTracking().Select(w => new
                     { w.WordId, w.Term, w.Status, HasTranslation = w.Translation != null }).ToListAsync();
-                var keySet = keys.ToHashSet(StringComparer.Ordinal);
-                var ids = rows.GroupBy(w => Tokenizer.NormalizeKey(w.Term, language), StringComparer.Ordinal)
-                    .Where(g => keySet.Contains(g.Key))
-                    .Select(g => g.OrderByDescending(w => w.Status > 0).ThenByDescending(w => w.HasTranslation)
-                        .ThenBy(w => w.Term, StringComparer.Ordinal).ThenBy(w => w.WordId).First().WordId).ToList();
+                var byExactKey = rows.GroupBy(w => Tokenizer.NormalizeKey(w.Term, language), StringComparer.Ordinal)
+                    .ToDictionary(g => g.Key, g => g.OrderByDescending(w => w.Status > 0).ThenByDescending(w => w.HasTranslation)
+                        .ThenBy(w => w.Term, StringComparer.Ordinal).ThenBy(w => w.WordId).First().WordId, StringComparer.Ordinal);
+                var byFoldedKey = rows.GroupBy(w => Tokenizer.FoldLookupKey(w.Term, language), StringComparer.Ordinal)
+                    .ToDictionary(g => g.Key, g => g.OrderByDescending(w => w.Status > 0).ThenByDescending(w => w.HasTranslation)
+                        .ThenBy(w => w.Term, StringComparer.Ordinal).ThenBy(w => w.WordId).First().WordId, StringComparer.Ordinal);
+                var ids = new HashSet<int>();
+                foreach (var k in keys)
+                {
+                    if (byExactKey.TryGetValue(k, out var exactId))
+                        ids.Add(exactId);
+                    else if (byFoldedKey.TryGetValue(Tokenizer.FoldLookupKey(k, language), out var foldedId))
+                        ids.Add(foldedId);
+                }
                 query = query.Where(w => ids.Contains(w.WordId));
             }
             else query = query.Where(w => keys.Contains(w.Term.ToLower()));

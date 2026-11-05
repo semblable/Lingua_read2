@@ -17,7 +17,7 @@ describe('Chinese reader token integration', () => {
     const result = tokenizeContent(text, chinese);
     expect(result.tokens.map(token => token.text).join('')).toBe(text);
     expect(result.tokens.filter(token => token.type === 'word').map(token => token.text))
-      .toEqual(['我', '今天', '在', '图书馆', '学习', '中文', 'OpenAI']);
+      .toEqual(['我', '今天', '在', '图书馆', '学习', '中文', 'OpenAI', '2026']);
     expect(result.tokens[0]).toEqual({ type: 'separator', text: '🙂', start: 0, end: 2 });
     expect(tokenizeContent('图书馆学习中文', { parserType: 'jieba' }).tokens).toHaveLength(1);
     const context = prepareLanguageContext('图书馆学习中文', chinese);
@@ -29,7 +29,7 @@ describe('Chinese reader token integration', () => {
 
   test.each(['', '   ', 'z-a'])('custom word class %s stays consistent with the legacy fallback', wordCharacters => {
     const result = tokenizeContent('中文 ABC 2026', { ...chinese, wordCharacters });
-    expect(result.tokens.filter(token => token.type === 'word').map(token => token.text)).toEqual(['中文', 'ABC']);
+    expect(result.tokens.filter(token => token.type === 'word').map(token => token.text)).toEqual(['中文', 'ABC', '2026']);
   });
 
   test('Korean sentence highlighting uses raw source spans without changing spelling', () => {

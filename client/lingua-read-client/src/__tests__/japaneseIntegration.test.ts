@@ -19,7 +19,7 @@ describe('Japanese reader token integration', () => {
     const result = tokenizeContent(text, japaneseProfiled);
     expect(result.tokens.map(token => token.text).join('')).toBe(text);
     expect(result.tokens.filter(token => token.type === 'word').map(token => token.text)).toEqual([
-      '私', 'は', '昨日', '図書館', 'で', '日本語', 'の', '本', 'を', '読み', 'まし', 'た', 'OpenAI'
+      '私', 'は', '昨日', '図書館', 'で', '日本語', 'の', '本', 'を', '読み', 'まし', 'た', 'OpenAI', '2026'
     ]);
     expect(result.tokens[0]).toEqual({ type: 'separator', text: '🙂', start: 0, end: 2 });
 

@@ -4,23 +4,22 @@ Use synthetic learners only. Read [CONTRIBUTING](../../CONTRIBUTING.md) for full
 
 ## Verified checkpoint — 2026-11-05
 
-Leading apostrophes, Finnish suffixes, dotted initialisms/abbreviations, and space-grouped decimals on tokenizer v4:
-- **Server (`dotnet test -c Release`):** 1,732 passed, 0 failed, 7 PostgreSQL-only skipped locally (Docker daemon unavailable).
-- **Client (`npm test -- --run`):** 1,746 passed across 114 test files; `npm run typecheck`, `npm run build`, and `npm run lint` (46 existing warnings) passed.
-- **TDD evidence:** Updated the seven requested corpus cases and added mirrored span regressions before implementation. The focused Vitest run failed 15 tests, then passed after implementation. The initial xUnit run could not connect to its test host inside the sandbox; the focused run outside it passed 293 tests. Full results above include saved-ID/status/translation reuse and idempotent linking tests.
-- **Gap summary:** `reference_gap_summary` in `multilingual_tokenizer_and_lemmatizer_test_suite_v4.json` is mechanically asserted by both `MultilingualGoldenTests` and `multilingualGolden.test.ts`: **89** source cases across **44** languages, **100** runtime cases, **24** cases with runtime span/key differences (down from 27 after closing `af-01`, `af-02`, and `fi-01`), and **86** cases with reference semantic lemmas. Tokenizer version stays **4**.
+Tokenizer v5 slice (Greek monotonic accents & contextual final sigma, Arabic hamza preservation, dual-key folded lookup with in-place canonical DB promotion, space-grouped integers, and bare numbers with pure-numeric status-0 filtering):
+- **Server (`dotnet test -c Release`):** 1,733 passed, 0 failed, 7 PostgreSQL-only skipped locally (Docker daemon unavailable).
+- **Client (`npm test -- --run`):** 1,766 passed across 114 test files; `npm run typecheck`, `npm run build`, and `npm run lint` (46 existing warnings) passed.
+- **Gap summary:** `reference_gap_summary` in `multilingual_tokenizer_and_lemmatizer_test_suite_v4.json` is mechanically asserted by both `MultilingualGoldenTests` and `multilingualGolden.test.ts`: **89** source cases across **44** languages, **100** runtime cases, **18** cases with runtime span/key differences (down from 24 after closing `ar-01`, `ar-02`, `he-01`, `el-01`, `el-02`, and `uk-02`), and **86** cases with reference semantic lemmas. Tokenizer version is **5**.
 
-Afrikaans `'n` and Dutch `'s`/`'t` are language-gated and exclude closed quotes. Finnish lowercase colon suffixes, contiguous dotted initialisms, `en` `Dr.`, and `uk` `грн.` retain their punctuation. ASCII-space decimal groups require three-digit groups, comma digits, and currency/unit context. The original `uk-02` uses `2 000 грн.`; its integer gap remains. A new `uk-space-decimal` case covers `1 250,00` and supplementary-character UTF-16 offsets. English quotes, Romance elisions, bare-year exclusions, and tokenizer version 4 remain covered.
+Greek canonical keys preserve monotonic accents and contextual final sigma (`ς`/`σ`), and Arabic/Persian canonical keys preserve hamza (`أ`, `إ`, `آ`, `ٱ`), while `FoldLookupKey`/`foldLookupTerm` provides secondary diacritic/sigma/hamza folding and in-place DB promotion on relink. Space-grouped integers (`2 000 грн.`) and bare integers (`2026`) are emitted as word tokens without creating `Status = 0` vocabulary clutter (`IsPureNumericToken` / `isPureNumericToken`). Sentence highlighting, Cloze blanking, and sentence mining (`splitSentenceAroundTerm`, `sentenceContainsTerm`, `pickSentenceForTerm`) match normalized, folded, and proclitic/elision tokens while preserving raw UTF-16 display slices.
 
 ## Focused language checks
 
 ```powershell
-dotnet test server/LinguaReadApi.Tests/LinguaReadApi.Tests.csproj -c Release --filter "FullyQualifiedName~MultilingualGolden|FullyQualifiedName~Korean|FullyQualifiedName~LookupFallback|FullyQualifiedName~WordsBatchLookup|FullyQualifiedName~WiktionaryTranslationService|FullyQualifiedName~TokenizerV4MigrationAcceptance"
+dotnet test server/LinguaReadApi.Tests/LinguaReadApi.Tests.csproj -c Release --filter "FullyQualifiedName~MultilingualGolden|FullyQualifiedName~Korean|FullyQualifiedName~LookupFallback|FullyQualifiedName~WordsBatchLookup|FullyQualifiedName~WiktionaryTranslationService|FullyQualifiedName~TokenizerV4MigrationAcceptance|FullyQualifiedName~TokenizerV5MigrationAcceptance"
 npm --prefix client/lingua-read-client test -- --run multilingualGolden korean lookupFallback indicRtlNormalization TextDisplay
 ```
 
 - [Chinese (`chinese-cases.json`)](chinese-cases.json), [Japanese (`japanese-cases.json`)](japanese-cases.json), [Korean (`korean-cases.json`)](korean-cases.json): verify opt-out profiled segmentation (`jieba-v1`, `tinysegmenter-ja-v1`), EPUB ruby stripping, supplementary Han, and Korean Hangul/KRDICT candidate ranking while keeping legacy unprofiled texts unchanged.
-- [Shared v4 corpus](../../tests/golden/multilingual_tokenizer_and_lemmatizer_test_suite_v4.json): xUnit `MultilingualGoldenTests` and Vitest `multilingualGolden.test.ts` assert processed surfaces, UTF-16 spans, lookup keys, normalization, validated lookup fallbacks, and Korean candidate/ranking parity. See the [reference gap audit](reference-gap-audit.md) for the 24 remaining span/key differences and 86 semantic markers.
+- [Shared golden corpus](../../tests/golden/multilingual_tokenizer_and_lemmatizer_test_suite_v4.json): xUnit `MultilingualGoldenTests` and Vitest `multilingualGolden.test.ts` assert processed surfaces, UTF-16 spans, lookup keys, normalization, validated lookup fallbacks, and Korean candidate/ranking parity. See the [reference gap audit](reference-gap-audit.md) for the 18 remaining span/key differences and 86 semantic markers.
 - [KRDICT canonical headwords](../../resources/krdict_lemmas.txt): 43,445 entries verified by client/server checksum tests (`python scripts/generate-krdict-lemmas.py`).
 - Core files: server `Services/Tokenization/{ChineseSegmenter,JapaneseSegmenter,ThaiSegmenter,KoreanLookup,Tokenizer,WordLinker}.cs`; client `utils/{chineseSegmenter,chineseDictionary,japaneseSegmenter,thaiSegmenter,koreanLookup,readerText}.ts` and `pages/TextDisplay.tsx`.
 
@@ -28,7 +27,7 @@ npm --prefix client/lingua-read-client test -- --run multilingualGolden korean l
 
 | Scope | Tests |
 | --- | --- |
-| Tokenizer v3→v4 relinking, learner data/credit/SRS snapshots, idempotency | `TokenizerV4MigrationAcceptanceTests` |
+| Tokenizer v3→v4→v5 relinking, canonical promotion, learner data/credit/SRS snapshots, idempotency | `TokenizerV4MigrationAcceptanceTests`, `TokenizerV5MigrationAcceptanceTests` |
 | Sentence/completion/manual passes, reset, goals, rollback | `ReadingCreditCompatibilityTests`, `ListeningCompatibilityTests` |
 | PostgreSQL upgrade, downgrade, and concurrent writers | `PostgresStudyActivityTests`, PostgreSQL cases in `ChineseRolloutTests`/`ChineseIntegrationTests`/`JapaneseRolloutTests` |
 | Upload file ownership and failed-copy/save cleanup | `AudiobookUploadStorageTests` |

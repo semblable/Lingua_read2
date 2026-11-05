@@ -44,7 +44,7 @@ public class TokenizerV4MigrationAcceptanceTests
         {
             var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
             Assert.All(await context.Texts.AsNoTracking().ToListAsync(),
-                text => Assert.Equal(4, text.WordLinkingTokenizerVersion));
+                text => Assert.Equal(WordLinker.CurrentTokenizerVersion, text.WordLinkingTokenizerVersion));
             Assert.Equal(4, await context.TextWords.CountAsync());
             Assert.Equal(new[] { 1, 1, 2, 2 }, await context.TextWords
                 .OrderBy(tw => tw.OccurrenceCount).Select(tw => tw.OccurrenceCount).ToArrayAsync());

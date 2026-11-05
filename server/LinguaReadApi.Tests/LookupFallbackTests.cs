@@ -136,12 +136,12 @@ public class LookupFallbackTests
     [InlineData("he", "\"צה\"ל\"", "צה״ל")]
     [InlineData("he", "'מס'", "מס׳")]
     [InlineData("he", "וכו׳", "וכו׳")]
-    [InlineData("ar", "کِتاب يی أإآٱ ةه", "كتاب يي اااا ةه")]
-    [InlineData("fa", "كِتاب يی أإآٱ ةه", "کتاب یی اااا ةه")]
+    [InlineData("ar", "کِتاب يی أإآٱ ةه", "كتاب يي أإآٱ ةه")]
+    [InlineData("fa", "كِتاب يی أإآٱ ةه", "کتاب یی أإآٱ ةه")]
     [InlineData("tr", "İI", "iı")]
     [InlineData("az-Latn", "İI", "iı")]
-    [InlineData("el", "λόγος", "λογοσ")]
-    [InlineData("el", "ΛΟΓΟΣ", "λογοσ")]
+    [InlineData("el", "λόγος", "λόγος")]
+    [InlineData("el", "ΛΟΓΟΣ", "λογος")]
     [InlineData("en", "I", "i")]
     [InlineData("en", "ς", "ς")]
     public void NormalizationIsLanguageGated(string code, string term, string expected) =>
@@ -176,8 +176,10 @@ public class LookupFallbackTests
     public void GreekAccentFoldingPreservesMalformedUtf16AndFoldsValidRuns()
     {
         var input = "Ά" + (char)0xd800 + " Ώ" + (char)0xdc00;
-        var expected = "α" + (char)0xd800 + " ω" + (char)0xdc00;
-        Assert.Equal(expected, Tokenizer.NormalizeKey(input, new Language { Code = "el" }));
+        var expectedCanonical = "ά" + (char)0xd800 + " ώ" + (char)0xdc00;
+        var expectedFolded = "α" + (char)0xd800 + " ω" + (char)0xdc00;
+        Assert.Equal(expectedCanonical, Tokenizer.NormalizeKey(input, new Language { Code = "el" }));
+        Assert.Equal(expectedFolded, Tokenizer.FoldLookupKey(input, new Language { Code = "el" }));
     }
 
     [Theory]
@@ -208,11 +210,11 @@ public class LookupFallbackTests
     [InlineData("af-ZA", "'n 'N 'n' 'name 's", "'n|'N|n|name|s")]
     [InlineData("nl-NL", "'s 'S 't 'T 's' 't' 'test 'n", "'s|'S|'t|'T|s|t|test|n")]
     [InlineData("en", "'hello' 'em 'tis don't dogs' rock 'n' roll", "hello|em|tis|don't|dogs|rock|n|roll")]
-    [InlineData("fi", "EU:ssa EU: ssa EU:SSA EU:2 EU:! sana:ssa U.S.A.:ssa", "EU:ssa|EU|ssa|EU|SSA|EU|EU|sana:ssa|U.S.A.:ssa")]
+    [InlineData("fi", "EU:ssa EU: ssa EU:SSA EU:2 EU:! sana:ssa U.S.A.:ssa", "EU:ssa|EU|ssa|EU|SSA|EU|2|EU|sana:ssa|U.S.A.:ssa")]
     [InlineData("en", "EU:ssa Dr. U.S.A. A.B word. A.Beta A.", "EU|ssa|Dr.|U.S.A.|A.B|word|A|Beta|A")]
     [InlineData("fr", "M. Dupont arriva.", "M|Dupont|arriva")]
-    [InlineData("uk", "1 250,00 грн. 12 345 678,90 kg 2026 2 000 грн.", "1 250,00|грн.|12 345 678,90|kg|грн.")]
-    [InlineData("uk", "1 250,00! 12 34,50 грн. 1 250 грн.", "250,00|34,50|грн.|грн.")]
+    [InlineData("uk", "1 250,00 грн. 12 345 678,90 kg 2026 2 000 грн.", "1 250,00|грн.|12 345 678,90|kg|2026|2 000|грн.")]
+    [InlineData("uk", "1 250,00! 12 34,50 грн. 1 250 грн.", "1|250,00|12|34,50|грн.|1 250|грн.")]
     [InlineData("uk", "€ 1 250,00. 1 250,00 %", "€|1 250,00|1 250,00")]
     public void BoundedSpansPreserveUtf16(string code, string input, string expected)
     {
@@ -249,6 +251,6 @@ public class LookupFallbackTests
         Assert.Equal(5, row.Status);
         Assert.Equal("saved", row.Translation.Translation);
         Assert.Equal(1, (await db.TextWords.SingleAsync(w => w.WordId == 42)).OccurrenceCount);
-        Assert.Equal(4, (await db.Texts.SingleAsync()).WordLinkingTokenizerVersion);
+        Assert.Equal(5, (await db.Texts.SingleAsync()).WordLinkingTokenizerVersion);
     }
 }

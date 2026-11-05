@@ -56,6 +56,60 @@ const renderTranscript = (settings: Settings, isMobile = false, overrides: Parti
   />
 );
 
+const virtualScrollFixture = () => {
+  localStorage.setItem(AUDIO_TRANSCRIPT_LAYOUT_STORAGE_KEY, 'flow');
+  let now = 0;
+  let frameId = 0;
+  const frames = new Map<number, FrameRequestCallback>();
+  vi.spyOn(performance, 'now').mockImplementation(() => now);
+  vi.spyOn(window, 'requestAnimationFrame').mockImplementation(callback => {
+    frames.set(++frameId, callback);
+    return frameId;
+  });
+  vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(id => { frames.delete(id); });
+  const listRef: React.RefObject<import('react-window').ListImperativeAPI | null> = { current: null };
+  const manyLines = Array.from({ length: 120 }, (_, index) => ({
+    id: index + 1, startTime: index * 2, endTime: index * 2 + 2, text: `Sentence ${index + 1}.`
+  }));
+  const view = renderTranscript(getInitialSettings(), false, { srtLines: manyLines, listRef });
+  const viewport = listRef.current!.element!;
+  vi.spyOn(viewport, 'clientHeight', 'get').mockReturnValue(600);
+  vi.spyOn(viewport, 'scrollHeight', 'get').mockReturnValue(20000);
+  const originalRect = HTMLElement.prototype.getBoundingClientRect;
+  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+    if (this === viewport) return new DOMRect(0, 100, 800, 600);
+    if (this.classList.contains('srt-line')) {
+      const row = this.closest<HTMLElement>('[data-react-window-index]')!;
+      const rowTop = parseFloat(row.style.transform.replace('translateY(', ''));
+      const cueIndex = Array.from(row.querySelectorAll('.srt-line')).indexOf(this);
+      return new DOMRect(0, 100 + rowTop + 20 + cueIndex * 40 - viewport.scrollTop, 600, 40);
+    }
+    return originalRect.call(this);
+  });
+  vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(function (this: HTMLElement) {
+    return this.hasAttribute('data-react-window-index') ? 200 : 0;
+  });
+  const scroll = vi.fn((options: ScrollToOptions) => {
+    if (options.top === undefined) return;
+    viewport.scrollTop = Math.max(0, Math.min(options.top, viewport.scrollHeight - viewport.clientHeight));
+    fireEvent.scroll(viewport);
+  });
+  vi.spyOn(viewport, 'scrollTo').mockImplementation(scroll as typeof viewport.scrollTo);
+  const measure = () => act(() => {
+    TestResizeObserver.resize(viewport, 600);
+    for (const row of viewport.querySelectorAll('[data-react-window-index]')) TestResizeObserver.resize(row, 200);
+  });
+  measure();
+  const frame = () => {
+    now += 16;
+    const pending = [...frames.values()];
+    frames.clear();
+    act(() => { for (const callback of pending) callback(now); });
+    measure();
+  };
+  return { ...view, viewport, listRef, scroll, frame, frames };
+};
+
 describe('audio transcript layout', () => {
   beforeEach(() => {
     localStorage.removeItem(AUDIO_TRANSCRIPT_LAYOUT_STORAGE_KEY);
@@ -101,6 +155,47 @@ describe('audio transcript layout', () => {
     expect(second.style.transform).toBe('translateY(180px)');
     act(() => { TestResizeObserver.resize(first, 260); });
     expect(second.style.transform).toBe('translateY(260px)');
+  });
+
+  test.each([
+    { mobile: false, flow: false }, { mobile: true, flow: false },
+    { mobile: false, flow: true }, { mobile: true, flow: true }
+  ])('paragraph padding seeks once while word lookup and selection stay separate (mobile=$mobile, flow=$flow)', ({ mobile, flow }) => {
+    if (flow) localStorage.setItem(AUDIO_TRANSCRIPT_LAYOUT_STORAGE_KEY, 'flow');
+    const seek = vi.fn();
+    const lookup = vi.fn();
+    const { container } = renderTranscript(getInitialSettings(), mobile, { handleLineClick: seek,
+      processTextContent: text => <span className="clickable-word" onClick={event => { event.stopPropagation(); lookup(text); }}>{text}</span> });
+    const paragraph = container.querySelector('.transcript-paragraph')!;
+    fireEvent.click(paragraph);
+    expect(seek).toHaveBeenLastCalledWith(0);
+    const secondCue = container.querySelector('#srt-line-2')!;
+    fireEvent.click(secondCue);
+    expect(seek).toHaveBeenLastCalledWith(2);
+    expect(seek).toHaveBeenCalledTimes(2);
+    fireEvent.click(screen.getByText(lines[1].text));
+    expect(lookup).toHaveBeenCalledWith(lines[1].text);
+    expect(seek).toHaveBeenCalledTimes(2);
+    const selection = window.getSelection()!;
+    const range = document.createRange();
+    range.selectNodeContents(secondCue);
+    selection.removeAllRanges();
+    selection.addRange(range);
+    fireEvent.click(paragraph);
+    expect(seek).toHaveBeenCalledTimes(2);
+    selection.removeAllRanges();
+  });
+
+  test('a mobile swipe suppresses the following paragraph-padding click', () => {
+    const seek = vi.fn();
+    const { container } = renderTranscript(getInitialSettings(), true, { handleLineClick: seek });
+    const transcript = container.querySelector('.audio-transcript-container')!;
+    const paragraph = container.querySelector('.transcript-paragraph')!;
+    fireEvent.touchStart(transcript);
+    fireEvent.touchMove(transcript);
+    fireEvent.touchEnd(transcript);
+    fireEvent.click(paragraph);
+    expect(seek).not.toHaveBeenCalled();
   });
 
   test.each([false, true])('flow joins sentences into paragraphs and highlights/seeks the original timed phrase (mobile=%s)', isMobile => {
@@ -268,5 +363,54 @@ describe('audio transcript layout', () => {
     const scroll = vi.spyOn(listRef.current!.element!, 'scrollTo').mockImplementation(() => {});
     act(() => { listRef.current!.scrollToRow({ index: 79, align: 'center' }); });
     expect(scroll).toHaveBeenCalledWith(expect.objectContaining({ top: expect.any(Number) }));
+  });
+
+  test('an offscreen flow cue stays centred after virtual rows are measured and animation frames settle', () => {
+    const { listRef, viewport, scroll, frame, frames } = virtualScrollFixture();
+    expect(document.getElementById('srt-line-84')).toBeNull();
+    act(() => { listRef.current!.scrollToRow({ index: 83, align: 'center' }); });
+    for (let index = 0; index < 90; index++) frame();
+    const cue = document.getElementById('srt-line-84')!;
+    expect(cue).not.toBeNull();
+    const cueRect = cue.getBoundingClientRect();
+    const bounds = viewport.getBoundingClientRect();
+    expect(cueRect.top + cueRect.height / 2).toBeCloseTo(bounds.top + bounds.height / 2);
+    expect(scroll.mock.calls.some(([options]) => typeof options === 'object' && options.behavior === 'smooth')).toBe(true);
+    expect(frames.size).toBe(0);
+    const settledTop = viewport.scrollTop;
+    for (let index = 0; index < 10; index++) frame();
+    expect(viewport.scrollTop).toBe(settledTop);
+  });
+
+  test.each(['wheel', 'pointerdown', 'touchstart', 'keydown', 'selection', 'layout', 'unmount'])('a pending offscreen follow yields to %s', action => {
+    const { listRef, viewport, scroll, frame, unmount } = virtualScrollFixture();
+    act(() => { listRef.current!.scrollToRow({ index: 83, align: 'center' }); });
+    if (action === 'unmount') unmount();
+    else if (action === 'layout') fireEvent.click(screen.getByRole('switch', { name: 'Flowing text' }));
+    else if (action === 'selection') vi.spyOn(window, 'getSelection').mockReturnValue({ isCollapsed: false, anchorNode: viewport } as unknown as Selection);
+    else if (action === 'keydown') fireEvent.keyDown(viewport, { key: 'PageDown' });
+    else fireEvent(viewport, new Event(action, { bubbles: true }));
+    scroll.mockClear();
+    for (let index = 0; index < 90; index++) frame();
+    expect(scroll).not.toHaveBeenCalled();
+  });
+
+  test('an active selection blocks the initial offscreen jump', () => {
+    const { listRef, viewport, scroll } = virtualScrollFixture();
+    vi.spyOn(window, 'getSelection').mockReturnValue({ isCollapsed: false, focusNode: viewport } as unknown as Selection);
+    act(() => { listRef.current!.scrollToRow({ index: 83, align: 'center' }); });
+    expect(scroll).not.toHaveBeenCalled();
+  });
+
+  test.each([0, 2])('blank subtitle cues do not start a virtual scroll loop (index=%s)', index => {
+    const listRef: React.RefObject<import('react-window').ListImperativeAPI | null> = { current: null };
+    renderTranscript(getInitialSettings(), false, { listRef, srtLines: [
+      { id: 1, startTime: 0, endTime: 1, text: ' ' },
+      { id: 2, startTime: 1, endTime: 2, text: 'A visible cue.' },
+      { id: 3, startTime: 2, endTime: 3, text: '' }
+    ] });
+    const scroll = vi.spyOn(listRef.current!.element!, 'scrollTo');
+    act(() => { listRef.current!.scrollToRow({ index, align: 'center' }); });
+    expect(scroll).not.toHaveBeenCalled();
   });
 });

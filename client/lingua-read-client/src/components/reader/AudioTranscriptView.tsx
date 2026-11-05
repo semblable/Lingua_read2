@@ -1,4 +1,4 @@
-import React, { useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { List, useDynamicRowHeight, type ListImperativeAPI } from 'react-window';
 import { Button, ButtonGroup, Form } from 'react-bootstrap';
 import TranscriptLine, { TranscriptParagraph } from './TranscriptLine';
@@ -52,7 +52,7 @@ const AudioTranscriptView = React.memo(({
     storage.getItem(AUDIO_TRANSCRIPT_LAYOUT_STORAGE_KEY) === 'flow' ? 'flow' : 'cues');
   const [alignments, setAlignments] = useState(readTranscriptAlignments);
   const [hasNativeSelection, setHasNativeSelection] = useState(false);
-  const followingCueRef = useRef<number | null>(null);
+  const followFrameRef = useRef<number | null>(null);
   const followAfterSwitchRef = useRef<number | string | null>(null);
   const paragraphListRef = useRef<ListImperativeAPI | null>(null);
   const contentWidth = Math.min(globalSettings.readerContentWidth || 740, (listWidth || (isMobile ? 360 : 740)) - 32);
@@ -82,37 +82,104 @@ const AudioTranscriptView = React.memo(({
       effectiveLineSpacing, globalSettings.paragraphSpacing, globalSettings.readingDensity,
       alignment, languageCode, layout, transcriptKey].join(':')
   });
+  const rowHeightRef = useRef(rowHeight);
+  useLayoutEffect(() => { rowHeightRef.current = rowHeight; }, [rowHeight]);
+  const cancelFollow = useCallback(() => {
+    if (followFrameRef.current !== null) cancelAnimationFrame(followFrameRef.current);
+    followFrameRef.current = null;
+  }, []);
+
+  useEffect(() => {
+    const viewport = textContentRef.current;
+    const cancelOnKey = (event: KeyboardEvent) => {
+      if (['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' '].includes(event.key)) cancelFollow();
+    };
+    viewport?.addEventListener('wheel', cancelFollow, { passive: true });
+    viewport?.addEventListener('touchstart', cancelFollow, { passive: true });
+    viewport?.addEventListener('pointerdown', cancelFollow);
+    viewport?.addEventListener('keydown', cancelOnKey);
+    return () => {
+      cancelFollow();
+      viewport?.removeEventListener('wheel', cancelFollow);
+      viewport?.removeEventListener('touchstart', cancelFollow);
+      viewport?.removeEventListener('pointerdown', cancelFollow);
+      viewport?.removeEventListener('keydown', cancelOnKey);
+    };
+  }, [cancelFollow, isMobile, layout, srtLines, textContentRef, transcriptKey]);
 
   // The reader addresses original cue indices; the virtual list now renders groups.
   useImperativeHandle(listRef, () => ({
     get element() { return paragraphListRef.current?.element ?? null; },
-    scrollToRow: ({ index, ...options }) => {
+    scrollToRow: ({ index }) => {
+      cancelFollow();
       const paragraphIndex = paragraphByCue[index];
       const line = srtLines[index];
-      if (paragraphIndex === undefined || !line || !paragraphs[paragraphIndex]) return;
-      followingCueRef.current = line.id;
-      const followCue = () => {
-        if (followingCueRef.current !== line.id) return true;
-        const viewport = paragraphListRef.current?.element;
-        const cue = document.getElementById(`srt-line-${line.id}`);
-        if (!viewport || !cue || !viewport.contains(cue)) return false;
+      const paragraph = paragraphs[paragraphIndex];
+      // Empty subtitle cues have a row mapping for navigation, but no DOM cue.
+      if (!line || !paragraph?.cues.some(cue => cue.line === line)) return;
+      const viewport = paragraphListRef.current?.element;
+      if (!viewport) return;
+      const hasSelection = () => {
         const selection = window.getSelection();
-        if (selection && !selection.isCollapsed && selection.anchorNode && viewport.contains(selection.anchorNode)) return true;
+        return Boolean(selection && !selection.isCollapsed &&
+          ((selection.anchorNode && viewport.contains(selection.anchorNode)) ||
+            (selection.focusNode && viewport.contains(selection.focusNode))));
+      };
+      if (hasSelection()) return;
+      const cueGeometry = (cue: HTMLElement) => {
         const bounds = viewport.getBoundingClientRect();
         const position = cue.getBoundingClientRect();
-        const center = position.top + position.height / 2;
-        const delta = center - bounds.top - bounds.height / 2;
-        if (Math.abs(delta) > Math.max(12, bounds.height * 0.05)) {
-          viewport.scrollTo({ top: Math.max(0, viewport.scrollTop + delta), behavior: 'smooth' });
-        }
-        return true;
+        const delta = position.top + position.height / 2 - bounds.top - bounds.height / 2;
+        return { delta, tolerance: Math.max(12, bounds.height * 0.05),
+          key: [position.top + viewport.scrollTop, position.height, bounds.top, bounds.height].map(Math.round).join(':') };
       };
-      if (!followCue()) {
-        paragraphListRef.current?.scrollToRow({ ...options, index: paragraphIndex });
-        requestAnimationFrame(followCue);
-      }
+      const centerCue = (cue: HTMLElement) => {
+        const geometry = cueGeometry(cue);
+        if (Math.abs(geometry.delta) > geometry.tolerance) {
+          viewport.scrollTo({ top: Math.max(0, viewport.scrollTop + geometry.delta), behavior: 'smooth' });
+        }
+        return geometry.key;
+      };
+      const renderedCue = document.getElementById(`srt-line-${line.id}`);
+      let centeredGeometry = renderedCue && viewport.contains(renderedCue) ? centerCue(renderedCue) : '';
+
+      // Jump using the same public height cache as the List. Calling its
+      // scrollToRow would start a second RAF loop that re-centres the paragraph
+      // and can undo the cue-specific scroll below.
+      const revealParagraph = () => {
+        const heights = rowHeightRef.current;
+        const estimate = heights.getAverageRowHeight();
+        let top = 0;
+        for (let row = 0; row < paragraphIndex; row++) top += heights.getRowHeight(row) ?? estimate;
+        const height = heights.getRowHeight(paragraphIndex) ?? estimate;
+        viewport.scrollTo({ top: Math.max(0, top + height / 2 - viewport.getBoundingClientRect().height / 2), behavior: 'instant' });
+      };
+      if (!centeredGeometry) revealParagraph();
+      const deadline = performance.now() + 1000;
+      let previousGeometry = '';
+      let stableFrames = 0;
+      const followAfterRender = () => {
+        followFrameRef.current = null;
+        if (paragraphListRef.current?.element !== viewport || hasSelection()) return;
+        const cue = document.getElementById(`srt-line-${line.id}`);
+        const expired = performance.now() >= deadline;
+        if (cue && viewport.contains(cue)) {
+          const geometry = cueGeometry(cue);
+          stableFrames = geometry.key === previousGeometry ? stableFrames + 1 : 0;
+          previousGeometry = geometry.key;
+          // Remeasure after a jump or late row resize, without restarting an
+          // ongoing smooth scroll to the same position on every frame.
+          if ((stableFrames >= 2 || expired) && geometry.key !== centeredGeometry) centeredGeometry = centerCue(cue);
+          if (expired || (stableFrames >= 2 && Math.abs(geometry.delta) <= geometry.tolerance)) return;
+        } else {
+          if (expired) return;
+          revealParagraph();
+        }
+        followFrameRef.current = requestAnimationFrame(followAfterRender);
+      };
+      followFrameRef.current = requestAnimationFrame(followAfterRender);
     }
-  }), [paragraphByCue, paragraphs, srtLines]);
+  }), [cancelFollow, paragraphByCue, paragraphs, srtLines]);
 
   useEffect(() => {
     const updateSelection = () => {

@@ -15,7 +15,14 @@ export type TranscriptRowProps = TranscriptContentProps & { paragraphs: Paragrap
 export const TranscriptParagraph = React.memo(({
   paragraph, currentLineId, processLineContent, handleLineClick, hasSelection
 }: TranscriptContentProps & { paragraph: Paragraph }) => (
-  <p className={`transcript-paragraph${paragraph.cues.some(cue => cue.line.id === currentLineId) ? ' has-active-cue' : ''}`}>
+  <p className={`transcript-paragraph${paragraph.cues.some(cue => cue.line.id === currentLineId) ? ' has-active-cue' : ''}`}
+    onClick={event => {
+      // Cue spans seek their own timestamp; only paragraph background clicks
+      // should fall back to the start of the paragraph.
+      if (event.target === event.currentTarget && paragraph.cues.length && !hasSelection?.()) {
+        handleLineClick(paragraph.cues[0].line.startTime);
+      }
+    }}>
     {paragraph.cues.map(({ line, text, separator }) => (
       <React.Fragment key={line.id}>
         {separator}

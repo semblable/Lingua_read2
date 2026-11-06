@@ -92,6 +92,10 @@ const BatchAudioCreate = () => {
         );
         const mp3Files = fileList.filter(f => /\.(mp3|m4a|aac|ogg|opus|wav)$/i.test(f.name));
         const srtFiles = fileList.filter(f => f.name.toLowerCase().endsWith('.srt'));
+        if (mp3Files.length === 0 && srtFiles.length === 0) {
+            setError('Please select supported audio files and matching SRT files.');
+            return;
+        }
 
         // Function to normalize base names: trim whitespace/punctuation, convert to lowercase
         const normalizeBaseName = (name: string | null | undefined): string => {
@@ -185,15 +189,17 @@ const BatchAudioCreate = () => {
 
             // Try prefix matching for truncated names (min 10 chars to avoid false positives)
             if (targetNormalized.length >= 10) {
+                const matches: T[] = [];
                 for (const [candidateNormalized, candidateList] of candidateMap.entries()) {
                     if (candidateNormalized.length >= 10) {
                         // Check if one is a prefix of the other
                         if (targetNormalized.startsWith(candidateNormalized) ||
                             candidateNormalized.startsWith(targetNormalized)) {
-                            return candidateList;
+                            matches.push(...candidateList);
                         }
                     }
                 }
+                return matches.length ? matches : null;
             }
             return null;
         };
@@ -217,6 +223,11 @@ const BatchAudioCreate = () => {
             // Attempt pairing only if not ambiguous
             if (!isAmbiguous) {
                 if (mp3List.length === 1 && matchingSrtList && matchingSrtList.length === 1) {
+                    if (pairedSrts.has(matchingSrtList[0].originalFullName)) {
+                        addProblem(matchingSrtList[0].originalFullName, 'Ambiguous Match (one SRT matches multiple audio files)');
+                        addProblem(mp3List[0].name, 'Ambiguous Match (shared SRT)');
+                        return;
+                    }
                     // Perfect 1-to-1 match based on normalized name
                     pairedMp3s.add(mp3List[0].name);
                     pairedSrts.add(matchingSrtList[0].originalFullName);

@@ -2,6 +2,9 @@
   "name": "lingua-read-client",
   "version": "0.1.0",
   "private": true,
+  "overrides": {
+    "zod": "^4.6.6"
+  },
   "type": "module",
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

@@ -35,6 +35,15 @@ const renderAudioSyncHook = (overrides = {}) => {
 };
 
 describe('useReaderAudioSync', () => {
+  test('follows playback in sentence mode with text display selected', () => {
+    const setCurrentSegmentIndex = vi.fn();
+    const { result } = renderAudioSyncHook({ isAudioLesson: true, isSentenceMode: true,
+      displayMode: 'text', setCurrentSegmentIndex,
+      srtLines: [{ id: 1, startTime: 0, endTime: 1 }, { id: 2, startTime: 1, endTime: 2 }] });
+    act(() => result.current.handleAudioTimeUpdate(1.5));
+    expect(setCurrentSegmentIndex).toHaveBeenCalledWith(1);
+    expect(result.current.currentSrtLineId).toBe(2);
+  });
   beforeEach(() => {
     cancelSpeech.mockReset();
   });

@@ -77,7 +77,7 @@ export const transcriptCueSeparator = (previous: string, next: string, languageC
   if (code && ['fr', 'it', 'ca', 'oc'].includes(code)
     && /(?:^|\s)(?:[cdjlmnst]|qu|un|all|dall|nell)['’ʼ]$/iu.test(previous) && /^[\p{L}\p{M}]/u.test(next)) return '';
   if (code === 'th' && /\p{Script=Thai}$/u.test(previous) && /^\p{Script=Thai}/u.test(next)) return '';
-  if ((code === 'zh' || code === 'ja') && /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}，。！？、]$/u.test(previous)
-    && /^[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]/u.test(next)) return '';
+  if ((code === 'zh' || code === 'ja') && /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}，。！？、」』】》）”’]$/u.test(previous)
+    && /^[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}「『【《（“‘]/u.test(next)) return '';
   return ' ';
 };

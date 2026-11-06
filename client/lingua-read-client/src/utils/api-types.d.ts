@@ -12,7 +12,9 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get: {
+        get?: never;
+        put?: never;
+        post: {
             parameters: {
                 query?: never;
                 header?: never;
@@ -30,8 +32,6 @@ export interface paths {
                 };
             };
         };
-        put?: never;
-        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1179,7 +1179,9 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get: {
+        get?: never;
+        put?: never;
+        post: {
             parameters: {
                 query?: never;
                 header?: never;
@@ -1197,8 +1199,6 @@ export interface paths {
                 };
             };
         };
-        put?: never;
-        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -5808,6 +5808,7 @@ export interface components {
             folderId?: number | null;
         };
         CreateWordDto: {
+            replaceExisting?: boolean;
             /** Format: int32 */
             textId: number;
             term: string;

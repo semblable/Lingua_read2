@@ -12,6 +12,17 @@ const setOnline = (value) => {
 };
 
 describe('enqueueIfOffline', () => {
+  test.each(['NetworkError', 'TimeoutError'])('retains a mutation after a DOM %s', async name => {
+    const result = await enqueueIfOffline({ type: 'srsReview', payload: { cardId: 1, grade: 2 } },
+      async () => { throw new DOMException('Network unavailable', name); });
+    expect(isOfflineQueued(result)).toBe(true);
+    expect(await pending()).toBe(1);
+  });
+  test('does not replay an explicitly cancelled mutation', async () => {
+    await expect(enqueueIfOffline({ type: 'srsReview', payload: { cardId: 1, grade: 2 } },
+      async () => { throw new DOMException('Cancelled', 'AbortError'); })).rejects.toThrow('Cancelled');
+    expect(await pending()).toBe(0);
+  });
   beforeEach(async () => {
     setOnline(true);
     try { await clearAll(); } catch { /* ignore */ }

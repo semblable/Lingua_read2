@@ -11,6 +11,7 @@ using System.Text;
 using System.Threading.Tasks;
 using LinguaReadApi.Data;
 using LinguaReadApi.Models;
+using LinguaReadApi.Services;
 
 namespace LinguaReadApi.Controllers
 {
@@ -65,6 +66,11 @@ namespace LinguaReadApi.Controllers
                 return BadRequest(new { message = "Password is required." });
             }
 
+            return await LessonStudyActivity.AtomicAsync<IActionResult>(_context, DefaultUserId, () => LoginCore(request.Password));
+        }
+
+        private async Task<IActionResult> LoginCore(string password)
+        {
             var user = await _context.Users.FindAsync(DefaultUserId);
             if (user == null)
             {
@@ -77,21 +83,35 @@ namespace LinguaReadApi.Controllers
                 return BadRequest(new { message = "Password not set. Please use the setup endpoint first." });
             }
 
-            var result = _passwordHasher.VerifyHashedPassword(user, user.PasswordHash, request.Password);
+            var now = DateTimeOffset.UtcNow;
+            if (user.LockoutEnd > now)
+                return Unauthorized(new { message = "Too many failed attempts. Try again later." });
+            if (user.LockoutEnd.HasValue)
+            {
+                user.LockoutEnd = null;
+                user.AccessFailedCount = 0;
+            }
+
+            var result = _passwordHasher.VerifyHashedPassword(user, user.PasswordHash, password);
             if (result == PasswordVerificationResult.Failed)
             {
                 _logger.LogWarning("[AuthController] Failed login attempt.");
+                user.AccessFailedCount++;
+                if (user.AccessFailedCount >= 5) user.LockoutEnd = now.AddMinutes(15);
+                await _context.SaveChangesAsync();
                 return Unauthorized(new { message = "Invalid password." });
             }
 
             // Rehash if needed (e.g. algorithm upgrade)
             if (result == PasswordVerificationResult.SuccessRehashNeeded)
             {
-                user.PasswordHash = _passwordHasher.HashPassword(user, request.Password);
+                user.PasswordHash = _passwordHasher.HashPassword(user, password);
                 await _context.SaveChangesAsync();
             }
 
             // Update last login
+            user.AccessFailedCount = 0;
+            user.LockoutEnd = null;
             if (string.IsNullOrEmpty(user.SecurityStamp)) user.SecurityStamp = Guid.NewGuid().ToString("D");
             user.LastLogin = DateTime.UtcNow;
             await _context.SaveChangesAsync();
@@ -167,9 +187,9 @@ namespace LinguaReadApi.Controllers
                 return BadRequest(new { message = "Password is required." });
             }
 
-            if (request.Password.Length < 6)
+            if (request.Password.Length < 12)
             {
-                return BadRequest(new { message = "Password must be at least 6 characters." });
+                return BadRequest(new { message = "Password must be at least 12 characters." });
             }
 
             var user = await _context.Users.FindAsync(DefaultUserId);
@@ -216,8 +236,8 @@ namespace LinguaReadApi.Controllers
         [HttpPost("change-password")]
         public async Task<IActionResult> ChangePassword([FromBody] ChangePasswordRequest request)
         {
-            if (string.IsNullOrWhiteSpace(request.NewPassword) || request.NewPassword.Length < 6)
-                return BadRequest(new { message = "Password must be at least 6 characters." });
+            if (string.IsNullOrWhiteSpace(request.NewPassword) || request.NewPassword.Length < 12)
+                return BadRequest(new { message = "Password must be at least 12 characters." });
 
             if (!Guid.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var userId))
                 return Unauthorized();

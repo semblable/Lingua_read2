@@ -101,16 +101,25 @@ namespace LinguaReadApi.Controllers
                     });
                 }
 
-                // Update status if the new status is higher
-                if (createWordDto.Status > existingWord.Status)
+                // Explicit reader saves can address provisional offline words by
+                // their natural key before the server ID reaches the open reader.
+                if (createWordDto.ReplaceExisting || createWordDto.Status > existingWord.Status)
                 {
                     existingWord.Status = createWordDto.Status;
                 }
 
                 var responseTranslation = existingWord.Translation?.Translation ?? "";
 
+                if (createWordDto.ReplaceExisting && createWordDto.Translation != null &&
+                    string.IsNullOrWhiteSpace(createWordDto.Translation))
+                {
+                    if (existingWord.Translation != null) _context.WordTranslations.Remove(existingWord.Translation);
+                    responseTranslation = "";
+                }
+
                 // Update translation if provided and different or missing
-                if (!string.IsNullOrEmpty(createWordDto.Translation))
+                if (!string.IsNullOrEmpty(createWordDto.Translation) &&
+                    !(createWordDto.ReplaceExisting && string.IsNullOrWhiteSpace(createWordDto.Translation)))
                 {
                     if (existingWord.Translation == null ||
                         createWordDto.Translation != existingWord.Translation.Translation)
@@ -191,7 +200,8 @@ namespace LinguaReadApi.Controllers
 
             var responseTranslationForNewWord = "";
             // Create translation only if provided
-            if (!string.IsNullOrEmpty(createWordDto.Translation))
+            if (!string.IsNullOrEmpty(createWordDto.Translation) &&
+                !(createWordDto.ReplaceExisting && string.IsNullOrWhiteSpace(createWordDto.Translation)))
             {
                 await UpsertWordTranslationAsync(word.WordId, createWordDto.Translation);
                 responseTranslationForNewWord = createWordDto.Translation;
@@ -516,12 +526,14 @@ namespace LinguaReadApi.Controllers
             await SrsCardLifecycle.ApplyStatusRulesAsync(
                 _context, word, await HasSentenceAsync(word, newSentence: null, settings), settings);
 
-            // Update translation only if a non-empty value is provided. An empty
-            // string means "leave unchanged" (consistent with CreateWord), so a
-            // status-only update — online or offline replay — never erases it.
-            if (!string.IsNullOrEmpty(updateWordDto.Translation))
+            // Omitted/null means status-only; explicit blank clears a translation.
+            if (updateWordDto.Translation != null)
             {
-                await UpsertWordTranslationAsync(word.WordId, updateWordDto.Translation);
+                if (string.IsNullOrWhiteSpace(updateWordDto.Translation))
+                {
+                    if (word.Translation != null) _context.WordTranslations.Remove(word.Translation);
+                }
+                else await UpsertWordTranslationAsync(word.WordId, updateWordDto.Translation);
             }
 
             await _context.SaveChangesAsync();
@@ -887,7 +899,7 @@ namespace LinguaReadApi.Controllers
                         SourceUrl = text != null ? text.SourceUrl : null
                     }).ToListAsync();
                 var output = format == "anki" ? VocabularyExport.Anki(rows, userId) : VocabularyExport.ContextCsv(rows);
-                return File(System.Text.Encoding.UTF8.GetBytes(output), format == "anki" ? "text/plain" : "text/csv",
+                return File(System.Text.Encoding.UTF8.GetBytes(format == "anki" ? output : "\uFEFF" + output), format == "anki" ? "text/plain" : "text/csv",
                     $"linguaread_{format}_{DateTime.UtcNow:yyyyMMddHHmmss}.{(format == "anki" ? "txt" : "csv")}");
             }
 
@@ -920,7 +932,7 @@ namespace LinguaReadApi.Controllers
                 csvBuilder.AppendLine($"{termCsv},{translationCsv},{statusCsv},{languageCsv}");
             }
 
-            var csvBytes = System.Text.Encoding.UTF8.GetBytes(csvBuilder.ToString());
+            var csvBytes = System.Text.Encoding.UTF8.GetBytes("\uFEFF" + csvBuilder.ToString());
             var fileName = $"linguaread_terms_{DateTime.UtcNow:yyyyMMddHHmmss}.csv";
 
             return File(csvBytes, "text/csv", fileName);
@@ -1012,6 +1024,9 @@ SET ""Translation"" = EXCLUDED.""Translation"",
 
     public class CreateWordDto
     {
+        // Explicit saves/replay may replace a provisional word's complete edit.
+        // Omitted/false retains the existing promotion-only create semantics.
+        public bool ReplaceExisting { get; set; }
         [Required]
         public int TextId { get; set; }
 

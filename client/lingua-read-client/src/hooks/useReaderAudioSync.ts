@@ -246,7 +246,7 @@ export const useReaderAudioSync = ({
 
     audioCurrentTimeRef.current = newTime;
 
-    if (!snapIsAudioLesson || snapSrtLines.length === 0 || snapDisplayMode !== 'audio') {
+    if (!snapIsAudioLesson || snapSrtLines.length === 0 || (!snapIsSentenceMode && snapDisplayMode !== 'audio')) {
       if (snapCurrentSrtLineId !== null) setCurrentSrtLineId(null);
       return;
     }
@@ -265,6 +265,8 @@ export const useReaderAudioSync = ({
 
     if (currentLine && currentLine.id !== snapCurrentSrtLineId) {
       setCurrentSrtLineId(currentLine.id);
+
+      if (snapIsSentenceMode) return;
 
       if (autoScrollRafRef.current) {
         cancelAnimationFrame(autoScrollRafRef.current);

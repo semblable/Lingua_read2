@@ -31,8 +31,8 @@ namespace LinguaReadApi.Controllers
             _logger = logger;
         }
 
-        // GET: api/datamanagement/backup
-        [HttpGet("backup")]
+        // POST: api/datamanagement/backup
+        [HttpPost("backup")]
         public async Task<IActionResult> BackupDatabase()
         {
             _logger.LogInformation("Database backup requested by user {UserId}", User.FindFirst(ClaimTypes.NameIdentifier)?.Value);

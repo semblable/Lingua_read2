@@ -26,7 +26,7 @@ export default function PasswordSettings() {
     </Form.Group>
     <Form.Group controlId="newPassword" className="mb-2">
       <Form.Label>New password</Form.Label>
-      <Form.Control type="password" autoComplete="new-password" minLength={6} required value={newPassword} onChange={e => setNewPassword(e.target.value)} />
+      <Form.Control type="password" autoComplete="new-password" minLength={12} required value={newPassword} onChange={e => setNewPassword(e.target.value)} />
     </Form.Group>
     {message && <Alert variant="success">{message}</Alert>}
     {error && <Alert variant="danger">{error}</Alert>}

@@ -13,8 +13,8 @@ export type PendingOp =
   // happened so the replay is scheduled from the review, not from the sync.
   // The three are optional only for ops queued by older builds.
   | { type: 'srsReview'; payload: { cardId: number; grade: number; clientEventId?: string; reviewedAt?: string; timezoneOffsetMinutes?: number } }
-  | { type: 'wordStatusUpdate'; payload: { wordId: number; status: number } }
-  | { type: 'wordCreate'; payload: { textId: number; term: string; translation?: string; status?: number } }
+  | { type: 'wordStatusUpdate'; payload: { wordId: number; status: number; translation?: string } }
+  | { type: 'wordCreate'; payload: { textId: number; term: string; translation?: string; status?: number; sentence?: string | null; replaceExisting?: boolean } }
   // Listening time. Additive on the server, so each op carries a clientEventId
   // the backend dedupes on — a replay (or a request whose response was lost on a
   // flaky link) can't double-count the seconds.
@@ -47,6 +47,7 @@ export type SyncResult = {
   attempted: number;
   succeeded: number;
   failed: number;
+  authRequired?: boolean;
 };
 
 export interface SyncHandlers {
@@ -65,7 +66,7 @@ let dbPromise: Promise<IDBDatabase> | null = null;
 
 function openDb(): Promise<IDBDatabase> {
   if (dbPromise) return dbPromise;
-  dbPromise = new Promise<IDBDatabase>((resolve, reject) => {
+  const opening = new Promise<IDBDatabase>((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
     req.onupgradeneeded = () => {
       const db = req.result;
@@ -73,10 +74,20 @@ function openDb(): Promise<IDBDatabase> {
         db.createObjectStore(STORE, { keyPath: 'id', autoIncrement: true });
       }
     };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error ?? new Error('Failed to open offline IndexedDB'));
+    req.onsuccess = () => {
+      const db = req.result;
+      const invalidate = () => { if (dbPromise === opening) dbPromise = null; };
+      db.onclose = invalidate;
+      db.onversionchange = () => { db.close(); invalidate(); };
+      resolve(db);
+    };
+    req.onerror = () => {
+      reject(req.error ?? new Error('Failed to open offline IndexedDB'));
+    };
   });
-  return dbPromise;
+  dbPromise = opening;
+  void opening.catch(() => { if (dbPromise === opening) dbPromise = null; });
+  return opening;
 }
 
 function txStore(db: IDBDatabase, mode: IDBTransactionMode): IDBObjectStore {
@@ -87,6 +98,9 @@ export async function enqueue(op: PendingOp, coalesceKey?: string): Promise<numb
   const db = await openDb();
   return new Promise<number>((resolve, reject) => {
     const store = txStore(db, 'readwrite');
+    let id: number;
+    store.transaction.oncomplete = () => resolve(id);
+    store.transaction.onabort = () => reject(store.transaction.error ?? new Error('Offline write aborted'));
 
     const add = () => {
       const record: Omit<StoredPendingOp, 'id'> = {
@@ -95,7 +109,7 @@ export async function enqueue(op: PendingOp, coalesceKey?: string): Promise<numb
         ...(coalesceKey ? { coalesceKey } : {})
       };
       const req = store.add(record);
-      req.onsuccess = () => resolve(req.result as number);
+      req.onsuccess = () => { id = req.result as number; };
       req.onerror = () => reject(req.error ?? new Error('Failed to enqueue offline op'));
     };
 
@@ -112,6 +126,15 @@ export async function enqueue(op: PendingOp, coalesceKey?: string): Promise<numb
       const cursor = cursorReq.result;
       if (cursor) {
         if ((cursor.value as StoredPendingOp).coalesceKey === coalesceKey) {
+          const previous = cursor.value as StoredPendingOp;
+          if (previous.type === 'wordStatusUpdate' && op.type === 'wordStatusUpdate') {
+            op = { ...op, payload: { ...previous.payload, ...op.payload } };
+          }
+          if (previous.type === 'wordCreate' && op.type === 'wordCreate') {
+            op = { ...op, payload: { ...op.payload,
+              translation: op.payload.translation ?? previous.payload.translation,
+              sentence: op.payload.sentence || previous.payload.sentence } };
+          }
           cursor.delete();
         }
         cursor.continue();
@@ -173,9 +196,8 @@ const DRAIN_LOCK = 'lr-offline-drain';
 const SKIPPED: SyncResult = { attempted: 0, succeeded: 0, failed: 0 };
 
 // Classify a handler error so drain() can decide whether to retry, drop, or halt.
-// - 'auth-stop': 401. fetchApi already redirects the user to /login. We leave
-//   the op in the queue (it'll replay after re-auth) and STOP the loop so we
-//   don't generate N more pointless 401s.
+// - 'auth-stop': 401. Leave the op queued and signal the background sync UI
+//   to request login without replacing the active page.
 // - 'terminal': other 4xx except 408/429. The server is rejecting the op permanently;
 //   retrying forever just keeps the queue stuck (this is what bit us before).
 //   Drop the op.
@@ -201,6 +223,7 @@ async function drainOnce(handlers: SyncHandlers): Promise<SyncResult> {
   let succeeded = 0;
   let failed = 0;
   let attempted = 0;
+  let authRequired = false;
 
   for (const op of ops) {
     attempted++;
@@ -229,8 +252,8 @@ async function drainOnce(handlers: SyncHandlers): Promise<SyncResult> {
     } catch (err) {
       const kind = classifyError(err);
       if (kind === 'auth-stop') {
-        // 401: stop draining. handleUnauthorized in api/client.ts already
-        // started the redirect to /login; remaining ops wait for re-auth.
+        // Keep the active page and all remaining work available during login.
+        authRequired = true;
         failed++;
         break;
       }
@@ -241,12 +264,13 @@ async function drainOnce(handlers: SyncHandlers): Promise<SyncResult> {
         failed++;
         continue;
       }
-      // Retryable: leave in queue for the next drain.
+      // Stop at the first retryable failure: later writes must not overtake it.
       failed++;
+      break;
     }
   }
 
-  return { attempted, succeeded, failed };
+  return { attempted, succeeded, failed, ...(authRequired ? { authRequired } : {}) };
 }
 
 export async function drain(handlers: SyncHandlers): Promise<SyncResult> {
@@ -305,5 +329,6 @@ export async function clearAll(): Promise<void> {
 // Test-only: force the next openDb() to reopen, so a `delete database()` in tests
 // gets picked up.
 export function _closeDbForTests(): void {
+  void dbPromise?.then(db => db.close(), () => {});
   dbPromise = null;
 }

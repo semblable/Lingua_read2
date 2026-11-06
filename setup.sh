@@ -7,7 +7,13 @@ echo "=== Lingua-Read Backup Setup ==="
 # 1. Install rclone if missing
 if ! command -v rclone &> /dev/null; then
   echo "Installing rclone..."
-  curl https://rclone.org/install.sh | sudo bash
+  if command -v apt-get &> /dev/null; then
+    sudo apt-get update
+    sudo apt-get install -y rclone
+  else
+    echo "Install rclone with your distribution's package manager, then rerun setup.sh."
+    exit 1
+  fi
 fi
 
 # 2. Create secrets directory

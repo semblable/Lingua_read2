@@ -5,12 +5,33 @@ using System.Text.Json;
 using LinguaReadApi.Models;
 using LinguaReadApi.Services.Ai;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Configuration;
+using Moq;
 using Xunit;
 
 namespace LinguaReadApi.Tests;
 
 public class OpenAiCompatibleChatClientTests
 {
+    [Theory]
+    [InlineData("http://localhost:11434/v1", true)]
+    [InlineData("http://localhost:11434/other", false)]
+    [InlineData("http://169.254.169.254/v1", false)]
+    public async Task CustomProviders_UsePrivateTransportOnlyForOperatorApprovedBaseUrls(string baseUrl, bool trusted)
+    {
+        var publicHandler = new ScriptedHandler(Json(HttpStatusCode.OK, Completion("public")));
+        var privateHandler = new ScriptedHandler(Json(HttpStatusCode.OK, Completion("local")));
+        var factory = new Mock<IHttpClientFactory>();
+        factory.Setup(f => f.CreateClient("AiProvider")).Returns(new HttpClient(publicHandler));
+        factory.Setup(f => f.CreateClient("PrivateAiProvider")).Returns(new HttpClient(privateHandler));
+        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> {
+            ["Ai:AllowedPrivateBaseUrls:0"] = "http://localhost:11434/v1/"
+        }).Build();
+        var client = new OpenAiCompatibleChatClient(factory.Object, NullLogger<OpenAiCompatibleChatClient>.Instance, config);
+        var result = await client.CompleteAsync(Connection("custom", model: "local", baseUrl: baseUrl), Request("local"), "test");
+        Assert.Equal(trusted ? "local" : "public", result.Content);
+        Assert.Equal(trusted ? 1 : 0, privateHandler.Requests.Count);
+    }
     private static readonly Guid UserId = Guid.NewGuid();
 
     [Fact]

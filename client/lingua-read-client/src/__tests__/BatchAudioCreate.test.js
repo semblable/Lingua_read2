@@ -31,6 +31,19 @@ const renderPage = () =>
   );
 
 describe('BatchAudioCreate', () => {
+  test.each([
+    ['notes.txt'],
+    ['ChapterLongName_Part1.mp3', 'ChapterLongName_Part2.mp3', 'ChapterLongName.srt'],
+    ['ChapterLongName.mp3', 'ChapterLongName_part1.srt', 'ChapterLongName_part2.srt'],
+  ])('rejects empty or ambiguous audio batches: %s', async (...names) => {
+    renderPage();
+    await screen.findByText('Spanish');
+    const input = document.getElementById('formFileMultiple');
+    fireEvent.change(input, { target: { files: names.map(name => new File(['x'], name)) } });
+    fireEvent.submit(input.closest('form'));
+    await screen.findByRole('alert');
+    expect(createAudioLessonsBatch).not.toHaveBeenCalled();
+  });
   beforeEach(() => {
     vi.clearAllMocks();
     getAllLanguages.mockResolvedValue(mockLanguages);

@@ -257,6 +257,7 @@ namespace LinguaReadApi.Controllers
                         LanguageId = createBookDto.LanguageId,
                         UserId = userId,
                         FolderId = createBookDto.FolderId,
+                        SortOrder = await LibrarySortOrder.MaxAsync(_context, userId, createBookDto.FolderId) + 1,
                         CreatedAt = DateTime.UtcNow
                     };
 
@@ -564,6 +565,7 @@ namespace LinguaReadApi.Controllers
                 LanguageId = uploadDto.LanguageId,
                 UserId = userId,
                 FolderId = uploadDto.FolderId,
+                SortOrder = await LibrarySortOrder.MaxAsync(_context, userId, uploadDto.FolderId) + 1,
                 CreatedAt = DateTime.UtcNow
             };
 
@@ -2730,6 +2732,9 @@ namespace LinguaReadApi.Controllers
                 return NotFound();
             }
 
+            var lessonAudioPaths = await _context.Texts
+                .Where(t => t.BookId == id && t.UserId == userId && t.IsAudioLesson && t.AudioFilePath != null)
+                .Select(t => t.AudioFilePath!).ToListAsync();
             _context.Books.Remove(book);
 
             try
@@ -2750,6 +2755,8 @@ namespace LinguaReadApi.Controllers
             // Clean up the book's media from disk — audiobook tracks, extracted EPUB assets and the
             // Hardcover cover. Runs after the DB delete committed and never fails the request.
             BookAssetStorage.DeleteBookAssets(userId, id, _logger, WebRoot);
+            foreach (var path in lessonAudioPaths)
+                BookAssetStorage.DeleteAudioLessonFile(path, _logger, WebRoot);
 
             return NoContent();
         }

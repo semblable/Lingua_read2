@@ -8,6 +8,22 @@ namespace LinguaReadApi.Tests;
 
 public class ReportWebhookClientTests
 {
+    [Theory]
+    [InlineData("AiProvider")]
+    [InlineData("HardcoverCover")]
+    public async Task UserSuppliedHttpDestinations_RefusePrivateAddresses(string name)
+    {
+        using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder => {
+            builder.UseEnvironment("Testing");
+            builder.ConfigureAppConfiguration((_, config) => config.AddInMemoryCollection(new Dictionary<string, string?> {
+                ["Jwt:Key"] = "synthetic-network-wiring-key-at-least-32-bytes",
+                ["ConnectionStrings:DefaultConnection"] = "Host=localhost;Database=unused"
+            }));
+        });
+        using var client = factory.Services.GetRequiredService<IHttpClientFactory>().CreateClient(name);
+        var error = await Assert.ThrowsAsync<HttpRequestException>(() => client.GetAsync("http://169.254.169.254/latest/meta-data"));
+        Assert.Contains("not a public internet address", error.GetBaseException().Message);
+    }
     [Fact]
     public async Task ReportClient_RefusesPrivateDestinationBeforeSending()
     {

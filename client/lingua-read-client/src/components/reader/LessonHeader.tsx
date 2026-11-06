@@ -77,7 +77,9 @@ const LessonHeader = React.memo(({
             />
           )}
           {!isAudioLesson && (book?.audiobookTracks?.length ?? 0) > 0 && (
-            <AudiobookPlayer type="book" book={book} />
+            <AudiobookPlayer type="book" book={book} languageId={book?.languageId ?? text.languageId}
+              audioRef={audioRef} onTimeUpdate={onTimeUpdate}
+              onPlaybackStateChange={onPlaybackStateChange} />
           )}
 
           <div className="d-flex align-items-center gap-2 ms-auto flex-shrink-0 lesson-header-actions">

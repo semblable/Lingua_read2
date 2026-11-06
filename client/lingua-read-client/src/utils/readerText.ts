@@ -1455,8 +1455,7 @@ const applyExceptionMerging = (
       const stripped = current.trimEnd();
       const matchesException = exceptionList.some((ex) => stripped.endsWith(ex));
       if (!matchesException) break;
-      // Glue with next, preserving intervening whitespace as a single space.
-      current = `${stripped} ${sentences[i + 1].trimStart()}`;
+      current += sentences[i + 1];
       i++;
     }
     merged.push(current);
@@ -1468,7 +1467,8 @@ const applyExceptionMerging = (
 export const splitBlockIntoSentences = (
   blockText: string,
   languageConfig: LanguageConfig,
-  languageCode: string | null | undefined
+  languageCode: string | null | undefined,
+  preserveWhitespace = false
 ): string[] => {
   if (!blockText) return [];
   const locale = localeFromCode(languageCode);
@@ -1484,7 +1484,7 @@ export const splitBlockIntoSentences = (
     const precedingWord = previous?.trimEnd().match(/([\p{L}\p{M}\p{N}.]+)\.$/u)?.[1];
     const followingWord = candidate.trimStart().match(/^[\p{L}\p{M}\p{N}]+/u)?.[0] || '';
     if (precedingWord && isAbbreviationOrNonSentencePeriod(precedingWord, '. ', followingWord, languageConfig)) {
-      merged[merged.length - 1] = `${previous.trimEnd()} ${candidate.trimStart()}`;
+      merged[merged.length - 1] = previous + candidate;
     } else {
       merged.push(candidate);
     }
@@ -1495,8 +1495,8 @@ export const splitBlockIntoSentences = (
   // Normalize after the emptiness filter: bookmarks and reading progress are
   // keyed by sentence index, so the segment count must not change.
   return merged
-    .map((sentence) => sentence.replace(/\s+/g, ' ').trim())
-    .filter(Boolean)
+    .map((sentence) => preserveWhitespace ? sentence : sentence.replace(/\s+/g, ' ').trim())
+    .filter(sentence => sentence.trim().length > 0)
     .map(normalizeTokenizerInput);
 };
 

@@ -197,7 +197,7 @@ const SrsStoryReview = () => {
   };
 
   const handleLookupClick = (tokenText: string, refKey: string, sentenceContext: string) => {
-    const clean = tokenText.replace(/[.,!?;:"""''()[\]{}\-—–…«»]/g, '').toLowerCase();
+    const clean = tokenText.replace(/^[\p{P}\s]+|[\p{P}\s]+$/gu, '').toLowerCase();
     if (!clean) return;
     setLookupWord({ text: clean, sentenceContext });
     setLookupRef(wordRefs.current[refKey]);

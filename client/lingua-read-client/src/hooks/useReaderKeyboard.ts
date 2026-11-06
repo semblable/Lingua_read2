@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import type { WordStatus } from '../types/wordStatus';
+import { isInteractiveKeyboardTarget } from '../utils/keyboard';
 
 export type { WordStatus };
 
@@ -16,10 +17,9 @@ export const useReaderKeyboard = ({
 }: UseReaderKeyboardArgs): void => {
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      const target = event.target as HTMLElement | null;
       if (
-        target?.tagName === 'INPUT' ||
-        target?.tagName === 'TEXTAREA' ||
+        event.defaultPrevented ||
+        isInteractiveKeyboardTarget(event.target) ||
         event.ctrlKey ||
         event.altKey ||
         event.metaKey

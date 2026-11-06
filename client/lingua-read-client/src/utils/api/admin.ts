@@ -3,7 +3,7 @@ import { API_URL, fetchApiDownload, ApiError, handleUnauthorized } from './clien
 // Backup Database — triggers a download in the browser
 export const backupDatabase = async (): Promise<{ message: string }> => {
   const { blob, filename } = await fetchApiDownload('/datamanagement/backup', {
-    method: 'GET'
+    method: 'POST'
   });
 
   const url = window.URL.createObjectURL(blob);

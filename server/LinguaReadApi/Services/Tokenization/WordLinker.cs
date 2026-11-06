@@ -80,12 +80,13 @@ namespace LinguaReadApi.Services.Tokenization
             CancellationToken cancellationToken)
         {
             var source = await context.Texts.AsNoTracking().Where(t => t.TextId == textId && t.UserId == userId)
-                .Select(t => new { t.SegmentationProfile, t.Language.Code }).FirstOrDefaultAsync(cancellationToken);
+                .Select(t => new { t.SegmentationProfile }).FirstOrDefaultAsync(cancellationToken);
             var profile = source?.SegmentationProfile;
             if (profile != null && !IsSupportedSegmentationProfile(profile))
                 throw new NotSupportedException("This text uses an unsupported segmentation profile; retain its links and upgrade the app.");
-            return (IsSupportedSegmentationProfile(profile) || KoreanLookup.IsKoreanLanguageCode(source?.Code))
-                && context.Database.IsRelational() && context.Database.CurrentTransaction == null;
+            // Queued work and synchronous edits must share the same user lock
+            // for ordinary texts too; otherwise old jobs can restore stale links.
+            return source != null && context.Database.IsRelational() && context.Database.CurrentTransaction == null;
         }
 
         private static async Task LinkCoreAsync(
@@ -94,10 +95,14 @@ namespace LinguaReadApi.Services.Tokenization
         {
             var snapshot = await context.Texts.AsNoTracking().Where(t => t.TextId == textId && t.UserId == userId)
                 .Select(t => new { t.SegmentationProfile, t.Content, t.LanguageId }).FirstOrDefaultAsync(cancellationToken);
-            var profile = snapshot?.SegmentationProfile;
+            if (snapshot == null) return; // The text may have been deleted while queued.
+            var profile = snapshot.SegmentationProfile;
             if (profile != null && !IsSupportedSegmentationProfile(profile))
                 throw new NotSupportedException("This text uses an unsupported segmentation profile; retain its links and upgrade the app.");
-            if (IsSupportedSegmentationProfile(profile)) { content = snapshot!.Content; languageId = snapshot.LanguageId; }
+            // Request content is only a historical snapshot. The locked database
+            // revision is authoritative for every language and segmentation mode.
+            content = snapshot.Content;
+            languageId = snapshot.LanguageId;
             var language = await context.Languages.AsNoTracking()
                 .FirstOrDefaultAsync(l => l.LanguageId == languageId, cancellationToken);
             if (language != null)
@@ -209,7 +214,7 @@ namespace LinguaReadApi.Services.Tokenization
                     }
                     break;
                 }
-                catch (DbUpdateException) when (attempt < MaxWordInsertAttempts)
+                catch (DbUpdateException) when (attempt < MaxWordInsertAttempts && context.Database.CurrentTransaction == null)
                 {
                     context.ChangeTracker.Clear();
                 }
@@ -349,6 +354,7 @@ namespace LinguaReadApi.Services.Tokenization
             AppDbContext context, int textId, string content, int languageId, Guid userId,
             CancellationToken cancellationToken)
         {
+            if (!await context.Texts.AnyAsync(t => t.TextId == textId && t.UserId == userId, cancellationToken)) return;
             var existingLinks = await context.TextWords
                 .Where(tw => tw.TextId == textId)
                 .ToListAsync(cancellationToken);

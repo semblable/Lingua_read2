@@ -1,3 +1,11 @@
+// Keep login return navigation inside this app, and avoid login loops.
+export const loginReturnPath = (search: string): string => {
+  const path = new URLSearchParams(search).get('redirect');
+  if (!path || !path.startsWith('/') || path.startsWith('//') || path.includes('\\')) return '/';
+  if ([...path].some(character => character.charCodeAt(0) < 32) || /^\/login(?:[/?#]|$)/i.test(path)) return '/';
+  return path;
+};
+
 // Library page for a folder (null/undefined = library root).
 export const libraryPath = (folderId?: number | null): string =>
   folderId ? `/library/${folderId}` : '/library';

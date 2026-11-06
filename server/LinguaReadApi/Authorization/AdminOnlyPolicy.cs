@@ -11,9 +11,7 @@ namespace LinguaReadApi.Authorization
     /// <summary>
     /// Gate for destructive admin endpoints (DB backup/restore, Discord report triggers).
     /// The allow-list comes from Admin:AllowedUserIds (comma-separated user ids). When unset,
-    /// every authenticated user qualifies: the app is single-user by design (one password,
-    /// one seeded account), so the owner is the admin. If multi-user auth ever lands, the
-    /// allow-list must be configured — this default would otherwise make every user an admin.
+    /// only the seeded owner account qualifies. Other accounts require an explicit allow-list.
     /// </summary>
     public sealed class AdminOnlyRequirement : IAuthorizationRequirement
     {
@@ -23,6 +21,7 @@ namespace LinguaReadApi.Authorization
     public sealed class AdminOnlyHandler : AuthorizationHandler<AdminOnlyRequirement>
     {
         private const string AdminUserIdsConfigKey = "Admin:AllowedUserIds";
+        private const string OwnerUserId = "a1a1a1a1-b2b2-c3c3-d4d4-e5e5e5e5e5e5";
 
         private readonly HashSet<string> _allowedUserIds;
         private readonly ILogger<AdminOnlyHandler> _logger;
@@ -33,18 +32,13 @@ namespace LinguaReadApi.Authorization
             _allowedUserIds = (configuration[AdminUserIdsConfigKey] ?? string.Empty)
                 .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            if (_allowedUserIds.Count == 0) _allowedUserIds.Add(OwnerUserId);
         }
 
         protected override Task HandleRequirementAsync(AuthorizationHandlerContext context, AdminOnlyRequirement requirement)
         {
             if (context.User.Identity?.IsAuthenticated != true)
             {
-                return Task.CompletedTask;
-            }
-
-            if (_allowedUserIds.Count == 0)
-            {
-                context.Succeed(requirement); // No restriction configured (single-user default).
                 return Task.CompletedTask;
             }
 

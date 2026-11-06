@@ -514,6 +514,7 @@ namespace LinguaReadApi.Services.News
                 LanguageId = feed.LanguageId,
                 UserId = feed.UserId,
                 FolderId = batch.FolderId,
+                SortOrder = await LibrarySortOrder.MaxAsync(_context, feed.UserId, batch.FolderId) + 1,
                 CreatedAt = now,
                 LastAccessedAt = null,
                 WordLinkingStatus = "processing",

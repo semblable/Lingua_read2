@@ -1,4 +1,5 @@
 import { safeLocalStorageSetItem } from './utils/storage';
+import { loginReturnPath } from './utils/helpers';
 import React, { useContext, useEffect, Suspense, lazy } from 'react';
 import { Routes, Route, Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useAuthStore } from './utils/store';
@@ -143,7 +144,7 @@ const AuthenticatedApp = () => {
           <Suspense fallback={<Loading />}>
             <Routes>
               <Route path="/" element={settingsContext.settings.minimalHome ? <HomeLite /> : <Home />} />
-              <Route path="/login" element={<Navigate to="/" />} />
+              <Route path="/login" element={<Navigate to={loginReturnPath(location.search)} replace />} />
 
               <Route element={<ProtectedRoute isAuthenticated={isAuthenticated} isLoading={isLoading} />}>
                 <Route path="/library" element={<Library />} />

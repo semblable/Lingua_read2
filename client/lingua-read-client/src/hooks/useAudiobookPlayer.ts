@@ -575,6 +575,7 @@ export const useAudiobookPlayer = ({
         audio.pause();
         return;
       }
+      initialSeekRef.current = null;
       playbackStartedContentKeyRef.current = contentKey;
       // `play` confirms intent, but startup/resume can still be buffering.
       if (!isPlayingRef.current) {
@@ -624,7 +625,7 @@ export const useAudiobookPlayer = ({
       audio.removeEventListener('pause', onPause);
       audio.removeEventListener('playing', onPlaying);
     };
-  }, [audioRef, contentKey, handleLoadedMetadata, handleTimeUpdate, handleEnded, handleError, resetSegmentPlayback, syncPlaybackState, suspendListening, flushListeningActivityRef, listeningTrackerRef, playbackStartedContentKeyRef, segmentPlaybackRef]);
+  }, [audioRef, contentKey, handleLoadedMetadata, handleTimeUpdate, handleEnded, handleError, resetSegmentPlayback, syncPlaybackState, suspendListening, flushListeningActivityRef, listeningTrackerRef, playbackStartedContentKeyRef, segmentPlaybackRef, initialSeekRef]);
 
   useEffect(() => {
     if (audioRef.current) {
@@ -709,6 +710,7 @@ export const useAudiobookPlayer = ({
     const audio = audioRef.current;
     if (!audio) return;
     if (audio.paused) {
+      initialSeekRef.current = null;
       userPositionIntentContentKeyRef.current = contentKey;
       playbackStartedContentKeyRef.current = contentKey;
       setAudioPlaybackIntent(audio, true);
@@ -717,7 +719,7 @@ export const useAudiobookPlayer = ({
       setAudioPlaybackIntent(audio, false);
       audio.pause();
     }
-  }, [audioRef, contentKey, requestAudioPlay, userPositionIntentContentKeyRef, playbackStartedContentKeyRef]);
+  }, [audioRef, contentKey, requestAudioPlay, userPositionIntentContentKeyRef, playbackStartedContentKeyRef, initialSeekRef]);
 
   const seek = useCallback((time: number) => {
     const audio = audioRef.current;
@@ -731,24 +733,31 @@ export const useAudiobookPlayer = ({
       resetSegmentPlayback();
     }
     userPositionIntentContentKeyRef.current = contentKey;
+    initialSeekRef.current = null;
     audio.currentTime = newTime;
     setCurrentTime(newTime);
     if (onTimeUpdateRef.current) {
       onTimeUpdateRef.current(newTime);
     }
-  }, [audioRef, contentKey, duration, resetSegmentPlayback, segmentPlaybackRef, userPositionIntentContentKeyRef]);
+  }, [audioRef, contentKey, duration, resetSegmentPlayback, segmentPlaybackRef, userPositionIntentContentKeyRef, initialSeekRef]);
 
   const goToNextTrack = useCallback(() => {
     if (currentTrackIndex < playlist.length - 1) {
+      userPositionIntentContentKeyRef.current = contentKey;
+      initialSeekRef.current = null;
+      setCurrentTime(0);
       setCurrentTrackIndex(prev => prev + 1);
     }
-  }, [currentTrackIndex, playlist.length]);
+  }, [contentKey, currentTrackIndex, playlist.length, userPositionIntentContentKeyRef, initialSeekRef]);
 
   const goToPrevTrack = useCallback(() => {
     if (currentTrackIndex > 0) {
+      userPositionIntentContentKeyRef.current = contentKey;
+      initialSeekRef.current = null;
+      setCurrentTime(0);
       setCurrentTrackIndex(prev => prev - 1);
     }
-  }, [currentTrackIndex]);
+  }, [contentKey, currentTrackIndex, userPositionIntentContentKeyRef, initialSeekRef]);
 
   const changeRate = useCallback((diff: number) => {
     setPlaybackRate(prev => {

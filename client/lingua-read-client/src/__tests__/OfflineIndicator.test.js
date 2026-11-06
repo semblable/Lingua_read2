@@ -4,6 +4,8 @@ import '@testing-library/jest-dom';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import OfflineIndicator from '../components/offline/OfflineIndicator';
 import { enqueue, clearAll } from '../utils/offline/syncQueue';
+import { authLogin } from '../utils/api/auth';
+vi.mock('../utils/api/auth', () => ({ authLogin: vi.fn() }));
 
 const setOnline = (value) => {
   Object.defineProperty(window.navigator, 'onLine', {
@@ -19,6 +21,21 @@ const noopHandlers = {
 };
 
 describe('OfflineIndicator', () => {
+  test('signs back in and syncs without replacing the active reader', async () => {
+    await enqueue({ type: 'srsReview', payload: { cardId: 9, grade: 2 } });
+    const review = vi.fn().mockRejectedValueOnce({ status: 401 }).mockResolvedValue(undefined);
+    authLogin.mockResolvedValue(new Response('{}'));
+    render(<><textarea aria-label="Reader note" defaultValue="unsaved note" />
+      <OfflineIndicator handlers={{ ...noopHandlers, srsReview: review }} /></>);
+    fireEvent.click(await screen.findByTestId('offline-indicator'));
+    await screen.findByRole('dialog');
+    expect(screen.getByLabelText('Reader note')).toHaveValue('unsaved note');
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'secret' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+    await waitFor(() => expect(review).toHaveBeenCalledTimes(2));
+    expect(authLogin).toHaveBeenCalledWith('secret');
+    expect(screen.getByLabelText('Reader note')).toHaveValue('unsaved note');
+  });
   beforeEach(async () => {
     setOnline(true);
     vi.clearAllMocks();

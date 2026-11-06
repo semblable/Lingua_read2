@@ -428,7 +428,7 @@ public class WordsControllerTests
     // --- 1.2: status-only update must not erase the saved translation ---
 
     [Fact]
-    public async Task UpdateWord_WithEmptyOrNullTranslation_PreservesExistingTranslation()
+    public async Task UpdateWord_WithNullTranslation_Preserves_AndExplicitEmptyClears()
     {
         using var context = CreateContext();
         var (userId, wordId) = SeedWord(context, status: 1);
@@ -437,15 +437,13 @@ public class WordsControllerTests
 
         var controller = CreateController(context, userId);
 
-        // Empty string (offline replay / online status-only save) leaves it unchanged.
-        var r1 = await controller.UpdateWord(wordId, new UpdateWordDto { Status = 5, Translation = "" });
+        var r1 = await controller.UpdateWord(wordId, new UpdateWordDto { Status = 5, Translation = null });
         Assert.IsType<NoContentResult>(r1);
         Assert.Equal("cat", (await context.WordTranslations.SingleAsync(t => t.WordId == wordId)).Translation);
 
-        // Null likewise means "leave unchanged".
-        var r2 = await controller.UpdateWord(wordId, new UpdateWordDto { Status = 4, Translation = null });
+        var r2 = await controller.UpdateWord(wordId, new UpdateWordDto { Status = 4, Translation = "" });
         Assert.IsType<NoContentResult>(r2);
-        Assert.Equal("cat", (await context.WordTranslations.SingleAsync(t => t.WordId == wordId)).Translation);
+        Assert.Empty(await context.WordTranslations.Where(t => t.WordId == wordId).ToListAsync());
     }
 
     [Fact]

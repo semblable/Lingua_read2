@@ -159,6 +159,13 @@ const renderTextDisplayWithRouter = (router, settingOverrides = {}) => render(
 );
 
 describe('TextDisplay', () => {
+  test('matches saved phrases across sentence-initial capitalization and preserves source case', async () => {
+    getText.mockResolvedValueOnce({ textId: 1, title: 'Phrase case', content: 'In spite of the rain, we went.',
+      languageId: null, languageCode: 'en', isAudioLesson: false, bookId: null,
+      words: [{ wordId: 10, term: 'in spite of', status: 2, translation: 'mimo' }] });
+    renderTextDisplay();
+    await waitFor(() => expect([...document.querySelectorAll('.clickable-word')].some(node => node.textContent === 'In spite of')).toBe(true));
+  });
   const originalMatchMedia = window.matchMedia;
   const originalGetSelection = window.getSelection;
 
@@ -3266,6 +3273,24 @@ describe('TextDisplay', () => {
   describe('scroll to bookmark on text load', () => {
     const longText = 'Sentence one. Sentence two. Sentence three. Sentence four. Sentence five.';
 
+    test('keeps the bookmark scroll pending until standard view is mounted', async () => {
+      getText.mockResolvedValueOnce({ textId: 1, title: 'Mode switch bookmark', content: longText,
+        languageId: null, languageCode: 'ES', isAudioLesson: false, words: [], bookId: null });
+      getTextBookmarks.mockResolvedValue({ textId: 1, sentenceIndices: [2], lastSentenceIndex: 2 });
+      const scrollSpy = vi.spyOn(window.HTMLElement.prototype, 'scrollIntoView').mockImplementation(() => {});
+      try {
+        const router = createMemoryRouter([{ path: '/texts/:textId', element: <TextDisplay /> }], { initialEntries: ['/texts/1'] });
+        const view = renderTextDisplayWithRouter(router, { sentenceMode: true, sentenceTtsEnabled: false });
+        await screen.findByText('Mode switch bookmark');
+        await waitFor(() => expect(document.querySelector('.sentence-mode-text')).not.toBeNull());
+        await waitFor(() => expect(getTextBookmarks).toHaveBeenCalled());
+        view.rerender(<SettingsContext.Provider value={createSettingsValue({ sentenceMode: false })}>
+          <RouterProvider router={router} />
+        </SettingsContext.Provider>);
+        await waitFor(() => expect(scrollSpy.mock.instances.some(node => node.getAttribute('data-sentence-index') === '2')).toBe(true));
+      } finally { scrollSpy.mockRestore(); }
+    });
+
     test('scrolls to the last bookmarked sentence on text load', async () => {
       getText.mockResolvedValueOnce({
         textId: 1,
@@ -3626,15 +3651,14 @@ describe('TextDisplay', () => {
         ).toBeGreaterThan(0);
       });
 
-      // On desktop, every book-mode render comes from LessonHeader, which
-      // does NOT pass an `audioRef` or `onPlaybackStateChange`. Only the mobile
-      // TextDisplay branch passes those. So a desktop render means no
-      // book-mode call has an audioRef, and the sticky mobile container
-      // (`.lesson-audio-bar`) is absent from the DOM.
+      // Desktop shares the reader's audio coordination, without mounting the
+      // separate sticky mobile container.
       const bookCallsWithAudioRef = findAudiobookCalls(
         (props) => props.type === 'book' && props.audioRef != null
       );
-      expect(bookCallsWithAudioRef.length).toBe(0);
+      expect(bookCallsWithAudioRef.length).toBeGreaterThan(0);
+      expect(bookCallsWithAudioRef.at(-1).onPlaybackStateChange).toEqual(expect.any(Function));
+      expect(bookCallsWithAudioRef.at(-1).onTimeUpdate).toEqual(expect.any(Function));
       expect(document.querySelector('.lesson-audio-bar')).toBeNull();
     });
 

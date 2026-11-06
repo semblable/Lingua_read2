@@ -2,7 +2,7 @@ import React from 'react';
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { BrowserRouter } from 'react-router-dom';
 import SrsStoryReview from '../pages/SrsStoryReview';
-import { getAllLanguages, getSrsStats, generateSrsStory, submitSrsReview, getWordsByLanguage, getSrsStories } from '../utils/api';
+import { getAllLanguages, getSrsStats, generateSrsStory, submitSrsReview, getWordsByLanguage, getSrsStories, translateSelectionWithContext } from '../utils/api';
 import { SettingsContext } from '../contexts/SettingsContext';
 import '@testing-library/jest-dom';
 
@@ -205,6 +205,18 @@ describe('SrsStoryReview (micro-contexts)', () => {
     const card = await screen.findByTestId('srs-microcontext-card');
     expect(card.querySelector('.srs-microcontext-target')).toHaveTextContent(term);
     expect(within(card).getByRole('button', { name: lookup })).toBeInTheDocument();
+  });
+
+  it('keeps internal apostrophes when looking up a contraction', async () => {
+    generateSrsStory.mockResolvedValue({ textId: 99, languageCode: 'en', microContexts: [
+      { wordId: 10, srsCardReviewId: 101, term: 'cat', usedForm: 'cat', context: "I don't see the cat.", translation: 'kot', wordStatus: 2 },
+    ] });
+    translateSelectionWithContext.mockResolvedValue({ translatedText: 'nie' });
+    renderComponent();
+    await selectSpanish();
+    fireEvent.click(await screen.findByRole('button', generateBtnQuery));
+    fireEvent.click(await screen.findByRole('button', { name: "don't" }));
+    await waitFor(() => expect(translateSelectionWithContext).toHaveBeenCalledWith("don't", "I don't see the cat.", 'en', 'EN'));
   });
 
   it('notes a word-status change on the reviewed card and updates that word elsewhere', async () => {

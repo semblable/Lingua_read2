@@ -190,6 +190,8 @@ Choose which AI service handles sentence and selection translation, sentence exp
 | Groq | *choose one* | |
 | Custom (OpenAI-compatible) | *choose one* | Any server with an OpenAI chat-completions API: Ollama (`http://host:11434/v1`), LM Studio, vLLM, LiteLLM, Together, Fireworks... The key is optional. The server calls it, so it must be reachable from the server. |
 
+Custom AI URLs must resolve to public addresses. To use a local model, the server operator must allow its exact base URL: set `AI_PRIVATE_BASE_URL=http://host.docker.internal:11434/v1` in the Compose `.env`, or configure the `Ai:AllowedPrivateBaseUrls` array for a native installation. Enter the same base URL in provider settings. AI requests do not follow redirects.
+
 **Load models** in Settings lists the models your saved key can use. **Test Connection** sends a one-word request with the saved key and model. If a provider rejects an optional request parameter (such as `max_tokens` or `temperature` on some reasoning models), the request is retried once with just the model and the messages.
 
 | Setting Field | Default Value | Allowed / Type | Description |

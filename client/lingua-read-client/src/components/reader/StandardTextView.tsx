@@ -1,6 +1,6 @@
 import React from 'react';
 import { Button, Spinner, Badge } from 'react-bootstrap';
-import { buildDisplayBlocks, getTitleLineVariant, normalizeTokenizerInput, splitBlockIntoSentences } from '../../utils/readerText';
+import { buildDisplayBlocks, getTitleLineVariant, splitBlockIntoSentences } from '../../utils/readerText';
 import type { DisplayBlock, LanguageConfig } from '../../utils/readerText';
 import type { Settings } from '../../contexts/SettingsContext';
 import type { ReaderText } from '../../hooks/useReaderState';
@@ -84,30 +84,27 @@ const StandardTextView = React.memo(({
   };
   const modeClass = readingUiMode === 'modern' ? 'modern' : 'classic';
   const renderLineAsSentences = (lineText: string): React.ReactNode[] => {
-    const normalized = normalizeTokenizerInput(lineText).replace(/\s+/g, ' ').trim();
-    let previousEnd = 0;
-    return splitBlockIntoSentences(lineText, languageConfig, text.languageCode).map(sentence => {
-      const start = normalized.indexOf(sentence, previousEnd);
-      const separator = start >= previousEnd ? normalized.slice(previousEnd, start) : '';
-      previousEnd = start >= 0 ? start + sentence.length : previousEnd;
+    return splitBlockIntoSentences(lineText, languageConfig, text.languageCode, true).map(sentence => {
+      const [, leading, body, trailing] = sentence.match(/^(\s*)([\s\S]*?\S)(\s*)$/)!;
       const index = currentSentenceIndex++;
-      return <React.Fragment key={index}>{separator}{renderSentence(processTextContent(sentence), index)}</React.Fragment>;
+      return <React.Fragment key={index}>{leading}{renderSentence(processTextContent(body), index)}{trailing}</React.Fragment>;
     });
   };
   const renderTitleLine = (line: string, lineIndex: number, blockKey: string, lines: string[]): React.ReactNode => {
     if (!line) {
-      return <div key={`${blockKey}-spacer-${lineIndex}`} className="reader-title-line-spacer" aria-hidden="true" />;
+      return <span key={`${blockKey}-spacer-${lineIndex}`} className="reader-title-line-spacer" style={{ display: 'block' }} aria-hidden="true" />;
     }
 
     const titleLineVariant = getTitleLineVariant(line, lineIndex, lines);
 
     return (
-      <div
+      <span
         key={`${blockKey}-line-${lineIndex}`}
         className={`reader-title-line reader-title-line-${modeClass} reader-title-line-${titleLineVariant}`}
+        style={{ display: 'block' }}
       >
         {processTextContent(line)}
-      </div>
+      </span>
     );
   };
 
@@ -162,6 +159,7 @@ const StandardTextView = React.memo(({
           fontSize: `${globalSettings.textSize}px`,
           lineHeight: isMobile ? mobileReadingConfig.lineSpacing : 'var(--reading-line-height)',
           fontFamily: getFontFamilyForList(),
+          whiteSpace: 'pre-wrap',
           // Custom properties don't appear in React.CSSProperties; cast at the
           // boundary so the `--mobile-reading-*` vars propagate to children.
           ...({
@@ -189,6 +187,7 @@ const StandardTextView = React.memo(({
           }
 
           if (block.isTitleBlock) {
+            if (!block.lines.join('').trim()) return null;
             return (
               <div
                 key={`${block.key}-title`}

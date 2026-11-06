@@ -20,6 +20,7 @@ import { SettingsContext } from '../contexts/SettingsContext';
 import { isOfflineQueued } from '../utils/offline/enqueueIfOffline';
 import { useReaderBookmarks } from '../hooks/useReaderBookmarks';
 import { useReaderKeyboard, type WordStatus } from '../hooks/useReaderKeyboard';
+import { useSyncedWordIdentities } from '../hooks/useSyncedWordIdentities';
 import { useWordTranslation } from '../hooks/useWordTranslation';
 import { useReaderAudioSync } from '../hooks/useReaderAudioSync';
 import { useReaderState, type FetchAllLanguageWordsFn } from '../hooks/useReaderState';
@@ -281,20 +282,23 @@ const TextDisplay = () => {
   // updates) within the same load — only the first ready frame fires a scroll.
   const scrolledForTextIdRef = useRef<string | number | null>(null);
   useEffect(() => {
-    if (loading || !text || !textId || !bookmarksReady) return;
+    if (loading || !text || !textId || !bookmarksReady || isSentenceMode || (isAudioLesson && displayMode === 'audio')) return;
     if (scrolledForTextIdRef.current === textId) return;
     const container = textContentRef.current;
     if (!container) return;
-    scrolledForTextIdRef.current = textId;
     const idx = lastBookmarkedIndex;
     if (idx == null) return;
-    requestAnimationFrame(() => {
+    const frame = requestAnimationFrame(() => {
       const el = container.querySelector(
         `[data-sentence-index="${idx}"]`
       ) as HTMLElement | null;
-      el?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      if (el) {
+        scrolledForTextIdRef.current = textId;
+        el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      }
     });
-  }, [loading, text, textId, bookmarksReady, lastBookmarkedIndex]);
+    return () => cancelAnimationFrame(frame);
+  }, [loading, text, textId, bookmarksReady, lastBookmarkedIndex, isSentenceMode, isAudioLesson, displayMode]);
 
   const applyTranslationToDisplayedWord = useCallback(
     (term: string, translationText: string) => {
@@ -608,6 +612,7 @@ const TextDisplay = () => {
   const lookupTerm = useCallback((term: string) => lowercaseLookupTerm(
     term, languageConfig?.code || languageConfig?.languageCode || text?.languageCode
   ), [languageConfig?.code, languageConfig?.languageCode, text?.languageCode]);
+  useSyncedWordIdentities(text?.textId, words, lookupTerm, setWords, setDisplayedWord);
   const foldTerm = useCallback((term: string) => foldLookupTerm(
     term, languageConfig?.code || languageConfig?.languageCode || text?.languageCode
   ), [languageConfig?.code, languageConfig?.languageCode, text?.languageCode]);
@@ -1255,8 +1260,9 @@ const TextDisplay = () => {
       for (const phrase of candidates) {
         const phraseTerm = phrase.term;
         if (!phraseTerm) continue;
-        if (koreanPhraseMatch || processed.substring(currentIndex).startsWith(phraseTerm)) {
-          const sourceSurface = koreanPhraseMatch?.surface ?? phraseTerm;
+        const sourceCandidate = processed.slice(currentIndex, currentIndex + phraseTerm.length);
+        if (koreanPhraseMatch || lookupTerm(sourceCandidate) === lookupTerm(phraseTerm)) {
+          const sourceSurface = koreanPhraseMatch?.surface ?? sourceCandidate;
           const phraseData = phrase;
           const phraseStatus = phraseData.status;
           const phraseTranslation = phraseData.translation;
@@ -1337,7 +1343,7 @@ const TextDisplay = () => {
 
     return elements;
 
-  }, [knownPhrases, koreanWordLookup, getWordData, getWordStyle, languageWordsLoaded, handleSelectableWordClick, handleSelectableWordTouchEnd, handleSelectableWordTouchStart, setHoveredWordTerm, languageConfig]);
+  }, [knownPhrases, koreanWordLookup, getWordData, getWordStyle, languageWordsLoaded, handleSelectableWordClick, handleSelectableWordTouchEnd, handleSelectableWordTouchStart, setHoveredWordTerm, languageConfig, lookupTerm]);
 
 
   const getFontFamilyForList = useCallback(() => {
@@ -1738,7 +1744,7 @@ const TextDisplay = () => {
           .then(newWordData => {
             const typed = newWordData as { translation?: string } | null;
             const wordWithTranslation = { ...(typed || {}), translation: translationToUse || typed?.translation };
-            setWords(prevWords => [...prevWords, wordWithTranslation]);
+            setWords(prevWords => [...prevWords.filter(w => lookupTerm(w.term || '') !== lookupTerm(targetTerm)), wordWithTranslation]);
             // The word is saved now; the panel showing it should say so (status, Mine, no hint).
             if ((selectedWord === term || selectedWord === targetTerm) && (displayedWord?.term === term || displayedWord?.term === targetTerm)) {
               setDisplayedWord({ ...wordWithTranslation, isNew: false });
@@ -1749,7 +1755,7 @@ const TextDisplay = () => {
           .catch(err => console.error(`[Keyboard Shortcut] Failed to create word ${targetTerm}:`, err));
       }
     },
-    [getWordData, text?.languageCode, text?.textId, translationTargetLanguageCode, setWords, selectedWord, displayedWord?.term, currentSentenceSegment?.text, selectedWordAiContext, activePhraseSelection?.sentenceContext, languageConfig?.characterSubstitutions, languageConfig?.code, languageConfig?.languageCode, globalSettings.autoTranslateWords, triggerAutoTranslation, setTranslation]
+    [getWordData, text?.languageCode, text?.textId, translationTargetLanguageCode, setWords, selectedWord, displayedWord?.term, currentSentenceSegment?.text, selectedWordAiContext, activePhraseSelection?.sentenceContext, languageConfig?.characterSubstitutions, languageConfig?.code, languageConfig?.languageCode, globalSettings.autoTranslateWords, triggerAutoTranslation, setTranslation, lookupTerm]
   );
 
   useReaderKeyboard({
@@ -1794,7 +1800,7 @@ const TextDisplay = () => {
           [selectedWordAiContext, activePhraseSelection?.sentenceContext, currentSentenceSegment?.text], languageConfig?.characterSubstitutions,
           languageConfig?.code || languageConfig?.languageCode || text?.languageCode);
         const newWordData = (await createWord(text.textId, termToSave, numericStatus, translationToSave, sentenceToMine)) as Record<string, unknown> | null;
-        setWords((prevWords: any[]) => [...prevWords, newWordData]);
+        setWords((prevWords: any[]) => [...prevWords.filter(w => lookupTerm(w.term || '') !== lookupTerm(termToSave)), newWordData]);
         setDisplayedWord({
           ...(newWordData || {}),
           isNew: false,

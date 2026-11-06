@@ -42,6 +42,22 @@ const baseProps = (overrides = {}) => ({
 });
 
 describe('StandardTextView', () => {
+  test.each(['First line.\nSecond line.\nThird line.', '第1.章。次の文。'])('preserves the source including line breaks and abbreviation boundaries: %s', content => {
+    const { container } = render(<StandardTextView {...baseProps({
+      text: { content, languageCode: 'ja' }, languageConfig: { sentenceSplitExceptions: ['第1.'] },
+      renderSentence: (processed, index) => <span data-sentence-index={index}>{processed}</span>,
+    })} />);
+    expect(container.querySelector('.text-content').textContent).toBe(content);
+  });
+
+  test('title sentences contain phrasing elements', () => {
+    const { container } = render(<StandardTextView {...baseProps({
+      text: { content: 'Title\nSubtitle', structuredContent: [{ type: 'title', text: 'Title\nSubtitle' }] },
+      renderSentence: (processed, index) => <span data-sentence-index={index}>{processed}</span>,
+    })} />);
+    expect(container.querySelector('[data-sentence-index] div')).toBeNull();
+    expect(container.querySelectorAll('[data-sentence-index] .reader-title-line')).toHaveLength(2);
+  });
   test.each([
     ['zh', '第一句。第二句！第三句？'],
     ['ja', '日本語です。次の文です！'],

@@ -68,17 +68,19 @@ export const updateAudiobookProgress = async (
     },
     () => fetchApi('/activity/audiobookprogress', {
       ...options,
+      suppressAuthRedirect: true,
       method: 'PUT',
       body: JSON.stringify(payload)
     }),
-    `audiobookProgress:book:${bookId}`
+    `audiobookProgress:book:${bookId}`,
+    { queueOnUnauthorized: true }
   );
 };
 
 export const getAudiobookProgress = async (
   bookId: number | string
 ): Promise<AudiobookProgress> => {
-  return await fetchApi<AudiobookProgress>(`/activity/audiobookprogress/${bookId}`);
+  return await fetchApi<AudiobookProgress>(`/activity/audiobookprogress/${bookId}`, { suppressAuthRedirect: true });
 };
 
 export type AudioLessonProgressInput = {
@@ -108,17 +110,19 @@ export const updateAudioLessonProgress = async (
     },
     () => fetchApi('/activity/audiolessonprogress', {
       ...options,
+      suppressAuthRedirect: true,
       method: 'PUT',
       body: JSON.stringify(payload)
     }),
-    `audioLessonProgress:lesson:${parsedTextId}`
+    `audioLessonProgress:lesson:${parsedTextId}`,
+    { queueOnUnauthorized: true }
   );
 };
 
 export const getAudioLessonProgress = async (
   textId: number | string
 ): Promise<AudioLessonProgress> => {
-  return await fetchApi<AudioLessonProgress>(`/activity/audiolessonprogress/${textId}`);
+  return await fetchApi<AudioLessonProgress>(`/activity/audiolessonprogress/${textId}`, { suppressAuthRedirect: true });
 };
 
 export const logListeningActivity = async (
@@ -132,9 +136,10 @@ export const logListeningActivity = async (
     { type: 'logListening', payload: { languageId, durationSeconds, clientEventId } },
     () => fetchApi('/activity/logListening', {
       ...options,
+      suppressAuthRedirect: true,
       method: 'POST',
       body: JSON.stringify(payload)
-    })
+    }), undefined, { queueOnUnauthorized: true }
   );
 };
 
@@ -172,8 +177,9 @@ export const logSentenceReadActivity = async (
       }
     },
     () => fetchApi('/activity/logSentenceRead', {
+      suppressAuthRedirect: true,
       method: 'POST',
       body: JSON.stringify(payload)
-    })
+    }), undefined, { queueOnUnauthorized: true }
   );
 };

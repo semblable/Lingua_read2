@@ -9,6 +9,16 @@ const fireKey = (key) => {
 };
 
 describe('useReaderKeyboard', () => {
+  test.each(['select', 'button', 'a', 'div'])('leaves keys to interactive targets: %s', tag => {
+    const onSetWordStatus = vi.fn();
+    renderHook(() => useReaderKeyboard({ enabled: true, hoveredWordTerm: 'cat', onSetWordStatus }));
+    const element = document.createElement(tag);
+    if (tag === 'div') element.setAttribute('contenteditable', 'true');
+    document.body.append(element);
+    try { element.dispatchEvent(new KeyboardEvent('keydown', { key: '2', bubbles: true }));
+      expect(onSetWordStatus).not.toHaveBeenCalled();
+    } finally { element.remove(); }
+  });
   test('returns void (pure side-effect hook)', () => {
     const onSetWordStatus = vi.fn();
     const { result } = renderHook(() =>

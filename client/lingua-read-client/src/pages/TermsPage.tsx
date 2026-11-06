@@ -156,6 +156,12 @@ const TermsPage = () => {
 
                 if (cancelled || version !== fetchVersion.current) return;
 
+                const lastPage = Math.max(1, data.totalPages || 0);
+                if (currentPage > lastPage) {
+                    setCurrentPage(lastPage);
+                    return;
+                }
+
                 setTerms(data.items || []);
                 setTotalItems(data.totalCount || 0);
                 setTotalPages(data.totalPages || 0);

@@ -56,6 +56,19 @@ const mockTerms = [
 ];
 
 describe('TermsPage', () => {
+  test('clamps a reactive refetch when the current page no longer exists', async () => {
+    localStorage.setItem('lastSelectedLanguage', '1');
+    getPaginatedWordsByLanguage.mockResolvedValue({ items: mockTerms, totalCount: 21, totalPages: 2 });
+    renderPage();
+    await screen.findByText('gato');
+    fireEvent.click(screen.getByRole('button', { name: '2' }));
+    await waitFor(() => expect(getPaginatedWordsByLanguage.mock.calls.at(-1)[1]).toBe(2));
+    await waitFor(() => expect(screen.getByRole('table')).toHaveAttribute('aria-busy', 'false'));
+    getPaginatedWordsByLanguage.mockResolvedValue({ items: mockTerms, totalCount: 20, totalPages: 1 });
+    fireEvent.click(screen.getByLabelText('Show sentences'));
+    await waitFor(() => expect(getPaginatedWordsByLanguage.mock.calls.at(-1)[1]).toBe(1));
+    expect(await screen.findByText('gato')).toBeInTheDocument();
+  });
   beforeEach(() => {
     vi.clearAllMocks();
     localStorage.clear();

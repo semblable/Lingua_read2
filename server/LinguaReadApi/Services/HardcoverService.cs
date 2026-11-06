@@ -804,7 +804,7 @@ public sealed class HardcoverService : IHardcoverService
 
         try
         {
-            var httpClient = _httpClientFactory.CreateClient();
+            var httpClient = _httpClientFactory.CreateClient("HardcoverCover");
             using var response = await httpClient.GetAsync(uri, cancellationToken);
             if (!response.IsSuccessStatusCode)
             {

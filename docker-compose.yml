@@ -62,6 +62,8 @@ services:
       PGPASSWORD: ${POSTGRES_PASSWORD}
       # Other variables
       Jwt__Key: ${JWT_KEY}
+      Ai__AllowedPrivateBaseUrls__0: ${AI_PRIVATE_BASE_URL:-}
+      ReverseProxy__KnownNetworks__0: ${TRUSTED_PROXY_NETWORK:-172.16.0.0/12}
       # Issuer/audience are opaque labels matched against themselves, not the site's domain,
       # so a domain move never requires changing them. Override only to rotate every session.
       Jwt__Issuer: ${JWT_ISSUER:-LinguaReadApi}

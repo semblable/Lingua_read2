@@ -82,18 +82,33 @@ public class WordInsertRaceTests : IDisposable
     }
 
     [Fact]
-    public async Task LinkAsync_WhenTheReaderInsertsTheSameWordFirst_LinksToItsRow()
+    public async Task LinkAsync_ConcurrentReaderSave_PreservesReaderEditAndLinkedCounts()
     {
         var options = await CreateSqliteOptions();
+        var linkerAtSave = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseLinker = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var readerAtSave = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         await using var context = new AppDbContext(
-            WithInsertBeforeFirstSave(options, () => InsertWord(options, "gato", status: 3)));
-
-        await WordLinker.LinkAsync(context, TextId, "gato perro gato", languageId: 1, UserId);
+            WithInsertBeforeFirstSave(options, async () => { linkerAtSave.SetResult(); await releaseLinker.Task; }));
+        await using var reader = new AppDbContext(WithInsertBeforeFirstSave(options, () => {
+            readerAtSave.SetResult(); return Task.CompletedTask;
+        }));
+        var linking = Task.Run(() => WordLinker.LinkAsync(context, TextId, "gato perro gato", languageId: 1, UserId));
+        await linkerAtSave.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        var saving = Task.Run(() => CreateController(reader).CreateWord(new CreateWordDto {
+            TextId = TextId, Term = "gato", Status = 3, Translation = "cat"
+        }));
+        try { await readerAtSave.Task.WaitAsync(TimeSpan.FromSeconds(10)); }
+        finally { releaseLinker.TrySetResult(); }
+        await linking.WaitAsync(TimeSpan.FromSeconds(10));
+        var saved = await saving.WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.IsType<OkObjectResult>(saved.Result);
 
         await using var check = new AppDbContext(options);
-        var words = await check.Words.OrderBy(w => w.Term).ToListAsync();
+        var words = await check.Words.Include(w => w.Translation).OrderBy(w => w.Term).ToListAsync();
         Assert.Equal(new[] { "gato", "perro" }, words.Select(w => w.Term));
         Assert.Equal(3, words[0].Status); // the reader's row, not replaced
+        Assert.Equal("cat", words[0].Translation?.Translation);
         var links = await check.TextWords.Where(tw => tw.TextId == TextId).ToListAsync();
         Assert.Equal(words.Select(w => w.WordId).Order(), links.Select(tw => tw.WordId).Order());
         Assert.Equal(2, links.Single(tw => tw.WordId == words[0].WordId).OccurrenceCount);

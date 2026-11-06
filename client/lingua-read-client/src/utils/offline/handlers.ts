@@ -2,8 +2,11 @@
 // is kept handler-agnostic so the unit tests can supply mocks; this file is the
 // single place where the real API helpers are imported.
 
-import { fetchApi } from '../api/client';
+import { fetchApi as request, type FetchApiOptions } from '../api/client';
 import type { SyncHandlers } from './syncQueue';
+
+const fetchApi = (endpoint: string, options: FetchApiOptions) =>
+  request(endpoint, { ...options, suppressAuthRedirect: true });
 
 export const productionSyncHandlers: SyncHandlers = {
   srsReview: async ({ payload }) => {
@@ -18,12 +21,9 @@ export const productionSyncHandlers: SyncHandlers = {
     });
   },
   wordStatusUpdate: async ({ payload }) => {
-    // Omit translation: a status-only replay must not overwrite the saved
-    // translation. The backend treats a missing/empty translation as
-    // "leave unchanged".
     await fetchApi(`/words/${payload.wordId}`, {
       method: 'PUT',
-      body: JSON.stringify({ status: payload.status }),
+      body: JSON.stringify({ status: payload.status, ...(payload.translation !== undefined ? { translation: payload.translation } : {}) }),
     });
   },
   wordCreate: async ({ payload }) => {
@@ -34,7 +34,9 @@ export const productionSyncHandlers: SyncHandlers = {
         textId: payload.textId,
         term: payload.term,
         status: payload.status ?? 1,
-        translation: payload.translation ?? '',
+        ...(payload.translation !== undefined ? { translation: payload.translation } : {}),
+        sentence: payload.sentence,
+        ...(payload.replaceExisting ? { replaceExisting: true } : {}),
       }),
     });
   },

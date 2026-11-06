@@ -4,6 +4,10 @@ import { groupTranscriptCues, transcriptCueSeparator } from '../utils/audioTrans
 const cues = (...texts: string[]) => texts.map((text, index) => ({ id: index + 1, startTime: index * 2, endTime: index * 2 + 2, text }));
 
 describe('transcript paragraph grouping', () => {
+  test.each(['zh', 'ja'])('joins CJK quotation boundaries without extra spaces (%s)', code => {
+    expect(transcriptCueSeparator('他说', '「你好」', code)).toBe('');
+    expect(transcriptCueSeparator('「你好」', '然后', code)).toBe('');
+  });
   test('cue layout keeps each nonempty cue on its own row', () => {
     const result = groupTranscriptCues(cues('Uma história que', 'continua aqui.', '', 'Outra frase.'), 'pt', 'cues');
     expect(result.paragraphs.map(paragraph => paragraph.cues.map(cue => cue.text)))

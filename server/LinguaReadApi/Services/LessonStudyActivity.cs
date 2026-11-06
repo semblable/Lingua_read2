@@ -85,17 +85,34 @@ public static class LessonStudyActivity
             await context.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock(hashtextextended({userId.ToString()}, 0))");
     }
 
-    public static async Task<T> AtomicAsync<T>(AppDbContext context, Guid userId, Func<Task<T>> action) =>
-        await context.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
+    public static async Task<T> AtomicAsync<T>(AppDbContext context, Guid userId, Func<Task<T>> action)
+    {
+        for (var attempt = 1; ; attempt++)
         {
-            context.ChangeTracker.Clear();
-            await using var transaction = context.Database.IsRelational()
-                ? await context.Database.BeginTransactionAsync(IsolationLevel.Serializable) : null;
-            await LockAsync(context, userId);
-            var result = await action();
-            if (transaction != null) await transaction.CommitAsync();
-            return result;
-        });
+            try
+            {
+                return await context.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
+                {
+                    context.ChangeTracker.Clear();
+                    await using var transaction = context.Database.IsRelational()
+                        ? await context.Database.BeginTransactionAsync(IsolationLevel.Serializable) : null;
+                    await LockAsync(context, userId);
+                    var result = await action();
+                    if (transaction != null) await transaction.CommitAsync();
+                    return result;
+                });
+            }
+            catch (DbUpdateException ex) when (attempt < 3 && context.Database.IsRelational() &&
+                ex.InnerException is Npgsql.PostgresException { SqlState: "23505", ConstraintName: "IX_Words_UserId_LanguageId_Term" })
+            {
+                // A concurrent vocabulary save can win the probe/insert race.
+                // A Serializable snapshot cannot see that row after a savepoint
+                // rollback: retry the entire owner operation in a new transaction.
+                // The await-using above has disposed/rolled back before this catch.
+                context.ChangeTracker.Clear();
+            }
+        }
+    }
 
     public static LessonStudyEvent Record(AppDbContext context, Guid userId, int textId, string title,
         int languageId, string content, string? audioPath, string? clientEventId, string kind,

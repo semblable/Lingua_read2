@@ -36,7 +36,7 @@ export const getTextSrt = async (textId: number | string): Promise<string> => {
 };
 
 export const getWordLinkingStatus = (textId: number | string): Promise<WordLinkingStatus> => {
-  return fetchApi<WordLinkingStatus>(`/texts/${textId}/word-linking-status`);
+  return fetchApi<WordLinkingStatus>(`/texts/${textId}/word-linking-status`, { suppressAuthRedirect: true });
 };
 
 export const getRecentTexts = (): Promise<RecentTexts> => {

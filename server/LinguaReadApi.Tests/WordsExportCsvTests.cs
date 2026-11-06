@@ -17,6 +17,19 @@ namespace LinguaReadApi.Tests;
 public class WordsExportCsvTests
 {
     [Theory]
+    [InlineData("simple")]
+    [InlineData("context")]
+    public async Task CsvExports_IncludeUtf8Bom_AndPreserveMultilingualTerms(string format)
+    {
+        await using var context = CreateContext();
+        var user = Seed(context);
+        (await context.Words.SingleAsync(w => w.WordId == 1)).Term = "中文 русский café";
+        await context.SaveChangesAsync();
+        var bytes = (await Export(context, user, format: format)).FileContents;
+        Assert.Equal(new byte[] { 0xEF, 0xBB, 0xBF }, bytes.Take(3).ToArray());
+        Assert.Contains("中文 русский café", Encoding.UTF8.GetString(bytes));
+    }
+    [Theory]
     [InlineData("=1+1")]
     [InlineData("+cmd")]
     [InlineData("-cmd")]
@@ -78,7 +91,7 @@ public class WordsExportCsvTests
     }
 
     private static string Lines(params string[] lines) =>
-        string.Concat(lines.Select(l => l + Environment.NewLine));
+        "\uFEFF" + string.Concat(lines.Select(l => l + Environment.NewLine));
 
     private static async Task<FileContentResult> Export(AppDbContext context, Guid userId, int? languageId = null, string? status = null, string format = "simple")
     {
@@ -222,6 +235,7 @@ public class WordsExportCsvTests
 
     private static List<string[]> ParseCsv(string csv)
     {
+        csv = csv.TrimStart('\uFEFF');
         using var parser = new TextFieldParser(new StringReader(csv)) { HasFieldsEnclosedInQuotes = true, TrimWhiteSpace = false };
         parser.SetDelimiters(",");
         var rows = new List<string[]>();

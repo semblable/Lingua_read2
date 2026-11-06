@@ -1,11 +1,18 @@
 import { handleUnauthorized } from '../utils/api/client';
 import { clearOfflineCaches } from '../utils/offline/cleanup';
+import { loginReturnPath } from '../utils/helpers';
 
 vi.mock('../utils/offline/cleanup', () => ({
   clearOfflineCaches: vi.fn(async () => {}),
 }));
 
 describe('handleUnauthorized', () => {
+  test.each(['https://example.com', '//example.com', '/\\example.com', '/login', '/login?redirect=/login'])('rejects unsafe login return paths: %s', path => {
+    expect(loginReturnPath(`?redirect=${encodeURIComponent(path)}`)).toBe('/');
+  });
+  test('preserves the reader path, query and fragment after login', () => {
+    expect(loginReturnPath('?redirect=%2Ftexts%2F7%3Fmode%3Daudio%23cue-3')).toBe('/texts/7?mode=audio#cue-3');
+  });
   let originalLocation;
   let hrefSetter;
 
@@ -36,7 +43,7 @@ describe('handleUnauthorized', () => {
   test('clears caches and redirects to /login when called from a non-login page', () => {
     handleUnauthorized();
     expect(clearOfflineCaches).toHaveBeenCalledTimes(1);
-    expect(hrefSetter).toHaveBeenCalledWith('/login');
+    expect(hrefSetter).toHaveBeenCalledWith('/login?redirect=%2Fdashboard');
   });
 
   test('does nothing when already on /login (no redirect loop)', () => {
@@ -62,7 +69,7 @@ describe('handleUnauthorized', () => {
     // The redirect runs synchronously after the cleanup is *kicked off*, not
     // after it resolves. This keeps the redirect from being held up if the
     // IndexedDB / Cache Storage clear stalls.
-    expect(hrefSetter).toHaveBeenCalledWith('/login');
+    expect(hrefSetter).toHaveBeenCalledWith('/login?redirect=%2Fdashboard');
     expect(clearOfflineCaches).toHaveBeenCalledTimes(1);
 
     // Tidy up the pending promise so vitest doesn't warn about it.

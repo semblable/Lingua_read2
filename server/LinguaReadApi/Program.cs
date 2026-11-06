@@ -124,7 +124,7 @@ builder.Services.AddIdentity<LinguaReadApi.Models.User, IdentityRole<Guid>>(opti
     // Configure identity options if needed (e.g., password requirements)
     options.SignIn.RequireConfirmedAccount = false; // Adjust as needed
     options.Password.RequireDigit = false;
-    options.Password.RequiredLength = 6;
+    options.Password.RequiredLength = 12;
     options.Password.RequireNonAlphanumeric = false;
     options.Password.RequireUppercase = false;
     options.Password.RequireLowercase = false;
@@ -135,6 +135,19 @@ builder.Services.AddIdentity<LinguaReadApi.Models.User, IdentityRole<Guid>>(opti
 // --- Remove the two duplicate AddIdentity blocks ---
 // Register HttpClient
 builder.Services.AddHttpClient();
+builder.Services.AddHttpClient("AiProvider").ConfigurePrimaryHttpMessageHandler(() =>
+{
+    var handler = LinguaReadApi.Services.News.PublicAddressGuard.CreateHandler();
+    handler.AllowAutoRedirect = false;
+    return handler;
+});
+// Only operator-configured exact base URLs may reach local model servers.
+// Never follow redirects from these trusted endpoints to another destination.
+builder.Services.AddHttpClient("PrivateAiProvider").ConfigurePrimaryHttpMessageHandler(() =>
+    new SocketsHttpHandler { AllowAutoRedirect = false, UseProxy = false,
+        ConnectTimeout = TimeSpan.FromSeconds(10), PooledConnectionLifetime = TimeSpan.FromMinutes(5) });
+builder.Services.AddHttpClient("HardcoverCover")
+    .ConfigurePrimaryHttpMessageHandler(LinguaReadApi.Services.News.PublicAddressGuard.CreateHandler);
 // Reports carry learner data: refuse redirects and private/reserved destination IPs,
 // including DNS rebinding. Relay host names also require an operator allowlist.
 builder.Services.AddHttpClient("ReportWebhook", client => client.Timeout = TimeSpan.FromSeconds(20))
@@ -365,6 +378,10 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
+// Check after the host is built so test-host configuration overrides apply too.
+if (!app.Environment.IsEnvironment("Testing"))
+    JwtKeyValidation.Validate(app.Configuration["Jwt:Key"]);
+
 // Static hook (not DI) because the EF value converter lives in the cached model,
 // which outlives any single scoped context.
 var secretProtectorLogger = app.Services
@@ -383,15 +400,7 @@ app.Lifetime.ApplicationStopped.Register(() =>
     }
 });
 
-// Trust reverse-proxy headers (Nginx) when deployed behind a proxy.
-// NOTE: We clear known networks/proxies so this works in containerized environments.
-var forwardedHeaderOptions = new ForwardedHeadersOptions
-{
-    ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
-};
-forwardedHeaderOptions.KnownIPNetworks.Clear(); // .NET 10: KnownNetworks is obsolete, replaced by KnownIPNetworks
-forwardedHeaderOptions.KnownProxies.Clear();
-app.UseForwardedHeaders(forwardedHeaderOptions);
+app.UseForwardedHeaders(ProxyTrust.CreateOptions(app.Configuration));
 
 // Before anything that writes a response body (API JSON and static files alike).
 app.UseResponseCompression();

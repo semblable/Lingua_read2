@@ -10,6 +10,7 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Configuration;
 
 namespace LinguaReadApi.Services.Ai
 {
@@ -35,15 +36,27 @@ namespace LinguaReadApi.Services.Ai
         private static readonly Regex LeadingThinkBlock = new(@"^\s*<think>.*?</think>\s*", RegexOptions.Singleline | RegexOptions.Compiled);
 
         private readonly HttpClient _httpClient;
+        private readonly HttpClient _privateHttpClient;
+        private readonly HashSet<string> _privateBaseUrls;
         private readonly ILogger<OpenAiCompatibleChatClient> _logger;
 
-        public OpenAiCompatibleChatClient(IHttpClientFactory httpClientFactory, ILogger<OpenAiCompatibleChatClient> logger)
+        public OpenAiCompatibleChatClient(IHttpClientFactory httpClientFactory, ILogger<OpenAiCompatibleChatClient> logger,
+            IConfiguration? configuration = null)
         {
-            _httpClient = httpClientFactory.CreateClient();
+            _httpClient = httpClientFactory.CreateClient("AiProvider");
+            _privateHttpClient = httpClientFactory.CreateClient("PrivateAiProvider");
+            _privateHttpClient.Timeout = Timeout.InfiniteTimeSpan;
+            _privateBaseUrls = (configuration?.GetSection("Ai:AllowedPrivateBaseUrls").Get<string[]>() ?? [])
+                .Select(url => AiProviderCatalog.TryNormalizeBaseUrl(url, out var normalized, out _) ? normalized : null)
+                .OfType<string>().ToHashSet(StringComparer.Ordinal);
             // Each attempt gets its own timeout (see SendOnceAsync).
             _httpClient.Timeout = Timeout.InfiniteTimeSpan;
             _logger = logger;
         }
+
+        private HttpClient ClientFor(AiProviderConnection connection) =>
+            connection.Definition.RequiresBaseUrl && _privateBaseUrls.Contains(connection.BaseUrl)
+                ? _privateHttpClient : _httpClient;
 
         /// <summary>Waits between retries. Replaced in tests.</summary>
         internal Func<TimeSpan, CancellationToken, Task> Delay { get; set; } = Task.Delay;
@@ -133,7 +146,7 @@ namespace LinguaReadApi.Services.Ai
             };
             AddHeaders(request, connection);
 
-            var response = await _httpClient.SendAsync(request, timeoutCts.Token);
+            var response = await ClientFor(connection).SendAsync(request, timeoutCts.Token);
             try
             {
                 var body = await response.Content.ReadAsStringAsync(timeoutCts.Token);
@@ -156,7 +169,7 @@ namespace LinguaReadApi.Services.Ai
                 using var request = new HttpRequestMessage(HttpMethod.Get, connection.ModelsUrl);
                 AddHeaders(request, connection);
 
-                using var response = await _httpClient.SendAsync(request, timeoutCts.Token);
+                using var response = await ClientFor(connection).SendAsync(request, timeoutCts.Token);
                 var body = await response.Content.ReadAsStringAsync(timeoutCts.Token);
                 if (!response.IsSuccessStatusCode)
                 {

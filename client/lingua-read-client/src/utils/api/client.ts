@@ -4,6 +4,7 @@
 // `import { ... } from '../utils/api'` unchanged.
 
 import { clearOfflineCaches } from '../offline/cleanup';
+import { notifyOfflineEvent } from '../offline/events';
 
 // Dynamically set API URL based on platform.
 //
@@ -26,7 +27,8 @@ export const API_URL = isWeb ? WEB_API_BASE_URL : MOBILE_API_BASE_URL;
 export const handleUnauthorized = (): void => {
   if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
     void clearOfflineCaches();
-    window.location.href = '/login';
+    const returnPath = window.location.pathname + (window.location.search || '') + (window.location.hash || '');
+    window.location.href = `/login?redirect=${encodeURIComponent(returnPath)}`;
   }
 };
 
@@ -111,6 +113,7 @@ export const uploadWithProgress = (
 
 export type FetchApiOptions = Omit<RequestInit, 'headers'> & {
   headers?: Record<string, string>;
+  suppressAuthRedirect?: boolean;
 };
 
 export class ApiError extends Error {
@@ -129,6 +132,7 @@ export const fetchApi = async <T = unknown>(
   endpoint: string,
   options: FetchApiOptions = {}
 ): Promise<T> => {
+  const { suppressAuthRedirect, ...requestOptions } = options;
   if (!endpoint.startsWith('/')) {
     endpoint = '/' + endpoint;
   }
@@ -145,7 +149,7 @@ export const fetchApi = async <T = unknown>(
     }
 
     const requestConfig: RequestInit = {
-      ...options,
+      ...requestOptions,
       headers,
       credentials: 'include',
       mode: 'cors'
@@ -155,7 +159,8 @@ export const fetchApi = async <T = unknown>(
     const response = await fetch(fullUrl.toString(), requestConfig);
 
     if (response.status === 401) {
-      handleUnauthorized();
+      if (suppressAuthRedirect) notifyOfflineEvent('auth-required');
+      else handleUnauthorized();
       throw new ApiError('Authentication required', 401);
     }
 

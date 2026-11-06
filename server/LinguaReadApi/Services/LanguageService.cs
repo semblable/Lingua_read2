@@ -236,6 +236,11 @@ namespace LinguaReadApi.Services
                 await using var transaction = await _context.Database.BeginTransactionAsync();
                 await LessonStudyActivity.LockAsync(_context, userId);
 
+                // Scoped goals refer to the history being deliberately erased. Keep
+                // them as archived records, and let future goals start at zero.
+                await _context.UserGoals.Where(g => g.UserId == userId && g.LanguageId == languageId && g.ArchivedAt == null)
+                    .ExecuteUpdateAsync(update => update.SetProperty(g => g.ArchivedAt, DateTime.UtcNow));
+
                 // The ExecuteDeleteAsync calls below bypass the change tracker, so nothing can tell
                 // afterwards which rows existed. Capture the media identities now and clean the disk
                 // up after the commit.
@@ -307,6 +312,22 @@ namespace LinguaReadApi.Services
                     .Where(e => e.UserId == userId && e.LanguageId == languageId
                                 && !(e.Kind == "time" && e.SourceTextId == 0 && !e.CountsTowardStatistics))
                     .ExecuteDeleteAsync();
+
+                // All-language goals still apply. Cap their baseline at the remaining
+                // metric so this explicit reset cannot manufacture negative progress.
+                var globalGoals = await _context.UserGoals.Where(g => g.UserId == userId && g.LanguageId == null &&
+                    g.Mode == GoalMode.Delta && g.ArchivedAt == null && g.CompletedAt == null).ToListAsync();
+                var goalProgress = new GoalProgressService(_context);
+                foreach (var group in globalGoals.GroupBy(g => g.GoalType))
+                {
+                    var metric = await goalProgress.SnapshotMetricAsync(userId, group.Key, null);
+                    foreach (var goal in group)
+                    {
+                        goal.BaselineValue = Math.Min(goal.BaselineValue, metric);
+                        if (goal.CurrentPeriodBaseline.HasValue) goal.CurrentPeriodBaseline = Math.Min(goal.CurrentPeriodBaseline.Value, metric);
+                    }
+                }
+                await _context.SaveChangesAsync();
 
                 await transaction.CommitAsync();
 

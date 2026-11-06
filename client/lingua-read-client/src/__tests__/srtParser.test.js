@@ -27,6 +27,12 @@ describe('parseSrtTime', () => {
 });
 
 describe('parseSrtContent', () => {
+  test('preserves arrows and numeric dialogue in zero-start cues and accepts dot timestamps', () => {
+    expect(parseSrtContent('1\n00:00:00.000-->00:00:02.500\nA --> B\n1984\n\n2\n00:00:02,500 --> 00:00:03,000\nNext.'))
+      .toEqual([{ id: 1, startTime: 0, endTime: 2.5, text: 'A --> B\n1984' },
+        { id: 2, startTime: 2.5, endTime: 3, text: 'Next.' }]);
+    expect(parseSrtContent('1\nNo timing line.')).toEqual([]);
+  });
   test('parses standard SRT with trailing blank line', () => {
     const srt = `1
 00:00:00,000 --> 00:00:02,000

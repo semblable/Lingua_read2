@@ -21,6 +21,34 @@ const flushEffects = async () => {
 };
 
 describe('useAudiobookPlayer', () => {
+  test('restores the saved position only after the target track loads', async () => {
+    let resolveProgress;
+    getAudiobookProgress.mockReturnValue(new Promise(resolve => { resolveProgress = resolve; }));
+    const audio = document.createElement('audio');
+    Object.defineProperty(audio, 'readyState', { configurable: true, value: 1 });
+    const audioRef = { current: audio };
+    const seeks = [];
+    let currentTime = 0;
+    Object.defineProperty(audio, 'currentTime', { configurable: true, get: () => currentTime,
+      set: value => { currentTime = value; seeks.push([audio.src, value]); } });
+    audio.load = vi.fn(() => { currentTime = 0; Object.defineProperty(audio, 'readyState', { configurable: true, value: 0 }); });
+    const book = { bookId: 17, audiobookTracks: [
+      { trackId: 1, title: '1', filePath: 'https://example.com/one.mp3' },
+      { trackId: 2, title: '2', filePath: 'https://example.com/two.mp3' },
+    ] };
+    const { result } = renderHook(() => useAudiobookPlayer({ type: 'book', book, audioRef }));
+    await flushEffects();
+    Object.defineProperty(audio, 'readyState', { configurable: true, value: 1 });
+    await act(async () => resolveProgress({ currentAudiobookTrackId: 2, currentAudiobookPosition: 330 }));
+    expect(result.current.currentTrackIndex).toBe(1);
+    expect(seeks).toEqual([]);
+    act(() => {
+      Object.defineProperty(audio, 'readyState', { configurable: true, value: 1 });
+      audio.dispatchEvent(new Event('loadedmetadata'));
+    });
+    expect(seeks).toEqual([['https://example.com/two.mp3', 330]]);
+    expect(audio.currentTime).toBe(330);
+  });
   beforeEach(() => {
     window.HTMLMediaElement.prototype.play = vi.fn().mockResolvedValue();
     window.HTMLMediaElement.prototype.pause = vi.fn();

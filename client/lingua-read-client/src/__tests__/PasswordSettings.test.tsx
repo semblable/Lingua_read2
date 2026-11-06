@@ -9,10 +9,10 @@ test('password change submits current password, clears secrets, and explains rev
   vi.mocked(fetchApi).mockResolvedValue({});
   render(<PasswordSettings />);
   fireEvent.change(screen.getByLabelText('Current password'), { target: { value: 'old-fixture' } });
-  fireEvent.change(screen.getByLabelText('New password'), { target: { value: 'new-fixture' } });
+  fireEvent.change(screen.getByLabelText('New password'), { target: { value: 'new-fixture-long' } });
   fireEvent.click(screen.getByRole('button', { name: 'Change password' }));
   await screen.findByText('Password changed. Other sessions have been signed out.');
-  expect(fetchApi).toHaveBeenCalledWith('/auth/change-password', { method: 'POST', body: JSON.stringify({ currentPassword: 'old-fixture', newPassword: 'new-fixture' }) });
+  expect(fetchApi).toHaveBeenCalledWith('/auth/change-password', { method: 'POST', body: JSON.stringify({ currentPassword: 'old-fixture', newPassword: 'new-fixture-long' }) });
   expect(screen.getByLabelText('Current password')).toHaveValue('');
   expect(screen.getByLabelText('New password')).toHaveValue('');
 });
@@ -21,7 +21,7 @@ test('failed password change displays the server error and permits a retry', asy
   vi.mocked(fetchApi).mockRejectedValue(new Error('Current password is incorrect.'));
   render(<PasswordSettings />);
   fireEvent.change(screen.getByLabelText('Current password'), { target: { value: 'wrong-fixture' } });
-  fireEvent.change(screen.getByLabelText('New password'), { target: { value: 'new-fixture' } });
+  fireEvent.change(screen.getByLabelText('New password'), { target: { value: 'new-fixture-long' } });
   fireEvent.click(screen.getByRole('button', { name: 'Change password' }));
   await screen.findByText('Current password is incorrect.');
   await waitFor(() => expect(screen.getByRole('button', { name: 'Change password' })).not.toBeDisabled());

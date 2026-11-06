@@ -27,7 +27,7 @@ describe('Setup', () => {
     expect(screen.getByRole('button', { name: /set password/i })).toBeInTheDocument();
   });
 
-  test('rejects password under 6 characters', async () => {
+  test('rejects password under 12 characters', async () => {
     renderSetup();
 
     fireEvent.change(screen.getByPlaceholderText('Choose a password'), {
@@ -39,7 +39,7 @@ describe('Setup', () => {
     fireEvent.click(screen.getByRole('button', { name: /set password/i }));
 
     await waitFor(() =>
-      expect(screen.getByText('Password must be at least 6 characters.')).toBeInTheDocument()
+      expect(screen.getByText('Password must be at least 12 characters.')).toBeInTheDocument()
     );
     expect(mockSetup).not.toHaveBeenCalled();
   });
@@ -48,10 +48,10 @@ describe('Setup', () => {
     renderSetup();
 
     fireEvent.change(screen.getByPlaceholderText('Choose a password'), {
-      target: { value: 'password123' }
+      target: { value: 'password1234' }
     });
     fireEvent.change(screen.getByPlaceholderText('Confirm your password'), {
-      target: { value: 'password456' }
+      target: { value: 'password4567' }
     });
     fireEvent.click(screen.getByRole('button', { name: /set password/i }));
 

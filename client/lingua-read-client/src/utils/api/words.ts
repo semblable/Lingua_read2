@@ -1,6 +1,6 @@
 import { fetchApi, fetchApiDownload } from './client';
 import type { ResponseOf } from '../fetchApi';
-import { enqueueIfOffline } from '../offline/enqueueIfOffline';
+import { enqueueIfOffline, isOfflineQueued } from '../offline/enqueueIfOffline';
 import { lowercaseLookupTerm } from '../readerText';
 
 export type Word = ResponseOf<'/api/Words/{id}', 'get'>;
@@ -22,7 +22,8 @@ export const createWord = async (
       textId: parseInt(String(textId), 10),
       term: term.trim(),
       status: parseInt(String(status), 10),
-      translation: translation || '',
+      ...(translation != null ? { translation } : {}),
+      replaceExisting: true,
       sentence
     };
 
@@ -31,7 +32,7 @@ export const createWord = async (
     // the server can recover languageId at replay time — sending textId=0
     // (the previous default) would fail validation on the server and trap
     // the op in the queue forever.
-    return await enqueueIfOffline(
+    const result = await enqueueIfOffline(
       {
         type: 'wordCreate',
         payload: {
@@ -39,6 +40,8 @@ export const createWord = async (
           term: payload.term,
           translation: payload.translation,
           status: payload.status,
+          sentence,
+          replaceExisting: true,
         },
       },
       () => fetchApi('/words', {
@@ -47,8 +50,14 @@ export const createWord = async (
           'Content-Type': 'application/json; charset=utf-8'
         },
         body: JSON.stringify(payload)
-      })
+      }),
+      `wordCreate:${payload.textId}:${payload.term}`
     );
+    // A queued create has no server ID yet. Keep it addressable by term in the
+    // reader; subsequent saves upsert the same term instead of PUTting a fake ID.
+    return isOfflineQueued(result)
+      ? { ...payload, wordId: 0, offline: true, queuedOp: result.queuedOp }
+      : result;
   } catch (error) {
     console.error('Error in createWord:', error);
     throw error;
@@ -66,20 +75,21 @@ export const updateWord = async (
 
     const payload = {
       status,
-      translation: translation ?? ''
+      ...(translation != null ? { translation } : {})
     };
 
-    // Offline replay: queue only the status change (translation edits are
-    // rarer and tend to need the network for AI suggestions anyway).
+    // Persist the complete edit; omitted translations remain unchanged.
     return await enqueueIfOffline(
       {
         type: 'wordStatusUpdate',
-        payload: { wordId: parseInt(String(wordId), 10), status: parseInt(String(status), 10) },
+        payload: { wordId: parseInt(String(wordId), 10), status: parseInt(String(status), 10),
+          ...(translation != null ? { translation } : {}) },
       },
       () => fetchApi(`/words/${wordId}`, {
         method: 'PUT',
         body: JSON.stringify(payload)
-      })
+      }),
+      `wordStatus:${wordId}`
     );
   } catch (error) {
     console.error('Error in updateWord:', error);

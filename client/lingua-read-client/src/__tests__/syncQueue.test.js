@@ -1,4 +1,5 @@
 import 'fake-indexeddb/auto';
+import { forceCloseDatabase } from 'fake-indexeddb';
 import '@testing-library/jest-dom';
 import {
   enqueue,
@@ -12,6 +13,7 @@ import {
 import { enqueueIfOffline } from '../utils/offline/enqueueIfOffline';
 import { ApiError, fetchApi } from '../utils/api/client';
 import { clearOfflineState } from '../utils/offline/cleanup';
+import { productionSyncHandlers } from '../utils/offline/handlers';
 
 // Full handler set including the listening/position/reading-progress ops added
 // for offline resilience. Tests override individual handlers as needed.
@@ -60,6 +62,20 @@ const installFakeLocks = ({ granted }) => {
 };
 
 describe('syncQueue', () => {
+  test('reopens after an initialization error and an unexpected connection close', async () => {
+    _closeDbForTests();
+    const open = vi.spyOn(indexedDB, 'open');
+    open.mockImplementationOnce(() => { throw new DOMException('Storage temporarily unavailable', 'UnknownError'); });
+    try {
+      await expect(pending()).rejects.toThrow('Storage temporarily unavailable');
+      await enqueue({ type: 'srsReview', payload: { cardId: 99, grade: 2 } });
+      const request = open.mock.results.at(-1).value;
+      forceCloseDatabase(request.result);
+      await new Promise(resolve => setTimeout(resolve, 0));
+      expect(await pending()).toBe(1);
+      expect(open).toHaveBeenCalledTimes(3);
+    } finally { open.mockRestore(); }
+  });
   beforeEach(async () => {
     // Reset the IndexedDB state between tests.
     setOnline(true);
@@ -269,15 +285,15 @@ describe('syncQueue', () => {
     });
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('', { status: 401 }));
     const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {});
-    const handlers = fullHandlers({ srsReview: () => fetchApi('/srs/review', { method: 'POST' }) });
+    const handlers = productionSyncHandlers;
     try {
       const before = await listPending();
-      expect(await drain(handlers)).toEqual({ attempted: 1, succeeded: 0, failed: 1 });
-      expect(redirect).toHaveBeenCalledWith('/login');
+      expect(await drain(handlers)).toEqual({ attempted: 1, succeeded: 0, failed: 1, authRequired: true });
+      expect(redirect).not.toHaveBeenCalled();
       // Let asynchronous cache cleanup finish too: it must never touch the queue.
       await new Promise(resolve => setTimeout(resolve, 0));
       expect(await listPending()).toEqual(before);
-      fetchMock.mockResolvedValue(new Response('{}', { headers: { 'content-type': 'application/json' } }));
+      fetchMock.mockImplementation(async () => new Response('{}', { headers: { 'content-type': 'application/json' } }));
       expect(await drain(handlers)).toEqual({ attempted: 2, succeeded: 2, failed: 0 });
       expect(await pending()).toBe(0);
       await enqueue({ type: 'srsReview', payload: { cardId: 701, grade: 2 } });

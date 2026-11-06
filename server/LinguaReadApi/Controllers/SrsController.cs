@@ -656,7 +656,9 @@ namespace LinguaReadApi.Controllers
                 MaxReviews = maxReviews,
                 StudiedNewCardsToday = studiedNew,
                 StudiedReviewsToday = studiedReviews,
-                CurrentStreak = settings?.SrsCurrentStreak ?? 0,
+                CurrentStreak = StudyDay(settings) is { } lastStudyDay &&
+                    lastStudyDay >= day.Today.AddDays(-1)
+                    ? settings?.SrsCurrentStreak ?? 0 : 0,
                 LongestStreak = settings?.SrsLongestStreak ?? 0,
                 RetentionRate = retentionRate
             };

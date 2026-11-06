@@ -16,6 +16,27 @@ namespace LinguaReadApi.Tests;
 
 public class AuthControllerTests
 {
+    [Fact]
+    public async Task Login_LocksAfterFiveFailures_AndResetsAfterExpiryAndSuccess()
+    {
+        await using var context = CreateContext();
+        var user = SeedDefaultUser(context);
+        user.PasswordHash = new PasswordHasher<User>().HashPassword(user, TestPassword);
+        await context.SaveChangesAsync();
+        var controller = CreateController(context);
+        for (var i = 0; i < 5; i++)
+            Assert.IsType<UnauthorizedObjectResult>(await controller.Login(new LoginRequest { Password = "wrong" }));
+        Assert.IsType<UnauthorizedObjectResult>(await controller.Login(new LoginRequest { Password = TestPassword }));
+        user = await context.Users.FindAsync(DefaultUserId);
+        Assert.Equal(5, user!.AccessFailedCount);
+        Assert.True(user.LockoutEnd > DateTimeOffset.UtcNow);
+        user.LockoutEnd = DateTimeOffset.UtcNow.AddSeconds(-1);
+        await context.SaveChangesAsync();
+        Assert.IsType<OkObjectResult>(await controller.Login(new LoginRequest { Password = TestPassword }));
+        user = await context.Users.FindAsync(DefaultUserId);
+        Assert.Equal(0, user!.AccessFailedCount);
+        Assert.Null(user.LockoutEnd);
+    }
     private static readonly Guid DefaultUserId = new("a1a1a1a1-b2b2-c3c3-d4d4-e5e5e5e5e5e5");
     private const string TestPassword = "SecurePass123";
     private const string TestJwtKey = "this-is-a-test-jwt-key-that-is-at-least-32-bytes-long-for-hmac-sha256!!";
@@ -239,7 +260,7 @@ public class AuthControllerTests
         var result = await controller.Setup(new SetupRequest { Password = "12345" });
 
         var bad = Assert.IsType<BadRequestObjectResult>(result);
-        Assert.Contains("at least 6 characters", GetMessage(bad.Value));
+        Assert.Contains("at least 12 characters", GetMessage(bad.Value));
     }
 
     [Fact]

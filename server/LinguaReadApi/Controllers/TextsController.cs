@@ -386,6 +386,7 @@ namespace LinguaReadApi.Controllers
                 LanguageId = createTextDto.LanguageId,
                 UserId = userId,
                 FolderId = createTextDto.FolderId,
+                SortOrder = await LibrarySortOrder.MaxAsync(_context, userId, createTextDto.FolderId) + 1,
                 Tag = createTextDto.Tag, // Assign the tag
                 CreatedAt = DateTime.UtcNow,
                 LastAccessedAt = null, // Explicitly null on creation
@@ -510,6 +511,7 @@ namespace LinguaReadApi.Controllers
                     LanguageId = createAudioLessonDto.LanguageId,
                     UserId = userId,
                     FolderId = createAudioLessonDto.FolderId,
+                    SortOrder = await LibrarySortOrder.MaxAsync(_context, userId, createAudioLessonDto.FolderId) + 1,
                     CreatedAt = DateTime.UtcNow,
                     IsAudioLesson = true,
                     AudioFilePath = audioFilePath,
@@ -680,6 +682,7 @@ namespace LinguaReadApi.Controllers
                             LanguageId = dto.LanguageId,
                             UserId = userId,
                             FolderId = dto.FolderId,
+                            SortOrder = await LibrarySortOrder.MaxAsync(_context, userId, dto.FolderId) + 1,
                             CreatedAt = DateTime.UtcNow,
                             IsAudioLesson = true,
                             AudioFilePath = audioFilePath,
@@ -976,9 +979,8 @@ namespace LinguaReadApi.Controllers
                  }
             }
 
-            var relinkProfiledText = text.SegmentationProfile != null &&
-                (text.Content != updateTextDto.Content || languageChanged);
-            if (relinkProfiledText)
+            var needsRelinking = text.Content != updateTextDto.Content || languageChanged;
+            if (needsRelinking)
             {
                 // Content and its boundary-dependent links form one revision.
                 // Refetch after AtomicAsync clears tracking, and roll everything

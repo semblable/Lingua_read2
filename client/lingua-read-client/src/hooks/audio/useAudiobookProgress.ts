@@ -45,12 +45,12 @@ export type UseAudiobookProgressArgs = {
 export type UseAudiobookProgressResult = {
   saveProgress: (force?: boolean) => Promise<void>;
   saveProgressRef: React.MutableRefObject<((force?: boolean) => Promise<void>) | null>;
-  queueInitialSeek: (position: number) => boolean;
+  queueInitialSeek: (position: number, targetTrackIndex?: number, initial?: boolean) => boolean;
   applyInitialSeekIfReady: (audio: HTMLAudioElement | null) => boolean;
   restoredContentKeyRef: React.MutableRefObject<string>;
   playbackStartedContentKeyRef: React.MutableRefObject<string>;
   userPositionIntentContentKeyRef: React.MutableRefObject<string>;
-  initialSeekRef: React.MutableRefObject<number | null>;
+  initialSeekRef: React.MutableRefObject<{ position: number; trackIndex: number; initial: boolean } | null>;
   lastServerUpdateRef: React.MutableRefObject<number | null>;
   justStartedPlayingRef: React.MutableRefObject<boolean>;
 };
@@ -78,41 +78,43 @@ export const useAudiobookProgress = ({
   const restoredContentKeyRef = useRef('');
   const playbackStartedContentKeyRef = useRef('');
   const userPositionIntentContentKeyRef = useRef('');
-  const initialSeekRef = useRef<number | null>(null);
+  const initialSeekRef = useRef<{ position: number; trackIndex: number; initial: boolean } | null>(null);
   const lastServerUpdateRef = useRef<number | null>(null);
   const justStartedPlayingRef = useRef(false);
 
   const applyInitialSeekIfReady = useCallback((audio: HTMLAudioElement | null) => {
     if (!audio || initialSeekRef.current == null) return false;
+    const pending = initialSeekRef.current;
 
     if (
-      restoredContentKeyRef.current === contentKey ||
+      pending.initial && (restoredContentKeyRef.current === contentKey ||
       userPositionIntentContentKeyRef.current === contentKey ||
-      playbackStartedContentKeyRef.current === contentKey
+      playbackStartedContentKeyRef.current === contentKey)
     ) {
       initialSeekRef.current = null;
       return false;
     }
 
-    audio.currentTime = initialSeekRef.current;
-    setCurrentTime(initialSeekRef.current);
+    if (audio.readyState < 1 || latestPlaybackStateRef.current.currentTrackIndex !== pending.trackIndex) return false;
+    audio.currentTime = pending.position;
+    setCurrentTime(pending.position);
     restoredContentKeyRef.current = contentKey;
     initialSeekRef.current = null;
     return true;
-  }, [contentKey, setCurrentTime]);
+  }, [contentKey, latestPlaybackStateRef, setCurrentTime]);
 
-  const queueInitialSeek = useCallback((position: number) => {
-    if (!Number.isFinite(position) || position <= 0) return false;
+  const queueInitialSeek = useCallback((position: number, targetTrackIndex = latestPlaybackStateRef.current.currentTrackIndex, initial = true) => {
+    if (!Number.isFinite(position) || position < 0) return false;
 
     if (
-      restoredContentKeyRef.current === contentKey ||
+      initial && (restoredContentKeyRef.current === contentKey ||
       userPositionIntentContentKeyRef.current === contentKey ||
-      playbackStartedContentKeyRef.current === contentKey
+      playbackStartedContentKeyRef.current === contentKey)
     ) {
       return false;
     }
 
-    initialSeekRef.current = position;
+    initialSeekRef.current = { position, trackIndex: targetTrackIndex, initial };
     setCurrentTime(position);
 
     const audio = audioRef.current;
@@ -121,7 +123,7 @@ export const useAudiobookProgress = ({
     }
 
     return true;
-  }, [applyInitialSeekIfReady, audioRef, contentKey, setCurrentTime]);
+  }, [applyInitialSeekIfReady, audioRef, contentKey, latestPlaybackStateRef, setCurrentTime]);
 
   useEffect(() => {
     let mounted = true;
@@ -198,9 +200,9 @@ export const useAudiobookProgress = ({
         }
 
         if (mounted) {
-          setCurrentTrackIndex(savedTrackIndex);
-          if (savedPosition > 0) {
-            queueInitialSeek(savedPosition);
+          if (userPositionIntentContentKeyRef.current !== contentKey && playbackStartedContentKeyRef.current !== contentKey) {
+            setCurrentTrackIndex(savedTrackIndex);
+            if (savedPosition > 0) queueInitialSeek(savedPosition, savedTrackIndex);
           }
           if (isBookMode) {
             setIsInitialized(true);
@@ -214,10 +216,14 @@ export const useAudiobookProgress = ({
             if (localRaw) {
               const localData = JSON.parse(localRaw);
               if (localData.position > 0) {
-                if (isBookMode && localData.trackIndex != null) {
-                  setCurrentTrackIndex(localData.trackIndex);
+                const localTrackIndex = isBookMode
+                  ? localData.trackId != null ? sourceTracks.findIndex(t => t.trackId === localData.trackId) : Number(localData.trackIndex ?? 0)
+                  : 0;
+                if (Number.isInteger(localTrackIndex) && localTrackIndex >= 0 && localTrackIndex < sourceTracks.length &&
+                    userPositionIntentContentKeyRef.current !== contentKey && playbackStartedContentKeyRef.current !== contentKey) {
+                  setCurrentTrackIndex(localTrackIndex);
+                  queueInitialSeek(localData.position, localTrackIndex);
                 }
-                queueInitialSeek(localData.position);
               }
             }
           } catch { /* corrupted or unavailable */ }
@@ -233,7 +239,7 @@ export const useAudiobookProgress = ({
     return () => {
       mounted = false;
     };
-  }, [book?.bookId, isBookMode, positionStorageKey, queueInitialSeek, sourceTracks, textId, setCurrentTrackIndex, setIsInitialized, setIsLoading]);
+  }, [book?.bookId, contentKey, isBookMode, positionStorageKey, queueInitialSeek, sourceTracks, textId, setCurrentTrackIndex, setIsInitialized, setIsLoading]);
 
   const saveProgress = useCallback(async (force = false) => {
     const audio = audioRef.current || latestAudioElementRef.current;
@@ -247,7 +253,7 @@ export const useAudiobookProgress = ({
       isPlaying: isPlayingSnapshot
     } = latestPlaybackStateRef.current;
 
-    if (!audio || !isInitializedSnapshot) return;
+    if (!audio || !isInitializedSnapshot || initialSeekRef.current) return;
     if (!force && audio.paused && !isPlayingSnapshot) return;
 
     const currentPos = audio.currentTime;
@@ -351,15 +357,14 @@ export const useAudiobookProgress = ({
             newPosition = remoteProgress.currentPosition ?? null;
           }
 
-          if (newPosition != null && newPosition > 0) {
+          if (newPosition != null && newPosition >= 0) {
             if (newTrackIndex !== currentTrackIndex) {
               setCurrentTrackIndex(newTrackIndex);
             }
 
             const audio = audioRef.current;
-            if (audio && Math.abs(audio.currentTime - newPosition) > 2) {
-              audio.currentTime = newPosition;
-              setCurrentTime(newPosition);
+            if (audio && (newTrackIndex !== currentTrackIndex || Math.abs(audio.currentTime - newPosition) > 2)) {
+              queueInitialSeek(newPosition, newTrackIndex, false);
             }
           }
 
@@ -384,7 +389,7 @@ export const useAudiobookProgress = ({
       clearInterval(pollInterval);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [audioRef, book?.bookId, contentKey, currentTrackIndex, isBookMode, isInitialized, isPlaying, sourceTracks, textId, setCurrentTime, setCurrentTrackIndex]);
+  }, [audioRef, book?.bookId, contentKey, currentTrackIndex, isBookMode, isInitialized, isPlaying, sourceTracks, textId, setCurrentTime, setCurrentTrackIndex, queueInitialSeek]);
 
   return {
     saveProgress,

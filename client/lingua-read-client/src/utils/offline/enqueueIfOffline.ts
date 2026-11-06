@@ -1,4 +1,4 @@
-import { enqueue, type PendingOp } from './syncQueue';
+import { enqueue, listPending, type PendingOp } from './syncQueue';
 
 // A network failure surfaces as `fetch` throwing `TypeError: Failed to fetch`
 // (Chrome/Firefox) or `NetworkError when attempting to fetch resource` (Safari).
@@ -9,7 +9,9 @@ function isNetworkFailure(error: unknown): boolean {
   if (typeof error === 'object' && 'name' in error && (error as { name?: string }).name === 'ApiError') {
     return false;
   }
-  return error instanceof TypeError;
+  return error instanceof TypeError ||
+    (typeof DOMException !== 'undefined' && error instanceof DOMException &&
+      (error.name === 'NetworkError' || error.name === 'TimeoutError'));
 }
 
 /**
@@ -25,17 +27,31 @@ function isNetworkFailure(error: unknown): boolean {
 export async function enqueueIfOffline<T>(
   op: PendingOp,
   run: () => Promise<T>,
-  coalesceKey?: string
+  coalesceKey?: string,
+  options: { queueOnUnauthorized?: boolean } = {}
 ): Promise<T | { offline: true; queuedOp: PendingOp }> {
   if (typeof navigator !== 'undefined' && navigator.onLine === false) {
     await enqueue(op, coalesceKey);
     return { offline: true, queuedOp: op };
   }
 
+  // Do not let a newer online edit overtake an older queued edit of the
+  // same entity. Coalescing replaces it with the newest complete payload.
+  if (coalesceKey) {
+    let queued = false;
+    try { queued = (await listPending()).some(pending => pending.coalesceKey === coalesceKey); } catch { /* online calls can work without local storage */ }
+    if (queued) {
+      await enqueue(op, coalesceKey);
+      return { offline: true, queuedOp: op };
+    }
+  }
+
   try {
     return await run();
   } catch (err) {
-    if (isNetworkFailure(err)) {
+    const unauthorized = options.queueOnUnauthorized && typeof err === 'object' && err !== null &&
+      'status' in err && err.status === 401;
+    if (isNetworkFailure(err) || unauthorized) {
       await enqueue(op, coalesceKey);
       return { offline: true, queuedOp: op };
     }

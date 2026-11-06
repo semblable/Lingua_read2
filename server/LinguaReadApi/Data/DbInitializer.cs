@@ -120,6 +120,7 @@ namespace LinguaReadApi.Data
                     var initialPassword = Environment.GetEnvironmentVariable("Auth__InitialPassword");
                     if (!string.IsNullOrWhiteSpace(initialPassword))
                     {
+                        if (initialPassword.Length < 12) throw new InvalidOperationException("Auth:InitialPassword must be at least 12 characters.");
                         var passwordHasher = serviceProvider.GetRequiredService<IPasswordHasher<User>>();
                         defaultUser.PasswordHash = passwordHasher.HashPassword(defaultUser, initialPassword);
                         Console.WriteLine("[DbInitializer] Initial password set from environment variable.");
@@ -138,6 +139,7 @@ namespace LinguaReadApi.Data
                         var initialPassword = Environment.GetEnvironmentVariable("Auth__InitialPassword");
                         if (!string.IsNullOrWhiteSpace(initialPassword))
                         {
+                            if (initialPassword.Length < 12) throw new InvalidOperationException("Auth:InitialPassword must be at least 12 characters.");
                             var passwordHasher = serviceProvider.GetRequiredService<IPasswordHasher<User>>();
                             existingUser.PasswordHash = passwordHasher.HashPassword(existingUser, initialPassword);
                             userSeeded = true; // trigger SaveChanges

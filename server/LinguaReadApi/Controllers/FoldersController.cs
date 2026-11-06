@@ -312,9 +312,7 @@ namespace LinguaReadApi.Controllers
                 return BadRequest("Parent folder not found");
 
             // Get max sort order in target location
-            var maxSortOrder = await _context.Folders
-                .Where(f => f.UserId == userId && f.ParentFolderId == dto.ParentFolderId)
-                .MaxAsync(f => (int?)f.SortOrder) ?? -1;
+            var maxSortOrder = await GetMaxSortOrderInFolder(userId, dto.ParentFolderId);
 
             var folder = new Folder
             {
@@ -380,7 +378,12 @@ namespace LinguaReadApi.Controllers
                         return BadRequest("Cannot move a folder into its own descendant");
                 }
 
-                folder.ParentFolderId = dto.ParentFolderId.Value == 0 ? null : dto.ParentFolderId.Value;
+                int? targetParent = dto.ParentFolderId.Value == 0 ? null : dto.ParentFolderId.Value;
+                if (folder.ParentFolderId != targetParent)
+                {
+                    folder.SortOrder = await GetMaxSortOrderInFolder(userId, targetParent) + 1;
+                    folder.ParentFolderId = targetParent;
+                }
             }
 
             await _context.SaveChangesAsync();
@@ -685,22 +688,8 @@ namespace LinguaReadApi.Controllers
             { book.FolderId = parent; book.SortOrder = ++maxSort; }
         }
 
-        private async Task<int> GetMaxSortOrderInFolder(Guid userId, int? folderId)
-        {
-            var maxFolderSort = await _context.Folders
-                .Where(f => f.UserId == userId && f.ParentFolderId == folderId)
-                .MaxAsync(f => (int?)f.SortOrder) ?? -1;
-
-            var maxBookSort = await _context.Books
-                .Where(b => b.UserId == userId && b.FolderId == folderId)
-                .MaxAsync(b => (int?)b.SortOrder) ?? -1;
-
-            var maxTextSort = await _context.Texts
-                .Where(t => t.UserId == userId && t.FolderId == folderId && t.BookId == null)
-                .MaxAsync(t => (int?)t.SortOrder) ?? -1;
-
-            return Math.Max(maxFolderSort, Math.Max(maxBookSort, maxTextSort));
-        }
+        private Task<int> GetMaxSortOrderInFolder(Guid userId, int? folderId) =>
+            LibrarySortOrder.MaxAsync(_context, userId, folderId);
 
         // Returns true if moving movingFolderId to targetParentId would create a cycle
         // (i.e., targetParentId is a descendant of movingFolderId)

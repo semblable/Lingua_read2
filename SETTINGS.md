@@ -44,11 +44,42 @@ Configure JSON Web Tokens (JWT) for secure authentication and authorize initial 
 
 | Variable Name | Default Value | Description |
 | :--- | :--- | :--- |
-| `JWT_KEY` | *None* | **Required.** Private cryptographic key for signing tokens. Must be a secure random string of **at least 32 characters** (256-bit). |
+| `LINGUAREAD_LOCAL_MODE` | `false` | Password-free personal use on the same computer. Uses the existing default owner, skips setup/login, and keeps existing passwords. The production Compose override always disables it. |
+| `JWT_KEY` | *None* | **Required for password login.** Private cryptographic key for signing tokens. Must be a secure random string of **at least 32 characters** (256-bit). Not used in local mode. |
 | `JWT_ISSUER` | `LinguaReadApi` | The token issuer identifier verified by the backend API. |
 | `JWT_AUDIENCE` | `LinguaReadClient` | The intended recipient identifier for backend tokens. |
 | `JWT_EXPIRY_HOURS` | `2160` | Duration (in hours) before a JWT token expires (defaults to 90 days). |
 | `LINGUAREAD_PASSWORD`| *None* | **Optional.** Sets an initial administrator/default user password on the first startup. |
+| `LINGUAREAD_SETUP_TOKEN` | *None* | Required for first-time in-app password setup outside Development. Not needed in local mode. Remove after setup. |
+
+For a personal Docker install, set `LINGUAREAD_LOCAL_MODE=true` in `.env` and run
+`docker compose up --build -d`. Open `http://localhost` (or `http://127.0.0.1`).
+The base Compose stack publishes nginx only on `127.0.0.1`; `HTTP_PORT` changes
+its host port without changing this boundary. Keep Docker Engine 28 or later for
+its localhost publishing fixes. [Docker documents this boundary](https://docs.docker.com/engine/network/port-publishing/).
+
+Local mode accepts only local hostnames, rejects nonlocal browser origins and
+requires the usual mutation header even without a session cookie. It keeps the
+normal authorization and media ownership checks using the existing owner. Other
+processes and containers on the same computer are trusted. It is not intended for
+LAN access, a public hostname, a tunnel, or an external reverse proxy.
+
+Native hosts use `Auth__LocalMode=true`; the API binds loopback in that mode.
+`Auth__LocalProxy=true` is for the bundled Docker nginx path only: it permits the
+configured trusted proxy peer while preserving local Host/origin checks. Compose
+sets both values from `LINGUAREAD_LOCAL_MODE`; native direct hosting needs only
+`Auth__LocalMode`.
+
+The Vite development server also binds `127.0.0.1` by default because it proxies
+the API. Keep it local when password-free mode is enabled. Use password mode for
+any development server deliberately exposed to another device.
+
+To restore password login, set `LINGUAREAD_LOCAL_MODE=false`, configure a valid
+`JWT_KEY`, and recreate the API with `docker compose up -d --force-recreate api`.
+An existing password still works. If none was set, configure an initial password
+or setup token before switching. Local mode never erases or replaces credentials.
+The production overlay forces both local flags off and replaces the localhost
+port binding with its HTTPS server ports (Compose 2.24.4 or later is required).
 
 > [!NOTE]
 > Behind the bundled nginx, login and first-time setup accept 5 password attempts a minute per address (plus a burst of 5); further attempts get "Too many password attempts" until the minute passes.
@@ -73,6 +104,7 @@ Adjust security bounds and Discord scheduler configurations.
 
 | Variable Name | Default Value | Description |
 | :--- | :--- | :--- |
+| `HTTP_PORT` | `80` | Localhost-only nginx HTTP port in the base Compose stack. The production override uses its own 80/443 ports. |
 | `CORS_ALLOWED_ORIGINS` | *None* | Comma-separated origins allowed to call the API **cross-origin**. The app itself is served same-origin by nginx and needs no entry, so this normally stays blank (= deny cross-origin in production; dev always allows localhost). |
 | `DISCORD_WEEKLY_REPORT_DAY` | `Monday` | Day of the week for generating the background system reports (`Monday`, `Tuesday`, etc.). |
 | `DISCORD_WEEKLY_REPORT_HOUR_UTC` | `8` | UTC hour (0-23) to run the Discord background reporting task. |

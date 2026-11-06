@@ -1,13 +1,19 @@
 import { useState } from 'react';
 import { Alert, Button, Form } from 'react-bootstrap';
 import { fetchApi } from '../../utils/api/client';
+import { useAuthStore } from '../../utils/store';
 
 export default function PasswordSettings() {
+  const localMode = useAuthStore(state => state.localMode);
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  if (localMode) return <Alert variant="info">
+    <h6>Password-free local mode</h6>
+    <p className="mb-0">This installation opens automatically on this computer. To require a password, disable local mode in the server configuration and restart. Existing passwords are preserved.</p>
+  </Alert>;
   return <Form className="settings-control-group" onSubmit={async (event) => {
     event.preventDefault();
     setBusy(true); setMessage(''); setError('');

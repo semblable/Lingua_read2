@@ -4,6 +4,7 @@ using LinguaReadApi.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.AspNetCore.Identity; // Required for User properties
+using Microsoft.Extensions.Configuration;
 
 namespace LinguaReadApi.Data
 {
@@ -15,6 +16,7 @@ namespace LinguaReadApi.Data
 
         public static void Initialize(IServiceProvider serviceProvider)
         {
+            var localMode = serviceProvider.GetService<IConfiguration>()?.GetValue<bool>("Auth:LocalMode") == true;
             using (var context = new AppDbContext(
                 serviceProvider.GetRequiredService<DbContextOptions<AppDbContext>>()))
             {
@@ -117,7 +119,7 @@ namespace LinguaReadApi.Data
                     };
 
                     // Bootstrap password from env var if provided
-                    var initialPassword = Environment.GetEnvironmentVariable("Auth__InitialPassword");
+                    var initialPassword = localMode ? null : Environment.GetEnvironmentVariable("Auth__InitialPassword");
                     if (!string.IsNullOrWhiteSpace(initialPassword))
                     {
                         if (initialPassword.Length < 12) throw new InvalidOperationException("Auth:InitialPassword must be at least 12 characters.");
@@ -136,7 +138,7 @@ namespace LinguaReadApi.Data
                     // If user has no password and env var is set, bootstrap the password
                     if (string.IsNullOrEmpty(existingUser.PasswordHash))
                     {
-                        var initialPassword = Environment.GetEnvironmentVariable("Auth__InitialPassword");
+                        var initialPassword = localMode ? null : Environment.GetEnvironmentVariable("Auth__InitialPassword");
                         if (!string.IsNullOrWhiteSpace(initialPassword))
                         {
                             if (initialPassword.Length < 12) throw new InvalidOperationException("Auth:InitialPassword must be at least 12 characters.");

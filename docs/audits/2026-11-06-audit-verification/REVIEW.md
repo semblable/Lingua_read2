@@ -4,7 +4,7 @@
 
 Reviewed the supplied comprehensive audit and its available reader, offline/SRS/library, and security reports against commit `7f2ba809` and the current checkout. Claims were checked through callers and existing behavior before editing; regression tests exercise the confirmed failure paths. The original backend transcript referenced by the master report is absent, so its undocumented findings cannot be verified. The reports' aggregate counts and their enumerated IDs do not reconcile; this review records the actual claims rather than repeating the “51 verified” total.
 
-No deployment, live database reset, migration, or production backup was performed. Existing unrelated working-tree edits and audit artifacts were preserved.
+No manual deployment, live database reset, migration, or production backup was performed. Existing unrelated working-tree edits and audit artifacts were preserved. The later requested push and its automatic staging result are recorded below.
 
 ## Confirmed defects corrected
 
@@ -84,7 +84,7 @@ The remaining entries are not 11 independent runtime exploits: they include pare
 - New credentials require 12 characters; five failed logins lock the account for 15 minutes. Existing password hashes and session duration are unchanged. Placeholder JWT keys now prevent non-test startup.
 - A future explicit language reset archives its scoped goals and rebases unfinished global delta goals in the same transaction. Existing goal data is not changed simply by upgrading.
 - There is no database schema migration in this change. Changed historical text links are repaired when those texts are edited; no unsolicited bulk rewrite of existing texts was run.
-- Password-free local setup remains a separate proposal, not an implemented change. An explicit mode would need loopback-only access, including localhost-bound Docker ports; ordinary server/LAN deployments retain authentication.
+- A subsequent feature implements password-free local setup through explicit `LINGUAREAD_LOCAL_MODE=true` (default false), with native, Docker web and Vite listeners local-only by default. It retains the existing owner and authorization/media policies, requires no JWT/password/setup token, and preserves existing credentials. Local hosts/origins and no-cookie CSRF requests are checked; the production Compose overlay forces both local flags off. See [settings](../../../SETTINGS.md).
 
 ## Independent review and corrections
 
@@ -105,15 +105,18 @@ The existing SQLite word-race test's interceptor previously awaited a competing 
 
 | Check | Result |
 | --- | --- |
-| Full frontend suite | 128 files, 2,032 tests passed |
-| Full backend suite | 1,866 passed, 9 optional PostgreSQL tests skipped, no failures |
+| Full frontend suite, including local mode | 129 files, 2,036 tests passed |
+| Full backend suite, including local mode | 1,903 passed, 9 optional PostgreSQL tests skipped locally, no failures |
 | TypeScript typecheck | Passed |
 | ESLint | Passed: zero errors, 35 pre-existing warnings |
 | Production build | Passed, including bundle and license-notice verification |
 | Demo | Six tests passed; static demo build and license-notice verification passed |
 | Proxy trust follow-up | Four middleware cases passed, including Docker IPv4-mapped IPv6 peers |
+| Local-mode configuration | Compose merge and resolved Vite proxy checks passed; both retained in CI |
 | Independent focused review | 64 frontend and 11 backend tests passed; no remaining actionable R1–R4 findings |
 | `git diff --check` | Passed |
 | npm dependency scan | Zero high/critical, nine moderate and two low development-tool entries |
 
-Optional PostgreSQL integration requires the existing isolated `LINGUA_STUDY_TEST_POSTGRES` test database; no production database was used. PostgreSQL unique-collision exceptions were injected into SQLite-backed tests to verify transaction handling, not actual PostgreSQL races. Media checks use the test DOM, not a physical browser/device. The frontend suite retains pre-existing React Bootstrap transition warnings in happy-dom. A warning trace disproves the claimed Cloze timer attribution. The production build retains its large-chunk warning. Backend tests needed local test-host socket access outside the sandbox; the initial sandbox run could build but could not connect to its test host. API types were regenerated from the final backend assembly, including the optional reader replacement flag.
+Optional PostgreSQL integration requires the existing isolated `LINGUA_STUDY_TEST_POSTGRES` test database locally; no production database was used. PostgreSQL unique-collision exceptions were injected into SQLite-backed tests to verify transaction handling, not actual PostgreSQL races. Media checks use the test DOM, not a physical browser/device. The frontend suite retains pre-existing React Bootstrap transition warnings in happy-dom. A warning trace disproves the claimed Cloze timer attribution. The production build retains its large-chunk warning. Backend tests needed local test-host socket access outside the sandbox; the initial sandbox run could build but could not connect to its test host. API types were regenerated from the backend assembly, including the optional reader replacement flag.
+
+The audit corrections were pushed as `bc9598c2`; [CI and automatic staging deployment](https://github.com/semblable/Lingua_read2/actions/runs/42218108856) passed with the isolated CI PostgreSQL database enabled. The later local-mode feature was implemented by the requested `password_free_local` subagent and reviewed by the primary agent, with 58 focused backend and 20 focused frontend tests passing before the final full runs above. Parent review closed a Vite proxy exposure path: the dev listener is loopback-only, API/media proxies forward the actual caller, and native local mode rejects nonlocal forwarded hops. The R1–R4 independent review predates this feature and does not claim independent review of it.

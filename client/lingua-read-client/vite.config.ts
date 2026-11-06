@@ -171,7 +171,8 @@ export default defineConfig({
   ],
   server: {
     port: 3000,
-    host: true,
+    // Keep the proxy on this computer too: it can reach a password-free API.
+    host: '127.0.0.1',
     open: false,
     // In production nginx serves the SPA and proxies /api to the API container, so the client
     // resolves its base URL to a relative '/api' (see utils/api/client.ts). Without this proxy the
@@ -182,11 +183,15 @@ export default defineConfig({
       '/api': {
         target: process.env.VITE_DEV_API_TARGET || 'http://localhost:5000',
         changeOrigin: true,
+        // Preserve the real caller so native password-free mode can reject a
+        // remote client even if this dev server is explicitly exposed with --host.
+        xfwd: true,
       },
       // Uploaded media (EPUB images, news photos, audio, covers), which nginx sends to the API too.
       '^/(audio_lessons|audiobooks|epub_assets|hardcover-covers)/': {
         target: process.env.VITE_DEV_API_TARGET || 'http://localhost:5000',
         changeOrigin: true,
+        xfwd: true,
       },
     },
   },

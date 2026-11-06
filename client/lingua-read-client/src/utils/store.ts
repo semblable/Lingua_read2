@@ -10,6 +10,7 @@ export type AuthState = {
   user: AuthUser | null;
   isLoading: boolean;
   needsSetup: boolean;
+  localMode: boolean;
   logoutWarning: string | null;
   checkAuth: () => Promise<void>;
   login: (password: string) => Promise<void>;
@@ -17,11 +18,12 @@ export type AuthState = {
   setup: (password: string, setupToken?: string) => Promise<void>;
 };
 
-export const useAuthStore = create<AuthState>()((set) => ({
+export const useAuthStore = create<AuthState>()((set, get) => ({
   isAuthenticated: false,
   user: null,
   isLoading: true,
   needsSetup: false,
+  localMode: false,
   logoutWarning: null,
   checkAuth: async () => {
     set({ isLoading: true });
@@ -30,11 +32,12 @@ export const useAuthStore = create<AuthState>()((set) => ({
       set({
         isAuthenticated: data.authenticated,
         needsSetup: data.needsSetup ?? false,
+        localMode: data.localMode ?? false,
         user: data.user || null,
         isLoading: false
       });
     } catch {
-      set({ isAuthenticated: false, user: null, isLoading: false, needsSetup: false });
+      set({ isAuthenticated: false, user: null, isLoading: false, needsSetup: false, localMode: false });
     }
   },
   login: async (password) => {
@@ -49,10 +52,14 @@ export const useAuthStore = create<AuthState>()((set) => ({
       isAuthenticated: status.authenticated,
       user: status.user || null,
       needsSetup: false,
+      localMode: status.localMode ?? false,
       logoutWarning: null
     });
   },
   logout: async () => {
+    // Local mode has no session to revoke; never erase offline work for a
+    // misleading sign-out action if an old UI invokes this after a mode change.
+    if (get().localMode) return;
     let logoutWarning: string | null = null;
     try {
       const response = await authLogout();
@@ -64,7 +71,7 @@ export const useAuthStore = create<AuthState>()((set) => ({
     // can't read User A's cached texts/audio or replay their queued
     // mutations under a new auth context.
     await clearOfflineState();
-    set({ isAuthenticated: false, user: null, logoutWarning });
+    set({ isAuthenticated: false, user: null, localMode: false, logoutWarning });
   },
   setup: async (password, setupToken) => {
     const res = await authSetup(password, setupToken);
@@ -76,7 +83,8 @@ export const useAuthStore = create<AuthState>()((set) => ({
     set({
       isAuthenticated: status.authenticated,
       user: status.user || null,
-      needsSetup: false
+      needsSetup: false,
+      localMode: status.localMode ?? false
     });
   }
 }));

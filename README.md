@@ -63,7 +63,7 @@ configuration and measurement.
 
 ## Installation (Docker)
 
-Install Git and Docker with the Compose plugin (Docker Desktop on Windows/macOS),
+Install Git and Docker with Compose 2.24.4 or later (Docker Desktop on Windows/macOS),
 then start Docker. No host Node.js, .NET SDK, or PostgreSQL installation is needed.
 
 ```sh
@@ -85,8 +85,21 @@ cp .env.example .env
 # Open .env with your preferred editor.
 ```
 
-Set `POSTGRES_PASSWORD` and a random `JWT_KEY` of at least 32 characters. Generate
-a key locally with PowerShell's cryptographic random generator:
+Set a private `POSTGRES_PASSWORD`. For personal use on this computer, also set:
+
+```dotenv
+LINGUAREAD_LOCAL_MODE=true
+```
+
+This opens your existing library without a login or password setup. The Docker
+web port binds to `127.0.0.1`, and the app accepts only local hostnames. Leave
+provider keys blank unless you need them. Local mode does not require `JWT_KEY`,
+`LINGUAREAD_PASSWORD` or `LINGUAREAD_SETUP_TOKEN`, and preserves existing passwords.
+Other processes and containers on your computer share this local trust boundary.
+Use Docker Engine 28 or later for its localhost port isolation fixes.
+
+For password login, leave `LINGUAREAD_LOCAL_MODE=false` and set a random
+`JWT_KEY` of at least 32 characters. Generate a key locally with PowerShell:
 
 ```powershell
 $jwtBytes = New-Object byte[] 32
@@ -96,9 +109,9 @@ $jwtRng.GetBytes($jwtBytes)
 $jwtRng.Dispose()
 ```
 
-Or use `openssl rand -base64 32` on macOS/Linux. Keep `.env` private. Provider keys
-are optional; unconfigured provider features are unavailable. Set
-`LINGUAREAD_PASSWORD` before first startup. Alternatively, configure a random
+Or use `openssl rand -base64 32` on macOS/Linux. Keep `.env` private. For password
+login, set `LINGUAREAD_PASSWORD` (at least 12 characters) before first startup.
+Alternatively, configure a random
 `LINGUAREAD_SETUP_TOKEN` and enter that operator token on the setup page along
 with your chosen password. Outside Development, setup requires this token.
 Remove the token after setup; keep the initial connection trusted and local.
@@ -109,13 +122,17 @@ docker compose ps
 ```
 
 The first build can take several minutes. Open [http://localhost](http://localhost)
-and set up/sign in with your password. The normal stack has three services: `db`,
+and start reading immediately in local mode, or set up/sign in with your password.
+The normal stack has three services: `db`,
 `api`, and `nginx`. The optional backup service starts only with its profile.
 
 This plain-HTTP setup is for local evaluation. Authentication cookies are secure
 outside Development, so a plain-HTTP address on another device can prevent login.
 For a server/phone over a network, configure HTTPS using the production settings
-and complete setup before allowing untrusted access. See [settings](SETTINGS.md)
+and complete password setup before allowing untrusted access. The production
+Compose override disables local mode even if `.env` enables it. The base Compose
+web port is now localhost-only; use the production override for network access.
+See [settings](SETTINGS.md)
 and the [security policy](SECURITY.md).
 
 | Service | Local access |
@@ -151,7 +168,8 @@ See [backup expectations](docs/BACKUP_AND_UPGRADE.md).
 | Symptom | Next step |
 | --- | --- |
 | Cannot connect to Docker / commands hang | Start Docker Desktop or the Docker daemon and wait until ready. |
-| Port 80 is in use | Change nginx's host mapping from `80:8080` to `8080:8080`, then open `http://localhost:8080`. |
+| Port 80 is in use | Set `HTTP_PORT=8080` in `.env`, recreate nginx, then open `http://localhost:8080`. |
+| Local mode rejects a request | Open `http://localhost` or `http://127.0.0.1` on the same computer. Custom domains, LAN access and requests from nonlocal browser origins are not supported in this mode. |
 | API stays unhealthy | Allow initial migrations to finish, then inspect `docker compose logs --tail 100 api`. |
 | Setup/login fails | Check `.env` naming, JWT key length, password, and HTTPS/cookie behavior. |
 | Missing provider feature | Configure that provider in Settings; no paid API is required to run the reader. |

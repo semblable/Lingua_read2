@@ -62,6 +62,9 @@ services:
       PGPASSWORD: ${POSTGRES_PASSWORD}
       # Other variables
       Jwt__Key: ${JWT_KEY}
+      # Opt-in personal local use. nginx is published on host loopback only.
+      Auth__LocalMode: ${LINGUAREAD_LOCAL_MODE:-false}
+      Auth__LocalProxy: ${LINGUAREAD_LOCAL_MODE:-false}
       Ai__AllowedPrivateBaseUrls__0: ${AI_PRIVATE_BASE_URL:-}
       ReverseProxy__KnownNetworks__0: ${TRUSTED_PROXY_NETWORK:-172.16.0.0/12}
       # Issuer/audience are opaque labels matched against themselves, not the site's domain,
@@ -120,7 +123,7 @@ services:
         condition: service_healthy
     ports:
       # nginx runs unprivileged (nginxinc/nginx-unprivileged) and listens on 8080 internally.
-      - "80:8080"
+      - "127.0.0.1:${HTTP_PORT:-80}:8080"
     healthcheck:
       # busybox wget (alpine image has no curl); /healthz is served on the plain-HTTP port.
       test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/healthz || exit 1"]

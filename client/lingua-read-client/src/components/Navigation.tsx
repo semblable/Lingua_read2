@@ -6,7 +6,7 @@ import { useAuthStore } from '../utils/store';
 
 
 const Navigation = () => {
-  const { isAuthenticated, logout } = useAuthStore();
+  const { isAuthenticated, logout, localMode } = useAuthStore();
   const navigate = useNavigate();
   const [expanded, setExpanded] = useState(false);
 
@@ -51,8 +51,10 @@ const Navigation = () => {
               <NavDropdown title="Account" id="account-dropdown" align="end">
                 <LinkContainer to="/settings"><NavDropdown.Item>User Settings</NavDropdown.Item></LinkContainer>
                 <LinkContainer to="/settings/languages"><NavDropdown.Item>Languages</NavDropdown.Item></LinkContainer>
-                <NavDropdown.Divider />
-                <NavDropdown.Item onClick={handleLogout}>Logout on all devices</NavDropdown.Item>
+                {localMode ? <NavDropdown.ItemText>Password-free local mode</NavDropdown.ItemText> : <>
+                  <NavDropdown.Divider />
+                  <NavDropdown.Item onClick={handleLogout}>Logout on all devices</NavDropdown.Item>
+                </>}
               </NavDropdown>
             )}
           </Nav>

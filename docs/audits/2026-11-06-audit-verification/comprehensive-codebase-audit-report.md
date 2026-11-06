@@ -28,7 +28,7 @@ The six claims labelled critical in the original summary all have implemented co
 - **Disaster recovery and temporary files:** The production archive intentionally includes decryption keys. Local archive permissions and recovery from process/host crashes remain operational responsibilities; ordinary aborted response streams already use DeleteOnClose.
 - **Features:** Automatic standard-view reading credit, repeated generated story contexts and MediaSession controls were not added as bug fixes. The report's claimed dictionary fallback, quota crashes, missing transaction, pipe/percent formula triggers and missing Cloze delay were not substantiated in the cited paths.
 - **Unavailable evidence:** Two backend low findings were mentioned without actionable details, and the referenced backend transcript is absent. They remain unverified.
-- **Local password-free setup:** Feasible as a separate, explicit local-only mode. It is not implemented in this remediation. The proposed boundary is loopback-only access, including localhost-bound Docker ports, while ordinary server/LAN deployments keep authentication.
+- **Local password-free setup:** Implemented in a subsequent feature change as explicit `LINGUAREAD_LOCAL_MODE=true`, defaulting off. Native API, default Docker web port and Vite development server bind loopback. Docker's production overlay forces password authentication on. Existing credentials are preserved; see [SETTINGS.md](../../../SETTINGS.md).
 
 These limitations are not silently counted as fixed. Each relevant ID and the reasoning are listed in [REVIEW.md](REVIEW.md).
 
@@ -41,6 +41,7 @@ These limitations are not silently counted as fixed. Each relevant ID and the re
 5. Newly created/changed passwords require 12 characters. Five failed logins impose a 15-minute lockout. Existing password hashes remain usable; example JWT keys now prevent non-test startup.
 6. A subsequent explicit language reset archives its scoped goals and rebases unfinished global delta goals within the reset transaction. Upgrading alone does not modify existing goal data.
 7. Reader natural-key word saves now send optional `replaceExisting: true`, allowing status demotion and explicit translation clearing before a real server ID is recovered. API callers omitting the flag retain the existing promotion-only create behavior. Synced provisional reader rows recover their real IDs without a page reload.
+8. Password-free local mode requires no JWT key, login password or setup token. It authenticates the existing owner within a checked local request boundary and retains ordinary authorization/media ownership policies. Nonlocal hosts/origins and unsafe requests without the CSRF header are rejected. The base Docker web port now binds `127.0.0.1`; use the production overlay for HTTPS network hosting. See the documented Compose/Docker version requirements before upgrading a host.
 
 No database schema migration or deployed-data rewrite is included. See [SETTINGS.md](../../../SETTINGS.md) for local AI configuration.
 
@@ -48,18 +49,21 @@ No database schema migration or deployed-data rewrite is included. See [SETTINGS
 
 | Check | Result |
 | --- | --- |
-| Full frontend suite | 128 files, 2,032 passed |
-| Full backend suite | 1,866 passed; nine optional PostgreSQL tests skipped; zero failures |
+| Full frontend suite, including local mode | 129 files, 2,036 passed |
+| Full backend suite, including local mode | 1,903 passed; nine optional PostgreSQL tests skipped locally; zero failures |
 | Proxy follow-up | Four middleware cases passed, including IPv4-mapped IPv6 peers |
 | TypeScript | Passed |
 | ESLint | Zero errors; 35 existing warnings |
 | Production build | Passed, including bundle and license-notice verification |
 | Demo | Six tests passed; static build and notice verification passed |
+| Local-mode boundaries | Compose merge and resolved Vite proxy checks passed; both checks added to CI |
 | Independent reviewer follow-up | 64 frontend and 11 backend tests passed; no remaining actionable R1–R4 findings |
 | Whitespace/diff checks | Passed |
 | npm scan | Zero high/critical; nine moderate and two low development-tool entries |
 
-The skipped PostgreSQL checks require the existing isolated test database; SQLite/in-memory tests do not substitute for those concurrency checks. Named PostgreSQL unique-collision retries were tested with injected exceptions and distinct SQLite transactions; no live PostgreSQL MVCC result is claimed. Existing large-chunk and happy-dom transition warnings remain documented. No live database, production backup, deployment, or unrelated user edit was modified.
+The skipped PostgreSQL checks require the existing isolated test database locally; SQLite/in-memory tests do not substitute for those concurrency checks. Named PostgreSQL unique-collision retries were tested with injected exceptions and distinct SQLite transactions; no dedicated live PostgreSQL collision result is claimed. Existing large-chunk and happy-dom transition warnings remain documented. The audit fixes were pushed as `bc9598c2`; their [CI and automatic staging deployment](https://github.com/semblable/Lingua_read2/actions/runs/42218108856) passed, with the CI isolated PostgreSQL database enabled. No production backup, production database, manual deployment or unrelated user edit was modified.
+
+The subsequent local-mode feature was implemented by the requested `password_free_local` subagent and reviewed by the primary agent. Focused coverage passed 58 backend and 20 frontend tests, followed by the full runs above. Parent review also closed a development-proxy bypass: Vite now binds loopback and forwards the actual caller for API/media requests, while native local mode rejects nonlocal forwarded hops before authentication. The R1–R4 independent review below applies to the audit corrections, not to an independent review of this later feature.
 
 ## Independent reviewer
 

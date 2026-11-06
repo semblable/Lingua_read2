@@ -118,6 +118,10 @@ jobs:
         run: npm run typecheck
         working-directory: client/lingua-read-client
 
+      - name: Check local development boundary
+        run: node scripts/check-local-dev-boundary.mjs
+        working-directory: client/lingua-read-client
+
       - name: Test client
         run: npm test -- --run
         working-directory: client/lingua-read-client
@@ -152,6 +156,9 @@ jobs:
 
       - name: Validate docker-compose (prod overlay + backup and monitoring profiles)
         run: docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile backup --profile monitoring config --quiet
+
+      - name: Check password-free local boundary
+        run: python3 verification/local_mode_config.py
 
       # Host-side scripts run unattended (cron, first boot) where a typo only surfaces
       # as a missing backup or a half-provisioned host — lint them here instead.

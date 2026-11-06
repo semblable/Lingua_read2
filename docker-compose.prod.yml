@@ -1,5 +1,9 @@
 services:
   api:
+    # Never inherit password-free local mode from a copied workstation .env.
+    environment:
+      Auth__LocalMode: "false"
+      Auth__LocalProxy: "false"
     # memswap_limit is memory + swap, so matching the memory limit means no swap: on a host
     # with swap, a runaway API is then restarted in seconds instead of crawling on disk.
     # A host with less RAM than the limit can allow swap with API_MEMSWAP_LIMIT (e.g. 3000M).
@@ -11,7 +15,7 @@ services:
           memory: 1500M
 
   nginx:
-    ports:
+    ports: !override
       # nginx-unprivileged listens on 8080/8443 internally; external ports stay 80/443.
       - "80:8080"
       - "443:8443"

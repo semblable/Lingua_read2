@@ -14,6 +14,7 @@ export type AuthUser = {
 export type AuthStatus = {
   authenticated: boolean;
   needsSetup?: boolean;
+  localMode?: boolean;
   user?: AuthUser | null;
 };
 

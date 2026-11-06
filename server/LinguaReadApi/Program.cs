@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Tokens;
@@ -280,12 +281,18 @@ builder.Services.AddScoped<IGoalProgressService, GoalProgressService>();
 builder.Services.AddScoped<IHardcoverService, HardcoverService>();
 builder.Services.AddScoped<ChapterDetectionService>();
 
-// Configure JWT Authentication
-builder.Services.AddAuthentication(options =>
+// Local mode is explicit and retains every controller/ownership policy. It does
+// not issue a cookie or a token that could survive switching back to passwords.
+// Resolve the selection from the final host configuration, including test-host
+// overrides. JWT options stay lazy and are never initialized in local mode.
+builder.Services.AddOptions<AuthenticationOptions>().Configure<IConfiguration>((options, configuration) =>
 {
-    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
-    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
-})
+    var scheme = LocalMode.IsEnabled(configuration) ? LocalMode.Scheme : JwtBearerDefaults.AuthenticationScheme;
+    options.DefaultAuthenticateScheme = scheme;
+    options.DefaultChallengeScheme = scheme;
+});
+builder.Services.AddAuthentication()
+.AddScheme<AuthenticationSchemeOptions, LocalOwnerAuthenticationHandler>(LocalMode.Scheme, _ => { })
 .AddJwtBearer(options =>
 {
     options.RequireHttpsMetadata = false;
@@ -379,7 +386,7 @@ builder.Services.AddCors(options =>
 var app = builder.Build();
 
 // Check after the host is built so test-host configuration overrides apply too.
-if (!app.Environment.IsEnvironment("Testing"))
+if (!app.Environment.IsEnvironment("Testing") && !LocalMode.IsEnabled(app.Configuration))
     JwtKeyValidation.Validate(app.Configuration["Jwt:Key"]);
 
 // Static hook (not DI) because the EF value converter lives in the cached model,
@@ -400,6 +407,7 @@ app.Lifetime.ApplicationStopped.Register(() =>
     }
 });
 
+app.UseMiddleware<LocalModeBoundaryMiddleware>();
 app.UseForwardedHeaders(ProxyTrust.CreateOptions(app.Configuration));
 
 // Before anything that writes a response body (API JSON and static files alike).
@@ -633,7 +641,7 @@ app.MapControllers();
 try
 {
     app.Urls.Clear();
-    app.Urls.Add("http://0.0.0.0:5000");
+    app.Urls.Add(LocalMode.ListenUrl(app.Configuration));
 }
 catch (InvalidOperationException)
 {

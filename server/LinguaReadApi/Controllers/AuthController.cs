@@ -12,6 +12,7 @@ using System.Threading.Tasks;
 using LinguaReadApi.Data;
 using LinguaReadApi.Models;
 using LinguaReadApi.Services;
+using LinguaReadApi.Authorization;
 
 namespace LinguaReadApi.Controllers
 {
@@ -61,6 +62,7 @@ namespace LinguaReadApi.Controllers
         [HttpPost("login")]
         public async Task<IActionResult> Login([FromBody] LoginRequest request)
         {
+            if (LocalMode.IsEnabled(_configuration)) return LocalModeUnavailable();
             if (string.IsNullOrWhiteSpace(request?.Password))
             {
                 return BadRequest(new { message = "Password is required." });
@@ -127,6 +129,7 @@ namespace LinguaReadApi.Controllers
         [HttpPost("logout")]
         public async Task<IActionResult> Logout()
         {
+            if (LocalMode.IsEnabled(_configuration)) return LocalModeUnavailable();
             // This single-account app signs out every device. Rotating the persisted stamp
             // also rejects copied cookies after a restart, rather than merely deleting one.
             if (User.Identity?.IsAuthenticated == true)
@@ -157,7 +160,8 @@ namespace LinguaReadApi.Controllers
         public async Task<IActionResult> Status()
         {
             var user = await _context.Users.FindAsync(DefaultUserId);
-            bool needsSetup = user == null || string.IsNullOrEmpty(user.PasswordHash);
+            bool localMode = LocalMode.IsEnabled(_configuration);
+            bool needsSetup = !localMode && (user == null || string.IsNullOrEmpty(user.PasswordHash));
 
             // Check if the request has a valid auth cookie by inspecting the current identity
             bool authenticated = User.Identity?.IsAuthenticated == true;
@@ -166,6 +170,7 @@ namespace LinguaReadApi.Controllers
             {
                 authenticated,
                 needsSetup,
+                localMode,
                 user = authenticated && user != null ? new { id = user.Id, email = user.Email } : null
             });
         }
@@ -174,6 +179,7 @@ namespace LinguaReadApi.Controllers
         [HttpPost("setup")]
         public async Task<IActionResult> Setup([FromBody] SetupRequest request)
         {
+            if (LocalMode.IsEnabled(_configuration)) return LocalModeUnavailable();
             // A fresh Internet-facing install must not be claimable by its first visitor.
             var setupToken = _configuration["Auth:SetupToken"];
             if (!_env.IsDevelopment() && (string.IsNullOrWhiteSpace(setupToken) ||
@@ -236,6 +242,7 @@ namespace LinguaReadApi.Controllers
         [HttpPost("change-password")]
         public async Task<IActionResult> ChangePassword([FromBody] ChangePasswordRequest request)
         {
+            if (LocalMode.IsEnabled(_configuration)) return LocalModeUnavailable();
             if (string.IsNullOrWhiteSpace(request.NewPassword) || request.NewPassword.Length < 12)
                 return BadRequest(new { message = "Password must be at least 12 characters." });
 
@@ -253,6 +260,10 @@ namespace LinguaReadApi.Controllers
             SetAuthCookie(GenerateJwtToken(user));
             return Ok(new { message = "Password changed. Other sessions have been signed out." });
         }
+
+        private IActionResult LocalModeUnavailable() => Conflict(new {
+            message = "Password-free local mode is enabled. Disable it in the server configuration to use passwords and sign out."
+        });
 
         private void SetAuthCookie(string token)
         {

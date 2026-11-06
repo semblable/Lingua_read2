@@ -63,8 +63,9 @@ Resolve local modifications before pulling. A tracked release can be selected wi
 staging/production hosts, use the existing promotion workflow rather than mixing
 manual source builds with deployment-managed image tags.
 
-Check the health endpoint, sign in, open an existing lesson, change a disposable
-test word, review a card, and play/seek audio. Confirm media and secrets still
+Check the health endpoint, open the local workspace or sign in, then open an
+existing lesson, change a disposable test word, review a card, and play/seek audio.
+Confirm media and secrets still
 work. Major PostgreSQL upgrades require their own tested dump/restore procedure;
 changing the image version over an old data volume is not a migration.
 
@@ -100,6 +101,24 @@ passed on the 2026-10-29 working tree. Repeat at the intended release checkpoint
 the drill does not verify every existing installation's backups.
 
 ## Passwords and session recovery
+
+In password-free local mode, the owner workspace opens automatically and password
+and logout controls are unavailable. Existing credentials are preserved. Local
+mode is not a password reset and must not be exposed through a network proxy or
+tunnel. To return to password login, set `LINGUAREAD_LOCAL_MODE=false`, configure
+a valid `JWT_KEY`, and recreate the API. If no password exists, configure an
+initial password (at least 12 characters) or an operator setup token first. See
+the complete [switching instructions](../SETTINGS.md#2-security--authentication).
+
+For upgrades from older base Compose configurations, nginx now binds only
+`127.0.0.1`, with `HTTP_PORT` defaulting to 80. Use the production overlay for
+HTTPS network hosting; it forces password authentication even when a copied
+`.env` enables local mode. Its replacement port mapping requires Compose 2.24.4
+or later. Password-free Docker use requires Engine 28 or later for localhost port
+isolation. Preserve your private `.env` and check the intended mode after any
+restore, because configuration is part of the recovery checkpoint.
+
+The following password/session recovery instructions apply in password mode.
 
 Settings → Data Management → Change password requires the current password and
 revokes other sessions. Logout revokes all sessions for this single account.

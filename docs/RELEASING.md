@@ -14,6 +14,13 @@ independent `main` deployment or publish a tag over unreviewed local changes.
 - [x] Run the [phone-sized browser checks](DEPLOYMENT_EVIDENCE.md#browser-checks-at-phone-sized-viewports)
   for the showcase, reader, and audio at portrait/landscape dimensions.
 - [ ] Complete the remaining [physical-phone check](DEPLOYMENT_EVIDENCE.md#physical-phone-check).
+- [ ] Have another person follow the README from a cold install in both local
+  and password modes. Check automatic local access without JWT/password/setup
+  credentials, localhost-only listeners, and existing-password preservation when
+  switching back. Verify network hosting uses the production overlay with local
+  mode disabled. Record actual browser/device results in the
+  [release evidence](RELEASE_VERIFICATION.md); automated request tests alone do
+  not close this gate.
 - [ ] Verify the actual Pages URL, direct hash links, bundled audio and reset.
   For a root-domain deployment, build with `DEMO_BASE_PATH=/` and check it there.
   Publish only through the reviewed manual demo workflow.

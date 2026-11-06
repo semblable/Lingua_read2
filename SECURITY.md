@@ -27,11 +27,21 @@ forks, caches, artifacts, or previously downloaded backups.
 
 ## Deployment and backups
 
-Complete initial password setup on a trusted local connection. Internet access
-needs HTTPS and a reviewed deployment configuration. The supplied plain-HTTP
-Compose setup is for local evaluation; see [installation](README.md#installation-docker)
-and [settings](SETTINGS.md) before exposing it. The app uses a shared default user;
-it is not a tenant-isolation boundary for unrelated users.
+The default is password authentication. Complete its initial setup on a trusted
+local connection. Personal installs can explicitly enable password-free mode with
+`LINGUAREAD_LOCAL_MODE=true`; the supplied Docker web port and native/development
+listeners bind loopback. This mode trusts processes and containers on the same
+computer, checks the request Host/origin and proxy boundary, and requires the
+mutation header even without a session cookie. It preserves existing passwords
+and does not create a transferable login cookie.
+
+Keep password-free mode local: do not expose it through LAN ports, tunnels or
+external proxies. Network access needs password authentication, HTTPS and a
+reviewed deployment configuration. The production Compose overlay forces local
+mode off; configure a valid JWT key and password/setup token before switching.
+See [installation](README.md#installation-docker) and [settings](SETTINGS.md) for
+requirements and mode switching. The app uses a shared default user; it is not a
+tenant-isolation boundary for unrelated users.
 
 Keep `.env`, provider tokens, backup remote configuration, uploaded private media,
 and the `api_dp_keys` volume out of Git and public issue attachments. The key ring

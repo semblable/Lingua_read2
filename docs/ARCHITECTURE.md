@@ -30,6 +30,25 @@ it is not included in a server backup. The demo imports the production reader
 and player, replaces API access with an in-memory adapter, and blocks unsupported
 or external fetches. It does not run migrations, real providers, or FSRS scheduling.
 
+## Authentication modes
+
+Password authentication is the default. It uses an HTTP-only JWT cookie and
+checks the owner's persisted security stamp; logout/password changes revoke
+sessions. Personal installs can opt into `LINGUAREAD_LOCAL_MODE=true` in Docker,
+or `Auth__LocalMode=true` for native hosting. A dedicated authentication handler
+then supplies the existing owner identity without a password, setup token, JWT
+key or new login cookie. Controller authorization and uploaded-media ownership
+checks remain active.
+
+The local request boundary runs before forwarded headers can change the socket
+peer. It validates local Host/origin values and requires the mutation header
+without relying on a cookie. Native hosting also rejects nonlocal forwarded
+addresses. Docker explicitly trusts its configured proxy peer and relies on the
+localhost-published nginx port; the production overlay disables both local flags.
+Vite binds loopback and forwards the real caller for API and media requests.
+Existing passwords remain intact when changing modes. [Settings](../SETTINGS.md)
+describes the supported deployment boundary and switching procedure.
+
 ## Case study: keeping tokenization consistent
 
 **Problem.** The reader and backend word linker need to agree on word boundaries

@@ -58,12 +58,13 @@ No database schema migration or deployed-data rewrite is included. See [SETTINGS
 | Demo | Six tests passed; static build and notice verification passed |
 | Local-mode boundaries | Compose merge and resolved Vite proxy checks passed; both checks added to CI |
 | Independent reviewer follow-up | 64 frontend and 11 backend tests passed; no remaining actionable R1–R4 findings |
+| Independent local-mode review | 59 backend and 31 frontend tests, both configuration checks and actual Vite proxy forwarding passed; no actionable findings |
 | Whitespace/diff checks | Passed |
 | npm scan | Zero high/critical; nine moderate and two low development-tool entries |
 
 The skipped PostgreSQL checks require the existing isolated test database locally; SQLite/in-memory tests do not substitute for those concurrency checks. Named PostgreSQL unique-collision retries were tested with injected exceptions and distinct SQLite transactions; no dedicated live PostgreSQL collision result is claimed. Existing large-chunk and happy-dom transition warnings remain documented. The audit fixes were pushed as `bc9598c2`; their [CI and automatic staging deployment](https://github.com/semblable/Lingua_read2/actions/runs/42218108856) passed, with the CI isolated PostgreSQL database enabled. No production backup, production database, manual deployment or unrelated user edit was modified.
 
-The subsequent local-mode feature was implemented by the requested `password_free_local` subagent and reviewed by the primary agent. Focused coverage passed 58 backend and 20 frontend tests, followed by the full runs above. Parent review also closed a development-proxy bypass: Vite now binds loopback and forwards the actual caller for API/media requests, while native local mode rejects nonlocal forwarded hops before authentication. The R1–R4 independent review below applies to the audit corrections, not to an independent review of this later feature.
+The subsequent local-mode feature was implemented by the requested `password_free_local` subagent and reviewed by the primary agent. Focused coverage passed 58 backend and 20 frontend tests, followed by the full runs above. Parent review also closed a development-proxy bypass: Vite now binds loopback and forwards the actual caller for API/media requests, while native local mode rejects nonlocal forwarded hops before authentication. A separate [independent local-mode review](LOCAL_MODE_REVIEW.md) then passed 59 backend tests, 31 frontend tests, both configuration checks and real Vite proxy forwarding, with no actionable findings. Its [CI/staging run](https://github.com/semblable/Lingua_read2/actions/runs/42219676231) completed successfully. The R1–R4 review below remains specific to the earlier audit corrections. Independent cold-install and real browser/device mode-switch checks remain open release gates.
 
 ## Independent reviewer
 

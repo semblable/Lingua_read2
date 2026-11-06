@@ -38,6 +38,30 @@ assertion failed after projecting removed columns. A follow-up corrects that
 assertion to inspect the surviving event ID. Deployment/promotion evidence needs
 a successful subsequent run; browser access prevented visual verification.
 
+## Password-free local mode (2026-11-06)
+
+Feature commit `c2ab8ec1` adds opt-in `LINGUAREAD_LOCAL_MODE=true`. A subagent
+implemented it, the primary agent reviewed it, and a separate reviewer subagent
+completed an [independent local-mode review](audits/2026-11-06-audit-verification/LOCAL_MODE_REVIEW.md)
+with no actionable findings. The reviewer independently passed 59 backend tests,
+31 frontend tests, both configuration checks and a real Vite-to-mock-upstream
+exercise covering API/media forwarding. It also reviewed the follow-up security,
+architecture, upgrade and release-checklist documentation.
+
+Local full runs passed 2,036 frontend tests and 1,903 backend tests, with nine
+PostgreSQL integration tests skipped locally, plus typecheck, lint, production
+build and six demo tests/build. Request tests cover fresh local owner access,
+default-off password mode, credential preservation, CSRF without cookies,
+untrusted peers/hosts/origins, forwarding-header spoofing, and admin/media gates.
+Compose merge and resolved Vite proxy checks are retained in CI. The
+[commit's CI/staging workflow](https://github.com/semblable/Lingua_read2/actions/runs/42219676231)
+passed server, client and configuration checks, all three image builds and the
+automatic staging deployment. CI uses its isolated PostgreSQL test database.
+
+These are automated request/configuration results. An independent cold install
+and actual browser/device mode-switch checks remain release gates; see the
+[checklist](RELEASING.md). No physical-device or public-exposure test is claimed.
+
 ## Still open
 
 Physical-phone/touch and iOS/Android audio lifecycle; real browser disconnect/reconnect; independent cold install; Anki desktop/mobile import UI; live-provider success; large-library performance; and production upgrade/old-binary rollback.

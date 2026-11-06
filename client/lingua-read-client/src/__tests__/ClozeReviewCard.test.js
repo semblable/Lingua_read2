@@ -193,6 +193,20 @@ describe('ClozeReviewCard', () => {
     expect(screen.getByTestId('cloze-hint-counter')).toHaveTextContent('1/3 hints');
   });
 
+  test('Ctrl+H remains a browser shortcut and interactive controls own their keys', () => {
+    render(<ClozeReviewCard {...baseProps} term="dog" />);
+    const input = screen.getByTestId('cloze-input');
+    const history = new KeyboardEvent('keydown', { key: 'h', ctrlKey: true, bubbles: true, cancelable: true });
+    fireEvent(input, history);
+    expect(history.defaultPrevented).toBe(false);
+    expect(input).toHaveValue('');
+    const button = screen.getByTestId('cloze-hint-button');
+    const altHint = new KeyboardEvent('keydown', { key: 'h', altKey: true, bubbles: true, cancelable: true });
+    fireEvent(button, altHint);
+    expect(altHint.defaultPrevented).toBe(false);
+    expect(input).toHaveValue('');
+  });
+
   test('supports diacritic-tolerant matching (e.g. cafe matches café)', () => {
     const { rerender } = render(<ClozeReviewCard {...baseProps} term="café" />);
     const input = screen.getByTestId('cloze-input');

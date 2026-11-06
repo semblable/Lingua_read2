@@ -190,6 +190,23 @@ describe('SrsStoryReview (micro-contexts)', () => {
     expect(screen.getByText(/You reviewed/)).toBeInTheDocument();
   });
 
+  it.each([
+    ['en', 'to', 'Today we go to school.', 'Today'],
+    ['zh', '学习', '我喜欢学习中文。', '喜欢'],
+    ['ja', '勉強', '私は日本語を勉強します。', '日本語'],
+    ['th', 'ภาษาไทย', 'ฉันกำลังเรียนภาษาไทย', 'เรียน'],
+  ])('highlights complete %s targets and exposes surrounding words for lookup', async (code, term, context, lookup) => {
+    generateSrsStory.mockResolvedValue({ textId: 99, languageCode: code, microContexts: [
+      { wordId: 10, srsCardReviewId: 101, term, usedForm: term, context, translation: 'target', wordStatus: 2 },
+    ] });
+    renderComponent();
+    await selectSpanish();
+    fireEvent.click(await screen.findByRole('button', generateBtnQuery));
+    const card = await screen.findByTestId('srs-microcontext-card');
+    expect(card.querySelector('.srs-microcontext-target')).toHaveTextContent(term);
+    expect(within(card).getByRole('button', { name: lookup })).toBeInTheDocument();
+  });
+
   it('notes a word-status change on the reviewed card and updates that word elsewhere', async () => {
     getWordsByLanguage.mockResolvedValue([{ term: 'gato', translation: 'cat', status: 3 }]);
     submitSrsReview.mockResolvedValue({

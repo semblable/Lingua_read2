@@ -399,26 +399,7 @@ namespace LinguaReadApi.Controllers
             if (folder == null)
                 return NotFound();
 
-            // Move child folders to parent
-            var childFolders = await _context.Folders
-                .Where(f => f.ParentFolderId == id)
-                .ToListAsync();
-            foreach (var child in childFolders)
-                child.ParentFolderId = folder.ParentFolderId;
-
-            // Move texts to parent folder (SetNull handles this via cascade, but be explicit)
-            var texts = await _context.Texts
-                .Where(t => t.FolderId == id)
-                .ToListAsync();
-            foreach (var text in texts)
-                text.FolderId = folder.ParentFolderId;
-
-            // Move books to parent folder
-            var books = await _context.Books
-                .Where(b => b.FolderId == id)
-                .ToListAsync();
-            foreach (var book in books)
-                book.FolderId = folder.ParentFolderId;
+            await ReparentFolderContents(userId, folder);
 
             _context.Folders.Remove(folder);
             await _context.SaveChangesAsync();
@@ -485,15 +466,7 @@ namespace LinguaReadApi.Controllers
                         .FirstOrDefaultAsync(f => f.FolderId == fId && f.UserId == userId);
                     if (folder == null) continue;
 
-                    // Move children to parent
-                    var childFolders = await _context.Folders.Where(f => f.ParentFolderId == fId).ToListAsync();
-                    foreach (var child in childFolders) child.ParentFolderId = folder.ParentFolderId;
-
-                    var childTexts = await _context.Texts.Where(t => t.FolderId == fId).ToListAsync();
-                    foreach (var t in childTexts) t.FolderId = folder.ParentFolderId;
-
-                    var childBooks = await _context.Books.Where(b => b.FolderId == fId).ToListAsync();
-                    foreach (var b in childBooks) b.FolderId = folder.ParentFolderId;
+                    await ReparentFolderContents(userId, folder);
 
                     _context.Folders.Remove(folder);
                 }
@@ -683,6 +656,33 @@ namespace LinguaReadApi.Controllers
                 current = node.ParentFolderId;
             }
             return chain;
+        }
+
+        private async Task ReparentFolderContents(Guid userId, Folder folder)
+        {
+            var parent = folder.ParentFolderId;
+            var maxSort = await GetMaxSortOrderInFolder(userId, parent);
+            // Include moves made earlier in the same bulk deletion, before SaveChanges.
+            maxSort = new[] { maxSort,
+                _context.Folders.Local.Where(f => f.UserId == userId && f.ParentFolderId == parent).Select(f => f.SortOrder).DefaultIfEmpty(-1).Max(),
+                _context.Books.Local.Where(b => b.UserId == userId && b.FolderId == parent).Select(b => b.SortOrder).DefaultIfEmpty(-1).Max(),
+                _context.Texts.Local.Where(t => t.UserId == userId && t.FolderId == parent && t.BookId == null).Select(t => t.SortOrder).DefaultIfEmpty(-1).Max()
+            }.Max();
+            var folders = await _context.Folders.Where(f => f.UserId == userId && f.ParentFolderId == folder.FolderId).ToListAsync();
+            foreach (var child in folders.Concat(_context.Folders.Local).DistinctBy(f => f.FolderId)
+                .Where(f => f.UserId == userId && f.ParentFolderId == folder.FolderId && _context.Entry(f).State != EntityState.Deleted)
+                .OrderBy(f => f.SortOrder).ThenBy(f => f.FolderId).ToList())
+            { child.ParentFolderId = parent; child.SortOrder = ++maxSort; }
+            var texts = await _context.Texts.Where(t => t.UserId == userId && t.FolderId == folder.FolderId).ToListAsync();
+            foreach (var text in texts.Concat(_context.Texts.Local).DistinctBy(t => t.TextId)
+                .Where(t => t.UserId == userId && t.FolderId == folder.FolderId && _context.Entry(t).State != EntityState.Deleted)
+                .OrderBy(t => t.SortOrder).ThenBy(t => t.TextId).ToList())
+            { text.FolderId = parent; text.SortOrder = ++maxSort; }
+            var books = await _context.Books.Where(b => b.UserId == userId && b.FolderId == folder.FolderId).ToListAsync();
+            foreach (var book in books.Concat(_context.Books.Local).DistinctBy(b => b.BookId)
+                .Where(b => b.UserId == userId && b.FolderId == folder.FolderId && _context.Entry(b).State != EntityState.Deleted)
+                .OrderBy(b => b.SortOrder).ThenBy(b => b.BookId).ToList())
+            { book.FolderId = parent; book.SortOrder = ++maxSort; }
         }
 
         private async Task<int> GetMaxSortOrderInFolder(Guid userId, int? folderId)

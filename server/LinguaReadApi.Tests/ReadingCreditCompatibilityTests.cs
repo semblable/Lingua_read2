@@ -252,7 +252,7 @@ public class ReadingCreditCompatibilityTests(ITestOutputHelper output)
         Assert.Equal(1, stats.TotalTextsCompleted);
         Assert.Equal(2, stats.TotalTextCompletions);
         // Preserve the separate legacy Language counter's completion-only behavior.
-        Assert.Equal(book ? 6 : 0, (await learner.Context.Languages.SingleAsync()).WordsRead);
+        Assert.Equal(0, (await learner.Context.Languages.SingleAsync()).WordsRead);
         Assert.Equal(preserved, await learner.Snapshot());
     }
 

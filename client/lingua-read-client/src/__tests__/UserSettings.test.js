@@ -180,6 +180,27 @@ describe('UserSettings', () => {
     vi.useRealTimers();
   });
 
+  test('a full local cache cannot turn a successful settings save into a failure', async () => {
+    await renderLoaded();
+    useManualClock();
+    const realStorage = localStorage;
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.stubGlobal('localStorage', {
+      getItem: key => realStorage.getItem(key),
+      setItem: () => { throw new DOMException('Full', 'QuotaExceededError'); },
+    });
+    try {
+      fireEvent.change(field('theme'), { target: { value: 'light' } });
+      await advance(CHOICE_DELAY);
+      expect(updateUserSettings).toHaveBeenCalledWith({ theme: 'light' }, { keepalive: true });
+      expect(screen.getByText('All changes saved')).toBeInTheDocument();
+      expect(updateSetting).toHaveBeenCalledWith('theme', 'light');
+    } finally {
+      vi.unstubAllGlobals();
+      errorLog.mockRestore();
+    }
+  });
+
   test('renders a spinner while loading', () => {
     getUserSettings.mockReturnValue(new Promise(() => {}));
     const { container } = renderPage();
@@ -214,7 +235,7 @@ describe('UserSettings', () => {
 
     await advance(1);
     expect(updateUserSettings).toHaveBeenCalledTimes(1);
-    expect(updateUserSettings).toHaveBeenCalledWith({ autoTranslateWords: false });
+    expect(updateUserSettings).toHaveBeenCalledWith({ autoTranslateWords: false }, { keepalive: true });
     expect(screen.getByText('All changes saved')).toBeInTheDocument();
     expect(updateSetting).toHaveBeenCalledWith('autoTranslateWords', false);
     expect(localStorage.getItem('autoTranslateWords')).toBe('false');
@@ -230,7 +251,7 @@ describe('UserSettings', () => {
     fireEvent.change(field('autoTranslateWordStatus'), { target: { value: '1' } });
     await advance(CHOICE_DELAY);
 
-    expect(updateUserSettings).toHaveBeenCalledWith({ autoTranslateWordStatus: 1 });
+    expect(updateUserSettings).toHaveBeenCalledWith({ autoTranslateWordStatus: 1 }, { keepalive: true });
     expect(updateSetting).toHaveBeenCalledWith('autoTranslateWordStatus', 1);
   });
 
@@ -242,14 +263,14 @@ describe('UserSettings', () => {
     fireEvent.click(field('newsImportEnabled'));
     await advance(CHOICE_DELAY);
 
-    expect(updateUserSettings).toHaveBeenCalledWith({ newsImportEnabled: true });
+    expect(updateUserSettings).toHaveBeenCalledWith({ newsImportEnabled: true }, { keepalive: true });
     expect(updateSetting).toHaveBeenCalledWith('newsImportEnabled', true);
     expect(screen.getByText('Your feeds')).toBeInTheDocument();
     expect(getNewsFeeds).toHaveBeenCalledTimes(1);
 
     fireEvent.change(field('newsDeleteUnreadAfterDays'), { target: { value: '0' } });
     await advance(CHOICE_DELAY);
-    expect(updateUserSettings).toHaveBeenLastCalledWith({ newsDeleteUnreadAfterDays: 0 });
+    expect(updateUserSettings).toHaveBeenLastCalledWith({ newsDeleteUnreadAfterDays: 0 }, { keepalive: true });
   });
 
   test('sends nothing when a switch is flipped back before it saves', async () => {
@@ -282,7 +303,7 @@ describe('UserSettings', () => {
 
     await advance(1);
     expect(updateUserSettings).toHaveBeenCalledTimes(1);
-    expect(updateUserSettings).toHaveBeenCalledWith({ aiProviders: { openrouter: { model: 'anthropic/claude' } } });
+    expect(updateUserSettings).toHaveBeenCalledWith({ aiProviders: { openrouter: { model: 'anthropic/claude' } } }, { keepalive: true });
   });
 
   test('saves a text edit as soon as the field loses focus', async () => {
@@ -295,7 +316,7 @@ describe('UserSettings', () => {
     fireEvent.blur(model);
 
     // No time has passed: only the blur can have sent it.
-    expect(updateUserSettings).toHaveBeenCalledWith({ aiProviders: { openrouter: { model: 'openai/gpt' } } });
+    expect(updateUserSettings).toHaveBeenCalledWith({ aiProviders: { openrouter: { model: 'openai/gpt' } } }, { keepalive: true });
   });
 
   test('does not save a half-typed timezone offset as 0', async () => {
@@ -312,7 +333,7 @@ describe('UserSettings', () => {
     fireEvent.change(offset, { target: { value: '-300' } });
     fireEvent.blur(offset);
     expect(updateUserSettings).toHaveBeenCalledTimes(1);
-    expect(updateUserSettings).toHaveBeenCalledWith({ discordTimezoneOffsetMinutes: -300 });
+    expect(updateUserSettings).toHaveBeenCalledWith({ discordTimezoneOffsetMinutes: -300 }, { keepalive: true });
   });
 
   test('sends a change made while a save is running right after it, not alongside', async () => {
@@ -336,7 +357,7 @@ describe('UserSettings', () => {
     await advance(0);
 
     expect(updateUserSettings).toHaveBeenCalledTimes(2);
-    expect(updateUserSettings).toHaveBeenLastCalledWith({ pauseOnWordClick: true });
+    expect(updateUserSettings).toHaveBeenLastCalledWith({ pauseOnWordClick: true }, { keepalive: true });
     expect(screen.getByText('All changes saved')).toBeInTheDocument();
   });
 
@@ -355,7 +376,7 @@ describe('UserSettings', () => {
     await advance(0);
 
     expect(updateUserSettings).toHaveBeenCalledTimes(2);
-    expect(updateUserSettings).toHaveBeenLastCalledWith({ autoTranslateWords: false });
+    expect(updateUserSettings).toHaveBeenLastCalledWith({ autoTranslateWords: false }, { keepalive: true });
     expect(screen.getByText('All changes saved')).toBeInTheDocument();
     expect(screen.queryByText(/Couldn't save your changes/)).not.toBeInTheDocument();
     expect(updateSetting).toHaveBeenCalledWith('autoTranslateWords', false);
@@ -371,7 +392,7 @@ describe('UserSettings', () => {
     expect(updateUserSettings).not.toHaveBeenCalled();
     unmount();
 
-    expect(updateUserSettings).toHaveBeenCalledWith({ aiProviders: { openrouter: { model: 'left/in-a-hurry' } } });
+    expect(updateUserSettings).toHaveBeenCalledWith({ aiProviders: { openrouter: { model: 'left/in-a-hurry' } } }, { keepalive: true });
   });
 
   test('keeps minimalHome on this device: no request, but stored and applied', async () => {
@@ -394,7 +415,7 @@ describe('UserSettings', () => {
     fireEvent.change(field('theme'), { target: { value: 'light' } });
     await advance(CHOICE_DELAY);
 
-    expect(updateUserSettings).toHaveBeenCalledWith({ theme: 'light' });
+    expect(updateUserSettings).toHaveBeenCalledWith({ theme: 'light' }, { keepalive: true });
     expect(document.body).toHaveClass('light-theme');
     expect(document.body).not.toHaveClass('dark-theme');
     expect(localStorage.getItem('theme')).toBe('light');
@@ -441,7 +462,7 @@ describe('UserSettings', () => {
     fireEvent.click(sectionOf(model).getByRole('button', { name: 'Test Connection' }));
 
     expect(await screen.findByText('Connected')).toBeInTheDocument();
-    expect(updateUserSettings).toHaveBeenCalledWith({ aiProviders: { openrouter: { model: 'new/model' } } });
+    expect(updateUserSettings).toHaveBeenCalledWith({ aiProviders: { openrouter: { model: 'new/model' } } }, { keepalive: true });
     expect(testAiProvider).toHaveBeenCalledWith('openrouter');
     expect(updateUserSettings.mock.invocationCallOrder[0])
       .toBeLessThan(testAiProvider.mock.invocationCallOrder[0]);
@@ -479,7 +500,7 @@ describe('UserSettings', () => {
     fireEvent.change(field('aiProvider'), { target: { value: 'deepseek' } });
     await advance(CHOICE_DELAY);
 
-    expect(updateUserSettings).toHaveBeenCalledWith({ aiProvider: 'deepseek' });
+    expect(updateUserSettings).toHaveBeenCalledWith({ aiProvider: 'deepseek' }, { keepalive: true });
     expect(updateSetting).toHaveBeenCalledWith('aiProvider', 'deepseek');
     expect(screen.getByLabelText('DeepSeek API key')).toBeInTheDocument();
     // DeepSeek has a default model, so only the key is missing.
@@ -535,7 +556,7 @@ describe('UserSettings', () => {
         openrouter: { model: 'openai/gpt-6-luna' },
         deepseek: { model: 'deepseek-v4-pro' }
       }
-    });
+    }, { keepalive: true });
 
     fireEvent.change(field('aiProvider'), { target: { value: 'openrouter' } });
     expect(screen.getByLabelText('Model')).toHaveValue('openai/gpt-6-luna');
@@ -552,7 +573,7 @@ describe('UserSettings', () => {
 
     expect(updateUserSettings).toHaveBeenCalledWith({
       aiProviders: { openrouter: { model: 'mistralai/mistral-small-2603', storyModel: 'anthropic/claude-story' } }
-    });
+    }, { keepalive: true });
   });
 
   test('a custom endpoint asks for a server URL, and its key is optional', async () => {
@@ -570,7 +591,7 @@ describe('UserSettings', () => {
 
     expect(updateUserSettings).toHaveBeenCalledWith({
       aiProviders: { custom: { baseUrl: 'http://localhost:11434/v1', model: 'llama3.3' } }
-    });
+    }, { keepalive: true });
     expect(screen.queryByTestId('ai-provider-incomplete')).not.toBeInTheDocument();
   });
 
@@ -600,7 +621,7 @@ describe('UserSettings', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Load models' }));
 
     expect(await screen.findByText(/1 models loaded/)).toBeInTheDocument();
-    expect(updateUserSettings).toHaveBeenCalledWith({ aiProviders: { custom: { baseUrl: 'http://localhost:11434/v1' } } });
+    expect(updateUserSettings).toHaveBeenCalledWith({ aiProviders: { custom: { baseUrl: 'http://localhost:11434/v1' } } }, { keepalive: true });
     expect(updateUserSettings.mock.invocationCallOrder[0])
       .toBeLessThan(getAiProviderModels.mock.invocationCallOrder[0]);
   });

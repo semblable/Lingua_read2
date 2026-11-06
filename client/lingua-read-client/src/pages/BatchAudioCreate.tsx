@@ -90,14 +90,14 @@ const BatchAudioCreate = () => {
         const fileList = Array.from(files).sort((a, b) =>
             a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })
         );
-        const mp3Files = fileList.filter(f => f.name.toLowerCase().endsWith('.mp3'));
+        const mp3Files = fileList.filter(f => /\.(mp3|m4a|aac|ogg|opus|wav)$/i.test(f.name));
         const srtFiles = fileList.filter(f => f.name.toLowerCase().endsWith('.srt'));
 
         // Function to normalize base names: trim whitespace/punctuation, convert to lowercase
         const normalizeBaseName = (name: string | null | undefined): string => {
             if (!name) return '';
             // Normalize unicode and strip extension if present
-            let base = name.normalize('NFKC').replace(/\.(mp3|srt)$/i, '');
+            let base = name.normalize('NFKC').replace(/\.(mp3|m4a|aac|ogg|opus|wav|srt)$/i, '');
             // Trim whitespace and collapse repeated spaces
             base = base.trim().replace(/\s+/g, ' ');
             // Trim trailing dots/underscores/dashes/spaces repeatedly (iteratively to handle mixed cases)
@@ -133,8 +133,8 @@ const BatchAudioCreate = () => {
                 }
             }
 
-            // If none matched, it's an invalid format
-            return { error: 'Invalid Format (expected base + lang suffix like __fr, _fr, -fr, .fr)', originalFullName: srtFileName };
+            // The form already supplies the language for the whole batch.
+            return { baseName: srtFileName.replace(/\.srt$/i, ''), originalFullName: srtFileName };
         };
 
         type SrtFileEntry = SrtInfo & { file: File };
@@ -149,7 +149,7 @@ const BatchAudioCreate = () => {
 
         // 1. Process and Normalize MP3s
         mp3Files.forEach(mp3File => {
-            const rawBaseName = mp3File.name.replace(/\.mp3$/i, '').trim(); // Trim whitespace
+            const rawBaseName = mp3File.name.replace(/\.(mp3|m4a|aac|ogg|opus|wav)$/i, '').trim(); // Trim whitespace
             const normalized = normalizeBaseName(rawBaseName);
             if (!mp3sByNormalizedBase.has(normalized)) mp3sByNormalizedBase.set(normalized, []);
             mp3sByNormalizedBase.get(normalized)!.push(mp3File);
@@ -157,7 +157,10 @@ const BatchAudioCreate = () => {
 
         // 2. Process, Validate Format, and Normalize SRTs
         srtFiles.forEach(srtFile => {
-            const info = extractSrtInfo(srtFile.name);
+            const exactBase = normalizeBaseName(srtFile.name.replace(/\.srt$/i, ''));
+            const info = mp3sByNormalizedBase.has(exactBase)
+                ? { baseName: exactBase, originalFullName: srtFile.name }
+                : extractSrtInfo(srtFile.name);
             if (info.error) {
                 addProblem(srtFile.name, info.error);
             } else {
@@ -296,12 +299,12 @@ const BatchAudioCreate = () => {
             <Card className="shadow-sm">
                 <Card.Body className="p-4">
                     <h2 className="mb-4">Batch Create Audio Lessons</h2>
-                    <p className="mb-4">Upload paired audio (.mp3) and subtitle (.srt) files. Files must follow the naming convention:</p>
+                    <p className="mb-4">Upload paired audio (.mp3, .m4a, .aac, .ogg, .opus, .wav) and subtitle (.srt) files. Pair files by matching names:</p>
                     <ul>
                         <li>Audio: <code>Lesson Name_.mp3</code></li>
                         <li>Subtitle: <code>Lesson Name__fr.srt</code> (or other language code)</li>
                     </ul>
-                    <p>The part before the final <code>_</code> or <code>__</code> must match exactly for files to be paired.</p>
+                    <p>Use matching base names, such as Chapter1.mp3 and Chapter1.srt. Language suffixes such as _fr or __fr are also supported.</p>
 
                     {loadingLanguages && <Spinner animation="border" size="sm" />}
                     {error && <Alert variant="danger">{error}</Alert>}
@@ -359,11 +362,11 @@ const BatchAudioCreate = () => {
                         </Form.Group>
 
                         <Form.Group controlId="formFileMultiple" className="mb-3">
-                            <Form.Label>Select Paired Audio (.mp3) and Subtitle (.srt) Files</Form.Label>
+                            <Form.Label>Select Paired Audio and Subtitle (.srt) Files</Form.Label>
                             <Form.Control
                                 type="file"
                                 multiple
-                                accept=".mp3,.srt"
+                                accept=".mp3,.m4a,.aac,.ogg,.opus,.wav,.srt"
                                 onChange={handleFileChange}
                                 required
                                 disabled={isLoading}

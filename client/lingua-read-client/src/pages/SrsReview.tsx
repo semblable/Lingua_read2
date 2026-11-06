@@ -1,3 +1,5 @@
+import { safeLocalStorageSetItem } from '../utils/storage';
+import { isInteractiveKeyboardTarget } from '../utils/keyboard';
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Container, Card, Button, Spinner, Alert, Form, Row, Col, Badge, ProgressBar, Modal } from 'react-bootstrap';
 import { useNavigate } from 'react-router-dom';
@@ -482,8 +484,7 @@ const SrsReview = () => {
     if (!sessionStarted || sessionComplete) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement;
-      if (target?.tagName === 'INPUT' || target?.tagName === 'SELECT') return;
+      if (e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey || isInteractiveKeyboardTarget(e.target)) return;
 
       if (e.code === 'Space' || e.code === 'Enter') {
         e.preventDefault();
@@ -508,7 +509,7 @@ const SrsReview = () => {
   const handleLanguageChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const langId = e.target.value;
     setSelectedLanguage(langId);
-    localStorage.setItem('srsSelectedLanguage', langId);
+    safeLocalStorageSetItem('srsSelectedLanguage', langId);
     setSessionStarted(false);
     setSessionComplete(false);
     setQueue({ unseen: [], learning: [] });

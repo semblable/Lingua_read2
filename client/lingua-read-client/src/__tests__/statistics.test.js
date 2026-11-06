@@ -246,7 +246,7 @@ describe('ActivityHeatmap', () => {
         period="last_week"
       />
     );
-    expect(container.querySelectorAll('[role="gridcell"]').length).toBe(7);
+    expect(container.querySelectorAll('.stats-heatmap-cell[role="img"]').length).toBe(7);
   });
 });
 

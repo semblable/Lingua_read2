@@ -515,7 +515,7 @@ namespace LinguaReadApi.Data
                 .OnDelete(DeleteBehavior.Cascade);
 
             modelBuilder.Entity<UserGoalPeriod>()
-                .HasIndex(p => new { p.GoalId, p.PeriodEnd });
+                .HasIndex(p => new { p.GoalId, p.PeriodEnd }).IsUnique();
 
             // News feeds (see NewsFeed). Deleting a feed keeps its articles as ordinary texts and
             // forgets which entries it had seen; deleting its folder only unsets FolderId, and the

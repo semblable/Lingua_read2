@@ -797,6 +797,40 @@ describe('AudiobookPlayer', () => {
     expect(await screen.findByText('Error loading audio.')).toBeInTheDocument();
   });
 
+  test('audio errors stop playback and listening accrual without requiring a pause event', async () => {
+    const now = vi.spyOn(Date, 'now').mockReturnValue(1000);
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { audio } = await renderReadyLessonPlayer();
+    try {
+      act(() => {
+        audio.__lrAllowPlayback = true;
+        fireEvent.play(audio);
+        fireEvent(audio, new Event('playing'));
+      });
+      now.mockReturnValue(6000);
+      act(() => fireEvent.error(audio));
+      expect(await screen.findByText('Error loading audio.')).toBeInTheDocument();
+      expect(screen.queryByTitle('Pause')).not.toBeInTheDocument();
+      now.mockReturnValue(26000);
+      act(() => fireEvent.pause(audio));
+      expect(logListeningActivity).toHaveBeenCalledTimes(1);
+      expect(logListeningActivity).toHaveBeenCalledWith(5, 5);
+    } finally {
+      errorLog.mockRestore();
+      now.mockRestore();
+    }
+  });
+
+  test('playback shortcuts do not intercept a focused native button or its child icon', async () => {
+    await renderReadyLessonPlayer();
+    const button = screen.getByTitle(/^Play/);
+    const target = button.querySelector('i, svg') || button;
+    const space = new KeyboardEvent('keydown', { key: ' ', code: 'Space', bubbles: true, cancelable: true });
+    fireEvent(target, space);
+    expect(space.defaultPrevented).toBe(false);
+    expect(screen.getByTitle(/^Play/)).toBeInTheDocument();
+  });
+
   test('segment with repeatCount=2 replays once then stops at endTime', async () => {
     getAudioLessonProgress.mockResolvedValue({ currentPosition: 0 });
 

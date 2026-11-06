@@ -109,9 +109,11 @@ namespace LinguaReadApi.Services.Srs
         public int NextIntervalDays(double stability, double desiredRetention, int maximumIntervalDays)
         {
             var raw = stability / _p.Factor * (Math.Pow(desiredRetention, 1.0 / _p.Decay) - 1);
+            if (double.IsNaN(raw)) return 1;
             // Math.Round defaults to banker's rounding, matching Python's round().
-            var days = (int)Math.Round(raw);
-            return Math.Min(Math.Max(days, 1), Math.Max(1, maximumIntervalDays));
+            // Bound the double before conversion: very large (or infinite)
+            // stability must not depend on the runtime's out-of-range cast behavior.
+            return (int)Math.Clamp(Math.Round(raw), 1.0, Math.Max(1, maximumIntervalDays));
         }
 
         /// <summary>

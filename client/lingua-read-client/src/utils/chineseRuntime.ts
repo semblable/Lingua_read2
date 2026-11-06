@@ -1,6 +1,7 @@
 import { createChineseSegmenter, type ChineseSegmenter } from './chineseSegmenter';
 
 let current: ChineseSegmenter | null = null;
+export const isChineseSegmentationReady = (): boolean => current !== null;
 export const initializeChineseSegmentation = (dictionary: string): void => {
   current = createChineseSegmenter(dictionary);
 };

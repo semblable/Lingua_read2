@@ -15,7 +15,7 @@ export const parseSrtTime = (timeString: string | null | undefined): number => {
   const hours = parseInt(parts[0], 10);
   const minutes = parseInt(parts[1], 10);
   const seconds = parseInt(secondsParts[0], 10);
-  const milliseconds = parseInt(secondsParts[1], 10);
+  const milliseconds = parseInt(secondsParts[1].padEnd(3, '0').slice(0, 3), 10);
   if (isNaN(hours) || isNaN(minutes) || isNaN(seconds) || isNaN(milliseconds)) return 0;
   return hours * 3600 + minutes * 60 + seconds + milliseconds / 1000;
 };

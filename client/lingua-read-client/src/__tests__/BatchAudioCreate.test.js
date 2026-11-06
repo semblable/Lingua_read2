@@ -91,4 +91,16 @@ describe('BatchAudioCreate', () => {
     expect(await screen.findByText(/Failed to load languages/i)).toBeInTheDocument();
     consoleSpy.mockRestore();
   });
+
+  test.each(['mp3', 'm4a', 'aac', 'ogg', 'opus', 'wav'])('pairs ordinary base names for %s audio', async (extension) => {
+    renderPage();
+    await screen.findByText('Spanish');
+    const input = document.getElementById('formFileMultiple');
+    const audio = new File(['audio'], `Chapter-one.${extension}`);
+    const srt = new File(['subs'], 'Chapter-one.srt');
+    fireEvent.change(input, { target: { files: [audio, srt] } });
+    fireEvent.submit(input.closest('form'));
+    await waitFor(() => expect(createAudioLessonsBatch).toHaveBeenCalled());
+    expect(createAudioLessonsBatch.mock.calls[0][2]).toEqual(expect.arrayContaining([audio, srt]));
+  });
 });

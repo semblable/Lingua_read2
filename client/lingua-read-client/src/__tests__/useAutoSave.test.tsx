@@ -351,4 +351,16 @@ describe('useAutoSave', () => {
 
     expect(save).toHaveBeenCalledWith({ model: 'typed' });
   });
+
+  test('an in-flight save finishing after unmount does not create notice timers', async () => {
+    const request = deferred<Partial<Form>>();
+    const save = vi.fn(() => request.promise);
+    const { result, unmount } = setup(save);
+    act(() => result.current.setField('model', 'edited', 0));
+    await advance(0);
+    unmount();
+    await act(async () => { request.resolve({ model: 'edited' }); });
+    expect(vi.getTimerCount()).toBe(0);
+    expect(save).toHaveBeenCalledTimes(1);
+  });
 });

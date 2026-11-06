@@ -18,6 +18,23 @@ namespace LinguaReadApi.Tests;
 public class CompleteLessonTests
 {
     [Fact]
+    public async Task Completion_PreservesSharedLanguageCounter_AndOtherLearnersStatistics()
+    {
+        await using var context = CreateContext();
+        var user = Guid.NewGuid();
+        SeedBookWithTwoParts(context, user, out var book, out var text);
+        (await context.Languages.SingleAsync()).WordsRead = 777;
+        var other = Guid.NewGuid();
+        context.Users.Add(new User { Id = other, UserName = "another learner" });
+        context.UserLanguageStatistics.Add(new UserLanguageStatistics { UserId = other, LanguageId = 1, TotalWordsRead = 999 });
+        await context.SaveChangesAsync();
+        await CreateController(context, user).CompleteLesson(book, new CompleteLessonDto { TextId = text });
+        context.ChangeTracker.Clear();
+        Assert.Equal(777, (await context.Languages.SingleAsync()).WordsRead);
+        Assert.Equal(999, (await context.UserLanguageStatistics.SingleAsync(s => s.UserId == other)).TotalWordsRead);
+        Assert.Equal(3, (await context.UserLanguageStatistics.SingleAsync(s => s.UserId == user)).TotalWordsRead);
+    }
+    [Fact]
     public async Task CompleteLesson_UpdatesAllCountersAndMarksPartFinished()
     {
         await using var context = CreateContext();
@@ -34,7 +51,7 @@ public class CompleteLessonTests
         context.ChangeTracker.Clear();
 
         var language = await context.Languages.SingleAsync();
-        Assert.Equal(3, language.WordsRead); // "hola amigo mundo" = 3 tokens
+        Assert.Equal(0, language.WordsRead); // Activity belongs to the user, not the shared language.
 
         var activity = await context.UserActivities.SingleAsync();
         Assert.Equal("TextCompleted", activity.ActivityType);
@@ -99,7 +116,7 @@ public class CompleteLessonTests
 
         var language = await context.Languages.SingleAsync();
         // Finishing must not change language word counts beyond what completion already credited.
-        Assert.Equal(4, language.WordsRead);
+        Assert.Equal(0, language.WordsRead); // Activity belongs to the user, not the shared language.
 
         var activities = await context.UserActivities.OrderBy(a => a.ActivityId).ToListAsync();
         Assert.Equal(2, activities.Count);
@@ -135,7 +152,7 @@ public class CompleteLessonTests
 
         var language = await context.Languages.SingleAsync();
         // Only the one completed lesson contributed (3 words). Finishing must NOT add the unread part's words.
-        Assert.Equal(3, language.WordsRead);
+        Assert.Equal(0, language.WordsRead); // Activity belongs to the user, not the shared language.
 
         var activities = await context.UserActivities.OrderBy(a => a.ActivityId).ToListAsync();
         Assert.Single(activities);
@@ -281,7 +298,7 @@ public class CompleteLessonTests
 
         // None of the counters should double.
         var language = await context.Languages.SingleAsync();
-        Assert.Equal(3, language.WordsRead);
+        Assert.Equal(0, language.WordsRead); // Activity belongs to the user, not the shared language.
         Assert.Single(await context.UserActivities.ToListAsync());
 
         var langStats = await context.UserLanguageStatistics.SingleAsync();
@@ -314,7 +331,7 @@ public class CompleteLessonTests
 
         context.ChangeTracker.Clear();
         var language = await context.Languages.SingleAsync();
-        Assert.Equal(6, language.WordsRead); // 3 + 3, re-read credits word volume
+        Assert.Equal(0, language.WordsRead); // Activity belongs to the user, not the shared language.
 
         var activities = await context.UserActivities.ToListAsync();
         Assert.Equal(2, activities.Count); // re-read logs a new activity row (streak coverage)

@@ -250,6 +250,20 @@ describe('SrsReview', () => {
     expect(await screen.findByText(/corre/)).toBeInTheDocument();
   });
 
+  it('focused buttons own Space and Enter instead of the global flip shortcut', async () => {
+    renderComponent();
+    await selectSpanish();
+    fireEvent.click(await screen.findByRole('button', { name: /Start Review/i }));
+    await screen.findByText(/duerme/);
+    const button = screen.getAllByRole('button')[0];
+    for (const code of ['Space', 'Enter']) {
+      const event = new KeyboardEvent('keydown', { code, key: code === 'Space' ? ' ' : 'Enter', bubbles: true, cancelable: true });
+      fireEvent(button, event);
+      expect(event.defaultPrevented).toBe(false);
+      expect(screen.getByText(/Click or press/)).toBeInTheDocument();
+    }
+  });
+
   it('labels the grade buttons with the intervals the server previewed', async () => {
     renderComponent();
     await selectSpanish();

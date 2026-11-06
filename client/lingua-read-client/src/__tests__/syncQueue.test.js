@@ -10,7 +10,8 @@ import {
   _closeDbForTests,
 } from '../utils/offline/syncQueue';
 import { enqueueIfOffline } from '../utils/offline/enqueueIfOffline';
-import { ApiError } from '../utils/api/client';
+import { ApiError, fetchApi } from '../utils/api/client';
+import { clearOfflineState } from '../utils/offline/cleanup';
 
 // Full handler set including the listening/position/reading-progress ops added
 // for offline resilience. Tests override individual handlers as needed.
@@ -217,11 +218,11 @@ describe('syncQueue', () => {
     expect(second).toEqual({ attempted: 0, succeeded: 0, failed: 0 });
   });
 
-  test('drain keeps the op queued on 5xx (retryable error)', async () => {
+  test.each([408, 429, 503])('drain retains HTTP %s mutations and replays them on retry', async (status) => {
     await enqueue({ type: 'srsReview', payload: { cardId: 600, grade: 2 } });
 
     const handlers = {
-      srsReview: vi.fn(async () => { throw new ApiError('boom', 503); }),
+      srsReview: vi.fn(async () => { throw new ApiError('retry later', status); }),
       wordStatusUpdate: vi.fn(),
       wordCreate: vi.fn(),
     };
@@ -229,6 +230,9 @@ describe('syncQueue', () => {
     const result = await drain(handlers);
     expect(result).toEqual({ attempted: 1, succeeded: 0, failed: 1 });
     expect(await pending()).toBe(1);
+    handlers.srsReview.mockResolvedValue(undefined);
+    expect(await drain(handlers)).toEqual({ attempted: 1, succeeded: 1, failed: 0 });
+    expect(await pending()).toBe(0);
   });
 
   test('drain halts on 401 and leaves remaining ops queued for re-auth', async () => {
@@ -252,6 +256,38 @@ describe('syncQueue', () => {
     expect(result.attempted).toBe(1);
     // All three ops still queued (none dropped).
     expect(await pending()).toBe(3);
+  });
+
+  test('real HTTP 401 preserves offline work through re-authentication, while logout clears it', async () => {
+    await enqueue({ type: 'srsReview', payload: { cardId: 700, grade: 2 } });
+    await enqueue({ type: 'wordStatusUpdate', payload: { wordId: 1, status: 2 } });
+    const originalLocation = window.location;
+    const redirect = vi.fn();
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: { pathname: '/texts/1', set href(value) { redirect(value); } },
+    });
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('', { status: 401 }));
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const handlers = fullHandlers({ srsReview: () => fetchApi('/srs/review', { method: 'POST' }) });
+    try {
+      const before = await listPending();
+      expect(await drain(handlers)).toEqual({ attempted: 1, succeeded: 0, failed: 1 });
+      expect(redirect).toHaveBeenCalledWith('/login');
+      // Let asynchronous cache cleanup finish too: it must never touch the queue.
+      await new Promise(resolve => setTimeout(resolve, 0));
+      expect(await listPending()).toEqual(before);
+      fetchMock.mockResolvedValue(new Response('{}', { headers: { 'content-type': 'application/json' } }));
+      expect(await drain(handlers)).toEqual({ attempted: 2, succeeded: 2, failed: 0 });
+      expect(await pending()).toBe(0);
+      await enqueue({ type: 'srsReview', payload: { cardId: 701, grade: 2 } });
+      await clearOfflineState();
+      expect(await pending()).toBe(0);
+    } finally {
+      fetchMock.mockRestore();
+      errorLog.mockRestore();
+      Object.defineProperty(window, 'location', { configurable: true, value: originalLocation });
+    }
   });
 
   test('enqueue coalesces ops sharing a coalesceKey, keeping only the newest', async () => {

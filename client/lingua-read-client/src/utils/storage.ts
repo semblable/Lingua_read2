@@ -48,3 +48,5 @@ const storage: StorageWrapper = {
 };
 
 export default storage;
+
+export const safeLocalStorageSetItem = storage.setItem;

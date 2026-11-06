@@ -45,9 +45,9 @@ export function useAutoSave<T extends object>({
   onSaved,
   savedNoticeMs = 2000
 }: UseAutoSaveOptions<T>): UseAutoSaveResult<T> {
-  const [values, setValues] = useState<T>(initialValues);
-  const [status, setStatus] = useState<AutoSaveStatus>('idle');
-  const [error, setError] = useState<string | null>(null);
+  const [values, setValuesState] = useState<T>(initialValues);
+  const [status, setStatusState] = useState<AutoSaveStatus>('idle');
+  const [error, setErrorState] = useState<string | null>(null);
 
   // The save loop runs outside render, so it works from refs: the current values and the values
   // the server was last known to hold.
@@ -57,6 +57,10 @@ export function useAutoSave<T extends object>({
   const noticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const runningRef = useRef<Promise<boolean> | null>(null);
   const failedRef = useRef(false);
+  const mountedRef = useRef(true);
+  const setValues = useCallback<typeof setValuesState>(value => { if (mountedRef.current) setValuesState(value); }, []);
+  const setStatus = useCallback<typeof setStatusState>(value => { if (mountedRef.current) setStatusState(value); }, []);
+  const setError = useCallback<typeof setErrorState>(value => { if (mountedRef.current) setErrorState(value); }, []);
 
   const saveRef = useRef(save);
   const onSavedRef = useRef(onSaved);
@@ -110,7 +114,7 @@ export function useAutoSave<T extends object>({
               failedRef.current = false;
               setError(null);
             }
-            if (savedAny) {
+            if (savedAny && mountedRef.current) {
               setStatus('saved');
               clearNotice();
               noticeTimerRef.current = setTimeout(() => {
@@ -157,7 +161,7 @@ export function useAutoSave<T extends object>({
     // included) by this line, and marking it as running would block every later save.
     if (!finished) runningRef.current = run;
     return run;
-  }, [clearNotice, clearTimer, pendingPatch, savedNoticeMs]);
+  }, [clearNotice, clearTimer, pendingPatch, savedNoticeMs, setError, setStatus]);
 
   const schedule = useCallback((delayMs: number) => {
     clearTimer();
@@ -176,13 +180,13 @@ export function useAutoSave<T extends object>({
       timerRef.current = null;
       void flush();
     }, delayMs);
-  }, [clearNotice, clearTimer, flush, pendingPatch]);
+  }, [clearNotice, clearTimer, flush, pendingPatch, setError, setStatus]);
 
   const setField = useCallback(<K extends keyof T>(key: K, value: T[K], delayMs: number = DEFAULT_DELAY_MS) => {
     valuesRef.current = { ...valuesRef.current, [key]: value };
     setValues(valuesRef.current);
     if (keysRef.current.includes(key)) schedule(delayMs);
-  }, [schedule]);
+  }, [schedule, setValues]);
 
   const reset = useCallback((next: T) => {
     clearTimer();
@@ -193,13 +197,13 @@ export function useAutoSave<T extends object>({
     setValues(next);
     setStatus('idle');
     setError(null);
-  }, [clearNotice, clearTimer]);
+  }, [clearNotice, clearTimer, setError, setStatus, setValues]);
 
   const applyServerValues = useCallback((partial: Partial<T>) => {
     valuesRef.current = { ...valuesRef.current, ...partial };
     savedRef.current = { ...savedRef.current, ...partial };
     setValues(valuesRef.current);
-  }, []);
+  }, [setValues]);
 
   const hasUnsavedChanges = useCallback(
     () => timerRef.current !== null || runningRef.current !== null || pendingPatch() !== null,
@@ -233,9 +237,13 @@ export function useAutoSave<T extends object>({
   }, [flush, hasUnsavedChanges]);
 
   // Leaving the page within the debounce window must not drop the change.
-  useEffect(() => () => {
-    clearNotice();
-    if (hasUnsavedChanges()) void flush();
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      clearNotice();
+      if (hasUnsavedChanges()) void flush();
+    };
   }, [clearNotice, flush, hasUnsavedChanges]);
 
   return { values, status, error, setField, reset, applyServerValues, flush, hasUnsavedChanges };

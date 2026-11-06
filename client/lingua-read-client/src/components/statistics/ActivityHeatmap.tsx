@@ -197,7 +197,7 @@ const ActivityHeatmap = ({ readingActivity, listeningActivity, period }: Activit
           </ButtonGroup>
         </div>
 
-        <div className="stats-heatmap-outer" role="grid" aria-label="Daily activity heatmap">
+        <div className="stats-heatmap-outer" role="region" aria-label="Daily activity heatmap">
           {/* Day-of-week labels column */}
           <div className="stats-heatmap-day-labels" aria-hidden="true">
             <div className="stats-heatmap-month-spacer" />
@@ -233,7 +233,7 @@ const ActivityHeatmap = ({ readingActivity, listeningActivity, period }: Activit
                       <div
                         key={day.dateKey}
                         className={`stats-heatmap-cell stats-heatmap-level-${level}`}
-                        role={day.inRange ? 'gridcell' : 'presentation'}
+                        role={day.inRange ? 'img' : 'presentation'}
                         aria-label={label || undefined}
                         title={label || undefined}
                       />

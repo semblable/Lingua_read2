@@ -61,7 +61,7 @@ public static class VocabularyExport
     private static string Html(string? value) => "<span>" + WebUtility.HtmlEncode(value ?? "")
         .Replace("\r\n", "\n").Replace('\r', '\n').Replace("\n", "<br>").Replace("\t", "&#9;") + "</span>";
 
-    private static string CsvCell(string? value)
+    public static string CsvCell(string? value)
     {
         value ??= "";
         var trimmed = value.TrimStart();

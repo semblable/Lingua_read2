@@ -68,6 +68,35 @@ describe('TermsPage', () => {
     deleteWord.mockResolvedValue(undefined);
   });
 
+  test('imports BOM/space-padded headers and Ignored status from exported CSV', async () => {
+    localStorage.setItem('lastSelectedLanguage', '1');
+    addTermsBatch.mockResolvedValue({ message: 'Imported' });
+    renderPage();
+    await screen.findByText('gato');
+    const csv = new File(['\uFEFF Term , Translation , Status \r\ngato,cat,6'], 'export.csv', { type: 'text/csv' });
+    fireEvent.change(document.querySelector('input[type="file"]'), { target: { files: [csv] } });
+    await waitFor(() => expect(addTermsBatch).toHaveBeenCalledWith('1', [{ term: 'gato', translation: 'cat', status: 6 }]));
+  });
+
+  test('returns to the last valid page when deleting the final row on page two', async () => {
+    localStorage.setItem('lastSelectedLanguage', '1');
+    getPaginatedWordsByLanguage.mockResolvedValue({ items: mockTerms, totalCount: 21, totalPages: 2 });
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    try {
+      renderPage();
+      await screen.findByText('gato');
+      fireEvent.click(screen.getByRole('button', { name: '2' }));
+      await waitFor(() => expect(getPaginatedWordsByLanguage.mock.calls.at(-1)[1]).toBe(2));
+      await waitFor(() => expect(screen.getByRole('table')).toHaveAttribute('aria-busy', 'false'));
+      getPaginatedWordsByLanguage.mockResolvedValueOnce({ items: [], totalCount: 20, totalPages: 1 })
+        .mockResolvedValue({ items: mockTerms, totalCount: 20, totalPages: 1 });
+      fireEvent.click(screen.getByRole('button', { name: 'Actions for gato' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Delete term' }));
+      await waitFor(() => expect(getPaginatedWordsByLanguage.mock.calls.at(-1)[1]).toBe(1));
+      expect(await screen.findByText('gato')).toBeInTheDocument();
+    } finally { confirm.mockRestore(); }
+  });
+
   test('renders the language dropdown after languages load', async () => {
     renderPage();
     expect(await screen.findByText('Spanish')).toBeInTheDocument();

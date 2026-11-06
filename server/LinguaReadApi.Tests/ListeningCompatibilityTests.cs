@@ -293,6 +293,19 @@ public class ListeningCompatibilityTests(ITestOutputHelper output)
     }
 
     [Fact]
+    public async Task PlayerHeartbeat_ThenStudyPanelPass_DoesNotCreditListeningTwice()
+    {
+        await using var learner = await Learner.Create();
+        var before = await learner.Seconds();
+        await learner.Playback("heartbeat-1", 300);
+        await learner.Playback("heartbeat-2", 300);
+        Assert.IsType<OkResult>(await learner.Pass("panel-pass", 0));
+        Assert.IsType<OkResult>(await learner.Pass("panel-pass", 0));
+        Assert.Equal(before + 600, await learner.Seconds());
+        Assert.Equal(new LessonStudyDto(0, 1), await learner.Counts());
+    }
+
+    [Fact]
     public async Task LanguageContentReset_KeepsPlaybackIdentitySoOldRetriesCannotRestoreTime()
     {
         await using var learner = await Learner.Create();

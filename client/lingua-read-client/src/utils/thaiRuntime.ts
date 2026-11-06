@@ -1,6 +1,7 @@
 import { createThaiSegmenter, type ThaiSegmenter } from './thaiSegmenter';
 
 let current: ThaiSegmenter | null = null;
+export const isThaiSegmentationReady = (): boolean => current !== null;
 export const initializeThaiSegmentation = (dictionary: string): void => {
   current = createThaiSegmenter(dictionary);
 };

@@ -324,7 +324,7 @@ public class ChineseRolloutTests
         h.Context.SavingChanges += (_, _) =>
         {
             var modifiedParts = h.Context.ChangeTracker.Entries<Text>()
-                .Where(e => e.State == EntityState.Modified && e.Property(t => t.WordLinkingStatus).IsModified && e.Entity.WordLinkingStatus == "processing")
+                .Where(e => (e.State == EntityState.Added || (e.State == EntityState.Modified && e.Property(t => t.WordLinkingStatus).IsModified)) && e.Entity.WordLinkingStatus == "processing")
                 .Select(e => e.Entity.SegmentationProfile)
                 .ToArray();
             if (modifiedParts.Length > 0)
@@ -554,7 +554,7 @@ public class ChineseRolloutTests
         var singleBeforeWorker = await h.Context.Texts.AsNoTracking().SingleAsync(t => t.TextId == singleId);
         Assert.Equal(ChineseSegmenter.Profile, singleBeforeWorker.SegmentationProfile);
         Assert.Equal("processing", singleBeforeWorker.WordLinkingStatus);
-        Assert.Equal("我爱读书。 今天在图书馆学习中文。", singleBeforeWorker.Content);
+        Assert.Equal("我爱读书。\n今天在图书馆学习中文。", singleBeforeWorker.Content);
         Assert.Equal(rawSrt, singleBeforeWorker.SrtContent);
 
         var srtResponse = Assert.IsType<ContentResult>((await h.Controller().GetSrtContent(singleId)).Result);
@@ -658,6 +658,25 @@ public class ChineseRolloutTests
         Assert.Equal(3, audioLesson.TotalWords);
         Assert.Equal(new[] { "今天", "学习", "中文" }.OrderBy(x => x),
             (await h.Context.TextWords.Where(tw => tw.TextId == audioId).Select(tw => tw.Word.Term).ToListAsync()).OrderBy(x => x));
+    }
+
+    [Theory]
+    [InlineData("mp3")]
+    [InlineData("m4a")]
+    [InlineData("aac")]
+    [InlineData("ogg")]
+    [InlineData("opus")]
+    [InlineData("wav")]
+    public async Task BatchAudio_AcceptsSupportedFormats_AndMatchingBaseNames(string extension)
+    {
+        await using var h = await Harness.Create();
+        var audio = FormFileFromBytes([1, 2, 3], $"Chapter-one.{extension}", "application/octet-stream");
+        var srt = FormFileFromBytes(Encoding.UTF8.GetBytes("1\n00:00:00,000 --> 00:00:02,000\n1984\n"), "Chapter-one.srt", "text/plain");
+        Assert.IsType<OkObjectResult>(await h.Controller().CreateAudioLessonsBatch(new CreateAudioLessonsBatchDto { LanguageId = 1 }, [audio, srt]));
+        var lesson = await h.Context.Texts.AsNoTracking().SingleAsync();
+        Assert.Equal("1984", lesson.Content);
+        Assert.EndsWith($".{extension}", lesson.AudioFilePath);
+        Assert.Single(await h.DrainAndLinkAsync());
     }
 
     [Fact]

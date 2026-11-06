@@ -74,8 +74,13 @@ namespace LinguaReadApi.Controllers
                 text.WordLinkingStatus = "processing";
             }
             await _context.SaveChangesAsync();
+            await EnqueueWordLinking(toLink, userId);
+        }
 
-            foreach (var text in toLink)
+        private async Task EnqueueWordLinking(IEnumerable<Text> texts, Guid userId)
+        {
+            if (_wordLinkingChannel == null) return;
+            foreach (var text in texts)
             {
                 await _wordLinkingChannel.Writer.WriteAsync(
                     new WordLinkingRequest(text.TextId, text.Content, text.LanguageId, userId));
@@ -410,6 +415,73 @@ namespace LinguaReadApi.Controllers
         [RequestFormLimits(MultipartBodyLengthLimit = 500L * 1024 * 1024)]
         public async Task<ActionResult<BookDto>> UploadBook([FromForm] UploadBookDto uploadDto)
         {
+            var userId = GetUserId();
+            BookDto? pendingCommit = null;
+            List<Text>? importedTexts = null;
+            ActionResult<BookDto> result;
+
+            async Task<bool> ImportWasCommitted() => pendingCommit != null &&
+                await _context.Books.AsNoTracking().AnyAsync(b => b.BookId == pendingCommit.BookId && b.UserId == userId);
+
+            try
+            {
+                result = await _context.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
+                {
+                    _context.ChangeTracker.Clear();
+                    if (pendingCommit != null)
+                    {
+                        // A commit can succeed on the database while its acknowledgement is
+                        // lost. Verify that generated ID before retrying or deleting its assets.
+                        if (await ImportWasCommitted())
+                            return new ActionResult<BookDto>(CreatedAtAction(nameof(GetBook), new { id = pendingCommit.BookId }, pendingCommit));
+                        CleanupBookAssets(userId, pendingCommit.BookId);
+                        pendingCommit = null;
+                        importedTexts = null;
+                    }
+                    return await UploadBookCore(uploadDto, (dto, texts) =>
+                    {
+                        pendingCommit = dto;
+                        importedTexts = texts;
+                    });
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error importing book");
+                _context.ChangeTracker.Clear();
+                if (pendingCommit == null)
+                    return StatusCode(StatusCodes.Status500InternalServerError, "Failed to import book. No partial book was saved.");
+
+                try
+                {
+                    if (!await _context.Database.CreateExecutionStrategy().ExecuteAsync(ImportWasCommitted))
+                    {
+                        CleanupBookAssets(userId, pendingCommit.BookId);
+                        return StatusCode(StatusCodes.Status500InternalServerError, "Failed to import book. No partial book was saved.");
+                    }
+                }
+                catch (Exception verificationError)
+                {
+                    _logger.LogError(verificationError, "Could not confirm book import {BookId}", pendingCommit.BookId);
+                    // Keep the files while the outcome is unknown. Deleting them here
+                    // could corrupt a successfully committed book.
+                    return StatusCode(StatusCodes.Status500InternalServerError, "Unable to confirm book import. Check your library before retrying.");
+                }
+                result = CreatedAtAction(nameof(GetBook), new { id = pendingCommit.BookId }, pendingCommit);
+            }
+
+            // Publish after the transaction is disposed and outside the retry delegate.
+            // A publication failure cannot undo or repeat the committed import.
+            if (result.Result is CreatedAtActionResult && importedTexts != null)
+            {
+                try { await EnqueueWordLinking(importedTexts.Where(t => !string.IsNullOrWhiteSpace(t.Content)), userId); }
+                catch (Exception ex) { _logger.LogError(ex, "Book imported but background linking could not be queued"); }
+            }
+            return result;
+        }
+
+        private async Task<ActionResult<BookDto>> UploadBookCore(UploadBookDto uploadDto, Action<BookDto, List<Text>> onCommitStarting)
+        {
             if (uploadDto.File == null || uploadDto.File.Length == 0)
             {
                 return BadRequest("No file uploaded.");
@@ -531,6 +603,11 @@ namespace LinguaReadApi.Controllers
                 }
             }
 
+            // All metadata, tags and chapters commit together. Dispose rolls back
+            // on parsing/storage failures, without a compensating database write.
+            await using var transaction = _context.Database.IsRelational()
+                ? await _context.Database.BeginTransactionAsync() : null;
+
             // 3. Add Book and New Tags
             _context.Books.Add(book);
             if (newTagsToCreate.Any())
@@ -538,18 +615,9 @@ namespace LinguaReadApi.Controllers
                 _context.Tags.AddRange(newTagsToCreate);
             }
 
-            // 4. Save Book and New Tags (Gets IDs)
-            try
-            {
-                await _context.SaveChangesAsync();
-                CleanupBookAssets(userId, book.BookId);
-            }
-            catch (DbUpdateException ex)
-            {
-                 _logger.LogError(ex, "Error saving book/new tags during upload");
-                 return StatusCode(StatusCodes.Status500InternalServerError, "Error saving book metadata.");
-            }
-
+            // 4. Get generated IDs inside the transaction.
+            await _context.SaveChangesAsync();
+            CleanupBookAssets(userId, book.BookId);
 
             // 5. Create BookTag Associations
             if (tagsToAssociate.Any())
@@ -564,16 +632,7 @@ namespace LinguaReadApi.Controllers
                          _logger.LogWarning("Could not associate tag '{TagName}' during upload as it lacks an ID.", tag.Name);
                      }
                 }
-                // 6. Save Associations
-                 try
-                 {
-                    await _context.SaveChangesAsync();
-                 }
-                 catch (DbUpdateException ex)
-                 {
-                     _logger.LogError(ex, "Error saving book tag associations during upload");
-                     // Consider if this error is critical enough to stop; maybe just log and continue
-                 }
+                await _context.SaveChangesAsync();
             }
 
             // --- Text Splitting and Creation ---
@@ -590,6 +649,7 @@ namespace LinguaReadApi.Controllers
                 catch (Exception) { /* ignore */ }
             }
 
+            var commitStarted = false;
             try
             {
                 if (epubBook != null)
@@ -700,48 +760,41 @@ namespace LinguaReadApi.Controllers
                         createdTexts.Add(text);
                     }
                 }
-                await _context.SaveChangesAsync(); // Save Texts
+                if (createdTexts.Count == 0) throw new InvalidDataException("The book contains no readable chapters.");
+                if (_wordLinkingChannel != null)
+                    foreach (var text in createdTexts.Where(t => !string.IsNullOrWhiteSpace(t.Content)))
+                        text.WordLinkingStatus = "processing";
+                await _context.SaveChangesAsync();
+                // --- Prepare Response ---
+                var bookDto = new BookDto
+                {
+                    BookId = book.BookId,
+                    Title = book.Title,
+                    Description = book.Description,
+                    LanguageName = language?.Name ?? "Unknown",
+                    CreatedAt = book.CreatedAt,
+                    PartCount = partCount, // Use calculated part count
+                    LastReadTextId = null,
+                    LastReadAt = null,
+                    TotalWords = 0, // Stats calculated later
+                    KnownWords = 0,
+                    LearningWords = 0,
+                    CoverImagePath = book.CoverImagePath,
+                    Tags = tagsToAssociate.Select(t => t.Name).ToList() // Use names from processed tags
+                };
 
-                // Kick off background word-linking now that TextIds exist.
-                // WordLinkingBackgroundService pulses StatsRecomputeService
-                // ~15s after the last text finishes, so the % indicator
-                // appears without waiting for the nightly sweep or a restart.
-                await QueueWordLinking(createdTexts, userId);
+                onCommitStarting(bookDto, createdTexts);
+                commitStarted = true;
+                if (transaction != null) await transaction.CommitAsync();
+                return CreatedAtAction(nameof(GetBook), new { id = book.BookId }, bookDto);
             }
             catch (Exception ex)
             {
                  _logger.LogError(ex, "Error splitting or saving text parts during upload");
-                 CleanupBookAssets(userId, book.BookId);
-                 foreach (var createdText in createdTexts)
-                 {
-                     _context.Entry(createdText).State = EntityState.Detached;
-                 }
-                 _context.Books.Remove(book); // Attempt to clean up book if text splitting fails
-                 await _context.SaveChangesAsync();
-                 return StatusCode(StatusCodes.Status500InternalServerError, "Book metadata created, but failed to process and save text content.");
+                 if (!commitStarted) CleanupBookAssets(userId, book.BookId);
+                 throw;
             }
 
-
-            // --- Prepare Response ---
-            language ??= await _context.Languages.FindAsync(book.LanguageId); // Re-fetch language just in case
-            var bookDto = new BookDto
-            {
-                BookId = book.BookId,
-                Title = book.Title,
-                Description = book.Description,
-                LanguageName = language?.Name ?? "Unknown",
-                CreatedAt = book.CreatedAt,
-                PartCount = partCount, // Use calculated part count
-                LastReadTextId = null,
-                LastReadAt = null,
-                TotalWords = 0, // Stats calculated later
-                KnownWords = 0,
-                LearningWords = 0,
-                CoverImagePath = book.CoverImagePath,
-                Tags = tagsToAssociate.Select(t => t.Name).ToList() // Use names from processed tags
-            };
-
-            return CreatedAtAction(nameof(GetBook), new { id = book.BookId }, bookDto);
         }
 
         // POST: api/books/preview-split
@@ -2308,7 +2361,6 @@ namespace LinguaReadApi.Controllers
                     var language = book.Language;
                     if (language != null)
                     {
-                        language.WordsRead += totalWordCount;
 
                         _context.UserActivities.Add(new UserActivity
                         {

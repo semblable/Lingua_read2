@@ -1,3 +1,4 @@
+import { safeLocalStorageSetItem } from '../utils/storage';
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Container, Row, Col, Table, Form, Button, Spinner, Alert, DropdownButton, Dropdown, Pagination, Badge } from 'react-bootstrap'; // Added Pagination, Badge
 import { getAllLanguages, getPaginatedWordsByLanguage, exportWordsCsv, addTermsBatch, deleteWord } from '../utils/api'; // Changed to use paginated API
@@ -96,6 +97,12 @@ const TermsPage = () => {
 
             if (version !== fetchVersion.current) return;
 
+            const lastPage = Math.max(1, data.totalPages || 0);
+            if (currentPage > lastPage) {
+                setCurrentPage(lastPage);
+                return;
+            }
+
             // Access properties from PagedResult
             setTerms(data.items || []);
             setTotalItems(data.totalCount || 0);
@@ -173,7 +180,7 @@ const TermsPage = () => {
         const langId = e.target.value;
         setSelectedLanguage(langId);
         setCurrentPage(1); // Reset to page 1
-        localStorage.setItem('lastSelectedLanguage', langId);
+        safeLocalStorageSetItem('lastSelectedLanguage', langId);
     };
 
     // Handle status filter change
@@ -251,6 +258,7 @@ const TermsPage = () => {
 
         Papa.parse<Record<string, string>>(file, {
             header: true,
+            transformHeader: (header: string) => header.replace(/^\uFEFF/, '').trim().toLowerCase(),
             skipEmptyLines: true,
             complete: async (results) => {
                 const termsToImport: Array<{ term: string; translation: string; status?: number }> = [];
@@ -274,11 +282,11 @@ const TermsPage = () => {
                         let status = null;
 
                         if (statusStr) {
-                            const parsedStatus = parseInt(statusStr, 10);
-                            if (!isNaN(parsedStatus) && parsedStatus >= 1 && parsedStatus <= 5) {
+                            const parsedStatus = Number(statusStr);
+                            if (Number.isInteger(parsedStatus) && parsedStatus >= 1 && parsedStatus <= 6) {
                                 status = parsedStatus;
                             } else if (!parseError) {
-                                parseError = `Row ${index + 2}: Invalid 'Status' value "${statusStr}". Must be a number between 1 and 5.`;
+                                parseError = `Row ${index + 2}: Invalid 'Status' value "${statusStr}". Must be a number between 1 and 6.`;
                             }
                         }
 
@@ -460,7 +468,7 @@ const TermsPage = () => {
                             onChange={event => {
                                 const checked = event.target.checked;
                                 setShowSentences(checked);
-                                localStorage.setItem('termsShowSentences', String(checked));
+                                safeLocalStorageSetItem('termsShowSentences', String(checked));
                             }} />
                     </div>
                     <div className="terms-file-actions">

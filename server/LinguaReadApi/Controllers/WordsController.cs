@@ -735,9 +735,9 @@ namespace LinguaReadApi.Controllers
                 {
                     existingWordsLookup[trimmedTerm] = existingWord;
                     // Word exists - update status if needed
-                    if (existingWord.Status == 0)
+                    if (existingWord.Status == 0 || (!keepExistingStatus && termDto.Status is >= 1 and <= 6))
                     {
-                        // Linking a text stores its unsaved words at 0; this is the first save.
+                        // Imports can explicitly restore every status, including Ignored.
                         existingWord.Status = RequestedStatus(termDto);
                         wordsWithNewStatus.Add(existingWord);
                     }
@@ -817,9 +817,9 @@ namespace LinguaReadApi.Controllers
             return await query.Include(w => w.Translation).OrderBy(w => w.WordId).ToListAsync();
         }
 
-        // The status a batch term asks for: 1-5, Known when left out.
+        // The status a batch term asks for: 1-6 (including Ignored), Known when left out.
         private static int RequestedStatus(NewTermDto termDto) =>
-            termDto.Status is >= 1 and <= 5 ? termDto.Status.Value : 5;
+            termDto.Status is >= 1 and <= 6 ? termDto.Status.Value : 5;
 
         // GET: api/words/export?languageId=5&status=1,5
         [HttpGet("export")]
@@ -912,10 +912,10 @@ namespace LinguaReadApi.Controllers
 
             foreach (var word in wordsToExport)
             {
-                var termCsv = EscapeCsvField(word.Term);
-                var translationCsv = EscapeCsvField(word.Translation ?? "");
+                var termCsv = VocabularyExport.CsvCell(word.Term);
+                var translationCsv = VocabularyExport.CsvCell(word.Translation ?? "");
                 var statusCsv = word.Status.ToString();
-                var languageCsv = EscapeCsvField(word.LanguageName ?? "Unknown"); // Handle potential null language if needed
+                var languageCsv = VocabularyExport.CsvCell(word.LanguageName ?? "Unknown");
 
                 csvBuilder.AppendLine($"{termCsv},{translationCsv},{statusCsv},{languageCsv}");
             }
@@ -926,20 +926,7 @@ namespace LinguaReadApi.Controllers
             return File(csvBytes, "text/csv", fileName);
         }
 
-        // Helper method to escape CSV fields containing commas or quotes
-        private string EscapeCsvField(string field)
-        {
-            if (string.IsNullOrEmpty(field)) return "";
 
-            // If the field contains a comma, double quote, or newline, enclose it in double quotes
-            if (field.Contains(',') || field.Contains('"') || field.Contains('\n') || field.Contains('\r'))
-            {
-                // Escape existing double quotes by doubling them
-                var escapedField = field.Replace("\"", "\"\"");
-                return $"\"{escapedField}\"";
-            }
-            return field;
-        }
 
         private async Task UpsertWordTranslationAsync(int wordId, string translation)
         {
@@ -1003,8 +990,8 @@ SET ""Translation"" = EXCLUDED.""Translation"",
         [Required]
         public List<NewTermDto> Terms { get; set; } = new List<NewTermDto>();
 
-        // Leave the status of saved words alone and only fill in their translation. Off, a saved
-        // word below Known is raised to Known ("mark all known", CSV import). Either way a status-0
+        // Leave the status of saved words alone and only fill in their translation. Off, an explicit
+        // status is restored; without one, a word below Known is raised to Known. A status-0
         // row (linked but never saved) takes the term's status, like a new word.
         public bool KeepExistingStatus { get; set; }
     }
@@ -1018,7 +1005,7 @@ SET ""Translation"" = EXCLUDED.""Translation"",
 
         public string? Translation { get; set; } // Translation is optional
 
-        [Range(1, 5, ErrorMessage = "Status must be between 1 and 5.")] // Add validation if status is provided
+        [Range(1, 6, ErrorMessage = "Status must be between 1 and 6.")]
         public int? Status { get; set; } // Status is optional
     }
 

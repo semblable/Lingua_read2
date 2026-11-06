@@ -1,3 +1,4 @@
+import { safeLocalStorageSetItem } from '../utils/storage';
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { Container, Row, Col, Button, Spinner, Alert, Breadcrumb, Form, Badge, Dropdown, ListGroup } from 'react-bootstrap';
 import { Link, useParams, useNavigate, useSearchParams } from 'react-router-dom';
@@ -126,11 +127,11 @@ const Library = () => {
   });
 
   useEffect(() => {
-    localStorage.setItem('libraryLanguageFilter', languageFilter);
+    safeLocalStorageSetItem('libraryLanguageFilter', languageFilter);
   }, [languageFilter]);
 
   useEffect(() => {
-    localStorage.setItem('librarySort', sort);
+    safeLocalStorageSetItem('librarySort', sort);
   }, [sort]);
 
   // Comprehension band filter — persisted to URL ?comp=…

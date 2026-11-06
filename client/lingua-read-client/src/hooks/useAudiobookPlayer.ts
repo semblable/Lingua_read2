@@ -1,3 +1,5 @@
+import { safeLocalStorageSetItem } from '../utils/storage';
+import { isInteractiveKeyboardTarget } from '../utils/keyboard';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   createEmptySourceSwap,
@@ -523,7 +525,11 @@ export const useAudiobookPlayer = ({
     });
     setError('Error loading audio.');
     setIsBuffering(false);
-  }, []);
+    pendingAutoAdvanceRef.current = false;
+    suspendListening();
+    resetSegmentPlayback();
+    syncPlaybackState(false);
+  }, [suspendListening, resetSegmentPlayback, syncPlaybackState]);
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -748,7 +754,7 @@ export const useAudiobookPlayer = ({
     setPlaybackRate(prev => {
       const newRate = parseFloat((prev + diff).toFixed(2));
       const clamped = Math.max(0.5, Math.min(newRate, 2.0));
-      localStorage.setItem('audioPlaybackRate', String(clamped));
+      safeLocalStorageSetItem('audioPlaybackRate', String(clamped));
       return clamped;
     });
   }, []);
@@ -756,13 +762,12 @@ export const useAudiobookPlayer = ({
   const handleVolumeChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const newVolume = parseFloat(e.target.value);
     setVolume(newVolume);
-    localStorage.setItem('audioVolume', String(newVolume));
+    safeLocalStorageSetItem('audioVolume', String(newVolume));
   }, []);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement;
-      if (target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA' || target?.isContentEditable) return;
+      if (e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey || isInteractiveKeyboardTarget(e.target)) return;
       if (e.key === ' ' || e.key === '`') {
         e.preventDefault();
         togglePlayPause();

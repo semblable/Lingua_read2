@@ -62,7 +62,10 @@ const CreateFolderModal = ({ show, onHide, onSubmit, parentFolderId = null }: Cr
             <Form.Label>Color (optional)</Form.Label>
             <div className="d-flex gap-2 flex-wrap">
               {Object.entries(FOLDER_COLORS).map(([colorName, colorValue]) => (
-                <span
+                <button
+                  type="button"
+                  aria-label={`Select ${colorName} folder color`}
+                  aria-pressed={color === colorName}
                   key={colorName}
                   onClick={() => setColor(color === colorName ? '' : colorName)}
                   style={{
@@ -76,7 +79,7 @@ const CreateFolderModal = ({ show, onHide, onSubmit, parentFolderId = null }: Cr
                     transition: 'border-color 0.15s'
                   }}
                   title={colorName}
-                ></span>
+                 />
               ))}
             </div>
           </Form.Group>

@@ -16,6 +16,25 @@ namespace LinguaReadApi.Tests;
 /// <summary>Pins the CSV export format (it is the user's terms backup).</summary>
 public class WordsExportCsvTests
 {
+    [Theory]
+    [InlineData("=1+1")]
+    [InlineData("+cmd")]
+    [InlineData("-cmd")]
+    [InlineData("@SUM(1,2)")]
+    [InlineData(" \t=1+1")]
+    public async Task SimpleExport_NeutralizesSpreadsheetFormulas(string formula)
+    {
+        await using var context = CreateContext();
+        var user = Seed(context);
+        var word = await context.Words.SingleAsync(w => w.WordId == 1);
+        word.Term = formula;
+        (await context.WordTranslations.SingleAsync(t => t.WordId == 1)).Translation = formula;
+        await context.SaveChangesAsync();
+        var rows = ParseCsv(Encoding.UTF8.GetString((await Export(context, user)).FileContents));
+        var row = Assert.Single(rows, r => r[2] == "4");
+        Assert.Equal("'" + formula, row[0]);
+        Assert.Equal("'" + formula, row[1]);
+    }
     [Fact]
     public async Task Export_WritesHeaderAndRows_OrderedByLanguageThenTerm_WithEscaping()
     {

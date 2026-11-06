@@ -1,14 +1,9 @@
 import React from 'react';
 import { Button, Spinner, Badge } from 'react-bootstrap';
-import { buildDisplayBlocks, getTitleLineVariant } from '../../utils/readerText';
-import type { DisplayBlock } from '../../utils/readerText';
+import { buildDisplayBlocks, getTitleLineVariant, normalizeTokenizerInput, splitBlockIntoSentences } from '../../utils/readerText';
+import type { DisplayBlock, LanguageConfig } from '../../utils/readerText';
 import type { Settings } from '../../contexts/SettingsContext';
 import type { ReaderText } from '../../hooks/useReaderState';
-
-interface ProcessedSentenceResult {
-  sentenceElements: React.ReactNode[] | null;
-  nextSentenceIndex: number;
-}
 
 interface StandardTextViewProps {
   text: ReaderText | null;
@@ -22,10 +17,11 @@ interface StandardTextViewProps {
   getFontFamilyForList: () => string;
   handleWordSelection: () => void;
   processTextContent: (text: string) => React.ReactNode;
-  renderProcessedContentAsSentences: (
+  renderSentence: (
     processed: React.ReactNode,
-    startIndex: number
-  ) => ProcessedSentenceResult;
+    sentenceIndex: number
+  ) => React.ReactNode;
+  languageConfig?: LanguageConfig;
   isMobile: boolean;
   textContentRef: React.RefObject<HTMLDivElement | null>;
   canUseSentenceTts: boolean;
@@ -50,7 +46,8 @@ const StandardTextView = React.memo(({
   getFontFamilyForList,
   handleWordSelection,
   processTextContent,
-  renderProcessedContentAsSentences,
+  renderSentence,
+  languageConfig,
   isMobile,
   textContentRef,
   canUseSentenceTts,
@@ -87,10 +84,15 @@ const StandardTextView = React.memo(({
   };
   const modeClass = readingUiMode === 'modern' ? 'modern' : 'classic';
   const renderLineAsSentences = (lineText: string): React.ReactNode[] => {
-    const processedLineElements = processTextContent(lineText);
-    const { sentenceElements, nextSentenceIndex } = renderProcessedContentAsSentences(processedLineElements, currentSentenceIndex);
-    currentSentenceIndex = nextSentenceIndex;
-    return sentenceElements ?? [];
+    const normalized = normalizeTokenizerInput(lineText).replace(/\s+/g, ' ').trim();
+    let previousEnd = 0;
+    return splitBlockIntoSentences(lineText, languageConfig, text.languageCode).map(sentence => {
+      const start = normalized.indexOf(sentence, previousEnd);
+      const separator = start >= previousEnd ? normalized.slice(previousEnd, start) : '';
+      previousEnd = start >= 0 ? start + sentence.length : previousEnd;
+      const index = currentSentenceIndex++;
+      return <React.Fragment key={index}>{separator}{renderSentence(processTextContent(sentence), index)}</React.Fragment>;
+    });
   };
   const renderTitleLine = (line: string, lineIndex: number, blockKey: string, lines: string[]): React.ReactNode => {
     if (!line) {
@@ -104,7 +106,7 @@ const StandardTextView = React.memo(({
         key={`${blockKey}-line-${lineIndex}`}
         className={`reader-title-line reader-title-line-${modeClass} reader-title-line-${titleLineVariant}`}
       >
-        {renderLineAsSentences(line)}
+        {processTextContent(line)}
       </div>
     );
   };
@@ -192,14 +194,15 @@ const StandardTextView = React.memo(({
                 key={`${block.key}-title`}
                 className={`reader-title-block reader-title-block-${modeClass}`}
               >
-                {(block.lines ?? []).map((line: string, lineIndex: number) => renderTitleLine(line, lineIndex, block.key, block.lines ?? []))}
+                {renderSentence(
+                  (block.lines ?? []).map((line: string, lineIndex: number) => renderTitleLine(line, lineIndex, block.key, block.lines ?? [])),
+                  currentSentenceIndex++
+                )}
               </div>
             );
           }
 
-          const processedParaElements = processTextContent(block.text ?? '');
-          const { sentenceElements, nextSentenceIndex } = renderProcessedContentAsSentences(processedParaElements, currentSentenceIndex);
-          currentSentenceIndex = nextSentenceIndex;
+          const sentenceElements = renderLineAsSentences(block.text ?? '');
 
           if (isMobile) {
             const grouped = groupSentences(sentenceElements || [], mobileReadingConfig.chunkSize);
@@ -210,7 +213,6 @@ const StandardTextView = React.memo(({
                     {group.map((sentence: React.ReactNode, sentenceIndex: number) => (
                       <React.Fragment key={`${block.key}-group-${groupIndex}-sentence-${sentenceIndex}`}>
                         {sentence}
-                        {sentenceIndex < group.length - 1 ? ' ' : null}
                       </React.Fragment>
                     ))}
                   </p>

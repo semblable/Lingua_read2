@@ -1,3 +1,4 @@
+import { safeLocalStorageSetItem } from '../utils/storage';
 import React, { useState, useEffect } from 'react';
 import { Form, Button, Card, Row, Col } from 'react-bootstrap';
 import { getUserSettings, updateUserSettings } from '../utils/api';
@@ -68,10 +69,10 @@ const UserSettings = () => {
     if (name === 'theme') {
       if (value === 'dark') {
         document.body.classList.add('dark-theme');
-        localStorage.setItem('theme', 'dark');
+        safeLocalStorageSetItem('theme', 'dark');
       } else {
         document.body.classList.remove('dark-theme');
-        localStorage.setItem('theme', 'light');
+        safeLocalStorageSetItem('theme', 'light');
       }
     }
   };

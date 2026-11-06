@@ -160,6 +160,33 @@ public class SrsSchedulerTests
         Assert.Equal(30, outcome.Card.IntervalDays);
     }
 
+    [Theory]
+    [InlineData(5e9, 36500)]
+    [InlineData(double.MaxValue, 36500)]
+    [InlineData(double.PositiveInfinity, 36500)]
+    [InlineData(5e9, 0)]
+    [InlineData(5e9, int.MaxValue)]
+    public void HugeStability_ClampsIntervalBeforeIntegerConversion(double stability, int maximum)
+    {
+        Assert.Equal(Math.Max(1, maximum), new FsrsAlgorithm().NextIntervalDays(stability, 0.9, maximum));
+    }
+
+    [Fact]
+    public void InvalidStability_PreservesMinimumInterval()
+    {
+        Assert.Equal(1, new FsrsAlgorithm().NextIntervalDays(double.NaN, 0.9, 36500));
+    }
+
+    [Theory]
+    [InlineData(Good)]
+    [InlineData(Easy)]
+    public void MatureCard_ReviewUsesMaximumInterval(int grade)
+    {
+        var outcome = Scheduler().Review(ReviewCard(stability: 5e9), grade, Noon);
+        Assert.Equal(36500, outcome.Card.IntervalDays);
+        Assert.True(outcome.Card.DueUtc > Noon.AddYears(90));
+    }
+
     [Fact]
     public void ShortenedStepList_GraduatesCardLeftOnMissingStep()
     {

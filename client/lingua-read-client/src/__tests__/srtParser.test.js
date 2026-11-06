@@ -168,3 +168,6 @@ describe('findSrtLineIndex', () => {
     expect(findSrtLineIndex([], 1)).toBe(-1);
   });
 });
+test.each([['00:00:05,5', 5.5], ['00:00:05,50', 5.5], ['00:00:05,005', 5.005]])('parses fractional seconds %s', (value, expected) => {
+  expect(parseSrtTime(value)).toBe(expected);
+});

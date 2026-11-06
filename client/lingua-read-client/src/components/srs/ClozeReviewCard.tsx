@@ -105,11 +105,12 @@ const ClozeReviewCard: React.FC<ClozeReviewCardProps> = ({
     }, 0);
   }, [revealedCount, totalLetters, characters, onHintUsed]);
 
-  // Global Alt+H / Ctrl+H keyboard shortcut while front face is active
+  // Alt+H reveals a hint; browser Ctrl+H remains available for history.
   useEffect(() => {
     if (isFlipped) return;
     const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.altKey || e.ctrlKey) && (e.key === 'h' || e.key === 'H')) {
+      if (e.defaultPrevented || isInteractiveKeyboardTarget(e.target)) return;
+      if (e.altKey && !e.ctrlKey && !e.metaKey && (e.key === 'h' || e.key === 'H')) {
         e.preventDefault();
         handleRevealLetter();
       }
@@ -122,7 +123,7 @@ const ClozeReviewCard: React.FC<ClozeReviewCardProps> = ({
     if (e.key === 'Enter') {
       e.preventDefault();
       onReveal();
-    } else if ((e.altKey || e.ctrlKey) && (e.key === 'h' || e.key === 'H')) {
+    } else if (e.altKey && !e.ctrlKey && !e.metaKey && (e.key === 'h' || e.key === 'H')) {
       e.preventDefault();
       handleRevealLetter();
     }
@@ -304,3 +305,4 @@ const ClozeReviewCard: React.FC<ClozeReviewCardProps> = ({
 };
 
 export default ClozeReviewCard;
+import { isInteractiveKeyboardTarget } from '../../utils/keyboard';

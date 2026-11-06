@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Navbar, Nav, Container, NavDropdown } from 'react-bootstrap';
 import { useNavigate } from 'react-router-dom';
 import { LinkContainer } from 'react-router-bootstrap';
@@ -8,6 +8,7 @@ import { useAuthStore } from '../utils/store';
 const Navigation = () => {
   const { isAuthenticated, logout } = useAuthStore();
   const navigate = useNavigate();
+  const [expanded, setExpanded] = useState(false);
 
   const handleLogout = async () => {
     await logout();
@@ -15,10 +16,10 @@ const Navigation = () => {
   };
 
   return (
-    <Navbar expand="lg" className="navbar-custom-bg">
+    <Navbar collapseOnSelect expanded={expanded} onToggle={setExpanded} expand="lg" className="navbar-custom-bg">
       <Container fluid className="content-in-fluid">
         <LinkContainer to="/"><Navbar.Brand>LinguaRead</Navbar.Brand></LinkContainer>
-        <Navbar.Toggle aria-controls="basic-navbar-nav" />
+        <Navbar.Toggle aria-controls="basic-navbar-nav" aria-expanded={expanded} />
         <Navbar.Collapse id="basic-navbar-nav">
           <Nav className="me-auto">
             <LinkContainer to="/"><Nav.Link>Home</Nav.Link></LinkContainer>
@@ -34,6 +35,7 @@ const Navigation = () => {
                 </NavDropdown>
 
                 <LinkContainer to="/dashboard"><Nav.Link>Dashboard</Nav.Link></LinkContainer>
+                <LinkContainer to="/goals"><Nav.Link eventKey="/goals">Goals</Nav.Link></LinkContainer>
                 <LinkContainer to="/statistics"><Nav.Link>Statistics</Nav.Link></LinkContainer>
                 <LinkContainer to="/terms"><Nav.Link>Terms</Nav.Link></LinkContainer>
                 <NavDropdown title="SRS" id="srs-dropdown">

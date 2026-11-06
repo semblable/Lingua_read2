@@ -555,20 +555,21 @@ namespace LinguaReadApi.Controllers
         private void TryDeleteAudioFile(string? relativeAudioPath)
             => BookAssetStorage.DeleteAudioLessonFile(relativeAudioPath, _logger, WebRoot);
 
-        // Placeholder for SRT parsing logic
-        private string ParseSrt(string srtContent)
+        internal static string ParseSrt(string srtContent)
         {
-            // Simple SRT parser: Extracts lines that don't contain '-->' and aren't sequence numbers
             var lines = srtContent.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.None);
             var transcriptLines = new List<string>();
+            var inCue = false;
             foreach (var line in lines)
             {
-                if (!string.IsNullOrWhiteSpace(line) && !line.Contains("-->") && !int.TryParse(line, out _))
-                {
-                    transcriptLines.Add(line.Trim());
-                }
+                if (string.IsNullOrWhiteSpace(line)) { inCue = false; continue; }
+                if (System.Text.RegularExpressions.Regex.IsMatch(line, @"^\s*\d{1,2}:\d{2}:\d{2}[,.]\d+\s*-->\s*\d{1,2}:\d{2}:\d{2}[,.]\d+"))
+                { inCue = true; continue; }
+                // Sequence numbers occur before timing lines; inside a cue,
+                // numbers such as "1984" are spoken dialogue and must survive.
+                if (inCue) transcriptLines.Add(line.Trim());
             }
-            return string.Join(" ", transcriptLines); // Join lines into a single transcript string
+            return string.Join("\n", transcriptLines);
         }
 
         // POST: api/texts/audio/batch
@@ -794,7 +795,7 @@ namespace LinguaReadApi.Controllers
                 result.NormalizedBaseName = NormalizeBaseName(result.BaseName);
                 var extension = Path.GetExtension(file.FileName).ToLowerInvariant();
 
-                if (extension == ".mp3") result.Type = FileType.MP3;
+                if (new[] { ".mp3", ".m4a", ".aac", ".ogg", ".opus", ".wav" }.Contains(extension)) result.Type = FileType.MP3;
                 else if (extension == ".srt") result.Type = FileType.SRT;
                 else
                 {

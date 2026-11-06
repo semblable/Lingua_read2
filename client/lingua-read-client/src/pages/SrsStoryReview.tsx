@@ -1,3 +1,4 @@
+import { safeLocalStorageSetItem } from '../utils/storage';
 import React, { useState, useEffect, useRef, useCallback, useContext } from 'react';
 import { Container, Card, Button, Spinner, Alert, Form, Row, Col, Badge, ProgressBar, OverlayTrigger, Tooltip, ButtonGroup, ToggleButton } from 'react-bootstrap';
 import { useNavigate } from 'react-router-dom';
@@ -12,6 +13,7 @@ import {
   type WordStatus
 } from '../types/wordStatus';
 import './SrsStoryReview.css';
+import { segmentContext, findContextTarget } from '../utils/storyContext';
 
 type MicroContext = NonNullable<SrsStoryGenerationResult['microContexts']>[number];
 type PastStory = SrsStories[number];
@@ -102,7 +104,7 @@ const SrsStoryReview = () => {
   const handleLanguageChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const langId = e.target.value;
     setSelectedLanguage(langId);
-    localStorage.setItem('srsSelectedLanguage', langId);
+    safeLocalStorageSetItem('srsSelectedLanguage', langId);
   };
 
   const handleStatusFilterChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -223,10 +225,10 @@ const SrsStoryReview = () => {
   // clickable for WordLookupPopover; the target-form span is rendered separately
   // by renderContextBody().
   const renderLookupTokens = (text: string, mc: MicroContext, idx: number, sliceKey: string) => {
-    const tokens = text.split(/(\s+|[.,!?;:"""''()[\]{}\-—–…«»])/);
-    return tokens.map((token: string, tIdx: number) => {
-      const cleanToken = token.replace(/[.,!?;:"""''()[\]{}\-—–…«»]/g, '').toLowerCase();
-      if (!cleanToken) return <span key={`${sliceKey}-${tIdx}`}>{token}</span>;
+    const tokens = segmentContext(text, languageCode);
+    return tokens.map(({ text: token, isWord }, tIdx: number) => {
+      const cleanToken = token.toLowerCase();
+      if (!isWord) return <span key={`${sliceKey}-${tIdx}`}>{token}</span>;
 
       const refKey = `mc-${idx}-${sliceKey}-${tIdx}`;
       const existing = existingWordsMap[cleanToken];
@@ -240,6 +242,12 @@ const SrsStoryReview = () => {
           onClick={() => handleLookupClick(token, refKey, mc.context ?? '')}
           role="button"
           tabIndex={0}
+          onKeyDown={event => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault();
+              handleLookupClick(token, refKey, mc.context ?? '');
+            }
+          }}
         >
           {token}
         </span>
@@ -259,25 +267,23 @@ const SrsStoryReview = () => {
   };
 
   // Render a single micro-context. Highlights the AI-declared `usedForm` as a single
-  // contiguous span (case-insensitive substring match against the context). Falls back
+  // contiguous span at complete word boundaries. Falls back
   // to the raw `term` when usedForm is missing. The text on either side flows through
   // the lookup-token renderer so non-target words remain clickable.
   const renderContextBody = (mc: MicroContext, idx: number) => {
     const needle = (mc.usedForm || mc.term || '').trim();
     const ctx = mc.context ?? '';
 
-    const matchIdx = needle
-      ? ctx.toLowerCase().indexOf(needle.toLowerCase())
-      : -1;
+    const match = findContextTarget(ctx, needle, languageCode);
 
-    if (matchIdx < 0) {
+    if (!match) {
       // Couldn't locate the target form anywhere — render the whole context as lookup tokens.
       return renderLookupTokens(ctx, mc, idx, 'all');
     }
 
-    const before = ctx.slice(0, matchIdx);
-    const matched = ctx.slice(matchIdx, matchIdx + needle.length);
-    const after = ctx.slice(matchIdx + needle.length);
+    const before = ctx.slice(0, match.start);
+    const matched = ctx.slice(match.start, match.end);
+    const after = ctx.slice(match.end);
 
     return (
       <>

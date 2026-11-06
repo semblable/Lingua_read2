@@ -267,7 +267,7 @@ function GoalModal({
     (type === GOAL_TYPE.WordsKnown || showAdvanced);
 
   return (
-    <Modal show={show} onHide={onHide} centered size="lg">
+    <Modal scrollable show={show} onHide={onHide} centered size="lg">
       <Modal.Header closeButton>
         <Modal.Title as="h5">{isEdit ? 'Edit goal' : 'New goal'}</Modal.Title>
       </Modal.Header>

@@ -15,6 +15,21 @@ namespace LinguaReadApi.Tests;
 public class AdminEndpointPolicyTests
 {
     [Fact]
+    public void LanguageMutations_RequireAdmin_WhileReadsRemainAvailableToAuthenticatedUsers()
+    {
+        var actions = typeof(LinguaReadApi.Controllers.LanguagesController).GetMethods()
+            .Where(m => m.GetCustomAttributes<HttpMethodAttribute>().Any());
+        var mutations = actions.Where(m => m.GetCustomAttributes<HttpMethodAttribute>()
+            .Any(a => a.HttpMethods.Any(v => v is "POST" or "PUT" or "DELETE"))
+            && m.Name != "ResetLanguageContent").ToList();
+        Assert.Equal(3, mutations.Count);
+        Assert.All(mutations, action => Assert.True(HasAdminPolicy(action.GetCustomAttributes<AuthorizeAttribute>())));
+        Assert.All(actions.Where(m => m.IsDefined(typeof(HttpGetAttribute))),
+            action => Assert.False(HasAdminPolicy(action.GetCustomAttributes<AuthorizeAttribute>())));
+        Assert.False(HasAdminPolicy(typeof(LinguaReadApi.Controllers.LanguagesController)
+            .GetMethod("ResetLanguageContent")!.GetCustomAttributes<AuthorizeAttribute>()));
+    }
+    [Fact]
     public void EveryAdminRoutedAction_RequiresTheAdminOnlyPolicy()
     {
         var controllerTypes = typeof(LinguaReadApi.Controllers.TextsController).Assembly

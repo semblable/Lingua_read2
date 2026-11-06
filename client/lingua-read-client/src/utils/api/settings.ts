@@ -15,23 +15,38 @@ export const getUserSettings = async (): Promise<UserSettings> => {
   }
 };
 
-export const updateUserSettings = async (
+// All writers share one queue, including explicit secret saves and debounced
+// form/reader patches. A late response must not overwrite a newer settings save.
+let settingsUpdateTail: Promise<unknown> = Promise.resolve();
+
+export const updateUserSettings = (
   settings: UpdateUserSettingsInput,
   // keepalive lets the request finish while the page unloads.
   options: { keepalive?: boolean } = {}
 ): Promise<UserSettings> => {
-  try {
-    // A change to the SRS retention, maximum interval or weights reschedules the
-    // user's cards, which fall due at the start of a local day.
-    return await fetchApi<UserSettings>(`/usersettings?timezoneOffsetMinutes=${tzOffsetMinutes()}`, {
-      method: 'PUT',
-      body: JSON.stringify(settings),
-      ...options
-    });
-  } catch (error) {
-    console.error('Failed to update user settings:', error);
-    throw error;
-  }
+  const request = settingsUpdateTail.catch(() => undefined).then(async () => {
+    try {
+      // A change to the SRS retention, maximum interval or weights reschedules the
+      // user's cards, which fall due at the start of a local day.
+      const body = JSON.stringify(settings);
+      // Fetch keepalive bodies have a 64 KiB limit. Large custom prompts must
+      // still save normally while the page is open; measure UTF-8 bytes.
+      const keepaliveOptions = options.keepalive
+        ? { keepalive: new TextEncoder().encode(body).byteLength <= 64 * 1024 }
+        : {};
+      return await fetchApi<UserSettings>(`/usersettings?timezoneOffsetMinutes=${tzOffsetMinutes()}`, {
+        method: 'PUT',
+        body,
+        ...options,
+        ...keepaliveOptions
+      });
+    } catch (error) {
+      console.error('Failed to update user settings:', error);
+      throw error;
+    }
+  });
+  settingsUpdateTail = request;
+  return request;
 };
 
 export const sendDiscordReport = async (

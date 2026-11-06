@@ -33,171 +33,183 @@ namespace LinguaReadApi.Controllers
             [FromQuery] string status = "active",
             [FromQuery] int timezoneOffsetMinutes = 0)
         {
-            timezoneOffsetMinutes = TimezoneOffset.Clamp(timezoneOffsetMinutes);
-            var userId = GetUserId();
-            var statusLower = (status ?? "active").Trim().ToLowerInvariant();
-
-            var query = _context.UserGoals.Where(g => g.UserId == userId);
-
-            switch (statusLower)
+            return await LessonStudyActivity.AtomicAsync<ActionResult<IEnumerable<GoalProgressDto>>>(_context, GetUserId(), async () =>
             {
-                case "archived":
-                    query = query.Where(g => g.ArchivedAt != null);
-                    break;
-                case "completed":
-                    query = query.Where(g => g.ArchivedAt == null && g.CompletedAt != null);
-                    break;
-                case "all":
-                    break;
-                case "active":
-                default:
-                    query = query.Where(g => g.ArchivedAt == null && g.CompletedAt == null);
-                    break;
-            }
+                timezoneOffsetMinutes = TimezoneOffset.Clamp(timezoneOffsetMinutes);
+                var userId = GetUserId();
+                var statusLower = (status ?? "active").Trim().ToLowerInvariant();
 
-            var goals = await query.OrderByDescending(g => g.CreatedAt).ToListAsync();
-            var dtos = await _progress.ComputeAsync(userId, goals, timezoneOffsetMinutes, DateTime.UtcNow);
+                var query = _context.UserGoals.Where(g => g.UserId == userId);
 
-            // Persist any side-effects (rolled periods, sticky completion stamps)
-            await _context.SaveChangesAsync();
+                switch (statusLower)
+                {
+                    case "archived":
+                        query = query.Where(g => g.ArchivedAt != null);
+                        break;
+                    case "completed":
+                        query = query.Where(g => g.ArchivedAt == null && g.CompletedAt != null);
+                        break;
+                    case "all":
+                        break;
+                    case "active":
+                    default:
+                        query = query.Where(g => g.ArchivedAt == null && g.CompletedAt == null);
+                        break;
+                }
 
-            return Ok(dtos.ToList());
+                var goals = await query.OrderByDescending(g => g.CreatedAt).ToListAsync();
+                var dtos = await _progress.ComputeAsync(userId, goals, timezoneOffsetMinutes, DateTime.UtcNow);
+
+                // Persist any side-effects (rolled periods, sticky completion stamps)
+                await _context.SaveChangesAsync();
+
+                return Ok(dtos.ToList());
+            });
         }
 
         // GET: api/goals/{id}?timezoneOffsetMinutes=...
         [HttpGet("{id}")]
         public async Task<ActionResult<GoalProgressDto>> GetGoal(int id, [FromQuery] int timezoneOffsetMinutes = 0)
         {
-            timezoneOffsetMinutes = TimezoneOffset.Clamp(timezoneOffsetMinutes);
-            var userId = GetUserId();
-            var goal = await _context.UserGoals.FirstOrDefaultAsync(g => g.GoalId == id && g.UserId == userId);
-            if (goal == null) return NotFound();
+            return await LessonStudyActivity.AtomicAsync<ActionResult<GoalProgressDto>>(_context, GetUserId(), async () =>
+            {
+                timezoneOffsetMinutes = TimezoneOffset.Clamp(timezoneOffsetMinutes);
+                var userId = GetUserId();
+                var goal = await _context.UserGoals.FirstOrDefaultAsync(g => g.GoalId == id && g.UserId == userId);
+                if (goal == null) return NotFound();
 
-            var dtos = await _progress.ComputeAsync(userId, new[] { goal }, timezoneOffsetMinutes, DateTime.UtcNow);
-            await _context.SaveChangesAsync();
+                var dtos = await _progress.ComputeAsync(userId, new[] { goal }, timezoneOffsetMinutes, DateTime.UtcNow);
+                await _context.SaveChangesAsync();
 
-            return Ok(dtos[0]);
+                return Ok(dtos[0]);
+            });
         }
 
         // POST: api/goals
         [HttpPost]
         public async Task<ActionResult<GoalProgressDto>> CreateGoal([FromBody] CreateGoalDto dto, [FromQuery] int timezoneOffsetMinutes = 0)
         {
-            timezoneOffsetMinutes = TimezoneOffset.Clamp(timezoneOffsetMinutes);
-            var userId = GetUserId();
-
-            // --- Validation ---
-            if (dto.TargetValue <= 0)
-                return BadRequest("Target must be greater than zero.");
-
-            if (!Enum.IsDefined(typeof(GoalType), dto.GoalType))
-                return BadRequest("Invalid goal type.");
-
-            if (!Enum.IsDefined(typeof(GoalMode), dto.Mode))
-                return BadRequest("Invalid goal mode.");
-
-            if (!Enum.IsDefined(typeof(GoalRecurrence), dto.Recurrence))
-                return BadRequest("Invalid recurrence.");
-
-            if (dto.Recurrence != GoalRecurrence.None && dto.Mode == GoalMode.Milestone)
-                return BadRequest("Milestone goals cannot recur.");
-
-            if (dto.Recurrence != GoalRecurrence.None && dto.Deadline.HasValue)
-                return BadRequest("Recurring goals do not take a deadline.");
-
-            if (dto.LanguageId.HasValue)
+            return await LessonStudyActivity.AtomicAsync<ActionResult<GoalProgressDto>>(_context, GetUserId(), async () =>
             {
-                var langExists = await _context.Languages.AnyAsync(l => l.LanguageId == dto.LanguageId.Value);
-                if (!langExists) return BadRequest("Language not found.");
-            }
+                timezoneOffsetMinutes = TimezoneOffset.Clamp(timezoneOffsetMinutes);
+                var userId = GetUserId();
 
-            var nowUtc = DateTime.UtcNow;
-            var todayUserTz = DateOnly.FromDateTime(nowUtc.AddMinutes(timezoneOffsetMinutes));
+                // --- Validation ---
+                if (dto.TargetValue <= 0)
+                    return BadRequest("Target must be greater than zero.");
 
-            if (dto.Deadline.HasValue && dto.Deadline.Value < todayUserTz)
-                return BadRequest("Deadline cannot be in the past.");
+                if (!Enum.IsDefined(typeof(GoalType), dto.GoalType))
+                    return BadRequest("Invalid goal type.");
 
-            // --- Build goal ---
-            var baseline = dto.Mode == GoalMode.Milestone
-                ? 0L
-                : await _progress.SnapshotMetricAsync(userId, dto.GoalType, dto.LanguageId);
+                if (!Enum.IsDefined(typeof(GoalMode), dto.Mode))
+                    return BadRequest("Invalid goal mode.");
 
-            var goal = new UserGoal
-            {
-                UserId = userId,
-                LanguageId = dto.LanguageId,
-                GoalType = dto.GoalType,
-                Mode = dto.Mode,
-                Recurrence = dto.Recurrence,
-                TargetValue = dto.TargetValue,
-                BaselineValue = baseline,
-                Deadline = dto.Deadline,
-                CreatedAt = nowUtc,
-                CreatedTzOffsetMin = timezoneOffsetMinutes,
-                Title = string.IsNullOrWhiteSpace(dto.Title) ? null : dto.Title.Trim()
-            };
+                if (!Enum.IsDefined(typeof(GoalRecurrence), dto.Recurrence))
+                    return BadRequest("Invalid recurrence.");
 
-            if (dto.Recurrence != GoalRecurrence.None)
-            {
-                goal.CurrentPeriodStart = GoalProgressService.PeriodStartContaining(todayUserTz, dto.Recurrence);
-                goal.CurrentPeriodBaseline = baseline;
-            }
+                if (dto.Recurrence != GoalRecurrence.None && dto.Mode == GoalMode.Milestone)
+                    return BadRequest("Milestone goals cannot recur.");
 
-            _context.UserGoals.Add(goal);
-            await _context.SaveChangesAsync();
+                if (dto.Recurrence != GoalRecurrence.None && dto.Deadline.HasValue)
+                    return BadRequest("Recurring goals do not take a deadline.");
 
-            var dtos = await _progress.ComputeAsync(userId, new[] { goal }, timezoneOffsetMinutes, nowUtc);
-            await _context.SaveChangesAsync();
+                if (dto.LanguageId.HasValue)
+                {
+                    var langExists = await _context.Languages.AnyAsync(l => l.LanguageId == dto.LanguageId.Value);
+                    if (!langExists) return BadRequest("Language not found.");
+                }
 
-            return CreatedAtAction(nameof(GetGoal), new { id = goal.GoalId }, dtos[0]);
+                var nowUtc = DateTime.UtcNow;
+                var todayUserTz = DateOnly.FromDateTime(nowUtc.AddMinutes(timezoneOffsetMinutes));
+
+                if (dto.Deadline.HasValue && dto.Deadline.Value < todayUserTz)
+                    return BadRequest("Deadline cannot be in the past.");
+
+                // --- Build goal ---
+                var baseline = dto.Mode == GoalMode.Milestone
+                    ? 0L
+                    : await _progress.SnapshotMetricAsync(userId, dto.GoalType, dto.LanguageId);
+
+                var goal = new UserGoal
+                {
+                    UserId = userId,
+                    LanguageId = dto.LanguageId,
+                    GoalType = dto.GoalType,
+                    Mode = dto.Mode,
+                    Recurrence = dto.Recurrence,
+                    TargetValue = dto.TargetValue,
+                    BaselineValue = baseline,
+                    Deadline = dto.Deadline,
+                    CreatedAt = nowUtc,
+                    CreatedTzOffsetMin = timezoneOffsetMinutes,
+                    Title = string.IsNullOrWhiteSpace(dto.Title) ? null : dto.Title.Trim()
+                };
+
+                if (dto.Recurrence != GoalRecurrence.None)
+                {
+                    goal.CurrentPeriodStart = GoalProgressService.PeriodStartContaining(todayUserTz, dto.Recurrence);
+                    goal.CurrentPeriodBaseline = baseline;
+                }
+
+                _context.UserGoals.Add(goal);
+                await _context.SaveChangesAsync();
+
+                var dtos = await _progress.ComputeAsync(userId, new[] { goal }, timezoneOffsetMinutes, nowUtc);
+                await _context.SaveChangesAsync();
+
+                return CreatedAtAction(nameof(GetGoal), new { id = goal.GoalId }, dtos[0]);
+            });
         }
 
         // PUT: api/goals/{id}
         [HttpPut("{id}")]
         public async Task<ActionResult<GoalProgressDto>> UpdateGoal(int id, [FromBody] UpdateGoalDto dto, [FromQuery] int timezoneOffsetMinutes = 0)
         {
-            timezoneOffsetMinutes = TimezoneOffset.Clamp(timezoneOffsetMinutes);
-            var userId = GetUserId();
-            var goal = await _context.UserGoals.FirstOrDefaultAsync(g => g.GoalId == id && g.UserId == userId);
-            if (goal == null) return NotFound();
-
-            // Disallow cadence/type/mode/scope changes (per plan)
-            if (dto.GoalType.HasValue && dto.GoalType.Value != goal.GoalType)
-                return BadRequest("Goal type cannot be changed. Create a new goal instead.");
-            if (dto.Mode.HasValue && dto.Mode.Value != goal.Mode)
-                return BadRequest("Goal mode cannot be changed.");
-            if (dto.Recurrence.HasValue && dto.Recurrence.Value != goal.Recurrence)
-                return BadRequest("Cadence cannot be changed.");
-            if (dto.LanguageId.HasValue && dto.LanguageId.Value != goal.LanguageId)
-                return BadRequest("Goal scope cannot be changed.");
-
-            if (dto.TargetValue.HasValue)
+            return await LessonStudyActivity.AtomicAsync<ActionResult<GoalProgressDto>>(_context, GetUserId(), async () =>
             {
-                if (dto.TargetValue.Value <= 0) return BadRequest("Target must be greater than zero.");
-                goal.TargetValue = dto.TargetValue.Value;
-            }
+                timezoneOffsetMinutes = TimezoneOffset.Clamp(timezoneOffsetMinutes);
+                var userId = GetUserId();
+                var goal = await _context.UserGoals.FirstOrDefaultAsync(g => g.GoalId == id && g.UserId == userId);
+                if (goal == null) return NotFound();
 
-            if (dto.Deadline.HasValue)
-            {
-                if (goal.Recurrence != GoalRecurrence.None)
-                    return BadRequest("Recurring goals do not have a deadline.");
-                goal.Deadline = dto.Deadline.Value;
-                // If extending past today on an Overdue goal, allow it to flow back to active.
-                // If goal was completed and we shorten the deadline below today — completion is sticky.
-            }
+                // Disallow cadence/type/mode/scope changes (per plan)
+                if (dto.GoalType.HasValue && dto.GoalType.Value != goal.GoalType)
+                    return BadRequest("Goal type cannot be changed. Create a new goal instead.");
+                if (dto.Mode.HasValue && dto.Mode.Value != goal.Mode)
+                    return BadRequest("Goal mode cannot be changed.");
+                if (dto.Recurrence.HasValue && dto.Recurrence.Value != goal.Recurrence)
+                    return BadRequest("Cadence cannot be changed.");
+                if (dto.LanguageId.HasValue && dto.LanguageId.Value != goal.LanguageId)
+                    return BadRequest("Goal scope cannot be changed.");
 
-            if (dto.ClearDeadline == true)
-                goal.Deadline = null;
+                if (dto.TargetValue.HasValue)
+                {
+                    if (dto.TargetValue.Value <= 0) return BadRequest("Target must be greater than zero.");
+                    goal.TargetValue = dto.TargetValue.Value;
+                }
 
-            if (dto.Title != null)
-                goal.Title = string.IsNullOrWhiteSpace(dto.Title) ? null : dto.Title.Trim();
+                if (dto.Deadline.HasValue)
+                {
+                    if (goal.Recurrence != GoalRecurrence.None)
+                        return BadRequest("Recurring goals do not have a deadline.");
+                    goal.Deadline = dto.Deadline.Value;
+                    // If extending past today on an Overdue goal, allow it to flow back to active.
+                    // If goal was completed and we shorten the deadline below today — completion is sticky.
+                }
 
-            await _context.SaveChangesAsync();
+                if (dto.ClearDeadline == true)
+                    goal.Deadline = null;
 
-            var dtos = await _progress.ComputeAsync(userId, new[] { goal }, timezoneOffsetMinutes, DateTime.UtcNow);
-            await _context.SaveChangesAsync();
+                if (dto.Title != null)
+                    goal.Title = string.IsNullOrWhiteSpace(dto.Title) ? null : dto.Title.Trim();
 
-            return Ok(dtos[0]);
+                await _context.SaveChangesAsync();
+
+                var dtos = await _progress.ComputeAsync(userId, new[] { goal }, timezoneOffsetMinutes, DateTime.UtcNow);
+                await _context.SaveChangesAsync();
+
+                return Ok(dtos[0]);
+            });
         }
 
         // POST: api/goals/{id}/archive

@@ -124,7 +124,7 @@ function ManualEntryModal({ show, onHide, onSubmitSuccess }: ManualEntryModalPro
 
 
     return (
-        <Modal show={show} onHide={onHide} onExited={handleExited} centered>
+        <Modal scrollable show={show} onHide={onHide} onExited={handleExited} centered>
             <Modal.Header closeButton className="p-3" style={{ borderBottom: '1px solid var(--border-color)' }}> {/* Added padding and themed border */}
                 <Modal.Title as="h5">Log Manual Activity</Modal.Title> {/* Use h5 for consistency */}
             </Modal.Header>

@@ -2,6 +2,7 @@ import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import StandardTextView from '../components/reader/StandardTextView';
+import { splitTextIntoSentenceSegments } from '../utils/readerText';
 
 const baseSettings = {
   textSize: 16,
@@ -24,10 +25,7 @@ const baseProps = (overrides = {}) => ({
   getFontFamilyForList: () => 'sans-serif',
   handleWordSelection: vi.fn(),
   processTextContent: (text) => text,
-  renderProcessedContentAsSentences: (processed) => ({
-    sentenceElements: [processed],
-    nextSentenceIndex: 1
-  }),
+  renderSentence: (processed) => processed,
   isMobile: false,
   textContentRef: { current: null },
   canUseSentenceTts: true,
@@ -44,6 +42,39 @@ const baseProps = (overrides = {}) => ({
 });
 
 describe('StandardTextView', () => {
+  test.each([
+    ['zh', '第一句。第二句！第三句？'],
+    ['ja', '日本語です。次の文です！'],
+    ['ar', 'مرحبا بالعالم؟ نعم. جملة أخرى!'],
+    ['ru', 'Первое предложение. Второе предложение!'],
+    ['en', 'I met Mr. Smith today. Next sentence.'],
+  ])('uses the sentence-mode boundaries and indices for %s', (code, content) => {
+    const text = { textId: 1, content, languageCode: code };
+    const canonical = splitTextIntoSentenceSegments(content, [], null, code);
+    const { container } = render(<StandardTextView {...baseProps({
+      text,
+      renderSentence: (processed, index) => <span key={index} data-sentence-index={index}>{processed}</span>,
+    })} />);
+    const sentences = [...container.querySelectorAll('[data-sentence-index]')];
+    expect(sentences.map(el => el.textContent)).toEqual(canonical.map(s => s.text));
+    expect(sentences.map(el => Number(el.dataset.sentenceIndex))).toEqual(canonical.map(s => s.index));
+    expect(container.querySelector('.text-content').textContent).toBe(content);
+    expect(sentences.length).toBeGreaterThan(1);
+  });
+
+  test('a multi-line title occupies one shared sentence index and images occupy none', () => {
+    const text = { textId: 1, content: 'Title\nSubtitle\n\nFirst sentence. Next sentence.', structuredContent: [
+      { type: 'title', text: 'Title\nSubtitle' },
+      { type: 'image', imageUrl: '/cover.jpg' },
+      { type: 'paragraph', text: 'First sentence. Next sentence.' },
+    ] };
+    const canonical = splitTextIntoSentenceSegments(text.content, text.structuredContent, null, 'en');
+    const renderSentence = vi.fn((processed, index) => <span key={index} data-sentence-index={index}>{processed}</span>);
+    const { container } = render(<StandardTextView {...baseProps({ text, renderSentence })} />);
+    expect([...container.querySelectorAll('[data-sentence-index]')].map(el => Number(el.dataset.sentenceIndex)))
+      .toEqual(canonical.map(s => s.index));
+    expect(container.querySelector('[data-sentence-index="0"]')).toHaveTextContent('TitleSubtitle');
+  });
   test('applies the saved script direction to content without reversing controls', () => {
     const { container, rerender } = render(<StandardTextView {...baseProps({ rightToLeft: true })} />);
     expect(container.querySelector('.text-content')).toHaveAttribute('dir', 'rtl');
@@ -117,10 +148,7 @@ describe('StandardTextView', () => {
 
   test("shows a news article's lead photo above the text without numbering it as a sentence", () => {
     // The shape the news import stores: the photo, then the paragraphs that make up content.
-    const renderProcessedContentAsSentences = vi.fn((processed, startIndex) => ({
-      sentenceElements: [processed],
-      nextSentenceIndex: startIndex + 1
-    }));
+    const renderSentence = vi.fn((processed) => processed);
     const props = baseProps({
       text: {
         textId: 7,
@@ -133,7 +161,7 @@ describe('StandardTextView', () => {
           { type: 'paragraph', text: 'Segundo parágrafo.' }
         ]
       },
-      renderProcessedContentAsSentences
+      renderSentence
     });
 
     const { container } = render(<StandardTextView {...props} />);
@@ -143,7 +171,7 @@ describe('StandardTextView', () => {
     expect(photo).toHaveAttribute('alt', 'Moradores protestam em frente à câmara');
     expect(screen.getByText('Moradores protestam em frente à câmara').tagName).toBe('FIGCAPTION');
     // Sentence numbering starts at the first paragraph, as it would without the photo.
-    expect(renderProcessedContentAsSentences.mock.calls.map(([text, start]) => [text, start])).toEqual([
+    expect(renderSentence.mock.calls.map(([text, start]) => [text, start])).toEqual([
       ['Primeiro parágrafo.', 0],
       ['Segundo parágrafo.', 1]
     ]);

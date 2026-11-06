@@ -1,4 +1,5 @@
 using LinguaReadApi.Models;
+using LinguaReadApi.Authorization;
 using LinguaReadApi.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -71,6 +72,7 @@ namespace LinguaReadApi.Controllers
         /// Creates a new language configuration.
         /// </summary>
         [HttpPost]
+        [Authorize(Policy = AdminOnlyRequirement.PolicyName)]
         public async Task<ActionResult<Language>> CreateLanguage([FromBody] Language language) // Use a DTO later if needed
         {
             if (language == null)
@@ -115,6 +117,7 @@ namespace LinguaReadApi.Controllers
         /// Updates an existing language configuration.
         /// </summary>
         [HttpPut("{id}")]
+        [Authorize(Policy = AdminOnlyRequirement.PolicyName)]
         public async Task<IActionResult> UpdateLanguage(int id, [FromBody] Language language) // Use a DTO later
         {
             if (id != language?.LanguageId)
@@ -164,6 +167,7 @@ namespace LinguaReadApi.Controllers
         /// Deletes a language configuration.
         /// </summary>
         [HttpDelete("{id}")]
+        [Authorize(Policy = AdminOnlyRequirement.PolicyName)]
         public async Task<IActionResult> DeleteLanguage(int id)
         {
             try

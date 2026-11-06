@@ -415,6 +415,23 @@ public class SrsStatusSyncTests
     }
 
     [Theory]
+    [InlineData(0)]
+    [InlineData(2)]
+    [InlineData(5)]
+    [InlineData(6)]
+    public async Task CsvImport_RestoresIgnoredStatus_ForNewAndExistingWords(int previousStatus)
+    {
+        var term = new NewTermDto { Term = "gato", Status = 6 };
+        Assert.True(System.ComponentModel.DataAnnotations.Validator.TryValidateObject(term,
+            new System.ComponentModel.DataAnnotations.ValidationContext(term), [], validateAllProperties: true));
+        using var context = CreateContext();
+        var userId = Seed(context, Settings(), wordStatus: previousStatus);
+        await Words(context, userId).AddTermsBatch(new AddTermBatchDto { LanguageId = 1,
+            Terms = [new NewTermDto { Term = "gato", Status = 6 }, new NewTermDto { Term = "perro", Status = 6 }] });
+        Assert.All(context.Words.AsNoTracking().ToList(), word => Assert.Equal(6, word.Status));
+    }
+
+    [Theory]
     [InlineData(true)]
     [InlineData(false)]
     public async Task Batch_SavesARowLinkingStoredAtStatus0_AtTheRequestedStatus(bool keepExistingStatus)

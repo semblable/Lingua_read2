@@ -1,3 +1,4 @@
+import { safeLocalStorageSetItem } from '../utils/storage';
 import React, { useState, useEffect, useRef, useContext, useCallback } from 'react';
 import { Container, Form, Button, Alert, Spinner } from 'react-bootstrap';
 import {
@@ -129,7 +130,8 @@ const saveSettingsPatch = async (patch: PageSettings): Promise<UserSettingsRespo
     Object.entries(patch).filter(([key]) => !LOCAL_ONLY_KEYS.has(key as SettingKey))
   );
   if (Object.keys(serverPatch).length === 0) return null;
-  return updateUserSettings(serverPatch as UpdateUserSettingsInput);
+  // Protect even requests already in flight when the user closes the page.
+  return updateUserSettings(serverPatch as UpdateUserSettingsInput, { keepalive: true });
 };
 
 const UserSettings = () => {
@@ -145,14 +147,14 @@ const UserSettings = () => {
       const val = saved[key] ?? patch[key];
       if (val === undefined || val === null) return;
       updateSetting(key, val as Settings[K]);
-      localStorage.setItem(key, typeof val === 'object' ? JSON.stringify(val) : String(val));
+      safeLocalStorageSetItem(key, typeof val === 'object' ? JSON.stringify(val) : String(val));
     };
     (Object.keys(patch) as SettingKey[]).forEach(syncSetting);
 
     const localOnly = Object.fromEntries(
       Object.entries(patch).filter(([key]) => LOCAL_ONLY_KEYS.has(key as SettingKey))
     );
-    localStorage.setItem('cachedSettings', JSON.stringify({ ...readCachedSettings(), ...(result ?? {}), ...localOnly }));
+    safeLocalStorageSetItem('cachedSettings', JSON.stringify({ ...readCachedSettings(), ...(result ?? {}), ...localOnly }));
 
     if (patch.theme !== undefined) applyThemeToBody(String(saved.theme ?? patch.theme));
   }, [updateSetting]);

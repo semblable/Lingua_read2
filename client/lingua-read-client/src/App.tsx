@@ -1,5 +1,6 @@
+import { safeLocalStorageSetItem } from './utils/storage';
 import React, { useContext, useEffect, Suspense, lazy } from 'react';
-import { Routes, Route, Navigate, Outlet } from 'react-router-dom';
+import { Routes, Route, Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useAuthStore } from './utils/store';
 import './App.css';
 import { SettingsContext } from './contexts/SettingsContext';
@@ -7,6 +8,7 @@ import { SettingsProvider } from './contexts/SettingsProvider';
 
 // Components (always needed)
 import Navigation from './components/Navigation';
+import ErrorBoundary from './components/ErrorBoundary';
 import OfflineIndicator from './components/offline/OfflineIndicator';
 import { productionSyncHandlers } from './utils/offline/handlers';
 import { registerServiceWorker } from './utils/offline/registerServiceWorker';
@@ -48,6 +50,7 @@ const ProtectedRoute = ({ isAuthenticated, isLoading }: { isAuthenticated: boole
 
 // Inner component that has access to SettingsContext (only rendered when authenticated)
 const AuthenticatedApp = () => {
+  const location = useLocation();
   const { isAuthenticated, isLoading } = useAuthStore();
   const settingsContext = useContext(SettingsContext);
 
@@ -99,7 +102,7 @@ const AuthenticatedApp = () => {
   useEffect(() => {
     if (settingsContext && settingsContext.settings && settingsContext.settings.lineSpacing) {
       document.body.style.setProperty('--reading-line-height', String(settingsContext.settings.lineSpacing));
-      localStorage.setItem('lineSpacing', String(settingsContext.settings.lineSpacing));
+      safeLocalStorageSetItem('lineSpacing', String(settingsContext.settings.lineSpacing));
     } else {
       const savedLineSpacing = localStorage.getItem('lineSpacing') || '1.5';
       document.body.style.setProperty('--reading-line-height', savedLineSpacing);
@@ -116,7 +119,7 @@ const AuthenticatedApp = () => {
   useEffect(() => {
     if (settingsContext && settingsContext.settings && settingsContext.settings.paragraphSpacing) {
       document.body.style.setProperty('--reader-paragraph-spacing', settingsContext.settings.paragraphSpacing + 'em');
-      localStorage.setItem('paragraphSpacing', String(settingsContext.settings.paragraphSpacing));
+      safeLocalStorageSetItem('paragraphSpacing', String(settingsContext.settings.paragraphSpacing));
     } else {
       const saved = localStorage.getItem('paragraphSpacing') || '1.0';
       document.body.style.setProperty('--reader-paragraph-spacing', saved + 'em');
@@ -136,40 +139,42 @@ const AuthenticatedApp = () => {
         <OfflineIndicator handlers={productionSyncHandlers} />
       </div>
       <div className="container-fluid p-0 m-0">
-        <Suspense fallback={<Loading />}>
-          <Routes>
-            <Route path="/" element={settingsContext.settings.minimalHome ? <HomeLite /> : <Home />} />
-            <Route path="/login" element={<Navigate to="/" />} />
+        <ErrorBoundary key={location.pathname}>
+          <Suspense fallback={<Loading />}>
+            <Routes>
+              <Route path="/" element={settingsContext.settings.minimalHome ? <HomeLite /> : <Home />} />
+              <Route path="/login" element={<Navigate to="/" />} />
 
-            <Route element={<ProtectedRoute isAuthenticated={isAuthenticated} isLoading={isLoading} />}>
-              <Route path="/library" element={<Library />} />
-              <Route path="/library/:folderId" element={<Library />} />
+              <Route element={<ProtectedRoute isAuthenticated={isAuthenticated} isLoading={isLoading} />}>
+                <Route path="/library" element={<Library />} />
+                <Route path="/library/:folderId" element={<Library />} />
 
-              {/* The old book and text lists live on in the Library. */}
-              <Route path="/books" element={<Navigate to="/library" replace />} />
-              <Route path="/books/create" element={<BookCreate />} />
-              <Route path="/books/:bookId" element={<BookDetail />} />
+                {/* The old book and text lists live on in the Library. */}
+                <Route path="/books" element={<Navigate to="/library" replace />} />
+                <Route path="/books/create" element={<BookCreate />} />
+                <Route path="/books/:bookId" element={<BookDetail />} />
 
-              <Route path="/texts" element={<Navigate to="/library" replace />} />
-              <Route path="/texts/create" element={<TextCreate />} />
-              <Route path="/texts/:textId" element={<TextDisplay />} />
-              <Route path="/texts/create-audio" element={<CreateAudioLesson />} />
-              <Route path="/texts/create-batch-audio" element={<BatchAudioCreate />} />
+                <Route path="/texts" element={<Navigate to="/library" replace />} />
+                <Route path="/texts/create" element={<TextCreate />} />
+                <Route path="/texts/:textId" element={<TextDisplay />} />
+                <Route path="/texts/create-audio" element={<CreateAudioLesson />} />
+                <Route path="/texts/create-batch-audio" element={<BatchAudioCreate />} />
 
-              <Route path="/dashboard" element={<Dashboard />} />
-              <Route path="/goals" element={<Goals />} />
-              <Route path="/statistics" element={<Statistics />} />
-              <Route path="/terms" element={<TermsPage />} />
-              <Route path="/srs" element={<SrsReview />} />
-              <Route path="/srs/story" element={<SrsStoryReview />} />
+                <Route path="/dashboard" element={<Dashboard />} />
+                <Route path="/goals" element={<Goals />} />
+                <Route path="/statistics" element={<Statistics />} />
+                <Route path="/terms" element={<TermsPage />} />
+                <Route path="/srs" element={<SrsReview />} />
+                <Route path="/srs/story" element={<SrsStoryReview />} />
 
-              <Route path="/settings" element={<UserSettings />} />
-              <Route path="/settings/languages" element={<LanguagesPage />} />
-            </Route>
+                <Route path="/settings" element={<UserSettings />} />
+                <Route path="/settings/languages" element={<LanguagesPage />} />
+              </Route>
 
-            <Route path="*" element={<Navigate to="/" />} />
-          </Routes>
-        </Suspense>
+              <Route path="*" element={<Navigate to="/" />} />
+            </Routes>
+          </Suspense>
+        </ErrorBoundary>
       </div>
     </div>
   );

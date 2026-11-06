@@ -1199,7 +1199,8 @@ namespace LinguaReadApi.Migrations
 
                     b.HasKey("PeriodId");
 
-                    b.HasIndex("GoalId", "PeriodEnd");
+                    b.HasIndex("GoalId", "PeriodEnd")
+                        .IsUnique();
 
                     b.ToTable("UserGoalPeriods");
                 });

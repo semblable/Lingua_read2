@@ -38,7 +38,6 @@ import {
   foldLookupTerm,
   isPureNumericToken,
   resolveLookupTerm,
-  isAbbreviationOrNonSentencePeriod,
   getOverlappedWordSpans,
   buildPhraseSelectionFromSpans,
   buildPhraseSelectionFromText,
@@ -57,10 +56,13 @@ import WordInfoPanel from '../components/reader/WordInfoPanel';
 import AudioTranscriptView from '../components/reader/AudioTranscriptView';
 import StandardTextView from '../components/reader/StandardTextView';
 import SentenceModeView from '../components/reader/SentenceModeView';
+import ErrorBoundary from '../components/ErrorBoundary';
 // Imported from the module itself: tests mock '../utils/api' with a fixed list of calls.
 import { mergeSavedWords, type AddTermsBatchResult, type Word } from '../utils/api/words';
 import type { Language } from '../utils/api/languages';
 import type { DisplayedWord } from '../types/displayedWord';
+import { isChineseSegmentationReady } from '../utils/chineseRuntime';
+import { isThaiSegmentationReady } from '../utils/thaiRuntime';
 
 const TextDisplay = () => {
   const { textId } = useParams();
@@ -636,11 +638,16 @@ const TextDisplay = () => {
 
   // 2. Pre-calculate and sort phrases once
   const knownPhrases = useMemo(() => {
+    // Hook state can publish words/config before the dictionary is available.
+    // Keep the loading/error UI renderable without invoking the pinned tokenizer.
+    if (loading || error ||
+      (languageConfig?.parserType === 'jieba-v1' && !isChineseSegmentationReady()) ||
+      (languageConfig?.parserType === 'thai-dict-v1' && !isThaiSegmentationReady())) return [];
     return words
       .filter(w => w.term && (w.term.includes(' ') || ((languageConfig?.parserType === 'jieba-v1' || languageConfig?.parserType === 'tinysegmenter-ja-v1' || languageConfig?.parserType === 'thai-dict-v1') &&
         ((w.status ?? 0) > 0 || !!w.translation) && extractWords(w.term, languageConfig).length > 1)))
       .sort((a, b) => (b.term?.length ?? 0) - (a.term?.length ?? 0));
-  }, [words, languageConfig]);
+  }, [words, languageConfig, loading, error]);
 
   const getWordData = useCallback((word: string | null | undefined) => {
     if (!word) return null;
@@ -2189,126 +2196,28 @@ const TextDisplay = () => {
     finally { completionIntentBusy.current = false; setCompleting(false); }
   };
 
-  // --- New Sentence Rendering Logic ---
-  // Takes processed elements for a block (e.g., paragraph) and a starting index,
-  // returns rendered sentence elements and the next sentence index.
-  const renderProcessedContentAsSentences = useCallback((
-    processedElements: React.ReactNode,
-    startingSentenceIndex: number
-  ): { sentenceElements: React.ReactNode[] | null; nextSentenceIndex: number } => {
-    if (!Array.isArray(processedElements) || processedElements.length === 0) {
-      return { sentenceElements: null, nextSentenceIndex: startingSentenceIndex };
-    }
-
-    const sentenceElements: React.ReactNode[] = [];
-    let currentSentenceElements: React.ReactNode[] = [];
-    let sentenceIndex = startingSentenceIndex;
-    const sentenceEndRegex = /^[.!?…]$/;
-    const whitespaceRegex = /^\s+$/;
-
-    const fragmentChildrenString = (el: React.ReactNode): string | null => {
-      if (!React.isValidElement(el) || el.type !== React.Fragment) return null;
-      const { children } = el.props as { children?: React.ReactNode };
-      return children == null ? null : String(children);
-    };
-
-    const extractWordTextFromElement = (el: React.ReactNode): string => {
-      if (!el || !React.isValidElement(el) || el.type === React.Fragment) return '';
-      const props = el.props as { children?: React.ReactNode };
-      if (props?.children != null) {
-        if (typeof props.children === 'string') return props.children.trim();
-        if (React.isValidElement(props.children)) return extractWordTextFromElement(props.children);
-        if (Array.isArray(props.children)) {
-          for (const child of props.children) {
-            const w = extractWordTextFromElement(child);
-            if (w) return w;
-          }
-        }
-      }
-      return '';
-    };
-
-    processedElements.forEach((element, idx) => {
-      currentSentenceElements.push(element);
-
-      let isEndOfSentence = false;
-      const fragmentText = fragmentChildrenString(element);
-      if (fragmentText !== null) {
-        const content = fragmentText.trim();
-        if (sentenceEndRegex.test(content)) {
-          const nextElement = processedElements[idx + 1];
-          const nextFragmentText = fragmentChildrenString(nextElement);
-          if (!nextElement || (nextFragmentText !== null && whitespaceRegex.test(nextFragmentText))) {
-            let isAbbrev = false;
-            if (content === '.') {
-              let precedingWord = '';
-              for (let j = idx - 1; j >= 0; j--) {
-                const w = extractWordTextFromElement(processedElements[j]);
-                if (w) {
-                  precedingWord = w;
-                  break;
-                }
-              }
-              let followingWord = '';
-              for (let j = idx + 1; j < processedElements.length; j++) {
-                const w = extractWordTextFromElement(processedElements[j]);
-                if (w) {
-                  followingWord = w;
-                  break;
-                }
-              }
-              const effectiveConfig = languageConfig
-                ? { ...languageConfig, languageCode: languageConfig.languageCode || text?.languageCode }
-                : (text?.languageCode ? { languageCode: text.languageCode } : null);
-              if (isAbbreviationOrNonSentencePeriod(precedingWord, '.', followingWord, effectiveConfig)) {
-                isAbbrev = true;
-              }
-            }
-            if (!isAbbrev) {
-              isEndOfSentence = true;
-            }
-          }
-        }
-      }
-
-      if (isEndOfSentence || idx === processedElements.length - 1) {
-        if (currentSentenceElements.some(el => {
-          const text = fragmentChildrenString(el);
-          return text === null || !whitespaceRegex.test(text);
-        })) {
-          const currentSentenceIndex = sentenceIndex++;
-          sentenceElements.push(
-            <span
-              key={`sentence-${currentSentenceIndex}`}
-              className="sentence"
-              data-sentence-index={currentSentenceIndex}
-              onContextMenu={(e) => handleSentenceContextMenu(e, currentSentenceIndex)}
-              onClickCapture={(e) => focusSentenceIndexFromNode(e.target as Node)}
-              onTouchEndCapture={(e) => focusSentenceIndexFromNode(e.target as Node)}
-              style={{ display: 'inline' }} // Keep inline display
-            >
-              {isBookmarked(currentSentenceIndex) && (
-                <span className="bookmark-icon" aria-label="bookmark">🔖</span>
-              )}
-              {currentSentenceElements}
-            </span>
-          );
-        }
-        currentSentenceElements = [];
-      }
-    });
-
-    return { sentenceElements, nextSentenceIndex: sentenceIndex };
-  }, [focusSentenceIndexFromNode, handleSentenceContextMenu, isBookmarked, languageConfig, text?.languageCode]); // Dependencies
-
-  // --- End New Sentence Rendering Logic ---
+  // Sentence boundaries come from readerText in both reading modes.
+  const renderSentence = useCallback((content: React.ReactNode, sentenceIndex: number) => (
+    <span
+      key={`sentence-${sentenceIndex}`}
+      className="sentence"
+      data-sentence-index={sentenceIndex}
+      onContextMenu={(e) => handleSentenceContextMenu(e, sentenceIndex)}
+      onClickCapture={(e) => focusSentenceIndexFromNode(e.target as Node)}
+      onTouchEndCapture={(e) => focusSentenceIndexFromNode(e.target as Node)}
+      style={{ display: 'inline' }}
+    >
+      {isBookmarked(sentenceIndex) && <span className="bookmark-icon" aria-label="bookmark">🔖</span>}
+      {content}
+    </span>
+  ), [focusSentenceIndexFromNode, handleSentenceContextMenu, isBookmarked]);
 
   // Stable, so the offline button's cache check doesn't re-run on every reader render.
   const offlineAudioUrls = useMemo(() => (audioSrc ? [audioSrc] : []), [audioSrc]);
 
   // --- Rendering Logic ---
   // --- Loading/Error/NotFound States ---
-  if (loading) { return <Container className="py-5 text-center"><Spinner animation="border" /></Container>; }
+  if (loading) { return <Container className="py-5 text-center"><Spinner animation="border" role="status"><span className="visually-hidden">Loading text</span></Spinner></Container>; }
   if (error) { return <Container className="py-5"><Alert variant="danger">{error}<Button onClick={() => navigate(-1)}>Back</Button></Alert></Container>; }
   if (!text) { return <Container className="py-5"><Alert variant="warning">Text not found<Button onClick={() => navigate(libraryPath())}>Back</Button></Alert></Container>; }
   // --- End Loading/Error States ---
@@ -2615,7 +2524,8 @@ const TextDisplay = () => {
                     getFontFamilyForList={getFontFamilyForList}
                     handleWordSelection={handleWordSelection}
                     processTextContent={processTextContent}
-                    renderProcessedContentAsSentences={renderProcessedContentAsSentences}
+                    renderSentence={renderSentence}
+                    languageConfig={languageConfig}
                     isMobile={isMobile}
                     textContentRef={textContentRef}
                     canUseSentenceTts={canUseSentenceTts}
@@ -2736,4 +2646,7 @@ const TextDisplay = () => {
   );
 };
 
-export default TextDisplay;
+export default function TextDisplayPage() {
+  const { textId } = useParams();
+  return <ErrorBoundary key={textId} title="Unable to display this text"><TextDisplay /></ErrorBoundary>;
+}

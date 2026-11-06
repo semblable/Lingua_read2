@@ -61,7 +61,10 @@ const RenameFolderModal = ({ show, onHide, folder, onSubmit }: RenameFolderModal
           <Form.Group>
             <Form.Label>Color (optional)</Form.Label>
             <div className="d-flex gap-2 flex-wrap">
-              <span
+              <button
+                type="button"
+                aria-label="Use default folder color"
+                aria-pressed={color === ''}
                 onClick={() => setColor('')}
                 style={{
                   width: 28,
@@ -74,9 +77,12 @@ const RenameFolderModal = ({ show, onHide, folder, onSubmit }: RenameFolderModal
                   transition: 'border-color 0.15s'
                 }}
                 title="Default"
-              ></span>
+               />
               {Object.entries(FOLDER_COLORS).map(([colorName, colorValue]) => (
-                <span
+                <button
+                  type="button"
+                  aria-label={`Select ${colorName} folder color`}
+                  aria-pressed={color === colorName}
                   key={colorName}
                   onClick={() => setColor(color === colorName ? '' : colorName)}
                   style={{
@@ -90,7 +96,7 @@ const RenameFolderModal = ({ show, onHide, folder, onSubmit }: RenameFolderModal
                     transition: 'border-color 0.15s'
                   }}
                   title={colorName}
-                ></span>
+                 />
               ))}
             </div>
           </Form.Group>

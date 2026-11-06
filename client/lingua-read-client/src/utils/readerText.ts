@@ -94,7 +94,7 @@ export const countWordsInText = (content: string | null | undefined): number => 
 };
 
 export const titleLineEndsLikeSentence = (line: string): boolean =>
-  /[.!?…]["'”’)]?$/.test(line.trim());
+  /[.!?…。！？؟।॥]["'”’)」』]?$/u.test(line.trim());
 
 export const isRomanOrNumericLine = (line: string): boolean =>
   /^\d{1,4}$/.test(line) || /^[IVXLCDM]+$/i.test(line);
@@ -197,7 +197,7 @@ export const buildDisplayBlocks = (
       const joinedText = nonEmptyLines.join(' ').trim();
       const totalWordCount = countWordsInText(joinedText);
       const allCapsLineCount = nonEmptyLines.filter(
-        (line) => /[A-Za-zÀ-ÿ]/.test(line) && line === line.toLocaleUpperCase()
+        (line) => /[A-Za-zÀ-ÿ]/.test(line) && line === line.toLocaleUpperCase() && !titleLineEndsLikeSentence(line)
       ).length;
       const romanOrNumericLineCount = nonEmptyLines.filter(isRomanOrNumericLine).length;
       const shortHeadingLineCount = nonEmptyLines.filter(isShortHeadingLine).length;
@@ -638,9 +638,7 @@ export const lowercaseLookupTerm = (term: string, languageCode?: string | null):
   const base = (languageCode || '').trim().toLowerCase().replace(/_/g, '-').split('-')[0];
   const scoped = NORMALIZED_VOCABULARY_LANGUAGES.has(base);
   const isRomanceElision = base === 'fr' || base === 'it' || base === 'ca';
-  const input = scoped || isRomanceElision || base === 'af' || base === 'nl'
-    ? applyCharacterSubstitutions(normalizeTokenizerInput(term || ''), BUILT_IN_SUBSTITUTIONS)
-    : term || '';
+  const input = applyCharacterSubstitutions(normalizeTokenizerInput(term || ''), BUILT_IN_SUBSTITUTIONS);
   const clean = input.trim().replace(/^[\u200C\u200D]+|[\u200C\u200D]+$/g, '');
   const stripped = stripLookupDiacritics(clean, languageCode);
   if (isRomanceElision) {
@@ -1380,7 +1378,7 @@ const SUPPORTED_INTL_SEGMENTER = ((): boolean => {
   }
 })();
 
-const DEFAULT_SENTENCE_TERMINATORS = '.!?…';
+const DEFAULT_SENTENCE_TERMINATORS = '.!?…。！？؟।॥';
 
 const escapeForCharClass = (ch: string): string => ch.replace(/[\\\]^-]/g, (m) => `\\${m}`);
 
@@ -1392,7 +1390,7 @@ const buildFallbackSentenceRegex = (splitSentences: string | null | undefined): 
   // it doesn't appear in the canonical `.!?` config but Intl.Segmenter
   // treats it as a sentence ender.
   const chars = new Set(raw.split(''));
-  chars.add('…');
+  for (const terminator of '…。！？؟।॥') chars.add(terminator);
   const cacheKey = [...chars].sort().join('');
   const cached = fallbackRegexCache.get(cacheKey);
   if (cached) return cached;
@@ -1467,7 +1465,7 @@ const applyExceptionMerging = (
   return merged;
 };
 
-const splitBlockIntoSentences = (
+export const splitBlockIntoSentences = (
   blockText: string,
   languageConfig: LanguageConfig,
   languageCode: string | null | undefined
@@ -1479,7 +1477,18 @@ const splitBlockIntoSentences = (
     intlResult && intlResult.length > 0
       ? intlResult
       : segmentSentencesRegex(blockText, languageConfig?.splitSentences);
-  const merged = applyExceptionMerging(candidates, languageConfig?.sentenceSplitExceptions);
+  const configured = applyExceptionMerging(candidates, languageConfig?.sentenceSplitExceptions);
+  const merged: string[] = [];
+  for (const candidate of configured) {
+    const previous = merged[merged.length - 1];
+    const precedingWord = previous?.trimEnd().match(/([\p{L}\p{M}\p{N}.]+)\.$/u)?.[1];
+    const followingWord = candidate.trimStart().match(/^[\p{L}\p{M}\p{N}]+/u)?.[0] || '';
+    if (precedingWord && isAbbreviationOrNonSentencePeriod(precedingWord, '. ', followingWord, languageConfig)) {
+      merged[merged.length - 1] = `${previous.trimEnd()} ${candidate.trimStart()}`;
+    } else {
+      merged.push(candidate);
+    }
+  }
   // Segment text leaves the reader as a mined sentence, a translation or
   // explanation request and TTS input, so drop soft hyphens and compose
   // accents here too (display is unaffected: the renderer normalizes anyway).

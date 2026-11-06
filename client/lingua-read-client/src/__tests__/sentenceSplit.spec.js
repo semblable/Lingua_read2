@@ -71,17 +71,16 @@ describe('splitTextIntoSentenceSegments — exception merging', () => {
     expect(sentenceTexts(segs)).toEqual(['Dr. Mr. Smith left.']);
   });
 
-  test('without exceptions, Dr. would split', () => {
+  test('built-in abbreviations remain intact without configured exceptions', () => {
     const segs = splitTextIntoSentenceSegments(
       'Dr. Smith arrived. He spoke.',
       [],
       englishCfg([]),
       'en'
     );
-    // We don't assert exact split count — Intl.Segmenter and the regex
-    // fallback may differ — but it should not be the merged form.
+    // Built-in reader abbreviations apply in both reading modes.
     expect(segs.length).toBeGreaterThan(1);
-    expect(sentenceTexts(segs)[0]).not.toBe('Dr. Smith arrived.');
+    expect(sentenceTexts(segs)[0]).toBe('Dr. Smith arrived.');
   });
 });
 

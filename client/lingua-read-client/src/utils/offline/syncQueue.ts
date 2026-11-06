@@ -176,10 +176,10 @@ const SKIPPED: SyncResult = { attempted: 0, succeeded: 0, failed: 0 };
 // - 'auth-stop': 401. fetchApi already redirects the user to /login. We leave
 //   the op in the queue (it'll replay after re-auth) and STOP the loop so we
 //   don't generate N more pointless 401s.
-// - 'terminal': any other 4xx. The server is rejecting the op permanently;
+// - 'terminal': other 4xx except 408/429. The server is rejecting the op permanently;
 //   retrying forever just keeps the queue stuck (this is what bit us before).
 //   Drop the op.
-// - 'retryable': network failures, 5xx, or unknown errors. Leave in queue.
+// - 'retryable': network failures, 408/429, 5xx, or unknown errors. Leave in queue.
 //
 // We duck-type on `error.status` so syncQueue stays handler-agnostic — the
 // handlers throw `ApiError` from api/client.ts, which carries a numeric status.
@@ -189,6 +189,7 @@ function classifyError(err: unknown): ErrorKind {
     const status = (err as { status?: unknown }).status;
     if (typeof status === 'number') {
       if (status === 401) return 'auth-stop';
+      if (status === 408 || status === 429) return 'retryable';
       if (status >= 400 && status < 500) return 'terminal';
     }
   }
@@ -287,8 +288,8 @@ export async function drain(handlers: SyncHandlers): Promise<SyncResult> {
 }
 
 /**
- * Wipe every queued op. Called from logout and handleUnauthorized (401
- * redirect) so a subsequent user on the same browser doesn't inherit pending
+ * Wipe every queued op. Called from explicit logout
+ * so a subsequent user on the same browser doesn't inherit pending
  * mutations (cross-user leak). Also used as a reset-between-tests primitive.
  */
 export async function clearAll(): Promise<void> {

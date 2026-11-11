@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Col, Container, Row } from 'react-bootstrap';
+import { Alert, Container } from 'react-bootstrap';
 import {
   getDashboard,
   getGoals,
@@ -12,14 +12,15 @@ import type { SrsStats } from '../utils/api/srs';
 import { useAuthStore } from '../utils/store';
 import HomeHero from '../components/home/HomeHero';
 import QuickStatsRow from '../components/home/QuickStatsRow';
-import ContinueLearningSection from '../components/home/ContinueLearningSection';
+import ContinueLearningCard from '../components/home/ContinueLearningCard';
+import MoreToResumeList from '../components/home/MoreToResumeList';
 import SrsDueWidget from '../components/home/SrsDueWidget';
-import NextActionCard from '../components/home/NextActionCard';
 import QuickAddCard from '../components/home/QuickAddCard';
 import LanguagesStrip from '../components/home/LanguagesStrip';
 import OnboardingHome from '../components/home/OnboardingHome';
 import GoalsCard from '../components/goals/GoalsCard';
 import ResumeAtLevelSection from '../components/dashboard/ResumeAtLevelSection';
+import './Home.css';
 
 // --- Helpers: tolerate camelCase / PascalCase from the API. ---
 
@@ -228,7 +229,6 @@ const Home: React.FC = () => {
   // Type-safe access to SrsStats (camelCase per OpenAPI).
   const srsDueCount = (srsStats as { dueCount?: number } | null)?.dueCount ?? 0;
 
-  const firstText = recent.length > 0 ? recent[0] : null;
   // Default the goal-creation modal to the user's most-active language so it
   // matches what LanguagesStrip puts first (which is sorted by activity). The
   // dashboard endpoint returns languages in insertion order, so picking
@@ -245,17 +245,6 @@ const Home: React.FC = () => {
     });
     return sorted[0]?.languageId;
   }, [languages]);
-
-  // Drive the "Next up" stalled-book check: prefer the recent text's own
-  // lastAccessedAt (always tied to the specific text), fall back to the
-  // matching language's lastActivityAt when the field isn't present.
-  const recentTextLastActivity = useMemo<string | null>(() => {
-    if (!firstText) return null;
-    const directAccess = (firstText as { lastAccessedAt?: string }).lastAccessedAt;
-    if (directAccess) return directAccess;
-    const lang = languages.find((l) => l.languageName === firstText.languageName);
-    return lang?.lastActivityAt ?? null;
-  }, [firstText, languages]);
 
   // If every backend call failed there's no signal to drive any widget, so
   // surface the error directly. (Doing this before the isEmpty check matters:
@@ -276,54 +265,41 @@ const Home: React.FC = () => {
     return <OnboardingHome username={user?.username} />;
   }
 
+  const hasGoals = (goals?.length ?? 0) > 0;
+  const goalsCard = (
+    <GoalsCard compact emptyInline
+      defaultLanguageId={mostActiveLanguageId}
+      goals={goals}
+      loading={loading && !goals}
+      onChanged={refreshGoals}
+    />
+  );
+
   return (
-    <Container className="py-4">
+    <Container className="home-dashboard">
+      <div className="home-header">
+        <HomeHero
+          username={user?.username}
+          todayWords={languages.reduce((sum, lang) => sum + lang.todayWordsRead, 0)}
+          todayListeningSeconds={languages.reduce((sum, lang) => sum + lang.todayListeningSeconds, 0)}
+          topGoalSummary={topGoalSummary}
+          streakDays={streakDays}
+          goalAction={!loading && !hasGoals ? goalsCard : undefined}
+        />
+        <QuickAddCard />
+      </div>
+      <div className="home-focus-grid">
+        <ContinueLearningCard text={recent[0] ?? null} loading={loading && !recentTexts} />
+        <SrsDueWidget count={srsDueCount} loading={loading && !srsStats} unavailable={!loading && !srsStats} />
+      </div>
+      <MoreToResumeList texts={recent.slice(1, 5)} />
 
-      {/* 1. Hero greeting + clickable chips */}
-      <HomeHero
-        username={user?.username}
-        srsDue={srsDueCount}
-        topGoalSummary={topGoalSummary}
-        streakDays={streakDays}
-      />
-
-      {/* 2. Next up — single recommended action */}
-      <NextActionCard
-        srsDue={srsDueCount}
-        recentText={firstText}
-        lastActivityAt={recentTextLastActivity}
-        loading={loading && !srsStats && !recentTexts}
-      />
-
-      {/* 3. Continue learning — promoted to its own row with secondary list */}
-      <ContinueLearningSection texts={recent} loading={loading && !recentTexts} />
-
-      {/* 4. Today row: SRS + quick-add */}
-      <Row className="g-3 mb-4">
-        <Col xs={12} md={6}>
-          <SrsDueWidget count={srsDueCount} loading={loading && !srsStats} />
-        </Col>
-        <Col xs={12} md={6}>
-          <QuickAddCard />
-        </Col>
-      </Row>
-
-      {/* 5. Languages — core navigation, moved above reference data */}
-      <LanguagesStrip languages={languages} maxVisible={3} />
-
-      {/* 6. Resume at your level (self-hides when empty) */}
       <ResumeAtLevelSection />
 
-      {/* 7. Goals — pass our already-fetched goals so the card doesn't make a
-          second /goals request. onChanged lets the modal trigger a refresh. */}
-      <GoalsCard
-        defaultLanguageId={mostActiveLanguageId}
-        goals={goals}
-        loading={loading && !goals}
-        onChanged={refreshGoals}
-      />
+      <LanguagesStrip languages={languages} maxVisible={3} />
 
-      {/* 8. At a glance — lifetime / 7d reference numbers */}
+      {hasGoals && goalsCard}
+
       <QuickStatsRow
         totalKnownWords={dashboard?.totalKnownWords}
         totalWordsReadWeek={dashboard?.totalWordsReadWeek}

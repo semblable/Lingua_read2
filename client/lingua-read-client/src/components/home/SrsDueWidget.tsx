@@ -1,53 +1,52 @@
-import React from 'react';
-import { Button, Card, Spinner } from 'react-bootstrap';
+import React, { useState } from 'react';
+import { Button, Card, Form, Spinner } from 'react-bootstrap';
 import { LinkContainer } from 'react-router-bootstrap';
 
 interface SrsDueWidgetProps {
   count?: number;
   loading?: boolean;
+  unavailable?: boolean;
 }
 
-const SrsDueWidget: React.FC<SrsDueWidgetProps> = ({ count = 0, loading }) => {
-  const heavy = count > 10;
-  const some = count > 0 && !heavy;
-  const variant = heavy ? 'danger' : some ? 'warning' : 'outline-secondary';
-  const borderStyle =
-    count > 0
-      ? {
-          borderLeft: `4px solid var(--bs-${heavy ? 'danger' : 'warning'}, ${
-            heavy ? '#dc3545' : '#ffc107'
-          })`,
-        }
-      : undefined;
-
+const SrsDueWidget: React.FC<SrsDueWidgetProps> = ({ count = 0, loading, unavailable }) => {
+  const [sessionSize, setSessionSize] = useState(50);
+  const [planDays, setPlanDays] = useState(14);
+  const target = Math.min(count, sessionSize);
   return (
-    <Card className="shadow-sm h-100" data-testid="srs-due-widget" style={borderStyle}>
+    <Card className="home-review-card h-100" data-testid="srs-due-widget">
       <Card.Body>
-        <div className="text-muted small text-uppercase fw-bold mb-1">SRS reviews</div>
-        {loading ? (
-          <Spinner animation="border" size="sm" />
+        <div className="home-section-label"><i className="bi bi-layers" aria-hidden="true" /> A little review</div>
+        {loading ? <Spinner animation="border" size="sm" role="status"><span className="visually-hidden">Loading reviews</span></Spinner> : unavailable ? (
+          <><h2>Reviews will be back soon</h2><p className="text-muted">We couldn't load your review count.</p><LinkContainer to="/srs"><Button variant="outline-secondary">Open SRS</Button></LinkContainer></>
         ) : count > 0 ? (
           <>
-            <div className="display-6 fw-bold lh-1 mb-2">{count.toLocaleString()}</div>
-            <div className="text-muted small mb-3">
-              card{count === 1 ? '' : 's'} due for review
-            </div>
-            <LinkContainer to="/srs">
-              <Button variant={variant} size="sm">
-                Review {count === 1 ? 'card' : `${count} cards`} now
-              </Button>
+            <h2>Small session.<br /> Steady progress.</h2>
+            <p className="text-muted">A few minutes to keep familiar words fresh.</p>
+            <div className="home-review-due">{count.toLocaleString()} due</div>
+            <LinkContainer to={{ pathname: '/srs', search: `?limit=${target}` }}>
+              <Button variant="primary" className="home-review-start">Review {target} {target === 1 ? 'card' : 'cards'} <span>· ~{Math.max(1, Math.round(target / 4))} min</span><i className="bi bi-arrow-right" aria-hidden="true" /></Button>
             </LinkContainer>
+            <div className="home-review-options">
+              <Form.Label htmlFor="home-session-size">Session size</Form.Label>
+              <Form.Select id="home-session-size" size="sm" value={sessionSize} onChange={e => setSessionSize(Number(e.target.value))}>
+                {[10, 25, 50, 100, 200].map(size => <option key={size} value={size}>{size} cards</option>)}
+              </Form.Select>
+            </div>
+            <details className={`home-catchup ${count > 200 ? 'home-catchup-prominent' : ''}`}>
+              <summary>Make a catch-up plan</summary>
+              <div className="home-catchup-body">
+                <p className="small text-muted">Take the queue at your own pace.</p>
+                <Form.Label htmlFor="home-plan-days">Spread this queue over</Form.Label>
+                <Form.Select id="home-plan-days" size="sm" value={planDays} onChange={e => setPlanDays(Number(e.target.value))}>
+                  {[7, 14, 30, 60].map(days => <option key={days} value={days}>{days} days</option>)}
+                </Form.Select>
+                <p className="small mt-2 mb-1">Aim for about <strong>{Math.ceil(count / planDays).toLocaleString()} cards a day</strong>.</p>
+                <p className="small text-muted mb-0">A pacing guide for the current queue. New reviews may arrive; due dates and daily limits stay as they are.</p>
+              </div>
+            </details>
           </>
         ) : (
-          <>
-            <div className="fw-semibold mb-1">All caught up</div>
-            <div className="text-muted small mb-3">No reviews due — check back tomorrow.</div>
-            <LinkContainer to="/srs">
-              <Button variant="outline-secondary" size="sm">
-                Open SRS
-              </Button>
-            </LinkContainer>
-          </>
+          <><h2>All caught up</h2><p className="text-muted">No reviews due. A good moment for a new chapter.</p><LinkContainer to="/srs"><Button variant="outline-secondary">Open SRS</Button></LinkContainer></>
         )}
       </Card.Body>
     </Card>

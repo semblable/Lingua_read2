@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import '@testing-library/jest-dom';
 import Dashboard from '../pages/Dashboard';
@@ -106,7 +106,7 @@ describe('Dashboard', () => {
       await screen.findByText('Dashboard');
       await waitFor(() => expect(getTexts).toHaveBeenCalled());
       // Section card present (it's the loading or wrapper), but no language sub-block.
-      expect(screen.queryByText(/Resume at your level/i)).not.toBeInTheDocument();
+      expect(screen.queryByText(/Find your next read/i)).not.toBeInTheDocument();
     });
 
     test('surfaces sweet-spot texts ordered by closeness to 94%', async () => {
@@ -129,12 +129,31 @@ describe('Dashboard', () => {
           totalWords: 100, knownWords: 95, unknownWordPercentage: 5 },
       ]);
       renderDashboard();
-      expect(await screen.findByText(/Resume at your level/i)).toBeInTheDocument();
+      expect(await screen.findByText(/Find your next read/i)).toBeInTheDocument();
       expect(screen.getByText('Sweet 90')).toBeInTheDocument();
       expect(screen.getByText('Sweet 95')).toBeInTheDocument();
       expect(screen.getByText('Sweet 98')).toBeInTheDocument();
       expect(screen.queryByText('Easy 99')).not.toBeInTheDocument();
       expect(screen.queryByText('Done one')).not.toBeInTheDocument();
+    });
+
+    test('distinguishes equally covered recommendations by type, length, and unfamiliar words', async () => {
+      getDashboard.mockResolvedValue({ languages: sampleLanguages });
+      getTexts.mockResolvedValue([
+        { textId: 51, title: 'Short text', languageName: 'French', totalWords: 1000, knownWords: 940, isAudioLesson: false },
+        { textId: 52, title: 'Long audio', languageName: 'French', totalWords: 3000, knownWords: 2820, isAudioLesson: true },
+      ]);
+      renderDashboard();
+      const short = await screen.findByTestId('resume-pick-51');
+      const audio = screen.getByTestId('resume-pick-52');
+      expect(within(short).getByText('60 unfamiliar words')).toBeInTheDocument();
+      expect(within(short).getByText('~5 min read')).toBeInTheDocument();
+      expect(within(short).getByText('Text')).toBeInTheDocument();
+      expect(within(audio).getByText('180 unfamiliar words')).toBeInTheDocument();
+      expect(within(audio).getByText('3,000 transcript words')).toBeInTheDocument();
+      expect(within(audio).getByText('Audio')).toBeInTheDocument();
+      expect(within(audio).getByText('94% vocabulary coverage')).toBeInTheDocument();
+      expect(within(audio).queryByText(/min read/)).not.toBeInTheDocument();
     });
 
     test('caps each language at 3 picks', async () => {
@@ -152,7 +171,7 @@ describe('Dashboard', () => {
           totalWords: 100, knownWords: 96, unknownWordPercentage: 4 },
       ]);
       renderDashboard();
-      await screen.findByText(/Resume at your level/i);
+      await screen.findByText(/Find your next read/i);
       // C/D/E are closest to 94 — A and B drop off.
       expect(screen.getByText('C')).toBeInTheDocument();
       expect(screen.getByText('D')).toBeInTheDocument();

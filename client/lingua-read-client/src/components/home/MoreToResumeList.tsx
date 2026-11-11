@@ -1,85 +1,32 @@
 import React from 'react';
-import { Badge, Card, ListGroup } from 'react-bootstrap';
+import { Card, ProgressBar } from 'react-bootstrap';
 import { Link } from 'react-router-dom';
 import type { RecentTexts } from '../../utils/api/texts';
+import { relativeTime, resumeSummary, resumeTitle } from './resumeSummary';
 
-type RecentText = RecentTexts[number];
-
-interface MoreToResumeListProps {
-  texts: RecentTexts;
-}
-
-const formatTitle = (t: RecentText): string => {
-  if (t.bookTitle) {
-    const part = t.partNumber ? ` · Part ${t.partNumber}` : '';
-    return `${t.bookTitle}${part}`;
-  }
-  return t.title || 'Untitled';
-};
-
-const relativeTime = (iso: string | undefined | null): string | null => {
-  if (!iso) return null;
-  const then = new Date(iso).getTime();
-  if (Number.isNaN(then)) return null;
-  const diffMs = Date.now() - then;
-  if (diffMs < 0) return 'just now';
-  const minutes = Math.round(diffMs / 60000);
-  if (minutes < 1) return 'just now';
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.round(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.round(hours / 24);
-  if (days < 30) return `${days}d ago`;
-  const months = Math.round(days / 30);
-  if (months < 12) return `${months}mo ago`;
-  const years = Math.round(months / 12);
-  return `${years}y ago`;
-};
-
-const MoreToResumeList: React.FC<MoreToResumeListProps> = ({ texts }) => {
-  if (!texts || texts.length === 0) return null;
-
+const MoreToResumeList: React.FC<{ texts: RecentTexts }> = ({ texts }) => {
+  if (!texts?.length) return null;
   return (
-    <Card className="shadow-sm h-100" data-testid="more-to-resume">
-      <Card.Body className="d-flex flex-column">
-        <Card.Subtitle className="text-muted small text-uppercase fw-bold mb-2">
-          More to resume
-        </Card.Subtitle>
-        <ListGroup variant="flush" className="flex-grow-1">
-          {texts.map((t) => {
-            const lastAccessed = (t as { lastAccessedAt?: string }).lastAccessedAt;
-            const when = relativeTime(lastAccessed);
+    <Card className="home-resume-list" data-testid="more-to-resume">
+      <Card.Body>
+        <div className="home-section-heading"><h2>Also on your shelf</h2><Link to="/library">View library <i className="bi bi-chevron-right" aria-hidden="true" /></Link></div>
+        <div className="home-shelf-items">
+          {texts.map(text => {
+            const summary = resumeSummary(text);
+            const when = relativeTime(text.lastAccessedAt);
             return (
-              <ListGroup.Item
-                key={t.textId}
-                action
-                as={Link}
-                to={`/texts/${t.textId}`}
-                className="px-0 py-2"
-                data-testid="more-to-resume-item"
-              >
-                <div className="d-flex justify-content-between align-items-start gap-2">
-                  <div
-                    className="text-truncate fw-semibold"
-                    style={{ minWidth: 0, flex: 1 }}
-                  >
-                    {formatTitle(t)}
-                  </div>
-                  {t.isAudioLesson && (
-                    <Badge bg="info" pill style={{ fontSize: '0.6rem' }}>
-                      Audio
-                    </Badge>
-                  )}
+              <Link to={`/texts/${text.textId}`} key={text.textId} className="home-shelf-item" data-testid="more-to-resume-item">
+                <span className="home-shelf-icon" aria-hidden="true"><i className={`bi bi-${text.isAudioLesson ? 'headphones' : 'book'}`} /></span>
+                <div className="home-shelf-copy">
+                  <div className="home-shelf-title"><strong title={resumeTitle(text)}>{resumeTitle(text)}</strong><span className="home-format">{text.isAudioLesson ? 'Audio' : 'Text'}</span></div>
+                  <div className="home-shelf-meta"><span>{text.languageName}{when ? ` · ${when}` : ''}</span><span>{summary.percent != null ? `${summary.percent}%` : summary.position}</span></div>
+                  {summary.percent != null && <ProgressBar><ProgressBar now={summary.percent} aria-label={`${resumeTitle(text)}: ${summary.label}`} /></ProgressBar>}
                 </div>
-                <div className="text-muted small">
-                  {t.languageName ? t.languageName : ''}
-                  {t.languageName && when ? ' · ' : ''}
-                  {when ?? ''}
-                </div>
-              </ListGroup.Item>
+                <i className={`bi bi-${text.isAudioLesson ? 'play-fill' : 'chevron-right'} home-shelf-arrow`} aria-hidden="true" />
+              </Link>
             );
           })}
-        </ListGroup>
+        </div>
       </Card.Body>
     </Card>
   );

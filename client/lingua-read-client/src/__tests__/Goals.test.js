@@ -112,6 +112,13 @@ describe('GoalsCard', () => {
     });
   });
 
+  test('keeps empty dashboard goals as an inline action that still opens the editor', async () => {
+    render(<MemoryRouter><GoalsCard compact emptyInline goals={[]} /></MemoryRouter>);
+    expect(screen.queryByRole('heading', { name: 'Goals' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '+ Set a goal' }));
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+  });
+
   test('renders up to 3 goals and shows total count when more', async () => {
     const many = Array.from({ length: 5 }).map((_, i) => ({
       ...baseGoal,

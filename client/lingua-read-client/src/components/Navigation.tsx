@@ -3,6 +3,7 @@ import { Navbar, Nav, Container, NavDropdown } from 'react-bootstrap';
 import { useNavigate } from 'react-router-dom';
 import { LinkContainer } from 'react-router-bootstrap';
 import { useAuthStore } from '../utils/store';
+import './Navigation.css';
 
 
 const Navigation = () => {
@@ -16,8 +17,8 @@ const Navigation = () => {
   };
 
   return (
-    <Navbar collapseOnSelect expanded={expanded} onToggle={setExpanded} expand="lg" className="navbar-custom-bg">
-      <Container fluid className="content-in-fluid">
+    <Navbar collapseOnSelect expanded={expanded} onToggle={setExpanded} expand="lg" className="navbar-custom-bg app-navigation">
+      <Container className="navbar-content">
         <LinkContainer to="/"><Navbar.Brand>LinguaRead</Navbar.Brand></LinkContainer>
         <Navbar.Toggle aria-controls="basic-navbar-nav" aria-expanded={expanded} />
         <Navbar.Collapse id="basic-navbar-nav">

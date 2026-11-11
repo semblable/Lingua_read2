@@ -6469,6 +6469,19 @@ export interface components {
             bookTitle?: string | null;
             /** Format: int32 */
             partNumber?: number | null;
+            /** Format: int32 */
+            totalWords?: number;
+            /** Format: int32 */
+            knownWords?: number;
+            /** Format: int32 */
+            readWords?: number | null;
+            preview?: string | null;
+            coverImagePath?: string | null;
+            isFinished?: boolean;
+            /** Format: double */
+            audioPositionSeconds?: number | null;
+            /** Format: double */
+            audioDurationSeconds?: number | null;
         };
         ReorderItemDto: {
             /** Format: int32 */

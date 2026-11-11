@@ -18,6 +18,8 @@ const sortForDisplay = (goals: Goal[]): Goal[] => {
 };
 
 interface GoalsCardProps {
+  compact?: boolean;
+  emptyInline?: boolean;
   defaultLanguageId?: number | string | null;
   // When the parent already fetched goals (e.g., Home, which needs them for the
   // hero chip) it can pass them in to avoid a second round trip. The parent is
@@ -31,6 +33,8 @@ interface GoalsCardProps {
 }
 
 function GoalsCard({
+  compact = false,
+  emptyInline = false,
   defaultLanguageId,
   goals: externalGoals,
   loading: externalLoading,
@@ -84,17 +88,19 @@ function GoalsCard({
 
   return (
     <>
-      <Card className="shadow-sm mb-4">
+      {emptyInline && !loading && !error && goals.length === 0 ? (
+        <Button variant="link" className="home-inline-goal" size="sm" onClick={() => setShowModal(true)}>+ Set a goal</Button>
+      ) : <Card className={`shadow-sm mb-4 ${compact ? 'home-goals-card' : ''}`}>
         <Card.Body>
           <div className="d-flex justify-content-between align-items-center mb-3">
-            <Card.Title as="h5" className="mb-0">Goals</Card.Title>
+            <Card.Title as={compact ? 'h2' : 'h5'} className="mb-0">Goals</Card.Title>
             <div className="d-flex gap-2">
               {goals.length > 0 && (
                 <Link to="/goals" className="btn btn-sm btn-outline-secondary">
                   View all{remaining > 0 ? ` (${goals.length})` : ''}
                 </Link>
               )}
-              <Button size="sm" variant="primary" onClick={() => setShowModal(true)}>＋ New goal</Button>
+              {(!compact || goals.length > 0) && <Button size="sm" variant="primary" onClick={() => setShowModal(true)}>＋ New goal</Button>}
             </div>
           </div>
 
@@ -103,10 +109,13 @@ function GoalsCard({
           {loading ? (
             <div className="text-center py-3"><Spinner animation="border" size="sm" /></div>
           ) : goals.length === 0 ? (
-            <div className="text-center py-4 text-muted">
-              <div className="mb-2" style={{ fontSize: '2rem' }}>🎯</div>
-              <div className="mb-2">No active goals yet.</div>
-              <Button size="sm" variant="primary" onClick={() => setShowModal(true)}>
+            <div className={compact ? 'home-goal-empty' : 'text-center py-4 text-muted'}>
+              <div>
+                {!compact && <div className="mb-2" style={{ fontSize: '2rem' }}>🎯</div>}
+                <div className="mb-1">{compact ? 'Make room for a small daily win.' : 'No active goals yet.'}</div>
+                {compact && <div className="small text-muted">Set a reading or listening goal that fits your day.</div>}
+              </div>
+              <Button size="sm" variant={compact ? 'outline-secondary' : 'primary'} onClick={() => setShowModal(true)}>
                 Set your first goal
               </Button>
             </div>
@@ -118,7 +127,7 @@ function GoalsCard({
             </div>
           )}
         </Card.Body>
-      </Card>
+      </Card>}
 
       <GoalModal
         show={showModal}

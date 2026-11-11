@@ -275,7 +275,11 @@ namespace LinguaReadApi.Controllers
                     IsAudioLesson = t.IsAudioLesson,
                     BookId = t.BookId,
                     BookTitle = t.Book != null ? t.Book.Title : null,
-                    PartNumber = t.PartNumber
+                    PartNumber = t.PartNumber,
+                    TotalWords = t.TotalWords,
+                    KnownWords = t.KnownWords,
+                    CoverImagePath = t.Book != null ? t.Book.CoverImagePath : t.ImagePath,
+                    IsFinished = t.IsFinished
                 })
                 .ToListAsync();
 
@@ -292,6 +296,45 @@ namespace LinguaReadApi.Controllers
                 {
                     break;
                 }
+            }
+
+            // Enrich only the five visible entries. Opening Home must not call GetText:
+            // that endpoint updates LastAccessedAt and would change the resume order.
+            var ids = recentTexts.Select(t => t.TextId).ToList();
+            var previews = await _context.Texts.AsNoTracking()
+                .Where(t => t.UserId == userId && ids.Contains(t.TextId))
+                .Select(t => new { t.TextId, Preview = t.Content.Substring(0, Math.Min(t.Content.Length, 320)), t.SrtContent })
+                .ToDictionaryAsync(t => t.TextId);
+            var reading = await _context.UserSentenceProgresses.AsNoTracking()
+                .Where(p => p.UserId == userId && ids.Contains(p.TextId))
+                .ToDictionaryAsync(p => p.TextId);
+            var audio = await _context.UserAudioLessonProgresses.AsNoTracking()
+                .Where(p => p.UserId == userId && ids.Contains(p.TextId))
+                .ToDictionaryAsync(p => p.TextId);
+            foreach (var text in recentTexts)
+            {
+                if (previews.TryGetValue(text.TextId, out var source))
+                {
+                    text.Preview = System.Net.WebUtility.HtmlDecode(
+                        System.Text.RegularExpressions.Regex.Replace(source.Preview, "<[^>]*>", " ")).Trim();
+                    // Subtitle end time is an estimate of the lesson length, not media metadata.
+                    if (text.IsAudioLesson && !string.IsNullOrWhiteSpace(source.SrtContent))
+                    {
+                        var ends = System.Text.RegularExpressions.Regex.Matches(source.SrtContent,
+                            @"-->\s*(\d{1,3}):(\d{2}):(\d{2})[,.](\d{3})");
+                        foreach (System.Text.RegularExpressions.Match end in ends)
+                        {
+                            var seconds = int.Parse(end.Groups[1].Value) * 3600d
+                                + int.Parse(end.Groups[2].Value) * 60d + int.Parse(end.Groups[3].Value)
+                                + int.Parse(end.Groups[4].Value) / 1000d;
+                            text.AudioDurationSeconds = Math.Max(text.AudioDurationSeconds ?? 0, seconds);
+                        }
+                    }
+                }
+                if (reading.TryGetValue(text.TextId, out var read))
+                    text.ReadWords = read.CreditedWordCount;
+                if (audio.TryGetValue(text.TextId, out var listen))
+                    text.AudioPositionSeconds = listen.CurrentPosition;
             }
 
             return recentTexts;
@@ -1400,6 +1443,14 @@ namespace LinguaReadApi.Controllers
         public int? BookId { get; set; }
         public string? BookTitle { get; set; }
         public int? PartNumber { get; set; } // Include PartNumber for book context
+        public int TotalWords { get; set; }
+        public int KnownWords { get; set; }
+        public int? ReadWords { get; set; }
+        public string? Preview { get; set; }
+        public string? CoverImagePath { get; set; }
+        public bool IsFinished { get; set; }
+        public double? AudioPositionSeconds { get; set; }
+        public double? AudioDurationSeconds { get; set; }
     }
 
     public class CreateAudioLessonsBatchDto

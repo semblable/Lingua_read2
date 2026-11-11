@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest';
-import { render, screen, cleanup, waitFor } from '@testing-library/react';
+import { render, screen, cleanup, waitFor, fireEvent } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 
 // Mock the whole api surface so Home + its children don't hit real endpoints.
@@ -143,8 +143,8 @@ describe('Home (integration)', () => {
     await waitFor(() => expect(screen.getByText('5,432')).toBeInTheDocument());
     expect(screen.getByText('1,234')).toBeInTheDocument();
 
-    // SRS widget surfaces the due count and the warning/danger CTA.
-    expect(await screen.findByText(/Review 12 cards now/)).toBeInTheDocument();
+    // The review action hands off a bounded session size.
+    expect(await screen.findByRole('button', { name: /Review 12 cards/ })).toHaveAttribute('href', '/srs?limit=12');
 
     // Continue learning card renders with the most-recent text title.
     expect(await screen.findByText('Una historia')).toBeInTheDocument();
@@ -152,16 +152,17 @@ describe('Home (integration)', () => {
     // Languages strip mirrors the one language back.
     expect(screen.getByTestId('lang-card-1')).toHaveTextContent('Spanish');
 
-    // Quick-add card now lives in the today row (3-col layout), not the footer.
+    // One header menu exposes every import route.
     expect(screen.getByTestId('quick-add-card')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Add book/i })).toHaveAttribute(
+    fireEvent.click(screen.getByRole('button', { name: /Add content/ }));
+    expect(screen.getByRole('link', { name: /Add book/i })).toHaveAttribute(
       'href',
       '/books/create'
     );
 
-    // NextActionCard sits at the top with the SRS-heavy (12 > 10) CTA.
-    const nextAction = screen.getByTestId('next-action-card');
-    expect(nextAction).toHaveAttribute('data-action-kind', 'srs-heavy');
+    // The review count is no longer repeated in a banner and a hero alert.
+    expect(screen.queryByTestId('next-action-card')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('hero-chip-srs')).not.toBeInTheDocument();
   });
 
   test('falls back gracefully when individual fetches reject', async () => {
@@ -198,8 +199,8 @@ describe('Home (integration)', () => {
 
     // Page still renders the languages strip even though two fetches failed.
     await waitFor(() => expect(screen.getByTestId('lang-card-1')).toBeInTheDocument());
-    // SRS widget falls back to the zero / all-caught-up state when stats fail.
-    expect(screen.getByText('All caught up')).toBeInTheDocument();
+    // A failed stats request must not claim the user is caught up.
+    expect(screen.getByText('Reviews will be back soon')).toBeInTheDocument();
     consoleErrorSpy.mockRestore();
   });
 

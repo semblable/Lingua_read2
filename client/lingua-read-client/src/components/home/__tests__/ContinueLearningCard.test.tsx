@@ -39,7 +39,7 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
-afterEach(() => cleanup());
+afterEach(() => { cleanup(); vi.useRealTimers(); });
 
 describe('ContinueLearningCard', () => {
   test('renders the empty state with a library CTA when no text is supplied', () => {
@@ -61,7 +61,7 @@ describe('ContinueLearningCard', () => {
     renderInRouter(<ContinueLearningCard text={makeRecent()} />);
 
     expect(screen.getByText('Cuentos cortos')).toBeInTheDocument();
-    expect(screen.getByText('Spanish')).toBeInTheDocument();
+    expect(screen.getAllByText('Spanish')).toHaveLength(2);
 
     const resume = screen.getByRole('button', { name: /^Resume$/ });
     expect(resume).toHaveAttribute('href', '/texts/42');
@@ -85,22 +85,48 @@ describe('ContinueLearningCard', () => {
     expect(screen.getByText('Audio')).toBeInTheDocument();
   });
 
-  test('renders a vocabulary-known progress bar from the enriched text', async () => {
-    mockedGetText.mockResolvedValue(makeFullText({ totalWords: 1000, knownWords: 750 }));
-    renderInRouter(<ContinueLearningCard text={makeRecent()} />);
+  test('keeps recorded reading activity separate from vocabulary coverage', () => {
+    renderInRouter(<ContinueLearningCard text={makeRecent({ totalWords: 1000, knownWords: 750, readWords: 200, preview: 'A story begins.' })} />);
+    expect(screen.getByText('75% vocabulary coverage')).toBeInTheDocument();
+    expect(screen.getByText('200 words read')).toBeInTheDocument();
+    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
+    expect(screen.queryByText(/min left/)).not.toBeInTheDocument();
+    expect(screen.getByText('A story begins.')).toBeInTheDocument();
+    expect(mockedGetText).not.toHaveBeenCalled();
+  });
 
-    await waitFor(() => expect(screen.getByText('Vocabulary known')).toBeInTheDocument());
-    expect(screen.getByText('75%')).toBeInTheDocument();
-    // 250 words remaining at 200 wpm rounds up to ~2 min.
-    expect(screen.getByText(/~2 min remaining/)).toBeInTheDocument();
+  test.each([
+    { totalWords: 50, readWords: 50, languageName: 'Portuguese' },
+    { totalWords: 1, readWords: 2, languageName: 'Japanese' },
+  ])('does not infer completion from incomparable vocabulary and reading counts: $languageName', ({ totalWords, readWords, languageName }) => {
+    renderInRouter(<ContinueLearningCard text={makeRecent({ totalWords, readWords, languageName, isFinished: false })} />);
+    expect(screen.getByText(`${readWords} words read`)).toBeInTheDocument();
+    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
+    expect(screen.queryByText('Ready to finish')).not.toBeInTheDocument();
+    expect(screen.queryByText(/min left/)).not.toBeInTheDocument();
+  });
+
+  test('uses saved audio position and transcript duration for listening progress', () => {
+    renderInRouter(<ContinueLearningCard text={makeRecent({ isAudioLesson: true, totalWords: 1000, audioPositionSeconds: 120, audioDurationSeconds: 600 })} />);
+    expect(screen.getByText('2:00 into audio')).toBeInTheDocument();
+    expect(screen.getByRole('progressbar', { name: 'Listening position' })).toHaveAttribute('aria-valuenow', '20');
+    expect(screen.getByText('~8 min left')).toBeInTheDocument();
   });
 
   test('falls back to a "no progress" hint when totalWords is missing', async () => {
     mockedGetText.mockResolvedValue(makeFullText({ totalWords: 0, knownWords: 0 }));
     renderInRouter(<ContinueLearningCard text={makeRecent()} />);
     await waitFor(() =>
-      expect(screen.getByText('No progress recorded yet.')).toBeInTheDocument()
+      expect(screen.getByText('Ready to read')).toBeInTheDocument()
     );
+  });
+
+  test('uses relative recency while making the playback timestamp explicit', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-11-11T15:00:00Z'));
+    renderInRouter(<ContinueLearningCard text={makeRecent({ totalWords: 1000, isAudioLesson: true, audioPositionSeconds: 516, lastAccessedAt: '2026-11-11T09:00:00Z' })} />);
+    expect(screen.getByText('Opened 6h ago')).toBeInTheDocument();
+    expect(screen.getByText('8:36 into audio')).toBeInTheDocument();
   });
 
   test('resets the enriching spinner when text transitions to null mid-fetch', async () => {

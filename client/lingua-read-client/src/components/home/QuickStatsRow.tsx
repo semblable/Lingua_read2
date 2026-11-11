@@ -39,7 +39,7 @@ const QuickStatsRow: React.FC<QuickStatsRowProps> = ({
   loading,
 }) => {
   return (
-    <Row className="g-3 mb-4">
+    <Row className="g-3 mb-4 home-stats-row">
       <Col xs={12} md={4}>
         <StatCard
           label="Total Known Words"

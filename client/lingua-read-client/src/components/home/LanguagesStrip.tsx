@@ -1,5 +1,5 @@
-import React from 'react';
-import { Card, Col, Row } from 'react-bootstrap';
+import React, { useState } from 'react';
+import { Card } from 'react-bootstrap';
 import { Link } from 'react-router-dom';
 import LanguageDashboardCard from '../dashboard/LanguageDashboardCard';
 
@@ -21,46 +21,26 @@ interface LanguageStripItem {
   lastActivityAt?: string | null;
 }
 
-interface LanguagesStripProps {
-  languages: LanguageStripItem[];
-  maxVisible?: number;
-}
-
-// Sort by most-recent activity, then by total known words as a tie-breaker.
-const sortByActivity = (langs: LanguageStripItem[]): LanguageStripItem[] => {
-  return [...langs].sort((a, b) => {
-    const aTime = a.lastActivityAt ? new Date(a.lastActivityAt).getTime() : 0;
-    const bTime = b.lastActivityAt ? new Date(b.lastActivityAt).getTime() : 0;
-    if (bTime !== aTime) return bTime - aTime;
-    return (b.knownWords || 0) - (a.knownWords || 0);
-  });
+const activityTime = (language: LanguageStripItem): number => {
+  const timestamp = language.lastActivityAt ? Date.parse(language.lastActivityAt) : 0;
+  return Number.isFinite(timestamp) ? timestamp : 0;
 };
 
-const LanguagesStrip: React.FC<LanguagesStripProps> = ({ languages, maxVisible = 3 }) => {
-  if (!languages || languages.length === 0) return null;
-
-  const sorted = sortByActivity(languages);
-  const visible = sorted.slice(0, maxVisible);
-  const remaining = sorted.length - visible.length;
-
+const LanguagesStrip: React.FC<{ languages: LanguageStripItem[]; maxVisible?: number }> = ({ languages, maxVisible = 3 }) => {
+  const [recentCutoff] = useState(() => Date.now() - 14 * 86400000);
+  if (!languages?.length) return null;
+  const visible = [...languages].sort((a, b) => activityTime(b) - activityTime(a) || b.knownWords - a.knownWords).slice(0, maxVisible);
+  const active = visible.filter(language => language.todayWordsRead > 0 || (language.todayListeningSeconds ?? 0) > 0
+    || language.last14DaysWords?.some(day => day.count > 0)
+    || activityTime(language) > recentCutoff);
+  const dormant = visible.filter(language => !active.includes(language));
   return (
-    <Card className="shadow-sm mb-4" data-testid="languages-strip">
+    <Card className="home-languages" data-testid="languages-strip">
       <Card.Body>
-        <div className="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-          <Card.Title as="h5" className="mb-0">
-            Your languages
-          </Card.Title>
-          <Link to="/dashboard" className="btn btn-sm btn-outline-secondary">
-            See all{remaining > 0 ? ` (${languages.length})` : ''} →
-          </Link>
-        </div>
-        <Row className="g-3">
-          {visible.map((lang) => (
-            <Col key={lang.languageId} md={6} xl={4}>
-              <LanguageDashboardCard lang={lang} />
-            </Col>
-          ))}
-        </Row>
+        <div className="home-section-heading"><h2>Your languages</h2><Link to="/dashboard">See all{languages.length > visible.length ? ` (${languages.length})` : ''} <i className="bi bi-chevron-right" aria-hidden="true" /></Link></div>
+        {active.length > 0 && <div className="home-active-languages">{active.map(language => <LanguageDashboardCard key={language.languageId} lang={language} showActivity={active.length > 1} showResume={active.length > 1} />)}</div>}
+        {dormant.length > 0 && <div className="home-dormant-languages">{dormant.map(language => <LanguageDashboardCard key={language.languageId} lang={language} compact />)}</div>}
+        <p className="home-language-footnote">Vocabulary counts saved forms, including inflections, rather than lemmas. CEFR levels are estimates. <span>Use <i className="bi bi-sliders" aria-hidden="true" /> to set your level or choose maintenance.</span></p>
       </Card.Body>
     </Card>
   );

@@ -1,5 +1,5 @@
-import { describe, test, expect, afterEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { describe, test, expect, afterEach, beforeEach } from 'vitest';
+import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import LanguageDashboardCard from '../LanguageDashboardCard';
 
@@ -43,8 +43,46 @@ const renderCard = (lang: CardLang) =>
   );
 
 afterEach(cleanup);
+beforeEach(() => localStorage.clear());
 
 describe('LanguageDashboardCard', () => {
+  test('labels every computed CEFR level as an estimate and distinguishes forms from lemmas', () => {
+    renderCard(makeLang({ cefrLevel: 'B1', nextCefrLevel: 'B2' }));
+    expect(screen.getByText('B1 · estimate')).toBeInTheDocument();
+    expect(screen.getByText('known word forms')).toHaveAttribute('title', expect.stringContaining('not a lemma count'));
+    expect(screen.getByText('words read today')).toBeInTheDocument();
+  });
+
+  test('can omit the duplicate daily summary and resume action while keeping the labelled chart', () => {
+    render(<MemoryRouter><LanguageDashboardCard lang={makeLang({ continueReadingTextId: 77, last14DaysWords: days([20, 40, 60]) })} showActivity={false} showResume={false} /></MemoryRouter>);
+    expect(screen.queryByText('words read today')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Continue reading/ })).not.toBeInTheDocument();
+    expect(screen.getByText('Last 14 days · words read')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Learning focus for Polish' })).toHaveAttribute('title', 'Set your Polish level or choose maintenance');
+  });
+
+  test('persists maintenance mode and removes the vocabulary milestone', async () => {
+    const lang = makeLang({ cefrLevel: 'A1', nextCefrLevel: 'A2' });
+    renderCard(lang);
+    fireEvent.click(screen.getByRole('button', { name: 'Learning focus for Polish' }));
+    fireEvent.change(screen.getByLabelText('How would you like to track this language?'), { target: { value: 'maintenance' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save preference' }));
+    await waitFor(() => expect(screen.getByText('Maintenance')).toBeInTheDocument());
+    expect(screen.queryByText(/forms to A2/)).not.toBeInTheDocument();
+    cleanup();
+    renderCard(lang);
+    expect(screen.getByText('Maintenance')).toBeInTheDocument();
+  });
+
+  test('lets the user set their own level without a vocabulary-based progress bar', async () => {
+    renderCard(makeLang({ cefrLevel: 'A1', nextCefrLevel: 'A2' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Learning focus for Polish' }));
+    fireEvent.change(screen.getByLabelText('How would you like to track this language?'), { target: { value: 'C2' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save preference' }));
+    await waitFor(() => expect(screen.getByText('C2 · self-set')).toBeInTheDocument());
+    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
+  });
+
   test('draws the sparkline when there was activity, labelled with the day count', () => {
     const { container } = renderCard(
       makeLang({ last14DaysWords: days([0, 120, 340, 0, 80, 500, 260, 0, 90, 610, 130, 40, 0, 220]) }),

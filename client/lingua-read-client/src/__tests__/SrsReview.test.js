@@ -125,6 +125,7 @@ describe('SrsReview', () => {
   });
 
   beforeEach(() => {
+    window.history.replaceState({}, '', '/');
     vi.clearAllMocks();
     mockLocalStorage.clear();
     getAllLanguages.mockResolvedValue(mockLanguages);
@@ -177,6 +178,16 @@ describe('SrsReview', () => {
 
     const startBtn = screen.getByRole('button', { name: /Start Review/i });
     expect(startBtn).toBeDisabled();
+  });
+
+  it.each([
+    ['100', 100], ['7', 7], ['999', 200], ['-10', 50], ['oops', 50],
+  ])('honors the dashboard session size %s within the server limits', async (requested, expected) => {
+    window.history.replaceState({}, '', `/srs?limit=${requested}`);
+    renderComponent();
+    await selectSpanish();
+    fireEvent.click(await screen.findByRole('button', { name: /Start Review/i }));
+    await waitFor(() => expect(getSrsDueCards).toHaveBeenCalledWith('1', expect.objectContaining({ limit: expected })));
   });
 
   it('loads stats and enables Start Review once a language is selected', async () => {

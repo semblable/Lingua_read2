@@ -136,7 +136,7 @@ const Dashboard = () => {
   }
 
   return (
-    <Container className="py-4">
+    <Container className="home-dashboard">
       <div className="d-flex justify-content-between align-items-end mb-4 flex-wrap gap-2">
         <div>
           <h2 className="mb-1">Dashboard</h2>

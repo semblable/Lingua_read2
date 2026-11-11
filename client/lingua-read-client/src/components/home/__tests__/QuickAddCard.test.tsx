@@ -1,32 +1,18 @@
 import { describe, test, expect, afterEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import QuickAddCard from '../QuickAddCard';
-
-const renderInRouter = (ui: React.ReactElement) =>
-  render(<MemoryRouter>{ui}</MemoryRouter>);
-
-afterEach(() => cleanup());
+afterEach(cleanup);
 
 describe('QuickAddCard', () => {
-  test('exposes the three add-content CTAs', () => {
-    renderInRouter(<QuickAddCard />);
-    expect(screen.getByRole('button', { name: /Add book/i })).toHaveAttribute(
-      'href',
-      '/books/create'
-    );
-    expect(screen.getByRole('button', { name: /Add text/i })).toHaveAttribute(
-      'href',
-      '/texts/create'
-    );
-    expect(screen.getByRole('button', { name: /Add audio/i })).toHaveAttribute(
-      'href',
-      '/texts/create-audio'
-    );
-  });
-
-  test('does not render an "Open dashboard" link (already in the navbar)', () => {
-    renderInRouter(<QuickAddCard />);
-    expect(screen.queryByRole('button', { name: /dashboard/i })).toBeNull();
+  test('reveals all three import routes through one menu', async () => {
+    render(<MemoryRouter><QuickAddCard /></MemoryRouter>);
+    const toggle = screen.getByRole('button', { name: '+ Add content' });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByRole('link', { name: /Add book/ })).toHaveAttribute('href', '/books/create');
+    expect(screen.getByRole('link', { name: /Add text/ })).toHaveAttribute('href', '/texts/create');
+    expect(screen.getByRole('link', { name: /Add audio/ })).toHaveAttribute('href', '/texts/create-audio');
   });
 });

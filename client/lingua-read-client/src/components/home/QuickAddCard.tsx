@@ -1,37 +1,16 @@
 import React from 'react';
-import { Button, Card } from 'react-bootstrap';
-import { LinkContainer } from 'react-router-bootstrap';
+import { Dropdown } from 'react-bootstrap';
+import { Link } from 'react-router-dom';
 
-const QuickAddCard: React.FC = () => {
-  return (
-    <Card className="shadow-sm h-100" data-testid="quick-add-card">
-      <Card.Body className="d-flex flex-column">
-        <Card.Subtitle className="text-muted small text-uppercase fw-bold mb-2">
-          Add new content
-        </Card.Subtitle>
-        <Card.Text className="text-muted small mb-3">
-          Import a book, paste a text, or upload audio.
-        </Card.Text>
-        <div className="mt-auto d-grid gap-2">
-          <LinkContainer to="/books/create">
-            <Button variant="success" size="sm">
-              Add book
-            </Button>
-          </LinkContainer>
-          <LinkContainer to="/texts/create">
-            <Button variant="primary" size="sm">
-              Add text
-            </Button>
-          </LinkContainer>
-          <LinkContainer to="/texts/create-audio">
-            <Button variant="info" size="sm">
-              Add audio
-            </Button>
-          </LinkContainer>
-        </div>
-      </Card.Body>
-    </Card>
-  );
-};
+const QuickAddCard: React.FC = () => (
+  <Dropdown className="home-add" data-testid="quick-add-card">
+    <Dropdown.Toggle variant="outline-secondary" id="home-add-menu">+ Add content</Dropdown.Toggle>
+    <Dropdown.Menu align="end">
+      <Dropdown.Item as={Link} to="/books/create"><i className="bi bi-book me-2" aria-hidden="true" />Add book</Dropdown.Item>
+      <Dropdown.Item as={Link} to="/texts/create"><i className="bi bi-file-text me-2" aria-hidden="true" />Add text</Dropdown.Item>
+      <Dropdown.Item as={Link} to="/texts/create-audio"><i className="bi bi-headphones me-2" aria-hidden="true" />Add audio</Dropdown.Item>
+    </Dropdown.Menu>
+  </Dropdown>
+);
 
 export default QuickAddCard;

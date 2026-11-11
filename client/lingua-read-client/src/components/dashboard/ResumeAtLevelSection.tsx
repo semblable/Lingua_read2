@@ -1,9 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Card, Col, Row, Spinner } from 'react-bootstrap';
-import { LinkContainer } from 'react-router-bootstrap';
+import { Link } from 'react-router-dom';
 import { getTexts } from '../../utils/api';
 import type { StoredText } from '../../utils/store';
-import ComprehensibilityBadge from '../shared/ComprehensibilityBadge';
 import {
   comprehensionBand,
   comprehensionPercent,
@@ -19,6 +18,28 @@ interface ScoredText {
   percent: number;
   languageName: string;
 }
+
+const RecommendedText = ({ text, percent }: Pick<ScoredText, 'text' | 'percent'>) => {
+  const total = text.totalWords;
+  const unfamiliar = total != null && total > 0
+    ? Math.max(0, Math.min(total, text.unknownWords ?? Math.round(total * (100 - percent) / 100))) : null;
+  return (
+    <Link to={`/texts/${text.textId}`} className="card h-100 resume-pick-card" data-testid={`resume-pick-${text.textId}`}>
+      <div className="card-body">
+        <div className="home-pick-meta">
+          <span className="home-format"><i className={`bi bi-${text.isAudioLesson ? 'headphones' : 'file-text'}`} aria-hidden="true" /> {text.isAudioLesson ? 'Audio' : 'Text'}</span>
+          {total != null && total > 0 && <span>{total.toLocaleString()} {text.isAudioLesson ? 'transcript words' : 'words'}</span>}
+        </div>
+        <h3 className="home-pick-title">{text.title}</h3>
+        <div className="home-vocabulary">{Math.round(percent)}% vocabulary coverage</div>
+        <div className="home-pick-details">
+          {unfamiliar != null && <span title="Word occurrences outside your familiar vocabulary; repeated forms may appear more than once.">{unfamiliar.toLocaleString()} unfamiliar {unfamiliar === 1 ? 'word' : 'words'}</span>}
+          {!text.isAudioLesson && total != null && total > 0 && <span title="Estimated at 200 words per minute">~{Math.max(1, Math.ceil(total / 200))} min read</span>}
+        </div>
+      </div>
+    </Link>
+  );
+};
 
 const ResumeAtLevelSection: React.FC = () => {
   const [texts, setTexts] = useState<StoredText[] | null>(null);
@@ -84,12 +105,11 @@ const ResumeAtLevelSection: React.FC = () => {
   if (picksByLanguage.size === 0) return null;
 
   return (
-    <Card className="shadow-sm mb-4" data-testid="resume-at-level-section">
+    <Card className="shadow-sm mb-4 home-recommendations" data-testid="resume-at-level-section">
       <Card.Body>
-        <Card.Title className="mb-1">Resume at your level</Card.Title>
+        <Card.Title as="h2" className="mb-1">Find your next read</Card.Title>
         <Card.Subtitle className="text-muted small mb-3">
-          Unread texts where you already know {KRASHEN_SWEET_SPOT_MIN}–{KRASHEN_SWEET_SPOT_MAX}% of the words —
-          the comprehension sweet spot for vocabulary growth.
+          From your library · {KRASHEN_SWEET_SPOT_MIN}–{KRASHEN_SWEET_SPOT_MAX}% vocabulary coverage, with room to grow.
         </Card.Subtitle>
 
         {Array.from(picksByLanguage.entries()).map(([language, picks]) => (
@@ -98,26 +118,7 @@ const ResumeAtLevelSection: React.FC = () => {
             <Row className="g-2">
               {picks.map(({ text, percent }) => (
                 <Col md={6} lg={4} key={text.textId}>
-                  <LinkContainer to={`/texts/${text.textId}`}>
-                    <Card
-                      role="link"
-                      className="h-100 resume-pick-card"
-                      style={{ cursor: 'pointer' }}
-                      data-testid={`resume-pick-${text.textId}`}
-                    >
-                      <Card.Body className="py-2 px-3">
-                        <div className="text-truncate fw-semibold">{text.title}</div>
-                        <div className="mt-1">
-                          <ComprehensibilityBadge
-                            totalWords={text.totalWords}
-                            knownWords={text.knownWords}
-                            unknownWords={text.unknownWords}
-                            unknownWordPercentage={percent != null ? 100 - percent : text.unknownWordPercentage}
-                          />
-                        </div>
-                      </Card.Body>
-                    </Card>
-                  </LinkContainer>
+                  <RecommendedText text={text} percent={percent} />
                 </Col>
               ))}
             </Row>

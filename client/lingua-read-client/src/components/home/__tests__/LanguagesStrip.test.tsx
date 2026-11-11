@@ -6,8 +6,8 @@ import { MemoryRouter } from 'react-router-dom';
 // LanguagesStrip's own responsibilities (sort + cap + link) and can assert on
 // stable test ids. The card itself is covered by its own tests.
 vi.mock('../../dashboard/LanguageDashboardCard', () => ({
-  default: ({ lang }: { lang: { languageId: number; languageName: string } }) => (
-    <div data-testid={`lang-card-${lang.languageId}`}>{lang.languageName}</div>
+  default: ({ lang, compact, showActivity, showResume }: { lang: { languageId: number; languageName: string }; compact?: boolean; showActivity?: boolean; showResume?: boolean }) => (
+    <div data-testid={`lang-card-${lang.languageId}`} data-compact={!!compact} data-activity={showActivity} data-resume={showResume}>{lang.languageName}</div>
   ),
 }));
 
@@ -39,6 +39,17 @@ const renderInRouter = (ui: React.ReactElement) =>
 afterEach(() => cleanup());
 
 describe('LanguagesStrip', () => {
+  test('collapses dormant languages while retaining the current language card', () => {
+    renderInRouter(<LanguagesStrip languages={[
+      makeLang({ languageId: 1, languageName: 'Portuguese', todayWordsRead: 100 }),
+      makeLang({ languageId: 2, languageName: 'English', lastActivityAt: '2020-01-01' }),
+    ]} />);
+    expect(screen.getByTestId('lang-card-1')).toHaveAttribute('data-compact', 'false');
+    expect(screen.getByTestId('lang-card-1')).toHaveAttribute('data-activity', 'false');
+    expect(screen.getByTestId('lang-card-1')).toHaveAttribute('data-resume', 'false');
+    expect(screen.getByTestId('lang-card-2')).toHaveAttribute('data-compact', 'true');
+  });
+
   test('renders nothing when there are no languages', () => {
     const { container } = renderInRouter(<LanguagesStrip languages={[]} />);
     expect(container.querySelector('[data-testid="languages-strip"]')).toBeNull();

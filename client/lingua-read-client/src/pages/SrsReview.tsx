@@ -2,7 +2,7 @@ import { safeLocalStorageSetItem } from '../utils/storage';
 import { isInteractiveKeyboardTarget } from '../utils/keyboard';
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Container, Card, Button, Spinner, Alert, Form, Row, Col, Badge, ProgressBar, Modal } from 'react-bootstrap';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { SettingsContext } from '../contexts/SettingsContext';
 import { getAllLanguages, getSrsDueCards, submitSrsReview, getSrsStats, updateUserSettings, undoSrsReview, cancelQueuedSrsReview, getSrsForecast, suspendSrsCard, unsuspendSrsCard, burySrsCard, updateSrsCard, getSrsHeatmap, getSrsAnalytics, getSrsSuspendedCards } from '../utils/api';
 import type { Language } from '../utils/api/languages';
@@ -82,6 +82,10 @@ const shouldRenderClozeForMixedMode = (cardId: number, sessionSeed: number): boo
 
 const SrsReview = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const requestedLimit = Number(searchParams.get('limit'));
+  const sessionLimit = Number.isInteger(requestedLimit) && requestedLimit > 0
+    ? Math.min(200, requestedLimit) : 50;
 
   // Random seed for "mixed" SRS card type — see shouldRenderClozeForMixedMode.
   // Stable for the lifetime of this mounted component (one review session),
@@ -341,7 +345,7 @@ const SrsReview = () => {
       const data = await getSrsDueCards(selectedLanguage, {
         status: statusFilter,
         onlyOneTarget,
-        limit: 50
+        limit: sessionLimit
       });
       setSessionStarted(true);
       advance(createSessionQueue(data ?? [], learningDueAt, Date.now()));
@@ -350,7 +354,7 @@ const SrsReview = () => {
     } finally {
       setLoading(false);
     }
-  }, [selectedLanguage, statusFilter, onlyOneTarget, advance, sessionComplete]);
+  }, [selectedLanguage, statusFilter, onlyOneTarget, advance, sessionComplete, sessionLimit]);
 
   // The due cards are all in the selected language; its substitutions are part of
   // how terms are keyed, so sentence matching needs them too.
@@ -891,6 +895,7 @@ const SrsReview = () => {
 
         <Card className="shadow-sm srs-setup-card">
           <Card.Body>
+            <p className="text-muted small">A session of up to {sessionLimit} cards · about {Math.max(1, Math.round(sessionLimit / 4))} minutes. Learning cards may repeat.</p>
             <Form.Group className="mb-3">
               <Form.Label>Language</Form.Label>
               <Form.Select value={selectedLanguage} onChange={handleLanguageChange}>

@@ -160,14 +160,14 @@ describe('BookDetail (general flows)', () => {
     await waitFor(() => expect(uploadAudiobookTracks).toHaveBeenCalled());
   });
 
-  describe('audiobook offline download (Feature 3+)', () => {
+  describe('audiobook offline downloads are paused', () => {
     test('renders no download button when the book has no audiobook tracks', async () => {
       renderBookDetail();
       await screen.findByText('Sample Book');
       expect(screen.queryByTestId('bookdetail-offline-download')).not.toBeInTheDocument();
     });
 
-    test('renders the download button when the book has audiobook tracks', async () => {
+    test('does not offer downloads even when the book has audiobook tracks', async () => {
       getBook.mockResolvedValueOnce({
         ...baseBook,
         audiobookTracks: [
@@ -177,12 +177,11 @@ describe('BookDetail (general flows)', () => {
       });
       renderBookDetail();
       await screen.findByText('Sample Book');
-      const wrapper = await screen.findByTestId('bookdetail-offline-download');
-      expect(wrapper).toBeInTheDocument();
-      expect(wrapper).toHaveTextContent(/Save all 2 tracks for offline/);
+      expect(screen.queryByTestId('bookdetail-offline-download')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('download-offline-button')).not.toBeInTheDocument();
     });
 
-    test('strips tracks without a filePath from the URL list', async () => {
+    test('does not offer downloads when some tracks have no filePath', async () => {
       getBook.mockResolvedValueOnce({
         ...baseBook,
         audiobookTracks: [
@@ -192,9 +191,8 @@ describe('BookDetail (general flows)', () => {
       });
       renderBookDetail();
       await screen.findByText('Sample Book');
-      const wrapper = await screen.findByTestId('bookdetail-offline-download');
-      // Two tracks present in DB but only one usable URL.
-      expect(wrapper).toHaveTextContent(/Save all 1 track for offline/);
+      expect(screen.queryByTestId('bookdetail-offline-download')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('download-offline-button')).not.toBeInTheDocument();
     });
   });
 });

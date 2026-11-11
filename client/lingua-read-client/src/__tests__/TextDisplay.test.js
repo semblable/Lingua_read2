@@ -2342,7 +2342,7 @@ describe('TextDisplay', () => {
     expect(screen.queryByText(/TTS Off/i)).not.toBeInTheDocument();
   });
 
-  test('audio lessons render the offline-download button under the header (Feature 3+)', async () => {
+  test('audio lessons do not offer offline downloads while the feature is paused', async () => {
     getText.mockResolvedValueOnce({
       textId: 1,
       title: 'Audio Lesson',
@@ -2362,7 +2362,8 @@ describe('TextDisplay', () => {
 
     await waitFor(() => expect(getText).toHaveBeenCalled());
     await screen.findByText('Audio Lesson');
-    expect(await screen.findByTestId('textdisplay-offline-download')).toBeInTheDocument();
+    expect(screen.queryByTestId('textdisplay-offline-download')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('download-offline-button')).not.toBeInTheDocument();
   });
 
   test('non-audio lessons do NOT render the offline-download button', async () => {

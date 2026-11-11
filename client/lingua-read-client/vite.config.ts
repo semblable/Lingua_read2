@@ -136,34 +136,12 @@ export default defineConfig({
             },
           },
           {
-            // Audio assets — only cached when user explicitly downloads them
-            // via the DownloadForOfflineButton (which uses the Cache Storage
-            // API directly). CacheFirst here so the service worker doesn't
-            // re-fetch large MP3 files on every replay.
-            //
-            // rangeRequests: true installs Workbox's RangeRequestsPlugin so
-            // <audio> elements can SEEK against cached files — without it,
-            // the browser's Range request (`Range: bytes=N-`) would miss the
-            // cache (because cache.match() is exact-URL) and fall back to the
-            // network, defeating the offline guarantee.
+            // Offline audio is paused: bypass the lr-audio cache, including
+            // previously downloaded tracks, and let the server handle ranges.
+            // DownloadForOfflineButton is also unmounted in both reader and
+            // book detail. Re-enable these together after fixing HTTP 206 caching.
             urlPattern: /^.*\/(audio_lessons|audiobooks)\/.*$/,
-            handler: 'CacheFirst',
-            options: {
-              cacheName: 'lr-audio',
-              rangeRequests: true,
-              expiration: { maxEntries: 500, maxAgeSeconds: 60 * 60 * 24 * 30 },
-              // Only cache COMPLETE (200) responses. Never cache 206 partials:
-              // RangeRequestsPlugin passes a cached 206 through untouched
-              // (see workbox-range-requests/createPartialResponse), so a 206
-              // captured from a `Range: bytes=0-` play request gets replayed
-              // for every later seek — the browser asks for bytes=N- but gets
-              // back the bytes-0 response, and Chrome rejects the Content-Range
-              // mismatch with "A ServiceWorker intercepted the request and
-              // encountered an unexpected error." Offline downloads store a
-              // full 200 (DownloadForOfflineButton fetches without a Range
-              // header), which the range plugin can slice correctly on seek.
-              cacheableResponse: { statuses: [0, 200] },
-            },
+            handler: 'NetworkOnly',
           },
         ],
       },

@@ -14,7 +14,6 @@ import TranslationPopup from '../components/TranslationPopup';
 import SummaryPopup from '../components/SummaryPopup';
 import AudiobookPlayer from '../components/AudiobookPlayer';
 import LessonStudyPanel from '../components/reader/LessonStudyPanel';
-import DownloadForOfflineButton from '../components/offline/DownloadForOfflineButton';
 import './TextDisplay.css';
 import { SettingsContext } from '../contexts/SettingsContext';
 import { isOfflineQueued } from '../utils/offline/enqueueIfOffline';
@@ -2218,9 +2217,6 @@ const TextDisplay = () => {
     </span>
   ), [focusSentenceIndexFromNode, handleSentenceContextMenu, isBookmarked]);
 
-  // Stable, so the offline button's cache check doesn't re-run on every reader render.
-  const offlineAudioUrls = useMemo(() => (audioSrc ? [audioSrc] : []), [audioSrc]);
-
   // --- Rendering Logic ---
   // --- Loading/Error/NotFound States ---
   if (loading) { return <Container className="py-5 text-center"><Spinner animation="border" role="status"><span className="visually-hidden">Loading text</span></Spinner></Container>; }
@@ -2351,16 +2347,7 @@ const TextDisplay = () => {
           }
         : undefined,
   };
-  // Download-for-offline (audio lessons only): pre-caches the audio before going offline.
-  const offlineDownload = isAudioLesson && audioSrc ? (
-    <span className="d-inline-flex align-items-center" data-testid="textdisplay-offline-download">
-      <DownloadForOfflineButton
-        cacheName="lr-audio"
-        urls={offlineAudioUrls}
-        label="Save audio for offline"
-      />
-    </span>
-  ) : null;
+  // Offline audio downloads are paused until caching is fixed.
   const studyControls = text?.textId ? (
     <LessonStudyPanel textId={text.textId} bookId={text.bookId} sourceRevision={text.studyRevision}
       hasAudio={!!audioSrc || (book?.audiobookTracks?.length ?? 0) > 0} />
@@ -2400,16 +2387,8 @@ const TextDisplay = () => {
         segmentPlaybackRequest={segmentPlaybackRequest}
         showDesktopLessonControls={showDesktopLessonControls}
         setShowDesktopLessonControls={setShowDesktopLessonControls}
-        offlineDownload={offlineDownload}
         studyControls={studyControls}
       />
-
-      {/* On mobile the header above isn't rendered, so the offline control gets its own row. */}
-      {isMobile && offlineDownload && (
-        <div className="px-3 py-1 d-flex justify-content-end">
-          {offlineDownload}
-        </div>
-      )}
 
       {/* Mobile Audio Player - Show for audio lessons on mobile only */}
       {isMobile && isAudioLesson && audioSrc && (

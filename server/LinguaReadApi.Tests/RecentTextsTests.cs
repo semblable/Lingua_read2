@@ -67,6 +67,25 @@ public class RecentTextsTests
         Assert.All(summaries, summary => { Assert.Null(summary.ReadWords); Assert.Null(summary.AudioPositionSeconds); Assert.Null(summary.AudioDurationSeconds); });
     }
 
+    [Fact]
+    public async Task RecentSummaries_StripCompleteMarkupAndDecodeEntitiesBeforeTruncating()
+    {
+        await using var context = CreateContext();
+        var owner = Guid.NewGuid();
+        context.Users.Add(new User { Id = owner });
+        context.Languages.Add(new Language { LanguageId = 1, Name = "French", Code = "fr" });
+        var prefix = new string('a', 310);
+        context.Texts.Add(new Text { UserId = owner, LanguageId = 1, Title = "Markup",
+            Content = prefix + "<span title='" + new string('x', 330) + "'>&amp;" + new string('b', 30) + "</span>",
+            LastAccessedAt = DateTime.UtcNow });
+        await context.SaveChangesAsync();
+
+        var summary = Assert.Single((await CreateController(context, owner).GetRecentTexts()).Value!);
+        Assert.Equal(prefix + " &" + new string('b', 8), summary.Preview);
+        Assert.NotNull(summary.Preview);
+        Assert.Equal(320, summary.Preview.Length);
+    }
+
     private static AppDbContext CreateContext() => new(new DbContextOptionsBuilder<AppDbContext>()
         .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
 

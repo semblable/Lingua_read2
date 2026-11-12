@@ -88,8 +88,7 @@ export const useAudiobookProgress = ({
 
     if (
       pending.initial && (restoredContentKeyRef.current === contentKey ||
-      userPositionIntentContentKeyRef.current === contentKey ||
-      playbackStartedContentKeyRef.current === contentKey)
+      userPositionIntentContentKeyRef.current === contentKey)
     ) {
       initialSeekRef.current = null;
       return false;
@@ -136,6 +135,7 @@ export const useAudiobookProgress = ({
       try {
         let savedTrackIndex = 0;
         let savedPosition = 0;
+        let hasServerPosition = false;
         let serverUpdateTime: number | null = null;
 
         if (isBookMode && book?.bookId) {
@@ -146,6 +146,7 @@ export const useAudiobookProgress = ({
             if (idx !== -1) {
               savedTrackIndex = idx;
               savedPosition = progress.currentAudiobookPosition || 0;
+              hasServerPosition = progress.currentAudiobookPosition != null && Number.isFinite(progress.currentAudiobookPosition) && progress.currentAudiobookPosition >= 0;
             }
           }
           if (progress?.updatedAt) {
@@ -157,8 +158,9 @@ export const useAudiobookProgress = ({
           }
         } else if (!isBookMode && textId) {
           const progress = await getAudioLessonProgress(textId);
-          if (progress && progress.currentPosition != null && progress.currentPosition > 0) {
+          if (progress && progress.currentPosition != null && Number.isFinite(progress.currentPosition) && progress.currentPosition >= 0) {
             savedPosition = progress.currentPosition;
+            hasServerPosition = true;
           }
           if (progress?.updatedAt) {
             const parsed = new Date(progress.updatedAt).getTime();
@@ -174,12 +176,12 @@ export const useAudiobookProgress = ({
             const localRaw = localStorage.getItem(positionStorageKey);
             if (localRaw) {
               const localData = JSON.parse(localRaw);
-              const localPosition = Number(localData.position) || 0;
+              const localPosition = Number(localData.position);
               const localTimestamp = Number(localData.timestamp) || 0;
               const localIsFresher = serverUpdateTime != null && localTimestamp > serverUpdateTime + 2000;
-              const shouldUseLocal = savedPosition <= 0 || localIsFresher;
+              const shouldUseLocal = !hasServerPosition || localIsFresher;
 
-              if (localPosition > 0 && shouldUseLocal) {
+              if (Number.isFinite(localPosition) && localPosition >= 0 && shouldUseLocal) {
                 let localTrackIndex = savedTrackIndex;
 
                 if (isBookMode) {
@@ -215,7 +217,7 @@ export const useAudiobookProgress = ({
             const localRaw = localStorage.getItem(positionStorageKey);
             if (localRaw) {
               const localData = JSON.parse(localRaw);
-              if (localData.position > 0) {
+              if (Number.isFinite(localData.position) && localData.position >= 0) {
                 const localTrackIndex = isBookMode
                   ? localData.trackId != null ? sourceTracks.findIndex(t => t.trackId === localData.trackId) : Number(localData.trackIndex ?? 0)
                   : 0;
@@ -266,7 +268,7 @@ export const useAudiobookProgress = ({
     const track = playlistSnapshot[currentTrackIndexSnapshot];
     if (!track) return;
 
-    if (positionStorageKey && currentPos > 0) {
+    if (positionStorageKey) {
       try {
         localStorage.setItem(positionStorageKey, JSON.stringify({
           position: currentPos,
@@ -277,6 +279,9 @@ export const useAudiobookProgress = ({
       } catch { /* quota exceeded or unavailable */ }
     }
 
+    // Mark the local snapshot before issuing the PUT, including while offline.
+    // A pause-triggered GET can finish before that save reaches the server.
+    lastServerUpdateRef.current = Date.now();
     try {
       const isPageLifecycleSave = lifecycleSaveRef.current || document.hidden;
       if (isBookModeSnapshot && bookId != null) {
@@ -313,7 +318,6 @@ export const useAudiobookProgress = ({
       justStartedPlayingRef.current = true;
       playbackStartedContentKeyRef.current = contentKey;
       saveProgress(true);
-      lastServerUpdateRef.current = Date.now();
     } else if (!isPlaying) {
       justStartedPlayingRef.current = false;
     }
@@ -343,7 +347,8 @@ export const useAudiobookProgress = ({
         const localUpdateTime = lastServerUpdateRef.current || 0;
 
         if (remoteUpdateTime > localUpdateTime + 2000) {
-          if (!isBookMode && playbackStartedContentKeyRef.current === contentKey) {
+          if (playbackStartedContentKeyRef.current === contentKey ||
+              userPositionIntentContentKeyRef.current === contentKey) {
             lastServerUpdateRef.current = remoteUpdateTime;
             return;
           }

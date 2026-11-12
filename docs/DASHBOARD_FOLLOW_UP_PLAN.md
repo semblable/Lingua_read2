@@ -86,3 +86,11 @@ production build for client changes; solution build/server tests for API/data ch
 Report skips. Update this plan concisely; launch a reviewer before committing/pushing
 the completed slice to `dev`, then monitor Staging through deployment/smoke checks.
 Exclude unrelated edits and private fixtures. Finish preview isolation before item 4.
+
+2026-11-12 audit follow-up: retry-safe activity entities, audio resume/zero-position
+sync, bounded recent summaries, zero-duration listening chart filtering, direct
+PostgreSQL endpoint tests, and deterministic offline retry timing are implemented.
+Release build/server tests, typecheck, lint, client tests, browser checks, and
+production build passed; the 12 PostgreSQL skips in the default run passed against
+an isolated database. See [release verification](RELEASE_VERIFICATION.md#audit-follow-up-verification-2026-11-12).
+Preview isolation remains the next dashboard slice.

@@ -45,6 +45,9 @@ public static class LessonStudyActivity
     public static string ListeningResetReceiptKey(string clientEventId) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes($"listening-reset-receipt:v1\n{clientEventId}")));
 
+    public static string ManualActivityReceiptKey(string operationId) =>
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes($"manual-activity-receipt:v1\n{operationId}")));
+
     // Reset receipts carry identity only: they never count toward statistics.
     public static IQueryable<LessonStudyEvent> ListeningResetReceipts(AppDbContext context, Guid userId) =>
         context.LessonStudyEvents.Where(e => e.UserId == userId && e.Kind == "time" && e.SourceTextId == 0 && !e.CountsTowardStatistics);

@@ -256,16 +256,19 @@ namespace LinguaReadApi.Controllers
         {
             var userId = GetUserId();
 
-            // Stream candidates ordered by recency, then collapse in memory so each
-            // book contributes at most one entry (its most recently accessed part).
-            // Standalone texts (no book) are always kept. EF Core's GroupBy + First
-            // pattern doesn't translate cleanly here, so we dedupe client-side over a
-            // tight, projection-only query.
-            var candidates = await _context.Texts
+            var candidates = _context.Texts.AsNoTracking()
                 .Where(t => t.UserId == userId
                          && t.LastAccessedAt != null
-                         && t.Tag != "srs-story")
+                         && t.Tag != "srs-story");
+            // Exclude older parts in SQL before limiting metadata to five rows.
+            // TextId breaks recency ties consistently within and between books.
+            var recentTexts = await candidates
+                .Where(t => t.BookId == null || !candidates.Any(other => other.BookId == t.BookId &&
+                    (other.LastAccessedAt > t.LastAccessedAt ||
+                     (other.LastAccessedAt == t.LastAccessedAt && other.TextId > t.TextId))))
                 .OrderByDescending(t => t.LastAccessedAt)
+                .ThenByDescending(t => t.TextId)
+                .Take(MaxRecentTexts)
                 .Select(t => new RecentTextDto
                 {
                     TextId = t.TextId,
@@ -283,27 +286,12 @@ namespace LinguaReadApi.Controllers
                 })
                 .ToListAsync();
 
-            var seenBookIds = new HashSet<int>();
-            var recentTexts = new List<RecentTextDto>(MaxRecentTexts);
-            foreach (var dto in candidates)
-            {
-                if (dto.BookId.HasValue && !seenBookIds.Add(dto.BookId.Value))
-                {
-                    continue;
-                }
-                recentTexts.Add(dto);
-                if (recentTexts.Count >= MaxRecentTexts)
-                {
-                    break;
-                }
-            }
-
             // Enrich only the five visible entries. Opening Home must not call GetText:
             // that endpoint updates LastAccessedAt and would change the resume order.
             var ids = recentTexts.Select(t => t.TextId).ToList();
             var previews = await _context.Texts.AsNoTracking()
                 .Where(t => t.UserId == userId && ids.Contains(t.TextId))
-                .Select(t => new { t.TextId, Preview = t.Content.Substring(0, Math.Min(t.Content.Length, 320)), t.SrtContent })
+                .Select(t => new { t.TextId, t.Content, t.SrtContent })
                 .ToDictionaryAsync(t => t.TextId);
             var reading = await _context.UserSentenceProgresses.AsNoTracking()
                 .Where(p => p.UserId == userId && ids.Contains(p.TextId))
@@ -315,8 +303,9 @@ namespace LinguaReadApi.Controllers
             {
                 if (previews.TryGetValue(text.TextId, out var source))
                 {
-                    text.Preview = System.Net.WebUtility.HtmlDecode(
-                        System.Text.RegularExpressions.Regex.Replace(source.Preview, "<[^>]*>", " ")).Trim();
+                    var plainText = System.Net.WebUtility.HtmlDecode(
+                        System.Text.RegularExpressions.Regex.Replace(source.Content, "<[^>]*>", " ")).Trim();
+                    text.Preview = plainText[..Math.Min(plainText.Length, 320)];
                     // Subtitle end time is an estimate of the lesson length, not media metadata.
                     if (text.IsAudioLesson && !string.IsNullOrWhiteSpace(source.SrtContent))
                     {

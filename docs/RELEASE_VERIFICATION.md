@@ -62,6 +62,123 @@ These are automated request/configuration results. An independent cold install
 and actual browser/device mode-switch checks remain release gates; see the
 [checklist](RELEASING.md). No physical-device or public-exposure test is claimed.
 
+## Home redesign, offline audio pause, and audio lesson credit (2026-11-12)
+
+Commits `30f8c072` through `e0b1841a` redesign the Home dashboard and simplify
+copy (`30f8c072`, `9fc433a1`), pause offline audio downloads and Workbox audio
+caching via `NetworkOnly` routing (`e3897e2d`), restore scoped CSS layout
+ownership and add mobile/layout browser coverage and untouched audio/reduced-motion
+fixes (`5147d615`, `546e507b`, `9525a5a4`; see
+[dashboard follow-up plan](DASHBOARD_FOLLOW_UP_PLAN.md)), and add automatic `0.1×`
+audio lesson playback credit with `PlaybackPasses` migration
+`20261112155846_AutomaticLessonListeningCredit` and library practice counts
+(`e0b1841a`; see [audio lesson verification](../verification/audio-lessons/README.md)).
+
+Local checks at `e0b1841a` (in a working tree with separate uncommitted edits to
+`CONTRIBUTING.md`, `FEATURES.md`, `docs/OPEN_SOURCE_PLAN.md`, and untracked
+verification outputs) passed 2,057 client tests across 129 files, 80 Playwright
+Chromium browser tests across 320/390/430/1280px, 6 static demo tests, and
+1,910 server tests with nine PostgreSQL-specific tests skipped when
+`LINGUA_STUDY_TEST_POSTGRES` is unset. TypeScript `typecheck`, ESLint (0 errors,
+34 existing warnings), production client build (`verify-build` and `verify-notices`,
+with the `NetworkOnly` audio route verified in `build/sw.js`), EF Core pending
+model check (0 pending changes), and local-mode boundary scripts passed. The
+auditor subagent observed one intermittent timing flake in
+`OfflineRetry.test.tsx` under parallel load that passed isolated, on re-run, and
+in the subsequent full client run.
+
+The [commit-specific CI/staging workflow](https://github.com/semblable/Lingua_read2/actions/runs/43256385001)
+for clean `dev` commit `e0b1841a` passed all jobs: `CI / Test server (.NET)`
+passed all 1,919 server tests (0 skipped, including the nine PostgreSQL tests
+against `postgres:18.6`); `CI / Test client` passed lint, typecheck, boundary
+checks, unit tests, Chromium browser checks, demo tests, and demo build;
+`CI / Check compose & scripts` and all three image builds succeeded; and
+`Deploy / staging` succeeded including external `/healthz`, `/api/Health/ready`,
+`/api/Health`, compression, and `/` checks.
+
+An independent pre-promotion subagent audit rated `e0b1841a` safe to promote to
+production with caveats (0 blockers):
+
+- **Staging endpoint smoke check recommended before promotion:**
+  `FoldersController.GetLibraryContents`, `TextsController.GetRecentTexts`, and
+  `UserActivityController.LogListeningActivity` with `Lesson != null` were
+  verified for Npgsql SQL translation, `[Required]` `Text.Content` nullability,
+  and SQLite/in-memory behavior, but `PostgresStudyActivityTests` did not execute
+  those three endpoints directly against PostgreSQL at that commit, and CI staging smoke
+  checks test health/root routes only. Before triggering `promote-prod.yml`,
+  verify `/`, `/library` practice badges, and `0.1×` audio lesson playback on
+  staging.
+- **Pre-existing non-blocking follow-up items:** `LogListeningActivity` and
+  `LogManualActivity` allocate `UserActivity` objects outside
+  `LessonStudyActivity.AtomicAsync` across `Serializable`/transient retries;
+  book-mode audio progress checks do not skip remote re-seeks after pauses and
+  can race or preserve stale local progress on pre-metadata Play or rewind to
+  `0s`; `GetRecentTexts` projects non-`srs-story` accessed metadata before taking
+  five items and strips HTML tags after the 320-character slice; and
+  `GetListeningStats` includes `0`-second rows from sub-0.5s credited lesson
+  flushes. Physical-phone touch/keyboard behavior and Safari also remain
+  unverified.
+
+### Audit follow-up verification (2026-11-12)
+
+The local follow-up addresses the audit's code and automated coverage gaps:
+
+- `LogListeningActivity` and `LogManualActivity` create fresh `UserActivity`
+  entities inside each `AtomicAsync` attempt. Manual rows and cumulative totals
+  use one `SaveChangesAsync`. Stable per-invocation identities protect legacy
+  keyless listening, and neutral manual-operation receipts survive resets.
+  SQLite regressions inject failures before commit and after an actual commit
+  whose acknowledgement is lost, verifying fresh entities, exactly-once totals,
+  separate-request additivity, and both statistics/language reset interleavings.
+- Book and lesson progress saves timestamp the local snapshot before the PUT;
+  pause polling preserves local playback/seek intent. Pending resume seeks survive
+  transport and native Play before metadata. Intentional zero-position saves
+  replace the local fallback, and a server zero outranks older local progress.
+  The untouched-zero save guard and one bookmark per book remain covered.
+- Recent-text metadata is deduplicated by book in SQL before taking five rows,
+  with deterministic ties. Complete HTML tags are removed and entities decoded
+  before the 320-character preview limit; only visible entries load content.
+- Zero-second automatic listening rows stay available for deduplication/reset
+  receipts but no longer create chart days/languages. Totals and negative manual
+  corrections are preserved.
+- Three new `PostgresStudyActivityTests` directly execute library practice-count
+  projection, recent-text summaries (including a long run of book parts), and
+  lesson-aware listening credit, concurrent replay, and reset receipts.
+- `OfflineRetry.test.tsx` now overrides the suite's wall-time-advancing fake clock
+  with `shouldAdvanceTime: false`; exact 1/2-second backoff boundaries depend only
+  on explicit timer advancement, including under parallel CPU load.
+
+Validation of the local working tree:
+
+- `dotnet build Lingua_Read.sln -c Release`: passed, 0 warnings/errors.
+- `dotnet test Lingua_Read.sln -c Release --no-build`: 1,928 passed, 12 skipped
+  with `LINGUA_STUDY_TEST_POSTGRES` unset. A separate filtered run supplied an
+  isolated temporary PostgreSQL 17 `studycheck` database: all 12 PostgreSQL tests
+  passed, 0 skipped, including the three new endpoints. The temporary server was
+  stopped and its data removed afterward.
+- `npm --prefix client/lingua-read-client run typecheck`: passed.
+- `npm --prefix client/lingua-read-client run lint`: passed, 0 errors and the same
+  34 existing warnings.
+- `npm --prefix client/lingua-read-client run test -- run`: 2,073 passed across
+  129 files, including the progress and deterministic offline retry regressions.
+- `npm --prefix client/lingua-read-client run test:browser`: 80 Chromium checks
+  passed across 320/390/430/1280px.
+- `npm --prefix client/lingua-read-client run build`: passed, including
+  `verify-build` and `verify-notices` (15 notices retained).
+
+An independent reviewer reproduced a lost-commit-acknowledgement retry that
+doubled a manual request's totals, and identified the same risk for legacy
+keyless listening. The stable identities/neutral receipt fix and its before/after
+commit and reset regressions passed all 52 focused activity/compatibility tests.
+Re-review found no remaining actionable findings; the full Release solution
+build/test was rerun successfully after that fix.
+
+The first sandboxed server test attempt could not connect to testhost, and a
+sandboxed solution build exited without compiler diagnostics. The successful
+server checks, PostgreSQL run, and browser checks ran outside that restriction.
+Physical-phone/Safari verification and staging endpoint smoke checks remain open.
+Unrelated working-tree edits and private fixtures were preserved.
+
 ## Still open
 
 Physical-phone/touch and iOS/Android audio lifecycle; real browser disconnect/reconnect; independent cold install; Anki desktop/mobile import UI; live-provider success; large-library performance; and production upgrade/old-binary rollback.

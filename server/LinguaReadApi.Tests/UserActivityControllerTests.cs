@@ -1,10 +1,16 @@
+using System.Data.Common;
 using System.Security.Claims;
 using LinguaReadApi.Controllers;
 using LinguaReadApi.Data;
 using LinguaReadApi.Models;
+using LinguaReadApi.Services;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
@@ -12,6 +18,210 @@ namespace LinguaReadApi.Tests;
 
 public class UserActivityControllerTests
 {
+    [Theory]
+    [InlineData("keyed", false, false)]
+    [InlineData("keyed", true, false)]
+    [InlineData("manual", false, false)]
+    [InlineData("manual", true, false)]
+    [InlineData("legacy", false, false)]
+    [InlineData("legacy", true, false)]
+    [InlineData("keyed", false, true)]
+    [InlineData("keyed", true, true)]
+    [InlineData("manual", false, true)]
+    [InlineData("manual", true, true)]
+    [InlineData("legacy", false, true)]
+    [InlineData("legacy", true, true)]
+    public async Task ActivityRetry_AfterGeneratedIds_PreservesExactlyOnceTotals(string kind, bool existingStats, bool committed)
+    {
+        var manual = kind == "manual";
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var failure = new FailFirstActivityCommit(committed);
+        await using var context = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>()
+            .UseSqlite(connection).AddInterceptors(failure)
+            .ReplaceService<IExecutionStrategyFactory, ActivityRetryFactory>().Options);
+        await context.Database.EnsureCreatedAsync();
+        var userId = Guid.NewGuid();
+        SeedUserAndLanguage(context, userId, 1);
+        if (existingStats)
+        {
+            context.UserLanguageStatistics.Add(new UserLanguageStatistics {
+                UserId = userId, LanguageId = 1, TotalWordsRead = 10, TotalSecondsListened = 20 });
+            await context.SaveChangesAsync();
+        }
+        failure.Armed = true;
+        var controller = CreateController(context, userId);
+        var result = manual
+            ? await controller.LogManualActivity(new() { LanguageId = 1, WordCount = 3, ListeningDurationSeconds = 7 })
+            : await controller.LogListeningActivity(new() { LanguageId = 1, DurationSeconds = 7,
+                ClientEventId = kind == "keyed" ? "retry-listening" : existingStats ? "" : null });
+
+        Assert.IsType<OkObjectResult>(result);
+        Assert.Equal(2, failure.Attempts.Count);
+        Assert.All(failure.Attempts[0], first => {
+            Assert.True(first.ActivityId > 0); // The failed attempt already received real keys.
+            Assert.DoesNotContain(failure.Attempts[1], retry => ReferenceEquals(first, retry));
+        });
+        context.ChangeTracker.Clear();
+        Assert.Equal(manual ? 2 : 1, await context.UserActivities.CountAsync());
+        var stats = await context.UserLanguageStatistics.SingleAsync();
+        Assert.Equal((existingStats ? 10 : 0) + (manual ? 3 : 0), stats.TotalWordsRead);
+        Assert.Equal((existingStats ? 20 : 0) + 7, stats.TotalSecondsListened);
+        Assert.Equal(7, await context.UserActivities.SumAsync(a => a.ListeningDurationSeconds ?? 0));
+        if (manual)
+        {
+            var receipt = await context.LessonStudyEvents.SingleAsync();
+            Assert.Equal("time", receipt.Kind);
+            Assert.Equal(0, receipt.SourceTextId);
+            Assert.False(receipt.CountsTowardStatistics);
+            Assert.Equal(0, receipt.PassTenths);
+            Assert.Equal(0, receipt.PlaybackPasses);
+            Assert.Equal(0, receipt.CreditedWords);
+            Assert.Equal(0, receipt.CreditedListeningSeconds);
+            Assert.Equal(LessonStudyActivity.ManualActivityReceiptKey(receipt.ClientEventId), receipt.SourceRevision);
+            // Equal payloads from separate user actions remain additive.
+            failure.Armed = false;
+            Assert.IsType<OkObjectResult>(await controller.LogManualActivity(new() {
+                LanguageId = 1, WordCount = 3, ListeningDurationSeconds = 7 }));
+            Assert.Equal(4, await context.UserActivities.CountAsync());
+            Assert.Equal((existingStats ? 10 : 0) + 6, (await context.UserLanguageStatistics.SingleAsync()).TotalWordsRead);
+            Assert.Equal((existingStats ? 20 : 0) + 14, (await context.UserLanguageStatistics.SingleAsync()).TotalSecondsListened);
+            Assert.Equal(2, await context.LessonStudyEvents.CountAsync());
+        }
+        else if (kind == "keyed")
+        {
+            Assert.IsType<OkObjectResult>(await controller.LogListeningActivity(new() {
+                LanguageId = 1, DurationSeconds = 7, ClientEventId = "retry-listening" }));
+            Assert.Single(await context.UserActivities.ToListAsync());
+            Assert.Equal(stats.TotalSecondsListened, (await context.UserLanguageStatistics.SingleAsync()).TotalSecondsListened);
+        }
+        else
+        {
+            Assert.False(string.IsNullOrEmpty((await context.UserActivities.SingleAsync()).ClientEventId));
+            failure.Armed = false;
+            Assert.IsType<OkObjectResult>(await controller.LogListeningActivity(new() { LanguageId = 1, DurationSeconds = 7 }));
+            Assert.Equal(2, await context.UserActivities.CountAsync());
+            Assert.Equal((existingStats ? 20 : 0) + 14, (await context.UserLanguageStatistics.SingleAsync()).TotalSecondsListened);
+        }
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task ActivityRetry_AfterCommittedReset_DoesNotRestoreActivity(bool manual, bool resetLanguage)
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var failure = new FailFirstActivityCommit(afterCommit: true);
+        await using var context = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>()
+            .UseSqlite(connection).AddInterceptors(failure)
+            .ReplaceService<IExecutionStrategyFactory, ActivityRetryFactory>().Options);
+        await context.Database.EnsureCreatedAsync();
+        var userId = Guid.NewGuid();
+        SeedUserAndLanguage(context, userId, 1);
+        string? listeningKey = null;
+        failure.AfterCommit = async () =>
+        {
+            await using var reset = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().UseSqlite(connection).Options);
+            if (!manual) listeningKey = (await reset.UserActivities.SingleAsync()).ClientEventId;
+            if (resetLanguage)
+            {
+                using var cache = new MemoryCache(new MemoryCacheOptions());
+                Assert.True(await new LanguageService(reset, cache).ResetLanguageContentAsync(1, userId));
+            }
+            else
+                Assert.IsType<OkObjectResult>(await new UsersController(reset, NullLogger<UsersController>.Instance) {
+                    ControllerContext = BuildControllerContext(userId) }.ResetStatistics());
+        };
+        failure.Armed = true;
+        var controller = CreateController(context, userId);
+        Assert.IsType<OkObjectResult>(manual
+            ? await controller.LogManualActivity(new() { LanguageId = 1, WordCount = 3, ListeningDurationSeconds = 7 })
+            : await controller.LogListeningActivity(new() { LanguageId = 1, DurationSeconds = 7 }));
+        context.ChangeTracker.Clear();
+        Assert.Equal(2, failure.Attempts.Count);
+        Assert.Empty(await context.UserActivities.ToListAsync());
+        Assert.All(await context.UserLanguageStatistics.ToListAsync(), stats => {
+            Assert.Equal(0, stats.TotalWordsRead);
+            Assert.Equal(0, stats.TotalSecondsListened);
+        });
+        var receipt = await context.LessonStudyEvents.SingleAsync();
+        Assert.False(receipt.CountsTowardStatistics);
+        Assert.Equal(manual ? LessonStudyActivity.ManualActivityReceiptKey(receipt.ClientEventId)
+            : LessonStudyActivity.ListeningResetReceiptKey(listeningKey!), receipt.SourceRevision);
+    }
+
+    private sealed class FailFirstActivityCommit(bool afterCommit) : DbTransactionInterceptor
+    {
+        public bool Armed;
+        public Func<Task>? AfterCommit;
+        public List<UserActivity[]> Attempts { get; } = [];
+        public override ValueTask<InterceptionResult> TransactionCommittingAsync(DbTransaction transaction,
+            TransactionEventData eventData, InterceptionResult result, CancellationToken cancellationToken = default)
+        {
+            if (Armed)
+            {
+                Attempts.Add(eventData.Context!.ChangeTracker.Entries<UserActivity>().Select(e => e.Entity).ToArray());
+                if (Attempts.Count == 1 && !afterCommit) throw new TimeoutException("Synthetic transient failure after saving, before commit.");
+            }
+            return new(result);
+        }
+
+        public override async Task TransactionCommittedAsync(DbTransaction transaction, TransactionEndEventData eventData,
+            CancellationToken cancellationToken = default)
+        {
+            if (Armed && afterCommit && Attempts.Count == 1)
+            {
+                if (AfterCommit != null) await AfterCommit();
+                throw new TimeoutException("Synthetic lost commit acknowledgement.");
+            }
+        }
+    }
+
+    public sealed class ActivityRetryFactory(ExecutionStrategyDependencies dependencies) : IExecutionStrategyFactory
+    {
+        public IExecutionStrategy Create() => new ActivityRetryStrategy(dependencies);
+    }
+
+    private sealed class ActivityRetryStrategy(ExecutionStrategyDependencies dependencies) : ExecutionStrategy(dependencies, 1, TimeSpan.Zero)
+    {
+        protected override bool ShouldRetryOn(Exception exception) => exception is TimeoutException;
+    }
+
+    [Fact]
+    public async Task SubSecondLessonPlayback_DoesNotCreateListeningChartBuckets_AndKeepsResetReceipt()
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        SeedUserLanguageAndText(context, userId, 1, "audio lesson");
+        var text = (await context.Texts.FindAsync(1))!;
+        text.IsAudioLesson = true;
+        await context.SaveChangesAsync();
+        var request = new UserActivityController.LogListeningRequest {
+            LanguageId = 1, DurationSeconds = 0, ClientEventId = "sub-second",
+            Lesson = new() { TextId = 1, SourceRevision = LessonStudyActivity.Revision(text.Content, 1, null),
+                PlayedSeconds = 0.4, AudioDurationSeconds = 4 } };
+        var controller = CreateController(context, userId);
+        Assert.IsType<OkObjectResult>(await controller.LogListeningActivity(request));
+        var stats = Assert.IsType<UserActivityController.ListeningStatsDto>(
+            Assert.IsType<OkObjectResult>((await controller.GetListeningStats()).Result).Value);
+        Assert.Equal(0, stats.TotalListeningSeconds);
+        Assert.Empty(stats.ListeningByDate);
+        Assert.Empty(stats.ListeningByLanguage);
+        Assert.Single(await context.UserActivities.ToListAsync());
+        Assert.Equal(1, (await context.LessonStudyEvents.SingleAsync()).PassTenths);
+
+        // Filtering display buckets must not erase the identity needed by resets.
+        Assert.IsType<OkObjectResult>(await new UsersController(context, NullLogger<UsersController>.Instance) {
+            ControllerContext = BuildControllerContext(userId) }.ResetStatistics());
+        Assert.Single(await LessonStudyActivity.ListeningResetReceipts(context, userId).ToListAsync());
+        Assert.IsType<OkObjectResult>(await controller.LogListeningActivity(request));
+        Assert.Empty(await context.UserActivities.ToListAsync());
+        Assert.Equal(0, (await context.UserLanguageStatistics.SingleAsync()).TotalSecondsListened);
+    }
+
     [Fact]
     public async Task LogListeningActivity_CreatesActivityAndInitializesLanguageStats()
     {
@@ -234,6 +444,22 @@ public class UserActivityControllerTests
             {
                 UserId = userId,
                 LanguageId = language.LanguageId,
+                ActivityType = "ManualListening",
+                Timestamp = now,
+                ListeningDurationSeconds = -5
+            },
+            new UserActivity
+            {
+                UserId = userId,
+                LanguageId = 2,
+                ActivityType = "Listening",
+                Timestamp = now.AddDays(-1),
+                ListeningDurationSeconds = 0
+            },
+            new UserActivity
+            {
+                UserId = userId,
+                LanguageId = language.LanguageId,
                 Language = language,
                 ActivityType = "Reading",
                 WordCount = 100,
@@ -249,10 +475,11 @@ public class UserActivityControllerTests
         var ok = Assert.IsType<OkObjectResult>(result.Result);
         var dto = Assert.IsType<UserActivityController.ListeningStatsDto>(ok.Value);
 
-        Assert.Equal(75, dto.TotalListeningSeconds);
-        Assert.Equal(75, dto.ListeningByDate.Values.Sum());
+        Assert.Equal(70, dto.TotalListeningSeconds);
+        Assert.Single(dto.ListeningByDate);
+        Assert.Equal(70, dto.ListeningByDate.Values.Sum());
         Assert.Single(dto.ListeningByLanguage);
-        Assert.Equal(75, dto.ListeningByLanguage[0].TotalSeconds);
+        Assert.Equal(70, dto.ListeningByLanguage[0].TotalSeconds);
     }
 
     [Fact]

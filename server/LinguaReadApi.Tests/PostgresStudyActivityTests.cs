@@ -37,6 +37,130 @@ public class PostgresStudyActivityTests
         User = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, UserId.ToString())], "test")) } };
 
     [PostgresStudyFact]
+    public async Task LibraryContents_ProjectsFractionalPracticeCounts_AndScopesFolderAndOwner()
+    {
+        await using var db = await Database.Create();
+        await using var c = db.Context();
+        var otherUser = Guid.NewGuid();
+        c.Users.Add(new User { Id = otherUser, UserName = "other synthetic learner" });
+        c.Folders.Add(new Folder { FolderId = 1, UserId = UserId, Name = "Lessons" });
+        c.Books.Add(new Book { BookId = 1, UserId = UserId, LanguageId = 1, Title = "Book" });
+        (await c.Texts.FindAsync(1))!.IsAudioLesson = true;
+        (await c.Texts.FindAsync(2))!.FolderId = 1;
+        c.Texts.AddRange(
+            new Text { TextId = 3, UserId = UserId, LanguageId = 1, Title = "Story", Content = "one", Tag = "srs-story" },
+            new Text { TextId = 4, UserId = otherUser, LanguageId = 1, Title = "Private", Content = "one" },
+            new Text { TextId = 5, UserId = UserId, LanguageId = 1, Title = "Part", Content = "one", BookId = 1 });
+        foreach (var (kind, tenths) in new[] { ("read", 10), ("read-set", 3), ("listen", 10), ("list-set", 12), ("playback", 3) })
+        {
+            var e = LessonStudyActivity.Record(c, UserId, 1, "Synthetic", 1, "one two. one!", null, "library-" + kind, kind);
+            e.PassTenths = tenths;
+        }
+        LessonStudyActivity.Record(c, UserId, 1, "Synthetic", 1, "one two. one!", null, "excluded", "read").CountsTowardStatistics = false;
+        LessonStudyActivity.Record(c, otherUser, 1, "Synthetic", 1, "one two. one!", null, "other-user", "read");
+        await c.SaveChangesAsync();
+        c.ChangeTracker.Clear();
+
+        var controller = new FoldersController(c, NullLogger<FoldersController>.Instance) { ControllerContext = Identity };
+        var root = (await controller.GetLibraryContents()).Value!;
+        var lesson = Assert.Single(root.Texts);
+        Assert.Equal(1, lesson.TextId);
+        Assert.True(lesson.IsAudioLesson);
+        Assert.Equal(1.3m, lesson.ReadCount);
+        Assert.Equal(2.5m, lesson.ListenCount);
+        Assert.Equal(1, Assert.Single(root.Books).PartCount);
+        Assert.Equal(1, Assert.Single(root.Folders).ItemCount);
+        var folder = (await controller.GetLibraryContents(1)).Value!;
+        var unread = Assert.Single(folder.Texts);
+        Assert.Equal(2, unread.TextId);
+        Assert.Equal(0m, unread.ReadCount);
+        Assert.Equal(0m, unread.ListenCount);
+    }
+
+    [PostgresStudyFact]
+    public async Task RecentTexts_LimitsAfterBookDeduplication_AndEnrichesOnlyOwnerProgress()
+    {
+        await using var db = await Database.Create();
+        await using var c = db.Context();
+        var accessed = new DateTime(2026, 11, 12, 10, 0, 0, DateTimeKind.Utc);
+        var otherUser = Guid.NewGuid();
+        c.Users.Add(new User { Id = otherUser, UserName = "other synthetic learner" });
+        c.Books.Add(new Book { BookId = 1, UserId = UserId, LanguageId = 1, Title = "Book", CoverImagePath = "cover.jpg" });
+        // A long run of parts must not hide older standalone entries behind a
+        // candidate limit. Equal timestamps also need one consistent book winner.
+        c.Texts.AddRange(Enumerable.Range(10, 75).Select(id => new Text {
+            TextId = id, UserId = UserId, LanguageId = 1, Title = $"Part {id}", Content = "one two",
+            BookId = 1, LastAccessedAt = id <= 11 ? accessed : accessed.AddSeconds(-id) }));
+        c.Texts.AddRange(Enumerable.Range(100, 7).Select(id => new Text {
+            TextId = id, UserId = UserId, LanguageId = 1, Title = $"Lesson {id}",
+            Content = new string('a', 310) + "<span title='" + new string('x', 330) + "'>&amp;" + new string('b', 30) + "</span>",
+            LastAccessedAt = accessed.AddMinutes(-id), IsAudioLesson = true,
+            SrtContent = "1\n00:00:00,000 --> 00:01:00,500\none\n" }));
+        c.Texts.AddRange(
+            new Text { TextId = 200, UserId = UserId, LanguageId = 1, Title = "Story", Content = "hidden", Tag = "srs-story", LastAccessedAt = accessed.AddDays(1), BookId = 1 },
+            new Text { TextId = 201, UserId = otherUser, LanguageId = 1, Title = "Private", Content = "hidden", LastAccessedAt = accessed.AddDays(2) });
+        c.UserSentenceProgresses.Add(new UserSentenceProgress { UserId = UserId, TextId = 100, CreditedWordCount = 5 });
+        c.UserAudioLessonProgresses.AddRange(
+            new UserAudioLessonProgress { UserId = UserId, TextId = 100, CurrentPosition = 12 },
+            new UserAudioLessonProgress { UserId = otherUser, TextId = 100, CurrentPosition = 99 });
+        await c.SaveChangesAsync();
+        c.ChangeTracker.Clear();
+        using var provider = new ServiceCollection().AddSingleton(c).BuildServiceProvider();
+        var controller = Texts(c, provider);
+
+        var recent = (await controller.GetRecentTexts()).Value!.ToList();
+        Assert.Equal(new[] { 11, 100, 101, 102, 103 }, recent.Select(t => t.TextId));
+        Assert.Equal("cover.jpg", recent[0].CoverImagePath);
+        Assert.Equal(new string('a', 310) + " &" + new string('b', 8), recent[1].Preview);
+        Assert.Equal(5, recent[1].ReadWords);
+        Assert.Equal(12d, recent[1].AudioPositionSeconds);
+        Assert.Equal(60.5d, recent[1].AudioDurationSeconds);
+        Assert.Equal(accessed.AddMinutes(-100), await c.Texts.Where(t => t.TextId == 100).Select(t => t.LastAccessedAt).SingleAsync());
+        Assert.Empty(c.ChangeTracker.Entries());
+    }
+
+    [PostgresStudyFact]
+    public async Task LessonPlayback_AccumulatesFractionalCredit_DeduplicatesConcurrentFlushes_AndPreservesResetReceipts()
+    {
+        await using var db = await Database.Create();
+        await using (var c = db.Context())
+        {
+            (await c.Texts.FindAsync(1))!.IsAudioLesson = true;
+            await c.SaveChangesAsync();
+        }
+        var request = new UserActivityController.LogListeningRequest {
+            LanguageId = 1, DurationSeconds = 0, ClientEventId = "lesson-fraction-a",
+            Lesson = new() { TextId = 1, SourceRevision = Revision, PlayedSeconds = 0.4, AudioDurationSeconds = 4 } };
+        await using var a = db.Context();
+        await using var b = db.Context();
+        Assert.All(await Task.WhenAll(Activity(a).LogListeningActivity(request), Activity(b).LogListeningActivity(request)),
+            result => Assert.IsType<OkObjectResult>(result));
+        await using var verify = db.Context();
+        Assert.Single(await verify.UserActivities.ToListAsync());
+        var first = await verify.LessonStudyEvents.SingleAsync();
+        Assert.Equal("playback", first.Kind);
+        Assert.Equal(1, first.PassTenths);
+        Assert.Equal(0.1, first.PlaybackPasses, 8);
+        var emptyStats = Assert.IsType<UserActivityController.ListeningStatsDto>(
+            Assert.IsType<OkObjectResult>((await Activity(verify).GetListeningStats()).Result).Value);
+        Assert.Empty(emptyStats.ListeningByDate);
+        Assert.Empty(emptyStats.ListeningByLanguage);
+
+        request = new() { LanguageId = 1, DurationSeconds = 1, ClientEventId = "lesson-fraction-b",
+            Lesson = new() { TextId = 1, SourceRevision = Revision, PlayedSeconds = 1, AudioDurationSeconds = 4 } };
+        Assert.IsType<OkObjectResult>(await Activity(verify).LogListeningActivity(request));
+        Assert.IsType<OkObjectResult>(await Activity(verify).LogListeningActivity(request));
+        Assert.Equal(3, (await LessonStudyActivity.PassCountsAsync(verify, UserId, 1)).Listen);
+        Assert.Equal(1, (await verify.UserLanguageStatistics.SingleAsync()).TotalSecondsListened);
+        Assert.Equal(2, await verify.LessonStudyEvents.CountAsync(e => e.Kind == "playback"));
+        await Reset(verify);
+        Assert.Equal(2, await LessonStudyActivity.ListeningResetReceipts(verify, UserId).CountAsync());
+        Assert.IsType<OkObjectResult>(await Activity(verify).LogListeningActivity(request));
+        Assert.Empty(await verify.UserActivities.ToListAsync());
+        Assert.Equal(0, (await verify.UserLanguageStatistics.SingleAsync()).TotalSecondsListened);
+    }
+
+    [PostgresStudyFact]
     public async Task ConcurrentFractionalEdits_RejectStaleTotals_AndDeduplicateRetries()
     {
         await using var db = await Database.Create();
@@ -200,11 +324,12 @@ public class PostgresStudyActivityTests
     private static async Task Complete(AppDbContext c, int textId, string id)
     {
         using var provider = new ServiceCollection().AddSingleton(c).BuildServiceProvider();
-        var controller = new TextsController(c, NullLogger<TextsController>.Instance,
-            new UserActivityService(c, NullLogger<UserActivityService>.Instance), new WordLinkingChannel(),
-            new StatsRecomputeService(provider, NullLogger<StatsRecomputeService>.Instance, new MigrationSignal())) { ControllerContext = Identity };
+        var controller = Texts(c, provider);
         Assert.IsType<OkObjectResult>((await controller.CompleteText(textId, clientEventId: id, repeat: true, sourceRevision: Revision)).Result);
     }
+    private static TextsController Texts(AppDbContext c, IServiceProvider provider) => new(c, NullLogger<TextsController>.Instance,
+            new UserActivityService(c, NullLogger<UserActivityService>.Instance), new WordLinkingChannel(),
+            new StatsRecomputeService(provider, NullLogger<StatsRecomputeService>.Instance, new MigrationSignal())) { ControllerContext = Identity };
     private static string Connection()
     {
         var value = Environment.GetEnvironmentVariable("LINGUA_STUDY_TEST_POSTGRES")!;

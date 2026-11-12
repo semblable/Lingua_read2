@@ -585,7 +585,6 @@ export const useAudiobookPlayer = ({
         audio.pause();
         return;
       }
-      initialSeekRef.current = null;
       playbackStartedContentKeyRef.current = contentKey;
       // `play` confirms intent, but startup/resume can still be buffering.
       if (!isPlayingRef.current) {
@@ -636,7 +635,7 @@ export const useAudiobookPlayer = ({
       audio.removeEventListener('pause', onPause);
       audio.removeEventListener('playing', onPlaying);
     };
-  }, [audioRef, contentKey, handleLoadedMetadata, handleTimeUpdate, handleEnded, handleError, resetSegmentPlayback, syncPlaybackState, suspendListening, flushListeningActivityRef, listeningTrackerRef, playbackStartedContentKeyRef, segmentPlaybackRef, initialSeekRef]);
+  }, [audioRef, contentKey, handleLoadedMetadata, handleTimeUpdate, handleEnded, handleError, resetSegmentPlayback, syncPlaybackState, suspendListening, flushListeningActivityRef, listeningTrackerRef, playbackStartedContentKeyRef, segmentPlaybackRef]);
 
   useEffect(() => {
     if (audioRef.current) {
@@ -722,8 +721,6 @@ export const useAudiobookPlayer = ({
     const audio = audioRef.current;
     if (!audio) return;
     if (audio.paused) {
-      initialSeekRef.current = null;
-      userPositionIntentContentKeyRef.current = contentKey;
       playbackStartedContentKeyRef.current = contentKey;
       setAudioPlaybackIntent(audio, true);
       requestAudioPlay('Play failed');
@@ -731,7 +728,7 @@ export const useAudiobookPlayer = ({
       setAudioPlaybackIntent(audio, false);
       audio.pause();
     }
-  }, [audioRef, contentKey, requestAudioPlay, userPositionIntentContentKeyRef, playbackStartedContentKeyRef, initialSeekRef]);
+  }, [audioRef, contentKey, requestAudioPlay, playbackStartedContentKeyRef]);
 
   const seek = useCallback((time: number) => {
     const audio = audioRef.current;

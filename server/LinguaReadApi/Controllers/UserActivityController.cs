@@ -92,33 +92,37 @@ public async Task<IActionResult> LogListeningActivity([FromBody] LogListeningReq
         }
     }
 
-    var activity = new UserActivity
-    {
-        UserId = userId,
-        LanguageId = request.LanguageId,
-        ActivityType = "Listening", // Specific type for listening
-        WordCount = 0, // Not applicable for listening
-        ListeningDurationSeconds = request.DurationSeconds,
-        ClientEventId = request.ClientEventId,
-        Timestamp = DateTime.UtcNow
-    };
-
+    // Legacy callers have no replay key. Give this invocation a stable identity
+    // so a lost commit acknowledgement cannot duplicate it on an internal retry.
+    var clientEventId = string.IsNullOrEmpty(request.ClientEventId) ? Guid.NewGuid().ToString() : request.ClientEventId;
     try
     {
         return await LessonStudyActivity.AtomicAsync<IActionResult>(_context, userId, async () =>
         {
         // Recheck after acquiring the shared activity lock (another request may
         // have committed while the optimistic duplicate check ran).
-        if (!string.IsNullOrEmpty(request.ClientEventId))
+        if (!string.IsNullOrEmpty(clientEventId))
         {
-            var resetReceiptKey = LessonStudyActivity.ListeningResetReceiptKey(request.ClientEventId);
-            if (await _context.UserActivities.AnyAsync(a => a.UserId == userId && a.ClientEventId == request.ClientEventId)
+            var resetReceiptKey = LessonStudyActivity.ListeningResetReceiptKey(clientEventId);
+            if (await _context.UserActivities.AnyAsync(a => a.UserId == userId && a.ClientEventId == clientEventId)
                 || await LessonStudyActivity.ListeningResetReceipts(_context, userId).AnyAsync(e => e.SourceRevision == resetReceiptKey))
                 return Ok(new { message = "Listening activity already logged (duplicate ignored)." });
         }
         // Activity row + cumulative stats are committed in a single SaveChanges so
         // a partial commit can't leave the seconds counted without the dedup row
         // (or vice-versa).
+        // Each transaction attempt needs a fresh entity: a rolled-back save may
+        // already have assigned a database-generated ActivityId.
+        var activity = new UserActivity
+        {
+            UserId = userId,
+            LanguageId = request.LanguageId,
+            ActivityType = "Listening",
+            WordCount = 0,
+            ListeningDurationSeconds = request.DurationSeconds,
+            ClientEventId = clientEventId,
+            Timestamp = DateTime.UtcNow
+        };
         _context.UserActivities.Add(activity);
 
         if (request.Lesson is { } lesson)
@@ -178,7 +182,7 @@ public async Task<IActionResult> LogListeningActivity([FromBody] LogListeningReq
         // index (Postgres 23505 = unique_violation). That's still a successful dedup,
         // not an error. Match on SqlState rather than a message substring so the
         // check doesn't depend on the driver's message formatting.
-        if (!string.IsNullOrEmpty(request.ClientEventId)
+        if (!string.IsNullOrEmpty(clientEventId)
             && dbEx.InnerException is Npgsql.PostgresException pgEx && pgEx.SqlState == "23505")
         {
             _logger.LogInformation("Concurrent duplicate listening activity ignored for UserId: {UserId}, ClientEventId: {ClientEventId}", userId, request.ClientEventId);
@@ -243,53 +247,61 @@ public async Task<IActionResult> LogManualActivity([FromBody] LogManualActivityR
     }
     _logger.LogInformation("Attempting to log manual activity for UserId: {UserId}", userId);
 
-    var activitiesToAdd = new List<UserActivity>();
-    var now = DateTime.UtcNow;
-
-    // Create Reading Activity if WordCount provided
-    if (request.WordCount.HasValue && request.WordCount != 0)
-    {
-        activitiesToAdd.Add(new UserActivity
-        {
-            UserId = userId,
-            LanguageId = request.LanguageId,
-            ActivityType = "ManualReading",
-            WordCount = request.WordCount.Value,
-            ListeningDurationSeconds = 0,
-            Timestamp = now
-        });
-        _logger.LogInformation("Prepared ManualReading activity for UserId: {UserId}, LanguageId: {LanguageId}, WordCount: {WordCount}", userId, request.LanguageId, request.WordCount.Value);
-    }
-
-    // Create Listening Activity if Duration provided
-    if (request.ListeningDurationSeconds.HasValue && request.ListeningDurationSeconds != 0)
-    {
-        activitiesToAdd.Add(new UserActivity
-        {
-            UserId = userId,
-            LanguageId = request.LanguageId,
-            ActivityType = "ManualListening",
-            WordCount = 0,
-            ListeningDurationSeconds = request.ListeningDurationSeconds.Value,
-            Timestamp = now
-        });
-        _logger.LogInformation("Prepared ManualListening activity for UserId: {UserId}, LanguageId: {LanguageId}, Duration: {Duration}", userId, request.LanguageId, request.ListeningDurationSeconds.Value);
-    }
-
-    if (!activitiesToAdd.Any())
-    {
-        // Should have been caught by earlier validation, but good to double-check
-        _logger.LogWarning("No valid manual activities to add for UserId: {UserId} despite passing initial validation.", userId);
-        return BadRequest("No valid activity data provided.");
-    }
-
+    // Stable across transaction retries, distinct for separate manual requests.
+    var operationId = Guid.NewGuid().ToString();
     try
     {
         return await LessonStudyActivity.AtomicAsync<IActionResult>(_context, userId, async () =>
         {
-        _context.UserActivities.AddRange(activitiesToAdd);
-        await _context.SaveChangesAsync();
-        // Update UserLanguageStatistics after manual activity save
+            // A commit can succeed while its acknowledgement is lost. Resets keep
+            // this neutral receipt, so retrying cannot restore erased corrections.
+            if (await _context.LessonStudyEvents.AnyAsync(e => e.UserId == userId && e.ClientEventId == operationId))
+                return Ok(new { message = "Manual activity logged successfully." });
+
+            // Recreate activities and reload totals on every transaction attempt.
+            var activitiesToAdd = new List<UserActivity>();
+            var now = DateTime.UtcNow;
+
+            // Create Reading Activity if WordCount provided
+            if (request.WordCount.HasValue && request.WordCount != 0)
+            {
+                activitiesToAdd.Add(new UserActivity
+                {
+                    UserId = userId,
+                    LanguageId = request.LanguageId,
+                    ActivityType = "ManualReading",
+                    WordCount = request.WordCount.Value,
+                    ListeningDurationSeconds = 0,
+                    Timestamp = now
+                });
+                _logger.LogInformation("Prepared ManualReading activity for UserId: {UserId}, LanguageId: {LanguageId}, WordCount: {WordCount}", userId, request.LanguageId, request.WordCount.Value);
+            }
+
+            // Create Listening Activity if Duration provided
+            if (request.ListeningDurationSeconds.HasValue && request.ListeningDurationSeconds != 0)
+            {
+                activitiesToAdd.Add(new UserActivity
+                {
+                    UserId = userId,
+                    LanguageId = request.LanguageId,
+                    ActivityType = "ManualListening",
+                    WordCount = 0,
+                    ListeningDurationSeconds = request.ListeningDurationSeconds.Value,
+                    Timestamp = now
+                });
+                _logger.LogInformation("Prepared ManualListening activity for UserId: {UserId}, LanguageId: {LanguageId}, Duration: {Duration}", userId, request.LanguageId, request.ListeningDurationSeconds.Value);
+            }
+
+            if (!activitiesToAdd.Any())
+            {
+                // Should have been caught by earlier validation, but good to double-check
+                _logger.LogWarning("No valid manual activities to add for UserId: {UserId} despite passing initial validation.", userId);
+                return BadRequest("No valid activity data provided.");
+            }
+
+            _context.UserActivities.AddRange(activitiesToAdd);
+            // Save activities and cumulative totals together; no generated entity
+            // state from a partial save is carried into a retry.
             var stats = await _context.UserLanguageStatistics
                 .Where(uls => uls.UserId == userId && uls.LanguageId == request.LanguageId)
                 .OrderBy(uls => uls.UserLanguageStatisticsId)
@@ -316,11 +328,18 @@ public async Task<IActionResult> LogManualActivity([FromBody] LogManualActivityR
                 stats.LastUpdatedAt = DateTime.UtcNow;
             }
 
+            _context.LessonStudyEvents.Add(new LessonStudyEvent
+            {
+                UserId = userId, LanguageId = request.LanguageId, SourceTextId = 0,
+                SourceRevision = LessonStudyActivity.ManualActivityReceiptKey(operationId),
+                ClientEventId = operationId, Kind = "time", CountsTowardStatistics = false,
+                PassTenths = 0, CreatedAt = now
+            });
             await _context.SaveChangesAsync();
             _logger.LogInformation("Updated UserLanguageStatistics for UserId: {UserId}, LanguageId: {LanguageId}", userId, request.LanguageId);
 
-        _logger.LogInformation("Successfully saved {Count} manual activity record(s) for UserId: {UserId}", activitiesToAdd.Count, userId);
-        return Ok(new { message = "Manual activity logged successfully." });
+            _logger.LogInformation("Successfully saved {Count} manual activity record(s) for UserId: {UserId}", activitiesToAdd.Count, userId);
+            return Ok(new { message = "Manual activity logged successfully." });
         });
     }
     catch (DbUpdateException dbEx)
@@ -614,7 +633,10 @@ public async Task<ActionResult<ListeningStatsDto>> GetListeningStats([FromQuery]
     var listeningActivities = await _context.UserActivities
         .Where(ua => ua.UserId == userId &&
                      ua.Timestamp >= startDate &&
-                     (ua.ActivityType == "Listening" || ua.ActivityType == "ManualListening")) // Include relevant types
+                     (ua.ActivityType == "Listening" || ua.ActivityType == "ManualListening") &&
+                     // Sub-second lesson flushes retain their dedup rows, but
+                     // zero elapsed time must not create chart days/languages.
+                     (ua.ActivityType != "Listening" || (ua.ListeningDurationSeconds ?? 0) != 0))
         .ToListAsync();
 
     var stats = new ListeningStatsDto();

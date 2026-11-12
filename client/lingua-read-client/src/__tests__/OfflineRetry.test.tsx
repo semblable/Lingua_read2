@@ -8,7 +8,11 @@ vi.mock('../hooks/useOnlineStatus', () => ({ useOnlineStatus: () => true }));
 afterEach(() => vi.useRealTimers());
 
 test('backs off background retries after repeated failures', async () => {
-  vi.useFakeTimers();
+  // This test checks exact deadlines. The suite default advances fake time
+  // with wall time, which can cross those deadlines on a busy worker.
+  vi.useFakeTimers({ shouldAdvanceTime: false });
+  vi.mocked(drain).mockReset();
+  vi.mocked(pending).mockReset();
   vi.mocked(pending).mockResolvedValue(1);
   vi.mocked(drain).mockResolvedValue({ attempted: 1, succeeded: 0, failed: 1 });
   const view = render(<OfflineIndicator handlers={{} as SyncHandlers} />);

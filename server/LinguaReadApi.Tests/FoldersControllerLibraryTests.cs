@@ -26,6 +26,27 @@ public class FoldersControllerLibraryTests
     private const int ChildOfA = 200;
 
     [Fact]
+    public async Task Library_ReturnsStudyTotalsForVisibleTextsAndOnlyTheCurrentUser()
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        Seed(context, userId);
+        context.LessonStudyEvents.AddRange(
+            new LessonStudyEvent { UserId = userId, SourceTextId = RootText, Kind = "read", PassTenths = 10, ClientEventId = "read" },
+            new LessonStudyEvent { UserId = userId, SourceTextId = RootText, Kind = "read-set", PassTenths = 15, ClientEventId = "adjust" },
+            new LessonStudyEvent { UserId = userId, SourceTextId = RootText, Kind = "playback", PassTenths = 6, ClientEventId = "playback" },
+            new LessonStudyEvent { UserId = userId, SourceTextId = RootText, Kind = "read", CountsTowardStatistics = false, ClientEventId = "reset" },
+            new LessonStudyEvent { UserId = Guid.NewGuid(), SourceTextId = RootText, Kind = "read", ClientEventId = "other-user" });
+        await context.SaveChangesAsync();
+        var root = (await CreateController(context, userId).GetLibraryContents()).Value!;
+        var text = Assert.Single(root.Texts);
+        Assert.Equal(2.5m, text.ReadCount);
+        Assert.Equal(0.6m, text.ListenCount);
+        var folder = (await CreateController(context, userId).GetLibraryContents(FolderA)).Value!;
+        Assert.Equal(0, Assert.Single(folder.Texts).ReadCount);
+    }
+
+    [Fact]
     public async Task ReorderItems_UpdatesItemsInTheRequestedFolder()
     {
         await using var context = CreateContext();

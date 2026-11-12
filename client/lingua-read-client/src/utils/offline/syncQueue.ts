@@ -3,6 +3,8 @@
 // fetch failure mode for network unreachable), the call is enqueued here and
 // replayed by drain() once the browser comes back online.
 
+import type { LessonListeningCredit } from '../../audio/listeningActivity';
+
 const DB_NAME = 'lingua-read-offline';
 const DB_VERSION = 1;
 const STORE = 'pending-ops';
@@ -18,7 +20,7 @@ export type PendingOp =
   // Listening time. Additive on the server, so each op carries a clientEventId
   // the backend dedupes on — a replay (or a request whose response was lost on a
   // flaky link) can't double-count the seconds.
-  | { type: 'logListening'; payload: { languageId: number | string; durationSeconds: number; clientEventId: string } }
+  | { type: 'logListening'; payload: { languageId: number | string; durationSeconds: number; clientEventId: string; lesson?: LessonListeningCredit } }
   // Audio position. Last-write-wins; coalesced on enqueue (see coalesceKey) so
   // only the newest position replays, and carries clientUpdatedAt so a late
   // drain can't clobber a newer value the server already holds.

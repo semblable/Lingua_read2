@@ -44,6 +44,66 @@ public class ListeningCompatibilityTests(ITestOutputHelper output)
             ? playedSourceSeconds / revisionDuration.Value : null;
 
     [Fact]
+    public async Task LessonPlayback_AccumulatesTenthsAcrossDevicesAndRetriesWithoutDuplicatingTime()
+    {
+        await using var learner = await Learner.Create();
+        var revision = await learner.Revision();
+        await learner.LessonPlayback("device-a", 3, 6, 100, revision);
+        Assert.Equal(new LessonStudyDto(0, 0), await learner.Counts());
+        await learner.LessonPlayback("device-b", 2, 4, 100, revision);
+        await learner.LessonPlayback("device-b", 2, 4, 100, revision);
+        Assert.Equal(new LessonStudyDto(0, 0.1m), await learner.Counts());
+        Assert.Equal(65, await learner.Seconds());
+        await learner.LessonPlayback("finish", 45, 90, 100, revision);
+        Assert.Equal(new LessonStudyDto(0, 1), await learner.Counts());
+        await learner.LessonPlayback("replay", 50, 100, 100, revision);
+        Assert.Equal(new LessonStudyDto(0, 2), await learner.Counts());
+        Assert.Equal(160, await learner.Seconds());
+        Assert.Equal(100, await learner.Words());
+    }
+
+    [Fact]
+    public async Task LessonPlayback_SmallRemaindersSurviveFlushesAndManualCountChanges()
+    {
+        await using var learner = await Learner.Create();
+        var revision = await learner.Revision();
+        for (var i = 0; i < 30; i++)
+            await learner.LessonPlayback($"small-{i}", 1, 1, 300, revision);
+        Assert.Equal(new LessonStudyDto(0, 0.1m), await learner.Counts());
+        Assert.IsType<OkObjectResult>(await new LessonStudyController(learner.Context) { ControllerContext = learner.Identity }
+            .SetCount(1, new() { ClientEventId = "edit-listens", SourceRevision = revision, Kind = "listen", Count = 2.5m, ExpectedCount = 0.1m }));
+        await learner.LessonPlayback("after-edit", 30, 30, 300, revision);
+        Assert.Equal(new LessonStudyDto(0, 2.6m), await learner.Counts());
+        Assert.Equal(120, await learner.Seconds());
+    }
+
+    [Fact]
+    public async Task LessonPlayback_StaleOrForeignLessonKeepsTimeWithoutCreditingAnotherSource()
+    {
+        await using var learner = await Learner.Create();
+        await learner.LessonPlayback("stale", 10, 100, 100, new string('F', 64));
+        await learner.LessonPlayback("missing", 10, 100, 100, await learner.Revision(), textId: 999);
+        Assert.Equal(new LessonStudyDto(0, 0), await learner.Counts());
+        Assert.Equal(80, await learner.Seconds());
+        Assert.Empty(await learner.Context.LessonStudyEvents.ToListAsync());
+    }
+
+    [Fact]
+    public async Task LessonPlayback_ResetRemovesRemaindersAndKeepsRetryReceipts()
+    {
+        await using var learner = await Learner.Create();
+        var revision = await learner.Revision();
+        await learner.LessonPlayback("before-reset", 6, 6, 100, revision);
+        await learner.Reset();
+        await learner.LessonPlayback("before-reset", 6, 6, 100, revision);
+        await learner.LessonPlayback("new-era", 4, 4, 100, revision);
+        Assert.Equal(new LessonStudyDto(0, 0), await learner.Counts());
+        Assert.Equal(4, await learner.Seconds());
+        await learner.LessonPlayback("new-era-2", 6, 6, 100, revision);
+        Assert.Equal(new LessonStudyDto(0, 0.1m), await learner.Counts());
+    }
+
+    [Fact]
     public async Task ActualPlaybackAndManualPasses_KeepSecondsSeparateFromIntegerCountsAndReading()
     {
         await using var learner = await Learner.Create();
@@ -370,6 +430,9 @@ public class ListeningCompatibilityTests(ITestOutputHelper output)
         public UserActivityController Activity() => new(context, null!, NullLogger<UserActivityController>.Instance) { ControllerContext = Identity };
         public Task<IActionResult> AttemptPlayback(string? id, int seconds) => Activity().LogListeningActivity(new() { LanguageId = 1, DurationSeconds = seconds, ClientEventId = id });
         public async Task Playback(string? id, int seconds) => Assert.IsType<OkObjectResult>(await AttemptPlayback(id, seconds));
+        public async Task LessonPlayback(string id, int elapsed, double played, double duration, string revision, int textId = 1) =>
+            Assert.IsType<OkObjectResult>(await Activity().LogListeningActivity(new() { LanguageId = 1, DurationSeconds = elapsed,
+                ClientEventId = id, Lesson = new() { TextId = textId, SourceRevision = revision, PlayedSeconds = played, AudioDurationSeconds = duration } }));
         public async Task<string> Revision() { var t = await context.Texts.AsNoTracking().SingleAsync(); return LessonStudyActivity.Revision(t.Content, t.LanguageId, t.AudioFilePath); }
         public async Task<IActionResult> Pass(string id, int seconds, string? revision = null) => await new LessonStudyController(context) { ControllerContext = Identity }
             .Listen(1, new() { ClientEventId = id, DurationSeconds = seconds, SourceRevision = revision ?? await Revision() });

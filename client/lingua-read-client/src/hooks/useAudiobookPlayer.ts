@@ -45,6 +45,7 @@ export type UseAudiobookPlayerArgs = {
   book?: AudiobookBookLike | null;
   audioSrc?: string | null;
   textId?: number | string | null;
+  sourceRevision?: string;
   languageId?: number | string | null;
   audioRef?: AudioElementRef;
   onTimeUpdate?: (newTime: number) => void;
@@ -96,6 +97,7 @@ export const useAudiobookPlayer = ({
   book,
   audioSrc,
   textId,
+  sourceRevision,
   languageId,
   audioRef: externalAudioRef,
   onTimeUpdate,
@@ -202,7 +204,10 @@ export const useAudiobookPlayer = ({
   } = useAudiobookListeningActivity({
     effectiveLanguageId,
     isPlayingRef,
-    lifecycleSaveRef
+    lifecycleSaveRef,
+    audioRef,
+    textId: isBookMode ? null : textId,
+    sourceRevision
   });
 
   // Stop accrual at a playback boundary (seek, buffering, source swap): credit
@@ -213,6 +218,7 @@ export const useAudiobookPlayer = ({
     tracker.markStalling();
     flushListeningActivityRef.current?.(false);
     tracker.clearCheckpoint();
+    tracker.stopPlayback();
   }, [flushListeningActivityRef, listeningTrackerRef]);
 
   // --- Source tracks + playlist sync ---
@@ -446,6 +452,7 @@ export const useAudiobookPlayer = ({
     const audio = audioRef.current;
     if (!audio) return;
     const time = audio.currentTime;
+    if (!audio.seeking) listeningTrackerRef.current.samplePlayback(time, audio.duration);
     setCurrentTime(time);
 
     const boundary = handleSegmentBoundary(time);
@@ -468,7 +475,7 @@ export const useAudiobookPlayer = ({
     if (onTimeUpdateRef.current) {
       onTimeUpdateRef.current(time);
     }
-  }, [audioRef, handleSegmentBoundary, requestAudioPlay]);
+  }, [audioRef, handleSegmentBoundary, requestAudioPlay, listeningTrackerRef]);
 
   const syncPlaybackState = useCallback((nextIsPlaying: boolean) => {
     isPlayingRef.current = nextIsPlaying;
@@ -541,12 +548,15 @@ export const useAudiobookPlayer = ({
       listeningSuspendedRef.current = false;
       tracker.markPlaying();
       tracker.ensureCheckpoint(Date.now());
+      tracker.startPlayback(audio.currentTime);
     };
     const onWaiting = () => {
       setIsBuffering(true);
       suspendListening();
     };
     const onSeeking = () => {
+      // Native seeking has already changed currentTime; discard that jump.
+      tracker.stopPlayback();
       suspendListening();
     };
     const onSeeked = () => {
@@ -588,6 +598,7 @@ export const useAudiobookPlayer = ({
       // React render can run. Repeated pauses then have no elapsed time to add.
       flushListeningActivityRef.current?.(true);
       tracker.clearCheckpoint();
+      tracker.stopPlayback();
       if (segmentPlaybackRef.current.active) {
         resetSegmentPlayback();
       }
@@ -670,6 +681,7 @@ export const useAudiobookPlayer = ({
     } else if (wasPlayingRef.current) {
       flushListeningActivity(true);
       tracker.clearCheckpoint();
+      tracker.stopPlayback();
       saveProgress(true);
       wasPlayingRef.current = false;
     }
@@ -734,12 +746,14 @@ export const useAudiobookPlayer = ({
     }
     userPositionIntentContentKeyRef.current = contentKey;
     initialSeekRef.current = null;
+    // Save the played tail before currentTime becomes the seek destination.
+    suspendListening();
     audio.currentTime = newTime;
     setCurrentTime(newTime);
     if (onTimeUpdateRef.current) {
       onTimeUpdateRef.current(newTime);
     }
-  }, [audioRef, contentKey, duration, resetSegmentPlayback, segmentPlaybackRef, userPositionIntentContentKeyRef, initialSeekRef]);
+  }, [audioRef, contentKey, duration, resetSegmentPlayback, segmentPlaybackRef, userPositionIntentContentKeyRef, initialSeekRef, suspendListening]);
 
   const goToNextTrack = useCallback(() => {
     if (currentTrackIndex < playlist.length - 1) {

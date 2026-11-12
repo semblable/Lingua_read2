@@ -105,12 +105,20 @@ const LibraryTextCard = ({ text, isSelected, onSelect, onItemClick }: LibraryTex
             {formatDate(text.createdAt ?? '')}
             {(text.totalWords ?? 0) > 0 && <> &middot; {text.totalWords!.toLocaleString()} words</>}
           </small>
-          <div className="mt-1">
+          <div className="mt-1 d-flex flex-wrap align-items-center gap-2">
             <ComprehensibilityBadge
               totalWords={text.totalWords}
               unknownWords={text.unknownWords}
               unknownWordPercentage={text.unknownWordPercentage}
             />
+            <small className="text-muted text-nowrap" title={`Read ${text.readCount ?? 0} times`} aria-label={`Read passes: ${text.readCount ?? 0}`}>
+              <i className="bi bi-book me-1" aria-hidden="true" />{text.readCount ?? 0}×
+            </small>
+            {text.isAudioLesson && (
+              <small className="text-muted text-nowrap" title={`Listened ${text.listenCount ?? 0} times`} aria-label={`Listened passes: ${text.listenCount ?? 0}`}>
+                <i className="bi bi-headphones me-1" aria-hidden="true" />{text.listenCount ?? 0}×
+              </small>
+            )}
           </div>
         </Card.Body>
         <Card.Footer className="p-2 bg-transparent border-top-0">

@@ -205,6 +205,8 @@ export type LibraryText = {
   title?: string | null;
   isAudioLesson?: boolean;
   isFinished?: boolean;
+  readCount?: number;
+  listenCount?: number;
   languageName?: string | null;
   tag?: string | null;
   createdAt?: string;

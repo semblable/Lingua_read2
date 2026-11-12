@@ -117,6 +117,20 @@ describe('Library', () => {
     expect(screen.getByText('My Folder')).toBeInTheDocument();
   });
 
+  test('shows fractional read and listen totals with accessible library icons', async () => {
+    getLibraryContents.mockResolvedValue({ ...emptyContents, texts: [
+      { textId: 100, title: 'Read again', readCount: 2.5 },
+      { textId: 101, title: 'Audio lesson', isAudioLesson: true, readCount: 1, listenCount: 0.6 },
+      { textId: 102, title: 'New text' }
+    ] });
+    renderLibrary();
+    expect(await screen.findByLabelText('Read passes: 2.5')).toHaveTextContent('2.5×');
+    expect(screen.getByLabelText('Read passes: 1')).toHaveTextContent('1×');
+    expect(screen.getByLabelText('Listened passes: 0.6')).toHaveTextContent('0.6×');
+    expect(screen.getByLabelText('Read passes: 0')).toHaveTextContent('0×');
+    expect(screen.getAllByLabelText(/Listened passes:/)).toHaveLength(1);
+  });
+
   test('renders an empty state when there is nothing in the folder', async () => {
     getLibraryContents.mockResolvedValue(emptyContents);
     renderLibrary();

@@ -6,6 +6,8 @@ import { fetchApi } from './client';
 import type { ResponseOf, RequestBodyOf } from '../fetchApi';
 import { enqueueIfOffline } from '../offline/enqueueIfOffline';
 import { newClientEventId } from '../offline/clientEventId';
+import type { LessonListeningCredit } from '../../audio/listeningActivity';
+import { notifyStudyChange } from '../studyIntent';
 
 // A monotonic-ish stamp the server uses for last-write-wins conflict
 // resolution on position/last-read so a late-draining offline save can't
@@ -128,12 +130,14 @@ export const getAudioLessonProgress = async (
 export const logListeningActivity = async (
   languageId: number | string,
   durationSeconds: number,
-  options: ProgressFetchOptions = {}
+  options: ProgressFetchOptions = {},
+  lesson?: LessonListeningCredit
 ): Promise<unknown> => {
   const clientEventId = newClientEventId();
-  const payload = { languageId, durationSeconds, clientEventId };
-  return await enqueueIfOffline(
-    { type: 'logListening', payload: { languageId, durationSeconds, clientEventId } },
+  const payload = { languageId, durationSeconds, clientEventId,
+    ...(lesson ? { lesson: { ...lesson, textId: Number(lesson.textId) } } : {}) };
+  const result = await enqueueIfOffline(
+    { type: 'logListening', payload },
     () => fetchApi('/activity/logListening', {
       ...options,
       suppressAuthRedirect: true,
@@ -141,6 +145,8 @@ export const logListeningActivity = async (
       body: JSON.stringify(payload)
     }), undefined, { queueOnUnauthorized: true }
   );
+  if (lesson) notifyStudyChange(lesson.textId);
+  return result;
 };
 
 export const logManualActivity = async (

@@ -40,13 +40,29 @@ namespace LinguaReadApi.Controllers
             public int DurationSeconds { get; set; }
             // Optional client-generated idempotency key (offline replay / lost-response dedup).
             public string? ClientEventId { get; set; }
+            public LessonListeningCredit? Lesson { get; set; }
+        }
+
+        public class LessonListeningCredit
+        {
+            public int TextId { get; set; }
+            public string SourceRevision { get; set; } = "";
+            public double PlayedSeconds { get; set; }
+            public double AudioDurationSeconds { get; set; }
         }
 [HttpPost("logListening")]
 public async Task<IActionResult> LogListeningActivity([FromBody] LogListeningRequest request)
 {
     _logger.LogInformation("Received request to log listening activity. LanguageId: {LanguageId}, DurationSeconds: {DurationSeconds}", request.LanguageId, request.DurationSeconds);
 
-    if (request.DurationSeconds <= 0)
+    if (request.Lesson is { } credit && (credit.TextId <= 0 || string.IsNullOrWhiteSpace(credit.SourceRevision) || credit.SourceRevision.Length != 64
+        || !double.IsFinite(credit.PlayedSeconds) || credit.PlayedSeconds <= 0 || credit.PlayedSeconds > 86400
+        || !double.IsFinite(credit.AudioDurationSeconds) || credit.AudioDurationSeconds <= 0
+        || credit.PlayedSeconds / credit.AudioDurationSeconds > 10000
+        || string.IsNullOrWhiteSpace(request.ClientEventId) || !LessonStudyActivity.ValidId(request.ClientEventId)))
+        return BadRequest("Invalid lesson playback credit.");
+
+    if (request.DurationSeconds < 0 || (request.DurationSeconds == 0 && request.Lesson == null))
     {
         _logger.LogWarning("Invalid duration received: {DurationSeconds}. Returning BadRequest.", request.DurationSeconds);
         return BadRequest("Duration must be positive.");
@@ -104,6 +120,29 @@ public async Task<IActionResult> LogListeningActivity([FromBody] LogListeningReq
         // a partial commit can't leave the seconds counted without the dedup row
         // (or vice-versa).
         _context.UserActivities.Add(activity);
+
+        if (request.Lesson is { } lesson)
+        {
+            var text = await _context.Texts.SingleOrDefaultAsync(t => t.TextId == lesson.TextId && t.UserId == userId
+                && t.LanguageId == request.LanguageId && t.IsAudioLesson);
+            // Old offline playback still earns its elapsed time after a lesson
+            // edit/deletion, but must not credit a different source revision.
+            if (text != null && lesson.SourceRevision == LessonStudyActivity.Revision(text.Content, text.LanguageId, text.AudioFilePath))
+            {
+                var previous = await _context.LessonStudyEvents
+                    .Where(e => e.UserId == userId && e.SourceTextId == text.TextId && e.Kind == "playback" && e.CountsTowardStatistics)
+                    .SumAsync(e => e.PlaybackPasses);
+                var passes = lesson.PlayedSeconds / lesson.AudioDurationSeconds;
+                // A tiny tolerance absorbs floating-point summation at exact
+                // boundaries without promoting a genuinely incomplete tenth.
+                static long Tenths(double value) => (long)Math.Floor(value * 10 + 1e-8);
+                var earned = Tenths(previous + passes) - Tenths(previous);
+                var playback = LessonStudyActivity.Record(_context, userId, text.TextId, text.Title, text.LanguageId,
+                    text.Content, text.AudioFilePath, null, "playback", seconds: request.DurationSeconds);
+                playback.PassTenths = (int)earned;
+                playback.PlaybackPasses = passes;
+            }
+        }
 
         // --- Update UserLanguageStatistics cumulative listening time ---
         var stats = await _context.UserLanguageStatistics

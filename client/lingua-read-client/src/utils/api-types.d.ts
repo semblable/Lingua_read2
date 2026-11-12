@@ -6167,6 +6167,15 @@ export interface components {
             difficulty?: number | null;
             isSuspended?: boolean;
         };
+        LessonListeningCredit: {
+            /** Format: int32 */
+            textId?: number;
+            sourceRevision?: string | null;
+            /** Format: double */
+            playedSeconds?: number;
+            /** Format: double */
+            audioDurationSeconds?: number;
+        };
         LessonStudyDto: {
             /** Format: double */
             readCount?: number;
@@ -6277,6 +6286,10 @@ export interface components {
             tag?: string | null;
             isAudioLesson?: boolean;
             isFinished?: boolean;
+            /** Format: double */
+            readCount?: number;
+            /** Format: double */
+            listenCount?: number;
             /** Format: int32 */
             sortOrder?: number;
             /** Format: int32 */
@@ -6313,6 +6326,7 @@ export interface components {
             /** Format: int32 */
             durationSeconds?: number;
             clientEventId?: string | null;
+            lesson?: components["schemas"]["LessonListeningCredit"];
         };
         LogManualActivityRequest: {
             /** Format: int32 */

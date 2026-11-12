@@ -5,15 +5,27 @@
 
 export const LISTENING_ACTIVITY_FLUSH_SECONDS = 10;
 
+export type LessonListeningCredit = {
+  textId: number | string;
+  sourceRevision: string;
+  playedSeconds: number;
+  audioDurationSeconds: number;
+};
+
 export type FlushPayload = {
   languageId: number | string;
   durationSeconds: number;
+  lesson?: LessonListeningCredit;
 };
 
 export type ListeningActivityTracker = {
   /** Set/clear the language id used for the next flush. */
   setLanguageId(id: number | string | null | undefined): void;
   getLanguageId(): number | string | null;
+  setLesson(lesson: Pick<LessonListeningCredit, 'textId' | 'sourceRevision'> | null): void;
+  startPlayback(position: number): void;
+  samplePlayback(position: number, duration: number): void;
+  stopPlayback(): void;
   /** Start (or reset) the accrual checkpoint to `now`. */
   startCheckpoint(now: number): void;
   /** Set the checkpoint to `now` only if there isn't one. Used on play
@@ -40,6 +52,7 @@ export type ListeningActivityTracker = {
   prepareFlush(now: number, force: boolean, isPlaying: boolean): FlushPayload | null;
   /** Re-credit seconds that a failed (non-lifecycle) fetch couldn't log. */
   restorePending(seconds: number): void;
+  restoreLesson(lesson: LessonListeningCredit): void;
   hasPending(): boolean;
   getPendingSeconds(): number;
 };
@@ -49,6 +62,10 @@ export const createListeningActivityTracker = (): ListeningActivityTracker => {
   let lastCheckpointAt: number | null = null;
   let pendingSeconds = 0;
   let isStalling = false;
+  let lesson: Pick<LessonListeningCredit, 'textId' | 'sourceRevision'> | null = null;
+  let mediaPosition: number | null = null;
+  let playedSeconds = 0;
+  let audioDurationSeconds = 0;
 
   const accrueUpTo = (now: number): void => {
     if (lastCheckpointAt == null) return;
@@ -65,6 +82,26 @@ export const createListeningActivityTracker = (): ListeningActivityTracker => {
     },
     getLanguageId() {
       return languageId;
+    },
+    setLesson(value) {
+      lesson = value;
+      mediaPosition = null;
+      playedSeconds = 0;
+      audioDurationSeconds = 0;
+    },
+    startPlayback(position) {
+      mediaPosition = lesson && Number.isFinite(position) ? position : null;
+    },
+    samplePlayback(position, duration) {
+      if (mediaPosition == null || !Number.isFinite(position)) return;
+      if (Number.isFinite(duration) && duration > 0) {
+        playedSeconds += Math.max(0, Math.min(position, duration) - mediaPosition);
+        audioDurationSeconds = duration;
+      }
+      mediaPosition = position;
+    },
+    stopPlayback() {
+      mediaPosition = null;
     },
     startCheckpoint(now) {
       lastCheckpointAt = now;
@@ -92,20 +129,29 @@ export const createListeningActivityTracker = (): ListeningActivityTracker => {
         lastCheckpointAt = now;
       }
 
-      const secondsToLog = force
+      const secondsToLog = Math.max(0, force
         ? Math.round(pendingSeconds)
-        : Math.floor(pendingSeconds);
+        : Math.floor(pendingSeconds));
 
-      if (secondsToLog <= 0) return null;
+      const lessonCredit = lesson && playedSeconds > 0 && audioDurationSeconds > 0
+        ? { ...lesson, playedSeconds, audioDurationSeconds } : undefined;
+      if (secondsToLog <= 0 && !(force && lessonCredit)) return null;
       if (!force && secondsToLog < LISTENING_ACTIVITY_FLUSH_SECONDS) return null;
       if (!languageId) return null;
 
       pendingSeconds -= secondsToLog;
-      return { languageId, durationSeconds: secondsToLog };
+      playedSeconds = 0;
+      return { languageId, durationSeconds: secondsToLog, ...(lessonCredit ? { lesson: lessonCredit } : {}) };
     },
     restorePending(seconds) {
       if (seconds > 0) {
         pendingSeconds += seconds;
+      }
+    },
+    restoreLesson(value) {
+      if (lesson?.textId === value.textId && lesson.sourceRevision === value.sourceRevision) {
+        playedSeconds += value.playedSeconds;
+        audioDurationSeconds = value.audioDurationSeconds;
       }
     },
     hasPending() {

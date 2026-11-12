@@ -174,6 +174,23 @@ namespace LinguaReadApi.Controllers
                 })
                 .ToListAsync();
 
+            var textIds = texts.Select(t => t.TextId).ToList();
+            var studyCounts = await _context.LessonStudyEvents
+                .Where(e => e.UserId == userId && textIds.Contains(e.SourceTextId) && e.CountsTowardStatistics)
+                .GroupBy(e => e.SourceTextId)
+                .Select(g => new
+                {
+                    TextId = g.Key,
+                    Read = g.Sum(e => e.Kind == "read" || e.Kind == "read-set" ? (long)e.PassTenths : 0L),
+                    Listen = g.Sum(e => e.Kind == "listen" || e.Kind == "list-set" || e.Kind == "playback" ? (long)e.PassTenths : 0L)
+                }).ToDictionaryAsync(c => c.TextId);
+            foreach (var text in texts)
+            {
+                if (!studyCounts.TryGetValue(text.TextId, out var counts)) continue;
+                text.ReadCount = counts.Read / 10m;
+                text.ListenCount = counts.Listen / 10m;
+            }
+
             return new LibraryContentsDto
             {
                 CurrentFolder = currentFolder,
@@ -788,6 +805,8 @@ namespace LinguaReadApi.Controllers
         public string? Tag { get; set; }
         public bool IsAudioLesson { get; set; }
         public bool IsFinished { get; set; }
+        public decimal ReadCount { get; set; }
+        public decimal ListenCount { get; set; }
         public int SortOrder { get; set; }
         public int? FolderId { get; set; }
         public int TotalWords { get; set; }

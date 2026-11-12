@@ -69,6 +69,7 @@ const LessonHeader = React.memo(({
               type="lesson"
               audioSrc={audioSrc}
               textId={textId}
+              sourceRevision={text.studyRevision}
               languageId={text?.languageId}
               audioRef={audioRef}
               onTimeUpdate={onTimeUpdate}

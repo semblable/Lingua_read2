@@ -10,6 +10,15 @@ vi.mock('../utils/api/client', () => ({
 import { fetchApi } from '../utils/api/client';
 import { productionSyncHandlers } from '../utils/offline/handlers';
 
+test('listening replay keeps the original event ID and fractional lesson exposure', async () => {
+  vi.clearAllMocks();
+  const payload = { languageId: 21, durationSeconds: 10, clientEventId: 'saved-playback-id',
+    lesson: { textId: 802, sourceRevision: 'A'.repeat(64), playedSeconds: 15, audioDurationSeconds: 300 } };
+  await productionSyncHandlers.logListening({ type: 'logListening', payload });
+  expect(vi.mocked(fetchApi).mock.calls[0][0]).toBe('/activity/logListening');
+  expect(JSON.parse(String(vi.mocked(fetchApi).mock.calls[0][1]?.body))).toEqual(payload);
+});
+
 describe('productionSyncHandlers.sentenceRead', () => {
   test('preserves stored Unicode text and indices without recounting on replay', async () => {
     vi.clearAllMocks();

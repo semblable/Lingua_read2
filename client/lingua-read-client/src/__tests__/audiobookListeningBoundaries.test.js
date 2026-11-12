@@ -37,6 +37,7 @@ const renderPlayer = async (options = {}) => {
     audioSrc: props.audioSrc,
     book: props.book,
     textId: 42,
+    sourceRevision: props.sourceRevision,
     languageId: 5,
     audioRef
   }), { initialProps });
@@ -75,6 +76,66 @@ describe('audiobook listening playback boundaries', () => {
     vi.useRealTimers();
     vi.restoreAllMocks();
     localStorage.clear();
+  });
+
+  const lessonCredit = () => logListeningActivity.mock.calls.map(call => call[3]).filter(Boolean);
+
+  test('lesson credit measures source playback at faster speeds separately from elapsed time', async () => {
+    const { audio, play, advance, pause } = await renderPlayer({ sourceRevision: 'A'.repeat(64) });
+    audio.playbackRate = 2;
+    play();
+    advance(5);
+    pause();
+    expect(loggedSeconds()).toBe(5);
+    expect(lessonCredit()).toEqual([{ textId: 42, sourceRevision: 'A'.repeat(64), playedSeconds: 10, audioDurationSeconds: 600 }]);
+  });
+
+  test('native seeks and buffering exclude jumps and waiting from lesson credit', async () => {
+    const { emit, play, advance, pause } = await renderPlayer({ sourceRevision: 'A'.repeat(64) });
+    play();
+    advance(5);
+    emit('timeupdate');
+    emit('seeking', { currentTime: 300, seeking: true });
+    advance(20, 0);
+    emit('seeked', { seeking: false });
+    advance(5);
+    emit('waiting', { readyState: 2 });
+    advance(30, 0);
+    emit('playing', { readyState: 4 });
+    advance(5);
+    pause();
+    expect(loggedSeconds()).toBe(15);
+    expect(lessonCredit().reduce((sum, credit) => sum + credit.playedSeconds, 0)).toBe(15);
+  });
+
+  test('replaying audio adds another exposure and reaching the end flushes the tail once', async () => {
+    const { emit, play, advance } = await renderPlayer({ sourceRevision: 'A'.repeat(64) });
+    emit('durationchange', { duration: 6 });
+    play();
+    advance(6);
+    emit('ended', { paused: true });
+    emit('pause');
+    emit('seeking', { currentTime: 0, seeking: true });
+    emit('seeked', { seeking: false });
+    play();
+    advance(6);
+    emit('pause', { paused: true });
+    emit('ended');
+    expect(loggedSeconds()).toBe(12);
+    expect(lessonCredit().reduce((sum, credit) => sum + credit.playedSeconds, 0)).toBe(12);
+  });
+
+  test('changing the transcript revision during playback flushes the old source and rearms the new one', async () => {
+    const { rerender, play, advance, pause } = await renderPlayer({ sourceRevision: 'A'.repeat(64) });
+    play();
+    advance(5);
+    rerender({ type: 'lesson', audioSrc: 'https://example.com/lesson.mp3', sourceRevision: 'B'.repeat(64) });
+    advance(5);
+    pause();
+    expect(loggedSeconds()).toBe(10);
+    expect(lessonCredit().map(credit => [credit.sourceRevision, credit.playedSeconds])).toEqual([
+      ['A'.repeat(64), 5], ['B'.repeat(64), 5]
+    ]);
   });
 
   test('initial play without active playback evidence earns no startup waiting time', async () => {

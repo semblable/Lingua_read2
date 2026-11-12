@@ -4,6 +4,28 @@ import {
 } from '../audio/listeningActivity';
 
 describe('listeningActivity', () => {
+  test('short audio can credit a fraction even when elapsed seconds round to zero', () => {
+    const t = createListeningActivityTracker();
+    t.setLanguageId(5);
+    t.setLesson({ textId: 42, sourceRevision: 'A'.repeat(64) });
+    t.startCheckpoint(0);
+    t.startPlayback(0);
+    t.samplePlayback(0.4, 2);
+    expect(t.prepareFlush(400, true, false)).toEqual({ languageId: 5, durationSeconds: 0,
+      lesson: { textId: 42, sourceRevision: 'A'.repeat(64), playedSeconds: 0.4, audioDurationSeconds: 2 } });
+    expect(t.prepareFlush(400, true, false)).toBeNull();
+  });
+
+  test('unknown audio duration earns no invented listen fraction', () => {
+    const t = createListeningActivityTracker();
+    t.setLanguageId(5);
+    t.setLesson({ textId: 42, sourceRevision: 'A'.repeat(64) });
+    t.startCheckpoint(0);
+    t.startPlayback(0);
+    t.samplePlayback(10, Infinity);
+    expect(t.prepareFlush(10000, true, false)).toEqual({ languageId: 5, durationSeconds: 10 });
+  });
+
   test('LISTENING_ACTIVITY_FLUSH_SECONDS is 10', () => {
     expect(LISTENING_ACTIVITY_FLUSH_SECONDS).toBe(10);
   });

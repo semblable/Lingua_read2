@@ -155,6 +155,7 @@ function LessonStudyPanelBody({ textId, bookId, sourceRevision, hasAudio }: Prop
       </Dropdown.Toggle>
       <Dropdown.Menu>
         {countEditor('listen')}
+        <Dropdown.ItemText className="small text-muted">Playback adds listens in 0.1× steps.</Dropdown.ItemText>
         <Dropdown.Divider />
         <Dropdown.Item as="button" disabled={!sourceRevision} onClick={() => setShowListen(true)}>Record a listen</Dropdown.Item>
         {!sourceRevision && <Dropdown.ItemText>Reload online to record a pass.</Dropdown.ItemText>}
@@ -169,7 +170,7 @@ function LessonStudyPanelBody({ textId, bookId, sourceRevision, hasAudio }: Prop
     <Modal show={showListen} onHide={() => !busy && setShowListen(false)} contentClassName="lesson-study-dialog" centered>
       <Modal.Header closeButton={!busy}><Modal.Title>Record a completed listen</Modal.Title></Modal.Header>
       <Modal.Body>
-        <p>This adds one listen to this lesson.</p>
+        <p>This adds one additional listen. In-app playback already updates this total automatically.</p>
         <Form.Group controlId="lesson-listen-minutes">
           <Form.Label>Additional listening time (minutes)</Form.Label>
           <Form.Control type="number" min="0" max="1440" step="0.1" value={minutes} onChange={e => setMinutes(e.target.value)} disabled={busy} />

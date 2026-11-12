@@ -2398,6 +2398,7 @@ const TextDisplay = () => {
             type="lesson"
             audioSrc={audioSrc}
             textId={textId}
+            sourceRevision={text?.studyRevision}
             languageId={text?.languageId}
             audioRef={audioRef}
             onTimeUpdate={handleAudioTimeUpdate}

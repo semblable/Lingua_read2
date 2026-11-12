@@ -16,6 +16,9 @@ public class LessonStudyEvent
     [MaxLength(8)] public string Kind { get; set; } = "read";
     // Integer tenths avoid floating-point drift; existing completed passes are 10.
     public int PassTenths { get; set; } = 10;
+    // Unrounded source-audio exposure. Small playback flushes retain their
+    // remainder until they collectively earn the next tenth of a listen.
+    public double PlaybackPasses { get; set; }
     public int? TargetPassTenths { get; set; }
     public bool? ReconcilesSentenceCredit { get; set; }
     public int CreditedWords { get; set; }

@@ -16,7 +16,7 @@ public static class LessonStudyActivity
             .GroupBy(e => e.Kind).Select(g => new { Kind = g.Key, Tenths = g.Sum(e => (long)e.PassTenths) })
             .ToDictionaryAsync(g => g.Kind, g => g.Tenths);
         return (counts.GetValueOrDefault("read") + counts.GetValueOrDefault("read-set"),
-            counts.GetValueOrDefault("listen") + counts.GetValueOrDefault("list-set"));
+            counts.GetValueOrDefault("listen") + counts.GetValueOrDefault("list-set") + counts.GetValueOrDefault("playback"));
     }
 
     public static long RoundedWords(long tenths, int words) =>

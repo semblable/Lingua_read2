@@ -4,6 +4,7 @@
 
 import { fetchApi as request, type FetchApiOptions } from '../api/client';
 import type { SyncHandlers } from './syncQueue';
+import { notifyStudyChange } from '../studyIntent';
 
 const fetchApi = (endpoint: string, options: FetchApiOptions) =>
   request(endpoint, { ...options, suppressAuthRedirect: true });
@@ -50,8 +51,10 @@ export const productionSyncHandlers: SyncHandlers = {
         languageId: payload.languageId,
         durationSeconds: payload.durationSeconds,
         clientEventId: payload.clientEventId,
+        ...(payload.lesson ? { lesson: payload.lesson } : {}),
       }),
     });
+    if (payload.lesson) notifyStudyChange(payload.lesson.textId);
   },
   audiobookProgress: async ({ payload }) => {
     await fetchApi('/activity/audiobookprogress', {

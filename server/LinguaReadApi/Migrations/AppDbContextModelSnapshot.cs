@@ -399,6 +399,9 @@ namespace LinguaReadApi.Migrations
                     b.Property<int>("PassTenths")
                         .HasColumnType("integer");
 
+                    b.Property<double>("PlaybackPasses")
+                        .HasColumnType("double precision");
+
                     b.Property<bool?>("ReconcilesSentenceCredit")
                         .HasColumnType("boolean");
 

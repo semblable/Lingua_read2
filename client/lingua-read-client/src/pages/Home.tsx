@@ -276,7 +276,7 @@ const Home: React.FC = () => {
   );
 
   return (
-    <Container className="home-dashboard">
+    <Container className="app-content-width home-dashboard">
       <div className="home-header">
         <HomeHero
           username={user?.username}

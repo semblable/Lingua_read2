@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { lazy, Suspense } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter, Route, Routes, useLocation } from 'react-router-dom';
 import 'bootstrap/dist/css/bootstrap.min.css';
@@ -16,6 +16,9 @@ import '../../src/App.css';
 import Home from '../../src/pages/Home';
 import Navigation from '../../src/components/Navigation';
 import { useAuthStore } from '../../src/utils/store';
+
+// eslint-disable-next-line react-refresh/only-export-components -- Standalone test entry point.
+const LayoutFixture = lazy(() => import('./LayoutFixture'));
 
 // Playwright supplies a new browser context for every test. Seed this context's
 // real store without bootstrapping account sessions or background offline work.
@@ -38,9 +41,10 @@ createRoot(document.getElementById('root')!).render(
       <div className="App">
         <p className="small text-center m-0 p-1">Browser test fixture · synthetic sample data</p>
         <Navigation />
-        <div className="container-fluid p-0 m-0">
+        <div className="app-route-content">
           <Routes>
             <Route path="/" element={<Home />} />
+            <Route path="/layout/*" element={<Suspense fallback={<p>Loading layout</p>}><LayoutFixture /></Suspense>} />
             <Route path="*" element={<RouteDestination />} />
           </Routes>
         </div>

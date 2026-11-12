@@ -5,14 +5,6 @@
   --bs-navbar-brand-color: #f2f6f9;
 }
 
-.app-navigation > .navbar-content {
-  width: 100%;
-  min-width: 0;
-  max-width: 1200px;
-  margin-inline: auto;
-  padding-inline: 24px;
-}
-
 .app-navigation .navbar-brand { color: var(--bs-navbar-brand-color); }
 .app-navigation .navbar-nav .nav-link { color: var(--bs-navbar-color); }
 .app-navigation .navbar-nav .nav-link.active,
@@ -21,11 +13,3 @@
 .app-navigation .navbar-nav .nav-link:focus-visible { color: var(--bs-navbar-hover-color); }
 .app-navigation .navbar-toggler { flex-shrink: 0; border-color: #71869a; }
 .app-navigation .navbar-toggler:focus-visible { outline: 3px solid #85e7cb; outline-offset: 3px; box-shadow: none; }
-
-@media (max-width: 991px) {
-  .app-navigation > .navbar-content { padding-inline: 20px; }
-}
-
-@media (max-width: 767px) {
-  .app-navigation > .navbar-content { padding-inline: 16px; }
-}

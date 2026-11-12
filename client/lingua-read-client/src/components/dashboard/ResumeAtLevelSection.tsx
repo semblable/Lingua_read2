@@ -115,7 +115,7 @@ const ResumeAtLevelSection: React.FC = () => {
         {Array.from(picksByLanguage.entries()).map(([language, picks]) => (
           <div key={language} className="mb-3" data-testid={`resume-language-${language}`}>
             <div className="text-muted text-uppercase small fw-bold mb-2">{language}</div>
-            <Row className="g-2">
+            <Row className="g-2 home-recommendation-grid">
               {picks.map(({ text, percent }) => (
                 <Col md={6} lg={4} key={text.textId}>
                   <RecommendedText text={text} percent={percent} />

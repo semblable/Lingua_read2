@@ -1,4 +1,6 @@
 .terms-page {
+    min-width: 0;
+    padding-inline: var(--content-gutter);
     text-align: left;
     color: var(--font-color);
     padding-bottom: 2rem;
@@ -21,6 +23,8 @@
 .terms-file-actions { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem; }
 .terms-export-help { color: var(--terms-muted); font-size: .8rem; margin: .65rem 0 1.25rem; }
 .terms-table-wrap { position: relative; min-height: 16rem; }
+/* Keep absolute screen-reader labels inside the table's local scroll bounds. */
+.terms-table-wrap > .table-responsive { position: relative; }
 .terms-table {
     --bs-table-bg: var(--background-color);
     --bs-table-color: var(--font-color);

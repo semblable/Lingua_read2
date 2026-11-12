@@ -18,7 +18,7 @@ const Navigation = () => {
 
   return (
     <Navbar collapseOnSelect expanded={expanded} onToggle={setExpanded} expand="lg" className="navbar-custom-bg app-navigation">
-      <Container className="navbar-content">
+      <Container className="app-content-width navbar-content">
         <LinkContainer to="/"><Navbar.Brand>LinguaRead</Navbar.Brand></LinkContainer>
         <Navbar.Toggle aria-controls="basic-navbar-nav" aria-expanded={expanded} />
         <Navbar.Collapse id="basic-navbar-nav">

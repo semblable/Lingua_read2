@@ -7,10 +7,7 @@
   --home-link: #087363;
   --home-accent: #66ddbb;
   --home-accent-ink: #12382e;
-  max-width: 1200px;
-  width: 100%;
-  min-width: 0;
-  padding: 38px 24px 48px;
+  padding-block: 38px var(--space-xxl);
   text-align: left;
   color: var(--home-text);
 }
@@ -204,8 +201,8 @@
 }
 
 .home-recommendations h2 { font-size: 1rem; }
-.home-recommendations .row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 0; }
-.home-recommendations .row > div { width: auto; padding: 0; margin-top: 0; }
+.home-recommendations .home-recommendation-grid { --bs-gutter-x: 0; --bs-gutter-y: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.home-recommendations .home-recommendation-grid > div { width: auto; min-width: 0; }
 .home-recommendations .resume-pick-card { background: var(--home-inset); border-radius: 10px; }
 .home-recommendations .resume-pick-card .card-body { padding: 16px !important; }
 .home-recommendations .resume-pick-card:hover { border-color: var(--home-link); }
@@ -218,25 +215,25 @@
 .home-goals-card .card-body > div:first-child { margin-bottom: 12px !important; }
 .home-goal-empty { display: flex; align-items: center; justify-content: space-between; gap: 20px; font-size: .875rem; }
 .home-goal-empty .btn { flex-shrink: 0; }
-.home-stats-row { border-top: 1px solid var(--home-border); margin-top: 28px; padding-top: 10px; }
+.home-stats-row { --bs-gutter-x: 0; border-top: 1px solid var(--home-border); margin-top: 28px; padding-top: 10px; }
 .home-dashboard .home-stats-row .card { border: 0; background: transparent; }
 .home-dashboard .home-stats-row .card-body { padding: 16px 0; }
 .home-stats-row .display-6 { font-size: 1.5rem; letter-spacing: -.03em; }
 .home-stats-row .text-uppercase { font-size: .8125rem; text-transform: none !important; font-weight: 500 !important; letter-spacing: .02em; }
 
 @media (max-width: 991px) {
-  .home-dashboard { padding: 28px 20px 40px; }
+  .home-dashboard { padding-block: 28px 40px; }
   .home-focus-grid { grid-template-columns: minmax(0, 1fr) 288px; gap: 16px; }
   .home-current-text { grid-template-columns: 76px minmax(0, 1fr); gap: 16px; }
   .home-cover { width: 76px; height: 120px; }
   .home-dashboard .card-body { padding: 20px; }
   .home-review-start { font-size: .75rem !important; padding: 10px !important; }
   .home-shelf-meta { flex-wrap: wrap; gap: 3px; }
-  .home-recommendations .row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .home-recommendations .home-recommendation-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (max-width: 767px) {
-  .home-dashboard { padding: 24px 16px 32px; }
+  .home-dashboard { padding-block: var(--space-lg) var(--space-xl); }
   .home-header { align-items: flex-start; flex-wrap: wrap; gap: 16px; margin-bottom: 20px; }
   .home-header > .home-add { display: none; }
   .home-focus-grid { grid-template-columns: minmax(0, 1fr); }
@@ -258,7 +255,7 @@
   .home-language-row-actions { margin-left: 0; }
   .home-goal-empty { align-items: flex-start; flex-direction: column; gap: 12px; }
   .home-active-languages { grid-template-columns: minmax(0, 1fr); }
-  .home-recommendations .row { grid-template-columns: minmax(0, 1fr); }
+  .home-recommendations .home-recommendation-grid { grid-template-columns: minmax(0, 1fr); }
   .home-language-numbers > span:last-child { margin-left: 0; }
   .home-today { gap: 8px 12px; }
   .home-today > span + span { padding-left: 12px; }

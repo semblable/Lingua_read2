@@ -37,6 +37,12 @@
   }
 }
 
+/* Flush outlet for pages that own their padding, including reader/audio panels. */
+.app-route-content {
+  width: 100%;
+  min-width: 0;
+}
+
 /* General Content Padding */
 .main-content-padding {
   padding: var(--space-md) var(--content-gutter);
@@ -47,7 +53,7 @@
 }
 
 /* Ensure full-width containers have internal padding for their content */
-/* This class can be added to the immediate child of a .container-fluid.p-0.m-0 */
+/* This class can be added to the immediate child of .app-route-content. */
 .content-in-fluid {
   padding-left: var(--content-gutter);
   padding-right: var(--content-gutter);
@@ -68,8 +74,9 @@
   background-color: var(--ui-background-light); /* Use light theme UI background */
 }
 
-.dark-theme .audiobook-player-custom-bg { /* Updated to use .dark-theme class */
-  background-color: var(--ui-background-dark); /* Use dark theme UI background */
+.dark-theme .audiobook-player-custom-bg,
+.classic-dark-theme .audiobook-player-custom-bg {
+  background-color: var(--theme-surface-bg);
 }
 
 /* Removed previous .original/.translated styles */

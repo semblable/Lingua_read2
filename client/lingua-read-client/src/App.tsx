@@ -139,7 +139,7 @@ const AuthenticatedApp = () => {
       <div className="position-fixed top-0 end-0 m-2" style={{ zIndex: 1080 }}>
         <OfflineIndicator handlers={productionSyncHandlers} />
       </div>
-      <div className="container-fluid p-0 m-0">
+      <div className="app-route-content">
         <ErrorBoundary key={location.pathname}>
           <Suspense fallback={<Loading />}>
             <Routes>

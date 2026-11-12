@@ -348,7 +348,7 @@
   /* Dark text on focus */
   border-color: var(--classic-dark-accent);
   /* Keep accent for focus */
-  box-shadow: 0 0 0 0.2rem rgba(var(--classic-dark-accent), 0.25);
+  box-shadow: 0 0 0 0.2rem color-mix(in srgb, var(--classic-dark-accent) 25%, transparent);
 }
 
 .classic-dark-theme .card,
@@ -783,9 +783,11 @@ a:focus {
 }
 
 
-.dark-theme .text-muted {
-  color: #a2a2a7 !important;
-  /* Keep or adjust if needed */
+/* Let Bootstrap utilities and reader captions share readable theme text. */
+.dark-theme,
+.classic-dark-theme {
+  --bs-secondary-color: color-mix(in srgb, var(--theme-text) 75%, var(--theme-surface-bg));
+  --theme-text-muted: var(--bs-secondary-color);
 }
 
 .dark-theme .close,
@@ -798,7 +800,7 @@ a:focus {
 
 /* .dark-theme a is handled by global 'a' and .dark-theme variable overrides */
 
-/* Fix for horizontal padding in Bootstrap container - KEEPING THIS AS IS */
+/* Browser layout checks also verify these root bounds with overflow unmasked. */
 body,
 html {
   overflow-x: hidden;
@@ -807,23 +809,21 @@ html {
   margin: 0;
 }
 
-/* Override Bootstrap container padding - KEEPING THIS AS IS */
-.container-fluid {
-  padding-left: 0 !important;
-  padding-right: 0 !important;
-  max-width: 100vw !important;
+/* Shared page alignment; Bootstrap keeps ownership of its containers and grid. */
+.app-content-width {
+  width: 100%;
+  min-width: 0;
+  max-width: var(--content-max-width);
+  margin-inline: auto;
+  padding-inline: var(--content-gutter);
 }
 
-/* Override any grid padding - KEEPING THIS AS IS */
-.row {
-  margin-left: 0 !important;
-  margin-right: 0 !important;
+@media (max-width: 991px) {
+  :root { --content-gutter: calc(var(--space-md) + var(--space-xs)); }
 }
 
-.col,
-[class*="col-"] {
-  padding-left: 0 !important;
-  padding-right: 0 !important;
+@media (max-width: 767px) {
+  :root { --content-gutter: var(--space-md); }
 }
 
 /* Dark theme overrides for word status text color are now handled by --status-text-color */
@@ -975,7 +975,7 @@ html {
   /* Ensure background doesn't change on focus for dark theme */
   color: var(--font-color-dark);
   border-color: var(--accent-color);
-  box-shadow: 0 0 0 0.2rem rgba(var(--accent-color), 0.25);
+  box-shadow: 0 0 0 0.2rem color-mix(in srgb, var(--accent-color) 25%, transparent);
 }
 
 .dark-theme .form-control::placeholder {

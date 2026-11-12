@@ -32,28 +32,39 @@ All 40 browser checks pass. Goal-dialog accessible names/field labels were fixed
 Lint, typecheck, production build, and 2,045 client tests passed; an offline retry
 timing test failed initially and passed isolated and full reruns.
 
-## 2. CSS ownership and layout cleanup — next
+## 2. CSS ownership and layout cleanup
 
-Global rules in `src/index.css` override Bootstrap container padding, row margins,
-and column padding with `!important`. The fluid-container width plus its global
-`max-width: 100vw` defeated the former navbar's local width/gutters. The navbar now
-uses a regular Container with scoped styles. Keep Bootstrap and use scoped Grid/Flex
-for custom layouts; a framework migration is outside this work.
+Bootstrap owns container padding and grid gutters again. Navbar/Home/Dashboard
+opt into `.app-content-width`, using existing width/spacing tokens. Custom layouts
+stay scoped; Bootstrap remains in place.
 
-- [ ] Inventory intentional flush/full-width layouts, especially reader/audio views;
+- [x] Inventory intentional flush/full-width layouts, especially reader/audio views;
   give them explicit component classes before changing shared rules.
-- [ ] Reuse existing layout tokens or add a small shared utility so navbar/dashboard
+- [x] Reuse existing layout tokens or add a small shared utility so navbar/dashboard
   widths and responsive gutters align.
-- [ ] Remove broad container overrides and restore grid gutters incrementally,
+- [x] Remove broad container overrides and restore grid gutters incrementally,
   checking reader, library, audio, and forms after each slice.
-- [ ] Retain shrinkable tracks and `min-width: 0`; allow primary titles to wrap and
+- [x] Retain shrinkable tracks and `min-width: 0`; allow primary titles to wrap and
   keep compact-list truncation deliberate. Check navigation, focus, and secondary
   text in every supported theme. Avoid stronger global `!important` rules.
 
 Acceptance: intended spacing survives, mobile controls remain visible, and the
 browser suite passes with overflow unmasked.
 
-## 3. Preview isolation
+Layout inventory: `.app-route-content` is flush; `TextDisplay` owns reader/audio
+widths through `.text-display-wrapper`, resizable panels, and audio bars. Terms
+uses `.terms-page` for a full-width, internally scrolling table. Library uses
+`.main-content-padding`; other pages use Bootstrap containers. Home recommendations
+use a scoped CSS grid and its stats row explicitly has no horizontal gutters.
+Other rows/columns retain Bootstrap spacing. Terms owns its scroller's positioning.
+
+Theme cleanup uses Bootstrap/reader color variables for secondary text and valid
+focus shadows; the audio player also uses the classic-dark surface token.
+Validation: 76 browser checks, 2,045 client tests, typecheck, lint (34 existing
+warnings), and production build passed. Theme screenshots checked; reviewer found
+no actionable issues. Physical-phone staging verification remains pending above.
+
+## 3. Preview isolation — next
 
 The uncommitted local preview disables logout and rejects non-GET sample requests;
 dedicated storage isolation remains unfinished. Its screenshot-derived fixtures

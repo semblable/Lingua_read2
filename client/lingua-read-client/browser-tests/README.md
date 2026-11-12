@@ -31,6 +31,9 @@ that rejects mutations and external requests. The separate fixture skips auth an
 offline startup and stays outside production/demo builds. Dashboard route probes
 verify destinations without mounting the reader or SRS; goal edits are cancelled.
 Layout pages use local settings and authored API/media responses; no edits are saved.
+Goal-dialog checks cover immediate Escape with reduced motion and animated dismissal
+after a live preference change. Audio checks leave unplayed lessons with the
+mutation denylist active, guarding against unintended zero-position saves.
 
 CI runs the suite and retains failure screenshots/traces for 14 days. Local output:
 `test-results/browser/` and `playwright-report/` (open with `npx playwright show-report`).

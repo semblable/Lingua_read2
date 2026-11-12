@@ -58,6 +58,7 @@ const renderProgress = (overrides = {}) => {
     });
 
     ctx.audioRef = audioRef;
+    ctx.contentKey = initial.contentKey;
     ctx.lifecycleSaveRef = lifecycleSaveRef;
     ctx.latestPlaybackStateRef = latestPlaybackStateRef;
 
@@ -133,4 +134,34 @@ describe('useAudiobookProgress', () => {
     const stored = JSON.parse(localStorage.getItem('audioPos:lesson:42'));
     expect(stored).toMatchObject({ position: 25, trackId: 'lesson-audio' });
   });
+
+  test('a forced lifecycle save does not reset an untouched player to zero', async () => {
+    const { result, ctx } = renderProgress();
+    await act(async () => {});
+    ctx.audioRef.current.paused = true;
+    ctx.lifecycleSaveRef.current = true;
+    // Intent from a different lesson must not authorize this player's reset.
+    result.current.playbackStartedContentKeyRef.current = 'lesson:previous';
+    result.current.userPositionIntentContentKeyRef.current = 'lesson:previous';
+
+    await act(async () => { await result.current.saveProgress(true); });
+
+    expect(updateAudioLessonProgress).not.toHaveBeenCalled();
+    expect(localStorage.getItem('audioPos:lesson:42')).toBeNull();
+  });
+
+  test.each(['playbackStartedContentKeyRef', 'userPositionIntentContentKeyRef'])(
+    'preserves a zero-position save authorized by %s', async intentRef => {
+      const { result, ctx } = renderProgress();
+      await act(async () => {});
+      ctx.audioRef.current.paused = true;
+      result.current[intentRef].current = ctx.contentKey;
+
+      await act(async () => { await result.current.saveProgress(true); });
+
+      expect(updateAudioLessonProgress).toHaveBeenCalledWith(
+        42, { currentPosition: 0 }, expect.objectContaining({ keepalive: false })
+      );
+    }
+  );
 });

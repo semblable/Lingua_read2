@@ -1,4 +1,4 @@
-import React, { useEffect, useId, useState } from 'react';
+import React, { useEffect, useId, useState, useSyncExternalStore } from 'react';
 import { Modal, Button, Form, Alert, Spinner, ButtonGroup } from 'react-bootstrap';
 import {
   getAllLanguages,
@@ -16,6 +16,13 @@ import {
 import type { GoalTypeValue, GoalModeValue, GoalRecurrenceValue } from './goalUtils';
 
 const SCOPE_ALL = '__all__';
+const reducedMotionQuery = '(prefers-reduced-motion: reduce)';
+const getReducedMotion = () => window.matchMedia(reducedMotionQuery).matches;
+const subscribeToReducedMotion = (onChange: () => void) => {
+  const query = window.matchMedia(reducedMotionQuery);
+  query.addEventListener('change', onChange);
+  return () => query.removeEventListener('change', onChange);
+};
 
 // Convert seconds <-> hours-with-half-step for the listening-time input.
 const secsToHours = (s: number): string => (s / 3600).toFixed(1).replace(/\.0$/, '');
@@ -39,6 +46,7 @@ function GoalModal({
   editing,
   defaultLanguageId
 }: GoalModalProps) {
+  const reducedMotion = useSyncExternalStore(subscribeToReducedMotion, getReducedMotion, () => false);
   const fieldId = useId();
   const isEdit = !!editing;
 
@@ -268,7 +276,7 @@ function GoalModal({
     (type === GOAL_TYPE.WordsKnown || showAdvanced);
 
   return (
-    <Modal scrollable show={show} onHide={onHide} centered size="lg" aria-labelledby={`${fieldId}-heading`}>
+    <Modal scrollable show={show} onHide={onHide} animation={!reducedMotion} centered size="lg" aria-labelledby={`${fieldId}-heading`}>
       <Modal.Header closeButton>
         <Modal.Title as="h5" id={`${fieldId}-heading`}>{isEdit ? 'Edit goal' : 'New goal'}</Modal.Title>
       </Modal.Header>

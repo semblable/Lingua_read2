@@ -33,6 +33,14 @@ All 40 browser checks pass. Goal-dialog accessible names/field labels were fixed
 Lint, typecheck, production build, and 2,045 client tests passed; an offline retry
 timing test failed initially and passed isolated and full reruns.
 
+CI follow-up: the goal dialog now bypasses fading under reduced motion, preserving
+immediate Escape dismissal. Untouched audio players no longer force-save zero;
+explicit rewinds/playback starts still save. Browser checks retain mutation
+blocking during lesson exit; three unit regressions cover zero-position intent.
+Follow-up validation: 76 browser checks, 2,048 client tests, 6 demo boundary tests,
+lint, typecheck, production/demo builds, and local boundary checks passed. Reviewer
+found no actionable issues; lint retains 34 existing warnings.
+
 ## 2. CSS ownership and layout cleanup
 
 Bootstrap owns container padding and grid gutters again. Navbar/Home/Dashboard

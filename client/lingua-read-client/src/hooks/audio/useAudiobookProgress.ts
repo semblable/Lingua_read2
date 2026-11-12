@@ -257,6 +257,12 @@ export const useAudiobookProgress = ({
     if (!force && audio.paused && !isPlayingSnapshot) return;
 
     const currentPos = audio.currentTime;
+    // Lifecycle/StrictMode cleanup may run for a player that was only opened.
+    // Preserve an intentional rewind or playback start at zero, but don't send
+    // an untouched zero that could replace progress saved on another device.
+    if (currentPos === 0 && !isPlayingSnapshot &&
+        playbackStartedContentKeyRef.current !== contentKey &&
+        userPositionIntentContentKeyRef.current !== contentKey) return;
     const track = playlistSnapshot[currentTrackIndexSnapshot];
     if (!track) return;
 
@@ -294,7 +300,7 @@ export const useAudiobookProgress = ({
       }
       console.error('Save progress failed', e);
     }
-  }, [audioRef, latestAudioElementRef, latestPlaybackStateRef, lifecycleSaveRef, positionStorageKey]);
+  }, [audioRef, contentKey, latestAudioElementRef, latestPlaybackStateRef, lifecycleSaveRef, positionStorageKey]);
 
   useEffect(() => {
     saveProgressRef.current = saveProgress;

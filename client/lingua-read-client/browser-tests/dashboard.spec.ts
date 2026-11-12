@@ -163,6 +163,7 @@ test('inline goal action opens a usable dialog and restores focus', async ({ pag
   await activate(action, page);
   const dialog = page.getByRole('dialog', { name: 'New goal' });
   await expect(dialog).toBeVisible();
+  await expect(dialog).not.toHaveClass(/\bfade\b/);
   await expect(dialog.getByRole('combobox', { name: 'Scope' })).toHaveValue('21');
   const target = dialog.getByRole('spinbutton', { name: 'Target (words)' });
   await expect(target).toHaveValue('1000');
@@ -176,8 +177,20 @@ test('inline goal action opens a usable dialog and restores focus', async ({ pag
   await activate(cancel, page);
   await expect(dialog).toBeHidden();
   await expect(action).toBeFocused();
+  // Motion preference changes remain live; normal animation is still enabled.
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
   await action.press('Enter');
   await expect(dialog).toBeVisible();
+  await expect(dialog).toHaveClass(/\bfade\b/);
+  await dialog.evaluate(element => Promise.all(element.getAnimations({ subtree: true }).map(animation => animation.finished)));
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+  await expect(action).toBeFocused();
+  // Reduced motion must also support Escape immediately after reopening.
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await action.press('Enter');
+  await expect(dialog).toBeVisible();
+  await expect(dialog).not.toHaveClass(/\bfade\b/);
   await page.keyboard.press('Escape');
   await expect(dialog).toBeHidden();
   await expect(action).toBeFocused();

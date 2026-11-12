@@ -167,6 +167,10 @@ for (const mode of ['classic', 'modern']) {
         await expect(player).toBeVisible();
         await expectInside(player, reader);
         await expect(page.locator('audio')).toHaveJSProperty('readyState', 4);
+        // Leaving an untouched lesson must not write a zero playback position.
+        // Keep the fixture's mutation denylist active during real page teardown.
+        await page.goto('/layout/library');
+        await expect(page.getByRole('searchbox', { name: 'Search library' })).toBeVisible();
       }
     });
   }

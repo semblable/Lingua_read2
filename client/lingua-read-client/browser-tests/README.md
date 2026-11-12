@@ -19,8 +19,9 @@ bounds, unmasked root overflow, menus, bounded SRS routes, catch-up controls, an
 goal-dialog labels/focus. Negative controls verify overflow detection. Deliberate
 title clamps above 400px and shelf truncation remain allowed.
 
-Layout checks mount Library, Terms, book/audio import forms, and classic/modern
-reader/audio views. They verify gutters, local table scrolling, flush panels,
+Layout checks mount Library, Terms, book/audio import forms, classic/modern readers,
+and audio lessons (which use classic UI even with the Modern preference).
+They verify gutters, local table scrolling, flush panels,
 visible keyboard focus, and representative secondary-text contrast in all three
 themes. Navbar/Home alignment also covers 800/1024/1600px. Theme screenshots at
 320/1280px are saved under `test-results/browser/` for visual review.

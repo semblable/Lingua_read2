@@ -1,7 +1,8 @@
 # Dashboard follow-up plan
 
 Updated 2026-11-12. Baseline: dashboard redesign `30f8c072`.
-Automated browser coverage is implemented; physical-phone verification is pending.
+Items 1–2 are implemented (`5147d615`, `546e507b`); preview isolation is next.
+Physical-phone staging verification remains pending.
 
 ## Constraints
 
@@ -63,6 +64,21 @@ focus shadows; the audio player also uses the classic-dark surface token.
 Validation: 76 browser checks, 2,045 client tests, typecheck, lint (34 existing
 warnings), and production build passed. Theme screenshots checked; reviewer found
 no actionable issues. Physical-phone staging verification remains pending above.
+
+Reader/audio follow-up compared `5147d615` with `546e507b`: 35 screenshot pairs
+and 62 browser checks passed; all 13 initial panel geometries matched. Word taps
+and status updates preserved word identity/translation; sentence credits, native
+play/pause/seek, two-track switching, and bounded listening payloads passed.
+The reviewer reran 324 focused tests with no actionable regression found.
+Selection/tracking/statistics/API/server logic is unchanged by the CSS commit.
+
+Audio lessons intentionally use classic UI even with the Modern preference;
+modern readers with audiobook tracks are a separate covered path. Dialog gutters
+changed; the 390px completion dialog's Learning badge now wraps without hiding
+counts/actions. Verification used synthetic Chromium sessions, not live-backend
+persistence/production totals, physical-phone selection handles, or Safari.
+The ad hoc screenshots/report remain local and ignored under
+`client/lingua-read-client/test-results/reader-audio-audit/`; they are not CI coverage.
 
 ## 3. Preview isolation — next
 

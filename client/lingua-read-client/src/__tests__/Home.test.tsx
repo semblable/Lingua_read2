@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest';
-import { render, screen, cleanup, waitFor, fireEvent } from '@testing-library/react';
+import { render, screen, cleanup, waitFor, fireEvent, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 
 // Mock the whole api surface so Home + its children don't hit real endpoints.
@@ -199,9 +199,43 @@ describe('Home (integration)', () => {
 
     // Page still renders the languages strip even though two fetches failed.
     await waitFor(() => expect(screen.getByTestId('lang-card-1')).toBeInTheDocument());
-    // A failed stats request must not claim the user is caught up.
-    expect(screen.getByText('Reviews will be back soon')).toBeInTheDocument();
+    // A failed stats request must remain distinct from a zero due count.
+    expect(screen.getByRole('heading', { name: 'Review count unavailable' })).toBeInTheDocument();
     consoleErrorSpy.mockRestore();
+  });
+
+  test('keeps the library fallback usable when recent texts fail while other data loads', async () => {
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    mockedGetDashboard.mockResolvedValue({
+      totalKnownWords: 100,
+      totalWordsReadWeek: 120,
+      totalListeningSecondsWeek: 0,
+      totalLanguages: 1,
+      languages: [{
+        languageId: 1,
+        languageName: 'Spanish',
+        knownWords: 100,
+        totalWords: 500,
+        knownWordsToNextLevel: 200,
+        todayWordsRead: 120,
+        todayListeningSeconds: 0,
+        currentReadingStreakDays: 0,
+      }],
+    } as unknown as Awaited<ReturnType<typeof getDashboard>>);
+    mockedGetRecentTexts.mockRejectedValue(new Error('recent texts offline'));
+
+    try {
+      renderHome();
+      const fallback = await screen.findByTestId('continue-card-empty');
+      expect(within(fallback).getByRole('heading', { name: 'Read or listen' })).toBeVisible();
+      expect(within(fallback).getByRole('button', { name: 'Open library' })).toHaveAttribute('href', '/library');
+      expect(screen.queryByRole('heading', { name: 'No recent texts' })).not.toBeInTheDocument();
+      expect(screen.getByTestId('lang-card-1')).toHaveTextContent('Spanish');
+      expect(screen.getByLabelText("Today's activity")).toHaveTextContent('120 words read today');
+      expect(screen.getByRole('heading', { name: 'No reviews due' })).toBeVisible();
+    } finally {
+      consoleErrorSpy.mockRestore();
+    }
   });
 
   test('builds the goal-summary fallback without a leading space when title and language are missing', async () => {

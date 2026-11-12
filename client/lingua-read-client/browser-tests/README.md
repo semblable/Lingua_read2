@@ -15,7 +15,7 @@ loopback Vite server on port 4175; keep it free. To inspect one width, run
 The 76 Chromium checks cover 320/390/430/1280px with production components,
 CSS, and fonts. Dashboard fixtures exercise long/accented titles, unbroken terms,
 audio, missing metadata, and due totals of 0/1/12/12,345. Checks cover element/text
-bounds, unmasked root overflow, menus, bounded SRS routes, catch-up controls, and
+bounds, unmasked root overflow, menus, review session limits/routes, and
 goal-dialog labels/focus. Negative controls verify overflow detection. Deliberate
 title clamps above 400px and shelf truncation remain allowed.
 

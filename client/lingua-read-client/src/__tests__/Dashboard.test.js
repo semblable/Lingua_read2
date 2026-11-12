@@ -106,7 +106,7 @@ describe('Dashboard', () => {
       await screen.findByText('Dashboard');
       await waitFor(() => expect(getTexts).toHaveBeenCalled());
       // Section card present (it's the loading or wrapper), but no language sub-block.
-      expect(screen.queryByText(/Find your next read/i)).not.toBeInTheDocument();
+      expect(screen.queryByText(/Suggested texts/i)).not.toBeInTheDocument();
     });
 
     test('surfaces sweet-spot texts ordered by closeness to 94%', async () => {
@@ -129,7 +129,7 @@ describe('Dashboard', () => {
           totalWords: 100, knownWords: 95, unknownWordPercentage: 5 },
       ]);
       renderDashboard();
-      expect(await screen.findByText(/Find your next read/i)).toBeInTheDocument();
+      expect(await screen.findByText(/Suggested texts/i)).toBeInTheDocument();
       expect(screen.getByText('Sweet 90')).toBeInTheDocument();
       expect(screen.getByText('Sweet 95')).toBeInTheDocument();
       expect(screen.getByText('Sweet 98')).toBeInTheDocument();
@@ -171,7 +171,7 @@ describe('Dashboard', () => {
           totalWords: 100, knownWords: 96, unknownWordPercentage: 4 },
       ]);
       renderDashboard();
-      await screen.findByText(/Find your next read/i);
+      await screen.findByText(/Suggested texts/i);
       // C/D/E are closest to 94 — A and B drop off.
       expect(screen.getByText('C')).toBeInTheDocument();
       expect(screen.getByText('D')).toBeInTheDocument();

@@ -1,141 +1,88 @@
 # Dashboard follow-up plan
 
-Updated 2026-11-12. Baseline: dashboard redesign `30f8c072`.
-Items 1–2 are implemented (`5147d615`, `546e507b`); preview isolation is next.
-Physical-phone staging verification remains pending.
+Updated 2026-11-12. Items 1–2 are implemented; item 3 is next.
+Home/Dashboard copy is simplified; catch-up controls and the review-time guess are removed.
+Validation: 76 browser checks, 2,049 client tests, 6 demo tests, lint (34 existing warnings),
+typecheck, production/demo builds, and boundary checks passed; independent review approved.
+20 synthetic before/after captures cover Home/Dashboard at 390/1280px and Home themes.
 
 ## Constraints
 
-- Keep the due total visible and sessions bounded by `min(due cards, session size)`.
-  Saved plans must also respect daily allowances and currently reviewable cards.
-- Distinguish saved word forms, vocabulary occurrences, reading credits, and playback
-  seconds. Reading credits divided by vocabulary totals cannot establish completion.
-- Fix component sizing instead of concealing overflow at the page boundary.
-- Synthetic previews need isolated auth, storage, caches, and offline queues;
-  intercepting network requests alone is insufficient.
+- Keep due totals visible and sessions bounded by `min(due cards, session size)`;
+  preserve the SRS algorithm, scheduling, and daily limits. No catch-up planner.
+- Keep saved word forms, vocabulary occurrences, reading credits, and playback
+  seconds distinct. Reading credits / vocabulary totals cannot establish completion.
+- Fix component sizing; retain Bootstrap, shrinkable tracks, wrapping primary
+  titles, and deliberate compact truncation instead of masking page overflow.
+  Keep layouts scoped; avoid stronger global `!important` overrides.
+- Preview isolation must cover auth, storage, caches, and offline state; network
+  interception alone is insufficient. Preserve unrelated edits and private fixtures.
 
-## 1. Mobile browser regressions
+## 1. Mobile browser regressions — automated coverage complete
 
-- [x] Render real Home/Navigation with authored synthetic API fixtures at
-  320/390/430/1280px, including long/accented titles, unbroken terms, audio,
-  and missing optional metadata.
-- [x] Check element/text bounds and document overflow, including with root overflow
-  unmasked. Preserve deliberate title clamps above 400px and compact shelf truncation.
-- [x] Exercise navigation/Add menus, session sizes, catch-up controls, and the inline
-  goal action; verify bounded SRS destinations for due totals 0/1/12/12,345.
-- [x] Run in client CI with failure screenshots/traces and no personal data or
-  external services. Negative controls verify overflow detection.
-- [ ] Record a physical-phone staging check: touch scrolling, menus, focus, and
-  on-screen keyboard; include revision and device/browser details.
+- [x] Synthetic Home/Navigation and layout coverage at 320/390/430/1280px:
+  long/missing metadata, unmasked overflow, menus, bounded sessions,
+  goal labels/focus/Escape, themes, and CI failure screenshots/traces.
+- [x] Fix reduced-motion goal dismissal and untouched zero-position audio saves;
+  retain intentional rewinds/playback saves and block fixture mutations on exit.
+- [ ] Physical-phone staging check: touch scrolling/selection, menus, focus, and
+  on-screen keyboard. Record revision, date, device/OS/browser, and results.
 
 [Run and scope](../client/lingua-read-client/browser-tests/README.md).
-All 40 browser checks pass. Goal-dialog accessible names/field labels were fixed.
-Lint, typecheck, production build, and 2,045 client tests passed; an offline retry
-timing test failed initially and passed isolated and full reruns.
+Implementation: `5147d615`; CI fixes: `9525a5a4`
+([staging pipeline and external smoke checks passed](https://github.com/semblable/Lingua_read2/actions/runs/43236764583)).
 
-CI follow-up: the goal dialog now bypasses fading under reduced motion, preserving
-immediate Escape dismissal. Untouched audio players no longer force-save zero;
-explicit rewinds/playback starts still save. Browser checks retain mutation
-blocking during lesson exit; three unit regressions cover zero-position intent.
-Follow-up validation: 76 browser checks, 2,048 client tests, 6 demo boundary tests,
-lint, typecheck, production/demo builds, and local boundary checks passed. Reviewer
-found no actionable issues; lint retains 34 existing warnings.
+## 2. CSS ownership and layout cleanup — complete
 
-## 2. CSS ownership and layout cleanup
+- [x] Restore Bootstrap container/grid ownership; align navbar/Home/Dashboard
+  through `.app-content-width` and existing tokens; verify theme/focus readability.
 
-Bootstrap owns container padding and grid gutters again. Navbar/Home/Dashboard
-opt into `.app-content-width`, using existing width/spacing tokens. Custom layouts
-stay scoped; Bootstrap remains in place.
+Layout ownership: flush `.app-route-content`; reader/audio `.text-display-wrapper`
+with local panels; full-width Terms with its own scroller; padded Library through
+`.main-content-padding`; scoped Home recommendation grid and flush stats row.
+Other pages retain Bootstrap containers/gutters. Implementation: `546e507b`.
 
-- [x] Inventory intentional flush/full-width layouts, especially reader/audio views;
-  give them explicit component classes before changing shared rules.
-- [x] Reuse existing layout tokens or add a small shared utility so navbar/dashboard
-  widths and responsive gutters align.
-- [x] Remove broad container overrides and restore grid gutters incrementally,
-  checking reader, library, audio, and forms after each slice.
-- [x] Retain shrinkable tracks and `min-width: 0`; allow primary titles to wrap and
-  keep compact-list truncation deliberate. Check navigation, focus, and secondary
-  text in every supported theme. Avoid stronger global `!important` rules.
-
-Acceptance: intended spacing survives, mobile controls remain visible, and the
-browser suite passes with overflow unmasked.
-
-Layout inventory: `.app-route-content` is flush; `TextDisplay` owns reader/audio
-widths through `.text-display-wrapper`, resizable panels, and audio bars. Terms
-uses `.terms-page` for a full-width, internally scrolling table. Library uses
-`.main-content-padding`; other pages use Bootstrap containers. Home recommendations
-use a scoped CSS grid and its stats row explicitly has no horizontal gutters.
-Other rows/columns retain Bootstrap spacing. Terms owns its scroller's positioning.
-
-Theme cleanup uses Bootstrap/reader color variables for secondary text and valid
-focus shadows; the audio player also uses the classic-dark surface token.
-Validation: 76 browser checks, 2,045 client tests, typecheck, lint (34 existing
-warnings), and production build passed. Theme screenshots checked; reviewer found
-no actionable issues. Physical-phone staging verification remains pending above.
-
-Reader/audio follow-up compared `5147d615` with `546e507b`: 35 screenshot pairs
-and 62 browser checks passed; all 13 initial panel geometries matched. Word taps
-and status updates preserved word identity/translation; sentence credits, native
-play/pause/seek, two-track switching, and bounded listening payloads passed.
-The reviewer reran 324 focused tests with no actionable regression found.
-Selection/tracking/statistics/API/server logic is unchanged by the CSS commit.
-
-Audio lessons intentionally use classic UI even with the Modern preference;
-modern readers with audiobook tracks are a separate covered path. Dialog gutters
-changed; the 390px completion dialog's Learning badge now wraps without hiding
-counts/actions. Verification used synthetic Chromium sessions, not live-backend
-persistence/production totals, physical-phone selection handles, or Safari.
-The ad hoc screenshots/report remain local and ignored under
-`client/lingua-read-client/test-results/reader-audio-audit/`; they are not CI coverage.
+Synthetic screenshots and selection/playback/tracking checks found no unintended
+regression; reviewers passed 324 focused tests. Audio lessons use classic UI even
+with Modern selected; modern audiobook readers are separate. Minor difference:
+the 390px completion dialog's Learning badge wraps; counts/actions remain visible.
+Local ad hoc evidence: `client/lingua-read-client/test-results/reader-audio-audit/`
+(ignored, not CI coverage). Live-backend persistence/production totals, physical
+phones, and Safari remain unverified; staging smoke checks do not establish them.
 
 ## 3. Preview isolation — next
 
-The uncommitted local preview disables logout and rejects non-GET sample requests;
-dedicated storage isolation remains unfinished. Its screenshot-derived fixtures
-must stay out of commits.
+The local preview is not fully isolated. Do not commit its private screenshot-derived
+fixtures; use wholly authored synthetic data.
 
-- [ ] Replace reusable preview data with wholly authored synthetic content.
-- [ ] Add a read-only adapter and isolated auth/storage/cache/offline state.
-- [ ] Block production APIs and unhandled external requests. Verify actions cannot
-  revoke sessions, clear real caches/queues, or pretend an unsaved change succeeded.
+- [ ] Replace reusable preview data and provide a read-only adapter.
+- [ ] Isolate auth, storage, caches, IndexedDB, service workers, and offline queues.
+- [ ] Block production APIs and unhandled external requests. Actions must not revoke
+  real sessions, clear real caches/queues, or fake successful saves.
 - [ ] Keep a visibly labelled sample entry point outside the production build.
 
 Acceptance: production components remain interactive without mutating real state.
 
-## 4. Saved catch-up plan
+## 4. Reading progress measurement — optional
 
-The current control is a pacing guide; it neither saves a plan nor reschedules cards.
+Keep reading activity counts and saved audio position/duration fallbacks until
+comparable totals for the same text revision exist. This is future measurement
+work; vocabulary knowledge and SRS scheduling remain separate.
 
-- [ ] Persist user scope, start date, duration, and preferred session size; include
-  settings in normal backup/data preservation.
-- [ ] Define daily progress for distinct completed cards versus repeated learning
-  steps, and separate the planned backlog from newly arriving reviews.
-- [ ] Respect SRS day boundaries, time zones, daily limits, and reviewable cards.
-- [ ] Support revising/stopping plans without changing study history or FSRS due dates.
-
-Acceptance: settings survive reloads, targets remain understandable, and small queues
-or exhausted allowances display honestly while sessions stay bounded.
-
-## 5. Canonical reading progress
-
-Unfinished reading currently shows activity counts; audio uses saved playback
-position and an available duration estimate. Keep these fallbacks until comparable
-reading totals exist.
-
-- [ ] Document each metric's unit/source/limits in API contracts; define one canonical
-  unit for total and covered reading, tied to source revision and segmentation.
-- [ ] Preserve historical credit separately from current coverage when text changes.
-- [ ] Define partial reads, completion, rereads, missing data, and source edits before
-  exposing percentages or ETAs. Estimates require an explicit reading-rate assumption.
-- [ ] Cover ignored vocabulary, Japanese/Chinese text, edits, and absent/stale progress.
+- [ ] Document metric units/sources/limits in API contracts; define one consistent
+  unit for total and covered reading tied to source revision and segmentation.
+- [ ] Preserve historical credits separately from coverage when sources change.
+- [ ] Define partial reads, completion, rereads, missing/stale data, and source edits
+  before percentages or ETAs; estimates require an explicit reading-rate assumption.
+- [ ] Cover ignored vocabulary, Japanese/Chinese segmentation, and edited sources.
 
 Acceptance: vocabulary changes cannot advance reading; source edits cannot rewrite
-earned history; unsupported coverage shows activity without inventing completion/ETA.
+earned credits; unsupported coverage shows activity without inventing completion/ETA.
 
 ## Validation per slice
 
-Run relevant behavioral/browser checks. Client changes require lint, typecheck,
-client tests, and production build; API/data changes require solution build/server
-tests. Report skips. Review the diff before pushing; exclude unrelated changes and
-personal fixtures. Proceed through CSS cleanup and preview isolation before saved
-plans and canonical reading progress.
+Make small verified changes. Run browser checks, lint, typecheck, client tests, and
+production build for client changes; solution build/server tests for API/data changes.
+Report skips. Update this plan concisely; launch a reviewer before committing/pushing
+the completed slice to `dev`, then monitor Staging through deployment/smoke checks.
+Exclude unrelated edits and private fixtures. Finish preview isolation before item 4.

@@ -95,12 +95,12 @@ const LanguageDashboardCard = ({ lang, compact = false, showActivity = true, sho
       <Modal show={editing} onHide={() => setEditing(false)} centered className="home-language-modal">
         <Modal.Header closeButton><Modal.Title>{lang.languageName} learning focus</Modal.Title></Modal.Header>
         <Modal.Body>
-          <Form.Label htmlFor={`language-focus-${lang.languageId}`}>How would you like to track this language?</Form.Label>
+          <Form.Label htmlFor={`language-focus-${lang.languageId}`}>Level display</Form.Label>
           <Form.Select id={`language-focus-${lang.languageId}`} value={draft} onChange={event => setDraft(event.target.value)}>
             <option value="estimate">Vocabulary estimate</option>
-            <option value="maintenance">Maintenance · keep it fresh</option>
-            <option value="hidden">Skip the level path</option>
-            {['A1', 'A2', 'B1', 'B2', 'C1', 'C2'].map(value => <option key={value} value={value}>{value} · my own level</option>)}
+            <option value="maintenance">Maintenance</option>
+            <option value="hidden">Hide level</option>
+            {['A1', 'A2', 'B1', 'B2', 'C1', 'C2'].map(value => <option key={value} value={value}>{value} · self-set</option>)}
           </Form.Select>
           <p className="small text-muted mt-3 mb-0">{LEVEL_NOTE} {FORM_COUNT_NOTE}</p>
           <Alert variant="info" className="small mt-3 mb-0">This display preference is saved in this browser.</Alert>

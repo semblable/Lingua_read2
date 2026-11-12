@@ -39,8 +39,8 @@ const ContinueLearningCard: React.FC<ContinueLearningCardProps> = ({ text, loadi
     <Card className="home-continue-card h-100" data-testid="continue-card-empty">
       <Card.Body>
         <div className="home-section-label">Continue learning</div>
-        <h2>A new chapter starts here.</h2>
-        <p className="text-muted">Choose something you're curious about and make it part of your day.</p>
+        <h2>Read or listen</h2>
+        <p className="text-muted">Open a text or audio lesson from your library.</p>
         <LinkContainer to="/library"><Button variant="primary">Open library <i className="bi bi-arrow-right ms-2" aria-hidden="true" /></Button></LinkContainer>
       </Card.Body>
     </Card>

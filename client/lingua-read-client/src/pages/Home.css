@@ -130,17 +130,10 @@
 .home-review-card p { font-size: .8125rem; line-height: 1.6; margin-bottom: 20px; }
 .home-review-start { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px; width: 100%; }
 .home-review-due { color: var(--home-muted); font-size: .8125rem; margin: -8px 0 14px; }
-.home-review-start span { font-weight: 400; }
 .home-review-start > i { margin-left: auto; }
 .home-review-options { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 14px; }
 .home-review-options .form-label { font-size: .8125rem; color: var(--home-muted); margin: 0; }
 .home-review-options select { width: 110px; }
-.home-catchup { border-top: 1px solid var(--home-border); padding-top: 16px; margin-top: 20px; }
-.home-catchup summary { cursor: pointer; color: var(--home-link); font-size: .8125rem; }
-.home-catchup-prominent { border: 0; padding-top: 0; }
-.home-catchup-prominent summary { padding: 12px; border: 1px solid var(--home-border); border-radius: 8px; background: var(--home-inset); font-weight: 600; }
-.home-catchup-body { padding-top: 12px; }
-.home-catchup-body p, .home-catchup-body .form-label { font-size: .8125rem; }
 
 .home-resume-list, .home-languages, .home-recommendations { margin-bottom: 24px; }
 .home-section-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 20px; }
@@ -245,9 +238,7 @@
   .home-cover-lines { display: none; }
   .home-continue-actions { margin-top: 20px; }
   .home-dashboard .home-review-start { font-size: .875rem !important; }
-  .home-review-card h2 br { display: none; }
   .home-review-card h2 { font-size: 1.25rem; }
-  .home-review-card h2 br::after { content: ' '; }
   .home-review-card .home-section-label { margin-bottom: 12px; }
   .home-language-summary { gap: 8px 12px; }
   .home-language-summary > strong { min-width: 88px; }

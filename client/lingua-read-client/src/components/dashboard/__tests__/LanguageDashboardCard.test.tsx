@@ -65,7 +65,7 @@ describe('LanguageDashboardCard', () => {
     const lang = makeLang({ cefrLevel: 'A1', nextCefrLevel: 'A2' });
     renderCard(lang);
     fireEvent.click(screen.getByRole('button', { name: 'Learning focus for Polish' }));
-    fireEvent.change(screen.getByLabelText('How would you like to track this language?'), { target: { value: 'maintenance' } });
+    fireEvent.change(screen.getByLabelText('Level display'), { target: { value: 'maintenance' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save preference' }));
     await waitFor(() => expect(screen.getByText('Maintenance')).toBeInTheDocument());
     expect(screen.queryByText(/forms to A2/)).not.toBeInTheDocument();
@@ -77,7 +77,7 @@ describe('LanguageDashboardCard', () => {
   test('lets the user set their own level without a vocabulary-based progress bar', async () => {
     renderCard(makeLang({ cefrLevel: 'A1', nextCefrLevel: 'A2' }));
     fireEvent.click(screen.getByRole('button', { name: 'Learning focus for Polish' }));
-    fireEvent.change(screen.getByLabelText('How would you like to track this language?'), { target: { value: 'C2' } });
+    fireEvent.change(screen.getByLabelText('Level display'), { target: { value: 'C2' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save preference' }));
     await waitFor(() => expect(screen.getByText('C2 · self-set')).toBeInTheDocument());
     expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();

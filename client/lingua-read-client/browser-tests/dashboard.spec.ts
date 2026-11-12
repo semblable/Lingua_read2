@@ -108,10 +108,11 @@ for (const count of [0, 1, 12, 12_345]) {
       await openDashboard();
       await unmaskRootOverflow(page);
       const review = page.getByTestId('srs-due-widget');
+      await expect(review.locator('details')).toHaveCount(0);
+      await expect(review.getByRole('combobox')).toHaveCount(count === 0 ? 0 : 1);
       if (count === 0) {
-        await expect(review.getByRole('heading', { name: 'All caught up' })).toBeVisible();
+        await expect(review.getByRole('heading', { name: 'No reviews due' })).toBeVisible();
         await expect(review.getByLabel('Session size')).toHaveCount(0);
-        await expect(review.getByText('Make a catch-up plan')).toHaveCount(0);
         const action = review.getByRole('button', { name: 'Open SRS', exact: true });
         await expectTextFits(action);
         await expectPageFits(page);
@@ -128,28 +129,17 @@ for (const count of [0, 1, 12, 12_345]) {
       for (const size of [50, 10, 200, 25, 100]) {
         if (size !== 50) await sessionSize.selectOption(String(size));
         const target = Math.min(count, size);
-        const action = review.getByRole('button', { name: new RegExp(`^Review ${target} cards? `) });
+        const action = review.getByRole('button', { name: `Review ${target} ${target === 1 ? 'card' : 'cards'}`, exact: true });
         await expect(action).toBeVisible();
         await expectTextFits(action);
         await expectInside(action, review.locator('.card-body'));
         await expect(dueTotal).toBeVisible();
       }
 
-      const catchUp = review.getByText('Make a catch-up plan', { exact: true });
-      await catchUp.focus();
-      await catchUp.press('Enter');
-      const days = review.getByLabel('Spread this queue over');
-      await expect(days).toHaveValue('14');
-      for (const duration of [14, 7, 30, 60]) {
-        if (duration !== 14) await days.selectOption(String(duration));
-        await expect(review.getByText(`${Math.ceil(count / duration).toLocaleString('en-US')} cards a day`, { exact: true })).toBeVisible();
-      }
       await expectPageFits(page);
-      await catchUp.press('Enter');
-      await expect(days).toBeHidden();
       await sessionSize.selectOption('10');
       const target = Math.min(count, 10);
-      await activate(review.getByRole('button', { name: new RegExp(`^Review ${target} cards? `) }), page);
+      await activate(review.getByRole('button', { name: `Review ${target} ${target === 1 ? 'card' : 'cards'}`, exact: true }), page);
       await expect(page).toHaveURL(new RegExp(`/srs\\?limit=${target}$`));
       await expect(page.getByTestId('route-destination')).toHaveText(`/srs?limit=${target}`);
     });

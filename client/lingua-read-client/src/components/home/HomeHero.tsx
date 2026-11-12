@@ -14,11 +14,11 @@ const HomeHero: React.FC<HomeHeroProps> = ({
   username, todayWords = 0, todayListeningSeconds = 0, topGoalSummary, streakDays = 0, goalAction,
 }) => {
   const hour = new Date().getHours();
-  const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : hour < 21 ? 'Good evening' : 'Working late';
+  const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : hour < 21 ? 'Good evening' : 'Hello';
   const name = username?.trim();
   return (
     <header className="home-hero">
-      <div className="home-eyebrow">Your learning, at a glance</div>
+      <div className="home-eyebrow">Today</div>
       <h1>{greeting}{name ? `, ${name}` : ''}.</h1>
       <div className="home-today" aria-label="Today's activity">
         <span><strong>{todayWords.toLocaleString()}</strong> words read today</span>

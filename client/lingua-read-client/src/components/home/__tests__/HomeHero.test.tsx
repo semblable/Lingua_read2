@@ -9,7 +9,7 @@ const renderHero = (props: React.ComponentProps<typeof HomeHero> = {}) =>
 afterEach(() => { cleanup(); vi.useRealTimers(); });
 
 describe('HomeHero', () => {
-  test.each([[8, 'Good morning'], [14, 'Good afternoon'], [19, 'Good evening'], [23, 'Working late']])('greets at hour %s', (hour, greeting) => {
+  test.each([[8, 'Good morning'], [14, 'Good afternoon'], [19, 'Good evening'], [23, 'Hello']])('greets at hour %s', (hour, greeting) => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date(2026, 4, 25, Number(hour)));
     renderHero({ username: 'Kamil' });

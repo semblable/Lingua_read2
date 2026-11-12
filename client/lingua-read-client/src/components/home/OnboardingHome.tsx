@@ -37,8 +37,8 @@ const OnboardingHome: React.FC<OnboardingHomeProps> = ({ username }) => {
           {name ? `Welcome to LinguaRead, ${name}.` : 'Welcome to LinguaRead.'}
         </h1>
         <p className="text-muted mb-0" style={{ maxWidth: 720, fontSize: '1rem' }}>
-          Read texts in any language with every word colour-coded by how well you know it. Click a
-          word for an instant translation, mark it as learned, and watch your vocabulary grow.
+          Read texts with words colour-coded by vocabulary status. Select a word to look up
+          its translation or change its status.
         </p>
       </div>
 
@@ -46,7 +46,7 @@ const OnboardingHome: React.FC<OnboardingHomeProps> = ({ username }) => {
         <Col xs={12} md={4}>
           <OnboardingStep
             title="Add a book"
-            body="Import an EPUB or paste a long text — LinguaRead splits it into bite-sized lessons."
+            body="Import an EPUB or paste a long text to split it into lessons."
             cta="Add a book"
             to="/books/create"
             variant="primary"
@@ -55,7 +55,7 @@ const OnboardingHome: React.FC<OnboardingHomeProps> = ({ username }) => {
         <Col xs={12} md={4}>
           <OnboardingStep
             title="Add a text"
-            body="Paste an article or short passage to start reading right away."
+            body="Paste an article or short passage."
             cta="Add a text"
             to="/texts/create"
             variant="primary"

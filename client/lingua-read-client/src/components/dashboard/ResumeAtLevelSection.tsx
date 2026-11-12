@@ -107,9 +107,9 @@ const ResumeAtLevelSection: React.FC = () => {
   return (
     <Card className="shadow-sm mb-4 home-recommendations" data-testid="resume-at-level-section">
       <Card.Body>
-        <Card.Title as="h2" className="mb-1">Find your next read</Card.Title>
+        <Card.Title as="h2" className="mb-1">Suggested texts</Card.Title>
         <Card.Subtitle className="text-muted small mb-3">
-          From your library · {KRASHEN_SWEET_SPOT_MIN}–{KRASHEN_SWEET_SPOT_MAX}% vocabulary coverage, with room to grow.
+          From your library · {KRASHEN_SWEET_SPOT_MIN}–{KRASHEN_SWEET_SPOT_MAX}% vocabulary coverage
         </Card.Subtitle>
 
         {Array.from(picksByLanguage.entries()).map(([language, picks]) => (

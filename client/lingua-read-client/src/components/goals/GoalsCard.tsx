@@ -112,8 +112,8 @@ function GoalsCard({
             <div className={compact ? 'home-goal-empty' : 'text-center py-4 text-muted'}>
               <div>
                 {!compact && <div className="mb-2" style={{ fontSize: '2rem' }}>🎯</div>}
-                <div className="mb-1">{compact ? 'Make room for a small daily win.' : 'No active goals yet.'}</div>
-                {compact && <div className="small text-muted">Set a reading or listening goal that fits your day.</div>}
+                <div className="mb-1">{compact ? 'No active goals.' : 'No active goals yet.'}</div>
+                {compact && <div className="small text-muted">Set a reading or listening target.</div>}
               </div>
               <Button size="sm" variant={compact ? 'outline-secondary' : 'primary'} onClick={() => setShowModal(true)}>
                 Set your first goal

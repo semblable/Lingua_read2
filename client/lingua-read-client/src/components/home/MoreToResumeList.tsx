@@ -9,7 +9,7 @@ const MoreToResumeList: React.FC<{ texts: RecentTexts }> = ({ texts }) => {
   return (
     <Card className="home-resume-list" data-testid="more-to-resume">
       <Card.Body>
-        <div className="home-section-heading"><h2>Also on your shelf</h2><Link to="/library">View library <i className="bi bi-chevron-right" aria-hidden="true" /></Link></div>
+        <div className="home-section-heading"><h2>Recently opened</h2><Link to="/library">View library <i className="bi bi-chevron-right" aria-hidden="true" /></Link></div>
         <div className="home-shelf-items">
           {texts.map(text => {
             const summary = resumeSummary(text);

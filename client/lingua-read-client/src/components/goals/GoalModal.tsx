@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useId, useState } from 'react';
 import { Modal, Button, Form, Alert, Spinner, ButtonGroup } from 'react-bootstrap';
 import {
   getAllLanguages,
@@ -39,6 +39,7 @@ function GoalModal({
   editing,
   defaultLanguageId
 }: GoalModalProps) {
+  const fieldId = useId();
   const isEdit = !!editing;
 
   const [type, setType] = useState<GoalTypeValue>(GOAL_TYPE.WordsRead);
@@ -267,9 +268,9 @@ function GoalModal({
     (type === GOAL_TYPE.WordsKnown || showAdvanced);
 
   return (
-    <Modal scrollable show={show} onHide={onHide} centered size="lg">
+    <Modal scrollable show={show} onHide={onHide} centered size="lg" aria-labelledby={`${fieldId}-heading`}>
       <Modal.Header closeButton>
-        <Modal.Title as="h5">{isEdit ? 'Edit goal' : 'New goal'}</Modal.Title>
+        <Modal.Title as="h5" id={`${fieldId}-heading`}>{isEdit ? 'Edit goal' : 'New goal'}</Modal.Title>
       </Modal.Header>
       <Modal.Body>
         {error && <Alert variant="danger">{error}</Alert>}
@@ -290,7 +291,7 @@ function GoalModal({
             </ButtonGroup>
           </Form.Group>
 
-          <Form.Group className="mb-3">
+          <Form.Group className="mb-3" controlId={`${fieldId}-scope`}>
             <Form.Label>Scope</Form.Label>
             <Form.Select
               value={scope}
@@ -370,7 +371,7 @@ function GoalModal({
             </div>
           )}
 
-          <Form.Group className="mb-3">
+          <Form.Group className="mb-3" controlId={`${fieldId}-target`}>
             <Form.Label>
               Target {type === GOAL_TYPE.ListeningSeconds ? '(hours)' : '(words)'}
             </Form.Label>
@@ -396,6 +397,7 @@ function GoalModal({
               {hasDeadline && (
                 <Form.Control
                   type="date"
+                  aria-label="Deadline"
                   className="mt-2"
                   value={deadline}
                   min={new Date().toISOString().slice(0, 10)}
@@ -405,7 +407,7 @@ function GoalModal({
             </Form.Group>
           )}
 
-          <Form.Group className="mb-3">
+          <Form.Group className="mb-3" controlId={`${fieldId}-title`}>
             <Form.Label>Title (optional)</Form.Label>
             <Form.Control
               type="text"

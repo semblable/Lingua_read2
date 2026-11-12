@@ -116,6 +116,10 @@ client/lingua-read-client/.env.*.local
 # Coverage reports for React client
 client/lingua-read-client/coverage/
 
+# Browser regression reports, screenshots, and traces.
+client/lingua-read-client/test-results/
+client/lingua-read-client/playwright-report/
+
 # Other React specific cache/build files
 client/lingua-read-client/.next/ # For Next.js
 client/lingua-read-client/.parcel-cache/ # For Parcel

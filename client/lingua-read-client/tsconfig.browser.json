@@ -1,0 +1,5 @@
+{
+  "extends": "./tsconfig.json",
+  "include": ["browser-tests", "playwright.config.ts", "vite.browser.config.ts", "src/types/react-router-bootstrap.d.ts"],
+  "exclude": ["node_modules", "build", "dist"]
+}

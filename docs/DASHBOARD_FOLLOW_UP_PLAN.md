@@ -1,0 +1,106 @@
+# Dashboard follow-up plan
+
+Updated 2026-11-12. Baseline: dashboard redesign `30f8c072`.
+Automated browser coverage is implemented; physical-phone verification is pending.
+
+## Constraints
+
+- Keep the due total visible and sessions bounded by `min(due cards, session size)`.
+  Saved plans must also respect daily allowances and currently reviewable cards.
+- Distinguish saved word forms, vocabulary occurrences, reading credits, and playback
+  seconds. Reading credits divided by vocabulary totals cannot establish completion.
+- Fix component sizing instead of concealing overflow at the page boundary.
+- Synthetic previews need isolated auth, storage, caches, and offline queues;
+  intercepting network requests alone is insufficient.
+
+## 1. Mobile browser regressions
+
+- [x] Render real Home/Navigation with authored synthetic API fixtures at
+  320/390/430/1280px, including long/accented titles, unbroken terms, audio,
+  and missing optional metadata.
+- [x] Check element/text bounds and document overflow, including with root overflow
+  unmasked. Preserve deliberate title clamps above 400px and compact shelf truncation.
+- [x] Exercise navigation/Add menus, session sizes, catch-up controls, and the inline
+  goal action; verify bounded SRS destinations for due totals 0/1/12/12,345.
+- [x] Run in client CI with failure screenshots/traces and no personal data or
+  external services. Negative controls verify overflow detection.
+- [ ] Record a physical-phone staging check: touch scrolling, menus, focus, and
+  on-screen keyboard; include revision and device/browser details.
+
+[Run and scope](../client/lingua-read-client/browser-tests/README.md).
+All 40 browser checks pass. Goal-dialog accessible names/field labels were fixed.
+Lint, typecheck, production build, and 2,045 client tests passed; an offline retry
+timing test failed initially and passed isolated and full reruns.
+
+## 2. CSS ownership and layout cleanup — next
+
+Global rules in `src/index.css` override Bootstrap container padding, row margins,
+and column padding with `!important`. The fluid-container width plus its global
+`max-width: 100vw` defeated the former navbar's local width/gutters. The navbar now
+uses a regular Container with scoped styles. Keep Bootstrap and use scoped Grid/Flex
+for custom layouts; a framework migration is outside this work.
+
+- [ ] Inventory intentional flush/full-width layouts, especially reader/audio views;
+  give them explicit component classes before changing shared rules.
+- [ ] Reuse existing layout tokens or add a small shared utility so navbar/dashboard
+  widths and responsive gutters align.
+- [ ] Remove broad container overrides and restore grid gutters incrementally,
+  checking reader, library, audio, and forms after each slice.
+- [ ] Retain shrinkable tracks and `min-width: 0`; allow primary titles to wrap and
+  keep compact-list truncation deliberate. Check navigation, focus, and secondary
+  text in every supported theme. Avoid stronger global `!important` rules.
+
+Acceptance: intended spacing survives, mobile controls remain visible, and the
+browser suite passes with overflow unmasked.
+
+## 3. Preview isolation
+
+The uncommitted local preview disables logout and rejects non-GET sample requests;
+dedicated storage isolation remains unfinished. Its screenshot-derived fixtures
+must stay out of commits.
+
+- [ ] Replace reusable preview data with wholly authored synthetic content.
+- [ ] Add a read-only adapter and isolated auth/storage/cache/offline state.
+- [ ] Block production APIs and unhandled external requests. Verify actions cannot
+  revoke sessions, clear real caches/queues, or pretend an unsaved change succeeded.
+- [ ] Keep a visibly labelled sample entry point outside the production build.
+
+Acceptance: production components remain interactive without mutating real state.
+
+## 4. Saved catch-up plan
+
+The current control is a pacing guide; it neither saves a plan nor reschedules cards.
+
+- [ ] Persist user scope, start date, duration, and preferred session size; include
+  settings in normal backup/data preservation.
+- [ ] Define daily progress for distinct completed cards versus repeated learning
+  steps, and separate the planned backlog from newly arriving reviews.
+- [ ] Respect SRS day boundaries, time zones, daily limits, and reviewable cards.
+- [ ] Support revising/stopping plans without changing study history or FSRS due dates.
+
+Acceptance: settings survive reloads, targets remain understandable, and small queues
+or exhausted allowances display honestly while sessions stay bounded.
+
+## 5. Canonical reading progress
+
+Unfinished reading currently shows activity counts; audio uses saved playback
+position and an available duration estimate. Keep these fallbacks until comparable
+reading totals exist.
+
+- [ ] Document each metric's unit/source/limits in API contracts; define one canonical
+  unit for total and covered reading, tied to source revision and segmentation.
+- [ ] Preserve historical credit separately from current coverage when text changes.
+- [ ] Define partial reads, completion, rereads, missing data, and source edits before
+  exposing percentages or ETAs. Estimates require an explicit reading-rate assumption.
+- [ ] Cover ignored vocabulary, Japanese/Chinese text, edits, and absent/stale progress.
+
+Acceptance: vocabulary changes cannot advance reading; source edits cannot rewrite
+earned history; unsupported coverage shows activity without inventing completion/ETA.
+
+## Validation per slice
+
+Run relevant behavioral/browser checks. Client changes require lint, typecheck,
+client tests, and production build; API/data changes require solution build/server
+tests. Report skips. Review the diff before pushing; exclude unrelated changes and
+personal fixtures. Proceed through CSS cleanup and preview isolation before saved
+plans and canonical reading progress.

@@ -993,6 +993,22 @@
   margin-top: 0;
 }
 
+/* Keep one focus ring instead of stacking the form glow and shared halo. */
+.word-info-panel textarea.form-control,
+.word-info-panel textarea.form-control:focus {
+  border-color: var(--border-color);
+  box-shadow: none;
+}
+
+.word-info-panel textarea.form-control:focus-visible {
+  outline-width: 2px !important;
+  outline-offset: 2px;
+}
+
+@media (forced-colors: active) {
+  .word-info-panel textarea.form-control { border-color: ButtonText; }
+}
+
 /* Status tints match the words in the text; Known and Ignored have none there, so they get a
    neutral one here. */
 .word-info-panel [data-status] {

@@ -18,9 +18,16 @@
 }
 
 .stats-card {
+  --text-muted: var(--theme-text-muted, #586169);
   background: var(--theme-surface-bg);
   border: 1px solid var(--theme-border-color, var(--border-color));
   border-radius: var(--radius-lg);
+}
+
+body:is(.dark-theme, .classic-dark-theme) .stats-card { --text-muted: #d2d8de; }
+.stats-card .btn-outline-primary, .stats-chart-mode .btn-outline-primary {
+  --bs-btn-color: var(--link-color);
+  --bs-btn-border-color: var(--link-color);
 }
 
 .stats-eyebrow {
@@ -91,6 +98,25 @@
 .stats-card-selected {
   border-color: var(--bs-primary, #0d6efd) !important;
   box-shadow: 0 0 0 2px rgba(13, 110, 253, 0.2);
+  border-inline-start-width: 5px;
+}
+
+.stats-data-alternative summary { cursor: pointer; overflow-wrap: anywhere; }
+.stats-data-alternative .table-responsive { max-height: 24rem; margin-top: 0.5rem; }
+.stats-data-alternative :is(th, td, caption) {
+  color: var(--theme-text, var(--font-color));
+  background-color: var(--theme-surface-bg);
+  border-color: var(--theme-border-color, var(--border-color));
+}
+.stats-heatmap-inspector { display: grid; gap: 0.5rem; }
+.stats-heatmap-inspector .form-control { max-width: 16rem; }
+
+@media (forced-colors: active) {
+  .stats-heatmap-cell:not(.stats-heatmap-level-empty) { border: 1px solid CanvasText; }
+  .stats-heatmap-level-1 { border-style: dotted !important; }
+  .stats-heatmap-level-2 { border-style: dashed !important; }
+  .stats-heatmap-level-3 { border-width: 2px !important; }
+  .stats-heatmap-level-4 { background: Highlight; forced-color-adjust: none; }
 }
 
 /* GitHub-style heatmap layout */

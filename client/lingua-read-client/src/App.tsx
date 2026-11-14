@@ -4,8 +4,9 @@ import React, { useContext, useEffect, Suspense, lazy } from 'react';
 import { Routes, Route, Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useAuthStore } from './utils/store';
 import './App.css';
-import { SettingsContext } from './contexts/SettingsContext';
+import { getInitialSettings, SettingsContext } from './contexts/SettingsContext';
 import { SettingsProvider } from './contexts/SettingsProvider';
+import { applyReaderStatusMarkers, readCachedTheme, watchTheme } from './utils/theme';
 
 // Components (always needed)
 import Navigation from './components/Navigation';
@@ -59,45 +60,6 @@ const AuthenticatedApp = () => {
   useEffect(() => {
     if (isAuthenticated) void migrateLegacyBookmarks();
   }, [isAuthenticated]);
-
-  // Theme management
-  useEffect(() => {
-    const savedTheme = localStorage.getItem('theme') || 'dark';
-
-    const applyTheme = (theme: string) => {
-      document.body.classList.remove('light-theme', 'dark-theme', 'classic-dark-theme');
-
-      if (theme === 'dark') {
-        document.body.classList.add('dark-theme');
-      } else if (theme === 'light') {
-        document.body.classList.add('light-theme');
-      } else if (theme === 'classic-dark') {
-        document.body.classList.add('classic-dark-theme');
-      } else {
-        const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-        if (prefersDark) {
-          document.body.classList.add('dark-theme');
-        } else {
-          document.body.classList.add('light-theme');
-        }
-      }
-    };
-
-    applyTheme(savedTheme);
-
-    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-    const handleSystemThemeChange = (_e: MediaQueryListEvent) => {
-      if (localStorage.getItem('theme') === 'system') {
-        applyTheme('system');
-      }
-    };
-
-    mediaQuery.addEventListener('change', handleSystemThemeChange);
-
-    return () => {
-      mediaQuery.removeEventListener('change', handleSystemThemeChange);
-    };
-  }, []);
 
   // Apply line spacing from settings
   useEffect(() => {
@@ -201,11 +163,8 @@ function App() {
 
   // Apply theme early (even before auth) so login/setup pages respect saved theme
   useEffect(() => {
-    const savedTheme = localStorage.getItem('theme') || 'dark';
-    document.body.classList.remove('light-theme', 'dark-theme', 'classic-dark-theme');
-    if (savedTheme === 'light') document.body.classList.add('light-theme');
-    else if (savedTheme === 'classic-dark') document.body.classList.add('classic-dark-theme');
-    else document.body.classList.add('dark-theme');
+    applyReaderStatusMarkers(getInitialSettings().readerStatusMarkersEnabled);
+    return watchTheme(readCachedTheme);
   }, []);
 
   if (isLoading) {

@@ -4,6 +4,7 @@
 // replayed by drain() once the browser comes back online.
 
 import type { LessonListeningCredit } from '../../audio/listeningActivity';
+import { notifyWordReplay, offlineSessionRevision } from './events';
 
 const DB_NAME = 'lingua-read-offline';
 const DB_VERSION = 1;
@@ -54,8 +55,8 @@ export type SyncResult = {
 
 export interface SyncHandlers {
   srsReview: (payload: PendingOp & { type: 'srsReview' }) => Promise<void>;
-  wordStatusUpdate: (payload: PendingOp & { type: 'wordStatusUpdate' }) => Promise<void>;
-  wordCreate: (payload: PendingOp & { type: 'wordCreate' }) => Promise<void>;
+  wordStatusUpdate: (payload: PendingOp & { type: 'wordStatusUpdate' }) => Promise<unknown>;
+  wordCreate: (payload: PendingOp & { type: 'wordCreate' }) => Promise<unknown>;
   logListening: (payload: PendingOp & { type: 'logListening' }) => Promise<void>;
   audiobookProgress: (payload: PendingOp & { type: 'audiobookProgress' }) => Promise<void>;
   audioLessonProgress: (payload: PendingOp & { type: 'audioLessonProgress' }) => Promise<void>;
@@ -188,6 +189,15 @@ async function deleteOp(id: number): Promise<void> {
   });
 }
 
+async function hasPending(id: number): Promise<boolean> {
+  const db = await openDb();
+  return new Promise<boolean>((resolve, reject) => {
+    const req = txStore(db, 'readonly').getKey(id);
+    req.onsuccess = () => resolve(req.result !== undefined);
+    req.onerror = () => reject(req.error ?? new Error('Failed to check pending op'));
+  });
+}
+
 let draining = false;
 
 // Web Locks key for cross-tab coordination. With { ifAvailable: true }, a
@@ -221,6 +231,7 @@ function classifyError(err: unknown): ErrorKind {
 }
 
 async function drainOnce(handlers: SyncHandlers): Promise<SyncResult> {
+  const session = offlineSessionRevision();
   const ops = await listPending();
   let succeeded = 0;
   let failed = 0;
@@ -228,14 +239,19 @@ async function drainOnce(handlers: SyncHandlers): Promise<SyncResult> {
   let authRequired = false;
 
   for (const op of ops) {
+    // An undo, deletion, or newer coalesced edit may have removed an operation
+    // while an earlier handler in this snapshot was awaiting its response.
+    if (!await hasPending(op.id)) continue;
+    if (offlineSessionRevision() !== session) break;
     attempted++;
     try {
+      let result: unknown;
       if (op.type === 'srsReview') {
         await handlers.srsReview(op);
       } else if (op.type === 'wordStatusUpdate') {
-        await handlers.wordStatusUpdate(op);
+        result = await handlers.wordStatusUpdate(op);
       } else if (op.type === 'wordCreate') {
-        await handlers.wordCreate(op);
+        result = await handlers.wordCreate(op);
       } else if (op.type === 'logListening') {
         await handlers.logListening(op);
       } else if (op.type === 'audiobookProgress') {
@@ -249,10 +265,18 @@ async function drainOnce(handlers: SyncHandlers): Promise<SyncResult> {
       } else if (op.type === 'bookmarkSet') {
         await handlers.bookmarkSet(op);
       }
+      if (offlineSessionRevision() !== session) break;
       await deleteOp(op.id);
+      if (op.type === 'wordCreate' || op.type === 'wordStatusUpdate') {
+        notifyWordReplay({ op, outcome: 'confirmed', result });
+      }
       succeeded++;
     } catch (err) {
+      if (offlineSessionRevision() !== session) break;
       const kind = classifyError(err);
+      if (op.type === 'wordCreate' || op.type === 'wordStatusUpdate') {
+        notifyWordReplay({ op, outcome: kind === 'terminal' ? 'rejected' : 'retryable' });
+      }
       if (kind === 'auth-stop') {
         // Keep the active page and all remaining work available during login.
         authRequired = true;

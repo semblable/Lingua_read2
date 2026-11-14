@@ -1,6 +1,8 @@
 import React from 'react';
 import { Form, Row, Col } from 'react-bootstrap';
 import type { Settings } from '../../contexts/SettingsContext';
+import { THEME_OPTIONS } from '../../utils/theme';
+import { readerFontFamily } from '../../utils/readerAppearance';
 
 export type SettingsChangeHandler = (
   event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
@@ -20,11 +22,13 @@ const AppearanceSettings = ({ settings, handleChange }: AppearanceSettingsProps)
             <Form.Group className="mb-3" controlId="theme">
               <Form.Label>Theme</Form.Label>
               <Form.Select name="theme" value={settings.theme} onChange={handleChange}>
-                <option value="light">Light</option>
-                <option value="dark">Dark</option>
-                <option value="classic-dark">Classic Dark</option>
-                <option value="system">System Default</option>
+                {THEME_OPTIONS.map(option => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
               </Form.Select>
+              <Form.Text className="text-muted">
+                High Contrast themes are optional. System Default follows your device&apos;s light or dark appearance.
+              </Form.Text>
             </Form.Group>
           </Col>
           <Col md={6}>
@@ -48,6 +52,8 @@ const AppearanceSettings = ({ settings, handleChange }: AppearanceSettingsProps)
       </div>
 
       <div className="settings-control-group">
+        <h3 className="h6">Reading comfort</h3>
+        <p className="small text-muted">Try the font, spacing and width that work for your reading.</p>
         <Row>
           <Col md={6}>
             <Form.Group className="mb-3" controlId="textSize">
@@ -144,6 +150,37 @@ const AppearanceSettings = ({ settings, handleChange }: AppearanceSettingsProps)
             onChange={handleChange}
           />
         </Form.Group>
+      </div>
+
+      <div className="settings-control-group">
+        <Form.Group className="mb-3" controlId="readerStatusMarkersEnabled">
+          <Form.Check
+            type="switch"
+            name="readerStatusMarkersEnabled"
+            label="Experimental word-status markers"
+            checked={settings.readerStatusMarkersEnabled}
+            onChange={handleChange}
+            aria-describedby="readerStatusMarkersHelp"
+          />
+          <Form.Text id="readerStatusMarkersHelp" className="text-muted">
+            Adds non-color cues independently of your theme. Off by default; these styles await multilingual and user review.
+            Known and Ignored words remain plain.
+          </Form.Text>
+        </Form.Group>
+        <figure className="settings-reading-preview" aria-label="Synthetic reading preview">
+          <p lang="en" style={{ fontSize: `${settings.textSize}px`, lineHeight: settings.lineSpacing, fontFamily: readerFontFamily(settings.textFont) }}>
+            A <span className="highlighted-word word-status-0">quiet</span>{' '}
+            <span className="highlighted-word word-status-1">garden</span>{' '}
+            <span className="highlighted-word word-status-2">welcomes</span>{' '}
+            <span className="highlighted-word word-status-3">curious</span>{' '}
+            <span className="highlighted-word word-status-4">readers</span>{' '}
+            <span className="word-status-5">each</span> <span className="word-status-6">day.</span>
+          </p>
+          <figcaption className="text-muted">
+            Synthetic example: Untracked, New, Learning, Familiar, Advanced, Known, Ignored.
+            Your current saved theme and marker preference apply after saving.
+          </figcaption>
+        </figure>
       </div>
     </>
   );

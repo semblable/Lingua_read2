@@ -214,6 +214,14 @@ namespace LinguaReadApi.Data
                 .HasForeignKey<UserSettings>(us => us.UserId)
                 .OnDelete(DeleteBehavior.Cascade);
 
+            // Upgrade existing accounts without changing the hover-shortcut default.
+            modelBuilder.Entity<UserSettings>()
+                .Property(us => us.ReaderCharacterShortcutsEnabled)
+                .HasDefaultValue(true);
+            modelBuilder.Entity<UserSettings>()
+                .Property(us => us.ReaderStatusMarkersEnabled)
+                .HasDefaultValue(false);
+
             // Encrypt secret UserSettings columns at rest. Transparent to every reader/writer; the
             // columns are unbounded text (see UserSettings) because ciphertext is longer than input.
             if (_secretsProtector != null)

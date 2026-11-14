@@ -132,7 +132,7 @@ jobs:
         run: npx playwright install --with-deps chromium
         working-directory: client/lingua-read-client
 
-      - name: Test mobile dashboard in Chromium
+      - name: Test dashboard, reader and accessibility in Chromium
         run: npm run test:browser
         working-directory: client/lingua-read-client
 

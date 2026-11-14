@@ -71,7 +71,7 @@ describe('opt-in Chinese reader workflow', () => {
   const setup = (rows, profile = 'jieba-v1') => {
     getText.mockResolvedValue({ textId: 1, title: 'Chinese fixture', content: '我今天在图书馆学习中文。', languageId: 12, languageCode: 'zh', segmentationProfile: profile, words: rows });
     vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true, json: async () => structuredClone(rows) });
-    updateWord.mockImplementation(async (wordId, status, translation) => ({ ...rows.find(row => row.wordId === wordId), status, translation }));
+    updateWord.mockImplementation(async (wordId, status, translation) => ({ ...rows.find(row => row.wordId === wordId), status, ...(translation !== undefined ? { translation } : {}) }));
   };
   test('clickable words preserve a saved term ID through reload and status edit', async () => {
     setup([{ wordId: 91, term: '图书馆', status: 3, translation: 'library' }]);
@@ -82,8 +82,8 @@ describe('opt-in Chinese reader workflow', () => {
     renderReader();
     await waitFor(() => expect(screen.getByText('图书馆')).toHaveClass('word-status-3'));
     fireEvent.click(screen.getByText('图书馆'));
-    fireEvent.click(screen.getByRole('button', { name: '4' }));
-    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(91, 4, 'library'));
+    fireEvent.click(screen.getByRole('button', { name: 'Advanced (4)' }));
+    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(91, 4, undefined));
     expect(createWord).not.toHaveBeenCalled();
   });
   test('saved phrases without spaces remain selectable phrases rather than disappearing', async () => {
@@ -95,8 +95,8 @@ describe('opt-in Chinese reader workflow', () => {
     vi.stubGlobal('alert', vi.fn());
     fireEvent.click(screen.getByRole('button', { name: 'Mine', exact: true }));
     await waitFor(() => expect(mineSentence).toHaveBeenCalledWith(92, '我今天在图书馆学习中文。', 1, 'Chinese fixture'));
-    fireEvent.click(screen.getByRole('button', { name: '4' }));
-    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(92, 4, 'study Chinese at the library'));
+    fireEvent.click(screen.getByRole('button', { name: 'Advanced (4)' }));
+    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(92, 4, undefined));
     expect(createWord).not.toHaveBeenCalled();
   });
   test('unprofiled legacy text keeps its whole-run boundaries', async () => {

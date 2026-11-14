@@ -1,6 +1,7 @@
-import React, { useMemo, useState } from 'react';
+import React, { useId, useMemo, useState } from 'react';
 import { ButtonGroup, Card, ToggleButton } from 'react-bootstrap';
-import { formatDuration, periodDayCount } from '../../utils/statistics';
+import ChartDataTable from './ChartDataTable';
+import { periodDayCount } from '../../utils/statistics';
 import type {
   ListeningActivity,
   ListeningActivityPoint,
@@ -116,14 +117,18 @@ interface ActivityHeatmapProps {
 
 const ActivityHeatmap = ({ readingActivity, listeningActivity, period }: ActivityHeatmapProps) => {
   const [mode, setMode] = useState('reading');
+  const [selectedDate, setSelectedDate] = useState(() => formatDateKey(new Date()));
+  const dateInputId = useId();
 
   const periodDays = periodDayCount(period);
   const numDays = periodDays && periodDays >= 7 ? periodDays : HEATMAP_FALLBACK_DAYS;
 
   const weeks = useMemo(() => generateWeeks(numDays), [numDays]);
+  const days = useMemo(() => weeks.flat().filter(day => day.inRange), [weeks]);
+  const inspectedDate = days.some(day => day.dateKey === selectedDate) ? selectedDate : days[days.length - 1].dateKey;
 
   const valueByDate = useMemo(() => {
-    const map = new Map();
+    const map = new Map<string, number>();
     if (mode === 'reading') {
       (readingActivity?.activityByDate || []).forEach((entry: ReadingActivityPoint) => {
         if (entry?.date) map.set(entry.date, entry.wordsRead || 0);
@@ -156,7 +161,7 @@ const ActivityHeatmap = ({ readingActivity, listeningActivity, period }: Activit
 
   const formatValue = (value: number): string => {
     if (mode === 'reading') return `${value.toLocaleString()} words`;
-    return formatDuration(value * 60);
+    return `${value.toLocaleString()} ${value === 1 ? 'minute' : 'minutes'}`;
   };
 
   const summary = totalActive > 0
@@ -164,7 +169,7 @@ const ActivityHeatmap = ({ readingActivity, listeningActivity, period }: Activit
     : `No activity in last ${numDays} days`;
 
   return (
-    <Card className="stats-card shadow-sm mb-4">
+    <Card className="stats-card shadow-sm mb-4" role="region" aria-label="Daily activity heatmap">
       <Card.Body>
         <div className="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
           <div>
@@ -197,7 +202,7 @@ const ActivityHeatmap = ({ readingActivity, listeningActivity, period }: Activit
           </ButtonGroup>
         </div>
 
-        <div className="stats-heatmap-outer" role="region" aria-label="Daily activity heatmap">
+        <div className="stats-heatmap-outer" aria-hidden="true">
           {/* Day-of-week labels column */}
           <div className="stats-heatmap-day-labels" aria-hidden="true">
             <div className="stats-heatmap-month-spacer" />
@@ -227,14 +232,12 @@ const ActivityHeatmap = ({ readingActivity, listeningActivity, period }: Activit
                     const value = day.inRange ? (valueByDate.get(day.dateKey) || 0) : null;
                     const level = value === null ? 'empty' : bucketIntensity(value, max);
                     const label = day.inRange
-                      ? `${day.dateKey}: ${value > 0 ? formatValue(value) : 'no activity'}`
+                      ? `${day.dateKey}: ${value !== null && value > 0 ? formatValue(value) : 'no activity'}`
                       : '';
                     return (
                       <div
                         key={day.dateKey}
                         className={`stats-heatmap-cell stats-heatmap-level-${level}`}
-                        role={day.inRange ? 'img' : 'presentation'}
-                        aria-label={label || undefined}
                         title={label || undefined}
                       />
                     );
@@ -245,7 +248,7 @@ const ActivityHeatmap = ({ readingActivity, listeningActivity, period }: Activit
           </div>
         </div>
 
-        <div className="d-flex align-items-center gap-2 mt-3 small text-muted">
+        <div className="d-flex align-items-center gap-2 mt-3 small text-muted" aria-hidden="true">
           <span>Less</span>
           <div className="stats-heatmap-cell stats-heatmap-level-0" />
           <div className="stats-heatmap-cell stats-heatmap-level-1" />
@@ -254,6 +257,18 @@ const ActivityHeatmap = ({ readingActivity, listeningActivity, period }: Activit
           <div className="stats-heatmap-cell stats-heatmap-level-4" />
           <span>More</span>
         </div>
+        <div className="stats-heatmap-inspector mt-3">
+          <label htmlFor={dateInputId}>Inspect daily {mode} activity</label>
+          <input id={dateInputId} type="date" className="form-control" value={inspectedDate}
+            min={days[0].dateKey} max={days[days.length - 1].dateKey}
+            onChange={event => {
+              if (days.some(day => day.dateKey === event.target.value)) setSelectedDate(event.target.value);
+            }} />
+          <output htmlFor={dateInputId}>{inspectedDate}: {formatValue(valueByDate.get(inspectedDate) || 0)}</output>
+        </div>
+        <ChartDataTable caption={`Daily ${mode} activity`} rows={days.map(day => ({
+          date: day.dateKey, value: valueByDate.get(day.dateKey) || 0,
+        }))} columns={[{ key: 'date', label: 'Date' }, { key: 'value', label: mode === 'reading' ? 'Words read' : 'Minutes listened' }]} />
       </Card.Body>
     </Card>
   );

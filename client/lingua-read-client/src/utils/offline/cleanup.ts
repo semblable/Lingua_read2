@@ -1,5 +1,6 @@
 import { clearAll } from './syncQueue';
 import { clearCachedBookmarks } from '../bookmarks';
+import { notifyOfflineEvent } from './events';
 
 /**
  * Wipe per-user service worker Cache Storage and the local bookmark cache.
@@ -28,6 +29,9 @@ export async function clearOfflineCaches(): Promise<void> {
 
 /** Explicit logout discards queued mutations; session expiry must preserve them. */
 export async function clearOfflineState(): Promise<void> {
+  // Invalidate pending reader coordinators before awaiting cache/queue cleanup.
+  // Late failures must not enqueue work into a subsequent user's session.
+  notifyOfflineEvent('session-ended');
   await clearOfflineCaches();
   try {
     await clearAll();

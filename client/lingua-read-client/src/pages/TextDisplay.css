@@ -8,6 +8,14 @@
   overflow-x: hidden;
 }
 
+/* Save progress and its delayed live announcement must not move hovered words. */
+.reader-save-feedback,
+.reader-save-pending {
+  min-block-size: 1.5em;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
 .lesson-header .lesson-header-body {
   display: flex;
   flex-direction: column;
@@ -913,6 +921,25 @@
   text-align: left;
 }
 
+.word-info-sheet-dialog {
+  margin: 0;
+  min-height: 100%;
+  display: flex;
+  align-items: flex-end;
+  max-width: 100%;
+  pointer-events: none;
+}
+.word-info-sheet-dialog .word-info-sheet {
+  max-height: min(85vh, 85dvh);
+  padding: 0;
+  pointer-events: auto;
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+.word-info-sheet-dialog .modal-header { flex-wrap: wrap; gap: 0.5rem; }
+.word-info-sheet-dialog .modal-body { overscroll-behavior: contain; }
+.word-info-sheet-dialog .modal-footer .btn { min-height: 40px; }
+
 /* --- Word Info panel (desktop side panel and mobile sheet) --- */
 .word-info-title {
   font-size: 0.75rem;
@@ -1004,6 +1031,28 @@
 .word-info-panel .btn.word-status-btn.active {
   font-weight: 700;
   border-bottom-color: currentColor;
+}
+
+/* --- Bookmark Styles --- */
+.word-info-panel .btn { min-width: 24px; min-height: 28px; white-space: normal; }
+.word-info-panel .btn-outline-secondary {
+  --bs-btn-color: var(--font-color);
+  --bs-btn-border-color: var(--font-color);
+}
+.word-info-panel .btn-outline-primary {
+  --bs-btn-color: var(--link-color);
+  --bs-btn-border-color: var(--link-color);
+}
+.word-info-panel .btn-outline-success { --bs-btn-color: #126b35; --bs-btn-border-color: #126b35; }
+body:is(.dark-theme, .classic-dark-theme) .word-info-panel .btn-outline-success {
+  --bs-btn-color: #8ce9b0;
+  --bs-btn-border-color: #8ce9b0;
+}
+.word-info-save-row, .word-info-extend-row { flex-wrap: wrap; }
+.word-info-panel :is(.word-info-term, .word-info-hint) { overflow-wrap: anywhere; }
+
+@media (prefers-reduced-motion: reduce) {
+  .text-content, .audio-transcript-container { scroll-behavior: auto; }
 }
 
 /* --- Bookmark Styles --- */

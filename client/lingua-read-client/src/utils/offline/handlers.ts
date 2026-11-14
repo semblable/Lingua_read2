@@ -22,13 +22,13 @@ export const productionSyncHandlers: SyncHandlers = {
     });
   },
   wordStatusUpdate: async ({ payload }) => {
-    await fetchApi(`/words/${payload.wordId}`, {
+    return await fetchApi(`/words/${payload.wordId}`, {
       method: 'PUT',
       body: JSON.stringify({ status: payload.status, ...(payload.translation !== undefined ? { translation: payload.translation } : {}) }),
     });
   },
   wordCreate: async ({ payload }) => {
-    await fetchApi('/words', {
+    return await fetchApi('/words', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json; charset=utf-8' },
       body: JSON.stringify({

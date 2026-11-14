@@ -30,6 +30,23 @@ const fullHandlers = (overrides = {}) => ({
   ...overrides,
 });
 
+test('a drain skips a deleted word from its snapshot and retains unrelated later work', async () => {
+  let finishFirst;
+  const first = new Promise(resolve => { finishFirst = resolve; });
+  await clearAll();
+  await enqueue({ type: 'wordStatusUpdate', payload: { wordId: 1, status: 2 } });
+  await enqueue({ type: 'wordCreate', payload: { textId: 8, term: 'cat', status: 3 } });
+  await enqueue({ type: 'srsReview', payload: { cardId: 9, grade: 2 } });
+  const handlers = fullHandlers({ wordStatusUpdate: vi.fn().mockReturnValue(first) });
+  const replay = drain(handlers);
+  await vi.waitFor(() => expect(handlers.wordStatusUpdate).toHaveBeenCalledOnce());
+  await removePending(op => op.type === 'wordCreate' && op.payload.term === 'cat');
+  finishFirst();
+  await expect(replay).resolves.toMatchObject({ attempted: 2, succeeded: 2, failed: 0 });
+  expect(handlers.wordCreate).not.toHaveBeenCalled();
+  expect(handlers.srsReview).toHaveBeenCalledOnce();
+});
+
 const setOnline = (value) => {
   Object.defineProperty(window.navigator, 'onLine', {
     configurable: true,

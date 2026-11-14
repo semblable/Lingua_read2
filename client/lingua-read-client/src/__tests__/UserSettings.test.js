@@ -421,6 +421,51 @@ describe('UserSettings', () => {
     expect(localStorage.getItem('theme')).toBe('light');
   });
 
+  test.each(['high-contrast-light', 'high-contrast-dark'])('saves %s without enabling experimental markers', async theme => {
+    await renderLoaded();
+    useManualClock();
+    document.body.classList.add('reader-modern', 'custom-state');
+    expect(field('readerStatusMarkersEnabled')).not.toBeChecked();
+    expect(field('readerCharacterShortcutsEnabled')).toBeChecked();
+    fireEvent.change(field('theme'), { target: { value: theme } });
+    await advance(CHOICE_DELAY);
+    expect(updateUserSettings).toHaveBeenCalledWith({ theme }, { keepalive: true });
+    expect(document.body).toHaveClass(`${theme}-theme`, 'reader-modern', 'custom-state');
+    expect(document.body).not.toHaveClass('reader-status-markers');
+    expect(localStorage.getItem('theme')).toBe(theme);
+  });
+
+  test('saves both reader preferences independently through the existing autosave queue', async () => {
+    await renderLoaded();
+    useManualClock();
+    fireEvent.click(field('readerCharacterShortcutsEnabled'));
+    await advance(CHOICE_DELAY);
+    expect(updateUserSettings).toHaveBeenLastCalledWith({ readerCharacterShortcutsEnabled: false }, { keepalive: true });
+    expect(updateSetting).toHaveBeenCalledWith('readerCharacterShortcutsEnabled', false);
+    expect(JSON.parse(localStorage.getItem('cachedSettings')).readerCharacterShortcutsEnabled).toBe(false);
+    fireEvent.click(field('readerStatusMarkersEnabled'));
+    await advance(CHOICE_DELAY);
+    expect(updateUserSettings).toHaveBeenLastCalledWith({ readerStatusMarkersEnabled: true }, { keepalive: true });
+    expect(document.body).toHaveClass('reader-status-markers');
+    expect(screen.getByLabelText('Synthetic reading preview')).toBeInTheDocument();
+  });
+
+  test('a rejected marker preference remains visibly unsaved and does not change applied appearance', async () => {
+    await renderLoaded();
+    useManualClock();
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      updateUserSettings.mockRejectedValueOnce(new Error('network unavailable'));
+      fireEvent.click(field('readerStatusMarkersEnabled'));
+      await advance(CHOICE_DELAY);
+      expect(document.body).not.toHaveClass('reader-status-markers');
+      expect(screen.queryByText('All changes saved')).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /retry/i })).toBeInTheDocument();
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
   test('Enter in a key field saves just that key, not the other settings', async () => {
     updateUserSettings.mockImplementation(async (body) => ({
       ...mockSettings,

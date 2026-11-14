@@ -7,6 +7,12 @@ dependency inventory. npm/NuGet/container dependencies retain their upstream
 licenses and notices; consult the lockfile, project files, and installed packages
 when redistributing a build.
 
+Accessibility browser tests use `@axe-core/playwright` and `axe-core` (MPL-2.0,
+Deque Systems and contributors). They are development dependencies, injected only
+into isolated browser fixtures, and excluded from production/demo bundles. Their
+upstream licenses remain in the installed packages; versions are pinned in the
+[client lockfile](client/lingua-read-client/package-lock.json).
+
 ## FSRS port
 
 The C# memory model, parameters, and review state machine in

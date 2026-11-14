@@ -2,41 +2,15 @@ import type { Locator, Page, TestInfo } from '@playwright/test';
 import { test, expect } from './layout.fixture';
 import { test as dashboardTest } from './dashboard.fixture';
 import { activate, expectInside, expectPageFits, expectTextFits, horizontalOverflow, unmaskRootOverflow } from './bounds';
+import { textContrast } from './contrast';
 
-const themes = ['light', 'dark', 'classic-dark'] as const;
+const themes = ['light', 'dark', 'classic-dark', 'high-contrast-light', 'high-contrast-dark'] as const;
 
 async function expectReadableText(element: Locator) {
   await expect(element).toBeVisible();
-  await expect.poll(() => element.evaluate(node => {
-    const canvas = document.createElement('canvas');
-    canvas.width = canvas.height = 1;
-    const context = canvas.getContext('2d')!;
-    const rgba = (color: string) => {
-      context.clearRect(0, 0, 1, 1);
-      context.fillStyle = color;
-      context.fillRect(0, 0, 1, 1);
-      return [...context.getImageData(0, 0, 1, 1).data];
-    };
-    let parent: Element | null = node;
-    let background = [255, 255, 255, 255];
-    let opacity = 1;
-    while (parent) {
-      const style = getComputedStyle(parent);
-      opacity *= parseFloat(style.opacity);
-      const color = rgba(style.backgroundColor);
-      if (color[3] === 255) { background = color; break; }
-      parent = parent.parentElement;
-    }
-    const foreground = rgba(getComputedStyle(node).color);
-    const alpha = foreground[3] / 255 * opacity;
-    const composite = foreground.slice(0, 3).map((value, i) => alpha * value + (1 - alpha) * background[i]);
-    const luminance = (color: number[]) => color.slice(0, 3).reduce((sum, value, i) => {
-      const channel = value / 255;
-      return sum + (channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4) * [0.2126, 0.7152, 0.0722][i];
-    }, 0);
-    const values = [luminance(background), luminance(composite)].sort((a, b) => a - b);
-    return (values[1] + 0.05) / (values[0] + 0.05);
-  }), { message: 'Secondary text must have at least 4.5:1 contrast' }).toBeGreaterThanOrEqual(4.5);
+  await expect.poll(async () => (await textContrast(element)).ratio, {
+    message: `Secondary text must have at least 4.5:1 contrast: ${await element.evaluate(node => node.outerHTML.slice(0, 250))}`,
+  }).toBeGreaterThanOrEqual(4.5);
 }
 
 async function checkThemes(page: Page, selector: string, focus: Locator, info: TestInfo, secondarySelector?: string) {
@@ -143,6 +117,21 @@ test('Terms keeps full width with a locally scrolling table', async ({ page, ope
 });
 
 for (const mode of ['classic', 'modern']) {
+  for (const [label, path] of [
+    ['sentence first read', 'texts/801?sentence=1'],
+    ['mixed passage', 'texts/801?mixed=1'],
+    ['mixed sentence', 'texts/801?sentence=1&mixed=1'],
+    ['mixed audio', 'texts/802?mixed=1'],
+  ]) {
+    test(`${mode} ${label} appearance remains usable`, async ({ page, openLayout }, info) => {
+      await openLayout(`${path}&mode=${mode}`);
+      await expect(page.locator('.clickable-word').first()).toBeVisible();
+      const control = path.includes('sentence=1') ? page.getByRole('button', { name: 'Next', exact: true }) : page.viewportSize()!.width <= 768
+        ? page.getByRole('button', { name: 'Open lesson controls', exact: true })
+        : page.getByRole('button', { name: 'Hide lesson controls panel', exact: true });
+      await checkThemes(page, '.text-display-wrapper', control, info);
+    });
+  }
   for (const [name, textId] of [['reader', 801], ['audio', 802]] as const) {
     test(`${mode} ${name} keeps its flush panels and controls`, async ({ page, openLayout }, info) => {
       await openLayout(`texts/${textId}?mode=${mode}`);

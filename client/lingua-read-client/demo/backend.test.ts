@@ -9,6 +9,21 @@ const request = (path: string, method = 'GET', body?: unknown) => new Request(`h
 afterEach(() => vi.restoreAllMocks());
 
 describe('static demo boundary', () => {
+  it('defaults accessibility preferences compatibly and retains explicit changes in this tab', async () => {
+    const backend = createDemoBackend('/Lingua_read2/');
+    const initial = await (await backend.respond(request('/usersettings'))).json();
+    expect(initial.readerCharacterShortcutsEnabled).toBe(true);
+    expect(initial.readerStatusMarkersEnabled).toBe(false);
+    await backend.respond(request('/usersettings', 'PUT', {
+      theme: 'high-contrast-dark', readerCharacterShortcutsEnabled: false, readerStatusMarkersEnabled: true,
+    }));
+    await backend.respond(request('/usersettings', 'PUT', { textSize: 22 }));
+    const reloaded = await (await backend.respond(request('/usersettings'))).json();
+    expect(reloaded).toMatchObject({
+      theme: 'high-contrast-dark', readerCharacterShortcutsEnabled: false, readerStatusMarkersEnabled: true, textSize: 22,
+    });
+  });
+
   it('edits fractional totals, rejects stale edits, and preserves whole-pass recording', async () => {
     const backend = createDemoBackend('/');
     const lesson = await (await backend.respond(request('/texts/2'))).json();

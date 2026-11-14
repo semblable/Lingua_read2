@@ -21,6 +21,7 @@ export function createDemoBackend(basePath: string) {
     showDesktopLessonControls: false, autoTranslateWords: true,
     sentenceTtsEnabled: false, sentenceMode: false, translationTargetLanguageCode: 'EN',
     pauseOnWordClick: true, readerParagraphIndent: false,
+    readerCharacterShortcutsEnabled: true, readerStatusMarkersEnabled: false,
   });
   const bookmarks = new Map<number, number[]>();
   const positions = new Map<number, number>();

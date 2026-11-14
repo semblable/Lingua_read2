@@ -19,14 +19,17 @@ export default defineConfig({
     screenshot: 'only-on-failure',
     trace: 'retain-on-failure',
   },
-  projects: [320, 390, 430, 1280].map(width => ({
+  projects: [...[320, 390, 430, 1280].map(width => ({
     name: `chromium-${width}`,
     use: {
       viewport: { width, height: 900 },
       isMobile: width < 768,
       hasTouch: width < 768,
     },
-  })),
+  })), {
+    name: 'chromium-desktop-320',
+    use: { viewport: { width: 320, height: 900 }, isMobile: false, hasTouch: false },
+  }],
   webServer: {
     command: 'npx vite --config vite.browser.config.ts',
     url: 'http://127.0.0.1:4175',

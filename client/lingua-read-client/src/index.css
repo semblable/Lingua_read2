@@ -13,7 +13,7 @@
 
   --font-color-on-primary: #FFFFFF;
   --font-color-on-secondary: #333333;
-  --font-color-on-accent: #FFFFFF;
+  --font-color-on-accent: #08251f;
 
   /* Light theme colors */
   --background-color-light: #FFFFFF;
@@ -21,8 +21,8 @@
   --ui-background-light: #f0f0f0;
   /* Lighter than secondary for subtle backgrounds */
   --border-color-light: #CED4DA;
-  --link-color-light: var(--accent-color);
-  --link-hover-color-light: var(--accent-color-darker);
+  --link-color-light: #087563;
+  --link-hover-color-light: #065a4c;
 
   /* Dark theme colors */
   --background-color-dark: var(--primary-color);
@@ -32,7 +32,7 @@
   /* Slightly lighter than primary for UI elements */
   --border-color-dark: #4a6278;
   /* Adjusted for contrast with primary */
-  --link-color-dark: var(--accent-color);
+  --link-color-dark: #55d8ba;
   /* Accent color can work well on dark too */
   --link-hover-color-dark: #2EEECB;
   /* Lighter accent for hover on dark */
@@ -58,7 +58,7 @@
   /* Use new surface for general UI */
   --classic-dark-border-color: #4A5568;
   /* General border, review if needed */
-  --classic-dark-link-color: var(--classic-dark-accent);
+  --classic-dark-link-color: #64dfc0;
   --classic-dark-link-hover-color: #2EEECB;
   /* Lighter accent for hover */
   --classic-dark-word-highlight-bg: rgba(135, 206, 250, 0.3);
@@ -89,7 +89,7 @@
   /* Darker Red */
   --status-2-color-dark: rgba(211, 84, 0, 0.4);
   /* Darker Orange */
-  --status-3-color-dark: rgba(243, 156, 18, 0.5);
+  --status-3-color-dark: rgba(243, 156, 18, 0.3);
   /* Darker Yellow */
   --status-4-color-dark: rgba(39, 174, 96, 0.4);
   /* Darker Green */
@@ -104,7 +104,7 @@
   /* Red, slightly more visible */
   --status-2-color-classic-dark: rgba(243, 156, 18, 0.35);
   /* Orange, slightly more visible */
-  --status-3-color-classic-dark: rgba(241, 196, 15, 0.45);
+  --status-3-color-classic-dark: rgba(241, 196, 15, 0.25);
   /* Yellow, slightly more visible */
   --status-4-color-classic-dark: rgba(46, 204, 113, 0.35);
   /* Green, slightly more visible */
@@ -218,15 +218,15 @@
   --popup-sentence-bg-2: #e8f5e9;
   /* light green */
   /* Multicolored Translation Text */
-  --translated-text-color-1: #007AFF;
+  --translated-text-color-1: #0054a8;
   /* Vibrant Blue */
-  --translated-text-color-2: #FF3B30;
+  --translated-text-color-2: #a51e27;
   /* Vibrant Red */
-  --translated-text-color-3: #34C759;
+  --translated-text-color-3: #1c6b32;
   /* Vibrant Green */
-  --translated-text-color-4: #AF52DE;
+  --translated-text-color-4: #74309b;
   /* Vibrant Purple */
-  --translated-text-color-5: #5AC8FA;
+  --translated-text-color-5: #076176;
   /* Vibrant Cyan */
 }
 
@@ -260,7 +260,7 @@
   --popup-sentence-bg-2: #283747;
   /* Even darker, or a contrasting subtle color */
   /* Multicolored Translation Text - Dark Theme */
-  --translated-text-color-1: #58A6FF;
+  --translated-text-color-1: #79b8ff;
   /* Lighter Blue */
   --translated-text-color-2: #FF7B72;
   /* Lighter Red */
@@ -581,6 +581,9 @@ a:focus {
 
 /* Primary Button */
 .btn-primary {
+  --bs-btn-active-bg: var(--accent-color-darker);
+  --bs-btn-active-border-color: var(--accent-color-darker);
+  --bs-btn-active-color: var(--font-color-on-accent);
   background-color: var(--accent-color);
   border-color: var(--accent-color);
   color: var(--font-color-on-accent);
@@ -608,6 +611,16 @@ a:focus {
   border-color: #d3d3d3;
   color: var(--font-color-on-secondary);
   box-shadow: var(--shadow-xs);
+}
+
+.classic-dark-theme .btn-secondary {
+  color: var(--classic-dark-text);
+  background-color: var(--classic-dark-panel-bg);
+  border-color: var(--classic-dark-surface-border-color);
+}
+.classic-dark-theme .btn-secondary:is(:hover, :focus, :active) {
+  color: var(--classic-dark-text);
+  background-color: var(--classic-dark-surface-bg);
 }
 
 /* Light/Outline Button for dark theme considerations */
@@ -1047,6 +1060,8 @@ html {
   color: var(--translated-text-color-5);
 }
 
+.translation-pair-number { color: var(--font-color); font-weight: 600; }
+
 /* Drag-select rubber band */
 .drag-select-rectangle {
   background-color: rgba(13, 110, 253, 0.1);
@@ -1157,4 +1172,72 @@ html {
 .library-grid-container.is-drag-selecting {
   user-select: none;
   -webkit-user-select: none;
+}
+
+/* Shared access behavior is independent of the selected color palette. */
+:root {
+  --focus-ring-color: #174ea6;
+  --focus-ring-halo: #ffffff;
+}
+
+body:is(.dark-theme, .classic-dark-theme, .high-contrast-dark-theme) {
+  --focus-ring-color: #ffe08a;
+  --focus-ring-halo: #202a35;
+}
+
+:is(a, button, input, textarea, select, summary, [tabindex]):focus-visible {
+  outline: 3px solid var(--focus-ring-color) !important;
+  outline-offset: 3px;
+  box-shadow: 0 0 0 2px var(--focus-ring-halo);
+}
+
+:is(a, button, input, textarea, select, summary, [tabindex]) {
+  scroll-margin-block: 6rem 2rem;
+}
+
+/* Only prose links: navigation, cards, and button links retain their layout. */
+:is(p, li, dd, .help-text, .form-text) a:not(.btn, .nav-link, .dropdown-item, .card-title) {
+  text-decoration: underline;
+  text-underline-offset: 0.16em;
+}
+
+:is(.btn, .dropdown-item, .btn-close, summary) {
+  min-height: 24px;
+}
+
+.btn-close { min-width: 24px; }
+
+/* Meaningful selection retains a shape/text cue when hue is unavailable. */
+.btn[aria-pressed="true"],
+.btn-check:checked + .btn {
+  text-decoration: underline;
+  text-underline-offset: 0.18em;
+  font-weight: 700;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+@media (forced-colors: active) {
+  .app-navigation .navbar-toggler-icon { background-image: none !important; filter: none !important; }
+  .app-navigation .navbar-toggler-icon::before { content: '☰'; color: ButtonText; font-size: 1.5rem; line-height: 1; }
+  :is(a, button, input, textarea, select, summary, [tabindex]):focus-visible {
+    outline-color: Highlight !important;
+    box-shadow: none;
+  }
+  :is(.btn, .form-control, .form-select, .card, .modal-content) {
+    border: 1px solid ButtonText;
+  }
+  .btn[aria-pressed="true"], .btn-check:checked + .btn {
+    outline: 2px solid Highlight;
+    outline-offset: -4px;
+  }
+  .clickable-word { forced-color-adjust: auto; }
+  .active-srt-line { border-inline-start: 3px solid Highlight; }
 }

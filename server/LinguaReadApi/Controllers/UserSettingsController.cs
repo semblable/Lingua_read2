@@ -66,6 +66,8 @@ namespace LinguaReadApi.Controllers
                     AutoTranslateWordStatus = 5,
                     PauseOnWordClick = false,
                     HighlightKnownWords = true,
+                    ReaderCharacterShortcutsEnabled = true,
+                    ReaderStatusMarkersEnabled = false,
                     SentenceMode = false,
                     SentenceAudioRepeats = 1,
                     SentenceTtsEnabled = false,
@@ -120,6 +122,8 @@ namespace LinguaReadApi.Controllers
                 AutoTranslateWordStatus = settings.AutoTranslateWordStatus,
                 PauseOnWordClick = settings.PauseOnWordClick,
                 HighlightKnownWords = settings.HighlightKnownWords,
+                ReaderCharacterShortcutsEnabled = settings.ReaderCharacterShortcutsEnabled,
+                ReaderStatusMarkersEnabled = settings.ReaderStatusMarkersEnabled,
                 SentenceMode = settings.SentenceMode,
                 SentenceAudioRepeats = settings.SentenceAudioRepeats,
                 SentenceTtsEnabled = settings.SentenceTtsEnabled,
@@ -216,6 +220,8 @@ namespace LinguaReadApi.Controllers
             
             // Update settings with provided values
             settings.Theme = updateDto.Theme ?? settings.Theme;
+            settings.ReaderCharacterShortcutsEnabled = updateDto.ReaderCharacterShortcutsEnabled ?? settings.ReaderCharacterShortcutsEnabled;
+            settings.ReaderStatusMarkersEnabled = updateDto.ReaderStatusMarkersEnabled ?? settings.ReaderStatusMarkersEnabled;
             settings.TextSize = updateDto.TextSize ?? settings.TextSize;
             settings.TextFont = updateDto.TextFont ?? settings.TextFont;
             if (!string.IsNullOrWhiteSpace(updateDto.ReadingUiMode))
@@ -536,6 +542,8 @@ namespace LinguaReadApi.Controllers
                 AutoTranslateWordStatus = settings.AutoTranslateWordStatus,
                 PauseOnWordClick = settings.PauseOnWordClick,
                 HighlightKnownWords = settings.HighlightKnownWords,
+                ReaderCharacterShortcutsEnabled = settings.ReaderCharacterShortcutsEnabled,
+                ReaderStatusMarkersEnabled = settings.ReaderStatusMarkersEnabled,
                 SentenceMode = settings.SentenceMode,
                 SentenceAudioRepeats = settings.SentenceAudioRepeats,
                 SentenceTtsEnabled = settings.SentenceTtsEnabled,
@@ -928,6 +936,8 @@ namespace LinguaReadApi.Controllers
         public int AutoTranslateWordStatus { get; set; } = 5;
         public bool PauseOnWordClick { get; set; } = false;
         public bool HighlightKnownWords { get; set; } = true;
+        public bool ReaderCharacterShortcutsEnabled { get; set; } = true;
+        public bool ReaderStatusMarkersEnabled { get; set; } = false;
         public bool SentenceMode { get; set; } = false;
         public int SentenceAudioRepeats { get; set; } = 1;
         public bool SentenceTtsEnabled { get; set; } = false;
@@ -1034,6 +1044,8 @@ namespace LinguaReadApi.Controllers
         public int? AutoTranslateWordStatus { get; set; }
         public bool? PauseOnWordClick { get; set; }
         public bool? HighlightKnownWords { get; set; }
+        public bool? ReaderCharacterShortcutsEnabled { get; set; }
+        public bool? ReaderStatusMarkersEnabled { get; set; }
         public bool? SentenceMode { get; set; }
         [Range(1, 10)]
         public int? SentenceAudioRepeats { get; set; }
@@ -1232,4 +1244,4 @@ namespace LinguaReadApi.Controllers
             SummarizationModel = row.SummarizationModel
         };
     }
-} 
+}

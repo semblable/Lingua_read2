@@ -1,0 +1,304 @@
+/* Opt-in palettes. Shared focus, reflow and motion rules live outside this gate. */
+body.high-contrast-light-theme {
+  --background-color: #ffffff;
+  --font-color: #000000;
+  --ui-background: #f4f4f4;
+  --border-color: #595959;
+  --theme-surface-bg: #ffffff;
+  --theme-border-color: #595959;
+  --theme-text: #000000;
+  --theme-text-color: #000000;
+  --theme-text-muted: #454545;
+  --text-muted: #454545;
+  --primary-color: #ffffff;
+  --secondary-color: #e4e4e4;
+  --accent-color: #005f4a;
+  --accent-color-darker: #004534;
+  --font-color-on-primary: #000000;
+  --font-color-on-secondary: #000000;
+  --font-color-on-accent: #ffffff;
+  --link-color: #004c99;
+  --link-hover-color: #002f66;
+  --status-0-color: #e4e4e4;
+  --status-1-color: #ffd9d3;
+  --status-2-color: #ffe1b2;
+  --status-3-color: #fff2a8;
+  --status-4-color: #c5efd2;
+  --status-text-color: #000000;
+  --popup-original-panel-bg: #ffffff;
+  --popup-translated-panel-bg: #f4f4f4;
+  --popup-sentence-bg-1: #ffffff;
+  --popup-sentence-bg-2: #e4e4e4;
+  --translated-text-color-1: #003f7d;
+  --translated-text-color-2: #8c1b12;
+  --translated-text-color-3: #00522a;
+  --translated-text-color-4: #5d247e;
+  --translated-text-color-5: #004b59;
+  --color-success: #00522a;
+  --color-danger: #8c1b12;
+  --color-warning: #684000;
+  --color-info: #003f7d;
+  --chart-known: #00522a;
+  --chart-reading: #003f7d;
+  --chart-listening: #005f4a;
+  --chart-comparison: #595959;
+  --chart-learning: #684000;
+  --hc-selection-bg: #000000;
+  --hc-selection-text: #ffffff;
+  --hc-muted-rgb: 69, 69, 69;
+  --hc-bg-rgb: 255, 255, 255;
+  --hc-text-rgb: 0, 0, 0;
+}
+
+body.high-contrast-dark-theme {
+  --background-color: #000000;
+  --font-color: #ffffff;
+  --ui-background: #111111;
+  --border-color: #aaaaaa;
+  --theme-surface-bg: #111111;
+  --theme-border-color: #aaaaaa;
+  --theme-text: #ffffff;
+  --theme-text-color: #ffffff;
+  --theme-text-muted: #d0d0d0;
+  --text-muted: #d0d0d0;
+  --primary-color: #111111;
+  --secondary-color: #282828;
+  --accent-color: #73f3d0;
+  --accent-color-darker: #b1ffe8;
+  --font-color-on-primary: #ffffff;
+  --font-color-on-secondary: #ffffff;
+  --font-color-on-accent: #000000;
+  --link-color: #8cd9ff;
+  --link-hover-color: #c7eeff;
+  --status-0-color: #282828;
+  --status-1-color: #572222;
+  --status-2-color: #593900;
+  --status-3-color: #4d4611;
+  --status-4-color: #12482a;
+  --status-text-color: #ffffff;
+  --popup-original-panel-bg: #000000;
+  --popup-translated-panel-bg: #111111;
+  --popup-sentence-bg-1: #111111;
+  --popup-sentence-bg-2: #282828;
+  --translated-text-color-1: #9ed4ff;
+  --translated-text-color-2: #ffb2a8;
+  --translated-text-color-3: #a8efb8;
+  --translated-text-color-4: #e3b8ff;
+  --translated-text-color-5: #99e6ef;
+  --color-success: #a8efb8;
+  --color-danger: #ffb2a8;
+  --color-warning: #ffe39c;
+  --color-info: #9ed4ff;
+  --chart-known: #a8efb8;
+  --chart-reading: #9ed4ff;
+  --chart-listening: #73f3d0;
+  --chart-comparison: #d0d0d0;
+  --chart-learning: #ffe39c;
+  --hc-selection-bg: #ffffff;
+  --hc-selection-text: #000000;
+  --hc-muted-rgb: 208, 208, 208;
+  --hc-bg-rgb: 0, 0, 0;
+  --hc-text-rgb: 255, 255, 255;
+}
+
+body:is(.high-contrast-light-theme, .high-contrast-dark-theme) {
+  --bs-body-bg: var(--background-color);
+  --bs-body-color: var(--font-color);
+  --bs-body-bg-rgb: var(--hc-bg-rgb);
+  --bs-body-color-rgb: var(--hc-text-rgb);
+  --bs-secondary-bg: var(--ui-background);
+  --bs-secondary-color: var(--theme-text-muted);
+  --bs-secondary-color-rgb: var(--hc-muted-rgb);
+  --bs-border-color: var(--border-color);
+  --bs-emphasis-color: var(--font-color);
+  --bs-tertiary-bg: var(--ui-background);
+  --bs-success: var(--color-success);
+  --bs-danger: var(--color-danger);
+  --bs-warning: var(--color-warning);
+  background: var(--background-color);
+  color: var(--font-color);
+}
+
+body:is(.high-contrast-light-theme, .high-contrast-dark-theme) ::selection {
+  background: var(--hc-selection-bg);
+  color: var(--hc-selection-text);
+}
+
+body:is(.high-contrast-light-theme, .high-contrast-dark-theme) :is(
+  .card, .modal-content, .offcanvas, .popover, .dropdown-menu, .list-group-item,
+  .settings-section-card, .settings-save-status, .reader-modern .reading-content,
+  .reader-modern .reading-block, .word-info-panel, .audiobook-player-custom-bg
+) {
+  color: var(--font-color);
+  background: var(--theme-surface-bg);
+  border-color: var(--border-color);
+  backdrop-filter: none;
+}
+
+body:is(.high-contrast-light-theme, .high-contrast-dark-theme) :is(
+  .card-header, .card-footer, .popover-header, .popover-body, .dropdown-item
+) {
+  color: var(--font-color);
+  background-color: var(--theme-surface-bg);
+  border-color: var(--border-color);
+}
+
+body:is(.high-contrast-light-theme, .high-contrast-dark-theme) :is(.form-control, .form-select, .input-group-text) {
+  color: var(--font-color);
+  background-color: var(--background-color);
+  border-color: var(--border-color);
+}
+
+body:is(.high-contrast-light-theme, .high-contrast-dark-theme) .form-control::placeholder {
+  color: var(--theme-text-muted);
+  opacity: 1;
+}
+
+body:is(.high-contrast-light-theme, .high-contrast-dark-theme) .form-check-input {
+  border-color: var(--border-color);
+  background-color: var(--background-color);
+}
+
+body:is(.high-contrast-light-theme, .high-contrast-dark-theme) .form-check-input:checked {
+  background-color: var(--accent-color);
+  border-color: var(--accent-color);
+}
+
+body.high-contrast-dark-theme .form-check-input:checked {
+  background-color: #005f4a;
+  border-color: #73f3d0;
+}
+
+body:is(.high-contrast-light-theme, .high-contrast-dark-theme) .btn {
+  --bs-btn-color: var(--font-color);
+  --bs-btn-bg: var(--theme-surface-bg);
+  --bs-btn-border-color: var(--border-color);
+  --bs-btn-hover-color: var(--font-color);
+  --bs-btn-hover-bg: var(--secondary-color);
+  --bs-btn-hover-border-color: var(--font-color);
+  --bs-btn-active-color: var(--font-color-on-accent);
+  --bs-btn-active-bg: var(--accent-color);
+  --bs-btn-active-border-color: var(--font-color);
+  color: var(--font-color);
+  background-color: var(--theme-surface-bg);
+  border-color: var(--border-color);
+}
+
+body:is(.high-contrast-light-theme, .high-contrast-dark-theme) .btn:is(.btn-primary, .active, [aria-pressed="true"]) {
+  color: var(--font-color-on-accent);
+  background-color: var(--accent-color);
+  border-color: var(--accent-color);
+}
+
+body:is(.high-contrast-light-theme, .high-contrast-dark-theme) .btn:not(:disabled):hover {
+  color: var(--font-color-on-accent);
+  background-color: var(--accent-color-darker);
+  border-color: var(--font-color);
+}
+
+body:is(.high-contrast-light-theme, .high-contrast-dark-theme) :is(.text-muted, .form-text) {
+  color: var(--theme-text-muted) !important;
+}
+
+body:is(.high-contrast-light-theme, .high-contrast-dark-theme) .app-navigation {
+  --bs-navbar-color: var(--font-color);
+  --bs-navbar-active-color: var(--link-color);
+  --bs-navbar-hover-color: var(--link-hover-color);
+  --bs-navbar-brand-color: var(--font-color);
+  color: var(--font-color);
+  background: var(--theme-surface-bg) !important;
+  border-bottom: 1px solid var(--border-color);
+}
+
+body:is(.high-contrast-light-theme, .high-contrast-dark-theme) .app-navigation .navbar-toggler {
+  border-color: var(--border-color);
+}
+
+body.high-contrast-dark-theme .form-select {
+  --bs-form-select-bg-img: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='%23fff' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='m2 5 6 6 6-6'/%3e%3c/svg%3e");
+}
+
+body.high-contrast-dark-theme .form-switch .form-check-input {
+  --bs-form-switch-bg: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='-4 -4 8 8'%3e%3ccircle r='3' fill='%23fff'/%3e%3c/svg%3e");
+}
+
+body.high-contrast-dark-theme .btn-close {
+  filter: invert(1);
+  opacity: 1;
+}
+
+body.high-contrast-dark-theme .navbar-toggler-icon {
+  filter: none;
+  background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 30 30'%3e%3cpath stroke='%23fff' stroke-linecap='round' stroke-width='2' d='M4 7h22M4 15h22M4 23h22'/%3e%3c/svg%3e");
+}
+
+body.high-contrast-light-theme .navbar-toggler-icon {
+  filter: none;
+  background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 30 30'%3e%3cpath stroke='%23000' stroke-linecap='round' stroke-width='2' d='M4 7h22M4 15h22M4 23h22'/%3e%3c/svg%3e");
+}
+
+body:is(.high-contrast-light-theme, .high-contrast-dark-theme) .settings-sidebar-item.active {
+  color: var(--font-color-on-accent);
+  background: var(--accent-color);
+  box-shadow: inset 4px 0 0 currentColor;
+}
+
+body:is(.high-contrast-light-theme, .high-contrast-dark-theme) .home-dashboard {
+  --home-panel: var(--theme-surface-bg);
+  --home-inset: var(--ui-background);
+  --home-border: var(--border-color);
+  --home-text: var(--font-color);
+  --home-muted: var(--theme-text-muted);
+  --home-link: var(--link-color);
+  --home-accent: var(--accent-color);
+  --home-accent-ink: var(--font-color-on-accent);
+}
+
+body:is(.high-contrast-light-theme, .high-contrast-dark-theme) .recharts-cartesian-axis-tick-value {
+  fill: var(--font-color);
+}
+
+body:is(.high-contrast-light-theme, .high-contrast-dark-theme) .recharts-cartesian-grid line {
+  stroke: var(--border-color);
+}
+
+body:is(.high-contrast-light-theme, .high-contrast-dark-theme) .recharts-default-tooltip {
+  color: var(--font-color) !important;
+  background-color: var(--theme-surface-bg) !important;
+  border-color: var(--border-color) !important;
+}
+
+.settings-reading-preview {
+  padding: 1rem;
+  margin-block: 1rem 0;
+  border: 1px solid var(--theme-border-color);
+  border-radius: var(--radius-md);
+  background: var(--background-color);
+  color: var(--font-color);
+  overflow-wrap: anywhere;
+}
+
+.settings-reading-preview p {
+  margin: 0;
+  line-height: var(--reading-line-height, 1.5);
+}
+
+.settings-reading-preview figcaption {
+  margin-block-start: .75rem;
+  font-size: .875rem;
+}
+
+/* Shared by passages and the settings preview, including a direct settings
+   visit before the lazy reader stylesheet has loaded. Independent of theme. */
+body.reader-status-markers :is(.word-status-0, .word-status-1, .word-status-2, .word-status-3, .word-status-4) {
+  text-decoration-line: underline;
+  text-decoration-color: currentColor;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.2em;
+  text-decoration-skip-ink: auto;
+}
+body.reader-status-markers .word-status-0 { border-bottom: 0; text-decoration-style: dotted; }
+body.reader-status-markers .word-status-1 { text-decoration-style: solid; }
+body.reader-status-markers .word-status-2 { text-decoration-style: dashed; }
+body.reader-status-markers .word-status-3 { text-decoration-style: double; }
+body.reader-status-markers .word-status-4 { text-decoration-style: wavy; }

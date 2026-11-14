@@ -8,9 +8,12 @@ import { subscribeOfflineEvent } from '../utils/offline/events';
 
 export function useSyncedWordIdentities(textId: number | string | null | undefined, words: Word[],
   lookupTerm: (term: string) => string, setWords: Dispatch<SetStateAction<Word[]>>,
-  setDisplayedWord: Dispatch<SetStateAction<DisplayedWord | null>>): void {
+  setDisplayedWord: Dispatch<SetStateAction<DisplayedWord | null>>,
+  options: { reconcileServerWords?: (words: Word[]) => void; hasQueuedStatuses?: boolean } = {}): void {
+  const { reconcileServerWords, hasQueuedStatuses = false } = options;
+  const needsIdentity = words.some(word => !word.wordId);
   useEffect(() => {
-    if (!textId || !words.some(word => !word.wordId)) return;
+    if (!textId || (!hasQueuedStatuses && !needsIdentity)) return;
     let disposed = false;
     let fetching = false;
     const reconcile = async () => {
@@ -20,8 +23,17 @@ export function useSyncedWordIdentities(textId: number | string | null | undefin
         if (await pending() > 0 || disposed) return;
         const text = await fetchApi<{ words?: Word[] }>(`/texts/${textId}`, { suppressAuthRedirect: true });
         if (await pending() > 0 || disposed) return;
-        const savedWords = new Map((text.words ?? []).filter(word => word.wordId && word.term)
-          .map(word => [lookupTerm(word.term!), word]));
+        // An ambiguous exact spelling cannot safely identify a provisional row.
+        // In particular, never fold distinct saved rows into one identity.
+        const savedWords = new Map<string, Word>();
+        const ambiguous = new Set<string>();
+        (text.words ?? []).filter(word => word.wordId && word.term).forEach(word => {
+          const key = lookupTerm(word.term!);
+          if (savedWords.has(key) && savedWords.get(key)?.wordId !== word.wordId) ambiguous.add(key);
+          else savedWords.set(key, word);
+        });
+        ambiguous.forEach(key => savedWords.delete(key));
+        reconcileServerWords?.(text.words ?? []);
         // Identity-only merge: a newer optimistic edit must not be overwritten
         // by the status/translation from an earlier network response.
         setWords(current => {
@@ -56,5 +68,5 @@ export function useSyncedWordIdentities(textId: number | string | null | undefin
       window.removeEventListener('focus', refresh);
       window.removeEventListener('online', refresh);
     };
-  }, [textId, words, lookupTerm, setWords, setDisplayedWord]);
+  }, [textId, needsIdentity, lookupTerm, setWords, setDisplayedWord, reconcileServerWords, hasQueuedStatuses]);
 }

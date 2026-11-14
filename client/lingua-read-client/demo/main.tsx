@@ -15,6 +15,7 @@ import '../src/index.css';
 import '../src/App.css';
 import { SettingsProvider } from '../src/contexts/SettingsProvider';
 import { SettingsContext } from '../src/contexts/SettingsContext';
+import { applyTheme } from '../src/utils/theme';
 import { DEMO_CHANGE_EVENT, installDemoBackend } from './backend';
 import './showcase.css';
 
@@ -31,7 +32,11 @@ function Showcase() {
   const [resetKey, setResetKey] = useState(0);
   const readerUrl = `${import.meta.env.BASE_URL}#/reader/${sample}`;
   const goToDemo = () => document.getElementById('try-reader')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  useEffect(() => { document.body.className = 'light-theme showcase-body'; }, []);
+  useEffect(() => {
+    applyTheme('light');
+    document.body.classList.add('showcase-body');
+    return () => document.body.classList.remove('showcase-body');
+  }, []);
 
   return <div className="showcase">
     <header className="showcase-nav showcase-width">
@@ -125,9 +130,9 @@ function ReaderControls({ reset }: { reset: () => void }) {
     return () => window.removeEventListener(DEMO_CHANGE_EVENT, update);
   }, []);
   useEffect(() => {
-    document.body.classList.toggle('dark-theme', settings.theme === 'dark');
-    document.body.classList.toggle('light-theme', settings.theme !== 'dark');
+    applyTheme(settings.theme);
     document.body.classList.add('demo-reader-body');
+    return () => document.body.classList.remove('demo-reader-body');
   }, [settings.theme]);
   return <>
     <div className="demo-reader-notice">

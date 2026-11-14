@@ -13,6 +13,8 @@ import {
   YAxis
 } from 'recharts';
 import { toCumulative } from '../../utils/statistics';
+import ChartDataTable from './ChartDataTable';
+import { useReducedMotion } from '../../hooks/useReducedMotion';
 import type {
   KnownWordsActivity,
   ListeningActivity,
@@ -25,12 +27,13 @@ const EmptyChart = ({ children }: { children: React.ReactNode }) => (
   <div className="stats-empty-chart text-muted">{children}</div>
 );
 
-const ChartCard = ({ title, summary, children }: { title: React.ReactNode; summary?: React.ReactNode; children: React.ReactNode }) => (
+const ChartCard = ({ title, summary, data, children }: { title: React.ReactNode; summary?: React.ReactNode; data?: React.ReactNode; children: React.ReactNode }) => (
   <Card className="stats-card h-100 shadow-sm">
     <Card.Body>
       <Card.Title className="stats-eyebrow mb-2">{title}</Card.Title>
       {summary && <div className="small text-muted mb-3">{summary}</div>}
       <div className="stats-chart">{children}</div>
+      {data}
     </Card.Body>
   </Card>
 );
@@ -95,6 +98,7 @@ const ActivityCharts = ({
   showComparison
 }: ActivityChartsProps) => {
   const [chartMode, setChartMode] = useState('daily');
+  const reducedMotion = useReducedMotion();
   const isCumulative = chartMode === 'cumulative';
 
   const readingByDate = useMemo(
@@ -158,6 +162,11 @@ const ActivityCharts = ({
   const readingXKey = hasReadingComparison ? 'label' : 'date';
   const listeningXKey = hasListeningComparison ? 'label' : 'date';
   const knownWordsXKey = hasKnownWordsComparison ? 'label' : 'date';
+  const seriesTable = (caption: string, rows: AnyActivityRow[], dateKey: string, key: string, label: string, previousKey: string, comparison: boolean) => (
+    loadingActivity ? null : <ChartDataTable caption={`${isCumulative ? 'Cumulative ' : ''}${caption}`} rows={rows}
+      columns={[{ key: dateKey, label: comparison ? 'Current-period date / aligned day' : 'Date' },
+        { key, label }, ...(comparison ? [{ key: previousKey, label: 'Previous period (aligned day)' }] : [])]} />
+  );
 
   const readingSummary = isCumulative
     ? (hasReadingComparison ? 'Running total — current vs previous period' : 'Running total of words read')
@@ -181,12 +190,12 @@ const ActivityCharts = ({
           <AreaChart data={listeningSeries}>
             <defs>
               <linearGradient id="statsListening" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#1ABC9C" stopOpacity={0.3} />
-                <stop offset="95%" stopColor="#1ABC9C" stopOpacity={0} />
+                <stop offset="5%" stopColor="var(--chart-listening, #1ABC9C)" stopOpacity={0.3} />
+                <stop offset="95%" stopColor="var(--chart-listening, #1ABC9C)" stopOpacity={0} />
               </linearGradient>
               <linearGradient id="statsListeningPrev" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#95A5A6" stopOpacity={0.2} />
-                <stop offset="95%" stopColor="#95A5A6" stopOpacity={0} />
+                <stop offset="5%" stopColor="var(--chart-comparison, #95A5A6)" stopOpacity={0.2} />
+                <stop offset="95%" stopColor="var(--chart-comparison, #95A5A6)" stopOpacity={0} />
               </linearGradient>
             </defs>
             <CartesianGrid strokeDasharray="3 3" vertical={false} />
@@ -195,21 +204,21 @@ const ActivityCharts = ({
             <Tooltip />
             {hasListeningComparison && <Legend />}
             {hasListeningComparison && (
-              <Area
+              <Area isAnimationActive={!reducedMotion}
                 type="monotone"
                 dataKey="previousMinutesListened"
                 name="Previous period"
-                stroke="#95A5A6"
+                stroke="var(--chart-comparison, #95A5A6)"
                 strokeWidth={1.5}
                 strokeDasharray="4 3"
                 fill="url(#statsListeningPrev)"
               />
             )}
-            <Area
+            <Area isAnimationActive={!reducedMotion}
               type="monotone"
               dataKey="minutesListened"
               name="Minutes listened"
-              stroke="#1ABC9C"
+              stroke="var(--chart-listening, #1ABC9C)"
               strokeWidth={2}
               fill="url(#statsListening)"
             />
@@ -227,17 +236,17 @@ const ActivityCharts = ({
           <Tooltip />
           {hasListeningComparison && <Legend />}
           {hasListeningComparison && (
-            <Bar
+            <Bar stroke="var(--font-color)" strokeWidth={1} isAnimationActive={!reducedMotion}
               dataKey="previousMinutesListened"
               name="Previous period"
-              fill="#BDC3C7"
+              fill="var(--chart-comparison, #BDC3C7)"
               radius={[4, 4, 0, 0]}
             />
           )}
-          <Bar
+          <Bar stroke="var(--font-color)" strokeWidth={1} isAnimationActive={!reducedMotion}
             dataKey="minutesListened"
             name="Minutes listened"
-            fill="#1ABC9C"
+            fill="var(--chart-listening, #1ABC9C)"
             radius={[4, 4, 0, 0]}
           />
         </BarChart>
@@ -249,15 +258,17 @@ const ActivityCharts = ({
     <>
       <Row className="mb-3 align-items-center g-2">
         <Col xs="auto">
-          <ButtonGroup size="sm" aria-label="Chart mode">
+          <ButtonGroup size="sm" className="stats-chart-mode" aria-label="Chart mode">
             <Button
               variant={isCumulative ? 'outline-primary' : 'primary'}
+              aria-pressed={!isCumulative}
               onClick={() => setChartMode('daily')}
             >
               Daily
             </Button>
             <Button
               variant={isCumulative ? 'primary' : 'outline-primary'}
+              aria-pressed={isCumulative}
               onClick={() => setChartMode('cumulative')}
             >
               Cumulative
@@ -276,6 +287,7 @@ const ActivityCharts = ({
           <ChartCard
             title={isCumulative ? 'Cumulative Words Known' : 'Words Known Over Time'}
             summary={knownWordsSummary}
+            data={seriesTable('words known', knownWordsSeries, knownWordsXKey, 'knownWords', 'Known words', 'previousKnownWords', hasKnownWordsComparison)}
           >
             {loadingActivity ? (
               <EmptyChart><Spinner animation="border" size="sm" /></EmptyChart>
@@ -284,12 +296,12 @@ const ActivityCharts = ({
                 <AreaChart data={knownWordsSeries}>
                   <defs>
                     <linearGradient id="statsKnownWords" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#2ECC71" stopOpacity={0.3} />
-                      <stop offset="95%" stopColor="#2ECC71" stopOpacity={0} />
+                      <stop offset="5%" stopColor="var(--chart-known, #2ECC71)" stopOpacity={0.3} />
+                      <stop offset="95%" stopColor="var(--chart-known, #2ECC71)" stopOpacity={0} />
                     </linearGradient>
                     <linearGradient id="statsKnownWordsPrev" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#95A5A6" stopOpacity={0.2} />
-                      <stop offset="95%" stopColor="#95A5A6" stopOpacity={0} />
+                      <stop offset="5%" stopColor="var(--chart-comparison, #95A5A6)" stopOpacity={0.2} />
+                      <stop offset="95%" stopColor="var(--chart-comparison, #95A5A6)" stopOpacity={0} />
                     </linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} />
@@ -298,21 +310,21 @@ const ActivityCharts = ({
                   <Tooltip />
                   {hasKnownWordsComparison && <Legend />}
                   {hasKnownWordsComparison && (
-                    <Area
+                    <Area isAnimationActive={!reducedMotion}
                       type="monotone"
                       dataKey="previousKnownWords"
                       name="Previous period"
-                      stroke="#95A5A6"
+                      stroke="var(--chart-comparison, #95A5A6)"
                       strokeWidth={1.5}
                       strokeDasharray="4 3"
                       fill="url(#statsKnownWordsPrev)"
                     />
                   )}
-                  <Area
+                  <Area isAnimationActive={!reducedMotion}
                     type="monotone"
                     dataKey="knownWords"
                     name="Known words"
-                    stroke="#2ECC71"
+                    stroke="var(--chart-known, #2ECC71)"
                     strokeWidth={2}
                     fill="url(#statsKnownWords)"
                   />
@@ -328,6 +340,7 @@ const ActivityCharts = ({
           <ChartCard
             title={isCumulative ? 'Cumulative Words Read' : 'Words Read Over Time'}
             summary={readingSummary}
+            data={seriesTable('words read', readingSeries, readingXKey, 'wordsRead', 'Words read', 'previousWordsRead', hasReadingComparison)}
           >
             {loadingActivity ? (
               <EmptyChart><Spinner animation="border" size="sm" /></EmptyChart>
@@ -336,12 +349,12 @@ const ActivityCharts = ({
                 <AreaChart data={readingSeries}>
                   <defs>
                     <linearGradient id="statsWordsRead" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#3498DB" stopOpacity={0.3} />
-                      <stop offset="95%" stopColor="#3498DB" stopOpacity={0} />
+                      <stop offset="5%" stopColor="var(--chart-reading, #3498DB)" stopOpacity={0.3} />
+                      <stop offset="95%" stopColor="var(--chart-reading, #3498DB)" stopOpacity={0} />
                     </linearGradient>
                     <linearGradient id="statsWordsReadPrev" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#95A5A6" stopOpacity={0.2} />
-                      <stop offset="95%" stopColor="#95A5A6" stopOpacity={0} />
+                      <stop offset="5%" stopColor="var(--chart-comparison, #95A5A6)" stopOpacity={0.2} />
+                      <stop offset="95%" stopColor="var(--chart-comparison, #95A5A6)" stopOpacity={0} />
                     </linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} />
@@ -350,21 +363,21 @@ const ActivityCharts = ({
                   <Tooltip />
                   {hasReadingComparison && <Legend />}
                   {hasReadingComparison && (
-                    <Area
+                    <Area isAnimationActive={!reducedMotion}
                       type="monotone"
                       dataKey="previousWordsRead"
                       name="Previous period"
-                      stroke="#95A5A6"
+                      stroke="var(--chart-comparison, #95A5A6)"
                       strokeWidth={1.5}
                       strokeDasharray="4 3"
                       fill="url(#statsWordsReadPrev)"
                     />
                   )}
-                  <Area
+                  <Area isAnimationActive={!reducedMotion}
                     type="monotone"
                     dataKey="wordsRead"
                     name="Words read"
-                    stroke="#3498DB"
+                    stroke="var(--chart-reading, #3498DB)"
                     strokeWidth={2}
                     fill="url(#statsWordsRead)"
                   />
@@ -380,6 +393,7 @@ const ActivityCharts = ({
           <ChartCard
             title={isCumulative ? 'Cumulative Listening' : 'Listening Over Time'}
             summary={listeningSummary}
+            data={seriesTable('listening minutes', listeningSeries, listeningXKey, 'minutesListened', 'Minutes listened', 'previousMinutesListened', hasListeningComparison)}
           >
             {renderListeningChart()}
           </ChartCard>
@@ -389,7 +403,9 @@ const ActivityCharts = ({
       {languageVocabulary.length > 1 && (
         <Row className="mb-4">
           <Col>
-            <ChartCard title="Vocabulary by Language" summary="Known and learning words by language">
+            <ChartCard title="Vocabulary by Language" summary="Known and learning words by language"
+              data={<ChartDataTable caption="Vocabulary by language" rows={languageVocabulary}
+                columns={[{ key: 'name', label: 'Language' }, { key: 'known', label: 'Known' }, { key: 'learning', label: 'Learning' }]} />}>
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={languageVocabulary} layout="vertical">
                   <CartesianGrid strokeDasharray="3 3" horizontal={false} />
@@ -397,8 +413,8 @@ const ActivityCharts = ({
                   <YAxis type="category" dataKey="name" tick={{ fontSize: 12 }} width={110} />
                   <Tooltip />
                   <Legend />
-                  <Bar dataKey="known" stackId="vocab" fill="#2ECC71" name="Known" />
-                  <Bar dataKey="learning" stackId="vocab" fill="#F1C40F" name="Learning" />
+                  <Bar stroke="var(--font-color)" strokeWidth={1} isAnimationActive={!reducedMotion} dataKey="known" stackId="vocab" fill="var(--chart-known, #2ECC71)" name="Known" />
+                  <Bar stroke="var(--font-color)" strokeWidth={1} isAnimationActive={!reducedMotion} dataKey="learning" stackId="vocab" fill="var(--chart-learning, #F1C40F)" name="Learning" />
                 </BarChart>
               </ResponsiveContainer>
             </ChartCard>

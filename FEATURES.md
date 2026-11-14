@@ -21,6 +21,13 @@ A concise tour of what LinguaRead can do. This is an overview — for every conf
 
 The core of LinguaRead is the reader. Every word in a text is colour-coded by how well you know it, from **New** through intermediate levels to **Known**, so you can see your comprehension at a glance. Click or hover a word to see its translation and a side panel with details; clicking lets you set or change its learning status, which updates the colour everywhere that word appears.
 
+Hover plus **1–5** or **I** still changes familiarity. Settings can turn these
+character shortcuts off. Status saves show pending, saved, queued-offline and
+retry feedback. Optional **High Contrast Light/Dark** themes and an independent
+experimental marker toggle are available in UI preferences. Passage navigation
+with arrow keys remains an isolated experiment pending screen-reader testing;
+see [accessibility evidence and limits](docs/ACCESSIBILITY_VERIFICATION.md).
+
 You can select a single word or drag across several words to capture a **multi-word phrase** as one term. **Bookmark** any sentence (right-click it, double-tap it on mobile, or use the word panel's bookmark button). Bookmarks sync across your devices, even when you bookmark offline, and a text reopens at your most recent one. **Sentence mode** breaks the text into one sentence at a time for focused study, optionally with browser text-to-speech (TTS) reading each sentence aloud. TTS uses the voices already on your device, with no API key: it picks the most natural one for the language (such as Edge's "Natural" voices), switches to one stored on the device while you're offline, and you can choose a voice per language in Settings → Reading. Most reading behaviour — auto-translate on click, highlighting, the info panel, TTS rate — is tunable in [SETTINGS.md → Reading Preferences](SETTINGS.md#2-reading-preferences) and [UI Preferences](SETTINGS.md#1-ui-preferences).
 
 The reader's **Read** and **Listened** totals support partial passes and rereads. Open either total to enter a value such as **2.5×** or use the **−0.1× / +0.1×** buttons, then press Enter or **Save total**. Reading edits adjust words-read statistics and goals; corrections are recorded on the day you save them and preserve separately earned sentence credit. Changing a total does not finish or reopen the lesson. Listening totals do not alter tracked playback time; **Record a listen** can separately add time spent listening outside the app. Editing requires an online connection, and a total changed elsewhere must be refreshed before saving.

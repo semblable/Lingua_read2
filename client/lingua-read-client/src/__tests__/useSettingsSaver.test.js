@@ -67,6 +67,16 @@ describe('useSettingsSaver', () => {
     expect(updateUserSettings).toHaveBeenLastCalledWith({ leftPanelWidth: 75 }, { keepalive: false });
   });
 
+  test('sends explicit disabled shortcuts and opt-in markers through the shared patch path', async () => {
+    const updateSetting = vi.fn();
+    const { result } = renderHook(() => useSettingsSaver(updateSetting));
+    act(() => { result.current({ readerCharacterShortcutsEnabled: false, readerStatusMarkersEnabled: true }); });
+    expect(updateSetting).toHaveBeenCalledWith('readerCharacterShortcutsEnabled', false);
+    expect(updateSetting).toHaveBeenCalledWith('readerStatusMarkersEnabled', true);
+    await act(async () => { vi.advanceTimersByTime(SETTINGS_SAVE_DELAY_MS); });
+    expect(updateUserSettings).toHaveBeenCalledWith({ readerCharacterShortcutsEnabled: false, readerStatusMarkersEnabled: true }, { keepalive: false });
+  });
+
   test('keeps a failed patch and sends it with the next change', async () => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
     updateUserSettings.mockRejectedValueOnce(new Error('offline'));

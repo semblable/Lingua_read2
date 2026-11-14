@@ -15,7 +15,8 @@ export const createWord = async (
   term: string,
   status: number | string,
   translation: string | null | undefined,
-  sentence: string | null = null
+  sentence: string | null = null,
+  options: { queueOnly?: boolean } = {}
 ): Promise<unknown> => {
   try {
     const payload = {
@@ -51,7 +52,8 @@ export const createWord = async (
         },
         body: JSON.stringify(payload)
       }),
-      `wordCreate:${payload.textId}:${payload.term}`
+      `wordCreate:${payload.textId}:${payload.term}`,
+      options
     );
     // A queued create has no server ID yet. Keep it addressable by term in the
     // reader; subsequent saves upsert the same term instead of PUTting a fake ID.

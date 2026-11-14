@@ -1,5 +1,6 @@
 import React, { useMemo, useRef, useCallback, useEffect } from 'react'; // Added useEffect
 import { Modal, Button, Spinner, Row, Col } from 'react-bootstrap';
+import { containModalTabKey } from '../utils/keyboard';
 
 // Parser for the <o s="N">...</o><t s="N">...</t> format
 interface SentencePair {
@@ -175,6 +176,8 @@ const TranslationPopup = ({
       show={show}
       onHide={handleClose}
       size="lg" /* Changed from xl to lg */
+      scrollable
+      onKeyDown={containModalTabKey}
       aria-labelledby="translation-popup"
       centered
       dialogClassName="translation-modal-wide" /* Custom class for wider modal */
@@ -184,15 +187,18 @@ const TranslationPopup = ({
           Translation ({sourceLanguage} → {targetLanguage})
         </Modal.Title>
       </Modal.Header>
-      <Modal.Body className="p-3"> {/* Added padding */}
-        <Row>
+      <Modal.Body className="p-3" tabIndex={0} role="region" aria-label="Translation passages">
+        <Row className="g-3">
           <Col md={6}>
             <h6>Original Text:</h6>
             {/* Original Text Column - Add ref and onScroll */}
             <div
               ref={originalScrollRef}
+              tabIndex={0}
+              role="region"
+              aria-label="Original passage"
               onScroll={() => handleScroll('original')}
-              className="p-2 border rounded h-100" /* Increased padding slightly */
+              className="p-2 border rounded"
               style={{
                 minHeight: '200px',
                 maxHeight: '60vh',
@@ -213,6 +219,7 @@ const TranslationPopup = ({
                     style={{ backgroundColor: index % 2 === 0 ? 'var(--popup-sentence-bg-1)' : 'var(--popup-sentence-bg-2)' }}
                     // Render original text, potentially decoding HTML entities if needed later
                   >
+                    <span className="translation-pair-number">{pair.number}. </span>
                     <span className={`translation-segment-color-${(index % 5) + 1}`}>
                       {pair.original}
                     </span>
@@ -234,8 +241,11 @@ const TranslationPopup = ({
             ) : sentencePairs.length > 0 ? (
               <div
                 ref={translatedScrollRef}
+                tabIndex={0}
+                role="region"
+                aria-label="Translated passage"
                 onScroll={() => handleScroll('translated')}
-                className="p-2 border rounded h-100" /* Increased padding slightly */
+                className="p-2 border rounded"
                 style={{
                   minHeight: '200px',
                   maxHeight: '60vh',
@@ -253,6 +263,7 @@ const TranslationPopup = ({
                     style={{ backgroundColor: index % 2 === 0 ? 'var(--popup-sentence-bg-1)' : 'var(--popup-sentence-bg-2)' }}
                     // Render translated text, potentially decoding HTML entities if needed later
                   >
+                    <span className="translation-pair-number">{pair.number}. </span>
                     <span className={`translation-segment-color-${(index % 5) + 1}`}>
                       {pair.translated}
                     </span>
@@ -274,4 +285,4 @@ const TranslationPopup = ({
   );
 };
 
-export default TranslationPopup; 
+export default TranslationPopup;

@@ -37,6 +37,16 @@ const baseProps = (overrides = {}) => ({
 });
 
 describe('WordInfoPanel', () => {
+  test('named status controls remain usable while translation is pending and character shortcuts are off', () => {
+    const props = baseProps();
+    props.translation.isTranslating = true;
+    render(<WordInfoPanel {...props} characterShortcutsEnabled={false} />);
+    const familiar = screen.getByRole('button', { name: 'Familiar (3)' });
+    expect(familiar).toBeEnabled();
+    expect(familiar).toHaveAttribute('title', 'Familiar');
+    fireEvent.click(familiar);
+    expect(props.actions.onSaveWord).toHaveBeenCalledWith(3);
+  });
   test('renders a placeholder when no word is displayed', () => {
     render(<WordInfoPanel {...baseProps({ displayedWord: null })} />);
     expect(screen.getByText(/Click\/hover on a word/i)).toBeInTheDocument();
@@ -184,7 +194,8 @@ describe('WordInfoPanel', () => {
 
   test('shows a saved indicator when saveSuccess is true', () => {
     render(<WordInfoPanel {...baseProps({ saveSuccess: true })} />);
-    expect(screen.getByRole('status')).toHaveTextContent('Saved');
+    expect(screen.getByText('✓ Saved')).toBeInTheDocument();
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
   });
 
   test('Mine Sentence button calls onMineSentence and is disabled for unsaved words', () => {

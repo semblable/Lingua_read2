@@ -9,6 +9,18 @@ const fireKey = (key) => {
 };
 
 describe('useReaderKeyboard', () => {
+  test('captures the current pointer target synchronously before a React hover render', () => {
+    let target = 'first';
+    const onSetWordStatus = vi.fn();
+    renderHook(() => useReaderKeyboard({ enabled: true, hoveredWordTerm: 'stale',
+      getShortcutTarget: () => target, onSetWordStatus }));
+    target = 'second';
+    fireKey('4');
+    expect(onSetWordStatus).toHaveBeenCalledWith('second', 4);
+    target = null;
+    fireKey('3');
+    expect(onSetWordStatus).toHaveBeenCalledTimes(1);
+  });
   test.each(['select', 'button', 'a', 'div'])('leaves keys to interactive targets: %s', tag => {
     const onSetWordStatus = vi.fn();
     renderHook(() => useReaderKeyboard({ enabled: true, hoveredWordTerm: 'cat', onSetWordStatus }));
@@ -146,6 +158,79 @@ describe('useReaderKeyboard', () => {
 
     unmount();
     fireKey('2');
+    expect(onSetWordStatus).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    { repeat: true }, { isComposing: true }, { keyCode: 229 },
+    { altKey: true }, { metaKey: true }, { shiftKey: true },
+  ])('leaves repeated, IME and modified number keys alone: %j', options => {
+    const onSetWordStatus = vi.fn();
+    renderHook(() => useReaderKeyboard({ enabled: true, hoveredWordTerm: 'cat', onSetWordStatus }));
+    const event = new KeyboardEvent('keydown', { key: '3', cancelable: true, ...options });
+    window.dispatchEvent(event);
+    expect(onSetWordStatus).not.toHaveBeenCalled();
+    expect(event.defaultPrevented).toBe(false);
+  });
+
+  test('retains deliberate status presses but suppresses a held ignore key', () => {
+    const onSetWordStatus = vi.fn();
+    renderHook(() => useReaderKeyboard({ enabled: true, hoveredWordTerm: 'cat', onSetWordStatus }));
+    fireKey('3');
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: '3', repeat: true }));
+    fireKey('4');
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'I', repeat: true }));
+    expect(onSetWordStatus.mock.calls).toEqual([['cat', 3], ['cat', 4]]);
+  });
+
+  test('respects character shortcut preferences', () => {
+    const onSetWordStatus = vi.fn();
+    renderHook(() => useReaderKeyboard({ enabled: true, characterShortcutsEnabled: false, hoveredWordTerm: 'cat', onSetWordStatus }));
+    fireKey('3');
+    fireKey('i');
+    expect(onSetWordStatus).not.toHaveBeenCalled();
+  });
+
+  test('suppresses shortcuts throughout an IME composition, even without isComposing on a key', () => {
+    const onSetWordStatus = vi.fn();
+    renderHook(() => useReaderKeyboard({ enabled: true, hoveredWordTerm: 'cat', onSetWordStatus }));
+    window.dispatchEvent(new Event('compositionstart'));
+    fireKey('3');
+    expect(onSetWordStatus).not.toHaveBeenCalled();
+    window.dispatchEvent(new Event('compositionend'));
+    fireKey('3');
+    expect(onSetWordStatus).toHaveBeenCalledOnce();
+  });
+
+  test.each(['dialog', 'alertdialog'])('a modal owns shortcuts even when its focus is still moving: %s', role => {
+    const onSetWordStatus = vi.fn();
+    renderHook(() => useReaderKeyboard({ enabled: true, hoveredWordTerm: 'cat', onSetWordStatus }));
+    const modal = document.createElement('div');
+    modal.setAttribute('role', role);
+    modal.setAttribute('aria-modal', 'true');
+    document.body.append(modal);
+    try {
+      fireKey('3');
+      expect(onSetWordStatus).not.toHaveBeenCalled();
+      modal.hidden = true;
+      fireKey('3');
+      expect(onSetWordStatus).toHaveBeenCalledOnce();
+    } finally { modal.remove(); }
+  });
+
+  test('does not consume selection gestures or keys already handled by another control', () => {
+    const onSetWordStatus = vi.fn();
+    renderHook(() => useReaderKeyboard({ enabled: true, hoveredWordTerm: 'cat', onSetWordStatus }));
+    const text = document.createTextNode('Native text selection');
+    document.body.append(text);
+    const range = document.createRange();
+    range.selectNodeContents(text);
+    const selection = window.getSelection();
+    selection.removeAllRanges(); selection.addRange(range);
+    try { fireKey('3'); expect(onSetWordStatus).not.toHaveBeenCalled(); }
+    finally { selection.removeAllRanges(); text.remove(); }
+    const handled = new KeyboardEvent('keydown', { key: '3', cancelable: true });
+    handled.preventDefault(); window.dispatchEvent(handled);
     expect(onSetWordStatus).not.toHaveBeenCalled();
   });
 });

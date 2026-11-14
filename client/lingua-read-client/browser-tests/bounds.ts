@@ -68,7 +68,7 @@ export async function expectInside(element: Locator, container: Locator) {
 }
 
 export async function activate(control: Locator, page: Page) {
-  if (page.viewportSize()!.width < 768) await control.tap();
+  if (await page.evaluate(() => navigator.maxTouchPoints > 0)) await control.tap();
   else await control.click();
 }
 

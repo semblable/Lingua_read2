@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef, ReactNode } from 'react';
 import { getUserSettings } from '../utils/api';
+import { applyReaderStatusMarkers, persistTheme, watchTheme } from '../utils/theme';
 import {
   SettingsContext,
   getInitialSettings,
@@ -18,6 +19,15 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({ children }) 
   const [errorSettings, setErrorSettings] = useState<string | null>(null);
   const settingsRequestRef = useRef(0);
   const editsDuringLoadRef = useRef<Partial<Settings>>({});
+
+  useEffect(() => {
+    persistTheme(settings.theme);
+    return watchTheme(() => settings.theme);
+  }, [settings.theme]);
+
+  useEffect(() => {
+    applyReaderStatusMarkers(settings.readerStatusMarkersEnabled);
+  }, [settings.readerStatusMarkersEnabled]);
 
   const fetchSettings = useCallback(async () => {
     const requestId = ++settingsRequestRef.current;

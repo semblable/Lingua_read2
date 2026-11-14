@@ -33,6 +33,20 @@ const ReadingSettings = ({
   return (
     <>
       <div className="settings-control-group">
+        <Form.Group className="mb-3" controlId="readerCharacterShortcutsEnabled">
+          <Form.Check
+            type="switch"
+            name="readerCharacterShortcutsEnabled"
+            label="Enable character-only reader shortcuts"
+            checked={settings.readerCharacterShortcutsEnabled}
+            onChange={handleChange}
+            aria-describedby="readerCharacterShortcutsHelp"
+          />
+          <Form.Text id="readerCharacterShortcutsHelp" className="text-muted">
+            Use 1–5 and I to change the word under the pointer. Turn off to prevent accidental status changes while reading.
+            Status buttons remain available.
+          </Form.Text>
+        </Form.Group>
         <Form.Group className="mb-3" controlId="autoTranslateWords">
           <Form.Check
             type="switch"

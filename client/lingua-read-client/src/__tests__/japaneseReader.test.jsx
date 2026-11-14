@@ -157,7 +157,7 @@ describe('Japanese reader workflow (TextDisplay)', () => {
     updateWord.mockImplementation(async (wordId, status, translation) => ({
       ...rows.find(row => row.wordId === wordId),
       status,
-      translation
+      ...(translation !== undefined ? { translation } : {})
     }));
   };
 
@@ -176,8 +176,8 @@ describe('Japanese reader workflow (TextDisplay)', () => {
     renderReader();
     await waitFor(() => expect(screen.getByText('𠮷野家')).toHaveClass('word-status-2'));
     fireEvent.click(screen.getByText('𠮷野家'));
-    fireEvent.click(screen.getByRole('button', { name: '4' }));
-    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(202, 4, 'Yoshinoya'));
+    fireEvent.click(screen.getByRole('button', { name: 'Advanced (4)' }));
+    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(202, 4, undefined));
     expect(createWord).not.toHaveBeenCalled();
   });
 
@@ -190,8 +190,8 @@ describe('Japanese reader workflow (TextDisplay)', () => {
     vi.stubGlobal('alert', vi.fn());
     fireEvent.click(screen.getByRole('button', { name: 'Mine', exact: true }));
     await waitFor(() => expect(mineSentence).toHaveBeenCalledWith(203, '私は昨日図書館で日本語の本を読みました。', 1, 'Japanese fixture'));
-    fireEvent.click(screen.getByRole('button', { name: '4' }));
-    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(203, 4, 'Japanese book'));
+    fireEvent.click(screen.getByRole('button', { name: 'Advanced (4)' }));
+    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(203, 4, undefined));
     expect(createWord).not.toHaveBeenCalled();
   });
 

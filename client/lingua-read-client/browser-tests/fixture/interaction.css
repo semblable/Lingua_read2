@@ -1,0 +1,31 @@
+/* Experiment only: no production marker decision is encoded by this stylesheet. */
+.interaction-spike { max-width: 70rem; margin-inline: auto; padding: 1rem; color: var(--font-color); }
+.interaction-spike :is(button, select, input) { font: inherit; min-height: 2rem; max-width: 100%; }
+.interaction-spike button { border: 1px solid currentColor; border-radius: .3rem; padding: .25rem .5rem; background: var(--content-bg); color: inherit; }
+.spike-options, .spike-controls { display: flex; flex-wrap: wrap; gap: .65rem; align-items: center; margin-block: .8rem; }
+.interaction-spike label { display: inline-flex; flex-wrap: wrap; align-items: center; gap: .4rem; }
+.interaction-spike :is(button, select, input, [tabindex]):focus-visible { outline: 3px solid currentColor; outline-offset: 3px; }
+.spike-gate { padding: .65rem; border: 2px solid currentColor; }
+.spike-target { border-inline-start: .25rem solid currentColor; padding-inline-start: .7rem; }
+.spike-passage { min-width: 0; padding: .65rem; border: 1px solid currentColor; margin-block: .8rem; }
+.spike-real-renderer { min-width: 0; }
+.spike-word { cursor: pointer; }
+.spike-word:focus { outline: 3px solid currentColor; outline-offset: 2px; }
+.spike-shortcut-target { box-shadow: 0 -2px currentColor; }
+.interaction-spike .reader-end-of-text-actions { display: none; }
+.interaction-spike :is(.word-status-5, .word-status-6) { background: transparent; border: 0; color: inherit; text-decoration: none; }
+.spike-markers-stages :is(.word-status-1,.word-status-2,.word-status-3,.word-status-4),
+.spike-markers-stronger :is(.word-status-1,.word-status-2,.word-status-3,.word-status-4) {
+  text-decoration-line: underline; text-decoration-color: currentColor; text-decoration-thickness: .09em;
+  text-underline-offset: .2em; text-decoration-skip-ink: auto;
+}
+.spike-markers-stages .word-status-1, .spike-markers-stronger .word-status-1 { text-decoration-style: solid; }
+.spike-markers-stages .word-status-2, .spike-markers-stronger .word-status-2 { text-decoration-style: dashed; }
+.spike-markers-stages .word-status-3, .spike-markers-stronger .word-status-3 { text-decoration-style: double; }
+.spike-markers-stages .word-status-4, .spike-markers-stronger .word-status-4 { text-decoration-style: wavy; }
+.spike-markers-stronger .spike-word[data-marker]::after { content: attr(data-marker); font: .7em sans-serif; vertical-align: .15em; margin-inline: .1em; }
+.spike-modal-backdrop { position: fixed; inset: 0; z-index: 3000; display: flex; align-items: center; justify-content: center; padding: 1rem; background: #0009; }
+.spike-dialog { width: min(30rem, 100%); max-height: calc(100dvh - 2rem); overflow: auto; padding: 1rem; background: var(--content-bg, white); color: var(--font-color, #222); border: 2px solid currentColor; }
+.spike-dialog label { display: flex; margin-block: 1rem; }
+@media (max-width: 400px) { .interaction-spike { padding: .65rem; } .interaction-spike h1 { font-size: 1.7rem; } }
+@media (forced-colors: active) { .spike-word { forced-color-adjust: auto; } .spike-shortcut-target { border-block-start: 2px solid CanvasText; } }

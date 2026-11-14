@@ -144,7 +144,7 @@ Tailor the look, theme, size, and layout of the reader.
 
 | Setting Field | Default Value | Allowed Values | Description |
 | :--- | :---: | :--- | :--- |
-| `Theme` | `"light"` | `"light"`, `"dark"`, `"system"` | Visual stylesheet color scheme. |
+| `Theme` | `"light"` | `"light"`, `"dark"`, `"classic-dark"`, `"high-contrast-light"`, `"high-contrast-dark"`, `"system"` | Light, Dark, Classic Dark, High Contrast Light, High Contrast Dark, or System Default. The High Contrast themes are optional. |
 | `TextSize` | `16` | Positive integers (px) | Base font size for reading lessons. |
 | `TextFont` | `"default"` | Font-family string | Font family for text rendering (supports browser overrides). |
 | `ReadingUiMode` | `"classic"` | `"classic"`, `"modern"` | Layout structure for reading interface. |
@@ -157,6 +157,13 @@ Tailor the look, theme, size, and layout of the reader.
 | `ReaderParagraphIndent` | `true` | `true` / `false` | Indents body paragraphs in classic/modern reading modes. |
 | `ReaderTextAlignment` | `"left"` | `"left"`, `"justify"` | Text alignment property of body text. |
 | `LeftPanelWidth` | `85` | `20` to `85` | Width percentage occupied by the main reading canvas (default 85%). |
+| `ReaderStatusMarkersEnabled` | `false` | `true` / `false` | **Experimental word-status markers** in Appearance. Adds non-color cues independently of the selected theme; Known and Ignored words stay plain. The styles await multilingual and user review. |
+
+The server's default theme for a new settings record remains Light. Before settings load, the browser uses its cached theme, with Dark as the existing fallback when no preference is available. Login and initial setup use the same cached preference. **System Default** follows the device's Light/Dark appearance and responds when it changes. Choosing a High Contrast theme does not turn experimental markers on; that switch remains off until you enable it separately.
+
+Appearance groups the existing reading-comfort controls and includes a small synthetic passage for comparing font, text size, line spacing and optional status markers. Its theme and marker styling follow the applied preferences after a successful save. These are personal reading choices; the preview does not establish assistive-technology support or whole-app accessibility conformance.
+
+Applied preferences are cached in this browser for reloads and offline reading, then refreshed from the server when available. Settings-page changes still require a successful server save: a rejected write stays visibly unsaved with **Retry**. The cache does not add an offline settings-write queue.
 
 The reader toolbar (text size, panel width, density, spacing, indent, alignment, panel toggle) changes these settings in place. Each change applies at once and is kept in this browser; the server gets it after a short pause, one request at a time, so a run of clicks is one save. A save that fails is retried with the next change or when you leave the page.
 
@@ -172,6 +179,7 @@ Controls language parser, default behavior during clicks, and playback sync.
 | `AutoTranslateWordStatus` | `5` | `1` to `5` | Status given to words not saved yet when translating a text's unknown words saves them (the reader's **Auto ?** button and `AutoTranslateOnOpen`). Words already tracked keep their status and only get the missing translation. Statuses 1-4 create flashcards when `SrsAutoCreateCards` allows it. |
 | `PauseOnWordClick` | `false` | `true` / `false` | Automatically pauses active media playing before showing word details. |
 | `HighlightKnownWords` | `true` | `true` / `false` | Color-code words based on acquaintance status. |
+| `ReaderCharacterShortcutsEnabled` | `true` | `true` / `false` | **Enable character-only reader shortcuts** in Reading. Keeps the existing hover + `1`–`5` and `I` status shortcuts enabled by default. Turn off to prevent character keys from changing word status; status buttons remain available. |
 | `SentenceMode` | `false` | `true` / `false` | Enter sentence-by-sentence view by default. |
 | `SentenceAudioRepeats` | `1` | Positive Integer | Repeating frequency for audio loop clips in sentence mode. |
 | `SentenceTtsEnabled` | `false` | `true` / `false` | Enable browser Text-to-Speech synthesizers in sentence mode. |

@@ -8,6 +8,7 @@ using LinguaReadApi.Services;
 using LinguaReadApi.Services.Ai;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
@@ -34,6 +35,8 @@ public class UserSettingsControllerTests
         Assert.Equal(1.5, dto.LineSpacing);
         Assert.Equal(1.0, dto.ParagraphSpacing);
         Assert.Equal(5, dto.AutoTranslateWordStatus);
+        Assert.True(dto.ReaderCharacterShortcutsEnabled);
+        Assert.False(dto.ReaderStatusMarkersEnabled);
         Assert.Equal("gemini", dto.AiProvider);
         Assert.Empty(dto.AiProviders);
         Assert.Empty(dto.AiProvidersWithApiKey);
@@ -43,6 +46,8 @@ public class UserSettingsControllerTests
         Assert.Equal(userId, row.UserId);
         Assert.False(row.AutoMoveFinishedLessons);
         Assert.Equal(85, row.LeftPanelWidth);
+        Assert.True(row.ReaderCharacterShortcutsEnabled);
+        Assert.False(row.ReaderStatusMarkersEnabled);
     }
 
     [Fact]
@@ -163,6 +168,83 @@ public class UserSettingsControllerTests
         Assert.Equal(1.75, reloaded.LineSpacing);
         Assert.Equal(1.6, reloaded.ParagraphSpacing);
         Assert.Equal(20, reloaded.TextSize);
+    }
+
+    [Theory]
+    [InlineData("high-contrast-light", false, false)]
+    [InlineData("high-contrast-dark", false, true)]
+    [InlineData("system", true, false)]
+    public async Task AccessibilityPreferences_SurviveUnrelatedPatchesAndReload(string theme, bool shortcuts, bool markers)
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        context.Users.Add(new User { Id = userId, UserName = "u", Email = "u@test.com" });
+        await context.SaveChangesAsync();
+        var controller = CreateController(context, userId);
+
+        var saved = (await controller.UpdateUserSettings(new UpdateUserSettingsDto
+        {
+            Theme = theme,
+            ReaderCharacterShortcutsEnabled = shortcuts,
+            ReaderStatusMarkersEnabled = markers
+        })).Value!;
+        Assert.Equal(theme, saved.Theme);
+        Assert.Equal(shortcuts, saved.ReaderCharacterShortcutsEnabled);
+        Assert.Equal(markers, saved.ReaderStatusMarkersEnabled);
+        await controller.UpdateUserSettings(new UpdateUserSettingsDto { TextSize = 21 });
+        context.ChangeTracker.Clear();
+
+        var reloaded = (await CreateController(context, userId).GetUserSettings()).Value!;
+        Assert.Equal(theme, reloaded.Theme);
+        Assert.Equal(shortcuts, reloaded.ReaderCharacterShortcutsEnabled);
+        Assert.Equal(markers, reloaded.ReaderStatusMarkersEnabled);
+        Assert.Equal(21, reloaded.TextSize);
+    }
+
+    [Fact]
+    public void AccessibilityMigration_AddsOnlyPreferencesWithCompatibleDefaults()
+    {
+        var migration = new LinguaReadApi.Data.Migrations.ReaderAccessibilityPreferences();
+        var additions = migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.AddColumnOperation>().ToList();
+        Assert.Equal(2, migration.UpOperations.Count);
+        Assert.Equal(2, additions.Count);
+        var shortcuts = Assert.Single(additions, column => column.Name == "ReaderCharacterShortcutsEnabled");
+        var markers = Assert.Single(additions, column => column.Name == "ReaderStatusMarkersEnabled");
+        Assert.Equal("UserSettings", shortcuts.Table);
+        Assert.Equal("UserSettings", markers.Table);
+        Assert.False(shortcuts.IsNullable);
+        Assert.False(markers.IsNullable);
+        Assert.Equal(true, shortcuts.DefaultValue);
+        Assert.Equal(false, markers.DefaultValue);
+    }
+
+    [Fact]
+    public async Task AccessibilityPreferences_FirstWriteCanDisableShortcutsInRelationalStorage()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<AppDbContext>().UseSqlite(connection).Options;
+        var userId = Guid.NewGuid();
+        await using (var context = new AppDbContext(options))
+        {
+            await context.Database.EnsureCreatedAsync();
+            context.Users.Add(new User { Id = userId, UserName = "u", Email = "u@test.com" });
+            await context.SaveChangesAsync();
+            // Insert with false before a settings row exists: the DB's true default must not
+            // replace an explicit user choice (EF uses a different sentinel for this field).
+            await CreateController(context, userId).UpdateUserSettings(new UpdateUserSettingsDto
+            {
+                Theme = "high-contrast-light",
+                ReaderCharacterShortcutsEnabled = false,
+                ReaderStatusMarkersEnabled = true
+            });
+        }
+
+        await using var reloadedContext = new AppDbContext(options);
+        var reloaded = (await CreateController(reloadedContext, userId).GetUserSettings()).Value!;
+        Assert.Equal("high-contrast-light", reloaded.Theme);
+        Assert.False(reloaded.ReaderCharacterShortcutsEnabled);
+        Assert.True(reloaded.ReaderStatusMarkersEnabled);
     }
 
     [Fact]

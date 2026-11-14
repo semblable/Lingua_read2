@@ -77,6 +77,15 @@ export const test = base.extend<{ openLayout: (path: string) => Promise<void> }>
     });
     await page.clock.setFixedTime(new Date('2026-11-12T11:00:00Z'));
     await runFixture(async path => {
+      const query = new URLSearchParams(path.split('?')[1]);
+      if (query.get('mixed') === '1') {
+        const words = ['Éloïse', 'suit', 'rivière', 'soleil', 'maisons', 'le'].map((term, index) => ({
+          wordId: 900 + index, languageId: 21, term, status: index + 1, translation: `Synthetic meaning ${index + 1}`,
+        }));
+        responses['/api/texts/801'] = { ...readerText, words };
+        responses['/api/texts/802'] = { ...audioText, words };
+        responses['/api/words/language/21'] = words;
+      }
       await page.goto(`/layout/${path}`);
       await page.evaluate(() => document.fonts.ready);
     });

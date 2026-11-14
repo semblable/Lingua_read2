@@ -72,7 +72,7 @@ describe('opt-in Thai reader workflow', () => {
   const setup = (rows, profile = 'thai-dict-v1', content = 'ฉันชอบอ่านหนังสือที่กรุงเทพฯ') => {
     getText.mockResolvedValue({ textId: 1, title: 'Thai fixture', content, languageId: 13, languageCode: 'th', segmentationProfile: profile, words: rows });
     vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true, json: async () => structuredClone(rows) });
-    updateWord.mockImplementation(async (wordId, status, translation) => ({ ...rows.find(row => row.wordId === wordId), status, translation }));
+    updateWord.mockImplementation(async (wordId, status, translation) => ({ ...rows.find(row => row.wordId === wordId), status, ...(translation !== undefined ? { translation } : {}) }));
   };
 
   test('clickable words preserve a saved term ID through reload and status edit', async () => {
@@ -85,8 +85,8 @@ describe('opt-in Thai reader workflow', () => {
     renderReader();
     await waitFor(() => expect(screen.getByText('หนังสือ')).toHaveClass('word-status-3'));
     fireEvent.click(screen.getByText('หนังสือ'));
-    fireEvent.click(screen.getByRole('button', { name: '4' }));
-    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(81, 4, 'book'));
+    fireEvent.click(screen.getByRole('button', { name: 'Advanced (4)' }));
+    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(81, 4, undefined));
     expect(createWord).not.toHaveBeenCalled();
   });
 

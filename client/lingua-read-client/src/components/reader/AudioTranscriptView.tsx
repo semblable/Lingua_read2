@@ -5,6 +5,7 @@ import TranscriptLine, { TranscriptParagraph } from './TranscriptLine';
 import { AUDIO_TRANSCRIPT_ALIGNMENT_STORAGE_KEY, AUDIO_TRANSCRIPT_LAYOUT_STORAGE_KEY, groupTranscriptCues,
   readTranscriptAlignments, type TranscriptLayout } from '../../utils/audioTranscript';
 import storage from '../../utils/storage';
+import { getScrollBehavior } from '../../utils/motion';
 import type { Settings } from '../../contexts/SettingsContext';
 import type { SrtEntry } from '../../utils/srtParser';
 
@@ -136,7 +137,7 @@ const AudioTranscriptView = React.memo(({
       const centerCue = (cue: HTMLElement) => {
         const geometry = cueGeometry(cue);
         if (Math.abs(geometry.delta) > geometry.tolerance) {
-          viewport.scrollTo({ top: Math.max(0, viewport.scrollTop + geometry.delta), behavior: 'smooth' });
+          viewport.scrollTo({ top: Math.max(0, viewport.scrollTop + geometry.delta), behavior: getScrollBehavior() });
         }
         return geometry.key;
       };
@@ -199,7 +200,7 @@ const AudioTranscriptView = React.memo(({
     if (cueId === null) return;
     const index = srtLines.findIndex(line => line.id === cueId);
     if (index < 0) return;
-    if (isMobile) document.getElementById(`srt-line-${cueId}`)?.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
+    if (isMobile) document.getElementById(`srt-line-${cueId}`)?.scrollIntoView?.({ block: 'center', behavior: getScrollBehavior() });
     else listRef.current?.scrollToRow({ index, align: 'center' });
   }, [layout, isMobile, listRef, srtLines]);
 

@@ -246,7 +246,8 @@ describe('ActivityHeatmap', () => {
         period="last_week"
       />
     );
-    expect(container.querySelectorAll('.stats-heatmap-cell[role="img"]').length).toBe(7);
+    expect(container.querySelectorAll('.stats-heatmap-weeks .stats-heatmap-cell:not(.stats-heatmap-level-empty)').length).toBe(7);
+    expect(screen.getByLabelText('Inspect daily reading activity')).toBeInTheDocument();
   });
 });
 

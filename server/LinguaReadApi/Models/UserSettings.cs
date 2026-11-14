@@ -11,7 +11,7 @@ namespace LinguaReadApi.Models
         public Guid UserId { get; set; }
         
         // UI Preferences
-        public string Theme { get; set; } = "light"; // light, dark, system
+        public string Theme { get; set; } = "light"; // light, dark, classic-dark, high-contrast-light, high-contrast-dark, system
         public int TextSize { get; set; } = 16; // font size for reading
         public string TextFont { get; set; } = "default"; // font family for reading
         [StringLength(20)]
@@ -37,6 +37,9 @@ namespace LinguaReadApi.Models
         public int AutoTranslateWordStatus { get; set; } = 5; // status of new words saved by translating a text's unknown words (1-5)
         public bool PauseOnWordClick { get; set; } = false; // pause lesson audio before opening word details
         public bool HighlightKnownWords { get; set; } = true; // highlight words based on knowledge level
+        public bool ReaderCharacterShortcutsEnabled { get; set; } = true;
+        // Independent opt-in experiment; never enabled automatically by a theme.
+        public bool ReaderStatusMarkersEnabled { get; set; } = false;
         public bool SentenceMode { get; set; } = false; // default reader mode
         public int SentenceAudioRepeats { get; set; } = 1; // play each audio segment N times in sentence mode
         public bool SentenceTtsEnabled { get; set; } = false; // enable browser TTS controls in sentence mode
@@ -232,4 +235,4 @@ namespace LinguaReadApi.Models
         // Navigation property
         public virtual User User { get; set; } = null!;
     }
-} 
+}

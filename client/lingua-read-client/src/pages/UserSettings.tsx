@@ -13,6 +13,7 @@ import type { Language } from '../utils/api/languages';
 import type { UpdateUserSettingsInput, UserSettings as UserSettingsResponse } from '../utils/api/settings';
 import type { AiProviderInfo, AiProviderTestResult } from '../utils/api/aiProviders';
 import { useAutoSave } from '../hooks/useAutoSave';
+import { applyReaderStatusMarkers, applyTheme, normalizeTheme } from '../utils/theme';
 
 type PageSettings = Partial<Settings>;
 
@@ -70,7 +71,8 @@ const EDITABLE_KEYS: readonly SettingKey[] = [
   'theme', 'textSize', 'textFont', 'readingUiMode', 'readerContentWidth',
   'readingDensity', 'showWordInfoPanel', 'readerParagraphIndent', 'readerTextAlignment',
   'leftPanelWidth', 'autoTranslateWords', 'autoTranslateOnOpen', 'autoTranslateWordStatus', 'pauseOnWordClick', 'highlightKnownWords',
-  'tooltipOnlyForSavedWords', 'sentenceTtsEnabled', 'defaultLanguageId', 'translationTargetLanguageCode',
+  'tooltipOnlyForSavedWords', 'readerCharacterShortcutsEnabled', 'readerStatusMarkersEnabled',
+  'sentenceTtsEnabled', 'defaultLanguageId', 'translationTargetLanguageCode',
   'wordTranslationProvider', 'wiktionaryRichDisplay',
   'azureTranslatorRegion',
   'autoAdvanceToNextLesson', 'autoAdvanceAudiobookTracks', 'autoMoveFinishedLessons', 'showProgressStats', 'lineSpacing',
@@ -100,20 +102,6 @@ const NUMERIC_FIELDS: ReadonlySet<string> = new Set([
 // once; a slider waits out the drag; typing waits for a pause, so a model name or prompt is saved
 // once rather than letter by letter. Leaving a text field saves it straight away.
 const SAVE_DELAY_MS = { choice: 150, slider: 400, typing: 800 };
-
-const applyThemeToBody = (theme: string) => {
-  document.body.classList.remove('light-theme', 'dark-theme', 'classic-dark-theme');
-  if (theme === 'dark') {
-    document.body.classList.add('dark-theme');
-  } else if (theme === 'light') {
-    document.body.classList.add('light-theme');
-  } else if (theme === 'classic-dark') {
-    document.body.classList.add('classic-dark-theme');
-  } else {
-    const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-    document.body.classList.add(prefersDark ? 'dark-theme' : 'light-theme');
-  }
-};
 
 const readCachedSettings = (): Record<string, unknown> => {
   try {
@@ -156,7 +144,10 @@ const UserSettings = () => {
     );
     safeLocalStorageSetItem('cachedSettings', JSON.stringify({ ...readCachedSettings(), ...(result ?? {}), ...localOnly }));
 
-    if (patch.theme !== undefined) applyThemeToBody(String(saved.theme ?? patch.theme));
+    if (patch.theme !== undefined) applyTheme(saved.theme ?? patch.theme);
+    if (patch.readerStatusMarkersEnabled !== undefined) {
+      applyReaderStatusMarkers((saved.readerStatusMarkersEnabled ?? patch.readerStatusMarkersEnabled) === true);
+    }
   }, [updateSetting]);
 
   // Local settings state holds the subset this page initializes/persists;
@@ -189,6 +180,8 @@ const UserSettings = () => {
       autoTranslateWordStatus: 5,
       pauseOnWordClick: false,
       highlightKnownWords: true,
+      readerCharacterShortcutsEnabled: true,
+      readerStatusMarkersEnabled: false,
       tooltipOnlyForSavedWords: false,
       sentenceTtsEnabled: false,
       defaultLanguageId: 0,
@@ -286,7 +279,7 @@ const UserSettings = () => {
       try {
         const data = await getUserSettings();
         resetSettings({
-          theme: data.theme || 'dark',
+          theme: normalizeTheme(data.theme),
           textSize: data.textSize || 16,
           textFont: data.textFont || 'default',
           readingUiMode: data.readingUiMode || 'classic',
@@ -301,6 +294,8 @@ const UserSettings = () => {
           autoTranslateWordStatus: data.autoTranslateWordStatus || 5,
           pauseOnWordClick: data.pauseOnWordClick ?? false,
           highlightKnownWords: data.highlightKnownWords ?? true,
+          readerCharacterShortcutsEnabled: data.readerCharacterShortcutsEnabled ?? true,
+          readerStatusMarkersEnabled: data.readerStatusMarkersEnabled ?? false,
           tooltipOnlyForSavedWords: data.tooltipOnlyForSavedWords ?? false,
           sentenceTtsEnabled: data.sentenceTtsEnabled ?? false,
           defaultLanguageId: data.defaultLanguageId || 0,

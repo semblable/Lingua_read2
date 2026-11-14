@@ -6,6 +6,7 @@ import { MemoryRouter, Route, Routes, createMemoryRouter, RouterProvider } from 
 import TextDisplay from '../pages/TextDisplay';
 import { SettingsContext } from '../contexts/SettingsContext';
 import { SettingsProvider } from '../contexts/SettingsProvider';
+import { notifyOfflineEvent } from '../utils/offline/events';
 import {
   getBookmarkedSentences,
   getLastBookmarkedSentence,
@@ -261,6 +262,8 @@ describe('TextDisplay', () => {
   });
 
   afterEach(() => {
+    // Every fixture represents a fresh learner session, including queued edits.
+    notifyOfflineEvent('session-ended');
     vi.unstubAllGlobals();
     vi.runOnlyPendingTimers();
     vi.useRealTimers();
@@ -310,8 +313,8 @@ describe('TextDisplay', () => {
       await waitFor(() => expect(screen.getByText('IŞIK')).toHaveClass('word-status-3'));
       fireEvent.click(screen.getByText('IŞIK'));
       expect(screen.getByRole('textbox')).toHaveValue('light');
-      fireEvent.click(screen.getByRole('button', { name: '4' }));
-      await waitFor(() => expect(updateWord).toHaveBeenCalledWith(91, 4, 'light'));
+      fireEvent.click(screen.getByRole('button', { name: 'Advanced (4)' }));
+      await waitFor(() => expect(updateWord).toHaveBeenCalledWith(91, 4, undefined));
       expect(createWord).not.toHaveBeenCalled();
     } finally {
       fetchMock.mockRestore();
@@ -587,8 +590,8 @@ describe('TextDisplay', () => {
       await waitFor(() => expect(screen.getByRole('button', { name: 'All Known' })).toBeEnabled());
       fireEvent.click(screen.getByText("L'eau"));
       expect(screen.getByRole('heading', { name: 'eau', exact: true })).toBeInTheDocument();
-      fireEvent.click(screen.getByRole('button', { name: '3', exact: true }));
-      await waitFor(() => expect(updateWord).toHaveBeenCalledWith(73, 3, 'water'));
+      fireEvent.click(screen.getByRole('button', { name: 'Familiar (3)' }));
+      await waitFor(() => expect(updateWord).toHaveBeenCalledWith(73, 3, undefined));
       fireEvent.click(screen.getByRole('button', { name: 'Mine', exact: true }));
       await waitFor(() => expect(mineSentence).toHaveBeenCalledWith(73, "L'eau.", 1, 'French fixture'));
       expect(createWord).not.toHaveBeenCalled();
@@ -603,8 +606,8 @@ describe('TextDisplay', () => {
       renderTextDisplay();
       await waitFor(() => expect(screen.getByRole('button', { name: 'All Known' })).toBeEnabled());
       fireEvent.click(screen.getByText("L'eau"));
-      fireEvent.click(screen.getByRole('button', { name: '3', exact: true }));
-      await waitFor(() => expect(updateWord).toHaveBeenCalledWith(74, 3, ''));
+      fireEvent.click(screen.getByRole('button', { name: 'Familiar (3)' }));
+      await waitFor(() => expect(updateWord).toHaveBeenCalledWith(74, 3, undefined));
       expect(createWord).not.toHaveBeenCalled();
     });
   });
@@ -624,7 +627,7 @@ describe('TextDisplay', () => {
     });
 
     await waitFor(() => expect(createWord).toHaveBeenCalled());
-    await waitFor(() => expect(screen.getByRole('button', { name: '3' })).toHaveAttribute('aria-pressed', 'true'));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Familiar (3)' })).toHaveAttribute('aria-pressed', 'true'));
     expect(screen.getByText('Familiar')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^Mine$/ })).toBeEnabled();
     expect(screen.getByRole('textbox', { name: 'Translation' })).toHaveValue('hola');
@@ -649,7 +652,7 @@ describe('TextDisplay', () => {
 
     renderTextDisplay({ autoTranslateWords: false });
     fireEvent.click(await screen.findByText('Hello'));
-    expect(screen.getByRole('button', { name: '2' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Learning (2)' })).toHaveAttribute('aria-pressed', 'true');
 
     const textarea = screen.getByRole('textbox', { name: 'Translation' });
     fireEvent.change(textarea, { target: { value: 'hola, buenas' } });
@@ -661,6 +664,55 @@ describe('TextDisplay', () => {
 
     await waitFor(() => expect(updateWord).toHaveBeenCalledWith(1, 2, 'hola, buenas'));
     await waitFor(() => expect(screen.queryByText(/Translation not saved yet/)).not.toBeInTheDocument());
+  });
+
+  test('panel and hover shortcuts share pending creates while independent words remain editable', async () => {
+    let finishTranslation;
+    let finishCreate;
+    translateText.mockImplementation(term => term === 'Hello'
+      ? new Promise(resolve => { finishTranslation = resolve; }) : Promise.resolve({ translatedText: 'mundo' }));
+    createWord.mockImplementation((_textId, term, status, savedTranslation) => term === 'Hello'
+      ? new Promise(resolve => { finishCreate = resolve; })
+      : Promise.resolve({ wordId: 10, term, status, translation: savedTranslation }));
+    updateWord.mockResolvedValue({});
+    renderTextDisplay({ autoTranslateWords: false });
+    const hello = await screen.findByText('Hello');
+    fireEvent.mouseEnter(hello);
+    fireEvent.keyDown(window, { key: '3' });
+    fireEvent.click(hello);
+    fireEvent.change(screen.getByRole('textbox', { name: 'Translation' }), { target: { value: 'newer sense' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Advanced (4)' }));
+    fireEvent.mouseEnter(screen.getByText('world'));
+    fireEvent.keyDown(window, { key: '4' });
+    await waitFor(() => expect(createWord).toHaveBeenCalledWith(1, 'world', 4, 'mundo', expect.anything()));
+    expect(createWord.mock.calls.filter(([, term]) => term === 'Hello')).toHaveLength(0);
+    await act(async () => { finishTranslation({ translatedText: 'stale sense' }); });
+    await waitFor(() => expect(createWord.mock.calls.filter(([, term]) => term === 'Hello')).toHaveLength(1));
+    expect(createWord).toHaveBeenCalledWith(1, 'Hello', 3, undefined, expect.anything());
+    await act(async () => { finishCreate({ wordId: 9, term: 'Hello', status: 3, translation: 'stale sense' }); });
+    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(9, 4, 'newer sense'));
+    expect(screen.getByRole('textbox', { name: 'Translation' })).toHaveValue('newer sense');
+    expect(screen.getByRole('button', { name: 'Advanced (4)' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  test('a rejected status rolls back and leaves a reachable per-word retry', async () => {
+    getText.mockResolvedValueOnce({
+      textId: 1, title: 'Synthetic save failure', content: 'Hello world.', languageId: null,
+      languageCode: 'ES', isAudioLesson: false, bookId: null,
+      words: [{ wordId: 9, term: 'Hello', status: 1, translation: 'hola' }],
+    });
+    updateWord.mockRejectedValueOnce(new Error('synthetic rejection')).mockResolvedValue({});
+    const { container } = renderTextDisplay({ autoTranslateWords: false });
+    fireEvent.click(await screen.findByText('Hello'));
+    fireEvent.click(screen.getByRole('button', { name: 'Familiar (3)' }));
+    const retry = await screen.findByRole('button', { name: 'Retry saving Hello' });
+    expect(screen.getByRole('button', { name: 'New (1)' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('textbox', { name: 'Translation' })).toHaveValue('hola');
+    fireEvent.click(retry);
+    await waitFor(() => expect(updateWord).toHaveBeenCalledTimes(2));
+    expect(updateWord).toHaveBeenLastCalledWith(9, 3, undefined);
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Retry saving Hello' })).not.toBeInTheDocument());
+    expect(container.querySelectorAll('.reader-save-feedback[aria-live="polite"]')).toHaveLength(1);
   });
 
   test.each(['save', 'mine'])('%s uses the selected word context after the reader advances', async action => {
@@ -681,8 +733,8 @@ describe('TextDisplay', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Mine', exact: true }));
       await waitFor(() => expect(mineSentence).toHaveBeenCalledWith(9, 'Hello world.', 1, 'Sample Text'));
     } else {
-      fireEvent.click(screen.getByRole('button', { name: '3', exact: true }));
-      await waitFor(() => expect(createWord).toHaveBeenCalledWith(1, 'Hello', 3, expect.any(String), 'Hello world.'));
+      fireEvent.click(screen.getByRole('button', { name: 'Familiar (3)' }));
+      await waitFor(() => expect(createWord).toHaveBeenCalledWith(1, 'Hello', 3, undefined, 'Hello world.'));
     }
   });
 
@@ -766,6 +818,26 @@ describe('TextDisplay', () => {
     expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument();
 
     confirmSpy.mockRestore();
+  });
+
+  test('saving, deleting, and saving the same newly tracked term creates it again without remounting', async () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    deleteWord.mockResolvedValue({});
+    createWord.mockResolvedValueOnce({ wordId: 9, term: 'Hello', status: 3 })
+      .mockResolvedValueOnce({ wordId: 10, term: 'Hello', status: 2 });
+    try {
+      renderTextDisplay({ autoTranslateWords: false });
+      fireEvent.click(await screen.findByText('Hello'));
+      fireEvent.click(screen.getByRole('button', { name: 'Familiar (3)' }));
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Delete' })).toBeEnabled());
+      fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+      await waitFor(() => expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument());
+      fireEvent.click(screen.getByRole('button', { name: 'Learning (2)' }));
+      await waitFor(() => expect(createWord).toHaveBeenCalledTimes(2));
+      expect(createWord).toHaveBeenLastCalledWith(1, 'Hello', 2, undefined, 'Hello world.');
+      expect(updateWord).not.toHaveBeenCalled();
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Learning (2)' })).toHaveAttribute('aria-pressed', 'true'));
+    } finally { confirmSpy.mockRestore(); }
   });
 
   test('AI Translate reuses highlighted text context', async () => {
@@ -933,7 +1005,7 @@ describe('TextDisplay', () => {
         expect.objectContaining({ signal: expect.anything() })
       );
     });
-    expect(await screen.findByText('Word Info')).toBeInTheDocument();
+    expect(await screen.findByRole('dialog', { name: 'Word information' })).toBeInTheDocument();
   });
 
   test('mobile initial long-press selection does not finalize on first selected word', async () => {
@@ -1040,7 +1112,7 @@ describe('TextDisplay', () => {
         expect.objectContaining({ signal: expect.anything() })
       );
     });
-    expect(await screen.findByText('Word Info')).toBeInTheDocument();
+    expect(await screen.findByRole('dialog', { name: 'Word information' })).toBeInTheDocument();
   });
 
   test('mobile drag selection finalizes via stability timer when touchend is suppressed', async () => {
@@ -1120,7 +1192,7 @@ describe('TextDisplay', () => {
         expect.objectContaining({ signal: expect.anything() })
       );
     });
-    expect(await screen.findByText('Word Info')).toBeInTheDocument();
+    expect(await screen.findByRole('dialog', { name: 'Word information' })).toBeInTheDocument();
   });
 
   test('mobile repeated touchend for same selection does not loop the Word Info sheet', async () => {
@@ -1158,7 +1230,7 @@ describe('TextDisplay', () => {
     await waitFor(() => {
       expect(translateSelectionWithContext).toHaveBeenCalledTimes(1);
     });
-    expect(await screen.findByText('Word Info')).toBeInTheDocument();
+    expect(await screen.findByRole('dialog', { name: 'Word information' })).toBeInTheDocument();
 
     // Releasing again on the same selection (e.g. tapping after release) must
     // not re-fire translation or flicker the sheet.
@@ -1168,7 +1240,7 @@ describe('TextDisplay', () => {
       vi.advanceTimersByTime(2000);
     });
 
-    expect(screen.getByText('Word Info')).toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: 'Word information' })).toBeInTheDocument();
     expect(translateSelectionWithContext).toHaveBeenCalledTimes(1);
   });
 

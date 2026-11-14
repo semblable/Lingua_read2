@@ -1,4 +1,4 @@
-import { safeLocalStorageSetItem } from '../utils/storage';
+import { applyTheme, persistTheme, THEME_OPTIONS } from '../utils/theme';
 import React, { useState, useEffect } from 'react';
 import { Form, Button, Card, Row, Col } from 'react-bootstrap';
 import { getUserSettings, updateUserSettings } from '../utils/api';
@@ -38,11 +38,7 @@ const UserSettings = () => {
         if (response) {
           setSettings(response);
 
-          if (response.theme === 'dark') {
-            document.body.classList.add('dark-theme');
-          } else {
-            document.body.classList.remove('dark-theme');
-          }
+          applyTheme(response.theme);
         }
       } catch (err) {
         console.error('Error fetching settings:', err);
@@ -67,13 +63,8 @@ const UserSettings = () => {
 
     // Apply theme change immediately
     if (name === 'theme') {
-      if (value === 'dark') {
-        document.body.classList.add('dark-theme');
-        safeLocalStorageSetItem('theme', 'dark');
-      } else {
-        document.body.classList.remove('dark-theme');
-        safeLocalStorageSetItem('theme', 'light');
-      }
+      applyTheme(value);
+      persistTheme(value);
     }
   };
 
@@ -112,8 +103,9 @@ const UserSettings = () => {
                   value={settings.theme}
                   onChange={handleChange}
                 >
-                  <option value="light">Light</option>
-                  <option value="dark">Dark</option>
+                  {THEME_OPTIONS.map(option => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
                 </Form.Select>
               </Form.Group>
             </Col>
@@ -199,4 +191,4 @@ const UserSettings = () => {
   );
 };
 
-export default UserSettings; 
+export default UserSettings;

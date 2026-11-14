@@ -88,6 +88,7 @@ export type WordInfoPhraseSelectionState = {
 };
 
 export type WordInfoPanelProps = {
+  characterShortcutsEnabled?: boolean;
   displayedWord: DisplayedWord | null;
   selectedWord: string;
   saveSuccess: boolean;
@@ -113,20 +114,23 @@ const WordInfoPanel = React.memo(({
   bookmark,
   language,
   definition,
-  phraseSelection
+  phraseSelection,
+  characterShortcutsEnabled = true
 }: WordInfoPanelProps) => {
   if (!displayedWord) {
     return (
       <div className="word-info-panel">
         <p className="mb-1">Click/hover on a word.</p>
-        <p className="word-info-hint mb-0">Hover a word and press 1–5 to set its status, or I to ignore it.</p>
+        <p className="word-info-hint mb-0">{characterShortcutsEnabled
+          ? 'Hover a word and press 1–5 to set its status, or I to ignore it.'
+          : 'Character shortcuts are off. Select a word, then use its status controls.'}</p>
       </div>
     );
   }
   const status = displayedWord.status ?? 0;
   // Not `isNew`: the API also sets that on saved words of status 1.
   const isTracked = status > 0 && !!displayedWord.wordId;
-  const statusButtonsDisabled = actions.processingWord || translation.isTranslating || !selectedWord;
+  const statusButtonsDisabled = actions.processingWord || !selectedWord;
   const hasUnsavedTranslation = isTracked && translation.saved !== undefined
     && translation.value.trim() !== translation.saved.trim();
   // Grow with the text (long Wiktionary glosses, appended AI senses) instead of scrolling a 2-line box.
@@ -159,7 +163,7 @@ const WordInfoPanel = React.memo(({
         </div>
         <div className="word-info-meta">
           <span className="word-info-status-pill" data-status={status}>{statusLabel(status)}</span>
-          {saveSuccess && <span className="word-info-saved" role="status">✓ Saved</span>}
+          {saveSuccess && <span className="word-info-saved">✓ Saved</span>}
         </div>
       </div>
       {displayedWord.lemmaCandidates && displayedWord.lemmaCandidates.length > 1 && actions.onSelectLemma && (
@@ -215,14 +219,14 @@ const WordInfoPanel = React.memo(({
       />
       {(hint || showSaveButton) && (
         <div className="word-info-save-row">
-          <div className="word-info-hint" aria-live="polite">{hint}</div>
+          <div className="word-info-hint">{hint}</div>
           {showSaveButton && (
             <Button
               variant="primary"
               size="sm"
               className="py-0 px-2 ms-auto"
               onClick={actions.onSaveTranslation}
-              disabled={statusButtonsDisabled}
+              disabled={statusButtonsDisabled || translation.isTranslating}
               title={isTracked ? 'Save this translation (Enter)' : 'Save this word as New (Enter)'}
             >
               Save
@@ -241,9 +245,10 @@ const WordInfoPanel = React.memo(({
             data-status={s}
             active={status === s}
             aria-pressed={status === s}
+            aria-label={`${WORD_STATUS_LABELS[s]} (${s})`}
             onClick={() => actions.onSaveWord(s)}
             disabled={statusButtonsDisabled}
-            title={`${WORD_STATUS_LABELS[s]} (key ${s} on a hovered word)`}
+            title={`${WORD_STATUS_LABELS[s]}${characterShortcutsEnabled ? ` (key ${s} on a hovered word)` : ''}`}
           >
             {s}
           </Button>
@@ -331,6 +336,7 @@ const WordInfoPanel = React.memo(({
             onClick={bookmark.onToggleBookmark}
             title={bookmark.isSentenceBookmarked ? 'Remove bookmark from this sentence' : 'Bookmark this sentence'}
             aria-pressed={bookmark.isSentenceBookmarked}
+            aria-label={bookmark.isSentenceBookmarked ? 'Remove sentence bookmark' : 'Bookmark sentence'}
           >
             🔖
           </Button>

@@ -331,7 +331,8 @@ describe('audio transcript layout', () => {
     expect(word).toHaveStyle({ backgroundColor: 'rgb(128, 64, 32)', color: 'rgb(255, 255, 255)' });
   });
 
-  test('follows a rendered cue near the viewport centre without fighting text selection', () => {
+  test.each([false, true])('follows a rendered cue without fighting text selection (reduced motion=%s)', reducedMotion => {
+    vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: reducedMotion })));
     const listRef: React.RefObject<import('react-window').ListImperativeAPI | null> = { current: null };
     renderTranscript(getInitialSettings(), false, { listRef });
     const viewport = listRef.current!.element!;
@@ -341,7 +342,7 @@ describe('audio transcript layout', () => {
     viewport.scrollTop = 200;
     const scroll = vi.spyOn(viewport, 'scrollTo').mockImplementation(() => {});
     act(() => { listRef.current!.scrollToRow({ index: 1, align: 'center' }); });
-    expect(scroll).toHaveBeenLastCalledWith({ top: 320, behavior: 'smooth' });
+    expect(scroll).toHaveBeenLastCalledWith({ top: 320, behavior: reducedMotion ? 'instant' : 'smooth' });
     scroll.mockClear();
     position.mockReturnValue(new DOMRect(0, 380, 600, 40));
     act(() => { listRef.current!.scrollToRow({ index: 1, align: 'center' }); });

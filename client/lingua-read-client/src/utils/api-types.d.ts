@@ -7136,6 +7136,8 @@ export interface components {
             autoTranslateWordStatus?: number | null;
             pauseOnWordClick?: boolean | null;
             highlightKnownWords?: boolean | null;
+            readerCharacterShortcutsEnabled?: boolean | null;
+            readerStatusMarkersEnabled?: boolean | null;
             sentenceMode?: boolean | null;
             /** Format: int32 */
             sentenceAudioRepeats?: number | null;
@@ -7276,6 +7278,8 @@ export interface components {
             autoTranslateWordStatus?: number;
             pauseOnWordClick?: boolean;
             highlightKnownWords?: boolean;
+            readerCharacterShortcutsEnabled?: boolean;
+            readerStatusMarkersEnabled?: boolean;
             sentenceMode?: boolean;
             /** Format: int32 */
             sentenceAudioRepeats?: number;
@@ -7397,6 +7401,8 @@ export interface components {
             autoTranslateWordStatus?: number;
             pauseOnWordClick?: boolean;
             highlightKnownWords?: boolean;
+            readerCharacterShortcutsEnabled?: boolean;
+            readerStatusMarkersEnabled?: boolean;
             sentenceMode?: boolean;
             /** Format: int32 */
             sentenceAudioRepeats?: number;

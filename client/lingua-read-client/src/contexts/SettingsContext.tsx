@@ -1,4 +1,5 @@
 import { createContext } from 'react';
+import { normalizeTheme, readCachedTheme } from '../utils/theme';
 
 // One AI provider's settings (never its key). Empty model fields fall back to the provider's
 // model, then to the provider's default model.
@@ -31,6 +32,8 @@ export type Settings = {
   autoTranslateWordStatus: number;
   pauseOnWordClick: boolean;
   highlightKnownWords: boolean;
+  readerCharacterShortcutsEnabled: boolean;
+  readerStatusMarkersEnabled: boolean;
   tooltipOnlyForSavedWords: boolean;
   sentenceMode: boolean;
   sentenceAudioRepeats: number;
@@ -131,6 +134,8 @@ const defaultSettings: Settings = {
   autoTranslateWordStatus: 5,
   pauseOnWordClick: false,
   highlightKnownWords: true,
+  readerCharacterShortcutsEnabled: true,
+  readerStatusMarkersEnabled: false,
   tooltipOnlyForSavedWords: false,
   sentenceMode: false,
   sentenceAudioRepeats: 1,
@@ -210,12 +215,12 @@ export const getInitialSettings = (): Settings => {
     const cached = localStorage.getItem('cachedSettings');
     if (cached) {
       const parsed = JSON.parse(cached) as Partial<Settings>;
-      return { ...defaultSettings, ...parsed };
+      return mergeSettings(parsed, { ...defaultSettings, theme: readCachedTheme() });
     }
   } catch {
     // Ignore parse errors, fall through to defaults
   }
-  return defaultSettings;
+  return { ...defaultSettings, theme: readCachedTheme() };
 };
 
 // Server response is permissive; coerce each field to the typed shape using
@@ -227,7 +232,7 @@ export const mergeSettings = (
   const d = (data || {}) as Partial<Settings>;
   const base = currentSettings || defaultSettings;
   return {
-    theme: d.theme || base.theme,
+    theme: normalizeTheme(d.theme, normalizeTheme(base.theme)),
     textSize: d.textSize || base.textSize,
     textFont: d.textFont || base.textFont,
     readingUiMode: d.readingUiMode || base.readingUiMode,
@@ -242,6 +247,10 @@ export const mergeSettings = (
     autoTranslateWordStatus: d.autoTranslateWordStatus || base.autoTranslateWordStatus,
     pauseOnWordClick: d.pauseOnWordClick ?? base.pauseOnWordClick,
     highlightKnownWords: d.highlightKnownWords ?? base.highlightKnownWords,
+    readerCharacterShortcutsEnabled: typeof d.readerCharacterShortcutsEnabled === 'boolean'
+      ? d.readerCharacterShortcutsEnabled : base.readerCharacterShortcutsEnabled,
+    readerStatusMarkersEnabled: typeof d.readerStatusMarkersEnabled === 'boolean'
+      ? d.readerStatusMarkersEnabled : base.readerStatusMarkersEnabled,
     tooltipOnlyForSavedWords: d.tooltipOnlyForSavedWords ?? base.tooltipOnlyForSavedWords,
     sentenceMode: d.sentenceMode ?? base.sentenceMode,
     sentenceAudioRepeats: d.sentenceAudioRepeats ?? base.sentenceAudioRepeats,

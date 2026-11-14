@@ -20,6 +20,7 @@ import { isOfflineQueued } from '../utils/offline/enqueueIfOffline';
 import { useReaderBookmarks } from '../hooks/useReaderBookmarks';
 import { useReaderKeyboard, type WordStatus } from '../hooks/useReaderKeyboard';
 import { useSyncedWordIdentities } from '../hooks/useSyncedWordIdentities';
+import { useWordStatusMutations, type WordStatusTarget } from '../hooks/useWordStatusMutations';
 import { useWordTranslation } from '../hooks/useWordTranslation';
 import { useReaderAudioSync } from '../hooks/useReaderAudioSync';
 import { useReaderState, type FetchAllLanguageWordsFn } from '../hooks/useReaderState';
@@ -53,6 +54,7 @@ import ReaderLessonActions from '../components/reader/ReaderLessonActions';
 import MobileLessonHeader from '../components/reader/MobileLessonHeader';
 import LessonHeader from '../components/reader/LessonHeader';
 import WordInfoPanel from '../components/reader/WordInfoPanel';
+import WordLookupSheet from '../components/reader/WordLookupSheet';
 import AudioTranscriptView from '../components/reader/AudioTranscriptView';
 import StandardTextView from '../components/reader/StandardTextView';
 import SentenceModeView from '../components/reader/SentenceModeView';
@@ -63,6 +65,8 @@ import type { Language } from '../utils/api/languages';
 import type { DisplayedWord } from '../types/displayedWord';
 import { isChineseSegmentationReady } from '../utils/chineseRuntime';
 import { isThaiSegmentationReady } from '../utils/thaiRuntime';
+import { getScrollBehavior } from '../utils/motion';
+import { readerFontFamily } from '../utils/readerAppearance';
 
 const TextDisplay = () => {
   const { textId } = useParams();
@@ -75,9 +79,15 @@ const TextDisplay = () => {
 
   // --- State Declarations ---
   const [selectedWord, setSelectedWord] = useState('');
-  const [hoveredWordTerm, setHoveredWordTerm] = useState<string | null>(null);
+  const hoveredWordTermRef = useRef<{ term: string; generation: object } | null>(null);
   const [processingWord, setProcessingWord] = useState(false);
   const [displayedWord, setDisplayedWord] = useState<DisplayedWord | null>(null);
+  const lookupReturnElementRef = useRef<{ element: HTMLElement; generation: object } | null>(null);
+  const [lookupOpenGeneration, setLookupOpenGeneration] = useState<object | null>(null);
+  const panelWordRef = useRef(displayedWord);
+  panelWordRef.current = displayedWord;
+  const translationEditRef = useRef<{ term: string; value: string } | null>(null);
+  const panelTranslationBaselineRef = useRef<{ term: string; value: string } | null>(null);
   const [selectedWordAiContext, setSelectedWordAiContext] = useState('');
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [translatingUnknown, setTranslatingUnknown] = useState(false);
@@ -265,6 +275,18 @@ const TextDisplay = () => {
   const readingUiMode = isAudioLesson
     ? 'classic'
     : (globalSettings.readingUiMode === 'modern' ? 'modern' : 'classic');
+  const lookupSentenceIndex = isSentenceMode ? currentSegmentIndex : null;
+  const lookupGeneration = useMemo(() => ({
+    textId, content: text?.content, languageConfig, displayMode, readingUiMode, lookupSentenceIndex,
+  }), [textId, text?.content, languageConfig, displayMode, readingUiMode, lookupSentenceIndex]);
+  const isLookupSheetOpen = isMobile && isWordPanelOpen && lookupOpenGeneration === lookupGeneration;
+  const setHoveredWordTerm = useCallback((term: string | null) => {
+    hoveredWordTermRef.current = term ? { term, generation: lookupGeneration } : null;
+  }, [lookupGeneration]);
+  const getHoveredWordTerm = useCallback(() => {
+    const target = hoveredWordTermRef.current;
+    return target?.generation === lookupGeneration ? target.term : null;
+  }, [lookupGeneration]);
 
   useEffect(() => {
     currentTextIdForSummaryRef.current = text?.textId ?? null;
@@ -293,7 +315,7 @@ const TextDisplay = () => {
       ) as HTMLElement | null;
       if (el) {
         scrolledForTextIdRef.current = textId;
-        el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        el.scrollIntoView({ block: 'center', behavior: getScrollBehavior() });
       }
     });
     return () => cancelAnimationFrame(frame);
@@ -571,11 +593,41 @@ const TextDisplay = () => {
     saveSettings({ leftPanelWidth: Math.max(20, Math.min(85, nextValue)) });
   }, [saveSettings]);
 
+  const lookupTerm = useCallback((term: string) => lowercaseLookupTerm(
+    term, languageConfig?.code || languageConfig?.languageCode || text?.languageCode
+  ), [languageConfig?.code, languageConfig?.languageCode, text?.languageCode]);
+  const onMutationTranslationSaved = useCallback((target: WordStatusTarget, savedTranslation: string) => {
+    const panel = panelWordRef.current;
+    if (!panel || (panel.wordId && target.word?.wordId
+      ? Number(panel.wordId) !== target.word.wordId
+      : lookupTerm(panel.term ?? '') !== lookupTerm(target.term))) return;
+    const baseline = panelTranslationBaselineRef.current;
+    setTranslation(current => current === (baseline?.value ?? target.word?.translation ?? '') ? savedTranslation : current);
+    panelTranslationBaselineRef.current = { term: target.term, value: savedTranslation };
+  }, [lookupTerm, setTranslation]);
+  const handleTranslationValueChange = useCallback((value: string) => {
+    translationEditRef.current = { term: displayedWord?.term || selectedWord, value };
+    setTranslation(value);
+  }, [displayedWord?.term, selectedWord, setTranslation]);
+  const {
+    mutate: mutateWordStatus, retry: retryWordStatus, retire: retireWordStatus, states: wordStatusStates,
+    announcement: wordStatusAnnouncement, reconcileWords, reconcileServerWords, version: wordStatusVersion,
+  } = useWordStatusMutations({
+    generation: `${textId ?? ''}:${text?.content ?? ''}`,
+    languageId: text?.languageId ?? text?.languageCode ?? '', lookupTerm,
+    setWords, setDisplayedWord, onTranslationSaved: onMutationTranslationSaved,
+    create: createWord, update: updateWord,
+  });
+  const wordStatusReconciliationRef = useRef({ reconcileWords, version: wordStatusVersion });
+  wordStatusReconciliationRef.current = { reconcileWords, version: wordStatusVersion };
+
   const fetchAllLanguageWords = useCallback(async (
     languageId: number | string | null | undefined,
     shouldApply: () => boolean = () => true
   ) => {
     if (!languageId) return; // Guard against missing languageId
+    const readOwner = wordStatusReconciliationRef.current;
+    const readVersion = readOwner.version();
     try {
       const response = await fetch(`${API_URL}/words/language/${languageId}?skipSort=true`, {
         credentials: 'include',
@@ -584,7 +636,10 @@ const TextDisplay = () => {
       if (!response.ok) throw new Error('Failed to fetch language words');
       const allLanguageWords = await response.json();
       if (!shouldApply()) return;
-      setWords(allLanguageWords);
+      setWords(current => {
+        const latest = wordStatusReconciliationRef.current;
+        return latest.reconcileWords(allLanguageWords, current, latest.version === readOwner.version ? readVersion : 0);
+      });
       setLanguageWordsLoaded(true);
     } catch (error) {
       console.error('Error fetching language words:', error);
@@ -601,17 +656,16 @@ const TextDisplay = () => {
   ) => {
     const savedWords = saved?.words;
     if (Array.isArray(savedWords)) {
-      setWords(prev => mergeSavedWords(prev, savedWords, languageConfig?.code || languageConfig?.languageCode || text?.languageCode));
+      setWords(prev => reconcileWords(mergeSavedWords(prev, savedWords, languageConfig?.code || languageConfig?.languageCode || text?.languageCode), prev, wordStatusVersion()));
     } else {
       await fetchAllLanguageWords(languageId);
     }
-  }, [setWords, fetchAllLanguageWords, languageConfig?.code, languageConfig?.languageCode, text?.languageCode]);
+  }, [setWords, fetchAllLanguageWords, languageConfig?.code, languageConfig?.languageCode, text?.languageCode, reconcileWords, wordStatusVersion]);
 
   // --- Optimized Data Structures ---
-  const lookupTerm = useCallback((term: string) => lowercaseLookupTerm(
-    term, languageConfig?.code || languageConfig?.languageCode || text?.languageCode
-  ), [languageConfig?.code, languageConfig?.languageCode, text?.languageCode]);
-  useSyncedWordIdentities(text?.textId, words, lookupTerm, setWords, setDisplayedWord);
+  useSyncedWordIdentities(text?.textId, words, lookupTerm, setWords, setDisplayedWord, {
+    reconcileServerWords, hasQueuedStatuses: wordStatusStates.some(state => state.queuedOffline),
+  });
   const foldTerm = useCallback((term: string) => foldLookupTerm(
     term, languageConfig?.code || languageConfig?.languageCode || text?.languageCode
   ), [languageConfig?.code, languageConfig?.languageCode, text?.languageCode]);
@@ -752,11 +806,15 @@ const TextDisplay = () => {
       ? koreanWordLookup ? resolveKoreanLookup(koreanWordLookup, lemma) : null
       : exactWord;
 
+    translationEditRef.current = null;
+    panelTranslationBaselineRef.current = { term: existingWord?.term || lemma, value: existingWord?.translation || '' };
+
     setSelectedWord(lemma);
     setSelectedWordAiContext(selectionContext);
     setProcessingWord(false);
     setWordTranslationError('');
     if (isMobile) {
+      setLookupOpenGeneration(lookupGeneration);
       setIsWordPanelOpen(true);
       setShowMobileHeader(false);
       setShowMoreControls(false);
@@ -786,7 +844,7 @@ const TextDisplay = () => {
       setTranslation('');
       if (!skipAutoTranslate) triggerAutoTranslation(lemma);
     }
-  }, [clearPendingSelection, cancelInflightTranslation, getWordData, koreanWordLookup, globalSettings.pauseOnWordClick, isAudioLesson, triggerAutoTranslation, setSelectedWord, setTranslation, setWordTranslationError, setDisplayedWord, isMobile, pauseAudioPlayback, setSegmentPlaybackRequest, languageConfig?.code, languageConfig?.languageCode, text?.languageCode]); // Dependencies using globalSettings don't need it listed if context handles updates
+  }, [clearPendingSelection, cancelInflightTranslation, getWordData, koreanWordLookup, globalSettings.pauseOnWordClick, isAudioLesson, triggerAutoTranslation, setSelectedWord, setTranslation, setWordTranslationError, setDisplayedWord, isMobile, pauseAudioPlayback, setSegmentPlaybackRequest, languageConfig?.code, languageConfig?.languageCode, text?.languageCode, lookupGeneration]); // Dependencies using globalSettings don't need it listed if context handles updates
 
   // Removed handleTextSelection as selection is now handled by onMouseUp on the container
 
@@ -853,6 +911,7 @@ const TextDisplay = () => {
     }
     focusSentenceIndexFromNode(event.target as Node);
     const targetSpan = (event.target as HTMLElement | null)?.closest?.('.clickable-word') as HTMLElement | null;
+    lookupReturnElementRef.current = targetSpan ? { element: targetSpan, generation: lookupGeneration } : null;
     const sentenceContext =
       readSentenceContextFromNode(event.target as Node) ||
       buildAiSelectionContext(null, targetSpan?.closest('.srt-line, .reader-title-line, .sentence-mode-text') as HTMLElement | null, word);
@@ -875,7 +934,7 @@ const TextDisplay = () => {
       );
     }
     handleWordClick(word, { selectionContext: sentenceContext });
-  }, [clearPendingSelection, focusSentenceIndexFromNode, readSentenceContextFromNode, buildAiSelectionContext, handleWordClick, hasActiveTextSelection, getWordData, globalSettings.tooltipOnlyForSavedWords, languageConfig]);
+  }, [clearPendingSelection, focusSentenceIndexFromNode, readSentenceContextFromNode, buildAiSelectionContext, handleWordClick, hasActiveTextSelection, getWordData, globalSettings.tooltipOnlyForSavedWords, languageConfig, lookupGeneration]);
 
   const handleSelectableWordTouchStart = useCallback(() => {
     selectableWordTouchStartRef.current = Date.now();
@@ -903,6 +962,7 @@ const TextDisplay = () => {
     let { range, selectedText } = selectionDetails;
     const selectedSpans = getOverlappedWordSpans(range, container);
     const firstWord = selectedSpans[0];
+    lookupReturnElementRef.current = firstWord ? { element: firstWord, generation: lookupGeneration } : null;
     const lastWord = selectedSpans[selectedSpans.length - 1];
     let prefix = '';
     let suffix = '';
@@ -968,7 +1028,7 @@ const TextDisplay = () => {
       mobileSelectionInitialTextRef.current = cleanedRawText;
     }
     handleSelectedText(cleanedRawText, sentenceContext);
-  }, [focusSentenceIndexFromNode, getSelectionDetails, buildAiSelectionContext, handleSelectedText, isMobile, normalizeSelectedText, clearMobileSelectionRetry, clearMobileSelectionStability, languageConfig]);
+  }, [focusSentenceIndexFromNode, getSelectionDetails, buildAiSelectionContext, handleSelectedText, isMobile, normalizeSelectedText, clearMobileSelectionRetry, clearMobileSelectionStability, languageConfig, lookupGeneration]);
 
   const scheduleWordSelection = useCallback((delayMs: number) => {
     clearPendingSelection();
@@ -1346,19 +1406,7 @@ const TextDisplay = () => {
 
 
   const getFontFamilyForList = useCallback(() => {
-    switch (globalSettings.textFont) { // Use globalSettings from context
-      case 'serif': return "var(--font-family-serif)"; // Use Lora via CSS variable
-      case 'sans-serif': return "var(--font-family-sans-serif)"; // Use Inter via CSS variable
-      case 'lato': return "'Lato', sans-serif";
-      case 'open-sans': return "'Open Sans', sans-serif";
-      case 'atkinson': return "'Atkinson Hyperlegible', sans-serif";
-      case 'merriweather': return "'Merriweather', serif";
-      case 'roboto-slab': return "'Roboto Slab', serif";
-      case 'comic-sans': return "'Comic Sans MS', 'Comic Sans', cursive";
-      case 'monospace': return "'Courier New', monospace"; // Keep monospace as is
-      case 'dyslexic': return "'OpenDyslexic', sans-serif"; // Keep dyslexic font as is
-      default: return "var(--font-family-sans-serif)"; // Default to Inter
-    }
+    return readerFontFamily(globalSettings.textFont);
   }, [globalSettings.textFont]); // Use globalSettings from context
 
   // Use globalSettings from context
@@ -1700,66 +1748,35 @@ const TextDisplay = () => {
   }, [languageWordsLoaded, text, globalSettings.autoTranslateOnOpen]);
 
   const handleSetWordStatusFromKeyboard = useCallback(
-    async (term: string, status: WordStatus) => {
+    (term: string, status: WordStatus) => {
+      if (text?.textId == null) return;
       const isKorean = isKoreanLanguageCode(languageConfig?.code || languageConfig?.languageCode || text?.languageCode);
       const analysis = isKorean ? analyzeKoreanCandidates(term)[0] : null;
       const targetTerm = getWordData(term)?.term || analysis?.lemma || term;
       const wordData = getWordData(term) || (analysis ? getWordData(targetTerm) : null);
-      if (wordData && wordData.wordId) {
-        let translationToUse = wordData.translation || '';
-        if (!translationToUse && text?.languageCode) {
-          try {
-            const result = await translateText(wordData.term || targetTerm, text.languageCode, translationTargetLanguageCode);
-            translationToUse = result?.translatedText || '';
-          } catch (err) {
-            console.error(`[Keyboard Shortcut] Failed to fetch translation for ${term}:`, err);
-          }
-        }
-        updateWord(wordData.wordId!, status, translationToUse)
-          .then(() => {
-            setWords(prevWords => prevWords.map(w => w.wordId === wordData.wordId ? { ...w, status, translation: translationToUse } : w));
-            if ((selectedWord === term || selectedWord === targetTerm) && (displayedWord?.term === term || displayedWord?.term === targetTerm)) {
-              setDisplayedWord((prev) => ({ ...(prev || {}), status, translation: translationToUse }));
-              // An empty box would make Enter save '' over the translation just stored.
-              setTranslation(prev => (prev.trim() ? prev : translationToUse));
-            }
-          })
-          .catch((err: unknown) => console.error(`[Keyboard Shortcut] Failed update for ${term}:`, err));
-      } else {
-        let translationToUse = '';
-        if (text?.languageCode) {
-          try {
-            const result = await translateText(targetTerm, text.languageCode, translationTargetLanguageCode);
-            translationToUse = result?.translatedText || '';
-          } catch (err) {
-            console.error(`[Keyboard Shortcut] Failed to fetch translation for ${targetTerm}:`, err);
-          }
-        }
-        const sentenceToMine = pickSentenceForTerm(targetTerm,
-          [selectedWordAiContext, activePhraseSelection?.sentenceContext, currentSentenceSegment?.text], languageConfig?.characterSubstitutions,
-          languageConfig?.code || languageConfig?.languageCode || text?.languageCode);
-        if (text?.textId == null) return;
-        createWord(text.textId, targetTerm, status, translationToUse, sentenceToMine)
-          .then(newWordData => {
-            const typed = newWordData as { translation?: string } | null;
-            const wordWithTranslation = { ...(typed || {}), translation: translationToUse || typed?.translation };
-            setWords(prevWords => [...prevWords.filter(w => lookupTerm(w.term || '') !== lookupTerm(targetTerm)), wordWithTranslation]);
-            // The word is saved now; the panel showing it should say so (status, Mine, no hint).
-            if ((selectedWord === term || selectedWord === targetTerm) && (displayedWord?.term === term || displayedWord?.term === targetTerm)) {
-              setDisplayedWord({ ...wordWithTranslation, isNew: false });
-              setTranslation(prev => (prev.trim() ? prev : wordWithTranslation.translation || ''));
-            }
-            if (globalSettings.autoTranslateWords && !translationToUse) triggerAutoTranslation(targetTerm);
-          })
-          .catch(err => console.error(`[Keyboard Shortcut] Failed to create word ${targetTerm}:`, err));
-      }
+      const sentenceToMine = pickSentenceForTerm(targetTerm,
+        [selectedWordAiContext, activePhraseSelection?.sentenceContext, currentSentenceSegment?.text], languageConfig?.characterSubstitutions,
+        languageConfig?.code || languageConfig?.languageCode || text.languageCode);
+      const sourceLanguage = text.languageCode;
+      // Resolve target, sentence, and translation preferences before any await.
+      // The provider remains part of this entity's FIFO, never a reader-wide lock.
+      void mutateWordStatus({
+        target: { textId: text.textId, term: targetTerm, word: wordData, sentence: sentenceToMine }, status,
+        fillTranslation: !wordData?.translation && sourceLanguage ? async () => {
+          const result = await translateText(targetTerm, sourceLanguage, translationTargetLanguageCode);
+          return result?.translatedText || undefined;
+        } : undefined,
+      });
     },
-    [getWordData, text?.languageCode, text?.textId, translationTargetLanguageCode, setWords, selectedWord, displayedWord?.term, currentSentenceSegment?.text, selectedWordAiContext, activePhraseSelection?.sentenceContext, languageConfig?.characterSubstitutions, languageConfig?.code, languageConfig?.languageCode, globalSettings.autoTranslateWords, triggerAutoTranslation, setTranslation, lookupTerm]
+    [getWordData, text?.languageCode, text?.textId, translationTargetLanguageCode, currentSentenceSegment?.text, selectedWordAiContext, activePhraseSelection?.sentenceContext, languageConfig?.characterSubstitutions, languageConfig?.code, languageConfig?.languageCode, mutateWordStatus]
   );
 
   useReaderKeyboard({
-    enabled: !processingWord && !isTranslating,
-    hoveredWordTerm,
+    enabled: !processingWord,
+    characterShortcutsEnabled: globalSettings.readerCharacterShortcutsEnabled ?? true,
+    modalOpen: isLookupSheetOpen || showStatsModal || showTranslationPopup || showSummaryPopup,
+    hoveredWordTerm: null,
+    getShortcutTarget: getHoveredWordTerm,
     onSetWordStatus: handleSetWordStatusFromKeyboard
   });
 
@@ -1775,49 +1792,44 @@ const TextDisplay = () => {
   const handleSaveWord = useCallback(async (status: number | string, translationOverride?: string, exactTermOverride?: string) => {
     // Ensure selectedWord is used here, as displayedWord might be slightly different if selection changed rapidly
     const termToSave = exactTermOverride || selectedWord || displayedWord?.term;
-    if (!termToSave || processingWord || isTranslating) {
+    if (!termToSave || processingWord || text?.textId == null) {
       return;
     }
-    const translationToSave = translationOverride ?? translation;
-    setSaveSuccess(false); setProcessingWord(true);
-    try {
-      const numericStatus = parseInt(String(status), 10);
-      if (isNaN(numericStatus) || numericStatus < 1 || numericStatus > 6) throw new Error(`Invalid status: ${status}.`);
-      const existingWord = exactTermOverride
+    const numericStatus = Number(status);
+    if (!Number.isInteger(numericStatus) || numericStatus < 1 || numericStatus > 6) return;
+    const existingWord = exactTermOverride
         ? (koreanWordLookup ? koreanWordLookup.exact.get(exactTermOverride) : wordMap.get(lookupTerm(exactTermOverride)))
         : displayedWord?.lemmaCandidates?.some(candidate => candidate.lemma === termToSave) && koreanWordLookup
           ? resolveKoreanLookup(koreanWordLookup, termToSave)
           : (getWordData(termToSave) || getWordData(selectedWord));
-      if (existingWord && existingWord.wordId && (!exactTermOverride || existingWord.term === exactTermOverride)) {
-        await updateWord(existingWord.wordId!, numericStatus, translationToSave);
-        // From the list as it is now: a batch save may have merged rows in during the await.
-        setWords(prev => prev.map(w => w.wordId === existingWord.wordId ? { ...w, status: numericStatus, translation: translationToSave } : w));
-        setDisplayedWord((prev) => (prev ? { ...prev, status: numericStatus, translation: translationToSave } : prev));
-      } else {
-        if (text?.textId == null) return;
-        const sentenceToMine = pickSentenceForTerm(termToSave,
+    const savedTarget = existingWord && (!exactTermOverride || existingWord.term === exactTermOverride) ? existingWord : null;
+    const targetTerm = savedTarget?.term || termToSave;
+    const edited = translationEditRef.current;
+    const baseline = panelTranslationBaselineRef.current;
+    const hasEditedTranslation = edited?.term === termToSave && edited.value === translation;
+    const hasNewProviderTranslation = !!translation.trim() && baseline?.term === termToSave && baseline.value !== translation;
+    // A status-only panel action must not send its older/empty draft over a
+    // translation that was saved while the panel remained open.
+    const translationToSave = translationOverride ?? (hasEditedTranslation || hasNewProviderTranslation ? translation : undefined);
+    const sentenceToMine = pickSentenceForTerm(targetTerm,
           [selectedWordAiContext, activePhraseSelection?.sentenceContext, currentSentenceSegment?.text], languageConfig?.characterSubstitutions,
           languageConfig?.code || languageConfig?.languageCode || text?.languageCode);
-        const newWordData = (await createWord(text.textId, termToSave, numericStatus, translationToSave, sentenceToMine)) as Record<string, unknown> | null;
-        setWords((prevWords: any[]) => [...prevWords.filter(w => lookupTerm(w.term || '') !== lookupTerm(termToSave)), newWordData]);
-        setDisplayedWord({
-          ...(newWordData || {}),
-          isNew: false,
-          surface: exactTermOverride || displayedWord?.surface,
-          particleBadge: exactTermOverride ? undefined : displayedWord?.particleBadge,
-          lemmaCandidates: exactTermOverride ? undefined : displayedWord?.lemmaCandidates
-        });
-      }
-      setSaveSuccess(true); setTimeout(() => setSaveSuccess(false), 2000);
-    } catch (error) { console.error('Error saving word:', error); alert(`Failed to save word: ${error instanceof Error ? error.message : ''}`); }
-    finally { setProcessingWord(false); }
-  }, [selectedWord, displayedWord, processingWord, isTranslating, translation, text?.textId, text?.languageCode, currentSentenceSegment?.text, selectedWordAiContext, activePhraseSelection?.sentenceContext, languageConfig?.characterSubstitutions, languageConfig?.code, languageConfig?.languageCode, getWordData, setWords, setDisplayedWord, setSaveSuccess, setProcessingWord, koreanWordLookup, wordMap, lookupTerm]); // createWord/updateWord are module imports (stable); omit to satisfy exhaustive-deps
+    if (exactTermOverride) {
+      setSelectedWord(exactTermOverride);
+      setDisplayedWord(current => current && current.term === displayedWord?.term ? {
+        ...current, term: exactTermOverride, wordId: savedTarget?.wordId,
+        surface: exactTermOverride, particleBadge: undefined, lemmaCandidates: undefined,
+      } : current);
+    }
+    await mutateWordStatus({ target: { textId: text.textId, term: targetTerm, word: savedTarget, sentence: sentenceToMine },
+      status: numericStatus as WordStatus, translation: translationToSave });
+  }, [selectedWord, displayedWord, processingWord, translation, text?.textId, text?.languageCode, currentSentenceSegment?.text, selectedWordAiContext, activePhraseSelection?.sentenceContext, languageConfig?.characterSubstitutions, languageConfig?.code, languageConfig?.languageCode, getWordData, koreanWordLookup, wordMap, lookupTerm, mutateWordStatus]);
 
   const handleSaveExactForm = useCallback(async () => {
     if (!displayedWord?.surface || typeof displayedWord.surface !== 'string') return;
     const statusToUse = (displayedWord.status ?? 0) > 0 ? displayedWord.status! : 1;
-    await handleSaveWord(statusToUse, undefined, displayedWord.surface);
-  }, [displayedWord, handleSaveWord]);
+    await handleSaveWord(statusToUse, translation, displayedWord.surface);
+  }, [displayedWord, handleSaveWord, translation]);
 
   const handleDeleteWord = useCallback(async () => {
     const wordToDelete = displayedWord?.wordId ? displayedWord : getWordData(selectedWord);
@@ -1832,6 +1844,7 @@ const TextDisplay = () => {
     setSaveSuccess(false);
     try {
       await deleteWord(wordToDelete.wordId);
+      await retireWordStatus(wordToDelete);
       setWords(prevWords => prevWords.filter(w => w.wordId !== wordToDelete.wordId));
       setDisplayedWord((prev) => (
         prev?.wordId === wordToDelete.wordId
@@ -1845,7 +1858,7 @@ const TextDisplay = () => {
     } finally {
       setProcessingWord(false);
     }
-  }, [displayedWord, getWordData, isTranslating, processingWord, selectedWord, setTranslation, setWords]);
+  }, [displayedWord, getWordData, isTranslating, processingWord, retireWordStatus, selectedWord, setTranslation, setWords]);
 
   const wordInfoRetranslateContext = selectedWordAiContext || currentSentenceSegment?.text || '';
 
@@ -2290,15 +2303,19 @@ const TextDisplay = () => {
   // (desktop right-panel + mobile bottom-sheet). Phase E3 grouped the
   // pre-existing 25-prop interface into 5 named composites.
   const savedWord = getWordData(selectedWord || displayedWord?.term || '');
+  const selectedWordMutation = wordStatusStates.find(state => savedWord?.wordId
+    ? state.wordId === savedWord.wordId : lookupTerm(state.term) === lookupTerm(selectedWord || displayedWord?.term || ''));
   const wordInfoProps = {
+    characterShortcutsEnabled: globalSettings.readerCharacterShortcutsEnabled ?? true,
     displayedWord,
     selectedWord,
-    saveSuccess,
+    saveSuccess: saveSuccess || !!(selectedWordMutation?.confirmedSequence && !selectedWordMutation.pending &&
+      !selectedWordMutation.queuedOffline && !selectedWordMutation.error),
     translation: {
       value: translation,
       // From the word list, which changes only on save; AI Translate updates displayedWord too.
       saved: savedWord ? (savedWord.translation ?? '') : undefined,
-      setValue: setTranslation,
+      setValue: handleTranslationValueChange,
       onKeyDown: handleTranslationKeyDown,
       isTranslating,
       error: wordTranslationError,
@@ -2352,8 +2369,33 @@ const TextDisplay = () => {
     <LessonStudyPanel textId={text.textId} bookId={text.bookId} sourceRevision={text.studyRevision}
       hasAudio={!!audioSrc || (book?.audiobookTracks?.length ?? 0) > 0} />
   ) : null;
+  const pendingWordCount = wordStatusStates.filter(state => state.pending).length;
+  const queuedWordCount = wordStatusStates.filter(state => state.queuedOffline && !state.pending).length;
+  const wordStatusFeedback = <>
+      <div className="reader-save-feedback px-3" role="status" aria-live="polite" aria-atomic="true">
+        {wordStatusAnnouncement}
+      </div>
+      <div className="reader-save-pending px-3 small">
+        {[
+          pendingWordCount > 0 ? `Saving ${pendingWordCount} word${pendingWordCount === 1 ? '' : 's'}.` : '',
+          queuedWordCount > 0 ? `${queuedWordCount} word${queuedWordCount === 1 ? '' : 's'} queued offline.` : '',
+        ].filter(Boolean).join(' ')}
+      </div>
+      {wordStatusStates.some(state => state.error) && (
+        <section className="reader-save-errors px-3 py-2" aria-label="Word save errors">
+          {wordStatusStates.filter(state => state.error).map(state => (
+            <div key={state.key} className="d-flex flex-wrap align-items-center gap-2">
+              <span>{state.error}</span>
+              <Button variant="outline-secondary" size="sm" onClick={() => { void retryWordStatus(state.key); }}
+                aria-label={`Retry saving ${state.term}`}>Retry</Button>
+            </div>
+          ))}
+        </section>
+      )}
+  </>;
   return (
     <div className={`text-display-wrapper lesson-page px-0 mx-0 w-100 reader-ui-${readingUiMode}`}>
+      {!isLookupSheetOpen && wordStatusFeedback}
       <MobileLessonHeader
         isMobile={isMobile}
         showMobileHeader={showMobileHeader}
@@ -2571,24 +2613,21 @@ const TextDisplay = () => {
         )}
       </div>
 
-      {isMobile && isWordPanelOpen && (
-        <div
-          className="word-info-sheet-backdrop"
-          onClick={() => {
-            setIsWordPanelOpen(false);
-            lastHandledSelectionRef.current = '';
-          }}
-          role="presentation"
-        >
-          <div className="word-info-sheet" onClick={(event) => event.stopPropagation()} role="dialog" aria-label="Word information">
-            <div className="word-info-sheet-handle" />
-            <div className="word-info-sheet-content">
-              <h5 className="mb-2 word-info-title">Word Info</h5>
-              <WordInfoPanel {...wordInfoProps} />
-            </div>
-          </div>
-        </div>
-      )}
+      <WordLookupSheet show={isLookupSheetOpen} onClose={() => {
+        setIsWordPanelOpen(false);
+        lastHandledSelectionRef.current = '';
+      }} onRestoreFocus={() => {
+        const anchor = lookupReturnElementRef.current;
+        const target = anchor?.generation === lookupGeneration && anchor.element.isConnected ? anchor.element : textContentRef.current;
+        lookupReturnElementRef.current = null;
+        if (!target?.isConnected) return;
+        target.tabIndex = -1;
+        target.focus({ preventScroll: true });
+        target.scrollIntoView?.({ block: 'nearest', behavior: getScrollBehavior() });
+      }}>
+        {isLookupSheetOpen && wordStatusFeedback}
+        <WordInfoPanel {...wordInfoProps} />
+      </WordLookupSheet>
 
       {/* Modals */}
       <Modal show={showStatsModal} onHide={() => setShowStatsModal(false)} centered>

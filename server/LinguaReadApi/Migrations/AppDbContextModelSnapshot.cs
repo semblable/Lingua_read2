@@ -1413,11 +1413,21 @@ namespace LinguaReadApi.Migrations
                     b.Property<bool>("PauseOnWordClick")
                         .HasColumnType("boolean");
 
+                    b.Property<bool>("ReaderCharacterShortcutsEnabled")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true);
+
                     b.Property<int>("ReaderContentWidth")
                         .HasColumnType("integer");
 
                     b.Property<bool>("ReaderParagraphIndent")
                         .HasColumnType("boolean");
+
+                    b.Property<bool>("ReaderStatusMarkersEnabled")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
 
                     b.Property<string>("ReaderTextAlignment")
                         .IsRequired()

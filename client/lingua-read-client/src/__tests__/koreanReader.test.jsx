@@ -74,7 +74,7 @@ describe('Korean reader saved vocabulary identity', () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true, json: async () => structuredClone(rows) });
     updateWord.mockImplementation(async (wordId, status, translation) => {
       const row = rows.find(row => row.wordId === wordId);
-      Object.assign(row, { status, translation });
+      Object.assign(row, { status, ...(translation !== undefined ? { translation } : {}) });
       return structuredClone(row);
     });
   };
@@ -108,8 +108,8 @@ describe('Korean reader saved vocabulary identity', () => {
     await waitFor(() => expect(screen.getByText(surface)).toHaveClass('word-status-3'));
     fireEvent.click(screen.getByText(surface));
     expect(screen.getByRole('textbox')).toHaveValue('Korean letters');
-    fireEvent.click(screen.getByRole('button', { name: '4' }));
-    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(91, 4, 'Korean letters'));
+    fireEvent.click(screen.getByRole('button', { name: 'Advanced (4)' }));
+    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(91, 4, undefined));
     expect(createWord).not.toHaveBeenCalled();
     expect(rows).toEqual([{ wordId: 91, term: stored, status: 4, translation: 'Korean letters' }]);
   });
@@ -128,8 +128,8 @@ describe('Korean reader saved vocabulary identity', () => {
     expect(screen.getByText('ㄱㅏ')).toHaveClass('word-status-3');
     fireEvent.click(screen.getByText('각'));
     expect(screen.getByRole('textbox')).toHaveValue('second meaning');
-    fireEvent.click(screen.getByRole('button', { name: '4' }));
-    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(92, 4, 'second meaning'));
+    fireEvent.click(screen.getByRole('button', { name: 'Advanced (4)' }));
+    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(92, 4, undefined));
     expect(rows[0]).toEqual({ wordId: 91, term: '각', status: 5, translation: 'first meaning' });
     expect(rows).toHaveLength(3);
     expect(createWord).not.toHaveBeenCalled();
@@ -154,8 +154,8 @@ describe('Korean reader saved vocabulary identity', () => {
     vi.stubGlobal('alert', vi.fn());
     fireEvent.click(screen.getByRole('button', { name: 'Mine', exact: true }));
     await waitFor(() => expect(mineSentence).toHaveBeenCalledWith(101, `🙂 앞, ${surface}!`, 1, 'Korean lookup fixture'));
-    fireEvent.click(screen.getByRole('button', { name: '4' }));
-    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(101, 4, 'saved phrase meaning'));
+    fireEvent.click(screen.getByRole('button', { name: 'Advanced (4)' }));
+    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(101, 4, undefined));
     expect(createWord).not.toHaveBeenCalled();
     expect(rows[0].term).toBe(stored);
   });
@@ -174,12 +174,12 @@ describe('Korean reader saved vocabulary identity', () => {
       .toEqual(['각 테스트', '각 테스트', '각', '테스트']);
     fireEvent.click(screen.getByText('각 테스트'));
     expect(screen.getByRole('textbox')).toHaveValue('first phrase');
-    fireEvent.click(screen.getByRole('button', { name: '4' }));
-    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(101, 4, 'first phrase'));
+    fireEvent.click(screen.getByRole('button', { name: 'Advanced (4)' }));
+    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(101, 4, undefined));
     fireEvent.click(screen.getByText('각 테스트'));
     expect(screen.getByRole('textbox')).toHaveValue('second phrase');
-    fireEvent.click(screen.getByRole('button', { name: '4' }));
-    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(102, 4, 'second phrase'));
+    fireEvent.click(screen.getByRole('button', { name: 'Advanced (4)' }));
+    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(102, 4, undefined));
     expect(createWord).not.toHaveBeenCalled();
     expect(rows).toHaveLength(2);
   });
@@ -325,8 +325,8 @@ describe('Korean reader saved vocabulary identity', () => {
     expect(screen.getByTestId('korean-particle-badge')).toHaveTextContent('+ 을 (Object Marker)');
 
     // Saving Status 4 updates the base lemma row, not creating a duplicate
-    fireEvent.click(screen.getByRole('button', { name: '4' }));
-    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(42, 4, 'book'));
+    fireEvent.click(screen.getByRole('button', { name: 'Advanced (4)' }));
+    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(42, 4, undefined));
     expect(createWord).not.toHaveBeenCalled();
     expect(rows[0].status).toBe(4);
   });
@@ -334,7 +334,7 @@ describe('Korean reader saved vocabulary identity', () => {
   test('saving exact form creates a separate Word record for the inflected token', async () => {
     const rows = [{ wordId: 42, term: '책', status: 3, translation: 'book' }];
     createWord.mockImplementation(async (textId, term, status, translation) => {
-      const newRow = { wordId: 99, term, status, translation };
+      const newRow = { wordId: 99, term, status, ...(translation !== undefined ? { translation } : {}) };
       rows.push(newRow);
       return structuredClone(newRow);
     });
@@ -355,7 +355,7 @@ describe('Korean reader saved vocabulary identity', () => {
   test('clicking unseen inflected word analyzes particle and saves base lemma to deck', async () => {
     const rows = [];
     createWord.mockImplementation(async (textId, term, status, translation) => {
-      const newRow = { wordId: 99, term, status, translation };
+      const newRow = { wordId: 99, term, status, ...(translation !== undefined ? { translation } : {}) };
       rows.push(newRow);
       return structuredClone(newRow);
     });
@@ -368,7 +368,7 @@ describe('Korean reader saved vocabulary identity', () => {
     expect(screen.getByTestId('korean-particle-badge')).toHaveTextContent('+ 을 (Object Marker)');
     // Default save saves base lemma '책'
     fireEvent.change(screen.getByRole('textbox'), { target: { value: 'book' } });
-    fireEvent.click(screen.getByRole('button', { name: '2' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Learning (2)' }));
 
     await waitFor(() => expect(createWord).toHaveBeenCalledWith(1, '책', 2, 'book', expect.anything()));
     expect(rows.some(r => r.term === '책')).toBe(true);
@@ -376,7 +376,7 @@ describe('Korean reader saved vocabulary identity', () => {
 
   test('candidate chips select the lemma that is saved', async () => {
     const rows = [];
-    createWord.mockImplementation(async (_textId, term, status, translation) => ({ wordId: 99, term, status, translation }));
+    createWord.mockImplementation(async (_textId, term, status, translation) => ({ wordId: 99, term, status, ...(translation !== undefined ? { translation } : {}) }));
     seedReader('산다.', rows);
     renderReader();
     await waitFor(() => expect(screen.getByText('산다')).toHaveClass('word-status-0'));
@@ -385,7 +385,7 @@ describe('Korean reader saved vocabulary identity', () => {
     fireEvent.click(screen.getByRole('button', { name: '살다', exact: true }));
     expect(screen.getByRole('button', { name: '살다', exact: true })).toHaveAttribute('aria-pressed', 'true');
     fireEvent.change(screen.getByRole('textbox'), { target: { value: 'to live' } });
-    fireEvent.click(screen.getByRole('button', { name: '2' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Learning (2)' }));
     await waitFor(() => expect(createWord).toHaveBeenCalled());
     expect(createWord.mock.calls[0].slice(0, 4)).toEqual([1, '살다', 2, 'to live']);
   });
@@ -397,19 +397,19 @@ describe('Korean reader saved vocabulary identity', () => {
     fireEvent.click(screen.getByText('산다'));
     expect(screen.getByRole('button', { name: '살다', exact: true })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByRole('textbox')).toHaveValue('to live');
-    fireEvent.click(screen.getByRole('button', { name: '4' }));
-    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(42, 4, 'to live'));
+    fireEvent.click(screen.getByRole('button', { name: 'Advanced (4)' }));
+    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(42, 4, undefined));
   });
 
   test('an untracked surface placeholder does not replace the selected lemma', async () => {
     seedReader('산다.', [{ wordId: 42, term: '산다', status: 0, translation: '' }]);
-    createWord.mockImplementation(async (_textId, term, status, translation) => ({ wordId: 99, term, status, translation }));
+    createWord.mockImplementation(async (_textId, term, status, translation) => ({ wordId: 99, term, status, ...(translation !== undefined ? { translation } : {}) }));
     renderReader();
     await waitFor(() => expect(screen.getByText('산다')).toHaveClass('word-status-0'));
     fireEvent.click(screen.getByText('산다'));
     expect(screen.getByRole('heading', { name: '사다' })).toBeInTheDocument();
     fireEvent.change(screen.getByRole('textbox'), { target: { value: 'to buy' } });
-    fireEvent.click(screen.getByRole('button', { name: '2' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Learning (2)' }));
     await waitFor(() => expect(createWord).toHaveBeenCalled());
     expect(createWord.mock.calls[0].slice(0, 4)).toEqual([1, '사다', 2, 'to buy']);
     expect(updateWord).not.toHaveBeenCalled();

@@ -17,6 +17,8 @@ const Probe = () => {
       <span data-testid="width">{settings.leftPanelWidth}</span>
       <span data-testid="alignment">{settings.readerTextAlignment}</span>
       <span data-testid="theme">{settings.theme}</span>
+      <span data-testid="shortcuts">{String(settings.readerCharacterShortcutsEnabled)}</span>
+      <span data-testid="markers">{String(settings.readerStatusMarkersEnabled)}</span>
       <button type="button" onClick={refetchSettings}>reload settings</button>
       <button
         type="button"
@@ -37,7 +39,26 @@ const cached = () => JSON.parse(localStorage.getItem('cachedSettings') || '{}');
 describe('SettingsProvider', () => {
   beforeEach(() => {
     localStorage.clear();
+    document.body.className = '';
     getUserSettings.mockReset();
+  });
+
+  test('server appearance and accessibility preferences replace cache and survive offline reload', async () => {
+    localStorage.setItem('cachedSettings', JSON.stringify({ theme: 'dark', readerCharacterShortcutsEnabled: true }));
+    getUserSettings.mockResolvedValue({ theme: 'high-contrast-dark', readerCharacterShortcutsEnabled: false, readerStatusMarkersEnabled: true });
+    const { unmount } = render(<SettingsProvider><Probe /></SettingsProvider>);
+    await waitFor(() => expect(screen.getByTestId('shortcuts')).toHaveTextContent('false'));
+    expect(document.body).toHaveClass('high-contrast-dark-theme', 'reader-status-markers');
+    expect(localStorage.getItem('theme')).toBe('high-contrast-dark');
+    expect(cached().readerCharacterShortcutsEnabled).toBe(false);
+    expect(cached().readerStatusMarkersEnabled).toBe(true);
+    unmount();
+
+    getUserSettings.mockReturnValue(new Promise(() => {}));
+    render(<SettingsProvider><Probe /></SettingsProvider>);
+    expect(screen.getByTestId('shortcuts')).toHaveTextContent('false');
+    expect(screen.getByTestId('markers')).toHaveTextContent('true');
+    expect(document.body).toHaveClass('high-contrast-dark-theme', 'reader-status-markers');
   });
 
   test('a change made outside the Settings page survives a reload', async () => {

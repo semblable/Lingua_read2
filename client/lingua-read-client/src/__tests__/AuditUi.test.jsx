@@ -49,5 +49,6 @@ test('heatmap describes its activity as a labelled region without incomplete gri
   expect(screen.getByRole('region', { name: 'Daily activity heatmap' })).toBeInTheDocument();
   expect(screen.queryByRole('grid')).not.toBeInTheDocument();
   expect(screen.queryByRole('gridcell')).not.toBeInTheDocument();
-  expect(screen.getAllByRole('img').length).toBeGreaterThan(0);
+  expect(screen.getByLabelText('Inspect daily reading activity')).toBeInTheDocument();
+  expect(screen.getByRole('table', { name: 'Daily reading activity' })).toBeInTheDocument();
 });

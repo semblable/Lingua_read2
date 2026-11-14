@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { cancelSpeech } from '../utils/browserTts';
+import { getScrollBehavior } from '../utils/motion';
 import { findSrtLineIndex } from '../utils/srtParser';
 import type { SrtEntry } from '../utils/srtParser';
 
@@ -286,7 +287,7 @@ export const useReaderAudioSync = ({
           const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
           const center = rect.top + rect.height / 2;
           if (Math.abs(center - viewportHeight / 2) > Math.max(12, viewportHeight * 0.05)) {
-            lineElement.scrollIntoView({ block: 'center', behavior: 'smooth' });
+            lineElement.scrollIntoView({ block: 'center', behavior: getScrollBehavior() });
           }
         }
       });

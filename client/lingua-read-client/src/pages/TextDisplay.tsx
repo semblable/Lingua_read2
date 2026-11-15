@@ -1580,7 +1580,6 @@ const TextDisplay = () => {
 
     cancelSpeech();
     setIsSpeakingSentence(false);
-    lastAutoSegmentPlaybackKeyRef.current = '';
 
     setSegmentPlaybackRequest({
       requestId: `replay-${currentSentenceSegment.index}-${Date.now()}-${++segmentRequestSeqRef.current}`,
@@ -1589,7 +1588,7 @@ const TextDisplay = () => {
       repeatCount: sentenceAudioRepeats,
       forcePlay: true
     });
-  }, [currentSentenceSegment, lastAutoSegmentPlaybackKeyRef, sentenceAudioRepeats, setIsSpeakingSentence, setSegmentPlaybackRequest, speakCurrentSentence]);
+  }, [currentSentenceSegment, sentenceAudioRepeats, setIsSpeakingSentence, setSegmentPlaybackRequest, speakCurrentSentence]);
 
   const activeSegmentTranslationKey =
     currentSentenceSegment && text?.textId != null

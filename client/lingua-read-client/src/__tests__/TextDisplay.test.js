@@ -4182,5 +4182,63 @@ describe('TextDisplay', () => {
         expect.objectContaining({ startTime: 2.5, endTime: 5 })
       );
     });
+
+    test('clicking Replay Audio holds current cue text across early MP3 keyframe seeks and touching boundaries', async () => {
+      getText.mockResolvedValueOnce({
+        textId: 1,
+        title: 'Replay Audio Stability',
+        content: 'First cue. Second cue.',
+        languageId: null,
+        languageCode: 'ES',
+        languageName: 'Spanish',
+        isAudioLesson: true,
+        audioFilePath: 'audio_lessons/1.mp3',
+        hasSrtContent: true,
+        words: [],
+        bookId: null
+      });
+      getTextSrt.mockResolvedValueOnce(
+        '1\n00:00:00,000 --> 00:00:02,500\nFirst cue.\n\n2\n00:00:02,500 --> 00:00:05,000\nSecond cue.\n'
+      );
+
+      renderTextDisplay({ sentenceMode: true });
+      expect(await screen.findByText('First')).toBeInTheDocument();
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /^Next$/i }));
+      });
+      expect(screen.getByText('2 / 2')).toBeInTheDocument();
+      expect(await screen.findByText('Second')).toBeInTheDocument();
+
+      // Advance time near the end of cue 2, then click Replay Audio.
+      act(() => {
+        const props = mockAudiobookPlayer.mock.calls.at(-1)[0];
+        props.onTimeUpdate(4.9);
+      });
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /Replay Audio/i }));
+      });
+
+      const replayReq = mockAudiobookPlayer.mock.calls.at(-1)[0].segmentPlaybackRequest;
+      expect(replayReq).toEqual(expect.objectContaining({ startTime: 2.5, endTime: 5, forcePlay: true }));
+      expect(replayReq.requestId).toMatch(/^replay-1-/);
+
+      // Simulate stale pre-seek tick followed by an early MP3 keyframe seek before 2.5s (2.25s).
+      act(() => {
+        const props = mockAudiobookPlayer.mock.calls.at(-1)[0];
+        props.onTimeUpdate(4.9);
+        props.onTimeUpdate(2.25);
+      });
+      expect(screen.getByText('2 / 2')).toBeInTheDocument();
+      expect(screen.getByText('Second')).toBeInTheDocument();
+      expect(screen.queryByText('First')).not.toBeInTheDocument();
+
+      // Reaching touching boundary at 2.5s also remains on Second cue.
+      act(() => {
+        mockAudiobookPlayer.mock.calls.at(-1)[0].onTimeUpdate(2.5);
+      });
+      expect(screen.getByText('2 / 2')).toBeInTheDocument();
+      expect(screen.queryByText('First')).not.toBeInTheDocument();
+    });
   });
 });

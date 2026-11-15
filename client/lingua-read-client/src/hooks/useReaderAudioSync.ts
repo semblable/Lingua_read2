@@ -88,7 +88,7 @@ export const useReaderAudioSync = ({
   const [isAudioPlaying, setIsAudioPlaying] = useState(false);
   const [isSpeakingSentence, setIsSpeakingSentence] = useState(false);
   const [isSpeakingWord, setIsSpeakingWord] = useState(false);
-  const [segmentPlaybackRequest, setSegmentPlaybackRequest] =
+  const [segmentPlaybackRequest, setSegmentPlaybackRequestState] =
     useState<SegmentPlaybackRequest | null>(null);
 
   const audioDrivenSentenceSyncRef = useRef(false);
@@ -99,7 +99,12 @@ export const useReaderAudioSync = ({
   const previousSegmentIndexRef = useRef(currentSegmentIndex);
   const wasSentenceModeRef = useRef(isSentenceMode);
   const lastAudioDrivenTargetRef = useRef<number | null>(null);
-  const manualTargetRef = useRef<{ segmentIndex: number; reached: boolean; setAt: number } | null>(null);
+  const manualTargetRef = useRef<{
+    segmentIndex: number;
+    reached: boolean;
+    setAt: number;
+    initialTime: number;
+  } | null>(null);
   const lastTrackedRequestIdRef = useRef<string | null>(null);
 
   const timeUpdateSnapshotRef = useRef<TimeUpdateSnapshot>({
@@ -138,6 +143,87 @@ export const useReaderAudioSync = ({
     listRef
   ]);
 
+  const syncManualTargetFromRequest = useCallback(
+    (
+      request: SegmentPlaybackRequest | null,
+      audioLessonActive: boolean,
+      sentenceModeActive: boolean,
+      lines: SrtEntry[],
+      segmentIndex: number
+    ) => {
+      const requestId = request?.requestId ?? null;
+      if (!requestId) {
+        if (lastTrackedRequestIdRef.current !== null) {
+          lastTrackedRequestIdRef.current = null;
+          if (manualTargetRef.current && !manualTargetRef.current.reached) {
+            manualTargetRef.current = null;
+          }
+        }
+        return;
+      }
+
+      if (!audioLessonActive || !sentenceModeActive || lines.length === 0 || !request) {
+        return;
+      }
+
+      if (requestId === lastTrackedRequestIdRef.current) {
+        return;
+      }
+      lastTrackedRequestIdRef.current = requestId;
+
+      const currentLine = lines[segmentIndex];
+      const matchedIndex =
+        currentLine &&
+        Math.abs(currentLine.startTime - request.startTime) < 0.05 &&
+        Math.abs(currentLine.endTime - request.endTime) < 0.05
+          ? segmentIndex
+          : findSrtLineIndex(lines, request.startTime);
+
+      if (matchedIndex !== -1) {
+        manualTargetRef.current = {
+          segmentIndex: matchedIndex,
+          reached: false,
+          setAt: Date.now(),
+          initialTime: audioCurrentTimeRef.current
+        };
+      }
+    },
+    []
+  );
+
+  const setSegmentPlaybackRequest = useCallback<
+    React.Dispatch<React.SetStateAction<SegmentPlaybackRequest | null>>
+  >(
+    (updater) => {
+      if (typeof updater === 'function') {
+        setSegmentPlaybackRequestState((prev) => {
+          const next = updater(prev);
+          const snap = timeUpdateSnapshotRef.current;
+          syncManualTargetFromRequest(
+            next,
+            snap.isAudioLesson,
+            snap.isSentenceMode,
+            snap.srtLines,
+            snap.currentSegmentIndex
+          );
+          return next;
+        });
+        return;
+      }
+
+      const snap = timeUpdateSnapshotRef.current;
+      syncManualTargetFromRequest(
+        updater,
+        snap.isAudioLesson,
+        snap.isSentenceMode,
+        snap.srtLines,
+        snap.currentSegmentIndex
+      );
+      setSegmentPlaybackRequestState(updater);
+    },
+    [syncManualTargetFromRequest]
+  );
+
   useEffect(() => {
     const prevSegmentIndex = previousSegmentIndexRef.current;
     const wasSentenceMode = wasSentenceModeRef.current;
@@ -167,48 +253,28 @@ export const useReaderAudioSync = ({
       manualTargetRef.current = {
         segmentIndex: currentSegmentIndex,
         reached: false,
-        setAt: Date.now()
+        setAt: Date.now(),
+        initialTime: audioCurrentTimeRef.current
       };
     }
   }, [currentSegmentIndex, isAudioLesson, isSentenceMode]);
 
   useEffect(() => {
-    const requestId = segmentPlaybackRequest?.requestId ?? null;
-    if (!requestId) {
-      if (lastTrackedRequestIdRef.current !== null) {
-        lastTrackedRequestIdRef.current = null;
-        if (manualTargetRef.current && !manualTargetRef.current.reached) {
-          manualTargetRef.current = null;
-        }
-      }
-      return;
-    }
-
-    if (!isAudioLesson || !isSentenceMode || srtLines.length === 0 || !segmentPlaybackRequest) {
-      return;
-    }
-
-    if (requestId === lastTrackedRequestIdRef.current) {
-      return;
-    }
-    lastTrackedRequestIdRef.current = requestId;
-
-    const currentLine = srtLines[currentSegmentIndex];
-    const matchedIndex =
-      currentLine &&
-      Math.abs(currentLine.startTime - segmentPlaybackRequest.startTime) < 0.05 &&
-      Math.abs(currentLine.endTime - segmentPlaybackRequest.endTime) < 0.05
-        ? currentSegmentIndex
-        : findSrtLineIndex(srtLines, segmentPlaybackRequest.startTime);
-
-    if (matchedIndex !== -1) {
-      manualTargetRef.current = {
-        segmentIndex: matchedIndex,
-        reached: false,
-        setAt: Date.now()
-      };
-    }
-  }, [segmentPlaybackRequest, isAudioLesson, isSentenceMode, srtLines, currentSegmentIndex]);
+    syncManualTargetFromRequest(
+      segmentPlaybackRequest,
+      isAudioLesson,
+      isSentenceMode,
+      srtLines,
+      currentSegmentIndex
+    );
+  }, [
+    segmentPlaybackRequest,
+    isAudioLesson,
+    isSentenceMode,
+    srtLines,
+    currentSegmentIndex,
+    syncManualTargetFromRequest
+  ]);
 
   useEffect(() => {
     if (!isSentenceMode) {
@@ -346,12 +412,17 @@ export const useReaderAudioSync = ({
         if (!activeTarget.reached) {
           const isShortCue = targetLine.endTime - targetLine.startTime <= 0.15;
           const isPaused = audioRef.current?.paused !== false;
+          const elapsedSinceSet = Date.now() - activeTarget.setAt;
+          const awaitingRewindSeek =
+            activeTarget.initialTime >= targetLine.startTime + 0.25 &&
+            newTime > targetLine.startTime + 0.25 &&
+            elapsedSinceSet < 350;
           const arrived =
-            newTime >= targetLine.startTime - 0.15 &&
+            !awaitingRewindSeek &&
+            newTime >= targetLine.startTime - 0.5 &&
             (isShortCue || isPaused ? newTime <= targetLine.endTime : newTime < targetLine.endTime);
 
           if (!arrived) {
-            const elapsedSinceSet = Date.now() - activeTarget.setAt;
             const isSeeking = Boolean(audioRef.current?.seeking);
             if (isSeeking || elapsedSinceSet < 1200) {
               return;
@@ -365,7 +436,7 @@ export const useReaderAudioSync = ({
 
         if (manualTargetRef.current === activeTarget && activeTarget.reached) {
           const inTargetOrBoundary =
-            newTime >= targetLine.startTime - 0.15 &&
+            newTime >= targetLine.startTime - 0.5 &&
             newTime <= targetLine.endTime + 0.05;
 
           if (inTargetOrBoundary) {

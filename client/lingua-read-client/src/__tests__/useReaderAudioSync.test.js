@@ -414,4 +414,63 @@ describe('useReaderAudioSync', () => {
     expect(result.current.currentSrtLineId).toBe(2);
     expect(setCurrentSegmentIndex).toHaveBeenCalledWith(1);
   });
+
+  test('replay audio ignores pre-seek end timestamps and early MP3 keyframe seeks without flashing previous cue', () => {
+    const setCurrentSegmentIndex = vi.fn();
+    const srtLines = [
+      { id: 1, startTime: 0, endTime: 2.5, text: 'First' },
+      { id: 2, startTime: 2.5, endTime: 5.0, text: 'Second' },
+      { id: 3, startTime: 5.0, endTime: 7.5, text: 'Third' },
+    ];
+    const { result } = renderHook(() => {
+      const listRef = useRef(null);
+      return useReaderAudioSync({
+        isAudioLesson: true,
+        isSentenceMode: true,
+        isMobile: false,
+        displayMode: 'audio',
+        srtLines,
+        currentSegmentIndex: 1,
+        setCurrentSegmentIndex,
+        listRef
+      });
+    });
+
+    result.current.audioRef.current = { paused: false, seeking: false, currentTime: 4.95 };
+    act(() => {
+      result.current.handleAudioPlaybackStateChange(true);
+      result.current.handleAudioTimeUpdate(4.95);
+    });
+    setCurrentSegmentIndex.mockClear();
+
+    // User clicks Replay Audio near the end of cue 1 (4.95s):
+    // synchronous wrapper tracks target cue 1 before child effects run.
+    act(() => {
+      result.current.setSegmentPlaybackRequest({
+        requestId: 'replay-1-test',
+        startTime: 2.5,
+        endTime: 5.0,
+        repeatCount: 1,
+        forcePlay: true
+      });
+      // Stale pre-seek ticks before rewind seek lands must neither revert nor skip ahead.
+      result.current.handleAudioTimeUpdate(4.95);
+      result.current.handleAudioTimeUpdate(5.02);
+    });
+    expect(setCurrentSegmentIndex).not.toHaveBeenCalled();
+
+    // VBR MP3 keyframe seek landing up to 0.5s before cue start (2.20s < 2.50s) must NOT switch to cue 0.
+    act(() => {
+      result.current.handleAudioTimeUpdate(2.2);
+    });
+    expect(setCurrentSegmentIndex).not.toHaveBeenCalled();
+    expect(result.current.currentSrtLineId).toBe(2);
+
+    // Settling inside cue 1 keeps cue 1 active.
+    act(() => {
+      result.current.handleAudioTimeUpdate(2.6);
+    });
+    expect(setCurrentSegmentIndex).not.toHaveBeenCalled();
+    expect(result.current.currentSrtLineId).toBe(2);
+  });
 });

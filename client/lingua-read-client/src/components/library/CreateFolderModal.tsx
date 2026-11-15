@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Modal, Form, Button, Alert } from 'react-bootstrap';
-import { FOLDER_COLORS } from './FolderCard';
+import { FOLDER_COLORS } from './folderColors';
 
 interface CreateFolderModalProps {
   show: boolean;

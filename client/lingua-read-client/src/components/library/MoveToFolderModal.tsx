@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Modal, ListGroup, Button, Spinner } from 'react-bootstrap';
-import { FOLDER_COLORS, type FolderColor } from './FolderCard';
+import { resolveFolderColor } from './folderColors';
 import type { LibraryFolder } from '../../utils/store';
 
 interface MoveToFolderModalProps {
@@ -51,11 +51,6 @@ const MoveToFolderModal = ({ show, onHide, folders, onMove, itemCount, excludeFo
     setSelectedFolderId(null);
   };
 
-  const getFolderColor = (folder: LibraryFolder): string => {
-    if (!folder.color) return '#6c757d';
-    return FOLDER_COLORS[folder.color as FolderColor] || folder.color;
-  };
-
   const selectedStyle: React.CSSProperties = {
     outline: '2px solid #0d6efd',
     outlineOffset: '-2px',
@@ -72,7 +67,7 @@ const MoveToFolderModal = ({ show, onHide, folders, onMove, itemCount, excludeFo
           style={{ paddingLeft: `${1 + depth * 1.5}rem`, ...(isSelected ? selectedStyle : {}) }}
           className="d-flex align-items-center"
         >
-          <i className="bi bi-folder-fill me-2" style={{ color: getFolderColor(folder) }}></i>
+          <i className="bi bi-folder-fill me-2" style={{ color: resolveFolderColor(folder.color) }}></i>
           {folder.name}
           <span className="ms-auto d-flex align-items-center gap-2">
             {(folder.itemCount ?? 0) > 0 && <small className="text-muted">{folder.itemCount}</small>}

@@ -5,19 +5,7 @@ import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import type { LibraryFolder, SelectableType } from '../../utils/store';
 import { CARD_INTERACTIVE_SELECTOR } from './cardClicks';
-
-export type FolderColor = 'blue' | 'green' | 'orange' | 'red' | 'purple' | 'teal' | 'pink' | 'yellow';
-
-const FOLDER_COLORS: Record<FolderColor, string> = {
-  blue: '#4A90D9',
-  green: '#5CB85C',
-  orange: '#F0AD4E',
-  red: '#D9534F',
-  purple: '#9B59B6',
-  teal: '#1ABC9C',
-  pink: '#E91E63',
-  yellow: '#F1C40F'
-};
+import { FOLDER_COLORS, resolveFolderColor } from './folderColors';
 
 interface FolderCardProps {
   folder: LibraryFolder;
@@ -59,7 +47,7 @@ const FolderCard = ({ folder, onClick, onRename, onDelete, onChangeColor, onMove
     cursor: 'pointer'
   };
 
-  const folderColor = folder.color ? (FOLDER_COLORS[folder.color as FolderColor] || folder.color) : '#6c757d';
+  const folderColor = resolveFolderColor(folder.color);
 
   return (
     <div ref={setNodeRef} style={style} data-selectable-id={folder.folderId} data-selectable-type="folder">
@@ -169,5 +157,4 @@ const FolderCard = ({ folder, onClick, onRename, onDelete, onChangeColor, onMove
   );
 };
 
-export { FOLDER_COLORS };
 export default FolderCard;

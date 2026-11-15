@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Modal, Form, Button, Alert } from 'react-bootstrap';
-import { FOLDER_COLORS } from './FolderCard';
+import { DEFAULT_FOLDER_COLOR, FOLDER_COLORS } from './folderColors';
 import type { LibraryFolder } from '../../utils/store';
 
 interface RenameFolderModalProps {
@@ -70,7 +70,7 @@ const RenameFolderModal = ({ show, onHide, folder, onSubmit }: RenameFolderModal
                   width: 28,
                   height: 28,
                   borderRadius: '50%',
-                  backgroundColor: '#6c757d',
+                  backgroundColor: DEFAULT_FOLDER_COLOR,
                   display: 'inline-block',
                   cursor: 'pointer',
                   border: color === '' ? '3px solid #000' : '3px solid transparent',

@@ -1036,13 +1036,14 @@
 }
 
 .word-info-panel textarea.form-control:focus-visible {
-  outline-width: 2px !important;
-  outline-offset: 2px;
+  outline: 2px solid var(--font-color) !important;
+  outline-offset: -2px;
 }
 
 @media (forced-colors: active) {
   .word-info-panel textarea.form-control { border-color: ButtonText; }
   .word-info-definition { border-color: ButtonText; }
+  .word-info-panel textarea.form-control:focus-visible { outline-color: Highlight !important; }
 }
 
 /* Status tints match the words in the text; Known and Ignored have none there, so they get a

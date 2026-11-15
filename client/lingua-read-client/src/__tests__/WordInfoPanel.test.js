@@ -232,6 +232,90 @@ describe('WordInfoPanel', () => {
     expect(parseFloat(textarea.style.height)).toBeGreaterThanOrEqual(140);
   });
 
+  test('keeps a manually chosen definition height while editing and resets it for another word', () => {
+    const props = baseProps();
+    const { rerender } = render(<WordInfoPanel {...props} />);
+    const textarea = screen.getByRole('textbox', { name: 'Translation' });
+    textarea.style.height = '180px';
+    rerender(<WordInfoPanel {...props} translation={{ ...props.translation, value: 'kitten' }} />);
+    expect(parseFloat(textarea.style.height)).toBe(180);
+    Object.defineProperty(textarea, 'scrollHeight', { configurable: true, value: 220 });
+    rerender(<WordInfoPanel {...props} translation={{ ...props.translation, value: 'An extended definition' }} />);
+    expect(parseFloat(textarea.style.height)).toBe(180);
+    textarea.style.height = '96px';
+    rerender(<WordInfoPanel {...props} translation={{ ...props.translation, value: 'An extended definition with another note' }} />);
+    expect(parseFloat(textarea.style.height)).toBe(96);
+    Object.defineProperty(textarea, 'scrollHeight', { configurable: true, value: 20 });
+    rerender(<WordInfoPanel {...props} displayedWord={{ term: 'cão', status: 0 }} translation={{ ...props.translation, value: 'dog' }} />);
+    expect(parseFloat(textarea.style.height)).toBeLessThan(180);
+  });
+
+  test.each([
+    ['pt', 'algarve', 'Algarve'],
+    ['pt', 'café', 'cafe\u0301'],
+    ['tr', 'ışık', 'IŞIK'],
+    ['fr', "l'homme", 'l’homme'],
+  ])('does not offer to save an equivalent %s spelling separately', (code, term, surface) => {
+    const props = baseProps();
+    render(<WordInfoPanel {...props}
+      displayedWord={{ term, surface, status: 2, wordId: 11 }}
+      language={{ ...props.language, languageConfig: { code } }}
+      actions={{ ...props.actions, onSaveExactForm: vi.fn() }} />);
+    expect(screen.queryByRole('button', { name: /Save exact form/ })).not.toBeInTheDocument();
+  });
+
+  test.each([
+    ['ko', '책', '책을'],
+    ['ko-KR', '책'.normalize('NFD'), '책을'],
+    ['KO_kr', '책', '책을'.normalize('NFD')],
+  ])('allows a recognized Korean form to be tracked separately (%s)', (code, term, surface) => {
+    const props = baseProps();
+    const onSaveExactForm = vi.fn();
+    render(<WordInfoPanel {...props}
+      displayedWord={{ term, surface, status: 3, wordId: 11,
+        lemmaCandidates: [{ lemma: '책', particle: '을', particleType: 'Object Marker', dictionaryValidated: true, rank: 0 }] }}
+      language={{ ...props.language, languageConfig: { code } }}
+      actions={{ ...props.actions, onSaveExactForm }} />);
+    const button = screen.getByRole('button', { name: `Save exact form '${surface}'` });
+    expect(button).toHaveAttribute('title', `Track this form separately from '${term}', with its own word status`);
+    fireEvent.click(button);
+    expect(onSaveExactForm).toHaveBeenCalledOnce();
+  });
+
+  test.each([
+    ['pt', 'trabalhar', 'trabalho'],
+    ['en', 'go', 'went'],
+    ['fr', 'homme', "l'homme"],
+    ['it', 'amico', "l'amico"],
+    ['ca', 'home', "l'home"],
+    [undefined, '책', '책을'],
+  ])('does not offer separate-form saving for an unsupported language (%s)', (code, term, surface) => {
+    const props = baseProps();
+    render(<WordInfoPanel {...props}
+      displayedWord={{ term, surface, status: 3, wordId: 11,
+        lemmaCandidates: [{ lemma: term, particle: '', particleType: '', dictionaryValidated: true, rank: 0 }] }}
+      language={{ ...props.language, languageConfig: { code } }}
+      actions={{ ...props.actions, onSaveExactForm: vi.fn() }} />);
+    expect(screen.queryByRole('button', { name: /Save exact form/ })).not.toBeInTheDocument();
+  });
+
+  test('Korean requires a matching base-form analysis and a distinct surface spelling', () => {
+    const props = baseProps();
+    const candidate = { lemma: '책', particle: '을', particleType: 'Object Marker', dictionaryValidated: true, rank: 0 };
+    const renderPanel = (surface, lemmaCandidates) => <WordInfoPanel {...props}
+      displayedWord={{ term: '책', surface, status: 3, wordId: 11, lemmaCandidates }}
+      language={{ ...props.language, languageConfig: { code: 'ko' } }}
+      actions={{ ...props.actions, onSaveExactForm: vi.fn() }} />;
+    const { rerender } = render(renderPanel('책을', undefined));
+    expect(screen.queryByRole('button', { name: /Save exact form/ })).not.toBeInTheDocument();
+    rerender(renderPanel('책을', [{ ...candidate, lemma: '집' }]));
+    expect(screen.queryByRole('button', { name: /Save exact form/ })).not.toBeInTheDocument();
+    rerender(renderPanel('책', [candidate]));
+    expect(screen.queryByRole('button', { name: /Save exact form/ })).not.toBeInTheDocument();
+    rerender(renderPanel('책'.normalize('NFD'), [candidate]));
+    expect(screen.queryByRole('button', { name: /Save exact form/ })).not.toBeInTheDocument();
+  });
+
   test('lists active term dictionaries and hides the section when there are none', () => {
     const withDictionaries = (dictionaries) => baseProps({
       language: { languageConfig: { dictionaries }, setEmbeddedUrl: vi.fn() }

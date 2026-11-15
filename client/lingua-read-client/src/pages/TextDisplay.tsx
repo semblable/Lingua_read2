@@ -2533,7 +2533,7 @@ const TextDisplay = () => {
       onSaveExactForm: handleSaveExactForm,
       onSelectLemma: (lemma: string) => handleWordClick(displayedWord?.surface || selectedWord, { candidateLemma: lemma, selectionContext: selectedWordAiContext }),
       processingWord,
-      onReadingCredit: handleReadingCredit,
+      onReadingCredit: globalSettings.srsAutoCreateCards === 'never' ? undefined : handleReadingCredit,
       onRetranslateWithContext: handleRetranslateWithContext,
       canRetranslate: !!displayedWord?.term && !!wordInfoRetranslateContext,
       onAddTranslationWithContext: handleAddTranslationWithContext,

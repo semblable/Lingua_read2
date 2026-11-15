@@ -64,6 +64,12 @@ connectors between core word characters. Both test suites consume the same
 [golden vectors](../tokenizer-golden-vectors.json), rather than maintaining two
 independent expected-result files.
 
+Separate-form saving is a reader capability layered on top of lookup. It is
+currently enabled only for Korean with a matching base-form candidate and a
+distinct surface key. The [word-form maintainer guide](READER_WORD_FORMS.md)
+documents the activation rule, implementation locations, and requirements for
+adding another language.
+
 **Evidence and limits.** The frontend
 [tokenizer suite](../client/lingua-read-client/src/__tests__/tokenizer.spec.js) and
 backend [TokenizerTests](../server/LinguaReadApi.Tests/TokenizerTests.cs) check

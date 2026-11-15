@@ -255,6 +255,25 @@ describe('UserSettings', () => {
     expect(updateSetting).toHaveBeenCalledWith('autoTranslateWordStatus', 1);
   });
 
+  test('automatic flashcards can be turned off from Reading without changing word settings', async () => {
+    await renderLoaded();
+    useManualClock();
+    const select = screen.getByLabelText('Create flashcards when saving words');
+    expect(select).toHaveValue('always');
+    fireEvent.change(select, { target: { value: 'never' } });
+    await advance(CHOICE_DELAY);
+    expect(updateUserSettings).toHaveBeenCalledWith({ srsAutoCreateCards: 'never' }, { keepalive: true });
+    expect(updateSetting).toHaveBeenCalledWith('srsAutoCreateCards', 'never');
+    expect(JSON.parse(localStorage.getItem('cachedSettings')).srsAutoCreateCards).toBe('never');
+  });
+
+  test.each(['never', 'with_sentence'])('Reading retains an existing %s automatic flashcard preference', async mode => {
+    getUserSettings.mockResolvedValueOnce({ ...mockSettings, srsAutoCreateCards: mode });
+    await renderLoaded();
+    expect(screen.getByLabelText('Create flashcards when saving words')).toHaveValue(mode);
+    expect(updateUserSettings).not.toHaveBeenCalled();
+  });
+
   test('turning news import on saves it and shows the feeds, whose options save as numbers', async () => {
     await renderLoaded();
     useManualClock();

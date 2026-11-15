@@ -70,7 +70,7 @@ const applyProviderKeyFlags = (saved: UserSettingsResponse): Partial<Settings> =
 const EDITABLE_KEYS: readonly SettingKey[] = [
   'theme', 'textSize', 'textFont', 'readingUiMode', 'readerContentWidth',
   'readingDensity', 'showWordInfoPanel', 'readerParagraphIndent', 'readerTextAlignment',
-  'leftPanelWidth', 'autoTranslateWords', 'autoTranslateOnOpen', 'autoTranslateWordStatus', 'pauseOnWordClick', 'highlightKnownWords',
+  'leftPanelWidth', 'autoTranslateWords', 'autoTranslateOnOpen', 'autoTranslateWordStatus', 'srsAutoCreateCards', 'pauseOnWordClick', 'highlightKnownWords',
   'tooltipOnlyForSavedWords', 'readerCharacterShortcutsEnabled', 'readerStatusMarkersEnabled',
   'sentenceTtsEnabled', 'defaultLanguageId', 'translationTargetLanguageCode',
   'wordTranslationProvider', 'wiktionaryRichDisplay',
@@ -292,6 +292,7 @@ const UserSettings = () => {
           autoTranslateWords: data.autoTranslateWords ?? true,
           autoTranslateOnOpen: data.autoTranslateOnOpen ?? false,
           autoTranslateWordStatus: data.autoTranslateWordStatus || 5,
+          srsAutoCreateCards: data.srsAutoCreateCards || 'always',
           pauseOnWordClick: data.pauseOnWordClick ?? false,
           highlightKnownWords: data.highlightKnownWords ?? true,
           readerCharacterShortcutsEnabled: data.readerCharacterShortcutsEnabled ?? true,

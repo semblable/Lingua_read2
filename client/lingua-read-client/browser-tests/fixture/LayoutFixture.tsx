@@ -14,6 +14,7 @@ const settings = mergeSettings({
   autoTranslateWords: false, autoTranslateOnOpen: false,
   readingUiMode: new URLSearchParams(window.location.search).get('mode') || 'classic',
   sentenceMode: new URLSearchParams(window.location.search).get('sentence') === '1',
+  srsAutoCreateCards: new URLSearchParams(window.location.search).get('srs') === 'off' ? 'never' : 'always',
 });
 
 export default function LayoutFixture() {

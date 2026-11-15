@@ -61,6 +61,66 @@ test('exact Known occurrence stays selected and the compact lookup is legible in
   expect(await field.evaluate(element => getComputedStyle(element).outlineStyle)).toBe('solid');
 });
 
+test('definition can be resized by its native handle and keeps the chosen height in all themes', async ({ page, openLayout }, info) => {
+  test.skip(page.viewportSize()!.width < 768, 'Native mouse resizing is a desktop interaction');
+  await openLayout('texts/801?redesign=1');
+  await page.locator('.text-content .clickable-word').filter({ hasText: /^rivière$/ }).first().click();
+  const panel = page.locator('.word-info-panel');
+  const field = panel.getByRole('textbox', { name: 'Translation', exact: true });
+  await expect(panel.getByRole('button', { name: 'Reading credit', exact: true })).toBeVisible();
+  const original = (await field.boundingBox())!;
+  await page.mouse.move(original.x + original.width - 4, original.y + original.height - 4);
+  await page.mouse.down();
+  await page.mouse.move(original.x + original.width - 4, original.y + original.height + 80, { steps: 12 });
+  await page.mouse.up();
+  await expect.poll(async () => (await field.boundingBox())!.height).toBeGreaterThan(original.height + 50);
+  const resizedHeight = (await field.boundingBox())!.height;
+  // Filling rerenders the controlled field and used to restore the automatic height too.
+  await field.fill('river, a flowing body of water');
+  expect((await field.boundingBox())!.height).toBeGreaterThanOrEqual(resizedHeight - 1);
+  for (const theme of themes) {
+    await page.evaluate(value => { document.body.className = `${value}-theme`; }, theme);
+    await expectPageFits(page);
+    const outline = await field.evaluate(element => {
+      const style = getComputedStyle(element);
+      return { style: style.outlineStyle, offset: parseFloat(style.outlineOffset) };
+    });
+    expect(outline.style).toBe('solid');
+    expect(outline.offset).toBeLessThan(0);
+    await page.screenshot({ path: info.outputPath(`${theme}-resized-definition.png`), fullPage: true, animations: 'disabled' });
+  }
+  // Shrinking below the content height must remain scrollable, including after another edit.
+  await field.fill(Array.from({ length: 8 }, (_, index) => `Definition note ${index + 1}`).join('\n'));
+  expect((await field.boundingBox())!.height).toBeCloseTo(resizedHeight, 0);
+  const longField = (await field.boundingBox())!;
+  await page.mouse.move(longField.x + longField.width - 4, longField.y + longField.height - 4);
+  await page.mouse.down();
+  await page.mouse.move(longField.x + longField.width - 4, longField.y + longField.height - 56, { steps: 12 });
+  await page.mouse.up();
+  const shrunkHeight = (await field.boundingBox())!.height;
+  expect(shrunkHeight).toBeLessThan(resizedHeight - 30);
+  await field.pressSequentially(' extra note');
+  await expect.poll(async () => (await field.boundingBox())!.height).toBeCloseTo(shrunkHeight, 0);
+  expect(await field.evaluate(element => element.scrollHeight > element.clientHeight)).toBe(true);
+  // A panel-width change should also preserve the manually shortened field.
+  await page.setViewportSize({ width: 1100, height: 900 });
+  await expect.poll(async () => (await field.boundingBox())!.height).toBeCloseTo(shrunkHeight, 0);
+  await page.locator('.text-content .clickable-word').filter({ hasText: /^maisons$/ }).first().click();
+  expect((await field.boundingBox())!.height).toBeLessThan(shrunkHeight);
+});
+
+test('turning automatic cards off hides reading credit while vocabulary grades still save', async ({ page, openLayout, statusNetwork }) => {
+  await openLayout('texts/801?redesign=1&srs=off');
+  const word = page.locator('.text-content .clickable-word').filter({ hasText: /^rivière$/ }).first();
+  await word.click();
+  await expect(page.getByRole('heading', { name: 'rivière', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Reading credit', exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Learning (2)', exact: true }).click();
+  await expect.poll(() => statusNetwork.contextWrites.length).toBe(1);
+  expect(statusNetwork.contextWrites[0]).toMatchObject({ wordId: 902, status: 2, textId: 801, sentence: 'Éloïse suit la rivière.' });
+  await expect(word).toHaveClass(/word-status-2/);
+});
+
 test('Appearance stays in bounds, retains keyboard focus, and applies reader preferences', async ({ page, openLayout, appearanceWrites }, info) => {
   test.setTimeout(90_000);
   await openLayout('texts/801?redesign=1&mode=modern');

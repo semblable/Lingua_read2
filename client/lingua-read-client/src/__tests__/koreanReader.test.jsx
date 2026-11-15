@@ -115,6 +115,7 @@ describe('Korean reader saved vocabulary identity', () => {
     await waitFor(() => expect(screen.getByText(surface)).toHaveClass('word-status-3'));
     fireEvent.click(screen.getByText(surface));
     expect(screen.getByRole('textbox')).toHaveValue('Korean letters');
+    expect(screen.queryByRole('button', { name: /Save exact form/ })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Advanced (4)' }));
     await waitFor(() => expect(updateWord).toHaveBeenCalledWith(91, 4, undefined, { textId: 1, sentence: `${surface}.` }));
     expect(createWord).not.toHaveBeenCalled();
@@ -364,6 +365,7 @@ describe('Korean reader saved vocabulary identity', () => {
 
     fireEvent.click(exactBtn);
     await waitFor(() => expect(createWord).toHaveBeenCalledWith(1, '책을', 3, 'book', expect.anything()));
+    expect(screen.queryByRole('button', { name: /Save exact form/ })).not.toBeInTheDocument();
   });
 
   test('clicking unseen inflected word analyzes particle and saves base lemma to deck', async () => {

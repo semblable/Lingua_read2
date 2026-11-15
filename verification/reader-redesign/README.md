@@ -14,9 +14,11 @@ Date: 2026-11-15
 
 ## Independent review
 
-An agent separate from the implementation authors reviewed the final change. The review found and verified fixes for mobile line spacing, hovered-word sentence provenance, quadratic selection-marker work, and repeated-word sentence selection in flowing audio. Final review reported no remaining actionable issues.
+An agent separate from the implementation authors reviewed the original redesign. The review found and verified fixes for mobile line spacing, hovered-word sentence provenance, quadratic selection-marker work, and repeated-word sentence selection in flowing audio. That review reported no remaining actionable issues.
 
 Visual inspection also corrected textarea padding being counted twice, an overly narrow desktop sidebar, bright utility surfaces caused by global button overrides, incomplete status-button borders in high-contrast themes, and low-contrast mobile Menu/Close controls in the light theme.
+
+A separate follow-up reviewer checked the word-panel changes and the [activation/extension guide](../../docs/READER_WORD_FORMS.md) against the later Sentence Mode/audio fixes on `d75fa1da`. The reviewer found that a manually shortened multiline definition expanded again on typing. After correction, an independent Chromium check confirmed a 176px field could be reduced to 96px and stay there through typing and width changes, with scrolling for overflow. The final review reported no remaining actionable findings.
 
 ## Automated results
 
@@ -35,7 +37,7 @@ Visual inspection also corrected textarea padding being counted twice, an overly
 
 Browser coverage includes real reader, sentence, and audio components, save ordering and retry behavior, keyboard focus, Escape/focus return, selected occurrences, phrase expansion, settings changes, 4.5:1 grade/header-text contrast, axe scans, forced colors, text spacing, and root/component overflow.
 
-The configured browser projects cover 320, 390, and 430px phones, a 1280px desktop, and a desktop browser reflowed to 320px. Screenshots cover light, dark, classic dark, high-contrast light, and high-contrast dark. Thirty representative captures are indexed below; the complete browser output also contains sentence-mode and narrow-width captures.
+The configured browser projects cover 320, 390, and 430px phones, a 1280px desktop, and a desktop browser reflowed to 320px. Screenshots cover light, dark, classic dark, high-contrast light, and high-contrast dark. Representative captures are indexed below; the complete browser output also contains sentence-mode and narrow-width captures.
 
 ## Screenshots
 
@@ -57,6 +59,14 @@ These captures use production React components and authored local data. They do 
 | High-contrast light | [View](screenshots/desktop-high-contrast-light-audio.png) | [View](screenshots/mobile-high-contrast-light-audio.png) |
 | High-contrast dark | [View](screenshots/desktop-high-contrast-dark-audio.png) | [View](screenshots/mobile-high-contrast-dark-audio.png) |
 
+## Word panel follow-up
+
+- Manual textarea resizing now survives ResizeObserver notifications, typing, and width changes, including shrinking below the content height with scrollable overflow; selecting another word restores the compact starting height. The focus outline stays inside the field in every theme.
+- The exact-form action is available only for Korean, when analysis matches the displayed base form and the surface has a different lookup key. It stays hidden for equivalent spellings and other languages, including Portuguese and French apostrophe matches.
+- Reading settings expose the existing automatic-card preference. With it off, reading credit is hidden and vocabulary grades/examples still save; existing cards are unaffected.
+- Final validation on top of `d75fa1da`, with the updated lockfile dependencies installed: **2,226 client tests passed** across 137 files; **17 browser checks passed** at desktop and phone widths (one desktop-only drag check skipped on phone). TypeScript checks, production build, documentation links, and lint passed (0 errors, 35 existing warnings).
+- Resized-field screenshots: [Light](screenshots/desktop-light-resized-definition.png), [Dark](screenshots/desktop-dark-resized-definition.png), [Classic dark](screenshots/desktop-classic-dark-resized-definition.png), [High-contrast light](screenshots/desktop-high-contrast-light-resized-definition.png), [High-contrast dark](screenshots/desktop-high-contrast-dark-resized-definition.png). Each capture follows a native mouse drag and a text edit.
+
 ## Reproduce
 
 From `client/lingua-read-client`:
@@ -77,4 +87,4 @@ From the repository root:
 dotnet test server/LinguaReadApi.Tests/LinguaReadApi.Tests.csproj --no-restore --filter 'FullyQualifiedName~ReaderAutomaticExampleTests|FullyQualifiedName~WordsControllerTests|FullyQualifiedName~SrsStatusSyncTests'
 ```
 
-The browser server uses port 4175. Local socket/testhost restrictions in the default sandbox required authorized test execution outside that sandbox. The committed evidence is this summary and the thirty indexed screenshots. Detailed runner logs, JSON reports, traces, and diagnostic runs remain local artifacts excluded by this directory's `.gitignore`. The indexed screenshots are unmodified copies of the final captures.
+The browser server uses port 4175. Local socket/testhost restrictions in the default sandbox required authorized test execution outside that sandbox. The evidence is this summary and the indexed screenshots. Detailed runner logs, JSON reports, traces, and diagnostic runs remain local artifacts excluded by this directory's `.gitignore`. The indexed screenshots are unmodified copies of the final captures.

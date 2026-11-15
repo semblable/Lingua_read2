@@ -87,6 +87,24 @@ const ReadingSettings = ({
           </Form.Text>
         </Form.Group>
 
+        <Form.Group className="mb-3" controlId="srsAutoCreateCards">
+          <Form.Label>Create flashcards when saving words</Form.Label>
+          <Form.Select
+            name="srsAutoCreateCards"
+            value={settings.srsAutoCreateCards || 'always'}
+            onChange={handleChange}
+            aria-describedby="srsAutoCreateCardsHelp"
+          >
+            <option value="always">Always (statuses 1–4)</option>
+            <option value="with_sentence">Only when a sentence is saved with it</option>
+            <option value="never">Off (save vocabulary without creating cards)</option>
+          </Form.Select>
+          <Form.Text id="srsAutoCreateCardsHelp" className="text-muted">
+            Optional. Word statuses and saved examples work without flashcards. Turning this off also hides
+            reading credit in the reader; existing cards remain available in Reviews.
+          </Form.Text>
+        </Form.Group>
+
         <Form.Group className="mb-3" controlId="pauseOnWordClick">
           <Form.Check
             type="switch"

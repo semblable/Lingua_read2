@@ -1,6 +1,7 @@
 import React, { useLayoutEffect, useRef } from 'react';
 import { Button, Alert, Form, Spinner, Badge } from 'react-bootstrap';
-import type { LanguageConfig } from '../../utils/readerText';
+import { lowercaseLookupTerm, type LanguageConfig } from '../../utils/readerText';
+import { composeKoreanLookupText, isKoreanLanguageCode } from '../../utils/koreanLookup';
 import type { DisplayedWord } from '../../types/displayedWord';
 import { WORD_STATUS_LABELS, WORD_STATUS_VALUES, type WordStatus } from '../../types/wordStatus';
 import WiktionaryDefinitions from './WiktionaryDefinitions';
@@ -117,20 +118,45 @@ const WordInfoPanel = React.memo(({
   characterShortcutsEnabled = true
 }: WordInfoPanelProps) => {
   const translationRef = useRef<HTMLTextAreaElement | null>(null);
+  const translationSizingRef = useRef<{
+    element: HTMLTextAreaElement;
+    term: string | undefined;
+    height: string;
+    manualHeight: number;
+  } | null>(null);
   useLayoutEffect(() => {
     const textarea = translationRef.current;
     if (!textarea) return;
+    const previous = translationSizingRef.current;
+    const sizing = previous?.element === textarea && previous.term === displayedWord?.term
+      ? previous
+      : { element: textarea, term: displayedWord?.term, height: textarea.style.height, manualHeight: 0 };
+    translationSizingRef.current = sizing;
     const resize = () => {
+      // Native dragging writes an inline height. Keep that choice while editing this word.
+      if (textarea.style.height !== sizing.height) {
+        sizing.manualHeight = parseFloat(textarea.style.height) || 0;
+      }
       textarea.style.height = 'auto';
       const style = getComputedStyle(textarea);
       const lineHeight = parseFloat(style.lineHeight) || 20;
       const borders = (parseFloat(style.borderTopWidth) || 0) + (parseFloat(style.borderBottomWidth) || 0);
       const extra = (parseFloat(style.paddingTop) || 0) + (parseFloat(style.paddingBottom) || 0) + borders;
       // scrollHeight already includes padding; adding it twice made short glosses look four lines tall.
-      textarea.style.height = `${Math.max(lineHeight * 2 + extra, textarea.scrollHeight + borders)}px`;
+      // A manual size also allows shrinking long notes; overflow can scroll instead of snapping back.
+      const height = sizing.manualHeight || textarea.scrollHeight + borders;
+      textarea.style.height = `${Math.max(lineHeight * 2 + extra, height)}px`;
+      sizing.height = textarea.style.height;
     };
     resize();
-    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(resize);
+    let width = textarea.clientWidth;
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => {
+      // Observing height here would immediately undo a drag of the resize handle.
+      if (textarea.clientWidth !== width) {
+        width = textarea.clientWidth;
+        resize();
+      }
+    });
     observer?.observe(textarea);
     return () => observer?.disconnect();
   }, [translation.value, displayedWord?.term]);
@@ -151,6 +177,15 @@ const WordInfoPanel = React.memo(({
   const statusButtonsDisabled = actions.processingWord || !selectedWord;
   const hasUnsavedTranslation = isTracked && translation.saved !== undefined
     && translation.value.trim() !== translation.saved.trim();
+  const lookupLanguage = language.languageConfig?.code || language.languageConfig?.languageCode || definition?.sourceLanguageCode;
+  const formKey = (term: string) => composeKoreanLookupText(lowercaseLookupTerm(term, lookupLanguage));
+  const termKey = formKey(displayedWord.term || '');
+  const hasDistinctSurface = !!displayedWord.surface && !!displayedWord.term
+    && formKey(displayedWord.surface) !== termKey;
+  // Korean is the only reader language with base-form analysis. Spelling aliases
+  // in other languages don't justify an extra vocabulary entry.
+  const canSaveExactForm = isKoreanLanguageCode(lookupLanguage) && hasDistinctSurface
+    && displayedWord.lemmaCandidates?.some(candidate => formKey(candidate.lemma) === termKey);
   const termDictionaries = (language.languageConfig?.dictionaries ?? [])
     .filter(dict => dict.isActive && dict.purpose === 'terms')
     .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
@@ -303,7 +338,7 @@ const WordInfoPanel = React.memo(({
         <span className="word-info-status-label">{statusLabel(status)}</span>
         {saveSuccess && <span className="word-info-saved">✓ Saved</span>}
       </div>
-      {Boolean(displayedWord.surface && displayedWord.surface !== displayedWord.term && actions.onSaveExactForm) && (
+      {canSaveExactForm && actions.onSaveExactForm && (
         <div className="mt-1 word-info-exact-row">
           <Button
             variant="link"
@@ -311,6 +346,7 @@ const WordInfoPanel = React.memo(({
             className="p-0 text-muted text-decoration-none word-info-save-exact-btn"
             onClick={actions.onSaveExactForm}
             disabled={statusButtonsDisabled}
+            title={`Track this form separately from '${displayedWord.term}', with its own word status`}
           >
             Save exact form &apos;{String(displayedWord.surface)}&apos;
           </Button>
@@ -335,9 +371,9 @@ const WordInfoPanel = React.memo(({
             size="sm"
             className="word-info-utility"
             onClick={() => actions.onReadingCredit!(displayedWord.wordId!)}
-            title="Boost SRS interval (reading credit)"
+            title="Count recognizing this word while reading toward its flashcard schedule"
           >
-            SRS ✓
+            Reading credit
           </Button>
         )}
         {/* Kept apart from the everyday actions so it isn't hit by accident. */}

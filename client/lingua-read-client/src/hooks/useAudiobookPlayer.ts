@@ -450,9 +450,9 @@ export const useAudiobookPlayer = ({
 
   const handleTimeUpdate = useCallback(() => {
     const audio = audioRef.current;
-    if (!audio) return;
+    if (!audio || audio.seeking) return;
     const time = audio.currentTime;
-    if (!audio.seeking) listeningTrackerRef.current.samplePlayback(time, audio.duration);
+    listeningTrackerRef.current.samplePlayback(time, audio.duration);
     setCurrentTime(time);
 
     const boundary = handleSegmentBoundary(time);
@@ -593,6 +593,11 @@ export const useAudiobookPlayer = ({
       syncPlaybackState(true);
     };
     const onPause = () => {
+      // Ignore stale queued `pause` events when playback has already resumed
+      // (e.g., advancing to the next segment right as the previous segment stopped).
+      if (!audio.paused) {
+        return;
+      }
       // Close the checkpoint at the event, before a seeked/playing event or a
       // React render can run. Repeated pauses then have no elapsed time to add.
       flushListeningActivityRef.current?.(true);

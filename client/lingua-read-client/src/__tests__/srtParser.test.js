@@ -173,6 +173,22 @@ describe('findSrtLineIndex', () => {
   test('returns -1 for empty srtLines', () => {
     expect(findSrtLineIndex([], 1)).toBe(-1);
   });
+
+  test('prefers newly started cue at touching and overlapping boundaries', () => {
+    const touching = [
+      { id: 1, startTime: 0, endTime: 2.5 },
+      { id: 2, startTime: 2.5, endTime: 5.0 },
+    ];
+    expect(findSrtLineIndex(touching, 2.5)).toBe(1);
+    expect(findSrtLineIndex(touching, 5.0)).toBe(1);
+
+    const overlapping = [
+      { id: 1, startTime: 0, endTime: 2.6 },
+      { id: 2, startTime: 2.5, endTime: 5.0 },
+    ];
+    expect(findSrtLineIndex(overlapping, 2.5)).toBe(1);
+    expect(findSrtLineIndex(overlapping, 2.55)).toBe(1);
+  });
 });
 test.each([['00:00:05,5', 5.5], ['00:00:05,50', 5.5], ['00:00:05,005', 5.005]])('parses fractional seconds %s', (value, expected) => {
   expect(parseSrtTime(value)).toBe(expected);

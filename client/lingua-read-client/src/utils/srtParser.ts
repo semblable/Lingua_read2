@@ -62,8 +62,21 @@ export const parseSrtContent = (srtContent: string | null | undefined): SrtEntry
 
 /**
  * Find the SRT line index matching a given time.
- * Uses inclusive end boundary (<=) to avoid dead zones at segment transitions.
+ * Prefers half-open intervals [startTime, endTime) so adjacent or slightly
+ * overlapping cues resolve to the newly started cue rather than an earlier cue
+ * whose endTime equals time. Falls back to inclusive endTime at trailing edges.
  */
 export const findSrtLineIndex = (srtLines: SrtEntry[], time: number): number => {
+  if (!Array.isArray(srtLines) || srtLines.length === 0 || !Number.isFinite(time)) {
+    return -1;
+  }
+
+  for (let i = srtLines.length - 1; i >= 0; i -= 1) {
+    const line = srtLines[i];
+    if (time >= line.startTime && time < line.endTime) {
+      return i;
+    }
+  }
+
   return srtLines.findIndex((line) => time >= line.startTime && time <= line.endTime);
 };

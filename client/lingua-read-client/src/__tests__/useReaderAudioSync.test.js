@@ -221,4 +221,197 @@ describe('useReaderAudioSync', () => {
       container.remove();
     }
   });
+
+  test('ignores pre-seek and quantization timestamps during manual Next navigation at higher playback speeds', () => {
+    const setCurrentSegmentIndex = vi.fn();
+    const srtLines = [
+      { id: 1, startTime: 0, endTime: 2.5, text: 'First' },
+      { id: 2, startTime: 2.5, endTime: 5.0, text: 'Second' },
+      { id: 3, startTime: 5.0, endTime: 7.5, text: 'Third' },
+    ];
+    const { result, rerender } = renderHook(
+      (props) => {
+        const listRef = useRef(null);
+        return useReaderAudioSync({ listRef, setCurrentSegmentIndex, ...props });
+      },
+      {
+        initialProps: {
+          isAudioLesson: true,
+          isSentenceMode: true,
+          isMobile: false,
+          displayMode: 'audio',
+          srtLines,
+          currentSegmentIndex: 0
+        }
+      }
+    );
+
+    result.current.audioRef.current = { paused: false, seeking: false, currentTime: 2.0 };
+    act(() => {
+      result.current.handleAudioPlaybackStateChange(true);
+      result.current.skipInitialAudioLessonSegmentPlaybackRef.current = false;
+    });
+
+    // User clicks Next: index advances 0 -> 1 before seek to 2.5s finishes.
+    rerender({
+      isAudioLesson: true,
+      isSentenceMode: true,
+      isMobile: false,
+      displayMode: 'audio',
+      srtLines,
+      currentSegmentIndex: 1
+    });
+
+    // Stale pre-seek timeupdate inside cue 0 must NOT yank index back to 0.
+    act(() => {
+      result.current.handleAudioTimeUpdate(2.1);
+    });
+    expect(setCurrentSegmentIndex).not.toHaveBeenCalled();
+
+    // MP3 frame quantization slightly before 2.5s must keep focus on cue 1.
+    act(() => {
+      result.current.handleAudioTimeUpdate(2.45);
+    });
+    expect(setCurrentSegmentIndex).not.toHaveBeenCalled();
+    expect(result.current.currentSrtLineId).toBe(2);
+  });
+
+  test('ignores pre-seek timestamp from next cue when navigating Previous', () => {
+    const setCurrentSegmentIndex = vi.fn();
+    const srtLines = [
+      { id: 1, startTime: 0, endTime: 2.5, text: 'First' },
+      { id: 2, startTime: 2.5, endTime: 5.0, text: 'Second' },
+    ];
+    const { result, rerender } = renderHook(
+      (props) => {
+        const listRef = useRef(null);
+        return useReaderAudioSync({ listRef, setCurrentSegmentIndex, ...props });
+      },
+      {
+        initialProps: {
+          isAudioLesson: true,
+          isSentenceMode: true,
+          isMobile: false,
+          displayMode: 'audio',
+          srtLines,
+          currentSegmentIndex: 1
+        }
+      }
+    );
+
+    result.current.audioRef.current = { paused: false, seeking: false, currentTime: 2.54 };
+    act(() => {
+      result.current.handleAudioPlaybackStateChange(true);
+      result.current.skipInitialAudioLessonSegmentPlaybackRef.current = false;
+    });
+
+    // User clicks Previous: 1 -> 0 while player is still at 2.54s in cue 1.
+    rerender({
+      isAudioLesson: true,
+      isSentenceMode: true,
+      isMobile: false,
+      displayMode: 'audio',
+      srtLines,
+      currentSegmentIndex: 0
+    });
+
+    act(() => {
+      result.current.handleAudioTimeUpdate(2.54);
+    });
+    expect(setCurrentSegmentIndex).not.toHaveBeenCalled();
+
+    // Once seek settles inside cue 0, SRT highlight updates cleanly without yanking.
+    act(() => {
+      result.current.handleAudioTimeUpdate(0.1);
+    });
+    expect(result.current.currentSrtLineId).toBe(1);
+    expect(setCurrentSegmentIndex).not.toHaveBeenCalled();
+  });
+
+  test('keeps segment focus when bounded segment playback stops at touching endTime boundary', () => {
+    const setCurrentSegmentIndex = vi.fn();
+    const srtLines = [
+      { id: 1, startTime: 0, endTime: 2.5, text: 'First' },
+      { id: 2, startTime: 2.5, endTime: 5.0, text: 'Second' },
+    ];
+    const { result, rerender } = renderHook(
+      (props) => {
+        const listRef = useRef(null);
+        return useReaderAudioSync({ listRef, setCurrentSegmentIndex, ...props });
+      },
+      {
+        initialProps: {
+          isAudioLesson: true,
+          isSentenceMode: true,
+          isMobile: false,
+          displayMode: 'audio',
+          srtLines,
+          currentSegmentIndex: 0
+        }
+      }
+    );
+
+    result.current.audioRef.current = { paused: false, seeking: false, currentTime: 0 };
+    act(() => {
+      result.current.skipInitialAudioLessonSegmentPlaybackRef.current = false;
+      result.current.setSegmentPlaybackRequest({
+        requestId: 'seg-0',
+        startTime: 0,
+        endTime: 2.5,
+        repeatCount: 1,
+        forcePlay: true
+      });
+    });
+
+    rerender({
+      isAudioLesson: true,
+      isSentenceMode: true,
+      isMobile: false,
+      displayMode: 'audio',
+      srtLines,
+      currentSegmentIndex: 0
+    });
+
+    act(() => {
+      result.current.handleAudioPlaybackStateChange(true);
+      result.current.handleAudioTimeUpdate(1.2);
+    });
+
+    // Simulate bounded stop: player pauses and emits endTime = 2.5 (= line[1].startTime).
+    result.current.audioRef.current.paused = true;
+    act(() => {
+      result.current.handleAudioTimeUpdate(2.5);
+    });
+    expect(setCurrentSegmentIndex).not.toHaveBeenCalled();
+    expect(result.current.currentSrtLineId).toBe(1);
+  });
+
+  test('handleLineClick updates currentSegmentIndex even outside sentence mode', () => {
+    const setCurrentSegmentIndex = vi.fn();
+    const srtLines = [
+      { id: 1, startTime: 0, endTime: 2.5, text: 'First' },
+      { id: 2, startTime: 2.5, endTime: 5.0, text: 'Second' },
+    ];
+    const { result } = renderHook(() => {
+      const listRef = useRef(null);
+      return useReaderAudioSync({
+        isAudioLesson: true,
+        isSentenceMode: false,
+        isMobile: false,
+        displayMode: 'audio',
+        srtLines,
+        currentSegmentIndex: 0,
+        setCurrentSegmentIndex,
+        listRef
+      });
+    });
+
+    result.current.audioRef.current = { currentTime: 0 };
+    act(() => {
+      result.current.handleLineClick(2.5);
+    });
+
+    expect(result.current.currentSrtLineId).toBe(2);
+    expect(setCurrentSegmentIndex).toHaveBeenCalledWith(1);
+  });
 });

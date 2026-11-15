@@ -182,6 +182,8 @@ export const useReaderState = ({
         setBook(null);
         setPreviousTextId(null);
         setNextTextId(null);
+        setAudioSrc(null);
+        setSrtLines([]);
         setSentenceProgressLoaded(false);
       }
 
@@ -216,16 +218,17 @@ export const useReaderState = ({
         setText(data);
         setWords(data.words || []);
         if (data.wordLinkingStatus === 'processing') startWordLinkingPoll();
+        let srtPromise: Promise<unknown> | null = null;
         if (data.isAudioLesson && data.audioFilePath && data.hasSrtContent) {
           if (!isAudioLessonRef.current) setIsAudioLesson(true);
 
           const newAudioSrc = `/${data.audioFilePath}`;
           setAudioSrc(newAudioSrc);
 
-          getTextSrt(textId)
+          srtPromise = Promise.resolve(getTextSrt(textId))
             .then(srtText => {
-              if (isCurrentRequest() && srtText) {
-                setSrtLines(parseSrtContent(srtText));
+              if (isCurrentRequest()) {
+                setSrtLines(srtText ? parseSrtContent(srtText) : []);
               }
             })
             .catch(err => {
@@ -291,6 +294,8 @@ export const useReaderState = ({
         promises.push(
           data?.textId ? (getSentenceProgress(data.textId) as Promise<unknown>) : Promise.resolve(null)
         );
+
+        promises.push(srtPromise ?? Promise.resolve(null));
 
         const results = await Promise.allSettled(promises);
         if (!isCurrentRequest()) return;

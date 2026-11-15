@@ -3855,4 +3855,332 @@ describe('TextDisplay', () => {
       expect(articleSpan).toHaveClass('word-status-0');
     });
   });
+
+  describe('sentence mode stability and audio sync', () => {
+    const renderWithMutableSettings = (settingOverrides = {}) => {
+      function StatefulSettingsReader() {
+        const [settings, setSettings] = React.useState(
+          createSettingsValue(settingOverrides).settings
+        );
+        const updateSetting = vi.fn((key, value) => {
+          setSettings(prev => ({ ...prev, [key]: value }));
+        });
+        return (
+          <SettingsContext.Provider value={{ settings, loadingSettings: false, errorSettings: null, updateSetting, refetchSettings: vi.fn() }}>
+            <MemoryRouter initialEntries={['/texts/1']} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+              <Routes>
+                <Route path="/texts/:textId" element={<TextDisplay />} />
+              </Routes>
+            </MemoryRouter>
+          </SettingsContext.Provider>
+        );
+      }
+
+      return render(<StatefulSettingsReader />);
+    };
+
+    test('audio lesson sentence mode Next advances cleanly after audio-driven sync back to previous cue', async () => {
+      getText.mockResolvedValueOnce({
+        textId: 1,
+        title: 'Audio Next Test',
+        content: 'First cue. Second cue.',
+        languageId: null,
+        languageCode: 'ES',
+        languageName: 'Spanish',
+        isAudioLesson: true,
+        audioFilePath: 'audio_lessons/1.mp3',
+        hasSrtContent: true,
+        words: [],
+        bookId: null
+      });
+      getTextSrt.mockResolvedValueOnce(
+        '1\n00:00:00,000 --> 00:00:02,500\nFirst cue.\n\n2\n00:00:02,500 --> 00:00:05,000\nSecond cue.\n'
+      );
+
+      renderTextDisplay({ sentenceMode: true });
+
+      expect(await screen.findByText('First')).toBeInTheDocument();
+      expect(mockAudiobookPlayer.mock.calls.at(-1)[0].segmentPlaybackRequest).toBeNull();
+
+      // Advance 0 -> 1 manually.
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /^Next$/i }));
+      });
+      expect(await screen.findByText('Second')).toBeInTheDocument();
+      const firstRequest = mockAudiobookPlayer.mock.calls.at(-1)[0].segmentPlaybackRequest;
+      expect(firstRequest).toEqual(expect.objectContaining({ startTime: 2.5, endTime: 5 }));
+
+      // Simulate scrubber/audio moving back into cue 0 after 1.5s.
+      act(() => {
+        vi.advanceTimersByTime(1500);
+        const latestProps = mockAudiobookPlayer.mock.calls.at(-1)[0];
+        latestProps.onTimeUpdate(1.0);
+      });
+      expect(await screen.findByText('First')).toBeInTheDocument();
+
+      // Clicking Next again (0 -> 1) MUST still emit a fresh segmentPlaybackRequest for cue 1.
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /^Next$/i }));
+      });
+      expect(await screen.findByText('Second')).toBeInTheDocument();
+      const secondRequest = mockAudiobookPlayer.mock.calls.at(-1)[0].segmentPlaybackRequest;
+      expect(secondRequest).toEqual(expect.objectContaining({ startTime: 2.5, endTime: 5 }));
+      expect(secondRequest.requestId).not.toBe(firstRequest.requestId);
+    });
+
+    test('audio playback changes and repeat count changes preserve open translation, explanation, and progress', async () => {
+      getText.mockResolvedValueOnce({
+        textId: 1,
+        title: 'Audio Stability Test',
+        content: 'First cue. Second cue.',
+        languageId: null,
+        languageCode: 'ES',
+        languageName: 'Spanish',
+        isAudioLesson: true,
+        audioFilePath: 'audio_lessons/1.mp3',
+        hasSrtContent: true,
+        words: [],
+        bookId: null
+      });
+      getTextSrt.mockResolvedValueOnce(
+        '1\n00:00:00,000 --> 00:00:02,500\nFirst cue.\n\n2\n00:00:02,500 --> 00:00:05,000\nSecond cue.\n'
+      );
+
+      renderWithMutableSettings({ sentenceMode: true, sentenceAudioRepeats: 1 });
+      expect(await screen.findByText('First')).toBeInTheDocument();
+      await waitFor(() => expect(logSentenceReadActivity).toHaveBeenCalledTimes(1));
+
+      // Open both translation and explanation on cue 0.
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /Show Translation/i }));
+      });
+      expect(await screen.findByText('Sentence translation')).toBeInTheDocument();
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /Explain Sentence/i }));
+      });
+      expect(await screen.findByText('Grammar')).toBeInTheDocument();
+
+      // Starting and pausing audio must NOT hide translation/explanation, log duplicate activity, or trigger segmentPlaybackRequest.
+      act(() => {
+        mockAudiobookPlayer.mock.calls.at(-1)[0].onPlaybackStateChange(true);
+      });
+      act(() => {
+        mockAudiobookPlayer.mock.calls.at(-1)[0].onPlaybackStateChange(false);
+      });
+      expect(screen.getByText('Sentence translation')).toBeInTheDocument();
+      expect(screen.getByText('Grammar')).toBeInTheDocument();
+      expect(logSentenceReadActivity).toHaveBeenCalledTimes(1);
+      expect(mockAudiobookPlayer.mock.calls.at(-1)[0].segmentPlaybackRequest).toBeNull();
+
+      // Increasing Repeats must NOT hide translation/explanation, log duplicate activity, or trigger playback.
+      fireEvent.click(screen.getByRole('button', { name: '+' }));
+      expect(screen.getByText('Repeats: 2')).toBeInTheDocument();
+      expect(screen.getByText('Sentence translation')).toBeInTheDocument();
+      expect(screen.getByText('Grammar')).toBeInTheDocument();
+      expect(logSentenceReadActivity).toHaveBeenCalledTimes(1);
+      expect(mockAudiobookPlayer.mock.calls.at(-1)[0].segmentPlaybackRequest).toBeNull();
+    });
+
+    test('failed sentence translation and explanation can be retried and stale responses do not bleed across sentences', async () => {
+      getText.mockResolvedValueOnce({
+        textId: 1,
+        title: 'Retry Test',
+        content: 'First sentence. Second sentence.',
+        languageId: null,
+        languageCode: 'ES',
+        languageName: 'Spanish',
+        isAudioLesson: false,
+        words: [],
+        bookId: null
+      });
+
+      let resolveFirst;
+      translateSentence
+        .mockImplementationOnce(() => new Promise(res => { resolveFirst = res; }))
+        .mockRejectedValueOnce(new Error('Network down'))
+        .mockResolvedValueOnce({ translatedText: 'Recovered second translation' });
+      explainSentence
+        .mockRejectedValueOnce(new Error('Timeout'))
+        .mockResolvedValueOnce({ explanationText: 'Grammar: Recovered explanation.' });
+
+      renderTextDisplay({ sentenceMode: true });
+      expect(await screen.findByText('First')).toBeInTheDocument();
+
+      // Start translation on sentence 0, then move to sentence 1 before it resolves.
+      fireEvent.click(screen.getByRole('button', { name: /Show Translation/i }));
+      fireEvent.click(screen.getByRole('button', { name: /^Next$/i }));
+      expect(await screen.findByText('Second')).toBeInTheDocument();
+
+      // Button on sentence 1 must NOT be stuck disabled while sentence 0 is in flight.
+      const translateBtn = screen.getByRole('button', { name: /Show Translation/i });
+      expect(translateBtn).not.toBeDisabled();
+
+      // Stale resolution from sentence 0 must NOT hijack sentence 1's view.
+      await act(async () => {
+        resolveFirst({ translatedText: 'Stale first translation' });
+      });
+      expect(screen.queryByText('Stale first translation')).not.toBeInTheDocument();
+
+      // Fail on sentence 1, dismiss error, retry -> succeeds.
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /Show Translation/i }));
+      });
+      expect(await screen.findByText(/Translation failed: Network down/)).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: /Hide Translation/i }));
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /Show Translation/i }));
+      });
+      expect(await screen.findByText('Recovered second translation')).toBeInTheDocument();
+
+      // Same retry behavior for explanation failures.
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /Explain Sentence/i }));
+      });
+      expect(await screen.findByText(/Explanation failed: Timeout/)).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: /Hide Explanation/i }));
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /Explain Sentence/i }));
+      });
+      expect(await screen.findByText('Recovered explanation.')).toBeInTheDocument();
+    });
+
+    test('advancing sentence clears leftover phrase and DOM selection so word clicks work immediately', async () => {
+      getText.mockResolvedValueOnce({
+        textId: 1,
+        title: 'Selection Reset Test',
+        content: 'Alpha word. Beta word.',
+        languageId: null,
+        languageCode: 'EN',
+        languageName: 'English',
+        isAudioLesson: false,
+        words: [],
+        bookId: null
+      });
+
+      const { container } = renderTextDisplay({ sentenceMode: true, autoTranslateWords: false });
+      const alphaWord = await screen.findByText('Alpha');
+
+      fireEvent.click(alphaWord);
+      expect(alphaWord).toHaveClass('reader-word-selected');
+
+      const mockRange = document.createRange();
+      mockRange.selectNodeContents(alphaWord);
+      const removeAllRanges = vi.fn();
+      let collapsed = false;
+      window.getSelection = vi.fn(() => ({
+        isCollapsed: collapsed,
+        rangeCount: collapsed ? 0 : 1,
+        anchorNode: alphaWord.firstChild,
+        focusNode: alphaWord.firstChild,
+        toString: () => (collapsed ? '' : 'Alpha'),
+        getRangeAt: () => mockRange,
+        removeAllRanges: () => {
+          collapsed = true;
+          removeAllRanges();
+        },
+        addRange: vi.fn()
+      }));
+
+      fireEvent.click(screen.getByRole('button', { name: /^Next$/i }));
+      const betaWord = await screen.findByText('Beta');
+      expect(removeAllRanges).toHaveBeenCalled();
+      expect(container.querySelectorAll('.reader-word-selected')).toHaveLength(0);
+
+      fireEvent.click(betaWord);
+      expect(betaWord).toHaveClass('reader-word-selected');
+      expect(screen.getByRole('textbox', { name: 'Translation' })).toBeInTheDocument();
+    });
+
+    test('toggling Sentence Mode ON in an audio lesson syncs to current SRT cue without rewinding audio', async () => {
+      getText.mockResolvedValueOnce({
+        textId: 1,
+        title: 'Mode Sync Audio',
+        content: 'First cue. Second cue. Third cue.',
+        languageId: null,
+        languageCode: 'ES',
+        languageName: 'Spanish',
+        isAudioLesson: true,
+        audioFilePath: 'audio_lessons/1.mp3',
+        hasSrtContent: true,
+        words: [],
+        bookId: null
+      });
+      getTextSrt.mockResolvedValueOnce(
+        '1\n00:00:00,000 --> 00:00:02,500\nFirst cue.\n\n2\n00:00:02,500 --> 00:00:05,000\nSecond cue.\n\n3\n00:00:05,000 --> 00:00:08,000\nThird cue.\n'
+      );
+
+      renderWithMutableSettings({ sentenceMode: false });
+      expect(await screen.findByText('Second')).toBeInTheDocument();
+
+      // Advance audio time to cue 2 in AudioTranscriptView.
+      act(() => {
+        mockAudiobookPlayer.mock.calls.at(-1)[0].onTimeUpdate(3.2);
+      });
+
+      // Toggle Sentence Mode ON while cue 2 is active.
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /Sentence Mode/i }));
+      });
+
+      expect(screen.getByText('2 / 3')).toBeInTheDocument();
+      expect(mockAudiobookPlayer.mock.calls.at(-1)[0].segmentPlaybackRequest).toBeNull();
+
+      // Subsequent audio-driven advance and manual navigation must both still work cleanly.
+      act(() => {
+        mockAudiobookPlayer.mock.calls.at(-1)[0].onTimeUpdate(5.6);
+      });
+      expect(screen.getByText('3 / 3')).toBeInTheDocument();
+      expect(mockAudiobookPlayer.mock.calls.at(-1)[0].segmentPlaybackRequest).toBeNull();
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /^Previous$/i }));
+      });
+      expect(screen.getByText('2 / 3')).toBeInTheDocument();
+      expect(mockAudiobookPlayer.mock.calls.at(-1)[0].segmentPlaybackRequest).toEqual(
+        expect.objectContaining({ startTime: 2.5, endTime: 5 })
+      );
+    });
+
+    test('toggling Sentence Mode ON does not leave skip-playback stuck when audio-driven sync runs immediately', async () => {
+      getText.mockResolvedValueOnce({
+        textId: 1,
+        title: 'Rapid Mode Toggle Audio',
+        content: 'First cue. Second cue. Third cue.',
+        languageId: null,
+        languageCode: 'ES',
+        languageName: 'Spanish',
+        isAudioLesson: true,
+        audioFilePath: 'audio_lessons/1.mp3',
+        hasSrtContent: true,
+        words: [],
+        bookId: null
+      });
+      getTextSrt.mockResolvedValueOnce(
+        '1\n00:00:00,000 --> 00:00:02,500\nFirst cue.\n\n2\n00:00:02,500 --> 00:00:05,000\nSecond cue.\n\n3\n00:00:05,000 --> 00:00:08,000\nThird cue.\n'
+      );
+
+      renderWithMutableSettings({ sentenceMode: false });
+      expect(await screen.findByText('Second')).toBeInTheDocument();
+
+      // Advance audio time to cue 2, toggle Sentence Mode ON and receive cue 3 timeupdate in the same act batch.
+      act(() => {
+        mockAudiobookPlayer.mock.calls.at(-1)[0].onTimeUpdate(3.2);
+      });
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /Sentence Mode/i }));
+        mockAudiobookPlayer.mock.calls.at(-1)[0].onTimeUpdate(5.6);
+      });
+
+      expect(screen.getByText('3 / 3')).toBeInTheDocument();
+
+      // Manual Previous must still emit a segmentPlaybackRequest (not swallowed by stuck skipInitial flag or wedged pending ref).
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /^Previous$/i }));
+      });
+      expect(screen.getByText('2 / 3')).toBeInTheDocument();
+      expect(mockAudiobookPlayer.mock.calls.at(-1)[0].segmentPlaybackRequest).toEqual(
+        expect.objectContaining({ startTime: 2.5, endTime: 5 })
+      );
+    });
+  });
 });

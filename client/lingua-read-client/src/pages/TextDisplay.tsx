@@ -129,13 +129,22 @@ const TextDisplay = () => {
   const showDesktopLessonControls = globalSettings.showDesktopLessonControls ?? true;
   const [isWordPanelOpen, setIsWordPanelOpen] = useState(false);
   const [currentSegmentIndex, setCurrentSegmentIndex] = useState(0);
+  const currentSegmentIndexRef = useRef(currentSegmentIndex);
+  currentSegmentIndexRef.current = currentSegmentIndex;
+  const translationTargetLanguageCodeRef = useRef(translationTargetLanguageCode);
+  translationTargetLanguageCodeRef.current = translationTargetLanguageCode;
   const [segmentTranslations, setSegmentTranslations] = useState<Record<number, string>>({});
   const [segmentExplanations, setSegmentExplanations] = useState<Record<number, string>>({});
-  const [isTranslatingSegment, setIsTranslatingSegment] = useState(false);
-  const [isExplainingSegment, setIsExplainingSegment] = useState(false);
+  const [translatingSegmentKeys, setTranslatingSegmentKeys] = useState<Record<string, boolean>>({});
+  const [explainingSegmentKeys, setExplainingSegmentKeys] = useState<Record<string, boolean>>({});
+  const inFlightSegmentTranslationsRef = useRef(new Set<string>());
+  const inFlightSegmentExplanationsRef = useRef(new Set<string>());
+  const failedSegmentTranslationsRef = useRef(new Set<string>());
+  const failedSegmentExplanationsRef = useRef(new Set<string>());
   const [visibleTranslationIndex, setVisibleTranslationIndex] = useState<number | null>(null);
   const [visibleExplanationIndex, setVisibleExplanationIndex] = useState<number | null>(null);
   const [creditedSegmentIndices, setCreditedSegmentIndices] = useState<number[]>([]);
+  const pendingModeEntryFromIndexRef = useRef<number | null>(null);
   const [activePhraseSelection, setActivePhraseSelection] = useState<PhraseSelectionState | null>(null);
   const selectionDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mobileSelectionRetryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -379,6 +388,11 @@ const TextDisplay = () => {
     listRef
   });
 
+  const isAudioPlayingRef = useRef(isAudioPlaying);
+  isAudioPlayingRef.current = isAudioPlaying;
+  const sentenceAudioRepeatsRef = useRef(sentenceAudioRepeats);
+  sentenceAudioRepeatsRef.current = sentenceAudioRepeats;
+
   const previousLoadedTextIdRef = useRef<string | undefined>(textId);
   useEffect(() => {
     if (previousLoadedTextIdRef.current === textId) return;
@@ -386,6 +400,10 @@ const TextDisplay = () => {
     setCurrentSegmentIndex(0);
     setSegmentTranslations({});
     setSegmentExplanations({});
+    setTranslatingSegmentKeys({});
+    setExplainingSegmentKeys({});
+    failedSegmentTranslationsRef.current.clear();
+    failedSegmentExplanationsRef.current.clear();
     setVisibleTranslationIndex(null);
     setVisibleExplanationIndex(null);
     setCreditedSegmentIndices([]);
@@ -393,6 +411,7 @@ const TextDisplay = () => {
     setSegmentPlaybackRequest(null);
     lastAutoSegmentPlaybackKeyRef.current = '';
     skipInitialAudioLessonSegmentPlaybackRef.current = true;
+    pendingModeEntryFromIndexRef.current = null;
     pendingSentenceCreditRef.current = new Set();
   }, [
     textId,
@@ -402,23 +421,48 @@ const TextDisplay = () => {
     pendingSentenceCreditRef
   ]);
 
+  const previousTranslationTargetLangRef = useRef(translationTargetLanguageCode);
+  useEffect(() => {
+    if (previousTranslationTargetLangRef.current === translationTargetLanguageCode) return;
+    previousTranslationTargetLangRef.current = translationTargetLanguageCode;
+    setSegmentTranslations({});
+    setSegmentExplanations({});
+    failedSegmentTranslationsRef.current.clear();
+    failedSegmentExplanationsRef.current.clear();
+    setVisibleTranslationIndex(null);
+    setVisibleExplanationIndex(null);
+  }, [translationTargetLanguageCode]);
+
   const focusSentenceIndexFromNode = useCallback((node: Node | null) => {
     const container = textContentRef.current;
     let currentNode: Node | null = node;
     while (currentNode && currentNode !== container) {
-      if (
-        currentNode.nodeType === Node.ELEMENT_NODE &&
-        (currentNode as HTMLElement).classList?.contains('sentence')
-      ) {
-        const sentenceIndex = Number((currentNode as HTMLElement).getAttribute('data-sentence-index'));
-        if (Number.isInteger(sentenceIndex) && sentenceIndex >= 0) {
-          setCurrentSegmentIndex(sentenceIndex);
+      if (currentNode.nodeType === Node.ELEMENT_NODE) {
+        const element = currentNode as HTMLElement;
+        if (element.classList?.contains('sentence')) {
+          const sentenceIndex = Number(element.getAttribute('data-sentence-index'));
+          if (Number.isInteger(sentenceIndex) && sentenceIndex >= 0) {
+            setCurrentSegmentIndex(sentenceIndex);
+          }
+          return;
         }
-        return;
+        if (element.classList?.contains('srt-line')) {
+          const lineIdAttr = element.id || '';
+          if (lineIdAttr.startsWith('srt-line-')) {
+            const lineId = Number(lineIdAttr.slice('srt-line-'.length));
+            if (Number.isInteger(lineId) && lineId >= 0) {
+              const srtIndex = srtLines.findIndex(line => line.id === lineId);
+              if (srtIndex !== -1) {
+                setCurrentSegmentIndex(srtIndex);
+              }
+            }
+          }
+          return;
+        }
       }
       currentNode = currentNode.parentNode;
     }
-  }, []);
+  }, [srtLines]);
 
   /** Max chars sent as sentenceContext to avoid huge payloads; backend may also limit. */
   const MAX_AI_CONTEXT_CHARS = 100000;
@@ -1522,6 +1566,8 @@ const TextDisplay = () => {
     }
   }, [canUseSentenceTts, displayedWord?.term, pauseAudioPlayback, selectedWord, sentenceTtsEnabled, sentenceTtsRate, setIsSpeakingSentence, setIsSpeakingWord, setSegmentPlaybackRequest, text?.languageCode]);
 
+  const segmentRequestSeqRef = useRef(0);
+
   const replayCurrentSegmentAudio = useCallback(() => {
     if (!currentSentenceSegment) {
       return;
@@ -1537,7 +1583,7 @@ const TextDisplay = () => {
     lastAutoSegmentPlaybackKeyRef.current = '';
 
     setSegmentPlaybackRequest({
-      requestId: `replay-${currentSentenceSegment.index}-${Date.now()}`,
+      requestId: `replay-${currentSentenceSegment.index}-${Date.now()}-${++segmentRequestSeqRef.current}`,
       startTime: currentSentenceSegment.startTime,
       endTime: currentSentenceSegment.endTime,
       repeatCount: sentenceAudioRepeats,
@@ -1545,77 +1591,244 @@ const TextDisplay = () => {
     });
   }, [currentSentenceSegment, lastAutoSegmentPlaybackKeyRef, sentenceAudioRepeats, setIsSpeakingSentence, setSegmentPlaybackRequest, speakCurrentSentence]);
 
-  const handleSegmentTranslationToggle = useCallback(async () => {
-    if (!currentSentenceSegment || !text?.languageCode) return;
+  const activeSegmentTranslationKey =
+    currentSentenceSegment && text?.textId != null
+      ? `${text.textId}:${currentSentenceSegment.index}:${translationTargetLanguageCode}`
+      : null;
+  const isTranslatingSegment = Boolean(
+    activeSegmentTranslationKey && translatingSegmentKeys[activeSegmentTranslationKey]
+  );
+  const isExplainingSegment = Boolean(
+    activeSegmentTranslationKey && explainingSegmentKeys[activeSegmentTranslationKey]
+  );
 
-    if (visibleTranslationIndex === currentSentenceSegment.index) {
+  const handleSegmentTranslationToggle = useCallback(async () => {
+    if (!currentSentenceSegment || !text?.languageCode || text?.textId == null) return;
+
+    const segmentIndex = currentSentenceSegment.index;
+    const requestTextId = text.textId;
+    const requestTargetLang = translationTargetLanguageCode;
+    const requestKey = `${requestTextId}:${segmentIndex}:${requestTargetLang}`;
+
+    if (inFlightSegmentTranslationsRef.current.has(requestKey) || translatingSegmentKeys[requestKey]) {
+      return;
+    }
+
+    if (visibleTranslationIndex === segmentIndex) {
       setVisibleTranslationIndex(null);
       return;
     }
 
-    if (segmentTranslations[currentSentenceSegment.index]) {
-      setVisibleTranslationIndex(currentSentenceSegment.index);
+    if (segmentTranslations[segmentIndex] && !failedSegmentTranslationsRef.current.has(requestKey)) {
+      setVisibleTranslationIndex(segmentIndex);
       return;
     }
 
-    setIsTranslatingSegment(true);
+    inFlightSegmentTranslationsRef.current.add(requestKey);
+    setTranslatingSegmentKeys(prev => ({ ...prev, [requestKey]: true }));
     try {
-      const result = await translateSentence(currentSentenceSegment.text, text.languageCode, translationTargetLanguageCode);
-      const translatedText = extractTranslatedTextFromPairedTags(
-        result?.translatedText || 'Translation failed.'
-      );
+      const result = await translateSentence(currentSentenceSegment.text, text.languageCode, requestTargetLang);
+      if (
+        String(previousLoadedTextIdRef.current) !== String(requestTextId) ||
+        translationTargetLanguageCodeRef.current !== requestTargetLang
+      ) {
+        return;
+      }
+      const rawTranslated = result?.translatedText?.trim() || '';
+      const translatedText = rawTranslated
+        ? extractTranslatedTextFromPairedTags(rawTranslated).trim() || 'Translation failed.'
+        : 'Translation failed.';
+      if (!rawTranslated || translatedText === 'Translation failed.') {
+        failedSegmentTranslationsRef.current.add(requestKey);
+      } else {
+        failedSegmentTranslationsRef.current.delete(requestKey);
+      }
       setSegmentTranslations(prev => ({
         ...prev,
-        [currentSentenceSegment.index]: translatedText
+        [segmentIndex]: translatedText
       }));
-      setVisibleTranslationIndex(currentSentenceSegment.index);
+      if (currentSegmentIndexRef.current === segmentIndex) {
+        setVisibleTranslationIndex(segmentIndex);
+      }
     } catch (translationErr: unknown) {
       console.error('Sentence translation failed:', translationErr);
+      if (
+        String(previousLoadedTextIdRef.current) !== String(requestTextId) ||
+        translationTargetLanguageCodeRef.current !== requestTargetLang
+      ) {
+        return;
+      }
+      failedSegmentTranslationsRef.current.add(requestKey);
       setSegmentTranslations(prev => ({
         ...prev,
-        [currentSentenceSegment.index]: `Translation failed: ${(translationErr as Error)?.message}`
+        [segmentIndex]: `Translation failed: ${(translationErr as Error)?.message}`
       }));
-      setVisibleTranslationIndex(currentSentenceSegment.index);
+      if (currentSegmentIndexRef.current === segmentIndex) {
+        setVisibleTranslationIndex(segmentIndex);
+      }
     } finally {
-      setIsTranslatingSegment(false);
+      inFlightSegmentTranslationsRef.current.delete(requestKey);
+      setTranslatingSegmentKeys(prev => {
+        if (!prev[requestKey]) return prev;
+        const next = { ...prev };
+        delete next[requestKey];
+        return next;
+      });
     }
-  }, [currentSentenceSegment, segmentTranslations, text?.languageCode, translationTargetLanguageCode, visibleTranslationIndex]);
+  }, [
+    currentSentenceSegment,
+    segmentTranslations,
+    text?.languageCode,
+    text?.textId,
+    translatingSegmentKeys,
+    translationTargetLanguageCode,
+    visibleTranslationIndex
+  ]);
 
   const handleSegmentExplanationToggle = useCallback(async () => {
-    if (!currentSentenceSegment || !text?.languageCode) return;
+    if (!currentSentenceSegment || !text?.languageCode || text?.textId == null) return;
 
-    if (visibleExplanationIndex === currentSentenceSegment.index) {
+    const segmentIndex = currentSentenceSegment.index;
+    const requestTextId = text.textId;
+    const requestTargetLang = translationTargetLanguageCode;
+    const requestKey = `${requestTextId}:${segmentIndex}:${requestTargetLang}`;
+
+    if (inFlightSegmentExplanationsRef.current.has(requestKey) || explainingSegmentKeys[requestKey]) {
+      return;
+    }
+
+    if (visibleExplanationIndex === segmentIndex) {
       setVisibleExplanationIndex(null);
       return;
     }
 
-    if (segmentExplanations[currentSentenceSegment.index]) {
-      setVisibleExplanationIndex(currentSentenceSegment.index);
+    if (segmentExplanations[segmentIndex] && !failedSegmentExplanationsRef.current.has(requestKey)) {
+      setVisibleExplanationIndex(segmentIndex);
       return;
     }
 
-    setIsExplainingSegment(true);
+    inFlightSegmentExplanationsRef.current.add(requestKey);
+    setExplainingSegmentKeys(prev => ({ ...prev, [requestKey]: true }));
     try {
-      const result = await explainSentence(currentSentenceSegment.text, text.languageCode, translationTargetLanguageCode);
-      const explanationText = result?.explanationText || 'Explanation failed.';
+      const result = await explainSentence(currentSentenceSegment.text, text.languageCode, requestTargetLang);
+      if (
+        String(previousLoadedTextIdRef.current) !== String(requestTextId) ||
+        translationTargetLanguageCodeRef.current !== requestTargetLang
+      ) {
+        return;
+      }
+      const rawExplanation = result?.explanationText?.trim() || '';
+      const explanationText = rawExplanation || 'Explanation failed.';
+      if (!rawExplanation) {
+        failedSegmentExplanationsRef.current.add(requestKey);
+      } else {
+        failedSegmentExplanationsRef.current.delete(requestKey);
+      }
       setSegmentExplanations(prev => ({
         ...prev,
-        [currentSentenceSegment.index]: explanationText
+        [segmentIndex]: explanationText
       }));
-      setVisibleExplanationIndex(currentSentenceSegment.index);
+      if (currentSegmentIndexRef.current === segmentIndex) {
+        setVisibleExplanationIndex(segmentIndex);
+      }
     } catch (explanationErr: unknown) {
       console.error('Sentence explanation failed:', explanationErr);
+      if (
+        String(previousLoadedTextIdRef.current) !== String(requestTextId) ||
+        translationTargetLanguageCodeRef.current !== requestTargetLang
+      ) {
+        return;
+      }
+      failedSegmentExplanationsRef.current.add(requestKey);
       setSegmentExplanations(prev => ({
         ...prev,
-        [currentSentenceSegment.index]: `Explanation failed: ${(explanationErr as Error)?.message}`
+        [segmentIndex]: `Explanation failed: ${(explanationErr as Error)?.message}`
       }));
-      setVisibleExplanationIndex(currentSentenceSegment.index);
+      if (currentSegmentIndexRef.current === segmentIndex) {
+        setVisibleExplanationIndex(segmentIndex);
+      }
     } finally {
-      setIsExplainingSegment(false);
+      inFlightSegmentExplanationsRef.current.delete(requestKey);
+      setExplainingSegmentKeys(prev => {
+        if (!prev[requestKey]) return prev;
+        const next = { ...prev };
+        delete next[requestKey];
+        return next;
+      });
     }
-  }, [currentSentenceSegment, segmentExplanations, text?.languageCode, translationTargetLanguageCode, visibleExplanationIndex]);
+  }, [
+    currentSentenceSegment,
+    explainingSegmentKeys,
+    segmentExplanations,
+    text?.languageCode,
+    text?.textId,
+    translationTargetLanguageCode,
+    visibleExplanationIndex
+  ]);
+
+  const wasSentenceModeRef = useRef(isSentenceMode);
+  const prevSelectionResetSegmentRef = useRef(currentSegmentIndex);
+  useEffect(() => {
+    const wasSentenceMode = wasSentenceModeRef.current;
+    wasSentenceModeRef.current = isSentenceMode;
+    const segmentChanged = prevSelectionResetSegmentRef.current !== currentSegmentIndex;
+    prevSelectionResetSegmentRef.current = currentSegmentIndex;
+
+    if (wasSentenceMode !== isSentenceMode || (isSentenceMode && segmentChanged)) {
+      setActivePhraseSelection(null);
+      clearPendingSelection();
+      clearMobileSelectionPending();
+      clearMobileSelectionStability();
+      lastHandledSelectionRef.current = '';
+      markReaderSelection([]);
+      const selection = typeof window !== 'undefined' ? window.getSelection?.() : null;
+      if (selection && !selection.isCollapsed) {
+        const container = textContentRef.current;
+        const anchorInContainer = Boolean(container && selection.anchorNode && container.contains(selection.anchorNode));
+        const focusInContainer = Boolean(container && selection.focusNode && container.contains(selection.focusNode));
+        const anchorDetached = Boolean(selection.anchorNode && !document.body?.contains(selection.anchorNode));
+        if (anchorInContainer || focusInContainer || anchorDetached) {
+          selection.removeAllRanges();
+        }
+      }
+    }
+
+    if (!wasSentenceMode && isSentenceMode) {
+      skipInitialAudioLessonSegmentPlaybackRef.current = true;
+      if (isAudioLesson && srtLines.length > 0) {
+        const cueIndex =
+          currentSrtLineId != null
+            ? srtLines.findIndex(line => line.id === currentSrtLineId)
+            : findSrtLineIndex(srtLines, audioCurrentTimeRef.current);
+        const resolvedIndex =
+          cueIndex !== -1 ? cueIndex : findSrtLineIndex(srtLines, audioCurrentTimeRef.current);
+        if (resolvedIndex !== -1 && resolvedIndex !== currentSegmentIndex) {
+          pendingModeEntryFromIndexRef.current = currentSegmentIndex;
+          setCurrentSegmentIndex(resolvedIndex);
+        }
+      }
+    } else if (!isSentenceMode) {
+      pendingModeEntryFromIndexRef.current = null;
+    }
+  }, [
+    audioCurrentTimeRef,
+    clearMobileSelectionPending,
+    clearMobileSelectionStability,
+    clearPendingSelection,
+    currentSegmentIndex,
+    currentSrtLineId,
+    isAudioLesson,
+    isSentenceMode,
+    markReaderSelection,
+    skipInitialAudioLessonSegmentPlaybackRef,
+    srtLines
+  ]);
 
   useEffect(() => {
+    if (!sentenceProgressLoaded) {
+      return;
+    }
+
     if (sentenceSegments.length === 0) {
       if (currentSegmentIndex !== 0) {
         setCurrentSegmentIndex(0);
@@ -1626,12 +1839,20 @@ const TextDisplay = () => {
     if (currentSegmentIndex >= sentenceSegments.length) {
       setCurrentSegmentIndex(sentenceSegments.length - 1);
     }
-  }, [currentSegmentIndex, sentenceSegments]);
+  }, [currentSegmentIndex, sentenceProgressLoaded, sentenceSegments]);
 
   useEffect(() => {
     if (!isSentenceMode || !sentenceProgressLoaded || !text?.textId || !currentSentenceSegment) {
       return;
     }
+
+    if (
+      pendingModeEntryFromIndexRef.current !== null &&
+      currentSentenceSegment.index === pendingModeEntryFromIndexRef.current
+    ) {
+      return;
+    }
+    pendingModeEntryFromIndexRef.current = null;
 
     const isAudioDrivenSync = audioDrivenSentenceSyncRef.current;
     audioDrivenSentenceSyncRef.current = false;
@@ -1675,35 +1896,32 @@ const TextDisplay = () => {
 
     if (isAudioLesson && currentSentenceSegment.type === 'audio') {
       setCurrentSrtLineId(currentSentenceSegment.srtLineId || null);
-      if (!isAudioDrivenSync && skipInitialAudioLessonSegmentPlaybackRef.current) {
+      const playbackKey = [
+        text.textId,
+        currentSentenceSegment.index,
+        currentSentenceSegment.startTime,
+        currentSentenceSegment.endTime
+      ].join(':');
+
+      if (isAudioDrivenSync) {
         skipInitialAudioLessonSegmentPlaybackRef.current = false;
-        return () => {
-          cancelled = true;
-        };
+        lastAutoSegmentPlaybackKeyRef.current = playbackKey;
+      } else if (skipInitialAudioLessonSegmentPlaybackRef.current) {
+        skipInitialAudioLessonSegmentPlaybackRef.current = false;
+        lastAutoSegmentPlaybackKeyRef.current = playbackKey;
+      } else if (lastAutoSegmentPlaybackKeyRef.current !== playbackKey) {
+        lastAutoSegmentPlaybackKeyRef.current = playbackKey;
+        setSegmentPlaybackRequest({
+          requestId: `${currentSentenceSegment.index}-${Date.now()}-${++segmentRequestSeqRef.current}`,
+          startTime: currentSentenceSegment.startTime,
+          endTime: currentSentenceSegment.endTime,
+          repeatCount: sentenceAudioRepeatsRef.current,
+          forcePlay: isAudioPlayingRef.current
+        });
       }
-      if (!isAudioDrivenSync) {
-        const playbackKey = [
-          text.textId,
-          currentSentenceSegment.index,
-          currentSentenceSegment.startTime,
-          currentSentenceSegment.endTime,
-          sentenceAudioRepeats
-        ].join(':');
-
-        if (lastAutoSegmentPlaybackKeyRef.current !== playbackKey) {
-          lastAutoSegmentPlaybackKeyRef.current = playbackKey;
-          setSegmentPlaybackRequest({
-            requestId: `${currentSentenceSegment.index}-${Date.now()}`,
-            startTime: currentSentenceSegment.startTime,
-            endTime: currentSentenceSegment.endTime,
-            repeatCount: sentenceAudioRepeats,
-            forcePlay: isAudioPlaying
-          });
-        }
-      }
+    } else if (!isAudioLesson) {
+      skipInitialAudioLessonSegmentPlaybackRef.current = false;
     }
-
-    skipInitialAudioLessonSegmentPlaybackRef.current = false;
 
     return () => {
       cancelled = true;
@@ -1712,11 +1930,9 @@ const TextDisplay = () => {
     audioDrivenSentenceSyncRef,
     currentSentenceSegment,
     isAudioLesson,
-    isAudioPlaying,
     isSentenceMode,
     lastAutoSegmentPlaybackKeyRef,
     pendingSentenceCreditRef,
-    sentenceAudioRepeats,
     sentenceProgressLoaded,
     setCurrentSrtLineId,
     setSegmentPlaybackRequest,

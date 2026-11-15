@@ -64,6 +64,7 @@ type TimeUpdateSnapshot = {
   displayMode: string;
   currentSrtLineId: number | null;
   isSentenceMode: boolean;
+  isAudioPlaying: boolean;
   currentSegmentIndex: number;
   isMobile: boolean;
   listRef: React.MutableRefObject<ListLikeRef>;
@@ -95,12 +96,19 @@ export const useReaderAudioSync = ({
   const skipInitialAudioLessonSegmentPlaybackRef = useRef(true);
   const pendingSentenceCreditRef = useRef(new Set<number>());
 
+  const previousSegmentIndexRef = useRef(currentSegmentIndex);
+  const wasSentenceModeRef = useRef(isSentenceMode);
+  const lastAudioDrivenTargetRef = useRef<number | null>(null);
+  const manualTargetRef = useRef<{ segmentIndex: number; reached: boolean; setAt: number } | null>(null);
+  const lastTrackedRequestIdRef = useRef<string | null>(null);
+
   const timeUpdateSnapshotRef = useRef<TimeUpdateSnapshot>({
     isAudioLesson: false,
     srtLines: [],
     displayMode: 'audio',
     currentSrtLineId: null,
     isSentenceMode: false,
+    isAudioPlaying: false,
     currentSegmentIndex: 0,
     isMobile: false,
     listRef
@@ -113,6 +121,7 @@ export const useReaderAudioSync = ({
       displayMode,
       currentSrtLineId,
       isSentenceMode,
+      isAudioPlaying,
       currentSegmentIndex,
       isMobile,
       listRef
@@ -123,10 +132,83 @@ export const useReaderAudioSync = ({
     displayMode,
     currentSrtLineId,
     isSentenceMode,
+    isAudioPlaying,
     currentSegmentIndex,
     isMobile,
     listRef
   ]);
+
+  useEffect(() => {
+    const prevSegmentIndex = previousSegmentIndexRef.current;
+    const wasSentenceMode = wasSentenceModeRef.current;
+    previousSegmentIndexRef.current = currentSegmentIndex;
+    wasSentenceModeRef.current = isSentenceMode;
+
+    if (!isAudioLesson || !isSentenceMode) {
+      manualTargetRef.current = null;
+      lastAudioDrivenTargetRef.current = null;
+      lastTrackedRequestIdRef.current = null;
+      return;
+    }
+
+    const isAudioDrivenMatch =
+      audioDrivenSentenceSyncRef.current &&
+      lastAudioDrivenTargetRef.current === currentSegmentIndex;
+    if (isAudioDrivenMatch) {
+      lastAudioDrivenTargetRef.current = null;
+      return;
+    }
+
+    if (
+      wasSentenceMode &&
+      currentSegmentIndex !== prevSegmentIndex &&
+      !skipInitialAudioLessonSegmentPlaybackRef.current
+    ) {
+      manualTargetRef.current = {
+        segmentIndex: currentSegmentIndex,
+        reached: false,
+        setAt: Date.now()
+      };
+    }
+  }, [currentSegmentIndex, isAudioLesson, isSentenceMode]);
+
+  useEffect(() => {
+    const requestId = segmentPlaybackRequest?.requestId ?? null;
+    if (!requestId) {
+      if (lastTrackedRequestIdRef.current !== null) {
+        lastTrackedRequestIdRef.current = null;
+        if (manualTargetRef.current && !manualTargetRef.current.reached) {
+          manualTargetRef.current = null;
+        }
+      }
+      return;
+    }
+
+    if (!isAudioLesson || !isSentenceMode || srtLines.length === 0 || !segmentPlaybackRequest) {
+      return;
+    }
+
+    if (requestId === lastTrackedRequestIdRef.current) {
+      return;
+    }
+    lastTrackedRequestIdRef.current = requestId;
+
+    const currentLine = srtLines[currentSegmentIndex];
+    const matchedIndex =
+      currentLine &&
+      Math.abs(currentLine.startTime - segmentPlaybackRequest.startTime) < 0.05 &&
+      Math.abs(currentLine.endTime - segmentPlaybackRequest.endTime) < 0.05
+        ? currentSegmentIndex
+        : findSrtLineIndex(srtLines, segmentPlaybackRequest.startTime);
+
+    if (matchedIndex !== -1) {
+      manualTargetRef.current = {
+        segmentIndex: matchedIndex,
+        reached: false,
+        setAt: Date.now()
+      };
+    }
+  }, [segmentPlaybackRequest, isAudioLesson, isSentenceMode, srtLines, currentSegmentIndex]);
 
   useEffect(() => {
     if (!isSentenceMode) {
@@ -203,20 +285,18 @@ export const useReaderAudioSync = ({
       if (audioRef.current) {
         audioRef.current.currentTime = startTime;
         audioCurrentTimeRef.current = startTime;
+        manualTargetRef.current = null;
 
         if (isAudioLesson && displayMode === 'audio' && srtLines.length > 0) {
-          const currentLineIndex = srtLines.findIndex(
-            line => startTime >= line.startTime && startTime < line.endTime
-          );
+          const currentLineIndex = findSrtLineIndex(srtLines, startTime);
           const currentLine = currentLineIndex !== -1 ? srtLines[currentLineIndex] : null;
           setCurrentSrtLineId(currentLine?.id ?? null);
 
-          if (
-            isSentenceMode &&
-            currentLineIndex !== -1 &&
-            currentLineIndex !== currentSegmentIndex
-          ) {
-            audioDrivenSentenceSyncRef.current = true;
+          if (currentLineIndex !== -1 && currentLineIndex !== currentSegmentIndex) {
+            if (isSentenceMode) {
+              audioDrivenSentenceSyncRef.current = true;
+              lastAudioDrivenTargetRef.current = currentLineIndex;
+            }
             setCurrentSegmentIndex(currentLineIndex);
           }
         }
@@ -240,6 +320,7 @@ export const useReaderAudioSync = ({
       displayMode: snapDisplayMode,
       currentSrtLineId: snapCurrentSrtLineId,
       isSentenceMode: snapIsSentenceMode,
+      isAudioPlaying: snapIsAudioPlaying,
       currentSegmentIndex: snapCurrentSegmentIndex,
       isMobile: snapIsMobile,
       listRef: snapListRef
@@ -255,12 +336,81 @@ export const useReaderAudioSync = ({
     const currentLineIndex = findSrtLineIndex(snapSrtLines, newTime);
     const currentLine = currentLineIndex !== -1 ? snapSrtLines[currentLineIndex] : null;
 
+    const target = snapIsSentenceMode ? manualTargetRef.current : null;
+    if (snapIsSentenceMode && target !== null) {
+      let activeTarget = target;
+      const targetLine = snapSrtLines[activeTarget.segmentIndex];
+      if (!targetLine) {
+        manualTargetRef.current = null;
+      } else {
+        if (!activeTarget.reached) {
+          const isShortCue = targetLine.endTime - targetLine.startTime <= 0.15;
+          const isPaused = audioRef.current?.paused !== false;
+          const arrived =
+            newTime >= targetLine.startTime - 0.15 &&
+            (isShortCue || isPaused ? newTime <= targetLine.endTime : newTime < targetLine.endTime);
+
+          if (!arrived) {
+            const elapsedSinceSet = Date.now() - activeTarget.setAt;
+            const isSeeking = Boolean(audioRef.current?.seeking);
+            if (isSeeking || elapsedSinceSet < 1200) {
+              return;
+            }
+            manualTargetRef.current = null;
+          } else {
+            activeTarget = { ...activeTarget, reached: true };
+            manualTargetRef.current = activeTarget;
+          }
+        }
+
+        if (manualTargetRef.current === activeTarget && activeTarget.reached) {
+          const inTargetOrBoundary =
+            newTime >= targetLine.startTime - 0.15 &&
+            newTime <= targetLine.endTime + 0.05;
+
+          if (inTargetOrBoundary) {
+            const isPreStartQuantization = newTime < targetLine.startTime;
+            const isAtEndBoundaryWhileStopping =
+              newTime >= targetLine.endTime - 0.05 &&
+              (audioRef.current?.paused !== false || !snapIsAudioPlaying);
+
+            if (
+              isPreStartQuantization ||
+              isAtEndBoundaryWhileStopping ||
+              currentLineIndex === target.segmentIndex
+            ) {
+              if (snapCurrentSegmentIndex !== target.segmentIndex) {
+                audioDrivenSentenceSyncRef.current = true;
+                lastAudioDrivenTargetRef.current = target.segmentIndex;
+                setCurrentSegmentIndex(target.segmentIndex);
+              }
+              if (targetLine.id !== snapCurrentSrtLineId) {
+                setCurrentSrtLineId(targetLine.id);
+              }
+              return;
+            }
+
+            if (
+              newTime >= targetLine.endTime &&
+              audioRef.current?.paused === false &&
+              snapIsAudioPlaying
+            ) {
+              manualTargetRef.current = null;
+            }
+          } else {
+            manualTargetRef.current = null;
+          }
+        }
+      }
+    }
+
     if (
       snapIsSentenceMode &&
       currentLineIndex !== -1 &&
       currentLineIndex !== snapCurrentSegmentIndex
     ) {
       audioDrivenSentenceSyncRef.current = true;
+      lastAudioDrivenTargetRef.current = currentLineIndex;
       setCurrentSegmentIndex(currentLineIndex);
     }
 

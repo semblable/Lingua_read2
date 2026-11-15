@@ -1230,4 +1230,111 @@ describe('AudiobookPlayer', () => {
     expect(audio.__lrAllowPlayback).toBe(true);
   });
 
+  test('ignores stale queued pause event when audio is actively playing a segment', async () => {
+    getAudioLessonProgress.mockResolvedValue({ currentPosition: 0 });
+    const onPlaybackStateChange = vi.fn();
+
+    const { container } = render(
+      <AudiobookPlayer
+        type="lesson"
+        audioSrc="https://example.com/lesson.mp3"
+        textId={42}
+        languageId={5}
+        onPlaybackStateChange={onPlaybackStateChange}
+        segmentPlaybackRequest={{
+          requestId: 'segment-active',
+          startTime: 2.5,
+          endTime: 5.0,
+          repeatCount: 1,
+          forcePlay: true
+        }}
+      />
+    );
+
+    await waitFor(() => {
+      expect(getAudioLessonProgress).toHaveBeenCalledWith(42);
+    });
+    await waitFor(() => {
+      expect(screen.getByTitle(/Play/)).toBeInTheDocument();
+    });
+
+    const audio = container.querySelector('audio');
+    Object.defineProperty(audio, 'paused', {
+      configurable: true,
+      get: () => false
+    });
+    act(() => {
+      audio.__lrAllowPlayback = true;
+      fireEvent.play(audio);
+    });
+    onPlaybackStateChange.mockClear();
+
+    // A queued pause event arrives while paused === false — must be ignored.
+    act(() => {
+      fireEvent.pause(audio);
+    });
+    expect(onPlaybackStateChange).not.toHaveBeenCalledWith(false);
+
+    // Active segment boundary must STILL stop when currentTime reaches endTime.
+    act(() => {
+      Object.defineProperty(audio, 'currentTime', {
+        configurable: true,
+        writable: true,
+        value: 5.0
+      });
+      fireEvent.timeUpdate(audio);
+    });
+    expect(window.HTMLMediaElement.prototype.pause).toHaveBeenCalled();
+  });
+
+  test('ignores timeupdate events while audio element is mid-seek', async () => {
+    getAudioLessonProgress.mockResolvedValue({ currentPosition: 0 });
+    const onTimeUpdate = vi.fn();
+
+    const { container } = render(
+      <AudiobookPlayer
+        type="lesson"
+        audioSrc="https://example.com/lesson.mp3"
+        textId={42}
+        languageId={5}
+        onTimeUpdate={onTimeUpdate}
+        segmentPlaybackRequest={{
+          requestId: 'segment-seeking',
+          startTime: 2.5,
+          endTime: 5.0,
+          repeatCount: 1,
+          forcePlay: true
+        }}
+      />
+    );
+
+    await waitFor(() => {
+      expect(getAudioLessonProgress).toHaveBeenCalledWith(42);
+    });
+    await waitFor(() => {
+      expect(screen.getByTitle(/Play/)).toBeInTheDocument();
+    });
+
+    const audio = container.querySelector('audio');
+    onTimeUpdate.mockClear();
+    window.HTMLMediaElement.prototype.pause.mockClear();
+
+    // Pre-seek timeupdate reporting old timestamp past endTime while seeking === true.
+    Object.defineProperty(audio, 'seeking', {
+      configurable: true,
+      get: () => true
+    });
+    Object.defineProperty(audio, 'currentTime', {
+      configurable: true,
+      writable: true,
+      value: 8.0
+    });
+    act(() => {
+      fireEvent.timeUpdate(audio);
+    });
+
+    expect(window.HTMLMediaElement.prototype.pause).not.toHaveBeenCalled();
+    expect(onTimeUpdate).not.toHaveBeenCalled();
+  });
+
 });

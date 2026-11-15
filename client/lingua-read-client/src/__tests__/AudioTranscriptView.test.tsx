@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import AudioTranscriptView from '../components/reader/AudioTranscriptView';
+import { TranscriptAppearanceFields } from '../components/reader/ReaderAppearance';
 import { getInitialSettings, type Settings } from '../contexts/SettingsContext';
 import { AUDIO_TRANSCRIPT_ALIGNMENT_STORAGE_KEY, AUDIO_TRANSCRIPT_LAYOUT_STORAGE_KEY } from '../utils/audioTranscript';
 
@@ -38,6 +39,10 @@ const stylesheetText = readFileSync('src/pages/TextDisplay.css', 'utf8');
 let stylesheet: HTMLStyleElement;
 
 const renderTranscript = (settings: Settings, isMobile = false, overrides: Partial<React.ComponentProps<typeof AudioTranscriptView>> = {}) => render(
+  <>
+  {/* The production fields live in Aa. Keep their real shared-state adapter in
+      this harness so layout/scroll assertions exercise external toolbar changes. */}
+  <TranscriptAppearanceFields />
   <AudioTranscriptView
     isMobile={isMobile}
     srtLines={lines}
@@ -54,6 +59,7 @@ const renderTranscript = (settings: Settings, isMobile = false, overrides: Parti
     languageCode="en"
     {...overrides}
   />
+  </>
 );
 
 const virtualScrollFixture = () => {

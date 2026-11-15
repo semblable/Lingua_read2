@@ -701,7 +701,14 @@
 }
 
 @media (min-width: 769px) {
+  .left-panel {
+    min-width: 0;
+    flex-shrink: 1;
+  }
+
   .right-panel {
+    min-width: 18rem;
+    flex-shrink: 0;
     position: sticky;
     top: 0;
     align-self: flex-start;
@@ -950,30 +957,35 @@
 }
 
 .word-info-term {
-  font-size: 1.4rem;
+  font-size: 1.25rem;
   font-weight: 700;
   line-height: 1.2;
   margin-bottom: 0.25rem;
   overflow-wrap: anywhere;
 }
 
-.word-info-meta {
+.word-info-header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
+  flex-wrap: wrap;
   gap: 0.5rem;
   margin-bottom: 0.5rem;
-  font-size: 0.8rem;
 }
 
+.word-info-headword { display: flex; align-items: center; flex: 1 1 5rem; min-width: 0; gap: 0.4rem; }
+.word-info-header-tools { display: flex; flex-wrap: wrap; gap: 0.25rem; margin-inline-start: auto; }
+.word-info-extend-row { display: flex; gap: 0.2rem; }
+.word-info-grade-caption { display: flex; justify-content: space-between; gap: 0.5rem; margin-top: 0.3rem; font-size: 0.8rem; }
+.word-info-status-label { color: var(--theme-text-muted, var(--font-color)); }
 .word-info-saved {
-  color: var(--bs-success, #198754);
+  color: var(--font-color);
   font-weight: 600;
 }
 
 .word-info-hint {
   margin-top: 0.25rem;
   font-size: 0.75rem;
-  opacity: 0.75;
+  color: var(--theme-text-muted, var(--font-color));
 }
 
 .word-info-hint-unsaved {
@@ -993,10 +1005,33 @@
   margin-top: 0;
 }
 
+.word-info-definition {
+  border: 1px solid var(--border-color);
+  border-radius: 0.5rem;
+  background: var(--background-color);
+  overflow: visible;
+}
+
+.word-info-definition-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.25rem;
+  padding: 0 0.35rem 0.35rem;
+}
+
 /* Keep one focus ring instead of stacking the form glow and shared halo. */
 .word-info-panel textarea.form-control,
 .word-info-panel textarea.form-control:focus {
-  border-color: var(--border-color);
+  min-height: 0;
+  max-height: 16rem;
+  resize: vertical;
+  line-height: 1.5;
+  padding: 0.45rem 0.6rem;
+  border-color: transparent;
+  border-radius: 0.5rem;
+  background: transparent;
+  color: var(--font-color);
   box-shadow: none;
 }
 
@@ -1007,6 +1042,7 @@
 
 @media (forced-colors: active) {
   .word-info-panel textarea.form-control { border-color: ButtonText; }
+  .word-info-definition { border-color: ButtonText; }
 }
 
 /* Status tints match the words in the text; Known and Ignored have none there, so they get a
@@ -1020,17 +1056,8 @@
 .word-info-panel [data-status="3"] { --word-status-tint: var(--status-3-color); }
 .word-info-panel [data-status="4"] { --word-status-tint: var(--status-4-color); }
 
-.word-info-status-pill {
-  display: inline-block;
-  padding: 0.1rem 0.6rem;
-  border: 1px solid var(--theme-border-color, #dee2e6);
-  border-radius: 999px;
-  background-color: var(--word-status-tint);
-  color: var(--font-color, inherit);
-  font-weight: 600;
-}
-
 .word-info-panel .btn.word-status-btn {
+  --bs-btn-bg: color-mix(in srgb, var(--word-status-tint) 45%, var(--theme-surface-bg, var(--ui-background)));
   --bs-btn-color: var(--font-color, inherit);
   --bs-btn-border-color: var(--theme-border-color, #dee2e6);
   --bs-btn-hover-color: var(--font-color, inherit);
@@ -1041,31 +1068,85 @@
   --bs-btn-active-border-color: currentColor;
   --bs-btn-disabled-color: var(--font-color, inherit);
   --bs-btn-disabled-border-color: var(--theme-border-color, #dee2e6);
-  border-bottom: 3px solid var(--word-status-tint);
+  min-width: 2rem;
+  min-height: 2rem;
+  border-width: 1px;
 }
 
 .word-info-panel .btn.word-status-btn.active {
   font-weight: 700;
-  border-bottom-color: currentColor;
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
 }
 
-/* --- Bookmark Styles --- */
-.word-info-panel .btn { min-width: 24px; min-height: 28px; white-space: normal; }
-.word-info-panel .btn-outline-secondary {
+.word-info-panel .btn { min-width: 28px; min-height: 32px; white-space: normal; }
+.word-info-panel .btn.word-info-utility {
   --bs-btn-color: var(--font-color);
-  --bs-btn-border-color: var(--font-color);
+  --bs-btn-bg: color-mix(in srgb, var(--font-color) 6%, transparent);
+  --bs-btn-border-color: transparent;
+  --bs-btn-hover-color: var(--font-color);
+  --bs-btn-hover-bg: color-mix(in srgb, var(--font-color) 12%, transparent);
+  --bs-btn-hover-border-color: transparent;
+  --bs-btn-active-color: var(--font-color);
+  --bs-btn-active-bg: color-mix(in srgb, var(--font-color) 16%, transparent);
+  --bs-btn-active-border-color: transparent;
+  --bs-btn-disabled-color: var(--font-color);
+  --bs-btn-disabled-bg: color-mix(in srgb, var(--font-color) 4%, transparent);
+  --bs-btn-disabled-border-color: transparent;
+  color: var(--bs-btn-color);
+  background-color: var(--bs-btn-bg);
+  border-color: var(--bs-btn-border-color);
+  padding: 0.2rem 0.5rem;
+  font-size: 0.8rem;
 }
-.word-info-panel .btn-outline-primary {
-  --bs-btn-color: var(--link-color);
-  --bs-btn-border-color: var(--link-color);
+.word-info-panel .btn.word-info-utility:is(:hover, :focus-visible) {
+  color: var(--bs-btn-hover-color);
+  background-color: var(--bs-btn-hover-bg);
+  border-color: var(--bs-btn-hover-border-color);
 }
-.word-info-panel .btn-outline-success { --bs-btn-color: #126b35; --bs-btn-border-color: #126b35; }
-body:is(.dark-theme, .classic-dark-theme) .word-info-panel .btn-outline-success {
-  --bs-btn-color: #8ce9b0;
-  --bs-btn-border-color: #8ce9b0;
+.word-info-panel .btn.word-info-utility:is(.active, :active) {
+  color: var(--bs-btn-active-color);
+  background-color: var(--bs-btn-active-bg);
+  border-color: var(--bs-btn-active-border-color);
 }
+.word-info-panel .btn.word-info-utility:disabled {
+  color: var(--bs-btn-disabled-color);
+  background-color: var(--bs-btn-disabled-bg);
+  border-color: var(--bs-btn-disabled-border-color);
+}
+.word-info-panel .word-info-generate { --bs-btn-bg: color-mix(in srgb, var(--font-color) 11%, transparent); }
+.word-info-panel .word-info-icon { display: inline-flex; align-items: center; justify-content: center; width: 32px; padding: 0.25rem; }
+.word-info-panel .btn.word-info-delete:is(:hover, :focus-visible) {
+  color: var(--color-danger, #b42318);
+  background: color-mix(in srgb, var(--color-danger, #b42318) 12%, transparent);
+}
+body:is(.dark-theme, .classic-dark-theme) .word-info-panel .btn.word-info-delete:is(:hover, :focus-visible) { color: #ffb2a8; }
+.word-info-actions:empty { display: none; }
+.word-info-dictionaries { margin-top: 0.75rem; padding-top: 0.5rem; border-top: 1px solid var(--border-color); }
+.word-info-panel .word-info-dictionary { padding: 0.2rem 0.3rem; color: var(--font-color); font-size: 0.8rem; text-decoration: none; }
+.word-info-panel .word-info-dictionary:hover { text-decoration: underline; }
 .word-info-save-row, .word-info-extend-row { flex-wrap: wrap; }
 .word-info-panel :is(.word-info-term, .word-info-hint) { overflow-wrap: anywhere; }
+
+/* Selection is independent of familiarity fills and non-color status underlines. */
+.clickable-word.reader-word-selected {
+  outline: 2px solid var(--font-color);
+  outline-offset: 2px;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
+@media (max-width: 768px) {
+  .word-info-panel .word-info-utility { min-height: 40px; }
+  .word-info-panel .word-info-icon { width: 40px; }
+}
+
+@media (forced-colors: active) {
+  .clickable-word.reader-word-selected { outline-color: Highlight; }
+  .word-info-panel .btn.word-status-btn.active { border-color: Highlight; }
+  .word-info-panel .word-info-utility { border-color: ButtonText; }
+}
 
 @media (prefers-reduced-motion: reduce) {
   .text-content, .audio-transcript-container { scroll-behavior: auto; }

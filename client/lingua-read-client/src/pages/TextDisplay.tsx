@@ -5,7 +5,7 @@ import type { ListImperativeAPI } from 'react-window';
 import {
   getText, getTextSrt, getWordLinkingStatus, createWord, updateWord, deleteWord, updateLastRead, completeLesson, getBook,
   translateText, translateSentence, translateFullText, translateSelectionWithContext,
-  explainSentence, mineSentence,
+  explainSentence,
   batchTranslateWords, addTermsBatch, getLanguage, getAllLanguages, summarizeText,
   getSentenceProgress, logSentenceReadActivity,
   API_URL, applySrsReadingCredit
@@ -19,6 +19,7 @@ import { SettingsContext } from '../contexts/SettingsContext';
 import { isOfflineQueued } from '../utils/offline/enqueueIfOffline';
 import { useReaderBookmarks } from '../hooks/useReaderBookmarks';
 import { useReaderKeyboard, type WordStatus } from '../hooks/useReaderKeyboard';
+import { useReaderSelectionMarker } from '../hooks/useReaderSelectionMarker';
 import { useSyncedWordIdentities } from '../hooks/useSyncedWordIdentities';
 import { useWordStatusMutations, type WordStatusTarget } from '../hooks/useWordStatusMutations';
 import { useWordTranslation } from '../hooks/useWordTranslation';
@@ -48,7 +49,7 @@ import {
 } from '../utils/readerText';
 import type { SentenceSegment, PhraseSelectionState } from '../utils/readerText';
 import { analyzeKoreanCandidates, composeKoreanLookupText, createKoreanLookup, findKoreanLookupMatches, isKoreanLanguageCode, resolveKoreanLookup } from '../utils/koreanLookup';
-import PrimaryControls from '../components/reader/PrimaryControls';
+import PrimaryControls, { ReaderNavigation } from '../components/reader/PrimaryControls';
 import SecondaryControls from '../components/reader/SecondaryControls';
 import ReaderLessonActions from '../components/reader/ReaderLessonActions';
 import MobileLessonHeader from '../components/reader/MobileLessonHeader';
@@ -67,6 +68,7 @@ import { isChineseSegmentationReady } from '../utils/chineseRuntime';
 import { isThaiSegmentationReady } from '../utils/thaiRuntime';
 import { getScrollBehavior } from '../utils/motion';
 import { readerFontFamily } from '../utils/readerAppearance';
+import { sentenceAtReaderOccurrence } from '../utils/readerOccurrenceContext';
 
 const TextDisplay = () => {
   const { textId } = useParams();
@@ -79,7 +81,7 @@ const TextDisplay = () => {
 
   // --- State Declarations ---
   const [selectedWord, setSelectedWord] = useState('');
-  const hoveredWordTermRef = useRef<{ term: string; generation: object } | null>(null);
+  const hoveredWordTermRef = useRef<{ term: string; generation: object; sentenceContext: string } | null>(null);
   const [processingWord, setProcessingWord] = useState(false);
   const [displayedWord, setDisplayedWord] = useState<DisplayedWord | null>(null);
   const lookupReturnElementRef = useRef<{ element: HTMLElement; generation: object } | null>(null);
@@ -279,10 +281,8 @@ const TextDisplay = () => {
   const lookupGeneration = useMemo(() => ({
     textId, content: text?.content, languageConfig, displayMode, readingUiMode, lookupSentenceIndex,
   }), [textId, text?.content, languageConfig, displayMode, readingUiMode, lookupSentenceIndex]);
+  const markReaderSelection = useReaderSelectionMarker(textContentRef, lookupGeneration);
   const isLookupSheetOpen = isMobile && isWordPanelOpen && lookupOpenGeneration === lookupGeneration;
-  const setHoveredWordTerm = useCallback((term: string | null) => {
-    hoveredWordTermRef.current = term ? { term, generation: lookupGeneration } : null;
-  }, [lookupGeneration]);
   const getHoveredWordTerm = useCallback(() => {
     const target = hoveredWordTermRef.current;
     return target?.generation === lookupGeneration ? target.term : null;
@@ -435,6 +435,12 @@ const TextDisplay = () => {
     const element = node instanceof Element ? node : node?.parentElement;
     const transcriptParagraph = element?.closest('.transcript-paragraph');
     if (transcriptParagraph && container?.contains(transcriptParagraph)) {
+      const occurrence = element?.closest('.clickable-word');
+      if (occurrence) {
+        const sentence = sentenceAtReaderOccurrence(transcriptParagraph, occurrence, languageConfig,
+          languageConfig?.code || languageConfig?.languageCode || text?.languageCode);
+        if (sentence) return clampContext(sentence);
+      }
       return clampContext(normalizeReaderText(transcriptParagraph.textContent));
     }
     let currentNode: Node | null = node;
@@ -450,7 +456,13 @@ const TextDisplay = () => {
       currentNode = currentNode.parentNode;
     }
     return '';
-  }, []);
+  }, [languageConfig, text?.languageCode]);
+
+  const setHoveredWordTerm = useCallback((term: string | null, node?: HTMLElement) => {
+    hoveredWordTermRef.current = term ? {
+      term, generation: lookupGeneration, sentenceContext: node ? readSentenceContextFromNode(node) : '',
+    } : null;
+  }, [lookupGeneration, readSentenceContextFromNode]);
 
   /**
    * Context for AI selection translation: prefer one .sentence, then a block (paragraph / group),
@@ -925,16 +937,17 @@ const TextDisplay = () => {
       }
     }
     if (targetSpan) {
-      setActivePhraseSelection(
-        buildPhraseSelectionFromSpans(targetSpan, targetSpan, textContentRef.current, languageConfig, sentenceContext)
-      );
+      const phraseSelection = buildPhraseSelectionFromSpans(targetSpan, targetSpan, textContentRef.current, languageConfig, sentenceContext);
+      setActivePhraseSelection(phraseSelection);
+      markReaderSelection(phraseSelection?.spans?.slice(phraseSelection.startIndex, phraseSelection.endIndex + 1) ?? [targetSpan]);
     } else {
       setActivePhraseSelection(
         buildPhraseSelectionFromText(word, sentenceContext, languageConfig)
       );
+      markReaderSelection([]);
     }
     handleWordClick(word, { selectionContext: sentenceContext });
-  }, [clearPendingSelection, focusSentenceIndexFromNode, readSentenceContextFromNode, buildAiSelectionContext, handleWordClick, hasActiveTextSelection, getWordData, globalSettings.tooltipOnlyForSavedWords, languageConfig, lookupGeneration]);
+  }, [clearPendingSelection, focusSentenceIndexFromNode, readSentenceContextFromNode, buildAiSelectionContext, handleWordClick, hasActiveTextSelection, getWordData, globalSettings.tooltipOnlyForSavedWords, languageConfig, lookupGeneration, markReaderSelection]);
 
   const handleSelectableWordTouchStart = useCallback(() => {
     selectableWordTouchStartRef.current = Date.now();
@@ -1023,12 +1036,13 @@ const TextDisplay = () => {
         ? phraseSelection
         : null
     );
+    markReaderSelection(selectedSpans);
     focusSentenceIndexFromNode(range.startContainer);
     if (isMobile) {
       mobileSelectionInitialTextRef.current = cleanedRawText;
     }
     handleSelectedText(cleanedRawText, sentenceContext);
-  }, [focusSentenceIndexFromNode, getSelectionDetails, buildAiSelectionContext, handleSelectedText, isMobile, normalizeSelectedText, clearMobileSelectionRetry, clearMobileSelectionStability, languageConfig, lookupGeneration]);
+  }, [focusSentenceIndexFromNode, getSelectionDetails, buildAiSelectionContext, handleSelectedText, isMobile, normalizeSelectedText, clearMobileSelectionRetry, clearMobileSelectionStability, languageConfig, lookupGeneration, markReaderSelection]);
 
   const scheduleWordSelection = useCallback((delayMs: number) => {
     clearPendingSelection();
@@ -1334,7 +1348,7 @@ const TextDisplay = () => {
               onTouchStart={handleSelectableWordTouchStart}
               onTouchEnd={handleSelectableWordTouchEnd}
               onClick={(e) => handleSelectableWordClick(e, sourceSurface, true)}
-              onMouseEnter={() => setHoveredWordTerm(sourceSurface)}
+              onMouseEnter={event => setHoveredWordTerm(sourceSurface, event.currentTarget)}
               onMouseLeave={() => setHoveredWordTerm(null)}
             >
               {sourceSurface}
@@ -1375,7 +1389,7 @@ const TextDisplay = () => {
             onTouchStart={handleSelectableWordTouchStart}
             onTouchEnd={handleSelectableWordTouchEnd}
             onClick={(e) => handleSelectableWordClick(e, currentWord)}
-            onMouseEnter={() => setHoveredWordTerm(currentWord)}
+            onMouseEnter={event => setHoveredWordTerm(currentWord, event.currentTarget)}
             onMouseLeave={() => setHoveredWordTerm(null)}
           >
             {currentWord}
@@ -1417,16 +1431,17 @@ const TextDisplay = () => {
   }), [globalSettings.textSize, getFontFamilyForList]); // getFontFamilyForList already depends on textFont
 
   const mobileReadingConfig = useMemo(() => {
+    const lineSpacing = Number(globalSettings.lineSpacing) || 1.5;
     switch (readingDensity) {
       case 'compact':
-        return { lineSpacing: 1.4, chunkSize: 3, blockPadding: '0.5rem 0.65rem' };
+        return { lineSpacing, chunkSize: 3, blockPadding: '0.5rem 0.65rem' };
       case 'spacious':
-        return { lineSpacing: 1.9, chunkSize: 1, blockPadding: '0.8rem 0.85rem' };
+        return { lineSpacing, chunkSize: 1, blockPadding: '0.8rem 0.85rem' };
       case 'balanced':
       default:
-        return { lineSpacing: 1.65, chunkSize: 2, blockPadding: '0.65rem 0.75rem' };
+        return { lineSpacing, chunkSize: 2, blockPadding: '0.65rem 0.75rem' };
     }
-  }, [readingDensity]);
+  }, [readingDensity, globalSettings.lineSpacing]);
 
   // sentenceSegments is a discriminated union: SRT-derived segments
   // (type: 'audio') carry startTime/endTime/srtLineId; sentence-split segments
@@ -1754,8 +1769,10 @@ const TextDisplay = () => {
       const analysis = isKorean ? analyzeKoreanCandidates(term)[0] : null;
       const targetTerm = getWordData(term)?.term || analysis?.lemma || term;
       const wordData = getWordData(term) || (analysis ? getWordData(targetTerm) : null);
+      const hovered = hoveredWordTermRef.current;
+      const hoveredContext = hovered?.generation === lookupGeneration && hovered.term === term ? hovered.sentenceContext : null;
       const sentenceToMine = pickSentenceForTerm(targetTerm,
-        [selectedWordAiContext, activePhraseSelection?.sentenceContext, currentSentenceSegment?.text], languageConfig?.characterSubstitutions,
+        [hoveredContext, selectedWordAiContext, activePhraseSelection?.sentenceContext, currentSentenceSegment?.text], languageConfig?.characterSubstitutions,
         languageConfig?.code || languageConfig?.languageCode || text.languageCode);
       const sourceLanguage = text.languageCode;
       // Resolve target, sentence, and translation preferences before any await.
@@ -1768,7 +1785,7 @@ const TextDisplay = () => {
         } : undefined,
       });
     },
-    [getWordData, text?.languageCode, text?.textId, translationTargetLanguageCode, currentSentenceSegment?.text, selectedWordAiContext, activePhraseSelection?.sentenceContext, languageConfig?.characterSubstitutions, languageConfig?.code, languageConfig?.languageCode, mutateWordStatus]
+    [getWordData, text?.languageCode, text?.textId, translationTargetLanguageCode, currentSentenceSegment?.text, selectedWordAiContext, activePhraseSelection?.sentenceContext, languageConfig?.characterSubstitutions, languageConfig?.code, languageConfig?.languageCode, lookupGeneration, mutateWordStatus]
   );
 
   useReaderKeyboard({
@@ -1934,6 +1951,7 @@ const TextDisplay = () => {
 
     const effectiveContext = sentenceContext || currentSentenceSegment?.text || '';
     setActivePhraseSelection(nextSelection);
+    markReaderSelection(spans?.slice(nextStart, nextEnd + 1) ?? []);
     lastHandledSelectionRef.current = nextText;
     const useAiContext = Boolean(effectiveContext && effectiveContext.trim());
     handleWordClick(nextText, {
@@ -1953,6 +1971,7 @@ const TextDisplay = () => {
     clearPendingSelection,
     clearMobileSelectionPending,
     clearMobileSelectionStability,
+    markReaderSelection,
     isMobile
   ]);
 
@@ -2070,28 +2089,6 @@ const TextDisplay = () => {
     }
   }, [summaryTargetLanguage, text?.content, text?.languageCode, text?.textId]);
 
-  const handleMineSentence = useCallback(async () => {
-    const sentenceToMine = pickSentenceForTerm(selectedWord || displayedWord?.term || '',
-      [selectedWordAiContext, activePhraseSelection?.sentenceContext, currentSentenceSegment?.text], languageConfig?.characterSubstitutions,
-      languageConfig?.code || languageConfig?.languageCode || text?.languageCode);
-    const wordId = displayedWord?.wordId;
-
-    if (!wordId || !sentenceToMine) {
-      alert("Please select an existing tracked word with a matching sentence.");
-      return;
-    }
-
-    try {
-      if (text?.textId == null) return;
-      // Create a temporary state indicator if you want, or just wait.
-      await mineSentence(wordId, sentenceToMine, text.textId, text.title);
-      alert("Sentence added to flashcards successfully!");
-    } catch (err: unknown) {
-      console.error("Failed to mine sentence:", err);
-      alert(`Failed to mine sentence: ${(err as Error)?.message}`);
-    }
-  }, [displayedWord, selectedWord, selectedWordAiContext, activePhraseSelection?.sentenceContext, currentSentenceSegment?.text, languageConfig?.characterSubstitutions, languageConfig?.code, languageConfig?.languageCode, text]);
-
   const handleTranslateUnknownWords = async ({ silent = false } = {}) => {
     // Saved rows are merged into the word list; the list's own load, if still running, would
     // replace them with what it read before the save.
@@ -2203,17 +2200,6 @@ const TextDisplay = () => {
     finally { completionIntentBusy.current = false; setCompleting(false); }
   };
 
-  const handleCompleteLessonNoStats = async () => {
-    if (!text?.textId || completionIntentBusy.current) return;
-    completionIntentBusy.current = true;
-    setCompleting(true);
-    try {
-      await completeLesson(text?.bookId ?? null, text.textId, true);
-      navigate(text?.bookId ? `/books/${text.bookId}` : libraryPath(text?.folderId));
-    } catch (error: unknown) { alert(`Failed to complete lesson: ${(error as Error)?.message}`); }
-    finally { completionIntentBusy.current = false; setCompleting(false); }
-  };
-
   // Sentence boundaries come from readerText in both reading modes.
   const renderSentence = useCallback((content: React.ReactNode, sentenceIndex: number) => (
     <span
@@ -2246,18 +2232,15 @@ const TextDisplay = () => {
       setDisplayMode={setDisplayMode}
       isSentenceMode={isSentenceMode}
       setSentenceModeEnabled={setSentenceModeEnabled}
-      text={text}
-      handleCompleteLesson={handleCompleteLesson}
-      handleCompleteLessonNoStats={handleCompleteLessonNoStats}
-      completing={completing}
-      nextTextId={nextTextId}
-      navigate={navigate}
     />
   );
+
+  const navigationControls = <ReaderNavigation text={text} navigate={navigate} />;
 
   const secondaryControls = (
     <SecondaryControls
       isMobile={isMobile}
+      isAudioTranscript={isAudioLesson && displayMode === 'audio' && !isSentenceMode}
       showParagraphIndent={!(isAudioLesson && displayMode === 'audio' && !isSentenceMode)}
       showTextAlignment={!(isAudioLesson && displayMode === 'audio' && !isSentenceMode)}
       globalSettings={globalSettings}
@@ -2331,7 +2314,6 @@ const TextDisplay = () => {
       onSaveTranslation: handleSaveTranslation,
       onSaveExactForm: handleSaveExactForm,
       onSelectLemma: (lemma: string) => handleWordClick(displayedWord?.surface || selectedWord, { candidateLemma: lemma, selectionContext: selectedWordAiContext }),
-      onMineSentence: handleMineSentence,
       processingWord,
       onReadingCredit: handleReadingCredit,
       onRetranslateWithContext: handleRetranslateWithContext,
@@ -2403,6 +2385,7 @@ const TextDisplay = () => {
         showMoreControls={showMoreControls}
         setShowMoreControls={setShowMoreControls}
         text={text ? { title: text.title ?? undefined } : text}
+        navigationControls={navigationControls}
         primaryControls={primaryControls}
         secondaryControls={secondaryControls}
         readerLessonActions={readerLessonActions}
@@ -2414,6 +2397,7 @@ const TextDisplay = () => {
       <LessonHeader
         isMobile={isMobile}
         text={text}
+        navigationControls={navigationControls}
         words={words}
         isAudioLesson={isAudioLesson}
         book={book}

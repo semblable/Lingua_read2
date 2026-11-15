@@ -14,6 +14,7 @@ describe('static demo boundary', () => {
     const initial = await (await backend.respond(request('/usersettings'))).json();
     expect(initial.readerCharacterShortcutsEnabled).toBe(true);
     expect(initial.readerStatusMarkersEnabled).toBe(false);
+    expect(initial.srsAutoCreateCards).toBe('always');
     await backend.respond(request('/usersettings', 'PUT', {
       theme: 'high-contrast-dark', readerCharacterShortcutsEnabled: false, readerStatusMarkersEnabled: true,
     }));
@@ -82,15 +83,26 @@ describe('static demo boundary', () => {
     for (const sentence of lessons[1].sentences) expect(srt).toContain(sentence);
   });
 
-  it('stores mined sentences locally without inventing scheduling results or translations', async () => {
+  it('captures the first example with an existing learning word without inventing scheduling results', async () => {
     const backend = createDemoBackend('/');
-    await backend.respond(request('/srs/mine', 'POST', { wordId: 101, sentence: 'A sentence worth keeping.', textTitle: 'Sample' }));
+    const word = backend.snapshot().words.find(item => item.term === 'río')!;
+    await backend.respond(request(`/words/${word.wordId}`, 'PUT', { status: 2, textId: 1, sentence: 'El río es tranquilo.' }));
+    await backend.respond(request(`/words/${word.wordId}`, 'PUT', { status: 3, textId: 1, sentence: 'Otro río sigue.' }));
     expect(backend.snapshot().mined).toHaveLength(1);
+    expect(backend.snapshot().mined[0]).toMatchObject({ wordId: word.wordId, sentence: 'El río es tranquilo.', textId: 1, textTitle: lessons[0].title });
     expect((await backend.respond(request('/srs/review', 'POST', { grade: 3 }))).status).toBe(501);
     expect((await backend.respond(request('/translation', 'POST', { sourceLanguageCode: 'ES', text: 'not in the sample' }))).status).toBe(422);
     expect((await backend.respond(request('/database/restore', 'POST', {}))).status).toBe(501);
     backend.reset();
     expect(backend.snapshot().mined).toHaveLength(0);
+  });
+
+  it('captures examples on new learning words and leaves Known and Ignored words out', async () => {
+    const backend = createDemoBackend('/');
+    for (const [term, status, sentence] of [['nuevo', 1, 'Un nuevo ejemplo.'], ['conocido', 5, 'Un conocido ejemplo.'], ['nombre', 6, 'Un nombre propio.']] as const) {
+      await backend.respond(request('/words', 'POST', { textId: 1, term, status, sentence }));
+    }
+    expect(backend.snapshot().mined.map(item => item.sentence)).toEqual(['Un nuevo ejemplo.']);
   });
 
   it('blocks external and real API requests while allowing same-origin sample assets', async () => {

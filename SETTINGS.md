@@ -149,14 +149,14 @@ Tailor the look, theme, size, and layout of the reader.
 | `TextFont` | `"default"` | Font-family string | Font family for text rendering (supports browser overrides). |
 | `ReadingUiMode` | `"classic"` | `"classic"`, `"modern"` | Layout structure for reading interface. |
 | `ReaderContentWidth` | `740` | Pixels | The maximum width (in pixels) of the text container to maintain readability. |
-| `ReadingDensity` | `"balanced"` | `"compact"`, `"balanced"`, `"spacious"` | Padding and margin level for parsed words. |
-| `LineSpacing` | `1.5` | `1.0` to `3.0` | Line-height multiplier for the reader. |
-| `ParagraphSpacing` | `1.0` | `0.2` to `3.0` (em) | Gap between paragraphs; the reader toolbar offers Tight (0.6), Normal (1.0) and Relaxed (1.6). |
+| `ReadingDensity` | `"balanced"` | `"compact"`, `"balanced"`, `"spacious"` | Block padding and sentence grouping, independent of font size and line spacing. Available under **Aa → Advanced layout**. |
+| `LineSpacing` | `1.5` | `1.0` to `3.0` | Line-height multiplier for desktop/mobile reading, sentence mode, and audio transcripts. |
+| `ParagraphSpacing` | `1.0` | `0.2` to `3.0` (em) | Gap between paragraphs; **Aa** offers Tight (0.6), Normal (1.0) and Relaxed (1.6). |
 | `ShowWordInfoPanel` | `true` | `true` / `false` | Automatically show/hide the word information sidebar. |
 | `TooltipOnlyForSavedWords` | `false` | `true` / `false` | If `true`, single-clicking a word already saved only shows a tooltip instead of loading sidebar. |
 | `ReaderParagraphIndent` | `true` | `true` / `false` | Indents body paragraphs in classic/modern reading modes. |
 | `ReaderTextAlignment` | `"left"` | `"left"`, `"justify"` | Text alignment property of body text. |
-| `LeftPanelWidth` | `85` | `20` to `85` | Width percentage occupied by the main reading canvas (default 85%). |
+| `LeftPanelWidth` | `85` | `20` to `85` | Preferred reading-area percentage under **Aa → Advanced layout**. The desktop word panel retains a readable minimum width. |
 | `ReaderStatusMarkersEnabled` | `false` | `true` / `false` | **Experimental word-status markers** in Appearance. Adds non-color cues independently of the selected theme; Known and Ignored words stay plain. The styles await multilingual and user review. |
 
 The server's default theme for a new settings record remains Light. Before settings load, the browser uses its cached theme, with Dark as the existing fallback when no preference is available. Login and initial setup use the same cached preference. **System Default** follows the device's Light/Dark appearance and responds when it changes. Choosing a High Contrast theme does not turn experimental markers on; that switch remains off until you enable it separately.
@@ -165,7 +165,7 @@ Appearance groups the existing reading-comfort controls and includes a small syn
 
 Applied preferences are cached in this browser for reloads and offline reading, then refreshed from the server when available. Settings-page changes still require a successful server save: a rejected write stays visibly unsaved with **Retry**. The cache does not add an offline settings-write queue.
 
-The reader toolbar (text size, panel width, density, spacing, indent, alignment, panel toggle) changes these settings in place. Each change applies at once and is kept in this browser; the server gets it after a short pause, one request at a time, so a run of clicks is one save. A save that fails is retried with the next change or when you leave the page.
+The reader's **Aa** menu groups text size, text-column width, spacing, indent and alignment; **Advanced layout** contains density and the desktop reader/panel split. The separate **Panel** control toggles the word sidebar. Each change applies at once and is kept in this browser; the server gets it after a short pause, one request at a time, so a run of clicks is one save. A save that fails is retried with the next change or when you leave the page. Audio transcript **Flowing text** and per-layout alignment also live in **Aa**; those two preferences are stored locally in this browser.
 
 ---
 
@@ -271,7 +271,7 @@ Configure flashcard reviews. Cards are scheduled with **FSRS-6** (the algorithm 
 | `SrsLapseMinimumIntervalDays`| `1` | Positive Integer | Minimum interval in days a forgotten card returns to review with. |
 | `SrsFsrsWeights` | *None* | 21 comma-separated numbers | Custom FSRS model weights (e.g. from an FSRS optimizer). Empty uses the FSRS-6 defaults. |
 | `SrsCardType` | `"translation"` | `"translation"`, `"cloze"`, `"mixed"` | Card presentation style: recall meaning from context (`"translation"`), fill in the missing word in a mined sentence with meaning cues and progressive letter hints (`"cloze"`), or alternate between both (`"mixed"`). Cards without a matching mined sentence fall back to translation. |
-| `SrsAutoCreateCards` | `"always"` | `"always"`, `"with_sentence"`, `"never"` | When saving a word at status 1-4 creates its SRS card. With `"never"`, cards come only from *Mine sentence*. |
+| `SrsAutoCreateCards` | `"always"` | `"always"`, `"with_sentence"`, `"never"` | Saving a word at status 1-4 creates its card by default. `"with_sentence"` requires a saved sentence example; `"never"` disables automatic card creation while vocabulary can still be saved. |
 | `SrsStatusSyncMode` | `"promote"` | `"off"`, `"promote"`, `"promote_demote"` | Whether reviews change the word's reader status: raise it as the card gets stronger, and with `"promote_demote"` also lower it when the card is forgotten. |
 | `SrsStatusLevel3Days` / `SrsStatusLevel4Days` | `7` / `21` | Days of stability | Card stability at which the word reaches status 3 and 4. A card that leaves the learning steps makes the word at least status 2. |
 | `SrsAutoKnownDays` | `0` | Days of stability, `0` = never | Card stability at which a review marks the word Known (5). |

@@ -1,92 +1,47 @@
 import React from 'react';
 import '@testing-library/jest-dom';
 import { render, screen, fireEvent } from '@testing-library/react';
-import PrimaryControls from '../components/reader/PrimaryControls';
+import PrimaryControls, { ReaderNavigation } from '../components/reader/PrimaryControls';
 
-const baseProps = {
+const baseProps = () => ({
+  isAudioLesson: false,
   displayMode: 'audio',
   setDisplayMode: vi.fn(),
   isSentenceMode: false,
   setSentenceModeEnabled: vi.fn(),
-  completing: false,
-  nextTextId: null,
-  navigate: vi.fn(),
-  handleCompleteLesson: vi.fn(),
-  handleCompleteLessonNoStats: vi.fn(),
-};
+});
 
-describe('PrimaryControls — Finish (no stats) button', () => {
-  test('renders for standalone audio lessons and triggers handler', () => {
-    render(
-      <PrimaryControls
-        {...baseProps}
-        isAudioLesson={true}
-        text={{ textId: 1, bookId: null }}
-      />
-    );
-
-    const btn = screen.getByRole('button', { name: /finish \(no stats\)/i });
-    expect(btn).toBeInTheDocument();
-    fireEvent.click(btn);
-    expect(baseProps.handleCompleteLessonNoStats).toHaveBeenCalledTimes(1);
-    expect(baseProps.handleCompleteLesson).not.toHaveBeenCalled();
+describe('PrimaryControls', () => {
+  test('contains reading modes without completion, navigation, or no-stats actions', () => {
+    const props = baseProps();
+    render(<PrimaryControls {...props} isAudioLesson />);
+    expect(screen.getAllByRole('button')).toHaveLength(2);
+    fireEvent.click(screen.getByRole('button', { name: 'Sentence Mode' }));
+    expect(props.setSentenceModeEnabled).toHaveBeenCalledWith(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Text View' }));
+    expect(props.setDisplayMode.mock.calls[0][0]('audio')).toBe('text');
+    expect(screen.queryByRole('button', { name: /finish|complete|library|book/i })).not.toBeInTheDocument();
   });
 
-  test('does not render for non-audio lessons', () => {
-    render(
-      <PrimaryControls
-        {...baseProps}
-        isAudioLesson={false}
-        text={{ textId: 1, bookId: null }}
-      />
-    );
-
-    expect(screen.queryByRole('button', { name: /finish \(no stats\)/i })).toBeNull();
-  });
-
-  test('does not render for audio lessons inside a book', () => {
-    render(
-      <PrimaryControls
-        {...baseProps}
-        isAudioLesson={true}
-        text={{ textId: 1, bookId: 99 }}
-      />
-    );
-
-    expect(screen.queryByRole('button', { name: /finish \(no stats\)/i })).toBeNull();
-    // Standard "Complete Lesson" is also gated to !bookId, so it shouldn't be here either.
-    expect(screen.queryByRole('button', { name: /^complete lesson$/i })).toBeNull();
+  test('marks the active sentence mode without an audio toggle on plain text', () => {
+    render(<PrimaryControls {...baseProps()} isSentenceMode />);
+    expect(screen.getByRole('button', { name: 'Sentence Mode' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getAllByRole('button')).toHaveLength(1);
   });
 });
 
-describe('PrimaryControls — Back to Library', () => {
-  test("a standalone text goes back to its Library folder", () => {
+describe('ReaderNavigation', () => {
+  test.each([[12, '/library/12'], [null, '/library']])('returns standalone texts to their folder (%s)', (folderId, path) => {
     const navigate = vi.fn();
-    render(
-      <PrimaryControls
-        {...baseProps}
-        navigate={navigate}
-        isAudioLesson={false}
-        text={{ textId: 1, bookId: null, folderId: 12 }}
-      />
-    );
-
-    fireEvent.click(screen.getByRole('button', { name: /back to library/i }));
-    expect(navigate).toHaveBeenCalledWith('/library/12');
+    render(<ReaderNavigation text={{ bookId: null, folderId }} navigate={navigate} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Back to Library' }));
+    expect(navigate).toHaveBeenCalledWith(path);
   });
 
-  test('a text outside any folder goes back to the Library root', () => {
+  test('returns book parts to their book', () => {
     const navigate = vi.fn();
-    render(
-      <PrimaryControls
-        {...baseProps}
-        navigate={navigate}
-        isAudioLesson={false}
-        text={{ textId: 1, bookId: null, folderId: null }}
-      />
-    );
-
-    fireEvent.click(screen.getByRole('button', { name: /back to library/i }));
-    expect(navigate).toHaveBeenCalledWith('/library');
+    render(<ReaderNavigation text={{ bookId: 99 }} navigate={navigate} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Back to Book' }));
+    expect(navigate).toHaveBeenCalledWith('/books/99');
   });
 });

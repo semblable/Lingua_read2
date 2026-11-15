@@ -4,7 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import TextDisplay from '../pages/TextDisplay';
 import { SettingsContext } from '../contexts/SettingsContext';
-import { addTermsBatch, batchTranslateWords, createWord, getLanguage, getText, mineSentence, updateWord } from '../utils/api';
+import { addTermsBatch, batchTranslateWords, createWord, getLanguage, getText, updateWord } from '../utils/api';
 
 vi.mock('../utils/api', () => ({
   getText: vi.fn(), getTextSrt: vi.fn(async () => ''),
@@ -54,6 +54,13 @@ const renderReader = () => render(
     </MemoryRouter>
   </SettingsContext.Provider>
 );
+
+const getReaderAction = action => {
+  if (action === 'All Known' && !screen.queryByRole('button', { name: action })) {
+    fireEvent.click(screen.getByRole('button', { name: 'More lesson actions' }));
+  }
+  return screen.getByRole('button', { name: action });
+};
 
 describe('Korean reader saved vocabulary identity', () => {
   beforeEach(() => {
@@ -109,7 +116,7 @@ describe('Korean reader saved vocabulary identity', () => {
     fireEvent.click(screen.getByText(surface));
     expect(screen.getByRole('textbox')).toHaveValue('Korean letters');
     fireEvent.click(screen.getByRole('button', { name: 'Advanced (4)' }));
-    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(91, 4, undefined));
+    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(91, 4, undefined, { textId: 1, sentence: `${surface}.` }));
     expect(createWord).not.toHaveBeenCalled();
     expect(rows).toEqual([{ wordId: 91, term: stored, status: 4, translation: 'Korean letters' }]);
   });
@@ -129,7 +136,7 @@ describe('Korean reader saved vocabulary identity', () => {
     fireEvent.click(screen.getByText('각'));
     expect(screen.getByRole('textbox')).toHaveValue('second meaning');
     fireEvent.click(screen.getByRole('button', { name: 'Advanced (4)' }));
-    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(92, 4, undefined));
+    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(92, 4, undefined, { textId: 1, sentence: '각 각 각 ㄱㅏ.' }));
     expect(rows[0]).toEqual({ wordId: 91, term: '각', status: 5, translation: 'first meaning' });
     expect(rows).toHaveLength(3);
     expect(createWord).not.toHaveBeenCalled();
@@ -152,10 +159,9 @@ describe('Korean reader saved vocabulary identity', () => {
     fireEvent.click(screen.getByText(surface));
     expect(screen.getByRole('textbox')).toHaveValue('saved phrase meaning');
     vi.stubGlobal('alert', vi.fn());
-    fireEvent.click(screen.getByRole('button', { name: 'Mine', exact: true }));
-    await waitFor(() => expect(mineSentence).toHaveBeenCalledWith(101, `🙂 앞, ${surface}!`, 1, 'Korean lookup fixture'));
+    expect(screen.queryByRole('button', { name: 'Mine', exact: true })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Advanced (4)' }));
-    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(101, 4, undefined));
+    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(101, 4, undefined, { textId: 1, sentence: `🙂 앞, ${surface}!` }));
     expect(createWord).not.toHaveBeenCalled();
     expect(rows[0].term).toBe(stored);
   });
@@ -175,11 +181,11 @@ describe('Korean reader saved vocabulary identity', () => {
     fireEvent.click(screen.getByText('각 테스트'));
     expect(screen.getByRole('textbox')).toHaveValue('first phrase');
     fireEvent.click(screen.getByRole('button', { name: 'Advanced (4)' }));
-    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(101, 4, undefined));
+    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(101, 4, undefined, { textId: 1, sentence: '각 테스트, 각 테스트, 각 테스트.' }));
     fireEvent.click(screen.getByText('각 테스트'));
     expect(screen.getByRole('textbox')).toHaveValue('second phrase');
     fireEvent.click(screen.getByRole('button', { name: 'Advanced (4)' }));
-    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(102, 4, undefined));
+    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(102, 4, undefined, { textId: 1, sentence: '각 테스트, 각 테스트, 각 테스트.' }));
     expect(createWord).not.toHaveBeenCalled();
     expect(rows).toHaveLength(2);
   });
@@ -201,7 +207,9 @@ describe('Korean reader saved vocabulary identity', () => {
     await waitFor(() => expect(screen.getByText('한글AbC')).toHaveClass('word-status-0'));
     fireEvent.click(screen.getByText('한글AbC'));
     expect(screen.getByRole('textbox')).toHaveValue('');
-    expect(screen.getByRole('button', { name: 'Mine', exact: true })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: 'Mine', exact: true })).not.toBeInTheDocument();
+    expect(updateWord).not.toHaveBeenCalled();
+    expect(createWord).not.toHaveBeenCalled();
     first.unmount();
     rows.reverse();
     renderReader();
@@ -240,8 +248,11 @@ describe('Korean reader saved vocabulary identity', () => {
     batchTranslateWords.mockResolvedValue({ [surface]: 'Korean letters', '한글': 'Korean letters' });
     vi.stubGlobal('alert', vi.fn());
     renderReader();
-    await waitFor(() => expect(screen.getByRole('button', { name: action })).toBeEnabled());
-    fireEvent.click(screen.getByRole('button', { name: action }));
+    await waitFor(() => {
+      expect(getReaderAction(action)).toBeEnabled();
+      expect(getReaderAction(action)).not.toHaveAttribute('aria-disabled', 'true');
+    });
+    fireEvent.click(getReaderAction(action));
     await waitFor(() => expect(addTermsBatch).toHaveBeenCalledOnce());
     expect(addTermsBatch.mock.calls[0][1]).toHaveLength(1);
     expect(addTermsBatch.mock.calls[0][1][0].term).toBe(surface);
@@ -256,8 +267,8 @@ describe('Korean reader saved vocabulary identity', () => {
     seedBatchSave(rows);
     vi.stubGlobal('alert', vi.fn());
     renderReader();
-    await waitFor(() => expect(screen.getByRole('button', { name: 'All Known' })).toBeEnabled());
-    fireEvent.click(screen.getByRole('button', { name: 'All Known' }));
+    await waitFor(() => expect(getReaderAction('All Known')).not.toHaveAttribute('aria-disabled', 'true'));
+    fireEvent.click(getReaderAction('All Known'));
     await waitFor(() => expect(addTermsBatch).toHaveBeenCalledWith(12, [{ term: '한글', translation: '', status: 5 }]));
     await waitFor(() => expect(screen.getByText(surface)).toHaveClass('word-status-5'));
     expect(rows).toEqual([{ wordId: 91, term: '한글', status: 5, translation: '' }]);
@@ -297,8 +308,11 @@ describe('Korean reader saved vocabulary identity', () => {
     vi.stubGlobal('alert', vi.fn());
     vi.spyOn(console, 'error').mockImplementation(() => {});
     renderReader();
-    await waitFor(() => expect(screen.getByRole('button', { name: action })).toBeEnabled());
-    fireEvent.click(screen.getByRole('button', { name: action }));
+    await waitFor(() => {
+      expect(getReaderAction(action)).toBeEnabled();
+      expect(getReaderAction(action)).not.toHaveAttribute('aria-disabled', 'true');
+    });
+    fireEvent.click(getReaderAction(action));
     await waitFor(() => expect(window.alert).toHaveBeenCalledWith(expect.stringMatching(/Ambiguous Korean vocabulary/)));
     expect(screen.getByText(/Ambiguous Korean vocabulary/)).toBeInTheDocument();
     expect(addTermsBatch).not.toHaveBeenCalled();
@@ -326,7 +340,7 @@ describe('Korean reader saved vocabulary identity', () => {
 
     // Saving Status 4 updates the base lemma row, not creating a duplicate
     fireEvent.click(screen.getByRole('button', { name: 'Advanced (4)' }));
-    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(42, 4, undefined));
+    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(42, 4, undefined, { textId: 1, sentence: '책이, 책은, 책도, 책을.' }));
     expect(createWord).not.toHaveBeenCalled();
     expect(rows[0].status).toBe(4);
   });

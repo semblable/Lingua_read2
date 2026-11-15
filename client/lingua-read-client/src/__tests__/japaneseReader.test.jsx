@@ -177,21 +177,20 @@ describe('Japanese reader workflow (TextDisplay)', () => {
     await waitFor(() => expect(screen.getByText('𠮷野家')).toHaveClass('word-status-2'));
     fireEvent.click(screen.getByText('𠮷野家'));
     fireEvent.click(screen.getByRole('button', { name: 'Advanced (4)' }));
-    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(202, 4, undefined));
+    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(202, 4, undefined, { textId: 1, sentence: '𠮷野家で食べる。' }));
     expect(createWord).not.toHaveBeenCalled();
   });
 
-  test('saved spaceless Japanese phrases remain selectable phrases and support sentence mining', async () => {
+  test('saved spaceless Japanese phrases remain selectable phrases and save sentence examples automatically', async () => {
     setup([{ wordId: 203, term: '日本語の本', status: 3, translation: 'Japanese book' }], 'tinysegmenter-ja-v1', '私は昨日図書館で日本語の本を読みました。');
     renderReader();
     await waitFor(() => expect(screen.getByText('日本語の本')).toHaveClass('word-status-3'));
     fireEvent.click(screen.getByText('日本語の本'));
     expect(screen.getByRole('textbox')).toHaveValue('Japanese book');
     vi.stubGlobal('alert', vi.fn());
-    fireEvent.click(screen.getByRole('button', { name: 'Mine', exact: true }));
-    await waitFor(() => expect(mineSentence).toHaveBeenCalledWith(203, '私は昨日図書館で日本語の本を読みました。', 1, 'Japanese fixture'));
+    expect(screen.queryByRole('button', { name: 'Mine', exact: true })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Advanced (4)' }));
-    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(203, 4, undefined));
+    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(203, 4, undefined, { textId: 1, sentence: '私は昨日図書館で日本語の本を読みました。' }));
     expect(createWord).not.toHaveBeenCalled();
   });
 
@@ -202,7 +201,7 @@ describe('Japanese reader workflow (TextDisplay)', () => {
     expect(Array.from(container.querySelectorAll('.clickable-word')).map(span => span.textContent)).toEqual(['猫は魚を食べます']);
   });
 
-  test('audio lesson SRT transcript and sentence mode segment Japanese cues and preserve mining', async () => {
+  test('audio lesson SRT transcript and sentence mode segment Japanese cues and preserve automatic examples', async () => {
     const rows = [
       { wordId: 201, term: '図書館', status: 3, translation: 'library' },
       { wordId: 202, term: '𠮷野家', status: 2, translation: 'Yoshinoya' }
@@ -242,10 +241,11 @@ describe('Japanese reader workflow (TextDisplay)', () => {
       '𠮷野家で食べる。'
     ]);
     fireEvent.click(screen.getByText('図書館'));
-    fireEvent.click(screen.getByRole('button', { name: 'Mine', exact: true }));
-    await waitFor(() =>
-      expect(mineSentence).toHaveBeenCalledWith(201, '私は昨日図書館で日本語の本を読みました。', 1, 'Japanese Audio')
-    );
+    expect(screen.queryByRole('button', { name: 'Mine', exact: true })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Advanced (4)' }));
+    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(201, 4, undefined, { textId: 1, sentence: '私は昨日図書館で日本語の本を読みました。' }));
+    expect(mineSentence).not.toHaveBeenCalled();
+    expect(createWord).not.toHaveBeenCalled();
     transcriptRender.unmount();
 
     const sentenceRender = renderReader({ ...settings, sentenceMode: true });
@@ -284,10 +284,11 @@ describe('Japanese reader workflow (TextDisplay)', () => {
     await waitFor(() => expect(screen.getByText('図書館')).toHaveClass('word-status-3'));
     expect(screen.getByText('日本語')).toHaveClass('word-status-2');
     fireEvent.click(screen.getByText('図書館'));
-    fireEvent.click(screen.getByRole('button', { name: 'Mine', exact: true }));
-    await waitFor(() =>
-      expect(mineSentence).toHaveBeenCalledWith(201, '私は昨日図書館で本を読みました。', 1, '第一章 日本語')
-    );
+    expect(screen.queryByRole('button', { name: 'Mine', exact: true })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Advanced (4)' }));
+    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(201, 4, undefined, { textId: 1, sentence: '私は昨日図書館で本を読みました。' }));
+    expect(mineSentence).not.toHaveBeenCalled();
+    expect(createWord).not.toHaveBeenCalled();
     standardRender.unmount();
 
     const sentenceRender = renderReader({ ...settings, sentenceMode: true });

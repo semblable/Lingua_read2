@@ -102,7 +102,7 @@ function Showcase() {
         <div className="showcase-workflow-grid">
           <article><span className="showcase-step">01 / BRING YOUR MATERIAL</span><h3>Your interests set the course.</h3><p>Import EPUBs, text, news feeds, or audio with subtitles. Organize books into lessons and pick up where you left off.</p><span className="showcase-detail">Books · Articles · Audio lessons</span></article>
           <article><span className="showcase-step">02 / NOTICE WHAT MATTERS</span><h3>Stay with the story.</h3><p>Look up a word or phrase, track how well you know it, and keep a useful sentence. Adjust the reader to how you like to read.</p><span className="showcase-detail">Vocabulary · Sentence mode · Bookmarks</span></article>
-          <article><span className="showcase-step">03 / MAKE IT FAMILIAR</span><h3>Meet your words again.</h3><p>The full app connects mined sentences and word statuses to FSRS-6 review. Choose your retention target and review in context.</p><span className="showcase-detail">FSRS · Cloze cards · Reading credit</span></article>
+          <article><span className="showcase-step">03 / MAKE IT FAMILIAR</span><h3>Meet your words again.</h3><p>The full app saves sentence examples with your vocabulary and connects learning words to FSRS-6 review. Choose your retention target and review in context.</p><span className="showcase-detail">FSRS · Cloze cards · Reading credit</span></article>
         </div>
         <p className="showcase-scope-note">The static demo shows reading, cue-based playback, and local vocabulary interactions. Imports, live AI, accounts, offline synchronization, and FSRS scheduling run in the self-hosted app.</p>
       </section>
@@ -139,7 +139,7 @@ function ReaderControls({ reset }: { reset: () => void }) {
       <span><a href={import.meta.env.BASE_URL} target="_top">← Samples</a><span className="demo-notice-detail"> · Prepared translations · Changes stay in this tab</span></span>
       <div>{textId === '2' && <a href={`${import.meta.env.BASE_URL}audio/ATTRIBUTION.txt`} target="_blank" rel="noreferrer">Audio credits</a>}<button type="button" onClick={() => setShowSaved(v => !v)}>Saved sentences ({saved.length})</button><button type="button" onClick={() => updateSetting('theme', settings.theme === 'dark' ? 'light' : 'dark')}>{settings.theme === 'dark' ? 'Light' : 'Dark'}</button><button type="button" onClick={reset}>Reset</button></div>
     </div>
-    {showSaved && <aside className="demo-saved-sentences" aria-label="Saved sample sentences"><strong>Sentences you mined in this demo</strong>{saved.length ? saved.map((item, i) => <p key={i}>{item.sentence}</p>) : <p>Click a word, then use <em>Mine sentence</em> in its panel.</p>}<small>In the full app these can feed your FSRS review. Scheduling is not simulated here.</small></aside>}
+    {showSaved && <aside className="demo-saved-sentences" aria-label="Saved sample sentences"><strong>Examples saved with your vocabulary</strong>{saved.length ? saved.map((item, i) => <p key={i}>{item.sentence}</p>) : <p>Save a word at status 1–4 and its sentence example is saved automatically.</p>}<small>In the full app these can feed your FSRS review. Scheduling is not simulated here.</small></aside>}
   </>;
 }
 

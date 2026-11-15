@@ -1,6 +1,7 @@
 import React from 'react';
 import { Button, Spinner } from 'react-bootstrap';
 import type { NavigateFunction } from 'react-router-dom';
+import './ReaderToolbar.css';
 
 interface ReaderLessonActionsProps {
   text: { bookId?: number | null } | null | undefined;
@@ -16,7 +17,6 @@ interface ReaderLessonActionsProps {
 
 const ReaderLessonActions = React.memo(({
   text,
-  isAudioLesson,
   previousTextId,
   nextTextId,
   isLastBookPart = false,
@@ -25,9 +25,7 @@ const ReaderLessonActions = React.memo(({
   handleCompleteLesson
 }: ReaderLessonActionsProps) => {
   if (!text) return null;
-  const showComplete = !isAudioLesson || text.bookId;
   const showBookNav = !!text.bookId;
-  if (!showBookNav && !showComplete) return null;
 
   return (
     <div className="d-flex flex-wrap align-items-center gap-1 reader-lesson-actions">
@@ -51,13 +49,13 @@ const ReaderLessonActions = React.memo(({
           </Button>
         </>
       )}
-      {showComplete && (
+      {(
         <Button
-          variant="success"
+          variant="primary"
           onClick={handleCompleteLesson}
           disabled={completing}
           size="sm"
-          className={showBookNav ? 'ms-1' : ''}
+          className={`reader-complete-action${showBookNav ? ' ms-1' : ''}`}
         >
           {completing ? <Spinner animation="border" size="sm" /> : (isLastBookPart ? 'Finish Book' : 'Complete Lesson')}
         </Button>

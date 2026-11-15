@@ -1,0 +1,83 @@
+.reader-back-link.btn { flex: 0 0 auto; color: var(--font-color); padding-inline: 0.35rem; text-decoration: none; }
+.reader-back-link.btn:hover { text-decoration: underline; color: var(--font-color); }
+.reader-complete-action.btn {
+  --bs-btn-color: var(--font-color-on-accent);
+  --bs-btn-bg: var(--accent-color);
+  --bs-btn-border-color: var(--accent-color);
+  --bs-btn-hover-color: var(--font-color-on-accent);
+  --bs-btn-hover-bg: var(--accent-color-darker);
+  --bs-btn-hover-border-color: var(--accent-color-darker);
+}
+.reader-appearance-toggle.btn { font-weight: 700; letter-spacing: -0.04em; }
+.reader-appearance-popover.popover {
+  --bs-popover-bg: var(--theme-surface-bg, var(--background-color));
+  --bs-popover-border-color: var(--border-color);
+  --bs-popover-body-color: var(--font-color);
+  --bs-popover-max-width: min(23rem, calc(100vw - 1.5rem));
+  width: min(23rem, calc(100vw - 1.5rem));
+  z-index: 1070;
+  box-shadow: 0 0.5rem 2rem rgb(0 0 0 / 0.16);
+}
+.reader-appearance-popover .popover-body { padding: 0.8rem 1rem; max-height: min(78dvh, 42rem); overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; }
+.reader-appearance-heading { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; margin-bottom: 0.65rem; }
+.reader-appearance-heading h2 { margin: 0; color: var(--font-color); font-size: 1rem; font-weight: 650; }
+.reader-appearance-heading .btn { color: var(--font-color); font-size: 1.35rem; line-height: 1; text-decoration: none; }
+.reader-appearance-field { margin: 0 0 0.75rem; min-width: 0; }
+.reader-appearance-field legend { float: none; color: var(--font-color); font-size: 0.78rem; font-weight: 600; margin-bottom: 0.35rem; }
+.reader-appearance-field .btn-group { display: flex; }
+.reader-appearance-field .btn-group > .btn { flex: 1 1 0; min-width: 0; white-space: normal; overflow-wrap: anywhere; }
+.reader-appearance-popover .btn:not(.btn-link) {
+  --bs-btn-color: var(--font-color);
+  --bs-btn-border-color: var(--border-color);
+  --bs-btn-hover-color: var(--font-color);
+  --bs-btn-hover-bg: color-mix(in srgb, var(--font-color) 9%, var(--theme-surface-bg));
+  --bs-btn-hover-border-color: var(--font-color);
+  --bs-btn-active-color: var(--font-color);
+  --bs-btn-active-bg: color-mix(in srgb, var(--font-color) 14%, var(--theme-surface-bg));
+  --bs-btn-active-border-color: var(--font-color);
+  --bs-btn-disabled-color: var(--font-color);
+  --bs-btn-disabled-border-color: var(--border-color);
+  min-height: 34px;
+}
+.reader-appearance-popover .btn[aria-pressed="true"] { color: var(--font-color); background: color-mix(in srgb, var(--font-color) 12%, var(--theme-surface-bg)); border-color: var(--font-color); font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
+.reader-font-stepper { display: flex; align-items: center; gap: 0.5rem; }
+.reader-font-stepper output { min-width: 5ch; text-align: center; font-size: 0.9rem; font-variant-numeric: tabular-nums; }
+.reader-appearance-popover .form-check { margin-bottom: 0.75rem; color: var(--font-color); font-size: 0.85rem; }
+.reader-appearance-advanced { border-top: 1px solid var(--border-color); padding-top: 0.6rem; }
+.reader-appearance-advanced summary { color: var(--font-color); font-size: 0.8rem; cursor: pointer; padding-block: 0.25rem; }
+.reader-appearance-advanced[open] summary { margin-bottom: 0.5rem; }
+.reader-appearance-advanced p, .reader-lesson-menu-hint { color: var(--font-color); font-size: 0.75rem; margin: 0.35rem 0 0; }
+.reader-lesson-menu-content.dropdown-menu {
+  --bs-dropdown-bg: var(--theme-surface-bg);
+  --bs-dropdown-color: var(--font-color);
+  --bs-dropdown-link-color: var(--font-color);
+  --bs-dropdown-link-hover-color: var(--font-color);
+  --bs-dropdown-link-hover-bg: color-mix(in srgb, var(--font-color) 9%, var(--theme-surface-bg));
+  --bs-dropdown-border-color: var(--border-color);
+  width: min(16rem, calc(100vw - 1.5rem));
+}
+.reader-lesson-menu-hint { padding: 0.3rem 1rem 0.4rem; }
+.reader-lesson-heading-row { min-width: 0; }
+.reader-lesson-heading-row .reader-lesson-actions { margin-left: auto; }
+.lesson-header-actions { flex-wrap: wrap; }
+.lesson-topbar .reader-lesson-actions { padding: 0.25rem 0.75rem 0.5rem; }
+.lesson-topbar .reader-back-link.btn { color: inherit; }
+.lesson-topbar .lesson-topbar-actions .btn {
+  color: var(--font-color);
+  background-color: transparent;
+  border-color: var(--border-color);
+}
+.lesson-topbar .lesson-topbar-actions .btn:is(:hover, [aria-expanded="true"]) {
+  color: var(--font-color);
+  background-color: color-mix(in srgb, var(--font-color) 10%, transparent);
+  border-color: var(--font-color);
+}
+@media (max-width: 768px) {
+  .reader-appearance-popover .btn:not(.btn-link) { min-height: 40px; }
+  .reader-appearance-popover .popover-body { padding: 0.65rem 0.75rem; }
+  .reader-appearance-popover .form-check { min-height: 36px; display: flex; align-items: center; gap: 0.5rem; }
+  .reader-appearance-popover .form-check-label { flex: 1; }
+}
+@media (forced-colors: active) {
+  .reader-appearance-popover .btn[aria-pressed="true"] { outline: 2px solid ButtonText; outline-offset: -3px; }
+}

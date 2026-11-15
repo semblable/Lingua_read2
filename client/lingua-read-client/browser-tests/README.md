@@ -70,3 +70,12 @@ See [release evidence and manual gates](../../../docs/ACCESSIBILITY_VERIFICATION
 Physical-phone staging verification remains pending: record revision, date,
 device/OS/browser, and results for touch scrolling, menus, native selects, focus,
 and goal-dialog use with the on-screen keyboard.
+
+`reader-redesign.spec.ts` covers exact repeated-word selection, automatic examples
+on existing-word saves and hover shortcuts, sentence/audio appearance, cue-spanning
+audio examples, compact growing definitions, and Appearance keyboard behavior.
+It captures the reader, lookup, and Appearance popover in all five themes and
+checks grade/header-text contrast. Its opt-in `redesign=1` fixture permits only
+synthetic local settings and sentence-progress writes; the ordinary layout
+fixture keeps its mutation denylist. Theme evidence and commands for this change
+are indexed in `verification/reader-redesign/README.md` at the repository root.

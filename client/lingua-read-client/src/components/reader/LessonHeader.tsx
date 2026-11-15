@@ -4,6 +4,7 @@ import AudiobookPlayer from '../AudiobookPlayer';
 import type { ReaderText, ReaderBook } from '../../hooks/useReaderState';
 import type { SegmentPlaybackRequest } from '../../hooks/useReaderAudioSync';
 import type { Word } from '../../utils/api/words';
+import './ReaderToolbar.css';
 
 interface LessonHeaderProps {
   isMobile: boolean;
@@ -14,6 +15,7 @@ interface LessonHeaderProps {
   primaryControls: React.ReactNode;
   secondaryControls: React.ReactNode;
   readerLessonActions: React.ReactNode;
+  navigationControls?: React.ReactNode;
   translateUnknownError?: string | null;
   audioSrc?: string | null;
   textId?: number | string | null;
@@ -37,6 +39,7 @@ const LessonHeader = React.memo(({
   primaryControls,
   secondaryControls,
   readerLessonActions,
+  navigationControls,
   translateUnknownError,
   audioSrc,
   textId,
@@ -54,7 +57,8 @@ const LessonHeader = React.memo(({
   return (
     <Card className="shadow-sm mb-2 border-0 rounded-0 lesson-header">
       <Card.Body className="py-1 px-2 lesson-header-body">
-        <div className="d-flex align-items-center gap-2 flex-wrap">
+        <div className="d-flex align-items-center gap-2 flex-wrap reader-lesson-heading-row">
+          {navigationControls}
           {/* Title - compact */}
           <div className="lesson-title-compact me-2">
             <h5 className="mb-0 text-truncate" style={{ maxWidth: '250px' }} title={text.title ?? undefined}>{text.title}</h5>
@@ -84,6 +88,7 @@ const LessonHeader = React.memo(({
           )}
 
           <div className="d-flex align-items-center gap-2 ms-auto flex-shrink-0 lesson-header-actions">
+            {readerLessonActions}
             {offlineDownload}
             <Button
               variant={showDesktopLessonControls ? 'outline-secondary' : 'primary'}
@@ -105,7 +110,6 @@ const LessonHeader = React.memo(({
             <div className="d-flex flex-wrap align-items-center gap-1">
               {secondaryControls}
             </div>
-            {readerLessonActions}
           </div>
         )}
         {translateUnknownError && <Alert variant="danger" className="mt-1 mb-0 p-1 small">{translateUnknownError}</Alert>}

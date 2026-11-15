@@ -33,6 +33,7 @@ export const test = base.extend<{ openLayout: (path: string) => Promise<void> }>
   openLayout: async ({ page, context, baseURL }, runFixture) => {
     const unexpectedRequests: string[] = [];
     const pageErrors: string[] = [];
+    let readerSrt = '1\n00:00:00,000 --> 00:00:01,000\nÉloïse suit la rivière.\n';
     page.on('pageerror', error => pageErrors.push(error.message));
     const responses: Record<string, unknown> = {
       '/api/languages': languages,
@@ -60,7 +61,7 @@ export const test = base.extend<{ openLayout: (path: string) => Promise<void> }>
           return;
         }
         if (url.pathname === '/api/texts/802/srt') {
-          await route.fulfill({ contentType: 'text/plain', body: '1\n00:00:00,000 --> 00:00:01,000\nÉloïse suit la rivière.\n' });
+          await route.fulfill({ contentType: 'text/plain', body: readerSrt });
           return;
         }
         if (url.pathname === '/synthetic-silence.wav') {
@@ -85,6 +86,20 @@ export const test = base.extend<{ openLayout: (path: string) => Promise<void> }>
         responses['/api/texts/801'] = { ...readerText, words };
         responses['/api/texts/802'] = { ...audioText, words };
         responses['/api/words/language/21'] = words;
+      }
+      if (query.get('redesign') === '1') {
+        const words = ['Éloïse', 'suit', 'rivière', 'soleil', 'maisons', 'le'].map((term, index) => ({
+          wordId: 900 + index, languageId: 21, term, status: index + 1, translation: `Synthetic meaning ${index + 1}`,
+        }));
+        const content = 'Éloïse suit la rivière. Le soleil éclaire les petites maisons.\n\nLes maisons bordent la rivière. Éloïse regarde le soleil et continue sa promenade.';
+        responses['/api/texts/801'] = { ...readerText, content, words };
+        responses['/api/texts/802'] = { ...audioText, content: 'Éloïse suit la rivière. La rivière traverse le village. Le soleil éclaire les maisons.', words };
+        readerSrt = '1\n00:00:00,000 --> 00:00:00,250\nÉloïse suit la rivière.\n\n2\n00:00:00,250 --> 00:00:00,500\nLa rivière\n\n3\n00:00:00,500 --> 00:00:00,750\ntraverse le village.\n\n4\n00:00:00,750 --> 00:00:01,000\nLe soleil éclaire les maisons.\n';
+        responses['/api/words/language/21'] = words;
+        responses['/api/languages/21'] = { ...languages[0], dictionaries: [
+          { dictionaryId: 1, isActive: true, purpose: 'terms', displayType: 'popup', urlTemplate: 'https://www.wordreference.com/fren/###', sortOrder: 1 },
+          { dictionaryId: 2, isActive: true, purpose: 'terms', displayType: 'popup', urlTemplate: 'https://www.linguee.com/french-english/search?source=french&query=###', sortOrder: 2 },
+        ] };
       }
       await page.goto(`/layout/${path}`);
       await page.evaluate(() => document.fonts.ready);

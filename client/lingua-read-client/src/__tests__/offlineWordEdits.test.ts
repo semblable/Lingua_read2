@@ -38,6 +38,26 @@ test('offline status coalescing retains translation edits and explicit clearing'
     .toEqual({ status: 3, translation: '' });
 });
 
+test('existing-word offline edits retain the first example and its source together through replay', async () => {
+  await updateWord(5, 1, 'kot', { textId: 7, sentence: 'A cat sleeps.' });
+  await updateWord(5, 2, undefined, { textId: 8, sentence: 'Another cat wakes.' });
+  await updateWord(5, 3, 'kotek');
+  expect(await listPending()).toHaveLength(1);
+  expect((await listPending())[0].payload).toEqual({ wordId: 5, status: 3, translation: 'kotek', textId: 7, sentence: 'A cat sleeps.' });
+  online(true);
+  await drain(productionSyncHandlers);
+  expect(JSON.parse(String(vi.mocked(fetchApi).mock.calls[0][1]?.body)))
+    .toEqual({ status: 3, translation: 'kotek', textId: 7, sentence: 'A cat sleeps.' });
+});
+
+test('an online existing-word save sends context alongside its grade without inventing a translation', async () => {
+  online(true);
+  await updateWord(5, 2, undefined, { textId: 7, sentence: 'A cat sleeps.' });
+  expect(JSON.parse(String(vi.mocked(fetchApi).mock.calls[0][1]?.body)))
+    .toEqual({ status: 2, textId: 7, sentence: 'A cat sleeps.' });
+  expect(await listPending()).toHaveLength(0);
+});
+
 test('a provisional word save explicitly applies demotion and clearing after replay', async () => {
   await createWord(1, 'cat', 4, 'kot');
   online(true);

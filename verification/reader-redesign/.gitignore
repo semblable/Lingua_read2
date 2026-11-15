@@ -1,0 +1,6 @@
+# Retain reviewable evidence; generated runner output stays local.
+*
+!.gitignore
+!README.md
+!screenshots/
+!screenshots/*.png

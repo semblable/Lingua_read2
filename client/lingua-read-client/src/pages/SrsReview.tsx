@@ -1080,7 +1080,7 @@ const SrsReview = () => {
                 <option value="mixed">Mixed — alternate between translation and cloze</option>
               </Form.Select>
               <Form.Text className="text-muted">
-                Cloze cards require a mined sentence containing the word; cards without one fall back to translation.
+                Cloze cards require a saved example containing the word; cards without one fall back to translation.
               </Form.Text>
             </Form.Group>
             <fieldset className="border-top pt-3 mb-3" data-testid="srs-status-sync-group">
@@ -1093,7 +1093,7 @@ const SrsReview = () => {
                 >
                   <option value="always">Always (statuses 1-4)</option>
                   <option value="with_sentence">Only when a sentence is saved with it</option>
-                  <option value="never">Never (only with "Mine sentence")</option>
+                  <option value="never">Off (save vocabulary without creating cards)</option>
                 </Form.Select>
               </Form.Group>
               <Form.Group className="mb-2" controlId="srs-status-sync-mode">
@@ -1431,7 +1431,7 @@ const SrsReview = () => {
 
                       {otherPhrases.length > 0 && (
                         <div className="mt-2 text-start">
-                          <small className="text-muted d-block mb-1">Other mined sentences:</small>
+                          <small className="text-muted d-block mb-1">Other saved examples:</small>
                           {otherPhrases.map((phrase) => (
                             <small key={phrase.srsPhraseId} className="srs-other-phrases d-block mb-1">
                               "{phrase.sentence}"

@@ -16,6 +16,15 @@ const baseProps = (overrides = {}) => ({
 });
 
 describe('ReaderLessonActions', () => {
+  test('standalone audio lessons use the same completion action without a no-stats alternative', () => {
+    const handleCompleteLesson = vi.fn();
+    render(<ReaderLessonActions {...baseProps({ text: { bookId: null }, isAudioLesson: true, handleCompleteLesson })} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Complete Lesson' }));
+    expect(handleCompleteLesson).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('button', { name: /no stats/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Next Text' })).not.toBeInTheDocument();
+  });
+
   test('shows Complete Lesson while the book part list has not loaded yet', () => {
     // nextTextId is null here too, which used to be read as "last part".
     render(<ReaderLessonActions {...baseProps()} />);

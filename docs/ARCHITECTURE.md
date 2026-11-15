@@ -85,14 +85,17 @@ mutations and coalesces supported last-write-wins operations. The production
 stored event IDs and timestamps instead of generating new ones. Reviews carry
 the original review time and timezone; the
 [SRS controller](../server/LinguaReadApi/Controllers/SrsController.cs) checks event
-IDs and guards review time. Word-status replay sends only status, preserving
-existing translations. Web Locks coordinate draining across supported browser tabs.
+IDs and guards review time. Word-status replay carries the latest grade and any
+explicit translation edit, together with the first captured sentence and its
+source. Omitting a translation preserves its stored meaning. The backend fills
+a missing example without replacing one already saved or resetting an existing
+card's schedule. Web Locks coordinate draining across supported browser tabs.
 
 **Evidence and limits.** [Queue tests](../client/lingua-read-client/src/__tests__/syncQueue.test.js)
 exercise FIFO ordering, coalescing, retry classification, and locking; the
 [handler tests](../client/lingua-read-client/src/__tests__/offlineHandlers.test.ts)
-check payload identity and status-only writes. These are deterministic tests,
-not a field reliability measurement. Browser storage eviction, old queued
+check payload identity, optional translation/example fields, and status-only writes.
+These are deterministic tests, not a field reliability measurement. Browser storage eviction, old queued
 payloads, and browsers without Web Locks need explicit consideration; server-side
 deduplication remains necessary. The static demo cannot verify this workflow.
 

@@ -1,10 +1,8 @@
 import React, { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { List, useDynamicRowHeight, type ListImperativeAPI } from 'react-window';
-import { Button, ButtonGroup, Form } from 'react-bootstrap';
 import TranscriptLine, { TranscriptParagraph } from './TranscriptLine';
-import { AUDIO_TRANSCRIPT_ALIGNMENT_STORAGE_KEY, AUDIO_TRANSCRIPT_LAYOUT_STORAGE_KEY, groupTranscriptCues,
-  readTranscriptAlignments, type TranscriptLayout } from '../../utils/audioTranscript';
-import storage from '../../utils/storage';
+import { groupTranscriptCues } from '../../utils/audioTranscript';
+import { useTranscriptAppearance } from '../../hooks/useTranscriptAppearance';
 import { getScrollBehavior } from '../../utils/motion';
 import type { Settings } from '../../contexts/SettingsContext';
 import type { SrtEntry } from '../../utils/srtParser';
@@ -49,12 +47,16 @@ const AudioTranscriptView = React.memo(({
   const touchMovedRef = useRef(false);
   const [listHeight, setListHeight] = useState(600);
   const [listWidth, setListWidth] = useState(0);
-  const [layout, setLayout] = useState<TranscriptLayout>(() =>
-    storage.getItem(AUDIO_TRANSCRIPT_LAYOUT_STORAGE_KEY) === 'flow' ? 'flow' : 'cues');
-  const [alignments, setAlignments] = useState(readTranscriptAlignments);
+  const { layout, alignment } = useTranscriptAppearance();
   const [hasNativeSelection, setHasNativeSelection] = useState(false);
   const followFrameRef = useRef<number | null>(null);
   const followAfterSwitchRef = useRef<number | string | null>(null);
+  const previousLayoutRef = useRef(layout);
+  useLayoutEffect(() => {
+    if (previousLayoutRef.current === layout) return;
+    previousLayoutRef.current = layout;
+    followAfterSwitchRef.current = currentSrtLineId;
+  }, [layout, currentSrtLineId]);
   const paragraphListRef = useRef<ListImperativeAPI | null>(null);
   const contentWidth = Math.min(globalSettings.readerContentWidth || 740, (listWidth || (isMobile ? 360 : 740)) - 32);
   const wideScript = /^(?:zh|ja)(?:[-_]|$)/iu.test(languageCode ?? '');
@@ -66,7 +68,6 @@ const AudioTranscriptView = React.memo(({
   const transcriptKey = useMemo(() => paragraphs.map(paragraph =>
     paragraph.cues.map(cue => cue.separator + cue.text).join('')).join('\n\n'), [paragraphs]);
   const effectiveLineSpacing = isMobile ? mobileReadingConfig.lineSpacing : globalSettings.lineSpacing;
-  const alignment = alignments[layout];
   const hasCurrentCue = currentSrtLineId !== null && srtLines.some(line => line.id === currentSrtLineId);
   const containerClassName = `audio-transcript-container audio-transcript-layout-${layout} reader-align-${alignment}${hasCurrentCue || isAudioPlaying ? ' is-following-cue' : ''}${hasNativeSelection ? ' has-native-selection' : ''}`;
   const fontStyle = getFontStyling(effectiveLineSpacing);
@@ -228,32 +229,6 @@ const AudioTranscriptView = React.memo(({
   if (!srtLines || srtLines.length === 0) return <p className="p-3">Loading transcript...</p>;
   if (paragraphs.length === 0) return <p className="p-3">No transcript text available.</p>;
 
-  const layoutSwitch = (
-    <div className="audio-transcript-layout-controls reader-quiet-controls">
-      <ButtonGroup size="sm" aria-label="Transcript alignment">
-        {([
-          ['left', 'Left', 'Ragged-right text'],
-          ['center', 'Center', 'Centered text'],
-          ['justify', 'Justify', 'Justified text']
-        ] as const).map(([value, label, title]) => (
-          <Button key={value} variant={alignment === value ? 'primary' : 'outline-secondary'} title={title}
-            aria-pressed={alignment === value} onClick={() => {
-              const next = { ...alignments, [layout]: value };
-              setAlignments(next);
-              storage.setItem(AUDIO_TRANSCRIPT_ALIGNMENT_STORAGE_KEY, JSON.stringify(next));
-            }}>{label}</Button>
-        ))}
-      </ButtonGroup>
-      <Form.Check type="switch" role="switch" id="audio-transcript-flow" label="Flowing text"
-        checked={layout === 'flow'} onChange={event => {
-          const next = event.target.checked ? 'flow' : 'cues';
-          followAfterSwitchRef.current = currentSrtLineId;
-          setLayout(next);
-          storage.setItem(AUDIO_TRANSCRIPT_LAYOUT_STORAGE_KEY, next);
-        }} />
-    </div>
-  );
-
   const hasSelection = () => {
     const selection = window.getSelection();
     return Boolean(selection && !selection.isCollapsed && selection.toString().trim());
@@ -279,7 +254,6 @@ const AudioTranscriptView = React.memo(({
 
     return (
       <div className="audio-transcript-view">
-        {layoutSwitch}
         <div
           className={containerClassName}
           ref={textContentRef}
@@ -315,7 +289,6 @@ const AudioTranscriptView = React.memo(({
 
   return (
     <div className="audio-transcript-view">
-      {layoutSwitch}
       <div
         className={containerClassName}
         ref={textContentRef}

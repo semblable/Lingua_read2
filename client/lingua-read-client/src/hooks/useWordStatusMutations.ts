@@ -243,7 +243,10 @@ class WordStatusCoordinator {
         if (entity.queuedOffline) createArgs[5] = { queueOnly: true };
         const result = creating
           ? await this.args.create(...createArgs)
-          : await this.args.update(entity.wordId!, request.status, translation);
+          : request.status <= 4 && request.target.sentence
+            ? await this.args.update(entity.wordId!, request.status, translation,
+              { textId: request.target.textId, sentence: request.target.sentence })
+            : await this.args.update(entity.wordId!, request.status, translation);
         if (entity.retired) {
           if (isOfflineQueued(result) && result.queuedOp?.id !== undefined) {
             const id = result.queuedOp.id;
@@ -255,8 +258,10 @@ class WordStatusCoordinator {
         if (isOfflineQueued(result)) {
           const op: QueuedWordOperation = result.queuedOp?.type === 'wordCreate' || result.queuedOp?.type === 'wordStatusUpdate'
             ? result.queuedOp : creating
-              ? { type: 'wordCreate', payload: { textId: Number(request.target.textId), term: entity.target.term.trim(), status: request.status, translation } }
-              : { type: 'wordStatusUpdate', payload: { wordId: entity.wordId!, status: request.status, translation } };
+              ? { type: 'wordCreate', payload: { textId: Number(request.target.textId), term: entity.target.term.trim(), status: request.status, translation,
+                sentence: request.target.sentence } }
+              : { type: 'wordStatusUpdate', payload: { wordId: entity.wordId!, status: request.status, translation,
+                ...(request.status <= 4 && request.target.sentence ? { textId: Number(request.target.textId), sentence: request.target.sentence } : {}) } };
           const previous = [...entity.queuedRequests].reverse().find(item => item.active && this.queueKey(item.op) === this.queueKey(op));
           if (previous) previous.active = false;
           entity.queuedRequests.push({ request, op, translation: translation ?? previous?.translation, active: true });

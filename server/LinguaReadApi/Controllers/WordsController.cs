@@ -129,28 +129,13 @@ namespace LinguaReadApi.Controllers
                     }
                 }
 
-                // Auto-mine sentence if provided
-                if (!string.IsNullOrEmpty(createWordDto.Sentence))
-                {
-                    if (!await SrsMinedSentences.ExistsAsync(
-                            _context, existingWord.WordId, userId, createWordDto.Sentence, text.Language))
-                    {
-                        _context.SrsPhrases.Add(new SrsPhrase
-                        {
-                            WordId = existingWord.WordId,
-                            UserId = userId,
-                            Sentence = createWordDto.Sentence,
-                            TextId = text.TextId,
-                            TextTitle = text.Title,
-                            CreatedAt = DateTime.UtcNow
-                        });
-                    }
-                }
+                var capturedExample = await SrsMinedSentences.CaptureFirstAsync(
+                    _context, existingWord, createWordDto.Sentence, text);
 
                 // Create, suspend or restore the SRS card to match the (possibly raised) status.
                 var settings = await GetSettingsAsync(userId);
                 await SrsCardLifecycle.ApplyStatusRulesAsync(
-                    _context, existingWord, await HasSentenceAsync(existingWord, createWordDto.Sentence, settings), settings);
+                    _context, existingWord, capturedExample || await HasSentenceAsync(existingWord, null, settings), settings);
 
                 await _context.SaveChangesAsync();
 
@@ -207,22 +192,11 @@ namespace LinguaReadApi.Controllers
                 responseTranslationForNewWord = createWordDto.Translation;
             }
 
-            // Auto-mine sentence if provided
-            if (!string.IsNullOrEmpty(createWordDto.Sentence))
-            {
-                _context.SrsPhrases.Add(new SrsPhrase
-                {
-                    WordId = word.WordId,
-                    UserId = userId,
-                    Sentence = createWordDto.Sentence,
-                    TextId = text.TextId,
-                    TextTitle = text.Title,
-                    CreatedAt = DateTime.UtcNow
-                });
-            }
+            var capturedNewExample = await SrsMinedSentences.CaptureFirstAsync(
+                _context, word, createWordDto.Sentence, text);
 
             await SrsCardLifecycle.ApplyStatusRulesAsync(
-                _context, word, hasSentence: !string.IsNullOrEmpty(createWordDto.Sentence), await GetSettingsAsync(userId));
+                _context, word, hasSentence: capturedNewExample, await GetSettingsAsync(userId));
 
             // Save relationships and potentially translation and SRS data
             await _context.SaveChangesAsync();
@@ -519,12 +493,31 @@ namespace LinguaReadApi.Controllers
                 return NotFound();
             }
 
+            Text? sourceText = null;
+            if (updateWordDto.Status is >= 1 and <= 4 && !string.IsNullOrWhiteSpace(updateWordDto.Sentence))
+            {
+                if (!updateWordDto.TextId.HasValue)
+                    return BadRequest("A source text is required to save an example.");
+                // A word save needs source metadata, not a second copy of a
+                // potentially book-sized text on every grading request.
+                sourceText = await _context.Texts.AsNoTracking()
+                    .Where(t => t.TextId == updateWordDto.TextId.Value && t.UserId == userId)
+                    .Select(t => new Text { TextId = t.TextId, UserId = t.UserId,
+                        LanguageId = t.LanguageId, Title = t.Title, Language = t.Language })
+                    .FirstOrDefaultAsync();
+                if (sourceText == null) return NotFound("Source text not found.");
+                if (sourceText.LanguageId != word.LanguageId)
+                    return BadRequest("The example must use the word's language.");
+            }
+
             // Update word status, then create, suspend or restore its SRS card to match
             // (Ignored always suspends; leaving Known/Ignored lifts only that suspension).
             word.Status = updateWordDto.Status;
+            var capturedExample = sourceText != null && await SrsMinedSentences.CaptureFirstAsync(
+                _context, word, updateWordDto.Sentence, sourceText);
             var settings = await GetSettingsAsync(userId);
             await SrsCardLifecycle.ApplyStatusRulesAsync(
-                _context, word, await HasSentenceAsync(word, newSentence: null, settings), settings);
+                _context, word, capturedExample || await HasSentenceAsync(word, newSentence: null, settings), settings);
 
             // Omitted/null means status-only; explicit blank clears a translation.
             if (updateWordDto.Translation != null)
@@ -1052,6 +1045,11 @@ SET ""Translation"" = EXCLUDED.""Translation"",
 
         // Translation is optional (can be empty or null)
         public string? Translation { get; set; }
+
+        // Optional reader example. Older status/translation-only callers remain valid.
+        [Range(1, int.MaxValue)]
+        public int? TextId { get; set; }
+        public string? Sentence { get; set; }
     }
 
     public class WordResponseDto

@@ -1,4 +1,5 @@
 import { mergeSettings } from '../src/contexts/SettingsContext';
+import { sentenceContainsTerm } from '../src/utils/readerText';
 import { demoLanguages, demoSrt, initialWords, lessons, normalizeTerm, spanishTranslations, type DemoWord } from './content/fixtures';
 
 export const DEMO_API = '/__linguaread_demo_api';
@@ -28,7 +29,7 @@ export function createDemoBackend(basePath: string) {
   const studyCounts = new Map<number, { readCount: number; listenCount: number }>();
   const studyEvents = new Map<string, string>();
   const studyRevision = (textId: number) => `demo-lesson-${textId}`.padEnd(64, '0');
-  const mined: Array<{ wordId: number; sentence: string; textTitle: string }> = [];
+  const mined: Array<{ wordId: number; sentence: string; textId: number; textTitle: string }> = [];
 
   const notify = () => {
     if (typeof window !== 'undefined') window.dispatchEvent(new Event(DEMO_CHANGE_EVENT));
@@ -63,6 +64,14 @@ export function createDemoBackend(basePath: string) {
     }
     notify();
     return word;
+  };
+  const saveExample = (word: DemoWord, textId: unknown, sentence: unknown) => {
+    const lesson = lessons.find(item => item.textId === Number(textId) && item.languageId === word.languageId);
+    if (word.status < 1 || word.status > 4 || !lesson || typeof sentence !== 'string' || !sentence.trim()
+      || mined.some(item => item.wordId === word.wordId)
+      || !sentenceContainsTerm(sentence, word.term, undefined, lesson.languageCode)) return;
+    mined.push({ wordId: word.wordId, sentence: sentence.trim(), textId: lesson.textId, textTitle: lesson.title });
+    notify();
   };
 
   async function respond(request: Request): Promise<Response> {
@@ -144,7 +153,9 @@ export function createDemoBackend(basePath: string) {
     if (path === '/words' && method === 'POST') {
       const lesson = lessons.find(l => l.textId === Number(body.textId));
       if (!lesson) return json({ message: 'Choose a sample lesson first.' }, 400);
-      return json(saveWord(lesson.languageId, String(body.term || ''), Number(body.status || 1), String(body.translation || '')));
+      const word = saveWord(lesson.languageId, String(body.term || ''), Number(body.status || 1), String(body.translation || ''));
+      saveExample(word, body.textId, body.sentence);
+      return json(word);
     }
     if ((found = match(/^\/words\/(\d+)$/))) {
       const word = words.find(w => w.wordId === Number(found![1]));
@@ -152,7 +163,8 @@ export function createDemoBackend(basePath: string) {
       if (method === 'DELETE') { words = words.filter(w => w !== word); notify(); return json({ message: 'Deleted from this demo.' }); }
       if (method === 'PUT') {
         word.status = Number(body.status || word.status);
-        if (body.translation) word.translation = String(body.translation);
+        if (typeof body.translation === 'string') word.translation = body.translation;
+        saveExample(word, body.textId, body.sentence);
         notify();
       }
       return json(word);
@@ -191,12 +203,6 @@ export function createDemoBackend(basePath: string) {
     if ((found = match(/^\/activity\/audiolessonprogress\/(\d+)$/))) return json({ currentPosition: positions.get(Number(found[1])) || 0 });
     if (path === '/activity/audiolessonprogress' && method === 'PUT') { positions.set(Number(body.textId), Number(body.currentPosition || 0)); return json({ saved: true }); }
     if (path === '/activity/loglistening' || path === '/activity/logsentenceread') return json({ saved: true });
-    if (path === '/srs/mine') {
-      const item = { wordId: Number(body.wordId), sentence: String(body.sentence || ''), textTitle: String(body.textTitle || '') };
-      if (!mined.some(m => m.wordId === item.wordId && m.sentence === item.sentence)) mined.push(item);
-      notify();
-      return json({ message: 'Sentence saved in this demo. FSRS scheduling runs in the self-hosted app.' });
-    }
     if (match(/^\/srs\/reading-credit\/\d+$/)) return json({ applied: false, message: 'Reading credit and FSRS scheduling run in the self-hosted app.' });
     if ((found = match(/^\/srs\/phrases\/(\d+)$/))) return json(mined.filter(m => m.wordId === Number(found![1])));
     // Unsupported actions fail locally. There is deliberately no production fallback.

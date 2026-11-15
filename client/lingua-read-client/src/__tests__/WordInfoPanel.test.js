@@ -22,7 +22,6 @@ const baseProps = (overrides = {}) => ({
   },
   actions: {
     onSaveWord: vi.fn(),
-    onMineSentence: vi.fn(),
     processingWord: false
   },
   bookmark: {
@@ -105,7 +104,7 @@ describe('WordInfoPanel', () => {
       value, saved, setValue: vi.fn(), onKeyDown: vi.fn(), isTranslating: false, error: null, ...extra
     });
     const actions = (extra = {}) => ({
-      onSaveWord: vi.fn(), onSaveTranslation, onMineSentence: vi.fn(), processingWord: false, ...extra
+      onSaveWord: vi.fn(), onSaveTranslation, processingWord: false, ...extra
     });
     const { rerender } = render(
       <WordInfoPanel {...baseProps({ translation: translation('cat', 'cat'), actions: actions() })} />
@@ -148,7 +147,7 @@ describe('WordInfoPanel', () => {
     render(
       <WordInfoPanel
         {...baseProps({
-          actions: { onSaveWord, onMineSentence: vi.fn(), processingWord: false }
+          actions: { onSaveWord, processingWord: false }
         })}
       />
     );
@@ -163,7 +162,7 @@ describe('WordInfoPanel', () => {
     render(
       <WordInfoPanel
         {...baseProps({
-          actions: { onSaveWord, onMineSentence: vi.fn(), processingWord: false }
+          actions: { onSaveWord, processingWord: false }
         })}
       />
     );
@@ -198,37 +197,39 @@ describe('WordInfoPanel', () => {
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
   });
 
-  test('Mine Sentence button calls onMineSentence and is disabled for unsaved words', () => {
-    const onMineSentence = vi.fn();
-    const { rerender } = render(
-      <WordInfoPanel
-        {...baseProps({
-          actions: { onSaveWord: vi.fn(), onMineSentence, processingWord: false }
-        })}
-      />
-    );
-    const mineBtn = screen.getByRole('button', { name: /^Mine$/ });
-    fireEvent.click(mineBtn);
-    expect(onMineSentence).toHaveBeenCalledTimes(1);
-
-    rerender(
-      <WordInfoPanel
-        {...baseProps({
-          displayedWord: { term: 'gato', wordId: 11, status: 0, isNew: true },
-          actions: { onSaveWord: vi.fn(), onMineSentence, processingWord: false }
-        })}
-      />
-    );
-    expect(screen.getByRole('button', { name: /^Mine$/ })).toBeDisabled();
+  test('does not expose a separate sentence-mining step', () => {
+    render(<WordInfoPanel {...baseProps()} />);
+    expect(screen.queryByRole('button', { name: /Mine/ })).not.toBeInTheDocument();
   });
 
-  test('Mine is enabled for a saved word of status 1, which the API flags isNew', () => {
-    render(
-      <WordInfoPanel
-        {...baseProps({ displayedWord: { term: 'gato', wordId: 11, status: 1, isNew: true } })}
-      />
-    );
-    expect(screen.getByRole('button', { name: /^Mine$/ })).toBeEnabled();
+  test('definition tools precede grading and the sentence bookmark stays in the header', () => {
+    const onRetranslateWithContext = vi.fn();
+    const { container } = render(<WordInfoPanel {...baseProps({ actions: {
+      onSaveWord: vi.fn(), processingWord: false, onRetranslateWithContext, canRetranslate: true,
+      onAddTranslationWithContext: vi.fn(), canAddTranslation: true,
+    } })} />);
+    const translate = screen.getByRole('button', { name: 'AI Translate' });
+    const grade = screen.getByRole('button', { name: 'Learning (2)' });
+    expect(translate.compareDocumentPosition(grade) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(translate.closest('.word-info-definition')).not.toBeNull();
+    expect(screen.getByRole('button', { name: 'Bookmark sentence' }).closest('.word-info-header')).not.toBeNull();
+    expect(container.querySelector('.word-info-status-pill')).toBeNull();
+    expect(screen.getAllByText('Learning')).toHaveLength(1);
+    fireEvent.click(translate);
+    expect(onRetranslateWithContext).toHaveBeenCalledOnce();
+  });
+
+  test('the definition starts at two rows without taking focus and expands for longer notes', () => {
+    const props = baseProps();
+    const { rerender } = render(<WordInfoPanel {...props} />);
+    const textarea = screen.getByRole('textbox', { name: 'Translation' });
+    expect(textarea).toHaveAttribute('rows', '2');
+    expect(textarea).not.toHaveFocus();
+    const shortHeight = parseFloat(textarea.style.height);
+    Object.defineProperty(textarea, 'scrollHeight', { configurable: true, value: 140 });
+    rerender(<WordInfoPanel {...props} translation={{ ...props.translation, value: 'A much longer definition with multiple senses and notes.' }} />);
+    expect(parseFloat(textarea.style.height)).toBeGreaterThan(shortHeight);
+    expect(parseFloat(textarea.style.height)).toBeGreaterThanOrEqual(140);
   });
 
   test('lists active term dictionaries and hides the section when there are none', () => {
@@ -246,7 +247,7 @@ describe('WordInfoPanel', () => {
       />
     );
     expect(screen.getByText('Dictionaries')).toBeInTheDocument();
-    const names = screen.getAllByRole('button').map(b => b.textContent);
+    const names = screen.getAllByRole('button').map(b => b.textContent.replace(' ↗', ''));
     expect(names.filter(n => ['Wordreference', 'Linguee', 'Example', 'Deepl'].includes(n)))
       .toEqual(['Wordreference', 'Linguee']);
 
@@ -290,8 +291,8 @@ describe('WordInfoPanel', () => {
       />
     );
 
-    const prevBtn = screen.getByRole('button', { name: /\+ Prev word/i });
-    const nextBtn = screen.getByRole('button', { name: /\+ Next word/i });
+    const prevBtn = screen.getByRole('button', { name: /Add previous word to selection/i });
+    const nextBtn = screen.getByRole('button', { name: /Add next word to selection/i });
     expect(prevBtn).toBeDisabled();
     expect(nextBtn).toBeEnabled();
 
@@ -310,7 +311,7 @@ describe('WordInfoPanel', () => {
         })}
       />
     );
-    expect(screen.queryByRole('button', { name: /\+ Prev word/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /\+ Next word/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Add previous word to selection/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Add next word to selection/i })).not.toBeInTheDocument();
   });
 });

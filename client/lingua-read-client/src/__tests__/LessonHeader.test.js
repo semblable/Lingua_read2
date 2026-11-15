@@ -29,6 +29,14 @@ const baseProps = (overrides = {}) => ({
 });
 
 describe('LessonHeader', () => {
+  test('navigation and completion stay in the title row when reading controls are collapsed', () => {
+    render(<LessonHeader {...baseProps({ navigationControls: <button>Back to Library</button> })} />);
+    expect(screen.getByRole('button', { name: 'Back to Library' })).toBeVisible();
+    expect(screen.getByTestId('reader-actions')).toBeVisible();
+    expect(screen.queryByTestId('primary-controls')).not.toBeInTheDocument();
+    expect(screen.getByTestId('reader-actions').closest('.lesson-controls-expanded-panel')).toBeNull();
+  });
+
   test('returns null on mobile', () => {
     const { container } = render(<LessonHeader {...baseProps({ isMobile: true })} />);
     expect(container.firstChild).toBeNull();

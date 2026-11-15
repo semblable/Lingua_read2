@@ -24,7 +24,8 @@ export const productionSyncHandlers: SyncHandlers = {
   wordStatusUpdate: async ({ payload }) => {
     return await fetchApi(`/words/${payload.wordId}`, {
       method: 'PUT',
-      body: JSON.stringify({ status: payload.status, ...(payload.translation !== undefined ? { translation: payload.translation } : {}) }),
+      body: JSON.stringify({ status: payload.status, ...(payload.translation !== undefined ? { translation: payload.translation } : {}),
+        ...(payload.sentence && payload.textId ? { textId: payload.textId, sentence: payload.sentence } : {}) }),
     });
   },
   wordCreate: async ({ payload }) => {

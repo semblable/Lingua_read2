@@ -16,7 +16,7 @@ export type PendingOp =
   // happened so the replay is scheduled from the review, not from the sync.
   // The three are optional only for ops queued by older builds.
   | { type: 'srsReview'; payload: { cardId: number; grade: number; clientEventId?: string; reviewedAt?: string; timezoneOffsetMinutes?: number } }
-  | { type: 'wordStatusUpdate'; payload: { wordId: number; status: number; translation?: string } }
+  | { type: 'wordStatusUpdate'; payload: { wordId: number; status: number; translation?: string; textId?: number; sentence?: string } }
   | { type: 'wordCreate'; payload: { textId: number; term: string; translation?: string; status?: number; sentence?: string | null; replaceExisting?: boolean } }
   // Listening time. Additive on the server, so each op carries a clientEventId
   // the backend dedupes on — a replay (or a request whose response was lost on a
@@ -131,12 +131,15 @@ export async function enqueue(op: PendingOp, coalesceKey?: string): Promise<numb
         if ((cursor.value as StoredPendingOp).coalesceKey === coalesceKey) {
           const previous = cursor.value as StoredPendingOp;
           if (previous.type === 'wordStatusUpdate' && op.type === 'wordStatusUpdate') {
-            op = { ...op, payload: { ...previous.payload, ...op.payload } };
+            // The grade/translation follow the latest edit; the first captured
+            // example and its source stay together until they reach the server.
+            op = { ...op, payload: { ...previous.payload, ...op.payload,
+              ...(previous.payload.sentence ? { sentence: previous.payload.sentence, textId: previous.payload.textId } : {}) } };
           }
           if (previous.type === 'wordCreate' && op.type === 'wordCreate') {
             op = { ...op, payload: { ...op.payload,
               translation: op.payload.translation ?? previous.payload.translation,
-              sentence: op.payload.sentence || previous.payload.sentence } };
+              sentence: previous.payload.sentence || op.payload.sentence } };
           }
           cursor.delete();
         }

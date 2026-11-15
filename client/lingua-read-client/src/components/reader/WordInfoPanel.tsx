@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useLayoutEffect, useRef } from 'react';
 import { Button, Alert, Form, Spinner, Badge } from 'react-bootstrap';
 import type { LanguageConfig } from '../../utils/readerText';
 import type { DisplayedWord } from '../../types/displayedWord';
@@ -53,7 +53,6 @@ export type WordInfoActions = {
   onSaveTranslation?: () => void;
   onSaveExactForm?: () => void;
   onSelectLemma?: (lemma: string) => void;
-  onMineSentence: () => void;
   processingWord: boolean;
   onReadingCredit?: (wordId: number | string) => void;
   onRetranslateWithContext?: () => void;
@@ -117,6 +116,25 @@ const WordInfoPanel = React.memo(({
   phraseSelection,
   characterShortcutsEnabled = true
 }: WordInfoPanelProps) => {
+  const translationRef = useRef<HTMLTextAreaElement | null>(null);
+  useLayoutEffect(() => {
+    const textarea = translationRef.current;
+    if (!textarea) return;
+    const resize = () => {
+      textarea.style.height = 'auto';
+      const style = getComputedStyle(textarea);
+      const lineHeight = parseFloat(style.lineHeight) || 20;
+      const borders = (parseFloat(style.borderTopWidth) || 0) + (parseFloat(style.borderBottomWidth) || 0);
+      const extra = (parseFloat(style.paddingTop) || 0) + (parseFloat(style.paddingBottom) || 0) + borders;
+      // scrollHeight already includes padding; adding it twice made short glosses look four lines tall.
+      textarea.style.height = `${Math.max(lineHeight * 2 + extra, textarea.scrollHeight + borders)}px`;
+    };
+    resize();
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(resize);
+    observer?.observe(textarea);
+    return () => observer?.disconnect();
+  }, [translation.value, displayedWord?.term]);
+
   if (!displayedWord) {
     return (
       <div className="word-info-panel">
@@ -133,8 +151,6 @@ const WordInfoPanel = React.memo(({
   const statusButtonsDisabled = actions.processingWord || !selectedWord;
   const hasUnsavedTranslation = isTracked && translation.saved !== undefined
     && translation.value.trim() !== translation.saved.trim();
-  // Grow with the text (long Wiktionary glosses, appended AI senses) instead of scrolling a 2-line box.
-  const translationRows = Math.min(6, Math.max(2, Math.ceil(translation.value.length / 40), translation.value.split(/\r?\n/).length));
   const termDictionaries = (language.languageConfig?.dictionaries ?? [])
     .filter(dict => dict.isActive && dict.purpose === 'terms')
     .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
@@ -153,7 +169,7 @@ const WordInfoPanel = React.memo(({
   return (
     <div className="word-info-panel">
       <div className="word-info-header">
-        <div className="d-flex align-items-center flex-wrap gap-2">
+        <div className="word-info-headword">
           <h5 className="word-info-term mb-0" dir={language.languageConfig?.rightToLeft === undefined ? 'auto' : language.languageConfig.rightToLeft ? 'rtl' : 'ltr'} lang={language.languageConfig?.code || undefined}>{displayedWord.term}</h5>
           {displayedWord.particleBadge != null && typeof displayedWord.particleBadge === 'string' && (
             <Badge bg="secondary" className="word-info-particle-badge" data-testid="korean-particle-badge">
@@ -161,9 +177,28 @@ const WordInfoPanel = React.memo(({
             </Badge>
           )}
         </div>
-        <div className="word-info-meta">
-          <span className="word-info-status-pill" data-status={status}>{statusLabel(status)}</span>
-          {saveSuccess && <span className="word-info-saved">✓ Saved</span>}
+        <div className="word-info-header-tools">
+          {phraseSelection && (phraseSelection.canExtendPrev || phraseSelection.canExtendNext) && (
+            <div className="word-info-extend-row" role="group" aria-label="Extend selection">
+              <Button variant="secondary" size="sm" className="word-info-utility word-extend-btn"
+                onClick={phraseSelection.onExtendPrev} disabled={!phraseSelection.canExtendPrev || actions.processingWord}
+                aria-label="Add previous word to selection" title="Include the previous word in this sentence">+ Prev</Button>
+              <Button variant="secondary" size="sm" className="word-info-utility word-extend-btn"
+                onClick={phraseSelection.onExtendNext} disabled={!phraseSelection.canExtendNext || actions.processingWord}
+                aria-label="Add next word to selection" title="Include the next word in this sentence">+ Next</Button>
+            </div>
+          )}
+          {bookmark.onToggleBookmark && (
+            <Button variant="secondary" size="sm" className="word-info-utility word-info-icon word-info-bookmark"
+              onClick={bookmark.onToggleBookmark} active={bookmark.isSentenceBookmarked}
+              title={bookmark.isSentenceBookmarked ? 'Remove bookmark from this sentence' : 'Bookmark this sentence'}
+              aria-pressed={bookmark.isSentenceBookmarked}
+              aria-label={bookmark.isSentenceBookmarked ? 'Remove sentence bookmark' : 'Bookmark sentence'}>
+              <svg viewBox="0 0 16 16" width="16" height="16" fill={bookmark.isSentenceBookmarked ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.4" aria-hidden="true">
+                <path d="M4 2.5h8v11l-4-2.7-4 2.7z" />
+              </svg>
+            </Button>
+          )}
         </div>
       </div>
       {displayedWord.lemmaCandidates && displayedWord.lemmaCandidates.length > 1 && actions.onSelectLemma && (
@@ -181,34 +216,12 @@ const WordInfoPanel = React.memo(({
           ))}
         </div>
       )}
-      {phraseSelection && (phraseSelection.canExtendPrev || phraseSelection.canExtendNext) && (
-        <div className="d-flex gap-1 mb-2 word-info-extend-row" role="group" aria-label="Extend selection">
-          <Button
-            variant="outline-secondary"
-            size="sm"
-            className="py-0 px-2 word-extend-btn"
-            onClick={phraseSelection.onExtendPrev}
-            disabled={!phraseSelection.canExtendPrev || actions.processingWord}
-            title="Include the previous word in this sentence"
-          >
-            + Prev word
-          </Button>
-          <Button
-            variant="outline-secondary"
-            size="sm"
-            className="py-0 px-2 word-extend-btn"
-            onClick={phraseSelection.onExtendNext}
-            disabled={!phraseSelection.canExtendNext || actions.processingWord}
-            title="Include the next word in this sentence"
-          >
-            + Next word
-          </Button>
-        </div>
-      )}
+      <div className="word-info-definition">
       <Form.Control
+        ref={translationRef}
         dir="auto"
         as="textarea"
-        rows={translationRows}
+        rows={2}
         value={translation.value}
         onChange={(e) => translation.setValue(e.target.value)}
         onKeyDown={translation.onKeyDown}
@@ -217,6 +230,25 @@ const WordInfoPanel = React.memo(({
         disabled={translation.isTranslating}
         size="sm"
       />
+      {(actions.onRetranslateWithContext || actions.onAddTranslationWithContext) && (
+        <div className="word-info-definition-actions">
+          {actions.onRetranslateWithContext && (
+            <Button variant="secondary" size="sm" className="word-info-utility word-info-generate"
+              onClick={actions.onRetranslateWithContext}
+              disabled={!actions.canRetranslate || translation.isTranslating || actions.processingWord}
+              title="Re-translate this word with AI using the current sentence as context">
+              {translation.isTranslating ? 'Translating…' : 'AI Translate'}
+            </Button>
+          )}
+          {actions.onAddTranslationWithContext && (
+            <Button variant="secondary" size="sm" className="word-info-utility"
+              onClick={actions.onAddTranslationWithContext}
+              disabled={!actions.canAddTranslation || translation.isTranslating || actions.processingWord}
+              title="Add an AI translation alongside the existing one" aria-label="Add AI translation">+ AI</Button>
+          )}
+        </div>
+      )}
+      </div>
       {(hint || showSaveButton) && (
         <div className="word-info-save-row">
           <div className="word-info-hint">{hint}</div>
@@ -267,6 +299,10 @@ const WordInfoPanel = React.memo(({
           Ignore
         </Button>
       </div>
+      <div className="word-info-grade-caption">
+        <span className="word-info-status-label">{statusLabel(status)}</span>
+        {saveSuccess && <span className="word-info-saved">✓ Saved</span>}
+      </div>
       {Boolean(displayedWord.surface && displayedWord.surface !== displayedWord.term && actions.onSaveExactForm) && (
         <div className="mt-1 word-info-exact-row">
           <Button
@@ -281,36 +317,11 @@ const WordInfoPanel = React.memo(({
         </div>
       )}
       <div className="d-flex flex-wrap gap-1 mt-2 word-info-actions">
-        {actions.onRetranslateWithContext && (
-          <Button
-            variant="outline-primary"
-            size="sm"
-            className="py-0 px-2"
-            onClick={actions.onRetranslateWithContext}
-            disabled={!actions.canRetranslate || translation.isTranslating || actions.processingWord}
-            title="Re-translate this word with AI using the current sentence as context"
-          >
-            {translation.isTranslating ? 'Translating...' : 'AI Translate'}
-          </Button>
-        )}
-        {actions.onAddTranslationWithContext && (
-          <Button
-            variant="outline-primary"
-            size="sm"
-            className="py-0 px-2"
-            onClick={actions.onAddTranslationWithContext}
-            disabled={!actions.canAddTranslation || translation.isTranslating || actions.processingWord}
-            title="Add an AI translation alongside the existing one"
-            aria-label="Add AI translation"
-          >
-            + AI
-          </Button>
-        )}
         {speech.sentenceTtsEnabled && (
           <Button
-            variant="outline-primary"
+            variant="secondary"
             size="sm"
-            className="py-0 px-2"
+            className="word-info-utility"
             onClick={speech.onSpeakWord}
             disabled={!speech.canUseSentenceTts || !displayedWord?.term}
             title={speech.canUseSentenceTts ? 'Read this word aloud' : 'Speech synthesis is not supported in this browser'}
@@ -318,34 +329,11 @@ const WordInfoPanel = React.memo(({
             {speech.isSpeakingWord ? 'Speaking...' : 'Speak'}
           </Button>
         )}
-        <Button
-          variant="outline-success"
-          size="sm"
-          className="py-0 px-2"
-          onClick={actions.onMineSentence}
-          disabled={!isTracked}
-          title="Mine the current sentence for SRS review"
-        >
-          Mine
-        </Button>
-        {bookmark.onToggleBookmark && (
-          <Button
-            variant={bookmark.isSentenceBookmarked ? 'warning' : 'outline-warning'}
-            size="sm"
-            className="py-0 px-2"
-            onClick={bookmark.onToggleBookmark}
-            title={bookmark.isSentenceBookmarked ? 'Remove bookmark from this sentence' : 'Bookmark this sentence'}
-            aria-pressed={bookmark.isSentenceBookmarked}
-            aria-label={bookmark.isSentenceBookmarked ? 'Remove sentence bookmark' : 'Bookmark sentence'}
-          >
-            🔖
-          </Button>
-        )}
         {displayedWord?.wordId && !displayedWord?.isNew && (displayedWord?.status ?? 0) >= 3 && (displayedWord?.status ?? 0) <= 4 && actions.onReadingCredit && (
           <Button
-            variant="outline-info"
+            variant="secondary"
             size="sm"
-            className="py-0 px-2"
+            className="word-info-utility"
             onClick={() => actions.onReadingCredit!(displayedWord.wordId!)}
             title="Boost SRS interval (reading credit)"
           >
@@ -355,14 +343,17 @@ const WordInfoPanel = React.memo(({
         {/* Kept apart from the everyday actions so it isn't hit by accident. */}
         {actions.onDeleteWord && displayedWord?.wordId && (
           <Button
-            variant="outline-danger"
+            variant="secondary"
             size="sm"
-            className="py-0 px-2 ms-auto"
+            className="word-info-utility word-info-icon word-info-delete ms-auto"
             onClick={actions.onDeleteWord}
             disabled={actions.processingWord || translation.isTranslating}
             title="Delete this term"
+            aria-label="Delete this term"
           >
-            Delete
+            <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden="true">
+              <path d="M2.5 4.5h11M6 2.5h4l.5 2H5.5zM4 4.5l.7 9h6.6l.7-9M6.5 6.5v5M9.5 6.5v5" />
+            </svg>
           </Button>
         )}
       </div>
@@ -376,7 +367,7 @@ const WordInfoPanel = React.memo(({
       )}
 
       {termDictionaries.length > 0 && selectedWord && (
-        <div className="mt-3 pt-2 border-top">
+        <div className="word-info-dictionaries">
           <h6 className="mb-2 small text-muted">Dictionaries</h6>
           <div className="d-flex flex-wrap gap-1">
             {termDictionaries.map(dict => {
@@ -402,8 +393,8 @@ const WordInfoPanel = React.memo(({
               }
 
               return (
-                <Button key={dict.dictionaryId} variant="outline-info" size="sm" onClick={handleDictClick} title={dict.urlTemplate}>
-                  {buttonText}
+                <Button key={dict.dictionaryId} variant="link" size="sm" className="word-info-dictionary" onClick={handleDictClick} title={dict.urlTemplate}>
+                  {buttonText}<span aria-hidden="true"> ↗</span>
                 </Button>
               );
             })}

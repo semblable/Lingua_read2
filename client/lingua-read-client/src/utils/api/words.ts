@@ -69,7 +69,8 @@ export const createWord = async (
 export const updateWord = async (
   wordId: number | string,
   status: number | string,
-  translation: string | null | undefined
+  translation: string | null | undefined,
+  context?: { textId: number | string; sentence: string }
 ): Promise<unknown> => {
   try {
     if (!wordId) throw new Error('Word ID is required');
@@ -77,7 +78,8 @@ export const updateWord = async (
 
     const payload = {
       status,
-      ...(translation != null ? { translation } : {})
+      ...(translation != null ? { translation } : {}),
+      ...(context ? { textId: Number(context.textId), sentence: context.sentence } : {})
     };
 
     // Persist the complete edit; omitted translations remain unchanged.
@@ -85,7 +87,8 @@ export const updateWord = async (
       {
         type: 'wordStatusUpdate',
         payload: { wordId: parseInt(String(wordId), 10), status: parseInt(String(status), 10),
-          ...(translation != null ? { translation } : {}) },
+          ...(translation != null ? { translation } : {}),
+          ...(context ? { textId: Number(context.textId), sentence: context.sentence } : {}) },
       },
       () => fetchApi(`/words/${wordId}`, {
         method: 'PUT',

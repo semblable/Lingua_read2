@@ -1,5 +1,6 @@
 import React from 'react';
 import { Button, Collapse } from 'react-bootstrap';
+import './ReaderToolbar.css';
 
 interface MobileLessonHeaderProps {
   isMobile: boolean;
@@ -11,6 +12,7 @@ interface MobileLessonHeaderProps {
   primaryControls: React.ReactNode;
   secondaryControls: React.ReactNode;
   readerLessonActions: React.ReactNode;
+  navigationControls?: React.ReactNode;
   /** True for audio lessons OR audiobooks — anything where audio playback is wired up. */
   hasAudio: boolean;
   isAudioPlaying: boolean;
@@ -28,6 +30,7 @@ const MobileLessonHeader = React.memo(({
   primaryControls,
   secondaryControls,
   readerLessonActions,
+  navigationControls,
   hasAudio,
   isAudioPlaying,
   toggleAudioPlayback,
@@ -72,6 +75,7 @@ const MobileLessonHeader = React.memo(({
       <div className={`lesson-topbar navbar-custom-bg ${showMobileHeader ? 'lesson-topbar-open' : 'lesson-topbar-closed'}`}>
         <div className="lesson-topbar-content">
           <div className="lesson-topbar-heading">
+            {navigationControls}
             <div className="lesson-topbar-title" title={text?.title}>{text?.title}</div>
           </div>
           <div className="lesson-topbar-actions">
@@ -95,6 +99,7 @@ const MobileLessonHeader = React.memo(({
           </div>
           {studyControls}
         </div>
+        {readerLessonActions}
         <Collapse in={showMoreControls}>
           <div id="lesson-more-controls" className="lesson-controls-collapse lesson-controls-menu reader-quiet-controls">
             <div className="lesson-controls-section">
@@ -102,9 +107,6 @@ const MobileLessonHeader = React.memo(({
             </div>
             <div className="lesson-controls-section">
               {secondaryControls}
-            </div>
-            <div className="lesson-controls-section lesson-controls-section-reader-actions">
-              {readerLessonActions}
             </div>
           </div>
         </Collapse>

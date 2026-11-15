@@ -83,7 +83,7 @@ describe('opt-in Chinese reader workflow', () => {
     await waitFor(() => expect(screen.getByText('图书馆')).toHaveClass('word-status-3'));
     fireEvent.click(screen.getByText('图书馆'));
     fireEvent.click(screen.getByRole('button', { name: 'Advanced (4)' }));
-    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(91, 4, undefined));
+    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(91, 4, undefined, { textId: 1, sentence: '我今天在图书馆学习中文。' }));
     expect(createWord).not.toHaveBeenCalled();
   });
   test('saved phrases without spaces remain selectable phrases rather than disappearing', async () => {
@@ -93,10 +93,9 @@ describe('opt-in Chinese reader workflow', () => {
     fireEvent.click(screen.getByText('图书馆学习中文'));
     expect(screen.getByRole('textbox')).toHaveValue('study Chinese at the library');
     vi.stubGlobal('alert', vi.fn());
-    fireEvent.click(screen.getByRole('button', { name: 'Mine', exact: true }));
-    await waitFor(() => expect(mineSentence).toHaveBeenCalledWith(92, '我今天在图书馆学习中文。', 1, 'Chinese fixture'));
+    expect(screen.queryByRole('button', { name: 'Mine', exact: true })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Advanced (4)' }));
-    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(92, 4, undefined));
+    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(92, 4, undefined, { textId: 1, sentence: '我今天在图书馆学习中文。' }));
     expect(createWord).not.toHaveBeenCalled();
   });
   test('unprofiled legacy text keeps its whole-run boundaries', async () => {
@@ -105,7 +104,7 @@ describe('opt-in Chinese reader workflow', () => {
     await screen.findByText('我今天在图书馆学习中文');
     expect(Array.from(container.querySelectorAll('.clickable-word')).map(span => span.textContent)).toEqual(['我今天在图书馆学习中文']);
   });
-  test('audio lesson SRT transcript and sentence mode segment Chinese cues and preserve cue offsets and mining', async () => {
+  test('audio lesson SRT transcript and sentence mode segment Chinese cues and preserve cue offsets and automatic examples', async () => {
     const rows = [
       { wordId: 91, term: '图书馆', status: 3, translation: 'library' },
       { wordId: 92, term: '自然语言', status: 2, translation: 'natural language' }
@@ -145,10 +144,11 @@ describe('opt-in Chinese reader workflow', () => {
       '自然语言处理很有趣。'
     ]);
     fireEvent.click(screen.getByText('图书馆'));
-    fireEvent.click(screen.getByRole('button', { name: 'Mine', exact: true }));
-    await waitFor(() =>
-      expect(mineSentence).toHaveBeenCalledWith(91, '我今天在图书馆学习中文。', 1, 'Chinese Audio')
-    );
+    expect(screen.queryByRole('button', { name: 'Mine', exact: true })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Advanced (4)' }));
+    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(91, 4, undefined, { textId: 1, sentence: '我今天在图书馆学习中文。' }));
+    expect(mineSentence).not.toHaveBeenCalled();
+    expect(createWord).not.toHaveBeenCalled();
     transcriptRender.unmount();
 
     const sentenceRender = renderReader({ ...settings, sentenceMode: true });
@@ -158,7 +158,7 @@ describe('opt-in Chinese reader workflow', () => {
     await waitFor(() => expect(screen.getByText('自然语言')).toHaveClass('word-status-2'));
     expect(sentenceRender.container.querySelector('.sentence-mode-text').textContent).toBe('自然语言处理很有趣。');
   });
-  test('EPUB structuredContent blocks segment Chinese words in standard and sentence modes and preserve sentence mining', async () => {
+  test('EPUB structuredContent blocks segment Chinese words in standard and sentence modes and preserve automatic sentence examples', async () => {
     const rows = [
       { wordId: 91, term: '图书馆', status: 3, translation: 'library' },
       { wordId: 92, term: '自然语言', status: 2, translation: 'natural language' }
@@ -186,10 +186,11 @@ describe('opt-in Chinese reader workflow', () => {
     await waitFor(() => expect(screen.getByText('图书馆')).toHaveClass('word-status-3'));
     expect(screen.getByText('自然语言')).toHaveClass('word-status-2');
     fireEvent.click(screen.getByText('图书馆'));
-    fireEvent.click(screen.getByRole('button', { name: 'Mine', exact: true }));
-    await waitFor(() =>
-      expect(mineSentence).toHaveBeenCalledWith(91, '我今天在图书馆学习中文。', 1, '第一章 自然语言')
-    );
+    expect(screen.queryByRole('button', { name: 'Mine', exact: true })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Advanced (4)' }));
+    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(91, 4, undefined, { textId: 1, sentence: '我今天在图书馆学习中文。' }));
+    expect(mineSentence).not.toHaveBeenCalled();
+    expect(createWord).not.toHaveBeenCalled();
     standardRender.unmount();
 
     const sentenceRender = renderReader({ ...settings, sentenceMode: true });

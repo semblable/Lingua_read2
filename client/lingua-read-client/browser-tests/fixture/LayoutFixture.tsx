@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Route, Routes } from 'react-router-dom';
 import { SettingsContext, mergeSettings } from '../../src/contexts/SettingsContext';
 import BookCreate from '../../src/pages/BookCreate';
@@ -16,10 +17,15 @@ const settings = mergeSettings({
 });
 
 export default function LayoutFixture() {
+  const interactiveReader = new URLSearchParams(window.location.search).get('redesign') === '1';
+  const [readerSettings, setReaderSettings] = useState(settings);
   return (
     <SettingsContext.Provider value={{
-      settings, loadingSettings: false, errorSettings: null,
-      updateSetting: () => { throw new Error('Layout checks must not change settings'); },
+      settings: readerSettings, loadingSettings: false, errorSettings: null,
+      updateSetting: (key, value) => {
+        if (!interactiveReader) throw new Error('Layout checks must not change settings');
+        setReaderSettings(current => ({ ...current, [key]: value }));
+      },
       refetchSettings: async () => {},
     }}>
       <Routes>
@@ -28,7 +34,7 @@ export default function LayoutFixture() {
         <Route path="terms" element={<TermsPage />} />
         <Route path="books/create" element={<BookCreate />} />
         <Route path="audio/create" element={<CreateAudioLesson />} />
-        <Route path="texts/:textId" element={settings.sentenceMode ? <SentenceLayoutFixture settings={settings} /> : <TextDisplay />} />
+        <Route path="texts/:textId" element={readerSettings.sentenceMode && !interactiveReader ? <SentenceLayoutFixture settings={readerSettings} /> : <TextDisplay />} />
       </Routes>
     </SettingsContext.Provider>
   );

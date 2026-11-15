@@ -19,7 +19,6 @@ import {
   getTextSrt,
   getWordLinkingStatus,
   createWord,
-  mineSentence,
   updateWord,
   deleteWord,
   updateLastRead,
@@ -46,7 +45,6 @@ vi.mock('../utils/api', () => ({
   getTextSrt: vi.fn(),
   getWordLinkingStatus: vi.fn(),
   createWord: vi.fn(),
-  mineSentence: vi.fn(),
   updateWord: vi.fn(),
   deleteWord: vi.fn(),
   updateLastRead: vi.fn(),
@@ -159,7 +157,103 @@ const renderTextDisplayWithRouter = (router, settingOverrides = {}) => render(
   </SettingsContext.Provider>
 );
 
+const getAllKnownButton = () => {
+  if (!screen.queryByRole('button', { name: 'All Known' })) {
+    fireEvent.click(screen.getByRole('button', { name: 'More lesson actions' }));
+  }
+  return screen.getByRole('button', { name: 'All Known' });
+};
+
+const openAppearance = () => {
+  if (!screen.queryByRole('button', { name: 'Appearance' })) {
+    act(() => {
+      fireEvent.click(screen.getByRole('button', { name: 'Open lesson controls' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Menu' }));
+      vi.advanceTimersByTime(1000);
+    });
+  }
+  fireEvent.click(screen.getByRole('button', { name: 'Appearance' }));
+};
+
 describe('TextDisplay', () => {
+  test('selecting the second occurrence of a Known word keeps only that instance marked through grading', async () => {
+    getText.mockResolvedValueOnce({ textId: 1, title: 'Repeated word', content: 'The dono greeted dono.',
+      languageId: null, languageCode: 'en', words: [{ wordId: 19, term: 'dono', status: 5, translation: 'owner' }] });
+    updateWord.mockResolvedValue({});
+    const { container } = renderTextDisplay({ autoTranslateWords: false });
+    await screen.findByText('greeted');
+    const occurrences = [...container.querySelectorAll('.clickable-word')].filter(span => span.textContent === 'dono');
+    fireEvent.click(occurrences[1]);
+    expect(occurrences[0]).not.toHaveClass('reader-word-selected');
+    expect(occurrences[1]).toHaveClass('reader-word-selected');
+    const definition = screen.getByRole('textbox', { name: 'Translation' });
+    expect(definition).not.toHaveFocus();
+    fireEvent.click(screen.getByRole('button', { name: 'Familiar (3)' }));
+    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(19, 3, undefined,
+      { textId: 1, sentence: 'The dono greeted dono.' }));
+    expect(occurrences[1]).toHaveClass('word-status-3', 'reader-word-selected');
+    expect(container.querySelectorAll('.reader-word-selected')).toHaveLength(1);
+    expect(screen.queryByRole('button', { name: /Mine|Finish \(no stats\)/ })).not.toBeInTheDocument();
+  });
+
+  test('hover grading captures the hovered occurrence rather than a previously selected sentence', async () => {
+    getText.mockResolvedValueOnce({ textId: 1, title: 'Repeated word', content: 'The dono greeted us. Another dono arrived.',
+      languageId: null, languageCode: 'en', words: [{ wordId: 19, term: 'dono', status: 5, translation: 'owner' }] });
+    updateWord.mockResolvedValue({});
+    const { container } = renderTextDisplay({ autoTranslateWords: false });
+    await screen.findByText('arrived');
+    const occurrences = [...container.querySelectorAll('.clickable-word')].filter(span => span.textContent === 'dono');
+    fireEvent.click(occurrences[0]);
+    fireEvent.mouseEnter(occurrences[1]);
+    fireEvent.keyDown(window, { key: '3' });
+    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(19, 3, undefined,
+      { textId: 1, sentence: 'Another dono arrived.' }));
+  });
+
+  test.each(['click', 'hover'])('flowing audio captures the %s occurrence sentence across cue boundaries', async action => {
+    localStorage.setItem('linguaReadAudioTranscriptLayout', 'flow');
+    getText.mockResolvedValueOnce({ textId: 1, title: 'Repeated audio word',
+      content: 'First dono rested. Another dono arrived at noon.', languageId: null, languageCode: 'en',
+      words: [{ wordId: 19, term: 'dono', status: 5, translation: 'owner' }],
+      isAudioLesson: true, audioFilePath: 'audio_lessons/1.mp3', hasSrtContent: true });
+    getTextSrt.mockResolvedValueOnce('1\n00:00:00,000 --> 00:00:02,000\nFirst dono rested. Another dono\n\n2\n00:00:02,000 --> 00:00:04,000\narrived at noon.\n');
+    updateWord.mockResolvedValue({});
+    const { container } = renderTextDisplay({ autoTranslateWords: false });
+    const continuation = await screen.findByText('arrived');
+    const occurrences = [...container.querySelectorAll('.clickable-word')].filter(span => span.textContent === 'dono');
+    expect(occurrences).toHaveLength(2);
+    expect(occurrences[0].closest('.transcript-paragraph')).toBe(occurrences[1].closest('.transcript-paragraph'));
+    expect(occurrences[1].closest('.srt-line')).not.toBe(continuation.closest('.srt-line'));
+    if (action === 'click') {
+      fireEvent.click(occurrences[1]);
+      fireEvent.click(screen.getByRole('button', { name: 'Familiar (3)' }));
+    } else {
+      fireEvent.click(occurrences[0]);
+      fireEvent.mouseEnter(occurrences[1]);
+      fireEvent.keyDown(window, { key: '3' });
+    }
+    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(19, 3, undefined,
+      { textId: 1, sentence: 'Another dono arrived at noon.' }));
+  });
+
+  test.each([
+    { audio: false, sentenceMode: false, readingDensity: 'compact' },
+    { audio: false, sentenceMode: true, readingDensity: 'compact' },
+    { audio: true, sentenceMode: false, readingDensity: 'compact' },
+    { audio: false, sentenceMode: false, readingDensity: 'spacious' },
+    { audio: false, sentenceMode: true, readingDensity: 'spacious' },
+    { audio: true, sentenceMode: false, readingDensity: 'spacious' },
+  ])('mobile line spacing honors Appearance independently of density: %j', async ({ audio, sentenceMode, readingDensity }) => {
+    window.matchMedia = vi.fn(() => ({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() }));
+    getText.mockResolvedValueOnce({ textId: 1, title: 'Line spacing', content: 'Hello world.', languageId: null,
+      languageCode: 'en', words: [], isAudioLesson: audio, audioFilePath: audio ? 'audio_lessons/1.mp3' : null, hasSrtContent: audio });
+    if (audio) getTextSrt.mockResolvedValueOnce('1\n00:00:00,000 --> 00:00:02,000\nHello world.\n');
+    renderTextDisplay({ lineSpacing: 2, readingDensity, sentenceMode });
+    const word = await screen.findByText('Hello');
+    const surface = word.closest(sentenceMode ? '.sentence-mode-text' : audio ? '.audio-transcript-container' : '.text-content');
+    expect(surface).toHaveStyle({ lineHeight: '2' });
+  });
+
   test('matches saved phrases across sentence-initial capitalization and preserves source case', async () => {
     getText.mockResolvedValueOnce({ textId: 1, title: 'Phrase case', content: 'In spite of the rain, we went.',
       languageId: null, languageCode: 'en', isAudioLesson: false, bookId: null,
@@ -208,8 +302,6 @@ describe('TextDisplay', () => {
     setTextBookmark.mockReset();
     setTextBookmark.mockResolvedValue({ textId: 1, sentenceIndices: [], lastSentenceIndex: null });
     createWord.mockReset();
-    mineSentence.mockReset();
-    mineSentence.mockResolvedValue({});
     updateWord.mockReset();
     deleteWord.mockReset();
     updateLastRead.mockReset();
@@ -314,7 +406,7 @@ describe('TextDisplay', () => {
       fireEvent.click(screen.getByText('IŞIK'));
       expect(screen.getByRole('textbox')).toHaveValue('light');
       fireEvent.click(screen.getByRole('button', { name: 'Advanced (4)' }));
-      await waitFor(() => expect(updateWord).toHaveBeenCalledWith(91, 4, undefined));
+      await waitFor(() => expect(updateWord).toHaveBeenCalledWith(91, 4, undefined, { textId: 1, sentence: 'IŞIK İZMİR.' }));
       expect(createWord).not.toHaveBeenCalled();
     } finally {
       fetchMock.mockRestore();
@@ -391,6 +483,7 @@ describe('TextDisplay', () => {
     renderTextDisplay();
     await screen.findByText('Hello');
 
+    openAppearance();
     fireEvent.click(screen.getByRole('button', { name: 'Set relaxed paragraph spacing' }));
     await act(async () => { vi.advanceTimersByTime(500); });
 
@@ -455,8 +548,9 @@ describe('TextDisplay', () => {
       await screen.findByText('Hello');
       await waitFor(() => expect(global.fetch).toHaveBeenCalled());
 
+      const allKnown = getAllKnownButton();
       await act(async () => {
-        fireEvent.click(screen.getByRole('button', { name: 'All Known' }));
+        fireEvent.click(allKnown);
       });
 
       await waitFor(() => expect(addTermsBatch).toHaveBeenCalled());
@@ -476,12 +570,12 @@ describe('TextDisplay', () => {
       await waitFor(() => expect(languageLoads()).toBe(1));
 
       expect(screen.getByRole('button', { name: 'Auto ?' })).toBeDisabled();
-      expect(screen.getByRole('button', { name: 'All Known' })).toBeDisabled();
+      expect(getAllKnownButton()).toHaveAttribute('aria-disabled', 'true');
 
       await act(async () => { finishLoad(); });
 
       await waitFor(() => expect(screen.getByRole('button', { name: 'Auto ?' })).toBeEnabled());
-      expect(screen.getByRole('button', { name: 'All Known' })).toBeEnabled();
+      expect(getAllKnownButton()).not.toHaveAttribute('aria-disabled', 'true');
     });
 
     test('a save puts the returned rows into the word list instead of reloading the language', async () => {
@@ -504,8 +598,9 @@ describe('TextDisplay', () => {
       expect(languageLoads()).toBe(1);
 
       // "world" is saved now, so All Known has nothing left to save.
+      const allKnown = getAllKnownButton();
       await act(async () => {
-        fireEvent.click(screen.getByRole('button', { name: 'All Known' }));
+        fireEvent.click(allKnown);
       });
       await waitFor(() => expect(window.alert).toHaveBeenCalledWith('No untracked words found.'));
       expect(addTermsBatch).toHaveBeenCalledTimes(1);
@@ -577,23 +672,21 @@ describe('TextDisplay', () => {
     test('All Known reuses a status-zero suffix without creating surface rows', async () => {
       configureFrench([{ wordId: 73, term: 'eau', status: 0, translation: '' }]);
       renderTextDisplay();
-      await waitFor(() => expect(screen.getByRole('button', { name: 'All Known' })).toBeEnabled());
-      fireEvent.click(screen.getByRole('button', { name: 'All Known' }));
+      await waitFor(() => expect(getAllKnownButton()).not.toHaveAttribute('aria-disabled', 'true'));
+      fireEvent.click(getAllKnownButton());
       await waitFor(() => expect(addTermsBatch).toHaveBeenCalled());
       expect(addTermsBatch).toHaveBeenCalledWith(5, [{ term: 'eau', translation: '', status: 5 }]);
     });
 
-    test('saving and mining the whole elision preserve its validated suffix ID', async () => {
+    test('saving the whole elision preserves its validated suffix ID and captures its example', async () => {
       configureFrench([{ wordId: 73, term: 'eau', status: 2, translation: 'water' }], 'L’eau.');
       updateWord.mockResolvedValue({});
       renderTextDisplay();
-      await waitFor(() => expect(screen.getByRole('button', { name: 'All Known' })).toBeEnabled());
+      await waitFor(() => expect(getAllKnownButton()).not.toHaveAttribute('aria-disabled', 'true'));
       fireEvent.click(screen.getByText("L'eau"));
       expect(screen.getByRole('heading', { name: 'eau', exact: true })).toBeInTheDocument();
       fireEvent.click(screen.getByRole('button', { name: 'Familiar (3)' }));
-      await waitFor(() => expect(updateWord).toHaveBeenCalledWith(73, 3, undefined));
-      fireEvent.click(screen.getByRole('button', { name: 'Mine', exact: true }));
-      await waitFor(() => expect(mineSentence).toHaveBeenCalledWith(73, "L'eau.", 1, 'French fixture'));
+      await waitFor(() => expect(updateWord).toHaveBeenCalledWith(73, 3, undefined, { textId: 1, sentence: "L'eau." }));
       expect(createWord).not.toHaveBeenCalled();
     });
 
@@ -604,10 +697,10 @@ describe('TextDisplay', () => {
       ], 'L’eau.');
       updateWord.mockResolvedValue({});
       renderTextDisplay();
-      await waitFor(() => expect(screen.getByRole('button', { name: 'All Known' })).toBeEnabled());
+      await waitFor(() => expect(getAllKnownButton()).not.toHaveAttribute('aria-disabled', 'true'));
       fireEvent.click(screen.getByText("L'eau"));
       fireEvent.click(screen.getByRole('button', { name: 'Familiar (3)' }));
-      await waitFor(() => expect(updateWord).toHaveBeenCalledWith(74, 3, undefined));
+      await waitFor(() => expect(updateWord).toHaveBeenCalledWith(74, 3, undefined, { textId: 1, sentence: "L'eau." }));
       expect(createWord).not.toHaveBeenCalled();
     });
   });
@@ -629,7 +722,7 @@ describe('TextDisplay', () => {
     await waitFor(() => expect(createWord).toHaveBeenCalled());
     await waitFor(() => expect(screen.getByRole('button', { name: 'Familiar (3)' })).toHaveAttribute('aria-pressed', 'true'));
     expect(screen.getByText('Familiar')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /^Mine$/ })).toBeEnabled();
+    expect(screen.queryByRole('button', { name: /^Mine$/ })).not.toBeInTheDocument();
     expect(screen.getByRole('textbox', { name: 'Translation' })).toHaveValue('hola');
     expect(screen.queryByText(/not saved yet/i)).not.toBeInTheDocument();
   });
@@ -662,7 +755,7 @@ describe('TextDisplay', () => {
       fireEvent.keyDown(textarea, { key: 'Enter' });
     });
 
-    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(1, 2, 'hola, buenas'));
+    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(1, 2, 'hola, buenas', { textId: 1, sentence: 'Hello world.' }));
     await waitFor(() => expect(screen.queryByText(/Translation not saved yet/)).not.toBeInTheDocument());
   });
 
@@ -690,7 +783,7 @@ describe('TextDisplay', () => {
     await waitFor(() => expect(createWord.mock.calls.filter(([, term]) => term === 'Hello')).toHaveLength(1));
     expect(createWord).toHaveBeenCalledWith(1, 'Hello', 3, undefined, expect.anything());
     await act(async () => { finishCreate({ wordId: 9, term: 'Hello', status: 3, translation: 'stale sense' }); });
-    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(9, 4, 'newer sense'));
+    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(9, 4, 'newer sense', { textId: 1, sentence: 'Hello world.' }));
     expect(screen.getByRole('textbox', { name: 'Translation' })).toHaveValue('newer sense');
     expect(screen.getByRole('button', { name: 'Advanced (4)' })).toHaveAttribute('aria-pressed', 'true');
   });
@@ -710,17 +803,17 @@ describe('TextDisplay', () => {
     expect(screen.getByRole('textbox', { name: 'Translation' })).toHaveValue('hola');
     fireEvent.click(retry);
     await waitFor(() => expect(updateWord).toHaveBeenCalledTimes(2));
-    expect(updateWord).toHaveBeenLastCalledWith(9, 3, undefined);
+    expect(updateWord).toHaveBeenLastCalledWith(9, 3, undefined, { textId: 1, sentence: 'Hello world.' });
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Retry saving Hello' })).not.toBeInTheDocument());
     expect(container.querySelectorAll('.reader-save-feedback[aria-live="polite"]')).toHaveLength(1);
   });
 
-  test.each(['save', 'mine'])('%s uses the selected word context after the reader advances', async action => {
+  test('saving uses the selected word context after the reader advances', async () => {
     vi.stubGlobal('alert', vi.fn());
     getText.mockResolvedValueOnce({
       textId: 1, title: 'Sample Text', content: 'Hello world. Next sentence.',
       languageId: null, languageCode: 'ES', languageName: 'Spanish', isAudioLesson: false, bookId: null,
-      words: action === 'mine' ? [{ wordId: 9, term: 'Hello', status: 2, translation: 'hola' }] : []
+      words: []
     });
     createWord.mockResolvedValue({ wordId: 9, term: 'Hello', status: 3, translation: '' });
     renderTextDisplay({ sentenceMode: true, sentenceTtsEnabled: false, autoTranslateWords: false });
@@ -729,13 +822,8 @@ describe('TextDisplay', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Next', exact: true }));
     await screen.findByText('sentence');
 
-    if (action === 'mine') {
-      fireEvent.click(screen.getByRole('button', { name: 'Mine', exact: true }));
-      await waitFor(() => expect(mineSentence).toHaveBeenCalledWith(9, 'Hello world.', 1, 'Sample Text'));
-    } else {
-      fireEvent.click(screen.getByRole('button', { name: 'Familiar (3)' }));
-      await waitFor(() => expect(createWord).toHaveBeenCalledWith(1, 'Hello', 3, undefined, 'Hello world.'));
-    }
+    fireEvent.click(screen.getByRole('button', { name: 'Familiar (3)' }));
+    await waitFor(() => expect(createWord).toHaveBeenCalledWith(1, 'Hello', 3, undefined, 'Hello world.'));
   });
 
   test('soft-hyphenated European words render as single clickable words', async () => {
@@ -811,11 +899,11 @@ describe('TextDisplay', () => {
 
     await waitFor(() => expect(getText).toHaveBeenCalled());
     fireEvent.click(await screen.findByText('Hello'));
-    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Delete this term' }));
 
     await waitFor(() => expect(deleteWord).toHaveBeenCalledWith(1));
     await waitFor(() => expect(screen.getByText(/Untracked/i)).toBeInTheDocument());
-    expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Delete this term' })).not.toBeInTheDocument();
 
     confirmSpy.mockRestore();
   });
@@ -829,9 +917,9 @@ describe('TextDisplay', () => {
       renderTextDisplay({ autoTranslateWords: false });
       fireEvent.click(await screen.findByText('Hello'));
       fireEvent.click(screen.getByRole('button', { name: 'Familiar (3)' }));
-      await waitFor(() => expect(screen.getByRole('button', { name: 'Delete' })).toBeEnabled());
-      fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
-      await waitFor(() => expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument());
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Delete this term' })).toBeEnabled());
+      fireEvent.click(screen.getByRole('button', { name: 'Delete this term' }));
+      await waitFor(() => expect(screen.queryByRole('button', { name: 'Delete this term' })).not.toBeInTheDocument());
       fireEvent.click(screen.getByRole('button', { name: 'Learning (2)' }));
       await waitFor(() => expect(createWord).toHaveBeenCalledTimes(2));
       expect(createWord).toHaveBeenLastCalledWith(1, 'Hello', 2, undefined, 'Hello world.');
@@ -1880,14 +1968,16 @@ describe('TextDisplay', () => {
       fireEvent.click(braveWord);
     });
 
-    const prevBtn = await screen.findByRole('button', { name: /\+ Prev word/i });
-    const nextBtn = await screen.findByRole('button', { name: /\+ Next word/i });
+    const prevBtn = await screen.findByRole('button', { name: /Add previous word to selection/i });
+    const nextBtn = await screen.findByRole('button', { name: /Add next word to selection/i });
     expect(prevBtn).toBeEnabled();
     expect(nextBtn).toBeEnabled();
 
     await act(async () => {
       fireEvent.click(nextBtn);
     });
+
+    expect([...document.querySelectorAll('.reader-word-selected')].map(span => span.textContent)).toEqual(['brave', 'world']);
 
     await waitFor(() => {
       expect(translateSelectionWithContext).toHaveBeenCalledWith(
@@ -1900,11 +1990,11 @@ describe('TextDisplay', () => {
     });
 
     // Now at the end of the first sentence ("world."), + Next word must be disabled
-    expect(screen.getByRole('button', { name: /\+ Next word/i })).toBeDisabled();
-    expect(screen.getByRole('button', { name: /\+ Prev word/i })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /Add next word to selection/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /Add previous word to selection/i })).toBeEnabled();
 
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: /\+ Prev word/i }));
+      fireEvent.click(screen.getByRole('button', { name: /Add previous word to selection/i }));
     });
 
     await waitFor(() => {
@@ -1944,7 +2034,7 @@ describe('TextDisplay', () => {
       else fireEvent.mouseUp(textContent);
       vi.advanceTimersByTime(1000);
     });
-    const nextButton = await screen.findByRole('button', { name: /\+ Next word/i });
+    const nextButton = await screen.findByRole('button', { name: /Add next word to selection/i });
     expect(selection.addRange).not.toHaveBeenCalled();
     await act(async () => { fireEvent.click(nextButton); });
     expect(selection.addRange).toHaveBeenCalled();
@@ -2070,7 +2160,7 @@ describe('TextDisplay', () => {
       fireEvent.click(mrWord);
     });
 
-    const nextBtn = await screen.findByRole('button', { name: /\+ Next word/i });
+    const nextBtn = await screen.findByRole('button', { name: /Add next word to selection/i });
     expect(nextBtn).toBeEnabled();
 
     await act(async () => {
@@ -2118,7 +2208,7 @@ describe('TextDisplay', () => {
       fireEvent.click(mrWord);
     });
 
-    const nextBtn = await screen.findByRole('button', { name: /\+ Next word/i });
+    const nextBtn = await screen.findByRole('button', { name: /Add next word to selection/i });
     expect(nextBtn).toBeEnabled();
 
     await act(async () => {
@@ -2639,7 +2729,9 @@ describe('TextDisplay', () => {
     getTextSrt.mockResolvedValueOnce('1\n00:00:00,000 --> 00:00:02,000\nHello brave\n\n2\n00:00:02,000 --> 00:00:04,000\nworld.\n');
     renderTextDisplay({ autoTranslateWords: true });
     const word = await screen.findByText('brave');
+    openAppearance();
     fireEvent.click(screen.getByRole('switch', { name: 'Flowing text' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Close appearance' }));
     const range = document.createRange();
     range.selectNodeContents(word);
     const selection = {
@@ -2653,7 +2745,7 @@ describe('TextDisplay', () => {
       else fireEvent.mouseUp(transcript);
       vi.advanceTimersByTime(1000);
     });
-    const nextButton = await screen.findByRole('button', { name: /\+ Next word/i });
+    const nextButton = await screen.findByRole('button', { name: /Add next word to selection/i });
     await act(async () => { fireEvent.click(nextButton); });
     expect(selection.addRange.mock.lastCall[0].toString()).toBe('brave world');
     expect(translateSelectionWithContext).toHaveBeenLastCalledWith(
@@ -2861,10 +2953,11 @@ describe('TextDisplay', () => {
     document.head.appendChild(stylesheet);
     try {
       expect(getTextAlignment()).toBe(audio && !sentenceMode ? 'center' : 'start');
-      fireEvent.click(screen.getByTitle('Justified text'));
+      openAppearance();
+      fireEvent.click(screen.getByRole('button', { name: 'Justify', exact: true }));
       expect(textContainer).toHaveClass('reader-align-justify');
       expect(getTextAlignment()).toBe('justify');
-      fireEvent.click(screen.getByTitle('Ragged-right text'));
+      fireEvent.click(screen.getByRole('button', { name: 'Left', exact: true }));
       expect(textContainer).toHaveClass('reader-align-left');
       expect(getTextAlignment()).toBe('start');
     } finally {
@@ -2914,23 +3007,23 @@ describe('TextDisplay', () => {
           vi.advanceTimersByTime(1000);
         });
       }
-      fireEvent.click(screen.getByTitle('Justified text'));
-      fireEvent.click(screen.getByTitle('Increase text size'));
-      if (!audio) fireEvent.click(screen.getByTitle('Toggle paragraph indent'));
-      fireEvent.click(within(screen.getByRole('group', { name: 'Reader text width' })).getByRole('button', { name: 'N' }));
-      fireEvent.click(within(screen.getByRole('group', { name: 'Reading density' })).getByRole('button', { name: 'S' }));
-      if (!mobile) {
-        fireEvent.click(screen.getByLabelText('Set line spacing to relaxed'));
-        fireEvent.click(screen.getByLabelText('Set relaxed paragraph spacing'));
-      }
+      openAppearance();
+      fireEvent.click(screen.getByRole('button', { name: 'Justify', exact: true }));
+      fireEvent.click(screen.getByRole('button', { name: 'Increase text size' }));
+      if (!audio) fireEvent.click(screen.getByRole('switch', { name: 'Indent paragraphs' }));
+      fireEvent.click(within(screen.getByRole('group', { name: 'Reader text width' })).getByRole('button', { name: 'Narrow' }));
+      fireEvent.click(screen.getByText('Advanced layout'));
+      fireEvent.click(within(screen.getByRole('group', { name: 'Reading density' })).getByRole('button', { name: 'Compact' }));
+      fireEvent.click(screen.getByLabelText('Set line spacing to 1.75'));
+      fireEvent.click(screen.getByLabelText('Set relaxed paragraph spacing'));
       expect(textContent).toHaveClass('reader-align-justify');
       if (!audio) expect(textContent).toHaveClass('reader-indent-off');
       expect(textContent).toHaveStyle({ fontSize: '18px' });
       if (audio) {
         expect(textContent.style.getPropertyValue('--reader-content-max-width')).toBe('620px');
         expect(textContent.style.getPropertyValue('--audio-transcript-row-padding')).toBe('0.08em 0.65rem');
-        expect(textContent.style.getPropertyValue('--audio-transcript-row-gap')).toBe(mobile ? '0.35em' : '0.56em');
-        expect(screen.queryByTitle('Toggle paragraph indent')).not.toBeInTheDocument();
+        expect(textContent.style.getPropertyValue('--audio-transcript-row-gap')).toBe('0.56em');
+        expect(screen.queryByRole('switch', { name: 'Indent paragraphs' })).not.toBeInTheDocument();
       }
       expect(JSON.parse(localStorage.getItem('cachedSettings'))).toEqual(expect.objectContaining({
         readerTextAlignment: audio ? 'left' : 'justify', textSize: 18, readerParagraphIndent: audio,
@@ -2940,7 +3033,7 @@ describe('TextDisplay', () => {
       expect(serverSettings).toEqual(expect.objectContaining({
         readerTextAlignment: audio ? 'left' : 'justify', textSize: 18, readerParagraphIndent: audio,
         readerContentWidth: 620, readingDensity: 'compact',
-        ...(!mobile && { lineSpacing: 1.75, paragraphSpacing: 1.6 })
+        lineSpacing: 1.75, paragraphSpacing: 1.6
       }));
       first.unmount();
       // Discard the cache so this reload has to restore the saved API response.
@@ -3194,7 +3287,7 @@ describe('TextDisplay', () => {
       expect(textarea).toHaveValue('first, second');
     });
     // A tracked word keeps the added sense without pressing Enter, at its current status.
-    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(1, 1, 'first, second'));
+    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(1, 1, 'first, second', { textId: 1, sentence: 'Hello world.' }));
     expect(await screen.findByText(/Saved/)).toBeInTheDocument();
     expect(screen.queryByText(/Translation not saved yet/)).not.toBeInTheDocument();
 
@@ -3303,7 +3396,7 @@ describe('TextDisplay', () => {
       fireEvent.click(screen.getByRole('button', { name: /^Save$/ }));
     });
 
-    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(1, 4, 'hola, oi'));
+    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(1, 4, 'hola, oi', { textId: 1, sentence: 'Hello world.' }));
     await waitFor(() => expect(screen.queryByRole('button', { name: /^Save$/ })).not.toBeInTheDocument());
   });
 
@@ -3328,7 +3421,7 @@ describe('TextDisplay', () => {
 
     // Should still render text despite book fetch failure
     expect(await screen.findByText('Chapter')).toBeInTheDocument();
-    expect(await screen.findByText('Book')).toBeInTheDocument();
+    expect(await screen.findByText('Book', { selector: '.clickable-word' })).toBeInTheDocument();
 
     await waitFor(() => {
       expect(updateLastRead).toHaveBeenCalledWith(10, 2);

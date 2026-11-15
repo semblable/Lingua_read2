@@ -25,7 +25,7 @@ npm run demo:preview
 ```
 
 `demo-dist/` is the deployable directory. `demo:test` verifies the sample-data
-boundary, isolation, vocabulary changes, mining, and project-path audio URLs.
+boundary, isolation, vocabulary changes, automatic examples, and project-path audio URLs.
 The normal `npm run build` still builds the normal application into `build/`.
 
 ## What visitors can try
@@ -33,13 +33,13 @@ The normal `npm run build` still builds the normal application into `build/`.
 - The actual Spanish reader, click-to-lookup, familiarity statuses, phrase selection,
   typography controls, sentence mode, and sentence bookmarks.
 - The actual audio-lesson player and cue-based transcript seeking/highlighting.
-- Mining sentences into a temporary list, exposed by **Saved sentences**.
+- Automatically saving the first sentence example with each learning word, exposed by **Saved sentences**.
 - Light/dark appearance and resetting sample vocabulary.
 
 Click an audio transcript word to look it up. Click the surrounding space or
 punctuation on a transcript line to seek to that cue.
 
-Word changes and mined sentences live in the browsing context and reset on reload.
+Word changes and saved examples live in the browsing context and reset on reload.
 Some display preferences use the reader's existing browser storage. The landing
 page embeds the reader in an iframe to isolate its layout; full-screen routes work
 through a hash router, including when opened directly on GitHub Pages.

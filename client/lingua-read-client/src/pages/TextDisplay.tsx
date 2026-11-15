@@ -374,6 +374,7 @@ const TextDisplay = () => {
     pendingSentenceCreditRef,
     toggleAudioPlayback,
     pauseAudioPlayback,
+    resetAudioSyncTargets,
     handleAudioPlaybackStateChange,
     handleLineClick,
     handleAudioTimeUpdate
@@ -409,12 +410,14 @@ const TextDisplay = () => {
     setCreditedSegmentIndices([]);
     setActivePhraseSelection(null);
     setSegmentPlaybackRequest(null);
+    resetAudioSyncTargets();
     lastAutoSegmentPlaybackKeyRef.current = '';
     skipInitialAudioLessonSegmentPlaybackRef.current = true;
     pendingModeEntryFromIndexRef.current = null;
     pendingSentenceCreditRef.current = new Set();
   }, [
     textId,
+    resetAudioSyncTargets,
     setSegmentPlaybackRequest,
     lastAutoSegmentPlaybackKeyRef,
     skipInitialAudioLessonSegmentPlaybackRef,

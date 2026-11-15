@@ -53,6 +53,7 @@ export type UseReaderAudioSyncResult = {
   setAudioPlaybackIntent: (shouldPlay: boolean) => void;
   toggleAudioPlayback: () => void;
   pauseAudioPlayback: () => void;
+  resetAudioSyncTargets: () => void;
   handleAudioPlaybackStateChange: (nextIsPlaying: boolean) => void;
   handleLineClick: (startTime: number) => void;
   handleAudioTimeUpdate: (newTime: number) => void;
@@ -90,6 +91,8 @@ export const useReaderAudioSync = ({
   const [isSpeakingWord, setIsSpeakingWord] = useState(false);
   const [segmentPlaybackRequest, setSegmentPlaybackRequestState] =
     useState<SegmentPlaybackRequest | null>(null);
+  const segmentPlaybackRequestRef = useRef<SegmentPlaybackRequest | null>(null);
+  segmentPlaybackRequestRef.current = segmentPlaybackRequest;
 
   const audioDrivenSentenceSyncRef = useRef(false);
   const lastAutoSegmentPlaybackKeyRef = useRef('');
@@ -104,8 +107,24 @@ export const useReaderAudioSync = ({
     reached: boolean;
     setAt: number;
     initialTime: number;
+    isReplay: boolean;
+    enteredCueBody: boolean;
+    lastCueTime: number;
   } | null>(null);
   const lastTrackedRequestIdRef = useRef<string | null>(null);
+
+  const resetAudioSyncTargets = useCallback(() => {
+    manualTargetRef.current = null;
+    lastAudioDrivenTargetRef.current = null;
+    lastTrackedRequestIdRef.current = null;
+  }, []);
+
+  const getCurrentAudioPosition = useCallback(() => {
+    const elementTime = audioRef.current?.currentTime;
+    return Number.isFinite(elementTime)
+      ? Math.max(audioCurrentTimeRef.current, elementTime as number)
+      : audioCurrentTimeRef.current;
+  }, []);
 
   const timeUpdateSnapshotRef = useRef<TimeUpdateSnapshot>({
     isAudioLesson: false,
@@ -180,15 +199,19 @@ export const useReaderAudioSync = ({
           : findSrtLineIndex(lines, request.startTime);
 
       if (matchedIndex !== -1) {
+        const currentAudioPos = getCurrentAudioPosition();
         manualTargetRef.current = {
           segmentIndex: matchedIndex,
           reached: false,
           setAt: Date.now(),
-          initialTime: audioCurrentTimeRef.current
+          initialTime: currentAudioPos,
+          isReplay: requestId.startsWith('replay-'),
+          enteredCueBody: false,
+          lastCueTime: currentAudioPos
         };
       }
     },
-    []
+    [getCurrentAudioPosition]
   );
 
   const setSegmentPlaybackRequest = useCallback<
@@ -231,9 +254,7 @@ export const useReaderAudioSync = ({
     wasSentenceModeRef.current = isSentenceMode;
 
     if (!isAudioLesson || !isSentenceMode) {
-      manualTargetRef.current = null;
-      lastAudioDrivenTargetRef.current = null;
-      lastTrackedRequestIdRef.current = null;
+      resetAudioSyncTargets();
       return;
     }
 
@@ -244,20 +265,32 @@ export const useReaderAudioSync = ({
       lastAudioDrivenTargetRef.current = null;
       return;
     }
+    audioDrivenSentenceSyncRef.current = false;
+    lastAudioDrivenTargetRef.current = null;
 
     if (
       wasSentenceMode &&
       currentSegmentIndex !== prevSegmentIndex &&
       !skipInitialAudioLessonSegmentPlaybackRef.current
     ) {
+      const currentAudioPos = getCurrentAudioPosition();
       manualTargetRef.current = {
         segmentIndex: currentSegmentIndex,
         reached: false,
         setAt: Date.now(),
-        initialTime: audioCurrentTimeRef.current
+        initialTime: currentAudioPos,
+        isReplay: false,
+        enteredCueBody: false,
+        lastCueTime: currentAudioPos
       };
     }
-  }, [currentSegmentIndex, isAudioLesson, isSentenceMode]);
+  }, [currentSegmentIndex, getCurrentAudioPosition, isAudioLesson, isSentenceMode, resetAudioSyncTargets]);
+
+  useEffect(() => {
+    if (srtLines.length === 0) {
+      resetAudioSyncTargets();
+    }
+  }, [srtLines.length, resetAudioSyncTargets]);
 
   useEffect(() => {
     syncManualTargetFromRequest(
@@ -412,11 +445,15 @@ export const useReaderAudioSync = ({
         if (!activeTarget.reached) {
           const isShortCue = targetLine.endTime - targetLine.startTime <= 0.15;
           const isPaused = audioRef.current?.paused !== false;
+          const cueDuration = Math.max(0, targetLine.endTime - targetLine.startTime);
+          const rewindMargin = Math.min(0.25, Math.max(0.03, cueDuration * 0.25));
           const elapsedSinceSet = Date.now() - activeTarget.setAt;
           const awaitingRewindSeek =
-            activeTarget.initialTime >= targetLine.startTime + 0.25 &&
-            newTime > targetLine.startTime + 0.25 &&
-            elapsedSinceSet < 350;
+            (activeTarget.initialTime >= targetLine.startTime + rewindMargin ||
+              (activeTarget.isReplay && activeTarget.initialTime >= targetLine.endTime - 0.1)) &&
+            newTime > targetLine.startTime + rewindMargin &&
+            !(newTime < activeTarget.initialTime - 0.15) &&
+            elapsedSinceSet < 800;
           const arrived =
             !awaitingRewindSeek &&
             newTime >= targetLine.startTime - 0.5 &&
@@ -429,7 +466,12 @@ export const useReaderAudioSync = ({
             }
             manualTargetRef.current = null;
           } else {
-            activeTarget = { ...activeTarget, reached: true };
+            activeTarget = {
+              ...activeTarget,
+              reached: true,
+              enteredCueBody: newTime >= targetLine.startTime,
+              lastCueTime: newTime
+            };
             manualTargetRef.current = activeTarget;
           }
         }
@@ -440,33 +482,72 @@ export const useReaderAudioSync = ({
             newTime <= targetLine.endTime + 0.05;
 
           if (inTargetOrBoundary) {
-            const isPreStartQuantization = newTime < targetLine.startTime;
-            const isAtEndBoundaryWhileStopping =
-              newTime >= targetLine.endTime - 0.05 &&
-              (audioRef.current?.paused !== false || !snapIsAudioPlaying);
-
-            if (
-              isPreStartQuantization ||
-              isAtEndBoundaryWhileStopping ||
-              currentLineIndex === target.segmentIndex
-            ) {
-              if (snapCurrentSegmentIndex !== target.segmentIndex) {
-                audioDrivenSentenceSyncRef.current = true;
-                lastAudioDrivenTargetRef.current = target.segmentIndex;
-                setCurrentSegmentIndex(target.segmentIndex);
+            const cueDuration = Math.max(0, targetLine.endTime - targetLine.startTime);
+            let isPreStartQuantization = newTime < targetLine.startTime;
+            if (isPreStartQuantization && activeTarget.enteredCueBody) {
+              const hasRepeats = (segmentPlaybackRequestRef.current?.repeatCount ?? 1) > 1;
+              const nearEndWindow = Math.max(
+                targetLine.startTime,
+                targetLine.endTime - Math.max(0.5, cueDuration * 0.4)
+              );
+              if (hasRepeats && activeTarget.lastCueTime >= nearEndWindow) {
+                activeTarget = {
+                  ...activeTarget,
+                  enteredCueBody: false,
+                  lastCueTime: newTime
+                };
+                manualTargetRef.current = activeTarget;
+              } else {
+                // Playback already entered this cue previously; treat moving back before startTime as a backward scrub.
+                isPreStartQuantization = false;
+                manualTargetRef.current = null;
               }
-              if (targetLine.id !== snapCurrentSrtLineId) {
-                setCurrentSrtLineId(targetLine.id);
-              }
-              return;
             }
 
-            if (
-              newTime >= targetLine.endTime &&
-              audioRef.current?.paused === false &&
-              snapIsAudioPlaying
-            ) {
-              manualTargetRef.current = null;
+            if (manualTargetRef.current === activeTarget) {
+              const isAtEndBoundaryWhileStopping =
+                newTime >= targetLine.endTime - 0.05 &&
+                (audioRef.current?.paused !== false || !snapIsAudioPlaying);
+
+              if (
+                isPreStartQuantization ||
+                isAtEndBoundaryWhileStopping ||
+                currentLineIndex === target.segmentIndex
+              ) {
+                if (!activeTarget.enteredCueBody && newTime >= targetLine.startTime) {
+                  activeTarget = {
+                    ...activeTarget,
+                    enteredCueBody: true,
+                    lastCueTime: newTime
+                  };
+                  manualTargetRef.current = activeTarget;
+                } else if (newTime !== activeTarget.lastCueTime) {
+                  activeTarget = {
+                    ...activeTarget,
+                    lastCueTime: newTime
+                  };
+                  manualTargetRef.current = activeTarget;
+                }
+
+                if (snapCurrentSegmentIndex !== target.segmentIndex) {
+                  audioDrivenSentenceSyncRef.current = true;
+                  lastAudioDrivenTargetRef.current = target.segmentIndex;
+                  setCurrentSegmentIndex(target.segmentIndex);
+                }
+                if (targetLine.id !== snapCurrentSrtLineId) {
+                  setCurrentSrtLineId(targetLine.id);
+                }
+                return;
+              }
+
+              if (
+                (newTime >= targetLine.endTime ||
+                  (activeTarget.enteredCueBody && currentLineIndex > target.segmentIndex)) &&
+                audioRef.current?.paused === false &&
+                snapIsAudioPlaying
+              ) {
+                manualTargetRef.current = null;
+              }
             }
           } else {
             manualTargetRef.current = null;
@@ -537,6 +618,7 @@ export const useReaderAudioSync = ({
     setAudioPlaybackIntent,
     toggleAudioPlayback,
     pauseAudioPlayback,
+    resetAudioSyncTargets,
     handleAudioPlaybackStateChange,
     handleLineClick,
     handleAudioTimeUpdate

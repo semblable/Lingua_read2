@@ -39,9 +39,16 @@ export const useAudiobookSegmentPlayback = ({
   setCurrentTime
 }: UseAudiobookSegmentPlaybackArgs): UseAudiobookSegmentPlaybackResult => {
   const segmentPlaybackRef = useRef<SegmentPlaybackState>(createSegmentPlaybackState());
+  const pendingRewindRef = useRef<{
+    startTime: number;
+    rewindMargin: number;
+    fromTime: number;
+    setAt: number;
+  } | null>(null);
 
   const resetSegmentPlayback = useCallback(() => {
     segmentPlaybackRef.current = cancelSegmentPlayback();
+    pendingRewindRef.current = null;
   }, []);
 
   // Reset segment state on content-key change. Registered BEFORE the apply
@@ -50,6 +57,7 @@ export const useAudiobookSegmentPlayback = ({
   // 419 of the legacy hook preceded the segment-apply effect at line 525.
   useEffect(() => {
     segmentPlaybackRef.current = cancelSegmentPlayback();
+    pendingRewindRef.current = null;
   }, [contentKey]);
 
   useEffect(() => {
@@ -67,6 +75,18 @@ export const useAudiobookSegmentPlayback = ({
     if (segmentPlaybackRef.current.requestId === segmentPlaybackRequest.requestId) return;
 
     const nextState = applySegmentRequest(segmentPlaybackRequest);
+    const prevTime = Number.isFinite(audio.currentTime) ? audio.currentTime : 0;
+    const cueDuration = Math.max(0, nextState.endTime - nextState.startTime);
+    const rewindMargin = Math.min(0.25, Math.max(0.05, cueDuration * 0.25));
+    pendingRewindRef.current =
+      prevTime > nextState.startTime + rewindMargin
+        ? {
+            startTime: nextState.startTime,
+            rewindMargin,
+            fromTime: prevTime,
+            setAt: Date.now()
+          }
+        : null;
     segmentPlaybackRef.current = nextState;
 
     userPositionIntentContentKeyRef.current = contentKey;
@@ -76,6 +96,20 @@ export const useAudiobookSegmentPlayback = ({
   }, [audioRef, contentKey, requestAudioPlay, resetSegmentPlayback, segmentPlaybackRequest, setCurrentTime, userPositionIntentContentKeyRef]);
 
   const handleSegmentBoundary = useCallback((currentTime: number): SegmentBoundaryOutcome => {
+    const pendingRewind = pendingRewindRef.current;
+    if (pendingRewind) {
+      if (
+        currentTime <= pendingRewind.startTime + pendingRewind.rewindMargin ||
+        currentTime < pendingRewind.fromTime - 0.15
+      ) {
+        pendingRewindRef.current = null;
+      } else if (Date.now() - pendingRewind.setAt < 350) {
+        return { action: 'continue' };
+      } else {
+        pendingRewindRef.current = null;
+      }
+    }
+
     const boundary = evaluateSegmentBoundary(segmentPlaybackRef.current, currentTime);
     if (boundary.action === 'continue') {
       return { action: 'continue' };

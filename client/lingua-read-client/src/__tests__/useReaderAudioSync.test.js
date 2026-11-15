@@ -472,5 +472,95 @@ describe('useReaderAudioSync', () => {
     });
     expect(setCurrentSegmentIndex).not.toHaveBeenCalled();
     expect(result.current.currentSrtLineId).toBe(2);
+
+    // Once playback entered cue 1 (2.6s) without repeats, scrubbing backward below 2.5s switches cleanly to cue 0.
+    act(() => {
+      result.current.handleAudioTimeUpdate(2.2);
+    });
+    expect(setCurrentSegmentIndex).toHaveBeenCalledWith(0);
+    expect(result.current.currentSrtLineId).toBe(1);
+  });
+
+  test('replay audio supports repeatCount=2 loop-backs, short <=0.25s cues, and lesson switches clear manual target', () => {
+    const setCurrentSegmentIndex = vi.fn();
+    const srtLines = [
+      { id: 1, startTime: 0, endTime: 2.5, text: 'First' },
+      { id: 2, startTime: 2.5, endTime: 5.0, text: 'Second' },
+    ];
+    const { result, rerender } = renderHook(
+      (props) => {
+        const listRef = useRef(null);
+        return useReaderAudioSync({ listRef, setCurrentSegmentIndex, ...props });
+      },
+      {
+        initialProps: {
+          isAudioLesson: true,
+          isSentenceMode: true,
+          isMobile: false,
+          displayMode: 'audio',
+          srtLines,
+          currentSegmentIndex: 1
+        }
+      }
+    );
+
+    result.current.audioRef.current = { paused: false, seeking: false, currentTime: 4.8 };
+    act(() => {
+      result.current.handleAudioPlaybackStateChange(true);
+      result.current.setSegmentPlaybackRequest({
+        requestId: 'replay-1-loop',
+        startTime: 2.5,
+        endTime: 5.0,
+        repeatCount: 2,
+        forcePlay: true
+      });
+      result.current.handleAudioTimeUpdate(2.6);
+      result.current.handleAudioTimeUpdate(4.85);
+    });
+    setCurrentSegmentIndex.mockClear();
+
+    // RepeatCount=2 loop-back landing slightly before cue start (2.25s) must hold cue 1.
+    act(() => {
+      result.current.handleAudioTimeUpdate(2.25);
+    });
+    expect(setCurrentSegmentIndex).not.toHaveBeenCalled();
+    expect(result.current.currentSrtLineId).toBe(2);
+
+    // Clearing srtLines (e.g., navigating to a new lesson) drops stale manual target.
+    rerender({
+      isAudioLesson: true,
+      isSentenceMode: true,
+      isMobile: false,
+      displayMode: 'audio',
+      srtLines: [],
+      currentSegmentIndex: 0
+    });
+    const newLessonLines = [
+      { id: 10, startTime: 0, endTime: 0.2, text: 'Short' },
+      { id: 11, startTime: 0.2, endTime: 0.4, text: 'Tiny' }
+    ];
+    rerender({
+      isAudioLesson: true,
+      isSentenceMode: true,
+      isMobile: false,
+      displayMode: 'audio',
+      srtLines: newLessonLines,
+      currentSegmentIndex: 1
+    });
+
+    // Simulate restored initialSeek position on audioRef without prior timeupdate, then Replay Audio on <=0.25s cue.
+    result.current.audioRef.current = { paused: false, seeking: false, currentTime: 0.38 };
+    act(() => {
+      result.current.setSegmentPlaybackRequest({
+        requestId: 'replay-1-short',
+        startTime: 0.2,
+        endTime: 0.4,
+        repeatCount: 1,
+        forcePlay: true
+      });
+      result.current.handleAudioTimeUpdate(0.39);
+      result.current.handleAudioTimeUpdate(0.41);
+    });
+    expect(setCurrentSegmentIndex).not.toHaveBeenCalled();
   });
 });

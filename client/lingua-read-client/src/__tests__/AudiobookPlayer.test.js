@@ -1337,4 +1337,69 @@ describe('AudiobookPlayer', () => {
     expect(onTimeUpdate).not.toHaveBeenCalled();
   });
 
+  test('replay audio request rewinding from endTime ignores stale pre-seek timeupdate even when seeking is false', async () => {
+    getAudioLessonProgress.mockResolvedValue({ currentPosition: 0 });
+    const onTimeUpdate = vi.fn();
+
+    const { container, rerender } = render(
+      <AudiobookPlayer
+        type="lesson"
+        audioSrc="https://example.com/lesson.mp3"
+        textId={42}
+        languageId={5}
+        onTimeUpdate={onTimeUpdate}
+        segmentPlaybackRequest={null}
+      />
+    );
+
+    await waitFor(() => {
+      expect(getAudioLessonProgress).toHaveBeenCalledWith(42);
+    });
+    await waitFor(() => {
+      expect(screen.getByTitle(/Play/)).toBeInTheDocument();
+    });
+
+    const audio = container.querySelector('audio');
+    Object.defineProperty(audio, 'currentTime', {
+      configurable: true,
+      writable: true,
+      value: 4.95
+    });
+
+    rerender(
+      <AudiobookPlayer
+        type="lesson"
+        audioSrc="https://example.com/lesson.mp3"
+        textId={42}
+        languageId={5}
+        onTimeUpdate={onTimeUpdate}
+        segmentPlaybackRequest={{
+          requestId: 'replay-1-preseek',
+          startTime: 2.5,
+          endTime: 5.0,
+          repeatCount: 1,
+          forcePlay: true
+        }}
+      />
+    );
+
+    window.HTMLMediaElement.prototype.pause.mockClear();
+
+    // Pre-seek tick near endTime arrives with seeking === false right after replay starts.
+    act(() => {
+      audio.currentTime = 4.98;
+      fireEvent.timeUpdate(audio);
+    });
+    expect(window.HTMLMediaElement.prototype.pause).not.toHaveBeenCalled();
+
+    // Once seek lands inside cue start, normal endTime boundary stop works.
+    act(() => {
+      audio.currentTime = 2.55;
+      fireEvent.timeUpdate(audio);
+      audio.currentTime = 5.0;
+      fireEvent.timeUpdate(audio);
+    });
+    expect(window.HTMLMediaElement.prototype.pause).toHaveBeenCalled();
+  });
+
 });

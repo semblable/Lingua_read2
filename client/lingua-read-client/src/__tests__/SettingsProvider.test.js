@@ -47,11 +47,14 @@ describe('SettingsProvider', () => {
     localStorage.setItem('cachedSettings', JSON.stringify({ theme: 'dark', readerCharacterShortcutsEnabled: true }));
     getUserSettings.mockResolvedValue({ theme: 'high-contrast-dark', readerCharacterShortcutsEnabled: false, readerStatusMarkersEnabled: true });
     const { unmount } = render(<SettingsProvider><Probe /></SettingsProvider>);
-    await waitFor(() => expect(screen.getByTestId('shortcuts')).toHaveTextContent('false'));
-    expect(document.body).toHaveClass('high-contrast-dark-theme', 'reader-status-markers');
-    expect(localStorage.getItem('theme')).toBe('high-contrast-dark');
-    expect(cached().readerCharacterShortcutsEnabled).toBe(false);
-    expect(cached().readerStatusMarkersEnabled).toBe(true);
+    // Rendering the settings can precede the effects that apply and cache them.
+    await waitFor(() => {
+      expect(screen.getByTestId('shortcuts')).toHaveTextContent('false');
+      expect(document.body).toHaveClass('high-contrast-dark-theme', 'reader-status-markers');
+      expect(localStorage.getItem('theme')).toBe('high-contrast-dark');
+      expect(cached().readerCharacterShortcutsEnabled).toBe(false);
+      expect(cached().readerStatusMarkersEnabled).toBe(true);
+    });
     unmount();
 
     getUserSettings.mockReturnValue(new Promise(() => {}));
@@ -86,7 +89,7 @@ describe('SettingsProvider', () => {
     expect(screen.getByTestId('width')).toHaveTextContent('60');
 
     await waitFor(() => expect(screen.getByTestId('width')).toHaveTextContent('70'));
-    expect(cached().leftPanelWidth).toBe(70);
+    await waitFor(() => expect(cached().leftPanelWidth).toBe(70));
   });
 
   test('a delayed settings load preserves toolbar edits made while it was loading', async () => {
@@ -100,7 +103,7 @@ describe('SettingsProvider', () => {
     await waitFor(() => expect(screen.getByTestId('theme')).toHaveTextContent('dark'));
     expect(screen.getByTestId('width')).toHaveTextContent('60');
     expect(screen.getByTestId('alignment')).toHaveTextContent('justify');
-    expect(cached().readerTextAlignment).toBe('justify');
+    await waitFor(() => expect(cached().readerTextAlignment).toBe('justify'));
   });
 
   test('an older load cannot overwrite a newer settings refresh', async () => {

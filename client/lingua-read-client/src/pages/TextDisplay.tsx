@@ -2580,7 +2580,7 @@ const TextDisplay = () => {
   const pendingWordCount = wordStatusStates.filter(state => state.pending).length;
   const queuedWordCount = wordStatusStates.filter(state => state.queuedOffline && !state.pending).length;
   const wordStatusFeedback = <>
-      <div className="reader-save-feedback px-3" role="status" aria-live="polite" aria-atomic="true">
+      <div className="reader-save-feedback visually-hidden" role="status" aria-live="polite" aria-atomic="true">
         {wordStatusAnnouncement}
       </div>
       <div className="reader-save-pending px-3 small">

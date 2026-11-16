@@ -8,12 +8,30 @@
   overflow-x: hidden;
 }
 
-/* Save progress and its delayed live announcement must not move hovered words. */
-.reader-save-feedback,
 .reader-save-pending {
-  min-block-size: 1.5em;
   line-height: 1.5;
   overflow-wrap: anywhere;
+}
+
+/* Keep the lookup sheet's grading controls steady while a save is pending. */
+.word-info-sheet .reader-save-pending {
+  min-block-size: 1.5em;
+}
+
+/* Keep save progress out of the passage flow without reserving an empty bar. */
+.text-display-wrapper > .reader-save-pending:not(:empty) {
+  position: fixed;
+  inset-inline-start: var(--space-md);
+  bottom: calc(var(--space-md) + env(safe-area-inset-bottom, 0px));
+  z-index: 1030;
+  max-width: min(24rem, calc(100vw - 7rem));
+  padding-block: var(--space-xs);
+  color: var(--theme-text);
+  background: var(--theme-surface-bg);
+  border: 1px solid var(--theme-border-color);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-sm);
+  pointer-events: none;
 }
 
 .lesson-header .lesson-header-body {

@@ -59,9 +59,8 @@ test('markers are independent of theme and keep Known/Ignored plain', async ({ p
   await page.screenshot({ path: info.outputPath('experimental-markers.png'), animations: 'disabled' });
 });
 
-test('desktop reflow and text-spacing overrides retain native controls', async ({ page, openLayout }) => {
+test('desktop reflow and text-spacing overrides retain native controls', { tag: '@desktop-reflow' }, async ({ page, openLayout }) => {
   await openLayout('presentation');
-  await page.setViewportSize({ width: 320, height: 900 });
   await unmaskRootOverflow(page);
   await page.addStyleTag({ content: 'p, h1, h2, h3, label, button, summary, td, th { line-height: 1.5 !important; letter-spacing: .12em !important; word-spacing: .16em !important; } p { margin-bottom: 2em !important; }' });
   await expectPageFits(page);
@@ -98,8 +97,7 @@ test('contrast measurement retains translucent ancestor layers and group opacity
   expect(contrast.ratio).toBeLessThan(2);
 });
 
-test('narrow word lookup contains focus, closes with Escape and returns to its exact clicked span', async ({ page, openLayout }) => {
-  await page.setViewportSize({ width: 320, height: 900 });
+test('narrow word lookup contains focus, closes with Escape and returns to its exact clicked span', { tag: '@narrow-only' }, async ({ page, openLayout }) => {
   await openLayout('texts/801?mixed=1');
   const word = page.locator('.text-content .clickable-word').filter({ hasText: /^rivière$/ }).first();
   await word.click();

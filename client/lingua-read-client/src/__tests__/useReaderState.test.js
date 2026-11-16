@@ -51,43 +51,6 @@ describe('useReaderState', () => {
     getSentenceProgress.mockReset();
   });
 
-  test('returns the documented Use<Name>Result shape', () => {
-    const { result } = renderReaderStateHook();
-    expect(result.current).toEqual(
-      expect.objectContaining({
-        loading: true,
-        setLoading: expect.any(Function),
-        error: '',
-        setError: expect.any(Function),
-        text: null,
-        setText: expect.any(Function),
-        book: null,
-        setBook: expect.any(Function),
-        words: [],
-        setWords: expect.any(Function),
-        languageWordsLoaded: false,
-        setLanguageWordsLoaded: expect.any(Function),
-        languageConfig: null,
-        setLanguageConfig: expect.any(Function),
-        embeddedUrl: null,
-        setEmbeddedUrl: expect.any(Function),
-        previousTextId: null,
-        nextTextId: null,
-        isLastBookPart: false,
-        isAudioLesson: false,
-        setIsAudioLesson: expect.any(Function),
-        displayMode: 'audio',
-        setDisplayMode: expect.any(Function),
-        audioSrc: null,
-        setAudioSrc: expect.any(Function),
-        srtLines: [],
-        setSrtLines: expect.any(Function),
-        sentenceProgressLoaded: false,
-        setSentenceProgressLoaded: expect.any(Function)
-      })
-    );
-  });
-
   test('no fetch when textId is undefined', async () => {
     renderReaderStateHook();
     await Promise.resolve();

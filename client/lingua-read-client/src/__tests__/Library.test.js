@@ -361,7 +361,7 @@ describe('Library', () => {
       expect(container.querySelector('img.library-text-photo')).toBeNull();
     });
 
-    test('card titles wrap to two lines, with the whole title on hover', async () => {
+    test('card titles retain full title attributes and omit the text-truncate class', async () => {
       const long = 'Por que o Japão tem tão poucas lixeiras nas ruas e ainda assim é tão limpo?';
       getLibraryContents.mockResolvedValue({
         ...sampleContents,

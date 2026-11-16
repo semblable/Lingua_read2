@@ -156,7 +156,7 @@ public class LessonLoadingOptimizationTests
     }
 
     [Fact]
-    public async Task GetWordsByLanguage_ExplicitSort_IgnoresSkipSort()
+    public async Task GetWordsByLanguage_ExplicitSort_ReturnsWordsSortedDescending()
     {
         await using var context = CreateContext();
         var userId = Guid.NewGuid();
@@ -165,14 +165,34 @@ public class LessonLoadingOptimizationTests
         context.ChangeTracker.Clear();
 
         var controller = CreateWordsController(context, userId);
-        // skipSort=false (default) + explicit sort
-        var result = await controller.GetWordsByLanguage(1, sortBy: "term_desc");
+        var result = await controller.GetWordsByLanguage(1, sortBy: "term_desc", skipSort: false);
 
         var okResult = Assert.IsType<ActionResult<IEnumerable<WordResponseDto>>>(result);
         var words = okResult.Value!.ToList();
         Assert.Equal("gamma", words[0].Term);
         Assert.Equal("beta", words[1].Term);
         Assert.Equal("alpha", words[2].Term);
+    }
+
+    [Theory]
+    [InlineData(false, null, "ORDER BY w.\"Term\"")]
+    [InlineData(false, "term_desc", "ORDER BY w.\"Term\" DESC")]
+    [InlineData(true, null, null)]
+    [InlineData(true, "term_desc", null)]
+    public async Task GetWordsByLanguage_SkipSort_ControlsSqlOrdering(
+        bool skipSort, string? sortBy, string? expectedOrderBy)
+    {
+        var capture = new NpgsqlQueryCapture();
+        await using var context = capture.CreateContext();
+        var controller = CreateWordsController(context, Guid.NewGuid());
+
+        var query = await capture.CaptureAsync(() =>
+            controller.GetWordsByLanguage(1, sortBy: sortBy, skipSort: skipSort));
+
+        if (expectedOrderBy == null)
+            Assert.DoesNotContain("ORDER BY", query.Sql, StringComparison.OrdinalIgnoreCase);
+        else
+            Assert.EndsWith(expectedOrderBy, query.Sql.TrimEnd());
     }
 
     [Fact]

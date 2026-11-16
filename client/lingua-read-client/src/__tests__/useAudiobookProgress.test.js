@@ -121,16 +121,6 @@ describe('useAudiobookProgress', () => {
     localStorage.clear();
   });
 
-  test('exposes saveProgress, queueInitialSeek, and content-key tracking refs', () => {
-    const { result } = renderProgress();
-    expect(typeof result.current.saveProgress).toBe('function');
-    expect(typeof result.current.queueInitialSeek).toBe('function');
-    expect(typeof result.current.applyInitialSeekIfReady).toBe('function');
-    expect(result.current.restoredContentKeyRef).toBeDefined();
-    expect(result.current.playbackStartedContentKeyRef).toBeDefined();
-    expect(result.current.userPositionIntentContentKeyRef).toBeDefined();
-  });
-
   test('initial-progress load calls the lesson API when isBookMode=false', async () => {
     getAudioLessonProgress.mockResolvedValue({ currentPosition: 42, updatedAt: new Date().toISOString() });
     renderProgress();

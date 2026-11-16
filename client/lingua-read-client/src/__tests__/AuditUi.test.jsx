@@ -37,7 +37,7 @@ test.each(['create', 'rename'])('folder %s exposes native, named color buttons w
   expect(swatch).toHaveAttribute('aria-pressed', 'false');
 });
 
-test.each(['goal', 'manual'])('%s dialog allows its body to scroll within the viewport', async (kind) => {
+test.each(['goal', 'manual'])('%s dialog renders the scrollable modal class and a body', async (kind) => {
   if (kind === 'goal') render(<GoalModal show onHide={vi.fn()} />);
   else render(<ManualEntryModal show onHide={vi.fn()} onSubmitSuccess={vi.fn()} />);
   await waitFor(() => expect(document.querySelector('.modal-dialog-scrollable')).toBeInTheDocument());

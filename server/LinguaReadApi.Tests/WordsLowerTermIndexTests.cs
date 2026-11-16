@@ -1,16 +1,22 @@
+using System.Security.Claims;
+using System.Text.RegularExpressions;
+using LinguaReadApi.Controllers;
 using LinguaReadApi.Data;
 using LinguaReadApi.Data.Migrations;
-using Microsoft.EntityFrameworkCore;
+using LinguaReadApi.Models;
+using LinguaReadApi.Services.Srs;
+using LinguaReadApi.Services.Tokenization;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore.Migrations.Operations;
+using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
 namespace LinguaReadApi.Tests;
 
 /// <summary>
-/// The case-insensitive term lookups only use IX_Words_UserId_LanguageId_LowerTerm while the SQL EF
-/// generates for <c>Term.ToLower()</c> matches the index expression, <c>lower("Term")</c>. Nothing
-/// fails if that drifts — the queries just go back to reading the whole language's vocabulary — so
-/// these tests pin both sides.
+/// Pin the lower(Term) index and the production query predicates that can use it.
+/// Languages with normalized/fallback headwords intentionally use a different path.
 /// </summary>
 public class WordsLowerTermIndexTests
 {
@@ -27,32 +33,109 @@ public class WordsLowerTermIndexTests
     }
 
     [Fact]
-    public void TermLookups_TranslateToLowerTermExpression()
+    public async Task CreateWord_ProbesNormalizedTermWithScopedLowerTermPredicate()
     {
-        using var context = CreateNpgsqlContext();
         var userId = Guid.NewGuid();
-        var key = "hola";
-        var keys = new List<string> { "hola", "amigo" };
+        var language = Spanish();
+        var capture = new NpgsqlQueryCapture(language, new Text
+        {
+            TextId = 42, UserId = userId, LanguageId = language.LanguageId,
+            Title = "Fixture", Content = "Hola amigo"
+        });
+        await using var context = capture.CreateContext();
+        var controller = CreateController(context, userId);
 
-        // Shape of WordsController.CreateWord's existing-word probe.
-        var single = context.Words
-            .Where(w => w.Term.ToLower() == key && w.UserId == userId && w.LanguageId == 1)
-            .ToQueryString();
-        // Shape of WordLinker's batch probe and SrsUnknownWordCounter's vocabulary query.
-        var batch = context.Words
-            .Where(w => w.UserId == userId && w.LanguageId == 1 && keys.Contains(w.Term.ToLower()))
-            .ToQueryString();
+        var query = await capture.CaptureAsync(() => controller.CreateWord(new CreateWordDto
+        {
+            TextId = 42, Term = "  HOLA  ", Status = 1
+        }));
 
-        Assert.Contains(@"lower(w.""Term"")", single);
-        Assert.Contains(@"lower(w.""Term"")", batch);
+        AssertIndexedTermLookup(query, userId, language.LanguageId, "hola");
     }
 
-    private static AppDbContext CreateNpgsqlContext()
+    [Fact]
+    public async Task AddTermsBatch_ProbesOnlyNormalizedDistinctTermsWithScopedLowerTermPredicate()
     {
-        // ToQueryString() compiles the real Npgsql translation without opening a connection.
-        var options = new DbContextOptionsBuilder<AppDbContext>()
-            .UseNpgsql("Host=localhost;Database=translation-check;Username=none;Password=none")
-            .Options;
-        return new AppDbContext(options);
+        var userId = Guid.NewGuid();
+        var language = Spanish();
+        var capture = new NpgsqlQueryCapture(language);
+        await using var context = capture.CreateContext();
+        var controller = CreateController(context, userId);
+
+        var query = await capture.CaptureAsync(() => controller.AddTermsBatch(new AddTermBatchDto
+        {
+            LanguageId = language.LanguageId,
+            Terms = [new() { Term = " HOLA " }, new() { Term = "amigo" }, new() { Term = "hola" }]
+        }));
+
+        AssertIndexedTermLookup(query, userId, language.LanguageId, "hola", "amigo");
     }
+
+    [Fact]
+    public async Task WordLinker_ProbesTextTokensWithScopedLowerTermPredicate()
+    {
+        var userId = Guid.NewGuid();
+        var language = Spanish();
+        var capture = new NpgsqlQueryCapture(language, new Text
+        {
+            TextId = 42, UserId = userId, LanguageId = language.LanguageId,
+            Title = "Fixture", Content = "HOLA amigo hola"
+        });
+        await using var context = capture.CreateContext();
+
+        var query = await capture.CaptureAsync(() =>
+            WordLinker.LinkAsync(context, 42, "HOLA amigo hola", language.LanguageId, userId));
+
+        AssertIndexedTermLookup(query, userId, language.LanguageId, "hola", "amigo");
+    }
+
+    [Fact]
+    public async Task SrsUnknownWordCounter_ProbesSentenceTokensWithScopedLowerTermPredicate()
+    {
+        var userId = Guid.NewGuid();
+        var language = Spanish();
+        var capture = new NpgsqlQueryCapture();
+        await using var context = capture.CreateContext();
+
+        var query = await capture.CaptureAsync(() => SrsUnknownWordCounter.CountAsync(context, userId,
+            [new(1, 42, language.LanguageId, "HOLA amigo hola")],
+            new Dictionary<int, Language> { [language.LanguageId] = language }));
+
+        AssertIndexedTermLookup(query, userId, language.LanguageId, "hola", "amigo");
+    }
+
+    private static void AssertIndexedTermLookup(
+        NpgsqlQueryCapture.CapturedQuery query, Guid userId, int languageId, params string[] expectedKeys)
+    {
+        var whereStart = query.Sql.IndexOf("\nWHERE ", StringComparison.Ordinal);
+        Assert.True(whereStart >= 0, query.Sql);
+        var where = query.Sql[whereStart..];
+        Assert.Equal(userId, ParameterFor(@"w\.""UserId"" = @(?<parameter>\w+)"));
+        Assert.Equal(languageId, ParameterFor(@"w\.""LanguageId"" = @(?<parameter>\w+)"));
+        var keys = Assert.IsAssignableFrom<IEnumerable<string>>(
+            ParameterFor(@"lower\(w\.""Term""\) = ANY \(@(?<parameter>\w+)\)"));
+        Assert.Equal(expectedKeys.OrderBy(k => k), keys.OrderBy(k => k));
+
+        object? ParameterFor(string predicate)
+        {
+            var match = Regex.Match(where, predicate);
+            Assert.True(match.Success, $"Missing indexed lookup predicate {predicate}:\n{query.Sql}");
+            return query.Parameters[match.Groups["parameter"].Value];
+        }
+    }
+
+    private static Language Spanish() => new() { LanguageId = 7, Code = "es", Name = "Spanish" };
+
+    private static WordsController CreateController(AppDbContext context, Guid userId) =>
+        new(context, NullLogger<WordsController>.Instance)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = new DefaultHttpContext
+                {
+                    User = new ClaimsPrincipal(new ClaimsIdentity(
+                        [new Claim(ClaimTypes.NameIdentifier, userId.ToString())], "TestAuth"))
+                }
+            }
+        };
 }

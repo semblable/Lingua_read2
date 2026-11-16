@@ -11,7 +11,7 @@ export default [
     ignores: ['build/**', 'dist/**', 'node_modules/**', 'coverage/**'],
   },
   {
-    files: ['src/**/*.{js,jsx,ts,tsx}', 'browser-tests/**/*.{ts,tsx}', 'playwright.config.ts', 'vite.browser.config.ts'],
+    files: ['src/**/*.{js,jsx,ts,tsx}', 'browser-tests/**/*.{ts,tsx}', 'app-smoke/**/*.ts', 'playwright.config.ts', 'playwright.app.config.ts', 'vite.browser.config.ts'],
     languageOptions: {
       ecmaVersion: 2022,
       sourceType: 'module',
@@ -58,7 +58,7 @@ export default [
   {
     // tsc --noEmit handles undefined identifier checks; ESLint's no-undef can't
     // see TS-only types (RequestInit, React namespace, etc.).
-    files: ['src/**/*.{ts,tsx}', 'browser-tests/**/*.{ts,tsx}', 'playwright.config.ts', 'vite.browser.config.ts'],
+    files: ['src/**/*.{ts,tsx}', 'browser-tests/**/*.{ts,tsx}', 'app-smoke/**/*.ts', 'playwright.config.ts', 'playwright.app.config.ts', 'vite.browser.config.ts'],
     rules: {
       'no-undef': 'off',
     },
@@ -82,5 +82,10 @@ export default [
         suite: 'readonly',
       },
     },
+  },
+  {
+    files: ['scripts/run-app-smoke.mjs'],
+    languageOptions: { globals: globals.node },
+    rules: js.configs.recommended.rules,
   },
 ];

@@ -157,6 +157,48 @@ jobs:
         env:
           DEMO_BASE_PATH: /Lingua_read2/
 
+  ci_app_smoke:
+    name: Test production app persistence
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node
+        uses: actions/setup-node@v7.1.0
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: client/lingua-read-client/package-lock.json
+
+      - name: Install client test dependencies
+        run: npm ci --legacy-peer-deps
+        working-directory: client/lingua-read-client
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+        working-directory: client/lingua-read-client
+
+      # Uses the production Dockerfiles, nginx, API, migrations and PostgreSQL.
+      # The runner creates and cleans up its own synthetic Compose project.
+      - name: Test setup, upload, offline replay and persisted reviews
+        run: npm run test:app
+        working-directory: client/lingua-read-client
+        env:
+          CI: true
+
+      - name: Upload app smoke failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: app-smoke-failures
+          path: |
+            client/lingua-read-client/playwright-app-report/
+            client/lingua-read-client/test-results/app-smoke/
+          if-no-files-found: ignore
+          retention-days: 14
+
   ci_infra:
     name: Check compose & scripts
     # Cheap structural gates: compose files must parse (base + prod overlay) so a
@@ -195,7 +237,7 @@ jobs:
   build_api:
     name: Build API image
     runs-on: ubuntu-latest
-    needs: [ ci_dotnet ]
+    needs: [ ci_dotnet, ci_app_smoke ]
     timeout-minutes: 25
     outputs:
       image_tag: ${{ steps.image_tag.outputs.value }}
@@ -249,7 +291,7 @@ jobs:
   build_nginx:
     name: Build web image (nginx + client)
     runs-on: ubuntu-latest
-    needs: [ ci_client ]
+    needs: [ ci_client, ci_app_smoke ]
     timeout-minutes: 25
     outputs:
       image_tag: ${{ steps.image_tag.outputs.value }}

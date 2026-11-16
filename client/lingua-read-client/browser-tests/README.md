@@ -12,23 +12,58 @@ On Linux use `npx playwright install --with-deps chromium`. Tests manage their o
 loopback Vite server on port 4175; keep it free. To inspect one width, run
 `npm run test:browser -- --project=chromium-390 --headed`.
 
-Chromium checks cover mobile 320/390/430px, desktop 1280px, and a separate
-`chromium-desktop-320` project with production components,
-CSS, and fonts. Dashboard fixtures exercise long/accented titles, unbroken terms,
-audio, missing metadata, and due totals of 0/1/12/12,345. Checks cover element/text
+These checks mount components in an isolated fixture. For the production app's
+authentication, upload, persisted reviews and offline replay, run
+`npm run test:app`; see [the app smoke guide](../app-smoke/README.md).
+
+The default run includes both production-component fixtures and the isolated
+interaction experiment. Select either group explicitly, or audit discovery:
+
+```powershell
+npm run test:browser -- --project="chromium-*"
+npm run test:browser -- --project="experiment-interaction-*"
+npm run test:browser -- --list
+```
+
+The component suite has 231 cases across mobile-emulation 320/390/430px,
+desktop 1280px, and a separate `chromium-desktop-320` project with production
+components, CSS, and fonts. These remain five distinct viewport/input contexts;
+desktop reflow at 320px does not emulate touch. The 24 interaction-experiment
+cases run in separately named desktop 1280px, desktop 320px, and touch 320px projects.
+All eight experiment behaviors remain in the default run and CI. Intermediate
+phone widths add no distinct interaction-controller behavior, so that experiment
+does not repeat them. Total discovery is 255 cases (previously 295).
+
+Fixed-context tests use explicit tags rather than resizing every project:
+
+| Tag | Selected projects | Regression |
+| --- | --- | --- |
+| `@desktop-only` | `chromium-1280` | Hover save ordering, native definition resize, supplemental navbar breakpoints |
+| `@narrow-only` | `chromium-320`, `chromium-desktop-320` | Lookup focus/retry and short-height goal-dialog scrolling with touch and pointer contexts |
+| `@desktop-reflow` | `chromium-desktop-320` | Desktop reflow with text-spacing overrides |
+
+Other component cases retain all five project widths. Dashboard fixtures
+exercise long/accented titles, unbroken terms, audio, missing metadata, and due
+totals of 0/1/12/12,345. Checks cover element/text
 bounds, unmasked root overflow, menus, review session limits/routes, and
-goal-dialog labels/focus. Negative controls verify overflow detection. Deliberate
+goal-dialog labels/focus. The 320×360px dialog regression checks actual modal-body
+overflow, changes its scroll position, and verifies header and Cancel bounds and
+focus return. Negative controls verify overflow detection. Deliberate
 title clamps above 400px and shelf truncation remain allowed.
 
 Layout checks mount Library, Terms, book/audio import forms, classic/modern readers,
-and audio lessons (which use classic UI even with the Modern preference).
+and audio lessons. Audio retains the complete classic theme/layout matrix;
+a targeted check verifies that the Modern preference still falls back to classic
+panels, a usable transcript, controls and loaded media at all five widths.
 They verify gutters, local table scrolling, flush panels,
 visible keyboard focus, and representative secondary-text contrast in all five
-themes. Navbar/Home alignment also covers 800/1024/1600px. Theme screenshots at
-320/1280px are saved under `test-results/browser/` for visual review.
+themes. Navbar/Home alignment covers each project's native width plus a single
+desktop pass at 800/1024/1600px, avoiding repeated width overrides in every project.
+Theme screenshots at 320/1280px are saved under `test-results/browser/` for visual
+review.
 
-Each test has fresh browser state, blocked service workers, and an API allowlist
-that rejects mutations and external requests. The separate fixture skips auth and
+Each test has fresh browser state, blocked service workers, and a closed request
+allowlist that rejects arbitrary mutations and external requests. The separate fixture skips auth and
 offline startup and stays outside production/demo builds. Dashboard route probes
 verify destinations without mounting the reader or SRS; goal edits are cancelled.
 Layout pages use local settings and authored API/media responses; no edits are saved.

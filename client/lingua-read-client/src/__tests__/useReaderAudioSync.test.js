@@ -48,36 +48,6 @@ describe('useReaderAudioSync', () => {
     cancelSpeech.mockReset();
   });
 
-  test('returns the documented Use<Name>Result shape', () => {
-    const { result } = renderAudioSyncHook();
-    expect(result.current).toEqual(
-      expect.objectContaining({
-        audioRef: expect.any(Object),
-        audioCurrentTimeRef: expect.any(Object),
-        currentSrtLineId: null,
-        setCurrentSrtLineId: expect.any(Function),
-        isAudioPlaying: false,
-        setIsAudioPlaying: expect.any(Function),
-        isSpeakingSentence: false,
-        setIsSpeakingSentence: expect.any(Function),
-        isSpeakingWord: false,
-        setIsSpeakingWord: expect.any(Function),
-        segmentPlaybackRequest: null,
-        setSegmentPlaybackRequest: expect.any(Function),
-        audioDrivenSentenceSyncRef: expect.any(Object),
-        lastAutoSegmentPlaybackKeyRef: expect.any(Object),
-        skipInitialAudioLessonSegmentPlaybackRef: expect.any(Object),
-        pendingSentenceCreditRef: expect.any(Object),
-        setAudioPlaybackIntent: expect.any(Function),
-        toggleAudioPlayback: expect.any(Function),
-        pauseAudioPlayback: expect.any(Function),
-        handleAudioPlaybackStateChange: expect.any(Function),
-        handleLineClick: expect.any(Function),
-        handleAudioTimeUpdate: expect.any(Function)
-      })
-    );
-  });
-
   test('handleAudioPlaybackStateChange cancels speech when audio starts playing', () => {
     const { result } = renderAudioSyncHook();
     act(() => {

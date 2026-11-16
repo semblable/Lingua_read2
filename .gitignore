@@ -119,6 +119,7 @@ client/lingua-read-client/coverage/
 # Browser regression reports, screenshots, and traces.
 client/lingua-read-client/test-results/
 client/lingua-read-client/playwright-report/
+client/lingua-read-client/playwright-app-report/
 
 # Other React specific cache/build files
 client/lingua-read-client/.next/ # For Next.js

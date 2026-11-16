@@ -61,8 +61,7 @@ test('exact Known occurrence stays selected and the compact lookup is legible in
   expect(await field.evaluate(element => getComputedStyle(element).outlineStyle)).toBe('solid');
 });
 
-test('definition can be resized by its native handle and keeps the chosen height in all themes', async ({ page, openLayout }, info) => {
-  test.skip(page.viewportSize()!.width < 768, 'Native mouse resizing is a desktop interaction');
+test('definition can be resized by its native handle and keeps the chosen height in all themes', { tag: '@desktop-only' }, async ({ page, openLayout }, info) => {
   await openLayout('texts/801?redesign=1');
   await page.locator('.text-content .clickable-word').filter({ hasText: /^rivière$/ }).first().click();
   const panel = page.locator('.word-info-panel');

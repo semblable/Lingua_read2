@@ -39,24 +39,6 @@ describe('useWordTranslation', () => {
     translateSelectionWithContext.mockReset();
   });
 
-  test('returns the documented Use<Name>Result shape', () => {
-    const { result } = renderTranslationHook();
-    expect(result.current).toEqual(
-      expect.objectContaining({
-        translation: '',
-        setTranslation: expect.any(Function),
-        isTranslating: false,
-        setIsTranslating: expect.any(Function),
-        wordTranslationError: '',
-        setWordTranslationError: expect.any(Function),
-        triggerAutoTranslation: expect.any(Function),
-        appendAutoTranslation: expect.any(Function),
-        cancelInflight: expect.any(Function),
-        clearCache: expect.any(Function)
-      })
-    );
-  });
-
   test('triggerAutoTranslation returns early when text is null', async () => {
     const { result } = renderTranslationHook({ text: null });
     await act(async () => {

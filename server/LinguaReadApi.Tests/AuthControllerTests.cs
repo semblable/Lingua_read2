@@ -96,7 +96,7 @@ public class AuthControllerTests
     }
 
     [Fact]
-    public async Task Login_CorrectPassword_ReturnsOkAndSetsCookie()
+    public async Task Login_CorrectPassword_ReturnsOkAndSetsHttpOnlyCookie()
     {
         await using var context = CreateContext();
         var hasher = new PasswordHasher<User>();
@@ -111,30 +111,11 @@ public class AuthControllerTests
 
         Assert.IsType<OkObjectResult>(result);
 
-        var setCookie = httpContext.Response.Headers["Set-Cookie"].ToString();
-        Assert.Contains(".LinguaRead.Auth", setCookie);
+        AssertHttpOnlyAuthCookie(httpContext);
 
         // Verify LastLogin was updated
         var updatedUser = await context.Users.FindAsync(DefaultUserId);
         Assert.NotNull(updatedUser!.LastLogin);
-    }
-
-    [Fact]
-    public async Task Login_CorrectPassword_CookieIsHttpOnly()
-    {
-        await using var context = CreateContext();
-        var hasher = new PasswordHasher<User>();
-        var user = SeedDefaultUser(context);
-        user.PasswordHash = hasher.HashPassword(user, TestPassword);
-        await context.SaveChangesAsync();
-
-        var httpContext = new DefaultHttpContext();
-        var controller = CreateController(context, httpContext: httpContext);
-
-        await controller.Login(new LoginRequest { Password = TestPassword });
-
-        var setCookie = httpContext.Response.Headers["Set-Cookie"].ToString().ToLower();
-        Assert.Contains("httponly", setCookie);
     }
 
     [Fact]
@@ -312,26 +293,18 @@ public class AuthControllerTests
         Assert.NotNull(user.LastLogin);
 
         // Verify auth cookie was set (auto-login)
-        var setCookie = httpContext.Response.Headers["Set-Cookie"].ToString();
-        Assert.Contains(".LinguaRead.Auth", setCookie);
-    }
-
-    [Fact]
-    public async Task Setup_ValidPassword_CookieIsHttpOnly()
-    {
-        await using var context = CreateContext();
-        SeedDefaultUser(context, passwordHash: null);
-
-        var httpContext = new DefaultHttpContext();
-        var controller = CreateController(context, httpContext: httpContext);
-
-        await controller.Setup(new SetupRequest { Password = TestPassword });
-
-        var setCookie = httpContext.Response.Headers["Set-Cookie"].ToString().ToLower();
-        Assert.Contains("httponly", setCookie);
+        AssertHttpOnlyAuthCookie(httpContext);
     }
 
     // --- Helpers ---
+
+    private static void AssertHttpOnlyAuthCookie(DefaultHttpContext httpContext)
+    {
+        var cookie = Assert.Single(httpContext.Response.GetTypedHeaders().SetCookie);
+        Assert.Equal(".LinguaRead.Auth", cookie.Name.Value);
+        Assert.False(string.IsNullOrWhiteSpace(cookie.Value.Value));
+        Assert.True(cookie.HttpOnly);
+    }
 
     private static AppDbContext CreateContext()
     {

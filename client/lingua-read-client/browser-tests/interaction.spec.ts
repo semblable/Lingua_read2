@@ -173,7 +173,7 @@ test('marker candidates keep Known/Ignored plain and expose exact target status 
       await expect(plain.first()).not.toHaveAttribute('data-marker');
     }
   }
-  if (['chromium-1280', 'chromium-desktop-320'].includes(test.info().project.name)) {
+  if (['experiment-interaction-desktop-1280', 'experiment-interaction-desktop-320'].includes(test.info().project.name)) {
     for (const scenario of ['first-read', 'mixed']) {
       await page.getByRole('combobox', { name: 'Passage', exact: true }).selectOption(scenario);
       for (const candidate of ['current', 'stages', 'stronger']) {

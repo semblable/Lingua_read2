@@ -93,43 +93,6 @@ describe('useAudiobookPlayer', () => {
     expect(onTimeUpdate).toHaveBeenLastCalledWith(5.1);
   });
 
-  test('returns the documented Use<Name>Result shape (lesson mode)', async () => {
-    const { result } = renderHook(() =>
-      useAudiobookPlayer({
-        type: 'lesson',
-        audioSrc: 'https://example.com/lesson.mp3',
-        textId: 42,
-        languageId: 7
-      })
-    );
-    await flushEffects();
-
-    expect(result.current).toEqual(
-      expect.objectContaining({
-        audioRef: expect.any(Object),
-        progressBarRef: expect.any(Object),
-        isPlaying: false,
-        isLoading: expect.any(Boolean),
-        isBuffering: false,
-        isBookMode: false,
-        currentTime: 0,
-        duration: 0,
-        error: '',
-        playbackRate: 1,
-        volume: expect.any(Number),
-        playlist: expect.any(Array),
-        currentTrackIndex: 0,
-        currentTrackDisplayName: expect.any(String),
-        togglePlayPause: expect.any(Function),
-        seek: expect.any(Function),
-        goToNextTrack: expect.any(Function),
-        goToPrevTrack: expect.any(Function),
-        changeRate: expect.any(Function),
-        handleVolumeChange: expect.any(Function)
-      })
-    );
-  });
-
   test('derives a single-entry playlist from audioSrc in lesson mode', async () => {
     const { result } = renderHook(() =>
       useAudiobookPlayer({

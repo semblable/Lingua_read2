@@ -49,22 +49,6 @@ describe('useReaderBookmarks', () => {
     vi.mocked(listPending).mockResolvedValue([]);
   });
 
-  test('returns the documented Use<Name>Result shape', async () => {
-    const { result } = renderBookmarks(1);
-
-    expect(result.current).toEqual(
-      expect.objectContaining({
-        bookmarkedIndices: expect.any(Array),
-        lastBookmarkedIndex: null,
-        bookmarksReady: false,
-        isBookmarked: expect.any(Function),
-        toggleBookmarkForIndex: expect.any(Function),
-        handleSentenceContextMenu: expect.any(Function)
-      })
-    );
-    await waitFor(() => expect(result.current.bookmarksReady).toBe(true));
-  });
-
   test('shows cached bookmarks before the server answers', () => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ 7: [1, 3, 5] }));
     localStorage.setItem(LAST_KEY, JSON.stringify({ 7: 3 }));

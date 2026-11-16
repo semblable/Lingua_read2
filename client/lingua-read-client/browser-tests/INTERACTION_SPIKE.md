@@ -96,8 +96,10 @@ Run the focused checks from the client directory:
 
 ```powershell
 npm test -- --run src/__tests__/readerInteraction.test.ts src/__tests__/useReaderInteraction.test.tsx
-npm run test:browser -- interaction.spec.ts --project=chromium-1280 --project=chromium-desktop-320
+npm run test:browser -- --project="experiment-interaction-*"
 ```
 
-The full browser suite also exercises mobile-emulation widths; those runs are
+The three experiment projects exercise desktop 1280px, desktop 320px and touch
+320px, and remain included in the default browser run. The component regression
+projects separately cover intermediate mobile-emulation widths. Those runs are
 separate from physical-device or assistive-technology evidence.

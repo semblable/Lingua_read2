@@ -39,10 +39,9 @@ async function checkThemes(page: Page, selector: string, focus: Locator, info: T
   }
 }
 
-dashboardTest('navbar and dashboard share gutters across themes and breakpoints', async ({ page, openDashboard }) => {
-  await openDashboard();
+async function checkNavbarGutters(page: Page, widths: number[]) {
   await unmaskRootOverflow(page);
-  for (const width of [page.viewportSize()!.width, 800, 1024, 1600]) {
+  for (const width of widths) {
     await page.setViewportSize({ width, height: 900 });
     for (const theme of themes) {
       await page.evaluate(value => { document.body.className = `${value}-theme`; }, theme);
@@ -61,6 +60,16 @@ dashboardTest('navbar and dashboard share gutters across themes and breakpoints'
       await expect(brand).toBeFocused();
     }
   }
+}
+
+dashboardTest('navbar and dashboard share gutters across themes at the project width', async ({ page, openDashboard }) => {
+  await openDashboard();
+  await checkNavbarGutters(page, [page.viewportSize()!.width]);
+});
+
+dashboardTest('navbar and dashboard share gutters at intermediate and wide desktop breakpoints', { tag: '@desktop-only' }, async ({ page, openDashboard }) => {
+  await openDashboard();
+  await checkNavbarGutters(page, [800, 1024, 1600]);
 });
 
 test('Library cards keep Bootstrap gutters', async ({ page, openLayout }, info) => {
@@ -117,11 +126,13 @@ test('Terms keeps full width with a locally scrolling table', async ({ page, ope
 });
 
 for (const mode of ['classic', 'modern']) {
+  // Audio always renders classic UI. Exercise its full theme/layout matrix once;
+  // the Modern-preference fallback has a focused regression below.
   for (const [label, path] of [
     ['sentence first read', 'texts/801?sentence=1'],
     ['mixed passage', 'texts/801?mixed=1'],
     ['mixed sentence', 'texts/801?sentence=1&mixed=1'],
-    ['mixed audio', 'texts/802?mixed=1'],
+    ...(mode === 'classic' ? [['mixed audio', 'texts/802?mixed=1']] : []),
   ]) {
     test(`${mode} ${label} appearance remains usable`, async ({ page, openLayout }, info) => {
       await openLayout(`${path}&mode=${mode}`);
@@ -132,7 +143,10 @@ for (const mode of ['classic', 'modern']) {
       await checkThemes(page, '.text-display-wrapper', control, info);
     });
   }
-  for (const [name, textId] of [['reader', 801], ['audio', 802]] as const) {
+  const lessonCases = mode === 'classic'
+    ? [['reader', 801], ['audio', 802]] as const
+    : [['reader', 801]] as const;
+  for (const [name, textId] of lessonCases) {
     test(`${mode} ${name} keeps its flush panels and controls`, async ({ page, openLayout }, info) => {
       await openLayout(`texts/${textId}?mode=${mode}`);
       const reader = page.locator('.text-display-wrapper');
@@ -164,3 +178,27 @@ for (const mode of ['classic', 'modern']) {
     });
   }
 }
+
+test('Modern preference falls back to classic audio panels and a usable transcript', async ({ page, openLayout }) => {
+  await openLayout('texts/802?mixed=1&mode=modern');
+  const reader = page.locator('.text-display-wrapper');
+  await expect(reader).toHaveClass(/reader-ui-classic/);
+  await expect(reader.locator('.resizable-container')).toHaveClass(/resizable-container-classic/);
+  await expect(page.locator('.audio-transcript-container .clickable-word').first()).toBeVisible();
+  const player = page.locator('.audiobook-player');
+  await expect(player).toBeVisible();
+  await expectInside(player, reader);
+  await expect(page.locator('audio')).toHaveJSProperty('readyState', 4);
+  await expectPageFits(page);
+  const control = page.viewportSize()!.width <= 768
+    ? page.getByRole('button', { name: 'Open lesson controls', exact: true })
+    : page.getByRole('button', { name: 'Hide lesson controls panel', exact: true });
+  await expect(control).toBeVisible();
+  if (page.viewportSize()!.width <= 768) {
+    await activate(control, page);
+    await expect(page.getByRole('button', { name: 'Menu', exact: true })).toBeVisible();
+    await expectPageFits(page);
+  }
+  await page.goto('/layout/library');
+  await expect(page.getByRole('searchbox', { name: 'Search library' })).toBeVisible();
+});

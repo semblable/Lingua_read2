@@ -186,6 +186,33 @@ test('inline goal action opens a usable dialog and restores focus', async ({ pag
   await expect(action).toBeFocused();
 });
 
+test('a narrow short viewport scrolls the goal dialog body while keeping its header and actions reachable', { tag: '@narrow-only' }, async ({ page, openDashboard }) => {
+  await page.setViewportSize({ width: page.viewportSize()!.width, height: 360 });
+  await openDashboard();
+  const action = page.getByRole('button', { name: '+ Set a goal' });
+  await activate(action, page);
+  const dialog = page.getByRole('dialog', { name: 'New goal' });
+  await expect(dialog).toBeVisible();
+  const content = dialog.locator('.modal-content');
+  const body = dialog.locator('.modal-body');
+  const bounds = (await content.boundingBox())!;
+  expect(bounds.x).toBeGreaterThanOrEqual(0);
+  expect(bounds.x + bounds.width).toBeLessThanOrEqual(page.viewportSize()!.width);
+  expect(bounds.y).toBeGreaterThanOrEqual(0);
+  expect(bounds.y + bounds.height).toBeLessThanOrEqual(page.viewportSize()!.height);
+  expect(await body.evaluate(element => element.scrollHeight)).toBeGreaterThan(await body.evaluate(element => element.clientHeight));
+  await body.evaluate(element => { element.scrollTop = element.scrollHeight; });
+  expect(await body.evaluate(element => element.scrollTop)).toBeGreaterThan(0);
+  const cancel = dialog.getByRole('button', { name: 'Cancel', exact: true });
+  await expectInside(cancel, body);
+  await expectInside(dialog.locator('.modal-header'), content);
+  await expectTextFits(cancel);
+  await expectPageFits(page);
+  await activate(cancel, page);
+  await expect(dialog).toBeHidden();
+  await expect(action).toBeFocused();
+});
+
 test('bounds checks detect masked element overflow and clipped text', async ({ page, openDashboard }) => {
   await openDashboard();
   // Negative controls prove that these assertions catch more than scrollWidth.

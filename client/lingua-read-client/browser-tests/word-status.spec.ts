@@ -1,7 +1,7 @@
 import { test, expect } from './word-status.fixture';
+import { expectInside, expectPageFits, unmaskRootOverflow } from './bounds';
 
-test('save feedback keeps hovered shortcut targets stationary through delayed announcements', async ({ page, openLayout, statusNetwork }) => {
-  await page.setViewportSize({ width: 1280, height: 900 });
+test('save feedback keeps hovered shortcut targets stationary through delayed announcements', { tag: '@desktop-only' }, async ({ page, openLayout, statusNetwork }) => {
   await page.clock.install({ time: new Date('2026-11-12T11:00:00Z') });
   await openLayout('texts/801?mixed=1');
   const words = page.locator('.text-content .clickable-word');
@@ -32,8 +32,7 @@ test('save feedback keeps hovered shortcut targets stationary through delayed an
   expect(await second.boundingBox()).toEqual(originalBounds);
 });
 
-test('real reader captures rapid different-word intents and does not retarget a delayed save', async ({ page, openLayout, statusNetwork }) => {
-  await page.setViewportSize({ width: 1280, height: 900 });
+test('real reader captures rapid different-word intents and does not retarget a delayed save', { tag: '@desktop-only' }, async ({ page, openLayout, statusNetwork }) => {
   await openLayout('texts/801?mixed=1');
   const words = page.locator('.text-content .clickable-word');
   const first = words.filter({ hasText: /^Éloïse$/ }).first();
@@ -54,8 +53,7 @@ test('real reader captures rapid different-word intents and does not retarget a 
   await expect(second).toHaveClass(/word-status-4/);
 });
 
-test('real lookup keeps its rejected save and retry controls inside the narrow modal', async ({ page, openLayout, statusNetwork }) => {
-  await page.setViewportSize({ width: 320, height: 900 });
+test('real lookup keeps its rejected save and retry controls inside the narrow modal', { tag: '@narrow-only' }, async ({ page, openLayout, statusNetwork }) => {
   await openLayout('texts/801?mixed=1');
   statusNetwork.rejectNext.add(902);
   await page.locator('.text-content .clickable-word').filter({ hasText: /^rivière$/ }).first().click();
@@ -64,6 +62,9 @@ test('real lookup keeps its rejected save and retry controls inside the narrow m
   const retry = dialog.getByRole('button', { name: 'Retry saving rivière' });
   await expect(retry).toBeVisible();
   await expect(dialog.locator('.reader-save-feedback')).toContainText('Could not save rivière');
+  await unmaskRootOverflow(page);
+  await expectInside(retry, dialog.locator('.modal-content'));
+  await expectPageFits(page);
   await retry.click();
   await expect(retry).toBeHidden();
   await expect(dialog.locator('.reader-save-feedback')).toContainText('Advanced saved');

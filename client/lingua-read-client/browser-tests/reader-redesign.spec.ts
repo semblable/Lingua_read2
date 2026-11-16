@@ -81,13 +81,18 @@ test('definition can be resized by its native handle and keeps the chosen height
   for (const theme of themes) {
     await page.evaluate(value => { document.body.className = `${value}-theme`; }, theme);
     await expectPageFits(page);
+    await expect(field).toBeFocused();
+    expect((await field.boundingBox())!.height).toBeCloseTo(resizedHeight, 0);
     const outline = await field.evaluate(element => {
       const style = getComputedStyle(element);
       return { style: style.outlineStyle, offset: parseFloat(style.outlineOffset) };
     });
     expect(outline.style).toBe('solid');
     expect(outline.offset).toBeLessThan(0);
-    await page.screenshot({ path: info.outputPath(`${theme}-resized-definition.png`), fullPage: true, animations: 'disabled' });
+    // Keep the interaction's viewport: full-page capture reset the desktop controls in Linux Chromium.
+    await page.screenshot({ path: info.outputPath(`${theme}-resized-definition.png`), fullPage: false, animations: 'disabled' });
+    await expect(field).toBeFocused();
+    expect((await field.boundingBox())!.height).toBeCloseTo(resizedHeight, 0);
   }
   // Shrinking below the content height must remain scrollable, including after another edit.
   await field.fill(Array.from({ length: 8 }, (_, index) => `Definition note ${index + 1}`).join('\n'));
@@ -135,6 +140,7 @@ test('Appearance stays in bounds, retains keyboard focus, and applies reader pre
   await unmaskRootOverflow(page);
   for (const theme of themes) {
     await page.evaluate(value => { document.body.className = `${value}-theme`; }, theme);
+    await expect(appearance).toBeVisible();
     await expectPageFits(page);
     expect(await horizontalOverflow(page, '[role="dialog"]')).toEqual([]);
     for (const control of await page.locator('.lesson-topbar-actions .btn').all()) {
@@ -142,7 +148,9 @@ test('Appearance stays in bounds, retains keyboard focus, and applies reader pre
         expect((await textContrast(control)).ratio, `${theme}: mobile header control contrast`).toBeGreaterThanOrEqual(4.5);
       }
     }
-    await page.screenshot({ path: info.outputPath(`${theme}-appearance.png`), fullPage: true, animations: 'disabled' });
+    // Capture the open overlay at the tested viewport without a full-page capture's resize cycle.
+    await page.screenshot({ path: info.outputPath(`${theme}-appearance.png`), fullPage: false, animations: 'disabled' });
+    await expect(appearance).toBeVisible();
   }
   await appearance.getByRole('button', { name: 'Increase text size', exact: true }).click();
   await expect(page.locator('.text-content')).toHaveCSS('font-size', '18px');

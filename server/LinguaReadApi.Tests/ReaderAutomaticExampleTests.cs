@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using System.Security.Claims;
+using System.Text;
 using System.Threading.Tasks;
 using LinguaReadApi.Controllers;
 using LinguaReadApi.Data;
@@ -162,6 +163,41 @@ public class ReaderAutomaticExampleTests
             Assert.Equal(0, (await db.Words.SingleAsync()).Status);
             Assert.Empty(db.SrsPhrases);
         }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task KoreanBaseForm_CapturesFirstExampleAndCreatesSentenceOnlyCard(bool decomposed)
+    {
+        var (db, controller, _) = Setup("with_sentence");
+        using (db)
+        {
+            var language = await db.Languages.SingleAsync();
+            language.Code = "KO_kr";
+            language.Name = "Korean";
+            (await db.Words.SingleAsync()).Term = "책";
+            var sentence = decomposed ? "책을 읽어요.".Normalize(NormalizationForm.FormD) : "책을 읽어요.";
+            (await db.Texts.SingleAsync(t => t.TextId == 7)).Content = sentence;
+            await db.SaveChangesAsync();
+            Assert.IsType<NoContentResult>(await controller.UpdateWord(41,
+                new UpdateWordDto { Status = 2, TextId = 7, Sentence = sentence }));
+            Assert.Single(db.SrsPhrases);
+            Assert.Single(db.SrsCardReviews);
+            await controller.UpdateWord(41, new UpdateWordDto { Status = 3, TextId = 8, Sentence = "책을 다시 읽어요." });
+            Assert.Single(db.SrsPhrases);
+            Assert.Single(db.SrsCardReviews);
+        }
+    }
+
+    [Fact]
+    public void KoreanExamplesMatchCanonicalJamoAndKeepCompatibilityFormsDistinct()
+    {
+        var language = new Language { Code = "ko-KR" };
+        Assert.True(SrsMinedSentences.ContainsTerm("책을 읽어요.", "책".Normalize(NormalizationForm.FormD), language));
+        Assert.False(SrsMinedSentences.ContainsTerm("ㅊㅐㄱ을 읽어요.", "책", language));
+        Assert.True(SrsMinedSentences.ContainsTerm("ㅊㅐㄱ을 읽어요.", "ㅊㅐㄱ", language));
+        Assert.False(SrsMinedSentences.ContainsTerm("책을 읽어요.", "고양이", language));
     }
 
     [Theory]

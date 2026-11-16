@@ -21,6 +21,7 @@ interface LessonHeaderProps {
   textId?: number | string | null;
   audioRef?: React.RefObject<HTMLAudioElement | null>;
   onTimeUpdate?: (newTime: number) => void;
+  onSeek?: () => void;
   onPlaybackStateChange?: (nextIsPlaying: boolean) => void;
   segmentPlaybackRequest?: SegmentPlaybackRequest | null;
   showDesktopLessonControls: boolean;
@@ -45,6 +46,7 @@ const LessonHeader = React.memo(({
   textId,
   audioRef,
   onTimeUpdate,
+  onSeek,
   onPlaybackStateChange,
   segmentPlaybackRequest,
   showDesktopLessonControls,
@@ -77,13 +79,14 @@ const LessonHeader = React.memo(({
               languageId={text?.languageId}
               audioRef={audioRef}
               onTimeUpdate={onTimeUpdate}
+              onSeek={onSeek}
               onPlaybackStateChange={onPlaybackStateChange}
               segmentPlaybackRequest={segmentPlaybackRequest}
             />
           )}
           {!isAudioLesson && (book?.audiobookTracks?.length ?? 0) > 0 && (
             <AudiobookPlayer type="book" book={book} languageId={book?.languageId ?? text.languageId}
-              audioRef={audioRef} onTimeUpdate={onTimeUpdate}
+              audioRef={audioRef} onTimeUpdate={onTimeUpdate} onSeek={onSeek}
               onPlaybackStateChange={onPlaybackStateChange} />
           )}
 

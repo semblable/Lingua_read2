@@ -3301,6 +3301,27 @@ describe('TextDisplay', () => {
     expect(updateWord).toHaveBeenCalledTimes(1);
   });
 
+  test.each([3, 5, 6])('+ AI keeps a newer status %s chosen while the provider is pending', async status => {
+    updateWord.mockResolvedValue({});
+    getText.mockResolvedValueOnce({ textId: 1, title: 'Sample', content: 'Hello world.', languageId: null,
+      languageCode: 'ES', isAudioLesson: false,
+      words: [{ wordId: 1, term: 'Hello', status: 1, translation: 'first' }] });
+    let finish;
+    translateSelectionWithContext.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    renderTextDisplay({ autoTranslateWords: false });
+    fireEvent.click(await screen.findByText('Hello'));
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Add AI translation' })); });
+    const label = status === 6 ? 'Ignore' : status === 5 ? 'Known (5)' : 'Familiar (3)';
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: label, exact: true })); });
+    await waitFor(() => expect(updateWord).toHaveBeenCalledTimes(1));
+    await act(async () => { finish({ translatedText: 'second' }); });
+    await waitFor(() => expect(updateWord).toHaveBeenCalledTimes(2));
+    const expected = status <= 4 ? [1, status, 'first, second', { textId: 1, sentence: 'Hello world.' }]
+      : [1, status, 'first, second'];
+    expect(updateWord).toHaveBeenLastCalledWith(...expected);
+    expect(screen.getByRole('button', { name: label, exact: true })).toHaveAttribute('aria-pressed', 'true');
+  });
+
   test('+ AI on an untracked word fills the box but leaves saving to a status or Save', async () => {
     getText.mockResolvedValueOnce({
       textId: 1,
@@ -3878,6 +3899,32 @@ describe('TextDisplay', () => {
 
       return render(<StatefulSettingsReader />);
     };
+
+    test.each([false, true])('explicit scrubbing clears a repeated cue target while playing (mobile: %s)', async mobile => {
+      window.matchMedia = vi.fn(() => ({ matches: mobile, addEventListener: vi.fn(), removeEventListener: vi.fn() }));
+      getText.mockResolvedValueOnce({ textId: 1, title: 'Audio scrub', content: 'First cue. Second cue.',
+        languageId: null, languageCode: 'ES', isAudioLesson: true, audioFilePath: 'audio_lessons/1.mp3', hasSrtContent: true, words: [] });
+      getTextSrt.mockResolvedValueOnce('1\n00:00:00,000 --> 00:00:02,500\nFirst cue.\n\n2\n00:00:02,500 --> 00:00:05,000\nSecond cue.\n');
+      renderTextDisplay({ sentenceMode: true, sentenceAudioRepeats: 2 });
+      expect(await screen.findByText('First')).toBeInTheDocument();
+      const audio = { paused: false, seeking: false, currentTime: 0 };
+      mockAudiobookPlayer.mock.calls.at(-1)[0].audioRef.current = audio;
+      act(() => { mockAudiobookPlayer.mock.calls.at(-1)[0].onPlaybackStateChange(true); });
+      await act(async () => { fireEvent.click(screen.getByRole('button', { name: /^Next$/i })); });
+      expect(await screen.findByText('Second')).toBeInTheDocument();
+      act(() => {
+        const props = mockAudiobookPlayer.mock.calls.at(-1)[0];
+        props.onTimeUpdate(2.6);
+        props.onTimeUpdate(4.85);
+      });
+      act(() => {
+        const props = mockAudiobookPlayer.mock.calls.at(-1)[0];
+        props.onSeek();
+        props.onTimeUpdate(2.25);
+      });
+      expect(await screen.findByText('First')).toBeInTheDocument();
+      expect(mockAudiobookPlayer.mock.calls.at(-1)[0].segmentPlaybackRequest).toBeNull();
+    });
 
     test('audio lesson sentence mode Next advances cleanly after audio-driven sync back to previous cue', async () => {
       getText.mockResolvedValueOnce({

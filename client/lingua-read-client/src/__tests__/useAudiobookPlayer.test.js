@@ -65,6 +65,34 @@ describe('useAudiobookPlayer', () => {
     localStorage.clear();
   });
 
+  test('reports an explicit seek before its time update, while automatic repeat seeks stay internal', async () => {
+    const audio = document.createElement('audio');
+    Object.defineProperty(audio, 'duration', { configurable: true, value: 10 });
+    Object.defineProperty(audio, 'seeking', { configurable: true, value: false });
+    const audioRef = { current: audio };
+    const segmentPlaybackRequest = { requestId: 'replay-repeated', startTime: 2.5, endTime: 5, repeatCount: 2, forcePlay: true };
+    const onSeek = vi.fn();
+    const onTimeUpdate = vi.fn();
+    const { result } = renderHook(() => useAudiobookPlayer({ type: 'lesson', textId: 42,
+      audioSrc: 'https://example.com/lesson.mp3', audioRef, onSeek, onTimeUpdate, segmentPlaybackRequest }));
+    await flushEffects();
+    act(() => {
+      audio.currentTime = 4.96;
+      audio.dispatchEvent(new Event('timeupdate'));
+    });
+    expect(audio.currentTime).toBe(2.5);
+    expect(onSeek).not.toHaveBeenCalled();
+    act(() => { result.current.seek(2.25); });
+    expect(onSeek).toHaveBeenCalledOnce();
+    expect(onTimeUpdate).toHaveBeenCalledWith(2.25);
+    expect(onSeek.mock.invocationCallOrder[0]).toBeLessThan(onTimeUpdate.mock.invocationCallOrder[0]);
+    act(() => {
+      audio.currentTime = 5.1;
+      audio.dispatchEvent(new Event('timeupdate'));
+    });
+    expect(onTimeUpdate).toHaveBeenLastCalledWith(5.1);
+  });
+
   test('returns the documented Use<Name>Result shape (lesson mode)', async () => {
     const { result } = renderHook(() =>
       useAudiobookPlayer({

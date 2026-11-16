@@ -49,6 +49,7 @@ export type UseAudiobookPlayerArgs = {
   languageId?: number | string | null;
   audioRef?: AudioElementRef;
   onTimeUpdate?: (newTime: number) => void;
+  onSeek?: () => void;
   onPlaybackStateChange?: (isPlaying: boolean) => void;
   segmentPlaybackRequest?: SegmentPlaybackRequest | null;
   autoAdvanceTracks?: boolean;
@@ -101,6 +102,7 @@ export const useAudiobookPlayer = ({
   languageId,
   audioRef: externalAudioRef,
   onTimeUpdate,
+  onSeek,
   onPlaybackStateChange,
   segmentPlaybackRequest,
   autoAdvanceTracks
@@ -109,6 +111,7 @@ export const useAudiobookPlayer = ({
   const internalAudioRef = useRef<HTMLAudioElement | null>(null);
   const audioRef: AudioElementRef = externalAudioRef ?? internalAudioRef;
   const onTimeUpdateRef = useRef(onTimeUpdate);
+  const onSeekRef = useRef(onSeek);
   const onPlaybackStateChangeRef = useRef(onPlaybackStateChange);
   const progressBarRef = useRef<HTMLDivElement | null>(null);
   const sourceSwapRef = useRef(createEmptySourceSwap());
@@ -135,6 +138,10 @@ export const useAudiobookPlayer = ({
   useEffect(() => {
     onTimeUpdateRef.current = onTimeUpdate;
   }, [onTimeUpdate]);
+
+  useEffect(() => {
+    onSeekRef.current = onSeek;
+  }, [onSeek]);
 
   useEffect(() => {
     onPlaybackStateChangeRef.current = onPlaybackStateChange;
@@ -750,6 +757,7 @@ export const useAudiobookPlayer = ({
     initialSeekRef.current = null;
     // Save the played tail before currentTime becomes the seek destination.
     suspendListening();
+    onSeekRef.current?.();
     audio.currentTime = newTime;
     setCurrentTime(newTime);
     if (onTimeUpdateRef.current) {

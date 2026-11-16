@@ -25,6 +25,11 @@ namespace LinguaReadApi.Services.Srs
         {
             var needle = Tokenizer.NormalizeKey(term, language);
             if (string.IsNullOrWhiteSpace(needle)) return false;
+            if (KoreanLookup.IsKoreanLanguageCode(language?.Code))
+            {
+                // Match the reader's base/surface spans and equivalent Hangul encodings.
+                return KoreanLookup.FindMatches(Tokenizer.NormalizeText(sentence, language), needle).Count > 0;
+            }
             var words = Tokenizer.Tokenize(term, language).Tokens.Where(t => t.IsWord).ToList();
             if (words.Count == 1 && Tokenizer.NormalizeKey(words[0].Text, language) == needle)
             {

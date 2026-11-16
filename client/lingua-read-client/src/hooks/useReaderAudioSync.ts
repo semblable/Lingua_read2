@@ -55,6 +55,7 @@ export type UseReaderAudioSyncResult = {
   pauseAudioPlayback: () => void;
   resetAudioSyncTargets: () => void;
   handleAudioPlaybackStateChange: (nextIsPlaying: boolean) => void;
+  handleAudioSeek: () => void;
   handleLineClick: (startTime: number) => void;
   handleAudioTimeUpdate: (newTime: number) => void;
 };
@@ -379,6 +380,14 @@ export const useReaderAudioSync = ({
     setIsAudioPlaying(nextIsPlaying);
   }, []);
 
+  const handleAudioSeek = useCallback(() => {
+    // The player has cancelled bounded playback. An explicit scrub owns the
+    // destination, including while paused or within the old cue's seek tolerance.
+    resetAudioSyncTargets();
+    audioDrivenSentenceSyncRef.current = false;
+    setSegmentPlaybackRequest(null);
+  }, [resetAudioSyncTargets, setSegmentPlaybackRequest]);
+
   const handleLineClick = useCallback(
     (startTime: number) => {
       if (audioRef.current) {
@@ -490,7 +499,8 @@ export const useReaderAudioSync = ({
                 targetLine.startTime,
                 targetLine.endTime - Math.max(0.5, cueDuration * 0.4)
               );
-              if (hasRepeats && activeTarget.lastCueTime >= nearEndWindow) {
+              if (hasRepeats && audioRef.current?.paused === false && snapIsAudioPlaying &&
+                  activeTarget.lastCueTime >= nearEndWindow) {
                 activeTarget = {
                   ...activeTarget,
                   enteredCueBody: false,
@@ -620,6 +630,7 @@ export const useReaderAudioSync = ({
     pauseAudioPlayback,
     resetAudioSyncTargets,
     handleAudioPlaybackStateChange,
+    handleAudioSeek,
     handleLineClick,
     handleAudioTimeUpdate
   };

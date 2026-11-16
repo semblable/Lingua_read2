@@ -481,6 +481,37 @@ describe('useReaderAudioSync', () => {
     expect(result.current.currentSrtLineId).toBe(1);
   });
 
+  test('a paused backward scrub after the final repeat follows the preceding cue', () => {
+    const setCurrentSegmentIndex = vi.fn();
+    const { result } = renderAudioSyncHook({ isAudioLesson: true, isSentenceMode: true,
+      currentSegmentIndex: 1, setCurrentSegmentIndex,
+      srtLines: [{ id: 1, startTime: 0, endTime: 2.5 }, { id: 2, startTime: 2.5, endTime: 5 }] });
+    const audio = { paused: false, seeking: false, currentTime: 4.8 };
+    result.current.audioRef.current = audio;
+    act(() => {
+      result.current.handleAudioPlaybackStateChange(true);
+      result.current.setSegmentPlaybackRequest({ requestId: 'replay-repeated', startTime: 2.5,
+        endTime: 5, repeatCount: 2, forcePlay: true });
+      result.current.handleAudioTimeUpdate(2.6);
+      result.current.handleAudioTimeUpdate(4.85);
+    });
+    act(() => { result.current.handleAudioTimeUpdate(2.25); });
+    expect(result.current.currentSrtLineId).toBe(2);
+    act(() => {
+      result.current.handleAudioTimeUpdate(2.6);
+      result.current.handleAudioTimeUpdate(4.85);
+    });
+    audio.paused = true;
+    act(() => { result.current.handleAudioPlaybackStateChange(false); });
+    act(() => { result.current.handleAudioTimeUpdate(5); });
+    expect(result.current.currentSrtLineId).toBe(2);
+    setCurrentSegmentIndex.mockClear();
+    audio.currentTime = 2.25;
+    act(() => { result.current.handleAudioTimeUpdate(2.25); });
+    expect(setCurrentSegmentIndex).toHaveBeenCalledWith(0);
+    expect(result.current.currentSrtLineId).toBe(1);
+  });
+
   test('replay audio supports repeatCount=2 loop-backs, short <=0.25s cues, and lesson switches clear manual target', () => {
     const setCurrentSegmentIndex = vi.fn();
     const srtLines = [

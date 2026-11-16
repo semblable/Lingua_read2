@@ -218,6 +218,15 @@ class WordStatusCoordinator {
     return result;
   };
 
+  saveTranslation = (target: WordStatusTarget, translation: string, generation: GenerationScope): Promise<WordStatusMutationResult> => {
+    const key = target.word?.wordId ? this.idKey(target.word.wordId) : this.naturalKey(target.term);
+    const entity = this.identities.get(key);
+    // A provider can finish after another grade, even before React renders it.
+    // Join the entity's FIFO with its current intent instead of an older panel status.
+    const status = entity?.desiredStatus ?? target.word?.status ?? 1;
+    return this.mutate({ target, translation, status: status as WordStatus }, generation);
+  };
+
   private async run(entity: Entity): Promise<void> {
     if (entity.running) return;
     entity.running = true;
@@ -443,6 +452,8 @@ export function useWordStatusMutations({ generation, languageId, lookupTerm, cre
   const coordinator = useMemo(() => session.forLanguage(languageId, create, update), [session, languageId, create, update]);
   useLayoutEffect(() => { coordinator.configure(callbacks, lookupTerm, generationScope); });
   const mutate = useCallback((intent: WordStatusIntent) => coordinator.mutate(intent, generationScope), [coordinator, generationScope]);
+  const saveTranslation = useCallback((target: WordStatusTarget, translation: string) =>
+    coordinator.saveTranslation(target, translation, generationScope), [coordinator, generationScope]);
   const retry = useCallback((key: string) => coordinator.retry(key, generationScope), [coordinator, generationScope]);
   const [view, setView] = useState<{ owner: WordStatusCoordinator; generation: GenerationScope; states: WordStatusMutationState[]; message: string }>();
   useLayoutEffect(() => {
@@ -459,7 +470,7 @@ export function useWordStatusMutations({ generation, languageId, lookupTerm, cre
     return () => { detach(); clearTimeout(timer); };
   }, [coordinator, generationScope]);
   return {
-    mutate, retry, retire: coordinator.retire, reconcileWords: coordinator.reconcileWords,
+    mutate, saveTranslation, retry, retire: coordinator.retire, reconcileWords: coordinator.reconcileWords,
     reconcileServerWords: coordinator.reconcileServerWords, version: coordinator.version,
     states: view?.owner === coordinator && view.generation === generationScope ? view.states : [],
     announcement: view?.owner === coordinator && view.generation === generationScope ? view.message : '',

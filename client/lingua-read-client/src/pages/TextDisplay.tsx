@@ -376,6 +376,7 @@ const TextDisplay = () => {
     pauseAudioPlayback,
     resetAudioSyncTargets,
     handleAudioPlaybackStateChange,
+    handleAudioSeek,
     handleLineClick,
     handleAudioTimeUpdate
   } = useReaderAudioSync({
@@ -669,7 +670,7 @@ const TextDisplay = () => {
     setTranslation(value);
   }, [displayedWord?.term, selectedWord, setTranslation]);
   const {
-    mutate: mutateWordStatus, retry: retryWordStatus, retire: retireWordStatus, states: wordStatusStates,
+    mutate: mutateWordStatus, saveTranslation: saveWordTranslation, retry: retryWordStatus, retire: retireWordStatus, states: wordStatusStates,
     announcement: wordStatusAnnouncement, reconcileWords, reconcileServerWords, version: wordStatusVersion,
   } = useWordStatusMutations({
     generation: `${textId ?? ''}:${text?.content ?? ''}`,
@@ -2222,16 +2223,23 @@ const TextDisplay = () => {
   }, [displayedWord?.term, triggerAutoTranslation, wordInfoRetranslateContext]);
 
   const handleAddTranslationWithContext = useCallback(async () => {
-    if (!displayedWord?.term) return;
+    if (!displayedWord?.term || text?.textId == null) return;
     const status = displayedWord.status ?? 0;
     const isTracked = status > 0 && !!displayedWord.wordId;
+    const target: WordStatusTarget = {
+      textId: text.textId, term: displayedWord.term,
+      word: { wordId: Number(displayedWord.wordId) || undefined, term: displayedWord.term,
+        status, translation: displayedWord.translation },
+      sentence: pickSentenceForTerm(displayedWord.term, [wordInfoRetranslateContext],
+        languageConfig?.characterSubstitutions, languageConfig?.code || languageConfig?.languageCode || text.languageCode),
+    };
     const updated = await appendAutoTranslation(displayedWord.term, {
       sentenceContext: wordInfoRetranslateContext,
     });
     // A tracked word keeps the added sense without an Enter; an untracked one still waits for a status.
     // Switching words cancels the request, so `updated` is null if the panel moved on.
-    if (updated !== null && isTracked) void handleSaveWord(status, updated);
-  }, [displayedWord, appendAutoTranslation, wordInfoRetranslateContext, handleSaveWord]);
+    if (updated !== null && isTracked) void saveWordTranslation(target, updated);
+  }, [displayedWord, text?.textId, text?.languageCode, languageConfig, appendAutoTranslation, wordInfoRetranslateContext, saveWordTranslation]);
 
   // Enter in the translation box and the panel's Save button: keep the status, or save as New.
   const handleSaveTranslation = useCallback(() => {
@@ -2627,6 +2635,7 @@ const TextDisplay = () => {
         textId={textId}
         audioRef={audioRef}
         onTimeUpdate={handleAudioTimeUpdate}
+        onSeek={handleAudioSeek}
         onPlaybackStateChange={handleAudioPlaybackStateChange}
         segmentPlaybackRequest={segmentPlaybackRequest}
         showDesktopLessonControls={showDesktopLessonControls}
@@ -2646,6 +2655,7 @@ const TextDisplay = () => {
             languageId={text?.languageId}
             audioRef={audioRef}
             onTimeUpdate={handleAudioTimeUpdate}
+            onSeek={handleAudioSeek}
             onPlaybackStateChange={handleAudioPlaybackStateChange}
             segmentPlaybackRequest={segmentPlaybackRequest}
           />

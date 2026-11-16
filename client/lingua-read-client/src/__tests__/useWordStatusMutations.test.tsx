@@ -39,6 +39,22 @@ beforeEach(async () => { await clearAll(); });
 afterEach(() => { notifyOfflineEvent('session-ended'); vi.useRealTimers(); });
 
 describe('reader status mutation coordination', () => {
+  test('a translation append preserves a grade queued before React renders it', async () => {
+    const pending = deferred<unknown>();
+    const update = vi.fn().mockReturnValueOnce(pending.promise).mockResolvedValue({});
+    const { result } = setup([cat], { update });
+    let translated!: Promise<unknown>;
+    act(() => {
+      void result.current.mutate({ target: target(cat), status: 6 });
+      translated = result.current.saveTranslation(target(cat), 'chat, minou');
+    });
+    expect(result.current.words[0].status).toBe(6);
+    expect(update).toHaveBeenCalledTimes(1);
+    await act(async () => { pending.resolve({}); await translated; });
+    expect(update).toHaveBeenLastCalledWith(41, 6, 'chat, minou');
+    expect(result.current.states[0]).toMatchObject({ desiredStatus: 6, confirmedStatus: 6 });
+  });
+
   test('existing-word save snapshots its sentence/source and Known or Ignored saves omit example capture', async () => {
     const { result, update } = setup([cat]);
     const intent: WordStatusIntent = { target: target(cat), status: 2 };

@@ -6970,6 +6970,9 @@ export interface components {
             /** Format: int32 */
             bookId?: number | null;
             bookTitle?: string | null;
+            /** Format: int32 */
+            partNumber?: number | null;
+            bookIsFinished?: boolean;
             isFinished?: boolean;
             /** Format: double */
             audioProgress?: number | null;
@@ -6981,6 +6984,8 @@ export interface components {
             totalWords?: number;
             /** Format: int32 */
             knownWords?: number;
+            wordLinkingStatus?: string | null;
+            hasNoCountableWords?: boolean;
             /** Format: date-time */
             statsUpdatedAt?: string | null;
             /** Format: int32 */
@@ -7222,6 +7227,9 @@ export interface components {
             /** Format: int32 */
             status: number;
             translation?: string | null;
+            /** Format: int32 */
+            textId?: number | null;
+            sentence?: string | null;
         };
         User: {
             /** Format: uuid */

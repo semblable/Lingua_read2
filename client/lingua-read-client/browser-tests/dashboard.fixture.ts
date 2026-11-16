@@ -1,23 +1,25 @@
 import { test as base, expect } from '@playwright/test';
-import type { RecentTexts } from '../src/utils/api/texts';
+import type { RecentTexts, TextsList } from '../src/utils/api/texts';
 import { audioLesson, dashboard, goalSuggestion, languages, readingLesson, recommendations, sparseDetail, sparseLesson } from './data';
 
 type DashboardOptions = {
   dueCount: number;
   primaryLesson: RecentTexts[number];
+  recommendationData: { texts: TextsList };
 };
 
 export const test = base.extend<DashboardOptions & { openDashboard: () => Promise<void> }>({
   dueCount: [12_345, { option: true }],
   primaryLesson: [audioLesson, { option: true }],
-  openDashboard: async ({ page, context, baseURL, dueCount, primaryLesson }, runFixture) => {
+  recommendationData: [{ texts: recommendations }, { option: true }],
+  openDashboard: async ({ page, context, baseURL, dueCount, primaryLesson, recommendationData }, runFixture) => {
     const unexpectedRequests: string[] = [];
     const pageErrors: string[] = [];
     page.on('pageerror', error => pageErrors.push(error.message));
     const apiResponses: Record<string, unknown> = {
       '/api/users/dashboard': dashboard,
       '/api/texts/recent': [primaryLesson, ...[audioLesson, readingLesson, sparseLesson].filter(lesson => lesson.textId !== primaryLesson.textId)],
-      '/api/texts': recommendations,
+      '/api/texts': recommendationData.texts,
       '/api/texts/703': sparseDetail,
       '/api/srs/stats': { dueCount, reviewableCount: dueCount, totalCards: dueCount },
       '/api/goals': [],

@@ -87,7 +87,7 @@ describe('Dashboard', () => {
     expect(tz).toBe(-new Date().getTimezoneOffset());
   });
 
-  describe('Resume at your level', () => {
+  describe('What to read next', () => {
     const sampleLanguages = [
       { languageId: 1, languageName: 'French', knownWords: 500, totalWords: 1000 },
     ];
@@ -106,7 +106,7 @@ describe('Dashboard', () => {
       await screen.findByText('Dashboard');
       await waitFor(() => expect(getTexts).toHaveBeenCalled());
       // Section card present (it's the loading or wrapper), but no language sub-block.
-      expect(screen.queryByText(/Suggested texts/i)).not.toBeInTheDocument();
+      expect(screen.queryByText(/What to read next/i)).not.toBeInTheDocument();
     });
 
     test('surfaces sweet-spot texts ordered by closeness to 94%', async () => {
@@ -129,7 +129,7 @@ describe('Dashboard', () => {
           totalWords: 100, knownWords: 95, unknownWordPercentage: 5 },
       ]);
       renderDashboard();
-      expect(await screen.findByText(/Suggested texts/i)).toBeInTheDocument();
+      expect(await screen.findByText(/What to read next/i)).toBeInTheDocument();
       expect(screen.getByText('Sweet 90')).toBeInTheDocument();
       expect(screen.getByText('Sweet 95')).toBeInTheDocument();
       expect(screen.getByText('Sweet 98')).toBeInTheDocument();
@@ -171,7 +171,7 @@ describe('Dashboard', () => {
           totalWords: 100, knownWords: 96, unknownWordPercentage: 4 },
       ]);
       renderDashboard();
-      await screen.findByText(/Suggested texts/i);
+      await screen.findByText(/What to read next/i);
       // C/D/E are closest to 94 — A and B drop off.
       expect(screen.getByText('C')).toBeInTheDocument();
       expect(screen.getByText('D')).toBeInTheDocument();
@@ -197,6 +197,137 @@ describe('Dashboard', () => {
       await screen.findByText('French Sweet');
       expect(screen.getByTestId('resume-language-French')).toBeInTheDocument();
       expect(screen.getByTestId('resume-language-Spanish')).toBeInTheDocument();
+    });
+
+    const bookPart = (textId, partNumber, overrides = {}) => ({
+      textId, partNumber, title: `Chapter ${partNumber}`, bookId: 100,
+      bookTitle: 'A journey along the river', bookIsFinished: false,
+      languageName: 'French', isFinished: false, totalWords: 100, knownWords: 94,
+      ...overrides,
+    });
+
+    test('recommends a whole book by word-weighted coverage, even when its first part is difficult', async () => {
+      getDashboard.mockResolvedValue({ languages: sampleLanguages });
+      getTexts.mockResolvedValue([
+        bookPart(2, 2, { totalWords: 900, knownWords: 882 }),
+        bookPart(1, 1, { totalWords: 100, knownWords: 60 }),
+      ]);
+      renderDashboard();
+      const pick = await screen.findByTestId('resume-pick-book-100');
+      expect(pick).toHaveAttribute('href', '/texts/1');
+      expect(within(pick).getByRole('heading', { name: 'A journey along the river' })).toBeInTheDocument();
+      expect(within(pick).getByText('Book')).toBeInTheDocument();
+      expect(within(pick).queryByText('Chapter 1')).not.toBeInTheDocument();
+      expect(within(pick).getByText('Start book · Part 1')).toBeInTheDocument();
+      expect(within(pick).getByText('94% vocabulary coverage')).toBeInTheDocument();
+      expect(within(pick).getByText('Across the whole book')).toBeInTheDocument();
+      expect(within(pick).getByText('1,000 words')).toBeInTheDocument();
+      expect(within(pick).getByText('58 unfamiliar words')).toBeInTheDocument();
+      expect(within(pick).queryByText(/min read/)).not.toBeInTheDocument();
+      expect(screen.getAllByTestId(/^resume-pick-/)).toHaveLength(1);
+    });
+
+    test('assesses all unread parts together and opens the earliest one in numeric reading order', async () => {
+      getDashboard.mockResolvedValue({ languages: sampleLanguages });
+      getTexts.mockResolvedValue([
+        bookPart(110, 10, { totalWords: 900, knownWords: 882 }),
+        bookPart(102, 2, { totalWords: 100, knownWords: 60 }),
+        bookPart(103, 3, { isFinished: true }),
+        bookPart(101, 1, { isFinished: true, totalWords: 10000, knownWords: 10000 }),
+      ]);
+      renderDashboard();
+      const pick = await screen.findByTestId('resume-pick-book-100');
+      expect(pick).toHaveAttribute('href', '/texts/102');
+      expect(within(pick).getByText('Continue book · Part 2')).toBeInTheDocument();
+      expect(within(pick).getByText('94% vocabulary coverage')).toBeInTheDocument();
+      expect(within(pick).getByText('1,000 words in unread parts')).toBeInTheDocument();
+      expect(within(pick).getByText('Across 2 of 4 parts still unread')).toBeInTheDocument();
+      expect(within(pick).getByText('58 unfamiliar words')).toBeInTheDocument();
+      expect(screen.getAllByTestId(/^resume-pick-/)).toHaveLength(1);
+    });
+
+    test.each([
+      ['too difficult', { totalWords: 1000, knownWords: 880 }],
+      ['above the coverage band', { totalWords: 1000, knownWords: 990 }],
+      ['missing vocabulary stats', { totalWords: 0, knownWords: 0 }],
+    ])('does not let completed chapters mask a remainder that is %s', async (_reason, stats) => {
+      getDashboard.mockResolvedValue({ languages: sampleLanguages });
+      getTexts.mockResolvedValue([
+        // In the difficult case, the whole book is 94% covered, but the unread
+        // half is only 88%. It must not be recommended as a suitable match.
+        bookPart(1, 1, { isFinished: true, totalWords: 1000, knownWords: 1000 }),
+        bookPart(2, 2, stats),
+        { textId: 200, title: 'Standalone match', languageName: 'French', totalWords: 100, knownWords: 94 },
+      ]);
+      renderDashboard();
+      await screen.findByTestId('resume-pick-200');
+      expect(screen.getAllByTestId(/^resume-pick-/)).toHaveLength(1);
+      expect(screen.queryByRole('heading', { name: 'A journey along the river' })).not.toBeInTheDocument();
+    });
+
+    test('excludes completed books and links to the book overview when part order is unavailable', async () => {
+      getDashboard.mockResolvedValue({ languages: sampleLanguages });
+      getTexts.mockResolvedValue([
+        bookPart(1, 1, { bookIsFinished: true }),
+        bookPart(2, 1, { bookId: 101, isFinished: true }),
+        bookPart(3, null, { bookId: 102 }),
+        bookPart(4, 2, { bookId: 102 }),
+      ]);
+      renderDashboard();
+      const pick = await screen.findByTestId('resume-pick-book-102');
+      expect(screen.getAllByTestId(/^resume-pick-/)).toHaveLength(1);
+      expect(pick).toHaveAttribute('href', '/books/102');
+      expect(within(pick).getByText('View book')).toBeInTheDocument();
+    });
+
+    test('ranks books, texts and audio together without reserving slots for each format', async () => {
+      getDashboard.mockResolvedValue({ languages: sampleLanguages });
+      getTexts.mockResolvedValue([
+        bookPart(1, 1, { knownWords: 93 }),
+        bookPart(2, 1, { bookId: 101 }),
+        bookPart(3, 1, { bookId: 102, knownWords: 96 }),
+        { textId: 200, title: 'An article', languageName: 'French', totalWords: 100, knownWords: 90 },
+        { textId: 201, title: 'An interview', languageName: 'French', totalWords: 100, knownWords: 98, isAudioLesson: true },
+      ]);
+      renderDashboard();
+      await screen.findByTestId('resume-pick-book-100');
+      expect(screen.getAllByTestId(/^resume-pick-/).map(pick => pick.dataset.testid)).toEqual([
+        'resume-pick-book-101', 'resume-pick-book-100', 'resume-pick-book-102',
+      ]);
+      expect(screen.queryByTestId('resume-pick-200')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('resume-pick-201')).not.toBeInTheDocument();
+    });
+
+    test('does not quietly omit an unread chapter whose vocabulary has not been calculated', async () => {
+      getDashboard.mockResolvedValue({ languages: sampleLanguages });
+      getTexts.mockResolvedValue([
+        bookPart(1, 1), bookPart(2, 2, { totalWords: 0, knownWords: 0 }),
+        // A confirmed empty part is safe to include without changing coverage.
+        bookPart(3, 1, { bookId: 101, totalWords: 0, knownWords: 0, wordLinkingStatus: 'completed', hasNoCountableWords: true }),
+        bookPart(4, 2, { bookId: 101 }),
+      ]);
+      renderDashboard();
+      await screen.findByTestId('resume-pick-book-101');
+      expect(screen.queryByTestId('resume-pick-book-100')).not.toBeInTheDocument();
+    });
+
+    test.each([
+      ['processing', 0, 0],
+      ['failed', 0, 0],
+      ['processing', 100, 94],
+      ['failed', 100, 94],
+      ['completed', 0, 0],
+      [undefined, 0, 0],
+    ])('excludes unfinished vocabulary analysis despite timestamped stats (%s, %i words)', async (wordLinkingStatus, totalWords, knownWords) => {
+      getDashboard.mockResolvedValue({ languages: sampleLanguages });
+      getTexts.mockResolvedValue([
+        bookPart(1, 1),
+        bookPart(2, 2, { totalWords, knownWords, wordLinkingStatus, hasNoCountableWords: false, statsUpdatedAt: '2026-11-16T10:00:00Z' }),
+        { textId: 200, title: 'Ready to read', languageName: 'French', totalWords: 100, knownWords: 94 },
+      ]);
+      renderDashboard();
+      await screen.findByTestId('resume-pick-200');
+      expect(screen.queryByTestId('resume-pick-book-100')).not.toBeInTheDocument();
     });
   });
 });

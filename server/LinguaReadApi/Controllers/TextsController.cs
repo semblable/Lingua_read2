@@ -70,11 +70,16 @@ namespace LinguaReadApi.Controllers
                     IsAudioLesson = t.IsAudioLesson,
                     BookId = t.BookId,
                     BookTitle = t.Book != null ? t.Book.Title : null, // Include BookTitle
+                    PartNumber = t.PartNumber,
+                    BookIsFinished = t.Book != null && t.Book.IsFinished,
                     IsFinished = t.IsFinished,
                     FolderId = t.FolderId,
                     SortOrder = t.SortOrder,
                     TotalWords = t.TotalWords,
                     KnownWords = t.KnownWords,
+                    WordLinkingStatus = t.WordLinkingStatus,
+                    HasNoCountableWords = t.TotalWords == 0 && t.WordLinkingStatus == "completed"
+                        && !t.TextWords.Any(tw => tw.Word.Status != 6),
                     StatsUpdatedAt = t.StatsUpdatedAt
                 })
                 .ToListAsync();
@@ -1318,12 +1323,16 @@ namespace LinguaReadApi.Controllers
         public bool IsAudioLesson { get; set; }
         public int? BookId { get; set; } // Include BookId
         public string? BookTitle { get; set; } // Include BookTitle
+        public int? PartNumber { get; set; }
+        public bool BookIsFinished { get; set; }
         public bool IsFinished { get; set; }
         public double? AudioProgress { get; set; }
         public int? FolderId { get; set; }
         public int SortOrder { get; set; }
         public int TotalWords { get; set; }
         public int KnownWords { get; set; }
+        public string? WordLinkingStatus { get; set; }
+        public bool HasNoCountableWords { get; set; }
         public DateTime? StatsUpdatedAt { get; set; }
         public int UnknownWords => Math.Max(TotalWords - KnownWords, 0);
         public double? UnknownWordPercentage =>

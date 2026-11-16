@@ -15,6 +15,104 @@ namespace LinguaReadApi.Tests;
 public class RecentTextsTests
 {
     [Fact]
+    public async Task TextList_ExposesBookOrderAndCompletionForSuggestions_WithoutLosingFinishedParts()
+    {
+        await using var context = CreateContext();
+        var owner = Guid.NewGuid();
+        var other = Guid.NewGuid();
+        context.Users.AddRange(new User { Id = owner }, new User { Id = other });
+        context.Languages.Add(new Language { LanguageId = 1, Name = "French", Code = "fr" });
+        context.Books.AddRange(
+            new Book { BookId = 1, UserId = owner, LanguageId = 1, Title = "A journey" },
+            new Book { BookId = 2, UserId = owner, LanguageId = 1, Title = "Finished book", IsFinished = true });
+        context.Texts.AddRange(
+            new Text { TextId = 1, UserId = owner, LanguageId = 1, BookId = 1, PartNumber = 1, IsFinished = true },
+            new Text { TextId = 2, UserId = owner, LanguageId = 1, BookId = 1, PartNumber = 2, TotalWords = 100, KnownWords = 94 },
+            new Text { TextId = 3, UserId = owner, LanguageId = 1, BookId = 2, PartNumber = 1 },
+            new Text { TextId = 4, UserId = owner, LanguageId = 1, Title = "Standalone" },
+            new Text { TextId = 5, UserId = other, LanguageId = 1, Title = "Private" },
+            new Text { TextId = 6, UserId = owner, LanguageId = 1, Tag = "srs-story" });
+        await context.SaveChangesAsync();
+
+        var texts = (await CreateController(context, owner).GetTexts()).Value!.ToDictionary(text => text.TextId);
+
+        Assert.Equal(new[] { 1, 2, 3, 4 }, texts.Keys.OrderBy(id => id));
+        Assert.True(texts[1].IsFinished);
+        Assert.Equal(1, texts[1].PartNumber);
+        Assert.Equal(2, texts[2].PartNumber);
+        Assert.Equal("A journey", texts[2].BookTitle);
+        Assert.False(texts[2].BookIsFinished);
+        Assert.Equal(94, texts[2].KnownWords);
+        Assert.True(texts[3].BookIsFinished);
+        Assert.False(texts[3].IsFinished);
+        Assert.Null(texts[4].BookId);
+        Assert.Null(texts[4].PartNumber);
+    }
+
+    [Theory]
+    [InlineData("processing")]
+    [InlineData("failed")]
+    public async Task TextList_DoesNotConfirmEmptyStats_BeforeOrAfterLinkingAddsCountableWords(string linkingStatus)
+    {
+        await using var context = CreateContext();
+        var owner = Guid.NewGuid();
+        context.Users.Add(new User { Id = owner });
+        context.Languages.Add(new Language { LanguageId = 1, Name = "French", Code = "fr" });
+        context.Books.Add(new Book { BookId = 1, UserId = owner, LanguageId = 1, Title = "A journey" });
+        context.Texts.Add(new Text { TextId = 1, UserId = owner, LanguageId = 1, BookId = 1, PartNumber = 1,
+            Content = "Un chapitre dont le vocabulaire reste à analyser.", WordLinkingStatus = linkingStatus });
+        await context.SaveChangesAsync();
+        context.ChangeTracker.Clear();
+        using var services = new ServiceCollection().AddSingleton(context).BuildServiceProvider();
+        var stats = new StatsRecomputeService(services, NullLogger<StatsRecomputeService>.Instance, new MigrationSignal());
+
+        await stats.RecomputeAllAsync(CancellationToken.None);
+        var text = Assert.Single((await CreateController(context, owner).GetTexts()).Value!);
+
+        Assert.Equal(0, text.TotalWords);
+        Assert.NotNull(text.StatsUpdatedAt);
+        Assert.Equal(linkingStatus, text.WordLinkingStatus);
+        Assert.False(text.HasNoCountableWords);
+
+        // The worker completes linking before the debounced stats sweep. Its
+        // new links must prevent the stale, timestamped zero from looking empty.
+        context.Words.Add(new Word { WordId = 1, UserId = owner, LanguageId = 1, Term = "chapitre", Status = 5 });
+        context.TextWords.Add(new TextWord { TextId = 1, WordId = 1, OccurrenceCount = 1 });
+        (await context.Texts.FindAsync(1))!.WordLinkingStatus = "completed";
+        await context.SaveChangesAsync();
+        var linked = Assert.Single((await CreateController(context, owner).GetTexts()).Value!);
+        Assert.Equal("completed", linked.WordLinkingStatus);
+        Assert.Equal(0, linked.TotalWords);
+        Assert.NotNull(linked.StatsUpdatedAt);
+        Assert.False(linked.HasNoCountableWords);
+
+        context.ChangeTracker.Clear();
+        await stats.RecomputeAllAsync(CancellationToken.None);
+        var refreshed = Assert.Single((await CreateController(context, owner).GetTexts()).Value!);
+        Assert.Equal(1, refreshed.TotalWords);
+        Assert.Equal(1, refreshed.KnownWords);
+    }
+
+    [Fact]
+    public async Task TextList_ConfirmsCompletedEmptyAndAllIgnoredParts_HaveNoCountableWords()
+    {
+        await using var context = CreateContext();
+        var owner = Guid.NewGuid();
+        context.Users.Add(new User { Id = owner });
+        context.Languages.Add(new Language { LanguageId = 1, Name = "French", Code = "fr" });
+        context.Texts.AddRange(
+            new Text { TextId = 1, UserId = owner, LanguageId = 1, Content = "...", WordLinkingStatus = "completed" },
+            new Text { TextId = 2, UserId = owner, LanguageId = 1, Content = "chapitre", WordLinkingStatus = "completed" });
+        context.Words.Add(new Word { WordId = 1, UserId = owner, LanguageId = 1, Term = "chapitre", Status = 6 });
+        context.TextWords.Add(new TextWord { TextId = 2, WordId = 1, OccurrenceCount = 1 });
+        await context.SaveChangesAsync();
+
+        var texts = (await CreateController(context, owner).GetTexts()).Value!.ToList();
+        Assert.Equal(2, texts.Count);
+        Assert.All(texts, text => Assert.True(text.HasNoCountableWords));
+    }
+
+    [Fact]
     public async Task RecentSummaries_IncludeSavedProgressWithoutChangingRecency_AndExcludeOtherUsers()
     {
         await using var context = CreateContext();

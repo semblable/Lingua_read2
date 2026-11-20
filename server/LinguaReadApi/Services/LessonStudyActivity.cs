@@ -116,7 +116,8 @@ public static class LessonStudyActivity
             await context.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock(hashtextextended({userId.ToString()}, 0))");
     }
 
-    public static async Task<T> AtomicAsync<T>(AppDbContext context, Guid userId, Func<Task<T>> action)
+    public static async Task<T> AtomicAsync<T>(AppDbContext context, Guid userId, Func<Task<T>> action,
+        IsolationLevel isolation = IsolationLevel.Serializable)
     {
         for (var attempt = 1; ; attempt++)
         {
@@ -126,7 +127,7 @@ public static class LessonStudyActivity
                 {
                     context.ChangeTracker.Clear();
                     await using var transaction = context.Database.IsRelational()
-                        ? await context.Database.BeginTransactionAsync(IsolationLevel.Serializable) : null;
+                        ? await context.Database.BeginTransactionAsync(isolation) : null;
                     await LockAsync(context, userId);
                     var result = await action();
                     if (transaction != null) await transaction.CommitAsync();

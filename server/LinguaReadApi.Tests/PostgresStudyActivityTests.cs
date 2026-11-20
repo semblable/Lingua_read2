@@ -213,6 +213,63 @@ public class PostgresStudyActivityTests
     }
 
     [PostgresStudyFact]
+    public async Task PlainListening_SeesStatisticsCommittedByPreviousLockHolderWithoutRetry()
+    {
+        await using var db = await Database.Create();
+        await using var setup = db.Context();
+        var options = new DbContextOptionsBuilder<AppDbContext>().UseNpgsql(setup.Database.GetConnectionString()).Options;
+        await using var writer = new AppDbContext(options);
+        await using var listener = new AppDbContext(options);
+        await listener.Database.OpenConnectionAsync();
+        var listenerPid = ((NpgsqlConnection)listener.Database.GetDbConnection()).ProcessID;
+
+        await using var transaction = await writer.Database.BeginTransactionAsync();
+        await LessonStudyActivity.LockAsync(writer, UserId);
+        var writerPid = ((NpgsqlConnection)writer.Database.GetDbConnection()).ProcessID;
+        var listening = Activity(listener).LogListeningActivity(new() { LanguageId = 1, DurationSeconds = 7, ClientEventId = "waiter" });
+        try
+        {
+            // Release the writer only after PostgreSQL has started the waiter's lock statement.
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+            while (!await writer.Database.SqlQuery<bool>($"""SELECT {writerPid} = ANY(pg_blocking_pids({listenerPid})) AS "Value" """)
+                .SingleAsync(timeout.Token))
+                await Task.Delay(10, timeout.Token);
+
+            writer.UserLanguageStatistics.Add(new() { UserId = UserId, LanguageId = 1, TotalSecondsListened = 5, LastUpdatedAt = DateTime.UtcNow });
+            await writer.SaveChangesAsync();
+            await transaction.CommitAsync();
+        }
+        catch
+        {
+            await transaction.RollbackAsync();
+            await listening;
+            throw;
+        }
+
+        Assert.IsType<OkObjectResult>(await listening);
+        Assert.Equal(12, (await setup.UserLanguageStatistics.SingleAsync()).TotalSecondsListened);
+        Assert.Equal("waiter", (await setup.UserActivities.SingleAsync()).ClientEventId);
+    }
+
+    [PostgresStudyFact]
+    public async Task PlainListening_DoesNotAcknowledgeAnUnrelatedUniqueViolation()
+    {
+        await using var db = await Database.Create();
+        await using var c = db.Context();
+        // An explicit ID leaves the next generated ID pointing at this unrelated activity.
+        c.UserActivities.Add(new() { ActivityId = 1, UserId = UserId, LanguageId = 1, ActivityType = "Reading", Timestamp = DateTime.UtcNow });
+        await c.SaveChangesAsync();
+        var request = new UserActivityController.LogListeningRequest { LanguageId = 1, DurationSeconds = 7, ClientEventId = "different-event" };
+        var failure = Assert.IsType<ObjectResult>(await Activity(c).LogListeningActivity(request));
+        Assert.Equal(500, failure.StatusCode);
+        Assert.False(await c.UserActivities.AnyAsync(a => a.ClientEventId == request.ClientEventId));
+        Assert.Empty(await c.UserLanguageStatistics.ToListAsync());
+
+        Assert.IsType<OkObjectResult>(await Activity(c).LogListeningActivity(request));
+        Assert.Equal(7, (await c.UserLanguageStatistics.SingleAsync()).TotalSecondsListened);
+    }
+
+    [PostgresStudyFact]
     public async Task ConcurrentDifferentLessonsAndExistingListening_PreserveSharedTotalsAndDedup()
     {
         await using var db = await Database.Create();

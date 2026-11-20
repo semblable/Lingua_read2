@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore; // Added for DbUpdateException
 using System;
 using System.ComponentModel.DataAnnotations; // Added for [Required] attribute
+using System.Data;
 using System.Security.Claims;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
@@ -95,6 +96,10 @@ public async Task<IActionResult> LogListeningActivity([FromBody] LogListeningReq
     // Legacy callers have no replay key. Give this invocation a stable identity
     // so a lost commit acknowledgement cannot duplicate it on an internal retry.
     var clientEventId = string.IsNullOrEmpty(request.ClientEventId) ? Guid.NewGuid().ToString() : request.ClientEventId;
+    // Elapsed time and its receipt share the user lock. On PostgreSQL, read
+    // the totals committed by the previous holder after the lock is acquired.
+    var isolation = request.Lesson == null && _context.Database.IsNpgsql()
+        ? IsolationLevel.ReadCommitted : IsolationLevel.Serializable;
     try
     {
         return await LessonStudyActivity.AtomicAsync<IActionResult>(_context, userId, async () =>
@@ -174,16 +179,15 @@ public async Task<IActionResult> LogListeningActivity([FromBody] LogListeningReq
         await _context.SaveChangesAsync();
         _logger.LogInformation("Successfully saved listening activity for UserId: {UserId}, ActivityId: {ActivityId}", userId, activity.ActivityId);
         return Ok(new { message = "Listening activity logged successfully.", activityId = activity.ActivityId }); // Indicate success
-        });
+        }, isolation);
     }
     catch (DbUpdateException dbEx) // Catch specific DB exceptions first
     {
         // Concurrent replay of the same ClientEventId loses the race on the unique
-        // index (Postgres 23505 = unique_violation). That's still a successful dedup,
-        // not an error. Match on SqlState rather than a message substring so the
-        // check doesn't depend on the driver's message formatting.
+        // receipt index. Other unique violations roll the activity back.
         if (!string.IsNullOrEmpty(clientEventId)
-            && dbEx.InnerException is Npgsql.PostgresException pgEx && pgEx.SqlState == "23505")
+            && dbEx.InnerException is Npgsql.PostgresException
+                { SqlState: Npgsql.PostgresErrorCodes.UniqueViolation, ConstraintName: "IX_UserActivities_UserId_ClientEventId" })
         {
             _logger.LogInformation("Concurrent duplicate listening activity ignored for UserId: {UserId}, ClientEventId: {ClientEventId}", userId, request.ClientEventId);
             return Ok(new { message = "Listening activity already logged (duplicate ignored)." });

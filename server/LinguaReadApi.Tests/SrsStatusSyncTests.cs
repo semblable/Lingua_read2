@@ -248,6 +248,55 @@ public class SrsStatusSyncTests
     }
 
     [Fact]
+    public async Task ReplayedGradeKeepsItsOwnVocabularyTimeWhenCardHistoryIsAhead()
+    {
+        using var context = CreateContext();
+        var userId = Seed(context, Settings(), wordStatus: 1);
+        context.SrsCardReviews.Add(new SrsCardReview { WordId = 1, UserId = userId, NextReviewAt = DateTime.UtcNow.AddHours(-1) });
+        await context.SaveChangesAsync();
+        var srs = Srs(context, userId);
+        var first = DateTime.UtcNow.AddMinutes(-5);
+        var last = first.AddMinutes(2);
+        await srs.SubmitReview(new SrsReviewSubmitDto { SrsCardReviewId = 1, Grade = 0, ReviewedAt = last });
+        var replay = await srs.SubmitReview(new SrsReviewSubmitDto { SrsCardReviewId = 1, Grade = 3, ReviewedAt = first });
+        var review = Assert.IsType<SrsReviewResultDto>(Assert.IsType<OkObjectResult>(replay.Result).Value);
+        var log = await context.SrsReviewLogs.SingleAsync(l => l.SrsReviewLogId == review.SrsReviewLogId);
+        Assert.Equal(last, log.ReviewedAt);
+        Assert.Equal(first, log.WordStatusIntentAt);
+        var status = Assert.IsType<SrsWordStatusChangeDto>(review.WordStatusChange).To;
+        var edit = new UpdateWordDto { Status = status, Translation = "domestic cat", ClientUpdatedAt = first.AddMinutes(1) };
+        Assert.IsType<NoContentResult>(await Words(context, userId).UpdateWord(1, edit));
+
+        Assert.IsType<OkObjectResult>(await srs.UndoLastReview(new SrsUndoDto { SrsReviewLogId = review.SrsReviewLogId }));
+        var word = await context.Words.AsNoTracking().Include(w => w.Translation).SingleAsync();
+        Assert.Equal(status, word.Status);
+        Assert.Equal("domestic cat", word.Translation.Translation);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task UndoPreservesALaterExplicitSelectionOfTheSameStatus(bool changedAwayFirst)
+    {
+        using var context = CreateContext();
+        var userId = Seed(context, Settings(), wordStatus: 1);
+        context.SrsCardReviews.Add(new SrsCardReview { WordId = 1, UserId = userId, NextReviewAt = DateTime.UtcNow.AddHours(-1) });
+        await context.SaveChangesAsync();
+        var srs = Srs(context, userId);
+        var reviewAt = DateTime.UtcNow.AddMinutes(-4);
+        var response = await srs.SubmitReview(new SrsReviewSubmitDto { SrsCardReviewId = 1, Grade = 3, ReviewedAt = reviewAt });
+        var review = Assert.IsType<SrsReviewResultDto>(Assert.IsType<OkObjectResult>(response.Result).Value);
+        var words = Words(context, userId);
+        if (changedAwayFirst)
+            Assert.IsType<NoContentResult>(await words.UpdateWord(1, new UpdateWordDto { Status = 2, ClientUpdatedAt = reviewAt.AddMinutes(1) }));
+        Assert.IsType<NoContentResult>(await words.UpdateWord(1, new UpdateWordDto { Status = 3, ClientUpdatedAt = reviewAt.AddMinutes(2) }));
+
+        Assert.IsType<OkObjectResult>(await srs.UndoLastReview(new SrsUndoDto { SrsReviewLogId = review.SrsReviewLogId }));
+        Assert.Equal(3, await context.Words.Select(w => w.Status).SingleAsync());
+        Assert.Empty(await context.SrsReviewLogs.ToListAsync());
+    }
+
+    [Fact]
     public async Task Undo_RestoresTheStatus_WhenNothingChangedItSince()
     {
         using var context = CreateContext();

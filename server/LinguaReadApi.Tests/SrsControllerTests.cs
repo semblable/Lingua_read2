@@ -9,7 +9,10 @@ using LinguaReadApi.Models;
 using LinguaReadApi.Services;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Xunit;
 
@@ -57,6 +60,115 @@ public class SrsControllerTests
         context.SrsCardReviews.AddRange(card1, card2);
 
         context.SaveChanges();
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task OfflineReviewKeepsItsOrderRelativeToAnExplicitWordEdit(bool editAlreadySaved)
+    {
+        using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        SeedData(context, userId, 1);
+        var words = new WordsController(context, NullLogger<WordsController>.Instance)
+        {
+            ControllerContext = CreateController(context, userId).ControllerContext
+        };
+        var reviewTime = DateTime.UtcNow.AddMinutes(-5);
+        reviewTime = reviewTime.AddTicks(-(reviewTime.Ticks % TimeSpan.TicksPerMillisecond));
+        var word = await context.Words.SingleAsync(w => w.WordId == 1);
+        word.CreatedAt = reviewTime.AddDays(-1);
+        await context.SaveChangesAsync();
+        var laterEdit = new UpdateWordDto { Status = 1, Translation = "domestic cat", ClientUpdatedAt = reviewTime.AddMinutes(1) };
+        if (editAlreadySaved)
+            Assert.IsType<NoContentResult>(await words.UpdateWord(1, laterEdit));
+
+        var result = await CreateController(context, userId).SubmitReview(
+            new SrsReviewSubmitDto { SrsCardReviewId = 1, Grade = 3, ClientEventId = "older-review", ReviewedAt = reviewTime });
+        var review = Assert.IsType<SrsReviewResultDto>(Assert.IsType<OkObjectResult>(result.Result).Value);
+        Assert.Equal(reviewTime, (await context.SrsReviewLogs.SingleAsync()).ReviewedAt);
+        if (editAlreadySaved)
+        {
+            Assert.Null(review.WordStatusChange);
+        }
+        else
+        {
+            Assert.Equal(3, review.WordStatusChange!.To);
+            Assert.Equal(reviewTime, word.LastEditedAt);
+            Assert.IsType<NoContentResult>(await words.UpdateWord(1, laterEdit));
+        }
+        Assert.Equal(1, word.Status);
+        Assert.Equal("domestic cat", word.Translation.Translation);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ReviewAndUndoRetry_WhenAWordSaveCommitsDuringTheirWrite(bool undo)
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<AppDbContext>().UseSqlite(connection).Options;
+        var userId = Guid.NewGuid();
+        var request = new SrsReviewSubmitDto
+        {
+            SrsCardReviewId = 1, Grade = 3, ClientEventId = "review-with-word-race", ReviewedAt = DateTime.UtcNow.AddMinutes(-2)
+        };
+        await using (var seed = new AppDbContext(options))
+        {
+            await seed.Database.EnsureCreatedAsync();
+            seed.Users.Add(new User { Id = userId, UserName = "reader", Email = "reader@example.test" });
+            seed.UserSettings.Add(new UserSettings { UserId = userId, SrsStatusSyncMode = "promote" });
+            SeedData(seed, userId, 1);
+            if (undo)
+            {
+                var saved = await CreateController(seed, userId).SubmitReview(request);
+                Assert.Equal(3, Assert.IsType<SrsReviewResultDto>(Assert.IsType<OkObjectResult>(saved.Result).Value).WordStatusChange!.To);
+            }
+        }
+
+        var writer = new ConcurrentWordSave(async () =>
+        {
+            await using var other = new AppDbContext(options);
+            var words = new WordsController(other, NullLogger<WordsController>.Instance)
+            {
+                ControllerContext = CreateController(other, userId).ControllerContext
+            };
+            Assert.IsType<NoContentResult>(await words.UpdateWord(1, new UpdateWordDto { Status = 2, Translation = "new definition" }));
+        });
+        var retryOptions = new DbContextOptionsBuilder<AppDbContext>(options).AddInterceptors(writer).Options;
+        await using var context = new AppDbContext(retryOptions);
+        var controller = CreateController(context, userId);
+        if (undo)
+        {
+            Assert.IsType<OkObjectResult>(await controller.UndoLastReview(new SrsUndoDto { ClientEventId = request.ClientEventId }));
+            Assert.Empty(await context.SrsReviewLogs.ToListAsync());
+            Assert.Null((await context.SrsCardReviews.SingleAsync(c => c.WordId == 1)).LastReviewedAt);
+        }
+        else
+        {
+            var result = await controller.SubmitReview(request);
+            Assert.Null(Assert.IsType<SrsReviewResultDto>(Assert.IsType<OkObjectResult>(result.Result).Value).WordStatusChange);
+            Assert.Null((await context.SrsReviewLogs.SingleAsync()).WordStatusAfter);
+        }
+
+        var savedWord = await context.Words.Include(w => w.Translation).SingleAsync(w => w.WordId == 1);
+        Assert.Equal(2, savedWord.Status);
+        Assert.Equal("new definition", savedWord.Translation.Translation);
+        Assert.Equal(undo ? 0 : 1, (await context.UserSettings.SingleAsync()).SrsDailyNewCardsStudied);
+        Assert.Equal(2, writer.SaveAttempts);
+    }
+
+    private sealed class ConcurrentWordSave(Func<Task> write) : SaveChangesInterceptor
+    {
+        public int SaveAttempts { get; private set; }
+
+        public override async ValueTask<InterceptionResult<int>> SavingChangesAsync(
+            DbContextEventData eventData, InterceptionResult<int> result, CancellationToken cancellationToken = default)
+        {
+            if (++SaveAttempts == 1) await write();
+            return result;
+        }
     }
 
     [Fact]

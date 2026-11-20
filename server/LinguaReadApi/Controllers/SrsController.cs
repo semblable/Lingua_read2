@@ -28,6 +28,7 @@ namespace LinguaReadApi.Controllers
     {
         // Controls whether cloze and mixed review modes populate ClozeSentence on due cards.
         private static readonly bool ClozeReviewEnabled = true;
+        private const int ReviewSaveAttempts = 3;
         private readonly AppDbContext _context;
         private readonly IStoryGenerationServiceFactory _storyGenerationServiceFactory;
 
@@ -238,8 +239,13 @@ namespace LinguaReadApi.Controllers
             if (!ModelState.IsValid)
                 return BadRequest(ModelState);
 
+            return await SubmitReviewAsync(dto, timezoneOffsetMinutes, DateTime.UtcNow, attempt: 1);
+        }
+
+        private async Task<ActionResult<SrsReviewResultDto>> SubmitReviewAsync(
+            SrsReviewSubmitDto dto, int timezoneOffsetMinutes, DateTime now, int attempt)
+        {
             var userId = GetUserId();
-            var now = DateTime.UtcNow;
 
             var settings = await _context.UserSettings.FirstOrDefaultAsync(u => u.UserId == userId);
             var day = DayContext(settings, timezoneOffsetMinutes, now);
@@ -265,10 +271,11 @@ namespace LinguaReadApi.Controllers
             if (card.BuriedUntil.HasValue && card.BuriedUntil.Value > now)
                 return BadRequest(new { Message = "Card is buried." });
 
-            // Offline reviews are scheduled from when they happened, but never from before
-            // the card's previous review or from the future.
-            var reviewedAt = dto.ReviewedAt is { } at ? SrsDay.AsUtc(at) : now;
-            if (reviewedAt > now) reviewedAt = now;
+            // The input time orders the review against explicit word edits. FSRS
+            // also needs to keep the card's existing review history in order.
+            var requestedReviewAt = dto.ReviewedAt is { } at ? SrsDay.AsUtc(at) : now;
+            if (requestedReviewAt > now) requestedReviewAt = now;
+            var reviewedAt = requestedReviewAt;
             if (card.LastReviewedAt is { } lastReviewed && reviewedAt < lastReviewed) reviewedAt = lastReviewed;
 
             // SM-2-era cards the backfill hasn't reached yet get their FSRS state from history first.
@@ -289,11 +296,21 @@ namespace LinguaReadApi.Controllers
             bool becameLeech = outcome.IsLapse && SrsLeeches.OnLapse(card, settings);
 
             // 3. The word's reader status follows the card (word-status sync settings).
-            var statusChange = await SyncWordStatusAsync(userId, card, outcome, settings, reviewLog);
+            var statusChange = await SyncWordStatusAsync(userId, card, outcome, settings, reviewLog, requestedReviewAt);
 
             try
             {
                 await _context.SaveChangesAsync();
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                // The whole SaveChanges rolled back. Recompute the grade from
+                // committed state, including its log and daily limits.
+                _context.ChangeTracker.Clear();
+                if (attempt < ReviewSaveAttempts)
+                    return await SubmitReviewAsync(dto, timezoneOffsetMinutes, now, attempt + 1);
+                return StatusCode(StatusCodes.Status503ServiceUnavailable,
+                    new { Message = "Vocabulary changed while saving this review. Try again." });
             }
             catch (DbUpdateException) when (!string.IsNullOrEmpty(dto.ClientEventId))
             {
@@ -398,8 +415,12 @@ namespace LinguaReadApi.Controllers
             [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] SrsUndoDto? dto = null,
             [FromQuery] int timezoneOffsetMinutes = 0)
         {
+            return await UndoLastReviewAsync(dto, timezoneOffsetMinutes, DateTime.UtcNow, attempt: 1);
+        }
+
+        private async Task<IActionResult> UndoLastReviewAsync(SrsUndoDto? dto, int timezoneOffsetMinutes, DateTime now, int attempt)
+        {
             var userId = GetUserId();
-            var now = DateTime.UtcNow;
             var cutoffTime = now.AddMinutes(-15);
 
             var clientEventId = dto?.ClientEventId;
@@ -446,17 +467,18 @@ namespace LinguaReadApi.Controllers
             card.Difficulty = lastLog.OldDifficulty;
             card.Lapses = lastLog.OldLapses;
 
-            // Put back the word status this review changed, and lift the Known suspension that
-            // change may have caused. Not if the status has changed since (say the user ignored
-            // the word meanwhile): that newer choice stands. Logs from before WordStatusAfter
-            // existed don't record it and are always restored.
+            // A manual save can choose the same status a review assigned. Preserve that
+            // decision while still allowing successive undos of review-driven changes.
             int? restoredWordStatus = null;
             if (lastLog.WordStatusBefore is { } statusBefore)
             {
                 var word = await _context.Words.FirstOrDefaultAsync(w => w.WordId == card.WordId && w.UserId == userId);
-                if (word != null && (lastLog.WordStatusAfter is not { } statusAfter || word.Status == statusAfter))
+                var statusIntentAt = lastLog.WordStatusIntentAt ?? lastLog.ReviewedAt;
+                if (word != null && !(word.LastEditedAt > now) && !(word.LastManualStatusAt >= statusIntentAt)
+                    && (lastLog.WordStatusAfter is not { } statusAfter || word.Status == statusAfter))
                 {
                     word.Status = statusBefore;
+                    word.LastEditedAt = now;
                     restoredWordStatus = statusBefore;
                     if (statusBefore != SrsCardLifecycle.StatusKnown) SrsCardLifecycle.LiftStatusSuspension(card);
                 }
@@ -474,7 +496,23 @@ namespace LinguaReadApi.Controllers
             // Remove the log
             _context.SrsReviewLogs.Remove(lastLog);
 
-            await _context.SaveChangesAsync();
+            try
+            {
+                await _context.SaveChangesAsync();
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                _context.ChangeTracker.Clear();
+                if (attempt < ReviewSaveAttempts)
+                {
+                    // A bodyless request may have selected the latest log. A
+                    // retry must keep that identity even if a new review exists.
+                    return await UndoLastReviewAsync(
+                        new SrsUndoDto { SrsReviewLogId = lastLog.SrsReviewLogId }, timezoneOffsetMinutes, now, attempt + 1);
+                }
+                return StatusCode(StatusCodes.Status503ServiceUnavailable,
+                    new { Message = "Vocabulary changed while undoing this review. Try again." });
+            }
             return Ok(new { Message = "Undo successful.", card.SrsCardReviewId, lastLog.SrsReviewLogId, RestoredWordStatus = restoredWordStatus });
         }
 
@@ -961,10 +999,11 @@ namespace LinguaReadApi.Controllers
         /// change, or null if the status stays.
         /// </summary>
         private async Task<SrsWordStatusChangeDto?> SyncWordStatusAsync(
-            Guid userId, SrsCardReview card, SrsReviewOutcome outcome, UserSettings? settings, SrsReviewLog log)
+            Guid userId, SrsCardReview card, SrsReviewOutcome outcome, UserSettings? settings, SrsReviewLog log,
+            DateTime requestedReviewAt)
         {
             var word = await _context.Words.FirstOrDefaultAsync(w => w.WordId == card.WordId && w.UserId == userId);
-            if (word == null) return null;
+            if (word == null || word.LastEditedAt >= requestedReviewAt) return null;
 
             if (SrsCardLifecycle.StatusAfterReview(word.Status, outcome, settings) is not { } newStatus)
                 return null;
@@ -972,7 +1011,9 @@ namespace LinguaReadApi.Controllers
             var change = new SrsWordStatusChangeDto { From = word.Status, To = newStatus };
             log.WordStatusBefore = word.Status;
             log.WordStatusAfter = newStatus;
+            log.WordStatusIntentAt = requestedReviewAt;
             word.Status = newStatus;
+            word.LastEditedAt = requestedReviewAt;
             SrsCardLifecycle.ApplyStatusRules(word, card, hasSentence: true, settings);
             return change;
         }

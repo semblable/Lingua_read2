@@ -53,8 +53,6 @@ export type UseReaderStateResult = {
   setLanguageWordsLoaded: React.Dispatch<React.SetStateAction<boolean>>;
   languageConfig: LanguageConfig | null;
   setLanguageConfig: React.Dispatch<React.SetStateAction<LanguageConfig | null>>;
-  embeddedUrl: string | null;
-  setEmbeddedUrl: React.Dispatch<React.SetStateAction<string | null>>;
   previousTextId: number | null;
   setPreviousTextId: React.Dispatch<React.SetStateAction<number | null>>;
   nextTextId: number | null;
@@ -91,7 +89,6 @@ export const useReaderState = ({
   const [words, setWords] = useState<Word[]>([]);
   const [languageWordsLoaded, setLanguageWordsLoaded] = useState(false);
   const [languageConfig, setLanguageConfig] = useState<LanguageConfig | null>(null);
-  const [embeddedUrl, setEmbeddedUrl] = useState<string | null>(null);
   const [previousTextId, setPreviousTextId] = useState<number | null>(null);
   const [nextTextId, setNextTextId] = useState<number | null>(null);
   const [isAudioLesson, setIsAudioLesson] = useState(false);
@@ -385,8 +382,6 @@ export const useReaderState = ({
     setLanguageWordsLoaded,
     languageConfig,
     setLanguageConfig,
-    embeddedUrl,
-    setEmbeddedUrl,
     previousTextId,
     setPreviousTextId,
     nextTextId,

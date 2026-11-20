@@ -96,7 +96,7 @@ function LanguageForm({ language, onSave, onCancel, onDelete, onResetContent }: 
             dictionaries: [
                 ...prev.dictionaries,
                 // Add a new dictionary object with default values
-                { dictionaryId: 0, purpose: 'terms', displayType: 'popup', urlTemplate: '', isActive: true, sortOrder: prev.dictionaries.length }
+                { dictionaryId: 0, purpose: 'terms', displayType: 'embedded', urlTemplate: '', isActive: true, sortOrder: prev.dictionaries.length }
             ]
         }));
     };
@@ -246,30 +246,7 @@ function LanguageForm({ language, onSave, onCancel, onDelete, onResetContent }: 
             </Row>
 
             <Row className="mb-3">
-                 <Form.Group as={Col} controlId="formParserType">
-                    <Form.Label>Parser Type</Form.Label>
-                    <Form.Select
-                        name="parserType"
-                        value={formData.parserType}
-                        onChange={handleChange}
-                    >
-                        <option value="spacedel">Space Delimited</option>
-                        <option value="mecab">MeCab (Japanese/Korean)</option>
-                        <option value="jieba">Jieba (Chinese)</option>
-                        {/* Add other parser types as needed */}
-                    </Form.Select>
-                    <Form.Text muted>Select the word tokenization strategy.</Form.Text>
-                    {formData.parserType !== 'spacedel' && (
-                        <Alert variant="warning" className="mt-2 mb-0 py-2 small" data-testid="parser-not-implemented">
-                            MeCab and Jieba segmentation isn&apos;t implemented yet as a language setting: existing
-                            text is split at spaces and punctuation only, so with <code>{DEFAULT_LANGUAGE_WORD_CHARACTERS}</code> each
-                            unspaced run of Japanese or Chinese becomes one word. New Chinese and Japanese texts, books and audio
-                            lessons can use built-in word segmentation instead; choose it when you add them (it stays on unless you
-                            untick it). Existing texts are not changed.
-                        </Alert>
-                    )}
-                </Form.Group>
-                 <Form.Group as={Col} controlId="formWordCharacters">
+                <Form.Group as={Col} controlId="formWordCharacters">
                     <Form.Label>Word Characters (Regex)</Form.Label>
                     <Form.Control
                         type="text"
@@ -369,7 +346,7 @@ function LanguageForm({ language, onSave, onCancel, onDelete, onResetContent }: 
 
             {/* --- Dictionary Editor Section --- */}
             <h5 className="mt-4">Dictionaries</h5>
-            <p>Configure external dictionary and translation links. Use <code>###</code> as the placeholder for the Looked Up Term/Expression.</p>
+            <p>Use <code>###</code> where the lookup term belongs in the URL. In-reader lookup works with HTTPS dictionaries that allow embedding.</p>
             {formData.dictionaries.map((dict, index) => (
                 <Card key={index} className="mb-3"> {/* Use index as key for dynamic list */}
                     <Card.Body>
@@ -387,7 +364,7 @@ function LanguageForm({ language, onSave, onCancel, onDelete, onResetContent }: 
                                     </Form.Select>
                                 </Form.Group>
                             </Col>
-                             <Col md={2}>
+                            <Col md={2}>
                                 <Form.Group controlId={`dictDisplayType-${index}`}>
                                     <Form.Label>Display</Form.Label>
                                     <Form.Select
@@ -395,8 +372,8 @@ function LanguageForm({ language, onSave, onCancel, onDelete, onResetContent }: 
                                         value={dict.displayType}
                                         onChange={(e) => handleChangeDictionary(index, 'displayType', e.target.value)}
                                     >
-                                        <option value="popup">Popup</option>
-                                        <option value="embedded">Embedded</option>
+                                        <option value="embedded">In reader</option>
+                                        <option value="popup">New tab</option>
                                     </Form.Select>
                                 </Form.Group>
                             </Col>

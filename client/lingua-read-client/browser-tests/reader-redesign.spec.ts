@@ -14,6 +14,29 @@ async function openTools(page: Page) {
   if (await menu.isVisible() && await menu.getAttribute('aria-expanded') !== 'true') await menu.click();
 }
 
+test('embedded dictionary leaves the translation editor available', async ({ page, context, openLayout }) => {
+  const lookupUrl = 'https://lexique.example.test/lookup?term=rivi%C3%A8re';
+  await page.route(url => url.href === lookupUrl, route => route.fulfill({
+    contentType: 'text/html; charset=utf-8',
+    body: '<!doctype html><title>Synthetic dictionary</title><p>river, a flowing body of water</p>',
+  }));
+  await openLayout('texts/801?redesign=1&dictionary=1');
+  await page.locator('.text-content .clickable-word').filter({ hasText: /^rivière$/ }).first().click();
+  const trigger = page.getByRole('button', { name: 'Lexique', exact: true });
+  await trigger.click();
+  const frame = page.locator('iframe[title="Lexique dictionary"]');
+  await expect(frame.contentFrame().getByText('river, a flowing body of water')).toBeVisible();
+  await expect(frame).toHaveAttribute('sandbox', 'allow-scripts allow-forms');
+  await expect(page.getByRole('link', { name: 'Open in new tab', exact: true })).toHaveAttribute('href', lookupUrl);
+  expect(context.pages()).toHaveLength(1);
+  const editor = page.getByRole('textbox', { name: 'Translation', exact: true });
+  await editor.fill('river');
+  await expect(editor).toHaveValue('river');
+  await page.getByRole('button', { name: 'Close dictionary', exact: true }).click();
+  await expect(frame).toHaveCount(0);
+  await expect(trigger).toBeFocused();
+});
+
 test('exact Known occurrence stays selected and the compact lookup is legible in all themes', async ({ page, openLayout }, info) => {
   test.setTimeout(90_000);
   await openLayout('texts/801?redesign=1&mode=modern');

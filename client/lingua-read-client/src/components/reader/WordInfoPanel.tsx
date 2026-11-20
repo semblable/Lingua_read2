@@ -4,22 +4,16 @@ import { lowercaseLookupTerm, type LanguageConfig } from '../../utils/readerText
 import { composeKoreanLookupText, isKoreanLanguageCode } from '../../utils/koreanLookup';
 import type { DisplayedWord } from '../../types/displayedWord';
 import { WORD_STATUS_LABELS, WORD_STATUS_VALUES, type WordStatus } from '../../types/wordStatus';
+import DictionaryLookup, { type ReaderDictionary } from './DictionaryLookup';
 import WiktionaryDefinitions from './WiktionaryDefinitions';
 
 export type { DisplayedWord };
 
 // LanguageConfig from readerText only covers tokenization; the API LanguageDto
-// also carries `dictionaries` used by the embedded-dictionary buttons.
+// also carries the reader's external dictionary links.
 export type WordInfoLanguageConfig =
   | (NonNullable<LanguageConfig> & {
-      dictionaries?: Array<{
-        dictionaryId?: number;
-        isActive?: boolean;
-        purpose?: string;
-        displayType?: string;
-        urlTemplate?: string;
-        sortOrder?: number;
-      }>;
+      dictionaries?: ReaderDictionary[];
     })
   | null
   | undefined;
@@ -70,7 +64,6 @@ export type WordInfoBookmarkState = {
 
 export type WordInfoLanguageState = {
   languageConfig: WordInfoLanguageConfig;
-  setEmbeddedUrl: (url: string | null) => void;
 };
 
 // Optional rich Wiktionary definitions; enabled only when the user's word translation
@@ -186,10 +179,6 @@ const WordInfoPanel = React.memo(({
   // in other languages don't justify an extra vocabulary entry.
   const canSaveExactForm = isKoreanLanguageCode(lookupLanguage) && hasDistinctSurface
     && displayedWord.lemmaCandidates?.some(candidate => formKey(candidate.lemma) === termKey);
-  const termDictionaries = (language.languageConfig?.dictionaries ?? [])
-    .filter(dict => dict.isActive && dict.purpose === 'terms')
-    .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
-
   const hasUnsavedNewWord = !isTracked && !!translation.value.trim();
   let hint: React.ReactNode = null;
   if (translation.isTranslating) {
@@ -402,40 +391,8 @@ const WordInfoPanel = React.memo(({
         />
       )}
 
-      {termDictionaries.length > 0 && selectedWord && (
-        <div className="word-info-dictionaries">
-          <h6 className="mb-2 small text-muted">Dictionaries</h6>
-          <div className="d-flex flex-wrap gap-1">
-            {termDictionaries.map(dict => {
-              const urlTemplate = dict.urlTemplate ?? '';
-              const handleDictClick = () => {
-                if (!selectedWord) return;
-                const term = encodeURIComponent(selectedWord);
-                const url = urlTemplate.replace('###', term);
-                if (dict.displayType === 'popup') {
-                  window.open(url, '_blank', 'noopener,noreferrer');
-                  language.setEmbeddedUrl(null);
-                } else if (dict.displayType === 'embedded') {
-                  language.setEmbeddedUrl(url);
-                }
-              };
-              let buttonText = `Dict ${dict.sortOrder}`;
-              try {
-                const urlObj = new URL(urlTemplate);
-                buttonText = urlObj.hostname.replace(/^www\./, '').split('.')[0];
-                buttonText = buttonText.charAt(0).toUpperCase() + buttonText.slice(1);
-              } catch {
-                // Ignore invalid URL for naming
-              }
-
-              return (
-                <Button key={dict.dictionaryId} variant="link" size="sm" className="word-info-dictionary" onClick={handleDictClick} title={dict.urlTemplate}>
-                  {buttonText}<span aria-hidden="true"> ↗</span>
-                </Button>
-              );
-            })}
-          </div>
-        </div>
+      {!!language.languageConfig?.dictionaries?.length && selectedWord && (
+        <DictionaryLookup key={selectedWord} dictionaries={language.languageConfig.dictionaries} term={selectedWord} />
       )}
     </div>
   );

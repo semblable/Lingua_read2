@@ -29,8 +29,7 @@ const baseProps = (overrides = {}) => ({
     onToggleBookmark: vi.fn()
   },
   language: {
-    languageConfig: null,
-    setEmbeddedUrl: vi.fn()
+    languageConfig: null
   },
   ...overrides
 });
@@ -318,7 +317,7 @@ describe('WordInfoPanel', () => {
 
   test('lists active term dictionaries and hides the section when there are none', () => {
     const withDictionaries = (dictionaries) => baseProps({
-      language: { languageConfig: { dictionaries }, setEmbeddedUrl: vi.fn() }
+      language: { languageConfig: { dictionaries } }
     });
     const { rerender } = render(
       <WordInfoPanel
@@ -331,9 +330,9 @@ describe('WordInfoPanel', () => {
       />
     );
     expect(screen.getByText('Dictionaries')).toBeInTheDocument();
-    const names = screen.getAllByRole('button').map(b => b.textContent.replace(' ↗', ''));
-    expect(names.filter(n => ['Wordreference', 'Linguee', 'Example', 'Deepl'].includes(n)))
+    expect(screen.getAllByRole('link').map(link => link.textContent.replace(' ↗', '')))
       .toEqual(['Wordreference', 'Linguee']);
+    expect(screen.getByRole('link', { name: 'Wordreference' })).toHaveAttribute('target', '_blank');
 
     rerender(
       <WordInfoPanel

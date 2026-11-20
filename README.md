@@ -46,12 +46,11 @@ It is a personal workspace using a shared default user, with no tenant-isolation
 promise for unrelated users. Support is best-effort from a solo maintainer with a
 full-time job; there are no response-time or availability commitments.
 
-The demo provides Spanish reading and English listening examples. Configurable
-language entries do not establish that every language works equally well.
-Space-delimited parsing, normalization, sentence rules, dictionaries, and RTL
-settings are configurable. **Japanese MeCab and Chinese Jieba segmentation are
-not implemented.** Verify a short passage in your own language before importing
-an entire library; see [adding languages](LANGUAGES_GUIDE.md).
+The demo provides Spanish reading and English listening examples. The app has
+44 study-language presets, with configurable sentence rules, dictionaries, and
+right-to-left layout. Chinese, Japanese, and Thai imports use dedicated word
+segmentation by default. Korean lookup offers dictionary-form suggestions
+for common inflections. [Language setup and tested coverage](LANGUAGES_GUIDE.md)
 
 The maintainer reports acceptable personal operation on an Oracle Cloud free-tier
 micro instance with swap enabled and good mobile performance in their own

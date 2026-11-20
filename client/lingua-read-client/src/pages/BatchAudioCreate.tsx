@@ -345,19 +345,19 @@ const BatchAudioCreate = () => {
                         {isChinese && <Form.Group className="mb-3">
                             <Form.Check id="chinese-segmentation" label="Chinese word segmentation (experimental)"
                                 checked={chineseSegmentation} onChange={event => setChineseSegmentation(event.target.checked)} />
-                            <Form.Text>Applies to this new import only. Downloads an 8.6 MB dictionary once for online and offline reading; requires HTTPS or localhost.</Form.Text>
+                            <Form.Text>Downloads an 8.6 MB dictionary once for offline use. Requires HTTPS or localhost.</Form.Text>
                         </Form.Group>}
 
                         {isJapanese && <Form.Group className="mb-3">
                             <Form.Check id="japanese-segmentation" label="Japanese word segmentation (experimental)"
                                 checked={japaneseSegmentation} onChange={event => setJapaneseSegmentation(event.target.checked)} />
-                            <Form.Text>Applies to this new import only. Uses built-in TinySegmenter boundaries (tinysegmenter-ja-v1) without modifying existing texts.</Form.Text>
+                            <Form.Text>TinySegmenter splits Japanese text into selectable words.</Form.Text>
                         </Form.Group>}
 
                         {isThai && <Form.Group className="mb-3">
                             <Form.Check id="thai-segmentation" label="Thai word segmentation (experimental)"
                                 checked={thaiSegmentation} onChange={event => setThaiSegmentation(event.target.checked)} />
-                            <Form.Text>Applies to this new import only. Uses built-in dictionary boundaries (thai-dict-v1) without modifying existing texts.</Form.Text>
+                            <Form.Text>A built-in Thai dictionary splits the text into selectable words.</Form.Text>
                         </Form.Group>}
 
                         <Form.Group className="mb-3" controlId="tag">

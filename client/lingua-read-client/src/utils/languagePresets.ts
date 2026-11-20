@@ -10,7 +10,6 @@ export interface LanguagePreset {
   rightToLeft?: boolean;
   splitSentences?: string;
   parserType?: string;
-  limitedWordSplitting?: boolean;
 }
 
 // Suggestions only: importing the catalog never creates database records or
@@ -21,7 +20,7 @@ export const LANGUAGE_PRESETS: readonly LanguagePreset[] = [
   { code: 'bn', name: 'Bengali', nativeName: 'বাংলা', country: 'Bangladesh', flag: 'bd', splitSentences: '.!?।' },
   { code: 'bg', name: 'Bulgarian', nativeName: 'Български', country: 'Bulgaria', flag: 'bg' },
   { code: 'ca', name: 'Catalan', nativeName: 'Català', country: 'Catalonia', flag: 'es-ct' },
-  { code: 'zh', name: 'Chinese', nativeName: '中文', country: 'China', flag: 'cn', splitSentences: '.!?。！？', parserType: 'jieba', limitedWordSplitting: true },
+  { code: 'zh', name: 'Chinese', nativeName: '中文', country: 'China', flag: 'cn', splitSentences: '.!?。！？', parserType: 'jieba' },
   { code: 'hr', name: 'Croatian', nativeName: 'Hrvatski', country: 'Croatia', flag: 'hr' },
   { code: 'cs', name: 'Czech', nativeName: 'Čeština', country: 'Czechia', flag: 'cz' },
   { code: 'da', name: 'Danish', nativeName: 'Dansk', country: 'Denmark', flag: 'dk' },
@@ -37,7 +36,7 @@ export const LANGUAGE_PRESETS: readonly LanguagePreset[] = [
   { code: 'hu', name: 'Hungarian', nativeName: 'Magyar', country: 'Hungary', flag: 'hu' },
   { code: 'id', name: 'Indonesian', nativeName: 'Bahasa Indonesia', country: 'Indonesia', flag: 'id' },
   { code: 'it', name: 'Italian', nativeName: 'Italiano', country: 'Italy', flag: 'it' },
-  { code: 'ja', name: 'Japanese', nativeName: '日本語', country: 'Japan', flag: 'jp', splitSentences: '.!?。！？', parserType: 'mecab', limitedWordSplitting: true },
+  { code: 'ja', name: 'Japanese', nativeName: '日本語', country: 'Japan', flag: 'jp', splitSentences: '.!?。！？', parserType: 'mecab' },
   { code: 'ko', name: 'Korean', nativeName: '한국어', country: 'South Korea', flag: 'kr', splitSentences: '.!?。！？' },
   { code: 'lv', name: 'Latvian', nativeName: 'Latviešu', country: 'Latvia', flag: 'lv' },
   { code: 'lt', name: 'Lithuanian', nativeName: 'Lietuvių', country: 'Lithuania', flag: 'lt' },
@@ -55,7 +54,7 @@ export const LANGUAGE_PRESETS: readonly LanguagePreset[] = [
   { code: 'sw', name: 'Swahili', nativeName: 'Kiswahili', country: 'Tanzania', flag: 'tz' },
   { code: 'sv', name: 'Swedish', nativeName: 'Svenska', country: 'Sweden', flag: 'se' },
   { code: 'ta', name: 'Tamil', nativeName: 'தமிழ்', country: 'India', flag: 'in', splitSentences: '.!?।' },
-  { code: 'th', name: 'Thai', nativeName: 'ไทย', country: 'Thailand', flag: 'th', limitedWordSplitting: true },
+  { code: 'th', name: 'Thai', nativeName: 'ไทย', country: 'Thailand', flag: 'th' },
   { code: 'tr', name: 'Turkish', nativeName: 'Türkçe', country: 'Türkiye Turkey', flag: 'tr' },
   { code: 'uk', name: 'Ukrainian', nativeName: 'Українська', country: 'Ukraine', flag: 'ua' },
   { code: 'ur', name: 'Urdu', nativeName: 'اردو', country: 'Pakistan', flag: 'pk', rightToLeft: true, splitSentences: '.!?؟۔' },

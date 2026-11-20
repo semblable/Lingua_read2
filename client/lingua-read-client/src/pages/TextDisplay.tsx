@@ -260,8 +260,6 @@ const TextDisplay = () => {
     setLanguageWordsLoaded,
     languageConfig,
     setLanguageConfig,
-    embeddedUrl,
-    setEmbeddedUrl,
     previousTextId,
     nextTextId,
     isLastBookPart,
@@ -2554,7 +2552,6 @@ const TextDisplay = () => {
     },
     language: {
       languageConfig,
-      setEmbeddedUrl,
     },
     definition: {
       enabled:
@@ -2798,28 +2795,6 @@ const TextDisplay = () => {
                 <WordInfoPanel {...wordInfoProps} />
               </div>
 
-              {/* --- Phase 3: Embedded Dictionary Iframe --- */}
-              {embeddedUrl && (
-                <div className="mt-2 pt-2 border-top flex-shrink-0" style={{ position: 'relative', height: '40%', minHeight: '150px' }}>
-                  <Button
-                    variant="light"
-                    size="sm"
-                    onClick={() => setEmbeddedUrl(null)}
-                    style={{ position: 'absolute', top: '5px', right: '5px', zIndex: 10, padding: '0.1rem 0.3rem', lineHeight: 1 }}
-                    title="Close Dictionary View"
-                  >
-                    &times; {/* Close icon */}
-                  </Button>
-                  <iframe
-                    src={embeddedUrl}
-                    title="Embedded Dictionary"
-                    style={{ width: '100%', height: '100%', border: 'none' }}
-                    sandbox="allow-scripts allow-same-origin allow-popups allow-forms" // Security sandbox
-                    referrerPolicy="no-referrer" // Privacy
-                  ></iframe>
-                </div>
-              )}
-              {/* --- End Phase 3 --- */}
             </Card.Body></Card>
           </div>
         )}

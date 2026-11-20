@@ -46,28 +46,36 @@ describe('LanguageForm word characters', () => {
 describe('LanguageForm parser type', () => {
   afterEach(cleanup);
 
-  test('space-delimited languages show no parser warning', () => {
-    render(<LanguageForm language={null} onSave={noop} onCancel={noop} onDelete={noop} />);
-    expect(screen.queryByTestId('parser-not-implemented')).toBeNull();
-  });
-
-  test('MeCab / Jieba warn that segmentation is not implemented', () => {
-    // The tokenizer ignores the parser type, so any-letter word characters make
-    // each unspaced run of Japanese or Chinese one "word".
-    const chinese = {
+  test('manages segmentation at import time and preserves the stored parser on save', async () => {
+    const japanese = {
       languageId: 9,
-      name: 'Chinese',
-      code: 'zh',
-      parserType: 'jieba',
+      name: 'Japanese',
+      code: 'ja',
+      parserType: 'mecab',
+      splitSentences: '.!?。！？',
       wordCharacters: String.raw`\p{L}\p{M}`,
       dictionaries: [],
       sentenceSplitExceptions: [],
     } as unknown as Language;
 
-    render(<LanguageForm language={chinese} onSave={noop} onCancel={noop} onDelete={noop} />);
-    const warning = screen.getByTestId('parser-not-implemented').textContent;
-    expect(warning).toMatch(/isn.t implemented yet as a language setting/);
-    expect(warning).toMatch(/New Chinese and Japanese texts, books and audio lessons can use built-in word segmentation/);
+    render(<LanguageForm language={japanese} onSave={noop} onCancel={noop} onDelete={noop} />);
+    expect(screen.queryByLabelText('Parser Type')).toBeNull();
+    expect(screen.queryByTestId('parser-not-implemented')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Update Language' }));
+    await waitFor(() => expect(updateLanguage).toHaveBeenCalledWith(9, expect.objectContaining({ parserType: 'mecab' })));
+  });
+});
+
+describe('LanguageForm dictionary display', () => {
+  afterEach(cleanup);
+
+  test('lets the learner choose an in-reader lookup or a new tab', () => {
+    render(<LanguageForm language={null} onSave={noop} onCancel={noop} onDelete={noop} />);
+    fireEvent.click(screen.getByRole('button', { name: '+ Add Dictionary' }));
+    const display = screen.getByRole('combobox', { name: 'Display' });
+    expect((display as HTMLSelectElement).value).toBe('embedded');
+    fireEvent.change(display, { target: { value: 'popup' } });
+    expect((display as HTMLSelectElement).value).toBe('popup');
   });
 });
 

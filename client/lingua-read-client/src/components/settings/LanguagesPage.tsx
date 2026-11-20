@@ -163,14 +163,12 @@ function LanguagesPage() {
                                             <div className="language-option-name">
                                                 <h3>{preset.name}</h3>
                                                 <span className="language-native-name" lang={preset.code} dir="auto">{preset.nativeName}</span>
-                                                {preset.limitedWordSplitting && <span className="language-splitting-note">Basic word splitting*</span>}
                                             </div>
                                             <button
                                                 type="button"
                                                 className={`language-add-button${added ? ' is-added' : ''}`}
                                                 disabled={added || isLoading || loadFailed || addingCode !== null}
                                                 aria-label={added ? `${preset.name} already added` : `Add ${preset.name}`}
-                                                aria-describedby={preset.limitedWordSplitting ? 'languages-segmentation-help' : undefined}
                                                 onClick={() => { void handleAdd(preset); }}
                                             >
                                                 {adding ? <Spinner animation="border" size="sm" /> : <i className={`bi bi-${added ? 'check-lg' : 'plus-lg'}`} aria-hidden="true" />}
@@ -188,7 +186,6 @@ function LanguagesPage() {
                                     {query && <Button variant="outline-secondary" size="sm" onClick={() => setQuery('')}>Clear search</Button>}
                                 </div>
                             )}
-                            <p className="languages-segmentation-help" id="languages-segmentation-help">* Chinese, Japanese and Thai currently split at spaces and punctuation. Text without spaces is treated as one word.</p>
                             <div className="languages-custom">
                                 <div><h3>Looking for something else?</h3><p className="languages-muted">Add any language and fine-tune dictionaries, script and reading settings.</p></div>
                                 <Button variant="outline-secondary" onClick={() => setSelectedLanguage({} as Language)} disabled={isLoading || loadFailed || addingCode !== null}>Set up a custom language <i className="bi bi-arrow-right" aria-hidden="true" /></Button>

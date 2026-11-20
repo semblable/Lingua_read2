@@ -125,9 +125,8 @@ describe('language catalog', () => {
     await waitFor(() => expect(updateLanguage).toHaveBeenCalledWith(1, expect.objectContaining({ name: 'English reading', code: 'en' })));
   });
 
-  test('provides a useful empty result and explains limited segmentation', async () => {
+  test('can clear an empty catalog search', async () => {
     await showCatalog();
-    expect(screen.getByText(/Chinese, Japanese and Thai currently split/)).toBeInTheDocument();
     fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'not-a-language' } });
     expect(screen.getByRole('heading', { name: 'No languages found' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Clear search' }));

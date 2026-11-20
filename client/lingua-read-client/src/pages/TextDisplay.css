@@ -1145,6 +1145,13 @@ body:is(.dark-theme, .classic-dark-theme) .word-info-panel .btn.word-info-delete
 .word-info-dictionaries { margin-top: 0.75rem; padding-top: 0.5rem; border-top: 1px solid var(--border-color); }
 .word-info-panel .word-info-dictionary { padding: 0.2rem 0.3rem; color: var(--font-color); font-size: 0.8rem; text-decoration: none; }
 .word-info-panel .word-info-dictionary:hover { text-decoration: underline; }
+.word-info-dictionary-frame {
+  display: block;
+  width: 100%;
+  height: clamp(12rem, 36vh, 26rem);
+  border: 1px solid var(--border-color);
+  border-radius: var(--bs-border-radius);
+}
 .word-info-save-row, .word-info-extend-row { flex-wrap: wrap; }
 .word-info-panel :is(.word-info-term, .word-info-hint) { overflow-wrap: anywhere; }
 

@@ -101,6 +101,12 @@ export const test = base.extend<{ openLayout: (path: string) => Promise<void> }>
           { dictionaryId: 2, isActive: true, purpose: 'terms', displayType: 'popup', urlTemplate: 'https://www.linguee.com/french-english/search?source=french&query=###', sortOrder: 2 },
         ] };
       }
+      if (query.get('dictionary') === '1') {
+        responses['/api/languages/21'] = { ...languages[0], dictionaries: [
+          { dictionaryId: 1, isActive: true, purpose: 'terms', displayType: 'embedded',
+            urlTemplate: 'https://lexique.example.test/lookup?term=###', sortOrder: 1 },
+        ] };
+      }
       await page.goto(`/layout/${path}`);
       await page.evaluate(() => document.fonts.ready);
     });

@@ -36,11 +36,11 @@ This is the standard approach. Any changes take effect immediately across the ap
 
 Presets include Unicode word characters, combining marks and joiners, sentence punctuation, and right-to-left layout where applicable. They do not override your translation target or add dictionaries. Existing regional codes such as `pt-BR` count as already added for their base language.
 
-Chinese, Japanese, and Thai default to **profiled word segmentation** (with per-import opt-out) for new texts, book imports (`.txt`, `.epub`, or manual), and audio/SRT imports:
+Chinese, Japanese, and Thai use dedicated word segmentation by default when you add a text, book, or audio lesson. The import form lets you turn it off for that item.
+
 - **Chinese (`jieba-v1`):** uses a pinned 8.6 MB dictionary downloaded once and cached for offline reopening (requires HTTPS or localhost).
 - **Japanese (`tinysegmenter-ja-v1`):** uses the built-in TinySegmenter profile and strips `<rt>`/`<rp>` furigana annotations from EPUB imports.
 - **Thai (`thai-dict-v1`):** uses a pinned ~62,108-word PyThaiNLP (CC0) dictionary constrained by Thai Character Cluster (TCC) boundaries.
-Existing unprofiled content keeps its legacy splitting; re-splitting a book preserves its profile.
 
 Korean keeps space-separated eojeol touch targets while decomposing common Josa/copula suffixes and verb/adjective stems (including `ㄹ` restoration) against the built-in 43,445-headword KRDICT lemma list. Exact saved vocabulary takes precedence, and validated alternatives appear as selectable chips.
 
@@ -60,11 +60,7 @@ Korean keeps space-separated eojeol touch targets while decomposing common Josa/
 
 LinguaRead's tokenizers use these settings for word and sentence splitting. See [the language roadmap](docs/LANGUAGE_SUPPORT_PLAN.md) for tested scope and remaining reference gaps.
 
-1. **Parser Type**:
-   - `Space Delimited` (`spacedel`): **Recommended for most languages** (Latin, Cyrillic, Greek, Arabic, Hebrew, etc.) where words are separated by spaces or punctuation.
-   - `MeCab` / `Jieba`: Legacy language settings; they do not upgrade existing text boundaries. New imports use the versioned `jieba-v1`, `tinysegmenter-ja-v1`, and `thai-dict-v1` profiles above.
-
-2. **Word Characters (Regex)**:
+1. **Word Characters (Regex)**:
    - A regular expression character class defining what constitutes a single word character.
    - **Default:** `\p{L}\p{M}` (Matches any Unicode letter plus combining diacritics/accents).
    - **Latin script:** `a-zA-ZÀ-ÖØ-öø-ɏḀ-ỿ\p{M}`
@@ -75,22 +71,22 @@ LinguaRead's tokenizers use these settings for word and sentence splitting. See 
 
    > **Romance & Romanian clitic/elision lookup (French, Italian, Catalan, Romanian):** Exact whole terms take precedence. When a glued elision has no exact match, lookup falls back to the stripped headword only if saved vocabulary or Wiktionary validates it: French (`l'`, `d'`, `c'`, `qu'`, `-là`, `-ci`), Italian (`l'`, `d'`, `un'`, `quell'`, `nell'`, `qualcos'`, `all'`, `dall'`, `sull'`, `coll'`, `bell'`, `sant'`, `quest'`, trailing `po'` → `po`), Catalan (`l'`, `d'`, `m'`, `t'`, `s'`, `n'`, and chained enclitics `-nos`, `-vos`, `'m`, `-ho`, etc.), and Romanian hyphenated clitics (`și-au` → `au` / `și`). Clickable spans stay whole.
 
-3. **Sentence Splitting Characters**:
+2. **Sentence Splitting Characters**:
    - Characters marking end-of-sentence boundaries.
    - European scripts: `.!?` (commas ordinarily do not end sentences)
    - CJK scripts: `.!?。！？`
    - Arabic / Persian: `.!?؟`
 
-4. **Character Substitutions**:
+3. **Character Substitutions**:
    - Pipe-separated list of replacements: `old=new|old2=new2`.
    - Used to normalize punctuation before tokenization.
    - *(Built-in rules already convert curly single quotes `’`, `‘`, `ʼ` → `'` and Unicode hyphens → `-`).*
    - Example: `´='|`='|’='|‘='|...=…|..=‥`
 
-5. **Romanization**:
+4. **Romanization**:
    - Currently unavailable. The ineffective switch is hidden; an existing stored preference is preserved when editing a language.
 
-6. **Right-to-Left Script (RTL)**:
+5. **Right-to-Left Script (RTL)**:
    - Enable for languages written right-to-left (Arabic, Hebrew, Persian, Urdu). Adjusts text alignment and layout direction in the reader.
 
 ---
@@ -105,14 +101,14 @@ If your primary native/learning target language differs from the global default 
 
 ### Step 5: External Dictionaries
 
-When reading, clicking a term opens external dictionary lookups in a popup or embedded panel.
-Click **+ Add Dictionary** to add one or more providers:
+Select a word or phrase to see the configured term dictionaries in Word Info.
+Add one in language settings with **+ Add Dictionary**.
 
-- **Purpose**: `Terms` (single words/phrases) or `Sentences`.
-- **Display**: `Popup` (opens in a new window/tab) or `Embedded` (loads in reader iframe).
+- Select **Terms** to use the dictionary for words and phrases in Word Info.
+- **Display** offers **In reader** for HTTPS sites that allow embedding, and **New tab** for external lookup. An in-reader lookup also has an **Open in new tab** link.
 - **URL Template**: The dictionary URL containing the placeholder `###` where the search term is injected.
   - *WordReference:* `https://www.wordreference.com/enru/###`
-  - *Wiktionary:* `https://{lang}.wiktionary.org/wiki/###`
+  - *Wiktionary:* `https://en.wiktionary.org/wiki/###`
   - *Cambridge:* `https://dictionary.cambridge.org/dictionary/english-spanish/###`
   - *Jisho (Japanese):* `https://jisho.org/search/###`
   - *Diki (Polish):* `https://www.diki.pl/slownik-angielsko-polski?q=###`
@@ -198,19 +194,19 @@ The reader shows **Read ×** and **Listened ×** for newly recorded complete pas
 
 The optional catalog is defined in `client/lingua-read-client/src/utils/languagePresets.ts`. All catalog presets use `\p{L}\p{M}\u200C\u200D` for letters, combining marks, and joiners. Existing configurations and database seed defaults retain their own settings.
 
-| Languages | Direction | Sentence boundaries | Parser setting |
+| Languages | Direction | Sentence boundaries | Default word segmentation |
 | :--- | :--- | :--- | :--- |
-| Most catalog languages | Left to right | `.!?` | `spacedel` |
-| Arabic, Persian | Right to left | `.!?؟` | `spacedel` |
-| Hebrew | Right to left | `.!?` | `spacedel` |
-| Urdu | Right to left | `.!?؟۔` | `spacedel` |
-| Hindi | Left to right | `.!?।॥` | `spacedel` |
-| Bengali, Tamil | Left to right | `.!?।` | `spacedel` |
-| Greek | Left to right | `.!?;` plus the Greek question mark | `spacedel` |
-| Korean | Left to right | `.!?。！？` | `spacedel` |
-| Chinese | Left to right | `.!?。！？` | `jieba` (legacy; new imports default to `jieba-v1` with opt-out) |
-| Japanese | Left to right | `.!?。！？` | `mecab` (legacy; new imports default to `tinysegmenter-ja-v1` with opt-out) |
-| Thai | Left to right | `.!?` | `spacedel` (legacy; new imports default to `thai-dict-v1` with opt-out) |
+| Most catalog languages | Left to right | `.!?` | Space-delimited |
+| Arabic, Persian | Right to left | `.!?؟` | Space-delimited |
+| Hebrew | Right to left | `.!?` | Space-delimited |
+| Urdu | Right to left | `.!?؟۔` | Space-delimited |
+| Hindi | Left to right | `.!?।॥` | Space-delimited |
+| Bengali, Tamil | Left to right | `.!?।` | Space-delimited |
+| Greek | Left to right | `.!?;` plus the Greek question mark | Space-delimited |
+| Korean | Left to right | `.!?。！？` | Spaced word groups |
+| Chinese | Left to right | `.!?。！？` | Jieba-derived dictionary |
+| Japanese | Left to right | `.!?。！？` | TinySegmenter |
+| Thai | Left to right | `.!?` | Thai dictionary |
 
 ---
 

@@ -52,9 +52,7 @@
 .language-add-button:disabled { opacity: .55; }
 .language-add-button.is-added { background: transparent; opacity: .85; }
 .language-add-button .spinner-border { width: .8rem; height: .8rem; }
-.language-splitting-note { display: block; margin-top: .25rem; font-size: .65rem; color: var(--theme-text); }
-.languages-segmentation-help { font-size: .75rem; color: var(--theme-text); opacity: .75; line-height: 1.6; margin: 1rem 0 1.75rem; }
-.languages-custom { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem; border-top: 1px solid var(--border-color); padding-top: 1.5rem; }
+.languages-custom { margin-top: 1.75rem; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem; border-top: 1px solid var(--border-color); padding-top: 1.5rem; }
 .languages-custom h3 { font-size: .95rem; font-weight: 600; margin: 0 0 .35rem; }
 .languages-custom p { margin: 0; max-width: 380px; }
 .languages-custom .btn { font-size: .8rem; border-radius: 9px; padding: .7rem .9rem; }

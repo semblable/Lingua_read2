@@ -73,10 +73,11 @@ adding another language.
 **Evidence and limits.** The frontend
 [tokenizer suite](../client/lingua-read-client/src/__tests__/tokenizer.spec.js) and
 backend [TokenizerTests](../server/LinguaReadApi.Tests/TokenizerTests.cs) check
-the shared cases. These fixtures make drift reviewable; they do not prove correct
-segmentation for every language. MeCab/Jieba currently fall back to the default
-algorithm. Extend the shared corpus with a failing language-specific example
-before modifying the parser, and run both suites.
+the shared cases. Chinese, Japanese, and Thai imports select dedicated segmentation
+profiles by default. The [multilingual corpus](../tests/golden/multilingual_tokenizer_and_lemmatizer_test_suite_v4.json)
+checks those profiles alongside the space-delimited tokenizer. Extend the shared
+corpus with a failing language-specific example before modifying the parser, and
+run both suites.
 
 ## Case study: replaying offline activity without changing its meaning
 

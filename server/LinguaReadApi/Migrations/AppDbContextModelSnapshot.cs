@@ -1617,6 +1617,9 @@ namespace LinguaReadApi.Data.Migrations
                     b.Property<DateTime?>("LastManualStatusAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<DateTime?>("LastStatusEditedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<int>("Status")
                         .HasColumnType("integer");
 

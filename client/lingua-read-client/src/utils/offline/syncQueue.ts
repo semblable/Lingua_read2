@@ -10,7 +10,8 @@ const DB_NAME = 'lingua-read-offline';
 const DB_VERSION = 1;
 const STORE = 'pending-ops';
 
-type WordEditVersion = { clientUpdatedAt?: string; translationUpdatedAt?: string; expectedRevision?: string };
+type WordEditVersion = { clientUpdatedAt?: string; translationUpdatedAt?: string; expectedRevision?: string;
+  translationOnly?: boolean; statusUpdatedAt?: string };
 
 export type PendingOp =
   // SRS grade. Carries a clientEventId the backend dedupes on (a grade applied
@@ -98,6 +99,19 @@ function mergeWordEdits(previous: StoredWord, incoming: QueuedWord, enqueuedAt: 
     ? { type: latest.type, payload: { ...latest.payload } }
     : { type: latest.type, payload: { ...latest.payload } };
   op.payload.clientUpdatedAt = previousIsLater ? previousTime : incomingTime;
+
+  // A gloss has no status intent. An earlier explicit grade retains its own time
+  // even when a later translation and grade travel in the same request.
+  const previousStatusAt = previous.payload.statusUpdatedAt ?? previousTime;
+  const incomingStatusAt = incoming.payload.statusUpdatedAt ?? incomingTime;
+  if (!previous.payload.translationOnly || !incoming.payload.translationOnly) {
+    const usePrevious = !previous.payload.translationOnly && (incoming.payload.translationOnly ||
+      Date.parse(previousStatusAt) > Date.parse(incomingStatusAt));
+    op.payload.status = (usePrevious ? previous.payload.status : incoming.payload.status) ?? 1;
+    delete op.payload.translationOnly;
+    const statusAt = usePrevious ? previousStatusAt : incomingStatusAt;
+    op.payload.statusUpdatedAt = statusAt === op.payload.clientUpdatedAt ? undefined : statusAt;
+  }
 
   const previousTranslationAt = previous.payload.translationUpdatedAt ?? previousTime;
   const incomingTranslationAt = incoming.payload.translationUpdatedAt ?? incomingTime;

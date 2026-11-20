@@ -504,11 +504,11 @@ namespace LinguaReadApi.Controllers
             {
                 var word = await _context.Words.FirstOrDefaultAsync(w => w.WordId == card.WordId && w.UserId == userId);
                 var statusIntentAt = lastLog.WordStatusIntentAt ?? lastLog.ReviewedAt;
-                if (word != null && !(word.LastEditedAt > now) && !(word.LastManualStatusAt >= statusIntentAt)
+                if (word != null && !((word.LastStatusEditedAt ?? word.LastEditedAt) > now) && !(word.LastManualStatusAt >= statusIntentAt)
                     && (lastLog.WordStatusAfter is not { } statusAfter || word.Status == statusAfter))
                 {
                     word.Status = statusBefore;
-                    word.LastEditedAt = now;
+                    RecordSrsStatusTime(word, now);
                     restoredWordStatus = statusBefore;
                     if (statusBefore != SrsCardLifecycle.StatusKnown) SrsCardLifecycle.LiftStatusSuspension(card);
                 }
@@ -1033,7 +1033,7 @@ namespace LinguaReadApi.Controllers
             DateTime requestedReviewAt)
         {
             var word = await _context.Words.FirstOrDefaultAsync(w => w.WordId == card.WordId && w.UserId == userId);
-            if (word == null || word.LastEditedAt >= requestedReviewAt) return null;
+            if (word == null || (word.LastStatusEditedAt ?? word.LastEditedAt) >= requestedReviewAt) return null;
 
             if (SrsCardLifecycle.StatusAfterReview(word.Status, outcome, settings) is not { } newStatus)
                 return null;
@@ -1043,9 +1043,18 @@ namespace LinguaReadApi.Controllers
             log.WordStatusAfter = newStatus;
             log.WordStatusIntentAt = requestedReviewAt;
             word.Status = newStatus;
-            word.LastEditedAt = requestedReviewAt;
+            RecordSrsStatusTime(word, requestedReviewAt);
             SrsCardLifecycle.ApplyStatusRules(word, card, hasSentence: true, settings);
             return change;
+        }
+
+        private static void RecordSrsStatusTime(Word word, DateTime intentAt)
+        {
+            word.LastStatusEditedAt = intentAt;
+            // An offline grade can update the status after a newer gloss was saved.
+            // Advancing the row revision invalidates that previous conflict snapshot.
+            word.LastEditedAt = word.LastEditedAt is { } previous && previous >= intentAt
+                ? previous.AddMicroseconds(1) : intentAt;
         }
 
         /// <summary>A log row capturing <paramref name="card"/>'s state before <paramref name="outcome"/> is applied.</summary>

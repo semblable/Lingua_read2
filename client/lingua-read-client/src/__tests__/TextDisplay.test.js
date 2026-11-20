@@ -755,7 +755,7 @@ describe('TextDisplay', () => {
       fireEvent.keyDown(textarea, { key: 'Enter' });
     });
 
-    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(1, 2, 'hola, buenas', { textId: 1, sentence: 'Hello world.', clientUpdatedAt: expect.any(String) }));
+    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(1, 2, 'hola, buenas', { textId: 1, sentence: 'Hello world.', clientUpdatedAt: expect.any(String), translationOnly: true }));
     await waitFor(() => expect(screen.queryByText(/Translation not saved yet/)).not.toBeInTheDocument());
   });
 
@@ -3352,7 +3352,7 @@ describe('TextDisplay', () => {
       expect(textarea).toHaveValue('first, second');
     });
     // A tracked word keeps the added sense without pressing Enter, at its current status.
-    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(1, 1, 'first, second', { textId: 1, sentence: 'Hello world.', clientUpdatedAt: expect.any(String) }));
+    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(1, 1, 'first, second', { textId: 1, sentence: 'Hello world.', clientUpdatedAt: expect.any(String), translationOnly: true }));
     expect(await screen.findByText(/Saved/)).toBeInTheDocument();
     expect(screen.queryByText(/Translation not saved yet/)).not.toBeInTheDocument();
 
@@ -3383,7 +3383,7 @@ describe('TextDisplay', () => {
     await waitFor(() => expect(updateWord).toHaveBeenCalledTimes(2));
     const context = status <= 4 ? { textId: 1, sentence: 'Hello world.' } : {};
     expect(updateWord).toHaveBeenLastCalledWith(1, status, 'first, second', {
-      ...context, clientUpdatedAt: expect.any(String)
+      ...context, clientUpdatedAt: expect.any(String), translationOnly: true
     });
     expect(screen.getByRole('button', { name: label, exact: true })).toHaveAttribute('aria-pressed', 'true');
   });
@@ -3483,7 +3483,7 @@ describe('TextDisplay', () => {
       fireEvent.click(screen.getByRole('button', { name: /^Save$/ }));
     });
 
-    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(1, 4, 'hola, oi', { textId: 1, sentence: 'Hello world.', clientUpdatedAt: expect.any(String) }));
+    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(1, 4, 'hola, oi', { textId: 1, sentence: 'Hello world.', clientUpdatedAt: expect.any(String), translationOnly: true }));
     await waitFor(() => expect(screen.queryByRole('button', { name: /^Save$/ })).not.toBeInTheDocument());
   });
 

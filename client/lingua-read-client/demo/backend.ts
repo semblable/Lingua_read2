@@ -153,7 +153,9 @@ export function createDemoBackend(basePath: string) {
     if (path === '/words' && method === 'POST') {
       const lesson = lessons.find(l => l.textId === Number(body.textId));
       if (!lesson) return json({ message: 'Choose a sample lesson first.' }, 400);
-      const word = saveWord(lesson.languageId, String(body.term || ''), Number(body.status || 1), String(body.translation || ''));
+      const word = saveWord(lesson.languageId, String(body.term || ''), body.translationOnly === true ? 1 : Number(body.status || 1),
+        String(body.translation || ''), body.translationOnly === true);
+      if (body.translationOnly === true && typeof body.translation === 'string') word.translation = body.translation;
       saveExample(word, body.textId, body.sentence);
       return json(word);
     }
@@ -162,7 +164,7 @@ export function createDemoBackend(basePath: string) {
       if (!word) return json({ message: 'Sample word not found.' }, 404);
       if (method === 'DELETE') { words = words.filter(w => w !== word); notify(); return json({ message: 'Deleted from this demo.' }); }
       if (method === 'PUT') {
-        word.status = Number(body.status || word.status);
+        word.status = body.translationOnly === true ? Math.max(1, word.status) : Number(body.status || word.status);
         if (typeof body.translation === 'string') word.translation = body.translation;
         saveExample(word, body.textId, body.sentence);
         notify();

@@ -26,7 +26,7 @@ export const createWord = async (
   status: number | string,
   translation: string | null | undefined,
   sentence: string | null = null,
-  options: { queueOnly?: boolean; clientUpdatedAt?: string; expectedRevision?: string } = {}
+  options: { queueOnly?: boolean; clientUpdatedAt?: string; expectedRevision?: string; translationOnly?: boolean } = {}
 ): Promise<unknown> => {
   try {
     const payload = {
@@ -35,6 +35,7 @@ export const createWord = async (
       status: parseInt(String(status), 10),
       ...(translation != null ? { translation } : {}),
       replaceExisting: true,
+      ...(options.translationOnly ? { translationOnly: true } : {}),
       sentence,
       clientUpdatedAt: options.clientUpdatedAt ?? wordEditTime(),
       ...(options.expectedRevision !== undefined ? { expectedRevision: options.expectedRevision } : {}),
@@ -68,7 +69,7 @@ export const createWord = async (
   }
 };
 
-type WordUpdateOptions = { clientUpdatedAt?: string; expectedRevision?: string } &
+type WordUpdateOptions = { clientUpdatedAt?: string; expectedRevision?: string; translationOnly?: boolean } &
   ({ textId: number | string; sentence: string } | { textId?: never; sentence?: never });
 
 export const updateWord = async (
@@ -85,6 +86,7 @@ export const updateWord = async (
       status,
       ...(translation != null ? { translation } : {}),
       ...(options?.textId !== undefined ? { textId: Number(options.textId), sentence: options.sentence } : {}),
+      ...(options?.translationOnly ? { translationOnly: true } : {}),
       clientUpdatedAt: options?.clientUpdatedAt ?? wordEditTime(),
       ...(options?.expectedRevision !== undefined ? { expectedRevision: options.expectedRevision } : {}),
     };

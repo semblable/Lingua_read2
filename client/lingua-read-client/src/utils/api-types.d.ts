@@ -5265,6 +5265,17 @@ export interface paths {
                 };
             };
             responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["WordResponseDto"];
+                        "application/json": components["schemas"]["WordResponseDto"];
+                        "text/json": components["schemas"]["WordResponseDto"];
+                    };
+                };
                 /** @description No Content */
                 204: {
                     headers: {
@@ -5855,6 +5866,9 @@ export interface components {
         };
         CreateWordDto: {
             replaceExisting?: boolean;
+            translationOnly?: boolean;
+            /** Format: date-time */
+            statusUpdatedAt?: string | null;
             /** Format: int32 */
             textId: number;
             term: string;
@@ -7279,6 +7293,9 @@ export interface components {
             srsLeechAction?: string | null;
         };
         UpdateWordDto: {
+            translationOnly?: boolean;
+            /** Format: date-time */
+            statusUpdatedAt?: string | null;
             /** Format: int32 */
             status: number;
             translation?: string | null;
@@ -7581,6 +7598,8 @@ export interface components {
             createdAt?: string;
             /** Format: date-time */
             lastEditedAt?: string | null;
+            /** Format: date-time */
+            lastStatusEditedAt?: string | null;
             /** Format: date-time */
             lastManualStatusAt?: string | null;
             /** Format: int32 */

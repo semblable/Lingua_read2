@@ -19,6 +19,7 @@ export type WordStatusIntent = {
   status: WordStatus;
   // Omitted means status-only; an explicit empty string intentionally clears it.
   translation?: string;
+  translationOnly?: boolean;
   fillTranslation?: () => Promise<string | undefined>;
 };
 export type WordStatusMutationState = {
@@ -246,7 +247,7 @@ class WordStatusCoordinator {
     // A provider can finish after another grade, even before React renders it.
     // Join the entity's FIFO with its current intent instead of an older panel status.
     const status = entity?.desiredStatus ?? target.word?.status ?? 1;
-    return this.mutate({ target, translation, status: status as WordStatus }, generation);
+    return this.mutate({ target, translation, status: status as WordStatus, translationOnly: true }, generation);
   };
 
   private async run(entity: Entity): Promise<void> {
@@ -270,6 +271,7 @@ class WordStatusCoordinator {
         // Provisional creates have passage-scoped queue keys. A later passage
         // must join the FIFO even after an older replay has supplied an ID.
         const timing = { clientUpdatedAt: request.clientUpdatedAt,
+          ...(request.translationOnly ? { translationOnly: true } : {}),
           ...(request.reviewed ? { expectedRevision: request.reviewed.expectedRevision } : {}) };
         const result = creating
           ? await this.args.create(request.target.textId, entity.target.term, request.status, translation,
@@ -290,8 +292,9 @@ class WordStatusCoordinator {
           const op: QueuedWordOperation = result.queuedOp?.type === 'wordCreate' || result.queuedOp?.type === 'wordStatusUpdate'
             ? result.queuedOp : creating
               ? { type: 'wordCreate', payload: { textId: Number(request.target.textId), term: entity.target.term.trim(), status: request.status, translation,
-                sentence: request.target.sentence } }
+                ...timing, sentence: request.target.sentence } }
               : { type: 'wordStatusUpdate', payload: { wordId: entity.wordId!, status: request.status, translation,
+                ...timing,
                 ...(request.status <= 4 && request.target.sentence ? { textId: Number(request.target.textId), sentence: request.target.sentence } : {}) } };
           const previous = op.payload.expectedRevision === undefined ? [...entity.queuedRequests].reverse()
             .find(item => item.active && item.op.payload.expectedRevision === undefined && this.queueKey(item.op) === this.queueKey(op)) : undefined;
@@ -299,8 +302,10 @@ class WordStatusCoordinator {
           entity.queuedRequests.push({ request, op, translation: translation ?? previous?.translation, active: true });
           this.updateQueuedState(entity);
         } else {
-          this.identify(entity, returnedWord(result));
-          entity.confirmedStatus = request.status;
+          const savedWord = returnedWord(result);
+          this.identify(entity, savedWord);
+          entity.confirmedStatus = savedWord?.status ?? request.status;
+          if (request.sequence === entity.sequence) entity.desiredStatus = entity.confirmedStatus;
           entity.confirmedSequence = request.sequence;
           if (translation !== undefined) entity.confirmedTranslation = translation;
         }
@@ -310,7 +315,7 @@ class WordStatusCoordinator {
         }
         entity.pending = entity.requests.length > 0;
         this.publish(entity, entity.sequence === request.sequence
-          ? `${entity.term}: ${isOfflineQueued(result) ? 'Queued offline' : WORD_STATUS_LABELS[request.status] + ' saved'}.` : undefined);
+          ? `${entity.term}: ${isOfflineQueued(result) ? 'Queued offline' : WORD_STATUS_LABELS[entity.confirmedStatus as WordStatus] + ' saved'}.` : undefined);
         request.resolve(isOfflineQueued(result) ? 'queued' : 'confirmed');
       } catch (error) {
         const conflict = getConflictingWord(error);
@@ -371,11 +376,12 @@ class WordStatusCoordinator {
           entity.conflictId = conflict.id;
           this.showConflictingWord(entity, queued.request);
           this.publish(entity, entity.error, true);
-        } else if (word && word.status === entity.desiredStatus &&
+        } else if (word && (queued?.request.translationOnly || word.status === entity.desiredStatus) &&
           // useSyncedWordIdentities checks that the shared queue is empty both
           // before and after this read, including when another tab replayed it.
           (queued?.translation === undefined || word.translation === queued.translation)) {
           entity.confirmedStatus = word.status ?? 0;
+          entity.desiredStatus = entity.confirmedStatus;
           entity.confirmedSequence = entity.sequence;
           entity.confirmedTranslation = word.translation ?? undefined;
           entity.queuedRequests = [];
@@ -410,9 +416,10 @@ class WordStatusCoordinator {
     if (!queued) return;
     const latest = queued.active && queued.request.sequence === entity.sequence;
     if (outcome === 'confirmed') {
-      this.identify(entity, returnedWord(result));
+      const savedWord = returnedWord(result);
+      this.identify(entity, savedWord);
       if (queued.request.sequence >= entity.confirmedSequence) {
-        entity.confirmedStatus = op.payload.status ?? queued.request.status;
+        entity.confirmedStatus = savedWord?.status ?? op.payload.status ?? queued.request.status;
         entity.confirmedSequence = queued.request.sequence;
         entity.confirmedTranslation = op.payload.translation ?? entity.confirmedTranslation;
       }

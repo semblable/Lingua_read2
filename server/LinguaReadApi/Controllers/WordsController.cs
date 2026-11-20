@@ -88,14 +88,14 @@ namespace LinguaReadApi.Controllers
             var word = (await LoadMatchingWordsAsync(userId, text.Language, [normalizedTerm]))
                 .FirstOrDefault();
             var isNew = word == null;
-            var status = createWordDto.ReplaceExisting || isNew
+            var status = createWordDto.TranslationOnly ? Math.Max(1, word?.Status ?? 0) : createWordDto.ReplaceExisting || isNew
                 ? createWordDto.Status : Math.Max(word!.Status, createWordDto.Status);
             var translation = createWordDto.ReplaceExisting
                 ? NormalizeTranslationEdit(createWordDto.Translation)
                 : string.IsNullOrEmpty(createWordDto.Translation) ? null : createWordDto.Translation;
             if (word == null && createWordDto.ExpectedRevision != null) return NotFound();
             var writeTime = word == null ? editedAt : ResolveWordEditTime(word, createWordDto.ExpectedRevision,
-                editedAt, status, translation, createWordDto.TranslationUpdatedAt);
+                editedAt, status, translation, createWordDto.TranslationUpdatedAt, createWordDto.StatusUpdatedAt);
             if (!writeTime.HasValue) return NewerWordConflict(word!);
 
             word ??= new Word
@@ -105,8 +105,8 @@ namespace LinguaReadApi.Controllers
                 LanguageId = text.LanguageId,
                 CreatedAt = DateTime.UtcNow
             };
-            word.Status = status;
-            word.LastEditedAt = word.LastManualStatusAt = writeTime.Value;
+            ApplyWordEdit(word, status, writeTime.Value, !createWordDto.TranslationOnly || isNew || word.Status == 0,
+                createWordDto.ExpectedRevision == null ? createWordDto.StatusUpdatedAt : null);
             if (isNew) _context.Words.Add(word);
             else _context.Entry(word).Property(w => w.LastEditedAt).IsModified = true;
             if (isNew || !await _context.TextWords.AnyAsync(tw => tw.TextId == text.TextId && tw.WordId == word.WordId))
@@ -404,6 +404,7 @@ namespace LinguaReadApi.Controllers
 
         // PUT: api/words/5
         [HttpPut("{id}")]
+        [ProducesResponseType(typeof(WordResponseDto), 200)]
         [ProducesResponseType(204)]
         [ProducesResponseType(typeof(WordEditConflictDto), 409)]
         public async Task<IActionResult> UpdateWord(int id, [FromBody] UpdateWordDto updateWordDto)
@@ -430,12 +431,13 @@ namespace LinguaReadApi.Controllers
             }
 
             var translation = NormalizeTranslationEdit(updateWordDto.Translation);
+            var status = updateWordDto.TranslationOnly ? Math.Max(1, word.Status) : updateWordDto.Status;
             var writeTime = ResolveWordEditTime(word, updateWordDto.ExpectedRevision, editedAt,
-                updateWordDto.Status, translation, updateWordDto.TranslationUpdatedAt);
+                status, translation, updateWordDto.TranslationUpdatedAt, updateWordDto.StatusUpdatedAt);
             if (!writeTime.HasValue) return NewerWordConflict(word);
 
             Text? sourceText = null;
-            if (updateWordDto.Status is >= 1 and <= 4 && !string.IsNullOrWhiteSpace(updateWordDto.Sentence))
+            if (status is >= 1 and <= 4 && !string.IsNullOrWhiteSpace(updateWordDto.Sentence))
             {
                 if (!updateWordDto.TextId.HasValue)
                     return BadRequest("A source text is required to save an example.");
@@ -453,8 +455,8 @@ namespace LinguaReadApi.Controllers
 
             // Update word status, then create, suspend or restore its SRS card to match
             // (Ignored always suspends; leaving Known/Ignored lifts only that suspension).
-            word.Status = updateWordDto.Status;
-            word.LastEditedAt = word.LastManualStatusAt = writeTime.Value;
+            ApplyWordEdit(word, status, writeTime.Value, !updateWordDto.TranslationOnly || word.Status == 0,
+                updateWordDto.ExpectedRevision == null ? updateWordDto.StatusUpdatedAt : null);
             _context.Entry(word).Property(w => w.LastEditedAt).IsModified = true;
             var capturedExample = sourceText != null && await SrsMinedSentences.CaptureFirstAsync(
                 _context, word, updateWordDto.Sentence, sourceText);
@@ -479,7 +481,7 @@ namespace LinguaReadApi.Controllers
                 return await ReadWordConflictAsync(userId, id);
             }
 
-            return NoContent();
+            return updateWordDto.TranslationOnly ? Ok(WordResponse(word, false)) : NoContent();
         }
 
         // DELETE: api/words/5
@@ -587,14 +589,13 @@ namespace LinguaReadApi.Controllers
                     var newWords = plan.WordsToCreate.ToHashSet();
                     foreach (var word in plan.WordsToCreate.Concat(plan.WordsWithNewStatus))
                     {
-                        word.LastEditedAt = editTime;
-                        if (newWords.Contains(word) || _context.Entry(word).Property(w => w.Status).OriginalValue != word.Status)
-                            word.LastManualStatusAt = editTime;
+                        var statusChanged = newWords.Contains(word) || _context.Entry(word).Property(w => w.Status).OriginalValue != word.Status;
+                        ApplyWordEdit(word, word.Status, editTime, statusChanged, null);
                     }
                     foreach (var (word, translation) in plan.TranslationsToUpsert)
                     {
                         SetWordTranslation(word, translation);
-                        word.LastEditedAt = editTime;
+                        ApplyWordEdit(word, word.Status, editTime, false, null);
                     }
 
                     // New cards can reference the added Word, so all associated writes
@@ -901,8 +902,20 @@ namespace LinguaReadApi.Controllers
         private static string WordRevision(Word word, DateTime? latest) =>
             $"{word.WordId:x}-{(latest ?? word.CreatedAt).Ticks:x}";
 
+        private static void ApplyWordEdit(Word word, int status, DateTime writeTime, bool statusSelected, DateTimeOffset? statusUpdatedAt)
+        {
+            // Preserve the effective status clock before a first definition edit advances the row revision.
+            word.LastStatusEditedAt ??= word.LastEditedAt ?? word.LastManualStatusAt ?? (!statusSelected && word.Status > 0 ? word.CreatedAt : null);
+            word.Status = status;
+            word.LastEditedAt = writeTime;
+            if (!statusSelected) return;
+            var statusTime = statusUpdatedAt is { } at && at.UtcDateTime < writeTime ? WordEditTime(at) : writeTime;
+            if (!(word.LastStatusEditedAt >= statusTime)) word.LastStatusEditedAt = statusTime;
+            if (!(word.LastManualStatusAt >= statusTime)) word.LastManualStatusAt = statusTime;
+        }
+
         private static DateTime? ResolveWordEditTime(Word word, string? expectedRevision, DateTime editedAt,
-            int status, string? translation, DateTimeOffset? translationUpdatedAt)
+            int status, string? translation, DateTimeOffset? translationUpdatedAt, DateTimeOffset? statusUpdatedAt)
         {
             var latest = LatestWordEdit(word);
             if (expectedRevision != null)
@@ -917,6 +930,8 @@ namespace LinguaReadApi.Controllers
 
             var changesTranslation = translation != null && translation != (word.Translation?.Translation ?? "");
             if (editedAt < previous || (editedAt == previous && (status != word.Status || changesTranslation)))
+                return null;
+            if (status != word.Status && statusUpdatedAt is { } statusTime && statusTime.UtcDateTime <= previous)
                 return null;
 
             // Coalescing may carry an earlier translation along with a newer status.
@@ -1027,6 +1042,8 @@ namespace LinguaReadApi.Controllers
         // Explicit saves/replay may replace a provisional word's complete edit.
         // Omitted/false retains the existing promotion-only create semantics.
         public bool ReplaceExisting { get; set; }
+        public bool TranslationOnly { get; set; }
+        public DateTimeOffset? StatusUpdatedAt { get; set; }
         [Required]
         public int TextId { get; set; }
 
@@ -1051,6 +1068,8 @@ namespace LinguaReadApi.Controllers
 
     public class UpdateWordDto
     {
+        public bool TranslationOnly { get; set; }
+        public DateTimeOffset? StatusUpdatedAt { get; set; }
         [Required]
         [Range(1, 6)]
         public int Status { get; set; }

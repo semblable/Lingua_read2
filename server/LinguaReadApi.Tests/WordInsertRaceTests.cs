@@ -204,6 +204,30 @@ public class WordInsertRaceTests : IDisposable
         Assert.Equal("intervening definition", (await reader.WordTranslations.SingleAsync()).Translation);
     }
 
+    [Fact]
+    public async Task LaterDefinitionInCoalescedRequestDoesNotRefreshAnOlderExplicitGrade()
+    {
+        var options = await CreateSqliteOptions();
+        await InsertWord(options, "gato", status: 0);
+        await using var db = new AppDbContext(options);
+        var id = await db.Words.Select(w => w.WordId).SingleAsync();
+        var time = DateTimeOffset.UtcNow.AddMinutes(-5);
+        var words = CreateController(db);
+        Assert.IsType<NoContentResult>(await words.UpdateWord(id, new UpdateWordDto { Status = 5, ClientUpdatedAt = time }));
+        var mixed = new UpdateWordDto { Status = 2, Translation = "queued", StatusUpdatedAt = time.AddMinutes(-1),
+            ClientUpdatedAt = time.AddMinutes(1) };
+        Assert.IsType<ConflictObjectResult>(await words.UpdateWord(id, mixed));
+        var word = await db.Words.AsNoTracking().Include(w => w.Translation).SingleAsync();
+        Assert.Equal(5, word.Status);
+        Assert.Null(word.Translation);
+        mixed.StatusUpdatedAt = time.AddSeconds(10);
+        Assert.IsType<NoContentResult>(await words.UpdateWord(id, mixed));
+        word = await db.Words.AsNoTracking().Include(w => w.Translation).SingleAsync();
+        Assert.Equal(2, word.Status);
+        Assert.True(word.LastEditedAt > word.LastManualStatusAt);
+        Assert.Equal(word.LastManualStatusAt, word.LastStatusEditedAt);
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

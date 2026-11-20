@@ -296,6 +296,47 @@ public class SrsStatusSyncTests
         Assert.Empty(await context.SrsReviewLogs.ToListAsync());
     }
 
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task DefinitionEditPreservesAReviewInEitherOrderAndLetsUndoRestoreThePreviousStatus(bool create, bool reviewFirst)
+    {
+        using var context = CreateContext();
+        var userId = Seed(context, Settings(), wordStatus: 1);
+        var reviewAt = DateTime.UtcNow.AddMinutes(-4);
+        var glossAt = reviewAt.AddMinutes(1);
+        var word = await context.Words.SingleAsync();
+        word.CreatedAt = reviewAt.AddDays(-1);
+        word.LastEditedAt = word.CreatedAt;
+        context.SrsCardReviews.Add(new SrsCardReview { WordId = 1, UserId = userId, NextReviewAt = reviewAt.AddHours(-1) });
+        await context.SaveChangesAsync();
+        var controller = Srs(context, userId);
+        var request = new SrsReviewSubmitDto { SrsCardReviewId = 1, Grade = 3, ReviewedAt = reviewAt };
+        async Task<SrsReviewResultDto> Review() => Assert.IsType<SrsReviewResultDto>(
+            Assert.IsType<OkObjectResult>((await controller.SubmitReview(request)).Result).Value);
+        var review = reviewFirst ? await Review() : null;
+        // The word panel still shows status 1 when its definition is saved.
+        var words = Words(context, userId);
+        var edited = create
+            ? (await words.CreateWord(new CreateWordDto { TextId = 1, Term = "gato", Status = 1,
+                Translation = "domestic cat", TranslationOnly = true, ReplaceExisting = true, ClientUpdatedAt = glossAt })).Result
+            : await words.UpdateWord(1, new UpdateWordDto { Status = 1, Translation = "domestic cat",
+                TranslationOnly = true, ClientUpdatedAt = glossAt });
+        var saved = Assert.IsType<WordResponseDto>(Assert.IsType<OkObjectResult>(edited).Value);
+        Assert.Equal(reviewFirst ? 3 : 1, saved.Status);
+        Assert.Null(word.LastManualStatusAt);
+
+        review ??= await Review();
+        Assert.Equal(3, review.WordStatusChange!.To);
+        Assert.Equal(3, word.Status);
+        if (!reviewFirst) Assert.True(word.LastEditedAt > glossAt.AddTicks(-(glossAt.Ticks % 10)));
+        Assert.IsType<OkObjectResult>(await controller.UndoLastReview(new SrsUndoDto { SrsReviewLogId = review.SrsReviewLogId }));
+        Assert.Equal(1, word.Status);
+        Assert.Equal("domestic cat", word.Translation.Translation);
+    }
+
     [Fact]
     public async Task Undo_RestoresTheStatus_WhenNothingChangedItSince()
     {

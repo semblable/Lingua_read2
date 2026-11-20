@@ -2048,7 +2048,7 @@ const TextDisplay = () => {
 
   // translationOverride: the text to store when the caller has one newer than this render's
   // `translation` (the + AI auto-save runs after an await).
-  const handleSaveWord = useCallback(async (status: number | string, translationOverride?: string, exactTermOverride?: string) => {
+  const handleSaveWord = useCallback(async (status: number | string, translationOverride?: string, exactTermOverride?: string, translationOnly = false) => {
     // Ensure selectedWord is used here, as displayedWord might be slightly different if selection changed rapidly
     const termToSave = exactTermOverride || selectedWord || displayedWord?.term;
     if (!termToSave || processingWord || text?.textId == null) {
@@ -2081,7 +2081,7 @@ const TextDisplay = () => {
       } : current);
     }
     await mutateWordStatus({ target: { textId: text.textId, term: targetTerm, word: savedTarget, sentence: sentenceToMine },
-      status: numericStatus as WordStatus, translation: translationToSave });
+      status: numericStatus as WordStatus, translation: translationToSave, ...(translationOnly ? { translationOnly: true } : {}) });
   }, [selectedWord, displayedWord, processingWord, translation, text?.textId, text?.languageCode, currentSentenceSegment?.text, selectedWordAiContext, activePhraseSelection?.sentenceContext, languageConfig?.characterSubstitutions, languageConfig?.code, languageConfig?.languageCode, getWordData, koreanWordLookup, wordMap, lookupTerm, mutateWordStatus]);
 
   const handleSaveExactForm = useCallback(async () => {
@@ -2268,7 +2268,7 @@ const TextDisplay = () => {
   const handleSaveTranslation = useCallback(() => {
     if (!displayedWord) return;
     const statusToSave = (displayedWord.status ?? 0) > 0 ? displayedWord.status! : 1;
-    void handleSaveWord(statusToSave);
+    void handleSaveWord(statusToSave, undefined, undefined, true);
   }, [displayedWord, handleSaveWord]);
 
   const handleTranslationKeyDown = useCallback((event: React.KeyboardEvent<HTMLTextAreaElement>) => {

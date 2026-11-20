@@ -14,6 +14,7 @@ export const test = layoutTest.extend<{ statusNetwork: StatusNetwork }>({
   statusNetwork: async ({ context, openLayout, baseURL }, runFixture) => {
     void openLayout; // Install the read-only fixture first, then this narrow overlay.
     const pending = new Map<number, () => void>();
+    const savedStatuses = new Map<number, number>();
     const state: StatusNetwork = {
       writes: [], contextWrites: [], hold: new Set(), rejectNext: new Set(),
       release: wordId => { state.hold.delete(wordId); pending.get(wordId)?.(); pending.delete(wordId); },
@@ -23,17 +24,20 @@ export const test = layoutTest.extend<{ statusNetwork: StatusNetwork }>({
       const url = new URL(request.url());
       if (url.origin !== baseURL || request.method() !== 'PUT') { await route.fallback(); return; }
       const wordId = Number(url.pathname.split('/').pop());
-      const payload = request.postDataJSON() as { status?: unknown; translation?: unknown; textId?: unknown; sentence?: unknown; clientUpdatedAt?: unknown };
+      const payload = request.postDataJSON() as { status?: unknown; translation?: unknown; textId?: unknown; sentence?: unknown;
+        clientUpdatedAt?: unknown; translationOnly?: unknown };
       if (![900, 901, 902, 903, 904, 905].includes(wordId) || !Number.isInteger(payload.status) ||
         Number(payload.status) < 1 || Number(payload.status) > 6 ||
-        Object.keys(payload).some(key => !['status', 'translation', 'textId', 'sentence', 'clientUpdatedAt'].includes(key)) ||
+        Object.keys(payload).some(key => !['status', 'translation', 'textId', 'sentence', 'clientUpdatedAt', 'translationOnly'].includes(key)) ||
+        (payload.translationOnly !== undefined && typeof payload.translationOnly !== 'boolean') ||
         typeof payload.clientUpdatedAt !== 'string' || !Number.isFinite(Date.parse(payload.clientUpdatedAt)) ||
         (payload.translation !== undefined && typeof payload.translation !== 'string') ||
         (payload.textId !== undefined && ![801, 802].includes(Number(payload.textId))) ||
         (payload.sentence !== undefined && (typeof payload.sentence !== 'string' || payload.sentence.length > 2000))) {
         await route.fallback(); return;
       }
-      const write = { wordId, status: Number(payload.status), ...(typeof payload.translation === 'string' ? { translation: payload.translation } : {}) };
+      const status = payload.translationOnly ? savedStatuses.get(wordId) ?? wordId - 899 : Number(payload.status);
+      const write = { wordId, status, ...(typeof payload.translation === 'string' ? { translation: payload.translation } : {}) };
       state.writes.push(write);
       state.contextWrites.push({ ...write,
         ...(typeof payload.textId === 'number' ? { textId: payload.textId } : {}),
@@ -42,7 +46,11 @@ export const test = layoutTest.extend<{ statusNetwork: StatusNetwork }>({
       if (state.hold.has(wordId)) await new Promise<void>(resolve => pending.set(wordId, resolve));
       if (state.rejectNext.delete(wordId)) {
         await route.fulfill({ status: 503, json: { message: 'Synthetic rejected word save' } });
-      } else await route.fulfill({ json: write });
+      } else {
+        savedStatuses.set(wordId, status);
+        if (payload.translationOnly) await route.fulfill({ json: write });
+        else await route.fulfill({ status: 204 });
+      }
     });
     await runFixture(state);
     for (const release of pending.values()) release();

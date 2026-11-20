@@ -197,7 +197,7 @@ const OfflineIndicator: React.FC<OfflineIndicatorProps> = ({
               {conflictingWord.translation && ` ${conflictingWord.translation}`}
             </p>
             <p className="mb-2">
-              Offline edit · {WORD_STATUS_LABELS[payload.status as WordStatus]}.
+              Offline edit · {payload.translationOnly ? 'Translation' : WORD_STATUS_LABELS[payload.status as WordStatus]}.
               {payload.translation !== undefined && (payload.translation ? ` ${payload.translation}` : ' Translation cleared.')}
             </p>
             <div className="d-flex flex-wrap gap-2">

@@ -24,6 +24,9 @@ namespace LinguaReadApi.Models
         [ConcurrencyCheck]
         public DateTime? LastEditedAt { get; set; }
 
+        // A later definition edit does not supersede a pending vocabulary grade.
+        public DateTime? LastStatusEditedAt { get; set; }
+
         // Explicit status saves retain priority when a learner later undoes a review.
         public DateTime? LastManualStatusAt { get; set; }
         

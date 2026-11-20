@@ -12,6 +12,34 @@ const online = (value: boolean) => Object.defineProperty(navigator, 'onLine', { 
 beforeEach(async () => { online(false); await clearAll(); vi.clearAllMocks(); });
 afterEach(() => online(true));
 
+test.each(['create', 'update'])('%s keeps the time of a deliberate grade across later gloss-only saves', async kind => {
+  const save = (status: number, translation: string | undefined, minute: number, translationOnly = false) => {
+    const options = { clientUpdatedAt: `2026-11-18T08:0${minute}:00.000Z`, translationOnly };
+    return kind === 'create' ? createWord(7, 'cat', status, translation, null, options) : updateWord(5, status, translation, options);
+  };
+  await save(1, 'older gloss', 1, true);
+  await save(3, undefined, 2);
+  await save(1, 'new gloss', 4, true);
+  await save(2, undefined, 0);
+  expect(await listPending()).toHaveLength(1);
+  online(true);
+  await drain(productionSyncHandlers);
+  const body = JSON.parse(String(vi.mocked(fetchApi).mock.calls[0][1]?.body));
+  expect(body).toMatchObject({ status: 3, translation: 'new gloss', statusUpdatedAt: '2026-11-18T08:02:00.000Z',
+    clientUpdatedAt: '2026-11-18T08:04:00.000Z' });
+  expect(body).not.toHaveProperty('translationOnly');
+});
+
+test('coalescing two definition-only updates never turns them into a status choice', async () => {
+  await updateWord(5, 1, 'cat', { translationOnly: true });
+  await updateWord(5, 1, '', { translationOnly: true });
+  online(true);
+  await drain(productionSyncHandlers);
+  const body = JSON.parse(String(vi.mocked(fetchApi).mock.calls[0][1]?.body));
+  expect(body).toMatchObject({ translation: '', translationOnly: true });
+  expect(body).not.toHaveProperty('statusUpdatedAt');
+});
+
 test('queued creates return usable reader fields and preserve sentence context across edits', async () => {
   const queued = await createWord(1, 'cat', 1, 'kot', 'A cat sleeps.');
   expect(queued)

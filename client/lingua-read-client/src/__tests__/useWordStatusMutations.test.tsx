@@ -51,8 +51,17 @@ describe('reader status mutation coordination', () => {
     expect(result.current.words[0].status).toBe(6);
     expect(update).toHaveBeenCalledTimes(1);
     await act(async () => { pending.resolve({}); await translated; });
-    expect(update).toHaveBeenLastCalledWith(41, 6, 'chat, minou', { clientUpdatedAt: expect.any(String) });
+    expect(update).toHaveBeenLastCalledWith(41, 6, 'chat, minou', { clientUpdatedAt: expect.any(String), translationOnly: true });
     expect(result.current.states[0]).toMatchObject({ desiredStatus: 6, confirmedStatus: 6 });
+  });
+
+  test('a translation-only save adopts the status from another tab returned by the server', async () => {
+    const update = vi.fn().mockResolvedValue({ ...cat, status: 5, translation: 'domestic cat' });
+    const { result } = setup([cat], { update });
+    await act(async () => { await result.current.saveTranslation(target(cat), 'domestic cat'); });
+    expect(update).toHaveBeenCalledWith(41, 1, 'domestic cat', expect.objectContaining({ translationOnly: true }));
+    expect(result.current.states[0]).toMatchObject({ desiredStatus: 5, confirmedStatus: 5 });
+    expect(result.current.words[0]).toMatchObject({ status: 5, translation: 'domestic cat' });
   });
 
   test('existing-word save snapshots its sentence/source and Known or Ignored saves omit example capture', async () => {

@@ -30,6 +30,8 @@ export const productionSyncHandlers: SyncHandlers = {
       body: JSON.stringify({ status: payload.status, translation: payload.translation,
         clientUpdatedAt: queuedWordEditTime(payload.clientUpdatedAt, enqueuedAt),
         expectedRevision: payload.expectedRevision,
+        translationOnly: payload.translationOnly,
+        statusUpdatedAt: payload.statusUpdatedAt,
         translationUpdatedAt: payload.translationUpdatedAt,
         ...(payload.sentence && payload.textId ? { textId: payload.textId, sentence: payload.sentence } : {}) }),
     });
@@ -45,6 +47,8 @@ export const productionSyncHandlers: SyncHandlers = {
         translation: payload.translation,
         clientUpdatedAt: queuedWordEditTime(payload.clientUpdatedAt, enqueuedAt),
         expectedRevision: payload.expectedRevision,
+        translationOnly: payload.translationOnly,
+        statusUpdatedAt: payload.statusUpdatedAt,
         translationUpdatedAt: payload.translationUpdatedAt,
         sentence: payload.sentence,
         ...(payload.replaceExisting ? { replaceExisting: true } : {}),

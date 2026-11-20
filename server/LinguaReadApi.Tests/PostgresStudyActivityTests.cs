@@ -192,7 +192,7 @@ public class PostgresStudyActivityTests
         var migrator = c.GetService<IMigrator>();
         const string before = "20261030122947_AddTextSegmentationProfile";
         await migrator.MigrateAsync(before);
-        await Seed(c);
+        await Seed(c, legacyWordSchema: true);
         // Simulate a row written by the previous server, without the new columns.
         await c.Database.ExecuteSqlInterpolatedAsync($"""
             INSERT INTO "LessonStudyEvents" ("UserId", "SourceTextId", "SourceTitle", "LanguageId", "SourceRevision",
@@ -292,17 +292,23 @@ public class PostgresStudyActivityTests
         var migrator = c.GetService<IMigrator>();
         const string before = "20260927181306_AddTextImagePath";
         await migrator.MigrateAsync(before);
-        await Seed(c, legacyTextSchema: true);
+        await Seed(c, legacyTextSchema: true, legacyWordSchema: true);
         c.UserActivities.Add(new UserActivity { UserId = UserId, LanguageId = 1, ActivityType = "Reading",
             WordCount = 123, Timestamp = DateTime.UtcNow.AddYears(-1) });
         c.WordTranslations.Add(new WordTranslation { WordId = 1, Translation = "edited meaning" });
         c.SrsPhrases.Add(new SrsPhrase { UserId = UserId, WordId = 1, TextId = 1, Sentence = "one two.", TextTitle = "Synthetic" });
         c.SrsCardReviews.Add(new SrsCardReview { SrsCardReviewId = 1, WordId = 1, UserId = UserId, Stability = 4.5,
             Difficulty = 3.2, NextReviewAt = DateTime.UtcNow.AddDays(12) });
-        c.SrsReviewLogs.Add(new SrsReviewLog { SrsCardReviewId = 1, UserId = UserId, Grade = 2 });
         await c.SaveChangesAsync();
+        await c.Database.ExecuteSqlInterpolatedAsync($"""
+            INSERT INTO "SrsReviewLogs" ("SrsCardReviewId", "UserId", "Grade", "ReviewedAt", "OldInterval", "OldRepetitions", "OldNextReviewAt")
+            VALUES (1, {UserId}, 2, {DateTime.UtcNow}, 0, 0, {DateTime.UtcNow})
+            """);
         var beforeData = await Snapshot(c);
         await migrator.MigrateAsync();
+        Assert.Null(await c.Words.Select(w => w.LastEditedAt).SingleAsync());
+        Assert.Null(await c.Words.Select(w => w.LastManualStatusAt).SingleAsync());
+        Assert.Null(await c.SrsReviewLogs.Select(l => l.WordStatusIntentAt).SingleAsync());
         Assert.Empty(await c.LessonStudyEvents.ToListAsync());
         Assert.Equal(beforeData, await Snapshot(c));
         await migrator.MigrateAsync(before); // Empty ledger can be removed.
@@ -338,15 +344,21 @@ public class PostgresStudyActivityTests
     }
     private static DbContextOptions<AppDbContext> Options(string connection) => new DbContextOptionsBuilder<AppDbContext>()
         .UseNpgsql(connection, o => o.EnableRetryOnFailure(5, TimeSpan.FromMilliseconds(100), null)).Options;
-    private static async Task Seed(AppDbContext c, bool legacyTextSchema = false)
+    private static async Task Seed(AppDbContext c, bool legacyTextSchema = false, bool legacyWordSchema = false)
     {
         c.Users.Add(new User { Id = UserId, UserName = "synthetic" });
         c.Languages.Add(new Language { LanguageId = 1, Code = "en", Name = "English" });
         if (!legacyTextSchema)
             c.Texts.AddRange(Enumerable.Range(1, 2).Select(id => new Text { TextId = id, UserId = UserId, LanguageId = 1,
                 Title = "Synthetic", Content = "one two. one!" }));
-        c.Words.Add(new Word { WordId = 1, UserId = UserId, LanguageId = 1, Term = "one", Status = 5 });
+        if (!legacyWordSchema)
+            c.Words.Add(new Word { WordId = 1, UserId = UserId, LanguageId = 1, Term = "one", Status = 5 });
         await c.SaveChangesAsync();
+        if (legacyWordSchema)
+            await c.Database.ExecuteSqlInterpolatedAsync($"""
+                INSERT INTO "Words" ("WordId", "UserId", "LanguageId", "Term", "Status", "CreatedAt")
+                VALUES (1, {UserId}, 1, 'one', 5, {DateTime.UtcNow})
+                """);
         if (legacyTextSchema)
         {
             // Seed the historical table shape without projecting new optional columns.
@@ -362,10 +374,15 @@ public class PostgresStudyActivityTests
     private static async Task<string> Snapshot(AppDbContext c)
     {
         c.ChangeTracker.Clear();
-        Array[] rows = [await c.Words.ToArrayAsync(), await c.WordTranslations.ToArrayAsync(), await c.SrsPhrases.ToArrayAsync(),
-            await c.SrsCardReviews.ToArrayAsync(), await c.SrsReviewLogs.ToArrayAsync(), await c.UserActivities.ToArrayAsync()];
-        return System.Text.Json.JsonSerializer.Serialize(rows.Select(a => a.Cast<object>().Select(e => c.Entry(e).Properties
-            .ToDictionary(p => p.Metadata.Name, p => p.CurrentValue)).ToArray()).ToArray());
+        var words = await c.Words.Select(w => new { w.WordId, w.UserId, w.LanguageId, w.Term, w.Status, w.CreatedAt }).ToArrayAsync();
+        var reviewLogs = await c.Database.SqlQueryRaw<string>("""
+            SELECT (to_jsonb(log) - 'WordStatusIntentAt')::text AS "Value" FROM "SrsReviewLogs" log ORDER BY "SrsReviewLogId"
+            """).ToArrayAsync();
+        Array[] rows = [await c.WordTranslations.ToArrayAsync(), await c.SrsPhrases.ToArrayAsync(),
+            await c.SrsCardReviews.ToArrayAsync(), await c.UserActivities.ToArrayAsync()];
+        var tables = rows.Select(a => a.Cast<object>().Select(e => c.Entry(e).Properties
+            .ToDictionary(p => p.Metadata.Name, p => p.CurrentValue)).ToArray()).ToArray();
+        return System.Text.Json.JsonSerializer.Serialize(new { words, reviewLogs, tables });
     }
     private sealed class Database(string schema, DbContextOptions<AppDbContext> options) : IAsyncDisposable
     {

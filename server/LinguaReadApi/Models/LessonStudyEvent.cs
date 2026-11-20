@@ -22,8 +22,10 @@ public class LessonStudyEvent
     public int? TargetPassTenths { get; set; }
     public bool? ReconcilesSentenceCredit { get; set; }
     public int CreditedWords { get; set; }
+    // Cumulative word volume for the recorded read count, before subtracting initial sentence credit.
+    public long? ReadingVolumeWords { get; set; }
     public int CreditedListeningSeconds { get; set; }
-    public int CountingVersion { get; set; } = 1; // Legacy activity unit; no retokenization.
+    public int CountingVersion { get; set; } = 1; // 1: whitespace, 2: profiled word boundaries.
     public bool CountsTowardStatistics { get; set; } = true;
     public bool IsCompletionCheckpoint { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;

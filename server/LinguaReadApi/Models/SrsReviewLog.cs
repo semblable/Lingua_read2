@@ -42,6 +42,8 @@ namespace LinguaReadApi.Models
         // restore it, but only while the word still has the status the review gave it.
         public int? WordStatusBefore { get; set; }
         public int? WordStatusAfter { get; set; }
+        // The grade's actual intent time when it changed vocabulary. ReviewedAt follows card order.
+        public DateTime? WordStatusIntentAt { get; set; }
 
         // Client-generated idempotency key for offline replays; filtered-unique per user.
         [StringLength(64)]

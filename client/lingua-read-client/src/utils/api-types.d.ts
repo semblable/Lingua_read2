@@ -7521,6 +7521,10 @@ export interface components {
             status: number;
             /** Format: date-time */
             createdAt?: string;
+            /** Format: date-time */
+            lastEditedAt?: string | null;
+            /** Format: date-time */
+            lastManualStatusAt?: string | null;
             /** Format: int32 */
             languageId?: number;
             /** Format: uuid */

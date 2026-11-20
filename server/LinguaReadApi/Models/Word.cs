@@ -19,6 +19,13 @@ namespace LinguaReadApi.Models
         public int Status { get; set; } = 1; // 1: New, 2-3: Learning, 4: Advanced, 5: Known, 6: Ignored
         
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+        // Separate from creation: the linker can add an untracked word before a user saves it.
+        [ConcurrencyCheck]
+        public DateTime? LastEditedAt { get; set; }
+
+        // Explicit status saves retain priority when a learner later undoes a review.
+        public DateTime? LastManualStatusAt { get; set; }
         
         [ForeignKey("Language")]
         public int LanguageId { get; set; }
@@ -57,4 +64,4 @@ namespace LinguaReadApi.Models
         public virtual Text Text { get; set; } = null!;
         public virtual Word Word { get; set; } = null!;
     }
-} 
+}

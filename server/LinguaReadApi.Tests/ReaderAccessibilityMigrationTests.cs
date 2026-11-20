@@ -25,7 +25,7 @@ public class ReaderAccessibilityMigrationTests
         var migrations = context.Database.GetMigrations().ToList();
         Assert.Contains("20260324181629_AddStoryReasoningSettings", migrations); // Historical Migrations/ directory.
         Assert.Contains(Before, migrations); // Active additive Data/Migrations/ directory.
-        Assert.Equal(Current, migrations[^1]);
+        Assert.Contains(Current, migrations);
 
         var model = context.Model.FindEntityType(typeof(UserSettings))!;
         var shortcuts = model.FindProperty(nameof(UserSettings.ReaderCharacterShortcutsEnabled))!;
@@ -69,7 +69,7 @@ public class ReaderAccessibilityMigrationTests
             await using (var context = new AppDbContext(options))
             {
                 var migrator = context.GetService<IMigrator>();
-                await migrator.MigrateAsync(Current);
+                await migrator.MigrateAsync();
                 context.Users.Add(new User { Id = userId, UserName = "synthetic settings learner" });
                 context.Languages.Add(new Language { LanguageId = 1, Code = "en", Name = "English" });
                 context.Words.Add(new Word { WordId = 73, UserId = userId, LanguageId = 1, Term = "garden", Status = 3 });
@@ -79,7 +79,7 @@ public class ReaderAccessibilityMigrationTests
                 // Produce a genuine historical row without asking the current model to
                 // insert columns that did not exist before this additive migration.
                 await migrator.MigrateAsync(Before);
-                await migrator.MigrateAsync(Current);
+                await migrator.MigrateAsync();
                 context.ChangeTracker.Clear();
                 var upgraded = await context.UserSettings.SingleAsync();
                 Assert.True(upgraded.ReaderCharacterShortcutsEnabled);
@@ -89,7 +89,7 @@ public class ReaderAccessibilityMigrationTests
                 upgraded.ReaderCharacterShortcutsEnabled = false;
                 upgraded.ReaderStatusMarkersEnabled = true;
                 await context.SaveChangesAsync();
-                await migrator.MigrateAsync(Current); // Repeating the upgrade is a no-op.
+                await migrator.MigrateAsync(); // Repeating the upgrade is a no-op.
             }
 
             await using var reloadedContext = new AppDbContext(options);

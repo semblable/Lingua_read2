@@ -8,7 +8,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
 #nullable disable
 
-namespace LinguaReadApi.Migrations
+namespace LinguaReadApi.Data.Migrations
 {
     [DbContext(typeof(AppDbContext))]
     partial class AppDbContextModelSnapshot : ModelSnapshot
@@ -402,6 +402,9 @@ namespace LinguaReadApi.Migrations
                     b.Property<double>("PlaybackPasses")
                         .HasColumnType("double precision");
 
+                    b.Property<long?>("ReadingVolumeWords")
+                        .HasColumnType("bigint");
+
                     b.Property<bool?>("ReconcilesSentenceCredit")
                         .HasColumnType("boolean");
 
@@ -704,6 +707,9 @@ namespace LinguaReadApi.Migrations
 
                     b.Property<int?>("WordStatusBefore")
                         .HasColumnType("integer");
+
+                    b.Property<DateTime?>("WordStatusIntentAt")
+                        .HasColumnType("timestamp with time zone");
 
                     b.HasKey("SrsReviewLogId");
 
@@ -1603,6 +1609,13 @@ namespace LinguaReadApi.Migrations
 
                     b.Property<int>("LanguageId")
                         .HasColumnType("integer");
+
+                    b.Property<DateTime?>("LastEditedAt")
+                        .IsConcurrencyToken()
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("LastManualStatusAt")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<int>("Status")
                         .HasColumnType("integer");

@@ -32,7 +32,8 @@ export type UseReaderStateArgs = {
   fetchAllLanguageWordsRef: React.MutableRefObject<FetchAllLanguageWordsFn | null>;
   onSentenceProgressApplied: (
     initialSegmentIndex: number,
-    creditedIndices: number[]
+    creditedIndices: number[],
+    preserveInitialCursor: boolean
   ) => void;
   autoTranslateTriggeredRef: React.MutableRefObject<boolean>;
   autoTranslateTextIdRef: React.MutableRefObject<number | string | null>;
@@ -71,8 +72,8 @@ export type UseReaderStateResult = {
   setAudioSrc: React.Dispatch<React.SetStateAction<string | null>>;
   srtLines: SrtEntry[];
   setSrtLines: React.Dispatch<React.SetStateAction<SrtEntry[]>>;
+  sentenceSourceReady: boolean;
   sentenceProgressLoaded: boolean;
-  setSentenceProgressLoaded: React.Dispatch<React.SetStateAction<boolean>>;
 };
 
 export const useReaderState = ({
@@ -95,6 +96,7 @@ export const useReaderState = ({
   const [displayMode, setDisplayMode] = useState('audio');
   const [audioSrc, setAudioSrc] = useState<string | null>(null);
   const [srtLines, setSrtLines] = useState<SrtEntry[]>([]);
+  const [sentenceSourceReady, setSentenceSourceReady] = useState(false);
   const [sentenceProgressLoaded, setSentenceProgressLoaded] = useState(false);
 
   const textLoadRequestVersionRef = useRef(0);
@@ -113,7 +115,7 @@ export const useReaderState = ({
   }, [displayMode]);
 
   const stableOnSentenceProgressApplied = useRef(onSentenceProgressApplied);
-  stableOnSentenceProgressApplied.current = onSentenceProgressApplied;
+  useEffect(() => { stableOnSentenceProgressApplied.current = onSentenceProgressApplied; }, [onSentenceProgressApplied]);
 
   useEffect(() => {
     const requestVersion = textLoadRequestVersionRef.current + 1;
@@ -181,6 +183,7 @@ export const useReaderState = ({
         setNextTextId(null);
         setAudioSrc(null);
         setSrtLines([]);
+        setSentenceSourceReady(false);
         setSentenceProgressLoaded(false);
       }
 
@@ -244,18 +247,11 @@ export const useReaderState = ({
           if (displayModeRef.current !== 'text') setDisplayMode('text');
         }
         setLoading(false);
-
-        const promises: Promise<unknown>[] = [];
-
-        promises.push(
-          data.languageId && fetchAllLanguageWordsRef.current
-            ? (fetchAllLanguageWordsRef.current(data.languageId, isCurrentRequest) as Promise<unknown>)
-            : Promise.resolve(null)
-        );
-
-        promises.push(
-          profileConfig ? Promise.resolve(profileConfig) : data.languageId ? (getLanguage(data.languageId) as Promise<unknown>) : Promise.resolve(null)
-        );
+        if (data.languageId && fetchAllLanguageWordsRef.current) {
+          void fetchAllLanguageWordsRef.current(data.languageId, isCurrentRequest).catch(reason => {
+            if (isCurrentRequest()) console.error('Failed to fetch language words:', reason);
+          });
+        } else if (!data.languageId) setLanguageWordsLoaded(true);
 
         // Book navigation only needs the part list, so apply it as soon as it arrives rather than
         // after the whole batch: the language vocabulary above can be hundreds of KB, and until
@@ -286,24 +282,19 @@ export const useReaderState = ({
             if (isCurrentRequest()) console.error('Failed to get book data:', bookErr);
           }
         };
-        promises.push(applyBook());
+        void applyBook();
 
-        promises.push(
-          data?.textId ? (getSentenceProgress(data.textId) as Promise<unknown>) : Promise.resolve(null)
-        );
-
-        promises.push(srtPromise ?? Promise.resolve(null));
-
-        const results = await Promise.allSettled(promises);
+        const progressResult = Promise.allSettled([data.textId ? getSentenceProgress(data.textId) : null]);
+        // Sentence indices depend on the language's splitting rules and on subtitle cues.
+        // The rest of the vocabulary and book metadata can continue loading in parallel.
+        const [language] = await Promise.allSettled([
+          profileConfig ?? (data.languageId ? getLanguage(data.languageId) : null),
+          srtPromise
+        ]);
         if (!isCurrentRequest()) return;
 
-        if (results[0].status === 'rejected') {
-          console.error('Failed to fetch language words:', results[0].reason);
-        }
-        if (!data.languageId) setLanguageWordsLoaded(true);
-
-        if (results[1].status === 'fulfilled' && results[1].value) {
-          const config = results[1].value as NonNullable<LanguageConfig>;
+        if (language.status === 'fulfilled' && language.value) {
+          const config = language.value as NonNullable<LanguageConfig>;
           const resolvedParserType =
             data.segmentationProfile === 'jieba-v1'
               ? 'jieba-v1'
@@ -320,28 +311,33 @@ export const useReaderState = ({
                         : config.parserType;
           setLanguageConfig({ ...config, parserType: resolvedParserType });
         } else {
-          if (results[1].status === 'rejected') {
-            console.error('Failed to fetch language configuration:', results[1].reason);
+          if (language.status === 'rejected') {
+            console.error('Failed to fetch language configuration:', language.reason);
             setError(prev => `${prev} (Warning: Failed to load language config)`);
           }
           setLanguageConfig(null);
         }
 
-        if (results[3].status === 'fulfilled' && results[3].value) {
-          const sentenceProgress = results[3].value as {
-            lastSegmentIndex?: number;
-            creditedSegmentIndices?: number[];
-          };
-          const initialIndex = Math.max(0, sentenceProgress?.lastSegmentIndex || 0);
+        setSentenceSourceReady(true);
+
+        const [progress] = await progressResult;
+        if (!isCurrentRequest()) return;
+        if (progress.status === 'fulfilled') {
+          const sentenceProgress = progress.value;
+          const initialIndex = Math.max(0, sentenceProgress?.lastSegmentIndex ?? 0);
           stableOnSentenceProgressApplied.current(
             initialIndex,
-            sentenceProgress?.creditedSegmentIndices || []
+            sentenceProgress?.creditedSegmentIndices ?? [],
+            sentenceProgress?.lastSegmentIndex != null || sentenceProgress?.cursorUnknown === true
           );
         } else {
-          if (results[3].status === 'rejected') {
-            console.error('Failed to fetch sentence progress:', results[3].reason);
+          const status = (progress.reason as { status?: number } | null)?.status;
+          if (status === 403 || status === 404) {
+            setError('This text is no longer available.');
+            return;
           }
-          stableOnSentenceProgressApplied.current(0, []);
+          console.error('Failed to fetch sentence progress:', progress.reason);
+          stableOnSentenceProgressApplied.current(0, [], true);
         }
         setSentenceProgressLoaded(true);
       } catch (err: unknown) {
@@ -395,7 +391,7 @@ export const useReaderState = ({
     setAudioSrc,
     srtLines,
     setSrtLines,
-    sentenceProgressLoaded,
-    setSentenceProgressLoaded
+    sentenceSourceReady,
+    sentenceProgressLoaded
   };
 };

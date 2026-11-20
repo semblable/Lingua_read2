@@ -371,6 +371,7 @@ public class LogSentenceReadRequest
     public List<SentenceSegmentDto> Segments { get; set; } = new();
 
     public int? CurrentSegmentIndex { get; set; }
+    public DateTimeOffset? ClientUpdatedAt { get; set; }
 }
 
 public class SentenceProgressDto
@@ -379,6 +380,7 @@ public class SentenceProgressDto
     public List<int> CreditedSegmentIndices { get; set; } = new();
     public int CreditedWordCount { get; set; }
     public int? LastSegmentIndex { get; set; }
+    public DateTime? CursorUpdatedAt { get; set; }
 }
 
 [HttpGet("sentenceprogress/{textId}")]
@@ -443,8 +445,7 @@ public async Task<ActionResult<SentenceProgressDto>> LogSentenceRead([FromBody] 
         progress = new UserSentenceProgress
         {
             UserId = userId,
-            TextId = request.TextId,
-            UpdatedAt = DateTime.UtcNow
+            TextId = request.TextId
         };
         _context.UserSentenceProgresses.Add(progress);
     }
@@ -482,14 +483,21 @@ public async Task<ActionResult<SentenceProgressDto>> LogSentenceRead([FromBody] 
             newlyCreditedWords += WordCountUtility.CountStudyWords(segment.SegmentText, text.Language, text.SegmentationProfile);
     }
 
-    if (request.CurrentSegmentIndex.HasValue && request.CurrentSegmentIndex.Value >= 0)
+    if (request.CurrentSegmentIndex is >= 0)
     {
-        progress.LastSegmentIndex = request.CurrentSegmentIndex.Value;
+        var now = DateTime.UtcNow;
+        var requestedAt = request.ClientUpdatedAt?.UtcDateTime ?? now;
+        var cursorUpdatedAt = requestedAt > now ? now : requestedAt;
+        // An old replay can contribute new reading credit independently of the cursor.
+        if (progress.LastSegmentIndex == null || cursorUpdatedAt >= progress.UpdatedAt)
+        {
+            progress.LastSegmentIndex = request.CurrentSegmentIndex;
+            progress.UpdatedAt = cursorUpdatedAt;
+        }
     }
 
     progress.CreditedSegmentIndicesJson = SerializeCreditedIndices(creditedIndices);
     progress.CreditedWordCount += newlyCreditedWords;
-    progress.UpdatedAt = DateTime.UtcNow;
 
     var independentReread = await _context.LessonStudyEvents.AnyAsync(e => e.UserId == userId && e.SourceTextId == request.TextId
         && e.CountsTowardStatistics && e.Kind == "read-set" && e.ReconcilesSentenceCredit == false);
@@ -1138,7 +1146,10 @@ private DateTime CalculateStartDate(string period)
                     .OrderBy(index => index)
                     .ToList(),
                 CreditedWordCount = progress.CreditedWordCount,
-                LastSegmentIndex = progress.LastSegmentIndex
+                LastSegmentIndex = progress.LastSegmentIndex,
+                CursorUpdatedAt = progress.LastSegmentIndex.HasValue
+                    ? DateTime.SpecifyKind(progress.UpdatedAt, DateTimeKind.Utc)
+                    : null
             };
         }
 

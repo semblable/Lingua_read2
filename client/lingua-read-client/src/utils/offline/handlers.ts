@@ -5,6 +5,9 @@
 import { fetchApi as request, type FetchApiOptions } from '../api/client';
 import { queuedWordEditTime, type SyncHandlers } from './syncQueue';
 import { notifyStudyChange } from '../studyIntent';
+import type { SentenceProgress } from '../api/audiobook';
+import { queuedSentenceCursorTime, rememberSentenceProgress } from '../sentenceProgress';
+import { offlineSessionRevision } from './events';
 
 const fetchApi = (endpoint: string, options: FetchApiOptions) =>
   request(endpoint, { ...options, suppressAuthRedirect: true });
@@ -84,15 +87,18 @@ export const productionSyncHandlers: SyncHandlers = {
       }),
     });
   },
-  sentenceRead: async ({ payload }) => {
-    await fetchApi('/activity/logSentenceRead', {
+  sentenceRead: async ({ payload, enqueuedAt }) => {
+    const session = offlineSessionRevision();
+    const progress = await fetchApi('/activity/logSentenceRead', {
       method: 'POST',
       body: JSON.stringify({
         textId: payload.textId,
         currentSegmentIndex: payload.currentSegmentIndex,
+        clientUpdatedAt: queuedSentenceCursorTime(payload.clientUpdatedAt, enqueuedAt),
         segments: payload.segments,
       }),
-    });
+    }) as SentenceProgress | undefined;
+    if (offlineSessionRevision() === session) rememberSentenceProgress(payload.textId, progress);
   },
   lastRead: async ({ payload }) => {
     await fetchApi(`/books/${payload.bookId}/lastread`, {

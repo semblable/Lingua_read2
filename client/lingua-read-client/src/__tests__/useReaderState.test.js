@@ -76,10 +76,10 @@ describe('useReaderState', () => {
     });
     expect(result.current.words).toEqual([{ wordId: 1, term: 'hola' }]);
     expect(result.current.languageConfig).toEqual({ languageId: 5, name: 'Spanish' });
-    expect(onSentenceProgressApplied).toHaveBeenCalledWith(2, [0, 1]);
+    expect(onSentenceProgressApplied).toHaveBeenCalledWith(2, [0, 1], true);
   });
 
-  test('falls back to empty sentence progress on rejection', async () => {
+  test('falls back to showing the first sentence without saving its cursor on rejection', async () => {
     getText.mockResolvedValue({
       textId: 8,
       languageId: 5,
@@ -94,7 +94,7 @@ describe('useReaderState', () => {
     await waitFor(() => {
       expect(result.current.sentenceProgressLoaded).toBe(true);
     });
-    expect(onSentenceProgressApplied).toHaveBeenCalledWith(0, []);
+    expect(onSentenceProgressApplied).toHaveBeenCalledWith(0, [], true);
   });
 
   test('sets error when getText fails', async () => {
@@ -106,6 +106,14 @@ describe('useReaderState', () => {
       expect(result.current.error).toBe('boom');
     });
     expect(result.current.loading).toBe(false);
+  });
+
+  test.each([403, 404])('does not start logging after a definitive %i for a cached lesson', async status => {
+    getText.mockResolvedValue({ textId: 9, content: 'hola' });
+    getSentenceProgress.mockRejectedValue(Object.assign(new Error('Unavailable'), { status }));
+    const { result, onSentenceProgressApplied } = renderReaderStateHook({ textId: '9' });
+    await waitFor(() => expect(result.current.error).toBe('This text is no longer available.'));
+    expect(onSentenceProgressApplied).not.toHaveBeenCalled();
   });
 
   test('configures audio mode for an audio lesson with SRT', async () => {
@@ -200,8 +208,8 @@ describe('useReaderState', () => {
       expect(result.current.previousTextId).toBe(19);
       expect(result.current.nextTextId).toBe(21);
       expect(result.current.isLastBookPart).toBe(false);
-      // Applied while the vocabulary request is still pending.
-      expect(result.current.sentenceProgressLoaded).toBe(false);
+      // Both the part list and the resume position are independent of vocabulary.
+      expect(result.current.sentenceProgressLoaded).toBe(true);
     });
 
     test('flags the last part once the book has loaded', async () => {

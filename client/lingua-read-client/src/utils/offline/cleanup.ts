@@ -1,9 +1,10 @@
 import { clearAll } from './syncQueue';
 import { clearCachedBookmarks } from '../bookmarks';
+import { clearCachedSentenceProgress } from '../sentenceProgress';
 import { notifyOfflineEvent } from './events';
 
 /**
- * Wipe per-user service worker Cache Storage and the local bookmark cache.
+ * Wipe per-user service worker Cache Storage and local reader caches.
  * Session expiry retains the pending queue so work can sync after login.
  * Also called from useAuthStore.logout so a
  * subsequent user on the same browser doesn't inherit the previous user's
@@ -25,6 +26,7 @@ export async function clearOfflineCaches(): Promise<void> {
   // No-op until the one-time bookmark upload has run: before that the cache
   // is the only copy of those bookmarks.
   clearCachedBookmarks();
+  clearCachedSentenceProgress();
 }
 
 /** Explicit logout discards queued mutations; session expiry must preserve them. */

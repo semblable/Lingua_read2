@@ -49,7 +49,6 @@ export type UseReaderAudioSyncResult = {
   audioDrivenSentenceSyncRef: React.MutableRefObject<boolean>;
   lastAutoSegmentPlaybackKeyRef: React.MutableRefObject<string>;
   skipInitialAudioLessonSegmentPlaybackRef: React.MutableRefObject<boolean>;
-  pendingSentenceCreditRef: React.MutableRefObject<Set<number>>;
   setAudioPlaybackIntent: (shouldPlay: boolean) => void;
   toggleAudioPlayback: () => void;
   pauseAudioPlayback: () => void;
@@ -98,7 +97,6 @@ export const useReaderAudioSync = ({
   const audioDrivenSentenceSyncRef = useRef(false);
   const lastAutoSegmentPlaybackKeyRef = useRef('');
   const skipInitialAudioLessonSegmentPlaybackRef = useRef(true);
-  const pendingSentenceCreditRef = useRef(new Set<number>());
 
   const previousSegmentIndexRef = useRef(currentSegmentIndex);
   const wasSentenceModeRef = useRef(isSentenceMode);
@@ -624,7 +622,6 @@ export const useReaderAudioSync = ({
     audioDrivenSentenceSyncRef,
     lastAutoSegmentPlaybackKeyRef,
     skipInitialAudioLessonSegmentPlaybackRef,
-    pendingSentenceCreditRef,
     setAudioPlaybackIntent,
     toggleAudioPlayback,
     pauseAudioPlayback,

@@ -29,10 +29,10 @@ export type PendingOp =
   // drain can't clobber a newer value the server already holds.
   | { type: 'audiobookProgress'; payload: { bookId: number | string; trackId: number | null; position: number | null; clientUpdatedAt: string } }
   | { type: 'audioLessonProgress'; payload: { textId: number | string; position: number | null; clientUpdatedAt: string } }
-  // Reading position. sentenceRead is already idempotent server-side (it dedupes
-  // by credited segment index), so it is appended, not coalesced. lastRead is
-  // last-write-wins and coalesced + timestamp-guarded like audio position.
-  | { type: 'sentenceRead'; payload: { textId: number; currentSegmentIndex?: number; segments: { segmentIndex: number; segmentText: string }[] } }
+  // Keep every sentence credit for server-side deduplication. The timestamp
+  // separately prevents a late replay from replacing a newer sentence cursor.
+  | { type: 'sentenceRead'; payload: { textId: number; currentSegmentIndex?: number; clientUpdatedAt?: string; segments: { segmentIndex: number; segmentText: string }[] } }
+  // Book last-read is last-write-wins and coalesced like audio position.
   | { type: 'lastRead'; payload: { bookId: number | string; textId: number | string; clientUpdatedAt: string } }
   // Sentence bookmark add/remove. Last-write-wins per sentence: coalesced on
   // enqueue and timestamp-guarded server-side, so a late drain can't undo a
@@ -69,7 +69,7 @@ export interface SyncHandlers {
   logListening: (payload: PendingOp & { type: 'logListening' }) => Promise<void>;
   audiobookProgress: (payload: PendingOp & { type: 'audiobookProgress' }) => Promise<void>;
   audioLessonProgress: (payload: PendingOp & { type: 'audioLessonProgress' }) => Promise<void>;
-  sentenceRead: (payload: PendingOp & { type: 'sentenceRead' }) => Promise<void>;
+  sentenceRead: (payload: Extract<PendingOp, { type: 'sentenceRead' }> & { enqueuedAt?: number }) => Promise<void>;
   lastRead: (payload: PendingOp & { type: 'lastRead' }) => Promise<void>;
   bookmarkSet: (payload: PendingOp & { type: 'bookmarkSet' }) => Promise<void>;
 }

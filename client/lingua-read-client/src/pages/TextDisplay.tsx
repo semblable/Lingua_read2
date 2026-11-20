@@ -17,6 +17,7 @@ import LessonStudyPanel from '../components/reader/LessonStudyPanel';
 import './TextDisplay.css';
 import { SettingsContext } from '../contexts/SettingsContext';
 import { isOfflineQueued } from '../utils/offline/enqueueIfOffline';
+import { offlineSessionRevision } from '../utils/offline/events';
 import { useReaderBookmarks } from '../hooks/useReaderBookmarks';
 import { useReaderKeyboard, type WordStatus } from '../hooks/useReaderKeyboard';
 import { useReaderSelectionMarker } from '../hooks/useReaderSelectionMarker';
@@ -144,6 +145,17 @@ const TextDisplay = () => {
   const [visibleTranslationIndex, setVisibleTranslationIndex] = useState<number | null>(null);
   const [visibleExplanationIndex, setVisibleExplanationIndex] = useState<number | null>(null);
   const [creditedSegmentIndices, setCreditedSegmentIndices] = useState<number[]>([]);
+  type SentenceRead = { segmentIndex: number; segmentText: string };
+  const sentenceReads = useMemo(() => ({
+    textId, firstVisible: null as SentenceRead | null, navigatedBeforeRestore: false,
+    restored: null as { index: number; credited: number[] } | null,
+    lastRead: null as SentenceRead | null
+  }), [textId]);
+  const activeSentenceReads = useRef(sentenceReads);
+  activeSentenceReads.current = sentenceReads;
+  const addSentenceCredits = useCallback((incoming: number[]) => {
+    if (incoming.length) setCreditedSegmentIndices(previous => [...new Set([...previous, ...incoming])]);
+  }, []);
   const pendingModeEntryFromIndexRef = useRef<number | null>(null);
   const [activePhraseSelection, setActivePhraseSelection] = useState<PhraseSelectionState | null>(null);
   const selectionDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -238,11 +250,15 @@ const TextDisplay = () => {
   } = useReaderBookmarks({ textId, isMobile, hasActiveTextSelection });
 
   const handleSentenceProgressApplied = useCallback(
-    (initialSegmentIndex: number, credited: number[]) => {
-      setCurrentSegmentIndex(initialSegmentIndex);
-      setCreditedSegmentIndices(credited);
+    (initialSegmentIndex: number, credited: number[], preserveInitialCursor: boolean) => {
+      if (!sentenceReads.navigatedBeforeRestore) {
+        sentenceReads.firstVisible = null;
+        sentenceReads.restored = preserveInitialCursor ? { index: initialSegmentIndex, credited } : null;
+        setCurrentSegmentIndex(initialSegmentIndex);
+      }
+      addSentenceCredits(credited);
     },
-    []
+    [addSentenceCredits, sentenceReads]
   );
 
   const {
@@ -271,8 +287,8 @@ const TextDisplay = () => {
     setAudioSrc,
     srtLines,
     setSrtLines,
-    sentenceProgressLoaded,
-    setSentenceProgressLoaded
+    sentenceSourceReady,
+    sentenceProgressLoaded
   } = useReaderState({
     textId,
     fetchAllLanguageWordsRef,
@@ -369,7 +385,6 @@ const TextDisplay = () => {
     audioDrivenSentenceSyncRef,
     lastAutoSegmentPlaybackKeyRef,
     skipInitialAudioLessonSegmentPlaybackRef,
-    pendingSentenceCreditRef,
     toggleAudioPlayback,
     pauseAudioPlayback,
     resetAudioSyncTargets,
@@ -413,14 +428,12 @@ const TextDisplay = () => {
     lastAutoSegmentPlaybackKeyRef.current = '';
     skipInitialAudioLessonSegmentPlaybackRef.current = true;
     pendingModeEntryFromIndexRef.current = null;
-    pendingSentenceCreditRef.current = new Set();
   }, [
     textId,
     resetAudioSyncTargets,
     setSegmentPlaybackRequest,
     lastAutoSegmentPlaybackKeyRef,
-    skipInitialAudioLessonSegmentPlaybackRef,
-    pendingSentenceCreditRef
+    skipInitialAudioLessonSegmentPlaybackRef
   ]);
 
   const previousTranslationTargetLangRef = useRef(translationTargetLanguageCode);
@@ -1514,6 +1527,13 @@ const TextDisplay = () => {
   }, [isAudioLesson, srtLines, text?.content, text?.structuredContent, languageConfig, text?.languageCode]);
 
   const currentSentenceSegment = sentenceSegments[currentSegmentIndex] || null;
+  const moveToAdjacentSentence = (step: -1 | 1) => {
+    if (!sentenceProgressLoaded && !sentenceReads.navigatedBeforeRestore && currentSentenceSegment) {
+      sentenceReads.firstVisible ??= { segmentIndex: currentSentenceSegment.index, segmentText: currentSentenceSegment.text };
+      sentenceReads.navigatedBeforeRestore = true;
+    }
+    setCurrentSegmentIndex(previous => Math.max(0, Math.min(sentenceSegments.length - 1, previous + step)));
+  };
 
   const speakCurrentSentence = useCallback(async () => {
     if (!currentSentenceSegment || !sentenceTtsEnabled || !canUseSentenceTts) {
@@ -1830,20 +1850,16 @@ const TextDisplay = () => {
       return;
     }
 
-    if (sentenceSegments.length === 0) {
-      if (currentSegmentIndex !== 0) {
-        setCurrentSegmentIndex(0);
-      }
-      return;
+    const lastIndex = Math.max(0, sentenceSegments.length - 1);
+    if (currentSegmentIndex > lastIndex) {
+      if (sentenceReads.restored?.index === currentSegmentIndex) sentenceReads.restored.index = lastIndex;
+      setCurrentSegmentIndex(lastIndex);
     }
-
-    if (currentSegmentIndex >= sentenceSegments.length) {
-      setCurrentSegmentIndex(sentenceSegments.length - 1);
-    }
-  }, [currentSegmentIndex, sentenceProgressLoaded, sentenceSegments]);
+  }, [currentSegmentIndex, sentenceProgressLoaded, sentenceReads, sentenceSegments]);
 
   useEffect(() => {
-    if (!isSentenceMode || !sentenceProgressLoaded || !text?.textId || !currentSentenceSegment) {
+    if (!sentenceSourceReady || error || !isSentenceMode || !text?.textId
+        || text.textId !== Number(sentenceReads.textId) || !currentSentenceSegment) {
       return;
     }
 
@@ -1855,43 +1871,50 @@ const TextDisplay = () => {
     }
     pendingModeEntryFromIndexRef.current = null;
 
-    const isAudioDrivenSync = audioDrivenSentenceSyncRef.current;
-    audioDrivenSentenceSyncRef.current = false;
-
-    let cancelled = false;
-
     const syncSentenceProgress = async () => {
       const segmentIndex = currentSentenceSegment.index;
-      if (pendingSentenceCreditRef.current.has(segmentIndex)) {
-        return;
+      const read = { segmentIndex, segmentText: currentSentenceSegment.text };
+      const segments = [read];
+      if (!sentenceProgressLoaded && !sentenceReads.navigatedBeforeRestore) {
+        sentenceReads.firstVisible ??= read;
+        if (sentenceReads.firstVisible.segmentIndex === segmentIndex) return;
+        sentenceReads.navigatedBeforeRestore = true;
       }
+      if (sentenceReads.firstVisible && sentenceReads.navigatedBeforeRestore) {
+        // The reader has navigated before the saved position arrived. Record both
+        // visible sentences and keep the position the reader just selected.
+        if (sentenceReads.firstVisible.segmentIndex !== segmentIndex) segments.unshift(sentenceReads.firstVisible);
+        sentenceReads.firstVisible = null;
+      }
+      if (sentenceReads.lastRead?.segmentIndex === segmentIndex) return;
+      if (sentenceReads.restored?.index !== segmentIndex) sentenceReads.restored = null;
+      if (sentenceReads.restored?.credited.includes(segmentIndex)) return;
 
-      pendingSentenceCreditRef.current.add(segmentIndex);
+      const session = offlineSessionRevision();
+      sentenceReads.lastRead = read;
       try {
-        if (text?.textId == null) return;
         const response = await logSentenceReadActivity({
-          textId: text.textId,
-          currentSegmentIndex: segmentIndex,
-          segments: [{
-            segmentIndex,
-            segmentText: currentSentenceSegment.text
-          }]
+          textId: Number(sentenceReads.textId),
+          ...(sentenceReads.restored ? {} : { currentSegmentIndex: segmentIndex }),
+          segments
         });
-
-        // Offline: the op is queued for replay and there's no server response —
-        // keep the existing credited indices rather than clobbering them with [].
-        if (!cancelled && !isOfflineQueued(response)) {
+        if (activeSentenceReads.current !== sentenceReads || offlineSessionRevision() !== session) return;
+        if (isOfflineQueued(response)) {
+          addSentenceCredits(segments.filter(segment => segment.segmentText.trim()).map(segment => segment.segmentIndex));
+        } else {
           const typed = response as { creditedSegmentIndices?: number[] } | null;
-          setCreditedSegmentIndices(typed?.creditedSegmentIndices || []);
+          addSentenceCredits(typed?.creditedSegmentIndices ?? []);
         }
       } catch (sentenceReadErr) {
+        if (sentenceReads.lastRead === read) sentenceReads.lastRead = null;
         console.error('Failed to log sentence progress:', sentenceReadErr);
-      } finally {
-        pendingSentenceCreditRef.current.delete(segmentIndex);
       }
     };
 
-    syncSentenceProgress();
+    void syncSentenceProgress();
+    if (!sentenceProgressLoaded) return;
+    const isAudioDrivenSync = audioDrivenSentenceSyncRef.current;
+    audioDrivenSentenceSyncRef.current = false;
     setVisibleTranslationIndex(null);
     setVisibleExplanationIndex(null);
 
@@ -1924,17 +1947,17 @@ const TextDisplay = () => {
       skipInitialAudioLessonSegmentPlaybackRef.current = false;
     }
 
-    return () => {
-      cancelled = true;
-    };
   }, [
+    addSentenceCredits,
     audioDrivenSentenceSyncRef,
     currentSentenceSegment,
+    error,
     isAudioLesson,
     isSentenceMode,
     lastAutoSegmentPlaybackKeyRef,
-    pendingSentenceCreditRef,
     sentenceProgressLoaded,
+    sentenceReads,
+    sentenceSourceReady,
     setCurrentSrtLineId,
     setSegmentPlaybackRequest,
     skipInitialAudioLessonSegmentPlaybackRef,
@@ -2442,7 +2465,7 @@ const TextDisplay = () => {
 
   // --- Rendering Logic ---
   // --- Loading/Error/NotFound States ---
-  if (loading) { return <Container className="py-5 text-center"><Spinner animation="border" role="status"><span className="visually-hidden">Loading text</span></Spinner></Container>; }
+  if (loading || (text && isSentenceMode && !error && !sentenceSourceReady)) { return <Container className="py-5 text-center"><Spinner animation="border" role="status"><span className="visually-hidden">Loading text</span></Spinner></Container>; }
   if (error) { return <Container className="py-5"><Alert variant="danger">{error}<Button onClick={() => navigate(-1)}>Back</Button></Alert></Container>; }
   if (!text) { return <Container className="py-5"><Alert variant="warning">Text not found<Button onClick={() => navigate(libraryPath())}>Back</Button></Alert></Container>; }
   // --- End Loading/Error States ---
@@ -2712,8 +2735,8 @@ const TextDisplay = () => {
                     textContentRef={textContentRef}
                     canGoPrev={currentSegmentIndex > 0}
                     canGoNext={currentSegmentIndex < sentenceSegments.length - 1}
-                    onPrev={() => setCurrentSegmentIndex(prev => Math.max(0, prev - 1))}
-                    onNext={() => setCurrentSegmentIndex(prev => Math.min(sentenceSegments.length - 1, prev + 1))}
+                    onPrev={() => moveToAdjacentSentence(-1)}
+                    onNext={() => moveToAdjacentSentence(1)}
                     onReplayAudio={replayCurrentSegmentAudio}
                     canUseSentenceTts={canUseSentenceTts}
                     isSpeakingSentence={isSpeakingSentence}

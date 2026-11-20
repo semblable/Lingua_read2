@@ -6393,6 +6393,8 @@ export interface components {
             segments?: components["schemas"]["SentenceSegmentDto"][] | null;
             /** Format: int32 */
             currentSegmentIndex?: number | null;
+            /** Format: date-time */
+            clientUpdatedAt?: string | null;
         };
         LoginRequest: {
             password?: string | null;
@@ -6602,6 +6604,8 @@ export interface components {
             creditedWordCount?: number;
             /** Format: int32 */
             lastSegmentIndex?: number | null;
+            /** Format: date-time */
+            cursorUpdatedAt?: string | null;
         };
         SentenceSegmentDto: {
             /** Format: int32 */

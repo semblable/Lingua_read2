@@ -67,6 +67,53 @@ public class SentenceModeActivityTests
     }
 
     [Fact]
+    public async Task LogSentenceRead_AppliesLateCreditWithoutReplacingNewerCursor()
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        const int textId = 11;
+        SeedUserLanguageAndText(context, userId, textId, "Alpha beta. Gamma delta. Epsilon zeta.");
+        var controller = CreateUserActivityController(context, userId);
+        var firstReadingAt = DateTimeOffset.UtcNow.AddMinutes(-10);
+
+        async Task<UserActivityController.SentenceProgressDto> RecordAsync(
+            int? cursor, DateTimeOffset? clientUpdatedAt, int creditedIndex, string sentence)
+        {
+            var result = await controller.LogSentenceRead(new UserActivityController.LogSentenceReadRequest
+            {
+                TextId = textId,
+                CurrentSegmentIndex = cursor,
+                ClientUpdatedAt = clientUpdatedAt,
+                Segments = [new() { SegmentIndex = creditedIndex, SegmentText = sentence }]
+            });
+            var ok = Assert.IsType<OkObjectResult>(result.Result);
+            return Assert.IsType<UserActivityController.SentenceProgressDto>(ok.Value);
+        }
+
+        var nearEnd = await RecordAsync(2, firstReadingAt.AddMinutes(2), 2, "Epsilon zeta.");
+        Assert.Equal(2, nearEnd.LastSegmentIndex);
+        Assert.Equal(firstReadingAt.AddMinutes(2).UtcDateTime, nearEnd.CursorUpdatedAt);
+
+        var laterReplay = await RecordAsync(1, firstReadingAt.AddMinutes(1), 1, "Gamma delta.");
+        Assert.Equal(2, laterReplay.LastSegmentIndex);
+        Assert.Equal(nearEnd.CursorUpdatedAt, laterReplay.CursorUpdatedAt);
+        Assert.Equal(new[] { 1, 2 }, laterReplay.CreditedSegmentIndices);
+        Assert.Equal(4, laterReplay.CreditedWordCount);
+
+        var creditOnly = await RecordAsync(null, null, 0, "Alpha beta.");
+        Assert.Equal(2, creditOnly.LastSegmentIndex);
+        Assert.Equal(nearEnd.CursorUpdatedAt, creditOnly.CursorUpdatedAt);
+        Assert.Equal(6, creditOnly.CreditedWordCount);
+
+        var backwardSeek = await RecordAsync(0, firstReadingAt.AddMinutes(3), 0, "Alpha beta.");
+        Assert.Equal(0, backwardSeek.LastSegmentIndex);
+        Assert.Equal(firstReadingAt.AddMinutes(3).UtcDateTime, backwardSeek.CursorUpdatedAt);
+        Assert.Equal(new[] { 0, 1, 2 }, backwardSeek.CreditedSegmentIndices);
+        Assert.Equal(6, backwardSeek.CreditedWordCount);
+        Assert.Equal(6, (await context.UserLanguageStatistics.SingleAsync()).TotalWordsRead);
+    }
+
+    [Fact]
     public async Task CompleteText_OnlyCreditsRemainingWordsAfterSentenceMode()
     {
         await using var context = CreateContext();

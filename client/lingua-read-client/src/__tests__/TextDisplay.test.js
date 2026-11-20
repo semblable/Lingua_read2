@@ -343,7 +343,7 @@ describe('TextDisplay', () => {
       textId: 1,
       creditedSegmentIndices: [],
       creditedWordCount: 0,
-      lastSegmentIndex: 0
+      lastSegmentIndex: null
     });
     logSentenceReadActivity.mockResolvedValue({
       textId: 1,
@@ -2399,6 +2399,71 @@ describe('TextDisplay', () => {
 
     expect(await screen.findByText('Another')).toBeInTheDocument();
     expect(logSentenceReadActivity).toHaveBeenCalled();
+  });
+
+  test('unknown sentence progress credits the visible fallback without moving the cursor and permits a backward move past an in-flight save', async () => {
+    getText.mockResolvedValueOnce({
+      textId: 1,
+      title: 'Sample Text',
+      content: 'First sentence. Second sentence. Third sentence.',
+      languageCode: 'ES',
+      isAudioLesson: false,
+      words: []
+    });
+    getSentenceProgress.mockRejectedValueOnce(new TypeError('offline'));
+    let resolvePending;
+    logSentenceReadActivity.mockResolvedValueOnce({ offline: true })
+      .mockImplementationOnce(() => new Promise(resolve => { resolvePending = resolve; }));
+
+    renderTextDisplay({ sentenceMode: true });
+    expect(await screen.findByText('First')).toBeInTheDocument();
+    expect(logSentenceReadActivity).toHaveBeenCalledWith({
+      textId: 1, segments: [{ segmentIndex: 0, segmentText: 'First sentence.' }]
+    });
+    expect(await screen.findByText('Read: 1')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /^Next$/i }));
+    expect(await screen.findByText('Second')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /^Next$/i }));
+    expect(await screen.findByText('Third')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Prev/i }));
+    expect(await screen.findByText('Second')).toBeInTheDocument();
+    expect(logSentenceReadActivity.mock.calls.map(([payload]) => payload.currentSegmentIndex)).toEqual([undefined, 1, 2, 1]);
+
+    await act(async () => resolvePending({ creditedSegmentIndices: [1] }));
+  });
+
+  test('moving while the saved sentence loads preserves the new position and credits every visited sentence', async () => {
+    getText.mockResolvedValueOnce({ textId: 1, title: 'Reader', languageCode: 'en', words: [],
+      content: 'First sentence. Second sentence. Third sentence. Fourth sentence.' });
+    let finishLoad;
+    getSentenceProgress.mockReturnValueOnce(new Promise(resolve => { finishLoad = resolve; }));
+    logSentenceReadActivity.mockResolvedValue({ offline: true });
+    renderTextDisplay({ sentenceMode: true });
+    expect(await screen.findByText('First')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /^Next$/ }));
+    expect(await screen.findByText('Second')).toBeInTheDocument();
+    expect(logSentenceReadActivity).toHaveBeenCalledWith({ textId: 1, currentSegmentIndex: 1, segments: [
+      { segmentIndex: 0, segmentText: 'First sentence.' }, { segmentIndex: 1, segmentText: 'Second sentence.' }
+    ] });
+    fireEvent.click(screen.getByRole('button', { name: /^Next$/ }));
+    expect(await screen.findByText('Third')).toBeInTheDocument();
+    await act(async () => finishLoad({ lastSegmentIndex: 3, creditedSegmentIndices: [3] }));
+    expect(screen.getByText('Third')).toBeInTheDocument();
+    expect(await screen.findByText('Read: 4')).toBeInTheDocument();
+    expect(logSentenceReadActivity.mock.calls.map(([payload]) => payload.currentSegmentIndex)).toEqual([1, 2]);
+  });
+
+  test('a saved sentence response keeps credits still queued for replay', async () => {
+    getText.mockResolvedValueOnce({ textId: 1, title: 'Reader', languageCode: 'en', words: [],
+      content: 'First sentence. Second sentence. Third sentence. Fourth sentence.' });
+    getSentenceProgress.mockResolvedValueOnce({ lastSegmentIndex: 2, creditedSegmentIndices: [0, 1, 2] });
+    logSentenceReadActivity.mockResolvedValueOnce({ lastSegmentIndex: 3, creditedSegmentIndices: [0, 3] });
+    renderTextDisplay({ sentenceMode: true });
+    expect(await screen.findByText('Third')).toBeInTheDocument();
+    expect(screen.getByText('Read: 3')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /^Next$/ }));
+    expect(await screen.findByText('Read: 4')).toBeInTheDocument();
   });
 
   test('sentence mode shows translation for current sentence', async () => {

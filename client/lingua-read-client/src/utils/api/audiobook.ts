@@ -4,8 +4,11 @@
 
 import { fetchApi } from './client';
 import type { ResponseOf, RequestBodyOf } from '../fetchApi';
-import { enqueueIfOffline } from '../offline/enqueueIfOffline';
+import { enqueueIfOffline, isOfflineQueued } from '../offline/enqueueIfOffline';
 import { newClientEventId } from '../offline/clientEventId';
+import { offlineSessionRevision } from '../offline/events';
+import { listPending, removePending } from '../offline/syncQueue';
+import { forgetSentenceProgress, queuedSentenceCursorTime, readCachedSentenceProgress, rememberSentenceProgress } from '../sentenceProgress';
 import type { LessonListeningCredit } from '../../audio/listeningActivity';
 import { notifyStudyChange } from '../studyIntent';
 
@@ -33,7 +36,10 @@ export type AudioLessonProgress = {
 export type SentenceProgress = ResponseOf<
   '/api/activity/sentenceprogress/{textId}',
   'get'
->;
+> & {
+  // A credit-only offline snapshot cannot tell us where another device stopped.
+  cursorUnknown?: boolean;
+};
 export type LogManualActivityInput = RequestBodyOf<'/api/activity/logManual', 'post'>;
 export type LogSentenceReadInput = RequestBodyOf<'/api/activity/logSentenceRead', 'post'>;
 
@@ -161,31 +167,94 @@ export const logManualActivity = async (
 export const getSentenceProgress = async (
   textId: number | string
 ): Promise<SentenceProgress> => {
-  return await fetchApi<SentenceProgress>(`/activity/sentenceprogress/${textId}`);
+  const session = offlineSessionRevision();
+  const cachedBeforeLoad = readCachedSentenceProgress(textId);
+  const [remote, pending] = await Promise.allSettled([
+    fetchApi<SentenceProgress>(`/activity/sentenceprogress/${textId}`, { suppressAuthRedirect: true }),
+    listPending()
+  ]);
+  if (offlineSessionRevision() !== session) throw new Error('The session ended before sentence progress loaded.');
+  if (remote.status === 'rejected') {
+    const status = (remote.reason as { status?: number } | null)?.status;
+    if (status === 403 || status === 404) {
+      forgetSentenceProgress(textId);
+      // A deleted/inaccessible lesson's queued reads would otherwise restore
+      // the same position on the next offline visit. Replay also treats these as terminal.
+      if (pending.status === 'fulfilled') {
+        const invalid = new Set(pending.value.filter(op => op.type === 'sentenceRead'
+          && op.payload.textId === Number(textId)).map(op => op.id));
+        if (invalid.size) await removePending(op => invalid.has(op.id)).catch(() => undefined);
+      }
+      throw remote.reason;
+    }
+  }
+
+  const serverProgress = remote.status === 'fulfilled' ? remote.value : null;
+  const cached = readCachedSentenceProgress(textId);
+  const cacheChangedDuringLoad = cached && (cached.cursorUpdatedAt !== cachedBeforeLoad?.cursorUpdatedAt
+    || cached.lastSegmentIndex !== cachedBeforeLoad.lastSegmentIndex
+    || cached.creditedSegmentIndices.length !== cachedBeforeLoad?.creditedSegmentIndices.length);
+  // A fresh GET can replace the cache after a restore. Merge only a confirmation
+  // received during this GET, e.g. a replay whose queue entry has disappeared.
+  const confirmed = serverProgress
+    ? rememberSentenceProgress(textId, serverProgress, !cacheChangedDuringLoad) ?? serverProgress
+    : cached;
+  let lastSegmentIndex = confirmed?.lastSegmentIndex ?? serverProgress?.lastSegmentIndex ?? null;
+  let cursorUpdatedAt = confirmed?.cursorUpdatedAt ?? null;
+  const credited = new Set(confirmed?.creditedSegmentIndices ?? []);
+  for (const op of pending.status === 'fulfilled' ? pending.value : []) {
+    if (op.type !== 'sentenceRead' || op.payload.textId !== Number(textId)) continue;
+    const queuedAt = queuedSentenceCursorTime(op.payload.clientUpdatedAt, op.enqueuedAt);
+    const segmentIndex = op.payload.currentSegmentIndex;
+    if (queuedAt && segmentIndex != null && segmentIndex >= 0
+        && (!cursorUpdatedAt || Date.parse(queuedAt) >= Date.parse(cursorUpdatedAt))) {
+      lastSegmentIndex = segmentIndex;
+      cursorUpdatedAt = queuedAt;
+    }
+    for (const segment of op.payload.segments) {
+      if (segment.segmentIndex >= 0 && segment.segmentText.trim()) credited.add(segment.segmentIndex);
+    }
+  }
+
+  const cursorUnknown = remote.status === 'rejected' && lastSegmentIndex == null;
+  if (cursorUnknown && !credited.size) throw remote.reason;
+  return {
+    ...serverProgress,
+    textId: Number(textId),
+    lastSegmentIndex,
+    cursorUpdatedAt,
+    ...(cursorUnknown ? { cursorUnknown: true } : {}),
+    creditedSegmentIndices: [...credited].sort((a, b) => a - b)
+  };
 };
 
 export const logSentenceReadActivity = async (
   payload: LogSentenceReadInput
 ): Promise<unknown> => {
-  // sentenceRead is appended (not coalesced): the server credits each segment
-  // index at most once, so replaying the same segments is a no-op.
+  const session = offlineSessionRevision();
+  const clientUpdatedAt = payload.currentSegmentIndex != null ? nowIso() : undefined;
+  // Keep all credits, even when the timestamp of an earlier cursor loses
+  // to a more recent navigation.
   const opSegments = (payload.segments ?? []).map((s) => ({
     segmentIndex: Number(s.segmentIndex),
     segmentText: String(s.segmentText ?? '')
   }));
-  return await enqueueIfOffline(
+  const result = await enqueueIfOffline<SentenceProgress>(
     {
       type: 'sentenceRead',
       payload: {
         textId: Number(payload.textId),
         currentSegmentIndex: payload.currentSegmentIndex ?? undefined,
+        clientUpdatedAt,
         segments: opSegments
       }
     },
-    () => fetchApi('/activity/logSentenceRead', {
+    () => fetchApi<SentenceProgress>('/activity/logSentenceRead', {
       suppressAuthRedirect: true,
       method: 'POST',
-      body: JSON.stringify(payload)
+      body: JSON.stringify({ ...payload, clientUpdatedAt })
     }), undefined, { queueOnUnauthorized: true }
   );
+  if (offlineSessionRevision() === session && !isOfflineQueued(result)) rememberSentenceProgress(payload.textId, result);
+  return result;
 };

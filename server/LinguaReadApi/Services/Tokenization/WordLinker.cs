@@ -51,9 +51,6 @@ namespace LinguaReadApi.Services.Tokenization
         // Tries at the Word insert when a reader save keeps winning the race.
         private const int MaxWordInsertAttempts = 3;
 
-        private static bool IsSupportedSegmentationProfile(string? profile) =>
-            profile == ChineseSegmenter.Profile || profile == JapaneseSegmenter.Profile || profile == ThaiSegmenter.Profile;
-
         /// <summary>
         /// Tokenize <paramref name="content"/>, materialise any new
         /// Word rows, and link the text via TextWord rows. Stamps the
@@ -82,7 +79,7 @@ namespace LinguaReadApi.Services.Tokenization
             var source = await context.Texts.AsNoTracking().Where(t => t.TextId == textId && t.UserId == userId)
                 .Select(t => new { t.SegmentationProfile }).FirstOrDefaultAsync(cancellationToken);
             var profile = source?.SegmentationProfile;
-            if (profile != null && !IsSupportedSegmentationProfile(profile))
+            if (profile != null && !Tokenizer.IsSupportedSegmentationProfile(profile))
                 throw new NotSupportedException("This text uses an unsupported segmentation profile; retain its links and upgrade the app.");
             // Queued work and synchronous edits must share the same user lock
             // for ordinary texts too; otherwise old jobs can restore stale links.
@@ -97,7 +94,7 @@ namespace LinguaReadApi.Services.Tokenization
                 .Select(t => new { t.SegmentationProfile, t.Content, t.LanguageId }).FirstOrDefaultAsync(cancellationToken);
             if (snapshot == null) return; // The text may have been deleted while queued.
             var profile = snapshot.SegmentationProfile;
-            if (profile != null && !IsSupportedSegmentationProfile(profile))
+            if (profile != null && !Tokenizer.IsSupportedSegmentationProfile(profile))
                 throw new NotSupportedException("This text uses an unsupported segmentation profile; retain its links and upgrade the app.");
             // Request content is only a historical snapshot. The locked database
             // revision is authoritative for every language and segmentation mode.
@@ -105,16 +102,7 @@ namespace LinguaReadApi.Services.Tokenization
             languageId = snapshot.LanguageId;
             var language = await context.Languages.AsNoTracking()
                 .FirstOrDefaultAsync(l => l.LanguageId == languageId, cancellationToken);
-            if (language != null)
-                language = new Language { Code = language.Code, WordCharacters = language.WordCharacters,
-                    CharacterSubstitutions = language.CharacterSubstitutions,
-                    ParserType = profile == ChineseSegmenter.Profile ? ChineseSegmenter.Profile
-                        : profile == JapaneseSegmenter.Profile ? JapaneseSegmenter.Profile
-                        : profile == ThaiSegmenter.Profile ? ThaiSegmenter.Profile
-                        : language.ParserType == ChineseSegmenter.Profile ? "jieba"
-                        : language.ParserType == JapaneseSegmenter.Profile ? "mecab"
-                        : language.ParserType == ThaiSegmenter.Profile ? "spacedel"
-                        : language.ParserType };
+            language = Tokenizer.ForTextProfile(language, profile);
 
             // Empty texts are current without creating vocabulary or replaying old content.
             if (string.IsNullOrWhiteSpace(content))

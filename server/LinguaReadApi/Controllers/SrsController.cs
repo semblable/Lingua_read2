@@ -133,7 +133,7 @@ namespace LinguaReadApi.Controllers
             var allFetchedCards = learningCardsPool.Concat(newCardsPool).Concat(reviewCardsPool).ToList();
             if (!allFetchedCards.Any()) return new List<SrsDueCardDto>();
 
-            // 4. Fetch phrases, then count unknown words in each card's newest phrase in one pass (1T).
+            // 4. Select each card's displayed example before counting its unknown words (1T).
             var cardWordIds = allFetchedCards.Select(c => c.WordId).Distinct().ToList();
             var phrases = await _context.SrsPhrases
                 .AsNoTracking()
@@ -143,19 +143,61 @@ namespace LinguaReadApi.Controllers
                 .GroupBy(p => p.WordId)
                 .ToDictionary(g => g.Key, g => g.OrderByDescending(p => p.CreatedAt).ToList());
 
-            // The unknown-word counts tokenize with each card's language, and cloze
-            // sentences are matched in the reader's normalized form, which depends on it
-            // too (its character substitutions): one lookup serves both.
+            // Read the source profile without loading the lesson body. Manual phrases and
+            // examples without their original source can still use the card's language.
             var cardLanguageIds = allFetchedCards.Select(c => c.Word.LanguageId).Distinct().ToList();
             var cardLanguages = await _context.Languages.AsNoTracking()
                 .Where(l => cardLanguageIds.Contains(l.LanguageId))
                 .ToDictionaryAsync(l => l.LanguageId);
+            var sourceIds = phrases.Where(p => p.TextId.HasValue).Select(p => p.TextId.GetValueOrDefault()).Distinct().ToList();
+            var sources = await _context.Texts.AsNoTracking()
+                .Where(t => t.UserId == userId && sourceIds.Contains(t.TextId))
+                .Select(t => new { t.TextId, t.LanguageId, t.SegmentationProfile })
+                .ToDictionaryAsync(t => t.TextId);
 
-            var unknownCounts = await SrsUnknownWordCounter.CountAsync(_context, userId, allFetchedCards
-                .Where(c => phrasesByWordId.ContainsKey(c.WordId))
-                .Select(c => new SrsUnknownWordCounter.Sentence(
-                    c.SrsCardReviewId, c.WordId, c.Word.LanguageId, phrasesByWordId[c.WordId][0].Sentence))
-                .ToList(), cardLanguages);
+            Language? MinedSourceLanguage(SrsPhrase phrase, int languageId)
+            {
+                if (phrase.TextId is not int id || !sources.TryGetValue(id, out var source) || source.LanguageId != languageId)
+                    return null;
+                return Tokenizer.ForTextProfile(cardLanguages.GetValueOrDefault(languageId), source.SegmentationProfile);
+            }
+
+            var examples = new List<SrsUnknownWordCounter.Sentence>();
+            var clozes = new Dictionary<int, string>();
+            foreach (var card in allFetchedCards)
+            {
+                if (!phrasesByWordId.TryGetValue(card.WordId, out var cardPhrases)) continue;
+                var languageIdForCard = card.Word.LanguageId;
+                var cardLanguage = cardLanguages.GetValueOrDefault(languageIdForCard);
+                var primaryIndex = -1;
+                for (var i = 0; i < cardPhrases.Count; i++)
+                {
+                    var phrase = cardPhrases[i];
+                    var source = MinedSourceLanguage(phrase, languageIdForCard);
+                    if (emitClozeSentence && BuildClozeSentence(phrase.Sentence, card.Word.Term, source ?? cardLanguage,
+                        useReaderSpans: source != null) is { } cloze)
+                    {
+                        clozes[card.SrsCardReviewId] = cloze;
+                        primaryIndex = i;
+                        break;
+                    }
+                    if (primaryIndex < 0 && SrsMinedSentences.ContainsTerm(phrase.Sentence, card.Word.Term, source ?? cardLanguage))
+                    {
+                        primaryIndex = i;
+                        if (!emitClozeSentence) break;
+                    }
+                }
+                if (primaryIndex < 0) continue;
+                var primary = cardPhrases[primaryIndex];
+                if (primaryIndex > 0)
+                {
+                    cardPhrases.RemoveAt(primaryIndex);
+                    cardPhrases.Insert(0, primary);
+                }
+                examples.Add(new SrsUnknownWordCounter.Sentence(card.SrsCardReviewId, card.WordId, languageIdForCard,
+                    primary.Sentence, MinedSourceLanguage(primary, languageIdForCard)));
+            }
+            var unknownCounts = await SrsUnknownWordCounter.CountAsync(_context, userId, examples, cardLanguages);
 
             // 5. Apply 1T filter to build lists
             var scheduler = new SrsScheduler(day.Options);
@@ -166,24 +208,12 @@ namespace LinguaReadApi.Controllers
             foreach (var card in allFetchedCards)
             {
                 var cardPhrases = phrasesByWordId.GetValueOrDefault(card.WordId) ?? new List<SrsPhrase>();
-                var bestPhrase = cardPhrases.FirstOrDefault();
                 int unknownWordsInBestPhrase = unknownCounts.GetValueOrDefault(card.SrsCardReviewId);
 
                 // 1T needs a phrase whose only unknown word is the card's own.
-                if (onlyOneTarget && (bestPhrase == null || unknownWordsInBestPhrase != 1)) continue;
+                if (onlyOneTarget && unknownWordsInBestPhrase != 1) continue;
 
-                string? clozeSentence = null;
-                if (emitClozeSentence && cardPhrases.Count > 0)
-                {
-                    var cardLanguage = cardLanguages.GetValueOrDefault(card.Word.LanguageId);
-                    foreach (var phrase in cardPhrases)
-                    {
-                        clozeSentence = BuildClozeSentence(phrase.Sentence, card.Word.Term, cardLanguage);
-                        if (clozeSentence != null) break;
-                    }
-                }
-
-                var dto = ToDueCardDto(card, cardPhrases, unknownWordsInBestPhrase, clozeSentence, scheduler, now);
+                var dto = ToDueCardDto(card, cardPhrases, unknownWordsInBestPhrase, clozes.GetValueOrDefault(card.SrsCardReviewId), scheduler, now);
 
                 switch (card.GetState())
                 {
@@ -1546,45 +1576,65 @@ Format (one object per provided word, in the same order):
         }
 
         /// <summary>
-        /// Replace the first whole-word, case-insensitive occurrence of
-        /// <paramref name="term"/> in <paramref name="sentence"/> with "___" (3
-        /// underscores). Returns null if no whole-word match exists or either
-        /// argument is empty — callers should fall back to translation mode.
-        ///
-        /// We assert "no word character on either side" via lookbehind/lookahead
-        /// rather than the simpler <c>\b...\b</c> so that terms which themselves
-        /// start or end with non-word characters (e.g. abbreviations like "e.g.",
-        /// French elisions like "l'") still match cleanly. <c>\w</c> follows the
-        /// Unicode definition, so:
-        /// <list type="bullet">
-        /// <item>Latin: term "es" won't mask the "es" inside "estas".</item>
-        /// <item>CJK: every ideograph is <c>\w</c>, so 猫 inside 野猫 also fails
-        /// to match. The cloze view drops to translation mode for those cards
-        /// rather than producing a garbled mask.</item>
-        /// </list>
-        ///
-        /// Both the sentence and the term go through <see cref="Tokenizer.NormalizeText"/>
-        /// first, and the masked sentence is returned in that form, the way the reader
-        /// shows it. Mined sentences are stored as the reader's raw segment text, so a
-        /// soft hyphen, a decomposed accent or a curly apostrophe in the sentence would
-        /// otherwise hide a term that was keyed without it ("reparava" in "repa" + U+00AD + "rava").
+        /// Mask an occurrence of the answer using the vocabulary keys for the card's language.
+        /// Mined examples use their source's word boundaries. Manual examples and terms
+        /// containing punctuation can match at Unicode word boundaries. Return the reader's
+        /// normalized display text, or null when the card needs a translation prompt.
         /// </summary>
-        internal static string? BuildClozeSentence(string? sentence, string? term, Language? language = null)
+        internal static string? BuildClozeSentence(string? sentence, string? term, Language? language = null,
+            bool useReaderSpans = false)
         {
             if (string.IsNullOrEmpty(sentence) || string.IsNullOrEmpty(term)) return null;
             const string Mask = "___";
-            sentence = Tokenizer.NormalizeText(sentence, language);
+            Tokenizer.TokenizationResult? readerText = useReaderSpans ? Tokenizer.Tokenize(sentence, language) : null;
+            sentence = readerText?.Processed ?? Tokenizer.NormalizeText(sentence, language);
             term = Tokenizer.NormalizeText(term, language).Trim();
-            if (sentence.Length == 0 || term.Length == 0) return null;
-            var match = Regex.Match(
-                sentence,
-                $@"(?<!\w){Regex.Escape(term)}(?!\w)",
-                RegexOptions.IgnoreCase);
-            if (!match.Success) return null;
-            return string.Concat(
-                sentence.AsSpan(0, match.Index),
-                Mask,
-                sentence.AsSpan(match.Index + match.Length));
+            var termKey = Tokenizer.KeyFromNormalizedText(term, language);
+            if (sentence.Length == 0 || termKey.Length == 0) return null;
+
+            var range = readerText is { } parsed ? FindReaderClozeRange(parsed, term, termKey, language) : null;
+            if (range == null)
+            {
+                // Punctuation such as "e.g." is part of some answers. Match candidates with
+                // those same separators, then compare their vocabulary keys in the card's
+                // language. The candidate's display length can include vocalization marks.
+                var shape = string.Concat(Regex.Matches(term, @"(\w+)|\W+")
+                    .Select(part => part.Groups[1].Success ? @"\w+" : Regex.Escape(part.Value)));
+                foreach (Match match in Regex.Matches(sentence, $@"(?<!\w)(?=({shape})(?!\w))"))
+                {
+                    var candidate = match.Groups[1];
+                    if (Tokenizer.KeyFromNormalizedText(candidate.Value, language) != termKey) continue;
+                    range = (candidate.Index, candidate.Length);
+                    break;
+                }
+            }
+            return range is { } found ? string.Concat(sentence.AsSpan(0, found.Start), Mask,
+                sentence.AsSpan(found.Start + found.Length)) : null;
+        }
+
+        private static (int Start, int Length)? FindReaderClozeRange(Tokenizer.TokenizationResult readerText,
+            string term, string termKey, Language? language)
+        {
+            var words = readerText.Tokens.Where(token => token.IsWord).ToArray();
+            var wordEnds = words.Select(word => word.End).ToHashSet();
+            var korean = KoreanLookup.IsKoreanLanguageCode(language?.Code);
+            foreach (var word in words)
+            {
+                if (Tokenizer.KeyFromNormalizedText(word.Text, language) == termKey)
+                    return (word.Start, word.End - word.Start);
+                var end = word.Start + term.Length;
+                if (end > readerText.Processed.Length ||
+                    Tokenizer.KeyFromNormalizedText(readerText.Processed[word.Start..end], language) != termKey)
+                    continue;
+                if (wordEnds.Contains(end)) return (word.Start, term.Length);
+
+                // Leave an attached particle visible if the saved answer is literally
+                // the start of that Korean word. Different conjugations need a different answer.
+                if (korean && end < word.End && KoreanLookup.AnalyzeKoreanCandidates(word.Text)
+                    .Any(candidate => candidate.DictionaryValidated && candidate.Lemma == term))
+                    return (word.Start, term.Length);
+            }
+            return null;
         }
     }
 

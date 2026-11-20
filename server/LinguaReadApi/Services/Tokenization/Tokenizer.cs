@@ -86,6 +86,31 @@ namespace LinguaReadApi.Services.Tokenization
 
         public readonly record struct TokenizationResult(string Processed, IReadOnlyList<Token> Tokens);
 
+        internal static bool IsSupportedSegmentationProfile(string? profile) =>
+            profile is ChineseSegmenter.Profile or JapaneseSegmenter.Profile or ThaiSegmenter.Profile;
+
+        /// <summary>Resolve tokenizer settings for a source text without changing its saved language.</summary>
+        internal static Language? ForTextProfile(Language? language, string? profile)
+        {
+            if (language == null) return null;
+            var parser = IsSupportedSegmentationProfile(profile) ? profile! : language.ParserType switch
+            {
+                ChineseSegmenter.Profile => "jieba",
+                JapaneseSegmenter.Profile => "mecab",
+                ThaiSegmenter.Profile => "spacedel",
+                _ => language.ParserType
+            };
+            if (parser == language.ParserType) return language;
+
+            return new Language
+            {
+                Code = language.Code,
+                WordCharacters = language.WordCharacters,
+                CharacterSubstitutions = language.CharacterSubstitutions,
+                ParserType = parser
+            };
+        }
+
         /// <summary>
         /// Parse a pipe-separated list of <c>old=new</c> pairs. The first
         /// '=' in each pair separates old from new; later '=' chars
@@ -377,8 +402,12 @@ namespace LinguaReadApi.Services.Tokenization
         public static string NormalizeKey(string text, Language? language)
         {
             if (string.IsNullOrEmpty(text)) return text;
-            var normalized = NormalizeText(text, language).Trim().Trim('\u200c', '\u200d');
-            var stripped = StripLookupDiacritics(normalized, language?.Code);
+            return KeyFromNormalizedText(NormalizeText(text, language), language);
+        }
+
+        internal static string KeyFromNormalizedText(string normalized, Language? language)
+        {
+            var stripped = StripLookupDiacritics(normalized.Trim().Trim('\u200c', '\u200d'), language?.Code);
             return LowercaseKey(stripped, language);
         }
 

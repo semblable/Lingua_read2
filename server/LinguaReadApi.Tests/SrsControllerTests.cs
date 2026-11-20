@@ -7,6 +7,7 @@ using LinguaReadApi.Controllers;
 using LinguaReadApi.Data;
 using LinguaReadApi.Models;
 using LinguaReadApi.Services;
+using LinguaReadApi.Services.Tokenization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.Sqlite;
@@ -574,6 +575,79 @@ public class SrsControllerTests
         Assert.Equal("translation", SrsController.NormalizeCardType("nonsense"));
     }
 
+    [Theory]
+    [InlineData("ja", "mecab", JapaneseSegmenter.Profile, "猫は魚を食べます。", "食べ", "は|猫|魚|を|ます", "猫は魚を___ます。")]
+    [InlineData("th", "spacedel", ThaiSegmenter.Profile, "ฉันชอบอ่านหนังสือที่กรุงเทพฯ", "อ่าน", "ฉัน|ชอบ|หนังสือ|ที่|กรุงเทพฯ", "ฉันชอบ___หนังสือที่กรุงเทพฯ")]
+    public async Task GetDueCards_UsesSourceProfileForClozeAndOneTarget(string code, string parser, string profile,
+        string sentence, string term, string otherTerms, string masked)
+    {
+        using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        context.Languages.Add(new Language { LanguageId = 1, Name = code, Code = code, ParserType = parser });
+        context.SaveChanges();
+        SeedCardWithPhrase(context, userId, 100, term, sentence, cardType: "cloze");
+        context.Texts.Add(new Text { TextId = 200, UserId = userId, LanguageId = 1, Title = "Source", Content = sentence,
+            SegmentationProfile = profile });
+        var phrase = context.SrsPhrases.Single();
+        phrase.TextId = 200;
+        var otherWords = otherTerms.Split('|').Select(word => new Word
+            { UserId = userId, LanguageId = 1, Term = word, Status = 5 }).ToArray();
+        context.Words.AddRange(otherWords);
+        context.SaveChanges();
+
+        var controller = CreateController(context, userId);
+        var review = Assert.Single((await controller.GetDueCards(onlyOneTarget: true)).Value!);
+        Assert.Equal(masked, review.ClozeSentence);
+        Assert.Equal(1, review.UnknownWordsInPhrase);
+
+        context.Words.Remove(otherWords[0]);
+        context.SaveChanges();
+        Assert.Empty((await controller.GetDueCards(onlyOneTarget: true)).Value!);
+        Assert.Equal(2, Assert.Single((await controller.GetDueCards()).Value!).UnknownWordsInPhrase);
+
+        phrase.TextId = null;
+        context.SaveChanges();
+        Assert.Null(Assert.Single((await controller.GetDueCards()).Value!).ClozeSentence);
+    }
+
+    [Theory]
+    [InlineData("고양이가 왔어요.", "고양이", "___가 왔어요.")]
+    [InlineData("길을 걸어요.", "걷다", null)]
+    public void BuildClozeSentence_LeavesKoreanAttachmentsWhenTheAnswerMatchesTheSpelling(string sentence, string term, string? expected)
+    {
+        Assert.Equal(expected, SrsController.BuildClozeSentence(sentence, term, new Language { Code = "ko" }, useReaderSpans: true));
+    }
+
+    [Theory]
+    [InlineData("He said e.g. that is fine.", "e.g.", "He said ___ that is fine.")]
+    [InlineData("A book in the library.", "in the library", "A book ___.")]
+    public void BuildClozeSentence_PreservesAbbreviationsAndPhrasesWithReaderSpans(string sentence, string term, string expected)
+    {
+        Assert.Equal(expected, SrsController.BuildClozeSentence(sentence, term, new Language { Code = "en" }, useReaderSpans: true));
+    }
+
+    [Theory]
+    [InlineData("tr", true)]
+    [InlineData("tr", false)]
+    [InlineData("az", true)]
+    [InlineData("az", false)]
+    public void BuildClozeSentence_UsesTheVocabularyKeysForDottedAndDotlessI(string code, bool useReaderSpans)
+    {
+        var language = new Language { Code = code };
+        Assert.Equal("KIR ve ___.", SrsController.BuildClozeSentence("KIR ve kir.", "kir", language, useReaderSpans));
+        Assert.Equal("___ ve kir.", SrsController.BuildClozeSentence("KIR ve kir.", "kır", language, useReaderSpans));
+        Assert.Equal("___.", SrsController.BuildClozeSentence("KİR.", "kir", language, useReaderSpans));
+        Assert.Null(SrsController.BuildClozeSentence("KIR.", "kir", language, useReaderSpans));
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void BuildClozeSentence_MasksTheFullDisplayLengthOfAMatchingKey(bool useReaderSpans)
+    {
+        Assert.Equal("Это ___.", SrsController.BuildClozeSentence("Это во́да.", "вода", new Language { Code = "ru" }, useReaderSpans));
+    }
+
     [Fact]
     public async Task GetDueCards_WithSavedClozeSetting_ReturnsTranslationWithoutChangingSavedData()
     {
@@ -696,6 +770,9 @@ public class SrsControllerTests
         using var context = CreateContext();
         var userId = Guid.NewGuid();
         SeedCardWithPhrase(context, userId, 400, "gato", "El perro corre.", cardType: "cloze");
+        context.Words.AddRange(new Word { UserId = userId, LanguageId = 1, Term = "el", Status = 5 },
+            new Word { UserId = userId, LanguageId = 1, Term = "corre", Status = 5 });
+        context.SaveChanges();
 
         var controller = CreateController(context, userId);
         var result = await controller.GetDueCards();
@@ -706,6 +783,8 @@ public class SrsControllerTests
         // fall back to translation rendering for this card.
         Assert.Null(card.ClozeSentence);
         Assert.Equal("gato", card.Term);
+        Assert.Equal(0, card.UnknownWordsInPhrase);
+        Assert.Empty((await controller.GetDueCards(onlyOneTarget: true)).Value!);
     }
 
     [Fact]
@@ -714,6 +793,8 @@ public class SrsControllerTests
         using var context = CreateContext();
         var userId = Guid.NewGuid();
         SeedCardWithPhrase(context, userId, 410, "gato", "El gato duerme.", cardType: "cloze");
+        var knownVerb = new Word { UserId = userId, LanguageId = 1, Term = "duerme", Status = 5 };
+        context.Words.AddRange(knownVerb, new Word { UserId = userId, LanguageId = 1, Term = "el", Status = 5 });
         // Add a newer phrase that lacks the exact surface form (ordered first by CreatedAt DESC).
         context.SrsPhrases.Add(new SrsPhrase
         {
@@ -731,5 +812,13 @@ public class SrsControllerTests
         var cards = result.Value ?? Assert.IsType<List<SrsDueCardDto>>(((OkObjectResult)result.Result!).Value);
         var card = Assert.Single(cards);
         Assert.Equal("El ___ duerme.", card.ClozeSentence);
+        Assert.Equal("El gato duerme.", card.Phrases[0].Sentence);
+        Assert.Equal(1, card.UnknownWordsInPhrase);
+        Assert.Single((await controller.GetDueCards(onlyOneTarget: true)).Value!);
+
+        knownVerb.Status = 1;
+        context.SaveChanges();
+        Assert.Equal(2, Assert.Single((await controller.GetDueCards()).Value!).UnknownWordsInPhrase);
+        Assert.Empty((await controller.GetDueCards(onlyOneTarget: true)).Value!);
     }
 }

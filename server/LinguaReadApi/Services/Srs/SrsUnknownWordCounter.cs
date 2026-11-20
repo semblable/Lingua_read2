@@ -18,13 +18,14 @@ namespace LinguaReadApi.Services.Srs
     /// </summary>
     public static class SrsUnknownWordCounter
     {
-        public sealed record Sentence(int Key, int TargetWordId, int LanguageId, string Text);
+        public sealed record Sentence(int Key, int TargetWordId, int LanguageId, string Text, Language? SourceLanguage = null);
 
         /// <summary>
         /// Returns unknown-word counts by <see cref="Sentence.Key"/>. A word counts as
         /// unknown if it is the card's own word, if the user's highest-status row for it is
-        /// below Known (5), or if it isn't in the vocabulary at all and is longer than one
-        /// character. Known (5), Ignored (6), and unsaved numeric tokens don't count.
+        /// below Known (5), or if it isn't in the vocabulary and either has a profiled
+        /// boundary or is longer than one character. Known (5), Ignored (6), and
+        /// unsaved numeric tokens don't count.
         /// </summary>
         /// <param name="languages">The sentences' languages by id when the caller has
         /// already loaded them; looked up otherwise.</param>
@@ -51,7 +52,7 @@ namespace LinguaReadApi.Services.Srs
                 var language = languages.GetValueOrDefault(group.Key);
                 var keysBySentence = group.ToDictionary(
                     s => s.Key,
-                    s => Tokenizer.ExtractLookupKeys(s.Text, language).Distinct().ToList());
+                    s => Tokenizer.ExtractLookupKeys(s.Text, s.SourceLanguage ?? language).Distinct().ToList());
 
                 var allKeys = keysBySentence.Values.SelectMany(k => k).Distinct().ToList();
                 if (allKeys.Count == 0)
@@ -79,6 +80,7 @@ namespace LinguaReadApi.Services.Srs
 
                 foreach (var sentence in group)
                 {
+                    var profiled = Tokenizer.IsSupportedSegmentationProfile(sentence.SourceLanguage?.ParserType);
                     int unknown = 0;
                     foreach (var key in keysBySentence[sentence.Key])
                     {
@@ -94,7 +96,7 @@ namespace LinguaReadApi.Services.Srs
                         }
                         if (matches.Count == 0)
                         {
-                            if (key.Length > 1 && !Tokenizer.IsPureNumericToken(key)) unknown++;
+                            if ((profiled || key.Length > 1) && !Tokenizer.IsPureNumericToken(key)) unknown++;
                         }
                         else if (matches.Any(m => m.WordId == sentence.TargetWordId) || matches.Max(m => m.Status) < 5)
                         {

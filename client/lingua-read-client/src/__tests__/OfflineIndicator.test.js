@@ -3,7 +3,7 @@ import React from 'react';
 import '@testing-library/jest-dom';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import OfflineIndicator from '../components/offline/OfflineIndicator';
-import { enqueue, clearAll } from '../utils/offline/syncQueue';
+import { enqueue, drain, clearAll, listWordConflicts } from '../utils/offline/syncQueue';
 import { authLogin } from '../utils/api/auth';
 vi.mock('../utils/api/auth', () => ({ authLogin: vi.fn() }));
 
@@ -21,6 +21,49 @@ const noopHandlers = {
 };
 
 describe('OfflineIndicator', () => {
+  test('opens a stored vocabulary conflict and keeps the saved version on request', async () => {
+    await enqueue({ type: 'wordStatusUpdate', payload: { wordId: 42, status: 3, translation: 'queued gloss' } });
+    const handlers = {
+      ...noopHandlers,
+      wordStatusUpdate: vi.fn().mockRejectedValue({
+        status: 409, body: { word: { wordId: 42, term: 'chat', status: 5, translation: 'saved gloss' } },
+      }),
+    };
+    await drain(handlers);
+    render(<OfflineIndicator handlers={handlers} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Review offline edits (1)' }));
+    expect(screen.getByRole('dialog')).toBeVisible();
+    expect(screen.getByText(/queued gloss/)).toBeVisible();
+    expect(screen.getByText(/saved gloss/)).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Keep saved version' }));
+    await waitFor(() => expect(screen.queryByRole('button', { name: /Review offline edits/ })).not.toBeInTheDocument());
+    expect(await listWordConflicts()).toEqual([]);
+    expect(handlers.wordStatusUpdate).toHaveBeenCalledOnce();
+  });
+
+  test('applying a draft refreshes an unversioned snapshot before overwriting a later change', async () => {
+    await enqueue({ type: 'wordStatusUpdate', payload: { wordId: 42, status: 3, translation: 'queued gloss' } });
+    const saved = { wordId: 42, term: 'chat', status: 5, translation: 'first gloss' };
+    const write = vi.fn()
+      .mockRejectedValueOnce({ status: 409, body: { word: saved } })
+      .mockRejectedValueOnce({ status: 409, body: { word: { ...saved, translation: 'intervening gloss' }, revision: 'updated' } })
+      .mockResolvedValue(undefined);
+    const handlers = { ...noopHandlers, wordStatusUpdate: write };
+    await drain(handlers);
+    render(<OfflineIndicator handlers={handlers} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Review offline edits (1)' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Apply offline edit' }));
+    expect(await screen.findByText(/intervening gloss/)).toBeVisible();
+    expect(screen.getByText(/queued gloss/)).toBeVisible();
+    expect(write.mock.lastCall[0].payload.expectedRevision).toBe('unknown');
+    const apply = screen.getByRole('button', { name: 'Apply offline edit' });
+    await waitFor(() => expect(apply).toBeEnabled());
+    fireEvent.click(apply);
+    await waitFor(() => expect(screen.queryByRole('button', { name: /Review offline edits/ })).not.toBeInTheDocument());
+    expect(write.mock.lastCall[0].payload.expectedRevision).toBe('updated');
+    expect(await listWordConflicts()).toEqual([]);
+  });
+
   test('signs back in and syncs without replacing the active reader', async () => {
     await enqueue({ type: 'srsReview', payload: { cardId: 9, grade: 2 } });
     const review = vi.fn().mockRejectedValueOnce({ status: 401 }).mockResolvedValue(undefined);

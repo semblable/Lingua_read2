@@ -5187,6 +5187,28 @@ export interface paths {
                         "text/json": components["schemas"]["WordResponseDto"];
                     };
                 };
+                /** @description Created */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["WordResponseDto"];
+                        "application/json": components["schemas"]["WordResponseDto"];
+                        "text/json": components["schemas"]["WordResponseDto"];
+                    };
+                };
+                /** @description Conflict */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["WordEditConflictDto"];
+                        "application/json": components["schemas"]["WordEditConflictDto"];
+                        "text/json": components["schemas"]["WordEditConflictDto"];
+                    };
+                };
             };
         };
         delete?: never;
@@ -5243,12 +5265,23 @@ export interface paths {
                 };
             };
             responses: {
-                /** @description OK */
-                200: {
+                /** @description No Content */
+                204: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content?: never;
+                };
+                /** @description Conflict */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["WordEditConflictDto"];
+                        "application/json": components["schemas"]["WordEditConflictDto"];
+                        "text/json": components["schemas"]["WordEditConflictDto"];
+                    };
                 };
             };
         };
@@ -5264,12 +5297,23 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                /** @description OK */
-                200: {
+                /** @description No Content */
+                204: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content?: never;
+                };
+                /** @description Conflict */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["WordEditConflictDto"];
+                        "application/json": components["schemas"]["WordEditConflictDto"];
+                        "text/json": components["schemas"]["WordEditConflictDto"];
+                    };
                 };
             };
         };
@@ -5818,6 +5862,11 @@ export interface components {
             status: number;
             translation?: string | null;
             sentence?: string | null;
+            /** Format: date-time */
+            clientUpdatedAt?: string | null;
+            /** Format: date-time */
+            translationUpdatedAt?: string | null;
+            expectedRevision?: string | null;
         };
         DailyCountDto: {
             date?: string | null;
@@ -7232,6 +7281,11 @@ export interface components {
             /** Format: int32 */
             textId?: number | null;
             sentence?: string | null;
+            /** Format: date-time */
+            clientUpdatedAt?: string | null;
+            /** Format: date-time */
+            translationUpdatedAt?: string | null;
+            expectedRevision?: string | null;
         };
         User: {
             /** Format: uuid */
@@ -7551,6 +7605,11 @@ export interface components {
             status?: number;
             translation?: string | null;
             isNew?: boolean;
+        };
+        WordEditConflictDto: {
+            message?: string | null;
+            word?: components["schemas"]["WordResponseDto"];
+            revision?: string | null;
         };
         WordResponseDto: {
             /** Format: int32 */

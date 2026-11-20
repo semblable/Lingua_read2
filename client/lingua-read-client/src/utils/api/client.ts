@@ -118,10 +118,12 @@ export type FetchApiOptions = Omit<RequestInit, 'headers'> & {
 
 export class ApiError extends Error {
   status?: number;
-  constructor(message: string, status?: number) {
+  body?: unknown;
+  constructor(message: string, status?: number, body?: unknown) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
+    this.body = body;
   }
 }
 
@@ -167,10 +169,12 @@ export const fetchApi = async <T = unknown>(
     if (!response.ok) {
       const contentType = response.headers.get('content-type');
       let errorMessage: string;
+      let errorData: unknown;
 
       if (contentType && contentType.includes('application/json')) {
-        const errorData = await response.json();
-        errorMessage = errorData.message || `HTTP error! Status: ${response.status}`;
+        const json = await response.json();
+        errorData = json;
+        errorMessage = json?.message || `HTTP error! Status: ${response.status}`;
       } else {
         const text = await response.text();
         errorMessage = text || `HTTP error! Status: ${response.status}`;
@@ -183,7 +187,7 @@ export const fetchApi = async <T = unknown>(
         error: errorMessage
       });
 
-      throw new ApiError(errorMessage, response.status);
+      throw new ApiError(errorMessage, response.status, errorData);
     }
 
     const contentType = response.headers.get('content-type');

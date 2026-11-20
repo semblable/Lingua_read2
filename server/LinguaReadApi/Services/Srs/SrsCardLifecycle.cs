@@ -96,10 +96,15 @@ namespace LinguaReadApi.Services.Srs
         /// <summary>Applies <see cref="ApplyStatusRules"/> to one saved word, adding any new card. Does not save.</summary>
         public static async Task ApplyStatusRulesAsync(AppDbContext db, Word word, bool hasSentence, UserSettings? settings)
         {
-            var card = db.SrsCardReviews.Local.FirstOrDefault(c => c.WordId == word.WordId && c.UserId == word.UserId)
+            var card = word.WordId == 0 ? null :
+                db.SrsCardReviews.Local.FirstOrDefault(c => c.WordId == word.WordId && c.UserId == word.UserId)
                 ?? await db.SrsCardReviews.FirstOrDefaultAsync(c => c.WordId == word.WordId && c.UserId == word.UserId);
             var created = ApplyStatusRules(word, card, hasSentence, settings);
-            if (created != null) db.SrsCardReviews.Add(created);
+            if (created != null)
+            {
+                created.Word = word;
+                db.SrsCardReviews.Add(created);
+            }
         }
 
         /// <summary>Batched <see cref="ApplyStatusRulesAsync(AppDbContext, Word, bool, UserSettings?)"/> for saved words without sentences.</summary>

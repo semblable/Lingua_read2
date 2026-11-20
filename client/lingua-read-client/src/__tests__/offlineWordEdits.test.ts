@@ -28,33 +28,69 @@ test('queued creates return usable reader fields and preserve sentence context a
 });
 
 test('offline status coalescing retains translation edits and explicit clearing', async () => {
-  await updateWord(5, 1, 'kot');
-  await updateWord(5, 2, undefined);
-  expect((await listPending())[0].payload).toEqual({ wordId: 5, status: 2, translation: 'kot' });
-  await updateWord(5, 3, '');
+  const translatedAt = '2026-11-18T08:00:00.000Z';
+  const gradedAt = '2026-11-18T08:01:00.000Z';
+  const clearedAt = '2026-11-18T08:02:00.000Z';
+  await updateWord(5, 1, 'kot', { clientUpdatedAt: translatedAt });
+  await updateWord(5, 2, undefined, { clientUpdatedAt: gradedAt });
+  expect((await listPending())[0].payload).toEqual({
+    wordId: 5, status: 2, translation: 'kot', clientUpdatedAt: gradedAt, translationUpdatedAt: translatedAt,
+  });
+  await updateWord(5, 3, '', { clientUpdatedAt: clearedAt });
   online(true);
   await drain(productionSyncHandlers);
   expect(JSON.parse(String(vi.mocked(fetchApi).mock.calls[0][1]?.body)))
-    .toEqual({ status: 3, translation: '' });
+    .toEqual({ status: 3, translation: '', clientUpdatedAt: clearedAt });
 });
 
 test('existing-word offline edits retain the first example and its source together through replay', async () => {
-  await updateWord(5, 1, 'kot', { textId: 7, sentence: 'A cat sleeps.' });
-  await updateWord(5, 2, undefined, { textId: 8, sentence: 'Another cat wakes.' });
-  await updateWord(5, 3, 'kotek');
+  await updateWord(5, 1, 'kot', { textId: 7, sentence: 'A cat sleeps.', clientUpdatedAt: '2026-11-18T08:18:00.000Z' });
+  await updateWord(5, 2, undefined, { textId: 8, sentence: 'Another cat wakes.', clientUpdatedAt: '2026-11-18T08:19:00.000Z' });
+  const clientUpdatedAt = '2026-11-18T08:20:00.000Z';
+  await updateWord(5, 3, 'kotek', { clientUpdatedAt });
   expect(await listPending()).toHaveLength(1);
-  expect((await listPending())[0].payload).toEqual({ wordId: 5, status: 3, translation: 'kotek', textId: 7, sentence: 'A cat sleeps.' });
+  expect((await listPending())[0].payload).toEqual({
+    wordId: 5, status: 3, translation: 'kotek', textId: 7, sentence: 'A cat sleeps.', clientUpdatedAt,
+  });
   online(true);
   await drain(productionSyncHandlers);
   expect(JSON.parse(String(vi.mocked(fetchApi).mock.calls[0][1]?.body)))
-    .toEqual({ status: 3, translation: 'kotek', textId: 7, sentence: 'A cat sleeps.' });
+    .toEqual({ status: 3, translation: 'kotek', textId: 7, sentence: 'A cat sleeps.', clientUpdatedAt });
+});
+
+test.each(['create', 'update'])('delayed %s keeps the newest status, last explicit translation and earliest eligible example', async kind => {
+  const save = (minute: number, status: number, translation: string | undefined, sentence: string) => {
+    const clientUpdatedAt = `2026-11-18T08:0${minute}:00.000Z`;
+    return kind === 'create' ? createWord(7, 'cat', status, translation, sentence, { clientUpdatedAt })
+      : updateWord(5, status, translation, { textId: minute + 7, sentence, clientUpdatedAt });
+  };
+  let failEarlier!: (error: Error) => void;
+  online(true);
+  vi.mocked(fetchApi).mockImplementationOnce(() => new Promise((_, reject) => { failEarlier = reject; }));
+  const delayed = save(1, 2, 'outdated', 'The first cat.');
+  await vi.waitFor(() => expect(fetchApi).toHaveBeenCalledOnce());
+  online(false);
+  await save(2, 3, '', 'Another cat.');
+  await save(3, 4, undefined, 'The last cat.');
+  failEarlier(new TypeError('Disconnected'));
+  await delayed;
+  await save(0, 5, 'oldest', 'A Known word cannot capture this cat example.');
+
+  const queued = await listPending();
+  expect(queued).toHaveLength(1);
+  const expected = { textId: kind === 'create' ? 7 : 8, sentence: 'The first cat.', status: 4, translation: '',
+    clientUpdatedAt: '2026-11-18T08:03:00.000Z', translationUpdatedAt: '2026-11-18T08:02:00.000Z' };
+  expect(queued[0].payload).toMatchObject(expected);
+  online(true);
+  await drain(productionSyncHandlers);
+  expect(JSON.parse(String(vi.mocked(fetchApi).mock.calls.at(-1)?.[1]?.body))).toMatchObject(expected);
 });
 
 test('an online existing-word save sends context alongside its grade without inventing a translation', async () => {
   online(true);
   await updateWord(5, 2, undefined, { textId: 7, sentence: 'A cat sleeps.' });
   expect(JSON.parse(String(vi.mocked(fetchApi).mock.calls[0][1]?.body)))
-    .toEqual({ status: 2, textId: 7, sentence: 'A cat sleeps.' });
+    .toEqual({ status: 2, textId: 7, sentence: 'A cat sleeps.', clientUpdatedAt: expect.any(String) });
   expect(await listPending()).toHaveLength(0);
 });
 
@@ -87,6 +123,7 @@ test('status-only natural-key replay omits translation rather than clearing the 
   const payload = JSON.parse(String(vi.mocked(fetchApi).mock.calls.at(-1)?.[1]?.body));
   expect(payload).toMatchObject({ textId: 1, term: 'cat', status: 2, replaceExisting: true });
   expect(payload).not.toHaveProperty('translation');
+  expect(payload.clientUpdatedAt).toEqual(expect.any(String));
 });
 
 test('a retryable failure keeps later writes behind it', async () => {
@@ -129,7 +166,8 @@ test('terminal and retryable word replay failures are reported per word, without
     vi.mocked(fetchApi).mockRejectedValueOnce({ status: 503 });
     await drain(productionSyncHandlers);
     expect(replayed).toHaveBeenLastCalledWith(expect.objectContaining({ outcome: 'retryable',
-      op: expect.objectContaining({ type: 'wordStatusUpdate', payload: { wordId: 5, status: 4 } }),
+      op: expect.objectContaining({ type: 'wordStatusUpdate',
+        payload: { wordId: 5, status: 4, clientUpdatedAt: expect.any(String) } }),
     }));
     expect(await listPending()).toHaveLength(1);
     vi.mocked(fetchApi).mockRejectedValueOnce({ status: 422 });

@@ -3,7 +3,7 @@
 // single place where the real API helpers are imported.
 
 import { fetchApi as request, type FetchApiOptions } from '../api/client';
-import type { SyncHandlers } from './syncQueue';
+import { queuedWordEditTime, type SyncHandlers } from './syncQueue';
 import { notifyStudyChange } from '../studyIntent';
 
 const fetchApi = (endpoint: string, options: FetchApiOptions) =>
@@ -21,14 +21,17 @@ export const productionSyncHandlers: SyncHandlers = {
       }),
     });
   },
-  wordStatusUpdate: async ({ payload }) => {
+  wordStatusUpdate: async ({ payload, enqueuedAt }) => {
     return await fetchApi(`/words/${payload.wordId}`, {
       method: 'PUT',
-      body: JSON.stringify({ status: payload.status, ...(payload.translation !== undefined ? { translation: payload.translation } : {}),
+      body: JSON.stringify({ status: payload.status, translation: payload.translation,
+        clientUpdatedAt: queuedWordEditTime(payload.clientUpdatedAt, enqueuedAt),
+        expectedRevision: payload.expectedRevision,
+        translationUpdatedAt: payload.translationUpdatedAt,
         ...(payload.sentence && payload.textId ? { textId: payload.textId, sentence: payload.sentence } : {}) }),
     });
   },
-  wordCreate: async ({ payload }) => {
+  wordCreate: async ({ payload, enqueuedAt }) => {
     return await fetchApi('/words', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json; charset=utf-8' },
@@ -36,7 +39,10 @@ export const productionSyncHandlers: SyncHandlers = {
         textId: payload.textId,
         term: payload.term,
         status: payload.status ?? 1,
-        ...(payload.translation !== undefined ? { translation: payload.translation } : {}),
+        translation: payload.translation,
+        clientUpdatedAt: queuedWordEditTime(payload.clientUpdatedAt, enqueuedAt),
+        expectedRevision: payload.expectedRevision,
+        translationUpdatedAt: payload.translationUpdatedAt,
         sentence: payload.sentence,
         ...(payload.replaceExisting ? { replaceExisting: true } : {}),
       }),

@@ -10,13 +10,23 @@ export type PaginatedWordsByLanguage = ResponseOf<
   'get'
 >;
 
+let latestEditMs = 0;
+
+// Keep closely spaced intents in local order. Capture the time before an
+// asynchronous translation, a failed send, or offline replay can delay it.
+export function wordEditTime(): string {
+  const now = Date.now();
+  latestEditMs = now > latestEditMs || now < latestEditMs - 1_000 ? now : latestEditMs + 1;
+  return new Date(latestEditMs).toISOString();
+}
+
 export const createWord = async (
   textId: number | string,
   term: string,
   status: number | string,
   translation: string | null | undefined,
   sentence: string | null = null,
-  options: { queueOnly?: boolean } = {}
+  options: { queueOnly?: boolean; clientUpdatedAt?: string; expectedRevision?: string } = {}
 ): Promise<unknown> => {
   try {
     const payload = {
@@ -25,7 +35,9 @@ export const createWord = async (
       status: parseInt(String(status), 10),
       ...(translation != null ? { translation } : {}),
       replaceExisting: true,
-      sentence
+      sentence,
+      clientUpdatedAt: options.clientUpdatedAt ?? wordEditTime(),
+      ...(options.expectedRevision !== undefined ? { expectedRevision: options.expectedRevision } : {}),
     };
 
     // Offline replay: createWord is one of the three mutations the offline
@@ -34,17 +46,7 @@ export const createWord = async (
     // (the previous default) would fail validation on the server and trap
     // the op in the queue forever.
     const result = await enqueueIfOffline(
-      {
-        type: 'wordCreate',
-        payload: {
-          textId: payload.textId,
-          term: payload.term,
-          translation: payload.translation,
-          status: payload.status,
-          sentence,
-          replaceExisting: true,
-        },
-      },
+      { type: 'wordCreate', payload },
       () => fetchApi('/words', {
         method: 'POST',
         headers: {
@@ -52,7 +54,7 @@ export const createWord = async (
         },
         body: JSON.stringify(payload)
       }),
-      `wordCreate:${payload.textId}:${payload.term}`,
+      options.expectedRevision === undefined ? `wordCreate:${payload.textId}:${payload.term}` : undefined,
       options
     );
     // A queued create has no server ID yet. Keep it addressable by term in the
@@ -66,11 +68,14 @@ export const createWord = async (
   }
 };
 
+type WordUpdateOptions = { clientUpdatedAt?: string; expectedRevision?: string } &
+  ({ textId: number | string; sentence: string } | { textId?: never; sentence?: never });
+
 export const updateWord = async (
   wordId: number | string,
   status: number | string,
   translation: string | null | undefined,
-  context?: { textId: number | string; sentence: string }
+  options?: WordUpdateOptions
 ): Promise<unknown> => {
   try {
     if (!wordId) throw new Error('Word ID is required');
@@ -79,22 +84,22 @@ export const updateWord = async (
     const payload = {
       status,
       ...(translation != null ? { translation } : {}),
-      ...(context ? { textId: Number(context.textId), sentence: context.sentence } : {})
+      ...(options?.textId !== undefined ? { textId: Number(options.textId), sentence: options.sentence } : {}),
+      clientUpdatedAt: options?.clientUpdatedAt ?? wordEditTime(),
+      ...(options?.expectedRevision !== undefined ? { expectedRevision: options.expectedRevision } : {}),
     };
 
     // Persist the complete edit; omitted translations remain unchanged.
     return await enqueueIfOffline(
       {
         type: 'wordStatusUpdate',
-        payload: { wordId: parseInt(String(wordId), 10), status: parseInt(String(status), 10),
-          ...(translation != null ? { translation } : {}),
-          ...(context ? { textId: Number(context.textId), sentence: context.sentence } : {}) },
+        payload: { ...payload, wordId: parseInt(String(wordId), 10), status: parseInt(String(status), 10) },
       },
       () => fetchApi(`/words/${wordId}`, {
         method: 'PUT',
         body: JSON.stringify(payload)
       }),
-      `wordStatus:${wordId}`
+      options?.expectedRevision === undefined ? `wordStatus:${wordId}` : undefined
     );
   } catch (error) {
     console.error('Error in updateWord:', error);

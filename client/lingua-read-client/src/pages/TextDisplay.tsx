@@ -722,7 +722,7 @@ const TextDisplay = () => {
 
   // --- Optimized Data Structures ---
   useSyncedWordIdentities(text?.textId, words, lookupTerm, setWords, setDisplayedWord, {
-    reconcileServerWords, hasQueuedStatuses: wordStatusStates.some(state => state.queuedOffline),
+    reconcileServerWords, hasQueuedStatuses: wordStatusStates.some(state => state.queuedOffline || state.conflictId !== undefined),
   });
   const foldTerm = useCallback((term: string) => foldLookupTerm(
     term, languageConfig?.code || languageConfig?.languageCode || text?.languageCode
@@ -2591,8 +2591,10 @@ const TextDisplay = () => {
           {wordStatusStates.filter(state => state.error).map(state => (
             <div key={state.key} className="d-flex flex-wrap align-items-center gap-2">
               <span>{state.error}</span>
-              <Button variant="outline-secondary" size="sm" onClick={() => { void retryWordStatus(state.key); }}
-                aria-label={`Retry saving ${state.term}`}>Retry</Button>
+              {state.conflictId === undefined && (
+                <Button variant="outline-secondary" size="sm" onClick={() => { void retryWordStatus(state.key); }}
+                  aria-label={`Retry saving ${state.term}`}>Retry</Button>
+              )}
             </div>
           ))}
         </section>

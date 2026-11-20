@@ -117,7 +117,7 @@ describe('Korean reader saved vocabulary identity', () => {
     expect(screen.getByRole('textbox')).toHaveValue('Korean letters');
     expect(screen.queryByRole('button', { name: /Save exact form/ })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Advanced (4)' }));
-    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(91, 4, undefined, { textId: 1, sentence: `${surface}.` }));
+    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(91, 4, undefined, { textId: 1, sentence: `${surface}.`, clientUpdatedAt: expect.any(String) }));
     expect(createWord).not.toHaveBeenCalled();
     expect(rows).toEqual([{ wordId: 91, term: stored, status: 4, translation: 'Korean letters' }]);
   });
@@ -137,7 +137,7 @@ describe('Korean reader saved vocabulary identity', () => {
     fireEvent.click(screen.getByText('각'));
     expect(screen.getByRole('textbox')).toHaveValue('second meaning');
     fireEvent.click(screen.getByRole('button', { name: 'Advanced (4)' }));
-    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(92, 4, undefined, { textId: 1, sentence: '각 각 각 ㄱㅏ.' }));
+    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(92, 4, undefined, { textId: 1, sentence: '각 각 각 ㄱㅏ.', clientUpdatedAt: expect.any(String) }));
     expect(rows[0]).toEqual({ wordId: 91, term: '각', status: 5, translation: 'first meaning' });
     expect(rows).toHaveLength(3);
     expect(createWord).not.toHaveBeenCalled();
@@ -162,7 +162,7 @@ describe('Korean reader saved vocabulary identity', () => {
     vi.stubGlobal('alert', vi.fn());
     expect(screen.queryByRole('button', { name: 'Mine', exact: true })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Advanced (4)' }));
-    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(101, 4, undefined, { textId: 1, sentence: `🙂 앞, ${surface}!` }));
+    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(101, 4, undefined, { textId: 1, sentence: `🙂 앞, ${surface}!`, clientUpdatedAt: expect.any(String) }));
     expect(createWord).not.toHaveBeenCalled();
     expect(rows[0].term).toBe(stored);
   });
@@ -182,11 +182,11 @@ describe('Korean reader saved vocabulary identity', () => {
     fireEvent.click(screen.getByText('각 테스트'));
     expect(screen.getByRole('textbox')).toHaveValue('first phrase');
     fireEvent.click(screen.getByRole('button', { name: 'Advanced (4)' }));
-    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(101, 4, undefined, { textId: 1, sentence: '각 테스트, 각 테스트, 각 테스트.' }));
+    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(101, 4, undefined, { textId: 1, sentence: '각 테스트, 각 테스트, 각 테스트.', clientUpdatedAt: expect.any(String) }));
     fireEvent.click(screen.getByText('각 테스트'));
     expect(screen.getByRole('textbox')).toHaveValue('second phrase');
     fireEvent.click(screen.getByRole('button', { name: 'Advanced (4)' }));
-    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(102, 4, undefined, { textId: 1, sentence: '각 테스트, 각 테스트, 각 테스트.' }));
+    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(102, 4, undefined, { textId: 1, sentence: '각 테스트, 각 테스트, 각 테스트.', clientUpdatedAt: expect.any(String) }));
     expect(createWord).not.toHaveBeenCalled();
     expect(rows).toHaveLength(2);
   });
@@ -341,7 +341,7 @@ describe('Korean reader saved vocabulary identity', () => {
 
     // Saving Status 4 updates the base lemma row, not creating a duplicate
     fireEvent.click(screen.getByRole('button', { name: 'Advanced (4)' }));
-    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(42, 4, undefined, { textId: 1, sentence: '책이, 책은, 책도, 책을.' }));
+    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(42, 4, undefined, { textId: 1, sentence: '책이, 책은, 책도, 책을.', clientUpdatedAt: expect.any(String) }));
     expect(createWord).not.toHaveBeenCalled();
     expect(rows[0].status).toBe(4);
   });
@@ -364,7 +364,7 @@ describe('Korean reader saved vocabulary identity', () => {
     expect(exactBtn).toBeInTheDocument();
 
     fireEvent.click(exactBtn);
-    await waitFor(() => expect(createWord).toHaveBeenCalledWith(1, '책을', 3, 'book', expect.anything()));
+    await waitFor(() => expect(createWord).toHaveBeenCalledWith(1, '책을', 3, 'book', expect.anything(), { clientUpdatedAt: expect.any(String) }));
     expect(screen.queryByRole('button', { name: /Save exact form/ })).not.toBeInTheDocument();
   });
 
@@ -386,7 +386,7 @@ describe('Korean reader saved vocabulary identity', () => {
     fireEvent.change(screen.getByRole('textbox'), { target: { value: 'book' } });
     fireEvent.click(screen.getByRole('button', { name: 'Learning (2)' }));
 
-    await waitFor(() => expect(createWord).toHaveBeenCalledWith(1, '책', 2, 'book', expect.anything()));
+    await waitFor(() => expect(createWord).toHaveBeenCalledWith(1, '책', 2, 'book', expect.anything(), { clientUpdatedAt: expect.any(String) }));
     expect(rows.some(r => r.term === '책')).toBe(true);
   });
 
@@ -414,7 +414,7 @@ describe('Korean reader saved vocabulary identity', () => {
     expect(screen.getByRole('button', { name: '살다', exact: true })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByRole('textbox')).toHaveValue('to live');
     fireEvent.click(screen.getByRole('button', { name: 'Advanced (4)' }));
-    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(42, 4, undefined));
+    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(42, 4, undefined, { clientUpdatedAt: expect.any(String) }));
   });
 
   test('an untracked surface placeholder does not replace the selected lemma', async () => {

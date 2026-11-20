@@ -86,7 +86,7 @@ describe('opt-in Thai reader workflow', () => {
     await waitFor(() => expect(screen.getByText('หนังสือ')).toHaveClass('word-status-3'));
     fireEvent.click(screen.getByText('หนังสือ'));
     fireEvent.click(screen.getByRole('button', { name: 'Advanced (4)' }));
-    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(81, 4, undefined, { textId: 1, sentence: 'ฉันชอบอ่านหนังสือที่กรุงเทพฯ' }));
+    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(81, 4, undefined, { textId: 1, sentence: 'ฉันชอบอ่านหนังสือที่กรุงเทพฯ', clientUpdatedAt: expect.any(String) }));
     expect(createWord).not.toHaveBeenCalled();
   });
 

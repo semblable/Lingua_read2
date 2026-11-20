@@ -3,7 +3,7 @@ import { afterEach, expect, test, vi } from 'vitest';
 import OfflineIndicator from '../components/offline/OfflineIndicator';
 import { drain, pending, type SyncHandlers } from '../utils/offline/syncQueue';
 
-vi.mock('../utils/offline/syncQueue', () => ({ drain: vi.fn(), pending: vi.fn() }));
+vi.mock('../utils/offline/syncQueue', () => ({ drain: vi.fn(), pending: vi.fn(), listWordConflicts: vi.fn().mockResolvedValue([]) }));
 vi.mock('../hooks/useOnlineStatus', () => ({ useOnlineStatus: () => true }));
 afterEach(() => vi.useRealTimers());
 

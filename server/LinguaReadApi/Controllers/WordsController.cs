@@ -45,6 +45,9 @@ namespace LinguaReadApi.Controllers
 
         // POST: api/words
         [HttpPost]
+        [ProducesResponseType(typeof(WordResponseDto), 200)]
+        [ProducesResponseType(typeof(WordResponseDto), 201)]
+        [ProducesResponseType(typeof(WordEditConflictDto), 409)]
         public async Task<ActionResult<WordResponseDto>> CreateWord([FromBody] CreateWordDto createWordDto)
         {
             if (!ModelState.IsValid)
@@ -52,10 +55,10 @@ namespace LinguaReadApi.Controllers
                 return BadRequest(ModelState);
             }
 
-            return await CreateWordAsync(createWordDto, attempt: 1);
+            return await CreateWordAsync(createWordDto, WordEditTime(createWordDto.ClientUpdatedAt), attempt: 1);
         }
 
-        private async Task<ActionResult<WordResponseDto>> CreateWordAsync(CreateWordDto createWordDto, int attempt)
+        private async Task<ActionResult<WordResponseDto>> CreateWordAsync(CreateWordDto createWordDto, DateTime editedAt, int attempt)
         {
             var userId = GetUserId();
 
@@ -82,133 +85,59 @@ namespace LinguaReadApi.Controllers
 
             // Normalize legacy headwords through the same language-scoped table
             // as new tokens; database lower() cannot fold script variants.
-            var existingWord = (await LoadMatchingWordsAsync(userId, text.Language, [normalizedTerm]))
+            var word = (await LoadMatchingWordsAsync(userId, text.Language, [normalizedTerm]))
                 .FirstOrDefault();
+            var isNew = word == null;
+            var status = createWordDto.ReplaceExisting || isNew
+                ? createWordDto.Status : Math.Max(word!.Status, createWordDto.Status);
+            var translation = createWordDto.ReplaceExisting
+                ? NormalizeTranslationEdit(createWordDto.Translation)
+                : string.IsNullOrEmpty(createWordDto.Translation) ? null : createWordDto.Translation;
+            if (word == null && createWordDto.ExpectedRevision != null) return NotFound();
+            var writeTime = word == null ? editedAt : ResolveWordEditTime(word, createWordDto.ExpectedRevision,
+                editedAt, status, translation, createWordDto.TranslationUpdatedAt);
+            if (!writeTime.HasValue) return NewerWordConflict(word!);
 
-            if (existingWord != null)
-            {
-                // Create text-word relationship if it doesn't exist
-                var existingTextWord = await _context.Set<TextWord>()
-                    .FirstOrDefaultAsync(tw => tw.TextId == text.TextId && tw.WordId == existingWord.WordId);
-
-                if (existingTextWord == null)
-                {
-                    _context.Set<TextWord>().Add(new TextWord
-                    {
-                        TextId = text.TextId,
-                        WordId = existingWord.WordId,
-                        CreatedAt = DateTime.UtcNow
-                    });
-                }
-
-                // Explicit reader saves can address provisional offline words by
-                // their natural key before the server ID reaches the open reader.
-                if (createWordDto.ReplaceExisting || createWordDto.Status > existingWord.Status)
-                {
-                    existingWord.Status = createWordDto.Status;
-                }
-
-                var responseTranslation = existingWord.Translation?.Translation ?? "";
-
-                if (createWordDto.ReplaceExisting && createWordDto.Translation != null &&
-                    string.IsNullOrWhiteSpace(createWordDto.Translation))
-                {
-                    if (existingWord.Translation != null) _context.WordTranslations.Remove(existingWord.Translation);
-                    responseTranslation = "";
-                }
-
-                // Update translation if provided and different or missing
-                if (!string.IsNullOrEmpty(createWordDto.Translation) &&
-                    !(createWordDto.ReplaceExisting && string.IsNullOrWhiteSpace(createWordDto.Translation)))
-                {
-                    if (existingWord.Translation == null ||
-                        createWordDto.Translation != existingWord.Translation.Translation)
-                    {
-                        await UpsertWordTranslationAsync(existingWord.WordId, createWordDto.Translation);
-                        responseTranslation = createWordDto.Translation;
-                    }
-                }
-
-                var capturedExample = await SrsMinedSentences.CaptureFirstAsync(
-                    _context, existingWord, createWordDto.Sentence, text);
-
-                // Create, suspend or restore the SRS card to match the (possibly raised) status.
-                var settings = await GetSettingsAsync(userId);
-                await SrsCardLifecycle.ApplyStatusRulesAsync(
-                    _context, existingWord, capturedExample || await HasSentenceAsync(existingWord, null, settings), settings);
-
-                await _context.SaveChangesAsync();
-
-                return Ok(new WordResponseDto
-                {
-                    WordId = existingWord.WordId,
-                    Term = existingWord.Term,
-                    Status = existingWord.Status,
-                    Translation = responseTranslation,
-                    IsNew = false
-                });
-            }
-
-            // Create new word
-            var word = new Word
+            word ??= new Word
             {
                 Term = normalizedTerm,
-                Status = createWordDto.Status,
                 UserId = userId,
                 LanguageId = text.LanguageId,
                 CreatedAt = DateTime.UtcNow
             };
+            word.Status = status;
+            word.LastEditedAt = word.LastManualStatusAt = writeTime.Value;
+            if (isNew) _context.Words.Add(word);
+            else _context.Entry(word).Property(w => w.LastEditedAt).IsModified = true;
+            if (isNew || !await _context.TextWords.AnyAsync(tw => tw.TextId == text.TextId && tw.WordId == word.WordId))
+                _context.TextWords.Add(new TextWord { TextId = text.TextId, Word = word, CreatedAt = DateTime.UtcNow });
+            SetWordTranslation(word, translation);
 
-            _context.Words.Add(word);
-            // Save here to get the WordId for relationships
+            var capturedExample = await SrsMinedSentences.CaptureFirstAsync(_context, word, createWordDto.Sentence, text);
+            var settings = await GetSettingsAsync(userId);
+            await SrsCardLifecycle.ApplyStatusRulesAsync(
+                _context, word, capturedExample || (!isNew && await HasSentenceAsync(word, null, settings)), settings);
+
+            // Save the edit, relationship, and SRS changes together. An optimistic
+            // concurrency loss rolls back the whole mutation before we compare it again.
             try
             {
                 await _context.SaveChangesAsync();
             }
             catch (DbUpdateException ex) when (attempt < MaxTermWriteAttempts)
             {
-                // The word linker (or another tab) inserted this word after the lookup
-                // above. Nothing was saved; go again and take the existing-word path.
-                _logger.LogWarning(ex, "New word collided with a concurrent word insert (attempt {Attempt}); retrying", attempt);
+                _logger.LogWarning(ex, "Word save collided with another writer (attempt {Attempt}); retrying", attempt);
                 _context.ChangeTracker.Clear();
-                return await CreateWordAsync(createWordDto, attempt + 1);
+                return await CreateWordAsync(createWordDto, editedAt, attempt + 1);
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                return await ReadWordConflictAsync(userId, word.WordId);
             }
 
-            // Create text-word relationship
-            var textWord = new TextWord
-            {
-                TextId = text.TextId,
-                WordId = word.WordId,
-                CreatedAt = DateTime.UtcNow
-            };
-            _context.Set<TextWord>().Add(textWord);
-
-            var responseTranslationForNewWord = "";
-            // Create translation only if provided
-            if (!string.IsNullOrEmpty(createWordDto.Translation) &&
-                !(createWordDto.ReplaceExisting && string.IsNullOrWhiteSpace(createWordDto.Translation)))
-            {
-                await UpsertWordTranslationAsync(word.WordId, createWordDto.Translation);
-                responseTranslationForNewWord = createWordDto.Translation;
-            }
-
-            var capturedNewExample = await SrsMinedSentences.CaptureFirstAsync(
-                _context, word, createWordDto.Sentence, text);
-
-            await SrsCardLifecycle.ApplyStatusRulesAsync(
-                _context, word, hasSentence: capturedNewExample, await GetSettingsAsync(userId));
-
-            // Save relationships and potentially translation and SRS data
-            await _context.SaveChangesAsync();
-
-            return CreatedAtAction(nameof(GetWord), new { id = word.WordId }, new WordResponseDto
-            {
-                WordId = word.WordId,
-                Term = word.Term,
-                Status = word.Status,
-                Translation = responseTranslationForNewWord,
-                IsNew = true
-            });
+            var response = WordResponse(word, isNew);
+            if (isNew) return CreatedAtAction(nameof(GetWord), new { id = word.WordId }, response);
+            return Ok(response);
         }
 
         // GET: api/words/5
@@ -475,6 +404,8 @@ namespace LinguaReadApi.Controllers
 
         // PUT: api/words/5
         [HttpPut("{id}")]
+        [ProducesResponseType(204)]
+        [ProducesResponseType(typeof(WordEditConflictDto), 409)]
         public async Task<IActionResult> UpdateWord(int id, [FromBody] UpdateWordDto updateWordDto)
         {
             if (!ModelState.IsValid)
@@ -482,6 +413,11 @@ namespace LinguaReadApi.Controllers
                 return BadRequest(ModelState);
             }
 
+            return await UpdateWordAsync(id, updateWordDto, WordEditTime(updateWordDto.ClientUpdatedAt), attempt: 1);
+        }
+
+        private async Task<IActionResult> UpdateWordAsync(int id, UpdateWordDto updateWordDto, DateTime editedAt, int attempt)
+        {
             var userId = GetUserId();
 
             var word = await _context.Words
@@ -492,6 +428,11 @@ namespace LinguaReadApi.Controllers
             {
                 return NotFound();
             }
+
+            var translation = NormalizeTranslationEdit(updateWordDto.Translation);
+            var writeTime = ResolveWordEditTime(word, updateWordDto.ExpectedRevision, editedAt,
+                updateWordDto.Status, translation, updateWordDto.TranslationUpdatedAt);
+            if (!writeTime.HasValue) return NewerWordConflict(word);
 
             Text? sourceText = null;
             if (updateWordDto.Status is >= 1 and <= 4 && !string.IsNullOrWhiteSpace(updateWordDto.Sentence))
@@ -513,29 +454,38 @@ namespace LinguaReadApi.Controllers
             // Update word status, then create, suspend or restore its SRS card to match
             // (Ignored always suspends; leaving Known/Ignored lifts only that suspension).
             word.Status = updateWordDto.Status;
+            word.LastEditedAt = word.LastManualStatusAt = writeTime.Value;
+            _context.Entry(word).Property(w => w.LastEditedAt).IsModified = true;
             var capturedExample = sourceText != null && await SrsMinedSentences.CaptureFirstAsync(
                 _context, word, updateWordDto.Sentence, sourceText);
             var settings = await GetSettingsAsync(userId);
             await SrsCardLifecycle.ApplyStatusRulesAsync(
                 _context, word, capturedExample || await HasSentenceAsync(word, newSentence: null, settings), settings);
 
-            // Omitted/null means status-only; explicit blank clears a translation.
-            if (updateWordDto.Translation != null)
-            {
-                if (string.IsNullOrWhiteSpace(updateWordDto.Translation))
-                {
-                    if (word.Translation != null) _context.WordTranslations.Remove(word.Translation);
-                }
-                else await UpsertWordTranslationAsync(word.WordId, updateWordDto.Translation);
-            }
+            SetWordTranslation(word, translation);
 
-            await _context.SaveChangesAsync();
+            try
+            {
+                await _context.SaveChangesAsync();
+            }
+            catch (DbUpdateException ex) when (attempt < MaxTermWriteAttempts)
+            {
+                _logger.LogWarning(ex, "Word update collided with another writer (attempt {Attempt}); retrying", attempt);
+                _context.ChangeTracker.Clear();
+                return await UpdateWordAsync(id, updateWordDto, editedAt, attempt + 1);
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                return await ReadWordConflictAsync(userId, id);
+            }
 
             return NoContent();
         }
 
         // DELETE: api/words/5
         [HttpDelete("{id}")]
+        [ProducesResponseType(204)]
+        [ProducesResponseType(typeof(WordEditConflictDto), 409)]
         public async Task<IActionResult> DeleteWord(int id)
         {
             var userId = GetUserId();
@@ -577,7 +527,14 @@ namespace LinguaReadApi.Controllers
             _context.SrsCardReviews.RemoveRange(srsCards);
             _context.Words.Remove(word);
 
-            await _context.SaveChangesAsync();
+            try
+            {
+                await _context.SaveChangesAsync();
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                return await ReadWordConflictAsync(userId, id);
+            }
 
             return NoContent();
         }
@@ -623,62 +580,48 @@ namespace LinguaReadApi.Controllers
 
             try
             {
-                TermsBatchPlan plan;
-                int changedCount;
                 for (var attempt = 1; ; attempt++)
                 {
-                    plan = await PlanTermsBatchAsync(userId, language, termsToAdd, batchDto.KeepExistingStatus);
+                    var plan = await PlanTermsBatchAsync(userId, language, termsToAdd, batchDto.KeepExistingStatus);
+                    var editTime = WordEditTime(null);
+                    var newWords = plan.WordsToCreate.ToHashSet();
+                    foreach (var word in plan.WordsToCreate.Concat(plan.WordsWithNewStatus))
+                    {
+                        word.LastEditedAt = editTime;
+                        if (newWords.Contains(word) || _context.Entry(word).Property(w => w.Status).OriginalValue != word.Status)
+                            word.LastManualStatusAt = editTime;
+                    }
+                    foreach (var (word, translation) in plan.TranslationsToUpsert)
+                    {
+                        SetWordTranslation(word, translation);
+                        word.LastEditedAt = editTime;
+                    }
+
+                    // New cards can reference the added Word, so all associated writes
+                    // stay in the same SaveChanges transaction.
+                    var settings = await GetSettingsAsync(userId);
+                    await SrsCardLifecycle.ApplyStatusRulesAsync(_context, userId,
+                        plan.WordsWithNewStatus.Where(w => !newWords.Contains(w)).ToList(), settings);
+                    foreach (var word in plan.WordsToCreate)
+                        await SrsCardLifecycle.ApplyStatusRulesAsync(_context, word, hasSentence: false, settings);
+
                     try
                     {
-                        changedCount = await _context.SaveChangesAsync();
-                        break;
+                        var changedCount = await _context.SaveChangesAsync();
+                        return Ok(new AddTermsBatchResultDto
+                        {
+                            Message = $"Batch processed. {changedCount} database changes saved.",
+                            Words = plan.BatchWords.Select(w => WordResponse(w, w.Status == 1)).ToList()
+                        });
                     }
                     catch (DbUpdateException ex) when (attempt < MaxTermWriteAttempts)
                     {
-                        // The word linker inserts every new word of a text it links, and
-                        // a book import leaves it doing that in the background for
-                        // minutes. A word it inserted after our read collides on
-                        // IX_Words_UserId_LanguageId_Term. Nothing was saved, so plan
-                        // again against the rows that are there now.
-                        _logger.LogWarning(ex, "Term batch collided with a concurrent word insert (attempt {Attempt}); retrying", attempt);
+                        // The word linker and other saves can race this batch. Plan
+                        // again against the committed rows rather than replaying them.
+                        _logger.LogWarning(ex, "Term batch collided with another writer (attempt {Attempt}); retrying", attempt);
                         _context.ChangeTracker.Clear();
                     }
                 }
-
-                // Cards follow the new statuses (Known may suspend; 1-4 may create a card).
-                await SrsCardLifecycle.ApplyStatusRulesAsync(
-                    _context, userId, plan.WordsWithNewStatus.Concat(plan.WordsToCreate).ToList(), await GetSettingsAsync(userId));
-                changedCount += await _context.SaveChangesAsync();
-
-                foreach (var translationToUpsert in plan.TranslationsToUpsert)
-                {
-                    await UpsertWordTranslationAsync(translationToUpsert.Word.WordId, translationToUpsert.Translation);
-                }
-                if (plan.TranslationsToUpsert.Any() && !_context.Database.IsRelational())
-                {
-                    changedCount += await _context.SaveChangesAsync();
-                }
-
-                // The upserts run as SQL, so the tracked words still carry their old
-                // translation; the last upsert for a word is the one stored.
-                var savedTranslations = new Dictionary<int, string>();
-                foreach (var (word, translation) in plan.TranslationsToUpsert)
-                {
-                    savedTranslations[word.WordId] = translation;
-                }
-                return Ok(new AddTermsBatchResultDto
-                {
-                    Message = $"Batch processed. {changedCount} database changes saved.",
-                    Words = plan.BatchWords.Select(w => new WordResponseDto
-                    {
-                        WordId = w.WordId,
-                        Term = w.Term,
-                        Status = w.Status,
-                        Translation = savedTranslations.GetValueOrDefault(w.WordId) ?? w.Translation?.Translation ?? "",
-                        IsNew = w.Status == 1, // as GET words/language sets it
-                        CreatedAt = w.CreatedAt
-                    }).ToList()
-                });
             }
             catch (DbUpdateException ex)
             {
@@ -933,35 +876,99 @@ namespace LinguaReadApi.Controllers
 
 
 
-        private async Task UpsertWordTranslationAsync(int wordId, string translation)
+        private static DateTime WordEditTime(DateTimeOffset? clientUpdatedAt)
         {
             var now = DateTime.UtcNow;
+            var time = clientUpdatedAt is { } client && client.UtcDateTime < now ? client.UtcDateTime : now;
+            // PostgreSQL stores timestamps to microsecond precision. Comparing at that
+            // precision lets an identical retry match its own committed write.
+            return time.AddTicks(-(time.Ticks % 10));
+        }
 
-            if (_context.Database.IsRelational())
+        private static string? NormalizeTranslationEdit(string? translation) =>
+            translation != null && string.IsNullOrWhiteSpace(translation) ? "" : translation;
+
+        private static DateTime? LatestWordEdit(Word word)
+        {
+            // Older rows only record creation and translation edits. A status-0
+            // placeholder created by the linker is not a user edit.
+            if (word.LastEditedAt.HasValue) return word.LastEditedAt;
+            var lastTranslation = word.Translation?.UpdatedAt ?? word.Translation?.CreatedAt;
+            return word.Status != 0 && (!lastTranslation.HasValue || word.CreatedAt > lastTranslation)
+                ? word.CreatedAt : lastTranslation;
+        }
+
+        private static string WordRevision(Word word, DateTime? latest) =>
+            $"{word.WordId:x}-{(latest ?? word.CreatedAt).Ticks:x}";
+
+        private static DateTime? ResolveWordEditTime(Word word, string? expectedRevision, DateTime editedAt,
+            int status, string? translation, DateTimeOffset? translationUpdatedAt)
+        {
+            var latest = LatestWordEdit(word);
+            if (expectedRevision != null)
             {
-                await _context.Database.ExecuteSqlInterpolatedAsync($@"
-INSERT INTO ""WordTranslations"" (""WordId"", ""Translation"", ""CreatedAt"", ""UpdatedAt"")
-VALUES ({wordId}, {translation}, {now}, NULL)
-ON CONFLICT (""WordId"") DO UPDATE
-SET ""Translation"" = EXCLUDED.""Translation"",
-    ""UpdatedAt"" = {now}");
-                return;
+                // An explicit decision applies only to the exact version the reader saw.
+                // Advance the authoritative clock even when the device clock is behind.
+                if (expectedRevision != WordRevision(word, latest)) return null;
+                var now = WordEditTime(null);
+                return latest is { } last && last >= now ? last.AddMicroseconds(1) : now;
             }
+            if (latest is not { } previous) return editedAt;
 
-            var existingTranslation = await _context.WordTranslations.FindAsync(wordId);
-            if (existingTranslation == null)
+            var changesTranslation = translation != null && translation != (word.Translation?.Translation ?? "");
+            if (editedAt < previous || (editedAt == previous && (status != word.Status || changesTranslation)))
+                return null;
+
+            // Coalescing may carry an earlier translation along with a newer status.
+            // Do not let that earlier value replace an intervening edit from another device.
+            return changesTranslation && translationUpdatedAt is { } translationTime && translationTime.UtcDateTime <= previous
+                ? null : editedAt;
+        }
+
+        private static WordResponseDto WordResponse(Word word, bool isNew) => new()
+        {
+            WordId = word.WordId,
+            Term = word.Term,
+            Status = word.Status,
+            Translation = word.Translation?.Translation ?? "",
+            CreatedAt = word.CreatedAt,
+            IsNew = isNew
+        };
+
+        private ConflictObjectResult NewerWordConflict(Word word) => Conflict(new WordEditConflictDto
+        {
+            Message = "A newer edit of this word is already saved. Review it before retrying.",
+            Word = WordResponse(word, word.Status == 1),
+            Revision = WordRevision(word, LatestWordEdit(word))
+        });
+
+        private async Task<ActionResult> ReadWordConflictAsync(Guid userId, int wordId)
+        {
+            var word = await _context.Words.AsNoTracking().Include(w => w.Translation)
+                .FirstOrDefaultAsync(w => w.UserId == userId && w.WordId == wordId);
+            if (word == null) return NotFound();
+            return NewerWordConflict(word);
+        }
+
+        // Track the translation so it is saved atomically with the guarded word and
+        // SRS effects. Omission leaves it alone and explicit blank clears it.
+        private void SetWordTranslation(Word word, string? translation)
+        {
+            if (translation == null || translation == (word.Translation?.Translation ?? "")) return;
+            if (translation.Length == 0)
             {
-                _context.WordTranslations.Add(new WordTranslation
-                {
-                    WordId = wordId,
-                    Translation = translation,
-                    CreatedAt = now
-                });
-                return;
+                if (word.Translation != null) _context.WordTranslations.Remove(word.Translation);
+                word.Translation = null!;
             }
-
-            existingTranslation.Translation = translation;
-            existingTranslation.UpdatedAt = now;
+            else if (word.Translation == null)
+            {
+                _context.WordTranslations.Add(new WordTranslation { Word = word, Translation = translation });
+            }
+            else
+            {
+                word.Translation.Translation = translation;
+                word.Translation.UpdatedAt = DateTime.UtcNow;
+            }
         }
 
 
@@ -1035,6 +1042,11 @@ SET ""Translation"" = EXCLUDED.""Translation"",
         public string? Translation { get; set; }
 
         public string? Sentence { get; set; }
+        public DateTimeOffset? ClientUpdatedAt { get; set; }
+        // Present when a newer status is carrying an earlier queued translation.
+        public DateTimeOffset? TranslationUpdatedAt { get; set; }
+        [StringLength(64)]
+        public string? ExpectedRevision { get; set; }
     }
 
     public class UpdateWordDto
@@ -1050,6 +1062,18 @@ SET ""Translation"" = EXCLUDED.""Translation"",
         [Range(1, int.MaxValue)]
         public int? TextId { get; set; }
         public string? Sentence { get; set; }
+        public DateTimeOffset? ClientUpdatedAt { get; set; }
+        // Present when a newer status is carrying an earlier queued translation.
+        public DateTimeOffset? TranslationUpdatedAt { get; set; }
+        [StringLength(64)]
+        public string? ExpectedRevision { get; set; }
+    }
+
+    public class WordEditConflictDto
+    {
+        public string Message { get; set; } = string.Empty;
+        public WordResponseDto Word { get; set; } = new();
+        public string Revision { get; set; } = string.Empty;
     }
 
     public class WordResponseDto

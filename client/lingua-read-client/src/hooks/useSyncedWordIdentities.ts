@@ -3,13 +3,13 @@ import type { Dispatch, SetStateAction } from 'react';
 import type { Word } from '../utils/api/words';
 import type { DisplayedWord } from '../types/displayedWord';
 import { fetchApi } from '../utils/api/client';
-import { pending } from '../utils/offline/syncQueue';
+import { listWordConflicts, pending, type WordConflict } from '../utils/offline/syncQueue';
 import { subscribeOfflineEvent } from '../utils/offline/events';
 
 export function useSyncedWordIdentities(textId: number | string | null | undefined, words: Word[],
   lookupTerm: (term: string) => string, setWords: Dispatch<SetStateAction<Word[]>>,
   setDisplayedWord: Dispatch<SetStateAction<DisplayedWord | null>>,
-  options: { reconcileServerWords?: (words: Word[]) => void; hasQueuedStatuses?: boolean } = {}): void {
+  options: { reconcileServerWords?: (words: Word[], conflicts: WordConflict[]) => void; hasQueuedStatuses?: boolean } = {}): void {
   const { reconcileServerWords, hasQueuedStatuses = false } = options;
   const needsIdentity = words.some(word => !word.wordId);
   useEffect(() => {
@@ -21,7 +21,10 @@ export function useSyncedWordIdentities(textId: number | string | null | undefin
       fetching = true;
       try {
         if (await pending() > 0 || disposed) return;
-        const text = await fetchApi<{ words?: Word[] }>(`/texts/${textId}`, { suppressAuthRedirect: true });
+        const [text, conflicts] = await Promise.all([
+          fetchApi<{ words?: Word[] }>(`/texts/${textId}`, { suppressAuthRedirect: true }),
+          hasQueuedStatuses ? listWordConflicts() : []
+        ]);
         if (await pending() > 0 || disposed) return;
         // An ambiguous exact spelling cannot safely identify a provisional row.
         // In particular, never fold distinct saved rows into one identity.
@@ -33,7 +36,7 @@ export function useSyncedWordIdentities(textId: number | string | null | undefin
           else savedWords.set(key, word);
         });
         ambiguous.forEach(key => savedWords.delete(key));
-        reconcileServerWords?.(text.words ?? []);
+        reconcileServerWords?.(text.words ?? [], conflicts);
         // Identity-only merge: a newer optimistic edit must not be overwritten
         // by the status/translation from an earlier network response.
         setWords(current => {

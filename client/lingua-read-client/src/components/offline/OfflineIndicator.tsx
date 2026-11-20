@@ -2,8 +2,9 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Badge, Button, Form, Modal } from 'react-bootstrap';
 import { authLogin } from '../../utils/api/auth';
 import { useOnlineStatus } from '../../hooks/useOnlineStatus';
-import { drain, pending, type SyncHandlers } from '../../utils/offline/syncQueue';
-import { notifyOfflineEvent, subscribeOfflineEvent } from '../../utils/offline/events';
+import { WORD_STATUS_LABELS, type WordStatus } from '../../types/wordStatus';
+import { drain, pending, listWordConflicts, resolveWordConflict, type SyncHandlers, type WordConflict } from '../../utils/offline/syncQueue';
+import { notifyOfflineEvent, offlineSessionRevision, subscribeOfflineEvent } from '../../utils/offline/events';
 
 interface OfflineIndicatorProps {
   /**
@@ -28,6 +29,10 @@ const OfflineIndicator: React.FC<OfflineIndicatorProps> = ({
   const [loginError, setLoginError] = useState('');
   const [signingIn, setSigningIn] = useState(false);
   const [retryAt, setRetryAt] = useState(0);
+  const [wordConflicts, setWordConflicts] = useState<WordConflict[]>([]);
+  const [showWordConflicts, setShowWordConflicts] = useState(false);
+  const [resolvingConflict, setResolvingConflict] = useState(false);
+  const [conflictError, setConflictError] = useState('');
   const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const retryDelay = useRef(1000);
   const nextAttemptAt = useRef(0);
@@ -44,13 +49,22 @@ const OfflineIndicator: React.FC<OfflineIndicatorProps> = ({
       setAuthRequired(false);
       setShowLogin(false);
     });
-    return () => { stopRequired(); stopRestored(); };
+    const stopSession = subscribeOfflineEvent('session-ended', () => {
+      setWordConflicts([]);
+      setShowWordConflicts(false);
+    });
+    return () => { stopRequired(); stopRestored(); stopSession(); };
   }, []);
   useEffect(() => () => { if (retryTimer.current) clearTimeout(retryTimer.current); }, []);
 
   const refreshCount = useCallback(async () => {
     try {
-      setPendingCount(await pending());
+      const session = offlineSessionRevision();
+      const [count, conflicts] = await Promise.all([pending(), listWordConflicts()]);
+      if (session !== offlineSessionRevision()) return;
+      setPendingCount(count);
+      setWordConflicts(conflicts);
+      if (conflicts.length === 0) setShowWordConflicts(false);
     } catch {
       // No-op: count is best-effort UI.
     }
@@ -71,7 +85,7 @@ const OfflineIndicator: React.FC<OfflineIndicatorProps> = ({
       } else {
         retryDelay.current = 1000;
         nextAttemptAt.current = 0;
-        if (result.succeeded > 0 && await pending() === 0) notifyOfflineEvent('sync-complete');
+        if (result.attempted > 0 && await pending() === 0) notifyOfflineEvent('sync-complete');
       }
     } catch {
       // Storage can be temporarily unavailable during browser lifecycle changes.
@@ -115,11 +129,32 @@ const OfflineIndicator: React.FC<OfflineIndicatorProps> = ({
   // call sites surface here too.
   useEffect(() => {
     refreshCount();
+    const stopRefresh = subscribeOfflineEvent('sync-complete', refreshCount);
     const id = window.setInterval(refreshCount, pollIntervalMs);
-    return () => window.clearInterval(id);
+    return () => { stopRefresh(); window.clearInterval(id); };
   }, [refreshCount, pollIntervalMs]);
 
-  if (online && pendingCount === 0 && !authRequired) return null;
+  const decideWordConflict = async (id: number, reapply: boolean) => {
+    setResolvingConflict(true);
+    setConflictError('');
+    try {
+      await resolveWordConflict(id, reapply);
+      if (reapply) {
+        nextAttemptAt.current = 0;
+        await handleDrainNow();
+      } else {
+        await refreshCount();
+        notifyOfflineEvent('sync-complete');
+      }
+    } catch {
+      setConflictError('Could not resolve the offline edit. Try again.');
+    } finally {
+      setResolvingConflict(false);
+    }
+  };
+
+  const showSync = !online || pendingCount > 0 || authRequired;
+  if (!showSync && wordConflicts.length === 0) return null;
 
   const label = !online
     ? `Offline${pendingCount > 0 ? ` · ${pendingCount} queued` : ''}`
@@ -127,7 +162,12 @@ const OfflineIndicator: React.FC<OfflineIndicatorProps> = ({
 
   return (
     <>
-    <button
+    {wordConflicts.length > 0 && (
+      <Button variant="outline-secondary" size="sm" className="ms-2" onClick={() => setShowWordConflicts(true)}>
+        Review offline edits ({wordConflicts.length})
+      </Button>
+    )}
+    {showSync && <button
       type="button"
       onClick={() => authRequired ? setShowLogin(true) : void handleDrainNow()}
       disabled={draining || !online}
@@ -143,7 +183,33 @@ const OfflineIndicator: React.FC<OfflineIndicatorProps> = ({
       <Badge bg={!online ? 'warning' : 'info'} pill>
         {authRequired ? 'Sign in to sync' : label}
       </Badge>
-    </button>
+    </button>}
+    <Modal show={showWordConflicts} onHide={() => setShowWordConflicts(false)}>
+      <Modal.Header closeButton><Modal.Title>Review offline vocabulary edits</Modal.Title></Modal.Header>
+      <Modal.Body>
+        <p>These edits are saved on this device. Each word has a newer saved version.</p>
+        {conflictError && <Alert variant="danger">{conflictError}</Alert>}
+        {wordConflicts.map(({ id, conflictingWord, payload }) => (
+          <section key={id} className="border-top py-2 text-break">
+            <h3 className="h6">{conflictingWord.term}</h3>
+            <p className="mb-2">
+              Saved version at sync · {WORD_STATUS_LABELS[conflictingWord.status as WordStatus]}.
+              {conflictingWord.translation && ` ${conflictingWord.translation}`}
+            </p>
+            <p className="mb-2">
+              Offline edit · {WORD_STATUS_LABELS[payload.status as WordStatus]}.
+              {payload.translation !== undefined && (payload.translation ? ` ${payload.translation}` : ' Translation cleared.')}
+            </p>
+            <div className="d-flex flex-wrap gap-2">
+              <Button size="sm" variant="outline-secondary" disabled={resolvingConflict}
+                onClick={() => { void decideWordConflict(id, false); }}>Keep saved version</Button>
+              <Button size="sm" disabled={resolvingConflict || draining || !online || authRequired}
+                onClick={() => { void decideWordConflict(id, true); }}>Apply offline edit</Button>
+            </div>
+          </section>
+        ))}
+      </Modal.Body>
+    </Modal>
     <Modal show={showLogin} onHide={() => setShowLogin(false)}>
       <Modal.Header closeButton><Modal.Title>Sign in to sync</Modal.Title></Modal.Header>
       <Form onSubmit={signIn}>

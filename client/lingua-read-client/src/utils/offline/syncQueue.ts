@@ -4,11 +4,13 @@
 // replayed by drain() once the browser comes back online.
 
 import type { LessonListeningCredit } from '../../audio/listeningActivity';
-import { notifyWordReplay, offlineSessionRevision } from './events';
+import { getConflictingWord, notifyWordReplay, offlineSessionRevision, type ConflictingWord } from './events';
 
 const DB_NAME = 'lingua-read-offline';
 const DB_VERSION = 1;
 const STORE = 'pending-ops';
+
+type WordEditVersion = { clientUpdatedAt?: string; translationUpdatedAt?: string; expectedRevision?: string };
 
 export type PendingOp =
   // SRS grade. Carries a clientEventId the backend dedupes on (a grade applied
@@ -16,8 +18,8 @@ export type PendingOp =
   // happened so the replay is scheduled from the review, not from the sync.
   // The three are optional only for ops queued by older builds.
   | { type: 'srsReview'; payload: { cardId: number; grade: number; clientEventId?: string; reviewedAt?: string; timezoneOffsetMinutes?: number } }
-  | { type: 'wordStatusUpdate'; payload: { wordId: number; status: number; translation?: string; textId?: number; sentence?: string } }
-  | { type: 'wordCreate'; payload: { textId: number; term: string; translation?: string; status?: number; sentence?: string | null; replaceExisting?: boolean } }
+  | { type: 'wordStatusUpdate'; payload: WordEditVersion & { wordId: number; status: number; translation?: string; textId?: number; sentence?: string } }
+  | { type: 'wordCreate'; payload: WordEditVersion & { textId: number; term: string; translation?: string; status?: number; sentence?: string | null; replaceExisting?: boolean } }
   // Listening time. Additive on the server, so each op carries a clientEventId
   // the backend dedupes on — a replay (or a request whose response was lost on a
   // flaky link) can't double-count the seconds.
@@ -44,7 +46,14 @@ export type StoredPendingOp = PendingOp & {
   // pending op with the same key before adding, so the queue keeps only the
   // newest value instead of dozens of stale 10s saves.
   coalesceKey?: string;
+  conflictingWord?: ConflictingWord;
+  // The first example may come from an earlier edit than the status retained here.
+  exampleCapturedAt?: number;
 };
+
+type QueuedWord = Extract<PendingOp, { type: 'wordCreate' | 'wordStatusUpdate' }>;
+type StoredWord = Extract<StoredPendingOp, { type: 'wordCreate' | 'wordStatusUpdate' }>;
+export type WordConflict = StoredWord & { conflictingWord: ConflictingWord };
 
 export type SyncResult = {
   attempted: number;
@@ -55,14 +64,62 @@ export type SyncResult = {
 
 export interface SyncHandlers {
   srsReview: (payload: PendingOp & { type: 'srsReview' }) => Promise<void>;
-  wordStatusUpdate: (payload: PendingOp & { type: 'wordStatusUpdate' }) => Promise<unknown>;
-  wordCreate: (payload: PendingOp & { type: 'wordCreate' }) => Promise<unknown>;
+  wordStatusUpdate: (op: Extract<PendingOp, { type: 'wordStatusUpdate' }> & { enqueuedAt?: number }) => Promise<unknown>;
+  wordCreate: (op: Extract<PendingOp, { type: 'wordCreate' }> & { enqueuedAt?: number }) => Promise<unknown>;
   logListening: (payload: PendingOp & { type: 'logListening' }) => Promise<void>;
   audiobookProgress: (payload: PendingOp & { type: 'audiobookProgress' }) => Promise<void>;
   audioLessonProgress: (payload: PendingOp & { type: 'audioLessonProgress' }) => Promise<void>;
   sentenceRead: (payload: PendingOp & { type: 'sentenceRead' }) => Promise<void>;
   lastRead: (payload: PendingOp & { type: 'lastRead' }) => Promise<void>;
   bookmarkSet: (payload: PendingOp & { type: 'bookmarkSet' }) => Promise<void>;
+}
+
+export function queuedWordEditTime(clientUpdatedAt?: string, enqueuedAt?: number): string | undefined {
+  if (clientUpdatedAt !== undefined) return clientUpdatedAt;
+  // The previous queue format already stored the enqueue time in IndexedDB.
+  const date = new Date(enqueuedAt ?? NaN);
+  return Number.isFinite(date.getTime()) ? date.toISOString() : undefined;
+}
+
+function exampleTime(op: QueuedWord, editTime: string, capturedAt?: number): number {
+  if (!op.payload.sentence?.trim() || !(Number(op.payload.textId) > 0)) return Infinity;
+  if (capturedAt !== undefined) return capturedAt;
+  const status = op.payload.status ?? 1;
+  return status >= 1 && status <= 4 ? Date.parse(editTime) : Infinity;
+}
+
+function mergeWordEdits(previous: StoredWord, incoming: QueuedWord, enqueuedAt: number, incomingExampleAt?: number) {
+  const previousTime = queuedWordEditTime(previous.payload.clientUpdatedAt, previous.enqueuedAt)!;
+  const incomingTime = queuedWordEditTime(incoming.payload.clientUpdatedAt, enqueuedAt)!;
+  // A slow request in another tab can enqueue an older intent after a newer one.
+  const previousIsLater = Date.parse(previousTime) > Date.parse(incomingTime);
+  const latest = previousIsLater ? previous : incoming;
+  const op: QueuedWord = latest.type === 'wordCreate'
+    ? { type: latest.type, payload: { ...latest.payload } }
+    : { type: latest.type, payload: { ...latest.payload } };
+  op.payload.clientUpdatedAt = previousIsLater ? previousTime : incomingTime;
+
+  const previousTranslationAt = previous.payload.translationUpdatedAt ?? previousTime;
+  const incomingTranslationAt = incoming.payload.translationUpdatedAt ?? incomingTime;
+  const keepPreviousTranslation = previous.payload.translation !== undefined && (
+    incoming.payload.translation === undefined || Date.parse(previousTranslationAt) > Date.parse(incomingTranslationAt));
+  op.payload.translation = keepPreviousTranslation ? previous.payload.translation : incoming.payload.translation;
+  const translationAt = keepPreviousTranslation ? previousTranslationAt : incomingTranslationAt;
+  op.payload.translationUpdatedAt = op.payload.translation !== undefined && translationAt !== op.payload.clientUpdatedAt
+    ? translationAt : undefined;
+
+  const previousExampleAt = exampleTime(previous, previousTime, previous.exampleCapturedAt);
+  const nextExampleAt = exampleTime(incoming, incomingTime, incomingExampleAt);
+  const firstExampleAt = Math.min(previousExampleAt, nextExampleAt);
+  if (Number.isFinite(firstExampleAt)) {
+    const example = previousExampleAt <= nextExampleAt ? previous : incoming;
+    op.payload.sentence = example.payload.sentence;
+    op.payload.textId = example.payload.textId!;
+  } else {
+    delete op.payload.sentence;
+    if (op.type === 'wordStatusUpdate') delete op.payload.textId;
+  }
+  return { op, exampleCapturedAt: Number.isFinite(firstExampleAt) ? firstExampleAt : undefined };
 }
 
 let dbPromise: Promise<IDBDatabase> | null = null;
@@ -102,13 +159,16 @@ export async function enqueue(op: PendingOp, coalesceKey?: string): Promise<numb
   return new Promise<number>((resolve, reject) => {
     const store = txStore(db, 'readwrite');
     let id: number;
+    const enqueuedAt = Date.now();
+    let exampleCapturedAt: number | undefined;
     store.transaction.oncomplete = () => resolve(id);
     store.transaction.onabort = () => reject(store.transaction.error ?? new Error('Offline write aborted'));
 
     const add = () => {
       const record: Omit<StoredPendingOp, 'id'> = {
         ...op,
-        enqueuedAt: Date.now(),
+        enqueuedAt,
+        ...(exampleCapturedAt !== undefined ? { exampleCapturedAt } : {}),
         ...(coalesceKey ? { coalesceKey } : {})
       };
       const req = store.add(record);
@@ -128,18 +188,13 @@ export async function enqueue(op: PendingOp, coalesceKey?: string): Promise<numb
     cursorReq.onsuccess = () => {
       const cursor = cursorReq.result;
       if (cursor) {
-        if ((cursor.value as StoredPendingOp).coalesceKey === coalesceKey) {
-          const previous = cursor.value as StoredPendingOp;
-          if (previous.type === 'wordStatusUpdate' && op.type === 'wordStatusUpdate') {
-            // The grade/translation follow the latest edit; the first captured
-            // example and its source stay together until they reach the server.
-            op = { ...op, payload: { ...previous.payload, ...op.payload,
-              ...(previous.payload.sentence ? { sentence: previous.payload.sentence, textId: previous.payload.textId } : {}) } };
-          }
-          if (previous.type === 'wordCreate' && op.type === 'wordCreate') {
-            op = { ...op, payload: { ...op.payload,
-              translation: op.payload.translation ?? previous.payload.translation,
-              sentence: previous.payload.sentence || op.payload.sentence } };
+        const previous = cursor.value as StoredPendingOp;
+        if (!previous.conflictingWord && previous.coalesceKey === coalesceKey) {
+          if ((previous.type === 'wordStatusUpdate' && op.type === 'wordStatusUpdate') ||
+            (previous.type === 'wordCreate' && op.type === 'wordCreate')) {
+            const merged = mergeWordEdits(previous, op, enqueuedAt, exampleCapturedAt);
+            op = merged.op;
+            exampleCapturedAt = merged.exampleCapturedAt;
           }
           cursor.delete();
         }
@@ -153,16 +208,10 @@ export async function enqueue(op: PendingOp, coalesceKey?: string): Promise<numb
 }
 
 export async function pending(): Promise<number> {
-  const db = await openDb();
-  return new Promise<number>((resolve, reject) => {
-    const store = txStore(db, 'readonly');
-    const req = store.count();
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error ?? new Error('Failed to count pending ops'));
-  });
+  return (await listPending()).length;
 }
 
-export async function listPending(): Promise<StoredPendingOp[]> {
+async function listQueue(): Promise<StoredPendingOp[]> {
   const db = await openDb();
   return new Promise<StoredPendingOp[]>((resolve, reject) => {
     const store = txStore(db, 'readonly');
@@ -172,12 +221,52 @@ export async function listPending(): Promise<StoredPendingOp[]> {
   });
 }
 
+export async function listPending(): Promise<StoredPendingOp[]> {
+  return (await listQueue()).filter(op => !op.conflictingWord);
+}
+
+function isWordConflict(op: StoredPendingOp): op is WordConflict {
+  return op.conflictingWord !== undefined && (op.type === 'wordStatusUpdate' || op.type === 'wordCreate');
+}
+
+export async function listWordConflicts(): Promise<WordConflict[]> {
+  return (await listQueue()).filter(isWordConflict);
+}
+
+async function updateQueuedOp(id: number, update: (store: IDBObjectStore, op: StoredPendingOp) => void): Promise<void> {
+  const db = await openDb();
+  return new Promise<void>((resolve, reject) => {
+    const store = txStore(db, 'readwrite');
+    store.transaction.oncomplete = () => resolve();
+    store.transaction.onabort = () => reject(store.transaction.error ?? new Error('Offline update aborted'));
+    const request = store.get(id);
+    request.onsuccess = () => { if (request.result) update(store, request.result as StoredPendingOp); };
+  });
+}
+
+export async function resolveWordConflict(id: number, reapply: boolean): Promise<void> {
+  await updateQueuedOp(id, (store, op) => {
+    if (!isWordConflict(op)) return;
+    if (reapply) {
+      // Keep an explicit reapply distinct from other pending edits for the same word.
+      store.add({
+        type: op.type,
+        enqueuedAt: Date.now(),
+        // If this snapshot predates versioned conflicts, refresh it on the
+        // server before permitting an overwrite.
+        payload: { ...op.payload, expectedRevision: op.conflictingWord.revision ?? 'unknown' },
+      });
+    }
+    store.delete(id);
+  });
+}
+
 /**
  * Removes queued ops matching `match` before they sync, e.g. an SRS grade
  * the user undid while offline. Returns how many were removed.
  */
 export async function removePending(match: (op: StoredPendingOp) => boolean): Promise<number> {
-  const matches = (await listPending()).filter(match);
+  const matches = (await listQueue()).filter(match);
   for (const op of matches) await deleteOp(op.id);
   return matches.length;
 }
@@ -195,8 +284,8 @@ async function deleteOp(id: number): Promise<void> {
 async function hasPending(id: number): Promise<boolean> {
   const db = await openDb();
   return new Promise<boolean>((resolve, reject) => {
-    const req = txStore(db, 'readonly').getKey(id);
-    req.onsuccess = () => resolve(req.result !== undefined);
+    const req = txStore(db, 'readonly').get(id);
+    req.onsuccess = () => resolve(req.result !== undefined && !(req.result as StoredPendingOp).conflictingWord);
     req.onerror = () => reject(req.error ?? new Error('Failed to check pending op'));
   });
 }
@@ -278,6 +367,13 @@ async function drainOnce(handlers: SyncHandlers): Promise<SyncResult> {
       if (offlineSessionRevision() !== session) break;
       const kind = classifyError(err);
       if (op.type === 'wordCreate' || op.type === 'wordStatusUpdate') {
+        const word = getConflictingWord(err);
+        if (word) {
+          await updateQueuedOp(op.id, (store, stored) => store.put({ ...stored, conflictingWord: word }));
+          notifyWordReplay({ op, outcome: 'conflict', result: word });
+          failed++;
+          continue;
+        }
         notifyWordReplay({ op, outcome: kind === 'terminal' ? 'rejected' : 'retryable' });
       }
       if (kind === 'auth-stop') {

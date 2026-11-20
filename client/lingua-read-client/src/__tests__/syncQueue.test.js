@@ -5,6 +5,8 @@ import {
   enqueue,
   pending,
   listPending,
+  listWordConflicts,
+  resolveWordConflict,
   drain,
   clearAll,
   removePending,
@@ -79,6 +81,50 @@ const installFakeLocks = ({ granted }) => {
 };
 
 describe('syncQueue', () => {
+  test('keeps a conflicting vocabulary draft across database reopen and only retries it on request', async () => {
+    await clearAll();
+    const editAt = '2026-11-19T09:00:00.000Z';
+    const gradeAt = '2026-11-19T09:01:00.000Z';
+    await enqueue({ type: 'wordStatusUpdate', payload: {
+      wordId: 42, status: 2, translation: 'queued draft', clientUpdatedAt: editAt,
+    } }, 'wordStatus:42');
+    await enqueue({ type: 'wordStatusUpdate', payload: {
+      wordId: 42, status: 3, clientUpdatedAt: gradeAt,
+    } }, 'wordStatus:42');
+    await enqueue({ type: 'srsReview', payload: { cardId: 7, grade: 3 } });
+    const saved = { wordId: 42, status: 4, translation: 'saved version', term: 'chat' };
+    const review = vi.fn();
+    const changed = { ...saved, translation: 'changed again' };
+    const write = vi.fn().mockRejectedValueOnce(new ApiError('Newer version saved', 409, { word: saved, revision: 'first' }))
+      .mockRejectedValueOnce(new ApiError('Changed again', 409, { word: changed, revision: 'second' }));
+    const handlers = fullHandlers({ wordStatusUpdate: write, srsReview: review });
+    await expect(drain(handlers)).resolves.toMatchObject({ attempted: 2, failed: 1, succeeded: 1 });
+    expect(review).toHaveBeenCalledOnce();
+
+    _closeDbForTests();
+    expect(await pending()).toBe(0);
+    const [conflict] = await listWordConflicts();
+    expect(conflict).toMatchObject({
+      conflictingWord: saved, payload: { status: 3, translation: 'queued draft', translationUpdatedAt: editAt },
+    });
+    await drain(handlers);
+    expect(write).toHaveBeenCalledOnce();
+    await resolveWordConflict(conflict.id, true);
+    await expect(drain(handlers)).resolves.toMatchObject({ attempted: 1, failed: 1 });
+    expect(write.mock.lastCall[0].payload.expectedRevision).toBe('first');
+    const [latest] = await listWordConflicts();
+    expect(latest.conflictingWord).toEqual({ ...changed, revision: 'second' });
+    await resolveWordConflict(conflict.id, true); // another tab still displays the original draft.
+    expect(await pending()).toBe(0);
+    await resolveWordConflict(latest.id, true);
+    await expect(drain(handlers)).resolves.toMatchObject({ attempted: 1, failed: 0, succeeded: 1 });
+    expect(write.mock.lastCall[0].payload).toMatchObject({
+      wordId: 42, status: 3, translation: 'queued draft', expectedRevision: 'second',
+      clientUpdatedAt: gradeAt, translationUpdatedAt: editAt,
+    });
+    expect(await listWordConflicts()).toEqual([]);
+  });
+
   test('reopens after an initialization error and an unexpected connection close', async () => {
     _closeDbForTests();
     const open = vi.spyOn(indexedDB, 'open');

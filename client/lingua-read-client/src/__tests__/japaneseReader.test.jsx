@@ -177,7 +177,7 @@ describe('Japanese reader workflow (TextDisplay)', () => {
     await waitFor(() => expect(screen.getByText('𠮷野家')).toHaveClass('word-status-2'));
     fireEvent.click(screen.getByText('𠮷野家'));
     fireEvent.click(screen.getByRole('button', { name: 'Advanced (4)' }));
-    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(202, 4, undefined, { textId: 1, sentence: '𠮷野家で食べる。' }));
+    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(202, 4, undefined, { textId: 1, sentence: '𠮷野家で食べる。', clientUpdatedAt: expect.any(String) }));
     expect(createWord).not.toHaveBeenCalled();
   });
 
@@ -190,7 +190,7 @@ describe('Japanese reader workflow (TextDisplay)', () => {
     vi.stubGlobal('alert', vi.fn());
     expect(screen.queryByRole('button', { name: 'Mine', exact: true })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Advanced (4)' }));
-    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(203, 4, undefined, { textId: 1, sentence: '私は昨日図書館で日本語の本を読みました。' }));
+    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(203, 4, undefined, { textId: 1, sentence: '私は昨日図書館で日本語の本を読みました。', clientUpdatedAt: expect.any(String) }));
     expect(createWord).not.toHaveBeenCalled();
   });
 
@@ -243,7 +243,7 @@ describe('Japanese reader workflow (TextDisplay)', () => {
     fireEvent.click(screen.getByText('図書館'));
     expect(screen.queryByRole('button', { name: 'Mine', exact: true })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Advanced (4)' }));
-    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(201, 4, undefined, { textId: 1, sentence: '私は昨日図書館で日本語の本を読みました。' }));
+    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(201, 4, undefined, { textId: 1, sentence: '私は昨日図書館で日本語の本を読みました。', clientUpdatedAt: expect.any(String) }));
     expect(mineSentence).not.toHaveBeenCalled();
     expect(createWord).not.toHaveBeenCalled();
     transcriptRender.unmount();
@@ -286,7 +286,7 @@ describe('Japanese reader workflow (TextDisplay)', () => {
     fireEvent.click(screen.getByText('図書館'));
     expect(screen.queryByRole('button', { name: 'Mine', exact: true })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Advanced (4)' }));
-    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(201, 4, undefined, { textId: 1, sentence: '私は昨日図書館で本を読みました。' }));
+    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(201, 4, undefined, { textId: 1, sentence: '私は昨日図書館で本を読みました。', clientUpdatedAt: expect.any(String) }));
     expect(mineSentence).not.toHaveBeenCalled();
     expect(createWord).not.toHaveBeenCalled();
     standardRender.unmount();

@@ -40,9 +40,26 @@ export function subscribeOfflineEvent(type: OfflineEvent, listener: () => void):
 // deliberately carry no vocabulary; other readers reconcile through their API.
 export type WordReplayResult = {
   op: Extract<import('./syncQueue').StoredPendingOp, { type: 'wordCreate' | 'wordStatusUpdate' }>;
-  outcome: 'confirmed' | 'rejected' | 'retryable';
+  outcome: 'confirmed' | 'conflict' | 'rejected' | 'retryable';
   result?: unknown;
 };
+
+export type ConflictingWord = { wordId: number; term: string; status: number; translation: string; revision?: string };
+
+export function getConflictingWord(error: unknown): ConflictingWord | undefined {
+  if (typeof error !== 'object' || error === null ||
+    !('status' in error) || error.status !== 409 || !('body' in error)) return undefined;
+  const body = error.body;
+  if (typeof body !== 'object' || body === null || !('word' in body)) return undefined;
+  const word = body.word;
+  if (typeof word !== 'object' || word === null ||
+    !('wordId' in word) || typeof word.wordId !== 'number' ||
+    !('status' in word) || typeof word.status !== 'number' ||
+    !('term' in word) || typeof word.term !== 'string' ||
+    !('translation' in word) || typeof word.translation !== 'string') return undefined;
+  return { wordId: word.wordId, term: word.term, status: word.status, translation: word.translation,
+    ...('revision' in body && typeof body.revision === 'string' ? { revision: body.revision } : {}) };
+}
 const wordReplayListeners = new Set<(event: WordReplayResult) => void>();
 export function notifyWordReplay(event: WordReplayResult): void {
   wordReplayListeners.forEach(listener => {

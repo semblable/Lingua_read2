@@ -23,10 +23,11 @@ export const test = layoutTest.extend<{ statusNetwork: StatusNetwork }>({
       const url = new URL(request.url());
       if (url.origin !== baseURL || request.method() !== 'PUT') { await route.fallback(); return; }
       const wordId = Number(url.pathname.split('/').pop());
-      const payload = request.postDataJSON() as { status?: unknown; translation?: unknown; textId?: unknown; sentence?: unknown };
+      const payload = request.postDataJSON() as { status?: unknown; translation?: unknown; textId?: unknown; sentence?: unknown; clientUpdatedAt?: unknown };
       if (![900, 901, 902, 903, 904, 905].includes(wordId) || !Number.isInteger(payload.status) ||
         Number(payload.status) < 1 || Number(payload.status) > 6 ||
-        Object.keys(payload).some(key => !['status', 'translation', 'textId', 'sentence'].includes(key)) ||
+        Object.keys(payload).some(key => !['status', 'translation', 'textId', 'sentence', 'clientUpdatedAt'].includes(key)) ||
+        typeof payload.clientUpdatedAt !== 'string' || !Number.isFinite(Date.parse(payload.clientUpdatedAt)) ||
         (payload.translation !== undefined && typeof payload.translation !== 'string') ||
         (payload.textId !== undefined && ![801, 802].includes(Number(payload.textId))) ||
         (payload.sentence !== undefined && (typeof payload.sentence !== 'string' || payload.sentence.length > 2000))) {

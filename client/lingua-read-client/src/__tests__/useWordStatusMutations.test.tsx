@@ -51,7 +51,7 @@ describe('reader status mutation coordination', () => {
     expect(result.current.words[0].status).toBe(6);
     expect(update).toHaveBeenCalledTimes(1);
     await act(async () => { pending.resolve({}); await translated; });
-    expect(update).toHaveBeenLastCalledWith(41, 6, 'chat, minou');
+    expect(update).toHaveBeenLastCalledWith(41, 6, 'chat, minou', { clientUpdatedAt: expect.any(String) });
     expect(result.current.states[0]).toMatchObject({ desiredStatus: 6, confirmedStatus: 6 });
   });
 
@@ -61,11 +61,11 @@ describe('reader status mutation coordination', () => {
     act(() => { void result.current.mutate(intent); });
     intent.target.sentence = 'Changed after the click.';
     await waitFor(() => expect(update).toHaveBeenCalledWith(41, 2, undefined,
-      { textId: 7, sentence: 'A cat rests.' }));
+      { textId: 7, sentence: 'A cat rests.', clientUpdatedAt: expect.any(String) }));
     await act(async () => { await result.current.mutate({ target: target(cat), status: 5 }); });
-    expect(update).toHaveBeenLastCalledWith(41, 5, undefined);
+    expect(update).toHaveBeenLastCalledWith(41, 5, undefined, { clientUpdatedAt: expect.any(String) });
     await act(async () => { await result.current.mutate({ target: target(cat), status: 6 }); });
-    expect(update).toHaveBeenLastCalledWith(41, 6, undefined);
+    expect(update).toHaveBeenLastCalledWith(41, 6, undefined, { clientUpdatedAt: expect.any(String) });
   });
   test('retiring a newly created word removes its natural-key alias so the same term can be created again', async () => {
     const unsaved = { wordId: 0, term: 'cat', status: 0 };
@@ -144,7 +144,7 @@ describe('reader status mutation coordination', () => {
     expect(result.current.states[0]).toMatchObject({ queuedOffline: false, confirmedStatus: 3, desiredStatus: 3 });
     expect(result.current.states[0].error).toContain('Could not save cat');
     await act(async () => { await result.current.retry(result.current.states[0].key); });
-    expect(update).toHaveBeenLastCalledWith(91, laterStatus, undefined, { textId: 8, sentence: 'A cat rests.' });
+    expect(update).toHaveBeenLastCalledWith(91, laterStatus, undefined, { textId: 8, sentence: 'A cat rests.', clientUpdatedAt: expect.any(String) });
   });
 
   test('a matching server read after another tab drains the queue confirms identified operations without a local replay event', async () => {
@@ -156,6 +156,43 @@ describe('reader status mutation coordination', () => {
     act(() => result.current.reconcileServerWords([{ ...cat, status: 4, translation: 'new sense' }]));
     expect(result.current.states[0]).toMatchObject({ queuedOffline: false, confirmedStatus: 4, desiredStatus: 4 });
     expect(result.current.states[0].error).toBeUndefined();
+  });
+
+  test('a conflict drained or discarded in another tab cannot be reapplied by a stale reader retry', async () => {
+    const op = { id: 104, enqueuedAt: 0, type: 'wordStatusUpdate' as const,
+      payload: { wordId: 41, status: 3, translation: 'offline sense' } };
+    const update = vi.fn().mockResolvedValue({ offline: true, queuedOp: op });
+    const { result } = setup([cat], { update });
+    await act(async () => { await result.current.mutate({ target: target(cat), status: 3, translation: 'offline sense' }); });
+    const savedWord = { wordId: 41, term: 'cat', status: 5, translation: 'saved sense' };
+    act(() => result.current.reconcileServerWords([savedWord], [{ ...op, conflictingWord: savedWord }]));
+    expect(result.current.states[0]).toMatchObject({ queuedOffline: false, conflictId: 104, desiredStatus: 5 });
+    expect(result.current.words[0].translation).toBe('saved sense');
+    await act(async () => { await result.current.retry(result.current.states[0].key); });
+    expect(update).toHaveBeenCalledOnce();
+
+    act(() => result.current.reconcileServerWords([savedWord], []));
+    expect(result.current.states[0]).toMatchObject({ queuedOffline: false, desiredStatus: 5 });
+    expect(result.current.states[0].conflictId).toBeUndefined();
+    expect(result.current.states[0].error).toBeUndefined();
+  });
+
+  test.each([false, true])('Retry preserves the word operation and uses the last displayed revision (create=%s)', async creating => {
+    const original = creating ? { ...cat, wordId: 0 } : cat;
+    const write = vi.fn()
+      .mockRejectedValueOnce({ status: 409, body: { word: { ...cat, status: 5 }, revision: 'first' } })
+      .mockRejectedValueOnce({ status: 409, body: { word: { ...cat, status: 6 }, revision: 'second' } })
+      .mockResolvedValue({ ...cat, status: 3, translation: 'draft' });
+    const { result, create, update } = setup([original], creating ? { create: write } : { update: write });
+    await act(async () => { await result.current.mutate({ target: target(original), status: 3, translation: 'draft' }); });
+    expect(result.current.states[0].desiredStatus).toBe(5);
+    await act(async () => { await result.current.retry(result.current.states[0].key); });
+    expect(write.mock.lastCall?.at(-1)).toMatchObject({ expectedRevision: 'first' });
+    expect(result.current.states[0].desiredStatus).toBe(6);
+    await act(async () => { await result.current.retry(result.current.states[0].key); });
+    expect(write.mock.lastCall?.at(-1)).toMatchObject({ expectedRevision: 'second' });
+    expect(result.current.words[0]).toMatchObject({ status: 3, translation: 'draft' });
+    expect(creating ? update : create).not.toHaveBeenCalled();
   });
 
   test('a new passage save stays behind an older queued create after an earlier replay supplies the ID', async () => {
@@ -235,12 +272,12 @@ describe('reader status mutation coordination', () => {
     const { result } = setup([untracked], { update });
     const intent = { target: target(untracked), status: 3 as const, fillTranslation };
     await act(async () => { await result.current.mutate(intent); });
-    expect(update).toHaveBeenLastCalledWith(41, 3, 'translated cat', { textId: 7, sentence: 'A cat rests.' });
+    expect(update).toHaveBeenLastCalledWith(41, 3, 'translated cat', { textId: 7, sentence: 'A cat rests.', clientUpdatedAt: expect.any(String) });
     await act(async () => {
       if (action === 'retry') await result.current.retry(result.current.states[0].key);
       else await result.current.mutate(intent);
     });
-    expect(update).toHaveBeenLastCalledWith(41, 3, 'translated cat', { textId: 7, sentence: 'A cat rests.' });
+    expect(update).toHaveBeenLastCalledWith(41, 3, 'translated cat', { textId: 7, sentence: 'A cat rests.', clientUpdatedAt: expect.any(String) });
     expect(result.current.words[0]).toMatchObject({ status: 3, translation: 'translated cat' });
   });
 
@@ -255,7 +292,7 @@ describe('reader status mutation coordination', () => {
     act(() => { void result.current.mutate({ target: target(untracked), status: 4, translation }); });
     await act(async () => { pending.reject({ status: 503 }); });
     await act(async () => { await result.current.retry(result.current.states[0].key); });
-    expect(update).toHaveBeenLastCalledWith(41, 4, translation, { textId: 7, sentence: 'A cat rests.' });
+    expect(update).toHaveBeenLastCalledWith(41, 4, translation, { textId: 7, sentence: 'A cat rests.', clientUpdatedAt: expect.any(String) });
     expect(result.current.words[0].translation).toBe(translation);
   });
 
@@ -279,7 +316,7 @@ describe('reader status mutation coordination', () => {
     const third = setup([{ wordId: 91, term: 'cat', status: 4 }], { create, update });
     await act(async () => { await third.result.current.mutate({ target: target(third.result.current.words[0]), status: 2 }); });
     expect(create).toHaveBeenCalledTimes(1);
-    expect(update).toHaveBeenCalledWith(91, 2, undefined, { textId: 7, sentence: 'A cat rests.' });
+    expect(update).toHaveBeenCalledWith(91, 2, undefined, { textId: 7, sentence: 'A cat rests.', clientUpdatedAt: expect.any(String) });
   });
   test('captures two different words immediately and lets their responses finish in either order', async () => {
     const first = deferred<unknown>();
@@ -313,11 +350,11 @@ describe('reader status mutation coordination', () => {
     });
     intent.target.sentence = 'Changed context after dispatch.';
     expect(create).toHaveBeenCalledTimes(1);
-    expect(create).toHaveBeenCalledWith(7, 'cat', 3, undefined, 'A cat rests.');
+    expect(create).toHaveBeenCalledWith(7, 'cat', 3, undefined, 'A cat rests.', { clientUpdatedAt: expect.any(String) });
     expect(update).not.toHaveBeenCalled();
     expect(result.current.words[0].status).toBe(4);
     await act(async () => { creating.resolve({ wordId: 91, term: 'cat', status: 3 }); });
-    expect(update).toHaveBeenCalledWith(91, 4, undefined, { textId: 7, sentence: 'A cat rests.' });
+    expect(update).toHaveBeenCalledWith(91, 4, undefined, { textId: 7, sentence: 'A cat rests.', clientUpdatedAt: expect.any(String) });
     expect(result.current.states[0]).toMatchObject({ wordId: 91, desiredStatus: 4, confirmedStatus: 3, pending: true });
     act(() => { void result.current.mutate({ target: target(result.current.words[0]), status: 2 }); });
     expect(update).toHaveBeenCalledTimes(1);
@@ -346,7 +383,7 @@ describe('reader status mutation coordination', () => {
     expect(result.current.words[0].status).toBe(1);
     expect(result.current.states[0].error).toContain('Could not save cat');
     await act(async () => { await result.current.retry(result.current.states[0].key); });
-    expect(update).toHaveBeenLastCalledWith(41, 4, undefined, { textId: 7, sentence: 'A cat rests.' });
+    expect(update).toHaveBeenLastCalledWith(41, 4, undefined, { textId: 7, sentence: 'A cat rests.', clientUpdatedAt: expect.any(String) });
     expect(result.current.words[0].status).toBe(4);
     expect(result.current.states[0].error).toBeUndefined();
   });
@@ -377,8 +414,12 @@ describe('reader status mutation coordination', () => {
     });
     expect(result.current.words[0].translation).toBe('new translation');
     await act(async () => { fill.resolve('late fill'); });
-    expect(create).toHaveBeenCalledWith(7, 'cat', 3, undefined, 'A cat rests.');
-    expect(update).toHaveBeenCalledWith(91, 4, 'new translation', { textId: 7, sentence: 'A cat rests.' });
+    expect(create).toHaveBeenCalledWith(7, 'cat', 3, undefined, 'A cat rests.', { clientUpdatedAt: expect.any(String) });
+    expect(update).toHaveBeenCalledWith(91, 4, 'new translation', { textId: 7, sentence: 'A cat rests.', clientUpdatedAt: expect.any(String) });
+    // The first edit's time reflects its dispatch, even though its provider response was late.
+    const firstTime = create.mock.calls[0][5]?.clientUpdatedAt;
+    const secondTime = update.mock.calls[0][3]?.clientUpdatedAt;
+    expect(Date.parse(firstTime ?? '')).toBeLessThan(Date.parse(secondTime ?? ''));
     expect(result.current.words[0].translation).toBe('new translation');
     expect(onTranslationSaved).toHaveBeenCalledTimes(1);
     expect(onTranslationSaved).toHaveBeenLastCalledWith(expect.objectContaining({ term: 'cat' }), 'new translation');
@@ -412,7 +453,7 @@ describe('reader status mutation coordination', () => {
     }));
     expect(result.current.states[0]).toMatchObject({ confirmedStatus: 4, queuedOffline: false, wordId: 91 });
     await act(async () => { await result.current.mutate({ target: target(result.current.words[0]), status: 2 }); });
-    expect(update).toHaveBeenCalledWith(91, 2, undefined, { textId: 7, sentence: 'A cat rests.' });
+    expect(update).toHaveBeenCalledWith(91, 2, undefined, { textId: 7, sentence: 'A cat rests.', clientUpdatedAt: expect.any(String) });
     expect(create).toHaveBeenCalledTimes(2);
   });
 
@@ -482,7 +523,7 @@ describe('reader status mutation coordination', () => {
     rerender({ generation: 'second' });
     act(() => { result.current.setWords([dog]); result.current.setDisplayedWord(dog); });
     await act(async () => { creating.resolve({ wordId: 91, term: 'cat' }); });
-    expect(update).toHaveBeenCalledWith(91, 4, undefined, { textId: 7, sentence: 'A cat rests.' });
+    expect(update).toHaveBeenCalledWith(91, 4, undefined, { textId: 7, sentence: 'A cat rests.', clientUpdatedAt: expect.any(String) });
     expect(result.current.words).toEqual([dog]);
     expect(result.current.displayed).toEqual(dog);
     expect(result.current.states).toEqual([]);
@@ -527,7 +568,7 @@ describe('reader status mutation coordination', () => {
     expect(create).toHaveBeenCalledTimes(1);
     expect(update).not.toHaveBeenCalled();
     await act(async () => { first.resolve({ wordId: 91, term: 'cat', status: 3 }); });
-    expect(update).toHaveBeenCalledWith(91, 4, undefined, { textId: 8, sentence: 'A new cat rests.' });
+    expect(update).toHaveBeenCalledWith(91, 4, undefined, { textId: 8, sentence: 'A new cat rests.', clientUpdatedAt: expect.any(String) });
     expect(create).toHaveBeenCalledTimes(1);
     expect(result.current.words[0]).toMatchObject({ wordId: 91, status: 4 });
     await act(async () => { second.resolve({}); });
@@ -579,7 +620,7 @@ describe('reader status mutation coordination', () => {
     expect(create).toHaveBeenCalledTimes(1);
     await act(async () => { first.resolve({ wordId: 91, term: 'cat', status: 3 }); });
     expect(create).toHaveBeenCalledTimes(1);
-    expect(update).toHaveBeenCalledWith(91, 4, undefined, { textId: 8, sentence: 'A cat rests.' });
+    expect(update).toHaveBeenCalledWith(91, 4, undefined, { textId: 8, sentence: 'A cat rests.', clientUpdatedAt: expect.any(String) });
     expect(newReader.result.current.words[0]).toMatchObject({ wordId: 91, status: 4 });
   });
 
@@ -610,7 +651,7 @@ describe('reader status mutation coordination', () => {
     const newUpdate = vi.fn().mockResolvedValue({});
     const newReader = setup([cat], { update: newUpdate });
     await act(async () => { await newReader.result.current.mutate({ target: target(cat), status: 2 }); });
-    expect(newUpdate).toHaveBeenCalledWith(41, 2, undefined, { textId: 7, sentence: 'A cat rests.' });
+    expect(newUpdate).toHaveBeenCalledWith(41, 2, undefined, { textId: 7, sentence: 'A cat rests.', clientUpdatedAt: expect.any(String) });
     await act(async () => { first.resolve({}); });
     expect(oldUpdate).toHaveBeenCalledTimes(1);
     expect(newReader.result.current.words[0].status).toBe(2);
@@ -624,7 +665,7 @@ describe('reader status mutation coordination', () => {
     await act(async () => {});
     const newReader = setup([unsaved]);
     await act(async () => { await newReader.result.current.mutate({ target: target(unsaved), status: 4 }); });
-    expect(newReader.create).toHaveBeenCalledWith(7, 'cat', 4, undefined, 'A cat rests.');
+    expect(newReader.create).toHaveBeenCalledWith(7, 'cat', 4, undefined, 'A cat rests.', { clientUpdatedAt: expect.any(String) });
     expect(newReader.update).not.toHaveBeenCalled();
   });
 

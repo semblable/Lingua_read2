@@ -83,7 +83,7 @@ describe('opt-in Chinese reader workflow', () => {
     await waitFor(() => expect(screen.getByText('图书馆')).toHaveClass('word-status-3'));
     fireEvent.click(screen.getByText('图书馆'));
     fireEvent.click(screen.getByRole('button', { name: 'Advanced (4)' }));
-    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(91, 4, undefined, { textId: 1, sentence: '我今天在图书馆学习中文。' }));
+    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(91, 4, undefined, { textId: 1, sentence: '我今天在图书馆学习中文。', clientUpdatedAt: expect.any(String) }));
     expect(createWord).not.toHaveBeenCalled();
   });
   test('saved phrases without spaces remain selectable phrases rather than disappearing', async () => {
@@ -95,7 +95,7 @@ describe('opt-in Chinese reader workflow', () => {
     vi.stubGlobal('alert', vi.fn());
     expect(screen.queryByRole('button', { name: 'Mine', exact: true })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Advanced (4)' }));
-    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(92, 4, undefined, { textId: 1, sentence: '我今天在图书馆学习中文。' }));
+    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(92, 4, undefined, { textId: 1, sentence: '我今天在图书馆学习中文。', clientUpdatedAt: expect.any(String) }));
     expect(createWord).not.toHaveBeenCalled();
   });
   test('unprofiled legacy text keeps its whole-run boundaries', async () => {
@@ -146,7 +146,7 @@ describe('opt-in Chinese reader workflow', () => {
     fireEvent.click(screen.getByText('图书馆'));
     expect(screen.queryByRole('button', { name: 'Mine', exact: true })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Advanced (4)' }));
-    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(91, 4, undefined, { textId: 1, sentence: '我今天在图书馆学习中文。' }));
+    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(91, 4, undefined, { textId: 1, sentence: '我今天在图书馆学习中文。', clientUpdatedAt: expect.any(String) }));
     expect(mineSentence).not.toHaveBeenCalled();
     expect(createWord).not.toHaveBeenCalled();
     transcriptRender.unmount();
@@ -188,7 +188,7 @@ describe('opt-in Chinese reader workflow', () => {
     fireEvent.click(screen.getByText('图书馆'));
     expect(screen.queryByRole('button', { name: 'Mine', exact: true })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Advanced (4)' }));
-    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(91, 4, undefined, { textId: 1, sentence: '我今天在图书馆学习中文。' }));
+    await waitFor(() => expect(updateWord).toHaveBeenCalledWith(91, 4, undefined, { textId: 1, sentence: '我今天在图书馆学习中文。', clientUpdatedAt: expect.any(String) }));
     expect(mineSentence).not.toHaveBeenCalled();
     expect(createWord).not.toHaveBeenCalled();
     standardRender.unmount();

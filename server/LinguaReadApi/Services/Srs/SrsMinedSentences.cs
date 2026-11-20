@@ -53,14 +53,17 @@ namespace LinguaReadApi.Services.Srs
         {
             if (word.Status is < 1 or > 4 || string.IsNullOrWhiteSpace(sentence)
                 || !ContainsTerm(sentence, word.Term, text.Language)) return false;
-            var stored = await context.SrsPhrases.AsNoTracking()
-                .Where(p => p.WordId == word.WordId && p.UserId == word.UserId)
-                .Select(p => p.Sentence).ToListAsync();
-            if (stored.Concat(context.SrsPhrases.Local.Where(p => p.WordId == word.WordId && p.UserId == word.UserId)
-                .Select(p => p.Sentence)).Any(s => !string.IsNullOrWhiteSpace(s) && ContainsTerm(s, word.Term, text.Language))) return false;
+            if (word.WordId != 0)
+            {
+                var stored = await context.SrsPhrases.AsNoTracking()
+                    .Where(p => p.WordId == word.WordId && p.UserId == word.UserId)
+                    .Select(p => p.Sentence).ToListAsync();
+                if (stored.Concat(context.SrsPhrases.Local.Where(p => p.WordId == word.WordId && p.UserId == word.UserId)
+                    .Select(p => p.Sentence)).Any(s => !string.IsNullOrWhiteSpace(s) && ContainsTerm(s, word.Term, text.Language))) return false;
+            }
             context.SrsPhrases.Add(new SrsPhrase
             {
-                WordId = word.WordId, UserId = word.UserId,
+                Word = word, UserId = word.UserId,
                 Sentence = Tokenizer.NormalizeText(sentence, text.Language).Trim(),
                 TextId = text.TextId, TextTitle = text.Title, CreatedAt = DateTime.UtcNow
             });

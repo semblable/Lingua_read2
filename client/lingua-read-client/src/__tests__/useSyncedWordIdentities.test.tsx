@@ -9,7 +9,7 @@ import { pending } from '../utils/offline/syncQueue';
 import { notifyOfflineEvent } from '../utils/offline/events';
 
 vi.mock('../utils/api/client', () => ({ fetchApi: vi.fn() }));
-vi.mock('../utils/offline/syncQueue', () => ({ pending: vi.fn() }));
+vi.mock('../utils/offline/syncQueue', () => ({ pending: vi.fn(), listWordConflicts: vi.fn().mockResolvedValue([]) }));
 const online = (value: boolean) => Object.defineProperty(navigator, 'onLine', { configurable: true, value });
 const lookup = (term: string) => term.toLowerCase();
 beforeEach(() => { vi.clearAllMocks(); online(true); });

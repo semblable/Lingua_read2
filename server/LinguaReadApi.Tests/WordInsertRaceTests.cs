@@ -81,6 +81,213 @@ public class WordInsertRaceTests : IDisposable
         Assert.Equal("cat", word.Translation?.Translation);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task QueuedWordEdit_WhenAnotherDeviceSavedLater_KeepsItsStatusTranslationAndCard(bool queuedCreate)
+    {
+        var options = await CreateSqliteOptions();
+        var offlineTime = DateTimeOffset.UtcNow.AddHours(-1);
+        await using var newer = new AppDbContext(options);
+        var created = await CreateController(newer).CreateWord(new CreateWordDto
+        {
+            Term = "gato", TextId = TextId, Status = 2, Translation = "cat",
+            ClientUpdatedAt = offlineTime.AddMinutes(-1)
+        });
+        var word = Assert.IsType<WordResponseDto>(Assert.IsType<CreatedAtActionResult>(created.Result).Value);
+        Assert.IsType<NoContentResult>(await CreateController(newer).UpdateWord(word.WordId,
+            new UpdateWordDto { Status = 6, Translation = "newer definition" }));
+
+        await using var replay = new AppDbContext(options);
+        var replayController = CreateController(replay);
+        var result = queuedCreate
+            ? (await replayController.CreateWord(new CreateWordDto
+            {
+                Term = "gato", TextId = TextId, Status = 4, Translation = "older definition",
+                Sentence = "gato perro gato", ReplaceExisting = true, ClientUpdatedAt = offlineTime
+            })).Result
+            : await replayController.UpdateWord(word.WordId, new UpdateWordDto
+            {
+                Status = 4, Translation = "older definition", TextId = TextId,
+                Sentence = "gato perro gato", ClientUpdatedAt = offlineTime
+            });
+
+        var conflict = Assert.IsType<WordEditConflictDto>(Assert.IsType<ConflictObjectResult>(result).Value);
+        Assert.Equal(word.WordId, conflict.Word.WordId);
+        Assert.Equal(6, conflict.Word.Status);
+        Assert.Equal("newer definition", conflict.Word.Translation);
+        await using var check = new AppDbContext(options);
+        var saved = await check.Words.Include(w => w.Translation).SingleAsync();
+        Assert.Equal(6, saved.Status);
+        Assert.Equal("newer definition", saved.Translation.Translation);
+        Assert.True((await check.SrsCardReviews.SingleAsync()).IsSuspended);
+        Assert.Empty(await check.SrsPhrases.ToListAsync());
+    }
+
+    [Fact]
+    public async Task QueuedEdit_WhenAnotherDeviceCommitsAfterItsRead_RollsBackAllStaleChanges()
+    {
+        var options = await CreateSqliteOptions();
+        await InsertWord(options, "gato", status: 0);
+        var oldTime = DateTimeOffset.UtcNow.AddMinutes(-2);
+        await using var reader = new AppDbContext(WithInsertBeforeFirstSave(options, async () =>
+        {
+            await using var other = new AppDbContext(options);
+            var wordId = await other.Words.Select(w => w.WordId).SingleAsync();
+            Assert.IsType<NoContentResult>(await CreateController(other).UpdateWord(wordId,
+                new UpdateWordDto { Status = 6, Translation = "other device" }));
+        }));
+
+        var result = await CreateController(reader).CreateWord(new CreateWordDto
+        {
+            Term = "gato", TextId = TextId, Status = 3, Translation = "old queued edit",
+            Sentence = "gato perro gato", ReplaceExisting = true, ClientUpdatedAt = oldTime
+        });
+
+        var conflict = Assert.IsType<WordEditConflictDto>(Assert.IsType<ConflictObjectResult>(result.Result).Value);
+        Assert.Equal(6, conflict.Word.Status);
+        Assert.Equal("other device", conflict.Word.Translation);
+        await using var check = new AppDbContext(options);
+        Assert.Empty(await check.TextWords.ToListAsync());
+        Assert.Empty(await check.SrsPhrases.ToListAsync());
+        Assert.Empty(await check.SrsCardReviews.ToListAsync());
+        Assert.Equal("other device", (await check.WordTranslations.SingleAsync()).Translation);
+    }
+
+    [Fact]
+    public async Task QueuedWordCreate_CanSaveALinkerPlaceholderAndRetryWithoutDuplicatingEffects()
+    {
+        var options = await CreateSqliteOptions();
+        var offlineTime = DateTimeOffset.UtcNow.AddMinutes(-5);
+        await InsertWord(options, "gato", status: 0);
+
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            await using var replay = new AppDbContext(options);
+            var result = await CreateController(replay).CreateWord(new CreateWordDto
+            {
+                Term = "gato", TextId = TextId, Status = 3, Translation = "cat",
+                Sentence = "gato perro gato", ReplaceExisting = true, ClientUpdatedAt = offlineTime
+            });
+            Assert.IsType<OkObjectResult>(result.Result);
+        }
+
+        await using var check = new AppDbContext(options);
+        Assert.Equal(3, (await check.Words.SingleAsync()).Status);
+        Assert.Single(await check.TextWords.ToListAsync());
+        Assert.Single(await check.SrsPhrases.ToListAsync());
+        Assert.Single(await check.SrsCardReviews.ToListAsync());
+    }
+
+    [Fact]
+    public async Task CoalescedEdit_DoesNotRefreshAgeOfOlderTranslation()
+    {
+        var options = await CreateSqliteOptions();
+        await InsertWord(options, "gato", status: 0);
+        var earlierEdit = DateTimeOffset.UtcNow.AddMinutes(-3);
+        await using var reader = new AppDbContext(options);
+        var wordId = await reader.Words.Select(w => w.WordId).SingleAsync();
+        var controller = CreateController(reader);
+        Assert.IsType<NoContentResult>(await controller.UpdateWord(wordId,
+            new UpdateWordDto { Status = 3, Translation = "intervening definition", ClientUpdatedAt = earlierEdit.AddMinutes(1) }));
+
+        var result = await controller.UpdateWord(wordId, new UpdateWordDto
+        {
+            Status = 4, Translation = "older definition", ClientUpdatedAt = earlierEdit.AddMinutes(2),
+            TranslationUpdatedAt = earlierEdit
+        });
+
+        var conflict = Assert.IsType<WordEditConflictDto>(Assert.IsType<ConflictObjectResult>(result).Value);
+        Assert.Equal("intervening definition", conflict.Word.Translation);
+        Assert.IsType<NoContentResult>(await controller.UpdateWord(wordId,
+            new UpdateWordDto { Status = 4, ClientUpdatedAt = earlierEdit.AddMinutes(2) }));
+        Assert.Equal("intervening definition", (await reader.WordTranslations.SingleAsync()).Translation);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ExplicitReapplyFromSlowClock_RequiresTheVersionActuallyReviewed(bool create)
+    {
+        var options = await CreateSqliteOptions();
+        await InsertWord(options, "gato", status: 0);
+        await using var seed = new AppDbContext(options);
+        var wordId = await seed.Words.Select(w => w.WordId).SingleAsync();
+        var slowClock = DateTimeOffset.UtcNow.AddHours(-1);
+        Assert.IsType<NoContentResult>(await CreateController(seed).UpdateWord(wordId,
+            new UpdateWordDto { Status = 5, Translation = "saved" }));
+
+        async Task<IActionResult> ApplyDraft(AppDbContext db, string? revision)
+        {
+            var controller = CreateController(db);
+            if (create)
+            {
+                var result = await controller.CreateWord(new CreateWordDto
+                {
+                    Term = "gato", TextId = TextId, ReplaceExisting = true, Status = 2, Sentence = "El gato.",
+                    Translation = "my draft", ClientUpdatedAt = slowClock,
+                    TranslationUpdatedAt = slowClock.AddMinutes(-1), ExpectedRevision = revision
+                });
+                return result.Result!;
+            }
+            return await controller.UpdateWord(wordId, new UpdateWordDto
+            {
+                TextId = TextId, Status = 2, Sentence = "El gato.", Translation = "my draft",
+                ClientUpdatedAt = slowClock, TranslationUpdatedAt = slowClock.AddMinutes(-1), ExpectedRevision = revision
+            });
+        }
+
+        var first = Assert.IsType<WordEditConflictDto>(Assert.IsType<ConflictObjectResult>(await ApplyDraft(seed, null)).Value);
+        Assert.Equal("saved", first.Word.Translation);
+        await using var racing = new AppDbContext(WithInsertBeforeFirstSave(options, async () =>
+        {
+            await using var other = new AppDbContext(options);
+            Assert.IsType<NoContentResult>(await CreateController(other).UpdateWord(wordId,
+                new UpdateWordDto { Status = 6, Translation = "changed during reapply" }));
+        }));
+        var second = Assert.IsType<WordEditConflictDto>(Assert.IsType<ConflictObjectResult>(await ApplyDraft(racing, first.Revision)).Value);
+        Assert.NotEqual(first.Revision, second.Revision);
+        Assert.Equal("changed during reapply", second.Word.Translation);
+        Assert.Empty(await racing.SrsPhrases.ToListAsync());
+
+        await using var retry = new AppDbContext(options);
+        var applied = await ApplyDraft(retry, second.Revision);
+        if (create) Assert.IsType<OkObjectResult>(applied);
+        else Assert.IsType<NoContentResult>(applied);
+        var word = await retry.Words.Include(w => w.Translation).SingleAsync();
+        Assert.Equal("my draft", word.Translation.Translation);
+        Assert.Equal(2, word.Status);
+        Assert.Equal(word.LastEditedAt, word.LastManualStatusAt);
+        Assert.True(word.LastEditedAt > slowClock.UtcDateTime.AddMinutes(30));
+        Assert.Single(await retry.SrsPhrases.ToListAsync());
+        if (create) Assert.Single(await retry.TextWords.ToListAsync());
+    }
+
+    [Fact]
+    public async Task TranslationOnlyBatch_PreservesTheLastExplicitStatusTime()
+    {
+        var options = await CreateSqliteOptions();
+        await using var db = new AppDbContext(options);
+        var controller = CreateController(db);
+        var slowClock = DateTimeOffset.UtcNow.AddHours(-1);
+        await controller.CreateWord(new CreateWordDto { Term = "gato", TextId = TextId, Status = 2, ClientUpdatedAt = slowClock });
+        var word = await db.Words.SingleAsync();
+        var manual = word.LastManualStatusAt;
+        Assert.NotNull(manual);
+        Assert.IsType<OkObjectResult>(await controller.AddTermsBatch(new AddTermBatchDto
+        {
+            LanguageId = 1, KeepExistingStatus = true, Terms = [new() { Term = "gato", Translation = "cat" }]
+        }));
+        Assert.Equal(manual, word.LastManualStatusAt);
+        Assert.True(word.LastEditedAt > manual);
+        Assert.IsType<OkObjectResult>(await controller.AddTermsBatch(new AddTermBatchDto
+        {
+            LanguageId = 1, Terms = [new() { Term = "gato", Status = 3 }]
+        }));
+        Assert.True(word.LastManualStatusAt > manual);
+        Assert.Equal(word.LastEditedAt, word.LastManualStatusAt);
+    }
+
     [Fact]
     public async Task LinkAsync_ConcurrentReaderSave_PreservesReaderEditAndLinkedCounts()
     {

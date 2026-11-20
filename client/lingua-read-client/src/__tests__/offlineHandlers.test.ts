@@ -44,10 +44,12 @@ describe('productionSyncHandlers.wordStatusUpdate', () => {
     vi.clearAllMocks();
   });
 
-  test('sends a status-only PUT without a translation field', async () => {
+  test('sends a status-only PUT at the recorded queue time without a translation field', async () => {
+    const enqueuedAt = Date.parse('2026-09-19T08:00:00.000Z');
     await productionSyncHandlers.wordStatusUpdate({
       type: 'wordStatusUpdate',
       payload: { wordId: 5, status: 3 },
+      enqueuedAt,
     });
 
     const mockFetch = vi.mocked(fetchApi);
@@ -58,7 +60,7 @@ describe('productionSyncHandlers.wordStatusUpdate', () => {
     expect(options?.method).toBe('PUT');
 
     const body = JSON.parse(String(options?.body));
-    expect(body).toEqual({ status: 3 });
+    expect(body).toEqual({ status: 3, clientUpdatedAt: new Date(enqueuedAt).toISOString() });
     expect(body).not.toHaveProperty('translation');
   });
 });

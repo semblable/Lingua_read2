@@ -12,8 +12,8 @@ export type RecentTexts = ResponseOf<'/api/Texts/recent', 'get'>;
 // the audiobook progress endpoints — see audiobook.ts.
 export type WordLinkingStatus = { wordLinkingStatus?: string } | null;
 
-export const getTexts = (): Promise<TextsList> => {
-  return fetchApi<TextsList>('/texts');
+export const getTexts = ({ liveCoverage = false }: { liveCoverage?: boolean } = {}): Promise<TextsList> => {
+  return fetchApi<TextsList>(liveCoverage ? '/texts?liveCoverage=true' : '/texts');
 };
 
 export const getText = (textId: number | string): Promise<Text> => {

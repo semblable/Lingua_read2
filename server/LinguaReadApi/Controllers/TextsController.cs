@@ -51,16 +51,19 @@ namespace LinguaReadApi.Controllers
 
         // GET: api/texts
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<TextDto>>> GetTexts()
+        public async Task<ActionResult<IEnumerable<TextDto>>> GetTexts([FromQuery] bool liveCoverage = false)
         {
             var userId = GetUserId();
 
-            var texts = await _context.Texts
-                .Where(t => t.UserId == userId && t.Tag != "srs-story")
-                .Include(t => t.Language)
-                .Include(t => t.Book) // Include Book for BookTitle
-                .OrderByDescending(t => t.CreatedAt) // Order by creation date by default
-                .Select(t => new TextDto
+            // Rank unread items from current vocabulary without rewriting cached text or book stats.
+            var texts = await (from t in _context.Texts
+                where t.UserId == userId && t.Tag != "srs-story"
+                let useLiveCoverage = liveCoverage && (t.WordLinkingStatus == "completed"
+                    || (t.WordLinkingStatus == null && t.TextWords.Any()))
+                    && !t.IsFinished && (t.Book == null || !t.Book.IsFinished)
+                let countableWords = t.TextWords.Where(link => link.Word.Status != 6)
+                orderby t.CreatedAt descending
+                select new TextDto
                 {
                     TextId = t.TextId,
                     Title = t.Title,
@@ -75,11 +78,13 @@ namespace LinguaReadApi.Controllers
                     IsFinished = t.IsFinished,
                     FolderId = t.FolderId,
                     SortOrder = t.SortOrder,
-                    TotalWords = t.TotalWords,
-                    KnownWords = t.KnownWords,
+                    TotalWords = useLiveCoverage ? countableWords.Sum(link => link.OccurrenceCount) : t.TotalWords,
+                    KnownWords = useLiveCoverage
+                        ? countableWords.Where(link => link.Word.Status >= 4 && link.Word.Status <= 5).Sum(link => link.OccurrenceCount)
+                        : t.KnownWords,
                     WordLinkingStatus = t.WordLinkingStatus,
-                    HasNoCountableWords = t.TotalWords == 0 && t.WordLinkingStatus == "completed"
-                        && !t.TextWords.Any(tw => tw.Word.Status != 6),
+                    HasNoCountableWords = (useLiveCoverage || (t.TotalWords == 0 && t.WordLinkingStatus == "completed"))
+                        && !countableWords.Any(),
                     StatsUpdatedAt = t.StatsUpdatedAt
                 })
                 .ToListAsync();

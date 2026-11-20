@@ -112,6 +112,41 @@ public class RecentTextsTests
         Assert.All(texts, text => Assert.True(text.HasNoCountableWords));
     }
 
+    [Theory]
+    [InlineData("completed")]
+    [InlineData(null)]
+    public async Task TextList_LiveCoverageReflectsVocabularyEditsBeforeScheduledRecompute(string? linkingStatus)
+    {
+        await using var context = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>()
+            .UseSqlite("Data Source=:memory:").Options);
+        await context.Database.OpenConnectionAsync();
+        await context.Database.EnsureCreatedAsync();
+        var owner = Guid.NewGuid();
+        context.Users.Add(new User { Id = owner });
+        context.Languages.Add(new Language { LanguageId = 1, Name = "French", Code = "fr" });
+        context.Texts.Add(new Text { TextId = 1, UserId = owner, LanguageId = 1, Title = "Passage",
+            Content = "chat chat chat", WordLinkingStatus = linkingStatus, TotalWords = 3 });
+        var word = new Word { WordId = 1, UserId = owner, LanguageId = 1, Term = "chat", Status = 5 };
+        context.Words.Add(word);
+        context.TextWords.Add(new TextWord { TextId = 1, WordId = 1, OccurrenceCount = 3 });
+        await context.SaveChangesAsync();
+        var controller = CreateController(context, owner);
+
+        var current = Assert.Single((await controller.GetTexts(liveCoverage: true)).Value!);
+        Assert.Equal(3, current.TotalWords);
+        Assert.Equal(3, current.KnownWords);
+        Assert.False(current.HasNoCountableWords);
+        var cached = Assert.Single((await controller.GetTexts()).Value!);
+        Assert.Equal(0, cached.KnownWords);
+
+        word.Status = 6;
+        await context.SaveChangesAsync();
+        var ignored = Assert.Single((await controller.GetTexts(liveCoverage: true)).Value!);
+        Assert.Equal(0, ignored.TotalWords);
+        Assert.Equal(0, ignored.KnownWords);
+        Assert.True(ignored.HasNoCountableWords);
+    }
+
     [Fact]
     public async Task RecentSummaries_IncludeSavedProgressWithoutChangingRecency_AndExcludeOtherUsers()
     {

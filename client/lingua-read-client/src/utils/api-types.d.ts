@@ -3704,7 +3704,9 @@ export interface paths {
         };
         get: {
             parameters: {
-                query?: never;
+                query?: {
+                    liveCoverage?: boolean;
+                };
                 header?: never;
                 path?: never;
                 cookie?: never;

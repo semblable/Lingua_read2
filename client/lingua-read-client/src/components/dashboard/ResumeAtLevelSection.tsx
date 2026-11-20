@@ -40,7 +40,7 @@ const ResumeAtLevelSection: React.FC = () => {
     let cancelled = false;
     (async () => {
       try {
-        const data = await getTexts();
+        const data = await getTexts({ liveCoverage: true });
         if (!cancelled) setTexts(data ?? []);
       } catch {
         if (!cancelled) setTexts([]);

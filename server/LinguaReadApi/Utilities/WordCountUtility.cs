@@ -2,17 +2,34 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using LinguaReadApi.Models;
+using LinguaReadApi.Services.Tokenization;
 
 namespace LinguaReadApi.Utilities
 {
     public static class WordCountUtility
     {
+        internal const int WhitespaceCountingVersion = 1;
+        internal const int SegmentationCountingVersion = 2;
+
+        internal static int StudyCountingVersion(string? segmentationProfile) =>
+            Tokenizer.IsSupportedSegmentationProfile(segmentationProfile)
+                ? SegmentationCountingVersion : WhitespaceCountingVersion;
+
+        /// <summary>Count every reader word occurrence for profiled text. Unprofiled text keeps its original study unit.</summary>
+        public static int CountStudyWords(string? content, Language? language, string? segmentationProfile)
+        {
+            if (!Tokenizer.IsSupportedSegmentationProfile(segmentationProfile)) return CountTotalWords(content);
+
+            var readerLanguage = Tokenizer.ForTextProfile(language, segmentationProfile);
+            return Tokenizer.Tokenize(content, readerLanguage).Tokens.Count(token => token.IsWord);
+        }
+
         /// <summary>
         /// Counts the total number of words in a text by splitting on whitespace
         /// </summary>
         /// <param name="text">The text to count words in</param>
         /// <returns>The total word count</returns>
-        public static int CountTotalWords(string text)
+        public static int CountTotalWords(string? text)
         {
             if (string.IsNullOrWhiteSpace(text))
                 return 0;
@@ -66,4 +83,4 @@ namespace LinguaReadApi.Utilities
             return new HashSet<string>(words);
         }
     }
-} 
+}

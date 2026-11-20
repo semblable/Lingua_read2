@@ -2296,6 +2296,7 @@ namespace LinguaReadApi.Controllers
                     // Verify the text belongs to this book
                     var text = await _context.Texts
                         .Where(t => t.TextId == lessonDto.TextId && t.BookId == id)
+                        .Include(t => t.Language)
                         .FirstOrDefaultAsync();
 
                     if (text == null)
@@ -2350,14 +2351,17 @@ namespace LinguaReadApi.Controllers
                     // counter and credits reading volume/activity — not TotalTextsCompleted.
                     bool isFirstCompletion = !text.IsFinished;
 
-                    // Preserve the legacy activity unit, independently of coverage.
-                    // As on the standalone route, initial sentence credit is already
-                    // earned. Only a later intentional reread earns the full volume.
-                    int totalWordCount = WordCountUtility.CountTotalWords(text.Content);
-                    int completionWordCredit = await LessonStudyActivity.CompletionWordsAsync(_context, userId, text.TextId, totalWordCount, text.IsFinished);
+                    // As on the standalone route, reconcile initial sentence credit in
+                    // the text's study unit. Only a later reread earns the full volume.
+                    var countingVersion = WordCountUtility.StudyCountingVersion(text.SegmentationProfile);
+                    int totalWordCount = WordCountUtility.CountStudyWords(text.Content, text.Language, text.SegmentationProfile);
+                    var (completionWordCredit, readingVolume) = await LessonStudyActivity.CompletionCreditAsync(_context, userId, text.TextId, totalWordCount, text.IsFinished,
+                        countingVersion == WordCountUtility.SegmentationCountingVersion ? WordCountUtility.CountTotalWords(text.Content) : totalWordCount);
                     var completedRead = LessonStudyActivity.Record(_context, userId, text.TextId, text.Title, text.LanguageId,
                         text.Content, text.AudioFilePath, lessonDto.ClientEventId, "read", words: completionWordCredit);
                     completedRead.ReconcilesSentenceCredit = isFirstCompletion;
+                    completedRead.CountingVersion = countingVersion;
+                    completedRead.ReadingVolumeWords = readingVolume;
 
                     // book.Language was eager-loaded above; mutate it in place rather than refetching.
                     var language = book.Language;

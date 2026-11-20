@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using LinguaReadApi.Data;
 using LinguaReadApi.Models;
+using LinguaReadApi.Utilities;
 using Microsoft.EntityFrameworkCore;
 
 namespace LinguaReadApi.Services;
@@ -22,17 +23,44 @@ public static class LessonStudyActivity
     public static long RoundedWords(long tenths, int words) =>
         (long)Math.Round(tenths * (decimal)words / 10, MidpointRounding.AwayFromZero);
 
+    internal sealed record ReadingPass(int CreditedWords, string SourceRevision, bool? ReconcilesSentenceCredit,
+        int LanguageId, int PassTenths, int? TargetPassTenths, int CountingVersion, long? ReadingVolumeWords);
+
+    internal static Task<List<ReadingPass>> ReadingPassesAsync(AppDbContext context, Guid userId, int textId) =>
+        context.LessonStudyEvents.Where(e => e.UserId == userId && e.SourceTextId == textId
+                && e.CountsTowardStatistics && (e.Kind == "read" || e.Kind == "read-set"))
+            .OrderBy(e => e.LessonStudyEventId)
+            .Select(e => new ReadingPass(e.CreditedWords, e.SourceRevision, e.ReconcilesSentenceCredit, e.LanguageId,
+                e.PassTenths, e.TargetPassTenths, e.CountingVersion, e.ReadingVolumeWords)).ToListAsync();
+
+    // Sentence reconciliation events have zero pass tenths. For older events without a
+    // volume snapshot, retain the units used by that counting version.
+    internal static long ReadingVolume(IReadOnlyList<ReadingPass> reads, int end, int words, int whitespaceWords)
+    {
+        long previous = 0, whitespaceTenths = 0, profiledTenths = 0;
+        for (var i = end - 1; i >= 0; i--)
+        {
+            var read = reads[i];
+            if (read.ReadingVolumeWords is { } saved) { previous = saved; break; }
+            if (read.CountingVersion == WordCountUtility.WhitespaceCountingVersion) whitespaceTenths += read.PassTenths;
+            else profiledTenths += read.PassTenths;
+        }
+        return Math.Max(0, previous + RoundedWords(whitespaceTenths, whitespaceWords) + RoundedWords(profiledTenths, words));
+    }
+
     // Reconcile whole-pass and fractional credit with the initial sentence read.
     // A normal completion always adds one pass, including after a partial read.
-    public static async Task<int> CompletionWordsAsync(AppDbContext context, Guid userId, int textId, int words, bool isFinished)
+    internal static async Task<(int CreditedWords, long ReadingVolumeWords)> CompletionCreditAsync(
+        AppDbContext context, Guid userId, int textId, int words, bool isFinished, int whitespaceWords)
     {
-        // Previously finished lessons (including Finish without credit) are
-        // deliberate rereads. Historical initial sentence units stay earned.
-        if (isFinished) return words;
-        var counts = await PassCountsAsync(context, userId, textId);
+        var reads = await ReadingPassesAsync(context, userId, textId);
+        var previousVolume = ReadingVolume(reads, reads.Count, words, whitespaceWords);
+        var volume = previousVolume + words;
+        // Previously finished lessons (including Finish without credit) are deliberate rereads.
+        if (isFinished) return (words, volume);
         var sentence = await context.UserSentenceProgresses.FindAsync(userId, textId);
-        var outstandingSentenceCredit = Math.Max(0L, (sentence?.CreditedWordCount ?? 0) - RoundedWords(counts.Read, words));
-        return words - (int)Math.Min(words, outstandingSentenceCredit);
+        var outstandingSentenceCredit = Math.Max(0L, (sentence?.CreditedWordCount ?? 0) - previousVolume);
+        return (words - (int)Math.Min(words, outstandingSentenceCredit), volume);
     }
 
     public static string Revision(string content, int languageId, string? audioPath) =>

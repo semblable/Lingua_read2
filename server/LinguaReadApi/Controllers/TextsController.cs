@@ -1168,7 +1168,8 @@ namespace LinguaReadApi.Controllers
                 var text = await _context.Texts
                     .AsNoTracking()
                     .Where(t => t.TextId == textId && t.UserId == userId)
-                    .Select(t => new { t.Content, t.Title, t.AudioFilePath, t.LanguageId, t.IsAudioLesson, t.IsFinished, t.LastCompletedAt })
+                    .Select(t => new { t.Content, t.Title, t.AudioFilePath, t.LanguageId, t.Language,
+                        t.SegmentationProfile, t.IsAudioLesson, t.IsFinished, t.LastCompletedAt })
                     .FirstOrDefaultAsync();
 
                 if (text == null)
@@ -1193,12 +1194,6 @@ namespace LinguaReadApi.Controllers
                 var totalWordsRunning = statusCounts.Where(s => s.Status != 6).Sum(s => s.Count);
                 var knownWordsRunning = statusCounts.Where(s => s.Status >= 4 && s.Status <= 5).Sum(s => s.Count);
                 var learningWordsRunning = statusCounts.Where(s => s.Status >= 2 && s.Status < 4).Sum(s => s.Count);
-
-                // Activity retains its legacy ASCII-whitespace unit, independently
-                // of coverage occurrences. Sentence credit belongs to the initial
-                // reading only; a later whole-text reread earns its full volume.
-                var totalActualWordCount = LinguaReadApi.Utilities.WordCountUtility.CountTotalWords(text.Content);
-                var completionWordCredit = await LessonStudyActivity.CompletionWordsAsync(_context, userId, textId, totalActualWordCount, text.IsFinished);
 
                 var stats = new TextStatsDto
                 {
@@ -1234,10 +1229,17 @@ namespace LinguaReadApi.Controllers
                 // concurrent double-click) gets retried, where the dedup check above answers it.
                 if (!skipStats)
                 {
+                    // Use the same study unit as the sentence reader. Initial sentence credit
+                    // is reconciled once, and a later whole-text reread earns its full volume.
+                    var countingVersion = WordCountUtility.StudyCountingVersion(text.SegmentationProfile);
+                    var words = WordCountUtility.CountStudyWords(text.Content, text.Language, text.SegmentationProfile);
+                    var (completionWordCredit, readingVolume) = await LessonStudyActivity.CompletionCreditAsync(_context, userId, textId, words, text.IsFinished,
+                        countingVersion == WordCountUtility.SegmentationCountingVersion ? WordCountUtility.CountTotalWords(text.Content) : words);
                     var completedRead = LessonStudyActivity.Record(_context, userId, textId, text.Title, text.LanguageId,
                         text.Content, text.AudioFilePath, clientEventId, "read", words: completionWordCredit);
                     completedRead.ReconcilesSentenceCredit = !text.IsFinished;
-                    // Reconcile initial sentence credit; intentional rereads earn full volume.
+                    completedRead.CountingVersion = countingVersion;
+                    completedRead.ReadingVolumeWords = readingVolume;
                     await _userActivityService.LogTextCompletedActivity(
                         userId,
                         text.LanguageId,

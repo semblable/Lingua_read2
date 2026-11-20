@@ -277,6 +277,145 @@ public class ReadingCreditCompatibilityTests(ITestOutputHelper output)
     }
 
     [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ProfiledReading_CountsOccurrencesAcrossSentencesCompletionRereadsAndAdjustments(bool book)
+    {
+        await using var learner = await Learner.Create(book);
+        var text = await learner.Context.Texts.SingleAsync();
+        var language = await learner.Context.Languages.SingleAsync();
+        language.Code = "ja";
+        language.ParserType = "mecab";
+        language.SplitSentences = ".!?。！？";
+        text.SegmentationProfile = JapaneseSegmenter.Profile;
+        text.Content = "猫は魚を食べます。猫は魚を食べます。";
+        await learner.Context.SaveChangesAsync();
+
+        await learner.ReadSentence(0, "猫は魚を食べます。");
+        Assert.Equal(106, await learner.Earned());
+        await learner.ReadPass("profiled-read");
+        Assert.Equal(112, await learner.Earned());
+        await learner.ReadPass("profiled-read");
+        Assert.Equal(112, await learner.Earned());
+        await learner.ReadPass("profiled-repeat");
+        Assert.Equal(124, await learner.Earned());
+
+        Assert.IsType<OkObjectResult>(await learner.SetCount("read", 2.5m, 2m, "profiled-adjust"));
+        Assert.Equal(130, await learner.Earned());
+        Assert.All(await learner.Context.LessonStudyEvents.Where(e => e.Kind == "read" || e.Kind == "read-set").ToListAsync(),
+            e => Assert.Equal(WordCountUtility.SegmentationCountingVersion, e.CountingVersion));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ProfiledReading_DoesNotRevalueAStoredWhitespacePassWhenAddingReading(bool book)
+    {
+        await using var learner = await Learner.Create(book);
+        var text = await learner.Context.Texts.SingleAsync();
+        var language = await learner.Context.Languages.SingleAsync();
+        language.Code = "ja";
+        language.ParserType = "mecab";
+        text.Content = "猫は魚を食べます。";
+        await learner.Context.SaveChangesAsync();
+
+        await learner.ReadPass("whitespace-read");
+        Assert.Equal(101, await learner.Earned());
+        // Existing passes predate the saved volume snapshot.
+        (await learner.Context.LessonStudyEvents.SingleAsync()).ReadingVolumeWords = null;
+        (await learner.Context.Texts.SingleAsync()).SegmentationProfile = JapaneseSegmenter.Profile;
+        await learner.Context.SaveChangesAsync();
+
+        Assert.IsType<OkObjectResult>(await learner.SetCount("read", 2, 1, "profiled-adjust"));
+        Assert.Equal(107, await learner.Earned());
+        Assert.Equal(1, (await learner.Context.LessonStudyEvents.SingleAsync(e => e.ClientEventId == "whitespace-read")).CreditedWords);
+    }
+
+    [Fact]
+    public async Task ProfiledReading_ChangingLanguageNormalizationDoesNotRevalueAnEarlierPass()
+    {
+        await using var learner = await Learner.Create(book: false);
+        var text = await learner.Context.Texts.SingleAsync();
+        var language = await learner.Context.Languages.SingleAsync();
+        language.Code = "ja";
+        language.ParserType = "mecab";
+        text.SegmentationProfile = JapaneseSegmenter.Profile;
+        text.Content = "猫";
+        await learner.Context.SaveChangesAsync();
+
+        await learner.ReadPass("single-word-read");
+        Assert.Equal(101, await learner.Earned());
+        (await learner.Context.Languages.SingleAsync()).CharacterSubstitutions = "猫=猫 猫";
+        await learner.Context.SaveChangesAsync();
+
+        Assert.IsType<OkObjectResult>(await learner.SetCount("read", 2, 1, "new-boundaries"));
+        Assert.Equal(103, await learner.Earned());
+        Assert.Equal(2, (await learner.Context.LessonStudyEvents.SingleAsync(e => e.ClientEventId == "new-boundaries")).CreditedWords);
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public async Task ProfiledReading_RetainsFractionalVolumeCoveredBySentenceCreditWhenWordSettingsChange(bool book, bool manual)
+    {
+        await using var learner = await Learner.Create(book);
+        var text = await learner.Context.Texts.SingleAsync();
+        var language = await learner.Context.Languages.SingleAsync();
+        language.Code = "ja";
+        text.SegmentationProfile = JapaneseSegmenter.Profile;
+        text.Content = "猫。犬。";
+        await learner.Context.SaveChangesAsync();
+
+        await learner.ReadSentence(0, "猫。");
+        await learner.ReadSentence(1, "犬。");
+        Assert.IsType<OkObjectResult>(await learner.SetCount("read", 0.3m, 0, "partial"));
+        var partial = await learner.Context.LessonStudyEvents.SingleAsync(e => e.ClientEventId == "partial");
+        Assert.Equal(1L, partial.ReadingVolumeWords);
+        Assert.Equal(0, partial.CreditedWords);
+        Assert.Equal(102, await learner.Earned());
+
+        (await learner.Context.Languages.SingleAsync()).CharacterSubstitutions = "猫=猫 猫 猫 猫 猫";
+        await learner.Context.SaveChangesAsync();
+        Assert.IsType<OkObjectResult>(await learner.SetCount("read", 0.3m, 0.3m, "unchanged"));
+        if (manual) Assert.IsType<OkObjectResult>(await learner.SetCount("read", 1.3m, 0.3m, "full"));
+        else await learner.ReadPass("full");
+        var full = await learner.Context.LessonStudyEvents.SingleAsync(e => e.ClientEventId == "full");
+        Assert.Equal(7L, full.ReadingVolumeWords);
+        Assert.Equal(5, full.CreditedWords);
+        Assert.Equal(107, await learner.Earned());
+
+        Assert.IsType<OkObjectResult>(await learner.SetCount("read", 0.3m, 1.3m, "corrected"));
+        Assert.Equal(102, await learner.Earned());
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ProfiledCompletion_DeductsPreviouslyUnreconciledWhitespaceSentenceCredit(bool book)
+    {
+        await using var learner = await Learner.Create(book);
+        var text = await learner.Context.Texts.SingleAsync();
+        var language = await learner.Context.Languages.SingleAsync();
+        language.Code = "ja";
+        language.ParserType = "mecab";
+        text.Content = "猫は魚を食べます。猫は魚を食べます。";
+        await learner.Context.SaveChangesAsync();
+
+        await learner.ReadSentence(0, "猫は魚を食べます。");
+        Assert.IsType<OkObjectResult>(await learner.SetCount("read", 0.4m, 0m, "whitespace-partial"));
+        Assert.Equal(101, await learner.Earned());
+        (await learner.Context.LessonStudyEvents.SingleAsync()).ReadingVolumeWords = null;
+        (await learner.Context.Texts.SingleAsync()).SegmentationProfile = JapaneseSegmenter.Profile;
+        await learner.Context.SaveChangesAsync();
+
+        await learner.ReadPass("profiled-full-read");
+        Assert.Equal(112, await learner.Earned());
+        Assert.Equal(11, (await learner.Context.LessonStudyEvents.SingleAsync(e => e.ClientEventId == "profiled-full-read")).CreditedWords);
+    }
+
+    [Theory]
     [InlineData(false, "one.two", "one.", "two")]
     [InlineData(true, "我爱读书。你呢？", "我爱读书。", "你呢？")]
     public async Task LegacySentenceUnits_CanExceedWholeTextUnits_WithoutRewritingEarnedHistory(

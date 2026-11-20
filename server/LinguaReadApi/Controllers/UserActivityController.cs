@@ -429,6 +429,7 @@ public async Task<ActionResult<SentenceProgressDto>> LogSentenceRead([FromBody] 
     {
     var text = await _context.Texts
         .AsNoTracking()
+        .Include(t => t.Language)
         .FirstOrDefaultAsync(t => t.TextId == request.TextId && t.UserId == userId);
 
     if (text == null)
@@ -477,7 +478,8 @@ public async Task<ActionResult<SentenceProgressDto>> LogSentenceRead([FromBody] 
         }
 
         creditedIndices.Add(segment.SegmentIndex);
-        if (!completedReading) newlyCreditedWords += WordCountUtility.CountTotalWords(segment.SegmentText);
+        if (!completedReading)
+            newlyCreditedWords += WordCountUtility.CountStudyWords(segment.SegmentText, text.Language, text.SegmentationProfile);
     }
 
     if (request.CurrentSegmentIndex.HasValue && request.CurrentSegmentIndex.Value >= 0)

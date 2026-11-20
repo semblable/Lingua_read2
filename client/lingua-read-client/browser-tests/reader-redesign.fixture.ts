@@ -6,6 +6,7 @@ export const test = statusTest.extend<{ appearanceWrites: Array<Record<string, u
   appearanceWrites: [async ({ context, openLayout, baseURL }, use) => {
     void openLayout;
     const writes: Array<Record<string, unknown>> = [];
+    const sentenceCredits = new Map<number, Set<number>>();
     const settingKeys = new Set(['textSize', 'readerContentWidth', 'lineSpacing', 'paragraphSpacing',
       'readerTextAlignment', 'readerParagraphIndent', 'readingDensity', 'leftPanelWidth',
       'showWordInfoPanel', 'sentenceMode']);
@@ -22,9 +23,17 @@ export const test = statusTest.extend<{ appearanceWrites: Array<Record<string, u
         }
       }
       if (request.method() === 'POST' && url.pathname === '/api/activity/logSentenceRead') {
-        const payload = request.postDataJSON() as { textId?: number; currentSegmentIndex?: number };
-        if ([801, 802].includes(payload.textId ?? 0) && Number.isInteger(payload.currentSegmentIndex)) {
-          await route.fulfill({ json: { creditedSegmentIndices: [payload.currentSegmentIndex] } });
+        const { textId, currentSegmentIndex, segments } = request.postDataJSON() as {
+          textId: number; currentSegmentIndex?: number; segments?: Array<{ segmentIndex: number; segmentText: string }>
+        };
+        if ([801, 802].includes(textId)
+          && (currentSegmentIndex === undefined || (Number.isInteger(currentSegmentIndex) && currentSegmentIndex >= 0))
+          && Array.isArray(segments) && segments.length > 0
+          && segments.every(s => Number.isInteger(s.segmentIndex) && s.segmentIndex >= 0 && typeof s.segmentText === 'string' && s.segmentText.trim())) {
+          const credited = sentenceCredits.get(textId) ?? new Set<number>();
+          segments.forEach(s => credited.add(s.segmentIndex));
+          sentenceCredits.set(textId, credited);
+          await route.fulfill({ json: { creditedSegmentIndices: [...credited] } });
           return;
         }
       }

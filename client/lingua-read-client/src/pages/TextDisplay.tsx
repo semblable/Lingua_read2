@@ -286,7 +286,8 @@ const TextDisplay = () => {
     audioSrc,
     setAudioSrc,
     srtLines,
-    setSrtLines,
+    subtitlesUnavailable,
+    retrySubtitles,
     sentenceSourceReady,
     sentenceProgressLoaded
   } = useReaderState({
@@ -455,6 +456,7 @@ const TextDisplay = () => {
       if (currentNode.nodeType === Node.ELEMENT_NODE) {
         const element = currentNode as HTMLElement;
         if (element.classList?.contains('sentence')) {
+          if (isAudioLesson) return;
           const sentenceIndex = Number(element.getAttribute('data-sentence-index'));
           if (Number.isInteger(sentenceIndex) && sentenceIndex >= 0) {
             setCurrentSegmentIndex(sentenceIndex);
@@ -477,7 +479,7 @@ const TextDisplay = () => {
       }
       currentNode = currentNode.parentNode;
     }
-  }, [srtLines]);
+  }, [isAudioLesson, srtLines]);
 
   /** Max chars sent as sentenceContext to avoid huge payloads; backend may also limit. */
   const MAX_AI_CONTEXT_CHARS = 100000;
@@ -1507,7 +1509,7 @@ const TextDisplay = () => {
   // (type: 'sentence' | 'title') carry mediaBlocks. Render code narrows on
   // `seg.type === 'audio'`.
   const sentenceSegments = useMemo<SentenceSegment[]>(() => {
-    if (isAudioLesson && srtLines.length > 0) {
+    if (isAudioLesson) {
       return srtLines.map((line, index) => ({
         index,
         text: line.text,
@@ -1846,7 +1848,7 @@ const TextDisplay = () => {
   ]);
 
   useEffect(() => {
-    if (!sentenceProgressLoaded) {
+    if (!sentenceProgressLoaded || (isAudioLesson && !sentenceSegments.length)) {
       return;
     }
 
@@ -1855,7 +1857,7 @@ const TextDisplay = () => {
       if (sentenceReads.restored?.index === currentSegmentIndex) sentenceReads.restored.index = lastIndex;
       setCurrentSegmentIndex(lastIndex);
     }
-  }, [currentSegmentIndex, sentenceProgressLoaded, sentenceReads, sentenceSegments]);
+  }, [currentSegmentIndex, isAudioLesson, sentenceProgressLoaded, sentenceReads, sentenceSegments]);
 
   useEffect(() => {
     if (!sentenceSourceReady || error || !isSentenceMode || !text?.textId
@@ -2465,10 +2467,24 @@ const TextDisplay = () => {
 
   // --- Rendering Logic ---
   // --- Loading/Error/NotFound States ---
-  if (loading || (text && isSentenceMode && !error && !sentenceSourceReady)) { return <Container className="py-5 text-center"><Spinner animation="border" role="status"><span className="visually-hidden">Loading text</span></Spinner></Container>; }
+  const waitingForSubtitles = isAudioLesson && !srtLines.length && (isSentenceMode || displayMode === 'audio');
+  if (loading || (text && isSentenceMode && !error && !sentenceSourceReady && !waitingForSubtitles)) { return <Container className="py-5 text-center"><Spinner animation="border" role="status"><span className="visually-hidden">Loading text</span></Spinner></Container>; }
   if (error) { return <Container className="py-5"><Alert variant="danger">{error}<Button onClick={() => navigate(-1)}>Back</Button></Alert></Container>; }
   if (!text) { return <Container className="py-5"><Alert variant="warning">Text not found<Button onClick={() => navigate(libraryPath())}>Back</Button></Alert></Container>; }
   // --- End Loading/Error States ---
+
+  const subtitleNotice = (
+    <Alert variant={subtitlesUnavailable ? 'warning' : 'secondary'} role={subtitlesUnavailable ? 'alert' : 'status'} className="m-3">
+      <p>{subtitlesUnavailable ? 'The subtitles for this lesson could not be loaded.' : 'Loading subtitles…'}</p>
+      <div className="d-flex flex-wrap gap-2">
+        {subtitlesUnavailable && <Button size="sm" variant="outline-secondary" onClick={retrySubtitles}>Retry subtitles</Button>}
+        <Button size="sm" variant="outline-secondary" onClick={() => {
+          setDisplayMode('text');
+          if (isSentenceMode) setSentenceModeEnabled(false);
+        }}>Read full text</Button>
+      </div>
+    </Alert>
+  );
 
   // DEBUG: Log isAudioLesson state before rendering
 
@@ -2722,7 +2738,7 @@ const TextDisplay = () => {
                 className={`reader-main-surface-inner reader-main-surface-inner-${readingUiMode}`}
                 style={{ '--reader-content-max-width': `${globalSettings.readerContentWidth || 740}px` } as React.CSSProperties}
               >
-                {isSentenceMode ? (
+                {waitingForSubtitles ? subtitleNotice : isSentenceMode ? (
                   <SentenceModeView
                     currentSegment={currentSentenceSegment}
                     segmentCount={sentenceSegments.length}

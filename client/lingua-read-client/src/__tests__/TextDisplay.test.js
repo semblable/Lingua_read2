@@ -3966,6 +3966,48 @@ describe('TextDisplay', () => {
       return render(<StatefulSettingsReader />);
     };
 
+    const lessonWithSubtitleCues = {
+      textId: 1, title: 'Audio lesson', content: 'Printed text. More prose.',
+      languageCode: 'en', isAudioLesson: true, audioFilePath: 'audio_lessons/1.mp3', hasSrtContent: true, words: []
+    };
+
+    test.each(['rejected', 'empty', 'textless'])('a %s subtitle response preserves the saved cue until a successful retry', async failure => {
+      getText.mockResolvedValueOnce(lessonWithSubtitleCues);
+      if (failure === 'rejected') getTextSrt.mockRejectedValueOnce(new TypeError('offline'));
+      else getTextSrt.mockResolvedValueOnce(failure === 'empty' ? '' : '1\n00:00:00,000 --> 00:00:01,000\n');
+      let finishRetry;
+      getTextSrt.mockImplementationOnce(() => new Promise(resolve => { finishRetry = resolve; }));
+      getSentenceProgress.mockResolvedValueOnce({ lastSegmentIndex: 1, creditedSegmentIndices: [1] });
+      renderWithMutableSettings({ sentenceMode: true });
+
+      const retry = await screen.findByRole('button', { name: 'Retry subtitles' });
+      expect(screen.queryByRole('button', { name: /^Next$/ })).not.toBeInTheDocument();
+      expect(logSentenceReadActivity).not.toHaveBeenCalled();
+      fireEvent.click(retry);
+      expect(await screen.findByText('Loading subtitles…')).toBeInTheDocument();
+      expect(logSentenceReadActivity).not.toHaveBeenCalled();
+      await act(async () => finishRetry('1\n00:00:00,000 --> 00:00:01,000\nStart.\n\n2\n00:00:01,000 --> 00:00:02,000\nRestored.\n\n3\n00:00:02,000 --> 00:00:03,000\nNext cue.'));
+      expect(await screen.findByText('Restored')).toBeInTheDocument();
+      expect(logSentenceReadActivity).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByRole('button', { name: /^Next$/ }));
+      await waitFor(() => expect(logSentenceReadActivity).toHaveBeenCalledExactlyOnceWith({
+        textId: 1, currentSegmentIndex: 2, segments: [{ segmentIndex: 2, segmentText: 'Next cue.' }]
+      }));
+      expect(getText).toHaveBeenCalledTimes(1);
+    });
+
+    test.each(['unavailable', 'pending'])('reads the full text of an audio lesson with %s subtitles', async state => {
+      getText.mockResolvedValueOnce(lessonWithSubtitleCues);
+      if (state === 'unavailable') getTextSrt.mockResolvedValueOnce('');
+      else getTextSrt.mockImplementationOnce(() => new Promise(() => {}));
+      renderWithMutableSettings({ sentenceMode: true });
+      await screen.findByText(state === 'unavailable' ? 'The subtitles for this lesson could not be loaded.' : 'Loading subtitles…');
+      fireEvent.click(await screen.findByRole('button', { name: 'Read full text' }));
+      expect(await screen.findByText('Printed')).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Retry subtitles' })).not.toBeInTheDocument();
+      expect(logSentenceReadActivity).not.toHaveBeenCalled();
+    });
+
     test.each([false, true])('explicit scrubbing clears a repeated cue target while playing (mobile: %s)', async mobile => {
       window.matchMedia = vi.fn(() => ({ matches: mobile, addEventListener: vi.fn(), removeEventListener: vi.fn() }));
       getText.mockResolvedValueOnce({ textId: 1, title: 'Audio scrub', content: 'First cue. Second cue.',

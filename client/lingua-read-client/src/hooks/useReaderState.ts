@@ -71,7 +71,8 @@ export type UseReaderStateResult = {
   audioSrc: string | null;
   setAudioSrc: React.Dispatch<React.SetStateAction<string | null>>;
   srtLines: SrtEntry[];
-  setSrtLines: React.Dispatch<React.SetStateAction<SrtEntry[]>>;
+  subtitlesUnavailable: boolean;
+  retrySubtitles: () => void;
   sentenceSourceReady: boolean;
   sentenceProgressLoaded: boolean;
 };
@@ -96,6 +97,8 @@ export const useReaderState = ({
   const [displayMode, setDisplayMode] = useState('audio');
   const [audioSrc, setAudioSrc] = useState<string | null>(null);
   const [srtLines, setSrtLines] = useState<SrtEntry[]>([]);
+  const [subtitlesUnavailable, setSubtitlesUnavailable] = useState(false);
+  const retrySubtitlesRef = useRef<(() => Promise<void>) | null>(null);
   const [sentenceSourceReady, setSentenceSourceReady] = useState(false);
   const [sentenceProgressLoaded, setSentenceProgressLoaded] = useState(false);
 
@@ -121,6 +124,7 @@ export const useReaderState = ({
     const requestVersion = textLoadRequestVersionRef.current + 1;
     textLoadRequestVersionRef.current = requestVersion;
     let cancelled = false;
+    let subtitleRequest = 0;
     let wordLinkingPollInterval: ReturnType<typeof setInterval> | null = null;
     const isCurrentRequest = (): boolean =>
       !cancelled && textLoadRequestVersionRef.current === requestVersion;
@@ -183,6 +187,7 @@ export const useReaderState = ({
         setNextTextId(null);
         setAudioSrc(null);
         setSrtLines([]);
+        setSubtitlesUnavailable(false);
         setSentenceSourceReady(false);
         setSentenceProgressLoaded(false);
       }
@@ -225,15 +230,23 @@ export const useReaderState = ({
           const newAudioSrc = `/${data.audioFilePath}`;
           setAudioSrc(newAudioSrc);
 
-          srtPromise = Promise.resolve(getTextSrt(textId))
-            .then(srtText => {
-              if (isCurrentRequest()) {
-                setSrtLines(srtText ? parseSrtContent(srtText) : []);
-              }
-            })
-            .catch(err => {
+          const loadSubtitles = async () => {
+            const request = ++subtitleRequest;
+            setSubtitlesUnavailable(false);
+            let lines: SrtEntry[] = [];
+            try {
+              lines = parseSrtContent(await getTextSrt(textId));
+            } catch (err) {
               if (isCurrentRequest()) console.error('Failed to load SRT:', err);
-            });
+            }
+            if (!isCurrentRequest() || request !== subtitleRequest) return;
+            // Keep original cue indices, including empty cues within a usable transcript.
+            const usable = lines.some(line => line.text.trim());
+            setSrtLines(usable ? lines : []);
+            setSubtitlesUnavailable(!usable);
+          };
+          retrySubtitlesRef.current = loadSubtitles;
+          srtPromise = loadSubtitles();
 
           if (displayModeRef.current !== 'audio') setDisplayMode('audio');
 
@@ -350,6 +363,7 @@ export const useReaderState = ({
 
     return () => {
       cancelled = true;
+      retrySubtitlesRef.current = null;
       clearWordLinkingPoll();
     };
     // Re-fetch only when textId changes. The effect closes over many stable
@@ -390,7 +404,8 @@ export const useReaderState = ({
     audioSrc,
     setAudioSrc,
     srtLines,
-    setSrtLines,
+    subtitlesUnavailable,
+    retrySubtitles: () => { void retrySubtitlesRef.current?.(); },
     sentenceSourceReady,
     sentenceProgressLoaded
   };

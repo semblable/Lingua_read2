@@ -123,4 +123,95 @@ describe('HardcoverSettings', () => {
 
     expect(props.handleChange).toHaveBeenCalledTimes(1);
   });
+
+  test('links to pre-scoped Hardcover PAT Link Builder URL and documents required scopes', () => {
+    renderSettings();
+
+    const link = screen.getByRole('link', { name: /hardcover api settings/i });
+    expect(link).toHaveAttribute(
+      'href',
+      'https://hardcover.app/account/api/keys/new?scope=read:me:content+read:catalog+read:library+write:library'
+    );
+    expect(screen.getByText('read:me:content')).toBeInTheDocument();
+    expect(screen.getByText('read:catalog')).toBeInTheDocument();
+    expect(screen.getByText('read:library')).toBeInTheDocument();
+    expect(screen.getByText('write:library')).toBeInTheDocument();
+  });
+
+  test('shows Saving... and disables related actions while saving token', async () => {
+    let resolveSave;
+    const onSaveToken = vi.fn(() => new Promise((res) => { resolveSave = res; }));
+    renderSettings(
+      { hasHardcoverApiToken: true, hardcoverSyncEnabled: true },
+      { onSaveToken }
+    );
+
+    const input = screen.getByPlaceholderText('Token configured');
+    fireEvent.change(input, { target: { value: 'new-token' } });
+    fireEvent.click(screen.getByRole('button', { name: /save token/i }));
+
+    expect(screen.getByRole('button', { name: /saving\.\.\./i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /test connection/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /clear token/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /sync all books/i })).toBeDisabled();
+    expect(input).toBeDisabled();
+
+    resolveSave();
+    await waitFor(() => expect(screen.getByRole('button', { name: /save token/i })).toBeInTheDocument());
+    expect(input).toHaveValue('');
+  });
+
+  test('disables action buttons while clearing token or syncing', () => {
+    const { rerender } = render(
+      <HardcoverSettings
+        settings={{ ...baseSettings, hasHardcoverApiToken: true, hardcoverSyncEnabled: true }}
+        handleChange={vi.fn()}
+        testingHardcover={false}
+        clearingHardcoverToken={true}
+        hardcoverTestResult={null}
+        syncingHardcover={false}
+        hardcoverSyncMessage={null}
+        onTestConnection={vi.fn()}
+        onSaveToken={vi.fn()}
+        onClearToken={vi.fn()}
+        onSyncAll={vi.fn()}
+      />
+    );
+
+    expect(screen.getByRole('button', { name: /clearing\.\.\./i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /save token/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /test connection/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /sync all books/i })).toBeDisabled();
+
+    rerender(
+      <HardcoverSettings
+        settings={{ ...baseSettings, hasHardcoverApiToken: true, hardcoverSyncEnabled: true }}
+        handleChange={vi.fn()}
+        testingHardcover={false}
+        clearingHardcoverToken={false}
+        hardcoverTestResult={null}
+        syncingHardcover={true}
+        hardcoverSyncMessage={null}
+        onTestConnection={vi.fn()}
+        onSaveToken={vi.fn()}
+        onClearToken={vi.fn()}
+        onSyncAll={vi.fn()}
+      />
+    );
+
+    expect(screen.getByRole('button', { name: /syncing\.\.\./i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /clear token/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /test connection/i })).toBeDisabled();
+  });
+
+  test('shows Testing... and disables Test Connection and Sync All while testing', () => {
+    renderSettings(
+      { hasHardcoverApiToken: true, hardcoverSyncEnabled: true },
+      { testingHardcover: true }
+    );
+
+    expect(screen.getByRole('button', { name: /testing\.\.\./i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /sync all books/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /clear token/i })).not.toBeDisabled();
+  });
 });

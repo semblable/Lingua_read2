@@ -127,8 +127,61 @@ export class ApiError extends Error {
   }
 }
 
+const JSON_CONTENT_TYPE_REGEX = /application\/(.*\+)?json/i;
+
+const flattenValidationErrors = (errors: unknown): string | null => {
+  if (!errors) return null;
+  const messages: string[] = [];
+
+  if (Array.isArray(errors)) {
+    for (const item of errors) {
+      if (typeof item === 'string' && item.trim()) {
+        messages.push(item.trim());
+      }
+    }
+  } else if (typeof errors === 'object') {
+    for (const value of Object.values(errors as Record<string, unknown>)) {
+      if (typeof value === 'string' && value.trim()) {
+        messages.push(value.trim());
+      } else if (Array.isArray(value)) {
+        for (const item of value) {
+          if (typeof item === 'string' && item.trim()) {
+            messages.push(item.trim());
+          }
+        }
+      }
+    }
+  }
+
+  return messages.length > 0 ? messages.join(' ') : null;
+};
+
+const extractApiErrorMessage = (json: unknown, status: number): string => {
+  if (typeof json === 'string') {
+    const trimmed = json.trim();
+    if (trimmed) return trimmed;
+  } else if (json && typeof json === 'object') {
+    const obj = json as Record<string, unknown>;
+    if (typeof obj.message === 'string' && obj.message.trim()) {
+      return obj.message.trim();
+    }
+    if (typeof obj.detail === 'string' && obj.detail.trim()) {
+      return obj.detail.trim();
+    }
+    const validationMessage = flattenValidationErrors(obj.errors);
+    if (validationMessage) {
+      return validationMessage;
+    }
+    if (typeof obj.title === 'string' && obj.title.trim()) {
+      return obj.title.trim();
+    }
+  }
+
+  return `HTTP error! Status: ${status}`;
+};
+
 // Internal fetch helper. JSON-in, JSON-out by default, redirects to /login on 401.
-// Returns the parsed response body (object or `{ message }` for plain text).
+// Returns the parsed response body (object or `{ message }` for plain text, `undefined` for 204/205/empty).
 // Callers that need the raw Response use bare `fetch(API_URL + ...)` instead.
 export const fetchApi = async <T = unknown>(
   endpoint: string,
@@ -168,16 +221,42 @@ export const fetchApi = async <T = unknown>(
 
     if (!response.ok) {
       const contentType = response.headers.get('content-type');
-      let errorMessage: string;
+      const fallbackMessage = `HTTP error! Status: ${response.status}`;
+      let errorMessage = fallbackMessage;
       let errorData: unknown;
 
-      if (contentType && contentType.includes('application/json')) {
-        const json = await response.json();
-        errorData = json;
-        errorMessage = json?.message || `HTTP error! Status: ${response.status}`;
-      } else {
-        const text = await response.text();
-        errorMessage = text || `HTTP error! Status: ${response.status}`;
+      if (contentType && JSON_CONTENT_TYPE_REGEX.test(contentType)) {
+        if (typeof response.text === 'function') {
+          try {
+            const rawText = await response.text();
+            if (rawText.trim()) {
+              try {
+                const json: unknown = JSON.parse(rawText);
+                errorData = json;
+                errorMessage = extractApiErrorMessage(json, response.status);
+              } catch {
+                errorMessage = rawText.trim() || fallbackMessage;
+              }
+            }
+          } catch {
+            errorMessage = fallbackMessage;
+          }
+        } else if (typeof response.json === 'function') {
+          try {
+            const json: unknown = await response.json();
+            errorData = json;
+            errorMessage = extractApiErrorMessage(json, response.status);
+          } catch {
+            errorMessage = fallbackMessage;
+          }
+        }
+      } else if (typeof response.text === 'function') {
+        try {
+          const text = await response.text();
+          errorMessage = text.trim() || fallbackMessage;
+        } catch {
+          errorMessage = fallbackMessage;
+        }
       }
 
       console.error('[API Error] Request failed:', {
@@ -190,8 +269,16 @@ export const fetchApi = async <T = unknown>(
       throw new ApiError(errorMessage, response.status, errorData);
     }
 
+    if (
+      response.status === 204 ||
+      response.status === 205 ||
+      response.headers.get('content-length') === '0'
+    ) {
+      return undefined as T;
+    }
+
     const contentType = response.headers.get('content-type');
-    if (contentType && contentType.includes('application/json')) {
+    if (contentType && JSON_CONTENT_TYPE_REGEX.test(contentType)) {
       return (await response.json()) as T;
     }
     const text = await response.text();

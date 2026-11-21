@@ -1,16 +1,20 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react'; // Add useCallback, useMemo
+import React, { useState, useEffect, useCallback, useMemo, useContext, useRef } from 'react'; // Add useCallback, useMemo
 import { Container, Card, Button, Alert, Spinner, ListGroup, Badge, ProgressBar, Modal, Form } from 'react-bootstrap'; // Add Form
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { LinkContainer } from 'react-router-bootstrap';
 import type { Book } from '../utils/api/books';
 import type { HardcoverCandidate } from '../utils/api/hardcover';
+import { SettingsContext } from '../contexts/SettingsContext';
 
-// `isFinished` is on the BookDto/list shape, not BookDetailDto, but the
-// finish-book mutation overlays it locally — keep it optional for both.
+// `isFinished` is returned by the API on BookDetailDto; keep it optional here
+// until api-types.d.ts is regenerated from Swagger.
 type BookWithStatus = Book & { isFinished?: boolean };
 type EditingBookDraft = { bookId?: number; title?: string | null };
 type EditingTextDraft = { textId?: number; title?: string | null; content?: string | null; tag?: string };
 type HardcoverMessage = { type: string; text: string };
+type HardcoverModalIntent = 'match' | 'import' | 'sync';
+type HardcoverModalAction = { type: 'search' } | { type: 'apply'; bookId: number } | null;
+type FinishSubmitMode = 'with-rating' | 'without-rating' | null;
 import {
   getBook,
   finishBook,
@@ -21,6 +25,7 @@ import {
   deleteText,
   uploadAudiobookTracks,
   matchHardcoverBook,
+  unlinkHardcoverBook,
   importHardcoverMetadata,
   syncHardcoverProgress,
   previewReSplitBook,
@@ -41,12 +46,14 @@ const normalizeCoverUrl = (value: string | null | undefined): string | null => {
 
 const BookDetail = () => {
   const { bookId } = useParams();
+  const settingsContext = useContext(SettingsContext);
   const [book, setBook] = useState<BookWithStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const navigate = useNavigate();
   const location = useLocation();
   const [finishingBook, setFinishingBook] = useState(false);
+  const [submittingFinishMode, setSubmittingFinishMode] = useState<FinishSubmitMode>(null);
   const [showRatingModal, setShowRatingModal] = useState(false);
   const [pendingRating, setPendingRating] = useState<number | null>(null); // 0.5 .. 5.0 or null
   const [finishError, setFinishError] = useState('');
@@ -68,9 +75,17 @@ const BookDetail = () => {
 
   // Hardcover state
   const [hardcoverLoading, setHardcoverLoading] = useState(false);
+  const [hardcoverModalAction, setHardcoverModalAction] = useState<HardcoverModalAction>(null);
   const [hardcoverMessage, setHardcoverMessage] = useState<HardcoverMessage | null>(null);
+  const [hardcoverModalMessage, setHardcoverModalMessage] = useState<HardcoverMessage | null>(null);
   const [hardcoverCandidates, setHardcoverCandidates] = useState<HardcoverCandidate[]>([]);
   const [showHardcoverCandidates, setShowHardcoverCandidates] = useState(false);
+  const [hardcoverSearchQuery, setHardcoverSearchQuery] = useState('');
+  const [selectedHardcoverEditions, setSelectedHardcoverEditions] = useState<Record<number, number>>({});
+  const [hardcoverModalIntent, setHardcoverModalIntent] = useState<HardcoverModalIntent>('match');
+
+  const fetchBookRequestRef = useRef(0);
+  const hardcoverRequestRef = useRef(0);
 
   // Re-split state
   const [showReSplitModal, setShowReSplitModal] = useState(false);
@@ -91,23 +106,61 @@ const BookDetail = () => {
   const [reSplitError, setReSplitError] = useState('');
 
 
-  const fetchBook = useCallback(async () => { // Wrap in useCallback
+  const fetchBook = useCallback(async ({ silent = false }: { silent?: boolean } = {}) => { // Wrap in useCallback
     if (!bookId) return;
-    setLoading(true);
+    const requestId = ++fetchBookRequestRef.current;
+    if (!silent) {
+      setLoading(true);
+    }
     try {
       const data = await getBook(bookId);
+      if (requestId !== fetchBookRequestRef.current) return;
       setBook(data);
-      setError('');
+      if (!silent) {
+        setError('');
+      }
     } catch (err: unknown) {
-      setError((err as Error)?.message || 'Failed to load book details');
+      if (requestId !== fetchBookRequestRef.current) return;
+      if (!silent) {
+        setError((err as Error)?.message || 'Failed to load book details');
+      } else {
+        console.error('Failed to silently refresh book details:', err);
+      }
     } finally {
-      setLoading(false);
+      if (!silent && requestId === fetchBookRequestRef.current) {
+        setLoading(false);
+      }
     }
   }, [bookId]); // Add bookId as dependency
 
   useEffect(() => {
-    fetchBook();
+    void fetchBook();
+    return () => {
+      fetchBookRequestRef.current += 1;
+    };
   }, [fetchBook]); // Use fetchBook as dependency
+
+  useEffect(() => {
+    hardcoverRequestRef.current += 1;
+    setHardcoverLoading(false);
+    setHardcoverModalAction(null);
+    setHardcoverMessage(null);
+    setHardcoverModalMessage(null);
+    setHardcoverCandidates([]);
+    setShowHardcoverCandidates(false);
+    setHardcoverSearchQuery('');
+    setSelectedHardcoverEditions({});
+    setHardcoverModalIntent('match');
+    setShowRatingModal(false);
+    setPendingRating(null);
+    setFinishError('');
+    setSubmittingFinishMode(null);
+    setFinishingBook(false);
+
+    return () => {
+      hardcoverRequestRef.current += 1;
+    };
+  }, [bookId]);
 
   useEffect(() => {
     if (location.state?.audioUploadWarning) {
@@ -124,14 +177,30 @@ const BookDetail = () => {
   // Strict bookId narrowed for API call sites that require non-null
   const bookIdStr = bookId ?? '';
 
+  // SettingsContext defaults to `loadingSettings: true` only when rendered outside SettingsProvider
+  // (e.g. isolated unit tests). Once loaded from SettingsProvider, enforce token + sync toggles too.
+  const settingsLoaded = Boolean(settingsContext && !settingsContext.loadingSettings);
+  const hardcoverConfiguredInSettings = !settingsLoaded
+    || (Boolean(settingsContext.settings?.hasHardcoverApiToken) && Boolean(settingsContext.settings?.hardcoverSyncEnabled));
+  const isLinkedToHardcover = Boolean(book?.hardcoverBookId);
+  const canRateOnHardcover = isLinkedToHardcover && hardcoverConfiguredInSettings;
+
   const handleOpenFinishModal = () => {
     setPendingRating(null);
     setFinishError('');
+    setSubmittingFinishMode(null);
     setShowRatingModal(true);
   };
 
-  const submitFinishBook = async (rating: number | null) => {
+  const handleCloseRatingModal = () => {
+    if (finishingBook) return;
+    setShowRatingModal(false);
+    setFinishError('');
+  };
+
+  const submitFinishBook = async (rating: number | null, mode: 'with-rating' | 'without-rating') => {
     setFinishingBook(true);
+    setSubmittingFinishMode(mode);
     setFinishError('');
     try {
       await finishBook(bookIdStr, rating);
@@ -143,6 +212,7 @@ const BookDetail = () => {
       setFinishError((err as Error)?.message || 'Failed to mark book as finished.');
     } finally {
       setFinishingBook(false);
+      setSubmittingFinishMode(null);
     }
   };
 
@@ -310,78 +380,292 @@ const BookDetail = () => {
   };
   // --- End Audiobook Upload Handlers ---
 
+  const getActiveEditionId = (candidate: HardcoverCandidate): number | undefined => {
+    const editions = candidate.editions ?? [];
+    const selected = candidate.bookId != null ? selectedHardcoverEditions[candidate.bookId] : undefined;
+    if (selected != null) {
+      return selected;
+    }
+    if (
+      candidate.bookId != null &&
+      candidate.bookId === book?.hardcoverBookId &&
+      book.hardcoverEditionId != null &&
+      editions.some(e => e.editionId === book.hardcoverEditionId)
+    ) {
+      return book.hardcoverEditionId;
+    }
+    return candidate.editionId ?? editions[0]?.editionId ?? undefined;
+  };
+
+  const handleCloseHardcoverModal = () => {
+    if (hardcoverLoading) return;
+    hardcoverRequestRef.current += 1;
+    setShowHardcoverCandidates(false);
+    setHardcoverModalMessage(null);
+    setHardcoverModalAction(null);
+  };
+
   const handleHardcoverMatch = async () => {
+    const requestId = ++hardcoverRequestRef.current;
     setHardcoverLoading(true);
     setHardcoverMessage(null);
+    setHardcoverModalMessage(null);
     try {
       const result = await matchHardcoverBook(bookIdStr);
+      if (requestId !== hardcoverRequestRef.current) return;
       if (result.applied) {
         setHardcoverMessage({ type: 'success', text: result.message || 'Matched Hardcover book.' });
-        await fetchBook();
+        await fetchBook({ silent: true });
       } else {
+        setHardcoverModalIntent('match');
+        setHardcoverSearchQuery(book?.title ?? '');
+        setSelectedHardcoverEditions({});
         setHardcoverCandidates(result.candidates || []);
+        setHardcoverModalMessage({ type: 'warning', text: result.message || 'Review Hardcover candidates.' });
         setShowHardcoverCandidates(true);
-        setHardcoverMessage({ type: 'warning', text: result.message || 'Review Hardcover candidates.' });
       }
     } catch (err: unknown) {
+      if (requestId !== hardcoverRequestRef.current) return;
       setHardcoverMessage({ type: 'danger', text: (err as Error)?.message || 'Hardcover match failed.' });
     } finally {
-      setHardcoverLoading(false);
+      if (requestId === hardcoverRequestRef.current) {
+        setHardcoverLoading(false);
+      }
+    }
+  };
+
+  const handleHardcoverSearch = async (event?: React.FormEvent) => {
+    event?.preventDefault();
+    const trimmed = hardcoverSearchQuery.trim();
+    if (!trimmed || hardcoverLoading) return;
+    const requestId = ++hardcoverRequestRef.current;
+    setHardcoverLoading(true);
+    setHardcoverModalAction({ type: 'search' });
+    setHardcoverModalMessage(null);
+    try {
+      const result = await matchHardcoverBook(bookIdStr, { query: trimmed });
+      if (requestId !== hardcoverRequestRef.current) return;
+      const candidates = result.candidates || [];
+      setHardcoverCandidates(candidates);
+      setSelectedHardcoverEditions({});
+      setShowHardcoverCandidates(true);
+      if (!candidates.length) {
+        setHardcoverModalMessage({ type: 'warning', text: result.message || 'No Hardcover candidates found.' });
+      }
+    } catch (err: unknown) {
+      if (requestId !== hardcoverRequestRef.current) return;
+      setHardcoverCandidates([]);
+      setSelectedHardcoverEditions({});
+      setHardcoverModalMessage({ type: 'danger', text: (err as Error)?.message || 'Hardcover search failed.' });
+    } finally {
+      if (requestId === hardcoverRequestRef.current) {
+        setHardcoverLoading(false);
+        setHardcoverModalAction(null);
+      }
     }
   };
 
   const handleHardcoverImport = async () => {
+    const requestId = ++hardcoverRequestRef.current;
     setHardcoverLoading(true);
     setHardcoverMessage(null);
+    setHardcoverModalMessage(null);
     try {
       const result = await importHardcoverMetadata(bookIdStr);
+      if (requestId !== hardcoverRequestRef.current) return;
       if (result.success) {
         setHardcoverMessage({ type: 'success', text: result.message || 'Imported Hardcover metadata.' });
-        await fetchBook();
+        await fetchBook({ silent: true });
       } else {
+        setHardcoverModalIntent('import');
+        setHardcoverSearchQuery(book?.title ?? '');
+        setSelectedHardcoverEditions({});
         setHardcoverCandidates(result.candidates || []);
+        setHardcoverModalMessage({ type: 'warning', text: result.message || 'Review Hardcover candidates.' });
         setShowHardcoverCandidates(true);
-        setHardcoverMessage({ type: 'warning', text: result.message || 'Review Hardcover candidates.' });
       }
     } catch (err: unknown) {
+      if (requestId !== hardcoverRequestRef.current) return;
       setHardcoverMessage({ type: 'danger', text: (err as Error)?.message || 'Hardcover metadata import failed.' });
     } finally {
-      setHardcoverLoading(false);
+      if (requestId === hardcoverRequestRef.current) {
+        setHardcoverLoading(false);
+      }
     }
   };
 
   const handleHardcoverSync = async () => {
+    const requestId = ++hardcoverRequestRef.current;
     setHardcoverLoading(true);
     setHardcoverMessage(null);
+    setHardcoverModalMessage(null);
     try {
       const result = await syncHardcoverProgress(bookIdStr);
+      if (requestId !== hardcoverRequestRef.current) return;
+
+      if (!book?.hardcoverBookId && result.skipped && hardcoverConfiguredInSettings) {
+        try {
+          const matchResult = await matchHardcoverBook(bookIdStr);
+          if (requestId !== hardcoverRequestRef.current) return;
+          if (matchResult.applied) {
+            const retrySync = await syncHardcoverProgress(bookIdStr);
+            if (requestId !== hardcoverRequestRef.current) return;
+            setHardcoverMessage({
+              type: retrySync.success ? 'success' : 'warning',
+              text: retrySync.message || 'Hardcover progress sync completed.'
+            });
+            await fetchBook({ silent: true });
+            return;
+          }
+          setHardcoverModalIntent('sync');
+          setHardcoverSearchQuery(book?.title ?? '');
+          setSelectedHardcoverEditions({});
+          setHardcoverCandidates(matchResult.candidates || []);
+          setHardcoverModalMessage({
+            type: 'warning',
+            text: result.message || matchResult.message || 'Select a Hardcover match to sync progress.'
+          });
+          setShowHardcoverCandidates(true);
+          return;
+        } catch {
+          if (requestId !== hardcoverRequestRef.current) return;
+          // Fall back to showing the skipped warning if candidate lookup fails.
+        }
+      }
+
       setHardcoverMessage({
         type: result.success ? 'success' : 'warning',
         text: result.message || 'Hardcover progress sync completed.'
       });
-      await fetchBook();
+      await fetchBook({ silent: true });
     } catch (err: unknown) {
+      if (requestId !== hardcoverRequestRef.current) return;
       setHardcoverMessage({ type: 'danger', text: (err as Error)?.message || 'Hardcover progress sync failed.' });
     } finally {
-      setHardcoverLoading(false);
+      if (requestId === hardcoverRequestRef.current) {
+        setHardcoverLoading(false);
+      }
+    }
+  };
+
+  const handleHardcoverUnlink = async () => {
+    if (!window.confirm(
+      `Unlink "${book?.title || 'this book'}" from Hardcover? Your local book metadata and reading progress will be preserved.`
+    )) {
+      return;
+    }
+    const requestId = ++hardcoverRequestRef.current;
+    setHardcoverLoading(true);
+    setHardcoverMessage(null);
+    try {
+      await unlinkHardcoverBook(bookIdStr);
+      if (requestId !== hardcoverRequestRef.current) return;
+      setShowHardcoverCandidates(false);
+      setHardcoverCandidates([]);
+      setSelectedHardcoverEditions({});
+      setHardcoverModalMessage(null);
+      setHardcoverMessage({ type: 'success', text: 'Unlinked Hardcover book.' });
+      await fetchBook({ silent: true });
+    } catch (err: unknown) {
+      if (requestId !== hardcoverRequestRef.current) return;
+      setHardcoverMessage({ type: 'danger', text: (err as Error)?.message || 'Failed to unlink Hardcover book.' });
+    } finally {
+      if (requestId === hardcoverRequestRef.current) {
+        setHardcoverLoading(false);
+      }
     }
   };
 
   const handleApplyHardcoverCandidate = async (candidate: HardcoverCandidate) => {
+    if (candidate.bookId == null) return;
+    const requestId = ++hardcoverRequestRef.current;
+    const activeEditionId = getActiveEditionId(candidate);
     setHardcoverLoading(true);
-    setHardcoverMessage(null);
+    setHardcoverModalAction({ type: 'apply', bookId: candidate.bookId });
+    setHardcoverModalMessage(null);
     try {
-      const result = await matchHardcoverBook(bookIdStr, candidate.bookId ?? null);
+      const result = await matchHardcoverBook(bookIdStr, {
+        hardcoverBookId: candidate.bookId,
+        ...(activeEditionId != null ? { hardcoverEditionId: activeEditionId } : {})
+      });
+      if (requestId !== hardcoverRequestRef.current) return;
+
+      if (!result.applied) {
+        setHardcoverModalMessage({
+          type: 'warning',
+          text: result.message || 'Could not apply Hardcover match.'
+        });
+        return;
+      }
+
+      if (hardcoverModalIntent === 'import') {
+        try {
+          const importResult = await importHardcoverMetadata(bookIdStr);
+          if (requestId !== hardcoverRequestRef.current) return;
+          setShowHardcoverCandidates(false);
+          setHardcoverModalMessage(null);
+          setHardcoverModalIntent('match');
+          setHardcoverMessage({
+            type: importResult.success ? 'success' : 'warning',
+            text: importResult.message || (importResult.success
+              ? 'Imported Hardcover metadata.'
+              : 'Matched Hardcover book, but metadata import did not complete.')
+          });
+        } catch (importErr: unknown) {
+          if (requestId !== hardcoverRequestRef.current) return;
+          setShowHardcoverCandidates(false);
+          setHardcoverModalMessage(null);
+          setHardcoverModalIntent('match');
+          setHardcoverMessage({
+            type: 'warning',
+            text: `Matched Hardcover book, but metadata import failed: ${(importErr as Error)?.message || 'Unknown error.'}`
+          });
+        }
+        await fetchBook({ silent: true });
+        return;
+      }
+
+      if (hardcoverModalIntent === 'sync') {
+        try {
+          const syncResult = await syncHardcoverProgress(bookIdStr);
+          if (requestId !== hardcoverRequestRef.current) return;
+          setShowHardcoverCandidates(false);
+          setHardcoverModalMessage(null);
+          setHardcoverModalIntent('match');
+          setHardcoverMessage({
+            type: syncResult.success ? 'success' : 'warning',
+            text: syncResult.message || 'Synced progress to Hardcover.'
+          });
+        } catch (syncErr: unknown) {
+          if (requestId !== hardcoverRequestRef.current) return;
+          setShowHardcoverCandidates(false);
+          setHardcoverModalMessage(null);
+          setHardcoverModalIntent('match');
+          setHardcoverMessage({
+            type: 'warning',
+            text: `Matched Hardcover book, but progress sync failed: ${(syncErr as Error)?.message || 'Unknown error.'}`
+          });
+        }
+        await fetchBook({ silent: true });
+        return;
+      }
+
       setShowHardcoverCandidates(false);
+      setHardcoverModalMessage(null);
+      setHardcoverModalIntent('match');
       setHardcoverMessage({
-        type: result.applied ? 'success' : 'warning',
+        type: 'success',
         text: result.message || 'Hardcover candidate applied.'
       });
-      await fetchBook();
+      await fetchBook({ silent: true });
     } catch (err: unknown) {
-      setHardcoverMessage({ type: 'danger', text: (err as Error)?.message || 'Failed to apply Hardcover candidate.' });
+      if (requestId !== hardcoverRequestRef.current) return;
+      setHardcoverModalMessage({ type: 'danger', text: (err as Error)?.message || 'Failed to apply Hardcover candidate.' });
     } finally {
-      setHardcoverLoading(false);
+      if (requestId === hardcoverRequestRef.current) {
+        setHardcoverLoading(false);
+        setHardcoverModalAction(null);
+      }
     }
   };
 
@@ -553,18 +837,15 @@ const BookDetail = () => {
             {book.hardcoverBookId ? (
               <div className="text-muted small">
                 Linked to Hardcover book #{book.hardcoverBookId}
-                {book.hardcoverSlug && (
-                  <>
-                    {' | '}
-                    <a
-                      href={`https://hardcover.app/books/${book.hardcoverSlug}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      View on Hardcover
-                    </a>
-                  </>
-                )}
+                {book.hardcoverEditionId != null && <> (edition #{book.hardcoverEditionId})</>}
+                {' | '}
+                <a
+                  href={`https://hardcover.app/id/book/${book.hardcoverBookId}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  View on Hardcover
+                </a>
                 {book.hardcoverLastSyncedAt && <> | Last synced: {formatDate(book.hardcoverLastSyncedAt)}</>}
               </div>
             ) : (
@@ -609,6 +890,16 @@ const BookDetail = () => {
             >
               Sync Progress
             </Button>
+            {book.hardcoverBookId && (
+              <Button
+                variant="outline-danger"
+                size="sm"
+                onClick={handleHardcoverUnlink}
+                disabled={hardcoverLoading}
+              >
+                Unlink
+              </Button>
+            )}
             {hardcoverLoading && <Spinner animation="border" size="sm" />}
           </div>
         </Card.Body>
@@ -726,8 +1017,9 @@ const BookDetail = () => {
       {/* Finish Book / Rating Modal */}
       <Modal
         show={showRatingModal}
-        onHide={() => { if (!finishingBook) { setShowRatingModal(false); setFinishError(''); } }}
+        onHide={handleCloseRatingModal}
         backdrop={finishingBook ? 'static' : true}
+        keyboard={!finishingBook}
       >
         <Modal.Header closeButton={!finishingBook}>
           <Modal.Title>Finish book</Modal.Title>
@@ -736,16 +1028,26 @@ const BookDetail = () => {
           <p>
             Mark <strong>{book.title}</strong> as completed?
           </p>
-          {book.hardcoverBookId && (
-            <p className="text-muted small mb-2">
-              Optionally rate it on Hardcover. Half-star ratings are supported.
+          {canRateOnHardcover ? (
+            <>
+              <p className="text-muted small mb-2">
+                Optionally rate it on Hardcover. Half-star ratings are supported.
+              </p>
+              <StarRatingPicker
+                value={pendingRating}
+                onChange={setPendingRating}
+                disabled={finishingBook}
+              />
+            </>
+          ) : (
+            <p className="text-muted small mb-0">
+              {!isLinkedToHardcover
+                ? 'Ratings sync to Hardcover when this book is linked and are not stored locally.'
+                : !settingsContext.settings?.hasHardcoverApiToken
+                  ? 'Ratings sync to Hardcover and are not stored locally. Add a Hardcover API token in Settings to rate books.'
+                  : 'Ratings sync to Hardcover and are not stored locally. Enable Hardcover sync in Settings to rate books.'}
             </p>
           )}
-          <StarRatingPicker
-            value={pendingRating}
-            onChange={setPendingRating}
-            disabled={finishingBook}
-          />
           {finishError && (
             <Alert variant="danger" className="mt-3 mb-0">
               {finishError}
@@ -755,60 +1057,158 @@ const BookDetail = () => {
         <Modal.Footer>
           <Button
             variant="outline-secondary"
-            onClick={() => setShowRatingModal(false)}
+            onClick={handleCloseRatingModal}
             disabled={finishingBook}
           >
             Cancel
           </Button>
-          <Button
-            variant="outline-success"
-            onClick={() => submitFinishBook(null)}
-            disabled={finishingBook}
-          >
-            {finishingBook && pendingRating == null ? <Spinner size="sm" animation="border" className="me-2" /> : null}
-            Finish without rating
-          </Button>
-          <Button
-            variant="success"
-            onClick={() => submitFinishBook(pendingRating)}
-            disabled={finishingBook || pendingRating == null}
-          >
-            {finishingBook && pendingRating != null ? <Spinner size="sm" animation="border" className="me-2" /> : null}
-            Finish with rating
-          </Button>
+          {canRateOnHardcover ? (
+            <>
+              <Button
+                variant="outline-success"
+                onClick={() => submitFinishBook(null, 'without-rating')}
+                disabled={finishingBook}
+              >
+                {submittingFinishMode === 'without-rating' ? <Spinner size="sm" animation="border" className="me-2" /> : null}
+                Finish without rating
+              </Button>
+              <Button
+                variant="success"
+                onClick={() => submitFinishBook(pendingRating, 'with-rating')}
+                disabled={finishingBook || pendingRating == null}
+              >
+                {submittingFinishMode === 'with-rating' ? <Spinner size="sm" animation="border" className="me-2" /> : null}
+                Finish with rating
+              </Button>
+            </>
+          ) : (
+            <Button
+              variant="success"
+              onClick={() => submitFinishBook(null, 'without-rating')}
+              disabled={finishingBook}
+            >
+              {submittingFinishMode === 'without-rating' ? <Spinner size="sm" animation="border" className="me-2" /> : null}
+              Finish book
+            </Button>
+          )}
         </Modal.Footer>
       </Modal>
 
-      <Modal show={showHardcoverCandidates} onHide={() => setShowHardcoverCandidates(false)} size="lg">
-        <Modal.Header closeButton>
+      <Modal
+        show={showHardcoverCandidates}
+        onHide={handleCloseHardcoverModal}
+        backdrop={hardcoverLoading ? 'static' : true}
+        keyboard={!hardcoverLoading}
+        size="lg"
+      >
+        <Modal.Header closeButton={!hardcoverLoading}>
           <Modal.Title>Review Hardcover Matches</Modal.Title>
         </Modal.Header>
         <Modal.Body>
+          <Form onSubmit={handleHardcoverSearch} className="mb-3">
+            <div className="d-flex gap-2">
+              <Form.Control
+                type="text"
+                aria-label="Search Hardcover"
+                placeholder="Search by title, author, ISBN-13, or Hardcover URL / ID"
+                value={hardcoverSearchQuery}
+                onChange={(e) => setHardcoverSearchQuery(e.target.value)}
+                disabled={hardcoverLoading}
+              />
+              <Button
+                type="submit"
+                variant="outline-primary"
+                disabled={hardcoverLoading || !hardcoverSearchQuery.trim()}
+              >
+                {hardcoverModalAction?.type === 'search' && (
+                  <Spinner size="sm" animation="border" className="me-1" />
+                )}
+                Search
+              </Button>
+            </div>
+          </Form>
+          {hardcoverModalMessage && (
+            <Alert variant={hardcoverModalMessage.type} className="mb-3">
+              {hardcoverModalMessage.text}
+            </Alert>
+          )}
           {hardcoverCandidates.length === 0 ? (
-            <Alert variant="info">No candidates were returned by Hardcover.</Alert>
+            !hardcoverLoading && !hardcoverModalMessage && (
+              <Alert variant="info">No candidates were returned by Hardcover.</Alert>
+            )
           ) : (
             <ListGroup>
-              {hardcoverCandidates.map(candidate => (
-                <ListGroup.Item key={candidate.bookId} className="d-flex justify-content-between align-items-start gap-3">
-                  <div>
-                    <h6 className="mb-1">{candidate.title}</h6>
-                    <div className="text-muted small">
-                      {candidate.author && <>Author: {candidate.author} </>}
-                      {candidate.pages && <>| Pages: {candidate.pages} </>}
-                      {candidate.isbn13 && <>| ISBN-13: {candidate.isbn13} </>}
-                      | Confidence: {Math.round((candidate.score || 0) * 100)}%
+              {hardcoverCandidates.map(candidate => {
+                const editions = candidate.editions ?? [];
+                const activeEditionId = getActiveEditionId(candidate);
+                const activeEdition = editions.find(e => e.editionId === activeEditionId);
+                const displayPages = activeEdition?.pages ?? candidate.pages;
+                const displayIsbn = activeEdition?.isbn13 ?? candidate.isbn13;
+                const isCurrentMatch = candidate.bookId != null && candidate.bookId === book.hardcoverBookId;
+                const isApplyingCandidate =
+                  hardcoverModalAction?.type === 'apply' && hardcoverModalAction.bookId === candidate.bookId;
+
+                return (
+                  <ListGroup.Item key={candidate.bookId} className="d-flex justify-content-between align-items-start gap-3">
+                    <div className="flex-grow-1">
+                      <h6 className="mb-1 d-flex align-items-center gap-2 flex-wrap">
+                        <span>{candidate.title}</span>
+                        {isCurrentMatch && (
+                          <Badge bg="secondary" pill>Current match</Badge>
+                        )}
+                      </h6>
+                      <div className="text-muted small">
+                        {candidate.author && <>Author: {candidate.author} </>}
+                        {activeEdition?.language && <>| Language: {activeEdition.language} </>}
+                        {activeEdition?.format && <>| Format: {activeEdition.format} </>}
+                        {displayPages && <>| Pages: {displayPages} </>}
+                        {displayIsbn && <>| ISBN-13: {displayIsbn} </>}
+                        | Confidence: {Math.round((candidate.score || 0) * 100)}%
+                      </div>
+                      {editions.length > 1 && candidate.bookId != null && (
+                        <Form.Select
+                          size="sm"
+                          aria-label={`Edition for ${candidate.title}`}
+                          className="mt-2"
+                          value={activeEditionId ?? ''}
+                          onChange={(e) => {
+                            const rawValue = e.target.value;
+                            if (rawValue === '') return;
+                            const nextId = Number(rawValue);
+                            if (Number.isInteger(nextId) && nextId > 0 && candidate.bookId != null) {
+                              setSelectedHardcoverEditions(prev => ({ ...prev, [candidate.bookId!]: nextId }));
+                            }
+                          }}
+                          disabled={hardcoverLoading}
+                        >
+                          {editions.map(ed => (
+                            <option key={ed.editionId} value={ed.editionId}>
+                              {[
+                                ed.language || ed.languageCode || 'Unknown language',
+                                ed.format || 'Edition',
+                                ed.pages ? `${ed.pages}p` : null,
+                                ed.publisher,
+                                ed.isbn13
+                              ].filter(Boolean).join(' · ')}
+                            </option>
+                          ))}
+                        </Form.Select>
+                      )}
                     </div>
-                  </div>
-                  <Button
-                    size="sm"
-                    variant="primary"
-                    onClick={() => handleApplyHardcoverCandidate(candidate)}
-                    disabled={hardcoverLoading}
-                  >
-                    Use This Match
-                  </Button>
-                </ListGroup.Item>
-              ))}
+                    <Button
+                      size="sm"
+                      variant="primary"
+                      onClick={() => handleApplyHardcoverCandidate(candidate)}
+                      disabled={hardcoverLoading || candidate.bookId == null}
+                    >
+                      {isApplyingCandidate && (
+                        <Spinner size="sm" animation="border" className="me-1" />
+                      )}
+                      Use This Match
+                    </Button>
+                  </ListGroup.Item>
+                );
+              })}
             </ListGroup>
           )}
         </Modal.Body>

@@ -201,4 +201,53 @@ public class BookAssetStorageTests : IDisposable
 
         Assert.Equal("epub_assets/11111111-1111-1111-1111-111111111111/news/42.webp", BookAssetStorage.NewsImageUrl(userId, 42, ".webp"));
     }
+
+    [Fact]
+    public void DeleteCoverImages_MatchesExactStem_SkipsExceptFilePath_AndLeavesMultiDotAndOtherBookFiles()
+    {
+        var userId = Guid.NewGuid();
+        var coverDir = Path.Combine(_webRoot, "hardcover-covers", userId.ToString("N"));
+        Directory.CreateDirectory(coverDir);
+
+        var oldJpg = Path.Combine(coverDir, "42.jpg");
+        var keepPng = Path.Combine(coverDir, "42.png");
+        var oldWebp = Path.Combine(coverDir, "42.webp");
+        var multiDotTemp = Path.Combine(coverDir, "42.temp123.tmp");
+        var multiDotBackup = Path.Combine(coverDir, "42.backup.jpg");
+        var otherBook = Path.Combine(coverDir, "420.jpg");
+
+        foreach (var path in new[] { oldJpg, keepPng, oldWebp, multiDotTemp, multiDotBackup, otherBook })
+        {
+            File.WriteAllText(path, "img");
+        }
+
+        BookAssetStorage.DeleteCoverImages(_webRoot, userId, 42, exceptFilePath: keepPng);
+
+        Assert.False(File.Exists(oldJpg));
+        Assert.False(File.Exists(oldWebp));
+        Assert.True(File.Exists(keepPng));
+        Assert.True(File.Exists(multiDotTemp));
+        Assert.True(File.Exists(multiDotBackup));
+        Assert.True(File.Exists(otherBook));
+    }
+
+    [Fact]
+    public void DeleteCoverImages_ContinuesDeletingRemainingExtensions_WhenOneFileCannotBeDeleted()
+    {
+        var userId = Guid.NewGuid();
+        var coverDir = Path.Combine(_webRoot, "hardcover-covers", userId.ToString("N"));
+        Directory.CreateDirectory(coverDir);
+
+        var lockedJpg = Path.Combine(coverDir, "7.jpg");
+        var removableWebp = Path.Combine(coverDir, "7.webp");
+        File.WriteAllText(lockedJpg, "jpg");
+        File.WriteAllText(removableWebp, "webp");
+
+        using (new FileStream(lockedJpg, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+        {
+            BookAssetStorage.DeleteCoverImages(_webRoot, userId, 7);
+        }
+
+        Assert.False(File.Exists(removableWebp));
+    }
 }

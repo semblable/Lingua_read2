@@ -151,21 +151,50 @@ namespace LinguaReadApi.Utilities
             }
         }
 
-        private static void DeleteCoverImages(string webRoot, Guid userId, int bookId, ILogger? logger)
+        internal static void DeleteCoverImages(
+            string webRoot,
+            Guid userId,
+            int bookId,
+            ILogger? logger = null,
+            string? exceptFilePath = null)
         {
             var coverDirectory = Path.Combine(webRoot, "hardcover-covers", userId.ToString("N"));
+            List<string> files;
             try
             {
                 if (!Directory.Exists(coverDirectory)) return;
 
-                foreach (var file in Directory.EnumerateFiles(coverDirectory, $"{bookId}.*"))
-                {
-                    File.Delete(file);
-                }
+                var expectedStem = bookId.ToString(CultureInfo.InvariantCulture);
+                var normalizedExceptPath = string.IsNullOrWhiteSpace(exceptFilePath)
+                    ? null
+                    : Path.GetFullPath(exceptFilePath);
+                var pathComparison = OperatingSystem.IsWindows()
+                    ? StringComparison.OrdinalIgnoreCase
+                    : StringComparison.Ordinal;
+
+                files = Directory.EnumerateFiles(coverDirectory, $"{expectedStem}.*")
+                    .Where(file =>
+                        string.Equals(Path.GetFileNameWithoutExtension(file), expectedStem, StringComparison.OrdinalIgnoreCase) &&
+                        (normalizedExceptPath == null ||
+                         !string.Equals(Path.GetFullPath(file), normalizedExceptPath, pathComparison)))
+                    .ToList();
             }
             catch (Exception ex)
             {
-                logger?.LogWarning(ex, "Failed to delete Hardcover cover for book {BookId} in {Path}", bookId, coverDirectory);
+                logger?.LogWarning(ex, "Failed to list Hardcover covers for book {BookId} in {Path}", bookId, coverDirectory);
+                return;
+            }
+
+            foreach (var file in files)
+            {
+                try
+                {
+                    File.Delete(file);
+                }
+                catch (Exception ex)
+                {
+                    logger?.LogWarning(ex, "Failed to delete Hardcover cover {FilePath} for book {BookId}", file, bookId);
+                }
             }
         }
     }

@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using Xunit;
 
@@ -45,6 +46,38 @@ public class ExternalWritesWiringTests : IClassFixture<WebApplicationFactory<Pro
         using var scope = CreateApp(disabled: null).Services.CreateScope();
 
         Assert.False(scope.ServiceProvider.GetRequiredService<IOptions<ExternalWritesOptions>>().Value.Disabled);
+    }
+
+    [Fact]
+    public void HardcoverServicesAndClients_AreRegisteredWithExpectedLifetimesAndOptions()
+    {
+        var app = CreateApp(disabled: null);
+        using var scope1 = app.Services.CreateScope();
+        using var scope2 = app.Services.CreateScope();
+
+        var limiter1 = scope1.ServiceProvider.GetRequiredService<HardcoverRateLimiter>();
+        var limiter2 = scope2.ServiceProvider.GetRequiredService<HardcoverRateLimiter>();
+        Assert.Same(limiter1, limiter2);
+
+        var channel1 = scope1.ServiceProvider.GetRequiredService<HardcoverSyncChannel>();
+        var channel2 = scope2.ServiceProvider.GetRequiredService<HardcoverSyncChannel>();
+        Assert.Same(channel1, channel2);
+
+        var lock1 = scope1.ServiceProvider.GetRequiredService<HardcoverOperationLock>();
+        var lock2 = scope2.ServiceProvider.GetRequiredService<HardcoverOperationLock>();
+        Assert.Same(lock1, lock2);
+
+        var httpClientFactory = scope1.ServiceProvider.GetRequiredService<IHttpClientFactory>();
+        using var apiClient = httpClientFactory.CreateClient(HardcoverService.ApiClientName);
+        Assert.Equal(new Uri("https://api.hardcover.app/"), apiClient.BaseAddress);
+        Assert.Equal(TimeSpan.FromSeconds(30), apiClient.Timeout);
+        Assert.Contains("LinguaRead/1.0", apiClient.DefaultRequestHeaders.UserAgent.ToString());
+
+        using var coverClient = httpClientFactory.CreateClient("HardcoverCover");
+        Assert.Equal(TimeSpan.FromSeconds(20), coverClient.Timeout);
+
+        var hostedServices = scope1.ServiceProvider.GetServices<IHostedService>().ToList();
+        Assert.DoesNotContain(hostedServices, s => s is HardcoverSyncBackgroundService);
     }
 
     private WebApplicationFactory<Program> CreateApp(bool? disabled) =>

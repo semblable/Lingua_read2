@@ -12,7 +12,9 @@ import {
   getAiProviders,
   testAiProvider,
   getAiProviderModels,
-  getNewsFeeds
+  getNewsFeeds,
+  getHardcoverStatus,
+  syncAllHardcover
 } from '../utils/api';
 
 vi.mock('../utils/api', () => ({
@@ -174,6 +176,8 @@ describe('UserSettings', () => {
     updateUserSettings.mockImplementation(echoSave);
     getAiProviders.mockResolvedValue(catalog);
     getNewsFeeds.mockResolvedValue([]);
+    getHardcoverStatus.mockResolvedValue({ configured: false, connected: false, message: 'Not configured' });
+    syncAllHardcover.mockResolvedValue({ results: [], message: 'Synced 0 of 0 books.' });
   });
 
   afterEach(() => {
@@ -784,5 +788,225 @@ describe('UserSettings', () => {
     expect(
       screen.queryByText(/Failed to load settings\. Please try again later\./)
     ).not.toBeInTheDocument();
+  });
+
+  // --- Hardcover ---
+
+  test('saving Hardcover token clears password input immediately, shows Testing... during status check, and displays result', async () => {
+    const statusCheck = deferred();
+    updateUserSettings.mockResolvedValueOnce({
+      ...mockSettings,
+      hasHardcoverApiToken: true
+    });
+    getHardcoverStatus.mockImplementationOnce(() => statusCheck.promise);
+
+    await renderLoaded();
+
+    const tokenInput = document.querySelector('#hardcoverApiToken');
+    const hcSection = sectionOf(tokenInput);
+    fireEvent.change(tokenInput, { target: { value: '  hc-secret-token  ' } });
+    fireEvent.click(hcSection.getByRole('button', { name: /save token/i }));
+
+    await waitFor(() =>
+      expect(updateUserSettings).toHaveBeenCalledWith({ hardcoverApiToken: 'hc-secret-token' })
+    );
+    // Input clears right after save completes, while getHardcoverStatus is still in flight.
+    await waitFor(() => expect(tokenInput).toHaveValue(''));
+    expect(hcSection.getByText('Hardcover token saved.')).toBeInTheDocument();
+    expect(hcSection.getByRole('button', { name: /testing\.\.\./i })).toBeDisabled();
+    expect(updateSetting).toHaveBeenCalledWith('hasHardcoverApiToken', true);
+
+    await act(async () => {
+      statusCheck.resolve({
+        configured: true,
+        connected: true,
+        username: 'hardcover-reader',
+        message: 'Connected to Hardcover.'
+      });
+    });
+
+    expect(await hcSection.findByText('Connected to Hardcover.')).toBeInTheDocument();
+    expect(hcSection.getByText('Connected as hardcover-reader')).toBeInTheDocument();
+    expect(hcSection.getByRole('button', { name: /test connection/i })).not.toBeDisabled();
+  });
+
+  test('Clear Token asks for confirmation and invalidates an in-flight status test', async () => {
+    const statusCheck = deferred();
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true);
+    getUserSettings.mockResolvedValue({
+      ...mockSettings,
+      hasHardcoverApiToken: true,
+      hardcoverSyncEnabled: true
+    });
+    getHardcoverStatus.mockImplementationOnce(() => statusCheck.promise);
+    updateUserSettings.mockResolvedValueOnce({
+      ...mockSettings,
+      hasHardcoverApiToken: false,
+      hardcoverSyncEnabled: false,
+      hardcoverLastSyncAt: null
+    });
+
+    try {
+      await renderLoaded();
+      const tokenInput = document.querySelector('#hardcoverApiToken');
+      const hcSection = sectionOf(tokenInput);
+
+      // Start an in-flight connection test
+      fireEvent.click(hcSection.getByRole('button', { name: /test connection/i }));
+      expect(hcSection.getByRole('button', { name: /testing\.\.\./i })).toBeDisabled();
+
+      // Cancelling confirm does not clear the token
+      fireEvent.click(hcSection.getByRole('button', { name: /clear token/i }));
+      expect(updateUserSettings).not.toHaveBeenCalled();
+
+      // Confirming Clear Token while status test is still pending clears the token
+      fireEvent.click(hcSection.getByRole('button', { name: /clear token/i }));
+      await waitFor(() =>
+        expect(updateUserSettings).toHaveBeenCalledWith({ clearHardcoverApiToken: true })
+      );
+      expect(await hcSection.findByText('Hardcover token cleared.')).toBeInTheDocument();
+      expect(updateSetting).toHaveBeenCalledWith('hasHardcoverApiToken', false);
+      expect(updateSetting).toHaveBeenCalledWith('hardcoverSyncEnabled', false);
+      expect(updateSetting).toHaveBeenCalledWith('hardcoverLastSyncAt', null);
+
+      // Now resolve the stale in-flight status check — it must be ignored!
+      await act(async () => {
+        statusCheck.resolve({
+          configured: true,
+          connected: true,
+          username: 'stale-user',
+          message: 'Stale connection result'
+        });
+      });
+
+      expect(hcSection.queryByText('Stale connection result')).not.toBeInTheDocument();
+      expect(hcSection.queryByText('Connected as stale-user')).not.toBeInTheDocument();
+      expect(hcSection.getByText('Hardcover token cleared.')).toBeInTheDocument();
+    } finally {
+      confirmSpy.mockRestore();
+    }
+  });
+
+  test('Sync All Books flushes pending settings before syncing and updates hardcoverLastSyncAt', async () => {
+    getUserSettings
+      .mockResolvedValueOnce({
+        ...mockSettings,
+        hasHardcoverApiToken: true,
+        hardcoverSyncEnabled: false
+      })
+      .mockResolvedValueOnce({
+        ...mockSettings,
+        hasHardcoverApiToken: true,
+        hardcoverSyncEnabled: true,
+        hardcoverLastSyncAt: '2026-05-01T12:00:00Z'
+      });
+    syncAllHardcover.mockResolvedValueOnce({
+      results: [{ bookId: 1, success: true, skipped: false }],
+      message: 'Synced 1 of 1 books.'
+    });
+
+    await renderLoaded();
+    const hcSection = sectionOf(document.querySelector('#hardcoverApiToken'));
+
+    // Toggle sync on (pending auto-save) and immediately click Sync All Books
+    fireEvent.click(field('hardcoverSyncEnabled'));
+    fireEvent.click(hcSection.getByRole('button', { name: /sync all books/i }));
+
+    const alert = await hcSection.findByText('Synced 1 of 1 books.');
+    expect(alert.closest('.alert')).toHaveClass('alert-success');
+    expect(updateUserSettings).toHaveBeenCalledWith({ hardcoverSyncEnabled: true }, { keepalive: true });
+    expect(syncAllHardcover).toHaveBeenCalledTimes(1);
+    expect(updateUserSettings.mock.invocationCallOrder[0])
+      .toBeLessThan(syncAllHardcover.mock.invocationCallOrder[0]);
+    expect(updateSetting).toHaveBeenCalledWith('hardcoverLastSyncAt', '2026-05-01T12:00:00Z');
+  });
+
+  test('Sync All Books uses danger/warning/success alert variants based on per-book results', async () => {
+    getUserSettings.mockResolvedValue({
+      ...mockSettings,
+      hasHardcoverApiToken: true,
+      hardcoverSyncEnabled: true
+    });
+
+    await renderLoaded();
+    const hcSection = sectionOf(document.querySelector('#hardcoverApiToken'));
+
+    // All failed -> danger with concise error details
+    syncAllHardcover.mockResolvedValueOnce({
+      results: [{ bookId: 1, success: false, skipped: false, message: 'Hardcover 502 Bad Gateway' }],
+      message: 'Synced 0 of 1 books.'
+    });
+    fireEvent.click(hcSection.getByRole('button', { name: /sync all books/i }));
+    const dangerAlert = await hcSection.findByText(/Synced 0 of 1 books\. \(Hardcover 502 Bad Gateway\)/);
+    expect(dangerAlert.closest('.alert')).toHaveClass('alert-danger');
+
+    // Partial failure (some succeeded, some failed) -> warning
+    syncAllHardcover.mockResolvedValueOnce({
+      results: [
+        { bookId: 1, success: true, skipped: false },
+        { bookId: 2, success: false, skipped: false, message: 'Rate limited' }
+      ],
+      message: 'Synced 1 of 2 books.'
+    });
+    fireEvent.click(hcSection.getByRole('button', { name: /sync all books/i }));
+    const partialAlert = await hcSection.findByText(/Synced 1 of 2 books\. \(Rate limited\)/);
+    expect(partialAlert.closest('.alert')).toHaveClass('alert-warning');
+
+    // All skipped -> warning
+    syncAllHardcover.mockResolvedValueOnce({
+      results: [{ bookId: 1, success: false, skipped: true, message: 'No high-confidence match' }],
+      message: 'Synced 0 of 1 books.'
+    });
+    fireEvent.click(hcSection.getByRole('button', { name: /sync all books/i }));
+    const skippedAlert = await hcSection.findByText('Synced 0 of 1 books.');
+    expect(skippedAlert.closest('.alert')).toHaveClass('alert-warning');
+
+    // Empty results with disabled message -> warning
+    syncAllHardcover.mockResolvedValueOnce({
+      results: [],
+      message: 'Hardcover sync is disabled.'
+    });
+    fireEvent.click(hcSection.getByRole('button', { name: /sync all books/i }));
+    const disabledAlert = await hcSection.findByText('Hardcover sync is disabled.');
+    expect(disabledAlert.closest('.alert')).toHaveClass('alert-warning');
+
+    // Empty results "Synced 0 of 0 books." -> success
+    syncAllHardcover.mockResolvedValueOnce({
+      results: [],
+      message: 'Synced 0 of 0 books.'
+    });
+    fireEvent.click(hcSection.getByRole('button', { name: /sync all books/i }));
+    const emptySuccessAlert = await hcSection.findByText('Synced 0 of 0 books.');
+    expect(emptySuccessAlert.closest('.alert')).toHaveClass('alert-success');
+  });
+
+  test('Sync All Books keeps success message even when trailing getUserSettings refresh fails', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    getUserSettings
+      .mockResolvedValueOnce({
+        ...mockSettings,
+        hasHardcoverApiToken: true,
+        hardcoverSyncEnabled: true
+      })
+      .mockRejectedValueOnce(new Error('Transient refresh failure'));
+    syncAllHardcover.mockResolvedValueOnce({
+      results: [{ bookId: 1, success: true, skipped: false }],
+      message: 'Synced 1 of 1 books.'
+    });
+
+    try {
+      await renderLoaded();
+      const hcSection = sectionOf(document.querySelector('#hardcoverApiToken'));
+
+      fireEvent.click(hcSection.getByRole('button', { name: /sync all books/i }));
+
+      const alert = await hcSection.findByText('Synced 1 of 1 books.');
+      expect(alert.closest('.alert')).toHaveClass('alert-success');
+      expect(hcSection.queryByText(/Transient refresh failure/)).not.toBeInTheDocument();
+      await waitFor(() => expect(getUserSettings).toHaveBeenCalledTimes(2));
+      expect(hcSection.getByText('Synced 1 of 1 books.')).toBeInTheDocument();
+    } finally {
+      consoleError.mockRestore();
+    }
   });
 });

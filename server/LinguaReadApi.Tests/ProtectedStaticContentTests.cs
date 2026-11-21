@@ -33,6 +33,7 @@ public class ProtectedStaticContentTests : IClassFixture<WebApplicationFactory<P
     // Hardcover covers use the "N" (no-dash) form of the id.
     private const string UserIdNoDashes = "a1a1a1a1b2b2c3c3d4d4e5e5e5e5e5e5";
     private const string OtherUserId = "b9b9b9b9-c8c8-d7d7-e6e6-f5f5f5f5f5f5";
+    private const string OtherUserIdNoDashes = "b9b9b9b9c8c8d7d7e6e6f5f5f5f5f5f5";
 
     private readonly WebApplicationFactory<Program> _factory;
 
@@ -250,6 +251,56 @@ public class ProtectedStaticContentTests : IClassFixture<WebApplicationFactory<P
         }
     }
 
+    [Theory]
+    [InlineData(
+        "hardcover-covers/" + OtherUserIdNoDashes + "/gate-test.jpg",
+        "/hardcover-covers/" + UserIdNoDashes + "/..%5c" + OtherUserIdNoDashes + "%5cgate-test.jpg")]
+    [InlineData(
+        "hardcover-covers/" + OtherUserIdNoDashes + "/gate-test.jpg",
+        "/hardcover-covers/" + UserIdNoDashes + "%5c..%5c" + OtherUserIdNoDashes + "%5cgate-test.jpg")]
+    [InlineData(
+        "hardcover-covers/" + OtherUserIdNoDashes + "/gate-test.jpg",
+        "/hardcover-covers/" + UserIdNoDashes + "/../" + OtherUserIdNoDashes + "/gate-test.jpg")]
+    [InlineData(
+        "audio_lessons/" + OtherUserId + "/gate-test.mp3",
+        "/audio_lessons/" + UserId + "/..%5c" + OtherUserId + "%5cgate-test.mp3")]
+    [InlineData(
+        "audio_lessons/" + OtherUserId + "/gate-test.mp3",
+        "/audio_lessons/" + UserId + "%5c..%5c" + OtherUserId + "%5cgate-test.mp3")]
+    [InlineData(
+        "epub_assets/" + OtherUserId + "/" + GateTestBookId + "/gate-test.jpg",
+        "/epub_assets/" + UserId + "/..%5c" + OtherUserId + "%5c" + GateTestBookId + "%5cgate-test.jpg")]
+    [InlineData(
+        "epub_assets/" + OtherUserId + "/" + GateTestBookId + "/gate-test.jpg",
+        "/epub_assets/" + UserId + "%5c..%5c" + OtherUserId + "%5c" + GateTestBookId + "%5cgate-test.jpg")]
+    [InlineData(
+        "audiobooks/" + GateTestBookId + "/track_1.mp3",
+        "/audiobooks/2000000002/..%5c" + GateTestBookId + "%5ctrack_1.mp3")]
+    [InlineData(
+        "audiobooks/" + GateTestBookId + "/track_1.mp3",
+        "/audiobooks/2000000002%5c..%5c" + GateTestBookId + "%5ctrack_1.mp3")]
+    public async Task BackslashAndDotSegmentTraversal_WhenTargetFileExistsOnDisk_Returns403(
+        string targetRelativePath,
+        string requestPath)
+    {
+        await SeedBookAsync(bookId: OwnedGateTestBookId, ownerId: UserId);
+        var file = WriteUploadedFile(targetRelativePath, "other user secret media");
+        try
+        {
+            var client = _factory.CreateClient();
+            var request = new HttpRequestMessage(HttpMethod.Get, requestPath);
+            request.Headers.Add("Cookie", $".LinguaRead.Auth={CreateJwt()}");
+
+            var response = await client.SendAsync(request);
+
+            Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        }
+        finally
+        {
+            DeleteUploadedFile(file);
+        }
+    }
+
     // Writes a real file under the test host's wwwroot (gitignored) so the static-file
     // middleware has something to serve. The names above are test-only (real lesson audio is
     // "{guid}_{name}", real books have small ids), so overwriting a leftover from an aborted
@@ -263,7 +314,7 @@ public class ProtectedStaticContentTests : IClassFixture<WebApplicationFactory<P
         return fullPath;
     }
 
-    // Deletes the file, and its folder when that folder is one of the test-only book ids above:
+    // Deletes the file, and its folder when that folder is one of the test-only book/user ids above:
     // only this class writes there, and its tests run one at a time. Every other folder stays:
     // audio_lessons/{UserId} is shared with CompressionPipelineTests, which xUnit runs in
     // parallel, so removing an "empty" one could pull it out from under that test's write.
@@ -271,12 +322,23 @@ public class ProtectedStaticContentTests : IClassFixture<WebApplicationFactory<P
     {
         File.Delete(fullPath);
 
-        var directory = Path.GetDirectoryName(fullPath)!;
-        var name = Path.GetFileName(directory);
-        if ((name == GateTestBookId || name == OwnedGateTestBookId.ToString()) &&
-            !Directory.EnumerateFileSystemEntries(directory).Any())
+        var directory = Path.GetDirectoryName(fullPath);
+        while (!string.IsNullOrEmpty(directory))
         {
-            Directory.Delete(directory);
+            var name = Path.GetFileName(directory);
+            if ((name == GateTestBookId ||
+                 name == OwnedGateTestBookId.ToString() ||
+                 name == OtherUserId ||
+                 name == OtherUserIdNoDashes) &&
+                !Directory.EnumerateFileSystemEntries(directory).Any())
+            {
+                Directory.Delete(directory);
+                directory = Path.GetDirectoryName(directory);
+            }
+            else
+            {
+                break;
+            }
         }
     }
 

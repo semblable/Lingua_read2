@@ -12,6 +12,7 @@ import type { AiProviderConfig, Settings, SettingKey } from '../contexts/Setting
 import type { Language } from '../utils/api/languages';
 import type { UpdateUserSettingsInput, UserSettings as UserSettingsResponse } from '../utils/api/settings';
 import type { AiProviderInfo, AiProviderTestResult } from '../utils/api/aiProviders';
+import type { HardcoverStatus } from '../utils/api/hardcover';
 import { useAutoSave } from '../hooks/useAutoSave';
 import { applyReaderStatusMarkers, applyTheme, normalizeTheme } from '../utils/theme';
 
@@ -22,16 +23,6 @@ type AudioStorageInfo = {
   totalSizeMB?: number;
   totalSizeGB?: number;
   totalFiles?: number;
-};
-
-type HardcoverStatus = {
-  configured?: boolean;
-  connected?: boolean;
-  syncEnabled?: boolean;
-  hardcoverUserId?: number | null;
-  username?: string | null;
-  message?: string | null;
-  success?: boolean;
 };
 import AppearanceSettings from '../components/settings/AppearanceSettings';
 import ReadingSettings from '../components/settings/ReadingSettings';
@@ -252,9 +243,17 @@ const UserSettings = () => {
 
   // Hardcover state
   const [testingHardcover, setTestingHardcover] = useState(false);
+  const [clearingHardcoverToken, setClearingHardcoverToken] = useState(false);
   const [hardcoverTestResult, setHardcoverTestResult] = useState<HardcoverStatus | null>(null);
   const [syncingHardcover, setSyncingHardcover] = useState(false);
   const [hardcoverSyncMessage, setHardcoverSyncMessage] = useState({ type: '', text: '' });
+  const hardcoverStatusSeqRef = useRef(0);
+
+  useEffect(() => {
+    return () => {
+      hardcoverStatusSeqRef.current += 1;
+    };
+  }, []);
 
   // AI provider catalog and connection test state
   const [aiProviderCatalog, setAiProviderCatalog] = useState<AiProviderInfo[] | null>(null);
@@ -559,48 +558,78 @@ const UserSettings = () => {
     updateSetting('aiProvidersWithApiKey', saved.aiProvidersWithApiKey ?? []);
   }, [applyServerValues, updateSetting]);
 
-  const handleTestHardcover = useCallback(async () => {
+  const runHardcoverStatusCheck = useCallback(async (seq: number) => {
     setTestingHardcover(true);
-    setHardcoverTestResult(null);
-    setHardcoverSyncMessage({ type: '', text: '' });
     try {
       const result = await getHardcoverStatus();
+      if (seq !== hardcoverStatusSeqRef.current) return;
       setHardcoverTestResult(result);
-    } catch (e: unknown) { const err = e as Error;
-      setHardcoverTestResult({ connected: false, message: err.message || 'Failed to test Hardcover connection.' });
+    } catch (e: unknown) {
+      if (seq !== hardcoverStatusSeqRef.current) return;
+      const err = e as Error;
+      setHardcoverTestResult({
+        connected: false,
+        message: err.message || 'Failed to test Hardcover connection.'
+      });
     } finally {
-      setTestingHardcover(false);
+      if (seq === hardcoverStatusSeqRef.current) {
+        setTestingHardcover(false);
+      }
     }
   }, []);
+
+  const handleTestHardcover = useCallback(async () => {
+    const seq = ++hardcoverStatusSeqRef.current;
+    setHardcoverTestResult(null);
+    setHardcoverSyncMessage({ type: '', text: '' });
+    await runHardcoverStatusCheck(seq);
+  }, [runHardcoverStatusCheck]);
 
   // Re-throws so HardcoverSettings keeps the typed token for a retry.
   const handleSaveHardcoverToken = useCallback(async (token: string) => {
     if (!token.trim()) return;
+    const seq = ++hardcoverStatusSeqRef.current;
     setHardcoverSyncMessage({ type: '', text: '' });
+    setHardcoverTestResult(null);
+    setTestingHardcover(false);
     try {
       const saved = await updateUserSettings({ hardcoverApiToken: token.trim() });
+      if (seq !== hardcoverStatusSeqRef.current) return;
       applyServerValues({
         hasHardcoverApiToken: saved.hasHardcoverApiToken ?? true,
-        ...(saved.hardcoverLastSyncAt ? { hardcoverLastSyncAt: saved.hardcoverLastSyncAt } : {})
+        ...(saved.hardcoverLastSyncAt !== undefined ? { hardcoverLastSyncAt: saved.hardcoverLastSyncAt ?? null } : {})
       });
       updateSetting('hasHardcoverApiToken', saved.hasHardcoverApiToken ?? true);
+      if (saved.hardcoverLastSyncAt !== undefined) {
+        updateSetting('hardcoverLastSyncAt', saved.hardcoverLastSyncAt ?? null);
+      }
       setHardcoverSyncMessage({ type: 'success', text: 'Hardcover token saved.' });
-    } catch (e: unknown) { const err = e as Error;
-      setHardcoverSyncMessage({ type: 'danger', text: err.message || 'Failed to save Hardcover token.' });
+    } catch (e: unknown) {
+      const err = e as Error;
+      if (seq === hardcoverStatusSeqRef.current) {
+        setHardcoverSyncMessage({ type: 'danger', text: err.message || 'Failed to save Hardcover token.' });
+      }
       throw err;
     }
-    try {
-      setHardcoverTestResult(await getHardcoverStatus());
-    } catch (e: unknown) { const err = e as Error;
-      setHardcoverTestResult({ connected: false, message: err.message || 'Failed to test Hardcover connection.' });
-    }
-  }, [applyServerValues, updateSetting]);
+    // Kick off the status check without delaying onSaveToken resolution so HardcoverSettings
+    // clears the password input as soon as saving succeeds.
+    void runHardcoverStatusCheck(seq);
+  }, [applyServerValues, runHardcoverStatusCheck, updateSetting]);
 
   const handleClearHardcoverToken = useCallback(async () => {
+    if (!window.confirm(
+      'Clear your saved Hardcover API token? This will also disable automatic Hardcover progress sync.'
+    )) {
+      return;
+    }
+    const seq = ++hardcoverStatusSeqRef.current;
+    setClearingHardcoverToken(true);
+    setTestingHardcover(false);
     setHardcoverSyncMessage({ type: '', text: '' });
     setHardcoverTestResult(null);
     try {
       await updateUserSettings({ clearHardcoverApiToken: true });
+      if (seq !== hardcoverStatusSeqRef.current) return;
       // Clearing the token also turns sync off on the server.
       applyServerValues({
         hasHardcoverApiToken: false,
@@ -609,9 +638,16 @@ const UserSettings = () => {
       });
       updateSetting('hasHardcoverApiToken', false);
       updateSetting('hardcoverSyncEnabled', false);
+      updateSetting('hardcoverLastSyncAt', null);
       setHardcoverSyncMessage({ type: 'success', text: 'Hardcover token cleared.' });
-    } catch (e: unknown) { const err = e as Error;
+    } catch (e: unknown) {
+      if (seq !== hardcoverStatusSeqRef.current) return;
+      const err = e as Error;
       setHardcoverSyncMessage({ type: 'danger', text: err.message || 'Failed to clear Hardcover token.' });
+    } finally {
+      if (seq === hardcoverStatusSeqRef.current) {
+        setClearingHardcoverToken(false);
+      }
     }
   }, [applyServerValues, updateSetting]);
 
@@ -633,18 +669,61 @@ const UserSettings = () => {
     setSyncingHardcover(true);
     setHardcoverSyncMessage({ type: '', text: '' });
     try {
-      const result = (await syncAllHardcover()) as { message?: string } | null;
-      setHardcoverSyncMessage({ type: 'success', text: result?.message || 'Hardcover sync completed.' });
-      const refreshed = await getUserSettings();
-      if (refreshed.hardcoverLastSyncAt) {
-        applyServerValues({ hardcoverLastSyncAt: refreshed.hardcoverLastSyncAt });
+      if (!(await flushSettings())) {
+        setHardcoverSyncMessage({
+          type: 'danger',
+          text: "Your latest changes aren't saved yet, so Hardcover sync would use the old ones. Retry the save first."
+        });
+        return;
       }
-    } catch (e: unknown) { const err = e as Error;
+
+      const result = await syncAllHardcover();
+      const results = result?.results ?? [];
+      const succeeded = results.filter(r => r.success);
+      const failed = results.filter(r => !r.success && !r.skipped);
+      const allSkipped = results.length > 0 && results.every(r => r.skipped);
+      const baseMessage = result?.message || 'Hardcover sync completed.';
+
+      let alertType: 'success' | 'warning' | 'danger' = 'success';
+      let alertText = baseMessage;
+
+      if (failed.length > 0) {
+        alertType = succeeded.length > 0 ? 'warning' : 'danger';
+        const uniqueDetails = Array.from(
+          new Set(
+            failed
+              .map(r => r.message?.trim())
+              .filter((msg): msg is string => Boolean(msg))
+          )
+        ).slice(0, 2);
+        if (uniqueDetails.length > 0 && !baseMessage.includes(uniqueDetails[0])) {
+          alertText = `${baseMessage} (${uniqueDetails.join('; ')})`;
+        }
+      } else if (
+        allSkipped ||
+        (results.length === 0 && /disabled|not enabled|not configured|skip|no token|missing token/i.test(baseMessage))
+      ) {
+        alertType = 'warning';
+      }
+
+      setHardcoverSyncMessage({ type: alertType, text: alertText });
+
+      try {
+        const refreshed = await getUserSettings();
+        if (refreshed.hardcoverLastSyncAt) {
+          applyServerValues({ hardcoverLastSyncAt: refreshed.hardcoverLastSyncAt });
+          updateSetting('hardcoverLastSyncAt', refreshed.hardcoverLastSyncAt);
+        }
+      } catch (refreshErr: unknown) {
+        console.error('Failed to refresh Hardcover last sync timestamp:', refreshErr);
+      }
+    } catch (e: unknown) {
+      const err = e as Error;
       setHardcoverSyncMessage({ type: 'danger', text: err.message || 'Hardcover sync failed.' });
     } finally {
       setSyncingHardcover(false);
     }
-  }, [applyServerValues]);
+  }, [applyServerValues, flushSettings, updateSetting]);
 
   const scrollToSection = (sectionId: string) => {
     setActiveSection(sectionId);
@@ -804,6 +883,7 @@ const UserSettings = () => {
                 settings={settings as Settings}
                 handleChange={handleChange}
                 testingHardcover={testingHardcover}
+                clearingHardcoverToken={clearingHardcoverToken}
                 hardcoverTestResult={hardcoverTestResult}
                 syncingHardcover={syncingHardcover}
                 hardcoverSyncMessage={hardcoverSyncMessage}

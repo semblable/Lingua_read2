@@ -13,6 +13,7 @@ import {
   deleteText,
   uploadAudiobookTracks,
   matchHardcoverBook,
+  unlinkHardcoverBook,
   importHardcoverMetadata,
   syncHardcoverProgress
 } from '../utils/api';
@@ -27,8 +28,11 @@ vi.mock('../utils/api', () => ({
   deleteText: vi.fn(),
   uploadAudiobookTracks: vi.fn(),
   matchHardcoverBook: vi.fn(),
+  unlinkHardcoverBook: vi.fn(),
   importHardcoverMetadata: vi.fn(),
-  syncHardcoverProgress: vi.fn()
+  syncHardcoverProgress: vi.fn(),
+  previewReSplitBook: vi.fn(),
+  reSplitBook: vi.fn()
 }));
 
 const baseBook = {

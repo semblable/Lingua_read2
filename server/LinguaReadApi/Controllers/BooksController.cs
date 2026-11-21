@@ -31,6 +31,7 @@ namespace LinguaReadApi.Controllers
         private readonly AppDbContext _context;
         private readonly ILogger<BooksController> _logger;
         private readonly IHardcoverService? _hardcoverService;
+        private readonly HardcoverSyncChannel? _hardcoverSyncChannel;
         private readonly WordLinkingChannel? _wordLinkingChannel;
         private readonly ChapterDetectionService _chapterDetectionService;
         /// <summary>Where uploaded audiobook media lives; tests use an isolated temp directory.</summary>
@@ -40,12 +41,13 @@ namespace LinguaReadApi.Controllers
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase
         };
 
-        public BooksController(AppDbContext context, ILogger<BooksController> logger, ChapterDetectionService chapterDetectionService, IHardcoverService? hardcoverService = null, WordLinkingChannel? wordLinkingChannel = null)
+        public BooksController(AppDbContext context, ILogger<BooksController> logger, ChapterDetectionService chapterDetectionService, IHardcoverService? hardcoverService = null, WordLinkingChannel? wordLinkingChannel = null, HardcoverSyncChannel? hardcoverSyncChannel = null)
         {
             _context = context;
             _logger = logger;
             _chapterDetectionService = chapterDetectionService;
             _hardcoverService = hardcoverService;
+            _hardcoverSyncChannel = hardcoverSyncChannel;
             _wordLinkingChannel = wordLinkingChannel;
         }
 
@@ -182,6 +184,7 @@ namespace LinguaReadApi.Controllers
                 KnownWords = book.KnownWords,
                 LearningWords = book.LearningWords,
                 StatsUpdatedAt = book.StatsUpdatedAt,
+                IsFinished = book.IsFinished,
                 Parts = book.Texts.OrderBy(t => t.PartNumber).Select(t => new TextPartDto
                 {
                     TextId = t.TextId,
@@ -2270,9 +2273,12 @@ namespace LinguaReadApi.Controllers
             try
             {
                 var strategy = _context.Database.CreateExecutionStrategy();
+                var lessonRecorded = false;
+                var commitAttempted = false;
 
-                return await strategy.ExecuteAsync<ActionResult<BookStatsDto>>(async () =>
+                var actionResult = await strategy.ExecuteAsync<ActionResult<BookStatsDto>>(async () =>
                 {
+                    lessonRecorded = false;
                     _context.ChangeTracker.Clear();
                     var now = DateTime.UtcNow;
                     double completionPercentage;
@@ -2337,6 +2343,11 @@ namespace LinguaReadApi.Controllers
                         double pctRetry = totalTextsRetry > 0
                             ? Math.Round((double)finishedTextsRetry / totalTextsRetry * 100, 2)
                             : 0;
+
+                        if (commitAttempted)
+                        {
+                            lessonRecorded = true;
+                        }
 
                         return new BookStatsDto
                         {
@@ -2466,7 +2477,9 @@ namespace LinguaReadApi.Controllers
                     }
 
                     await _context.SaveChangesAsync();
+                    commitAttempted = true;
                     await transaction.CommitAsync();
+                    lessonRecorded = true;
 
                     var result = new BookStatsDto
                     {
@@ -2477,9 +2490,15 @@ namespace LinguaReadApi.Controllers
                         IsFinished = book.IsFinished
                     };
 
-                    await TriggerHardcoverProgressSyncAsync(userId, id);
                     return result;
                 });
+
+                if (lessonRecorded)
+                {
+                    await TriggerHardcoverProgressSyncAsync(userId, id);
+                }
+
+                return actionResult;
             }
             catch (DbUpdateException ex)
             {
@@ -2490,6 +2509,9 @@ namespace LinguaReadApi.Controllers
 
         // PUT: api/books/5/finish
         [HttpPut("{id}/finish")]
+        [ProducesResponseType(StatusCodes.Status204NoContent)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
         public async Task<IActionResult> FinishBook(int id, [FromBody] FinishBookRequest? request)
         {
             var userId = GetUserId();
@@ -2808,6 +2830,15 @@ namespace LinguaReadApi.Controllers
 
         private async Task TriggerHardcoverProgressSyncAsync(Guid userId, int bookId, decimal? rating = null)
         {
+            if (_hardcoverSyncChannel != null)
+            {
+                if (!_hardcoverSyncChannel.TryEnqueue(new HardcoverSyncRequest(userId, bookId, rating)))
+                {
+                    _logger.LogWarning("Hardcover sync queue rejected progress sync for user {UserId}, book {BookId}.", userId, bookId);
+                }
+                return;
+            }
+
             if (_hardcoverService == null)
             {
                 return;
@@ -2815,7 +2846,7 @@ namespace LinguaReadApi.Controllers
 
             try
             {
-                await _hardcoverService.SyncProgressAsync(userId, bookId, requireSyncEnabled: true, rating, HttpContext.RequestAborted);
+                await _hardcoverService.SyncProgressAsync(userId, bookId, requireSyncEnabled: true, rating, CancellationToken.None);
             }
             catch (Exception ex)
             {
@@ -3397,6 +3428,7 @@ namespace LinguaReadApi.Controllers
         public int KnownWords { get; set; }
         public int LearningWords { get; set; }
         public DateTime? StatsUpdatedAt { get; set; }
+        public bool IsFinished { get; set; }
         public int UnknownWords => Math.Max(TotalWords - KnownWords, 0);
         public double? UnknownWordPercentage =>
             TotalWords > 0 ? Math.Round((double)(TotalWords - KnownWords) / TotalWords * 100, 1) : (double?)null;

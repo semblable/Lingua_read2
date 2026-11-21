@@ -21,7 +21,9 @@ using Microsoft.AspNetCore.Identity; // Keep one Identity using
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.ResponseCompression;
+using System.Globalization;
 using System.IO.Compression;
+using System.Net;
 // using Microsoft.AspNetCore.Identity.EntityFrameworkCore; // This namespace is not needed directly here
 
 // --- Load .env file ---
@@ -147,7 +149,20 @@ builder.Services.AddHttpClient("AiProvider").ConfigurePrimaryHttpMessageHandler(
 builder.Services.AddHttpClient("PrivateAiProvider").ConfigurePrimaryHttpMessageHandler(() =>
     new SocketsHttpHandler { AllowAutoRedirect = false, UseProxy = false,
         ConnectTimeout = TimeSpan.FromSeconds(10), PooledConnectionLifetime = TimeSpan.FromMinutes(5) });
-builder.Services.AddHttpClient("HardcoverCover")
+builder.Services.AddHttpClient(HardcoverService.ApiClientName, client =>
+{
+    client.BaseAddress = new Uri("https://api.hardcover.app/");
+    client.Timeout = TimeSpan.FromSeconds(30);
+    client.DefaultRequestHeaders.UserAgent.ParseAdd(HardcoverService.UserAgent);
+})
+.ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+{
+    AllowAutoRedirect = false,
+    AutomaticDecompression = DecompressionMethods.All,
+    ConnectTimeout = TimeSpan.FromSeconds(10),
+    PooledConnectionLifetime = TimeSpan.FromMinutes(5)
+});
+builder.Services.AddHttpClient("HardcoverCover", client => client.Timeout = TimeSpan.FromSeconds(20))
     .ConfigurePrimaryHttpMessageHandler(LinguaReadApi.Services.News.PublicAddressGuard.CreateHandler);
 // Reports carry learner data: refuse redirects and private/reserved destination IPs,
 // including DNS rebinding. Relay host names also require an operator allowlist.
@@ -278,6 +293,13 @@ builder.Services.AddHostedService<LinguaReadApi.Services.News.NewsFeedBackground
 builder.Services.AddScoped<ILanguageService, LanguageService>();
 builder.Services.AddScoped<IUserActivityService, UserActivityService>(); // Register UserActivityService
 builder.Services.AddScoped<IGoalProgressService, GoalProgressService>();
+builder.Services.AddSingleton<HardcoverRateLimiter>();
+builder.Services.AddSingleton<HardcoverSyncChannel>();
+builder.Services.AddSingleton<HardcoverOperationLock>();
+if (!builder.Environment.IsEnvironment("Testing"))
+{
+    builder.Services.AddHostedService<HardcoverSyncBackgroundService>();
+}
 builder.Services.AddScoped<IHardcoverService, HardcoverService>();
 builder.Services.AddScoped<ChapterDetectionService>();
 
@@ -424,6 +446,10 @@ app.Use(async (context, next) =>
     {
         await next.Invoke();
     }
+    catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
+    {
+        // Client disconnected; do not log as an unhandled error or attempt a 500 response.
+    }
     catch (Exception ex)
     {
         // Log the exception details
@@ -546,30 +572,119 @@ static async Task<bool> CallerOwnsProtectedContentAsync(HttpContext context)
     }
 
     var path = context.Request.Path;
-
-    if (path.StartsWithSegments("/audio_lessons", out var rest) ||
-        path.StartsWithSegments("/epub_assets", out rest) ||
-        path.StartsWithSegments("/hardcover-covers", out rest))
+    if (string.IsNullOrEmpty(path.Value) || HasUnsafePathCharactersOrDotSegments(path.Value))
     {
-        return Guid.TryParse(FirstSegment(rest), out var ownerId) && ownerId == userId;
+        return false;
     }
 
-    if (path.StartsWithSegments("/audiobooks", out rest))
+    string matchedPrefix;
+    PathString rest;
+    var isAudiobook = false;
+
+    if (path.StartsWithSegments("/audio_lessons", out rest))
     {
-        if (!int.TryParse(FirstSegment(rest), out var bookId))
+        matchedPrefix = "audio_lessons";
+    }
+    else if (path.StartsWithSegments("/epub_assets", out rest))
+    {
+        matchedPrefix = "epub_assets";
+    }
+    else if (path.StartsWithSegments("/hardcover-covers", out rest))
+    {
+        matchedPrefix = "hardcover-covers";
+    }
+    else if (path.StartsWithSegments("/audiobooks", out rest))
+    {
+        matchedPrefix = "audiobooks";
+        isAudiobook = true;
+    }
+    else
+    {
+        return false;
+    }
+
+    if (string.IsNullOrEmpty(rest.Value) || HasUnsafePathCharactersOrDotSegments(rest.Value))
+    {
+        return false;
+    }
+
+    var segments = rest.Value.Split(['/', '\\'], StringSplitOptions.RemoveEmptyEntries);
+    if (segments.Length == 0 || segments.Any(static s => s is "." or ".."))
+    {
+        return false;
+    }
+
+    var ownerSegment = segments[0];
+    int bookId = 0;
+    if (isAudiobook)
+    {
+        if (!int.TryParse(ownerSegment, NumberStyles.Integer, CultureInfo.InvariantCulture, out bookId))
         {
             return false;
         }
+    }
+    else
+    {
+        if (!Guid.TryParse(ownerSegment, out var ownerId) || ownerId != userId)
+        {
+            return false;
+        }
+    }
+
+    // Defense-in-depth: verify the resolved candidate path stays strictly inside wwwroot/{prefix}/{ownerSegment}/.
+    try
+    {
+        var contentRoot = context.RequestServices.GetRequiredService<IWebHostEnvironment>().ContentRootPath;
+        var prefixRoot = Path.GetFullPath(Path.Combine(contentRoot, "wwwroot", matchedPrefix));
+        var prefixRootWithSep = EnsureTrailingSeparator(prefixRoot);
+        var ownerRoot = Path.GetFullPath(Path.Combine(prefixRoot, ownerSegment));
+        var ownerRootWithSep = EnsureTrailingSeparator(ownerRoot);
+        var candidatePath = Path.GetFullPath(Path.Combine([prefixRoot, .. segments]));
+        var comparison = OperatingSystem.IsWindows()
+            ? StringComparison.OrdinalIgnoreCase
+            : StringComparison.Ordinal;
+
+        if (!ownerRoot.StartsWith(prefixRootWithSep, comparison) ||
+            !candidatePath.StartsWith(ownerRootWithSep, comparison))
+        {
+            return false;
+        }
+    }
+    catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+    {
+        return false;
+    }
+
+    if (isAudiobook)
+    {
         var db = context.RequestServices.GetRequiredService<AppDbContext>();
         return await db.Books.AnyAsync(b => b.BookId == bookId && b.UserId == userId);
     }
 
-    return false;
+    return true;
 
-    static string? FirstSegment(PathString rest) =>
-        rest.Value?.Split('/', StringSplitOptions.RemoveEmptyEntries) is { Length: > 0 } parts
-            ? parts[0]
-            : null;
+    static bool HasUnsafePathCharactersOrDotSegments(string value)
+    {
+        if (value.Contains('\\') || value.Contains('\0'))
+        {
+            return true;
+        }
+
+        foreach (var segment in value.Split(['/', '\\'], StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (segment is "." or "..")
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    static string EnsureTrailingSeparator(string directoryPath) =>
+        directoryPath.EndsWith(Path.DirectorySeparatorChar)
+            ? directoryPath
+            : directoryPath + Path.DirectorySeparatorChar;
 }
 
 app.Use(async (context, next) =>

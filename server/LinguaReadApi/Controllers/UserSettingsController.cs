@@ -24,13 +24,16 @@ namespace LinguaReadApi.Controllers
     {
         private readonly AppDbContext _context;
         private readonly DiscordReportService _discordReportService;
+        private readonly HardcoverRateLimiter? _hardcoverRateLimiter;
 
         public UserSettingsController(
             AppDbContext context,
-            DiscordReportService discordReportService)
+            DiscordReportService discordReportService,
+            HardcoverRateLimiter? hardcoverRateLimiter = null)
         {
             _context = context;
             _discordReportService = discordReportService;
+            _hardcoverRateLimiter = hardcoverRateLimiter;
         }
 
         // GET: api/usersettings
@@ -340,17 +343,40 @@ namespace LinguaReadApi.Controllers
             {
                 settings.DiscordTimezoneOffsetMinutes = updateDto.DiscordTimezoneOffsetMinutes.Value;
             }
-            settings.HardcoverSyncEnabled = updateDto.HardcoverSyncEnabled ?? settings.HardcoverSyncEnabled;
-            if (updateDto.ClearHardcoverApiToken == true)
+            var hardcoverTokenChanged = false;
+            if (updateDto.ClearHardcoverApiToken == true ||
+                (updateDto.HardcoverApiToken != null && updateDto.HardcoverApiToken.Trim(' ', '\t').Length == 0))
             {
                 settings.HardcoverApiToken = null;
                 settings.HardcoverSyncEnabled = false;
+                settings.HardcoverLastSyncAt = null;
+                hardcoverTokenChanged = true;
             }
             else if (updateDto.HardcoverApiToken != null)
             {
-                settings.HardcoverApiToken = string.IsNullOrWhiteSpace(updateDto.HardcoverApiToken)
-                    ? null
-                    : updateDto.HardcoverApiToken.Trim();
+                var normalizedToken = updateDto.HardcoverApiToken.Trim(' ', '\t');
+                if (normalizedToken.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+                {
+                    normalizedToken = normalizedToken["Bearer ".Length..].Trim(' ', '\t');
+                }
+
+                if (normalizedToken.Length == 0 || normalizedToken.Any(c => c < 0x21 || c > 0x7E))
+                {
+                    return BadRequest(new { message = "Hardcover API token contains invalid characters." });
+                }
+
+                settings.HardcoverApiToken = normalizedToken;
+                hardcoverTokenChanged = true;
+            }
+
+            if (updateDto.HardcoverSyncEnabled.HasValue)
+            {
+                if (updateDto.HardcoverSyncEnabled.Value && string.IsNullOrWhiteSpace(settings.HardcoverApiToken))
+                {
+                    return BadRequest(new { message = "Configure a Hardcover API token before enabling Hardcover sync." });
+                }
+
+                settings.HardcoverSyncEnabled = updateDto.HardcoverSyncEnabled.Value;
             }
             settings.NewsImportEnabled = updateDto.NewsImportEnabled ?? settings.NewsImportEnabled;
             settings.NewsArticlesPerFeedPerDay = updateDto.NewsArticlesPerFeedPerDay ?? settings.NewsArticlesPerFeedPerDay;
@@ -522,6 +548,11 @@ namespace LinguaReadApi.Controllers
             }
 
             await _context.SaveChangesAsync();
+
+            if (hardcoverTokenChanged)
+            {
+                _hardcoverRateLimiter?.Clear(userId);
+            }
 
             return new UserSettingsDto
             {

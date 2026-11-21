@@ -555,11 +555,129 @@ public class CompleteLessonTests
         Assert.IsType<BadRequestObjectResult>(tooHigh);
     }
 
+    [Fact]
+    public async Task CompleteLesson_AndFinishBook_EnqueueOntoHardcoverSyncChannelWhenConfigured()
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        SeedBookWithTwoParts(context, userId, out var bookId, out var firstTextId);
+        var secondBookId = bookId + 1;
+        context.Books.Add(new Book
+        {
+            BookId = secondBookId,
+            UserId = userId,
+            LanguageId = 1,
+            Title = "Second Book"
+        });
+        await context.SaveChangesAsync();
+
+        var hardcoverService = new RecordingHardcoverService();
+        var channel = new HardcoverSyncChannel();
+
+        var controller = CreateController(context, userId, hardcoverService, channel);
+
+        var lessonResult = await controller.CompleteLesson(bookId, new CompleteLessonDto { TextId = firstTextId });
+        Assert.IsType<BookStatsDto>(lessonResult.Value);
+
+        var finishResult = await controller.FinishBook(bookId, new FinishBookRequest { Rating = 4.0m });
+        Assert.IsType<NoContentResult>(finishResult);
+
+        Assert.Equal(0, hardcoverService.SyncCalls);
+        Assert.True(channel.Reader.TryRead(out var req));
+        Assert.Equal(userId, req!.UserId);
+        Assert.Equal(bookId, req.BookId);
+        Assert.Equal(4.0m, req.Rating);
+        Assert.False(channel.Reader.TryRead(out _));
+
+        // Enqueueing for a second distinct bookId produces a separate item, and a subsequent
+        // null-rating enqueue on an already-queued item preserves the non-null 4.0m rating.
+        Assert.True(channel.TryEnqueue(new HardcoverSyncRequest(userId, bookId, 4.0m)));
+        Assert.True(channel.TryEnqueue(new HardcoverSyncRequest(userId, secondBookId, null)));
+        Assert.True(channel.TryEnqueue(new HardcoverSyncRequest(userId, bookId, null)));
+
+        Assert.True(channel.Reader.TryRead(out var firstCoalesced));
+        Assert.Equal(bookId, firstCoalesced!.BookId);
+        Assert.Equal(4.0m, firstCoalesced.Rating);
+
+        Assert.True(channel.Reader.TryRead(out var secondDistinct));
+        Assert.Equal(secondBookId, secondDistinct!.BookId);
+        Assert.Null(secondDistinct.Rating);
+
+        Assert.False(channel.Reader.TryRead(out _));
+    }
+
+    [Fact]
+    public async Task CompleteLesson_DedupedRetry_OnlyEnqueuesOntoHardcoverSyncChannelOnce()
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        SeedBookWithTwoParts(context, userId, out var bookId, out var firstTextId);
+        var secondTextId = firstTextId + 1;
+        var channel = new HardcoverSyncChannel();
+        var controller = CreateController(context, userId, hardcoverSyncChannel: channel);
+
+        // 1. Retry within 10s window
+        await controller.CompleteLesson(bookId, new CompleteLessonDto { TextId = firstTextId });
+        Assert.True(channel.Reader.TryRead(out var firstEnqueue));
+        Assert.Equal(bookId, firstEnqueue!.BookId);
+
+        await controller.CompleteLesson(bookId, new CompleteLessonDto { TextId = firstTextId });
+        Assert.False(channel.Reader.TryRead(out _));
+
+        // 2. Retry with identical ClientEventId
+        const string clientEventId = "event-12345678";
+        await controller.CompleteLesson(bookId, new CompleteLessonDto { TextId = secondTextId, ClientEventId = clientEventId });
+        Assert.True(channel.Reader.TryRead(out var secondEnqueue));
+        Assert.Equal(bookId, secondEnqueue!.BookId);
+
+        await controller.CompleteLesson(bookId, new CompleteLessonDto { TextId = secondTextId, ClientEventId = clientEventId });
+        Assert.False(channel.Reader.TryRead(out _));
+    }
+
+    [Fact]
+    public async Task FinishBook_WithInvalidRatingOrNonExistentBook_DoesNotEnqueueOntoHardcoverSyncChannel()
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        SeedBookWithTwoParts(context, userId, out var bookId, out _);
+        var channel = new HardcoverSyncChannel();
+        var controller = CreateController(context, userId, hardcoverSyncChannel: channel);
+
+        var badRating = await controller.FinishBook(bookId, new FinishBookRequest { Rating = 6.0m });
+        Assert.IsType<BadRequestObjectResult>(badRating);
+        Assert.False(channel.Reader.TryRead(out _));
+
+        var notFound = await controller.FinishBook(bookId + 999, new FinishBookRequest { Rating = 4.0m });
+        Assert.IsType<NotFoundObjectResult>(notFound);
+        Assert.False(channel.Reader.TryRead(out _));
+    }
+
+    [Fact]
+    public async Task GetBook_ReturnsIsFinishedTrue_AfterFinishBook()
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        SeedBookWithTwoParts(context, userId, out var bookId, out _);
+        var controller = CreateController(context, userId);
+
+        var before = await controller.GetBook(bookId);
+        Assert.False(Assert.IsType<BookDetailDto>(before.Value).IsFinished);
+
+        var finish = await controller.FinishBook(bookId, new FinishBookRequest());
+        Assert.IsType<NoContentResult>(finish);
+
+        context.ChangeTracker.Clear();
+        var after = await controller.GetBook(bookId);
+        var detail = Assert.IsType<BookDetailDto>(after.Value);
+        Assert.True(detail.IsFinished);
+        Assert.All(detail.Parts, p => Assert.True(p.IsFinished));
+    }
+
     // --- Helpers ---
 
-    private static BooksController CreateController(AppDbContext context, Guid userId, IHardcoverService? hardcoverService = null)
+    private static BooksController CreateController(AppDbContext context, Guid userId, IHardcoverService? hardcoverService = null, HardcoverSyncChannel? hardcoverSyncChannel = null)
     {
-        return new BooksController(context, NullLogger<BooksController>.Instance, new ChapterDetectionService(), hardcoverService)
+        return new BooksController(context, NullLogger<BooksController>.Instance, new ChapterDetectionService(), hardcoverService, hardcoverSyncChannel: hardcoverSyncChannel)
         {
             ControllerContext = new ControllerContext
             {
@@ -644,8 +762,11 @@ public class CompleteLessonTests
         public Task<HardcoverConnectionResult> GetStatusAsync(Guid userId, CancellationToken cancellationToken = default) =>
             Task.FromResult(new HardcoverConnectionResult(true, true, true, 1, "reader", "ok"));
 
-        public Task<HardcoverMatchResult> MatchBookAsync(Guid userId, int bookId, int? hardcoverBookId = null, CancellationToken cancellationToken = default) =>
+        public Task<HardcoverMatchResult> MatchBookAsync(Guid userId, int bookId, int? hardcoverBookId = null, int? hardcoverEditionId = null, string? searchQuery = null, CancellationToken cancellationToken = default) =>
             Task.FromResult(new HardcoverMatchResult(false, null, [], "not used"));
+
+        public Task UnlinkBookAsync(Guid userId, int bookId, CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
 
         public Task<HardcoverMetadataImportResult> ImportMetadataAsync(Guid userId, int bookId, CancellationToken cancellationToken = default) =>
             Task.FromResult(new HardcoverMetadataImportResult(false, [], [], "not used"));

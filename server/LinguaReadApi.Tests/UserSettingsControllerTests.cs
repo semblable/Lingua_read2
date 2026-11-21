@@ -972,7 +972,145 @@ public class UserSettingsControllerTests
         Assert.Equal(before, (await context.SrsCardReviews.AsNoTracking().SingleAsync(c => c.SrsCardReviewId == cardId)).NextReviewAt);
     }
 
-    private static UserSettingsController CreateController(AppDbContext context, Guid userId)
+    [Fact]
+    public async Task UpdateUserSettings_ClearingHardcoverTokenViaWhitespace_ResetsTokenSyncAndLastSyncAt()
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        context.Users.Add(new User { Id = userId, UserName = "u", Email = "u@test.com" });
+        context.UserSettings.Add(new UserSettings
+        {
+            UserId = userId,
+            HardcoverApiToken = "existing-token",
+            HardcoverSyncEnabled = true,
+            HardcoverLastSyncAt = DateTime.UtcNow.AddHours(-1)
+        });
+        await context.SaveChangesAsync();
+
+        var controller = CreateController(context, userId);
+        var result = await controller.UpdateUserSettings(new UpdateUserSettingsDto
+        {
+            HardcoverApiToken = "   \t  "
+        });
+
+        var dto = Assert.IsType<UserSettingsDto>(result.Value);
+        Assert.False(dto.HasHardcoverApiToken);
+        Assert.False(dto.HardcoverSyncEnabled);
+        Assert.Null(dto.HardcoverLastSyncAt);
+
+        var row = await context.UserSettings.AsNoTracking().SingleAsync();
+        Assert.Null(row.HardcoverApiToken);
+        Assert.False(row.HardcoverSyncEnabled);
+        Assert.Null(row.HardcoverLastSyncAt);
+    }
+
+    [Theory]
+    [InlineData("token\nwith-newline")]
+    [InlineData("token\rwith-cr")]
+    [InlineData("token with internal spaces")]
+    [InlineData("Bearer token with spaces")]
+    [InlineData("token\u0007control")]
+    [InlineData("token-non-ascii-é")]
+    public async Task UpdateUserSettings_RejectsHardcoverTokenWithInvalidCharacters(string invalidToken)
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        context.Users.Add(new User { Id = userId, UserName = "u", Email = "u@test.com" });
+        await context.SaveChangesAsync();
+
+        var controller = CreateController(context, userId);
+        var result = await controller.UpdateUserSettings(new UpdateUserSettingsDto
+        {
+            HardcoverApiToken = invalidToken
+        });
+
+        Assert.IsType<BadRequestObjectResult>(result.Result);
+    }
+
+    [Fact]
+    public async Task UpdateUserSettings_EnablingHardcoverSyncWithoutToken_ReturnsBadRequest()
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        context.Users.Add(new User { Id = userId, UserName = "u", Email = "u@test.com" });
+        await context.SaveChangesAsync();
+
+        var controller = CreateController(context, userId);
+        var result = await controller.UpdateUserSettings(new UpdateUserSettingsDto
+        {
+            HardcoverSyncEnabled = true
+        });
+
+        Assert.IsType<BadRequestObjectResult>(result.Result);
+
+        // Also fails if the same request clears an existing token while trying to enable sync.
+        context.ChangeTracker.Clear();
+        var existing = await context.UserSettings.FirstOrDefaultAsync(s => s.UserId == userId);
+        if (existing == null)
+        {
+            context.UserSettings.Add(new UserSettings { UserId = userId, HardcoverApiToken = "valid-token" });
+        }
+        else
+        {
+            existing.HardcoverApiToken = "valid-token";
+        }
+        await context.SaveChangesAsync();
+
+        var clearAndEnable = await controller.UpdateUserSettings(new UpdateUserSettingsDto
+        {
+            ClearHardcoverApiToken = true,
+            HardcoverSyncEnabled = true
+        });
+        Assert.IsType<BadRequestObjectResult>(clearAndEnable.Result);
+    }
+
+    [Fact]
+    public async Task UpdateUserSettings_UpdatingOrClearingHardcoverToken_ClearsHardcoverRateLimiter()
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        context.Users.Add(new User { Id = userId, UserName = "u", Email = "u@test.com" });
+        await context.SaveChangesAsync();
+
+        var limiter = new HardcoverRateLimiter();
+        var now = DateTimeOffset.UtcNow;
+
+        void SeedThrottleState()
+        {
+            using var response = new HttpResponseMessage(System.Net.HttpStatusCode.TooManyRequests);
+            response.Headers.TryAddWithoutValidation("RateLimit", "\"daily\";r=0;t=3600");
+            limiter.RecordResponse(userId, response.Headers, response.StatusCode, now);
+            limiter.GetRequiredDelay(userId, now, out var exhausted, out _);
+            Assert.True(exhausted);
+        }
+
+        var controller = CreateController(context, userId, limiter);
+
+        // 1. Updating token clears rate limiter state for the user.
+        SeedThrottleState();
+        var setResult = await controller.UpdateUserSettings(new UpdateUserSettingsDto
+        {
+            HardcoverApiToken = "Bearer valid-token-123"
+        });
+        Assert.IsType<UserSettingsDto>(setResult.Value);
+        limiter.GetRequiredDelay(userId, now, out var exhaustedAfterSet, out _);
+        Assert.False(exhaustedAfterSet);
+
+        // 2. Clearing token via whitespace clears rate limiter state for the user.
+        SeedThrottleState();
+        var clearResult = await controller.UpdateUserSettings(new UpdateUserSettingsDto
+        {
+            HardcoverApiToken = "   "
+        });
+        Assert.IsType<UserSettingsDto>(clearResult.Value);
+        limiter.GetRequiredDelay(userId, now, out var exhaustedAfterClear, out _);
+        Assert.False(exhaustedAfterClear);
+    }
+
+    private static UserSettingsController CreateController(
+        AppDbContext context,
+        Guid userId,
+        HardcoverRateLimiter? hardcoverRateLimiter = null)
     {
         var discord = new DiscordReportService(
             context,
@@ -982,7 +1120,8 @@ public class UserSettingsControllerTests
 
         return new UserSettingsController(
             context,
-            discord)
+            discord,
+            hardcoverRateLimiter)
         {
             ControllerContext = BuildControllerContext(userId)
         };

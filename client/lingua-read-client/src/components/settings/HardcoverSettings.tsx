@@ -2,17 +2,16 @@ import React, { useState } from 'react';
 import { Form, Button, Alert, Spinner } from 'react-bootstrap';
 import type { Settings } from '../../contexts/SettingsContext';
 import type { SettingsChangeHandler } from './AppearanceSettings';
-import type { ResponseOf } from '../../utils/fetchApi';
-
-type HardcoverTestResult = ResponseOf<'/api/Hardcover/status', 'get'>;
+import type { HardcoverStatus } from '../../utils/api/hardcover';
 
 interface HardcoverSettingsProps {
   settings: Settings;
   handleChange: SettingsChangeHandler;
   testingHardcover: boolean;
-  hardcoverTestResult: HardcoverTestResult | null;
+  clearingHardcoverToken?: boolean;
+  hardcoverTestResult: HardcoverStatus | null;
   syncingHardcover: boolean;
-  hardcoverSyncMessage: { type?: string; text?: string };
+  hardcoverSyncMessage?: { type?: string; text?: string } | null;
   onTestConnection: () => void;
   onSaveToken: (token: string) => Promise<void> | void;
   onClearToken: () => void;
@@ -23,6 +22,7 @@ const HardcoverSettings = ({
   settings,
   handleChange,
   testingHardcover,
+  clearingHardcoverToken = false,
   hardcoverTestResult,
   syncingHardcover,
   hardcoverSyncMessage,
@@ -35,7 +35,7 @@ const HardcoverSettings = ({
   const [savingToken, setSavingToken] = useState(false);
 
   const saveToken = async () => {
-    if (!token.trim() || savingToken) return;
+    if (!token.trim() || savingToken || clearingHardcoverToken || syncingHardcover) return;
     setSavingToken(true);
     try {
       await onSaveToken(token);
@@ -80,13 +80,23 @@ const HardcoverSettings = ({
             value={token}
             onChange={(event) => setToken(event.target.value)}
             onKeyDown={handleTokenKeyDown}
+            disabled={savingToken || clearingHardcoverToken}
           />
           {token.trim() && !savingToken && (
             <Form.Text className="d-block text-warning-emphasis">Not saved yet: press Enter or Save Token</Form.Text>
           )}
           <Form.Text className="text-muted">
-            Get your token from <a href="https://hardcover.app/account/api" target="_blank" rel="noopener noreferrer">Hardcover API settings</a>.
-            Saved tokens are not returned to the browser.
+            Get your token from{' '}
+            <a
+              href="https://hardcover.app/account/api/keys/new?scope=read:me:content+read:catalog+read:library+write:library"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Hardcover API settings
+            </a>
+            . Required scopes: <code>read:me:content</code>, <code>read:catalog</code>,{' '}
+            <code>read:library</code>, and <code>write:library</code>. Tokens expire based on the
+            expiration you choose on Hardcover. Saved tokens are not returned to the browser.
           </Form.Text>
         </Form.Group>
 
@@ -96,16 +106,16 @@ const HardcoverSettings = ({
             size="sm"
             type="button"
             onClick={saveToken}
-            disabled={savingToken || !token.trim()}
+            disabled={savingToken || clearingHardcoverToken || syncingHardcover || !token.trim()}
           >
-            Save Token
+            {savingToken ? 'Saving...' : 'Save Token'}
           </Button>
           <Button
             variant="outline-secondary"
             size="sm"
             type="button"
             onClick={onTestConnection}
-            disabled={testingHardcover || !settings.hasHardcoverApiToken}
+            disabled={testingHardcover || savingToken || clearingHardcoverToken || syncingHardcover || !settings.hasHardcoverApiToken}
           >
             {testingHardcover ? 'Testing...' : 'Test Connection'}
           </Button>
@@ -114,16 +124,23 @@ const HardcoverSettings = ({
             size="sm"
             type="button"
             onClick={onClearToken}
-            disabled={!settings.hasHardcoverApiToken}
+            disabled={clearingHardcoverToken || savingToken || syncingHardcover || !settings.hasHardcoverApiToken}
           >
-            Clear Token
+            {clearingHardcoverToken ? 'Clearing...' : 'Clear Token'}
           </Button>
           <Button
             variant="outline-primary"
             size="sm"
             type="button"
             onClick={onSyncAll}
-            disabled={syncingHardcover || !settings.hasHardcoverApiToken || !settings.hardcoverSyncEnabled}
+            disabled={
+              syncingHardcover ||
+              savingToken ||
+              clearingHardcoverToken ||
+              testingHardcover ||
+              !settings.hasHardcoverApiToken ||
+              !settings.hardcoverSyncEnabled
+            }
           >
             {syncingHardcover ? (
               <>
@@ -154,7 +171,7 @@ const HardcoverSettings = ({
         )}
 
         {hardcoverSyncMessage?.text && (
-          <Alert variant={hardcoverSyncMessage.type} className="mt-3 mb-0">
+          <Alert variant={hardcoverSyncMessage.type || 'info'} className="mt-3 mb-0">
             {hardcoverSyncMessage.text}
           </Alert>
         )}

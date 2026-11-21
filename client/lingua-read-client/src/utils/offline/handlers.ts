@@ -100,6 +100,8 @@ export const productionSyncHandlers: SyncHandlers = {
         currentSegmentIndex: payload.currentSegmentIndex,
         clientUpdatedAt: queuedSentenceCursorTime(payload.clientUpdatedAt, enqueuedAt),
         segments: payload.segments,
+        sourceRevision: payload.sourceRevision,
+        legacySegments: payload.legacySegments,
       }),
     }) as SentenceProgress | undefined;
     if (offlineSessionRevision() === session) rememberSentenceProgress(payload.textId, progress);

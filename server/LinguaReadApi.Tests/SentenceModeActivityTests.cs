@@ -114,6 +114,78 @@ public class SentenceModeActivityTests
     }
 
     [Fact]
+    public async Task LogSentenceRead_AheadClockCreditsWordsWithoutMovingTheSavedCursor()
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        const int textId = 11;
+        SeedUserLanguageAndText(context, userId, textId, "Alpha beta. Gamma delta.");
+        var controller = CreateUserActivityController(context, userId);
+
+        var saved = await controller.LogSentenceRead(new()
+        {
+            TextId = textId, CurrentSegmentIndex = 1, Segments = [new() { SegmentIndex = 1, SegmentText = "Gamma delta." }]
+        });
+        var replay = await controller.LogSentenceRead(new()
+        {
+            TextId = textId, CurrentSegmentIndex = 0, ClientUpdatedAt = DateTimeOffset.UtcNow.AddDays(1),
+            Segments = [new() { SegmentIndex = 0, SegmentText = "Alpha beta." }]
+        });
+
+        var before = Assert.IsType<UserActivityController.SentenceProgressDto>(Assert.IsType<OkObjectResult>(saved.Result).Value);
+        var after = Assert.IsType<UserActivityController.SentenceProgressDto>(Assert.IsType<OkObjectResult>(replay.Result).Value);
+        Assert.Equal(1, after.LastSegmentIndex);
+        Assert.Equal(before.CursorUpdatedAt, after.CursorUpdatedAt);
+        Assert.Equal(4, after.CreditedWordCount);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task LogSentenceRead_UsesSourceCoverageAfterSplittingAndMergingSegments(bool legacy)
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        const int textId = 11;
+        const string content = "Alpha. Beta. Gamma.";
+        SeedUserLanguageAndText(context, userId, textId, content);
+        var controller = CreateUserActivityController(context, userId);
+        var text = await context.Texts.SingleAsync();
+        var revision = LessonStudyActivity.Revision(text.Content, text.LanguageId, text.AudioFilePath);
+
+        async Task<UserActivityController.SentenceProgressDto> Read(UserActivityController.SentenceSegmentDto segment,
+            string? sourceRevision, List<UserActivityController.SentenceSegmentDto>? legacySegments = null)
+        {
+            var result = await controller.LogSentenceRead(new()
+            {
+                TextId = textId, SourceRevision = sourceRevision, LegacySegments = legacySegments, Segments = [segment]
+            });
+            return Assert.IsType<UserActivityController.SentenceProgressDto>(Assert.IsType<OkObjectResult>(result.Result).Value);
+        }
+
+        UserActivityController.SentenceSegmentDto original = new()
+        {
+            SegmentIndex = 0, SegmentText = "Alpha. Beta.", SourceStart = 0, SourceText = "Alpha. Beta. "
+        };
+        Assert.Equal(2, (await Read(original, legacy ? null : revision)).CreditedWordCount);
+        if (legacy) Assert.Equal(2, (await Read(original, revision, [original])).CreditedWordCount);
+
+        Assert.Equal(2, (await Read(new()
+        {
+            SegmentIndex = 1, SegmentText = "Beta.", SourceStart = 7, SourceText = "Beta. "
+        }, revision)).CreditedWordCount);
+        Assert.Equal(3, (await Read(new()
+        {
+            SegmentIndex = 1, SegmentText = "Beta. Gamma.", SourceStart = 7, SourceText = "Beta. Gamma."
+        }, revision)).CreditedWordCount);
+        Assert.Equal(3, (await Read(new()
+        {
+            SegmentIndex = 2, SegmentText = "Gamma.", SourceStart = 13, SourceText = "Gamma."
+        }, revision)).CreditedWordCount);
+        Assert.Equal(3, (await context.UserLanguageStatistics.SingleAsync()).TotalWordsRead);
+    }
+
+    [Fact]
     public async Task CompleteText_OnlyCreditsRemainingWordsAfterSentenceMode()
     {
         await using var context = CreateContext();

@@ -3,7 +3,7 @@ import { beforeEach, expect, test, vi } from 'vitest';
 
 vi.mock('../utils/api/client', () => ({ fetchApi: vi.fn() }));
 
-import { getSentenceProgress } from '../utils/api/audiobook';
+import { getSentenceProgress, logSentenceReadActivity } from '../utils/api/audiobook';
 import { fetchApi } from '../utils/api/client';
 import { productionSyncHandlers } from '../utils/offline/handlers';
 import { clearAll, drain, enqueue, listPending } from '../utils/offline/syncQueue';
@@ -60,6 +60,40 @@ test('a credit-only offline read survives both reload and successful replay with
   await expect(getSentenceProgress(textId)).resolves.toMatchObject({ lastSegmentIndex: null, creditedSegmentIndices: [] });
   mockFetch.mockRejectedValueOnce(new TypeError('offline'));
   await expect(getSentenceProgress(textId)).rejects.toThrow('offline');
+});
+
+test('calibrates new cursor writes and skips an older queue entry with a future timestamp', async () => {
+  const textId = 14;
+  const serverTime = '2026-11-16T13:00:00Z';
+  const progress = { textId, lastSegmentIndex: 4, cursorUpdatedAt: '2026-11-16T12:00:00Z', creditedSegmentIndices: [4], serverTime };
+  await enqueue({ type: 'sentenceRead', payload: {
+    textId, currentSegmentIndex: 2, clientUpdatedAt: '2026-11-17T12:00:00Z',
+    segments: [{ segmentIndex: 2, segmentText: 'Two.' }]
+  } });
+  mockFetch.mockResolvedValueOnce(progress);
+  await expect(getSentenceProgress(textId)).resolves.toMatchObject({ lastSegmentIndex: 4, creditedSegmentIndices: [2, 4] });
+
+  mockFetch.mockResolvedValueOnce(progress);
+  await logSentenceReadActivity({ textId, currentSegmentIndex: 5, segments: [{ segmentIndex: 5, segmentText: 'Five.' }] });
+  const timestamp = Date.parse(JSON.parse(String(mockFetch.mock.calls[1][1]?.body)).clientUpdatedAt);
+  expect(timestamp).toBeGreaterThanOrEqual(Date.parse(serverTime));
+  expect(timestamp).toBeLessThan(Date.parse(serverTime) + 1000);
+});
+
+test('preserves source spans through the offline queue and across a reopen', async () => {
+  const textId = 16;
+  const sourceRevision = 'source revision';
+  const first = { segmentIndex: 0, segmentText: 'First.', sourceStart: 0, sourceText: 'First. ' };
+  const second = { segmentIndex: 1, segmentText: 'Next.', sourceStart: 7, sourceText: 'Next.' };
+  mockFetch.mockRejectedValueOnce(new TypeError('offline'));
+  await logSentenceReadActivity({ textId, sourceRevision, segments: [second], legacySegments: [first] });
+  mockFetch.mockRejectedValueOnce(new TypeError('offline'));
+  await expect(getSentenceProgress(textId)).resolves.toMatchObject({
+    sourceCoverage: { sourceRevision, ranges: [{ start: 7, end: 12 }] }
+  });
+  mockFetch.mockResolvedValueOnce({ textId, creditedSegmentIndices: [0, 1] });
+  await expect(drain(productionSyncHandlers)).resolves.toMatchObject({ succeeded: 1 });
+  expect(JSON.parse(String(mockFetch.mock.calls[2][1]?.body))).toMatchObject({ sourceRevision, legacySegments: [first], segments: [second] });
 });
 
 test('legacy replay uses its original queue time and keeps the newer confirmed cursor offline', async () => {

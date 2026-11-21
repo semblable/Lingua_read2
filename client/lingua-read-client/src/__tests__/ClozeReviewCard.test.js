@@ -112,6 +112,20 @@ describe('ClozeReviewCard', () => {
     expect(screen.getByTestId('cloze-user-answer')).toHaveAttribute('data-cloze-match', 'true');
   });
 
+  test.each([
+    ['tr-TR', 'ışık', 'IŞIK', 'true'],
+    ['tr-TR', 'kir', 'KIR', 'false'],
+    ['tr-TR', 'şu', 'SU', 'false'],
+    ['az-Latn', 'qapı', 'QAPI', 'true'],
+    ['az-Latn', 'qapı', 'QAPİ', 'false']
+  ])('%s compares %s and %s with the vocabulary casing rules', (languageCode, term, answer, expected) => {
+    const props = { ...baseProps, languageCode, term };
+    const { rerender } = render(<ClozeReviewCard {...props} />);
+    fireEvent.change(screen.getByTestId('cloze-input'), { target: { value: answer } });
+    rerender(<ClozeReviewCard {...props} isFlipped />);
+    expect(screen.getByTestId('cloze-user-answer')).toHaveAttribute('data-cloze-match', expected);
+  });
+
   test('renders the meaning cue on the front face when translation is provided', () => {
     render(<ClozeReviewCard {...baseProps} translation="gato" />);
     expect(screen.getByTestId('cloze-meaning-cue')).toHaveTextContent('Meaning:gato');

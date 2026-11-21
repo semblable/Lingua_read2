@@ -50,6 +50,8 @@ export type ReaderSegment = {
   text: string;
   type: 'sentence' | 'title';
   mediaBlocks: DisplayBlock[];
+  sourceStart?: number;
+  sourceText?: string;
 };
 
 // SRT-derived sentence segment. Constructed in TextDisplay when an audio
@@ -1464,11 +1466,10 @@ const applyExceptionMerging = (
   return merged;
 };
 
-export const splitBlockIntoSentences = (
+const sentenceChunks = (
   blockText: string,
   languageConfig: LanguageConfig,
-  languageCode: string | null | undefined,
-  preserveWhitespace = false
+  languageCode: string | null | undefined
 ): string[] => {
   if (!blockText) return [];
   const locale = localeFromCode(languageCode);
@@ -1489,16 +1490,18 @@ export const splitBlockIntoSentences = (
       merged.push(candidate);
     }
   }
-  // Segment text leaves the reader as a mined sentence, a translation or
-  // explanation request and TTS input, so drop soft hyphens and compose
-  // accents here too (display is unaffected: the renderer normalizes anyway).
-  // Normalize after the emptiness filter: bookmarks and reading progress are
-  // keyed by sentence index, so the segment count must not change.
-  return merged
+  return merged;
+};
+
+export const splitBlockIntoSentences = (
+  blockText: string,
+  languageConfig: LanguageConfig,
+  languageCode: string | null | undefined,
+  preserveWhitespace = false
+): string[] => sentenceChunks(blockText, languageConfig, languageCode)
     .map((sentence) => preserveWhitespace ? sentence : sentence.replace(/\s+/g, ' ').trim())
     .filter(sentence => sentence.trim().length > 0)
     .map(normalizeTokenizerInput);
-};
 
 export const splitTextIntoSentenceSegments = (
   content: string | null | undefined,
@@ -1510,6 +1513,7 @@ export const splitTextIntoSentenceSegments = (
 
   const segments: ReaderSegment[] = [];
   let pendingMediaBlocks: DisplayBlock[] = [];
+  let sourceOffset = 0;
 
   buildDisplayBlocks(content, structuredContent).forEach((block) => {
     if (block.type === 'image') {
@@ -1517,30 +1521,41 @@ export const splitTextIntoSentenceSegments = (
       return;
     }
 
+    // Offsets refer to the display blocks before sentence splitting. A
+    // different language rule can change segment indices without moving text.
+    const blockSource = block.isTitleBlock ? block.lines.join('\n').trim() : block.text;
+    const blockStart = sourceOffset;
+    sourceOffset += blockSource.length + 1;
     if (block.isTitleBlock) {
-      const titleSegmentText = block.lines.join('\n').trim();
-      if (titleSegmentText) {
+      if (blockSource) {
         segments.push({
           index: segments.length,
-          text: normalizeTokenizerInput(titleSegmentText),
+          text: normalizeTokenizerInput(blockSource),
           type: 'title',
-          mediaBlocks: pendingMediaBlocks
+          mediaBlocks: pendingMediaBlocks,
+          sourceStart: blockStart,
+          sourceText: blockSource
         });
         pendingMediaBlocks = [];
       }
       return;
     }
 
-    const sentences = splitBlockIntoSentences(block.text, languageConfig, languageCode);
-    sentences.forEach((sentence, sentenceIndex) => {
+    let nextSearch = 0;
+    for (const chunk of sentenceChunks(blockSource, languageConfig, languageCode)) {
+      const start = blockSource.indexOf(chunk, nextSearch);
+      if (start >= 0) nextSearch = start + chunk.length;
+      const sentence = chunk.replace(/\s+/g, ' ').trim();
+      if (!sentence) continue;
       segments.push({
         index: segments.length,
-        text: sentence,
+        text: normalizeTokenizerInput(sentence),
         type: 'sentence',
-        mediaBlocks: sentenceIndex === 0 ? pendingMediaBlocks : []
+        mediaBlocks: pendingMediaBlocks,
+        ...(start < 0 ? {} : { sourceStart: blockStart + start, sourceText: chunk })
       });
-    });
-
+      pendingMediaBlocks = [];
+    }
     pendingMediaBlocks = [];
   });
 

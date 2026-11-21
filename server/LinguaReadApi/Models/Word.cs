@@ -27,6 +27,9 @@ namespace LinguaReadApi.Models
         // A later definition edit does not supersede a pending vocabulary grade.
         public DateTime? LastStatusEditedAt { get; set; }
 
+        // A clear is also a definition edit, even after the translation row is gone.
+        public DateTime? LastTranslationEditedAt { get; set; }
+
         // Explicit status saves retain priority when a learner later undoes a review.
         public DateTime? LastManualStatusAt { get; set; }
         

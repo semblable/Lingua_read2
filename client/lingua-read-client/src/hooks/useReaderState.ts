@@ -16,6 +16,7 @@ import type { LanguageConfig } from '../utils/readerText';
 import type { Text as TextDto } from '../utils/api/texts';
 import type { Book as BookDto } from '../utils/api/books';
 import { addMissingWords, type Word } from '../utils/api/words';
+import type { SentenceSourceCoverage } from '../utils/sentenceProgress';
 
 // Page state often overlays extra fields the OpenAPI spec omits. Keep the
 // types loose enough for the augmented runtime shape used by the reader.
@@ -33,7 +34,8 @@ export type UseReaderStateArgs = {
   onSentenceProgressApplied: (
     initialSegmentIndex: number,
     creditedIndices: number[],
-    preserveInitialCursor: boolean
+    preserveInitialCursor: boolean,
+    coverage?: SentenceSourceCoverage
   ) => void;
   autoTranslateTriggeredRef: React.MutableRefObject<boolean>;
   autoTranslateTextIdRef: React.MutableRefObject<number | string | null>;
@@ -338,11 +340,13 @@ export const useReaderState = ({
         if (progress.status === 'fulfilled') {
           const sentenceProgress = progress.value;
           const initialIndex = Math.max(0, sentenceProgress?.lastSegmentIndex ?? 0);
-          stableOnSentenceProgressApplied.current(
+          const restore = [
             initialIndex,
             sentenceProgress?.creditedSegmentIndices ?? [],
             sentenceProgress?.lastSegmentIndex != null || sentenceProgress?.cursorUnknown === true
-          );
+          ] as const;
+          if (sentenceProgress?.sourceCoverage) stableOnSentenceProgressApplied.current(...restore, sentenceProgress.sourceCoverage);
+          else stableOnSentenceProgressApplied.current(...restore);
         } else {
           const status = (progress.reason as { status?: number } | null)?.status;
           if (status === 403 || status === 404) {

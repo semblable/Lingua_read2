@@ -8,7 +8,8 @@ import { enqueueIfOffline, isOfflineQueued } from '../offline/enqueueIfOffline';
 import { newClientEventId } from '../offline/clientEventId';
 import { offlineSessionRevision } from '../offline/events';
 import { listPending, removePending } from '../offline/syncQueue';
-import { forgetSentenceProgress, queuedSentenceCursorTime, readCachedSentenceProgress, rememberSentenceProgress } from '../sentenceProgress';
+import { estimatedSentenceServerTime, forgetSentenceProgress, includeSentenceReadRanges, queuedSentenceCursorTime,
+  readCachedSentenceProgress, rememberSentenceProgress } from '../sentenceProgress';
 import type { LessonListeningCredit } from '../../audio/listeningActivity';
 import { notifyStudyChange } from '../studyIntent';
 
@@ -193,7 +194,8 @@ export const getSentenceProgress = async (
   const cached = readCachedSentenceProgress(textId);
   const cacheChangedDuringLoad = cached && (cached.cursorUpdatedAt !== cachedBeforeLoad?.cursorUpdatedAt
     || cached.lastSegmentIndex !== cachedBeforeLoad.lastSegmentIndex
-    || cached.creditedSegmentIndices.length !== cachedBeforeLoad?.creditedSegmentIndices.length);
+    || cached.creditedSegmentIndices.length !== cachedBeforeLoad?.creditedSegmentIndices.length
+    || JSON.stringify(cached.sourceCoverage) !== JSON.stringify(cachedBeforeLoad?.sourceCoverage));
   // A fresh GET can replace the cache after a restore. Merge only a confirmation
   // received during this GET, e.g. a replay whose queue entry has disappeared.
   const confirmed = serverProgress
@@ -201,12 +203,16 @@ export const getSentenceProgress = async (
     : cached;
   let lastSegmentIndex = confirmed?.lastSegmentIndex ?? serverProgress?.lastSegmentIndex ?? null;
   let cursorUpdatedAt = confirmed?.cursorUpdatedAt ?? null;
+  const hasConfirmedCursor = lastSegmentIndex != null;
+  const serverTime = estimatedSentenceServerTime();
   const credited = new Set(confirmed?.creditedSegmentIndices ?? []);
+  let sourceCoverage = confirmed?.sourceCoverage ?? null;
   for (const op of pending.status === 'fulfilled' ? pending.value : []) {
     if (op.type !== 'sentenceRead' || op.payload.textId !== Number(textId)) continue;
     const queuedAt = queuedSentenceCursorTime(op.payload.clientUpdatedAt, op.enqueuedAt);
     const segmentIndex = op.payload.currentSegmentIndex;
     if (queuedAt && segmentIndex != null && segmentIndex >= 0
+        && (!hasConfirmedCursor || serverTime === undefined || Date.parse(queuedAt) <= serverTime)
         && (!cursorUpdatedAt || Date.parse(queuedAt) >= Date.parse(cursorUpdatedAt))) {
       lastSegmentIndex = segmentIndex;
       cursorUpdatedAt = queuedAt;
@@ -214,6 +220,8 @@ export const getSentenceProgress = async (
     for (const segment of op.payload.segments) {
       if (segment.segmentIndex >= 0 && segment.segmentText.trim()) credited.add(segment.segmentIndex);
     }
+    sourceCoverage = includeSentenceReadRanges(sourceCoverage, op.payload.sourceRevision, op.payload.segments,
+      confirmed?.creditedSegmentIndices ?? []);
   }
 
   const cursorUnknown = remote.status === 'rejected' && lastSegmentIndex == null;
@@ -223,6 +231,7 @@ export const getSentenceProgress = async (
     textId: Number(textId),
     lastSegmentIndex,
     cursorUpdatedAt,
+    ...(sourceCoverage ? { sourceCoverage } : {}),
     ...(cursorUnknown ? { cursorUnknown: true } : {}),
     creditedSegmentIndices: [...credited].sort((a, b) => a - b)
   };
@@ -232,10 +241,12 @@ export const logSentenceReadActivity = async (
   payload: LogSentenceReadInput
 ): Promise<unknown> => {
   const session = offlineSessionRevision();
-  const clientUpdatedAt = payload.currentSegmentIndex != null ? nowIso() : undefined;
+  const clientUpdatedAt = payload.currentSegmentIndex == null ? undefined
+    : new Date(estimatedSentenceServerTime() ?? Date.now()).toISOString();
   // Keep all credits, even when the timestamp of an earlier cursor loses
   // to a more recent navigation.
   const opSegments = (payload.segments ?? []).map((s) => ({
+    ...s,
     segmentIndex: Number(s.segmentIndex),
     segmentText: String(s.segmentText ?? '')
   }));
@@ -246,7 +257,9 @@ export const logSentenceReadActivity = async (
         textId: Number(payload.textId),
         currentSegmentIndex: payload.currentSegmentIndex ?? undefined,
         clientUpdatedAt,
-        segments: opSegments
+        segments: opSegments,
+        sourceRevision: payload.sourceRevision ?? undefined,
+        legacySegments: payload.legacySegments ?? undefined
       }
     },
     () => fetchApi<SentenceProgress>('/activity/logSentenceRead', {

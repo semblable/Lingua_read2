@@ -1274,6 +1274,9 @@ namespace LinguaReadApi.Data.Migrations
                     b.Property<int?>("LastSegmentIndex")
                         .HasColumnType("integer");
 
+                    b.Property<string>("SourceCoverageJson")
+                        .HasColumnType("text");
+
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -1618,6 +1621,9 @@ namespace LinguaReadApi.Data.Migrations
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<DateTime?>("LastStatusEditedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("LastTranslationEditedAt")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<int>("Status")

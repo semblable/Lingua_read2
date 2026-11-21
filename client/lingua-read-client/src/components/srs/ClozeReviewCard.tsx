@@ -1,11 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Form } from 'react-bootstrap';
+import { lowercaseLookupTerm } from '../../utils/readerText';
 
 export interface ClozeReviewCardProps {
   /** Stable identity used to reset the typed answer and hints when the card changes. */
   cardId: number | string;
   clozeSentence: string;
   term: string;
+  languageCode?: string;
   translation: string;
   isFlipped: boolean;
   onReveal: () => void;
@@ -29,6 +31,7 @@ const ClozeReviewCard: React.FC<ClozeReviewCardProps> = ({
   cardId,
   clozeSentence,
   term,
+  languageCode,
   translation,
   isFlipped,
   onReveal,
@@ -141,9 +144,15 @@ const ClozeReviewCard: React.FC<ClozeReviewCardProps> = ({
     return { char: ch, isLetter: true, isRevealed, key: idx };
   });
 
-  // Matching evaluation: exact match or diacritic-tolerant match
-  const normalizedTyped = typedAnswer.trim().normalize('NFC').toLowerCase();
-  const normalizedTerm = term.trim().normalize('NFC').toLowerCase();
+  // Turkish and Azerbaijani distinguish dotted and dotless I as well as
+  // letters with and without marks. Use the same keys as their vocabulary.
+  const baseLanguage = languageCode?.trim().toLowerCase().split(/[-_]/)[0];
+  const useTurkicKeys = baseLanguage === 'tr' || baseLanguage === 'az';
+  const normalizeAnswer = (answer: string) => useTurkicKeys
+    ? lowercaseLookupTerm(answer, languageCode)
+    : answer.trim().normalize('NFC').toLowerCase();
+  const normalizedTyped = normalizeAnswer(typedAnswer);
+  const normalizedTerm = normalizeAnswer(term);
   const exactMatch = normalizedTyped.length > 0 && normalizedTyped === normalizedTerm;
 
   // Tolerate accents on Latin letters, preserving phonemic marks in other
@@ -153,7 +162,7 @@ const ClozeReviewCard: React.FC<ClozeReviewCardProps> = ({
       (_match, base: string, marks: string) => base + marks.replace(/\p{Diacritic}/gu, ''));
   const diacriticTyped = stripDiacritics(normalizedTyped);
   const diacriticTerm = stripDiacritics(normalizedTerm);
-  const diacriticMatch = diacriticTyped.length > 0 && diacriticTyped === diacriticTerm;
+  const diacriticMatch = !useTurkicKeys && diacriticTyped.length > 0 && diacriticTyped === diacriticTerm;
 
   const matched = exactMatch || diacriticMatch;
   const hasAccentDiff = !exactMatch && diacriticMatch;

@@ -94,9 +94,10 @@ namespace LinguaReadApi.Controllers
                 ? NormalizeTranslationEdit(createWordDto.Translation)
                 : string.IsNullOrEmpty(createWordDto.Translation) ? null : createWordDto.Translation;
             if (word == null && createWordDto.ExpectedRevision != null) return NotFound();
-            var writeTime = word == null ? editedAt : ResolveWordEditTime(word, createWordDto.ExpectedRevision,
-                editedAt, status, translation, createWordDto.TranslationUpdatedAt, createWordDto.StatusUpdatedAt);
-            if (!writeTime.HasValue) return NewerWordConflict(word!);
+            var edit = ResolveWordEdit(word, createWordDto.ExpectedRevision, editedAt, status,
+                !createWordDto.TranslationOnly || isNew || word!.Status == 0,
+                translation, createWordDto.StatusUpdatedAt, createWordDto.TranslationUpdatedAt);
+            if (edit == null) return NewerWordConflict(word!);
 
             word ??= new Word
             {
@@ -105,8 +106,7 @@ namespace LinguaReadApi.Controllers
                 LanguageId = text.LanguageId,
                 CreatedAt = DateTime.UtcNow
             };
-            ApplyWordEdit(word, status, writeTime.Value, !createWordDto.TranslationOnly || isNew || word.Status == 0,
-                createWordDto.ExpectedRevision == null ? createWordDto.StatusUpdatedAt : null);
+            ApplyWordEdit(word, status, edit);
             if (isNew) _context.Words.Add(word);
             else _context.Entry(word).Property(w => w.LastEditedAt).IsModified = true;
             if (isNew || !await _context.TextWords.AnyAsync(tw => tw.TextId == text.TextId && tw.WordId == word.WordId))
@@ -432,9 +432,10 @@ namespace LinguaReadApi.Controllers
 
             var translation = NormalizeTranslationEdit(updateWordDto.Translation);
             var status = updateWordDto.TranslationOnly ? Math.Max(1, word.Status) : updateWordDto.Status;
-            var writeTime = ResolveWordEditTime(word, updateWordDto.ExpectedRevision, editedAt,
-                status, translation, updateWordDto.TranslationUpdatedAt, updateWordDto.StatusUpdatedAt);
-            if (!writeTime.HasValue) return NewerWordConflict(word);
+            var edit = ResolveWordEdit(word, updateWordDto.ExpectedRevision, editedAt, status,
+                !updateWordDto.TranslationOnly || word.Status == 0,
+                translation, updateWordDto.StatusUpdatedAt, updateWordDto.TranslationUpdatedAt);
+            if (edit == null) return NewerWordConflict(word);
 
             Text? sourceText = null;
             if (status is >= 1 and <= 4 && !string.IsNullOrWhiteSpace(updateWordDto.Sentence))
@@ -455,8 +456,7 @@ namespace LinguaReadApi.Controllers
 
             // Update word status, then create, suspend or restore its SRS card to match
             // (Ignored always suspends; leaving Known/Ignored lifts only that suspension).
-            ApplyWordEdit(word, status, writeTime.Value, !updateWordDto.TranslationOnly || word.Status == 0,
-                updateWordDto.ExpectedRevision == null ? updateWordDto.StatusUpdatedAt : null);
+            ApplyWordEdit(word, status, edit);
             _context.Entry(word).Property(w => w.LastEditedAt).IsModified = true;
             var capturedExample = sourceText != null && await SrsMinedSentences.CaptureFirstAsync(
                 _context, word, updateWordDto.Sentence, sourceText);
@@ -590,12 +590,12 @@ namespace LinguaReadApi.Controllers
                     foreach (var word in plan.WordsToCreate.Concat(plan.WordsWithNewStatus))
                     {
                         var statusChanged = newWords.Contains(word) || _context.Entry(word).Property(w => w.Status).OriginalValue != word.Status;
-                        ApplyWordEdit(word, word.Status, editTime, statusChanged, null);
+                        ApplyWordEdit(word, word.Status, new(AdvanceRevision(word.LastEditedAt, editTime), statusChanged ? editTime : null, null));
                     }
                     foreach (var (word, translation) in plan.TranslationsToUpsert)
                     {
+                        ApplyWordEdit(word, word.Status, new(AdvanceRevision(word.LastEditedAt, editTime), null, editTime));
                         SetWordTranslation(word, translation);
-                        ApplyWordEdit(word, word.Status, editTime, false, null);
                     }
 
                     // New cards can reference the added Word, so all associated writes
@@ -902,43 +902,59 @@ namespace LinguaReadApi.Controllers
         private static string WordRevision(Word word, DateTime? latest) =>
             $"{word.WordId:x}-{(latest ?? word.CreatedAt).Ticks:x}";
 
-        private static void ApplyWordEdit(Word word, int status, DateTime writeTime, bool statusSelected, DateTimeOffset? statusUpdatedAt)
+        private sealed record WordEdit(DateTime Revision, DateTime? StatusTime, DateTime? TranslationTime);
+
+        private static DateTime AdvanceRevision(DateTime? previous, DateTime time) =>
+            previous is { } revision && revision >= time ? revision.AddMicroseconds(1) : time;
+
+        private static DateTime? LatestStatusEdit(Word word) => word.LastStatusEditedAt ?? word.LastEditedAt
+            ?? word.LastManualStatusAt ?? (word.Status > 0 ? word.CreatedAt : null);
+
+        private static DateTime? LatestTranslationEdit(Word word) => word.LastTranslationEditedAt
+            ?? word.Translation?.UpdatedAt ?? word.Translation?.CreatedAt;
+
+        private static void ApplyWordEdit(Word word, int status, WordEdit edit)
         {
             // Preserve the effective status clock before a first definition edit advances the row revision.
-            word.LastStatusEditedAt ??= word.LastEditedAt ?? word.LastManualStatusAt ?? (!statusSelected && word.Status > 0 ? word.CreatedAt : null);
+            if (!edit.StatusTime.HasValue) word.LastStatusEditedAt ??= LatestStatusEdit(word);
             word.Status = status;
-            word.LastEditedAt = writeTime;
-            if (!statusSelected) return;
-            var statusTime = statusUpdatedAt is { } at && at.UtcDateTime < writeTime ? WordEditTime(at) : writeTime;
-            if (!(word.LastStatusEditedAt >= statusTime)) word.LastStatusEditedAt = statusTime;
-            if (!(word.LastManualStatusAt >= statusTime)) word.LastManualStatusAt = statusTime;
+            word.LastEditedAt = edit.Revision;
+            if (edit.TranslationTime is { } translationTime && !(word.LastTranslationEditedAt >= translationTime))
+                word.LastTranslationEditedAt = translationTime;
+            if (edit.StatusTime is { } statusTime)
+            {
+                if (!(word.LastStatusEditedAt >= statusTime)) word.LastStatusEditedAt = statusTime;
+                if (!(word.LastManualStatusAt >= statusTime)) word.LastManualStatusAt = statusTime;
+            }
         }
 
-        private static DateTime? ResolveWordEditTime(Word word, string? expectedRevision, DateTime editedAt,
-            int status, string? translation, DateTimeOffset? translationUpdatedAt, DateTimeOffset? statusUpdatedAt)
+        private static WordEdit? ResolveWordEdit(Word? word, string? expectedRevision, DateTime editedAt,
+            int status, bool statusSelected, string? translation, DateTimeOffset? statusUpdatedAt, DateTimeOffset? translationUpdatedAt)
         {
-            var latest = LatestWordEdit(word);
+            var latest = word == null ? null : LatestWordEdit(word);
             if (expectedRevision != null)
             {
                 // An explicit decision applies only to the exact version the reader saw.
-                // Advance the authoritative clock even when the device clock is behind.
-                if (expectedRevision != WordRevision(word, latest)) return null;
-                var now = WordEditTime(null);
-                return latest is { } last && last >= now ? last.AddMicroseconds(1) : now;
+                if (word == null || expectedRevision != WordRevision(word, latest)) return null;
+                var now = AdvanceRevision(latest, WordEditTime(null));
+                return new(now, statusSelected ? now : null, translation == null ? null : now);
             }
-            if (latest is not { } previous) return editedAt;
 
-            var changesTranslation = translation != null && translation != (word.Translation?.Translation ?? "");
-            if (editedAt < previous || (editedAt == previous && (status != word.Status || changesTranslation)))
+            // The revision guards the row, while conflict detection follows the fields
+            // this request actually edits (including the original times in a coalesced save).
+            DateTime? statusTime = statusSelected ? EditFieldTime(statusUpdatedAt, editedAt) : null;
+            DateTime? translationTime = translation == null ? null : EditFieldTime(translationUpdatedAt, editedAt);
+            if (word != null && (IsStaleFieldEdit(statusTime, LatestStatusEdit(word), status != word.Status)
+                || IsStaleFieldEdit(translationTime, LatestTranslationEdit(word), translation != (word.Translation?.Translation ?? ""))))
                 return null;
-            if (status != word.Status && statusUpdatedAt is { } statusTime && statusTime.UtcDateTime <= previous)
-                return null;
-
-            // Coalescing may carry an earlier translation along with a newer status.
-            // Do not let that earlier value replace an intervening edit from another device.
-            return changesTranslation && translationUpdatedAt is { } translationTime && translationTime.UtcDateTime <= previous
-                ? null : editedAt;
+            return new(AdvanceRevision(latest, editedAt), statusTime, translationTime);
         }
+
+        private static DateTime EditFieldTime(DateTimeOffset? fieldTime, DateTime editedAt) =>
+            fieldTime is { } at && at.UtcDateTime < editedAt ? WordEditTime(at) : editedAt;
+
+        private static bool IsStaleFieldEdit(DateTime? incoming, DateTime? current, bool changesValue) =>
+            incoming is { } edit && current is { } saved && (edit < saved || (edit == saved && changesValue));
 
         private static WordResponseDto WordResponse(Word word, bool isNew) => new()
         {

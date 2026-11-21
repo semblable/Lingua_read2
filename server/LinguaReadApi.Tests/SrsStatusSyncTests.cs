@@ -337,6 +337,53 @@ public class SrsStatusSyncTests
         Assert.Equal("domestic cat", word.Translation.Translation);
     }
 
+    [Theory]
+    [InlineData(true, false)]
+    [InlineData(false, false)]
+    [InlineData(true, true)]
+    [InlineData(false, true)]
+    public async Task OfflineDefinitionAndGradeUseSeparateEditTimes(bool gradeFirst, bool newerServerDefinition)
+    {
+        using var context = CreateContext();
+        var userId = Seed(context, Settings(), wordStatus: 1);
+        var basis = DateTimeOffset.UtcNow.AddMinutes(-10);
+        var word = await context.Words.SingleAsync();
+        word.CreatedAt = basis.UtcDateTime;
+        word.LastEditedAt = word.LastStatusEditedAt = basis.UtcDateTime;
+        context.SrsCardReviews.Add(new() { WordId = 1, UserId = userId, NextReviewAt = basis.UtcDateTime });
+        await context.SaveChangesAsync();
+
+        var words = Words(context, userId);
+        async Task<IActionResult> SaveDefinition(string translation, int minute) => await words.UpdateWord(1, new()
+        {
+            Status = 1, Translation = translation, TranslationOnly = true, ClientUpdatedAt = basis.AddMinutes(minute)
+        });
+
+        async Task Review()
+        {
+            var result = await Srs(context, userId).SubmitReview(new()
+            {
+                SrsCardReviewId = 1, Grade = 3, ReviewedAt = basis.AddMinutes(3).UtcDateTime
+            });
+            var review = Assert.IsType<SrsReviewResultDto>(Assert.IsType<OkObjectResult>(result.Result).Value);
+            Assert.Equal(3, review.WordStatusChange?.To);
+        }
+
+        Assert.IsType<OkObjectResult>(await SaveDefinition("server", newerServerDefinition ? 4 : 1));
+        if (gradeFirst) await Review();
+        var replay = await SaveDefinition("offline", 2);
+        if (!gradeFirst) await Review();
+
+        if (newerServerDefinition) Assert.IsType<ConflictObjectResult>(replay);
+        else Assert.IsType<OkObjectResult>(replay);
+        Assert.Equal(newerServerDefinition ? "server" : "offline", word.Translation.Translation);
+        Assert.Equal(3, word.Status);
+
+        Assert.IsType<OkObjectResult>(await SaveDefinition("", 5));
+        Assert.IsType<ConflictObjectResult>(await SaveDefinition("older than clear", 4));
+        Assert.Null(word.Translation);
+    }
+
     [Fact]
     public async Task Undo_RestoresTheStatus_WhenNothingChangedItSince()
     {

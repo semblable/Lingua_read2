@@ -70,6 +70,15 @@ import { isThaiSegmentationReady } from '../utils/thaiRuntime';
 import { getScrollBehavior } from '../utils/motion';
 import { readerFontFamily } from '../utils/readerAppearance';
 import { sentenceAtReaderOccurrence } from '../utils/readerOccurrenceContext';
+import { hasSentenceRange, includeSentenceReadRanges, mergeSentenceCoverage, type SentenceReadSegment,
+  type SentenceSourceCoverage } from '../utils/sentenceProgress';
+import type { SentenceProgress } from '../utils/api/audiobook';
+
+function sentenceRead(segment: SentenceSegment, includeSource: boolean): SentenceReadSegment {
+  const read = { segmentIndex: segment.index, segmentText: segment.text };
+  return includeSource && segment.type !== 'audio'
+    ? { ...read, sourceStart: segment.sourceStart, sourceText: segment.sourceText } : read;
+}
 
 const TextDisplay = () => {
   const { textId } = useParams();
@@ -145,16 +154,17 @@ const TextDisplay = () => {
   const [visibleTranslationIndex, setVisibleTranslationIndex] = useState<number | null>(null);
   const [visibleExplanationIndex, setVisibleExplanationIndex] = useState<number | null>(null);
   const [creditedSegmentIndices, setCreditedSegmentIndices] = useState<number[]>([]);
-  type SentenceRead = { segmentIndex: number; segmentText: string };
+  const [sourceCoverage, setSourceCoverage] = useState<SentenceSourceCoverage | null>(null);
   const sentenceReads = useMemo(() => ({
-    textId, firstVisible: null as SentenceRead | null, navigatedBeforeRestore: false,
+    textId, firstVisible: null as SentenceReadSegment | null, navigatedBeforeRestore: false,
     restored: null as { index: number; credited: number[] } | null,
-    lastRead: null as SentenceRead | null
+    lastRead: null as SentenceReadSegment | null
   }), [textId]);
   const activeSentenceReads = useRef(sentenceReads);
   activeSentenceReads.current = sentenceReads;
-  const addSentenceCredits = useCallback((incoming: number[]) => {
+  const addSentenceCredits = useCallback((incoming: number[], coverage?: SentenceSourceCoverage | null) => {
     if (incoming.length) setCreditedSegmentIndices(previous => [...new Set([...previous, ...incoming])]);
+    if (coverage) setSourceCoverage(previous => mergeSentenceCoverage(previous, coverage));
   }, []);
   const pendingModeEntryFromIndexRef = useRef<number | null>(null);
   const [activePhraseSelection, setActivePhraseSelection] = useState<PhraseSelectionState | null>(null);
@@ -250,13 +260,13 @@ const TextDisplay = () => {
   } = useReaderBookmarks({ textId, isMobile, hasActiveTextSelection });
 
   const handleSentenceProgressApplied = useCallback(
-    (initialSegmentIndex: number, credited: number[], preserveInitialCursor: boolean) => {
+    (initialSegmentIndex: number, credited: number[], preserveInitialCursor: boolean, coverage?: SentenceSourceCoverage) => {
       if (!sentenceReads.navigatedBeforeRestore) {
         sentenceReads.firstVisible = null;
         sentenceReads.restored = preserveInitialCursor ? { index: initialSegmentIndex, credited } : null;
         setCurrentSegmentIndex(initialSegmentIndex);
       }
-      addSentenceCredits(credited);
+      addSentenceCredits(credited, coverage);
     },
     [addSentenceCredits, sentenceReads]
   );
@@ -423,6 +433,7 @@ const TextDisplay = () => {
     setVisibleTranslationIndex(null);
     setVisibleExplanationIndex(null);
     setCreditedSegmentIndices([]);
+    setSourceCoverage(null);
     setActivePhraseSelection(null);
     setSegmentPlaybackRequest(null);
     resetAudioSyncTargets();
@@ -1529,9 +1540,20 @@ const TextDisplay = () => {
   }, [isAudioLesson, srtLines, text?.content, text?.structuredContent, languageConfig, text?.languageCode]);
 
   const currentSentenceSegment = sentenceSegments[currentSegmentIndex] || null;
+  const sentenceCreditRevision = isAudioLesson ? null : text?.studyRevision;
+  const coverageForSource = sourceCoverage?.sourceRevision === sentenceCreditRevision ? sourceCoverage : null;
+  const legacyCredits = useMemo(() => coverageForSource?.legacyIndices ?? creditedSegmentIndices,
+    [coverageForSource, creditedSegmentIndices]);
+  const creditedSegmentCount = useMemo(() => coverageForSource
+    ? sentenceSegments.filter(segment => legacyCredits.includes(segment.index)
+      || hasSentenceRange(coverageForSource, sentenceRead(segment, true))).length
+    : creditedSegmentIndices.length, [coverageForSource, creditedSegmentIndices, legacyCredits, sentenceSegments]);
+  const creditContext = useRef({ coverageForSource, legacyCredits, sentenceSegments });
+  creditContext.current = { coverageForSource, legacyCredits, sentenceSegments };
+
   const moveToAdjacentSentence = (step: -1 | 1) => {
     if (!sentenceProgressLoaded && !sentenceReads.navigatedBeforeRestore && currentSentenceSegment) {
-      sentenceReads.firstVisible ??= { segmentIndex: currentSentenceSegment.index, segmentText: currentSentenceSegment.text };
+      sentenceReads.firstVisible ??= sentenceRead(currentSentenceSegment, !!sentenceCreditRevision);
       sentenceReads.navigatedBeforeRestore = true;
     }
     setCurrentSegmentIndex(previous => Math.max(0, Math.min(sentenceSegments.length - 1, previous + step)));
@@ -1874,8 +1896,9 @@ const TextDisplay = () => {
     pendingModeEntryFromIndexRef.current = null;
 
     const syncSentenceProgress = async () => {
+      const { coverageForSource, legacyCredits, sentenceSegments } = creditContext.current;
       const segmentIndex = currentSentenceSegment.index;
-      const read = { segmentIndex, segmentText: currentSentenceSegment.text };
+      const read = sentenceRead(currentSentenceSegment, !!sentenceCreditRevision);
       const segments = [read];
       if (!sentenceProgressLoaded && !sentenceReads.navigatedBeforeRestore) {
         sentenceReads.firstVisible ??= read;
@@ -1888,24 +1911,34 @@ const TextDisplay = () => {
         if (sentenceReads.firstVisible.segmentIndex !== segmentIndex) segments.unshift(sentenceReads.firstVisible);
         sentenceReads.firstVisible = null;
       }
-      if (sentenceReads.lastRead?.segmentIndex === segmentIndex) return;
+      if (sentenceReads.lastRead?.segmentIndex === segmentIndex && sentenceReads.lastRead.sourceStart === read.sourceStart
+          && sentenceReads.lastRead.sourceText === read.sourceText) return;
       if (sentenceReads.restored?.index !== segmentIndex) sentenceReads.restored = null;
-      if (sentenceReads.restored?.credited.includes(segmentIndex)) return;
+      if (sentenceReads.restored && (sentenceCreditRevision
+        ? coverageForSource && legacyCredits.length === 0 && hasSentenceRange(coverageForSource, read)
+        : sentenceReads.restored.credited.includes(segmentIndex))) return;
 
       const session = offlineSessionRevision();
       sentenceReads.lastRead = read;
       try {
+        const legacySegments = sentenceCreditRevision ? legacyCredits.flatMap(index => {
+          const segment = sentenceSegments[index];
+          return segment ? [sentenceRead(segment, true)] : [];
+        }) : [];
         const response = await logSentenceReadActivity({
           textId: Number(sentenceReads.textId),
           ...(sentenceReads.restored ? {} : { currentSegmentIndex: segmentIndex }),
+          ...(sentenceCreditRevision ? { sourceRevision: sentenceCreditRevision } : {}),
+          ...(legacySegments.length ? { legacySegments } : {}),
           segments
         });
         if (activeSentenceReads.current !== sentenceReads || offlineSessionRevision() !== session) return;
         if (isOfflineQueued(response)) {
-          addSentenceCredits(segments.filter(segment => segment.segmentText.trim()).map(segment => segment.segmentIndex));
+          addSentenceCredits(segments.filter(segment => segment.segmentText.trim()).map(segment => segment.segmentIndex),
+            includeSentenceReadRanges(coverageForSource, sentenceCreditRevision, segments, legacyCredits));
         } else {
-          const typed = response as { creditedSegmentIndices?: number[] } | null;
-          addSentenceCredits(typed?.creditedSegmentIndices ?? []);
+          const typed = response as SentenceProgress | null;
+          addSentenceCredits(typed?.creditedSegmentIndices ?? [], typed?.sourceCoverage);
         }
       } catch (sentenceReadErr) {
         if (sentenceReads.lastRead === read) sentenceReads.lastRead = null;
@@ -1957,6 +1990,7 @@ const TextDisplay = () => {
     isAudioLesson,
     isSentenceMode,
     lastAutoSegmentPlaybackKeyRef,
+    sentenceCreditRevision,
     sentenceProgressLoaded,
     sentenceReads,
     sentenceSourceReady,
@@ -2743,7 +2777,7 @@ const TextDisplay = () => {
                     currentSegment={currentSentenceSegment}
                     segmentCount={sentenceSegments.length}
                     currentSegmentIndex={currentSegmentIndex}
-                    creditedSegmentCount={creditedSegmentIndices.length}
+                    creditedSegmentCount={creditedSegmentCount}
                     fontStyle={getFontStyling(isMobile ? mobileReadingConfig.lineSpacing : globalSettings.lineSpacing)}
                     textAlignment={globalSettings.readerTextAlignment}
                     processTextContent={processTextContent}

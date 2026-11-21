@@ -365,6 +365,13 @@ public class SentenceSegmentDto
 
     [Required]
     public string SegmentText { get; set; } = string.Empty;
+
+    public int? SourceStart { get; set; }
+    public string? SourceText { get; set; }
+
+    internal SentenceSourceRange? SourceRange() => SourceStart is >= 0 and int start
+        && SourceText is { Length: > 0 } text && start <= int.MaxValue - text.Length
+        ? new(start, start + text.Length) : null;
 }
 
 public class LogSentenceReadRequest
@@ -373,6 +380,9 @@ public class LogSentenceReadRequest
     public int TextId { get; set; }
 
     public List<SentenceSegmentDto> Segments { get; set; } = new();
+
+    public string? SourceRevision { get; set; }
+    public List<SentenceSegmentDto>? LegacySegments { get; set; }
 
     public int? CurrentSegmentIndex { get; set; }
     public DateTimeOffset? ClientUpdatedAt { get; set; }
@@ -385,6 +395,8 @@ public class SentenceProgressDto
     public int CreditedWordCount { get; set; }
     public int? LastSegmentIndex { get; set; }
     public DateTime? CursorUpdatedAt { get; set; }
+    public DateTime ServerTime { get; set; } = DateTime.UtcNow;
+    public SentenceSourceCoverage? SourceCoverage { get; set; }
 }
 
 [HttpGet("sentenceprogress/{textId}")]
@@ -455,6 +467,20 @@ public async Task<ActionResult<SentenceProgressDto>> LogSentenceRead([FromBody] 
     }
 
     var creditedIndices = ParseCreditedIndices(progress.CreditedSegmentIndicesJson);
+    var coverage = SentenceSourceCoverage.Read(progress.SourceCoverageJson);
+    var spanAware = !text.IsAudioLesson && request.SourceRevision != null;
+    if (spanAware)
+    {
+        if (request.SourceRevision != LessonStudyActivity.Revision(text.Content, text.LanguageId, text.AudioFilePath))
+            return Ok(ToSentenceProgressDto(progress));
+        if (coverage == null || coverage.SourceRevision != request.SourceRevision)
+            coverage = new() { SourceRevision = request.SourceRevision!, LegacyIndices = new(creditedIndices) };
+        foreach (var legacy in request.LegacySegments ?? [])
+        {
+            if (legacy?.SourceRange() is { } span && coverage.LegacyIndices.Remove(legacy.SegmentIndex))
+                coverage.Mark(span);
+        }
+    }
     var distinctSegments = request.Segments
         .Where(segment => segment != null && !string.IsNullOrWhiteSpace(segment.SegmentText))
         .GroupBy(segment => segment.SegmentIndex)
@@ -477,12 +503,27 @@ public async Task<ActionResult<SentenceProgressDto>> LogSentenceRead([FromBody] 
 
     foreach (var segment in distinctSegments)
     {
-        if (segment.SegmentIndex < 0 || creditedIndices.Contains(segment.SegmentIndex))
+        if (segment.SegmentIndex < 0) continue;
+
+        if (spanAware && coverage != null && segment.SourceRange() is { } span)
         {
+            if (!coverage.LegacyIndices.Remove(segment.SegmentIndex) && !completedReading)
+            {
+                foreach (var unread in coverage.UnreadText(span, segment.SourceText!))
+                {
+                    var creditText = unread.Length == segment.SourceText!.Length ? segment.SegmentText : unread;
+                    newlyCreditedWords += WordCountUtility.CountStudyWords(creditText, text.Language, text.SegmentationProfile);
+                }
+            }
+            creditedIndices.Add(segment.SegmentIndex);
+            coverage.Mark(span);
             continue;
         }
 
-        creditedIndices.Add(segment.SegmentIndex);
+        // Old clients and audio cues use ordinals. Keep any late legacy credits
+        // available for the next reader that can map them to source spans.
+        if (!creditedIndices.Add(segment.SegmentIndex)) continue;
+        coverage?.LegacyIndices.Add(segment.SegmentIndex);
         if (!completedReading)
             newlyCreditedWords += WordCountUtility.CountStudyWords(segment.SegmentText, text.Language, text.SegmentationProfile);
     }
@@ -491,16 +532,17 @@ public async Task<ActionResult<SentenceProgressDto>> LogSentenceRead([FromBody] 
     {
         var now = DateTime.UtcNow;
         var requestedAt = request.ClientUpdatedAt?.UtcDateTime ?? now;
-        var cursorUpdatedAt = requestedAt > now ? now : requestedAt;
         // An old replay can contribute new reading credit independently of the cursor.
-        if (progress.LastSegmentIndex == null || cursorUpdatedAt >= progress.UpdatedAt)
+        // Future timestamps cannot order a write against an existing cursor.
+        if (progress.LastSegmentIndex == null || (requestedAt <= now && requestedAt >= progress.UpdatedAt))
         {
             progress.LastSegmentIndex = request.CurrentSegmentIndex;
-            progress.UpdatedAt = cursorUpdatedAt;
+            progress.UpdatedAt = requestedAt > now ? now : requestedAt;
         }
     }
 
     progress.CreditedSegmentIndicesJson = SerializeCreditedIndices(creditedIndices);
+    if (coverage != null) progress.SourceCoverageJson = JsonSerializer.Serialize(coverage);
     progress.CreditedWordCount += newlyCreditedWords;
 
     var independentReread = await _context.LessonStudyEvents.AnyAsync(e => e.UserId == userId && e.SourceTextId == request.TextId
@@ -1150,6 +1192,7 @@ private DateTime CalculateStartDate(string period)
                     .OrderBy(index => index)
                     .ToList(),
                 CreditedWordCount = progress.CreditedWordCount,
+                SourceCoverage = SentenceSourceCoverage.Read(progress.SourceCoverageJson),
                 LastSegmentIndex = progress.LastSegmentIndex,
                 CursorUpdatedAt = progress.LastSegmentIndex.HasValue
                     ? DateTime.SpecifyKind(progress.UpdatedAt, DateTimeKind.Utc)

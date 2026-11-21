@@ -353,6 +353,28 @@ public class ReadingCreditCompatibilityTests(ITestOutputHelper output)
         Assert.Equal(2, (await learner.Context.LessonStudyEvents.SingleAsync(e => e.ClientEventId == "new-boundaries")).CreditedWords);
     }
 
+    [Fact]
+    public async Task ProfiledReading_StartsRoundingFromZeroAfterRemovingLegacyPasses()
+    {
+        await using var learner = await Learner.Create(book: false);
+        var text = await learner.Context.Texts.SingleAsync();
+        var language = await learner.Context.Languages.SingleAsync();
+        text.Content = "猫";
+        language.Code = "ja";
+        language.CharacterSubstitutions = "猫=猫 猫 猫 猫 猫";
+        await learner.Context.SaveChangesAsync();
+
+        Assert.IsType<OkObjectResult>(await learner.SetCount("read", 0.5m, 0m, "legacy-half"));
+        (await learner.Context.LessonStudyEvents.SingleAsync()).ReadingVolumeWords = null;
+        (await learner.Context.Texts.SingleAsync()).SegmentationProfile = JapaneseSegmenter.Profile;
+        await learner.Context.SaveChangesAsync();
+
+        Assert.IsType<OkObjectResult>(await learner.SetCount("read", 0m, 0.5m, "zero"));
+        Assert.Equal(100, await learner.Earned());
+        Assert.IsType<OkObjectResult>(await learner.SetCount("read", 0.6m, 0m, "fresh"));
+        Assert.Equal(103, await learner.Earned());
+    }
+
     [Theory]
     [InlineData(false, false)]
     [InlineData(true, false)]

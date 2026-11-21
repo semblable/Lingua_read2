@@ -1387,6 +1387,7 @@ const SrsReview = () => {
                       cardId={currentCard.srsCardReviewId ?? 0}
                       clozeSentence={currentCard.clozeSentence!}
                       term={currentCard.term ?? ''}
+                      languageCode={matchingLanguageCode}
                       translation={currentCard.translation ?? ''}
                       isFlipped={isFlipped}
                       onReveal={() => setIsFlipped(true)}

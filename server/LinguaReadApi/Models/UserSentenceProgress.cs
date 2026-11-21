@@ -15,6 +15,8 @@ namespace LinguaReadApi.Models
         [Required]
         public string CreditedSegmentIndicesJson { get; set; } = "[]";
 
+        public string? SourceCoverageJson { get; set; }
+
         public int CreditedWordCount { get; set; } = 0;
 
         public int? LastSegmentIndex { get; set; }

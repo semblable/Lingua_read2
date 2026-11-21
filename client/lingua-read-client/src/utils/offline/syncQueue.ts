@@ -4,6 +4,7 @@
 // replayed by drain() once the browser comes back online.
 
 import type { LessonListeningCredit } from '../../audio/listeningActivity';
+import type { SentenceReadSegment } from '../sentenceProgress';
 import { getConflictingWord, notifyWordReplay, offlineSessionRevision, type ConflictingWord } from './events';
 
 const DB_NAME = 'lingua-read-offline';
@@ -32,7 +33,8 @@ export type PendingOp =
   | { type: 'audioLessonProgress'; payload: { textId: number | string; position: number | null; clientUpdatedAt: string } }
   // Keep every sentence credit for server-side deduplication. The timestamp
   // separately prevents a late replay from replacing a newer sentence cursor.
-  | { type: 'sentenceRead'; payload: { textId: number; currentSegmentIndex?: number; clientUpdatedAt?: string; segments: { segmentIndex: number; segmentText: string }[] } }
+  | { type: 'sentenceRead'; payload: { textId: number; currentSegmentIndex?: number; clientUpdatedAt?: string;
+    segments: SentenceReadSegment[]; sourceRevision?: string; legacySegments?: SentenceReadSegment[] } }
   // Book last-read is last-write-wins and coalesced like audio position.
   | { type: 'lastRead'; payload: { bookId: number | string; textId: number | string; clientUpdatedAt: string } }
   // Sentence bookmark add/remove. Last-write-wins per sentence: coalesced on

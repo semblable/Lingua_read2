@@ -6405,6 +6405,8 @@ export interface components {
             /** Format: int32 */
             textId: number;
             segments?: components["schemas"]["SentenceSegmentDto"][] | null;
+            sourceRevision?: string | null;
+            legacySegments?: components["schemas"]["SentenceSegmentDto"][] | null;
             /** Format: int32 */
             currentSegmentIndex?: number | null;
             /** Format: date-time */
@@ -6620,11 +6622,28 @@ export interface components {
             lastSegmentIndex?: number | null;
             /** Format: date-time */
             cursorUpdatedAt?: string | null;
+            /** Format: date-time */
+            serverTime?: string;
+            sourceCoverage?: components["schemas"]["SentenceSourceCoverage"];
         };
         SentenceSegmentDto: {
             /** Format: int32 */
             segmentIndex: number;
             segmentText: string;
+            /** Format: int32 */
+            sourceStart?: number | null;
+            sourceText?: string | null;
+        };
+        SentenceSourceCoverage: {
+            sourceRevision: string;
+            ranges: components["schemas"]["SentenceSourceRange"][];
+            legacyIndices: number[];
+        };
+        SentenceSourceRange: {
+            /** Format: int32 */
+            start: number;
+            /** Format: int32 */
+            end: number;
         };
         SentenceTranslationRequest: {
             text?: string | null;
@@ -7600,6 +7619,8 @@ export interface components {
             lastEditedAt?: string | null;
             /** Format: date-time */
             lastStatusEditedAt?: string | null;
+            /** Format: date-time */
+            lastTranslationEditedAt?: string | null;
             /** Format: date-time */
             lastManualStatusAt?: string | null;
             /** Format: int32 */

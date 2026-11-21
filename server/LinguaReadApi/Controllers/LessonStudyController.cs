@@ -95,8 +95,10 @@ public class LessonStudyController(AppDbContext context) : ControllerBase
                 else if (target >= expected)
                 {
                     // Content or counting changes must not revalue previously earned passes.
-                    var previousCurrentUnits = LessonStudyActivity.RoundedWords(expected - earlierWhitespaceTenths, words);
-                    var extra = LessonStudyActivity.RoundedWords(target - earlierWhitespaceTenths, words) - previousCurrentUnits;
+                    // A correction can remove all or part of the historical whitespace passes.
+                    var retainedWhitespaceTenths = Math.Clamp(earlierWhitespaceTenths, 0, expected);
+                    var previousCurrentUnits = LessonStudyActivity.RoundedWords(expected - retainedWhitespaceTenths, words);
+                    var extra = LessonStudyActivity.RoundedWords(target - retainedWhitespaceTenths, words) - previousCurrentUnits;
                     readingVolume = previousVolume + extra;
                     wordDelta = Math.Max(0L, extra - Math.Max(0L, sentenceWords - previousVolume));
                 }

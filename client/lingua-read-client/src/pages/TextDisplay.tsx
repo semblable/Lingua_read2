@@ -1547,7 +1547,8 @@ const TextDisplay = () => {
   const creditedSegmentCount = useMemo(() => coverageForSource
     ? sentenceSegments.filter(segment => legacyCredits.includes(segment.index)
       || hasSentenceRange(coverageForSource, sentenceRead(segment, true))).length
-    : creditedSegmentIndices.length, [coverageForSource, creditedSegmentIndices, legacyCredits, sentenceSegments]);
+    : creditedSegmentIndices.filter(index => index >= 0 && index < sentenceSegments.length).length,
+    [coverageForSource, creditedSegmentIndices, legacyCredits, sentenceSegments]);
   const creditContext = useRef({ coverageForSource, legacyCredits, sentenceSegments });
   creditContext.current = { coverageForSource, legacyCredits, sentenceSegments };
 
@@ -1914,17 +1915,17 @@ const TextDisplay = () => {
       if (sentenceReads.lastRead?.segmentIndex === segmentIndex && sentenceReads.lastRead.sourceStart === read.sourceStart
           && sentenceReads.lastRead.sourceText === read.sourceText) return;
       if (sentenceReads.restored?.index !== segmentIndex) sentenceReads.restored = null;
+      const legacySegments = sentenceCreditRevision ? legacyCredits.flatMap(index => {
+        const segment = sentenceSegments[index];
+        return segment ? [sentenceRead(segment, true)] : [];
+      }) : [];
       if (sentenceReads.restored && (sentenceCreditRevision
-        ? coverageForSource && legacyCredits.length === 0 && hasSentenceRange(coverageForSource, read)
+        ? coverageForSource && legacySegments.length === 0 && hasSentenceRange(coverageForSource, read)
         : sentenceReads.restored.credited.includes(segmentIndex))) return;
 
       const session = offlineSessionRevision();
       sentenceReads.lastRead = read;
       try {
-        const legacySegments = sentenceCreditRevision ? legacyCredits.flatMap(index => {
-          const segment = sentenceSegments[index];
-          return segment ? [sentenceRead(segment, true)] : [];
-        }) : [];
         const response = await logSentenceReadActivity({
           textId: Number(sentenceReads.textId),
           ...(sentenceReads.restored ? {} : { currentSegmentIndex: segmentIndex }),

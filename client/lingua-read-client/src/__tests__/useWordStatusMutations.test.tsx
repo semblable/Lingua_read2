@@ -64,6 +64,109 @@ describe('reader status mutation coordination', () => {
     expect(result.current.words[0]).toMatchObject({ status: 5, translation: 'domestic cat' });
   });
 
+  test('reconcileServerWords does not confirm a coalesced offline status+translation edit when only the translation matches', async () => {
+    const update = vi.fn()
+      .mockResolvedValueOnce({ offline: true, queuedOp: { id: 105, type: 'wordStatusUpdate', payload: { wordId: 41, status: 3 } } })
+      .mockResolvedValueOnce({ offline: true, queuedOp: { id: 106, type: 'wordStatusUpdate', payload: { wordId: 41, status: 3, translation: 'domestic cat', translationOnly: true } } });
+    const { result } = setup([cat], { update });
+    await act(async () => {
+      await result.current.mutate({ target: target(cat), status: 3 });
+      await result.current.saveTranslation(target(cat), 'domestic cat');
+    });
+
+    act(() => result.current.reconcileServerWords([{ ...cat, status: 1, translation: 'domestic cat' }]));
+    expect(result.current.states[0]).toMatchObject({ queuedOffline: true, desiredStatus: 3 });
+    expect(result.current.states[0].error).toContain('Could not confirm cat');
+
+    act(() => result.current.reconcileServerWords([{ ...cat, status: 3, translation: 'domestic cat' }]));
+    expect(result.current.states[0]).toMatchObject({ queuedOffline: false, desiredStatus: 3, confirmedStatus: 3 });
+    expect(result.current.states[0].error).toBeUndefined();
+  });
+
+  test('a translation-only mutate preserves an in-flight desiredStatus from before React re-renders', async () => {
+    const pending = deferred<unknown>();
+    const update = vi.fn().mockReturnValueOnce(pending.promise).mockResolvedValue({});
+    const { result } = setup([cat], { update });
+    let translationSave!: Promise<unknown>;
+    act(() => {
+      void result.current.mutate({ target: target(cat), status: 3 });
+      translationSave = result.current.mutate({ target: target(cat), status: 1, translation: 'gloss', translationOnly: true });
+    });
+    expect(result.current.states[0].desiredStatus).toBe(3);
+    expect(result.current.words[0].status).toBe(3);
+    await act(async () => { pending.resolve({}); await translationSave; });
+    expect(update).toHaveBeenLastCalledWith(41, 3, 'gloss', {
+      textId: 7,
+      sentence: 'A cat rests.',
+      clientUpdatedAt: expect.any(String),
+      translationOnly: true
+    });
+    expect(result.current.states[0]).toMatchObject({ desiredStatus: 3, confirmedStatus: 3 });
+  });
+
+  test('reconcileServerWords requires matching status when any active uncoalesced queued op is not translation-only', async () => {
+    const unsaved = { wordId: 0, term: 'cat', status: 0 };
+    const create = vi.fn()
+      .mockResolvedValueOnce({ offline: true, queuedOp: { id: 107, type: 'wordCreate', payload: { textId: 7, term: 'cat', status: 3 } } })
+      .mockResolvedValueOnce({ offline: true, queuedOp: { id: 108, type: 'wordCreate', payload: { textId: 8, term: 'cat', status: 3, translation: 'domestic cat', translationOnly: true } } });
+    const { result, rerender } = setup([unsaved], { create });
+    await act(async () => { await result.current.mutate({ target: target(unsaved), status: 3 }); });
+    rerender({ generation: 'passage-b' });
+    await act(async () => {
+      await result.current.saveTranslation({ ...target(unsaved), textId: 8 }, 'domestic cat');
+    });
+
+    act(() => result.current.reconcileServerWords([{ wordId: 91, term: 'cat', status: 1, translation: 'domestic cat' }]));
+    expect(result.current.states[0]).toMatchObject({ queuedOffline: true, desiredStatus: 3 });
+    expect(result.current.states[0].error).toContain('Could not confirm cat');
+
+    act(() => result.current.reconcileServerWords([{ wordId: 91, term: 'cat', status: 3, translation: 'domestic cat' }]));
+    expect(result.current.states[0]).toMatchObject({ queuedOffline: false, desiredStatus: 3, confirmedStatus: 3 });
+    expect(result.current.states[0].error).toBeUndefined();
+  });
+
+  test('retry after terminal rejection of a coalesced offline status+translation edit keeps the status change', async () => {
+    const update = vi.fn()
+      .mockResolvedValueOnce({ offline: true, queuedOp: { id: 109, type: 'wordStatusUpdate', payload: { wordId: 41, status: 3 } } })
+      .mockResolvedValueOnce({ offline: true, queuedOp: { id: 110, type: 'wordStatusUpdate', payload: { wordId: 41, status: 3, translation: 'gloss', translationOnly: true } } })
+      .mockResolvedValueOnce({});
+    const { result } = setup([cat], { update });
+    await act(async () => {
+      await result.current.mutate({ target: target(cat), status: 3 });
+      await result.current.saveTranslation(target(cat), 'gloss');
+    });
+    act(() => notifyWordReplay({
+      outcome: 'rejected',
+      op: { id: 110, enqueuedAt: 0, type: 'wordStatusUpdate', payload: { wordId: 41, status: 3, translation: 'gloss' } },
+    }));
+    expect(result.current.states[0]).toMatchObject({ queuedOffline: false, desiredStatus: 1, confirmedStatus: 1 });
+
+    await act(async () => { await result.current.retry(result.current.states[0].key); });
+    expect(update).toHaveBeenLastCalledWith(41, 3, 'gloss', {
+      textId: 7,
+      sentence: 'A cat rests.',
+      clientUpdatedAt: expect.any(String),
+    });
+    expect(result.current.states[0]).toMatchObject({ desiredStatus: 3, confirmedStatus: 3 });
+  });
+
+  test('saveTranslation falls back to status 1 instead of 0 after a failed grade on an untracked word', async () => {
+    const untracked = { wordId: 41, term: 'cat', status: 0, translation: '' };
+    const update = vi.fn().mockRejectedValueOnce(new Error('network')).mockResolvedValueOnce({ ...untracked, status: 1, translation: 'gloss' });
+    const { result } = setup([untracked], { update });
+    await act(async () => { await result.current.mutate({ target: target(untracked), status: 3 }); });
+    expect(result.current.states[0]).toMatchObject({ desiredStatus: 0, confirmedStatus: 0 });
+
+    await act(async () => { await result.current.saveTranslation(target(untracked), 'gloss'); });
+    expect(update).toHaveBeenLastCalledWith(41, 1, 'gloss', {
+      textId: 7,
+      sentence: 'A cat rests.',
+      clientUpdatedAt: expect.any(String),
+      translationOnly: true,
+    });
+    expect(result.current.states[0]).toMatchObject({ desiredStatus: 1, confirmedStatus: 1 });
+  });
+
   test('existing-word save snapshots its sentence/source and Known or Ignored saves omit example capture', async () => {
     const { result, update } = setup([cat]);
     const intent: WordStatusIntent = { target: target(cat), status: 2 };

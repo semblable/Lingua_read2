@@ -2275,7 +2275,7 @@ namespace LinguaReadApi.Controllers
                     var now = DateTime.UtcNow;
                     double completionPercentage;
 
-                    await using var transaction = await _context.Database.BeginTransactionAsync(IsolationLevel.Serializable);
+                    await using var transaction = await _context.Database.BeginTransactionAsync(LessonStudyActivity.LockedIsolation(_context));
                     await LessonStudyActivity.LockAsync(_context, userId);
 
                     var book = await _context.Books
@@ -2491,45 +2491,54 @@ namespace LinguaReadApi.Controllers
         public async Task<IActionResult> FinishBook(int id, [FromBody] FinishBookRequest? request)
         {
             var userId = GetUserId();
-            var now = DateTime.UtcNow;
-
-            var book = await _context.Books
-                .Where(b => b.BookId == id && b.UserId == userId)
-                .Include(b => b.Texts)
-                .FirstOrDefaultAsync();
-
-            if (book == null)
-            {
-                return NotFound("Book not found");
-            }
-
-            // Validate / normalize rating: must be in [0.5, 5.0] in 0.5 increments.
             decimal? rating = null;
-            if (request?.Rating.HasValue == true)
+
+            var errorResult = await LessonStudyActivity.AtomicAsync<IActionResult?>(_context, userId, async () =>
             {
-                var raw = request.Rating.Value;
-                if (raw < 0.5m || raw > 5.0m)
+                var now = DateTime.UtcNow;
+
+                var book = await _context.Books
+                    .Where(b => b.BookId == id && b.UserId == userId)
+                    .Include(b => b.Texts)
+                    .FirstOrDefaultAsync();
+
+                if (book == null)
                 {
-                    return BadRequest("Rating must be between 0.5 and 5.0.");
+                    return NotFound("Book not found");
                 }
 
-                // Snap to nearest 0.5
-                rating = Math.Round(raw * 2m, MidpointRounding.AwayFromZero) / 2m;
-            }
+                // Validate / normalize rating: must be in [0.5, 5.0] in 0.5 increments.
+                rating = null;
+                if (request?.Rating.HasValue == true)
+                {
+                    var raw = request.Rating.Value;
+                    if (raw < 0.5m || raw > 5.0m)
+                    {
+                        return BadRequest("Rating must be between 0.5 and 5.0.");
+                    }
 
-            // Mark unfinished child texts as finished — child-text completion is part of
-            // "book is done" semantics, not a stat. We deliberately do NOT touch word
-            // statuses, language counters, or UserActivity.
-            foreach (var text in book.Texts.Where(t => !t.IsFinished))
-            {
-                text.IsFinished = true;
-                text.LastCompletedAt = now;
-            }
+                    // Snap to nearest 0.5
+                    rating = Math.Round(raw * 2m, MidpointRounding.AwayFromZero) / 2m;
+                }
 
-            book.LastReadAt = now;
-            book.IsFinished = true;
+                // Mark unfinished child texts as finished — child-text completion is part of
+                // "book is done" semantics, not a stat. We deliberately do NOT touch word
+                // statuses, language counters, or UserActivity.
+                foreach (var text in book.Texts.Where(t => !t.IsFinished))
+                {
+                    text.IsFinished = true;
+                    text.LastCompletedAt = now;
+                }
 
-            await _context.SaveChangesAsync();
+                book.LastReadAt = now;
+                book.IsFinished = true;
+
+                await _context.SaveChangesAsync();
+                return null;
+            });
+
+            if (errorResult != null) return errorResult;
+
             await TriggerHardcoverProgressSyncAsync(userId, id, rating);
 
             return NoContent();

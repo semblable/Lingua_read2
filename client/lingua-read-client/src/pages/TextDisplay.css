@@ -963,7 +963,7 @@
 }
 .word-info-sheet-dialog .modal-header { flex-wrap: wrap; gap: 0.5rem; }
 .word-info-sheet-dialog .modal-body { overscroll-behavior: contain; }
-.classic-dark-theme .word-info-sheet-dialog .modal-header .btn-close { filter: invert(1); }
+.word-info-sheet-dialog .modal-header .btn-close { box-sizing: border-box; min-width: 40px; min-height: 40px; }
 
 /* --- Word Info panel (desktop side panel and mobile sheet) --- */
 .word-info-title {

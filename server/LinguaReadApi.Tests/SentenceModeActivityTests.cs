@@ -222,7 +222,177 @@ public class SentenceModeActivityTests
         Assert.Equal(new[] { 0, 2 }, replay.CreditedSegmentIndices);
         Assert.Equal(edited, replay.SourceCoverage?.SourceRevision);
         Assert.Equal(new SentenceSourceRange(13, 19), Assert.Single(replay.SourceCoverage!.Ranges));
+        Assert.Empty(replay.SourceCoverage!.LegacyIndices);
         Assert.Equal(3, (await Read(original, 1, alpha, beta)).CreditedWordCount);
+    }
+
+    [Fact]
+    public async Task EditingText_DoesNotLeakEarlierRevisionIndicesOntoNewSentences()
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        const int textId = 12;
+        SeedUserLanguageAndText(context, userId, textId, "Alpha. Beta.");
+        var controller = CreateUserActivityController(context, userId);
+
+        var text = await context.Texts.SingleAsync();
+        var original = LessonStudyActivity.Revision(text.Content, text.LanguageId, text.AudioFilePath);
+        Assert.IsType<OkObjectResult>((await controller.LogSentenceRead(new()
+        {
+            TextId = textId,
+            SourceRevision = original,
+            CurrentSegmentIndex = 0,
+            Segments = [new() { SegmentIndex = 0, SegmentText = "Alpha.", SourceStart = 0, SourceText = "Alpha. " }]
+        })).Result);
+
+        text = await context.Texts.SingleAsync();
+        text.Content = "New opening sentence. Alpha. Beta.";
+        await context.SaveChangesAsync();
+        var edited = LessonStudyActivity.Revision(text.Content, text.LanguageId, text.AudioFilePath);
+
+        var loaded = Assert.IsType<UserActivityController.SentenceProgressDto>(
+            Assert.IsType<OkObjectResult>((await controller.GetSentenceProgress(textId)).Result).Value);
+        Assert.Equal(edited, loaded.SourceCoverage?.SourceRevision);
+        Assert.Empty(loaded.SourceCoverage!.Ranges);
+        Assert.Empty(loaded.SourceCoverage!.LegacyIndices);
+
+        // Even if a client sends LegacySegments for index 0, the edited opening sentence is unread and must earn credit.
+        UserActivityController.SentenceSegmentDto opening = new()
+        {
+            SegmentIndex = 0, SegmentText = "New opening sentence.", SourceStart = 0, SourceText = "New opening sentence. "
+        };
+        var readEdited = Assert.IsType<UserActivityController.SentenceProgressDto>(
+            Assert.IsType<OkObjectResult>((await controller.LogSentenceRead(new()
+            {
+                TextId = textId, SourceRevision = edited, LegacySegments = [opening], Segments = [opening]
+            })).Result).Value);
+        Assert.Equal(4, readEdited.CreditedWordCount);
+        Assert.Equal(4, (await context.UserLanguageStatistics.SingleAsync()).TotalWordsRead);
+    }
+
+    [Fact]
+    public async Task LegacyReadOnEditedText_AddsOnlyNewLegacyIndexWithoutInheritingEarlierRevisionIndices()
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        const int textId = 13;
+        SeedUserLanguageAndText(context, userId, textId, "Alpha. Beta.");
+        var controller = CreateUserActivityController(context, userId);
+
+        var text = await context.Texts.SingleAsync();
+        var original = LessonStudyActivity.Revision(text.Content, text.LanguageId, text.AudioFilePath);
+        Assert.IsType<OkObjectResult>((await controller.LogSentenceRead(new()
+        {
+            TextId = textId,
+            SourceRevision = original,
+            CurrentSegmentIndex = 0,
+            Segments = [new() { SegmentIndex = 0, SegmentText = "Alpha.", SourceStart = 0, SourceText = "Alpha. " }]
+        })).Result);
+
+        text = await context.Texts.SingleAsync();
+        text.Content = "New opening. Alpha. Beta.";
+        await context.SaveChangesAsync();
+        var edited = LessonStudyActivity.Revision(text.Content, text.LanguageId, text.AudioFilePath);
+
+        // A legacy (revisionless) read of segment 0 on the edited text must not be skipped
+        // just because revision 1 previously credited segment 0.
+        var legacyZero = Assert.IsType<UserActivityController.SentenceProgressDto>(
+            Assert.IsType<OkObjectResult>((await controller.LogSentenceRead(new()
+            {
+                TextId = textId,
+                CurrentSegmentIndex = 0,
+                Segments = [new() { SegmentIndex = 0, SegmentText = "New opening." }]
+            })).Result).Value);
+        Assert.Equal(edited, legacyZero.SourceCoverage?.SourceRevision);
+        Assert.Equal([0], legacyZero.SourceCoverage!.LegacyIndices);
+        Assert.Equal(3, legacyZero.CreditedWordCount);
+
+        // Repeating that legacy read on the same revision must deduplicate to 0 extra words.
+        var duplicateZero = Assert.IsType<UserActivityController.SentenceProgressDto>(
+            Assert.IsType<OkObjectResult>((await controller.LogSentenceRead(new()
+            {
+                TextId = textId,
+                CurrentSegmentIndex = 0,
+                Segments = [new() { SegmentIndex = 0, SegmentText = "New opening." }]
+            })).Result).Value);
+        Assert.Equal(3, duplicateZero.CreditedWordCount);
+
+        // A span-aware read of segment 1 (migrating legacy 0) keeps both ordinals deduplicated
+        // against any later revisionless client read.
+        UserActivityController.SentenceSegmentDto opening = new()
+        {
+            SegmentIndex = 0, SegmentText = "New opening.", SourceStart = 0, SourceText = "New opening. "
+        };
+        UserActivityController.SentenceSegmentDto alphaEdited = new()
+        {
+            SegmentIndex = 1, SegmentText = "Alpha.", SourceStart = 13, SourceText = "Alpha. "
+        };
+        var spanRead = Assert.IsType<UserActivityController.SentenceProgressDto>(
+            Assert.IsType<OkObjectResult>((await controller.LogSentenceRead(new()
+            {
+                TextId = textId,
+                SourceRevision = edited,
+                LegacySegments = [opening],
+                Segments = [alphaEdited]
+            })).Result).Value);
+        Assert.Equal(4, spanRead.CreditedWordCount);
+        Assert.Empty(spanRead.SourceCoverage!.LegacyIndices);
+
+        var lateLegacy = Assert.IsType<UserActivityController.SentenceProgressDto>(
+            Assert.IsType<OkObjectResult>((await controller.LogSentenceRead(new()
+            {
+                TextId = textId,
+                Segments =
+                [
+                    new() { SegmentIndex = 0, SegmentText = "New opening." },
+                    new() { SegmentIndex = 1, SegmentText = "Alpha." }
+                ]
+            })).Result).Value);
+        Assert.Equal(4, lateLegacy.CreditedWordCount);
+    }
+
+    [Fact]
+    public async Task PreExistingCoverageJsonWithoutCreditedIndices_DeduplicatesSameRevisionLegacyReads()
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        const int textId = 14;
+        SeedUserLanguageAndText(context, userId, textId, "Alpha. Beta.");
+        var text = await context.Texts.SingleAsync();
+        var revision = LessonStudyActivity.Revision(text.Content, text.LanguageId, text.AudioFilePath);
+
+        // Stored JSON format created prior to per-revision CreditedIndices persistence.
+        context.UserSentenceProgresses.Add(new UserSentenceProgress
+        {
+            UserId = userId,
+            TextId = textId,
+            CreditedSegmentIndicesJson = "[0]",
+            SourceCoverageJson = $$$"""{"{{{revision}}}":{"SourceRevision":"{{{revision}}}","Ranges":[{"Start":0,"End":7}],"LegacyIndices":[]}}""",
+            CreditedWordCount = 1,
+            LastSegmentIndex = 0,
+            UpdatedAt = DateTime.UtcNow
+        });
+        context.UserLanguageStatistics.Add(new UserLanguageStatistics
+        {
+            UserId = userId,
+            LanguageId = 1,
+            TotalWordsRead = 1,
+            LastUpdatedAt = DateTime.UtcNow
+        });
+        await context.SaveChangesAsync();
+        context.ChangeTracker.Clear();
+
+        var controller = CreateUserActivityController(context, userId);
+        var replay = Assert.IsType<UserActivityController.SentenceProgressDto>(
+            Assert.IsType<OkObjectResult>((await controller.LogSentenceRead(new()
+            {
+                TextId = textId,
+                Segments = [new() { SegmentIndex = 0, SegmentText = "Alpha." }]
+            })).Result).Value);
+        Assert.Equal(1, replay.CreditedWordCount);
+        Assert.Empty(replay.SourceCoverage!.LegacyIndices);
+        Assert.Equal(1, (await context.UserLanguageStatistics.SingleAsync()).TotalWordsRead);
+        Assert.Empty(await context.UserActivities.ToListAsync());
     }
 
     [Fact]

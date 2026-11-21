@@ -1,3 +1,4 @@
+using System.Data;
 using System.Data.Common;
 using System.Security.Claims;
 using LinguaReadApi.Controllers;
@@ -188,6 +189,18 @@ public class UserActivityControllerTests
     private sealed class ActivityRetryStrategy(ExecutionStrategyDependencies dependencies) : ExecutionStrategy(dependencies, 1, TimeSpan.Zero)
     {
         protected override bool ShouldRetryOn(Exception exception) => exception is TimeoutException;
+    }
+
+    [Fact]
+    public void LockedIsolation_UsesReadCommittedForPostgresAndSerializableOtherwise()
+    {
+        using var postgres = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>()
+            .UseNpgsql("Host=localhost;Database=unused").Options);
+        using var sqlite = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>()
+            .UseSqlite("Data Source=:memory:").Options);
+
+        Assert.Equal(IsolationLevel.ReadCommitted, LessonStudyActivity.LockedIsolation(postgres));
+        Assert.Equal(IsolationLevel.Serializable, LessonStudyActivity.LockedIsolation(sqlite));
     }
 
     [Fact]

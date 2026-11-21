@@ -108,6 +108,59 @@ test('keeps an offline read of an earlier text revision queued without restoring
   await expect(listPending()).resolves.toHaveLength(1);
 });
 
+test('retains queued source spans for an edited revision when cached coverage is from an earlier revision', async () => {
+  const textId = 18;
+  mockFetch.mockResolvedValueOnce({
+    textId,
+    lastSegmentIndex: 0,
+    cursorUpdatedAt: '2026-11-16T12:00:00Z',
+    creditedSegmentIndices: [0],
+    sourceCoverage: { sourceRevision: 'previous', ranges: [{ start: 0, end: 6 }], legacyIndices: [] }
+  });
+  await getSentenceProgress(textId, 'previous');
+
+  await enqueue({ type: 'sentenceRead', payload: {
+    textId,
+    sourceRevision: 'current',
+    currentSegmentIndex: 1,
+    clientUpdatedAt: '2026-11-16T12:10:00Z',
+    segments: [{ segmentIndex: 1, segmentText: 'Edited.', sourceStart: 10, sourceText: 'Edited.' }]
+  } });
+
+  mockFetch.mockRejectedValueOnce(new TypeError('offline'));
+  await expect(getSentenceProgress(textId, 'current')).resolves.toMatchObject({
+    creditedSegmentIndices: [1],
+    sourceCoverage: {
+      sourceRevision: 'current',
+      ranges: [{ start: 10, end: 17 }],
+      legacyIndices: []
+    }
+  });
+});
+
+test('offline reload of an edited revision with no queued reads does not leak earlier revision credits', async () => {
+  const textId = 19;
+  mockFetch.mockResolvedValueOnce({
+    textId,
+    lastSegmentIndex: 2,
+    cursorUpdatedAt: '2026-11-16T12:00:00Z',
+    creditedSegmentIndices: [0, 1, 2],
+    sourceCoverage: { sourceRevision: 'previous', ranges: [{ start: 0, end: 20 }], legacyIndices: [] }
+  });
+  await getSentenceProgress(textId, 'previous');
+
+  mockFetch.mockRejectedValueOnce(new TypeError('offline'));
+  await expect(getSentenceProgress(textId, 'current')).resolves.toMatchObject({
+    lastSegmentIndex: 2,
+    creditedSegmentIndices: [],
+    sourceCoverage: {
+      sourceRevision: 'current',
+      ranges: [],
+      legacyIndices: []
+    }
+  });
+});
+
 test('legacy replay uses its original queue time and keeps the newer confirmed cursor offline', async () => {
   const textId = 23;
   await enqueue({ type: 'sentenceRead', payload: {

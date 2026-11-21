@@ -6,7 +6,6 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore; // Added for DbUpdateException
 using System;
 using System.ComponentModel.DataAnnotations; // Added for [Required] attribute
-using System.Data;
 using System.Security.Claims;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
@@ -96,10 +95,6 @@ public async Task<IActionResult> LogListeningActivity([FromBody] LogListeningReq
     // Legacy callers have no replay key. Give this invocation a stable identity
     // so a lost commit acknowledgement cannot duplicate it on an internal retry.
     var clientEventId = string.IsNullOrEmpty(request.ClientEventId) ? Guid.NewGuid().ToString() : request.ClientEventId;
-    // Elapsed time and its receipt share the user lock. On PostgreSQL, read
-    // the totals committed by the previous holder after the lock is acquired.
-    var isolation = request.Lesson == null && _context.Database.IsNpgsql()
-        ? IsolationLevel.ReadCommitted : IsolationLevel.Serializable;
     try
     {
         return await LessonStudyActivity.AtomicAsync<IActionResult>(_context, userId, async () =>
@@ -179,7 +174,7 @@ public async Task<IActionResult> LogListeningActivity([FromBody] LogListeningReq
         await _context.SaveChangesAsync();
         _logger.LogInformation("Successfully saved listening activity for UserId: {UserId}, ActivityId: {ActivityId}", userId, activity.ActivityId);
         return Ok(new { message = "Listening activity logged successfully.", activityId = activity.ActivityId }); // Indicate success
-        }, isolation);
+        });
     }
     catch (DbUpdateException dbEx) // Catch specific DB exceptions first
     {
@@ -426,8 +421,16 @@ public async Task<ActionResult<SentenceProgressDto>> GetSentenceProgress(int tex
         });
     }
 
-    var coverage = progress.SourceCoverageJson == null ? null : SentenceSourceCoverage.ReadVersions(progress.SourceCoverageJson)
-        .GetValueOrDefault(LessonStudyActivity.Revision(text.Content, text.LanguageId, text.AudioFilePath));
+    SentenceSourceCoverage? coverage = null;
+    if (!text.IsAudioLesson && progress.SourceCoverageJson != null)
+    {
+        var coverages = SentenceSourceCoverage.ReadVersions(progress.SourceCoverageJson);
+        if (coverages.Count > 0)
+        {
+            var currentRevision = LessonStudyActivity.Revision(text.Content, text.LanguageId, text.AudioFilePath);
+            coverage = coverages.GetValueOrDefault(currentRevision) ?? new() { SourceRevision = currentRevision };
+        }
+    }
     return Ok(ToSentenceProgressDto(progress, coverage));
 }
 
@@ -478,6 +481,13 @@ public async Task<ActionResult<SentenceProgressDto>> LogSentenceRead([FromBody] 
         ? LessonStudyActivity.Revision(text.Content, text.LanguageId, text.AudioFilePath) : null;
     var currentSource = !spanAware || requestedRevision == currentRevision;
     var currentCoverage = currentRevision == null ? null : coverages.GetValueOrDefault(currentRevision);
+    if (currentCoverage is { HasStoredCreditedIndices: false })
+    {
+        // Pre-existing coverage rows predating per-revision CreditedIndices still have
+        // their same-revision ordinals in CreditedSegmentIndicesJson.
+        currentCoverage.CreditedIndices.UnionWith(creditedIndices);
+        currentCoverage.HasStoredCreditedIndices = true;
+    }
     var coverage = currentCoverage;
     if (spanAware)
     {
@@ -486,7 +496,12 @@ public async Task<ActionResult<SentenceProgressDto>> LogSentenceRead([FromBody] 
         var revision = requestedRevision!;
         if (!coverages.TryGetValue(revision, out coverage))
         {
-            coverage = new() { SourceRevision = revision, LegacyIndices = currentSource || coverages.Count == 0 ? new(creditedIndices) : [] };
+            coverage = new()
+            {
+                SourceRevision = revision,
+                LegacyIndices = coverages.Count == 0 ? new(creditedIndices) : [],
+                CreditedIndices = coverages.Count == 0 ? new(creditedIndices) : []
+            };
             coverages.Add(revision, coverage);
         }
         if (currentSource) currentCoverage = coverage;
@@ -531,6 +546,7 @@ public async Task<ActionResult<SentenceProgressDto>> LogSentenceRead([FromBody] 
                 }
             }
             if (currentSource) creditedIndices.Add(segment.SegmentIndex);
+            coverage.CreditedIndices.Add(segment.SegmentIndex);
             coverage.Mark(span);
             continue;
         }
@@ -539,10 +555,26 @@ public async Task<ActionResult<SentenceProgressDto>> LogSentenceRead([FromBody] 
         // available for the next reader that can map them to source spans.
         if (currentSource)
         {
-            if (!creditedIndices.Add(segment.SegmentIndex)) continue;
-            coverage?.LegacyIndices.Add(segment.SegmentIndex);
+            if (!text.IsAudioLesson && currentRevision != null && coverages.Count > 0)
+            {
+                // Once span-aware revisions exist, deduplicate revisionless reads
+                // against the current revision rather than earlier revisions' indices.
+                if (coverage == null)
+                {
+                    coverage = currentCoverage = new() { SourceRevision = currentRevision };
+                    coverages.Add(currentRevision, coverage);
+                }
+                if (!coverage.CreditedIndices.Add(segment.SegmentIndex)) continue;
+                coverage.LegacyIndices.Add(segment.SegmentIndex);
+                creditedIndices.Add(segment.SegmentIndex);
+            }
+            else if (!creditedIndices.Add(segment.SegmentIndex)) continue;
         }
-        else if (coverage?.LegacyIndices.Add(segment.SegmentIndex) != true) continue;
+        else
+        {
+            if (coverage == null || !coverage.CreditedIndices.Add(segment.SegmentIndex)) continue;
+            coverage.LegacyIndices.Add(segment.SegmentIndex);
+        }
         if (!completedReading)
             newlyCreditedWords += WordCountUtility.CountStudyWords(segment.SegmentText, text.Language, text.SegmentationProfile);
     }
@@ -561,7 +593,7 @@ public async Task<ActionResult<SentenceProgressDto>> LogSentenceRead([FromBody] 
     }
 
     progress.CreditedSegmentIndicesJson = SerializeCreditedIndices(creditedIndices);
-    if (coverages.Count > 0) progress.SourceCoverageJson = JsonSerializer.Serialize(coverages);
+    if (coverages.Count > 0) progress.SourceCoverageJson = SentenceSourceCoverage.WriteVersions(coverages);
     progress.CreditedWordCount += newlyCreditedWords;
 
     var independentReread = await _context.LessonStudyEvents.AnyAsync(e => e.UserId == userId && e.SourceTextId == request.TextId
@@ -620,7 +652,10 @@ public async Task<ActionResult<SentenceProgressDto>> LogSentenceRead([FromBody] 
 
     await _context.SaveChangesAsync();
 
-    return Ok(ToSentenceProgressDto(progress, currentCoverage));
+    var responseCoverage = currentCoverage ?? (!text.IsAudioLesson && currentRevision != null && coverages.Count > 0
+        ? new SentenceSourceCoverage { SourceRevision = currentRevision }
+        : null);
+    return Ok(ToSentenceProgressDto(progress, responseCoverage));
     });
 }
 

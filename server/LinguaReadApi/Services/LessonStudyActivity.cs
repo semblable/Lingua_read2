@@ -116,9 +116,16 @@ public static class LessonStudyActivity
             await context.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock(hashtextextended({userId.ToString()}, 0))");
     }
 
+    // On PostgreSQL, pg_advisory_xact_lock(userId) serializes locked user writes.
+    // Using ReadCommitted lets a waiter see rows committed by the previous lock holder
+    // immediately after acquiring the lock instead of reading a pre-lock Serializable snapshot.
+    public static IsolationLevel LockedIsolation(AppDbContext context) =>
+        context.Database.IsNpgsql() ? IsolationLevel.ReadCommitted : IsolationLevel.Serializable;
+
     public static async Task<T> AtomicAsync<T>(AppDbContext context, Guid userId, Func<Task<T>> action,
-        IsolationLevel isolation = IsolationLevel.Serializable)
+        IsolationLevel? isolation = null)
     {
+        var level = isolation ?? LockedIsolation(context);
         for (var attempt = 1; ; attempt++)
         {
             try
@@ -127,7 +134,7 @@ public static class LessonStudyActivity
                 {
                     context.ChangeTracker.Clear();
                     await using var transaction = context.Database.IsRelational()
-                        ? await context.Database.BeginTransactionAsync(isolation) : null;
+                        ? await context.Database.BeginTransactionAsync(level) : null;
                     await LockAsync(context, userId);
                     var result = await action();
                     if (transaction != null) await transaction.CommitAsync();
@@ -137,9 +144,8 @@ public static class LessonStudyActivity
             catch (DbUpdateException ex) when (attempt < 3 && context.Database.IsRelational() &&
                 ex.InnerException is Npgsql.PostgresException { SqlState: "23505", ConstraintName: "IX_Words_UserId_LanguageId_Term" })
             {
-                // A concurrent vocabulary save can win the probe/insert race.
-                // A Serializable snapshot cannot see that row after a savepoint
-                // rollback: retry the entire owner operation in a new transaction.
+                // A concurrent vocabulary save outside the user lock can win the probe/insert race.
+                // Retrying in a fresh transaction observes the committed row and updates it.
                 // The await-using above has disposed/rolled back before this catch.
                 context.ChangeTracker.Clear();
             }

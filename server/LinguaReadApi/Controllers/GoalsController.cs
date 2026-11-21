@@ -217,12 +217,15 @@ namespace LinguaReadApi.Controllers
         public async Task<IActionResult> ArchiveGoal(int id)
         {
             var userId = GetUserId();
-            var goal = await _context.UserGoals.FirstOrDefaultAsync(g => g.GoalId == id && g.UserId == userId);
-            if (goal == null) return NotFound();
+            return await LessonStudyActivity.AtomicAsync<IActionResult>(_context, userId, async () =>
+            {
+                var goal = await _context.UserGoals.FirstOrDefaultAsync(g => g.GoalId == id && g.UserId == userId);
+                if (goal == null) return NotFound();
 
-            if (!goal.ArchivedAt.HasValue) goal.ArchivedAt = DateTime.UtcNow;
-            await _context.SaveChangesAsync();
-            return NoContent();
+                if (!goal.ArchivedAt.HasValue) goal.ArchivedAt = DateTime.UtcNow;
+                await _context.SaveChangesAsync();
+                return NoContent();
+            });
         }
 
         // POST: api/goals/{id}/restore
@@ -230,12 +233,15 @@ namespace LinguaReadApi.Controllers
         public async Task<IActionResult> RestoreGoal(int id)
         {
             var userId = GetUserId();
-            var goal = await _context.UserGoals.FirstOrDefaultAsync(g => g.GoalId == id && g.UserId == userId);
-            if (goal == null) return NotFound();
+            return await LessonStudyActivity.AtomicAsync<IActionResult>(_context, userId, async () =>
+            {
+                var goal = await _context.UserGoals.FirstOrDefaultAsync(g => g.GoalId == id && g.UserId == userId);
+                if (goal == null) return NotFound();
 
-            goal.ArchivedAt = null;
-            await _context.SaveChangesAsync();
-            return NoContent();
+                goal.ArchivedAt = null;
+                await _context.SaveChangesAsync();
+                return NoContent();
+            });
         }
 
         // DELETE: api/goals/{id}  (hard delete)
@@ -243,11 +249,14 @@ namespace LinguaReadApi.Controllers
         public async Task<IActionResult> DeleteGoal(int id)
         {
             var userId = GetUserId();
-            var goal = await _context.UserGoals.FirstOrDefaultAsync(g => g.GoalId == id && g.UserId == userId);
-            if (goal == null) return NotFound();
-            _context.UserGoals.Remove(goal);
-            await _context.SaveChangesAsync();
-            return NoContent();
+            return await LessonStudyActivity.AtomicAsync<IActionResult>(_context, userId, async () =>
+            {
+                var goal = await _context.UserGoals.FirstOrDefaultAsync(g => g.GoalId == id && g.UserId == userId);
+                if (goal == null) return NotFound();
+                _context.UserGoals.Remove(goal);
+                await _context.SaveChangesAsync();
+                return NoContent();
+            });
         }
 
         // GET: api/goals/suggestions?type=&languageId=&recurrence=&mode=&timezoneOffsetMinutes=

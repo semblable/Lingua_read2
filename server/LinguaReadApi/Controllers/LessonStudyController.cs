@@ -69,9 +69,18 @@ public class LessonStudyController(AppDbContext context) : ControllerBase
                 var credited = reads.Sum(e => (long)e.CreditedWords);
                 var sentence = await context.UserSentenceProgresses.FindAsync(UserId, textId);
                 var words = WordCountUtility.CountStudyWords(text.Content, text.Language, text.SegmentationProfile);
-                var earlierWhitespaceTenths = countingVersion == WordCountUtility.SegmentationCountingVersion
-                    ? reads.Where(e => e.CountingVersion == WordCountUtility.WhitespaceCountingVersion).Sum(e => (long)e.PassTenths)
-                    : 0;
+                long retainedWhitespaceTenths = 0;
+                if (countingVersion == WordCountUtility.SegmentationCountingVersion)
+                {
+                    long runningTenths = 0;
+                    foreach (var read in reads)
+                    {
+                        runningTenths += read.PassTenths;
+                        if (read.CountingVersion == WordCountUtility.WhitespaceCountingVersion)
+                            retainedWhitespaceTenths += read.PassTenths;
+                        retainedWhitespaceTenths = Math.Clamp(retainedWhitespaceTenths, 0, Math.Max(0, runningTenths));
+                    }
+                }
                 var whitespaceWords = countingVersion == WordCountUtility.WhitespaceCountingVersion ? words : WordCountUtility.CountTotalWords(text.Content);
                 var previousVolume = LessonStudyActivity.ReadingVolume(reads, reads.Count, words, whitespaceWords);
                 readingVolume = previousVolume;
@@ -96,9 +105,9 @@ public class LessonStudyController(AppDbContext context) : ControllerBase
                 {
                     // Content or counting changes must not revalue previously earned passes.
                     // A correction can remove all or part of the historical whitespace passes.
-                    var retainedWhitespaceTenths = Math.Clamp(earlierWhitespaceTenths, 0, expected);
-                    var previousCurrentUnits = LessonStudyActivity.RoundedWords(expected - retainedWhitespaceTenths, words);
-                    var extra = LessonStudyActivity.RoundedWords(target - retainedWhitespaceTenths, words) - previousCurrentUnits;
+                    var retained = Math.Clamp(retainedWhitespaceTenths, 0, expected);
+                    var previousCurrentUnits = LessonStudyActivity.RoundedWords(expected - retained, words);
+                    var extra = LessonStudyActivity.RoundedWords(target - retained, words) - previousCurrentUnits;
                     readingVolume = previousVolume + extra;
                     wordDelta = Math.Max(0L, extra - Math.Max(0L, sentenceWords - previousVolume));
                 }

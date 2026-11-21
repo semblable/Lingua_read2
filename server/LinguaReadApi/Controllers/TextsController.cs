@@ -1083,21 +1083,31 @@ namespace LinguaReadApi.Controllers
         public async Task<IActionResult> DeleteText(int id)
         {
             var userId = GetUserId();
-            var text = await _context.Texts.FirstOrDefaultAsync(t => t.TextId == id && t.UserId == userId);
-            if (text == null)
+            var deleted = await LessonStudyActivity.AtomicAsync<(bool Found, bool IsAudioLesson, string? AudioFilePath)>(_context, userId, async () =>
+            {
+                var text = await _context.Texts.FirstOrDefaultAsync(t => t.TextId == id && t.UserId == userId);
+                if (text == null)
+                {
+                    return (false, false, null);
+                }
+
+                var isAudioLesson = text.IsAudioLesson;
+                var audioFilePath = text.AudioFilePath;
+                _context.Texts.Remove(text);
+                await _context.SaveChangesAsync();
+                return (true, isAudioLesson, audioFilePath);
+            });
+
+            if (!deleted.Found)
             {
                 return NotFound();
             }
 
-            // Delete the associated audio file if it's an audio lesson
-            if (text.IsAudioLesson)
+            // Delete the associated audio file after the commit if it's an audio lesson.
+            if (deleted.IsAudioLesson)
             {
-                TryDeleteAudioFile(text.AudioFilePath);
+                TryDeleteAudioFile(deleted.AudioFilePath);
             }
-
-
-            _context.Texts.Remove(text);
-            await _context.SaveChangesAsync();
 
             // A news article's lead photo; best-effort, after the commit.
             BookAssetStorage.DeleteNewsImages(userId, [id], _logger, WebRoot);
@@ -1157,7 +1167,7 @@ namespace LinguaReadApi.Controllers
                 _context.ChangeTracker.Clear();
                 var now = DateTime.UtcNow;
 
-                await using var transaction = await _context.Database.BeginTransactionAsync(IsolationLevel.Serializable);
+                await using var transaction = await _context.Database.BeginTransactionAsync(LessonStudyActivity.LockedIsolation(_context));
                 await LessonStudyActivity.LockAsync(_context, userId);
 
                 // Only the columns used below: the full row would drag in StructuredContent/SrtContent.
@@ -1221,8 +1231,9 @@ namespace LinguaReadApi.Controllers
                 // Not wrapped in a catch: this runs inside the transaction, where a failed statement
                 // aborts it. Swallowing the error here would only turn it into "current transaction
                 // is aborted" at step 3, which the execution strategy doesn't retry. Letting it
-                // propagate rolls the whole attempt back, and a serialization conflict (the
-                // concurrent double-click) gets retried, where the dedup check above answers it.
+                // propagate rolls the whole attempt back; concurrent double-clicks are serialized
+                // by the user lock on PostgreSQL (or retried via Serializable on other providers),
+                // where the dedup check above answers them.
                 if (!skipStats)
                 {
                     // Use the same study unit as the sentence reader. Initial sentence credit

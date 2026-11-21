@@ -206,8 +206,12 @@ export const getSentenceProgress = async (
   let cursorUpdatedAt = confirmed?.cursorUpdatedAt ?? null;
   const hasConfirmedCursor = lastSegmentIndex != null;
   const serverTime = estimatedSentenceServerTime();
-  const credited = new Set(confirmed?.creditedSegmentIndices ?? []);
-  let sourceCoverage = confirmed?.sourceCoverage ?? null;
+  const confirmedCoverage = confirmed?.sourceCoverage ?? null;
+  const confirmedForDifferentRevision = !!sourceRevision && !!confirmedCoverage && confirmedCoverage.sourceRevision !== sourceRevision;
+  const credited = new Set(confirmedForDifferentRevision ? [] : (confirmed?.creditedSegmentIndices ?? []));
+  let sourceCoverage = confirmedForDifferentRevision && sourceRevision
+    ? { sourceRevision, ranges: [], legacyIndices: [] }
+    : confirmedCoverage;
   for (const op of pending.status === 'fulfilled' ? pending.value : []) {
     if (op.type !== 'sentenceRead' || op.payload.textId !== Number(textId)) continue;
     // Earlier revisions still replay for credit without projecting their indices onto this text.
@@ -224,7 +228,7 @@ export const getSentenceProgress = async (
       if (segment.segmentIndex >= 0 && segment.segmentText.trim()) credited.add(segment.segmentIndex);
     }
     sourceCoverage = includeSentenceReadRanges(sourceCoverage, op.payload.sourceRevision, op.payload.segments,
-      confirmed?.creditedSegmentIndices ?? []);
+      confirmedForDifferentRevision ? [] : (confirmed?.creditedSegmentIndices ?? []));
   }
 
   const cursorUnknown = remote.status === 'rejected' && lastSegmentIndex == null;

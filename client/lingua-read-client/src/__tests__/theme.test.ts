@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   applyReaderStatusMarkers, applyTheme, normalizeTheme, readCachedTheme,
@@ -79,5 +81,12 @@ describe('theme and cached accessibility preferences', () => {
     applyReaderStatusMarkers(true);
     applyTheme('light');
     expect(document.body.classList.contains('reader-status-markers')).toBe(true);
+  });
+
+  it('keeps close buttons inverted in classic-dark-theme modals and readable in forced-colors mode', () => {
+    const css = fs.readFileSync(path.resolve(__dirname, '../index.css'), 'utf8');
+    expect(css).toMatch(/\.classic-dark-theme\s+\.btn-close\s*\{[^}]*filter:\s*invert\(1\)/);
+    expect(css).not.toMatch(/\.classic-dark-theme\s+\.modal-content\s+\.btn-close\s*,?\s*[\s\S]*?filter:\s*none/);
+    expect(css).toMatch(/@media\s*\(forced-colors:\s*active\)\s*\{[\s\S]*?\.btn-close\s*\{[^}]*filter:\s*none\s*!important/);
   });
 });

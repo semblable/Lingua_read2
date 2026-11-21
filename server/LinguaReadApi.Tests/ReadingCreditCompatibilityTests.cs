@@ -373,6 +373,54 @@ public class ReadingCreditCompatibilityTests(ITestOutputHelper output)
         Assert.Equal(100, await learner.Earned());
         Assert.IsType<OkObjectResult>(await learner.SetCount("read", 0.6m, 0m, "fresh"));
         Assert.Equal(103, await learner.Earned());
+        Assert.IsType<OkObjectResult>(await learner.SetCount("read", 0.7m, 0.6m, "step"));
+        Assert.Equal(104, await learner.Earned());
+        Assert.IsType<OkObjectResult>(await learner.SetCount("read", 1m, 0.7m, "full"));
+        Assert.Equal(105, await learner.Earned());
+    }
+
+    [Fact]
+    public async Task ProfiledReading_RetiresRemovedLegacyPassesAcrossMultiStepAndPartialCorrections()
+    {
+        await using var fullReset = await Learner.Create(book: false);
+        var text = await fullReset.Context.Texts.SingleAsync();
+        var language = await fullReset.Context.Languages.SingleAsync();
+        text.Content = "猫";
+        language.Code = "ja";
+        language.CharacterSubstitutions = "猫=猫 猫 猫 猫 猫";
+        await fullReset.Context.SaveChangesAsync();
+
+        Assert.IsType<OkObjectResult>(await fullReset.SetCount("read", 0.5m, 0m, "legacy-half"));
+        (await fullReset.Context.LessonStudyEvents.SingleAsync()).ReadingVolumeWords = null;
+        (await fullReset.Context.Texts.SingleAsync()).SegmentationProfile = JapaneseSegmenter.Profile;
+        await fullReset.Context.SaveChangesAsync();
+
+        Assert.IsType<OkObjectResult>(await fullReset.SetCount("read", 0m, 0.5m, "zero"));
+        Assert.IsType<OkObjectResult>(await fullReset.SetCount("read", 0.5m, 0m, "half"));
+        Assert.Equal(103, await fullReset.Earned());
+        Assert.IsType<OkObjectResult>(await fullReset.SetCount("read", 1m, 0.5m, "full"));
+        Assert.Equal(105, await fullReset.Earned());
+
+        await using var partial = await Learner.Create(book: false);
+        var pText = await partial.Context.Texts.SingleAsync();
+        var pLang = await partial.Context.Languages.SingleAsync();
+        pText.Content = "猫";
+        pLang.Code = "ja";
+        pLang.CharacterSubstitutions = "猫=猫 猫 猫 猫 猫";
+        await partial.Context.SaveChangesAsync();
+
+        Assert.IsType<OkObjectResult>(await partial.SetCount("read", 0.5m, 0m, "legacy-half"));
+        (await partial.Context.LessonStudyEvents.SingleAsync()).ReadingVolumeWords = null;
+        (await partial.Context.Texts.SingleAsync()).SegmentationProfile = JapaneseSegmenter.Profile;
+        await partial.Context.SaveChangesAsync();
+
+        // Reducing 0.5 -> 0.2 retires 0.3 legacy tenths, leaving 0.2 retained (0.2*1=0 words rounded).
+        Assert.IsType<OkObjectResult>(await partial.SetCount("read", 0.2m, 0.5m, "partial-down"));
+        Assert.Equal(100, await partial.Earned());
+        Assert.IsType<OkObjectResult>(await partial.SetCount("read", 0.5m, 0.2m, "partial-up"));
+        Assert.Equal(102, await partial.Earned());
+        Assert.IsType<OkObjectResult>(await partial.SetCount("read", 1m, 0.5m, "partial-full"));
+        Assert.Equal(104, await partial.Earned());
     }
 
     [Theory]

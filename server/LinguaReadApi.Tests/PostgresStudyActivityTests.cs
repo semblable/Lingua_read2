@@ -213,10 +213,26 @@ public class PostgresStudyActivityTests
     }
 
     [PostgresStudyFact]
-    public async Task PlainListening_SeesStatisticsCommittedByPreviousLockHolderWithoutRetry()
+    public async Task PlainListening_SeesStatisticsCommittedByPreviousLockHolderWithoutRetry() =>
+        await Listening_SeesStatisticsCommittedByPreviousLockHolderWithoutRetry(withLesson: false);
+
+    [PostgresStudyFact]
+    public async Task LessonListening_SeesStatisticsCommittedByPreviousLockHolderWithoutRetry() =>
+        await Listening_SeesStatisticsCommittedByPreviousLockHolderWithoutRetry(withLesson: true);
+
+    private static async Task Listening_SeesStatisticsCommittedByPreviousLockHolderWithoutRetry(bool withLesson)
     {
         await using var db = await Database.Create();
         await using var setup = db.Context();
+        string? lessonRevision = null;
+        if (withLesson)
+        {
+            var text = await setup.Texts.SingleAsync(t => t.TextId == 1);
+            text.IsAudioLesson = true;
+            text.AudioFilePath = "audio.mp3";
+            await setup.SaveChangesAsync();
+            lessonRevision = LessonStudyActivity.Revision(text.Content, text.LanguageId, text.AudioFilePath);
+        }
         var options = new DbContextOptionsBuilder<AppDbContext>().UseNpgsql(setup.Database.GetConnectionString()).Options;
         await using var writer = new AppDbContext(options);
         await using var listener = new AppDbContext(options);
@@ -226,7 +242,13 @@ public class PostgresStudyActivityTests
         await using var transaction = await writer.Database.BeginTransactionAsync();
         await LessonStudyActivity.LockAsync(writer, UserId);
         var writerPid = ((NpgsqlConnection)writer.Database.GetDbConnection()).ProcessID;
-        var listening = Activity(listener).LogListeningActivity(new() { LanguageId = 1, DurationSeconds = 7, ClientEventId = "waiter" });
+        var listening = Activity(listener).LogListeningActivity(new()
+        {
+            LanguageId = 1,
+            DurationSeconds = 7,
+            ClientEventId = "waiter",
+            Lesson = withLesson ? new() { TextId = 1, SourceRevision = lessonRevision!, PlayedSeconds = 3.5, AudioDurationSeconds = 70 } : null
+        });
         try
         {
             // Release the writer only after PostgreSQL has started the waiter's lock statement.
@@ -236,6 +258,14 @@ public class PostgresStudyActivityTests
                 await Task.Delay(10, timeout.Token);
 
             writer.UserLanguageStatistics.Add(new() { UserId = UserId, LanguageId = 1, TotalSecondsListened = 5, LastUpdatedAt = DateTime.UtcNow });
+            if (withLesson)
+            {
+                // Half a tenth committed before releasing the lock: the waiter's 0.05 only crosses
+                // the 0.1 threshold if it reads this committed playback row after acquiring the lock.
+                var prior = LessonStudyActivity.Record(writer, UserId, 1, "Synthetic", 1, "one two. one!", "audio.mp3", "writer-playback", "playback", seconds: 5);
+                prior.PassTenths = 0;
+                prior.PlaybackPasses = 0.05;
+            }
             await writer.SaveChangesAsync();
             await transaction.CommitAsync();
         }
@@ -249,6 +279,12 @@ public class PostgresStudyActivityTests
         Assert.IsType<OkObjectResult>(await listening);
         Assert.Equal(12, (await setup.UserLanguageStatistics.SingleAsync()).TotalSecondsListened);
         Assert.Equal("waiter", (await setup.UserActivities.SingleAsync()).ClientEventId);
+        if (withLesson)
+        {
+            var playbacks = await setup.LessonStudyEvents.OrderBy(e => e.LessonStudyEventId).ToListAsync();
+            Assert.Equal(2, playbacks.Count);
+            Assert.Equal(1, playbacks[1].PassTenths);
+        }
     }
 
     [PostgresStudyFact]

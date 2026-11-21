@@ -475,14 +475,6 @@
   border-right-color: var(--classic-dark-surface-bg);
 }
 
-/* Ensure close buttons on these light grey surfaces are visible */
-.classic-dark-theme .modal-content .btn-close,
-.classic-dark-theme .popover .btn-close {
-  filter: none;
-  /* Remove default dark theme inversion if any */
-  /* Consider a specific color or SVG for the close button if default is not visible */
-}
-
 *,
 *::before,
 *::after {
@@ -804,7 +796,9 @@ a:focus {
 }
 
 .dark-theme .close,
-.dark-theme .btn-close {
+.dark-theme .btn-close,
+.classic-dark-theme .close,
+.classic-dark-theme .btn-close {
   /* Added .btn-close for Bootstrap 5 */
   color: var(--font-color-dark);
   filter: invert(1) grayscale(100%) brightness(200%);
@@ -1227,6 +1221,8 @@ body:is(.dark-theme, .classic-dark-theme, .high-contrast-dark-theme) {
 @media (forced-colors: active) {
   .app-navigation .navbar-toggler-icon { background-image: none !important; filter: none !important; }
   .app-navigation .navbar-toggler-icon::before { content: '☰'; color: ButtonText; font-size: 1.5rem; line-height: 1; }
+  .btn-close { background-image: none !important; filter: none !important; opacity: 1; display: inline-flex; align-items: center; justify-content: center; }
+  .btn-close::before { content: '×'; color: ButtonText; font-size: 1.25rem; line-height: 1; }
   :is(a, button, input, textarea, select, summary, [tabindex]):focus-visible {
     outline-color: Highlight !important;
     box-shadow: none;

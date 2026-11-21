@@ -2466,6 +2466,38 @@ describe('TextDisplay', () => {
     expect(await screen.findByText('Read: 4')).toBeInTheDocument();
   });
 
+  test('out-of-bounds legacy indices do not trigger a redundant save when the restored sentence is already covered', async () => {
+    const studyRevision = 'B'.repeat(64);
+    getText.mockResolvedValueOnce({ textId: 1, title: 'Reader', languageCode: 'en', words: [], studyRevision,
+      content: 'First sentence. Second sentence.' });
+    getSentenceProgress.mockResolvedValueOnce({
+      lastSegmentIndex: 0,
+      creditedSegmentIndices: [0, 5],
+      sourceCoverage: {
+        sourceRevision: studyRevision,
+        ranges: [{ start: 0, end: 16 }],
+        legacyIndices: [5]
+      }
+    });
+    renderTextDisplay({ sentenceMode: true });
+    expect(await screen.findByText('First')).toBeInTheDocument();
+    expect(screen.getByText('Read: 1')).toBeInTheDocument();
+    expect(logSentenceReadActivity).not.toHaveBeenCalled();
+  });
+
+  test('out-of-bounds legacy credited indices without sourceCoverage are excluded from the displayed read count', async () => {
+    getText.mockResolvedValueOnce({ textId: 1, title: 'Reader', languageCode: 'en', words: [],
+      content: 'First sentence. Second sentence.' });
+    getSentenceProgress.mockResolvedValueOnce({
+      lastSegmentIndex: 0,
+      creditedSegmentIndices: [0, 5]
+    });
+    renderTextDisplay({ sentenceMode: true });
+    expect(await screen.findByText('First')).toBeInTheDocument();
+    expect(screen.getByText('Read: 1')).toBeInTheDocument();
+    expect(logSentenceReadActivity).not.toHaveBeenCalled();
+  });
+
   test('sentence mode shows translation for current sentence', async () => {
     getText.mockResolvedValueOnce({
       textId: 1,

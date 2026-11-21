@@ -41,7 +41,7 @@ type ReviewedWordEdit = { expectedRevision: string; create: boolean };
 type Request = WordStatusIntent & { generation: GenerationScope; sequence: number; clientUpdatedAt: string;
   reviewed?: ReviewedWordEdit; resolve: (result: WordStatusMutationResult) => void };
 type QueuedWordOperation = Extract<PendingOp, { type: 'wordCreate' | 'wordStatusUpdate' }> & { id?: number };
-type QueuedRequest = { request: Request; op: QueuedWordOperation; translation?: string; active: boolean };
+type QueuedRequest = { request: Request; op: QueuedWordOperation; translation?: string; translationOnly: boolean; active: boolean };
 type Entity = WordStatusMutationState & {
   generation: GenerationScope;
   target: WordStatusTarget;
@@ -220,23 +220,27 @@ class WordStatusCoordinator {
     // Capture the complete intent before translation or persistence can await.
     const captured = { ...intent, target: { ...intent.target, word: intent.target.word ? { ...intent.target.word } : null } };
     const entity = this.entityFor(captured.target, captured, generation);
+    const status = captured.translationOnly
+      ? ((entity.desiredStatus > 0 ? entity.desiredStatus : captured.status || 1) as WordStatus)
+      : captured.status;
+    const effective = { ...captured, status };
     const sequence = ++this.sequence;
     entity.sequence = sequence;
     entity.generation = generation;
-    entity.desiredStatus = captured.status;
+    entity.desiredStatus = effective.status;
     entity.pending = true;
     entity.error = undefined;
     entity.conflictId = undefined;
-    entity.lastIntent = captured;
+    entity.lastIntent = effective;
     entity.reviewed = reviewed;
-    if (captured.translation !== undefined) {
-      entity.translation = captured.translation;
+    if (effective.translation !== undefined) {
+      entity.translation = effective.translation;
       entity.translationSequence = sequence;
     }
     const result = new Promise<WordStatusMutationResult>(resolve => {
-      entity.requests.push({ ...captured, generation, sequence, clientUpdatedAt: wordEditTime(), reviewed, resolve });
+      entity.requests.push({ ...effective, generation, sequence, clientUpdatedAt: wordEditTime(), reviewed, resolve });
     });
-    this.publish(entity, `Saving ${entity.term}: ${WORD_STATUS_LABELS[captured.status]}.`, captured.translation !== undefined);
+    this.publish(entity, `Saving ${entity.term}: ${WORD_STATUS_LABELS[effective.status]}.`, effective.translation !== undefined);
     void this.run(entity);
     return result;
   };
@@ -246,7 +250,7 @@ class WordStatusCoordinator {
     const entity = this.identities.get(key);
     // A provider can finish after another grade, even before React renders it.
     // Join the entity's FIFO with its current intent instead of an older panel status.
-    const status = entity?.desiredStatus ?? target.word?.status ?? 1;
+    const status = entity?.desiredStatus || target.word?.status || 1;
     return this.mutate({ target, translation, status: status as WordStatus, translationOnly: true }, generation);
   };
 
@@ -299,7 +303,16 @@ class WordStatusCoordinator {
           const previous = op.payload.expectedRevision === undefined ? [...entity.queuedRequests].reverse()
             .find(item => item.active && item.op.payload.expectedRevision === undefined && this.queueKey(item.op) === this.queueKey(op)) : undefined;
           if (previous) previous.active = false;
-          entity.queuedRequests.push({ request, op, translation: translation ?? previous?.translation, active: true });
+          const translationOnly = !!request.translationOnly && (!previous || previous.translationOnly);
+          const coalescedTranslation = translation ?? previous?.translation;
+          if (request.sequence === entity.sequence) {
+            entity.lastIntent = {
+              ...entity.lastIntent,
+              ...(coalescedTranslation !== undefined ? { translation: coalescedTranslation } : {}),
+              translationOnly: translationOnly || undefined,
+            };
+          }
+          entity.queuedRequests.push({ request, op, translation: coalescedTranslation, translationOnly, active: true });
           this.updateQueuedState(entity);
         } else {
           const savedWord = returnedWord(result);
@@ -366,20 +379,24 @@ class WordStatusCoordinator {
         entity.translation = entity.confirmedTranslation;
         this.publish(entity);
       } else if (entity.queuedOffline && !entity.pending) {
-        const queued = [...entity.queuedRequests].reverse().find(item => item.active);
-        const conflict = queued && conflicts?.find(item => item.id === queued.op.id);
+        const activeQueued = entity.queuedRequests.filter(item => item.active);
+        const queued = activeQueued[activeQueued.length - 1];
+        const conflict = conflicts?.find(item => activeQueued.some(entry => entry.op.id === item.id));
+        const allTranslationOnly = activeQueued.length > 0 && activeQueued.every(item => item.translationOnly);
+        const expectedTranslation = [...activeQueued].reverse().find(entry => entry.translation !== undefined)?.translation;
         if (conflict && queued) {
-          this.rememberConflictingWord(entity, word ?? conflict.conflictingWord, queued.request.sequence);
+          const conflictingEntry = activeQueued.find(entry => entry.op.id === conflict.id) ?? queued;
+          this.rememberConflictingWord(entity, word ?? conflict.conflictingWord, conflictingEntry.request.sequence);
           entity.desiredStatus = entity.confirmedStatus;
           entity.queuedRequests = [];
           this.updateQueuedState(entity);
           entity.conflictId = conflict.id;
-          this.showConflictingWord(entity, queued.request);
+          this.showConflictingWord(entity, conflictingEntry.request);
           this.publish(entity, entity.error, true);
-        } else if (word && (queued?.request.translationOnly || word.status === entity.desiredStatus) &&
+        } else if (word && (allTranslationOnly || word.status === entity.desiredStatus) &&
           // useSyncedWordIdentities checks that the shared queue is empty both
           // before and after this read, including when another tab replayed it.
-          (queued?.translation === undefined || word.translation === queued.translation)) {
+          (expectedTranslation === undefined || word.translation === expectedTranslation)) {
           entity.confirmedStatus = word.status ?? 0;
           entity.desiredStatus = entity.confirmedStatus;
           entity.confirmedSequence = entity.sequence;
@@ -388,7 +405,7 @@ class WordStatusCoordinator {
           this.updateQueuedState(entity);
           entity.error = undefined;
           this.publish(entity, `${entity.term}: ${WORD_STATUS_LABELS[entity.desiredStatus as WordStatus]} saved.`);
-        } else if (conflicts && queued?.op.id !== undefined) {
+        } else if (conflicts && activeQueued.some(entry => entry.op.id !== undefined)) {
           // The queue was empty on both sides of a server read. Another tab
           // may already have resolved the conflict, so stop offering a replay.
           if (word) this.rememberConflictingWord(entity, word, entity.sequence);

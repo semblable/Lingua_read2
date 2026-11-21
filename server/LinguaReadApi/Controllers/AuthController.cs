@@ -68,26 +68,33 @@ namespace LinguaReadApi.Controllers
                 return BadRequest(new { message = "Password is required." });
             }
 
-            return await LessonStudyActivity.AtomicAsync<IActionResult>(_context, DefaultUserId, () => LoginCore(request.Password));
+            var (errorResult, user) = await LessonStudyActivity.AtomicAsync<(IActionResult? Error, User? User)>(_context, DefaultUserId, () => LoginCore(request.Password));
+            if (errorResult != null) return errorResult;
+
+            var token = GenerateJwtToken(user!);
+            SetAuthCookie(token);
+
+            _logger.LogInformation("[AuthController] User {UserId} logged in successfully.", user!.Id);
+            return Ok(new { message = "Login successful." });
         }
 
-        private async Task<IActionResult> LoginCore(string password)
+        private async Task<(IActionResult? Error, User? User)> LoginCore(string password)
         {
             var user = await _context.Users.FindAsync(DefaultUserId);
             if (user == null)
             {
                 _logger.LogError("[AuthController] Default user with ID {UserId} not found.", DefaultUserId);
-                return StatusCode(500, new { message = "Default user configuration error." });
+                return (StatusCode(500, new { message = "Default user configuration error." }), null);
             }
 
             if (string.IsNullOrEmpty(user.PasswordHash))
             {
-                return BadRequest(new { message = "Password not set. Please use the setup endpoint first." });
+                return (BadRequest(new { message = "Password not set. Please use the setup endpoint first." }), null);
             }
 
             var now = DateTimeOffset.UtcNow;
             if (user.LockoutEnd > now)
-                return Unauthorized(new { message = "Too many failed attempts. Try again later." });
+                return (Unauthorized(new { message = "Too many failed attempts. Try again later." }), null);
             if (user.LockoutEnd.HasValue)
             {
                 user.LockoutEnd = null;
@@ -101,7 +108,7 @@ namespace LinguaReadApi.Controllers
                 user.AccessFailedCount++;
                 if (user.AccessFailedCount >= 5) user.LockoutEnd = now.AddMinutes(15);
                 await _context.SaveChangesAsync();
-                return Unauthorized(new { message = "Invalid password." });
+                return (Unauthorized(new { message = "Invalid password." }), null);
             }
 
             // Rehash if needed (e.g. algorithm upgrade)
@@ -118,11 +125,7 @@ namespace LinguaReadApi.Controllers
             user.LastLogin = DateTime.UtcNow;
             await _context.SaveChangesAsync();
 
-            var token = GenerateJwtToken(user);
-            SetAuthCookie(token);
-
-            _logger.LogInformation("[AuthController] User {UserId} logged in successfully.", user.Id);
-            return Ok(new { message = "Login successful." });
+            return (null, user);
         }
 
         [AllowAnonymous]
@@ -137,12 +140,16 @@ namespace LinguaReadApi.Controllers
                 var id = User.FindFirstValue(ClaimTypes.NameIdentifier);
                 if (Guid.TryParse(id, out var userId))
                 {
-                    var user = await _context.Users.FindAsync(userId);
-                    if (user != null)
+                    await LessonStudyActivity.AtomicAsync(_context, userId, async () =>
                     {
-                        user.SecurityStamp = Guid.NewGuid().ToString("D");
-                        await _context.SaveChangesAsync();
-                    }
+                        var user = await _context.Users.FindAsync(userId);
+                        if (user != null)
+                        {
+                            user.SecurityStamp = Guid.NewGuid().ToString("D");
+                            await _context.SaveChangesAsync();
+                        }
+                        return true;
+                    });
                 }
             }
             Response.Cookies.Delete(".LinguaRead.Auth", new CookieOptions
@@ -198,43 +205,50 @@ namespace LinguaReadApi.Controllers
                 return BadRequest(new { message = "Password must be at least 12 characters." });
             }
 
-            var user = await _context.Users.FindAsync(DefaultUserId);
-            if (user == null)
+            var (errorResult, user) = await LessonStudyActivity.AtomicAsync<(IActionResult? Error, User? User)>(_context, DefaultUserId, async () =>
             {
-                _logger.LogError("[AuthController] Default user with ID {UserId} not found.", DefaultUserId);
-                return StatusCode(500, new { message = "Default user configuration error." });
-            }
+                var current = await _context.Users.FindAsync(DefaultUserId);
+                if (current == null)
+                {
+                    _logger.LogError("[AuthController] Default user with ID {UserId} not found.", DefaultUserId);
+                    return (StatusCode(500, new { message = "Default user configuration error." }), null);
+                }
 
-            if (!string.IsNullOrEmpty(user.PasswordHash))
-            {
-                return BadRequest(new { message = "Password is already set. Use login instead." });
-            }
+                if (!string.IsNullOrEmpty(current.PasswordHash))
+                {
+                    return (BadRequest(new { message = "Password is already set. Use login instead." }), null);
+                }
 
-            user.SecurityStamp = Guid.NewGuid().ToString("D");
-            user.PasswordHash = _passwordHasher.HashPassword(user, request.Password);
-            user.LastLogin = DateTime.UtcNow;
-            if (_context.Database.IsRelational())
-            {
-                // Only one simultaneous first visitor may claim setup.
-                var changed = await _context.Users
-                    .Where(u => u.Id == DefaultUserId && (u.PasswordHash == null || u.PasswordHash == ""))
-                    .ExecuteUpdateAsync(update => update
-                        .SetProperty(u => u.PasswordHash, user.PasswordHash)
-                        .SetProperty(u => u.SecurityStamp, user.SecurityStamp)
-                        .SetProperty(u => u.LastLogin, user.LastLogin));
-                if (changed != 1)
-                    return BadRequest(new { message = "Password is already set. Use login instead." });
-            }
-            else
-            {
-                await _context.SaveChangesAsync();
-            }
+                current.SecurityStamp = Guid.NewGuid().ToString("D");
+                current.PasswordHash = _passwordHasher.HashPassword(current, request.Password);
+                current.LastLogin = DateTime.UtcNow;
+                if (_context.Database.IsRelational())
+                {
+                    // Only one simultaneous first visitor may claim setup.
+                    var changed = await _context.Users
+                        .Where(u => u.Id == DefaultUserId && (u.PasswordHash == null || u.PasswordHash == ""))
+                        .ExecuteUpdateAsync(update => update
+                            .SetProperty(u => u.PasswordHash, current.PasswordHash)
+                            .SetProperty(u => u.SecurityStamp, current.SecurityStamp)
+                            .SetProperty(u => u.LastLogin, current.LastLogin));
+                    if (changed != 1)
+                        return (BadRequest(new { message = "Password is already set. Use login instead." }), null);
+                }
+                else
+                {
+                    await _context.SaveChangesAsync();
+                }
+
+                return (null, current);
+            });
+
+            if (errorResult != null) return errorResult;
 
             // Auto-login after setup
-            var token = GenerateJwtToken(user);
+            var token = GenerateJwtToken(user!);
             SetAuthCookie(token);
 
-            _logger.LogInformation("[AuthController] Password set and user {UserId} logged in via setup.", user.Id);
+            _logger.LogInformation("[AuthController] Password set and user {UserId} logged in via setup.", user!.Id);
             return Ok(new { message = "Password set successfully." });
         }
 
@@ -248,16 +262,21 @@ namespace LinguaReadApi.Controllers
 
             if (!Guid.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var userId))
                 return Unauthorized();
-            var user = await _context.Users.FindAsync(userId);
-            if (user == null) return Unauthorized();
-            if (string.IsNullOrEmpty(user.PasswordHash) ||
-                _passwordHasher.VerifyHashedPassword(user, user.PasswordHash, request.CurrentPassword) == PasswordVerificationResult.Failed)
-                return BadRequest(new { message = "Current password is incorrect." });
+            var (errorResult, user) = await LessonStudyActivity.AtomicAsync<(IActionResult? Error, User? User)>(_context, userId, async () =>
+            {
+                var current = await _context.Users.FindAsync(userId);
+                if (current == null) return (Unauthorized(), null);
+                if (string.IsNullOrEmpty(current.PasswordHash) ||
+                    _passwordHasher.VerifyHashedPassword(current, current.PasswordHash, request.CurrentPassword) == PasswordVerificationResult.Failed)
+                    return (BadRequest(new { message = "Current password is incorrect." }), null);
 
-            user.PasswordHash = _passwordHasher.HashPassword(user, request.NewPassword);
-            user.SecurityStamp = Guid.NewGuid().ToString("D");
-            await _context.SaveChangesAsync();
-            SetAuthCookie(GenerateJwtToken(user));
+                current.PasswordHash = _passwordHasher.HashPassword(current, request.NewPassword);
+                current.SecurityStamp = Guid.NewGuid().ToString("D");
+                await _context.SaveChangesAsync();
+                return (null, current);
+            });
+            if (errorResult != null) return errorResult;
+            SetAuthCookie(GenerateJwtToken(user!));
             return Ok(new { message = "Password changed. Other sessions have been signed out." });
         }
 

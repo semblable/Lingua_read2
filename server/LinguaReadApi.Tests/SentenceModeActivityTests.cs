@@ -186,6 +186,46 @@ public class SentenceModeActivityTests
     }
 
     [Fact]
+    public async Task OfflineSentenceReplay_EarnsUnreadCreditWithoutMovingAnEditedTextsCursor()
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        const int textId = 11;
+        SeedUserLanguageAndText(context, userId, textId, "Alpha. Beta. Gamma.");
+        var controller = CreateUserActivityController(context, userId);
+
+        var text = await context.Texts.SingleAsync();
+        var original = LessonStudyActivity.Revision(text.Content, text.LanguageId, text.AudioFilePath);
+        UserActivityController.SentenceSegmentDto alpha = new() { SegmentIndex = 0, SegmentText = "Alpha.", SourceStart = 0, SourceText = "Alpha. " };
+        UserActivityController.SentenceSegmentDto beta = new() { SegmentIndex = 1, SegmentText = "Beta.", SourceStart = 7, SourceText = "Beta. " };
+        UserActivityController.SentenceSegmentDto gamma = new() { SegmentIndex = 2, SegmentText = "Gamma.", SourceStart = 13, SourceText = "Gamma." };
+
+        async Task<UserActivityController.SentenceProgressDto> Read(string revision, int index, params UserActivityController.SentenceSegmentDto[] segments)
+        {
+            var result = await controller.LogSentenceRead(new()
+            {
+                TextId = textId, SourceRevision = revision, CurrentSegmentIndex = index, Segments = [..segments]
+            });
+            return Assert.IsType<UserActivityController.SentenceProgressDto>(Assert.IsType<OkObjectResult>(result.Result).Value);
+        }
+
+        Assert.Equal(1, (await Read(original, 0, alpha)).CreditedWordCount);
+        text = await context.Texts.SingleAsync();
+        text.Content = "Alpha. Beta! Gamma.";
+        await context.SaveChangesAsync();
+        var edited = LessonStudyActivity.Revision(text.Content, text.LanguageId, text.AudioFilePath);
+        Assert.Equal(2, (await Read(edited, 2, gamma)).CreditedWordCount);
+
+        var replay = await Read(original, 1, alpha, beta);
+        Assert.Equal(3, replay.CreditedWordCount);
+        Assert.Equal(2, replay.LastSegmentIndex);
+        Assert.Equal(new[] { 0, 2 }, replay.CreditedSegmentIndices);
+        Assert.Equal(edited, replay.SourceCoverage?.SourceRevision);
+        Assert.Equal(new SentenceSourceRange(13, 19), Assert.Single(replay.SourceCoverage!.Ranges));
+        Assert.Equal(3, (await Read(original, 1, alpha, beta)).CreditedWordCount);
+    }
+
+    [Fact]
     public async Task CompleteText_OnlyCreditsRemainingWordsAfterSentenceMode()
     {
         await using var context = CreateContext();

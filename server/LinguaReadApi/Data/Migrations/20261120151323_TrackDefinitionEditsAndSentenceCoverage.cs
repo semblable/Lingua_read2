@@ -30,12 +30,12 @@ namespace LinguaReadApi.Data.Migrations
                 WHERE word."WordId" = translation."WordId";
                 """);
 
-            // A word with no translation row can still have a recent explicit clear.
+            // Legacy clears removed the translation row. A later status write
+            // could replace their timestamp, so use the last known word revision.
             migrationBuilder.Sql("""
                 UPDATE "Words" AS word
                 SET "LastTranslationEditedAt" = word."LastEditedAt"
-                WHERE word."LastTranslationEditedAt" IS NULL AND word."LastEditedAt" IS NOT NULL
-                    AND (word."LastStatusEditedAt" IS NULL OR word."LastStatusEditedAt" < word."LastEditedAt");
+                WHERE word."LastTranslationEditedAt" IS NULL AND word."LastEditedAt" IS NOT NULL;
                 """);
         }
 

@@ -1054,13 +1054,9 @@ namespace LinguaReadApi.Controllers
                 });
             }
 
+            // Metadata edits leave the reader's display blocks and span offsets intact.
             text.Title = updateTextDto.Title;
-            text.Content = updateTextDto.Content;
-            text.StructuredContent = null;
             text.Tag = updateTextDto.Tag;
-            if (languageChanged) text.LanguageId = updateTextDto.LanguageId!.Value;
-
-            _context.Entry(text).State = EntityState.Modified;
 
             try
             {

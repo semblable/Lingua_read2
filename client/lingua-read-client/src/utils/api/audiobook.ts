@@ -166,7 +166,8 @@ export const logManualActivity = async (
 };
 
 export const getSentenceProgress = async (
-  textId: number | string
+  textId: number | string,
+  sourceRevision?: string
 ): Promise<SentenceProgress> => {
   const session = offlineSessionRevision();
   const cachedBeforeLoad = readCachedSentenceProgress(textId);
@@ -209,6 +210,8 @@ export const getSentenceProgress = async (
   let sourceCoverage = confirmed?.sourceCoverage ?? null;
   for (const op of pending.status === 'fulfilled' ? pending.value : []) {
     if (op.type !== 'sentenceRead' || op.payload.textId !== Number(textId)) continue;
+    // Earlier revisions still replay for credit without projecting their indices onto this text.
+    if (sourceRevision && op.payload.sourceRevision && op.payload.sourceRevision !== sourceRevision) continue;
     const queuedAt = queuedSentenceCursorTime(op.payload.clientUpdatedAt, op.enqueuedAt);
     const segmentIndex = op.payload.currentSegmentIndex;
     if (queuedAt && segmentIndex != null && segmentIndex >= 0

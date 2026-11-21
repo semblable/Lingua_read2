@@ -12,10 +12,19 @@ public sealed class SentenceSourceCoverage
     [Required] public List<SentenceSourceRange> Ranges { get; init; } = [];
     [Required] public HashSet<int> LegacyIndices { get; init; } = [];
 
-    internal static SentenceSourceCoverage? Read(string? json)
+    internal static Dictionary<string, SentenceSourceCoverage> ReadVersions(string? json)
     {
-        try { return json == null ? null : JsonSerializer.Deserialize<SentenceSourceCoverage>(json); }
-        catch (JsonException) { return null; }
+        if (json == null) return [];
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            var stored = document.RootElement;
+            if (stored.ValueKind != JsonValueKind.Object) return [];
+            if (stored.TryGetProperty(nameof(SourceRevision), out _) && stored.Deserialize<SentenceSourceCoverage>() is { } single)
+                return new() { [single.SourceRevision] = single };
+            return stored.Deserialize<Dictionary<string, SentenceSourceCoverage>>() ?? [];
+        }
+        catch (JsonException) { return []; }
     }
 
     internal IEnumerable<string> UnreadText(SentenceSourceRange span, string sourceText)

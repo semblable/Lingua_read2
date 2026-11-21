@@ -81,6 +81,27 @@ public class AuditRegressionTests
     private static ControllerContext Identity(Guid userId) => new() { HttpContext = new DefaultHttpContext {
         User = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, userId.ToString())], "test")) } };
 
+    [Fact]
+    public async Task TextMetadataEdit_PreservesStructuredReaderContent()
+    {
+        await using var context = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+        var userId = Guid.NewGuid();
+        const string content = "Winter field.\n\nAlpha beta. Gamma delta.";
+        const string structured = """
+            [{"type":"image","imageUrl":"/field.png","caption":"Winter field."},{"type":"text","text":"Alpha beta. Gamma delta."}]
+            """;
+        context.Texts.Add(new Text { TextId = 1, UserId = userId, LanguageId = 1, Title = "old", Content = content, StructuredContent = structured });
+        await context.SaveChangesAsync();
+        var controller = new TextsController(context, NullLogger<TextsController>.Instance, null!, new WordLinkingChannel(), null!)
+            { ControllerContext = Identity(userId) };
+
+        Assert.IsType<NoContentResult>(await controller.UpdateText(1, new() { TextId = 1, Title = "new", Content = content }));
+
+        var saved = await context.Texts.AsNoTracking().SingleAsync();
+        Assert.Equal("new", saved.Title);
+        Assert.Equal(structured, saved.StructuredContent);
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

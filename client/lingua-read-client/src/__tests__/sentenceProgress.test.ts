@@ -96,6 +96,18 @@ test('preserves source spans through the offline queue and across a reopen', asy
   expect(JSON.parse(String(mockFetch.mock.calls[2][1]?.body))).toMatchObject({ sourceRevision, legacySegments: [first], segments: [second] });
 });
 
+test('keeps an offline read of an earlier text revision queued without restoring its position', async () => {
+  const textId = 17;
+  await enqueue({ type: 'sentenceRead', payload: {
+    textId, sourceRevision: 'previous', currentSegmentIndex: 2, clientUpdatedAt: '2026-11-16T12:10:00Z',
+    segments: [{ segmentIndex: 2, segmentText: 'Previous sentence.' }]
+  } });
+  mockFetch.mockResolvedValueOnce({ textId, lastSegmentIndex: 4, cursorUpdatedAt: '2026-11-16T12:00:00Z', creditedSegmentIndices: [4] });
+
+  await expect(getSentenceProgress(textId, 'current')).resolves.toMatchObject({ lastSegmentIndex: 4, creditedSegmentIndices: [4] });
+  await expect(listPending()).resolves.toHaveLength(1);
+});
+
 test('legacy replay uses its original queue time and keeps the newer confirmed cursor offline', async () => {
   const textId = 23;
   await enqueue({ type: 'sentenceRead', payload: {

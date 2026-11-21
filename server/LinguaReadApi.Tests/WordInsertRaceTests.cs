@@ -229,6 +229,39 @@ public class WordInsertRaceTests : IDisposable
     }
 
     [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task CoalescedEdit_IgnoresAnOlderFieldThatAlreadyMatches(bool olderDefinition)
+    {
+        var options = await CreateSqliteOptions();
+        await InsertWord(options, "gato", status: 0);
+        await using var db = new AppDbContext(options);
+        var id = await db.Words.Select(w => w.WordId).SingleAsync();
+        var now = DateTimeOffset.UtcNow.AddMinutes(-5);
+        var serverAt = now.AddMinutes(1);
+        var offlineAt = now.AddMinutes(2);
+        var controller = CreateController(db);
+        Assert.IsType<NoContentResult>(await controller.UpdateWord(id, new() { Status = 2, Translation = "cat", ClientUpdatedAt = serverAt }));
+
+        var replay = new UpdateWordDto
+        {
+            Status = olderDefinition ? 4 : 2,
+            Translation = olderDefinition ? "cat" : "domestic cat",
+            ClientUpdatedAt = offlineAt,
+            StatusUpdatedAt = olderDefinition ? null : now,
+            TranslationUpdatedAt = olderDefinition ? now : null
+        };
+        Assert.IsType<NoContentResult>(await controller.UpdateWord(id, replay));
+        var word = await db.Words.AsNoTracking().Include(w => w.Translation).SingleAsync();
+        Assert.Equal(replay.Status, word.Status);
+        Assert.Equal(replay.Translation, word.Translation.Translation);
+        Assert.Equal(TrimToMicroseconds(olderDefinition ? serverAt : offlineAt), word.LastTranslationEditedAt);
+        Assert.Equal(TrimToMicroseconds(olderDefinition ? offlineAt : serverAt), word.LastManualStatusAt);
+
+        static DateTime TrimToMicroseconds(DateTimeOffset time) => time.UtcDateTime.AddTicks(-(time.Ticks % 10));
+    }
+
+    [Theory]
     [InlineData(false)]
     [InlineData(true)]
     public async Task ExplicitReapplyFromSlowClock_RequiresTheVersionActuallyReviewed(bool create)

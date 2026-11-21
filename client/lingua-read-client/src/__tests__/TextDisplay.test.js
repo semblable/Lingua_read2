@@ -3172,10 +3172,12 @@ describe('TextDisplay', () => {
   // --- Parallel loading optimization tests ---
 
   test('parallel loading: fetches language config and sentence progress with languageId', async () => {
+    const studyRevision = 'A'.repeat(64);
     getText.mockResolvedValueOnce({
       textId: 1,
       title: 'Lesson',
       content: 'Hola mundo.',
+      studyRevision,
       languageId: 5,
       languageCode: 'ES',
       languageName: 'Spanish',
@@ -3196,7 +3198,7 @@ describe('TextDisplay', () => {
 
     await waitFor(() => {
       expect(getLanguage).toHaveBeenCalledWith(5);
-      expect(getSentenceProgress).toHaveBeenCalledWith(1);
+      expect(getSentenceProgress).toHaveBeenCalledWith(1, studyRevision);
     });
 
     delete global.fetch;

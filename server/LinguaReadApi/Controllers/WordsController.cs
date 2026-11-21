@@ -944,9 +944,18 @@ namespace LinguaReadApi.Controllers
             // this request actually edits (including the original times in a coalesced save).
             DateTime? statusTime = statusSelected ? EditFieldTime(statusUpdatedAt, editedAt) : null;
             DateTime? translationTime = translation == null ? null : EditFieldTime(translationUpdatedAt, editedAt);
-            if (word != null && (IsStaleFieldEdit(statusTime, LatestStatusEdit(word), status != word.Status)
-                || IsStaleFieldEdit(translationTime, LatestTranslationEdit(word), translation != (word.Translation?.Translation ?? ""))))
-                return null;
+            if (word != null)
+            {
+                var lastStatus = LatestStatusEdit(word);
+                var lastTranslation = LatestTranslationEdit(word);
+                var changesStatus = status != word.Status;
+                var changesTranslation = translation != (word.Translation?.Translation ?? "");
+                // An older coalesced field already at its intended value is a no-op.
+                if (statusUpdatedAt.HasValue && !changesStatus && statusTime < lastStatus) statusTime = null;
+                if (translationUpdatedAt.HasValue && !changesTranslation && translationTime < lastTranslation) translationTime = null;
+                if (IsStaleFieldEdit(statusTime, lastStatus, changesStatus)
+                    || IsStaleFieldEdit(translationTime, lastTranslation, changesTranslation)) return null;
+            }
             return new(AdvanceRevision(latest, editedAt), statusTime, translationTime);
         }
 

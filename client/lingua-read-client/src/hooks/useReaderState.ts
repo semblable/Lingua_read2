@@ -299,7 +299,7 @@ export const useReaderState = ({
         };
         void applyBook();
 
-        const progressResult = Promise.allSettled([data.textId ? getSentenceProgress(data.textId) : null]);
+        const progressResult = Promise.allSettled([data.textId ? getSentenceProgress(data.textId, data.studyRevision) : null]);
         // Sentence indices depend on the language's splitting rules and on subtitle cues.
         // The rest of the vocabulary and book metadata can continue loading in parallel.
         const [language] = await Promise.allSettled([

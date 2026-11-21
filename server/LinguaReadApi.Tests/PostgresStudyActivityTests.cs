@@ -349,14 +349,15 @@ public class PostgresStudyActivityTests
         var migrator = c.GetService<IMigrator>();
         await migrator.MigrateAsync("20261120134002_RecordWordStatusEditTime");
         await Seed(c, legacyWordSchema: true);
-        var definitionAt = new DateTime(2026, 11, 20, 10, 0, 0, DateTimeKind.Utc);
+        var definitionAt = DateTimeOffset.FromUnixTimeSeconds(DateTimeOffset.UtcNow.AddMinutes(-10).ToUnixTimeSeconds()).UtcDateTime;
         var statusAt = definitionAt.AddMinutes(1);
-        var clearAt = definitionAt.AddMinutes(2);
+        var statusAfterClearAt = definitionAt.AddMinutes(3);
         await c.Database.ExecuteSqlInterpolatedAsync($"""
             UPDATE "Words" SET "LastEditedAt" = {statusAt}, "LastStatusEditedAt" = {statusAt} WHERE "WordId" = 1;
             INSERT INTO "Words" ("WordId", "UserId", "LanguageId", "Term", "Status", "CreatedAt", "LastEditedAt", "LastStatusEditedAt")
-            VALUES (2, {UserId}, 1, 'cleared', 3, {definitionAt}, {clearAt}, {statusAt}),
-                   (3, {UserId}, 1, 'status-only', 3, {definitionAt}, {statusAt}, {statusAt});
+            VALUES (2, {UserId}, 1, 'cleared', 3, {definitionAt}, {statusAfterClearAt}, {statusAfterClearAt}),
+                   (3, {UserId}, 1, 'status-only', 3, {definitionAt}, {statusAt}, {statusAt}),
+                   (4, {UserId}, 1, 'untracked', 0, {definitionAt}, NULL, NULL);
             INSERT INTO "WordTranslations" ("WordId", "Translation", "CreatedAt") VALUES (1, 'old definition', {definitionAt});
             INSERT INTO "UserSentenceProgresses" ("UserId", "TextId", "CreditedSegmentIndicesJson", "CreditedWordCount", "LastSegmentIndex", "UpdatedAt")
             VALUES ({UserId}, 1, '[0]', 2, 0, {statusAt});
@@ -364,8 +365,14 @@ public class PostgresStudyActivityTests
 
         await migrator.MigrateAsync();
 
-        var words = await c.Words.OrderBy(w => w.WordId).Select(w => w.LastTranslationEditedAt).ToArrayAsync();
-        Assert.Equal(new DateTime?[] { definitionAt, clearAt, null }, words);
+        var words = new WordsController(c, NullLogger<WordsController>.Instance) { ControllerContext = Identity };
+        Assert.IsType<ConflictObjectResult>(await words.UpdateWord(2, new()
+        {
+            Status = 3, TranslationOnly = true, Translation = "offline draft", ClientUpdatedAt = statusAt
+        }));
+        Assert.False(await c.WordTranslations.AnyAsync(t => t.WordId == 2));
+        var clocks = await c.Words.OrderBy(w => w.WordId).Select(w => w.LastTranslationEditedAt).ToArrayAsync();
+        Assert.Equal(new DateTime?[] { definitionAt, statusAfterClearAt, statusAt, null }, clocks);
         var progress = await c.UserSentenceProgresses.SingleAsync();
         Assert.Equal("[0]", progress.CreditedSegmentIndicesJson);
         Assert.Equal(2, progress.CreditedWordCount);

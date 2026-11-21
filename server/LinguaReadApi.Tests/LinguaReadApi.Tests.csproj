@@ -35,5 +35,12 @@
     <None Update="FsrsGoldenVectors\fsrs-golden-vectors.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <!-- nginx configs, checked against the API's upload size limits by NginxUploadRoutesTests. -->
+    <None Include="..\..\client\lingua-read-client\nginx.conf" Link="nginx\nginx.conf">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="..\..\client\lingua-read-client\nginx.ssl.conf" Link="nginx\nginx.ssl.conf">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 </Project>

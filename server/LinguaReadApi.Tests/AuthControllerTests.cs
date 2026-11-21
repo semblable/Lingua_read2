@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using LinguaReadApi.Authorization;
 using LinguaReadApi.Controllers;
 using LinguaReadApi.Data;
 using LinguaReadApi.Models;
@@ -89,9 +90,13 @@ public class AuthControllerTests
         user.SecurityStamp = "existing-session-stamp";
         await context.SaveChangesAsync();
         var lockoutEnd = user.LockoutEnd;
-        var controller = CreateController(context, recoveryToken: TestRecoveryToken);
+        var controller = CreateController(context, recoveryToken: " " + TestRecoveryToken + " ");
 
-        var result = await controller.Login(new LoginRequest { Password = password, RecoveryToken = TestRecoveryToken.ToUpperInvariant() });
+        var result = await controller.Login(new LoginRequest
+        {
+            Password = password,
+            RecoveryToken = "  " + TestRecoveryToken.ToUpperInvariant() + "\n"
+        });
         var persistedUser = await context.Users.AsNoTracking().SingleAsync(u => u.Id == DefaultUserId);
 
         if (succeeds)
@@ -104,11 +109,31 @@ public class AuthControllerTests
         }
         else
         {
-            Assert.IsType<UnauthorizedObjectResult>(result);
+            var unauthorized = Assert.IsType<UnauthorizedObjectResult>(result);
+            Assert.Equal("Invalid password.", GetMessage(unauthorized.Value));
+            Assert.True(GetProperty<bool>(unauthorized.Value!, "recoveryAvailable"));
             Assert.False(controller.Response.Headers.ContainsKey("Set-Cookie"));
             Assert.Equal(lockoutEnd, persistedUser.LockoutEnd);
             Assert.Equal(5, persistedUser.AccessFailedCount);
         }
+    }
+
+    [Theory]
+    [InlineData(null, false)]
+    [InlineData("", false)]
+    [InlineData("   ", false)]
+    [InlineData(TestRecoveryToken, false)]
+    [InlineData(" " + TestRecoveryToken + "\n", false)]
+    [InlineData("misconfigured", true)]
+    [InlineData("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcde", true)]
+    [InlineData("g123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", true)]
+    public void RecoveryToken_DetectsMisconfiguration(string? configuredToken, bool expected)
+    {
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { [RecoveryToken.ConfigKey] = configuredToken })
+            .Build();
+
+        Assert.Equal(expected, RecoveryToken.IsMisconfigured(config));
     }
 
     [Fact]

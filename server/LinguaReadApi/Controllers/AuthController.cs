@@ -98,13 +98,12 @@ namespace LinguaReadApi.Controllers
             var locked = user.LockoutEnd > now;
             if (locked)
             {
-                var configuredToken = _configuration["Auth:RecoveryToken"];
-                var recoveryAvailable = IsRecoveryToken(configuredToken);
-                if (!recoveryAvailable || !IsRecoveryToken(request.RecoveryToken) ||
-                    !CryptographicOperations.FixedTimeEquals(
-                        Convert.FromHexString(configuredToken!), Convert.FromHexString(request.RecoveryToken!)))
+                var configuredToken = RecoveryToken.ReadConfigured(_configuration);
+                var submittedToken = RecoveryToken.TryDecode(request.RecoveryToken);
+                if (configuredToken == null || submittedToken == null ||
+                    !CryptographicOperations.FixedTimeEquals(configuredToken, submittedToken))
                 {
-                    return (LockedSignIn(recoveryAvailable), null);
+                    return (LockedSignIn(recoveryAvailable: configuredToken != null), null);
                 }
             }
             else if (user.LockoutEnd.HasValue)
@@ -117,7 +116,9 @@ namespace LinguaReadApi.Controllers
             if (result == PasswordVerificationResult.Failed)
             {
                 _logger.LogWarning("[AuthController] Failed login attempt.");
-                if (locked) return (LockedSignIn(recoveryAvailable: true), null);
+                // The recovery code was valid: report the wrong password, keep the lockout as is,
+                // and keep offering the recovery field so the owner can retry.
+                if (locked) return (Unauthorized(new { message = "Invalid password.", recoveryAvailable = true }), null);
                 user.AccessFailedCount++;
                 if (user.AccessFailedCount >= 5) user.LockoutEnd = now.AddMinutes(15);
                 await _context.SaveChangesAsync();
@@ -140,8 +141,6 @@ namespace LinguaReadApi.Controllers
 
             return (null, user);
         }
-
-        private static bool IsRecoveryToken(string? token) => token is { Length: 64 } && token.All(Uri.IsHexDigit);
 
         private UnauthorizedObjectResult LockedSignIn(bool recoveryAvailable) => Unauthorized(new
         {

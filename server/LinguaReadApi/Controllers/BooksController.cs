@@ -489,7 +489,8 @@ namespace LinguaReadApi.Controllers
             }
             // Basic check for allowed extensions
             var allowedExtensions = new[] { ".txt", ".epub" };
-            var fileExtension = Path.GetExtension(uploadDto.File.FileName)?.ToLowerInvariant();
+            var uploadedFileName = UploadFileName.Get(uploadDto.File.FileName);
+            var fileExtension = Path.GetExtension(uploadedFileName)?.ToLowerInvariant();
             if (string.IsNullOrEmpty(fileExtension) || !allowedExtensions.Contains(fileExtension))
             {
                  return BadRequest("Unsupported file type. Please upload .epub or .txt files.");
@@ -517,7 +518,7 @@ namespace LinguaReadApi.Controllers
             string bookContent = string.Empty;
             string? bookDescription = null;
             EpubBook? epubBook = null;
-            string sourceFileStem = Path.GetFileNameWithoutExtension(uploadDto.File.FileName);
+            string sourceFileStem = Path.GetFileNameWithoutExtension(uploadedFileName);
 
             // --- File Processing ---
             try
@@ -530,7 +531,7 @@ namespace LinguaReadApi.Controllers
                     bookTitle = uploadDto.TitleOverride ?? epubBook.Title ?? sourceFileStem;
                     var normalizedDescription = NormalizeEpubHtmlToText(epubBook.Description ?? string.Empty);
                     bookDescription = string.IsNullOrWhiteSpace(normalizedDescription)
-                        ? $"Uploaded from {uploadDto.File.FileName}"
+                        ? $"Uploaded from {uploadedFileName}"
                         : normalizedDescription;
                 }
                 else
@@ -556,12 +557,13 @@ namespace LinguaReadApi.Controllers
             // --- Book and Tag Creation (Similar to CreateBook) ---
 
             // 1. Create Book entity
+            var fallbackDescription = bookDescription ?? $"Uploaded from {uploadedFileName}";
             var book = new Book
             {
                 Title = bookTitle.Length > 200 ? bookTitle.Substring(0, 200) : bookTitle, // Ensure title fits DB constraint
-                Description = (bookDescription ?? $"Uploaded from {uploadDto.File.FileName}").Length > 1000
-                    ? (bookDescription ?? $"Uploaded from {uploadDto.File.FileName}").Substring(0, 1000)
-                    : (bookDescription ?? $"Uploaded from {uploadDto.File.FileName}"),
+                Description = fallbackDescription.Length > 1000
+                    ? fallbackDescription.Substring(0, 1000)
+                    : fallbackDescription,
                 LanguageId = uploadDto.LanguageId,
                 UserId = userId,
                 FolderId = uploadDto.FolderId,
@@ -811,7 +813,7 @@ namespace LinguaReadApi.Controllers
             }
 
             var allowedExtensions = new[] { ".txt", ".epub" };
-            var fileExtension = Path.GetExtension(uploadDto.File.FileName)?.ToLowerInvariant();
+            var fileExtension = Path.GetExtension(UploadFileName.Get(uploadDto.File.FileName))?.ToLowerInvariant();
             if (string.IsNullOrEmpty(fileExtension) || !allowedExtensions.Contains(fileExtension))
             {
                 return BadRequest("Unsupported file type. Please upload .epub or .txt files.");
@@ -831,7 +833,7 @@ namespace LinguaReadApi.Controllers
                 if (fileExtension == ".epub")
                 {
                     epubBook = await EpubReader.ReadBookAsync(stream);
-                    var artifactKeys = BuildEpubArtifactKeys(uploadDto.TitleOverride ?? epubBook.Title, Path.GetFileNameWithoutExtension(uploadDto.File.FileName));
+                    var artifactKeys = BuildEpubArtifactKeys(uploadDto.TitleOverride ?? epubBook.Title, Path.GetFileNameWithoutExtension(UploadFileName.Get(uploadDto.File.FileName)));
 
                     absoluteTempDir = Path.Combine(Path.GetTempPath(), "lingua-preview", Guid.NewGuid().ToString("N"));
                     Directory.CreateDirectory(absoluteTempDir);
@@ -1136,7 +1138,7 @@ namespace LinguaReadApi.Controllers
                 {
                     if (file.Length == 0) continue;
 
-                    var fileExtension = Path.GetExtension(file.FileName)?.ToLowerInvariant();
+                    var fileExtension = Path.GetExtension(UploadFileName.Get(file.FileName))?.ToLowerInvariant();
                     if (string.IsNullOrEmpty(fileExtension) || !allowedAudioExtensions.Contains(fileExtension))
                     {
                         _logger.LogWarning("Skipping unsupported audio file: {FileName}", file.FileName);

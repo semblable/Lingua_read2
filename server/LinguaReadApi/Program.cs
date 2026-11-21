@@ -389,6 +389,10 @@ var app = builder.Build();
 if (!app.Environment.IsEnvironment("Testing") && !LocalMode.IsEnabled(app.Configuration))
     JwtKeyValidation.Validate(app.Configuration["Jwt:Key"]);
 
+// A malformed recovery code only disables lockout recovery, so warn rather than refuse to start.
+if (!LocalMode.IsEnabled(app.Configuration) && RecoveryToken.IsMisconfigured(app.Configuration))
+    app.Logger.LogWarning("Auth:RecoveryToken (LINGUAREAD_RECOVERY_TOKEN) is set but is not 64 hex characters; owner lockout recovery is disabled.");
+
 // Static hook (not DI) because the EF value converter lives in the cached model,
 // which outlives any single scoped context.
 var secretProtectorLogger = app.Services

@@ -518,7 +518,7 @@ namespace LinguaReadApi.Controllers
             try
             {
                 // --- 1. Save Audio File ---
-                var audioFileName = $"{Guid.NewGuid()}_{GetUploadFileName(createAudioLessonDto.AudioFile.FileName)}";
+                var audioFileName = $"{Guid.NewGuid()}_{UploadFileName.Get(createAudioLessonDto.AudioFile.FileName)}";
                 var userAudioDir = Path.Combine(WebRoot ?? "wwwroot", "audio_lessons", userId.ToString()); // Consider configuration for base path
                 Directory.CreateDirectory(userAudioDir); // Ensure directory exists
                 var fullAudioPath = Path.Combine(userAudioDir, audioFileName);
@@ -598,9 +598,6 @@ namespace LinguaReadApi.Controllers
 
         private void TryDeleteAudioFile(string? relativeAudioPath)
             => BookAssetStorage.DeleteAudioLessonFile(relativeAudioPath, _logger, WebRoot);
-
-        private static string GetUploadFileName(string fileName) =>
-            Path.GetFileName(fileName.Replace('\\', '/'));
 
         internal static string ParseSrt(string srtContent)
         {
@@ -691,7 +688,7 @@ namespace LinguaReadApi.Controllers
                     try
                     {
                         // --- 1. Save Audio File ---
-                        var audioFileName = $"{Guid.NewGuid()}_{GetUploadFileName(mp3Info.File.FileName)}";
+                        var audioFileName = $"{Guid.NewGuid()}_{UploadFileName.Get(mp3Info.File.FileName)}";
                         var userAudioDir = Path.Combine(WebRoot ?? "wwwroot", "audio_lessons", userId.ToString());
                         Directory.CreateDirectory(userAudioDir);
                         var fullAudioPath = Path.Combine(userAudioDir, audioFileName);
@@ -839,7 +836,7 @@ namespace LinguaReadApi.Controllers
             var result = new FileInfoResult { File = file, OriginalName = file.FileName };
             try
             {
-                var fileName = GetUploadFileName(file.FileName);
+                var fileName = UploadFileName.Get(file.FileName);
                 result.BaseName = Path.GetFileNameWithoutExtension(fileName);
                 result.NormalizedBaseName = NormalizeBaseName(result.BaseName);
                 var extension = Path.GetExtension(fileName).ToLowerInvariant();

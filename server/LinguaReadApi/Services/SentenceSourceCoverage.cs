@@ -1,6 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using LinguaReadApi.Models;
 
 namespace LinguaReadApi.Services;
 
@@ -18,6 +19,10 @@ public sealed class SentenceSourceCoverage
     // False for pre-existing rows persisted before CreditedIndices existed in JSON,
     // so LogSentenceRead can hydrate same-revision ordinals from CreditedSegmentIndicesJson.
     [JsonIgnore] internal bool HasStoredCreditedIndices { get; set; } = true;
+    [JsonIgnore] internal ReadingSource? Source { get; set; }
+    [JsonIgnore] internal int CreditedWordCount { get; set; }
+
+    internal sealed record ReadingSource(int LanguageId, string? SegmentationProfile);
 
     private sealed class StoredCoverage
     {
@@ -25,6 +30,8 @@ public sealed class SentenceSourceCoverage
         public List<SentenceSourceRange> Ranges { get; init; } = [];
         public HashSet<int> LegacyIndices { get; init; } = [];
         public HashSet<int>? CreditedIndices { get; init; }
+        public ReadingSource? Source { get; init; }
+        public int CreditedWordCount { get; init; }
     }
 
     private static SentenceSourceCoverage FromStored(StoredCoverage stored) => new()
@@ -33,7 +40,9 @@ public sealed class SentenceSourceCoverage
         Ranges = stored.Ranges,
         LegacyIndices = stored.LegacyIndices,
         CreditedIndices = new(stored.CreditedIndices ?? stored.LegacyIndices),
-        HasStoredCreditedIndices = stored.CreditedIndices != null
+        HasStoredCreditedIndices = stored.CreditedIndices != null,
+        Source = stored.Source,
+        CreditedWordCount = stored.CreditedWordCount
     };
 
     internal static Dictionary<string, SentenceSourceCoverage> ReadVersions(string? json)
@@ -63,8 +72,59 @@ public sealed class SentenceSourceCoverage
                 SourceRevision = pair.Value.SourceRevision,
                 Ranges = pair.Value.Ranges,
                 LegacyIndices = pair.Value.LegacyIndices,
-                CreditedIndices = pair.Value.CreditedIndices
+                CreditedIndices = pair.Value.CreditedIndices,
+                Source = pair.Value.Source,
+                CreditedWordCount = pair.Value.CreditedWordCount
             }));
+
+    internal static HashSet<int> ReadCreditedIndices(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return [];
+        try { return JsonSerializer.Deserialize<HashSet<int>>(json) ?? []; }
+        catch (JsonException) { return []; }
+    }
+
+    internal static SentenceSourceCoverage BindCurrentSource(Dictionary<string, SentenceSourceCoverage> versions,
+        UserSentenceProgress progress, Text text)
+    {
+        var revision = LessonStudyActivity.Revision(text.Content, text.LanguageId, text.AudioFilePath);
+        if (!versions.TryGetValue(revision, out var current))
+        {
+            var legacy = versions.Count == 0 ? ReadCreditedIndices(progress.CreditedSegmentIndicesJson) : [];
+            current = new() { SourceRevision = revision, LegacyIndices = legacy, CreditedIndices = new(legacy) };
+            versions.Add(revision, current);
+        }
+        else if (!current.HasStoredCreditedIndices)
+        {
+            current.CreditedIndices.UnionWith(ReadCreditedIndices(progress.CreditedSegmentIndicesJson));
+            current.HasStoredCreditedIndices = true;
+        }
+
+        current.Source = new(text.LanguageId, text.SegmentationProfile);
+        // Assign credit from older rows before an edit can change its language.
+        var assignedWords = versions.Values.Sum(coverage => coverage.CreditedWordCount);
+        current.CreditedWordCount += Math.Max(0, progress.CreditedWordCount - assignedWords);
+        return current;
+    }
+
+    internal static int CreditedWordsForLanguage(UserSentenceProgress? progress, int languageId)
+    {
+        if (progress == null || progress.CreditedWordCount == 0) return 0;
+        var otherLanguages = ReadVersions(progress.SourceCoverageJson).Values
+            .Where(coverage => coverage.Source != null && coverage.Source.LanguageId != languageId)
+            .Sum(coverage => coverage.CreditedWordCount);
+        return Math.Max(0, progress.CreditedWordCount - otherLanguages);
+    }
+
+    internal static void ResetWordCredit(UserSentenceProgress progress)
+    {
+        if (progress.CreditedWordCount == 0) return;
+        progress.CreditedWordCount = 0;
+        var versions = ReadVersions(progress.SourceCoverageJson);
+        if (!versions.Values.Any(coverage => coverage.CreditedWordCount != 0)) return;
+        foreach (var coverage in versions.Values) coverage.CreditedWordCount = 0;
+        progress.SourceCoverageJson = WriteVersions(versions);
+    }
 
     internal IEnumerable<string> UnreadText(SentenceSourceRange span, string sourceText)
     {

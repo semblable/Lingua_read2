@@ -11,7 +11,7 @@ const DB_NAME = 'lingua-read-offline';
 const DB_VERSION = 1;
 const STORE = 'pending-ops';
 
-type WordEditVersion = { clientUpdatedAt?: string; translationUpdatedAt?: string; expectedRevision?: string;
+export type WordEditVersion = { clientUpdatedAt?: string; translationUpdatedAt?: string; expectedRevision?: string;
   translationOnly?: boolean; statusUpdatedAt?: string };
 
 export type PendingOp =
@@ -170,25 +170,25 @@ function txStore(db: IDBDatabase, mode: IDBTransactionMode): IDBObjectStore {
   return db.transaction(STORE, mode).objectStore(STORE);
 }
 
-export async function enqueue(op: PendingOp, coalesceKey?: string): Promise<number> {
+export async function enqueue(op: PendingOp, coalesceKey?: string): Promise<StoredPendingOp> {
   const db = await openDb();
-  return new Promise<number>((resolve, reject) => {
+  return new Promise<StoredPendingOp>((resolve, reject) => {
     const store = txStore(db, 'readwrite');
-    let id: number;
+    let queuedOp: StoredPendingOp;
     const enqueuedAt = Date.now();
     let exampleCapturedAt: number | undefined;
-    store.transaction.oncomplete = () => resolve(id);
+    store.transaction.oncomplete = () => resolve(queuedOp);
     store.transaction.onabort = () => reject(store.transaction.error ?? new Error('Offline write aborted'));
 
     const add = () => {
-      const record: Omit<StoredPendingOp, 'id'> = {
+      const record = {
         ...op,
         enqueuedAt,
         ...(exampleCapturedAt !== undefined ? { exampleCapturedAt } : {}),
         ...(coalesceKey ? { coalesceKey } : {})
       };
       const req = store.add(record);
-      req.onsuccess = () => { id = req.result as number; };
+      req.onsuccess = () => { queuedOp = { ...record, id: req.result as number }; };
       req.onerror = () => reject(req.error ?? new Error('Failed to enqueue offline op'));
     };
 

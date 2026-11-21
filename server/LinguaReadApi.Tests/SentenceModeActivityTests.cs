@@ -395,6 +395,132 @@ public class SentenceModeActivityTests
         Assert.Empty(await context.UserActivities.ToListAsync());
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task FirstHistoricalReplay_DoesNotClaimTheCurrentTextsLegacyCredit(bool legacyRow)
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        const int textId = 15;
+        const string newOpening = "New opening.";
+        SeedUserLanguageAndText(context, userId, textId, $"{newOpening} Beta.");
+        var current = LessonStudyActivity.Revision($"{newOpening} Beta.", 1, null);
+        var original = LessonStudyActivity.Revision("Alpha. Beta.", 1, null);
+        var controller = CreateUserActivityController(context, userId);
+
+        if (legacyRow)
+        {
+            context.UserSentenceProgresses.Add(new() { UserId = userId, TextId = textId,
+                CreditedSegmentIndicesJson = "[0]", CreditedWordCount = 2, LastSegmentIndex = 0 });
+            context.UserLanguageStatistics.Add(new() { UserId = userId, LanguageId = 1, TotalWordsRead = 2 });
+            await context.SaveChangesAsync();
+        }
+        else
+        {
+            Assert.Equal(2, (await ReadSentence(controller, textId, 0, newOpening)).CreditedWordCount);
+        }
+
+        var replay = await ReadSentence(controller, textId, 0, "Alpha.", original);
+        Assert.Equal(3, replay.CreditedWordCount);
+        Assert.Equal(current, replay.SourceCoverage!.SourceRevision);
+        Assert.Equal([0], replay.SourceCoverage.LegacyIndices);
+
+        Assert.Equal(3, (await ReadSentence(controller, textId, 0, newOpening, current)).CreditedWordCount);
+        Assert.Equal(3, (await context.UserLanguageStatistics.SingleAsync()).TotalWordsRead);
+    }
+
+    [Fact]
+    public async Task TextEdit_PinsExistingOrdinalCreditToTheOutgoingRevision()
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        const int textId = 16;
+        SeedUserLanguageAndText(context, userId, textId, "Alpha. Beta.");
+        var original = LessonStudyActivity.Revision("Alpha. Beta.", 1, null);
+        context.UserSentenceProgresses.Add(new() { UserId = userId, TextId = textId,
+            CreditedSegmentIndicesJson = "[0]", CreditedWordCount = 1, LastSegmentIndex = 0 });
+        context.UserLanguageStatistics.Add(new() { UserId = userId, LanguageId = 1, TotalWordsRead = 1 });
+        await context.SaveChangesAsync();
+
+        var texts = CreateTextsController(context, userId);
+        Assert.IsType<NoContentResult>(await texts.UpdateText(textId,
+            new() { TextId = textId, Title = "Edited", Content = "New opening. Beta." }));
+        var current = LessonStudyActivity.Revision("New opening. Beta.", 1, null);
+        var controller = CreateUserActivityController(context, userId);
+
+        Assert.Equal(1, (await ReadSentence(controller, textId, 0, "Alpha.", original)).CreditedWordCount);
+        Assert.Equal(3, (await ReadSentence(controller, textId, 0, "New opening.", current)).CreditedWordCount);
+        Assert.Equal(3, (await context.UserLanguageStatistics.SingleAsync()).TotalWordsRead);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task OfflineRead_KeepsItsLanguageAcrossAnEditAndCompletion(bool completeBeforeReplay)
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        const int textId = 17;
+        SeedUserLanguageAndText(context, userId, textId, "Alfa beta.");
+        context.Languages.Add(new() { LanguageId = 2, Code = "en", Name = "English" });
+        await context.SaveChangesAsync();
+        var original = LessonStudyActivity.Revision("Alfa beta.", 1, null);
+        const string editedText = "First. Another line.";
+        var current = LessonStudyActivity.Revision(editedText, 2, null);
+
+        var texts = CreateTextsController(context, userId);
+        Assert.IsType<NoContentResult>(await texts.UpdateText(textId,
+            new() { TextId = textId, Title = "Edited", Content = editedText, LanguageId = 2 }));
+        var controller = CreateUserActivityController(context, userId);
+
+        if (!completeBeforeReplay)
+            Assert.Null((await ReadSentence(controller, textId, 0, "Alfa beta.", original)).LastSegmentIndex);
+
+        await ReadSentence(controller, textId, 0, "First.", current);
+        Assert.IsType<OkObjectResult>((await texts.CompleteText(textId, sourceRevision: current)).Result);
+        Assert.Equal(3, (await ReadSentence(controller, textId, 0, "Alfa beta.", original)).CreditedWordCount);
+
+        var stats = await context.UserLanguageStatistics.ToDictionaryAsync(s => s.LanguageId, s => s.TotalWordsRead);
+        Assert.Equal(2, stats[1]);
+        Assert.Equal(3, stats[2]);
+        Assert.Equal(2, (await context.UserActivities.SingleAsync(a => a.LanguageId == 1)).WordCount);
+    }
+
+    [Fact]
+    public async Task SavingAnUnchangedPassCountAfterALanguageEdit_DoesNotDoubleCreditSentences()
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        const int textId = 18;
+        const string originalText = "Alfa beta. Gamma delta.";
+        const string editedText = "First words. Another line.";
+        SeedUserLanguageAndText(context, userId, textId, originalText);
+        context.Languages.Add(new() { LanguageId = 2, Code = "en", Name = "English" });
+        await context.SaveChangesAsync();
+        var original = LessonStudyActivity.Revision(originalText, 1, null);
+        var current = LessonStudyActivity.Revision(editedText, 2, null);
+
+        var study = new LessonStudyController(context) { ControllerContext = BuildControllerContext(userId) };
+        Assert.IsType<OkObjectResult>(await study.SetCount(textId, new()
+        {
+            Kind = "read", Count = 0.5m, ExpectedCount = 0m, ClientEventId = "original-half-pass", SourceRevision = original
+        }));
+        var texts = CreateTextsController(context, userId);
+        Assert.IsType<NoContentResult>(await texts.UpdateText(textId,
+            new() { TextId = textId, Title = "Edited", Content = editedText, LanguageId = 2 }));
+        await ReadSentence(CreateUserActivityController(context, userId), textId, 0, "First words.", current);
+        Assert.IsType<OkObjectResult>(await study.SetCount(textId, new()
+        {
+            Kind = "read", Count = 0.5m, ExpectedCount = 0.5m, ClientEventId = "unchanged-total", SourceRevision = current
+        }));
+
+        Assert.IsType<OkObjectResult>((await texts.CompleteText(textId, sourceRevision: current)).Result);
+        var stats = await context.UserLanguageStatistics.ToDictionaryAsync(s => s.LanguageId, s => s.TotalWordsRead);
+        Assert.Equal(2, stats[1]);
+        Assert.Equal(4, stats[2]);
+    }
+
     [Fact]
     public async Task CompleteText_OnlyCreditsRemainingWordsAfterSentenceMode()
     {
@@ -662,6 +788,22 @@ public class SentenceModeActivityTests
         {
             ControllerContext = BuildControllerContext(userId)
         };
+    }
+
+    private static TextsController CreateTextsController(AppDbContext context, Guid userId) => new(context,
+        NullLogger<TextsController>.Instance, new UserActivityService(context, NullLogger<UserActivityService>.Instance),
+        new WordLinkingChannel(), CreateStatsRecompute(context)) { ControllerContext = BuildControllerContext(userId) };
+
+    private static async Task<UserActivityController.SentenceProgressDto> ReadSentence(UserActivityController controller,
+        int textId, int index, string sentence, string? revision = null)
+    {
+        var result = await controller.LogSentenceRead(new()
+        {
+            TextId = textId, SourceRevision = revision, CurrentSegmentIndex = index,
+            Segments = [new() { SegmentIndex = index, SegmentText = sentence,
+                SourceStart = revision == null ? null : 0, SourceText = revision == null ? null : sentence }]
+        });
+        return Assert.IsType<UserActivityController.SentenceProgressDto>(Assert.IsType<OkObjectResult>(result.Result).Value);
     }
 
     private static ControllerContext BuildControllerContext(Guid userId)

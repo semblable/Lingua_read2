@@ -51,7 +51,7 @@ public static class LessonStudyActivity
     // Reconcile whole-pass and fractional credit with the initial sentence read.
     // A normal completion always adds one pass, including after a partial read.
     internal static async Task<(int CreditedWords, long ReadingVolumeWords)> CompletionCreditAsync(
-        AppDbContext context, Guid userId, int textId, int words, bool isFinished, int whitespaceWords)
+        AppDbContext context, Guid userId, int textId, int languageId, int words, bool isFinished, int whitespaceWords)
     {
         var reads = await ReadingPassesAsync(context, userId, textId);
         var previousVolume = ReadingVolume(reads, reads.Count, words, whitespaceWords);
@@ -59,7 +59,15 @@ public static class LessonStudyActivity
         // Previously finished lessons (including Finish without credit) are deliberate rereads.
         if (isFinished) return (words, volume);
         var sentence = await context.UserSentenceProgresses.FindAsync(userId, textId);
-        var outstandingSentenceCredit = Math.Max(0L, (sentence?.CreditedWordCount ?? 0) - previousVolume);
+        var sentenceWords = SentenceSourceCoverage.CreditedWordsForLanguage(sentence, languageId);
+        var languageVolume = previousVolume;
+        if (reads.Any(read => read.LanguageId != languageId))
+        {
+            // Saving an unchanged count can repeat volume earned in another language.
+            var languageReads = reads.Where(read => read.LanguageId == languageId && read.PassTenths != 0).ToList();
+            languageVolume = ReadingVolume(languageReads, languageReads.Count, words, whitespaceWords);
+        }
+        var outstandingSentenceCredit = Math.Max(0L, sentenceWords - languageVolume);
         return (words - (int)Math.Min(words, outstandingSentenceCredit), volume);
     }
 

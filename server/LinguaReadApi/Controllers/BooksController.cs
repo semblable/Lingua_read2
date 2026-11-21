@@ -2355,7 +2355,7 @@ namespace LinguaReadApi.Controllers
                     // the text's study unit. Only a later reread earns the full volume.
                     var countingVersion = WordCountUtility.StudyCountingVersion(text.SegmentationProfile);
                     int totalWordCount = WordCountUtility.CountStudyWords(text.Content, text.Language, text.SegmentationProfile);
-                    var (completionWordCredit, readingVolume) = await LessonStudyActivity.CompletionCreditAsync(_context, userId, text.TextId, totalWordCount, text.IsFinished,
+                    var (completionWordCredit, readingVolume) = await LessonStudyActivity.CompletionCreditAsync(_context, userId, text.TextId, text.LanguageId, totalWordCount, text.IsFinished,
                         countingVersion == WordCountUtility.SegmentationCountingVersion ? WordCountUtility.CountTotalWords(text.Content) : totalWordCount);
                     var completedRead = LessonStudyActivity.Record(_context, userId, text.TextId, text.Title, text.LanguageId,
                         text.Content, text.AudioFilePath, lessonDto.ClientEventId, "read", words: completionWordCredit);

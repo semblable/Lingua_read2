@@ -533,6 +533,7 @@ public class ReadingCreditCompatibilityTests(ITestOutputHelper output)
         Assert.Equal(0, await learner.Earned());
         var progress = await learner.Context.UserSentenceProgresses.SingleAsync();
         Assert.Equal(0, progress.CreditedWordCount);
+        Assert.Equal(0, Assert.Single(SentenceSourceCoverage.ReadVersions(progress.SourceCoverageJson).Values).CreditedWordCount);
         Assert.Equal("[0]", progress.CreditedSegmentIndicesJson);
         Assert.Equal(0, progress.LastSegmentIndex);
         // Keep the old dedup indices so a queued pre-reset payload cannot be recredited.

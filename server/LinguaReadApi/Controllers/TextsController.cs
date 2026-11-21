@@ -1031,6 +1031,15 @@ namespace LinguaReadApi.Controllers
                 {
                     var current = await _context.Texts.FirstOrDefaultAsync(t => t.TextId == id && t.UserId == userId);
                     if (current == null) return NotFound();
+                    if (!current.IsAudioLesson)
+                    {
+                        // Even a lesson with no server progress can have reads queued offline.
+                        var progress = await _context.UserSentenceProgresses.FindAsync(userId, id)
+                            ?? _context.UserSentenceProgresses.Add(new() { UserId = userId, TextId = id }).Entity;
+                        var versions = SentenceSourceCoverage.ReadVersions(progress.SourceCoverageJson);
+                        SentenceSourceCoverage.BindCurrentSource(versions, progress, current);
+                        progress.SourceCoverageJson = SentenceSourceCoverage.WriteVersions(versions);
+                    }
                     current.Title = updateTextDto.Title;
                     current.Content = updateTextDto.Content;
                     current.StructuredContent = null;
@@ -1240,7 +1249,7 @@ namespace LinguaReadApi.Controllers
                     // is reconciled once, and a later whole-text reread earns its full volume.
                     var countingVersion = WordCountUtility.StudyCountingVersion(text.SegmentationProfile);
                     var words = WordCountUtility.CountStudyWords(text.Content, text.Language, text.SegmentationProfile);
-                    var (completionWordCredit, readingVolume) = await LessonStudyActivity.CompletionCreditAsync(_context, userId, textId, words, text.IsFinished,
+                    var (completionWordCredit, readingVolume) = await LessonStudyActivity.CompletionCreditAsync(_context, userId, textId, text.LanguageId, words, text.IsFinished,
                         countingVersion == WordCountUtility.SegmentationCountingVersion ? WordCountUtility.CountTotalWords(text.Content) : words);
                     var completedRead = LessonStudyActivity.Record(_context, userId, textId, text.Title, text.LanguageId,
                         text.Content, text.AudioFilePath, clientEventId, "read", words: completionWordCredit);

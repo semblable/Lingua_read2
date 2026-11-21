@@ -1,6 +1,7 @@
 import { fetchApi, fetchApiDownload } from './client';
 import type { ResponseOf } from '../fetchApi';
 import { enqueueIfOffline, isOfflineQueued } from '../offline/enqueueIfOffline';
+import type { WordEditVersion } from '../offline/syncQueue';
 import { lowercaseLookupTerm } from '../readerText';
 
 export type Word = ResponseOf<'/api/Words/{id}', 'get'>;
@@ -20,13 +21,24 @@ export function wordEditTime(): string {
   return new Date(latestEditMs).toISOString();
 }
 
+function wordEditVersion(options: WordEditVersion = {}): WordEditVersion {
+  const { clientUpdatedAt = wordEditTime(), statusUpdatedAt, translationUpdatedAt, expectedRevision, translationOnly } = options;
+  return {
+    clientUpdatedAt,
+    ...(translationOnly ? { translationOnly } : {}),
+    ...(statusUpdatedAt !== undefined ? { statusUpdatedAt } : {}),
+    ...(translationUpdatedAt !== undefined ? { translationUpdatedAt } : {}),
+    ...(expectedRevision !== undefined ? { expectedRevision } : {}),
+  };
+}
+
 export const createWord = async (
   textId: number | string,
   term: string,
   status: number | string,
   translation: string | null | undefined,
   sentence: string | null = null,
-  options: { queueOnly?: boolean; clientUpdatedAt?: string; expectedRevision?: string; translationOnly?: boolean } = {}
+  options: WordEditVersion & { queueOnly?: boolean } = {}
 ): Promise<unknown> => {
   try {
     const payload = {
@@ -35,10 +47,8 @@ export const createWord = async (
       status: parseInt(String(status), 10),
       ...(translation != null ? { translation } : {}),
       replaceExisting: true,
-      ...(options.translationOnly ? { translationOnly: true } : {}),
       sentence,
-      clientUpdatedAt: options.clientUpdatedAt ?? wordEditTime(),
-      ...(options.expectedRevision !== undefined ? { expectedRevision: options.expectedRevision } : {}),
+      ...wordEditVersion(options),
     };
 
     // Offline replay: createWord is one of the three mutations the offline
@@ -69,7 +79,7 @@ export const createWord = async (
   }
 };
 
-type WordUpdateOptions = { clientUpdatedAt?: string; expectedRevision?: string; translationOnly?: boolean } &
+type WordUpdateOptions = WordEditVersion &
   ({ textId: number | string; sentence: string } | { textId?: never; sentence?: never });
 
 export const updateWord = async (
@@ -86,9 +96,7 @@ export const updateWord = async (
       status,
       ...(translation != null ? { translation } : {}),
       ...(options?.textId !== undefined ? { textId: Number(options.textId), sentence: options.sentence } : {}),
-      ...(options?.translationOnly ? { translationOnly: true } : {}),
-      clientUpdatedAt: options?.clientUpdatedAt ?? wordEditTime(),
-      ...(options?.expectedRevision !== undefined ? { expectedRevision: options.expectedRevision } : {}),
+      ...wordEditVersion(options),
     };
 
     // Persist the complete edit; omitted translations remain unchanged.

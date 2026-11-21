@@ -67,7 +67,7 @@ describe('reader status mutation coordination', () => {
   test('reconcileServerWords does not confirm a coalesced offline status+translation edit when only the translation matches', async () => {
     const update = vi.fn()
       .mockResolvedValueOnce({ offline: true, queuedOp: { id: 105, type: 'wordStatusUpdate', payload: { wordId: 41, status: 3 } } })
-      .mockResolvedValueOnce({ offline: true, queuedOp: { id: 106, type: 'wordStatusUpdate', payload: { wordId: 41, status: 3, translation: 'domestic cat', translationOnly: true } } });
+      .mockResolvedValueOnce({ offline: true, queuedOp: { id: 106, type: 'wordStatusUpdate', payload: { wordId: 41, status: 3, translation: 'domestic cat' } } });
     const { result } = setup([cat], { update });
     await act(async () => {
       await result.current.mutate({ target: target(cat), status: 3 });
@@ -128,7 +128,7 @@ describe('reader status mutation coordination', () => {
   test('retry after terminal rejection of a coalesced offline status+translation edit keeps the status change', async () => {
     const update = vi.fn()
       .mockResolvedValueOnce({ offline: true, queuedOp: { id: 109, type: 'wordStatusUpdate', payload: { wordId: 41, status: 3 } } })
-      .mockResolvedValueOnce({ offline: true, queuedOp: { id: 110, type: 'wordStatusUpdate', payload: { wordId: 41, status: 3, translation: 'gloss', translationOnly: true } } })
+      .mockResolvedValueOnce({ offline: true, queuedOp: { id: 110, type: 'wordStatusUpdate', payload: { wordId: 41, status: 3, translation: 'gloss' } } })
       .mockResolvedValueOnce({});
     const { result } = setup([cat], { update });
     await act(async () => {
@@ -148,6 +148,38 @@ describe('reader status mutation coordination', () => {
       clientUpdatedAt: expect.any(String),
     });
     expect(result.current.states[0]).toMatchObject({ desiredStatus: 3, confirmedStatus: 3 });
+  });
+
+  test('retry keeps the status from a merged edit originally queued in another tab', async () => {
+    const earlierGradeAt = new Date(Date.now() - 10_000).toISOString();
+    await enqueue({ type: 'wordStatusUpdate', payload: {
+      wordId: cat.wordId, status: 3, textId: 6, sentence: 'A cat sleeps.',
+      clientUpdatedAt: earlierGradeAt,
+    } }, `wordStatus:${cat.wordId}`);
+    const fetch = vi.spyOn(apiClient, 'fetchApi')
+      .mockRejectedValueOnce(new apiClient.ApiError('The earlier example source is gone.', 400))
+      .mockResolvedValueOnce(null);
+    try {
+      const { result } = setup([cat], { update: vi.fn(updateWord) });
+      await act(async () => { await result.current.saveTranslation(target(cat), 'gloss'); });
+      expect(result.current.states[0]).toMatchObject({ desiredStatus: 3, queuedOffline: true });
+      const [pending] = await listPending();
+      expect(pending).toMatchObject({ type: 'wordStatusUpdate', payload: { status: 3, translation: 'gloss', textId: 6,
+        statusUpdatedAt: earlierGradeAt } });
+      if (pending.type !== 'wordStatusUpdate') throw new Error('Expected a queued word update');
+
+      await act(async () => { await drain(productionSyncHandlers); });
+      expect(result.current.states[0]).toMatchObject({ queuedOffline: false, confirmedStatus: 1 });
+      await act(async () => { await result.current.retry(result.current.states[0].key); });
+
+      const retried = JSON.parse(String(fetch.mock.lastCall?.[1]?.body));
+      expect(retried).toMatchObject({ status: 3, translation: 'gloss', textId: 7,
+        clientUpdatedAt: pending.payload.clientUpdatedAt, statusUpdatedAt: earlierGradeAt });
+      expect(retried).not.toHaveProperty('translationOnly');
+      expect(result.current.states[0].confirmedStatus).toBe(3);
+    } finally {
+      fetch.mockRestore();
+    }
   });
 
   test('saveTranslation falls back to status 1 instead of 0 after a failed grade on an untracked word', async () => {
@@ -221,7 +253,7 @@ describe('reader status mutation coordination', () => {
   test('retirement removes only this word from the offline queue', async () => {
     const update = vi.fn().mockImplementation(async (wordId: number, status: number) => {
       const op = { type: 'wordStatusUpdate' as const, payload: { wordId, status } };
-      return { offline: true, queuedOp: { ...op, id: await enqueue(op, `wordStatusUpdate:${wordId}`) } };
+      return { offline: true, queuedOp: await enqueue(op, `wordStatusUpdate:${wordId}`) };
     });
     const { result } = setup([cat, dog], { update });
     await act(async () => {

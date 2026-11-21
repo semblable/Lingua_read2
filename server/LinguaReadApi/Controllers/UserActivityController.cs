@@ -474,37 +474,29 @@ public async Task<ActionResult<SentenceProgressDto>> LogSentenceRead([FromBody] 
         _context.UserSentenceProgresses.Add(progress);
     }
 
-    var creditedIndices = ParseCreditedIndices(progress.CreditedSegmentIndicesJson);
+    var creditedIndices = SentenceSourceCoverage.ReadCreditedIndices(progress.CreditedSegmentIndicesJson);
     var coverages = SentenceSourceCoverage.ReadVersions(progress.SourceCoverageJson);
-    var spanAware = !text.IsAudioLesson && requestedRevision != null;
-    var currentRevision = spanAware || coverages.Count > 0
-        ? LessonStudyActivity.Revision(text.Content, text.LanguageId, text.AudioFilePath) : null;
-    var currentSource = !spanAware || requestedRevision == currentRevision;
-    var currentCoverage = currentRevision == null ? null : coverages.GetValueOrDefault(currentRevision);
-    if (currentCoverage is { HasStoredCreditedIndices: false })
-    {
-        // Pre-existing coverage rows predating per-revision CreditedIndices still have
-        // their same-revision ordinals in CreditedSegmentIndicesJson.
-        currentCoverage.CreditedIndices.UnionWith(creditedIndices);
-        currentCoverage.HasStoredCreditedIndices = true;
-    }
+    // Anchor ordinal-only credit to the current text before looking up an offline revision.
+    var currentCoverage = text.IsAudioLesson ? null : SentenceSourceCoverage.BindCurrentSource(coverages, progress, text);
+    var spanAware = currentCoverage != null && requestedRevision != null;
+    var currentSource = !spanAware || requestedRevision == currentCoverage?.SourceRevision;
     var coverage = currentCoverage;
-    if (spanAware)
+    if (!currentSource && !coverages.TryGetValue(requestedRevision!, out coverage))
     {
-        // Offline reads can refer to the source as it was before a text edit.
-        // Keep those receipts separate from the new layout's ranges and cursor.
-        var revision = requestedRevision!;
-        if (!coverages.TryGetValue(revision, out coverage))
-        {
-            coverage = new()
-            {
-                SourceRevision = revision,
-                LegacyIndices = coverages.Count == 0 ? new(creditedIndices) : [],
-                CreditedIndices = coverages.Count == 0 ? new(creditedIndices) : []
-            };
-            coverages.Add(revision, coverage);
-        }
-        if (currentSource) currentCoverage = coverage;
+        coverage = new() { SourceRevision = requestedRevision! };
+        coverages.Add(coverage.SourceRevision, coverage);
+    }
+
+    // Revisions recorded before source metadata was saved can still replay.
+    var source = coverage?.Source ?? currentCoverage?.Source;
+    var creditLanguageId = source?.LanguageId ?? text.LanguageId;
+    var segmentationProfile = source == null ? text.SegmentationProfile : source.SegmentationProfile;
+    var creditLanguage = creditLanguageId == text.LanguageId ? text.Language : await _context.Languages.FindAsync(creditLanguageId);
+    if (creditLanguageId != text.LanguageId && creditLanguage == null)
+        return BadRequest("The language of this earlier read is no longer available.");
+
+    if (spanAware && coverage != null)
+    {
         foreach (var legacy in request.LegacySegments ?? [])
         {
             if (legacy?.SourceRange() is { } span && coverage.LegacyIndices.Remove(legacy.SegmentIndex))
@@ -518,17 +510,18 @@ public async Task<ActionResult<SentenceProgressDto>> LogSentenceRead([FromBody] 
         .ToList();
 
     var newlyCreditedWords = 0;
+    var studyEvents = _context.LessonStudyEvents.Where(e => e.UserId == userId && e.SourceTextId == request.TextId
+        && e.LanguageId == creditLanguageId);
+    var readingPasses = studyEvents.Where(e => e.CountsTowardStatistics && (e.Kind == "read" || e.Kind == "read-set"));
     // New completion events are authoritative credit checkpoints. Keep them
     // after explicit statistics resets; sentence credit remains initial-pass only.
-    var completedReading = await _context.LessonStudyEvents.AnyAsync(e => e.UserId == userId
-        && e.SourceTextId == request.TextId && e.IsCompletionCheckpoint
+    var completedReading = await studyEvents.AnyAsync(e => e.IsCompletionCheckpoint
         && (e.Kind == "read" || !e.CountsTowardStatistics));
     if (!completedReading)
     {
         // A corrected manual total below 1× can resume the initial sentence
         // read. Actual completions and reset checkpoints remain authoritative.
-        var passCounts = await LessonStudyActivity.PassCountsAsync(_context, userId, request.TextId);
-        completedReading = passCounts.Read >= 10;
+        completedReading = await readingPasses.SumAsync(e => (long)e.PassTenths) >= 10;
     }
 
     foreach (var segment in distinctSegments)
@@ -542,41 +535,21 @@ public async Task<ActionResult<SentenceProgressDto>> LogSentenceRead([FromBody] 
                 foreach (var unread in coverage.UnreadText(span, segment.SourceText!))
                 {
                     var creditText = unread.Length == segment.SourceText!.Length ? segment.SegmentText : unread;
-                    newlyCreditedWords += WordCountUtility.CountStudyWords(creditText, text.Language, text.SegmentationProfile);
+                    newlyCreditedWords += WordCountUtility.CountStudyWords(creditText, creditLanguage, segmentationProfile);
                 }
             }
-            if (currentSource) creditedIndices.Add(segment.SegmentIndex);
             coverage.CreditedIndices.Add(segment.SegmentIndex);
             coverage.Mark(span);
-            continue;
-        }
-
-        // Old clients and audio cues use ordinals. Keep any late legacy credits
-        // available for the next reader that can map them to source spans.
-        if (currentSource)
-        {
-            if (!text.IsAudioLesson && currentRevision != null && coverages.Count > 0)
-            {
-                // Once span-aware revisions exist, deduplicate revisionless reads
-                // against the current revision rather than earlier revisions' indices.
-                if (coverage == null)
-                {
-                    coverage = currentCoverage = new() { SourceRevision = currentRevision };
-                    coverages.Add(currentRevision, coverage);
-                }
-                if (!coverage.CreditedIndices.Add(segment.SegmentIndex)) continue;
-                coverage.LegacyIndices.Add(segment.SegmentIndex);
-                creditedIndices.Add(segment.SegmentIndex);
-            }
-            else if (!creditedIndices.Add(segment.SegmentIndex)) continue;
         }
         else
         {
-            if (coverage == null || !coverage.CreditedIndices.Add(segment.SegmentIndex)) continue;
-            coverage.LegacyIndices.Add(segment.SegmentIndex);
+            // Legacy reads and audio cues carry only ordinals.
+            if (!(coverage?.CreditedIndices ?? creditedIndices).Add(segment.SegmentIndex)) continue;
+            coverage?.LegacyIndices.Add(segment.SegmentIndex);
+            if (!completedReading)
+                newlyCreditedWords += WordCountUtility.CountStudyWords(segment.SegmentText, creditLanguage, segmentationProfile);
         }
-        if (!completedReading)
-            newlyCreditedWords += WordCountUtility.CountStudyWords(segment.SegmentText, text.Language, text.SegmentationProfile);
+        if (currentSource) creditedIndices.Add(segment.SegmentIndex);
     }
 
     if (currentSource && request.CurrentSegmentIndex is >= 0)
@@ -593,23 +566,25 @@ public async Task<ActionResult<SentenceProgressDto>> LogSentenceRead([FromBody] 
     }
 
     progress.CreditedSegmentIndicesJson = SerializeCreditedIndices(creditedIndices);
-    if (coverages.Count > 0) progress.SourceCoverageJson = SentenceSourceCoverage.WriteVersions(coverages);
+    if (coverage != null)
+    {
+        coverage.Source ??= source;
+        coverage.CreditedWordCount += newlyCreditedWords;
+        progress.SourceCoverageJson = SentenceSourceCoverage.WriteVersions(coverages);
+    }
     progress.CreditedWordCount += newlyCreditedWords;
 
-    var independentReread = await _context.LessonStudyEvents.AnyAsync(e => e.UserId == userId && e.SourceTextId == request.TextId
-        && e.CountsTowardStatistics && e.Kind == "read-set" && e.ReconcilesSentenceCredit == false);
-    if (newlyCreditedWords > 0 && !independentReread)
+    if (newlyCreditedWords > 0 && !await readingPasses.AnyAsync(e => e.Kind == "read-set" && e.ReconcilesSentenceCredit == false))
     {
         // Sentence reads can overtake a manually entered partial pass. Transfer
         // the overlap to sentence progress without earning those words twice.
-        var passWords = await _context.LessonStudyEvents.Where(e => e.UserId == userId && e.SourceTextId == request.TextId
-            && e.CountsTowardStatistics && (e.Kind == "read" || e.Kind == "read-set"))
-            .SumAsync(e => (long)e.CreditedWords);
+        var passWords = await readingPasses.SumAsync(e => (long)e.CreditedWords);
         var overlap = (int)Math.Min(newlyCreditedWords, Math.Max(0L, passWords));
         if (overlap > 0)
         {
-            var reconciliation = LessonStudyActivity.Record(_context, userId, text.TextId, text.Title, text.LanguageId,
+            var reconciliation = LessonStudyActivity.Record(_context, userId, text.TextId, text.Title, creditLanguageId,
                 text.Content, text.AudioFilePath, null, "read-set", words: -overlap);
+            if (coverage != null) reconciliation.SourceRevision = coverage.SourceRevision;
             reconciliation.PassTenths = 0;
             reconciliation.ReconcilesSentenceCredit = true;
             newlyCreditedWords -= overlap;
@@ -621,14 +596,14 @@ public async Task<ActionResult<SentenceProgressDto>> LogSentenceRead([FromBody] 
         _context.UserActivities.Add(new UserActivity
         {
             UserId = userId,
-            LanguageId = text.LanguageId,
+            LanguageId = creditLanguageId,
             ActivityType = "Reading",
             WordCount = newlyCreditedWords,
             Timestamp = DateTime.UtcNow
         });
 
         var stats = await _context.UserLanguageStatistics
-            .Where(uls => uls.UserId == userId && uls.LanguageId == text.LanguageId)
+            .Where(uls => uls.UserId == userId && uls.LanguageId == creditLanguageId)
             .OrderBy(uls => uls.UserLanguageStatisticsId)
             .FirstOrDefaultAsync();
 
@@ -637,7 +612,7 @@ public async Task<ActionResult<SentenceProgressDto>> LogSentenceRead([FromBody] 
             stats = new UserLanguageStatistics
             {
                 UserId = userId,
-                LanguageId = text.LanguageId,
+                LanguageId = creditLanguageId,
                 TotalWordsRead = newlyCreditedWords,
                 LastUpdatedAt = DateTime.UtcNow
             };
@@ -652,10 +627,7 @@ public async Task<ActionResult<SentenceProgressDto>> LogSentenceRead([FromBody] 
 
     await _context.SaveChangesAsync();
 
-    var responseCoverage = currentCoverage ?? (!text.IsAudioLesson && currentRevision != null && coverages.Count > 0
-        ? new SentenceSourceCoverage { SourceRevision = currentRevision }
-        : null);
-    return Ok(ToSentenceProgressDto(progress, responseCoverage));
+    return Ok(ToSentenceProgressDto(progress, currentCoverage));
     });
 }
 
@@ -1215,23 +1187,6 @@ private DateTime CalculateStartDate(string period)
 
         // --- Helper Methods ---
 
-        private static HashSet<int> ParseCreditedIndices(string? json)
-        {
-            if (string.IsNullOrWhiteSpace(json))
-            {
-                return new HashSet<int>();
-            }
-
-            try
-            {
-                return JsonSerializer.Deserialize<HashSet<int>>(json) ?? new HashSet<int>();
-            }
-            catch
-            {
-                return new HashSet<int>();
-            }
-        }
-
         private static string SerializeCreditedIndices(HashSet<int> creditedIndices)
         {
             return JsonSerializer.Serialize(creditedIndices.OrderBy(index => index));
@@ -1242,7 +1197,7 @@ private DateTime CalculateStartDate(string period)
             return new SentenceProgressDto
             {
                 TextId = progress.TextId,
-                CreditedSegmentIndices = ParseCreditedIndices(progress.CreditedSegmentIndicesJson)
+                CreditedSegmentIndices = SentenceSourceCoverage.ReadCreditedIndices(progress.CreditedSegmentIndicesJson)
                     .OrderBy(index => index)
                     .ToList(),
                 CreditedWordCount = progress.CreditedWordCount,

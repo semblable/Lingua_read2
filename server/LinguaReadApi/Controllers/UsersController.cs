@@ -850,7 +850,7 @@ namespace LinguaReadApi.Controllers
                     .ToListAsync();
                 foreach (var progress in sentenceProgresses)
                 {
-                    progress.CreditedWordCount = 0;
+                    SentenceSourceCoverage.ResetWordCredit(progress);
                 }
                 // Retain action IDs/checkpoints after reset. A lost-response retry
                 // must not resurrect erased statistics or another completed pass.

@@ -89,7 +89,7 @@ public class LessonStudyController(AppDbContext context) : ControllerBase
                 reconcileSentences = reads.FirstOrDefault(e => e.ReconcilesSentenceCredit.HasValue)?.ReconcilesSentenceCredit
                     ?? (reads.Count == 0 ? !text.IsFinished : reads[0].CreditedWords <
                         (reads[0].CountingVersion == WordCountUtility.WhitespaceCountingVersion ? whitespaceWords : words));
-                var sentenceWords = reconcileSentences == true ? sentence?.CreditedWordCount ?? 0 : 0;
+                var sentenceWords = reconcileSentences == true ? SentenceSourceCoverage.CreditedWordsForLanguage(sentence, text.LanguageId) : 0;
                 // Word settings can change without changing the lesson revision. Recalculate
                 // a profiled total only if its previous credit agrees with today's count.
                 var recordedCreditMatches = previousVolume == LessonStudyActivity.RoundedWords(expected, words)

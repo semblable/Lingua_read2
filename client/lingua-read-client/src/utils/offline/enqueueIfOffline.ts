@@ -1,7 +1,7 @@
-import { enqueue, listPending, type PendingOp } from './syncQueue';
+import { enqueue, listPending, type PendingOp, type StoredPendingOp } from './syncQueue';
 import { offlineSessionRevision } from './events';
 
-export type OfflineQueuedResult = { offline: true; queuedOp: PendingOp & { id?: number } };
+export type OfflineQueuedResult = { offline: true; queuedOp: StoredPendingOp };
 
 // A network failure surfaces as `fetch` throwing `TypeError: Failed to fetch`
 // (Chrome/Firefox) or `NetworkError when attempting to fetch resource` (Safari).
@@ -20,7 +20,7 @@ function isNetworkFailure(error: unknown): boolean {
 /**
  * Run a mutation. If `navigator.onLine === false` OR the network throws a
  * TypeError (server unreachable), enqueue the op for later replay and return
- * the synthetic success marker `{ offline: true, queuedOp: op }`. Application
+ * the saved record, including any edits carried forward during coalescing. Application
  * errors (ApiError) and unexpected exceptions still propagate so callers can
  * surface them in the UI.
  *
@@ -37,10 +37,12 @@ export async function enqueueIfOffline<T>(
   const assertSession = () => {
     if (offlineSessionRevision() !== session) throw new Error('The session ended before this change could be queued.');
   };
-  if (options.queueOnly || (typeof navigator !== 'undefined' && navigator.onLine === false)) {
+  const queue = async (): Promise<OfflineQueuedResult> => {
     assertSession();
-    const id = await enqueue(op, coalesceKey);
-    return { offline: true, queuedOp: { ...op, id } };
+    return { offline: true, queuedOp: await enqueue(op, coalesceKey) };
+  };
+  if (options.queueOnly || (typeof navigator !== 'undefined' && navigator.onLine === false)) {
+    return queue();
   }
 
   // Do not let a newer online edit overtake an older queued edit of the
@@ -48,11 +50,7 @@ export async function enqueueIfOffline<T>(
   if (coalesceKey) {
     let queued = false;
     try { queued = (await listPending()).some(pending => pending.coalesceKey === coalesceKey); } catch { /* online calls can work without local storage */ }
-    if (queued) {
-      assertSession();
-      const id = await enqueue(op, coalesceKey);
-      return { offline: true, queuedOp: { ...op, id } };
-    }
+    if (queued) return queue();
   }
 
   try {
@@ -61,11 +59,7 @@ export async function enqueueIfOffline<T>(
   } catch (err) {
     const unauthorized = options.queueOnUnauthorized && typeof err === 'object' && err !== null &&
       'status' in err && err.status === 401;
-    if (isNetworkFailure(err) || unauthorized) {
-      assertSession();
-      const id = await enqueue(op, coalesceKey);
-      return { offline: true, queuedOp: { ...op, id } };
-    }
+    if (isNetworkFailure(err) || unauthorized) return queue();
     throw err;
   }
 }
